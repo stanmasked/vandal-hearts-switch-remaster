@@ -75,6 +75,15 @@ jobs:
             -o /tmp/test-card-restore
           /tmp/test-card-restore
 
+      - name: Test archive restore coordinator
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic \
+            -Iswitch-save switch-save/archive_name.c switch-save/card_validate.c \
+            switch-save/atomic_write.c switch-save/card_restore.c \
+            switch-save/archive_restore.c tests/test_archive_restore.c \
+            -o /tmp/test-archive-restore
+          /tmp/test-archive-restore
+
       - name: Test PS1 memory translator prototype
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic \
