@@ -10,6 +10,7 @@ on:
       - "switch-test/**"
       - "switch-test-graphics/**"
       - "scripts/fetch_upstream_pcport.sh"
+      - "scripts/audit_switch_blockers.py"
       - ".github/workflows/switch-smoke-test.yml"
   workflow_dispatch:
 
@@ -26,6 +27,9 @@ jobs:
 
       - name: Fetch pinned upstream source for inspection
         run: bash scripts/fetch_upstream_pcport.sh .cache/upstream-pc-port
+
+      - name: Audit desktop backend for Switch blockers
+        run: python3 scripts/audit_switch_blockers.py .cache/upstream-pc-port
 
       - name: Build NRO with devkitPro toolchain
         run: |
