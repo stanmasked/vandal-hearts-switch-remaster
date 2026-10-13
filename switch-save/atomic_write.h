@@ -24,8 +24,10 @@ typedef struct {
 
 /*
  * Write bytes to a temporary file, flush and close it, then replace destination.
- * Returns 1 only if every stage succeeds. Any failure after temporary creation
- * attempts to close the handle (if still open) and remove the temporary file.
+ * Returns 1 only if every stage succeeds. Failures after temporary creation
+ * close the handle when possible and remove the temporary file when the backend
+ * supplied a non-empty, NUL-terminated temporary path. If that path is malformed,
+ * the handle is closed but cleanup is not attempted using an untrusted path.
  * This orchestrator does not implement a filesystem and is not yet wired into
  * the game; platform callbacks supply all actual I/O behavior.
  */
