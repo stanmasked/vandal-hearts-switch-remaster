@@ -15,7 +15,16 @@ In the non-PC branches both routines cast the same numeric PS1 address, `0x1f800
 
 - The pinned upstream documentation says `ProcessMapFileData` has one caller: `LoadMap` in `src/states/game_setup.c`. `LoadMap` calls it synchronously after loading the map PRS data. Thus the map dictionary is scoped to a single decompression call in the observed path.
 - The sprite decoder is armed by `StartUnitSpritesDecoder` in `src/units/roster.c`, which sets the global `gUnitSpritesDecoder` state and source/destination pointers. `DecodeUnitSprites` is called from the per-frame path in `src/core/engine.c` and invokes the handler when its function index is active; `Objf050_UnitSpritesDecoder` can return between frames while retaining its state and cache cursor.
-- This supports a distinction in lifetime: map unpacking uses its cache only while the synchronous call is active, while sprite decoding retains cache contents across frames. `LoadMap` is reached from scene/state-transition code in `src/core/main.c`, so map decompression is not necessarily limited to initial startup. The inspected code does **not** prove that the decoder is always disarmed before every such transition; therefore, a shared scratchpad could overwrite a paused decoder's dictionary. Do not merge the PC-port arrays until transition ordering is verified or the decoder is explicitly reset/paused at the right boundary.
+- This supports a distinction in lifetime: map unpacking uses its cache only while the synchronous call is active, while sprite decoding retains cache contents across frames. `LoadMap` is reached from scene/state-transition code in `src/core/main.c` and from battle setup in `src/battle/evaluators.c`, so map decompression is not limited to initial startup. The inspected code does **not** prove that the decoder is always disarmed before every such transition; therefore, a shared scratchpad could overwrite a paused decoder's dictionary.
+
+Additional reset-path review narrows—but does not close—the question:
+
+- `StartUnitSpritesDecoder` arms the standalone global `gUnitSpritesDecoder` by setting its `functionIndex`, state, and source/destination pointers. `DecodeUnitSprites` dispatches it once per frame while that function index is active.
+- The general scene-transition reset `Obj_ResetFromIdx10()` iterates `gObjectArray`; `gUnitSpritesDecoder` is declared separately as its own global `Object`, not as an element of that array. Therefore this reset call alone is not evidence that the sprite decoder is cancelled.
+- `State_Init()` calls `Obj_ResetAll()` and later sets `gDecodingSprites = 0`, but the inspected reset path does not establish that `gUnitSpritesDecoder.functionIndex` and its retained cache state are reset. Clearing the flag alone is not a demonstrated decoder reset.
+- `Objf050_UnitSpritesDecoder` sets the decoder inactive only on completion (or its explicit state-2 path); the observed start routine sets state to zero for a new decode. This supports restart behavior, but does not prove every map load occurs after the active decode has completed.
+
+Conclusion: there is no source-level proof yet that map loading and an in-progress sprite decode cannot overlap across transitions. Do not merge the PC-port arrays until transition ordering is verified or the decoder is explicitly reset/paused at the correct boundary.
 
 ## Prototype implications
 
