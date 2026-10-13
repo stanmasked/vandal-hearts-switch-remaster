@@ -214,6 +214,15 @@ int main(void)
            == VH_SAVE_UPDATE_INVALID_ARGUMENT);
     assert(store.read_calls == 0 && store.writes == 0);
 
+    /* Result outputs may not overwrite the caller's card image either. */
+    make_card(overlap_storage.bytes, 0x33U);
+    assert(vh_save_slot_update(&OPS, &store, CARD_HEADER_US,
+                               overlap_storage.bytes, CARD_SIZE,
+                               a, b, SLOT_CAP, verify, SLOT_CAP,
+                               (unsigned int *)(void *)overlap_storage.bytes,
+                               NULL) == VH_SAVE_UPDATE_INVALID_ARGUMENT);
+    assert(store.read_calls == 0 && store.writes == 0);
+
     assert(update(&store, new_card) == VH_SAVE_UPDATE_OK);
     assert(vh_save_slot_select(store.slots[0], store.sizes[0],
                                store.slots[1], store.sizes[1],
