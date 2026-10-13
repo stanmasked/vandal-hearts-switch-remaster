@@ -122,7 +122,7 @@ int vh_save_slot_validate(const uint8_t *container, size_t container_size,
 
     if (container == NULL ||
         container_size < VH_SAVE_SLOT_HEADER_SIZE ||
-        expected_header_size != 384U && expected_header_size != 512U ||
+        (expected_header_size != 384U && expected_header_size != 512U) ||
         memcmp(container, VH_SLOT_MAGIC, sizeof(VH_SLOT_MAGIC)) != 0 ||
         read_u32_le(container + VH_SLOT_VERSION_OFFSET) != VH_SLOT_VERSION) {
         return 0;
