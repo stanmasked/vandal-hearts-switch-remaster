@@ -54,6 +54,14 @@ jobs:
             -o /tmp/test-archive-name
           /tmp/test-archive-name
 
+      - name: Test safe archive path construction
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic \
+            -Iswitch-save switch-save/archive_name.c switch-save/checked_path.c \
+            switch-save/archive_path.c tests/test_archive_path.c \
+            -o /tmp/test-archive-path
+          /tmp/test-archive-path
+
       - name: Test atomic save-write orchestration
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic \
