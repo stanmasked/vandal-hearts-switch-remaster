@@ -22,7 +22,7 @@ higher-resolution rendering and presentation improvements.
 1. [x] Review upstream documentation, license, and repository structure.
 2. [x] Inventory major dependencies, build system, renderer, audio, input, and platform-specific memory handling.
 3. [x] Build diagnostic Switch homebrew prototypes in CI (console/input and framebuffer color bars).
-4. [x] Add a host-tested PS1 main-RAM/scratchpad address-translation prototype; it is not yet connected to the engine.
+4. [x] Add a host-tested PS1 main-RAM/scratchpad address-translation prototype, including tests for known sound-work and movie-ring-buffer offsets; it is not yet connected to the engine.
 5. [ ] Design and implement a Switch-specific game backend; current diagnostics are not the game.
 6. [ ] Validate a playable baseline on supported hardware.
 7. [ ] Plan and test optional visual improvements.
@@ -31,8 +31,8 @@ See the [upstream audit](docs/UPSTREAM_AUDIT.md), [first Switch blocker audit re
 [build notes](docs/BUILDING.md), [Switch backend design](docs/SWITCH_BACKEND_DESIGN.md),
 [pinned upstream workflow](docs/UPSTREAM_WORKFLOW.md), and [legal notes](docs/LEGAL.md).
 
-The latest successful [CI run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38445568774)
-builds the diagnostic NROs and uploads the source-pattern audits as an [artifact](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38445568774/artifacts/11837343907). The memory scan covers 156 source files: 3,325 main-RAM-shaped occurrences include 22 code-shaped and 3,303 comment/string matches; 4 scratchpad occurrences include 3 code-shaped and 1 comment/string match; there are no I/O-register-range hits; 3 zero/NULL-mirror occurrences include 1 code-shaped and 2 comment/string matches. Code-shaped hits still include inactive preprocessor branches and are not confirmed runtime accesses. The artifact is not a playable game.
+The latest successful [CI run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38446259657)
+builds the diagnostic NROs and uploads the source-pattern audits as an [artifact](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38446259657/artifacts/11837909647). The memory scan covers 156 source files: 3,325 main-RAM-shaped occurrences include 22 code-shaped and 3,303 comment/string matches; 4 scratchpad occurrences include 3 code-shaped and 1 comment/string match; there are no I/O-register-range hits; 3 zero/NULL-mirror occurrences include 1 code-shaped and 2 comment/string matches. Code-shaped hits still include inactive preprocessor branches and are not confirmed runtime accesses. The artifact is not a playable game.
 
 ## Upstream
 
