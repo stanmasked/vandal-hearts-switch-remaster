@@ -42,8 +42,9 @@ typedef enum {
  * disjoint scratch buffers: one per slot and a read-back buffer. Each must be
  * large enough for VH_SAVE_SLOT_HEADER_SIZE + the largest supported card image.
  * All I/O callbacks are required; no filesystem durability is implied. The
- * caller must serialize updates; this coordinator contains no lock. card_image
- * must not overlap any scratch buffer. The close callback must consume/close
+ * caller must serialize updates; this coordinator contains no lock. The function
+ * rejects overlapping scratch-buffer ranges and any overlap with card_image.
+ * The close callback must consume/close
  * the open target even when it reports failure.
  */
 vh_save_update_result vh_save_slot_update(
