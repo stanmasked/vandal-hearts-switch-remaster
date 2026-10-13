@@ -99,6 +99,12 @@ int main(void)
     assert(vh_card_validate_image(image, HEADER_US + 0x100, NULL) == 0);
     free(image);
 
+    /* An occupied final record truncated by one byte must be rejected. */
+    image = make_image(HEADER_US, 2);
+    assert(vh_card_validate_image(
+        image, HEADER_US + 3 * RECORD_STRIDE + SAVE_SIZE - 1U, NULL) == 0);
+    free(image);
+
     image = make_image(HEADER_US, -1);
     image[2] = 0;
     assert(vh_card_validate_image(image, IMAGE_SIZE, NULL) == 0);
