@@ -33,6 +33,13 @@ jobs:
       - name: Test memory inventory scanner
         run: python3 -m unittest discover -s tests -v
 
+      - name: Test PS1 memory translator prototype
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic \
+            -Iswitch-memory switch-memory/psx_memory.c tests/test_psx_memory.c \
+            -o /tmp/test-psx-memory
+          /tmp/test-psx-memory
+
       - name: Audit desktop backend for Switch blockers
         run: python3 scripts/audit_switch_blockers.py .cache/upstream-pc-port | tee switch-blocker-audit.txt
 
