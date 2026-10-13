@@ -10,6 +10,7 @@ on:
       - "README.md"
       - "switch-test/**"
       - "switch-test-graphics/**"
+      - "switch-test-filesystem/**"
       - "scripts/fetch_upstream_pcport.sh"
       - "scripts/audit_switch_blockers.py"
       - "scripts/audit_psx_memory_literals.py"
@@ -56,7 +57,7 @@ jobs:
             -v "$PWD:/work" \
             -w /work \
             devkitpro/devkita64:latest \
-            sh -lc 'make -C switch-test && make -C switch-test-graphics'
+            sh -lc 'make -C switch-test && make -C switch-test-graphics && make -C switch-test-filesystem'
 
       - name: Upload Switch homebrew artifact
         uses: actions/upload-artifact@v4
@@ -66,6 +67,7 @@ jobs:
           path: |
             switch-test/*.nro
             switch-test-graphics/*.nro
+            switch-test-filesystem/*.nro
             switch-blocker-audit.txt
             psx-memory-literal-inventory.txt
           if-no-files-found: error
