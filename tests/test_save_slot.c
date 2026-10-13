@@ -32,6 +32,30 @@ static void write_u32_le(uint8_t *p, uint32_t value)
     p[3] = (uint8_t)(value >> 24);
 }
 
+static uint32_t crc32_update(uint32_t crc, const uint8_t *data, size_t size)
+{
+    size_t i;
+    for (i = 0; i < size; ++i) {
+        unsigned int bit;
+        crc ^= data[i];
+        for (bit = 0; bit < 8; ++bit) {
+            crc = (crc & 1U) != 0U
+                ? (crc >> 1) ^ UINT32_C(0xedb88320)
+                : crc >> 1;
+        }
+    }
+    return crc;
+}
+
+static uint32_t container_crc(const uint8_t *container, size_t total_size)
+{
+    uint32_t crc = UINT32_C(0xffffffff);
+    crc = crc32_update(crc, container, 20U);
+    crc = crc32_update(crc, container + VH_SAVE_SLOT_HEADER_SIZE,
+                       total_size - VH_SAVE_SLOT_HEADER_SIZE);
+    return ~crc;
+}
+
 static void make_card(uint8_t card[CARD_SIZE], uint8_t marker)
 {
     uint8_t *listing;
@@ -106,6 +130,8 @@ int main(void)
 
     memcpy(corrupt, slot_a, size_a);
     write_u32_le(corrupt + 4, 2U); /* unsupported envelope version */
+    /* Keep checksum valid so this specifically exercises version rejection. */
+    write_u32_le(corrupt + 20, container_crc(corrupt, size_a));
     assert(vh_save_slot_validate(corrupt, size_a, CARD_HEADER_US,
                                  NULL, NULL, NULL) == 0);
 
