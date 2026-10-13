@@ -168,7 +168,11 @@ int main(void)
     uint8_t alternate_container[SLOT_CAP];
     uint8_t invalid_card[CARD_SIZE];
     uint8_t a[SLOT_CAP], b[SLOT_CAP], verify[SLOT_CAP];
-    uint8_t overlap_buffers[SLOT_CAP * 3U];
+    union {
+        uint64_t u64_align;
+        unsigned int uint_align;
+        uint8_t bytes[SLOT_CAP * 3U];
+    } overlap_storage;
     uint64_t generation = 0U;
     unsigned int selected = 99U;
     uint64_t untouched_generation = UINT64_C(123456789);
@@ -190,10 +194,24 @@ int main(void)
 
     /* Partially overlapping scratch ranges must be rejected before I/O. */
     assert(vh_save_slot_update(&OPS, &store, CARD_HEADER_US, new_card,
-                               CARD_SIZE, overlap_buffers,
-                               overlap_buffers + SLOT_CAP - 1U, SLOT_CAP,
-                               overlap_buffers + SLOT_CAP * 2U, SLOT_CAP,
+                               CARD_SIZE, overlap_storage.bytes,
+                               overlap_storage.bytes + SLOT_CAP - 1U, SLOT_CAP,
+                               overlap_storage.bytes + SLOT_CAP * 2U, SLOT_CAP,
                                NULL, NULL) == VH_SAVE_UPDATE_INVALID_ARGUMENT);
+    assert(store.read_calls == 0 && store.writes == 0);
+
+    /* Result outputs may not alias scratch storage or each other. */
+    assert(vh_save_slot_update(&OPS, &store, CARD_HEADER_US, new_card,
+                               CARD_SIZE, overlap_storage.bytes, b, SLOT_CAP,
+                               verify, SLOT_CAP,
+                               (unsigned int *)(void *)overlap_storage.bytes,
+                               NULL) == VH_SAVE_UPDATE_INVALID_ARGUMENT);
+    assert(store.read_calls == 0 && store.writes == 0);
+    assert(vh_save_slot_update(&OPS, &store, CARD_HEADER_US, new_card,
+                               CARD_SIZE, a, b, SLOT_CAP, verify, SLOT_CAP,
+                               (unsigned int *)(void *)overlap_storage.bytes,
+                               (uint64_t *)(void *)overlap_storage.bytes)
+           == VH_SAVE_UPDATE_INVALID_ARGUMENT);
     assert(store.read_calls == 0 && store.writes == 0);
 
     assert(update(&store, new_card) == VH_SAVE_UPDATE_OK);
