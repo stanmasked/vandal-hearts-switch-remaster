@@ -34,7 +34,7 @@ int main(void)
     expect_rejected("root", "..");
     expect_rejected("root", "../outside");
     expect_rejected("root", "sub/card.bin");
-    expect_rejected("root", "sub\\card.bin");
+    expect_rejected("root", "sub\\\\card.bin");
     expect_rejected("root", "line\nbreak");
 
     {
