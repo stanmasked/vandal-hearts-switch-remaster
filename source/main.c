@@ -47,6 +47,9 @@ int main(int argc, char **argv) {
                 message = "Enemy tile is blocked.";
             } else if (vh_manhattan_distance(hero_x, hero_y, cursor_x, cursor_y) > MOVE_RANGE) {
                 message = "Too far: movement range is 2 tiles.";
+            } else if (!vh_can_move(hero_x, hero_y, cursor_x, cursor_y,
+                                   GRID_WIDTH, GRID_HEIGHT, MOVE_RANGE, enemy_x, enemy_y)) {
+                message = "Invalid destination.";
             } else {
                 hero_x = cursor_x;
                 hero_y = cursor_y;
