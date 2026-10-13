@@ -163,6 +163,7 @@ int main(void)
     uint8_t alternate_container[SLOT_CAP];
     uint8_t invalid_card[CARD_SIZE];
     uint8_t a[SLOT_CAP], b[SLOT_CAP], verify[SLOT_CAP];
+    uint8_t overlap_buffers[SLOT_CAP * 3U];
     uint64_t generation = 0U;
     unsigned int selected = 99U;
 
@@ -170,6 +171,15 @@ int main(void)
     make_card(new_card, 0x22U);
 
     seed(&store, old_card, 5U);
+
+    /* Partially overlapping scratch ranges must be rejected before I/O. */
+    assert(vh_save_slot_update(&OPS, &store, CARD_HEADER_US, new_card,
+                               CARD_SIZE, overlap_buffers,
+                               overlap_buffers + SLOT_CAP - 1U, SLOT_CAP,
+                               overlap_buffers + SLOT_CAP * 2U, SLOT_CAP,
+                               NULL, NULL) == VH_SAVE_UPDATE_INVALID_ARGUMENT);
+    assert(store.read_calls == 0 && store.writes == 0);
+
     assert(update(&store, new_card) == VH_SAVE_UPDATE_OK);
     assert(vh_save_slot_select(store.slots[0], store.sizes[0],
                                store.slots[1], store.sizes[1],
