@@ -32,11 +32,12 @@ A mixed solution may be needed because existing PC_PORT adaptations already hand
 
 ## Next technical work
 
-1. Inventory every integer/pointer constant in the PS1 RAM, scratchpad, and memory-mapped I/O ranges across `src/`, including pointer arithmetic and values stored for later use.
-2. Classify each use as: direct dereference, offset arithmetic, address passed to a subsystem, stored guest pointer, or already host-backed compatibility shim.
-3. Identify whether a narrow memory helper can cover each category without changing observable game behavior.
-4. Add unit tests for guest-address translation and boundary cases before attempting a Switch engine link.
-5. Only after this inventory is reviewed, introduce a Switch-only memory module and exclude the desktop bootstrap from the target build.
+1. **Added:** `scripts/audit_psx_memory_literals.py` now scans upstream `src/`, `platform/pc/src/`, and `platform/pc/include/` for literal patterns in PS1 main-RAM, scratchpad, I/O-register, and NULL-mirror address ranges. CI runs it against the pinned source and includes `psx-memory-literal-inventory.txt` in the downloadable artifact.
+2. Review each hit and classify it as a direct dereference, offset arithmetic, address passed to a subsystem, stored guest pointer, or documentation/comment-only occurrence. The script deliberately includes comments and inactive preprocessor branches to avoid silently dropping leads.
+3. Expand beyond literals to address construction and pointer-flow patterns; a simple regex cannot prove the inventory is complete.
+4. Identify whether a narrow memory helper can cover each category without changing observable game behavior.
+5. Add unit tests for guest-address translation and boundary cases before attempting a Switch engine link.
+6. Only after this inventory is reviewed, introduce a Switch-only memory module and exclude the desktop bootstrap from the target build.
 
 ## Validation gate
 
