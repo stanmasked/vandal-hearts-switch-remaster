@@ -40,9 +40,22 @@ static void test_scratchpad_boundaries(void) {
 static void test_known_upstream_guest_offsets(void) {
     PsxMemory memory = make_memory();
 
-    /* SOUND_WORK_PTR(0x80140878) uses host storage corresponding to guest RAM. */
+    /*
+     * SOUND_WORK_PTR entries for the three US sound-set work areas must
+     * translate into the same main-RAM backing store, preserving guest-RAM
+     * aliasing rather than creating unrelated per-buffer allocations.
+     */
     assert(psx_memory_translate(&memory, UINT32_C(0x80140878), 1)
            == &main_ram[0x140878]);
+    assert(psx_memory_translate(&memory, UINT32_C(0x80141878), 1)
+           == &main_ram[0x141878]);
+    assert(psx_memory_translate(&memory, UINT32_C(0x80144878), 1)
+           == &main_ram[0x144878]);
+
+    /* A span beginning at a sound-work base is accepted only within RAM. */
+    assert(psx_memory_translate(&memory, UINT32_C(0x80144878), 0x100)
+           == &main_ram[0x144878]);
+    assert(psx_memory_translate(&memory, UINT32_C(0x801ffff0), 0x20) == NULL);
 
     /* Movie_Init's non-PC address is the equivalent of gScratch3 + 0x472c0. */
     assert(psx_memory_translate(&memory, UINT32_C(0x801c74d0), 0x20)
