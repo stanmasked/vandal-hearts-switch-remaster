@@ -86,6 +86,20 @@ jobs:
             -o /tmp/test-save-update
           /tmp/test-save-update
 
+      - name: Run save-container tests with undefined-behavior sanitizer
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic \
+            -fsanitize=undefined -fno-sanitize-recover=all \
+            -Iswitch-save switch-save/card_validate.c switch-save/save_slot.c \
+            tests/test_save_slot.c -o /tmp/test-save-slot-ubsan
+          /tmp/test-save-slot-ubsan
+          cc -std=c11 -Wall -Wextra -Werror -pedantic \
+            -fsanitize=undefined -fno-sanitize-recover=all \
+            -Iswitch-save switch-save/card_validate.c switch-save/save_slot.c \
+            switch-save/save_update.c tests/test_save_update.c \
+            -o /tmp/test-save-update-ubsan
+          /tmp/test-save-update-ubsan
+
       - name: Test PS1 memory-card image validator
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic \
