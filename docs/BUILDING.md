@@ -2,13 +2,13 @@
 
 ## Status
 
-The minimal devkitPro/devkitA64/libnx homebrew build is verified in GitHub Actions: CI compiles the prototype and packages an `.nro` artifact. This verifies the toolchain and packaging path only; the application has not yet been verified on a Switch console or emulator, and it is not a port of the original game.
+The minimal devkitPro/devkitA64/libnx homebrew build is verified in GitHub Actions: CI compiles the prototype and packages an `.nro` artifact. The current source includes a software-rendered 1280×720 RGBA framebuffer grid. This verifies compilation and packaging only; the application has not yet been verified on a Switch console or emulator, and it is not a port of the original game.
 
 ## Verified minimal Switch build
 
-The repository's `Switch toolchain and prototype build` workflow runs the toolchain checks, builds the ELF/NRO with the root `Makefile`, and uploads the generated NRO as an Actions artifact. See the [latest workflow runs](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/workflows/switch-toolchain.yml). Open a successful run and download the `vandal-hearts-switch-prototype` artifact.
+The repository's `Switch toolchain and prototype build` workflow runs toolchain checks, host-side rule tests, builds the ELF/NRO with the root `Makefile`, and uploads the generated NRO as an Actions artifact. The graphical framebuffer source and tests passed in [CI run 38483880113](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38483880113). Open the run and download the `vandal-hearts-switch-prototype` artifact.
 
-The current program is a text-console input and tactical-grid experiment. A successful CI build does not establish runtime behavior, controller usability, rendering performance, or compatibility with the original game. Do not describe this artifact as a playable port.
+The current program draws a generated 8×6 tactical grid directly into a libnx framebuffer, without fonts or game assets. D-pad moves the cursor; A selects the hero or attempts movement; B cancels selection; Plus exits. A successful CI build does not establish runtime behavior, controller usability, rendering performance, or compatibility with the original game. Do not describe this artifact as a playable port.
 
 ## Upstream build baseline
 
@@ -40,14 +40,15 @@ Before adding a Switch target:
 - Audit OS-specific code in `platform/pc/src/pc_bootstrap.c`, including memory mapping/protection and executable-image inspection.
 - Determine how locally generated files will be created without bundling copyrighted game data.
 
-## First prototype (recommended)
+## First prototype
 
-Keep this separate from the game port:
-1. Build a minimal homebrew application with the selected toolchain.
-2. Read controller input.
-3. Present a generated color-bar/test framebuffer.
-4. Measure frame pacing and memory behavior on the actual target.
-5. Add audio/threading probes only after the first prototype works.
+The minimal prototype now implements:
+1. A homebrew application built with the selected toolchain.
+2. Controller polling using libnx.
+3. A generated software-rendered framebuffer grid in RGBA8888 format.
+4. A simple cursor, hero marker, enemy marker, and movement-range visualization.
+
+Next, run it in a named emulator or on physical hardware and verify orientation, repeated frame updates, controller behavior, and clean exit. Record the environment and evidence; do not infer runtime success from compilation.
 
 Then create a dependency/API inventory for the upstream platform layer and port one interface at a time.
 
@@ -57,7 +58,7 @@ Then create a dependency/API inventory for the upstream platform layer and port 
 - [ ] Host OS and toolchain versions recorded.
 - [ ] Desktop build result recorded (or blockers documented).
 - [ ] Dependencies and licenses inventoried.
-- [x] Minimal Switch input/text-console prototype built and packaged by CI.
-- [ ] Switch framebuffer prototype built and tested on emulator or hardware.
+- [x] Minimal Switch input and framebuffer prototype built and packaged by CI.
+- [ ] Framebuffer prototype run and tested on emulator or hardware.
 - [ ] Switch graphics, audio, threading, and filesystem support verified.
 - [ ] No proprietary game data included in the repository.
