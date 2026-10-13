@@ -78,15 +78,26 @@ static void test_known_upstream_guest_offsets(void) {
 static void test_unsupported_ranges_and_invalid_storage(void) {
     PsxMemory memory = make_memory();
     PsxMemory short_ram = memory;
+    PsxMemory short_scratch = memory;
+    PsxMemory missing_main = memory;
     PsxMemory missing_scratch = memory;
 
     assert(psx_memory_translate(NULL, PSX_MAIN_RAM_BASE, 1) == NULL);
     assert(psx_memory_translate(&memory, 0, 1) == NULL);
     assert(psx_memory_translate(&memory, UINT32_C(0x1f801810), 4) == NULL);
     assert(psx_memory_translate(&memory, PSX_MAIN_RAM_BASE, 0) == NULL);
+    assert(psx_memory_translate(&memory, PSX_SCRATCHPAD_BASE, 0) == NULL);
 
     short_ram.main_ram_size = PSX_MAIN_RAM_SIZE - 1;
     assert(psx_memory_translate(&short_ram, PSX_MAIN_RAM_BASE, 1) == NULL);
+
+    short_scratch.scratchpad_size = PSX_SCRATCHPAD_SIZE - 1;
+    assert(psx_memory_translate(&short_scratch, PSX_SCRATCHPAD_BASE, 1) == NULL);
+
+    missing_main.main_ram = NULL;
+    assert(psx_memory_translate(&missing_main, PSX_MAIN_RAM_BASE, 1) == NULL);
+    /* A missing main-RAM backing buffer must not disable a separate valid region. */
+    assert(psx_memory_translate(&missing_main, PSX_SCRATCHPAD_BASE, 1) == &scratchpad[0]);
 
     missing_scratch.scratchpad = NULL;
     assert(psx_memory_translate(&missing_scratch, PSX_SCRATCHPAD_BASE, 1) == NULL);
