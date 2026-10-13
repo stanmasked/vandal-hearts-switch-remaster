@@ -111,6 +111,7 @@ int main(void)
 {
     mock_fs fs;
     const char payload[] = "synthetic card";
+    vh_atomic_write_ops incomplete_ops = OPS;
 
     fs = fresh_fs();
     assert(vh_atomic_write(&OPS, &fs, "card.bin", payload,
@@ -158,6 +159,12 @@ int main(void)
                            sizeof(payload)) == 0);
     expect_failure_preserves_destination(&fs);
     assert(fs.replaced == 1);
+
+    fs = fresh_fs();
+    incomplete_ops.replace = NULL;
+    assert(vh_atomic_write(&incomplete_ops, &fs, "card.bin", payload,
+                           sizeof(payload)) == 0);
+    assert(fs.opened == 0 && fs.destination_value == 7);
 
     assert(vh_atomic_write(NULL, NULL, "card.bin", payload,
                            sizeof(payload)) == 0);
