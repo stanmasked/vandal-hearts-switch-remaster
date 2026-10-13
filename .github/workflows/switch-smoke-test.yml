@@ -12,6 +12,7 @@ on:
       - "scripts/fetch_upstream_pcport.sh"
       - "scripts/audit_switch_blockers.py"
       - "scripts/audit_psx_memory_literals.py"
+      - "tests/**"
       - ".github/workflows/switch-smoke-test.yml"
   workflow_dispatch:
 
@@ -28,6 +29,9 @@ jobs:
 
       - name: Fetch pinned upstream source for inspection
         run: bash scripts/fetch_upstream_pcport.sh .cache/upstream-pc-port
+
+      - name: Test memory inventory scanner
+        run: python3 -m unittest discover -s tests -v
 
       - name: Audit desktop backend for Switch blockers
         run: python3 scripts/audit_switch_blockers.py .cache/upstream-pc-port | tee switch-blocker-audit.txt
