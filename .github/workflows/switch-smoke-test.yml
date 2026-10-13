@@ -29,7 +29,7 @@ jobs:
         run: bash scripts/fetch_upstream_pcport.sh .cache/upstream-pc-port
 
       - name: Audit desktop backend for Switch blockers
-        run: python3 scripts/audit_switch_blockers.py .cache/upstream-pc-port
+        run: python3 scripts/audit_switch_blockers.py .cache/upstream-pc-port | tee switch-blocker-audit.txt
 
       - name: Build NRO with devkitPro toolchain
         run: |
@@ -47,5 +47,6 @@ jobs:
           path: |
             switch-test/*.nro
             switch-test-graphics/*.nro
+            switch-blocker-audit.txt
           if-no-files-found: error
           retention-days: 14
