@@ -10,6 +10,7 @@ typedef struct {
     int fail_flush;
     int fail_close;
     int fail_replace;
+    int bad_temporary_path;
     int opened;
     int wrote;
     int flushed;
@@ -27,7 +28,11 @@ static void *mock_open(void *context, const char *destination,
     (void)destination;
     fs->opened++;
     if (fs->fail_open || capacity < sizeof("mock.tmp")) return NULL;
-    memcpy(temporary_path, "mock.tmp", sizeof("mock.tmp"));
+    if (fs->bad_temporary_path) {
+        memset(temporary_path, 'x', capacity);
+    } else {
+        memcpy(temporary_path, "mock.tmp", sizeof("mock.tmp"));
+    }
     return fs;
 }
 
@@ -119,6 +124,13 @@ int main(void)
     assert(vh_atomic_write(&OPS, &fs, "card.bin", payload,
                            sizeof(payload)) == 0);
     assert(fs.closed == 0 && fs.removed == 0 && fs.destination_value == 7);
+
+    fs = fresh_fs();
+    fs.bad_temporary_path = 1;
+    assert(vh_atomic_write(&OPS, &fs, "card.bin", payload,
+                           sizeof(payload)) == 0);
+    assert(fs.closed == 1 && fs.replaced == 0);
+    assert(fs.destination_value == 7);
 
     fs = fresh_fs();
     fs.fail_write = 1;
