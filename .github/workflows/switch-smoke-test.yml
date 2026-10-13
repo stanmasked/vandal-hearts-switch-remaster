@@ -1,0 +1,38 @@
+name: Switch homebrew smoke test
+
+on:
+  push:
+    branches:
+      - experiment/switch-homebrew-smoke-test
+    paths:
+      - "switch-test/**"
+      - ".github/workflows/switch-smoke-test.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build libnx smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build NRO with devkitPro toolchain
+        run: |
+          docker run --rm \
+            -v "$PWD:/work" \
+            -w /work \
+            devkitpro/devkita64:latest \
+            make -C switch-test
+
+      - name: Upload Switch homebrew artifact
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: switch-smoke-test-nro
+          path: switch-test/build/*.nro
+          if-no-files-found: error
+          retention-days: 14
