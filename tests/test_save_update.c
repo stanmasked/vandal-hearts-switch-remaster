@@ -166,6 +166,8 @@ int main(void)
     uint8_t overlap_buffers[SLOT_CAP * 3U];
     uint64_t generation = 0U;
     unsigned int selected = 99U;
+    uint64_t untouched_generation = UINT64_C(123456789);
+    unsigned int untouched_selected = 42U;
 
     make_card(old_card, 0x11U);
     make_card(new_card, 0x22U);
@@ -202,7 +204,12 @@ int main(void)
     old_size = store.sizes[0];
     memcpy(old_container, store.slots[0], old_size);
     store.fail = FAIL_READ_INITIAL;
-    assert(update(&store, new_card) == VH_SAVE_UPDATE_IO_FAILURE);
+    assert(vh_save_slot_update(&OPS, &store, CARD_HEADER_US, new_card,
+                               CARD_SIZE, a, b, SLOT_CAP, verify, SLOT_CAP,
+                               &untouched_selected, &untouched_generation)
+           == VH_SAVE_UPDATE_IO_FAILURE);
+    assert(untouched_selected == 42U);
+    assert(untouched_generation == UINT64_C(123456789));
     assert(store.writes == 0);
     assert_old_slot_preserved(&store, old_container, old_size);
 
