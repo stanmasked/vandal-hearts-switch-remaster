@@ -25,8 +25,9 @@ higher-resolution rendering and presentation improvements.
 5. [ ] Plan and test optional visual improvements.
 
 See the [upstream audit](docs/UPSTREAM_AUDIT.md), [porting plan](docs/PORTING_PLAN.md),
-[build notes](docs/BUILDING.md), [prototype acceptance checklist](docs/PROTOTYPE_CHECKLIST.md),
-and [legal notes](docs/LEGAL.md).
+[build notes](docs/BUILDING.md), [toolchain diagnostic instructions](docs/TOOLCHAIN_CHECK.md),
+[prototype acceptance checklist](docs/PROTOTYPE_CHECKLIST.md), and
+[legal notes](docs/LEGAL.md).
 
 ## Upstream
 
