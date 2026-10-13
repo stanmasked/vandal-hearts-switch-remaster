@@ -2,7 +2,7 @@
 
 ## Current status
 
-**Source audit complete; minimal NRO builds in CI; interactive tactical-grid prototype implemented. Runtime input and graphics presentation are not yet verified on an emulator or physical Switch.**
+**Source audit complete; graphical framebuffer NRO builds in CI; interactive runtime input and graphics presentation are not yet verified on an emulator or physical Switch.**
 
 The upstream PC port is a native C project with a portable hardware-interface layer, but it is designed for desktop Windows/Linux/macOS. See [Upstream Audit](UPSTREAM_AUDIT.md) for findings and [Build Notes](BUILDING.md) for the dependency inventory.
 
@@ -28,8 +28,8 @@ The upstream PC port is a native C project with a portable hardware-interface la
 - [x] Confirm devkitPro/devkitA64/libnx are available in the CI container.
 - [x] Build a minimal test application without game code or game data.
 - [x] Implement a controller-driven tactical grid and basic unit movement rules.
+- [x] Implement and compile a software-rendered RGBA8888 framebuffer grid.
 - [ ] Verify the application and controller behavior in an emulator or on actual hardware.
-- [ ] Present a generated pixel framebuffer/test pattern.
 - [ ] Measure frame pacing and memory use on actual hardware.
 - [ ] Verify audio and thread support independently.
 
