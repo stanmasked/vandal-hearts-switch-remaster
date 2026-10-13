@@ -18,6 +18,10 @@ This is a source-level triage of the code-shaped rows in the CI literal inventor
 | \`src/maps/unpack.c:49\` | The non-\`PC_PORT\` branch assigns \`pCache = (u8 *)0x1f800000\` for a 1 KiB dictionary. The \`PC_PORT\` branch uses a static \`sPcScratchpad[0x400]\`. | Use an explicit Switch-owned 1 KiB scratchpad buffer or a common helper. Verify reentrancy and lifetime before changing storage semantics. |
 | \`platform/pc/src/pc_bootstrap.c:48\` (not in scanner scope's PC source? see note) | Documents the fixed PS1 scratchpad base used by the desktop bootstrap. | Desktop bootstrap must not be part of the Switch target; this comment/definition is an architectural reference, not a reason to reserve the same address on Horizon. |
 
+## Zero/NULL-mirror-shaped hit
+
+`platform/pc/src/pc_bootstrap.c:54` defines `PSX_NULL_MIRROR_BASE` as `0x00000000UL`. This is part of the desktop memory-map setup and its comments explain the PC port's null-read compatibility issue. It is not a standalone request to dereference address zero on Switch; the associated fault behavior and game call sites require separate review.
+
 ## Priority order
 
 1. Trace \`gScratch3_80180210\` and the movie ring-buffer path; this is the most obvious remaining fixed pointer in an engine source path.
