@@ -74,7 +74,28 @@ vh_save_update_result vh_save_slot_update(
         ranges_overlap(card_image, card_image_size,
                        slot_b_buffer, slot_capacity) ||
         ranges_overlap(card_image, card_image_size,
-                       verify_buffer, verify_capacity)) {
+                       verify_buffer, verify_capacity) ||
+        (selected_slot_out != NULL &&
+         (ranges_overlap(selected_slot_out, sizeof(*selected_slot_out),
+                         slot_a_buffer, slot_capacity) ||
+          ranges_overlap(selected_slot_out, sizeof(*selected_slot_out),
+                         slot_b_buffer, slot_capacity) ||
+          ranges_overlap(selected_slot_out, sizeof(*selected_slot_out),
+                         verify_buffer, verify_capacity) ||
+          ranges_overlap(selected_slot_out, sizeof(*selected_slot_out),
+                         card_image, card_image_size))) ||
+        (generation_out != NULL &&
+         (ranges_overlap(generation_out, sizeof(*generation_out),
+                         slot_a_buffer, slot_capacity) ||
+          ranges_overlap(generation_out, sizeof(*generation_out),
+                         slot_b_buffer, slot_capacity) ||
+          ranges_overlap(generation_out, sizeof(*generation_out),
+                         verify_buffer, verify_capacity) ||
+          ranges_overlap(generation_out, sizeof(*generation_out),
+                         card_image, card_image_size))) ||
+        (selected_slot_out != NULL && generation_out != NULL &&
+         ranges_overlap(selected_slot_out, sizeof(*selected_slot_out),
+                        generation_out, sizeof(*generation_out))) {
         return VH_SAVE_UPDATE_INVALID_ARGUMENT;
     }
 
