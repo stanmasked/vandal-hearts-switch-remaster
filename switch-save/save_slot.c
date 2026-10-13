@@ -2,6 +2,7 @@
 
 #include "card_validate.h"
 
+#include <stdint.h>
 #include <string.h>
 
 enum {
@@ -16,6 +17,27 @@ enum {
 static const uint8_t VH_SLOT_MAGIC[VH_SLOT_MAGIC_SIZE] = {
     (uint8_t)'V', (uint8_t)'H', (uint8_t)'S', (uint8_t)'L'
 };
+
+/* Treat address-range overflow conservatively as overlap. */
+static int ranges_overlap(const void *a, size_t a_size,
+                          const void *b, size_t b_size)
+{
+    uintptr_t a_start;
+    uintptr_t b_start;
+    uintptr_t a_end;
+    uintptr_t b_end;
+
+    if (a_size == 0U || b_size == 0U) return 0;
+    a_start = (uintptr_t)a;
+    b_start = (uintptr_t)b;
+    if (a_size > UINTPTR_MAX - a_start ||
+        b_size > UINTPTR_MAX - b_start) {
+        return 1;
+    }
+    a_end = a_start + a_size;
+    b_end = b_start + b_size;
+    return a_start < b_end && b_start < a_end;
+}
 
 static uint32_t read_u32_le(const uint8_t *p)
 {
@@ -89,7 +111,8 @@ int vh_save_slot_encode(uint8_t *out, size_t out_capacity,
     }
 
     total_size = VH_SAVE_SLOT_HEADER_SIZE + card_image_size;
-    if (out_capacity < total_size) {
+    if (out_capacity < total_size ||
+        ranges_overlap(out, total_size, card_image, card_image_size)) {
         return 0;
     }
 
