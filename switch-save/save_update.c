@@ -3,6 +3,27 @@
 #include <stdint.h>
 #include <string.h>
 
+/* Treat address-range overflow conservatively as overlap. */
+static int ranges_overlap(const void *a, size_t a_size,
+                          const void *b, size_t b_size)
+{
+    uintptr_t a_start;
+    uintptr_t b_start;
+    uintptr_t a_end;
+    uintptr_t b_end;
+
+    if (a_size == 0U || b_size == 0U) return 0;
+    a_start = (uintptr_t)a;
+    b_start = (uintptr_t)b;
+    if (a_size > UINTPTR_MAX - a_start ||
+        b_size > UINTPTR_MAX - b_start) {
+        return 1;
+    }
+    a_end = a_start + a_size;
+    b_end = b_start + b_size;
+    return a_start < b_end && b_start < a_end;
+}
+
 static int ops_valid(const vh_save_update_ops *ops)
 {
     return ops != NULL && ops->read_slot != NULL &&
@@ -42,8 +63,18 @@ vh_save_update_result vh_save_slot_update(
         slot_a_buffer == NULL || slot_b_buffer == NULL ||
         verify_buffer == NULL || slot_capacity < VH_SAVE_SLOT_HEADER_SIZE ||
         verify_capacity < VH_SAVE_SLOT_HEADER_SIZE ||
-        slot_a_buffer == slot_b_buffer || slot_a_buffer == verify_buffer ||
-        slot_b_buffer == verify_buffer) {
+        ranges_overlap(slot_a_buffer, slot_capacity,
+                       slot_b_buffer, slot_capacity) ||
+        ranges_overlap(slot_a_buffer, slot_capacity,
+                       verify_buffer, verify_capacity) ||
+        ranges_overlap(slot_b_buffer, slot_capacity,
+                       verify_buffer, verify_capacity) ||
+        ranges_overlap(card_image, card_image_size,
+                       slot_a_buffer, slot_capacity) ||
+        ranges_overlap(card_image, card_image_size,
+                       slot_b_buffer, slot_capacity) ||
+        ranges_overlap(card_image, card_image_size,
+                       verify_buffer, verify_capacity)) {
         return VH_SAVE_UPDATE_INVALID_ARGUMENT;
     }
 
