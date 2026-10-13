@@ -173,11 +173,20 @@ int main(void)
     unsigned int selected = 99U;
     uint64_t untouched_generation = UINT64_C(123456789);
     unsigned int untouched_selected = 42U;
+    vh_save_update_ops incomplete_ops = OPS;
 
     make_card(old_card, 0x11U);
     make_card(new_card, 0x22U);
 
     seed(&store, old_card, 5U);
+
+    /* Missing required callbacks are rejected before any backend activity. */
+    incomplete_ops.flush = NULL;
+    assert(vh_save_slot_update(&incomplete_ops, &store, CARD_HEADER_US,
+                               new_card, CARD_SIZE, a, b, SLOT_CAP,
+                               verify, SLOT_CAP, NULL, NULL)
+           == VH_SAVE_UPDATE_INVALID_ARGUMENT);
+    assert(store.read_calls == 0 && store.writes == 0);
 
     /* Partially overlapping scratch ranges must be rejected before I/O. */
     assert(vh_save_slot_update(&OPS, &store, CARD_HEADER_US, new_card,
