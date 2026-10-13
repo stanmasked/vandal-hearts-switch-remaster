@@ -16,7 +16,7 @@ Two concrete examples in the pinned source make the issue visible:
 - `src/core/cd.c` initializes `gSoundSets` with `SOUND_WORK_PTR(0x80140878)`. The nearby comment says these used to be anonymous fixed PS1-RAM addresses; the PC port has already added host-backed handling for this specific structure.
 - `src/maps/unpack.c` sets `pCache = (u8 *)0x1f800000` and uses it as a 1 KiB dictionary indexed by `cacheOfs & 0x3ff`. This is a direct scratchpad pointer, not an ordinary allocated host buffer.
 
-These are examples, not a complete inventory of all absolute addresses. The CI literal scanner has now run against the pinned upstream snapshot (156 C/C++ source files) and reported 3,326 occurrences: 3,321 main-RAM-shaped literals, 3 scratchpad literals, 0 I/O-register-range literals, and 2 zero/NULL-mirror literals. These are *occurrences*, not unique addresses or confirmed runtime accesses. Because the scan intentionally includes comments, documentation strings, generated data tables, and inactive preprocessor branches, the main-RAM count is a lead list—not evidence of 3,321 unsafe dereferences. The downloadable CI artifact contains the full per-file/per-line inventory.
+These are examples, not a complete inventory of all absolute addresses. The CI literal scanner has run against the pinned upstream snapshot (156 C/C++ source files). The raw inventory reports 3,321 main-RAM-shaped occurrences, 3 scratchpad occurrences, 0 I/O-register-range occurrences, and 2 zero/NULL-mirror occurrences. A lexical pass separates ordinary code from comments and quoted strings: main RAM is 18 code-shaped occurrences plus 3,303 comment/string occurrences; scratchpad is 2 code-shaped plus 1 comment/string; the 2 zero/NULL-mirror occurrences are comment/string-only. These are *occurrences*, not unique addresses or confirmed runtime accesses. Inactive preprocessor branches are still included, so even a code-shaped occurrence is only a review lead, not proof of a runtime dereference. The downloadable CI artifact contains the full per-file/per-line inventory.
 
 ## Design decision to resolve before integrating the engine
 
@@ -32,8 +32,8 @@ A mixed solution may be needed because existing PC_PORT adaptations already hand
 
 ## Next technical work
 
-1. **Completed:** `scripts/audit_psx_memory_literals.py` scans upstream `src/`, `platform/pc/src/`, and `platform/pc/include/`; CI runs the scanner and uploads `psx-memory-literal-inventory.txt`.
-2. **Next:** classify the high-value hits first: active executable statements, pointer casts/dereferences, arithmetic from a guest base, and values passed to memory-sensitive subsystems. Treat comments, strings, and generated address annotations separately so they do not dominate the review.
+1. **Completed:** `scripts/audit_psx_memory_literals.py` scans upstream `src/`, `platform/pc/src/`, and `platform/pc/include/`; CI runs it, tests the code/comment classifier, and uploads `psx-memory-literal-inventory.txt`.
+2. **Next:** inspect the 20 code-shaped hits (18 main-RAM, 2 scratchpad) in context and distinguish active code from inactive `#if` branches. Then classify pointer casts/dereferences, arithmetic from a guest base, and values passed to memory-sensitive subsystems.
 3. Expand beyond literals to address construction and pointer-flow patterns; a simple regex cannot prove the inventory is complete.
 4. Identify whether a narrow memory helper can cover each category without changing observable game behavior.
 5. Add unit tests for guest-address translation and boundary cases before attempting a Switch engine link.
