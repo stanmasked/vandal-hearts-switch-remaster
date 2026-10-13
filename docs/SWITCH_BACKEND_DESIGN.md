@@ -40,7 +40,7 @@ The PC build is a native C engine port, but its platform layer is not a Switch b
 ## Exit criteria
 
 - [x] Smoke-test workflow produces and uploads a `.nro` artifact (console/input test; CI run `38440173974`).
-- [ ] Framebuffer color-bar test builds and uploads a separate `.nro` artifact.
+- [x] Framebuffer color-bar test builds and uploads a separate `.nro` artifact (CI run `38440679570`).
 - [ ] Smoke-test source and build files are verified against the current devkitPro image.
 - [ ] Upstream source is integrated at a pinned revision without proprietary assets.
 - [ ] Switch-specific compile failures are resolved and documented.
