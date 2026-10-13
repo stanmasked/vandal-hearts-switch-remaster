@@ -46,6 +46,13 @@ jobs:
             -o /tmp/test-checked-path
           /tmp/test-checked-path
 
+      - name: Test region-scoped archive names
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic \
+            -Iswitch-save switch-save/archive_name.c tests/test_archive_name.c \
+            -o /tmp/test-archive-name
+          /tmp/test-archive-name
+
       - name: Test atomic save-write orchestration
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic \
