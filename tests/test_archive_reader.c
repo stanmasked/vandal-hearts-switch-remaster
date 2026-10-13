@@ -9,6 +9,7 @@ enum { US_HEADER = 384, LISTING_SIZE = 128, IMAGE_CAP = 640 };
 
 typedef struct {
     int open_calls, read_calls, close_calls;
+    int fail_open;
     int read_success, close_success;
     int write_open_calls, replace_calls;
     size_t reported_size;
@@ -49,7 +50,7 @@ static void *read_open(void *ctx, const char *name)
     fixture *f = (fixture *)ctx;
     f->open_calls++;
     assert(strcmp(name, "BASLUS-00447VH.20261013-203000") == 0);
-    return f;
+    return f->fail_open ? NULL : f;
 }
 static int read_all(void *ctx, void *h, uint8_t *buffer,
                     size_t capacity, size_t *size)
@@ -144,6 +145,13 @@ int main(void)
     make_card(&f); f.read_success = 1; f.close_success = 1;
     assert(!restore(&f, buffer, US_HEADER));
     assert(f.close_calls == 1 && f.write_open_calls == 0 && f.replace_calls == 0);
+
+    /* Failed open must not attempt read, close, or destination mutation. */
+    memset(&f, 0, sizeof(f));
+    make_card(&f); f.fail_open = 1; f.read_success = 1; f.close_success = 1;
+    assert(!restore(&f, buffer, sizeof(buffer)));
+    assert(f.open_calls == 1 && f.read_calls == 0 && f.close_calls == 0);
+    assert(f.write_open_calls == 0 && f.replace_calls == 0);
 
     memset(&f, 0, sizeof(f));
     make_card(&f); f.read_success = 1; f.close_success = 1;
