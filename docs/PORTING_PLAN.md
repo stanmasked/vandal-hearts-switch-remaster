@@ -2,70 +2,62 @@
 
 ## Current status
 
-**Research only.** The upstream PC port has not yet been audited in this repository,
-and Switch compatibility is unverified. This plan is a sequence of investigation
-and validation steps, not a claim that these steps are complete.
+**Source audit completed; Switch prototype not started.** The upstream PC port is a native C project with a portable hardware-interface layer, but it is designed for desktop Windows/Linux/macOS. No Switch build or on-device test has been performed in this repository.
 
-## Phase 1 — Establish a baseline
+See [Upstream Audit](UPSTREAM_AUDIT.md) for findings and [Build Notes](BUILDING.md) for the dependency inventory.
 
-- Read the upstream README, architecture/build/cross-platform docs, contribution
-  guidance, and license.
-- Record the upstream commit or release being evaluated.
-- Build and run the unmodified PC port on a supported desktop environment, if
-  its dependencies and game-data requirements can be met legally.
-- Record the exact build commands, toolchain versions, logs, and known issues.
+## Phase 1 — Establish a reproducible baseline
 
-**Exit condition:** a documented, reproducible desktop baseline, or a clear report
-of what prevents it.
+- [x] Review upstream README, architecture, build docs, platform glue, and license notices.
+- [ ] Record the exact upstream commit SHA used for porting.
+- [ ] Build and run the unmodified desktop PC port, if dependencies and locally supplied legal game data are available.
+- [ ] Record exact toolchain versions, commands, logs, and known issues.
+
+**Exit condition:** a documented desktop baseline, or a clear report of blockers.
 
 ## Phase 2 — Map portability boundaries
 
-Inventory:
-- Build system and compiler assumptions.
-- SDL or other third-party libraries and their target support.
-- Graphics API, shaders, texture formats, and rendering assumptions.
-- Audio, input/controller handling, filesystem paths, save data, and timing.
-- Platform-specific APIs, threading, memory use, and external tools.
-
-Separate portable game logic from platform-specific services where practical.
-Do not replace major subsystems before the dependency map exists.
+- [ ] Inventory all dependencies and license obligations.
+- [ ] Inventory OS-specific APIs in `pc_bootstrap.c` and related files.
+- [ ] Trace the graphics presentation path (`pc_gpu_window.c`) and isolate it behind a small interface.
+- [ ] Evaluate SDL2, graphics, audio, threading, filesystem, and memory APIs against the chosen Switch homebrew toolchain.
+- [ ] Keep changes out of the byte-matching game source unless there is a documented, gated reason.
 
 ## Phase 3 — Switch homebrew feasibility prototype
 
-- Verify current devkitPro/devkitA64/libnx documentation and the supported
-  versions of required libraries.
-- Determine whether the upstream renderer and SDL version can be supported,
-  or whether a small platform abstraction is needed.
-- Create a minimal build target only after the dependency and license review.
-- Validate launch, input, file access, rendering, audio, and clean shutdown
-  independently where possible.
+- [ ] Confirm current devkitPro/devkitA64/libnx setup and compatible library versions.
+- [ ] Build a minimal test application without game code or game data.
+- [ ] Read controller input and present a generated test framebuffer.
+- [ ] Measure frame pacing and memory use on actual hardware.
+- [ ] Verify audio and thread support independently.
 
-**Exit condition:** a minimal homebrew build that launches on the intended test
-environment, with reproducible instructions and logs.
+**Exit condition:** reproducible homebrew test app with input and framebuffer presentation on the intended test environment.
 
-## Phase 4 — Playable vertical slice
+## Phase 4 — Port platform services
 
-- Load one representative scene or battle using locally supplied legal game data.
-- Test controller navigation, timing, audio, save/load, and scene transitions.
-- Compare behavior against the desktop baseline.
-- Track crashes, performance, and compatibility limitations.
+- [ ] Add a Switch-specific presentation backend or a verified supported renderer path.
+- [ ] Adapt bootstrap, memory handling, filesystem paths, and save locations as needed.
+- [ ] Adapt audio and threading only after proving the chosen libraries/toolchain support them.
+- [ ] Keep the original desktop targets working.
 
-## Phase 5 — HD improvements
+## Phase 5 — Playable baseline
 
-Only after baseline compatibility:
-- Identify resolution-dependent assumptions and rendering bottlenecks.
-- Preserve original art and gameplay behavior as a reference mode.
-- Make visual changes incremental and toggleable where feasible.
-- Test scaling, UI legibility, texture filtering, aspect ratio, and performance.
+- [ ] Build a Switch-targeted binary with locally supplied, legally obtained game data.
+- [ ] Verify startup, controller navigation, rendering, audio, save/load, and scene transitions.
+- [ ] Track crashes, performance, memory use, and known limitations.
+- [ ] Compare behavior against the desktop baseline.
 
-## Phase 6 — Regression and release readiness
+## Phase 6 — HD improvements
 
-- Maintain a tested feature matrix and known-issues list.
-- Document required tools and legal user-provided data.
-- Verify licensing and redistribution rights for every shipped component.
-- Never bundle proprietary game data or claim hardware compatibility without testing.
+Only after the baseline is playable:
+- [ ] Identify resolution-dependent assumptions and performance bottlenecks.
+- [ ] Preserve original art/gameplay as a reference mode.
+- [ ] Add optional visual improvements incrementally.
+- [ ] Test scaling, UI legibility, texture filtering, aspect ratio, and performance.
 
-## Decision log
+## Licensing and release readiness
 
-Record decisions here with date, evidence, alternatives considered, and follow-up
-tasks. Unknowns should remain marked as unknown rather than assumed solved.
+- [ ] Review upstream `LICENSE`, `NOTICE`, and `DISCLAIMER` before copying code.
+- [ ] Treat the upstream repository as mixed-rights: GPL-2.0 applies to specified original PC-port code/tooling, not automatically to decompiled game code or game-derived data.
+- [ ] Do not commit disc images, game executables, BIOS/SDK data, extracted assets, or generated copyrighted content.
+- [ ] Never claim Switch support until it has been built and tested on hardware.
