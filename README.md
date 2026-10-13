@@ -5,9 +5,10 @@ An experimental, community-driven project to investigate whether the existing
 can be adapted for Nintendo Switch homebrew, with a longer-term goal of exploring
 higher-resolution rendering and presentation improvements.
 
-> **Status: planning / research.** Nintendo Switch compatibility has not been
-> established. This repository does not currently contain a working Switch port.
-> No build or on-device test is claimed.
+> **Status: early prototype.** GitHub Actions has successfully built a minimal
+> Switch homebrew NRO. The interactive tactical-grid input test is not yet
+> verified in an emulator or on physical hardware. This is not a working port
+> of Vandal Hearts.
 
 ## Goals
 
@@ -20,14 +21,25 @@ higher-resolution rendering and presentation improvements.
 
 1. [x] Review upstream documentation and license.
 2. [x] Inventory dependencies, build system, renderer, audio, input, and file I/O.
-3. [ ] Define a minimal Switch platform/build prototype.
-4. [ ] Validate a playable baseline on supported hardware.
-5. [ ] Plan and test optional visual improvements.
+3. [x] Build a minimal Switch homebrew prototype in CI.
+4. [ ] Verify interactive controller input and runtime behavior in an emulator or on hardware.
+5. [ ] Validate a playable baseline on supported hardware.
+6. [ ] Plan and test optional visual improvements.
+
+The current prototype renders a small tactical grid in the console, moves a cursor with
+the D-pad, marks a tile with A, clears the mark with B, and exits with Plus. It uses no
+original game code or proprietary game data.
 
 See the [upstream audit](docs/UPSTREAM_AUDIT.md), [porting plan](docs/PORTING_PLAN.md),
 [build notes](docs/BUILDING.md), [toolchain diagnostic instructions](docs/TOOLCHAIN_CHECK.md),
 [prototype acceptance checklist](docs/PROTOTYPE_CHECKLIST.md), and
 [legal notes](docs/LEGAL.md).
+
+## Build artifact
+
+The CI workflow creates an artifact named `vandal-hearts-switch-prototype`.
+Download it from the [latest workflow runs](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions).
+A successful CI build confirms compilation and packaging only; it does not confirm runtime behavior.
 
 ## Upstream
 
