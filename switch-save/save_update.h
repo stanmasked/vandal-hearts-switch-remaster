@@ -23,6 +23,7 @@ typedef struct {
     int (*write_all)(void *context, unsigned int slot,
                      const uint8_t *data, size_t size);
     int (*flush)(void *context, unsigned int slot);
+    /* Called after every successful open_write, even after write/flush failure. */
     int (*close)(void *context, unsigned int slot);
 } vh_save_update_ops;
 
@@ -40,7 +41,10 @@ typedef enum {
  * Write a new generation into the non-current slot. The caller supplies three
  * disjoint scratch buffers: one per slot and a read-back buffer. Each must be
  * large enough for VH_SAVE_SLOT_HEADER_SIZE + the largest supported card image.
- * All I/O callbacks are required; no filesystem durability is implied.
+ * All I/O callbacks are required; no filesystem durability is implied. The
+ * caller must serialize updates; this coordinator contains no lock. card_image
+ * must not overlap any scratch buffer. The close callback must consume/close
+ * the open target even when it reports failure.
  */
 vh_save_update_result vh_save_slot_update(
     const vh_save_update_ops *ops, void *context,
