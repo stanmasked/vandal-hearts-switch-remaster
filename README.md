@@ -28,6 +28,8 @@ higher-resolution rendering and presentation improvements.
 7. [ ] Validate a playable baseline on supported hardware.
 8. [ ] Plan and test optional visual improvements.
 
+Portable movement-rule unit tests run with `make test` and are included in CI; they cover Manhattan distance, grid bounds, movement range, and the blocked enemy tile. See the [CI run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38483716754).
+
 The current console prototype provides a small 8×6 grid. D-pad moves the cursor;
 A selects the hero or attempts to move it; B cancels selection; Plus exits.
 Movement is limited to a Manhattan distance of two tiles, and the enemy tile is
