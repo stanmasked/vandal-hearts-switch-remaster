@@ -26,12 +26,12 @@ higher-resolution rendering and presentation improvements.
 5. [ ] Validate a playable baseline on supported hardware.
 6. [ ] Plan and test optional visual improvements.
 
-See the [upstream audit](docs/UPSTREAM_AUDIT.md), [porting plan](docs/PORTING_PLAN.md),
+See the [upstream audit](docs/UPSTREAM_AUDIT.md), [first Switch blocker audit results](docs/SWITCH_BLOCKER_AUDIT_RESULTS.md), [porting plan](docs/PORTING_PLAN.md),
 [build notes](docs/BUILDING.md), [Switch backend design](docs/SWITCH_BACKEND_DESIGN.md),
 [pinned upstream workflow](docs/UPSTREAM_WORKFLOW.md), and [legal notes](docs/LEGAL.md).
 
-The latest [CI run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38440952887)
-produces the two diagnostic NROs as a downloadable artifact.
+The latest successful [CI run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38442205384)
+produces two diagnostic NROs and a source-pattern audit report as a downloadable [artifact](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38442205384/artifacts/11834899128). The artifact is not a playable game.
 
 ## Upstream
 
