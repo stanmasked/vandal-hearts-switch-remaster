@@ -1,17 +1,11 @@
 #include <switch.h>
 #include <stdio.h>
 
+#include "game_rules.h"
+
 #define GRID_WIDTH 8
 #define GRID_HEIGHT 6
 #define MOVE_RANGE 2
-
-static int manhattan_distance(int x1, int y1, int x2, int y2) {
-    int dx = x1 - x2;
-    int dy = y1 - y2;
-    if (dx < 0) dx = -dx;
-    if (dy < 0) dy = -dy;
-    return dx + dy;
-}
 
 int main(int argc, char **argv) {
     (void)argc;
@@ -51,7 +45,7 @@ int main(int argc, char **argv) {
                 }
             } else if (cursor_x == enemy_x && cursor_y == enemy_y) {
                 message = "Enemy tile is blocked.";
-            } else if (manhattan_distance(hero_x, hero_y, cursor_x, cursor_y) > MOVE_RANGE) {
+            } else if (vh_manhattan_distance(hero_x, hero_y, cursor_x, cursor_y) > MOVE_RANGE) {
                 message = "Too far: movement range is 2 tiles.";
             } else {
                 hero_x = cursor_x;
