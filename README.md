@@ -32,7 +32,7 @@ See the [upstream audit](docs/UPSTREAM_AUDIT.md), [first Switch blocker audit re
 [pinned upstream workflow](docs/UPSTREAM_WORKFLOW.md), and [legal notes](docs/LEGAL.md).
 
 The latest successful [CI run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38445568774)
-builds the diagnostic NROs and uploads the source-pattern audits as an [artifact](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38445276745/artifacts/11837428992). The memory scan covers 156 source files: 3,325 main-RAM-shaped occurrences include 22 code-shaped and 3,303 comment/string matches; 4 scratchpad occurrences include 3 code-shaped and 1 comment/string match; there are no I/O-register-range hits; 3 zero/NULL-mirror occurrences include 1 code-shaped and 2 comment/string matches. Code-shaped hits still include inactive preprocessor branches and are not confirmed runtime accesses. The artifact is not a playable game.
+builds the diagnostic NROs and uploads the source-pattern audits as an [artifact](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38445568774/artifacts/11837343907). The memory scan covers 156 source files: 3,325 main-RAM-shaped occurrences include 22 code-shaped and 3,303 comment/string matches; 4 scratchpad occurrences include 3 code-shaped and 1 comment/string match; there are no I/O-register-range hits; 3 zero/NULL-mirror occurrences include 1 code-shaped and 2 comment/string matches. Code-shaped hits still include inactive preprocessor branches and are not confirmed runtime accesses. The artifact is not a playable game.
 
 ## Upstream
 
