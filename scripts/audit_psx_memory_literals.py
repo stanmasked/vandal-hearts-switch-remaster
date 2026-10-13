@@ -11,7 +11,7 @@ import sys
 ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else ".cache/upstream-pc-port")
 SCAN_ROOTS = (ROOT / "src", ROOT / "platform/pc/src", ROOT / "platform/pc/include")
 SOURCE_SUFFIXES = {".c", ".h", ".cpp", ".hpp", ".inc"}
-ADDRESS = re.compile(r"(?i)(?<![\\w])(?:0x)?(80[0-7][0-9a-f]{5}|1f800[0-9a-f]{3}|1f801[0-9a-f]{3}|00000000)(?![\\w])")
+ADDRESS = re.compile(r"(?i)(?<![\w])(?:0x)?(80[0-7][0-9a-f]{5}|1f800[0-9a-f]{3}|1f801[0-9a-f]{3}|00000000)(?![\w])")
 GROUPS = ("main-RAM", "scratchpad", "I/O-register-range", "NULL-mirror-or-zero")
 
 
@@ -47,7 +47,7 @@ def mask_comments_and_literals(source: str) -> str:
             i += 1
             continue
         if state == "line-comment":
-            if ch == "\\n":
+            if ch == "\n":
                 state = "code"
             else:
                 chars[i] = " "
@@ -59,15 +59,15 @@ def mask_comments_and_literals(source: str) -> str:
                 i += 2
                 state = "code"
             else:
-                if ch != "\\n":
+                if ch != "\n":
                     chars[i] = " "
                 i += 1
             continue
         # C/C++ string or character literal. Honor escaped quotes and backslashes.
-        if ch == "\\\\":
+        if ch == "\\":
             chars[i] = " "
             if i + 1 < len(source):
-                if source[i + 1] != "\\n":
+                if source[i + 1] != "\n":
                     chars[i + 1] = " "
                 i += 2
             else:
@@ -76,7 +76,7 @@ def mask_comments_and_literals(source: str) -> str:
         if (state == "string" and ch == '"') or (state == "char" and ch == "'"):
             chars[i] = " "
             state = "code"
-        elif ch != "\\n":
+        elif ch != "\n":
             chars[i] = " "
         i += 1
     return "".join(chars)
@@ -126,10 +126,10 @@ def main() -> int:
         rows = [row for row in hits if row[0] == group]
         code_count = sum(row[1] == "code" for row in rows)
         non_code_count = len(rows) - code_count
-        print(f"\\n[{group}] {len(rows)} occurrence(s): {code_count} code, {non_code_count} comment/string")
+        print(f"\n[{group}] {len(rows)} occurrence(s): {code_count} code, {non_code_count} comment/string")
         for _, origin, path, number, source, value in rows:
             print(f"  [{origin}] {path}:{number}: 0x{value} | {source}")
-    print("\\nReview code-tagged occurrences first; comments, strings, and inactive preprocessor branches still require manual interpretation.")
+    print("\nReview code-tagged occurrences first; comments, strings, and inactive preprocessor branches still require manual interpretation.")
     return 0
 
 
