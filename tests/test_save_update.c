@@ -138,13 +138,12 @@ static vh_save_update_result update(memory_store *store,
                                a, b, SLOT_CAP, verify, SLOT_CAP, NULL, NULL);
 }
 
-static void assert_old_slot_selected(memory_store *store)
+static void assert_old_slot_preserved(const memory_store *store,
+                                       const uint8_t *old_container,
+                                       size_t old_size)
 {
-    unsigned int selected = 99U;
-    assert(vh_save_slot_select(store->slots[0], store->sizes[0],
-                               store->slots[1], store->sizes[1],
-                               CARD_HEADER_US, &selected) == VH_SAVE_SLOT_VALID);
-    assert(selected == 0U);
+    assert(store->sizes[0] == old_size);
+    assert(memcmp(store->slots[0], old_container, old_size) == 0);
 }
 
 int main(void)
@@ -154,6 +153,8 @@ int main(void)
     fail_stage failures[] = {FAIL_OPEN, FAIL_WRITE, FAIL_FLUSH, FAIL_CLOSE,
                              FAIL_READBACK, FAIL_VERIFY_CORRUPT};
     size_t i;
+    size_t old_size;
+    uint8_t old_container[SLOT_CAP];
     uint8_t a[SLOT_CAP], b[SLOT_CAP], verify[SLOT_CAP];
     uint64_t generation = 0U;
     unsigned int selected = 99U;
@@ -173,23 +174,29 @@ int main(void)
 
     for (i = 0U; i < sizeof(failures) / sizeof(failures[0]); ++i) {
         seed(&store, old_card, 5U);
+        old_size = store.sizes[0];
+        memcpy(old_container, store.slots[0], old_size);
         store.fail = failures[i];
         assert(update(&store, new_card) != VH_SAVE_UPDATE_OK);
-        assert_old_slot_selected(&store);
+        assert_old_slot_preserved(&store, old_container, old_size);
     }
 
     seed(&store, old_card, 5U);
+    old_size = store.sizes[0];
+    memcpy(old_container, store.slots[0], old_size);
     store.fail = FAIL_READ_INITIAL;
     assert(update(&store, new_card) == VH_SAVE_UPDATE_IO_FAILURE);
     assert(store.writes == 0);
-    assert_old_slot_selected(&store);
+    assert_old_slot_preserved(&store, old_container, old_size);
 
     seed(&store, old_card, UINT64_MAX);
+    old_size = store.sizes[0];
+    memcpy(old_container, store.slots[0], old_size);
     assert(vh_save_slot_update(&OPS, &store, CARD_HEADER_US, new_card,
                                CARD_SIZE, a, b, SLOT_CAP, verify, SLOT_CAP,
                                NULL, NULL) == VH_SAVE_UPDATE_GENERATION_EXHAUSTED);
     assert(store.writes == 0);
-    assert_old_slot_selected(&store);
+    assert_old_slot_preserved(&store, old_container, old_size);
 
     memset(&store, 0, sizeof(store));
     assert(update(&store, new_card) == VH_SAVE_UPDATE_NO_VALID_BASE);
