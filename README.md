@@ -6,9 +6,9 @@ can be adapted for Nintendo Switch homebrew, with a longer-term goal of explorin
 higher-resolution rendering and presentation improvements.
 
 > **Status: early porting experiments.** Nintendo Switch game compatibility has not been
-> established, and this repository does not contain a working Vandal Hearts port. Two
-> diagnostic homebrew `.nro` files now compile in CI (console/input and framebuffer color bars);
-> neither contains game code or game data. No on-device test is claimed.
+> established, and this repository does not contain a working Vandal Hearts port. Three
+> diagnostic homebrew `.nro` targets are being built in CI: console/input, framebuffer color bars,
+> and an SD-card filesystem smoke test. They contain no game code or game data. No on-device test is claimed.
 
 ## Goals
 
@@ -21,7 +21,7 @@ higher-resolution rendering and presentation improvements.
 
 1. [x] Review upstream documentation, license, and repository structure.
 2. [x] Inventory major dependencies, build system, renderer, audio, input, and platform-specific memory handling.
-3. [x] Build diagnostic Switch homebrew prototypes in CI (console/input and framebuffer color bars).
+3. [x] Add diagnostic Switch homebrew prototypes for console/input and framebuffer output; add an SD-card filesystem smoke test, pending CI/device verification.
 4. [x] Add a host-tested PS1 main-RAM/scratchpad address-translation prototype, including tests for known sound-work and movie-ring-buffer offsets; it is not yet connected to the engine.
 5. [ ] Design and implement a Switch-specific game backend; current diagnostics are not the game.
 6. [ ] Validate a playable baseline on supported hardware.
@@ -31,8 +31,7 @@ See the [upstream audit](docs/UPSTREAM_AUDIT.md), [first Switch blocker audit re
 [build notes](docs/BUILDING.md), [Switch backend design](docs/SWITCH_BACKEND_DESIGN.md),
 [pinned upstream workflow](docs/UPSTREAM_WORKFLOW.md), and [legal notes](docs/LEGAL.md).
 
-The latest successful [CI run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38454592639)
-builds both diagnostic NROs and uploads the source-pattern audits as an artifact. The run also passed the host-side memory translator tests and source audits. The NROs are diagnostic only; this does not establish on-device game compatibility. The memory scan covers 156 source files: 3,325 main-RAM-shaped occurrences include 22 code-shaped and 3,303 comment/string matches; 4 scratchpad occurrences include 3 code-shaped and 1 comment/string match; there are no I/O-register-range hits; 3 zero/NULL-mirror occurrences include 1 code-shaped and 2 comment/string matches. Code-shaped hits still include inactive preprocessor branches and are not confirmed runtime accesses. The artifact is not a playable game.
+The [GitHub Actions workflow history](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/workflows/switch-smoke-test.yml) shows current build status and downloadable artifacts. CI builds diagnostic NROs and uploads source-pattern audits; it also runs host-side memory translator tests and source audits. The filesystem smoke test is intended to verify libnx SD-card file I/O on-device, but no on-device result is claimed. The NROs are diagnostic only; this does not establish on-device game compatibility. The memory scan covers 156 source files: 3,325 main-RAM-shaped occurrences include 22 code-shaped and 3,303 comment/string matches; 4 scratchpad occurrences include 3 code-shaped and 1 comment/string match; there are no I/O-register-range hits; 3 zero/NULL-mirror occurrences include 1 code-shaped and 2 comment/string matches. Code-shaped hits still include inactive preprocessor branches and are not confirmed runtime accesses. The artifact is not a playable game.
 
 ## Upstream
 
