@@ -17,7 +17,8 @@ typedef enum {
 /*
  * Encode a version-1 container around a validated PS1 card image.
  * The payload must match expected_header_size (384 or 512) and pass the
- * existing in-memory card validator. Returns 1 on success.
+ * existing in-memory card validator. Source and encoded destination ranges must
+ * not overlap. Returns 1 on success.
  */
 int vh_save_slot_encode(uint8_t *out, size_t out_capacity,
                         uint64_t generation, const uint8_t *card_image,
