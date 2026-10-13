@@ -60,6 +60,14 @@ jobs:
             -o /tmp/test-card-validate
           /tmp/test-card-validate
 
+      - name: Test validated memory-card restore coordinator
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic \
+            -Iswitch-save switch-save/card_validate.c switch-save/atomic_write.c \
+            switch-save/card_restore.c tests/test_card_restore.c \
+            -o /tmp/test-card-restore
+          /tmp/test-card-restore
+
       - name: Test PS1 memory translator prototype
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic \
