@@ -95,6 +95,10 @@ int main(void)
     uint64_t generation = 0U;
     const uint8_t *payload = NULL;
     unsigned int selected = 99U;
+    size_t untouched_size = 12345U;
+    uint64_t untouched_generation = UINT64_C(987654321);
+    const uint8_t *untouched_payload = (const uint8_t *)card_a;
+    size_t untouched_payload_size = 678U;
 
     make_card(card_a, 0x11U);
     make_card(card_b, 0x22U);
@@ -108,6 +112,7 @@ int main(void)
 
     assert(vh_save_slot_select(NULL, 0U, NULL, 0U, CARD_HEADER_US,
                                &selected) == VH_SAVE_SLOT_INVALID);
+    assert(selected == 99U);
 
     assert(vh_save_slot_select(slot_a, size_a, NULL, 0U, CARD_HEADER_US,
                                &selected) == VH_SAVE_SLOT_VALID);
@@ -125,6 +130,12 @@ int main(void)
                                &selected) == VH_SAVE_SLOT_VALID);
     assert(selected == 0U);
 
+    /* Failed validation must not partially publish output values. */
+    assert(vh_save_slot_validate(slot_a, size_a - 1U, CARD_HEADER_US,
+                                 &untouched_generation, &untouched_payload,
+                                 &untouched_payload_size) == 0);
+    assert(untouched_generation == UINT64_C(987654321));
+    assert(untouched_payload == card_a && untouched_payload_size == 678U);
     assert(vh_save_slot_validate(slot_a, size_a - 1U, CARD_HEADER_US,
                                  NULL, NULL, NULL) == 0);
     assert(vh_save_slot_validate(slot_a, size_a, 512U,
@@ -138,7 +149,8 @@ int main(void)
                                  NULL, NULL, NULL) == 0);
 
     assert(vh_save_slot_encode(slot_a, size_a - 1U, 5U, card_a, CARD_SIZE,
-                               CARD_HEADER_US, NULL) == 0);
+                               CARD_HEADER_US, &untouched_size) == 0);
+    assert(untouched_size == 12345U);
     assert(vh_save_slot_encode(slot_a, size_a, 0U, card_a, CARD_SIZE,
                                CARD_HEADER_US, NULL) == 0);
 
@@ -159,8 +171,10 @@ int main(void)
     assert(selected == 0U);
 
     size_b = encode(slot_b, 7U, card_b);
+    selected = 77U;
     assert(vh_save_slot_select(slot_a, size_a, slot_b, size_b, CARD_HEADER_US,
                                &selected) == VH_SAVE_SLOT_AMBIGUOUS);
+    assert(selected == 77U);
 
     size_a = encode(slot_a, UINT64_MAX, card_a);
     size_b = encode(slot_b, UINT64_MAX - 1U, card_b);
