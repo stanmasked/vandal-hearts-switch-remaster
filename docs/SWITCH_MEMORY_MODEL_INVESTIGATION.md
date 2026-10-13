@@ -32,8 +32,9 @@ A mixed solution may be needed because existing PC_PORT adaptations already hand
 
 ## Next technical work
 
-1. **Completed:** `scripts/audit_psx_memory_literals.py` scans upstream `src/`, `platform/pc/src/`, and `platform/pc/include/`; CI runs it, tests the code/comment classifier, and uploads `psx-memory-literal-inventory.txt`.
-2. **Next:** inspect the 20 code-shaped hits (18 main-RAM, 2 scratchpad) in context and distinguish active code from inactive `#if` branches. Then classify pointer casts/dereferences, arithmetic from a guest base, and values passed to memory-sensitive subsystems.
+1. **Completed:** `scripts/audit_psx_memory_literals.py` scans upstream `src/`, `platform/pc/src/`, and `platform/pc/include/`; CI tests the code/comment classifier and uploads `psx-memory-literal-inventory.txt`.
+2. **Prototype added:** `switch-memory/psx_memory.c` translates fully contained guest ranges in main RAM and scratchpad into caller-owned buffers; `tests/test_psx_memory.c` covers region boundaries and unsupported addresses. CI now compiles and runs these tests with strict host C compiler warnings. This helper is not linked into the game engine.
+3. **Next:** inspect the 26 code-shaped hits in context and distinguish active code from inactive `#if` branches. Then classify pointer casts/dereferences, arithmetic from a guest base, and values passed to memory-sensitive subsystems.
 3. Expand beyond literals to address construction and pointer-flow patterns; a simple regex cannot prove the inventory is complete.
 4. Identify whether a narrow memory helper can cover each category without changing observable game behavior.
 5. Add unit tests for guest-address translation and boundary cases before attempting a Switch engine link.
