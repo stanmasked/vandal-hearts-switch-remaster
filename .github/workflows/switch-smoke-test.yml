@@ -29,8 +29,7 @@ jobs:
             -v "$PWD:/work" \
             -w /work \
             devkitpro/devkita64:latest \
-            make -C switch-test
-          make -C switch-test-graphics
+            sh -lc 'make -C switch-test && make -C switch-test-graphics'
 
       - name: Upload Switch homebrew artifact
         uses: actions/upload-artifact@v4
