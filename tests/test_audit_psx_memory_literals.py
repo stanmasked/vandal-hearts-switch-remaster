@@ -16,6 +16,7 @@ class AddressInventoryTests(unittest.TestCase):
             source.parent.mkdir(parents=True)
             source.write_text(
                 "void *ram = (void *)0x80140878;\n"
+                "#define PSX_RAM_BASE ((void *)0x80000000UL)\n"
                 "unsigned char *scratch = (unsigned char *)0x1f800000;\n"
                 "unsigned int io = 0x1f801810;\n"
                 "void *null_mirror = (void *)0x00000000;\n",
@@ -27,11 +28,12 @@ class AddressInventoryTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
             )
-            self.assertIn("[main-RAM] 1 occurrence(s): 1 code, 0 comment/string", result.stdout)
+            self.assertIn("[main-RAM] 2 occurrence(s): 2 code, 0 comment/string", result.stdout)
             self.assertIn("[scratchpad] 1 occurrence(s): 1 code, 0 comment/string", result.stdout)
             self.assertIn("[I/O-register-range] 1 occurrence(s): 1 code, 0 comment/string", result.stdout)
             self.assertIn("[NULL-mirror-or-zero] 1 occurrence(s): 1 code, 0 comment/string", result.stdout)
             self.assertIn("[code] src/memory_probe.c:1: 0x80140878", result.stdout)
+            self.assertIn("[code] src/memory_probe.c:2: 0x80000000", result.stdout)
 
     def test_separates_comments_and_string_literals_from_code(self):
         with tempfile.TemporaryDirectory() as temp:
