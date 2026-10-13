@@ -1,6 +1,28 @@
 #include "checked_path.h"
 
+#include <stdint.h>
 #include <string.h>
+
+/* Reject overlap and address-range overflow before any output mutation. */
+static int ranges_overlap(const void *a, size_t a_size,
+                          const void *b, size_t b_size)
+{
+    uintptr_t a_start;
+    uintptr_t b_start;
+    uintptr_t a_end;
+    uintptr_t b_end;
+
+    if (a_size == 0U || b_size == 0U) return 0;
+    a_start = (uintptr_t)a;
+    b_start = (uintptr_t)b;
+    if (a_size > UINTPTR_MAX - a_start ||
+        b_size > UINTPTR_MAX - b_start) {
+        return 1;
+    }
+    a_end = a_start + a_size;
+    b_end = b_start + b_size;
+    return a_start < b_end && b_start < a_end;
+}
 
 static int valid_leaf(const char *leaf)
 {
@@ -44,7 +66,9 @@ int vh_checked_path_join(char *out, size_t out_size,
         return 0;
     }
     needed = root_len + separator + leaf_len + 1U;
-    if (needed > out_size) {
+    if (needed > out_size ||
+        ranges_overlap(out, needed, root, root_len + 1U) ||
+        ranges_overlap(out, needed, leaf, leaf_len + 1U)) {
         return 0;
     }
 
