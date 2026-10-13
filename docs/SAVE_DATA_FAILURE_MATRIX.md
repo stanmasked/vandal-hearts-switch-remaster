@@ -49,11 +49,11 @@ These are desktop-source observations, not guarantees about a future Horizon imp
 ## Implementation order
 
 1. **Started:** add a small, host-testable checked path joiner. The initial helper is in `switch-save/checked_path.c`; it rejects empty, traversal-like, multi-component, control-character, and overlong leaf paths without modifying the output on failure. Its root is trusted input and must be chosen by the target backend.
-2. Keep card validation independent of file-opening details so it can be host-tested using synthetic fixtures.
+2. **Prototype added:** `switch-save/card_validate.c` validates an in-memory card image without file I/O. Host tests synthesize US (384-byte) and JP (512-byte) header layouts, check valid occupied slots, and reject a bad header, listing CRC, occupied-slot CRC, or truncated occupied record. CI compiles this module with strict warnings.
 3. Port archive operations behind the adapter; avoid compiling desktop POSIX/Windows path and sync code into Horizon.
 4. Add fault-injection tests for write/flush/close/replace failures on the host.
 5. Run real-device tests for SD removal, storage errors, restart recovery, and region isolation before connecting the save UI.
 
-The checked-path helper is only a small path-construction primitive; it does not create directories, verify mount state, resolve symlinks, or make file replacement atomic. It is not yet wired into the game or save backend.
+The checked-path helper is only a small path-construction primitive; it does not create directories, verify mount state, resolve symlinks, or make file replacement atomic. The card validator only checks the observed header/listing/occupied-record CRC structure in a caller-provided byte buffer; it does not read files, validate region identity beyond the candidate header size, or integrate with restore operations. Neither helper is wired into the game or save backend.
 
 Do not package game data, BIOS files, or disc images in the repository or build artifact.
