@@ -1,0 +1,12 @@
+.cache/
+build/
+switch-test/build/
+switch-test/*.nro
+switch-test/*.elf
+switch-test/*.map
+switch-test/*.nacp
+switch-test-graphics/build/
+switch-test-graphics/*.nro
+switch-test-graphics/*.elf
+switch-test-graphics/*.map
+switch-test-graphics/*.nacp
