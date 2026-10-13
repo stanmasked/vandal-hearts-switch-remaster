@@ -11,7 +11,7 @@ import sys
 ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else ".cache/upstream-pc-port")
 SCAN_ROOTS = (ROOT / "src", ROOT / "platform/pc/src", ROOT / "platform/pc/include")
 SOURCE_SUFFIXES = {".c", ".h", ".cpp", ".hpp", ".inc"}
-ADDRESS = re.compile(r"(?i)(?<![\w])(?:0x)?(80[0-7][0-9a-f]{5}|1f800[0-9a-f]{3}|1f801[0-9a-f]{3}|00000000)(?![\w])")
+ADDRESS = re.compile(r"(?i)(?<![\w])(?:0x)?(80[0-7][0-9a-f]{5}|1f800[0-9a-f]{3}|1f801[0-9a-f]{3}|00000000)[uUlL]*(?![\w])")
 GROUPS = ("main-RAM", "scratchpad", "I/O-register-range", "NULL-mirror-or-zero")
 
 
