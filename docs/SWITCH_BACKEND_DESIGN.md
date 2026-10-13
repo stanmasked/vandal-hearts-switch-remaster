@@ -23,8 +23,10 @@ The pinned upstream CMake build validates a region-matching original PS-X execut
    - Add a Switch-specific build target instead of reusing desktop CMake defaults blindly.
    - Preserve the original data-generation and region validation requirements; do not check proprietary game files into this repository.
 
-2. **Platform API audit**
-   - Replace or isolate desktop-only assumptions in `platform/pc/`, especially virtual memory/protection and executable-image inspection in `pc_bootstrap.c`.
+2. **Memory model and platform API audit**
+   - Treat `pc_bootstrap.c` as a desktop-only component, not a candidate for direct compilation on Switch: it reserves PS1 RAM and scratchpad at fixed virtual addresses using `VirtualAlloc`/`mmap`, inspects PE/ELF/Mach-O images, and includes desktop fault-handling paths.
+   - The decompiled game contains hard-coded PS1 RAM pointers (including `0x80000000` and scratchpad `0x1f800000`). Before a game build can work, determine how these are represented in the source and design a safe Switch memory model; do not assume the desktop fixed-address mapping works under Horizon.
+   - Replace or isolate other desktop-only assumptions in `platform/pc/`.
    - Audit file paths, timing, threads, input, audio device setup, and shutdown lifecycle against Horizon/libnx.
    - Avoid assuming that a desktop POSIX implementation is automatically compatible with Horizon.
 
