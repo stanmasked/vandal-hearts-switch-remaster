@@ -81,7 +81,7 @@ int vh_save_slot_encode(uint8_t *out, size_t out_capacity,
     if (out == NULL || generation == 0U || card_image == NULL ||
         card_image_size > UINT32_MAX ||
         card_image_size > (size_t)-1 - VH_SAVE_SLOT_HEADER_SIZE ||
-        expected_header_size != 384U && expected_header_size != 512U ||
+        (expected_header_size != 384U && expected_header_size != 512U) ||
         !vh_card_validate_image(card_image, card_image_size,
                                 &validated_header_size) ||
         validated_header_size != expected_header_size) {
