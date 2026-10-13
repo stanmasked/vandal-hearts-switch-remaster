@@ -22,7 +22,7 @@ int vh_atomic_write(const vh_atomic_write_ops *ops, void *context,
         return 0;
     }
 
-    temporary[0] = '\0';
+    memset(temporary, 0, sizeof(temporary));
     handle = ops->open_temporary(context, destination, temporary,
                                  sizeof(temporary));
     if (handle == NULL) {
