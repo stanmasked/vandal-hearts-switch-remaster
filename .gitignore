@@ -10,3 +10,4 @@ switch-test-graphics/*.nro
 switch-test-graphics/*.elf
 switch-test-graphics/*.map
 switch-test-graphics/*.nacp
+switch-blocker-audit.txt
