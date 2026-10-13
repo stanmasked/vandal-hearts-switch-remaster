@@ -24,8 +24,8 @@ higher-resolution rendering and presentation improvements.
 4. [ ] Validate a playable baseline on supported hardware.
 5. [ ] Plan and test optional visual improvements.
 
-See [the porting plan](docs/PORTING_PLAN.md), [build notes](docs/BUILDING.md),
-and [legal notes](docs/LEGAL.md).
+See the [upstream audit](docs/UPSTREAM_AUDIT.md), [porting plan](docs/PORTING_PLAN.md),
+[build notes](docs/BUILDING.md), and [legal notes](docs/LEGAL.md).
 
 ## Upstream
 
