@@ -2,11 +2,11 @@
 
 ## Purpose and status
 
-This checklist defines the smallest useful Switch homebrew experiment before any game code or game data is ported.
+This checklist tracks the smallest useful Switch homebrew experiment before any game code or game data is ported.
 
-**Status: specification only.** No prototype source, binary, build, emulator run, or physical-device result is included or claimed by this document.
+**Status: minimal NRO build verified in GitHub Actions; interactive runtime and controller behavior remain unverified.**
 
-The intended toolchain is the open homebrew environment based on devkitPro/devkitA64 and libnx. Confirm installed package versions and the exact target environment before treating any result as reproducible.
+The prototype uses devkitPro/devkitA64 and libnx. CI run [38481552455](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38481552455) successfully built and uploaded an NRO artifact. That confirms the build and packaging pipeline, not that the app runs on a console or emulator.
 
 ## Scope boundary
 
@@ -18,16 +18,16 @@ The prototype must be independent of Vandal Hearts and must not require a disc i
 
 - [ ] Record host OS and version.
 - [ ] Record devkitPro, devkitA64, libnx, and any selected graphics/input library versions.
-- [ ] Record the repository revision and exact build command.
-- [ ] Capture the complete build output and exit code.
+- [x] Record the repository revision and exact build command in CI workflow history.
+- [ ] Capture the complete build output and exit code as a durable evidence record.
 
 **Pass condition:** another developer can recreate the environment description and run the same command. A version list alone is not a successful build.
 
 ### P1 — Build a minimal homebrew application
 
-- [ ] Start from a minimal application template supplied by the selected toolchain.
-- [ ] Build an NRO without game code or game data.
-- [ ] Record compiler/linker output and artifact checksum.
+- [x] Build an NRO without game code or game data.
+- [x] Confirm that CI produces the expected NRO artifact.
+- [ ] Record the artifact's SHA-256 checksum and preserve compiler/linker output.
 
 **Pass condition:** the build exits successfully and produces the expected artifact. This is a compile result only, not proof that it runs.
 
@@ -35,9 +35,11 @@ The prototype must be independent of Vandal Hearts and must not require a disc i
 
 - [ ] Launch the application in the explicitly named environment (emulator or physical console).
 - [ ] Show a visible running indicator.
-- [ ] Poll controller input using the selected supported API.
-- [ ] Demonstrate at least one button press changing visible state.
+- [ ] Verify D-pad cursor movement.
+- [ ] Demonstrate A selecting a tile and B clearing the selection.
 - [ ] Record environment, steps, result, and any logs.
+
+The current source renders a generated ASCII tactical grid in the libnx console. Runtime behavior is not yet confirmed.
 
 **Pass condition:** launch and input are observed in the named environment. Emulator results and physical-device results must be reported separately.
 
