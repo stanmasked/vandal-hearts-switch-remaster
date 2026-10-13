@@ -45,8 +45,8 @@ typedef enum {
  * caller must serialize updates; this coordinator contains no lock. The function
  * rejects overlapping scratch-buffer ranges and any overlap with card_image.
  * selected_slot_out and generation_out are written only on verified success;
- * callers must keep these output objects separate from each other and from all
- * input/scratch buffers.
+ * The coordinator rejects output objects that overlap each other or the
+ * card/scratch buffers.
  * The close callback must consume/close
  * the open target even when it reports failure.
  */
