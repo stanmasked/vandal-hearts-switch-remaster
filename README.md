@@ -30,7 +30,7 @@ See the [upstream audit](docs/UPSTREAM_AUDIT.md), [porting plan](docs/PORTING_PL
 [build notes](docs/BUILDING.md), [Switch backend design](docs/SWITCH_BACKEND_DESIGN.md),
 [pinned upstream workflow](docs/UPSTREAM_WORKFLOW.md), and [legal notes](docs/LEGAL.md).
 
-The latest [CI run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38440679570)
+The latest [CI run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38440952887)
 produces the two diagnostic NROs as a downloadable artifact.
 
 ## Upstream
