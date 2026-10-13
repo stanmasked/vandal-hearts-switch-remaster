@@ -7,6 +7,7 @@ on:
     branches:
       - experiment/switch-homebrew-smoke-test
     paths:
+      - "README.md"
       - "switch-test/**"
       - "switch-test-graphics/**"
       - "scripts/fetch_upstream_pcport.sh"
