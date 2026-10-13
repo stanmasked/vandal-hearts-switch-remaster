@@ -156,6 +156,7 @@ int main(void)
                              FAIL_READBACK, FAIL_VERIFY_CORRUPT};
     size_t i;
     size_t old_size;
+    size_t alternate_size;
     uint8_t old_container[SLOT_CAP];
     uint8_t alternate_container[SLOT_CAP];
     uint8_t invalid_card[CARD_SIZE];
@@ -224,14 +225,14 @@ int main(void)
                                CARD_SIZE, CARD_HEADER_US, &store.sizes[1]));
     memcpy(old_container, store.slots[0], store.sizes[0]);
     old_size = store.sizes[0];
-    memcpy(alternate_container, store.slots[1], store.sizes[1]);
+    alternate_size = store.sizes[1];
+    memcpy(alternate_container, store.slots[1], alternate_size);
     assert(update(&store, old_card) == VH_SAVE_UPDATE_AMBIGUOUS_BASE);
     assert(store.writes == 0);
     assert(store.sizes[0] == old_size &&
            memcmp(store.slots[0], old_container, old_size) == 0);
-    assert(store.sizes[1] == sizeof(alternate_container) ||
-           store.sizes[1] == VH_SAVE_SLOT_HEADER_SIZE + CARD_SIZE);
-    assert(memcmp(store.slots[1], alternate_container, store.sizes[1]) == 0);
+    assert(store.sizes[1] == alternate_size);
+    assert(memcmp(store.slots[1], alternate_container, alternate_size) == 0);
 
     /* Invalid replacement image is rejected before any target mutation. */
     seed(&store, old_card, 5U);
