@@ -43,8 +43,8 @@ The pinned upstream CMake build validates a region-matching original PS-X execut
 
 ## Exit criteria
 
-- [x] Smoke-test workflow produces and uploads a `.nro` artifact (console/input test; CI run `38440173974`).
-- [x] Framebuffer color-bar test builds and uploads a separate `.nro` artifact (CI run `38440679570`).
+- [x] Smoke-test workflow produces and uploads a `.nro` artifact (console/input test; CI run `38440952887`).
+- [x] Framebuffer color-bar test builds and uploads a separate `.nro` artifact (CI run `38440952887`).
 - [x] Smoke-test source and build files are verified against the current devkitPro image.
 - [x] Pinned upstream source fetch is verified in CI without copying game data into the repository.
 - [ ] Upstream source is integrated at a pinned revision without proprietary assets.
