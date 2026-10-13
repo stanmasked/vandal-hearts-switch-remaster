@@ -51,6 +51,15 @@ static void test_known_upstream_guest_offsets(void) {
     /* gScratch3 is a guest-RAM subregion, not a separate PS1 memory bank. */
     assert(psx_memory_translate(&memory, UINT32_C(0x80180210), 1)
            == &main_ram[0x180210]);
+
+    /* Documented gScratch3 users must stay inside the actual 2 MiB RAM map. */
+    assert(psx_memory_translate(&memory, UINT32_C(0x80180210) + 0x3a300, 1)
+           == &main_ram[0x1ba510]);
+    assert(psx_memory_translate(&memory, UINT32_C(0x80180210) + 0x472c0, 0x20)
+           == &main_ram[0x1c74d0]);
+
+    /* Nominal gScratch3 size 0x80000 would extend 0x210 past guest RAM. */
+    assert(psx_memory_translate(&memory, UINT32_C(0x80180210) + 0x80000, 1) == NULL);
 }
 
 static void test_unsupported_ranges_and_invalid_storage(void) {
