@@ -32,7 +32,10 @@ jobs:
           set -euxo pipefail
           export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
           export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
-          command -v aarch64-none-elf-gcc || test -x "$DEVKITA64/bin/aarch64-none-elf-gcc"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          command -v aarch64-none-elf-gcc
+          command -v elf2nro
+          command -v nacptool
           command -v elf2nro || test -x "$DEVKITPRO/tools/bin/elf2nro"
           command -v nacptool || test -x "$DEVKITPRO/tools/bin/nacptool"
           test -f "$DEVKITPRO/libnx/include/switch.h"
