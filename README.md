@@ -21,7 +21,7 @@ higher-resolution rendering and presentation improvements.
 
 1. [x] Review upstream documentation, license, and repository structure.
 2. [x] Inventory major dependencies, build system, renderer, audio, input, and platform-specific memory handling.
-3. [x] Add diagnostic Switch homebrew prototypes for console/input and framebuffer output; add an SD-card filesystem smoke test, pending CI/device verification.
+3. [x] Add diagnostic Switch homebrew prototypes for console/input and framebuffer output; the SD-card filesystem smoke test builds in CI, but still needs on-device verification.
 4. [x] Add a host-tested PS1 main-RAM/scratchpad address-translation prototype, including tests for known sound-work and movie-ring-buffer offsets; it is not yet connected to the engine.
 5. [x] Add a host-tested checked path-join helper for the future save-data adapter; it is not yet connected to game saves.
 6. [x] Add host-tested PS1 card validation, versioned save containers, two-slot recovery/update logic, and archive-restore orchestration; no filesystem backend, game integration, or durability guarantee exists yet.
