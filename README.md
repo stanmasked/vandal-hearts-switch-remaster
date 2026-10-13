@@ -27,7 +27,7 @@ higher-resolution rendering and presentation improvements.
 6. [ ] Validate a playable baseline on supported hardware.
 7. [ ] Plan and test optional visual improvements.
 
-See the [upstream audit](docs/UPSTREAM_AUDIT.md), [first Switch blocker audit results](docs/SWITCH_BLOCKER_AUDIT_RESULTS.md), [memory-model investigation](docs/SWITCH_MEMORY_MODEL_INVESTIGATION.md), [PS1 code-hit triage](docs/PSX_MEMORY_CODE_HITS.md), [PS1 memory call-site matrix](docs/PSX_MEMORY_CALLSITE_MATRIX.md), [sound-buffer lifetime audit](docs/SOUND_BUFFER_LIFETIME_AUDIT.md), [memory translator prototype](docs/SWITCH_MEMORY_TRANSLATOR_PROTOTYPE.md), [PS1 memory scanner](scripts/audit_psx_memory_literals.py), [porting plan](docs/PORTING_PLAN.md),
+See the [upstream audit](docs/UPSTREAM_AUDIT.md), [first Switch blocker audit results](docs/SWITCH_BLOCKER_AUDIT_RESULTS.md), [memory-model investigation](docs/SWITCH_MEMORY_MODEL_INVESTIGATION.md), [PS1 code-hit triage](docs/PSX_MEMORY_CODE_HITS.md), [PS1 memory call-site matrix](docs/PSX_MEMORY_CALLSITE_MATRIX.md), [memory boundary follow-up](docs/PSX_MEMORY_BOUNDARY_FOLLOWUP.md), [sound-buffer lifetime audit](docs/SOUND_BUFFER_LIFETIME_AUDIT.md), [memory translator prototype](docs/SWITCH_MEMORY_TRANSLATOR_PROTOTYPE.md), [PS1 memory scanner](scripts/audit_psx_memory_literals.py), [porting plan](docs/PORTING_PLAN.md),
 [build notes](docs/BUILDING.md), [Switch backend design](docs/SWITCH_BACKEND_DESIGN.md),
 [pinned upstream workflow](docs/UPSTREAM_WORKFLOW.md), and [legal notes](docs/LEGAL.md).
 
