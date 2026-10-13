@@ -8,6 +8,7 @@ on:
       - experiment/switch-homebrew-smoke-test
     paths:
       - "switch-test/**"
+      - "switch-test-graphics/**"
       - ".github/workflows/switch-smoke-test.yml"
   workflow_dispatch:
 
@@ -29,12 +30,15 @@ jobs:
             -w /work \
             devkitpro/devkita64:latest \
             make -C switch-test
+          make -C switch-test-graphics
 
       - name: Upload Switch homebrew artifact
         uses: actions/upload-artifact@v4
         if: success()
         with:
           name: switch-smoke-test-nro
-          path: switch-test/*.nro
+          path: |
+            switch-test/*.nro
+            switch-test-graphics/*.nro
           if-no-files-found: error
           retention-days: 14
