@@ -26,6 +26,18 @@ Additional reset-path review narrows—but does not close—the question:
 
 Conclusion: there is no source-level proof yet that map loading and an in-progress sprite decode cannot overlap across transitions. Do not merge the PC-port arrays until transition ordering is verified or the decoder is explicitly reset/paused at the correct boundary.
 
+### Integration gate before sharing one scratchpad
+
+This audit intentionally leaves the shared-backing decision **blocked**, rather than treating the PS1 address alias as sufficient proof. Before switching both consumers to the same 1 KiB buffer, an engine integration change must demonstrate all of the following:
+
+1. Every `LoadMap`/`ProcessMapFileData` entry path is accounted for, including scene setup in `src/core/main.c` and battle setup in `src/battle/evaluators.c`.
+2. A transition cannot enter map decompression while `gUnitSpritesDecoder.functionIndex` is active, **or** it explicitly cancels/restarts the decoder in a way that cannot resume with stale cache offsets.
+3. The decoder's own completion path and its special state-2 path both leave the global decoder in a well-defined inactive state; clearing `gDecodingSprites` alone is not enough.
+4. A regression test or trace covers a deliberately paused sprite decode followed by a map load, then verifies that the next decoder tick cannot consume overwritten dictionary data.
+5. The test is run against the actual integrated engine code; the current memory translator tests only validate address translation and backing-store separation.
+
+Pinned-source entry points for a future integration review: [LoadMap call site in main.c](https://github.com/HalmyLyseas/VandalHearts-PcPort/blob/14552fffa0e0b47e02b57592e274fc6e7a649923/src/core/main.c), [battle evaluator](https://github.com/HalmyLyseas/VandalHearts-PcPort/blob/14552fffa0e0b47e02b57592e274fc6e7a649923/src/battle/evaluators.c), [frame dispatch](https://github.com/HalmyLyseas/VandalHearts-PcPort/blob/14552fffa0e0b47e02b57592e274fc6e7a649923/src/core/object.c), [decoder implementation](https://github.com/HalmyLyseas/VandalHearts-PcPort/blob/14552fffa0e0b47e02b57592e274fc6e7a649923/src/core/graphics.c), and [decoder start routine](https://github.com/HalmyLyseas/VandalHearts-PcPort/blob/14552fffa0e0b47e02b57592e274fc6e7a649923/src/units/roster.c).
+
 ## Prototype implications
 
 - `psx_memory_translate()` models scratchpad as a distinct 1 KiB region at `[0x1f800000, 0x1f800400)`, separate from the 2 MiB main RAM backing store.
