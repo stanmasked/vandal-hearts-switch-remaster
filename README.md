@@ -22,9 +22,10 @@ higher-resolution rendering and presentation improvements.
 1. [x] Review upstream documentation, license, and repository structure.
 2. [x] Inventory major dependencies, build system, renderer, audio, input, and platform-specific memory handling.
 3. [x] Build diagnostic Switch homebrew prototypes in CI (console/input and framebuffer color bars).
-4. [ ] Design and implement a Switch-specific game backend; current diagnostics are not the game.
-5. [ ] Validate a playable baseline on supported hardware.
-6. [ ] Plan and test optional visual improvements.
+4. [x] Add a host-tested PS1 main-RAM/scratchpad address-translation prototype; it is not yet connected to the engine.
+5. [ ] Design and implement a Switch-specific game backend; current diagnostics are not the game.
+6. [ ] Validate a playable baseline on supported hardware.
+7. [ ] Plan and test optional visual improvements.
 
 See the [upstream audit](docs/UPSTREAM_AUDIT.md), [first Switch blocker audit results](docs/SWITCH_BLOCKER_AUDIT_RESULTS.md), [memory-model investigation](docs/SWITCH_MEMORY_MODEL_INVESTIGATION.md), [PS1 code-hit triage](docs/PSX_MEMORY_CODE_HITS.md), [memory translator prototype](docs/SWITCH_MEMORY_TRANSLATOR_PROTOTYPE.md), [PS1 memory scanner](scripts/audit_psx_memory_literals.py), [porting plan](docs/PORTING_PLAN.md),
 [build notes](docs/BUILDING.md), [Switch backend design](docs/SWITCH_BACKEND_DESIGN.md),
