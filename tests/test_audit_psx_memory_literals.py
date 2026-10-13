@@ -27,11 +27,31 @@ class AddressInventoryTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
             )
-            self.assertIn("[main-RAM] 1 occurrence(s)", result.stdout)
-            self.assertIn("[scratchpad] 1 occurrence(s)", result.stdout)
-            self.assertIn("[I/O-register-range] 1 occurrence(s)", result.stdout)
-            self.assertIn("[NULL-mirror-or-zero] 1 occurrence(s)", result.stdout)
-            self.assertIn("src/memory_probe.c:1: 0x80140878", result.stdout)
+            self.assertIn("[main-RAM] 1 occurrence(s): 1 code, 0 comment/string", result.stdout)
+            self.assertIn("[scratchpad] 1 occurrence(s): 1 code, 0 comment/string", result.stdout)
+            self.assertIn("[I/O-register-range] 1 occurrence(s): 1 code, 0 comment/string", result.stdout)
+            self.assertIn("[NULL-mirror-or-zero] 1 occurrence(s): 1 code, 0 comment/string", result.stdout)
+            self.assertIn("[code] src/memory_probe.c:1: 0x80140878", result.stdout)
+
+    def test_separates_comments_and_string_literals_from_code(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "src" / "comments.c"
+            source.parent.mkdir(parents=True)
+            source.write_text(
+                "void *ram = (void *)0x80001234; // 0x80005678\n"
+                "/* 0x80009999 */ const char *s = \"0x8000abcd\";\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(SCRIPT), str(root)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertIn("[main-RAM] 4 occurrence(s): 1 code, 3 comment/string", result.stdout)
+            self.assertIn("[code] src/comments.c:1: 0x80001234", result.stdout)
+            self.assertIn("[comment/string] src/comments.c:1: 0x80005678", result.stdout)
 
     def test_errors_when_no_source_tree_exists(self):
         with tempfile.TemporaryDirectory() as temp:
