@@ -38,6 +38,13 @@ jobs:
       - name: Test memory inventory scanner
         run: python3 -m unittest discover -s tests -v
 
+      - name: Test checked save-path helper
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic \\
+            -Iswitch-save switch-save/checked_path.c tests/test_checked_path.c \\
+            -o /tmp/test-checked-path
+          /tmp/test-checked-path
+
       - name: Test PS1 memory translator prototype
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic \
