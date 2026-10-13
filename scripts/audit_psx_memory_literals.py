@@ -11,7 +11,7 @@ import sys
 ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else ".cache/upstream-pc-port")
 SCAN_ROOTS = (ROOT / "src", ROOT / "platform/pc/src", ROOT / "platform/pc/include")
 SOURCE_SUFFIXES = {".c", ".h", ".cpp", ".hpp", ".inc"}
-ADDRESS = re.compile(r"(?i)(?<![\w])(?:0x)?(800[0-7][0-9a-f]{4}|1f800[0-9a-f]{3}|1f801[0-9a-f]{3}|00000000)(?![\w])")
+ADDRESS = re.compile(r"(?i)(?<![\w])(?:0x)?(80[0-7][0-9a-f]{5}|1f800[0-9a-f]{3}|1f801[0-9a-f]{3}|00000000)(?![\w])")
 # Match the documented PS1 main RAM, scratchpad, I/O-register range, and NULL mirror.
 # Some code uses shortened or macro-based addresses that this deliberately simple scan misses.
 
@@ -33,7 +33,7 @@ def main() -> int:
         for number, line in enumerate(lines, 1):
             for match in ADDRESS.finditer(line):
                 value = match.group(1).lower()
-                if value.startswith("800"):
+                if value.startswith("80"):
                     kind = "main-RAM"
                 elif value.startswith("1f800"):
                     kind = "scratchpad"
