@@ -9,6 +9,7 @@ enum { CARD_HEADER_US = 384, CARD_SIZE = 512, SLOT_CAP = 1024 };
 typedef enum {
     FAIL_NONE,
     FAIL_READ_INITIAL,
+    FAIL_READ_SECOND_INITIAL,
     FAIL_OPEN,
     FAIL_WRITE,
     FAIL_FLUSH,
@@ -67,6 +68,7 @@ static vh_save_io_result read_slot(void *context, unsigned int slot,
     memory_store *store = (memory_store *)context;
     ++store->read_calls;
     if ((store->fail == FAIL_READ_INITIAL && store->read_calls <= 2) ||
+        (store->fail == FAIL_READ_SECOND_INITIAL && store->read_calls == 2) ||
         (store->fail == FAIL_READBACK && store->read_calls > 2)) {
         return VH_SAVE_IO_ERROR;
     }
@@ -190,6 +192,15 @@ int main(void)
     old_size = store.sizes[0];
     memcpy(old_container, store.slots[0], old_size);
     store.fail = FAIL_READ_INITIAL;
+    assert(update(&store, new_card) == VH_SAVE_UPDATE_IO_FAILURE);
+    assert(store.writes == 0);
+    assert_old_slot_preserved(&store, old_container, old_size);
+
+    /* Even a valid slot A cannot be used if reading slot B errors. */
+    seed(&store, old_card, 5U);
+    old_size = store.sizes[0];
+    memcpy(old_container, store.slots[0], old_size);
+    store.fail = FAIL_READ_SECOND_INITIAL;
     assert(update(&store, new_card) == VH_SAVE_UPDATE_IO_FAILURE);
     assert(store.writes == 0);
     assert_old_slot_preserved(&store, old_container, old_size);
