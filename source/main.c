@@ -6,20 +6,18 @@ int main(int argc, char **argv) {
     (void)argv;
 
     consoleInit(NULL);
-    consoleClear();
-    printf("Vandal Hearts - Switch prototype\n");
-    printf("--------------------------------\n");
-    printf("Minimal libnx input/console smoke test.\n");
-    printf("Press A to confirm input.\n");
-    printf("Press PLUS to exit.\n");
+    padConfigureInput(1, HidNpadStyleSet_NpadStandard);
+
+    PadState pad;
+    padInitializeDefault(&pad);
 
     bool a_pressed = false;
 
     while (appletMainLoop()) {
-        hidScanInput();
-        const u64 keys_down = hidKeysDown(CONTROLLER_P1_AUTO);
+        padUpdate(&pad);
+        const u64 buttons_down = padGetButtonsDown(&pad);
 
-        if (keys_down & KEY_A) {
+        if (buttons_down & HidNpadButton_A) {
             a_pressed = true;
         }
 
@@ -32,7 +30,7 @@ int main(int argc, char **argv) {
         printf("Press PLUS to exit.\n");
         consoleUpdate(NULL);
 
-        if (keys_down & KEY_PLUS) {
+        if (buttons_down & HidNpadButton_Plus) {
             break;
         }
     }
