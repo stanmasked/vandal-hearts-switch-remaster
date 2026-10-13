@@ -1,0 +1,63 @@
+name: Switch toolchain readiness
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/switch-toolchain.yml'
+      - 'tools/**'
+      - 'docs/**'
+      - 'Makefile'
+      - 'makefile'
+      - 'source/**'
+      - 'src/**'
+
+permissions:
+  contents: read
+
+jobs:
+  toolchain:
+    name: Install and verify devkitPro Switch toolchain
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install official devkitPro pacman
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl wget ca-certificates
+          wget -q https://apt.devkitpro.org/install-devkitpro-pacman
+          sudo bash ./install-devkitpro-pacman
+          sudo dkp-pacman -Sy --noconfirm
+          sudo dkp-pacman -S --needed --noconfirm switch-dev
+
+      - name: Verify Switch toolchain
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          test -x "$DEVKITA64/bin/aarch64-none-elf-gcc"
+          test -x "$DEVKITPRO/tools/bin/elf2nro"
+          test -x "$DEVKITPRO/tools/bin/nacptool"
+          test -f "$DEVKITPRO/libnx/include/switch.h"
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" --version
+          "$DEVKITPRO/tools/bin/elf2nro" --help || true
+          echo "DEVKITPRO=$DEVKITPRO"
+          echo "DEVKITA64=$DEVKITA64"
+
+      - name: Build project if a Makefile exists
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if [[ -f Makefile || -f makefile ]]; then
+            export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+            export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+            make
+          else
+            echo 'Toolchain verified. No project Makefile exists yet; no NRO build was attempted.'
+          fi
