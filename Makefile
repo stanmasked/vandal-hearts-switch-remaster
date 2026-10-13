@@ -13,8 +13,8 @@ APP_VERSION := 0.1.0
 CC       := $(DEVKITA64)/bin/aarch64-none-elf-gcc
 ELF2NRO  := $(DEVKITPRO)/tools/bin/elf2nro
 NACPTOOL := $(DEVKITPRO)/tools/bin/nacptool
-CFLAGS   := -g -Wall -Wextra -O2 -ffunction-sections -fdata-sections -I$(DEVKITPRO)/libnx/include
-LDFLAGS  := -specs=$(DEVKITPRO)/libnx/switch.specs -Wl,--gc-sections
+CFLAGS   := -g -Wall -Wextra -O2 -fPIE -ffunction-sections -fdata-sections -I$(DEVKITPRO)/libnx/include
+LDFLAGS  := -specs=$(DEVKITPRO)/libnx/switch.specs -Wl,--gc-sections -pie
 LDLIBS   := -L$(DEVKITPRO)/libnx/lib -lnx
 
 .PHONY: all clean
