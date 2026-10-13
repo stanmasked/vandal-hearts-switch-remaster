@@ -2,14 +2,14 @@
 
 ## Current status
 
-**Source audit completed; Switch prototype not started.** The upstream PC port is a native C project with a portable hardware-interface layer, but it is designed for desktop Windows/Linux/macOS. No Switch build or on-device test has been performed in this repository.
+**Source audit complete; minimal NRO builds in CI; interactive tactical-grid prototype implemented. Runtime input and graphics presentation are not yet verified on an emulator or physical Switch.**
 
-See [Upstream Audit](UPSTREAM_AUDIT.md) for findings and [Build Notes](BUILDING.md) for the dependency inventory.
+The upstream PC port is a native C project with a portable hardware-interface layer, but it is designed for desktop Windows/Linux/macOS. See [Upstream Audit](UPSTREAM_AUDIT.md) for findings and [Build Notes](BUILDING.md) for the dependency inventory.
 
 ## Phase 1 — Establish a reproducible baseline
 
 - [x] Review upstream README, architecture, build docs, platform glue, and license notices.
-- [ ] Record the exact upstream commit SHA used for porting.
+- [x] Record the exact upstream commit SHA used for the audit.
 - [ ] Build and run the unmodified desktop PC port, if dependencies and locally supplied legal game data are available.
 - [ ] Record exact toolchain versions, commands, logs, and known issues.
 
@@ -17,17 +17,19 @@ See [Upstream Audit](UPSTREAM_AUDIT.md) for findings and [Build Notes](BUILDING.
 
 ## Phase 2 — Map portability boundaries
 
-- [ ] Inventory all dependencies and license obligations.
-- [ ] Inventory OS-specific APIs in `pc_bootstrap.c` and related files.
-- [ ] Trace the graphics presentation path (`pc_gpu_window.c`) and isolate it behind a small interface.
+- [x] Inventory major dependencies and license boundaries.
+- [ ] Inventory all OS-specific APIs in the bootstrap and related files.
+- [ ] Trace the graphics presentation path and isolate it behind a small interface.
 - [ ] Evaluate SDL2, graphics, audio, threading, filesystem, and memory APIs against the chosen Switch homebrew toolchain.
 - [ ] Keep changes out of the byte-matching game source unless there is a documented, gated reason.
 
 ## Phase 3 — Switch homebrew feasibility prototype
 
-- [ ] Confirm current devkitPro/devkitA64/libnx setup and compatible library versions.
-- [ ] Build a minimal test application without game code or game data.
-- [ ] Read controller input and present a generated test framebuffer.
+- [x] Confirm devkitPro/devkitA64/libnx are available in the CI container.
+- [x] Build a minimal test application without game code or game data.
+- [x] Implement a controller-driven tactical grid and basic unit movement rules.
+- [ ] Verify the application and controller behavior in an emulator or on actual hardware.
+- [ ] Present a generated pixel framebuffer/test pattern.
 - [ ] Measure frame pacing and memory use on actual hardware.
 - [ ] Verify audio and thread support independently.
 
@@ -57,7 +59,7 @@ Only after the baseline is playable:
 
 ## Licensing and release readiness
 
-- [ ] Review upstream `LICENSE`, `NOTICE`, and `DISCLAIMER` before copying code.
+- [ ] Review upstream LICENSE, NOTICE, and DISCLAIMER before copying code.
 - [ ] Treat the upstream repository as mixed-rights: GPL-2.0 applies to specified original PC-port code/tooling, not automatically to decompiled game code or game-derived data.
 - [ ] Do not commit disc images, game executables, BIOS/SDK data, extracted assets, or generated copyrighted content.
 - [ ] Never claim Switch support until it has been built and tested on hardware.
