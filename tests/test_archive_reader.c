@@ -110,6 +110,7 @@ int main(void)
 {
     fixture f;
     uint8_t buffer[IMAGE_CAP];
+    vh_archive_read_ops incomplete_read_ops = READ_OPS;
 
     memset(&f, 0, sizeof(f));
     make_card(&f); f.read_success = 1; f.close_success = 1;
@@ -145,6 +146,15 @@ int main(void)
     make_card(&f); f.read_success = 1; f.close_success = 1;
     assert(!restore(&f, buffer, US_HEADER));
     assert(f.close_calls == 1 && f.write_open_calls == 0 && f.replace_calls == 0);
+
+    /* Missing reader callbacks are rejected before opening the archive. */
+    memset(&f, 0, sizeof(f));
+    make_card(&f); f.read_success = 1; f.close_success = 1;
+    incomplete_read_ops.close_archive = NULL;
+    assert(!vh_restore_archive_file(&WRITE_OPS, &incomplete_read_ops, &f,
+        "active-card.bin", "BASLUS-00447VH.20261013-203000",
+        "BASLUS-00447VH", buffer, sizeof(buffer), US_HEADER));
+    assert(f.open_calls == 0 && f.write_open_calls == 0);
 
     /* Failed open must not attempt read, close, or destination mutation. */
     memset(&f, 0, sizeof(f));
