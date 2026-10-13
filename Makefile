@@ -11,19 +11,26 @@ APP_AUTHOR := Vandal Hearts Switch Remaster contributors
 APP_VERSION := 0.1.0
 
 CC       := $(DEVKITA64)/bin/aarch64-none-elf-gcc
+HOST_CC  ?= gcc
 ELF2NRO  := $(DEVKITPRO)/tools/bin/elf2nro
 NACPTOOL := $(DEVKITPRO)/tools/bin/nacptool
 CFLAGS   := -g -Wall -Wextra -O2 -fPIE -ffunction-sections -fdata-sections -I$(DEVKITPRO)/libnx/include
 LDFLAGS  := -specs=$(DEVKITPRO)/libnx/switch.specs -Wl,--gc-sections -pie
 LDLIBS   := -L$(DEVKITPRO)/libnx/lib -lnx
 
-.PHONY: all clean
+.PHONY: all clean test
 all: $(BUILD)/$(TARGET).nro
+
+test: $(BUILD)/test_game_rules
+	./$(BUILD)/test_game_rules
 
 $(BUILD):
 	mkdir -p $@
 
-$(BUILD)/$(TARGET).elf: $(SOURCES)/main.c | $(BUILD)
+$(BUILD)/test_game_rules: tests/test_game_rules.c source/game_rules.h | $(BUILD)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@
+
+$(BUILD)/$(TARGET).elf: $(SOURCES)/main.c $(SOURCES)/game_rules.h | $(BUILD)
 	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ $(LDLIBS)
 
 $(BUILD)/$(TARGET).nacp: | $(BUILD)
