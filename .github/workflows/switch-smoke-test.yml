@@ -73,8 +73,8 @@ jobs:
 
       - name: Test versioned save-slot containers and recovery selection
         run: |
-          cc -std=c11 -Wall -Wextra -Werror -pedantic \\
-            -Iswitch-save switch-save/card_validate.c switch-save/save_slot.c \\
+          cc -std=c11 -Wall -Wextra -Werror -pedantic \
+            -Iswitch-save switch-save/card_validate.c switch-save/save_slot.c \
             tests/test_save_slot.c -o /tmp/test-save-slot
           /tmp/test-save-slot
 
