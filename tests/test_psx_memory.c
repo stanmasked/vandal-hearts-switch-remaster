@@ -37,6 +37,24 @@ static void test_scratchpad_boundaries(void) {
     assert(psx_memory_translate(&memory, PSX_SCRATCHPAD_BASE + (uint32_t)PSX_SCRATCHPAD_SIZE - 1, 2) == NULL);
 }
 
+static void test_scratchpad_is_separate_from_main_ram(void) {
+    PsxMemory memory = make_memory();
+    uint8_t *guest_ram = psx_memory_translate(&memory, PSX_MAIN_RAM_BASE, 1);
+    uint8_t *guest_scratch = psx_memory_translate(&memory, PSX_SCRATCHPAD_BASE, 1);
+
+    assert(guest_ram != NULL);
+    assert(guest_scratch != NULL);
+    assert(guest_ram != guest_scratch);
+
+    *guest_ram = UINT8_C(0x31);
+    *guest_scratch = UINT8_C(0xc7);
+    assert(main_ram[0] == UINT8_C(0x31));
+    assert(scratchpad[0] == UINT8_C(0xc7));
+    assert(psx_memory_translate(&memory, PSX_MAIN_RAM_BASE, 1) == guest_ram);
+    assert(psx_memory_translate(&memory, PSX_SCRATCHPAD_BASE, 1) == guest_scratch);
+    assert(main_ram[0] != scratchpad[0]);
+}
+
 static void test_known_upstream_guest_offsets(void) {
     PsxMemory memory = make_memory();
 
@@ -128,6 +146,7 @@ static void test_unsupported_ranges_and_invalid_storage(void) {
 int main(void) {
     test_main_ram_boundaries();
     test_scratchpad_boundaries();
+    test_scratchpad_is_separate_from_main_ram();
     test_known_upstream_guest_offsets();
     test_unsupported_ranges_and_invalid_storage();
     puts("PS1 memory translation tests passed");
