@@ -14,6 +14,7 @@ on:
       - "switch-save/**"
       - "docs/SAVE_DATA_FAILURE_MATRIX.md"
       - "docs/LIBNX_FILESYSTEM_BACKEND_NOTES.md"
+      - "docs/SAVE_RECOVERY_DESIGN.md"
       - "scripts/fetch_upstream_pcport.sh"
       - "scripts/audit_switch_blockers.py"
       - "scripts/audit_psx_memory_literals.py"
