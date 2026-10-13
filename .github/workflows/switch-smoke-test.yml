@@ -1,5 +1,6 @@
 name: Switch homebrew smoke test
 # CI smoke test only; full game port is not built by this workflow.
+# Uses the current libnx Pad API for controller polling.
 
 on:
   push:
