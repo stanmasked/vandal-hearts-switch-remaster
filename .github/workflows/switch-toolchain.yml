@@ -49,6 +49,7 @@ jobs:
           set -euxo pipefail
           export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
           export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
           make
 
       - name: Upload NRO artifact
