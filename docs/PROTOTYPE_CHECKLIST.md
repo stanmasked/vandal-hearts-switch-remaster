@@ -4,9 +4,9 @@
 
 This checklist tracks the smallest useful Switch homebrew experiment before any game code or game data is ported.
 
-**Status: minimal NRO build verified in GitHub Actions; interactive runtime and controller behavior remain unverified.**
+**Status: graphical framebuffer prototype compiles and packages in CI; runtime presentation and controller behavior remain unverified.**
 
-The prototype uses devkitPro/devkitA64 and libnx. CI run [38481552455](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38481552455) successfully built and uploaded an NRO artifact. That confirms the build and packaging pipeline, not that the app runs on a console or emulator.
+The prototype uses devkitPro/devkitA64 and libnx. CI run [38483880113](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38483880113) successfully ran toolchain checks, host-side rule tests, the Switch build, and NRO artifact upload. This confirms the build and packaging pipeline, not that the app runs on a console or emulator. GitHub reports the uploaded artifact archive digest as `sha256:f22f0ef243bb1db0367a03ca1f75c3c21b41ab73c1556f59a965c64cf1e90cb3`; this is not a checksum of the extracted NRO.
 
 ## Scope boundary
 
@@ -14,7 +14,7 @@ The prototype must be independent of Vandal Hearts and must not require a disc i
 
 ## Automated rule tests
 
-The movement-rule helpers are shared by the prototype and a host-side test executable. `make test` checks Manhattan distance, board bounds, valid movement range, and the blocked enemy tile. These tests passed in [CI run 38483716754](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38483716754). They validate the extracted rule functions, not controller behavior or runtime graphics.
+The movement-rule helpers are shared by the prototype and a host-side test executable. `make test` checks Manhattan distance, board bounds, valid movement range, and the blocked enemy tile. These tests passed as part of [CI run 38483880113](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38483880113). They validate the extracted rule functions, not controller behavior or runtime graphics.
 
 ## Milestones and required evidence
 
@@ -43,14 +43,15 @@ The movement-rule helpers are shared by the prototype and a host-side test execu
 - [ ] Demonstrate A selecting a tile and B clearing the selection.
 - [ ] Record environment, steps, result, and any logs.
 
-The current source renders a generated ASCII tactical grid in the libnx console. Runtime behavior is not yet confirmed.
+The current source draws a software-rendered 8×6 grid into a libnx RGBA8888 framebuffer. Runtime behavior is not yet confirmed.
 
 **Pass condition:** launch and input are observed in the named environment. Emulator results and physical-device results must be reported separately.
 
 ### P3 — Verify graphics presentation
 
-- [ ] Present a generated test pattern (for example, color bars and a moving rectangle) without loading game assets.
-- [ ] Verify correct orientation, expected dimensions, and repeated frame updates.
+- [x] Implement a generated framebuffer pattern/grid without loading game assets.
+- [x] Compile and package the framebuffer implementation in CI.
+- [ ] Verify correct orientation, expected dimensions, and repeated frame updates at runtime.
 - [ ] Record chosen API, pixel format, stride handling, and any scaling.
 - [ ] Check that the app exits cleanly.
 
@@ -81,17 +82,17 @@ Only after P1–P3 pass:
 | Field | Value |
 | --- | --- |
 | Date/time | |
-| Source revision | |
-| Host OS | |
-| Toolchain and library versions | |
-| Target environment | Emulator name/version or physical-device description |
-| Exact command | |
-| Build exit code | |
-| Artifact path and checksum | |
-| Runtime steps | |
-| Observed result | |
-| Logs / screenshots location | |
-| Known limitations | |
+| Source revision | `737485a9645f33cdade195fc8c4fce75d7f4f872` |
+| Host OS | GitHub Actions runner/container (see workflow logs) |
+| Toolchain and library versions | Toolchain verification passed; exact versions not yet recorded here |
+| Target environment | CI build only; runtime target not yet tested |
+| Exact command | Root Makefile build via CI workflow |
+| Build exit code | 0 (workflow build step succeeded) |
+| Artifact path and checksum | Artifact `vandal-hearts-switch-prototype`; archive SHA-256: `f22f0ef243bb1db0367a03ca1f75c3c21b41ab73c1556f59a965c64cf1e90cb3` |
+| Runtime steps | Not yet run |
+| Observed result | CI build and upload succeeded; no runtime claim |
+| Logs / screenshots location | [CI run 38483880113](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38483880113) |
+| Known limitations | Compile verified only; emulator/device behavior unverified |
 
 Do not commit proprietary game files or include them in CI artifacts. Use generated test data only.
 
