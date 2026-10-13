@@ -4,7 +4,11 @@
 #include <stddef.h>
 
 typedef struct {
-    /* Creates a unique temporary file on the same filesystem as destination. */
+    /*
+     * Creates a unique temporary file on the same filesystem as destination.
+     * A returned handle requires a non-empty NUL-terminated path; if the
+     * backend cannot provide one, it must clean up any created file itself.
+     */
     void *(*open_temporary)(void *context, const char *destination,
                             char *temporary_path, size_t path_capacity);
     /* Must write the complete span or return 0. */
