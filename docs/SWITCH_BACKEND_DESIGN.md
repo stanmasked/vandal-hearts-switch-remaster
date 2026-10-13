@@ -18,6 +18,8 @@ The pinned upstream CMake build validates a region-matching original PS-X execut
 
 ## Required platform work
 
+The CI now runs `scripts/audit_switch_blockers.py` against the pinned upstream `platform/pc/src` and `platform/pc/include` trees before compiling the diagnostic homebrew apps. It reports fixed PS1 addresses, desktop virtual-memory calls, OS loader introspection, SDL/OpenGL/OpenAL use, and POSIX threading sites. This is an inventory to guide the port, not a compatibility proof; findings are expected until a Switch backend exists.
+
 1. **Build integration**
    - Keep a pinned upstream revision and make the build reproducible.
    - Add a Switch-specific build target instead of reusing desktop CMake defaults blindly.
@@ -49,6 +51,7 @@ The pinned upstream CMake build validates a region-matching original PS-X execut
 - [x] Framebuffer color-bar test builds and uploads a separate `.nro` artifact (CI run `38440952887`).
 - [x] Smoke-test source and build files are verified against the current devkitPro image.
 - [x] Pinned upstream source fetch is verified in CI without copying game data into the repository.
+- [x] CI runs a repeatable source-level blocker inventory before the diagnostic builds.
 - [ ] Upstream source is integrated at a pinned revision without proprietary assets.
 - [ ] Switch-specific compile failures are resolved and documented.
 - [ ] First boot is confirmed on a real Switch or a compatible test environment.
