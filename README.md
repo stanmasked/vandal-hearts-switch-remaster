@@ -24,9 +24,10 @@ higher-resolution rendering and presentation improvements.
 3. [x] Add diagnostic Switch homebrew prototypes for console/input and framebuffer output; add an SD-card filesystem smoke test, pending CI/device verification.
 4. [x] Add a host-tested PS1 main-RAM/scratchpad address-translation prototype, including tests for known sound-work and movie-ring-buffer offsets; it is not yet connected to the engine.
 5. [x] Add a host-tested checked path-join helper for the future save-data adapter; it is not yet connected to game saves.
-6. [ ] Design and implement a Switch-specific game backend; current diagnostics are not the game.
-7. [ ] Validate a playable baseline on supported hardware.
-8. [ ] Plan and test optional visual improvements.
+6. [x] Add host-tested PS1 card validation, versioned save containers, two-slot recovery/update logic, and archive-restore orchestration; no filesystem backend, game integration, or durability guarantee exists yet.
+7. [ ] Design and implement a Switch-specific game backend; current diagnostics are not the game.
+8. [ ] Validate a playable baseline on supported hardware.
+9. [ ] Plan and test optional visual improvements.
 
 See the [upstream audit](docs/UPSTREAM_AUDIT.md), [first Switch blocker audit results](docs/SWITCH_BLOCKER_AUDIT_RESULTS.md), [memory-model investigation](docs/SWITCH_MEMORY_MODEL_INVESTIGATION.md), [PS1 code-hit triage](docs/PSX_MEMORY_CODE_HITS.md), [PS1 memory call-site matrix](docs/PSX_MEMORY_CALLSITE_MATRIX.md), [memory boundary follow-up](docs/PSX_MEMORY_BOUNDARY_FOLLOWUP.md), [direct guest-pointer migration audit](docs/DIRECT_GUEST_POINTER_MIGRATION.md), [scratchpad separation audit](docs/SCRATCHPAD_SEPARATION_AUDIT.md), [sound-buffer lifetime audit](docs/SOUND_BUFFER_LIFETIME_AUDIT.md), [filesystem and save-data port audit](docs/FILESYSTEM_AND_SAVE_PORT_AUDIT.md), [save-data failure matrix](docs/SAVE_DATA_FAILURE_MATRIX.md), [save recovery design](docs/SAVE_RECOVERY_DESIGN.md), [libnx filesystem backend findings](docs/LIBNX_FILESYSTEM_BACKEND_NOTES.md), [save recovery design](docs/SAVE_RECOVERY_DESIGN.md), [memory translator prototype](docs/SWITCH_MEMORY_TRANSLATOR_PROTOTYPE.md), [PS1 memory scanner](scripts/audit_psx_memory_literals.py), [porting plan](docs/PORTING_PLAN.md),
 [build notes](docs/BUILDING.md), [Switch backend design](docs/SWITCH_BACKEND_DESIGN.md),
