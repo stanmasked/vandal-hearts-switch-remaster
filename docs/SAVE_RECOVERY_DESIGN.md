@@ -1,6 +1,6 @@
 # Save recovery design without rename-over-existing
 
-Status: proposed architecture, not implemented and not device-tested. The current callback writer remains a test seam and must not be connected to game saves yet.
+Status: the versioned container codec and slot-selection helper are implemented as host-testable C code in `switch-save/save_slot.c`; filesystem coordination, game integration, and device testing are not implemented. The helper must not be connected to game saves yet.
 
 ## Why consider a different transaction model?
 
