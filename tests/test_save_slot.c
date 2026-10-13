@@ -87,6 +87,8 @@ int main(void)
     uint8_t slot_a[VH_SAVE_SLOT_HEADER_SIZE + CARD_SIZE];
     uint8_t slot_b[VH_SAVE_SLOT_HEADER_SIZE + CARD_SIZE];
     uint8_t corrupt[VH_SAVE_SLOT_HEADER_SIZE + CARD_SIZE];
+    uint8_t overlap_storage[CARD_SIZE + VH_SAVE_SLOT_HEADER_SIZE + 8U];
+    uint8_t overlap_before[sizeof(overlap_storage)];
     size_t size_a;
     size_t size_b;
     size_t payload_size = 0U;
@@ -139,6 +141,16 @@ int main(void)
                                CARD_HEADER_US, NULL) == 0);
     assert(vh_save_slot_encode(slot_a, size_a, 0U, card_a, CARD_SIZE,
                                CARD_HEADER_US, NULL) == 0);
+
+    /* Encoder must reject partially overlapping source/destination ranges. */
+    make_card(overlap_storage, 0x33U);
+    memcpy(overlap_before, overlap_storage, sizeof(overlap_storage));
+    assert(vh_save_slot_encode(overlap_storage + 1U,
+                               sizeof(overlap_storage) - 1U, 5U,
+                               overlap_storage, CARD_SIZE, CARD_HEADER_US,
+                               NULL) == 0);
+    assert(memcmp(overlap_storage, overlap_before,
+                  sizeof(overlap_storage)) == 0);
 
     size_a = encode(slot_a, 7U, card_a);
     size_b = encode(slot_b, 7U, card_a);
