@@ -5,9 +5,10 @@ An experimental, community-driven project to investigate whether the existing
 can be adapted for Nintendo Switch homebrew, with a longer-term goal of exploring
 higher-resolution rendering and presentation improvements.
 
-> **Status: planning / research.** Nintendo Switch compatibility has not been
-> established. This repository does not currently contain a working Switch port.
-> No build or on-device test is claimed.
+> **Status: early porting experiments.** Nintendo Switch game compatibility has not been
+> established, and this repository does not contain a working Vandal Hearts port. Two
+> diagnostic homebrew `.nro` files now compile in CI (console/input and framebuffer color bars);
+> neither contains game code or game data. No on-device test is claimed.
 
 ## Goals
 
@@ -18,14 +19,19 @@ higher-resolution rendering and presentation improvements.
 
 ## Project status
 
-1. [ ] Review upstream documentation and license.
-2. [ ] Inventory dependencies, build system, renderer, audio, input, and file I/O.
-3. [ ] Define a minimal Switch platform/build prototype.
-4. [ ] Validate a playable baseline on supported hardware.
-5. [ ] Plan and test optional visual improvements.
+1. [x] Review upstream documentation, license, and repository structure.
+2. [x] Inventory major dependencies, build system, renderer, audio, input, and platform-specific memory handling.
+3. [x] Build diagnostic Switch homebrew prototypes in CI (console/input and framebuffer color bars).
+4. [ ] Design and implement a Switch-specific game backend; current diagnostics are not the game.
+5. [ ] Validate a playable baseline on supported hardware.
+6. [ ] Plan and test optional visual improvements.
 
 See the [upstream audit](docs/UPSTREAM_AUDIT.md), [porting plan](docs/PORTING_PLAN.md),
-[build notes](docs/BUILDING.md), and [legal notes](docs/LEGAL.md).
+[build notes](docs/BUILDING.md), [Switch backend design](docs/SWITCH_BACKEND_DESIGN.md),
+[pinned upstream workflow](docs/UPSTREAM_WORKFLOW.md), and [legal notes](docs/LEGAL.md).
+
+The latest [CI run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38440679570)
+produces the two diagnostic NROs as a downloadable artifact.
 
 ## Upstream
 
