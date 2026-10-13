@@ -10,6 +10,7 @@ typedef enum {
     FAIL_NONE,
     FAIL_READ_INITIAL,
     FAIL_READ_SECOND_INITIAL,
+    FAIL_READ_OVERSIZE,
     FAIL_OPEN,
     FAIL_WRITE,
     FAIL_FLUSH,
@@ -67,6 +68,10 @@ static vh_save_io_result read_slot(void *context, unsigned int slot,
 {
     memory_store *store = (memory_store *)context;
     ++store->read_calls;
+    if (store->fail == FAIL_READ_OVERSIZE && store->read_calls == 1) {
+        *size_out = capacity + 1U;
+        return VH_SAVE_IO_OK;
+    }
     if ((store->fail == FAIL_READ_INITIAL && store->read_calls <= 2) ||
         (store->fail == FAIL_READ_SECOND_INITIAL && store->read_calls == 2) ||
         (store->fail == FAIL_READBACK && store->read_calls > 2)) {
@@ -210,6 +215,15 @@ int main(void)
            == VH_SAVE_UPDATE_IO_FAILURE);
     assert(untouched_selected == 42U);
     assert(untouched_generation == UINT64_C(123456789));
+    assert(store.writes == 0);
+    assert_old_slot_preserved(&store, old_container, old_size);
+
+    /* A backend claiming a read larger than its supplied buffer is rejected. */
+    seed(&store, old_card, 5U);
+    old_size = store.sizes[0];
+    memcpy(old_container, store.slots[0], old_size);
+    store.fail = FAIL_READ_OVERSIZE;
+    assert(update(&store, new_card) == VH_SAVE_UPDATE_IO_FAILURE);
     assert(store.writes == 0);
     assert_old_slot_preserved(&store, old_container, old_size);
 
