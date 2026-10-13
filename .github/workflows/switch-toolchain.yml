@@ -40,14 +40,17 @@ jobs:
           echo "DEVKITPRO=$DEVKITPRO"
           echo "DEVKITA64=$DEVKITA64"
 
-      - name: Build project if a Makefile exists
+      - name: Build project
         shell: bash
         run: |
           set -euxo pipefail
-          if [[ -f Makefile || -f makefile ]]; then
-            export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
-            export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
-            make
-          else
-            echo 'Toolchain verified. No project Makefile exists yet; no NRO build was attempted.'
-          fi
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          make
+
+      - name: Upload NRO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vandal-hearts-switch-prototype
+          path: build/*.nro
+          if-no-files-found: error
