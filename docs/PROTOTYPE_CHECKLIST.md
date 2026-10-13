@@ -12,6 +12,10 @@ The prototype uses devkitPro/devkitA64 and libnx. CI run [38481552455](https://g
 
 The prototype must be independent of Vandal Hearts and must not require a disc image, original executable, BIOS/font data, extracted assets, or other proprietary game data. Do not copy upstream game code into this test.
 
+## Automated rule tests
+
+The movement-rule helpers are shared by the prototype and a host-side test executable. `make test` checks Manhattan distance, board bounds, valid movement range, and the blocked enemy tile. These tests passed in [CI run 38483716754](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38483716754). They validate the extracted rule functions, not controller behavior or runtime graphics.
+
 ## Milestones and required evidence
 
 ### P0 — Record the environment
