@@ -10,6 +10,7 @@ on:
       - 'Makefile'
       - 'makefile'
       - 'source/**'
+      - 'tests/**'
       - 'src/**'
 
 permissions:
@@ -42,6 +43,12 @@ jobs:
           aarch64-none-elf-gcc --version
           echo "DEVKITPRO=$DEVKITPRO"
           echo "DEVKITA64=$DEVKITA64"
+
+      - name: Run host-side rule tests
+        shell: bash
+        run: |
+          set -euxo pipefail
+          make test
 
       - name: Build project
         shell: bash
