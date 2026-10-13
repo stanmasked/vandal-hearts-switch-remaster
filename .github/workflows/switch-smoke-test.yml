@@ -9,6 +9,7 @@ on:
     paths:
       - "switch-test/**"
       - "switch-test-graphics/**"
+      - "scripts/fetch_upstream_pcport.sh"
       - ".github/workflows/switch-smoke-test.yml"
   workflow_dispatch:
 
@@ -22,6 +23,9 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Fetch pinned upstream source for inspection
+        run: bash scripts/fetch_upstream_pcport.sh .cache/upstream-pc-port
 
       - name: Build NRO with devkitPro toolchain
         run: |
