@@ -34,7 +34,6 @@ vh_save_update_result vh_save_slot_update(
     vh_save_io_result read_a;
     vh_save_io_result read_b;
     vh_save_slot_selection selection;
-    int opened = 0;
     int write_ok = 0;
     int flush_ok = 0;
     int close_ok = 0;
@@ -94,15 +93,12 @@ vh_save_update_result vh_save_slot_update(
     if (!ops->open_write(context, target_slot)) {
         return VH_SAVE_UPDATE_IO_FAILURE;
     }
-    opened = 1;
     write_ok = ops->write_all(context, target_slot, target_buffer, encoded_size);
     if (write_ok) flush_ok = ops->flush(context, target_slot);
     close_ok = ops->close(context, target_slot);
-    opened = 0;
     if (!write_ok || !flush_ok || !close_ok) {
         return VH_SAVE_UPDATE_IO_FAILURE;
     }
-    (void)opened;
 
     if (ops->read_slot(context, target_slot, verify_buffer,
                        verify_capacity, &verify_size) != VH_SAVE_IO_OK ||
