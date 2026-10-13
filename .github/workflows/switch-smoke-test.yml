@@ -14,6 +14,7 @@ on:
       - "scripts/audit_psx_memory_literals.py"
       - "tests/**"
       - "docs/DIRECT_GUEST_POINTER_MIGRATION.md"
+      - "docs/SCRATCHPAD_SEPARATION_AUDIT.md"
       - ".github/workflows/switch-smoke-test.yml"
   workflow_dispatch:
 
