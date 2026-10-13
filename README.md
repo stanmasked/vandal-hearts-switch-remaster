@@ -30,8 +30,8 @@ See the [upstream audit](docs/UPSTREAM_AUDIT.md), [first Switch blocker audit re
 [build notes](docs/BUILDING.md), [Switch backend design](docs/SWITCH_BACKEND_DESIGN.md),
 [pinned upstream workflow](docs/UPSTREAM_WORKFLOW.md), and [legal notes](docs/LEGAL.md).
 
-The latest successful [CI run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38442205384)
-produces two diagnostic NROs and a source-pattern audit report as a downloadable [artifact](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38442205384/artifacts/11834899128). The artifact is not a playable game.
+The latest successful [CI run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38443654383)
+builds the diagnostic NROs and uploads the source-pattern audits as an [artifact](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38443654383/artifacts/11837901509). The memory scan covers 156 source files and found 3,321 main-RAM-shaped occurrences, 3 scratchpad occurrences, no I/O-register-range occurrences, and 2 zero/NULL-mirror occurrences. These include comments and inactive code; they are not confirmed runtime accesses. The artifact is not a playable game.
 
 ## Upstream
 
