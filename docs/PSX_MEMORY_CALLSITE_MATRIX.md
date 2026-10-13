@@ -24,7 +24,7 @@ This matrix follows the fixed-address and scratch-buffer paths found in the pinn
 - The documented use up to `+0x3a300` and the movie ring offset `+0x472c0` both fit inside the RAM window. This does **not** prove that every access through the nominal `0x80000` region is a valid guest-RAM access.
 - `gScratch1_801317c0` has documented nominal size `0x10000` and usage up to `+0xa000`; any mapping must be checked against the actual allocation and guest-address window too.
 
-See also the focused [sound buffer and transfer-lifetime audit](SOUND_BUFFER_LIFETIME_AUDIT.md), which traces the sound-set address offsets and the loader's use of caller-selected buffer pointers, and the [memory boundary follow-up](PSX_MEMORY_BOUNDARY_FOLLOWUP.md), which distinguishes strict guest-RAM spans from legacy logical buffer sizes and observed overrun behavior.
+See also the [direct guest-pointer migration audit](DIRECT_GUEST_POINTER_MIGRATION.md), the focused [sound buffer and transfer-lifetime audit](SOUND_BUFFER_LIFETIME_AUDIT.md), which traces the sound-set address offsets and the loader's use of caller-selected buffer pointers, and the [memory boundary follow-up](PSX_MEMORY_BOUNDARY_FOLLOWUP.md), which distinguishes strict guest-RAM spans from legacy logical buffer sizes and observed overrun behavior.
 
 ## Implementation order
 
