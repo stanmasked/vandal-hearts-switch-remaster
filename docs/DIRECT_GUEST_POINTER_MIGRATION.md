@@ -25,7 +25,7 @@ The upstream project's own [memory-safety notes](https://github.com/HalmyLyseas/
 
 ## Suggested order
 
-1. Replace the sound-work address casts behind a named helper while preserving one shared backing store.
+1. **Prototype added:** `psx_sound_work_translate()` bounds a requested span to the legacy `[0x80140000, 0x80200000)` sound-work window, then resolves it through the shared main-RAM translator. Host tests cover the window start/end, rejected out-of-window spans, and pointer identity/aliasing. This is not wired into upstream game code yet.
 2. Introduce a scratchpad provider for unpacking, with a separate provider for graphics until non-overlap is demonstrated.
 3. Audit the movie ring buffer's maximum access span and lifetime.
 4. Only then consider a common guest-memory context passed through engine subsystems.
