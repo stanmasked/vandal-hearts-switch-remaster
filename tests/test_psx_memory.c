@@ -57,6 +57,19 @@ static void test_known_upstream_guest_offsets(void) {
            == &main_ram[0x144878]);
     assert(psx_memory_translate(&memory, UINT32_C(0x801ffff0), 0x20) == NULL);
 
+    /*
+     * A guest-address translation must expose the shared RAM bytes, not a
+     * copied or per-buffer mirror. Verify a write is visible through both
+     * the backing allocation and a second translation of the same address.
+     */
+    {
+        uint8_t *sound_work = psx_memory_translate(&memory, UINT32_C(0x80144878), 1);
+        assert(sound_work != NULL);
+        *sound_work = UINT8_C(0x5a);
+        assert(main_ram[0x144878] == UINT8_C(0x5a));
+        assert(psx_memory_translate(&memory, UINT32_C(0x80144878), 1) == sound_work);
+    }
+
     /* Movie_Init's non-PC address is the equivalent of gScratch3 + 0x472c0. */
     assert(psx_memory_translate(&memory, UINT32_C(0x801c74d0), 0x20)
            == &main_ram[0x1c74d0]);
