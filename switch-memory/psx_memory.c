@@ -38,3 +38,19 @@ void *psx_memory_translate(PsxMemory *memory, uint32_t guest_address, size_t len
                             guest_address, PSX_SCRATCHPAD_BASE,
                             PSX_SCRATCHPAD_SIZE, length);
 }
+
+
+void *psx_sound_work_translate(PsxMemory *memory, uint32_t guest_address, size_t length) {
+    size_t offset;
+
+    if (length == 0 || guest_address < PSX_SOUND_WORK_BASE) {
+        return NULL;
+    }
+
+    offset = (size_t)(guest_address - PSX_SOUND_WORK_BASE);
+    if (offset >= PSX_SOUND_WORK_SIZE || length > PSX_SOUND_WORK_SIZE - offset) {
+        return NULL;
+    }
+
+    return psx_memory_translate(memory, guest_address, length);
+}
