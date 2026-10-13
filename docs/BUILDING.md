@@ -2,7 +2,13 @@
 
 ## Status
 
-No Switch build procedure has been verified. This document records upstream desktop requirements and the next investigations; it is not yet a recipe for producing a working Switch binary.
+The minimal devkitPro/devkitA64/libnx homebrew build is verified in GitHub Actions: CI compiles the prototype and packages an `.nro` artifact. This verifies the toolchain and packaging path only; the application has not yet been verified on a Switch console or emulator, and it is not a port of the original game.
+
+## Verified minimal Switch build
+
+The repository's `Switch toolchain and prototype build` workflow runs the toolchain checks, builds the ELF/NRO with the root `Makefile`, and uploads the generated NRO as an Actions artifact. See the [latest workflow runs](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/workflows/switch-toolchain.yml). Open a successful run and download the `vandal-hearts-switch-prototype` artifact.
+
+The current program is a text-console input and tactical-grid experiment. A successful CI build does not establish runtime behavior, controller usability, rendering performance, or compatibility with the original game. Do not describe this artifact as a playable port.
 
 ## Upstream build baseline
 
@@ -51,6 +57,7 @@ Then create a dependency/API inventory for the upstream platform layer and port 
 - [ ] Host OS and toolchain versions recorded.
 - [ ] Desktop build result recorded (or blockers documented).
 - [ ] Dependencies and licenses inventoried.
-- [ ] Switch framebuffer/input prototype built and tested.
+- [x] Minimal Switch input/text-console prototype built and packaged by CI.
+- [ ] Switch framebuffer prototype built and tested on emulator or hardware.
 - [ ] Switch graphics, audio, threading, and filesystem support verified.
 - [ ] No proprietary game data included in the repository.
