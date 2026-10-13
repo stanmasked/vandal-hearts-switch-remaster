@@ -23,6 +23,7 @@ typedef struct {
     fail_stage fail;
     int read_calls;
     int writes;
+    unsigned int last_write_slot;
 } memory_store;
 
 static uint32_t crc32_bytes(const uint8_t *data, size_t size)
@@ -99,6 +100,7 @@ static int write_all(void *context, unsigned int slot,
     memcpy(store->slots[slot], data, size);
     store->sizes[slot] = size;
     ++store->writes;
+    store->last_write_slot = slot;
     return 1;
 }
 
@@ -155,6 +157,8 @@ int main(void)
     size_t i;
     size_t old_size;
     uint8_t old_container[SLOT_CAP];
+    uint8_t alternate_container[SLOT_CAP];
+    uint8_t invalid_card[CARD_SIZE];
     uint8_t a[SLOT_CAP], b[SLOT_CAP], verify[SLOT_CAP];
     uint64_t generation = 0U;
     unsigned int selected = 99U;
@@ -201,6 +205,43 @@ int main(void)
     memset(&store, 0, sizeof(store));
     assert(update(&store, new_card) == VH_SAVE_UPDATE_NO_VALID_BASE);
     assert(store.writes == 0);
+
+
+    /* When slot B is the active generation, the coordinator writes slot A. */
+    seed(&store, old_card, 5U);
+    assert(vh_save_slot_encode(store.slots[1], SLOT_CAP, 6U, new_card,
+                               CARD_SIZE, CARD_HEADER_US, &store.sizes[1]));
+    assert(update(&store, old_card) == VH_SAVE_UPDATE_OK);
+    assert(store.last_write_slot == 0U);
+    assert(vh_save_slot_select(store.slots[0], store.sizes[0],
+                               store.slots[1], store.sizes[1],
+                               CARD_HEADER_US, &selected) == VH_SAVE_SLOT_VALID);
+    assert(selected == 0U);
+
+    /* Equal-generation divergent payloads must not be overwritten. */
+    seed(&store, old_card, 5U);
+    assert(vh_save_slot_encode(store.slots[1], SLOT_CAP, 5U, new_card,
+                               CARD_SIZE, CARD_HEADER_US, &store.sizes[1]));
+    memcpy(old_container, store.slots[0], store.sizes[0]);
+    old_size = store.sizes[0];
+    memcpy(alternate_container, store.slots[1], store.sizes[1]);
+    assert(update(&store, old_card) == VH_SAVE_UPDATE_AMBIGUOUS_BASE);
+    assert(store.writes == 0);
+    assert(store.sizes[0] == old_size &&
+           memcmp(store.slots[0], old_container, old_size) == 0);
+    assert(store.sizes[1] == sizeof(alternate_container) ||
+           store.sizes[1] == VH_SAVE_SLOT_HEADER_SIZE + CARD_SIZE);
+    assert(memcmp(store.slots[1], alternate_container, store.sizes[1]) == 0);
+
+    /* Invalid replacement image is rejected before any target mutation. */
+    seed(&store, old_card, 5U);
+    memcpy(old_container, store.slots[0], store.sizes[0]);
+    old_size = store.sizes[0];
+    memcpy(invalid_card, new_card, sizeof(invalid_card));
+    invalid_card[0] = 'X';
+    assert(update(&store, invalid_card) == VH_SAVE_UPDATE_INVALID_ARGUMENT);
+    assert(store.writes == 0);
+    assert_old_slot_preserved(&store, old_container, old_size);
 
     puts("save update coordinator tests: PASS");
     return 0;
