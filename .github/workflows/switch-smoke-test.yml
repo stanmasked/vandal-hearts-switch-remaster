@@ -16,6 +16,7 @@ on:
       - "tests/**"
       - "docs/DIRECT_GUEST_POINTER_MIGRATION.md"
       - "docs/SCRATCHPAD_SEPARATION_AUDIT.md"
+      - "docs/FILESYSTEM_AND_SAVE_PORT_AUDIT.md"
       - ".github/workflows/switch-smoke-test.yml"
   workflow_dispatch:
 
