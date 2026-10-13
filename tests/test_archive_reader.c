@@ -132,6 +132,19 @@ int main(void)
     assert(!restore(&f, buffer, sizeof(buffer)));
     assert(f.close_calls == 1 && f.write_open_calls == 0 && f.replace_calls == 0);
 
+    /* An empty archive is not a valid card image and must never reach writes. */
+    memset(&f, 0, sizeof(f));
+    make_card(&f); f.read_success = 1; f.close_success = 1;
+    f.reported_size = 0;
+    assert(!restore(&f, buffer, sizeof(buffer)));
+    assert(f.close_calls == 1 && f.write_open_calls == 0 && f.replace_calls == 0);
+
+    /* A too-small caller buffer must fail closed and still close the reader. */
+    memset(&f, 0, sizeof(f));
+    make_card(&f); f.read_success = 1; f.close_success = 1;
+    assert(!restore(&f, buffer, US_HEADER));
+    assert(f.close_calls == 1 && f.write_open_calls == 0 && f.replace_calls == 0);
+
     memset(&f, 0, sizeof(f));
     make_card(&f); f.read_success = 1; f.close_success = 1;
     assert(!vh_restore_archive_file(&WRITE_OPS, &READ_OPS, &f,
