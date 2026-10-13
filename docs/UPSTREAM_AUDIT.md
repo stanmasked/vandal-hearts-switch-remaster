@@ -3,6 +3,7 @@
 **Audit date:** 2026-10-13  
 **Upstream:** [HalmyLyseas/VandalHearts-PcPort](https://github.com/HalmyLyseas/VandalHearts-PcPort)  
 **Upstream default branch:** `master`  
+**Audited upstream commit:** [`14552fffa0e0b47e02b57592e274fc6e7a649923`](https://github.com/HalmyLyseas/VandalHearts-PcPort/commit/14552fffa0e0b47e02b57592e274fc6e7a649923)  
 **Scope:** repository metadata, README, architecture/build documentation, build files, platform glue, renderer, and license notices. This is a source-level feasibility review, not a successful build or Switch test.
 
 ## Executive summary
