@@ -3,6 +3,15 @@
 
 #define GRID_WIDTH 8
 #define GRID_HEIGHT 6
+#define MOVE_RANGE 2
+
+static int manhattan_distance(int x1, int y1, int x2, int y2) {
+    int dx = x1 - x2;
+    int dy = y1 - y2;
+    if (dx < 0) dx = -dx;
+    if (dy < 0) dy = -dy;
+    return dx + dy;
+}
 
 int main(int argc, char **argv) {
     (void)argc;
@@ -14,10 +23,14 @@ int main(int argc, char **argv) {
     PadState pad;
     padInitializeDefault(&pad);
 
-    int cursor_x = GRID_WIDTH / 2;
-    int cursor_y = GRID_HEIGHT / 2;
-    int selected_x = -1;
-    int selected_y = -1;
+    int cursor_x = 1;
+    int cursor_y = 2;
+    int hero_x = 1;
+    int hero_y = 2;
+    const int enemy_x = 6;
+    const int enemy_y = 3;
+    int hero_selected = 0;
+    const char *message = "Move cursor to P and press A to select.";
 
     while (appletMainLoop()) {
         padUpdate(&pad);
@@ -29,18 +42,34 @@ int main(int argc, char **argv) {
         if ((buttons_down & HidNpadButton_Down) && cursor_y < GRID_HEIGHT - 1) cursor_y++;
 
         if (buttons_down & HidNpadButton_A) {
-            selected_x = cursor_x;
-            selected_y = cursor_y;
+            if (!hero_selected) {
+                if (cursor_x == hero_x && cursor_y == hero_y) {
+                    hero_selected = 1;
+                    message = "Unit selected: move within 2 tiles, then press A.";
+                } else {
+                    message = "No unit on this tile. Move cursor to P.";
+                }
+            } else if (cursor_x == enemy_x && cursor_y == enemy_y) {
+                message = "Enemy tile is blocked.";
+            } else if (manhattan_distance(hero_x, hero_y, cursor_x, cursor_y) > MOVE_RANGE) {
+                message = "Too far: movement range is 2 tiles.";
+            } else {
+                hero_x = cursor_x;
+                hero_y = cursor_y;
+                hero_selected = 0;
+                message = "Unit moved. Select P again for another test move.";
+            }
         }
+
         if (buttons_down & HidNpadButton_B) {
-            selected_x = -1;
-            selected_y = -1;
+            hero_selected = 0;
+            message = "Selection cancelled.";
         }
 
         consoleClear();
-        printf("VANDAL HEARTS - SWITCH PROTOTYPE 0.2\n");
+        printf("VANDAL HEARTS - SWITCH PROTOTYPE 0.3\n");
         printf("-----------------------------------\n");
-        printf("Tactical grid input test\n\n");
+        printf("Tactical movement test | Range: %d\n\n", MOVE_RANGE);
         printf("  ");
         for (int x = 0; x < GRID_WIDTH; x++) printf("+---");
         printf("+\n");
@@ -48,9 +77,10 @@ int main(int argc, char **argv) {
         for (int y = 0; y < GRID_HEIGHT; y++) {
             printf("  ");
             for (int x = 0; x < GRID_WIDTH; x++) {
-                char marker = ' ';
+                char marker = '.';
+                if (x == hero_x && y == hero_y) marker = hero_selected ? 'S' : 'P';
+                if (x == enemy_x && y == enemy_y) marker = 'E';
                 if (x == cursor_x && y == cursor_y) marker = '@';
-                else if (x == selected_x && y == selected_y) marker = 'X';
                 printf("| %c ", marker);
             }
             printf("|\n  ");
@@ -58,14 +88,11 @@ int main(int argc, char **argv) {
             printf("+\n");
         }
 
-        printf("\nD-pad: move cursor   A: select tile\n");
-        printf("B: clear selection   PLUS: exit\n");
-        if (selected_x >= 0) {
-            printf("Selected tile: (%d, %d)\n", selected_x + 1, selected_y + 1);
-        } else {
-            printf("Selected tile: none\n");
-        }
-        printf("\nBuild prototype only; no original game assets.\n");
+        printf("\nD-pad: move cursor   A: select/move unit\n");
+        printf("B: cancel selection  PLUS: exit\n");
+        printf("P=hero  E=enemy  @=cursor  S=selected hero\n");
+        printf("%s\n", message);
+        printf("Generated test only; no original game assets.\n");
         consoleUpdate(NULL);
 
         if (buttons_down & HidNpadButton_Plus) break;
