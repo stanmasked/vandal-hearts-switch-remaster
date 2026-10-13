@@ -46,6 +46,13 @@ jobs:
             -o /tmp/test-checked-path
           /tmp/test-checked-path
 
+      - name: Test atomic save-write orchestration
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic \
+            -Iswitch-save switch-save/atomic_write.c tests/test_atomic_write.c \
+            -o /tmp/test-atomic-write
+          /tmp/test-atomic-write
+
       - name: Test PS1 memory-card image validator
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic \
