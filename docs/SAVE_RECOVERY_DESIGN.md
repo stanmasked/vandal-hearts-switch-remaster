@@ -1,6 +1,6 @@
 # Save recovery design without rename-over-existing
 
-Status: the versioned container codec and slot-selection helper are implemented as host-testable C code in `switch-save/save_slot.c`; filesystem coordination, game integration, and device testing are not implemented. The helper must not be connected to game saves yet.
+Status: the versioned container codec, slot selector, and callback-driven update coordinator are implemented as host-testable C in `switch-save/save_slot.c` and `switch-save/save_update.c`. The coordinator is not connected to a filesystem backend or game API, and device testing is not implemented. Do not connect it to game saves yet.
 
 ## Why consider a different transaction model?
 
@@ -34,7 +34,7 @@ The envelope checksum detects torn or corrupted containers; the existing card-im
 3. Write a complete envelope and card image, check every write result and byte count, flush, and close using only the guarantees actually available from the backend.
 4. Reopen the target and validate its complete envelope and embedded card image.
 5. Report success only after read-back validation succeeds. The higher generation becomes authoritative on the next selection pass.
-6. If any stage fails, leave the previous current slot untouched. A damaged target slot is rejected at startup and can be overwritten by a later successful update.
+6. If any stage fails, the previous current slot's bytes remain untouched. The inactive target may be missing, damaged, or—if the write completed despite a later flush/close/read-back error—may contain a valid higher generation. Therefore an error return means the update was not verified by this call, not that the old generation is guaranteed to remain selected after restart. Recovery always validates both slots and selects the highest valid generation.
 
 This scheme does not need a separate active-slot pointer or a rename-over-existing operation. It also does not by itself guarantee power-loss durability: filesystem behavior, flush semantics, close limitations, SD removal, and possible corruption of both slots still require target-device testing. If the backend cannot establish that a successful write/flush can be read back, the UI must not claim durable success.
 
@@ -47,7 +47,11 @@ This scheme does not need a separate active-slot pointer or a rename-over-existi
 - A restore must validate the archive name, read the complete bounded archive, validate the memory-card image and region, then write it as a new generation. It must not modify the currently selected slot in place.
 - Slot names and paths must be constructed from a trusted save root and fixed slot names. No archive-supplied path may become a slot path.
 
-## Host tests required before implementation
+## Host tests and current implementation scope
+
+`vh_save_slot_update()` is a host-testable coordinator driven by injected I/O callbacks. It refuses to proceed if either slot read reports an I/O error, refuses to overwrite when neither slot is valid or the base is ambiguous, never writes the selected current slot, rejects generation `UINT64_MAX` rather than wrapping, checks write/flush/close results, and reopens the target for full read-back validation. The current test suite exercises success, initial-read failure, open/write/flush/close/read-back failures, corrupted read-back, no valid base, and generation exhaustion. The previous current slot is checked byte-for-byte after failures. These are simulated callback tests, not a filesystem durability test.
+
+
 
 - Both slots invalid; one valid slot; two valid slots in either generation order.
 - Newer slot corrupt, truncated, wrong version, wrong length, bad envelope checksum, or invalid embedded card image; fall back only to the older valid slot.
