@@ -95,7 +95,7 @@ vh_save_update_result vh_save_slot_update(
                          card_image, card_image_size))) ||
         (selected_slot_out != NULL && generation_out != NULL &&
          ranges_overlap(selected_slot_out, sizeof(*selected_slot_out),
-                        generation_out, sizeof(*generation_out))) {
+                        generation_out, sizeof(*generation_out)))) {
         return VH_SAVE_UPDATE_INVALID_ARGUMENT;
     }
 
