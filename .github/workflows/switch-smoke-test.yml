@@ -35,6 +35,6 @@ jobs:
         if: success()
         with:
           name: switch-smoke-test-nro
-          path: switch-test/build/*.nro
+          path: switch-test/*.nro
           if-no-files-found: error
           retention-days: 14
