@@ -18,8 +18,8 @@ higher-resolution rendering and presentation improvements.
 
 ## Project status
 
-1. [ ] Review upstream documentation and license.
-2. [ ] Inventory dependencies, build system, renderer, audio, input, and file I/O.
+1. [x] Review upstream documentation and license.
+2. [x] Inventory dependencies, build system, renderer, audio, input, and file I/O.
 3. [ ] Define a minimal Switch platform/build prototype.
 4. [ ] Validate a playable baseline on supported hardware.
 5. [ ] Plan and test optional visual improvements.
