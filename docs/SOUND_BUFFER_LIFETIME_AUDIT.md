@@ -22,6 +22,16 @@ The `gCdFiles` table associates many files with `gScratch3_80180210` and some wi
 
 This means the loader is not merely allocating a local temporary: its table-selected destination is consumed by subsequent audio-library calls. Buffer lifetime must extend until those consumers finish. Replacing the shared staging area with a stack buffer would be unsafe without proving that all pointers are consumed synchronously.
 
+### 3. Header retention and body chunking are concrete requirements
+
+The pinned PC audio backend provides additional evidence beyond the game-side state machine:
+
+- The CD loader calls `SsVabTransBodyPartly` with a fixed maximum chunk of `90 * 2048` bytes (184,320 bytes) per step. The final call may have fewer valid body bytes even though the API argument remains the fixed chunk size.
+- In the PC `libsnd.c` implementation, `SsVabOpenHeadSticky` stores `s_vagSizeTablePtr[vabId]` as a pointer into the supplied VAB header buffer. `SsVabTransBodyPartly` later reads that table when the accumulated body is complete. Therefore, in this backend, the header memory must remain valid and unchanged through the final body-transfer/decode step, not merely until `SsVabOpenHeadSticky` returns.
+- The PC backend copies each body chunk into a per-VAB staging allocation and accumulates it until the tracked CD file sector count is reached. This establishes the PC implementation's own copy behavior, but it does not establish the behavior of Sony's original PsyQ audio library or any future Switch audio backend.
+
+The practical ownership rule is now more precise: keep the selected header buffer stable for the entire body transfer, keep each body staging chunk valid until the consumer has copied/finished with it, and only reuse shared storage when the loader/backend contract proves it safe.
+
 ### 3. What is and is not established about overlap
 
 - Multiple sound-set variants intentionally reuse the same work address for VAB ID 2.
@@ -39,4 +49,4 @@ This means the loader is not merely allocating a local temporary: its table-sele
 
 ## Evidence
 
-Upstream source locations reviewed: `src/core/cd.c` definitions of `SOUND_WORK_PTR`, `gSoundSets`, `gCdFiles`, `LoadCdFile`, the CD-read path around line 990, VAB setup/continuation around lines 1060–1122, and sequence loading around line 1147. The line numbers refer to the pinned revision and may shift on upstream changes.
+Upstream source locations reviewed at pinned revision `14552fffa0e0b47e02b57592e274fc6e7a649923`: `src/core/cd.c` definitions of `SOUND_WORK_PTR`, `gSoundSets`, `gCdFiles`, the CD-read path, VAB setup/continuation and sequence loading; `platform/pc/src/libsnd.c` implementations of `SsVabOpenHeadSticky` and `SsVabTransBodyPartly`; and `docs/pc-port/subsystems/spu.md` section “VAB structure” / “VAB body transfer and CD completion accounting”. Line numbers may shift on upstream changes.
