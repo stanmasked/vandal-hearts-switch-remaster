@@ -91,7 +91,7 @@ int main(void)
     free(image);
 
     image = make_image(HEADER_US, 1);
-    image[HEADER_US + RECORD_STRIDE + 4] ^= 0x80;
+    image[HEADER_US + 2 * RECORD_STRIDE + 4] ^= 0x80;
     assert(vh_card_validate_image(image, IMAGE_SIZE, NULL) == 0);
     free(image);
 
