@@ -52,9 +52,17 @@ static void test_known_upstream_guest_offsets(void) {
     assert(psx_memory_translate(&memory, UINT32_C(0x80144878), 1)
            == &main_ram[0x144878]);
 
-    /* A span beginning at a sound-work base is accepted only within RAM. */
-    assert(psx_memory_translate(&memory, UINT32_C(0x80144878), 0x100)
+    /* The named sound-work adapter restricts spans to the legacy window. */
+    assert(psx_sound_work_translate(&memory, UINT32_C(0x80144878), 0x100)
            == &main_ram[0x144878]);
+    assert(psx_sound_work_translate(&memory, PSX_SOUND_WORK_BASE, PSX_SOUND_WORK_SIZE)
+           == &main_ram[0x140000]);
+    assert(psx_sound_work_translate(&memory, UINT32_C(0x801ffff0), 0x10)
+           == &main_ram[0x1ffff0]);
+    assert(psx_sound_work_translate(&memory, UINT32_C(0x801ffff0), 0x11) == NULL);
+    assert(psx_sound_work_translate(&memory, UINT32_C(0x8013ffff), 1) == NULL);
+    assert(psx_sound_work_translate(&memory, UINT32_C(0x80200000), 1) == NULL);
+    assert(psx_sound_work_translate(&memory, PSX_SOUND_WORK_BASE, 0) == NULL);
     assert(psx_memory_translate(&memory, UINT32_C(0x801ffff0), 0x20) == NULL);
 
     /*
@@ -68,6 +76,7 @@ static void test_known_upstream_guest_offsets(void) {
         *sound_work = UINT8_C(0x5a);
         assert(main_ram[0x144878] == UINT8_C(0x5a));
         assert(psx_memory_translate(&memory, UINT32_C(0x80144878), 1) == sound_work);
+        assert(psx_sound_work_translate(&memory, UINT32_C(0x80144878), 1) == sound_work);
     }
 
     /* Movie_Init's non-PC address is the equivalent of gScratch3 + 0x472c0. */
