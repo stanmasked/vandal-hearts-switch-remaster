@@ -17,23 +17,14 @@ permissions:
 
 jobs:
   toolchain:
-    name: Install and verify devkitPro Switch toolchain
+    name: Verify devkitPro Switch toolchain
     runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
     timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Install official devkitPro pacman
-        shell: bash
-        run: |
-          set -euxo pipefail
-          sudo apt-get update
-          sudo apt-get install -y curl wget ca-certificates
-          wget -q https://apt.devkitpro.org/install-devkitpro-pacman
-          sudo bash ./install-devkitpro-pacman
-          sudo dkp-pacman -Sy --noconfirm
-          sudo dkp-pacman -S --needed --noconfirm switch-dev
 
       - name: Verify Switch toolchain
         shell: bash
@@ -41,12 +32,11 @@ jobs:
           set -euxo pipefail
           export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
           export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
-          test -x "$DEVKITA64/bin/aarch64-none-elf-gcc"
-          test -x "$DEVKITPRO/tools/bin/elf2nro"
-          test -x "$DEVKITPRO/tools/bin/nacptool"
+          command -v aarch64-none-elf-gcc || test -x "$DEVKITA64/bin/aarch64-none-elf-gcc"
+          command -v elf2nro || test -x "$DEVKITPRO/tools/bin/elf2nro"
+          command -v nacptool || test -x "$DEVKITPRO/tools/bin/nacptool"
           test -f "$DEVKITPRO/libnx/include/switch.h"
-          "$DEVKITA64/bin/aarch64-none-elf-gcc" --version
-          "$DEVKITPRO/tools/bin/elf2nro" --help || true
+          aarch64-none-elf-gcc --version
           echo "DEVKITPRO=$DEVKITPRO"
           echo "DEVKITA64=$DEVKITA64"
 
