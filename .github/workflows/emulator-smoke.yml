@@ -142,10 +142,10 @@ jobs:
               fi
               timeout --kill-after=2s 10s import -window "$window" "$SHOT"
               if [ "$CHECK_INPUT" = "1" ]; then
-                timeout --kill-after=1s 3s xdotool windowfocus --sync "$window" || true
-                timeout --kill-after=1s 3s xdotool keydown --window "$window" Right
+                timeout --kill-after=1s 3s timeout --kill-after=1s 3s xdotool windowfocus --sync "$window" || true
+                timeout --kill-after=1s 3s timeout --kill-after=1s 3s xdotool keydown --window "$window" Right
                 sleep 0.15
-                timeout --kill-after=1s 3s xdotool keyup --window "$window" Right
+                timeout --kill-after=1s 3s timeout --kill-after=1s 3s xdotool keyup --window "$window" Right
               fi
               sleep 1
               timeout --kill-after=2s 10s import -window "$window" "$SHOT_AFTER"
