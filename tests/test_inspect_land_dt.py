@@ -41,6 +41,22 @@ class InspectLandDtTests(unittest.TestCase):
             self.assertEqual(report["records"][0]["bytes"], [1, 2, 3, 4])
             self.assertEqual(report["records"][0]["absolute_input_offset"], 964)
 
+    def test_accepts_custom_gfx_indices(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "map02.bin"
+            data = bytearray(BLOCK_SIZE)
+            data[78 * 4:78 * 4 + 4] = bytes((21, 22, 23, 24))
+            data[95 * 4:95 * 4 + 4] = bytes((31, 32, 33, 34))
+            data[CLUT_INDEX_OFFSET + 78] = 6
+            data[CLUT_INDEX_OFFSET + 95] = 7
+            path.write_bytes(data)
+
+            report = inspect_land_dt(path, single_block=True, gfx_ids=(78, 95))
+            self.assertEqual([r["gfx"] for r in report["records"]], [78, 95])
+            self.assertEqual(report["records"][0]["bytes"], [21, 22, 23, 24])
+            self.assertEqual(report["records"][1]["bytes"], [31, 32, 33, 34])
+            self.assertEqual([r["clut_index"] for r in report["records"]], [6, 7])
+
     def test_rejects_invalid_size_and_map_number(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "bad.bin"
@@ -52,6 +68,13 @@ class InspectLandDtTests(unittest.TestCase):
             path.write_bytes(bytes(BLOCK_SIZE))
             with self.assertRaisesRegex(ValueError, "outside the input"):
                 inspect_land_dt(path, map_number=2)
+
+    def test_rejects_invalid_gfx_index(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "map.bin"
+            path.write_bytes(bytes(BLOCK_SIZE))
+            with self.assertRaisesRegex(ValueError, "between 0 and 256"):
+                inspect_land_dt(path, single_block=True, gfx_ids=(257,))
 
     def test_rejects_empty_input(self):
         with tempfile.TemporaryDirectory() as temp:
