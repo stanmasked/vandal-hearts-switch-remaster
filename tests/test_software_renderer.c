@@ -67,9 +67,12 @@ int main(void) {
 
     /* Rectangle outlines draw borders without touching the interior. */
     for (int i = 0; i < STORAGE; ++i) pixels[i] = 0xA5A5A5A5u;
-    vh_canvas_draw_rect_outline(&canvas, 1, 1, 3, 2, 0x0BADF00Du);
+    vh_canvas_draw_rect_outline(&canvas, 1, 0, 3, 3, 0x0BADF00Du);
+    assert(pixels[1] == 0x0BADF00Du);
+    assert(pixels[2] == 0x0BADF00Du);
+    assert(pixels[3] == 0x0BADF00Du);
     assert(pixels[STRIDE + 1] == 0x0BADF00Du);
-    assert(pixels[STRIDE + 2] == 0x0BADF00Du);
+    assert(pixels[STRIDE + 2] == 0xA5A5A5A5u);
     assert(pixels[STRIDE + 3] == 0x0BADF00Du);
     assert(pixels[2 * STRIDE + 1] == 0x0BADF00Du);
     assert(pixels[2 * STRIDE + 2] == 0x0BADF00Du);
