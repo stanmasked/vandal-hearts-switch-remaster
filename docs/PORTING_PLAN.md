@@ -31,7 +31,7 @@ The official devkitPro package recipes provide a plausible path closer to the up
 - [switch-mesa package recipe](https://github.com/devkitPro/pacman-packages/blob/master/switch/mesa/PKGBUILD) provides the Mesa graphics library for the Switch package set.
 - [switch-openal-soft package recipe](https://github.com/devkitPro/pacman-packages/blob/master/switch/openal-soft/PKGBUILD) builds OpenAL Soft and depends on `switch-sdl2`.
 
-This establishes that package recipes exist. The separate [SDL2 probe CI run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523386492) now confirms `switch-sdl2` installs in the CI image and links into an NRO with a software renderer and controller/keyboard event handling. It does **not** yet prove runtime behavior or compatibility with the upstream OpenGL renderer. Next, run the probe on an emulator or console, then test an SDL_GL/OpenGL context and OpenAL independently before choosing the upstream port architecture.
+This establishes that package recipes exist. The [SDL2 probe CI run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523589761) confirms `switch-sdl2` installs in the CI image and links into two NROs: one with a software renderer and controller/keyboard event handling, and one requesting an OpenGL ES 2.0 context. Neither probe has been run on an emulator or console. A GLES2 context is not proof that the upstream desktop OpenGL renderer is source/API-compatible. Next, run both probes on an emulator or console and test OpenAL independently before choosing the upstream port architecture.
 
 ## Phase 3 — Switch homebrew feasibility prototype
 
@@ -40,6 +40,7 @@ This establishes that package recipes exist. The separate [SDL2 probe CI run](ht
 - [x] Implement a controller-driven tactical grid and basic unit movement rules.
 - [x] Implement and compile a software-rendered RGBA8888 framebuffer grid.
 - [x] Build and package a separate SDL2 window/input/software-renderer probe in CI.
+- [x] Build and package a separate SDL2 OpenGL ES 2.0 context probe in CI.
 - [ ] Verify the framebuffer and SDL2 probes in an emulator or on actual hardware.
 - [ ] Measure frame pacing and memory use on actual hardware.
 - [ ] Verify audio and thread support independently.
