@@ -81,6 +81,9 @@ jobs:
     needs: sdl2-probe
     timeout-minutes: 15
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Download SDL2 texture-upload NRO
         uses: actions/download-artifact@v4
         with:
