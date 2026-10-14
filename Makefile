@@ -7,6 +7,7 @@ TARGET     := vandal-hearts-prototype
 SDL2_TARGET := sdl2-switch-probe
 SDL2_GL_TARGET := sdl2-gl-switch-probe
 SDL2_TEXTURE_TARGET := sdl2-texture-switch-probe
+OPENAL_TARGET := openal-switch-probe
 SDL2_CONFIG ?= $(DEVKITPRO)/portlibs/switch/bin/sdl2-config
 BUILD      := build
 SOURCES    := source
@@ -22,7 +23,7 @@ CFLAGS   := -g -Wall -Wextra -O2 -fPIE -ffunction-sections -fdata-sections -I$(D
 LDFLAGS  := -specs=$(DEVKITPRO)/libnx/switch.specs -Wl,--gc-sections -pie
 LDLIBS   := -L$(DEVKITPRO)/libnx/lib -lnx
 
-.PHONY: all clean test verify-nro sdl2-probe sdl2-gl-probe sdl2-texture-probe
+.PHONY: all clean test verify-nro sdl2-probe sdl2-gl-probe sdl2-texture-probe openal-probe
 all: $(BUILD)/$(TARGET).nro
 
 test: $(BUILD)/test_game_rules
@@ -38,6 +39,9 @@ sdl2-gl-probe: $(BUILD)/$(SDL2_GL_TARGET).nro
 	python3 tests/check_nro.py $<
 
 sdl2-texture-probe: $(BUILD)/$(SDL2_TEXTURE_TARGET).nro
+	python3 tests/check_nro.py $<
+
+openal-probe: $(BUILD)/$(OPENAL_TARGET).nro
 	python3 tests/check_nro.py $<
 
 $(BUILD):
@@ -81,6 +85,15 @@ $(BUILD)/$(SDL2_TEXTURE_TARGET).nacp: | $(BUILD)
 
 $(BUILD)/$(SDL2_TEXTURE_TARGET).nro: $(BUILD)/$(SDL2_TEXTURE_TARGET).elf $(BUILD)/$(SDL2_TEXTURE_TARGET).nacp
 	$(ELF2NRO) $< $@ --nacp=$(BUILD)/$(SDL2_TEXTURE_TARGET).nacp
+
+$(BUILD)/$(OPENAL_TARGET).elf: probes/openal_smoke.c | $(BUILD)
+	$(CC) $(CFLAGS) $(LDFLAGS) $(shell $(SDL2_CONFIG) --cflags) $< -o $@ -lopenal $(shell $(SDL2_CONFIG) --libs) $(LDLIBS) -lm
+
+$(BUILD)/$(OPENAL_TARGET).nacp: | $(BUILD)
+	$(NACPTOOL) --create "Vandal Hearts OpenAL Probe" "$(APP_AUTHOR)" "$(APP_VERSION)" $@
+
+$(BUILD)/$(OPENAL_TARGET).nro: $(BUILD)/$(OPENAL_TARGET).elf $(BUILD)/$(OPENAL_TARGET).nacp
+	$(ELF2NRO) $< $@ --nacp=$(BUILD)/$(OPENAL_TARGET).nacp
 
 clean:
 	rm -rf $(BUILD)
