@@ -44,7 +44,7 @@ The project can disable the optional HD-pack paths in its existing build system 
 
 The current renderer presents the finished framebuffer through OpenGL calls on Windows/Linux (including legacy `glDrawPixels`) and through SDL's Metal renderer on macOS. A Switch target cannot be assumed to provide this desktop OpenGL path. The presentation layer will likely need a Switch-compatible backend or a supported SDL renderer path; this must be proven with a minimal framebuffer prototype before changing the game renderer.
 
-**Concrete graphics API mismatch:** at the audited upstream revision, `platform/pc/src/pc_gpu_window.c` presents the software rasterizer output with `glPixelZoom`, `glRasterPos2f`, and `glDrawPixels` ([source lines 906–908](https://github.com/HalmyLyseas/VandalHearts-PcPort/blob/14552fffa0e0b47e02b57592e274fc6e7a649923/platform/pc/src/pc_gpu_window.c#L906-L908)). These are legacy desktop OpenGL APIs and are not part of OpenGL ES 2.0. Therefore, successfully creating a GLES2 context does not make the upstream presentation path compatible. The new texture-upload probe tests one possible replacement—uploading a CPU-generated RGBA frame to a GLES2 texture and drawing a fullscreen quad—but it still requires runtime validation and comparison against the upstream frame format, stride, orientation, and scaling behavior.
+**Concrete graphics API mismatch:** at the audited upstream revision, `platform/pc/src/pc_gpu_window.c` presents the software rasterizer output with `glPixelZoom`, `glRasterPos2f`, and `glDrawPixels` ([source lines 906–908](https://github.com/HalmyLyseas/VandalHearts-PcPort/blob/14552fffa0e0b47e02b57592e274fc6e7a649923/platform/pc/src/pc_gpu_window.c#L906-L908)). These are legacy desktop OpenGL APIs and are not part of OpenGL ES 2.0. Therefore, successfully creating a GLES2 context does not make the upstream presentation path compatible. The new texture-upload probe tests one possible replacement—uploading a CPU-generated RGBA frame to a GLES2 texture and drawing a fullscreen quad. NeXium runtime smoke now confirms its initial frame and one joystick-driven Right movement ([run 38526810434](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38526810434)); physical-device validation and comparison against the upstream frame format, stride, orientation, and scaling behavior remain outstanding.
 
 ### 2. OS memory and executable assumptions
 
@@ -72,11 +72,21 @@ Before copying files, preserve attribution and license notices, review the upstr
 
 1. Record a specific upstream commit SHA and keep the first porting experiments reproducible.
 2. Create a dependency/OS-API inventory for `platform/pc/src/` and its headers.
-3. Build a tiny Switch homebrew test that initializes the chosen runtime, reads controller input, and presents a test framebuffer—without any game data.
-4. Verify the actual Switch support for SDL2, graphics presentation, audio, and threading in the chosen toolchain.
-5. Only then prototype the PC port's presentation layer behind a small platform interface.
-6. Build and test incrementally on hardware; log memory use, frame timing, input, audio, and save/file behavior.
-7. Revisit HD improvements only after the unmodified baseline is playable.
+3. [x] Build and run a tiny Switch homebrew test that reads controller input and presents a test framebuffer without game data; main libnx and SDL2 texture probes pass a one-step Right-arrow test in NeXium.
+4. [ ] Verify SDL2, graphics presentation, audio, and threading on a physical Switch; emulator evidence alone is not enough.
+5. [ ] Prototype the PC port's presentation layer behind a small platform interface.
+6. [ ] Build and test incrementally on hardware; log memory use, frame timing, input, audio, and save/file behavior.
+7. [ ] Revisit HD improvements only after the unmodified baseline is playable.
+
+## Follow-up runtime evidence (2026-10-14)
+
+The initial no-game-data prototypes now have reproducible emulator evidence:
+
+- Main libnx framebuffer: 1280×720 frame detected and one Right-arrow movement confirmed in [run 38525585386](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38525585386); [screenshots and logs](https://api.github.com/repos/stanmasked/vandal-hearts-switch-remaster/actions/artifacts/11874464900/zip).
+- SDL2 texture-upload and joystick path: 1280×720 frame detected and one Right-arrow movement confirmed in [run 38526810434](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38526810434); [screenshots and logs](https://api.github.com/repos/stanmasked/vandal-hearts-switch-remaster/actions/artifacts/11876567065/zip).
+- The SDL2 probe uses the devkitPro Switch joystick event path (`SDL_JoystickOpen` / `SDL_JOYBUTTONDOWN`), not only the desktop `SDL_GameController` event path.
+
+These checks validate one graphics frame and one input transition in NeXium with software Vulkan. They do not establish physical Switch compatibility, sustained playability, audio output, the full SDL2 software-renderer path, or compatibility of the upstream desktop OpenGL renderer.
 
 ## What this audit does not establish
 
