@@ -122,3 +122,14 @@ python3 tools/inspect_land_dt.py path/to/LAND_DT.DAT --map-number 2 --gfx 78 95 
 ```
 
 For one extracted block, use `--block --gfx 78 95 145 207 241 243`. Valid indices are 0–256. The tests include synthetic custom-index fixtures and invalid-index handling. These changes improve repeatability; they do not resolve the original asset question until real source bytes are supplied or lawfully extracted and inspected.
+
+
+## Cross-map raw-record comparison mode (2026-10-15)
+
+Extended `tools/inspect_land_dt.py` with `--compare-maps`. It compares selected GFX records and their CLUT indices across two or more zero-based blocks in the same concatenated input, and marks whether each selected GFX record differs between the chosen maps. Example:
+
+```sh
+python3 tools/inspect_land_dt.py path/to/LAND_DT.DAT --compare-maps 2 3 4 5 --gfx 78 95 145 207 241 243
+```
+
+The comparison is intentionally byte-level: a difference is evidence of map-specific data, not proof that any record is corrupt or that another map's record is the correct replacement. The synthetic tests cover differing and identical records, CLUT index differences, and invalid map selections. CI execution is pending for this latest change.
