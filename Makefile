@@ -39,10 +39,10 @@ sdl2-gl-probe: $(BUILD)/$(SDL2_GL_TARGET).nro
 $(BUILD):
 	mkdir -p $@
 
-$(BUILD)/test_game_rules: tests/test_game_rules.c source/game_rules.h | $(BUILD)
+$(BUILD)/test_game_rules: tests/test_game_rules.c source/game_rules.h source/game_state.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@
 
-$(BUILD)/$(TARGET).elf: $(SOURCES)/main.c $(SOURCES)/game_rules.h | $(BUILD)
+$(BUILD)/$(TARGET).elf: $(SOURCES)/main.c $(SOURCES)/game_rules.h $(SOURCES)/game_state.h | $(BUILD)
 	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ $(LDLIBS)
 
 $(BUILD)/$(TARGET).nacp: | $(BUILD)
@@ -51,7 +51,7 @@ $(BUILD)/$(TARGET).nacp: | $(BUILD)
 $(BUILD)/$(TARGET).nro: $(BUILD)/$(TARGET).elf $(BUILD)/$(TARGET).nacp
 	$(ELF2NRO) $< $@ --nacp=$(BUILD)/$(TARGET).nacp
 
-$(BUILD)/$(SDL2_TARGET).elf: probes/sdl2_smoke.c source/game_rules.h | $(BUILD)
+$(BUILD)/$(SDL2_TARGET).elf: probes/sdl2_smoke.c source/game_rules.h source/game_state.h | $(BUILD)
 	$(CC) $(CFLAGS) -Isource $(LDFLAGS) $(shell $(SDL2_CONFIG) --cflags) $< -o $@ $(shell $(SDL2_CONFIG) --libs) $(LDLIBS) -lm
 
 $(BUILD)/$(SDL2_TARGET).nacp: | $(BUILD)
