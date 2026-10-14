@@ -1,7 +1,6 @@
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stddef.h>
 
 #include "../source/rgb24_frame.h"
 
@@ -41,10 +40,9 @@ int main(void) {
     assert(!vh_rgb24_frame_valid(&zero_width));
     assert(!vh_rgb24_frame_valid(&zero_height));
 
-    /* Normal upstream width: 320 RGB pixels => 960 bytes per row. */
-    VhRgb24Frame native = {pixels, 960u, 320, 2};
-    assert(!vh_rgb24_frame_valid(&native)); /* backing data is too small only conceptually;
-                                             * validity checks layout, not allocation length. */
+    /* The contract validates layout, not the allocation size behind the pointer. */
+    VhRgb24Frame native_layout = {pixels, 960u, 320, 2};
+    assert(vh_rgb24_frame_valid(&native_layout));
 
     puts("RGB24 frame contract tests passed.");
     return 0;
