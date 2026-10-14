@@ -75,6 +75,7 @@ int main(int argc, char **argv) {
     }
     show_status(renderer, 1);
 
+    show_status(renderer, 3); /* entering alcOpenDevice */
     device = alcOpenDevice(NULL);
     if (!device) {
         fprintf(stderr, "alcOpenDevice failed\n");
@@ -82,12 +83,14 @@ int main(int argc, char **argv) {
         goto cleanup;
     }
 
+    show_status(renderer, 4); /* entering alcCreateContext */
     context = alcCreateContext(device, NULL);
     if (!context) {
         fprintf(stderr, "alcCreateContext failed\n");
         result = 4;
         goto cleanup;
     }
+    show_status(renderer, 5); /* entering alcMakeContextCurrent */
     if (alcMakeContextCurrent(context) != ALC_TRUE) {
         fprintf(stderr, "alcMakeContextCurrent failed\n");
         result = 5;
@@ -95,23 +98,29 @@ int main(int argc, char **argv) {
     }
     context_current = 1;
 
+    show_status(renderer, 6); /* entering alGenBuffers */
     alGenBuffers(1, &buffer);
     if (check_al_error("alGenBuffers") != 0) { result = 6; goto cleanup; }
 
+    show_status(renderer, 7); /* entering alBufferData */
     alBufferData(buffer, AL_FORMAT_MONO16, samples, (ALsizei)sizeof(samples), SAMPLE_RATE);
     if (check_al_error("alBufferData") != 0) { result = 7; goto cleanup; }
 
+    show_status(renderer, 8); /* entering alGenSources */
     alGenSources(1, &source);
     if (check_al_error("alGenSources") != 0) { result = 8; goto cleanup; }
 
+    show_status(renderer, 9); /* entering alSourcei */
     alSourcei(source, AL_BUFFER, (ALint)buffer);
     if (check_al_error("alSourcei(AL_BUFFER)") != 0) { result = 9; goto cleanup; }
 
+    show_status(renderer, 10); /* entering alSourcePlay */
     alSourcePlay(source);
     if (check_al_error("alSourcePlay") != 0) { result = 10; goto cleanup; }
 
     SDL_Delay(100);
     ALint source_state = AL_INITIAL;
+    show_status(renderer, 11); /* entering alGetSourcei */
     alGetSourcei(source, AL_SOURCE_STATE, &source_state);
     if (check_al_error("alGetSourcei(AL_SOURCE_STATE)") != 0) {
         result = 11;
