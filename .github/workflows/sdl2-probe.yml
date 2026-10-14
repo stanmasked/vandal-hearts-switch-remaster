@@ -8,6 +8,7 @@ on:
       - 'probes/**'
       - 'Makefile'
       - 'source/game_rules.h'
+      - 'source/game_state.h'
       - 'tests/check_nro.py'
 
 permissions:
@@ -43,6 +44,7 @@ jobs:
           make test
           make sdl2-probe
           make sdl2-gl-probe
+          make sdl2-texture-probe
 
       - name: Upload SDL2 software-renderer probe
         uses: actions/upload-artifact@v4
@@ -56,4 +58,11 @@ jobs:
         with:
           name: sdl2-gl-switch-probe
           path: build/sdl2-gl-switch-probe.nro
+          if-no-files-found: error
+
+      - name: Upload SDL2 texture-upload probe
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdl2-texture-switch-probe
+          path: build/sdl2-texture-switch-probe.nro
           if-no-files-found: error
