@@ -81,7 +81,7 @@ int main(void) {
     assert(pixels[STRIDE + WIDTH] == 0xA5A5A5A5u);
 
     for (int i = 0; i < STORAGE; ++i) pixels[i] = 0xA5A5A5A5u;
-    vh_canvas_draw_rect_outline(&canvas, -1, -1, 3, 3, 0xABCDEF01u);
+    vh_canvas_draw_rect_outline(&canvas, -1, -1, 4, 4, 0xABCDEF01u);
     assert(pixels[0] == 0xABCDEF01u);
     assert(pixels[1] == 0xABCDEF01u);
     assert(pixels[STRIDE] == 0xABCDEF01u);
