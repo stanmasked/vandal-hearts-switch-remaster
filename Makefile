@@ -121,8 +121,8 @@ $(BUILD)/$(SDL2_TEXTURE_TARGET).nacp: | $(BUILD)
 $(BUILD)/$(SDL2_TEXTURE_TARGET).nro: $(BUILD)/$(SDL2_TEXTURE_TARGET).elf $(BUILD)/$(SDL2_TEXTURE_TARGET).nacp
 	$(ELF2NRO) $< $@ --nacp=$(BUILD)/$(SDL2_TEXTURE_TARGET).nacp
 
-$(BUILD)/$(RGB24_TEXTURE_TARGET).elf: probes/rgb24_texture_smoke.c source/rgb24_frame.h source/switch_presenter_layout.h | $(BUILD)
-	$(CC) $(CFLAGS) $(LDFLAGS) $(shell $(SDL2_CONFIG) --cflags) $< -o $@ $(shell $(SDL2_CONFIG) --libs) -lGLESv2 $(LDLIBS) -lm
+$(BUILD)/$(RGB24_TEXTURE_TARGET).elf: probes/rgb24_texture_smoke.c source/rgb24_frame.h source/switch_presenter_layout.h source/switch_rgb24_presenter.h source/switch_rgb24_presenter.c | $(BUILD)
+	$(CC) $(CFLAGS) $(LDFLAGS) $(shell $(SDL2_CONFIG) --cflags) probes/rgb24_texture_smoke.c source/switch_rgb24_presenter.c -o $@ $(shell $(SDL2_CONFIG) --libs) -lGLESv2 $(LDLIBS) -lm
 
 $(BUILD)/$(RGB24_TEXTURE_TARGET).nacp: | $(BUILD)
 	$(NACPTOOL) --create "Vandal Hearts RGB24 Texture Probe" "$(APP_AUTHOR)" "$(APP_VERSION)" $@
