@@ -7,6 +7,7 @@ TARGET     := vandal-hearts-prototype
 SDL2_TARGET := sdl2-switch-probe
 SDL2_GL_TARGET := sdl2-gl-switch-probe
 SDL2_TEXTURE_TARGET := sdl2-texture-switch-probe
+RGB24_TEXTURE_TARGET := rgb24-texture-switch-probe
 
 SDL2_AUDIO_TARGET := sdl2-audio-switch-probe
 OPENAL_TARGET := openal-switch-probe
@@ -25,7 +26,7 @@ CFLAGS   := -g -Wall -Wextra -O2 -fPIE -ffunction-sections -fdata-sections -I$(D
 LDFLAGS  := -specs=$(DEVKITPRO)/libnx/switch.specs -Wl,--gc-sections -pie
 LDLIBS   := -L$(DEVKITPRO)/libnx/lib -lnx
 
-.PHONY: all clean test test-sanitize verify-nro sdl2-probe sdl2-gl-probe sdl2-texture-probe sdl2-audio-probe openal-probe
+.PHONY: all clean test test-sanitize verify-nro sdl2-probe sdl2-gl-probe sdl2-texture-probe rgb24-texture-probe sdl2-audio-probe openal-probe
 all: $(BUILD)/$(TARGET).nro
 
 test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_rgb24_frame
@@ -53,6 +54,9 @@ sdl2-gl-probe: $(BUILD)/$(SDL2_GL_TARGET).nro
 	python3 tests/check_nro.py $<
 
 sdl2-texture-probe: $(BUILD)/$(SDL2_TEXTURE_TARGET).nro
+	python3 tests/check_nro.py $<
+
+rgb24-texture-probe: $(BUILD)/$(RGB24_TEXTURE_TARGET).nro
 	python3 tests/check_nro.py $<
 
 openal-probe: $(BUILD)/$(OPENAL_TARGET).nro
@@ -108,6 +112,15 @@ $(BUILD)/$(SDL2_TEXTURE_TARGET).nacp: | $(BUILD)
 
 $(BUILD)/$(SDL2_TEXTURE_TARGET).nro: $(BUILD)/$(SDL2_TEXTURE_TARGET).elf $(BUILD)/$(SDL2_TEXTURE_TARGET).nacp
 	$(ELF2NRO) $< $@ --nacp=$(BUILD)/$(SDL2_TEXTURE_TARGET).nacp
+
+$(BUILD)/$(RGB24_TEXTURE_TARGET).elf: probes/rgb24_texture_smoke.c | $(BUILD)
+	$(CC) $(CFLAGS) $(LDFLAGS) $(shell $(SDL2_CONFIG) --cflags) $< -o $@ $(shell $(SDL2_CONFIG) --libs) -lGLESv2 $(LDLIBS) -lm
+
+$(BUILD)/$(RGB24_TEXTURE_TARGET).nacp: | $(BUILD)
+	$(NACPTOOL) --create "Vandal Hearts RGB24 Texture Probe" "$(APP_AUTHOR)" "$(APP_VERSION)" $@
+
+$(BUILD)/$(RGB24_TEXTURE_TARGET).nro: $(BUILD)/$(RGB24_TEXTURE_TARGET).elf $(BUILD)/$(RGB24_TEXTURE_TARGET).nacp
+	$(ELF2NRO) $< $@ --nacp=$(BUILD)/$(RGB24_TEXTURE_TARGET).nacp
 
 
 $(BUILD)/$(SDL2_AUDIO_TARGET).elf: probes/sdl2_audio_smoke.c | $(BUILD)
