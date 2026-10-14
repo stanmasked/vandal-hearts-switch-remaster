@@ -63,3 +63,24 @@ Source: [upstream `game_setup.c` at the audited commit](https://github.com/Halmy
 ### Revised priority
 
 Before attempting visual repair, compare the exact raw 1797-byte block for map 02 with the corresponding blocks from known-good maps and verify the parser's byte offsets against the upstream loader layout. In particular, confirm whether “slot 641/643” refers to the same table indexing in the extracted representation as in the upstream `gGfxSubTextures`/CLUT arrays. Keep the two records unmodified until that mapping and the source bytes are validated.
+
+
+## Texture-index mapping cross-check (2026-10-15)
+
+A second upstream source check resolves one indexing ambiguity. In `include/graphics.h`, the enum declares `GFX_MAP_TEXTURES_OFS = 400` and `GFX_MAP_TEXTURE_1 = 401`. `LoadMapTextures()` iterates table indices 400 through 656 (257 entries) while reading the 257 four-byte subtexture records from the selected 1797-byte map block.
+
+Therefore the observed relationship is consistent with the upstream table layout:
+
+- GFX 241 → table index `400 + 241 = 641`
+- GFX 243 → table index `400 + 243 = 643`
+
+This supports that 641 and 643 are the corresponding **runtime subtexture-table indices** for GFX 241 and GFX 243, rather than a simple off-by-one introduced by that particular naming convention. It does not independently prove the extraction tool's raw-byte offsets, or establish whether the map-specific zero records are intentional.
+
+Sources:
+- [`include/graphics.h` at the audited upstream commit](https://github.com/HalmyLyseas/VandalHearts-PcPort/blob/14552fffa0e0b47e02b57592e274fc6e7a649923/include/graphics.h)
+- [`LoadMapTextures()` at the audited upstream commit](https://github.com/HalmyLyseas/VandalHearts-PcPort/blob/14552fffa0e0b47e02b57592e274fc6e7a649923/src/states/game_setup.c#L1216-L1400)
+
+### Outcome of this check
+
+**Confirmed:** the GFX-to-runtime-table-index arithmetic matches the reported slots exactly.  
+**Still unresolved:** whether the four source bytes for map 02 entries 241 and 243 are zero in the original data, whether zero dimensions are intentional, and whether either face is visibly defective in the original game.
