@@ -1,7 +1,11 @@
 """Unit tests for the PS1 STR sector repacking utility."""
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+# Support direct execution via `python3 tests/test_restore_ps1_str.py`.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from tools.restore_ps1_str import RAW_CD_SECTOR_SIZE, SECTOR_SIZE, STR_MAGIC, repack
 
