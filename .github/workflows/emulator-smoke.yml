@@ -112,7 +112,8 @@ jobs:
               pid=$!
               for i in $(seq 1 30); do
                 sleep 1
-                if ! kill -0 "$pid" 2>/dev/null; then
+                state="$(ps -o stat= -p "$pid" 2>/dev/null | tr -d " " || true)"
+                if [ -z "$state" ] || [[ "$state" == Z* ]] || ! kill -0 "$pid" 2>/dev/null; then
                   wait "$pid" || rc=$?
                   cat "$LOG"
                   echo "NeXium exited before screenshot (status ${rc:-unknown})"
@@ -121,10 +122,12 @@ jobs:
               done
               window="$(xdotool search --onlyvisible --name "NeXium" 2>/dev/null | tail -n 1 || true)"
               if [ -n "$window" ]; then
-                import -window "$window" "$SHOT"
-              else
-                import -window root "$SHOT"
+                timeout 10s import -window "$window" "$SHOT" || true
               fi
+              if [ ! -s "$SHOT" ]; then
+                timeout 10s import -window root "$SHOT"
+              fi
+              test -s "$SHOT"
               kill -INT "$pid" 2>/dev/null || true
               sleep 2
               kill -KILL "$pid" 2>/dev/null || true
