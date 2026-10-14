@@ -30,6 +30,12 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
+          # Some package-mirror/CDN paths reject the default pacman downloader
+          # User-Agent with HTTP 403. Use curl with a pacman-compatible UA.
+          pacman_conf="${DEVKITPRO:-/opt/devkitpro}/pacman/etc/pacman.conf"
+          if [ -f "$pacman_conf" ] && ! grep -q '^XferCommand[[:space:]]*=' "$pacman_conf"; then
+            sed -i '/^\[options\]/a XferCommand = /usr/bin/curl --user-agent "pacman/6.1.0 (Linux x86_64) libalpm/14.0.0" -L -C - -f -o %o %u' "$pacman_conf"
+          fi
           for attempt in 1 2 3 4 5; do
             if dkp-pacman -Sy --noconfirm switch-sdl2; then
               break
