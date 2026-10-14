@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "game_rules.h"
+#include "game_state.h"
 
 #define FB_WIDTH 1280
 #define FB_HEIGHT 720
@@ -173,43 +174,34 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    int cursor_x = 1;
-    int cursor_y = 2;
-    int hero_x = 1;
-    int hero_y = 2;
-    const int enemy_x = 6;
-    const int enemy_y = 3;
-    int hero_selected = 0;
+    VhGameState state = {1, 2, 1, 2, 6, 3, 0};
 
     while (appletMainLoop()) {
         padUpdate(&pad);
         const u64 buttons_down = padGetButtonsDown(&pad);
 
         if (buttons_down & HidNpadButton_Plus) break;
-        if ((buttons_down & HidNpadButton_Left) && cursor_x > 0) cursor_x--;
-        if ((buttons_down & HidNpadButton_Right) && cursor_x < GRID_WIDTH - 1) cursor_x++;
-        if ((buttons_down & HidNpadButton_Up) && cursor_y > 0) cursor_y--;
-        if ((buttons_down & HidNpadButton_Down) && cursor_y < GRID_HEIGHT - 1) cursor_y++;
+        if (buttons_down & HidNpadButton_Left)
+            vh_move_cursor(&state, -1, 0, GRID_WIDTH, GRID_HEIGHT);
+        if (buttons_down & HidNpadButton_Right)
+            vh_move_cursor(&state, 1, 0, GRID_WIDTH, GRID_HEIGHT);
+        if (buttons_down & HidNpadButton_Up)
+            vh_move_cursor(&state, 0, -1, GRID_WIDTH, GRID_HEIGHT);
+        if (buttons_down & HidNpadButton_Down)
+            vh_move_cursor(&state, 0, 1, GRID_WIDTH, GRID_HEIGHT);
 
-        if (buttons_down & HidNpadButton_A) {
-            if (!hero_selected) {
-                if (cursor_x == hero_x && cursor_y == hero_y) hero_selected = 1;
-            } else if (vh_can_move(hero_x, hero_y, cursor_x, cursor_y,
-                                   GRID_WIDTH, GRID_HEIGHT, MOVE_RANGE, enemy_x, enemy_y)) {
-                hero_x = cursor_x;
-                hero_y = cursor_y;
-                hero_selected = 0;
-            }
-        }
-
-        if (buttons_down & HidNpadButton_B) hero_selected = 0;
+        if (buttons_down & HidNpadButton_A)
+            vh_activate_cursor(&state, GRID_WIDTH, GRID_HEIGHT, MOVE_RANGE);
+        if (buttons_down & HidNpadButton_B)
+            vh_cancel_selection(&state);
 
         u32 stride_bytes = 0;
         u32 *pixels = (u32 *)framebufferBegin(&fb, &stride_bytes);
         if (pixels) {
             const u32 stride_pixels = stride_bytes / sizeof(u32);
-            draw_frame(pixels, stride_pixels, cursor_x, cursor_y, hero_x, hero_y,
-                       enemy_x, enemy_y, hero_selected);
+            draw_frame(pixels, stride_pixels, state.cursor_x, state.cursor_y,
+                       state.hero_x, state.hero_y, state.enemy_x, state.enemy_y,
+                       state.hero_selected);
         }
         framebufferEnd(&fb);
     }
