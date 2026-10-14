@@ -47,5 +47,14 @@ $(BUILD)/$(TARGET).nacp: | $(BUILD)
 $(BUILD)/$(TARGET).nro: $(BUILD)/$(TARGET).elf $(BUILD)/$(TARGET).nacp
 	$(ELF2NRO) $< $@ --nacp=$(BUILD)/$(TARGET).nacp
 
+$(BUILD)/$(SDL2_TARGET).elf: probes/sdl2_smoke.c source/game_rules.h | $(BUILD)
+	$(CC) $(CFLAGS) $(LDFLAGS) $(shell $(SDL2_CONFIG) --cflags) $< -o $@ $(shell $(SDL2_CONFIG) --libs) $(LDLIBS)
+
+$(BUILD)/$(SDL2_TARGET).nacp: | $(BUILD)
+	$(NACPTOOL) --create "Vandal Hearts SDL2 Probe" "$(APP_AUTHOR)" "$(APP_VERSION)" $@
+
+$(BUILD)/$(SDL2_TARGET).nro: $(BUILD)/$(SDL2_TARGET).elf $(BUILD)/$(SDL2_TARGET).nacp
+	$(ELF2NRO) $< $@ --nacp=$(BUILD)/$(SDL2_TARGET).nacp
+
 clean:
 	rm -rf $(BUILD)
