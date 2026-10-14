@@ -26,7 +26,14 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          dkp-pacman -Sy --noconfirm switch-openal-soft
+          for attempt in 1 2 3; do
+            if dkp-pacman -Sy --noconfirm switch-openal-soft; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then exit 1; fi
+            echo "Package mirror unavailable; retrying ($attempt/3)" >&2
+            sleep $((attempt * 5))
+          done
           export PATH="$DEVKITPRO/portlibs/switch/bin:$PATH"
           command -v sdl2-config
 
