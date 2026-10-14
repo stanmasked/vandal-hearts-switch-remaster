@@ -89,5 +89,22 @@ class CdXaPipelineTests(unittest.TestCase):
             self.assertEqual(payload.stat().st_size, AUDIO_BYTES_PER_SECTOR * 2)
 
 
+    def test_mismatched_duplicate_subheader_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "synthetic-disc.bin"
+            payload = root / "audio-payload.bin"
+            sector = bytearray(xa_audio_sector())
+            sector[20] = 2  # Make the second subheader copy disagree with the first.
+            source.write_bytes(bytes(sector))
+
+            report = extract_audio_payloads(source, payload)
+            self.assertEqual(report["mode2_sectors"], 1)
+            self.assertEqual(report["matching_subheaders"], 0)
+            self.assertEqual(report["audio_form2_sectors_written"], 0)
+            self.assertEqual(report["payload_bytes_written"], 0)
+            self.assertEqual(payload.read_bytes(), b"")
+
+
 if __name__ == "__main__":
     unittest.main()
