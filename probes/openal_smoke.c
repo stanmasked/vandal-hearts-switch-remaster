@@ -117,7 +117,9 @@ int main(int argc, char **argv) {
 
     show_status(renderer, 10); /* entering alSourcePlay */
     alSourcePlay(source);
-    show_status(renderer, 13); /* alSourcePlay returned; next OpenAL query is intentionally avoided */
+    /* Green means only that alSourcePlay returned; audible output is unverified.
+       Avoid an intermediate white frame that can be mistaken for a stalled probe. */
+    show_status(renderer, 0);
 
     /* Both alGetSourcei(AL_SOURCE_STATE) and post-playback status queries can
        stall in the current NeXium runtime. Keep this probe focused on whether
