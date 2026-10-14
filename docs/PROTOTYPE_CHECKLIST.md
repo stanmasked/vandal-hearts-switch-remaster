@@ -38,12 +38,18 @@ The movement-rule helpers are shared by the prototype and a host-side test execu
 ### P2 — Verify runtime and controller input
 
 - [ ] Launch the application in the explicitly named environment (emulator or physical console).
-- [ ] Show a visible running indicator.
-- [ ] Verify D-pad cursor movement.
-- [ ] Demonstrate A selecting a tile and B clearing the selection.
+- [ ] Confirm the title and control hints are visible and correctly oriented.
+- [ ] Verify D-pad moves the cursor and clamps it to the 8×6 board edges.
+- [ ] Press A while the cursor is on the hero to select it and reveal the movement range.
+- [ ] Move to an in-range empty tile and press A; verify the hero moves and selection clears.
+- [ ] Try to move onto the enemy tile or outside the movement range; verify the move is rejected.
+- [ ] Press B while selected; verify selection clears without moving the hero.
+- [ ] Press Plus; verify the app exits cleanly.
 - [ ] Record environment, steps, result, and any logs.
 
-The current source draws a software-rendered 8×6 grid into a libnx RGBA8888 framebuffer. Runtime behavior is not yet confirmed.
+For a manual run, download the `vandal-hearts-switch-prototype` artifact from a successful workflow run, extract the `.nro`, copy it to `sd:/switch/vandal-hearts-prototype.nro`, and launch it from the Homebrew Menu. Use a Switch homebrew-capable test environment you control; do not include game images or proprietary assets.
+
+The current source draws a software-rendered 8×6 grid into a libnx RGBA8888 framebuffer and uses a generated 5×7 bitmap font for labels. Runtime behavior is not yet confirmed.
 
 **Pass condition:** launch and input are observed in the named environment. Emulator results and physical-device results must be reported separately.
 
