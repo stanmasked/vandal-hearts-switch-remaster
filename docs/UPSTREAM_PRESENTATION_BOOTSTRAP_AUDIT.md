@@ -79,3 +79,14 @@ Do not yet attempt to declare the whole upstream port Switch-compatible. The exi
 This document records source observations, not a successful upstream build or device test. Source locations refer to the audited upstream revision above. Re-check the source if the pinned upstream commit changes.
 
 Relevant API reference: [OpenGL ES 2.0 reference pages](https://registry.khronos.org/OpenGL-Refpages/es2.0/xhtml/) and [texture upload row-alignment explanation](https://docs.gl/es2/glTexImage2D).
+
+## 5. First host-side frame-contract test
+
+Added `source/rgb24_frame.h` and `tests/test_rgb24_frame.c` on the isolated audit branch, and wired the test into the Makefile's `test` target.
+
+The helper deliberately does not own or copy pixels. It validates the documented RGB24 dimensions/stride contract and exposes a top-down row accessor over the upstream bottom-up buffer. The unit test uses a 3-pixel-wide frame (9 bytes per row) with six distinct color markers, checks top/bottom row selection and RGB channel order, rejects out-of-range rows and invalid metadata, and confirms the expected 960-byte stride for a 320-pixel native frame.
+
+**Confirmed locally:** the new test compiled with `gcc -std=c11 -Wall -Wextra -Werror -O2` and printed `RGB24 frame contract tests passed.`
+
+**Important limitation:** the helper is a host-testable contract boundary, not yet called by the SDL2/GLES2 probe or the upstream game renderer. This verifies row interpretation and metadata validation only; it does not yet verify GPU texture upload, shader UVs, scaling, or emulator/console output.
+
