@@ -188,6 +188,13 @@ jobs:
               if hero_count < 50:
                   raise SystemExit("Expected hero marker not detected")
 
+          heartbeat_box = (1000, 600, 1120, 609)
+          heartbeat_before = near_color_count(before, hero, heartbeat_box)
+          heartbeat_after = near_color_count(after, hero, heartbeat_box)
+          print(f"SDL2 heartbeat pixels before={heartbeat_before} after={heartbeat_after}")
+          if abs(heartbeat_after - heartbeat_before) < 80:
+              raise SystemExit("SDL2 heartbeat did not change between screenshots")
+
           cell, grid_x, grid_y = 64, 384, 120
           def tile_box(x, y):
               return (x + 4, y + 4, x + cell - 4, y + cell - 4)
