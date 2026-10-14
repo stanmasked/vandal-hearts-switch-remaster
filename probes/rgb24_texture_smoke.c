@@ -160,6 +160,8 @@ int main(void) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     /* 321 RGB pixels = 963 bytes/row, intentionally not divisible by four. */
+    /* Drain earlier errors so this checkpoint reports the upload itself. */
+    while (glGetError() != GL_NO_ERROR) {}
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, frame.width, frame.height, 0,
                  GL_RGB, GL_UNSIGNED_BYTE, frame.pixels);
