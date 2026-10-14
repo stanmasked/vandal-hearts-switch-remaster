@@ -43,6 +43,16 @@ class DecodeCdXaAdpcmTests(unittest.TestCase):
         self.assertEqual(samples[0:8:2], (1, 2, 3, 4))
         self.assertEqual(samples[1:8:2], (1, 2, 3, 4))
 
+    def test_keeps_unclipped_predictor_history_but_clips_pcm(self):
+        group = bytearray(GROUP_SIZE)
+        # Filter 2 can drive the internal predictor outside signed 16-bit range.
+        group[:16] = bytes([0x2C]) * 16
+        history = [[32767, -32768], [0, 0]]
+        pcm = decode_group(bytes(group), history)
+        samples = struct.unpack("<" + "h" * (len(pcm) // 2), pcm)
+        self.assertEqual(samples[0], 32767)
+        self.assertGreater(history[0][0], 32767)
+
     def test_rejects_bad_group_length_and_parameter_copy(self):
         with self.assertRaisesRegex(ValueError, "exactly 128"):
             decode_group(bytes(127), [[0, 0], [0, 0]])
