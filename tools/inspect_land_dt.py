@@ -20,10 +20,22 @@ CLUT_DATA_SIZE = 512
 TARGET_GFX = (241, 243)
 
 
-def inspect_land_dt(path: Path, map_number: int = 2, single_block: bool = False) -> dict[str, object]:
+def inspect_land_dt(
+    path: Path,
+    map_number: int = 2,
+    single_block: bool = False,
+    gfx_ids: tuple[int, ...] = TARGET_GFX,
+) -> dict[str, object]:
     data = path.read_bytes()
     if not data:
         raise ValueError("Input file is empty.")
+    if not gfx_ids:
+        raise ValueError("At least one GFX index is required.")
+    invalid_gfx = [gfx for gfx in gfx_ids if gfx < 0 or gfx >= TEXTURE_RECORD_COUNT]
+    if invalid_gfx:
+        raise ValueError(
+            f"GFX indices must be between 0 and {TEXTURE_RECORD_COUNT - 1}; invalid: {invalid_gfx}."
+        )
 
     if single_block:
         if len(data) != BLOCK_SIZE:
@@ -44,7 +56,7 @@ def inspect_land_dt(path: Path, map_number: int = 2, single_block: bool = False)
         raise ValueError("Selected LAND_DT block is incomplete.")
 
     records = []
-    for gfx in TARGET_GFX:
+    for gfx in gfx_ids:
         offset = gfx * TEXTURE_RECORD_SIZE
         raw = block[offset:offset + TEXTURE_RECORD_SIZE]
         records.append({
@@ -78,11 +90,19 @@ def main() -> int:
     parser.add_argument("input", type=Path, help="concatenated LAND_DT blocks or one extracted block")
     parser.add_argument("--map-number", type=int, default=2, help="zero-based block index in concatenated input (default: 2)")
     parser.add_argument("--block", action="store_true", help="input is exactly one extracted 1797-byte block")
+    parser.add_argument(
+        "--gfx",
+        type=int,
+        nargs="+",
+        default=list(TARGET_GFX),
+        metavar="INDEX",
+        help="GFX record indices to inspect (default: 241 243; valid range: 0-256)",
+    )
     args = parser.parse_args()
     if not args.input.is_file():
         parser.error(f"Input file not found: {args.input}")
     try:
-        report = inspect_land_dt(args.input, args.map_number, args.block)
+        report = inspect_land_dt(args.input, args.map_number, args.block, tuple(args.gfx))
     except (OSError, ValueError) as error:
         parser.error(str(error))
     print(json.dumps(report, indent=2))
