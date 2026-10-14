@@ -21,22 +21,18 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Install OpenAL Soft for Switch
         shell: bash
         run: |
           set -euxo pipefail
           for attempt in 1 2 3; do
-            if dkp-pacman -Sy --noconfirm switch-openal-soft; then
-              break
-            fi
+            if dkp-pacman -Sy --noconfirm switch-openal-soft; then break; fi
             if [ "$attempt" -eq 3 ]; then exit 1; fi
             echo "Package mirror unavailable; retrying ($attempt/3)" >&2
             sleep $((attempt * 5))
           done
           export PATH="$DEVKITPRO/portlibs/switch/bin:$PATH"
           command -v sdl2-config
-
       - name: Build and validate OpenAL probe
         shell: bash
         run: |
@@ -46,10 +42,108 @@ jobs:
           export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$DEVKITPRO/portlibs/switch/bin:$PATH"
           make test
           make openal-probe
-
       - name: Upload OpenAL probe artifact
         uses: actions/upload-artifact@v4
         with:
           name: openal-switch-probe
           path: build/openal-switch-probe.nro
           if-no-files-found: error
+
+  openal-runtime:
+    name: Verify OpenAL playback state in NeXium
+    runs-on: ubuntu-26.04
+    needs: openal-probe
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Download OpenAL probe NRO
+        uses: actions/download-artifact@v4
+        with:
+          name: openal-switch-probe
+          path: nros
+      - name: Install headless display and runtime dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl jq xvfb xauth xdotool \
+            libgtk-3-0t64 libasound2t64 libudev1 libxkbcommon0 libxkbcommon-x11-0 \
+            libx11-xcb1 libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
+            libvulkan1 mesa-vulkan-drivers
+      - name: Download NeXium nightly
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          release_json="$(curl -fsSL --retry 3 --retry-all-errors -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/nexium-emu/nexium-nightly/releases/tags/nightly)"
+          asset_url="$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
+          test -n "$asset_url"
+          curl -fL --retry 3 --retry-all-errors "$asset_url" -o /tmp/nexium-linux.tar.gz
+          mkdir -p /tmp/nexium
+          tar -xzf /tmp/nexium-linux.tar.gz -C /tmp/nexium
+          emu_bin="$(find /tmp/nexium -type f -executable \( -name 'nexium-gui' -o -name 'nexium' \) -print -quit)"
+          if [ -z "$emu_bin" ]; then
+            emu_bin="$(find /tmp/nexium -type f -executable ! -name 'ffmpeg' -print -quit)"
+          fi
+          test -n "$emu_bin"
+          echo "NEXIUM_BIN=$emu_bin" >> "$GITHUB_ENV"
+          echo "NeXium executable: $emu_bin"
+          ldd "$emu_bin" || true
+      - name: Assert OpenAL source enters playback state
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime-evidence
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+          export NRO="nros/openal-switch-probe.nro"
+          export LOG="runtime-evidence/openal-nexium.log"
+          if ! timeout --kill-after=5s 55s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
+            set -uo pipefail
+            "$NEXIUM_BIN" "$NRO" >"$LOG" 2>&1 &
+            pid=$!
+            cleanup() {
+              kill -INT "$pid" 2>/dev/null || true
+              sleep 1
+              kill -KILL "$pid" 2>/dev/null || true
+              wait "$pid" 2>/dev/null || true
+            }
+            trap cleanup EXIT
+            for i in $(seq 1 25); do
+              sleep 1
+              if grep -q "OpenAL source entered AL_PLAYING successfully" "$LOG"; then
+                cat "$LOG"
+                echo "OpenAL runtime assertion passed"
+                exit 0
+              fi
+              if grep -Eqi "alcOpenDevice failed|alcCreateContext failed|OpenAL.*failed|OpenAL source did not enter AL_PLAYING|error:" "$LOG"; then
+                cat "$LOG"
+                echo "OpenAL runtime reported an error" >&2
+                exit 1
+              fi
+              state="$(ps -o stat= -p "$pid" 2>/dev/null | tr -d " " || true)"
+              if [ -z "$state" ] || [[ "$state" == Z* ]] || ! kill -0 "$pid" 2>/dev/null; then
+                wait "$pid" || rc=$?
+                cat "$LOG"
+                echo "NeXium exited before OpenAL assertion" >&2
+                exit 1
+              fi
+            done
+            cat "$LOG"
+            echo "Timed out waiting for OpenAL AL_PLAYING assertion" >&2
+            exit 1
+          '; then
+            echo "OpenAL runtime verification failed" >&2
+            exit 1
+          fi
+      - name: Upload OpenAL runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openal-nexium-runtime-evidence
+          path: runtime-evidence/
+          if-no-files-found: warn
