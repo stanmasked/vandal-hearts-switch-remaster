@@ -4,7 +4,7 @@
 
 This checklist tracks the smallest useful Switch homebrew experiment before any game code or game data is ported.
 
-**Status: initial framebuffer and SDL2 texture-upload presentation, visible before/after frame changes, and one Right-arrow move in both the main libnx prototype and SDL2 joystick probe are confirmed in NeXium. Repeated multi-step interaction, audio output, and physical-console behavior remain unverified.**
+**Status: initial framebuffer and SDL2 texture-upload presentation and visible before/after frame changes are confirmed in NeXium. The main libnx prototype has also passed a two-press Right-arrow test moving the cursor from `(1, 2)` to `(3, 2)`; repeated SDL2 movement, A/B interactions, audio output, and physical-console behavior remain unverified.**
 
 The prototype uses devkitPro/devkitA64 and libnx. The latest main prototype passed toolchain checks, host-side rule tests, NRO header/segment validation, and artifact upload in [CI run 38524223405](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223405). The SDL2 software-renderer, OpenGL ES 2.0 context, and CPU framebuffer-to-texture probes passed package installation, compilation/linking, NRO validation, and artifact upload in [CI run 38524223415](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223415). The software-renderer and GLES2-context probes are compile/package evidence; the CPU-framebuffer texture-upload probe also passed the NeXium initial-frame screenshot check in [run 38524564337](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524564337). It does not prove compatibility with the upstream desktop OpenGL path. The latest texture-probe archive digest is `sha256:85b154a316d66b7d51eb7aa0c1bb057d967cec3a18178b2a5b3ae998c4984131`; it is not a checksum of the extracted NRO.
 
@@ -42,6 +42,7 @@ The movement rules and input-state transitions are shared by the libnx prototype
 - [ ] Launch the application on physical Switch hardware.
 - [ ] Confirm the title and control hints are visible and correctly oriented.
 - [x] Verify one Right-arrow input moves the cursor exactly one tile in the main libnx prototype via NeXium's keyboard-to-controller mapping ([CI run 38525585386](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38525585386)).
+- [x] Verify two separate Right-arrow presses move the cursor exactly two tiles in the main libnx prototype via NeXium ([CI run 38577626136](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38577626136)).
 - [ ] Verify D-pad edge clamping, physical-controller input, and all other controller actions.
 - [ ] Press A while the cursor is on the hero to select it and reveal the movement range.
 - [ ] Move to an in-range empty tile and press A; verify the hero moves and selection clears.
