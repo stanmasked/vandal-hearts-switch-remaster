@@ -25,9 +25,10 @@ higher-resolution rendering and presentation improvements.
 4. [x] Implement a generated tactical grid with a hero, enemy marker, selection, and movement-range checks.
 5. [x] Implement and compile a software-rendered framebuffer presentation path with generated bitmap labels.
 6. [x] Validate the packaged NRO header and segment bounds in CI.
-7. [ ] Verify controller input and repeated framebuffer presentation in an emulator or on hardware.
-8. [ ] Validate a playable baseline on supported hardware.
-9. [ ] Plan and test optional visual improvements.
+7. [x] Compile and package SDL2 software-renderer, OpenGL ES 2.0, and CPU-framebuffer texture-upload probes in CI.
+8. [ ] Verify controller input and graphics presentation in an emulator or on hardware.
+9. [ ] Validate a playable baseline on supported hardware.
+10. [ ] Plan and test optional visual improvements.
 
 Portable unit tests run with `make test` and are included in CI. They cover Manhattan distance, grid bounds, movement range, the blocked enemy tile, cursor clamping, selection, valid and invalid moves, and canceling selection. The shared state logic is used by both the libnx framebuffer prototype and the SDL2 software-renderer probe. The latest main build, host tests, NRO segment validation, and artifact upload passed in [CI run 38523844738](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523844738).
 

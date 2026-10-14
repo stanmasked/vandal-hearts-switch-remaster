@@ -49,7 +49,7 @@ The movement rules and input-state transitions are shared by the libnx prototype
 
 For a manual run, download the `vandal-hearts-switch-prototype` artifact from a successful workflow run, extract the `.nro`, copy it to `sd:/switch/vandal-hearts-prototype.nro`, and launch it from the Homebrew Menu. Use a Switch homebrew-capable test environment you control; do not include game images or proprietary assets.
 
-The current source draws a software-rendered 8×6 grid into a libnx RGBA8888 framebuffer and uses a generated 5×7 bitmap font for labels. Runtime behavior is not yet confirmed.
+The current source draws a software-rendered 8×6 grid into a libnx RGBA8888 framebuffer and uses a generated 5×7 bitmap font for labels. The separate SDL2 texture probe also compiles a CPU-generated RGBA frame upload to a GLES2 texture and fullscreen-quad presentation path. Runtime behavior is not yet confirmed.
 
 **Pass condition:** launch and input are observed in the named environment. Emulator results and physical-device results must be reported separately.
 
@@ -62,7 +62,8 @@ The current source draws a software-rendered 8×6 grid into a libnx RGBA8888 fra
 - [x] Compile/link and package a third probe uploading a CPU-rendered RGBA framebuffer into an OpenGL ES texture.
 - [ ] Run the SDL2 probes in an emulator or on physical hardware.
 - [ ] Verify SDL2 event mapping and stable frame presentation at runtime.
-- [ ] Test an SDL_GL/OpenGL context separately before attempting the upstream renderer.
+- [x] Build an SDL_GL/OpenGL ES context probe separately from the software renderer.
+- [ ] Run the GLES2 context and texture-upload probes on hardware/emulator before attempting the upstream renderer.
 
 The software-renderer and OpenGL ES 2.0 builds and artifact uploads passed in [CI run 38523937214](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523937214). The generated NROs are about 6.7 MB and 6.1 MB before compression. This is compile/link evidence only.
 
