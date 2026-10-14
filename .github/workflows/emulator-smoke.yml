@@ -111,9 +111,10 @@ jobs:
             local shot_cancelled="runtime-evidence/$label-cancelled.png"
             local shot_invalid="runtime-evidence/$label-invalid-move.png"
             local shot_enemy_blocked="runtime-evidence/$label-enemy-blocked.png"
+            local shot_exit="runtime-evidence/$label-after-plus-exit.png"
             local shot_after="runtime-evidence/$label-after-move.png"
             local log="runtime-evidence/$label.log"
-            export NRO="$nro" SHOT="$shot" SHOT_SELECTED="$shot_selected" SHOT_CANCELLED="$shot_cancelled" SHOT_INVALID="$shot_invalid" SHOT_ENEMY_BLOCKED="$shot_enemy_blocked" SHOT_AFTER="$shot_after" LOG="$log" CHECK_INPUT="$check_input" VK_ICD_FILENAMES="$icd"
+            export NRO="$nro" SHOT="$shot" SHOT_SELECTED="$shot_selected" SHOT_CANCELLED="$shot_cancelled" SHOT_INVALID="$shot_invalid" SHOT_ENEMY_BLOCKED="$shot_enemy_blocked" SHOT_EXIT="$shot_exit" SHOT_AFTER="$shot_after" LOG="$log" CHECK_INPUT="$check_input" VK_ICD_FILENAMES="$icd"
             echo "Launching $nro in NeXium" | tee -a runtime-evidence/runner.log
 
             if ! timeout --kill-after=5s 60s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
@@ -208,6 +209,11 @@ jobs:
                 timeout --kill-after=1s 3s xdotool keyup --window "$window" c
                 sleep 0.3
                 timeout --kill-after=2s 10s import -window "$window" "$SHOT_ENEMY_BLOCKED"
+                timeout --kill-after=1s 3s xdotool keydown --window "$window" m
+                sleep 0.15
+                timeout --kill-after=1s 3s xdotool keyup --window "$window" m
+                sleep 1
+                timeout --kill-after=2s 10s import -window "$window" "$SHOT_EXIT"
               fi
               sleep 1
               test -s "$SHOT"
@@ -217,6 +223,7 @@ jobs:
                 test -s "$SHOT_CANCELLED"
                 test -s "$SHOT_INVALID"
                 test -s "$SHOT_ENEMY_BLOCKED"
+                test -s "$SHOT_EXIT"
               fi
               kill -INT "$pid" 2>/dev/null || true
               sleep 2
@@ -228,7 +235,7 @@ jobs:
               return
             fi
 
-            if ! python3 - "$shot" "$shot_selected" "$shot_cancelled" "$shot_invalid" "$shot_enemy_blocked" "$shot_after" "$label" <<'PY'
+            if ! python3 - "$shot" "$shot_selected" "$shot_cancelled" "$shot_invalid" "$shot_enemy_blocked" "$shot_exit" "$shot_after" "$label" <<'PY'
           from PIL import Image
           from pathlib import Path
           import sys
@@ -238,8 +245,9 @@ jobs:
           cancelled = Image.open(sys.argv[3]).convert("RGB") if Path(sys.argv[3]).exists() else None
           invalid = Image.open(sys.argv[4]).convert("RGB") if Path(sys.argv[4]).exists() else None
           enemy_blocked = Image.open(sys.argv[5]).convert("RGB") if Path(sys.argv[5]).exists() else None
-          after = Image.open(sys.argv[6]).convert("RGB")
-          label = sys.argv[7]
+          exit_screen = Image.open(sys.argv[6]).convert("RGB") if Path(sys.argv[6]).exists() else None
+          after = Image.open(sys.argv[7]).convert("RGB")
+          label = sys.argv[8]
           hero = (86, 190, 244)
           cursor = (255, 219, 102)
 
@@ -326,6 +334,13 @@ jobs:
               if not (old_hero_after_block <= 100 and new_hero_after_block >= 300 and
                       enemy_marker >= 300 and cursor_on_enemy >= 300 and range_after_block >= 300):
                   raise SystemExit("Move onto the enemy tile was not rejected while preserving the hero and selection")
+
+              if exit_screen is None or exit_screen.size != (1280, 720):
+                  raise SystemExit("Missing or invalid screenshot after Plus exit input")
+              hero_after_exit = near_color_count(exit_screen, hero, tile_new_hero)
+              print(f"{label}: hero marker pixels in previous tile after Plus={hero_after_exit}")
+              if hero_after_exit >= 100:
+                  raise SystemExit("Plus input did not leave the active game frame")
           else:
               print("SDL2 input is not asserted here; SDL2 joystick input is checked in the separate workflow.")
           PY
