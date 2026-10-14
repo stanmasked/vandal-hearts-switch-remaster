@@ -29,3 +29,14 @@ Do not infer audio properties from the filename alone. Filter candidate audio se
 5. Keep source disc data and extracted copyrighted resources local; do not commit them to this public repository.
 
 Reference format documentation: [PSX-SPX CD-ROM format](https://psx-spx.consoledev.net/dev/ps1/cdr/cdromformat/) and [CD-ROM streaming formats](https://psx-spx.consoledev.net/dev/ps1/cdr/cdromfileformats/streaming/).
+
+
+## Repository inspection helper
+
+The repository now includes a read-only metadata inspector for raw 2352-byte sectors:
+
+```sh
+python3 tools/inspect_cdxa.py /path/to/local-disc-image.bin
+```
+
+It reports sync-pattern, Mode 2, duplicated-subheader, XA audio and Form 2 audio counts, plus submode/coding-info distributions. Synthetic tests cover valid audio metadata, mismatched subheaders, non-Mode-2 sectors, empty input, and invalid sector alignment. The helper does **not** decode ADPCM or write audio files. Run it on a local, legally obtained raw BIN; do not upload the disc image to the public repository.
