@@ -128,6 +128,8 @@ jobs:
           echo "Vulkan ICD: $icd" | tee runtime-evidence/runner.log
           export NRO="nros/sdl2-texture-switch-probe.nro"
           export SHOT="runtime-evidence/sdl2-before-right.png"
+          export SHOT_SELECTED="runtime-evidence/sdl2-selected.png"
+          export SHOT_CANCELLED="runtime-evidence/sdl2-cancelled.png"
           export SHOT_AFTER="runtime-evidence/sdl2-after-right.png"
           export LOG="runtime-evidence/sdl2-nexium.log"
           export VK_ICD_FILENAMES="$icd"
@@ -152,6 +154,16 @@ jobs:
             fi
             timeout --kill-after=2s 10s import -window "$window" "$SHOT"
             timeout --kill-after=1s 3s xdotool windowfocus --sync "$window" || true
+            timeout --kill-after=1s 3s xdotool keydown --window "$window" c
+            sleep 0.15
+            timeout --kill-after=1s 3s xdotool keyup --window "$window" c
+            sleep 0.3
+            timeout --kill-after=2s 10s import -window "$window" "$SHOT_SELECTED"
+            timeout --kill-after=1s 3s xdotool keydown --window "$window" x
+            sleep 0.15
+            timeout --kill-after=1s 3s xdotool keyup --window "$window" x
+            sleep 0.3
+            timeout --kill-after=2s 10s import -window "$window" "$SHOT_CANCELLED"
             for press in 1 2; do
               timeout --kill-after=1s 3s xdotool keydown --window "$window" Right
               sleep 0.15
@@ -160,7 +172,7 @@ jobs:
             done
             sleep 1
             timeout --kill-after=2s 10s import -window "$window" "$SHOT_AFTER"
-            test -s "$SHOT" && test -s "$SHOT_AFTER"
+            test -s "$SHOT" && test -s "$SHOT_SELECTED" && test -s "$SHOT_CANCELLED" && test -s "$SHOT_AFTER"
             kill -INT "$pid" 2>/dev/null || true
             sleep 2
             kill -KILL "$pid" 2>/dev/null || true
@@ -169,12 +181,14 @@ jobs:
             echo "SDL2 runtime/input launch failed" | tee -a runtime-evidence/runner.log
             exit 1
           fi
-          python3 - "$SHOT" "$SHOT_AFTER" <<'PY'
+          python3 - "$SHOT" "$SHOT_SELECTED" "$SHOT_CANCELLED" "$SHOT_AFTER" <<'PY'
           from PIL import Image
           import sys
 
           before = Image.open(sys.argv[1]).convert("RGB")
-          after = Image.open(sys.argv[2]).convert("RGB")
+          selected = Image.open(sys.argv[2]).convert("RGB")
+          cancelled = Image.open(sys.argv[3]).convert("RGB")
+          after = Image.open(sys.argv[4]).convert("RGB")
           hero = (86, 190, 244)
           cursor = (255, 219, 102)
 
@@ -183,7 +197,7 @@ jobs:
               return sum(1 for r, g, b in crop.getdata()
                          if max(abs(r-color[0]), abs(g-color[1]), abs(b-color[2])) <= 16)
 
-          for image in (before, after):
+          for image in (before, selected, cancelled, after):
               if image.size != (1280, 720):
                   raise SystemExit(f"Unexpected screenshot dimensions: {image.size}")
               hero_count = near_color_count(image, hero, (0, 0, image.width, image.height))
@@ -202,6 +216,14 @@ jobs:
           cell, grid_x, grid_y = 64, 384, 120
           def tile_box(x, y):
               return (x + 4, y + 4, x + cell - 4, y + cell - 4)
+
+          range_color = (43, 91, 91)
+          range_box = tile_box(grid_x + 2 * cell, grid_y + 2 * cell)
+          range_selected = near_color_count(selected, range_color, range_box)
+          range_cancelled = near_color_count(cancelled, range_color, range_box)
+          print(f"SDL2 range pixels selected={range_selected} cancelled={range_cancelled}")
+          if not (range_selected >= 300 and range_cancelled <= 100):
+              raise SystemExit("SDL2 A/B joystick events did not toggle the movement-range highlight")
 
           def cursor_cells(image):
               found = []
