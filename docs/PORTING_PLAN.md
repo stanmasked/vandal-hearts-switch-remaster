@@ -20,6 +20,7 @@ The upstream PC port is a native C project with a portable hardware-interface la
 - [x] Inventory major dependencies and license boundaries.
 - [ ] Inventory all OS-specific APIs in the bootstrap and related files.
 - [ ] Trace the graphics presentation path and isolate it behind a small interface.
+- [x] Identify the upstream SDL_GameController input path versus the Switch SDL_Joystick event path; document the adapter requirement.
 - [ ] Evaluate SDL2, graphics, audio, threading, filesystem, and memory APIs against the chosen Switch homebrew toolchain.
 - [ ] Keep changes out of the byte-matching game source unless there is a documented, gated reason.
 
@@ -51,7 +52,7 @@ This establishes that package recipes exist. The [SDL2 probe CI run](https://git
 - [x] Build and package an OpenAL Soft generated-tone probe in CI.
 - [ ] Verify audio output and thread support independently.
 
-**Exit condition:** reproducible homebrew test app with input and framebuffer presentation on the intended test environment.
+**Exit condition:** initial framebuffer presentation and one input transition are now reproducible in NeXium; sustained interaction, audio, and physical Switch validation remain open.
 
 ## Phase 4 — Port platform services
 
