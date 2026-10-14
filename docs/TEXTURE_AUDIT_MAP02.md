@@ -84,3 +84,23 @@ Sources:
 
 **Confirmed:** the GFX-to-runtime-table-index arithmetic matches the reported slots exactly.  
 **Still unresolved:** whether the four source bytes for map 02 entries 241 and 243 are zero in the original data, whether zero dimensions are intentional, and whether either face is visibly defective in the original game.
+
+
+## Raw block-offset calculation from the upstream loader (2026-10-15)
+
+The loader's byte-level read order makes it possible to calculate where these records must reside in a LAND_DT block, without claiming that the original bytes have been inspected. LoadMapTextures() reads 257 records of four bytes each in ascending table-index order, beginning at table index 400. Therefore record ordinal equals the GFX index, and the four-byte record starts at GFX * 4 within the selected 1797-byte block.
+
+| GFX | Runtime table index | Record ordinal | Offset within block | Four-byte range |
+|---:|---:|---:|---:|---|
+| 241 | 641 | 241 | 964 (0x3C4) | 964–967 (0x3C4–0x3C7) |
+| 243 | 643 | 243 | 972 (0x3CC) | 972–975 (0x3CC–0x3CF) |
+
+The 257 four-byte records occupy bytes 0–1027. The following 257 CLUT-index bytes occupy offsets 1028–1284, followed by 512 CLUT-data bytes at offsets 1285–1796. This exactly accounts for the loader's documented 1797-byte block size.
+
+For map number 2, the loader's block base expression mapNum * 1797 gives a base offset of 3594 (0xE0A) relative to the beginning of the LAND_DT data loaded into the scratch buffer. Under that map-number assumption, the two record starts would be 4558 (0x11CE) and 4566 (0x11D6) relative to that loaded data. These are calculated offsets, not observed bytes or verified file offsets on disc.
+
+### Why this matters
+
+This narrows the next verification to a small, deterministic byte range and provides a way to compare the parser's output with the upstream layout. A raw dump or extractor output can be checked at these offsets; if the four source bytes are nonzero while parsed metadata becomes zero, the extraction/parsing stage becomes the leading suspect. If they are zero in the source block too, that still does not by itself establish whether the record is intentional or visually defective.
+
+**Evidence boundary:** no original LAND_DT binary, disc image, or extracted block was available in the repository files inspected during this check. No byte values have been read or asserted here.
