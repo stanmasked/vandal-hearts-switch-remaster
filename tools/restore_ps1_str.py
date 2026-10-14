@@ -74,15 +74,18 @@ def main() -> int:
     if not 0 <= args.crf <= 51:
         parser.error("--crf must be between 0 and 51.")
 
-    ffmpeg = shutil.which("ffmpeg")
-    if not ffmpeg:
-        parser.error("FFmpeg was not found on PATH.")
     source = args.input.resolve()
     output = args.output.resolve()
     if source == output:
         parser.error("Input and output paths must be different.")
     if not source.is_file():
         parser.error(f"Input file not found: {source}")
+    if source.stat().st_size == 0:
+        parser.error("Input file is empty; expected a non-empty STR stream.")
+
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        parser.error("FFmpeg was not found on PATH.")
     output.parent.mkdir(parents=True, exist_ok=True)
 
     if args.keep_intermediate:
