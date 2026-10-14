@@ -23,14 +23,15 @@ higher-resolution rendering and presentation improvements.
 2. [x] Inventory dependencies, build system, renderer, audio, input, and file I/O.
 3. [x] Build a minimal Switch homebrew prototype in CI.
 4. [x] Implement a generated tactical grid with a hero, enemy marker, selection, and movement-range checks.
-5. [x] Implement and compile a software-rendered framebuffer presentation path.
-6. [ ] Verify controller input and repeated framebuffer presentation in an emulator or on hardware.
-7. [ ] Validate a playable baseline on supported hardware.
-8. [ ] Plan and test optional visual improvements.
+5. [x] Implement and compile a software-rendered framebuffer presentation path with generated bitmap labels.
+6. [x] Validate the packaged NRO header and segment bounds in CI.
+7. [ ] Verify controller input and repeated framebuffer presentation in an emulator or on hardware.
+8. [ ] Validate a playable baseline on supported hardware.
+9. [ ] Plan and test optional visual improvements.
 
-Portable movement-rule unit tests run with `make test` and are included in CI; they cover Manhattan distance, grid bounds, movement range, and the blocked enemy tile. The graphical framebuffer build and host-side tests passed in [CI run 38483880113](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38483880113).
+Portable movement-rule unit tests run with `make test` and are included in CI; they cover Manhattan distance, grid bounds, movement range, and the blocked enemy tile. The graphical framebuffer build and host-side tests passed in [CI run 38483880113](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38483880113). The latest bitmap-label build and NRO segment validation passed in [CI run 38522872471](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38522872471).
 
-The current prototype renders an 8×6 grid into a 1280×720 RGBA framebuffer without requiring fonts or game assets. D-pad moves the cursor; A selects the hero or attempts to move it; B cancels selection; Plus exits. Movement is limited to a Manhattan distance of two tiles, and the enemy tile is blocked. This is a mechanics/input experiment, not the original game's battle system. A successful build does not prove that the framebuffer presents correctly at runtime.
+The current prototype renders an 8×6 grid into a 1280×720 RGBA framebuffer using a generated 5×7 bitmap font; it requires no external fonts or game assets. D-pad moves the cursor; A selects the hero or attempts to move it; B cancels selection; Plus exits. Movement is limited to a Manhattan distance of two tiles, and the enemy tile is blocked. This is a mechanics/input experiment, not the original game's battle system. A successful build does not prove that the framebuffer presents correctly at runtime.
 
 See the [upstream audit](docs/UPSTREAM_AUDIT.md), [porting plan](docs/PORTING_PLAN.md),
 [build notes](docs/BUILDING.md), [toolchain diagnostic instructions](docs/TOOLCHAIN_CHECK.md),
@@ -40,8 +41,8 @@ See the [upstream audit](docs/UPSTREAM_AUDIT.md), [porting plan](docs/PORTING_PL
 ## Build artifact
 
 The CI workflow creates an artifact named `vandal-hearts-switch-prototype`.
-Download it from [this successful CI run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38483880113) or the [workflow runs page](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions).
-The artifact for run 38483880113 was uploaded successfully (archive size 52,124 bytes; SHA-256 digest reported by GitHub for the artifact archive: `f22f0ef243bb1db0367a03ca1f75c3c21b41ab73c1556f59a965c64cf1e90cb3`). This digest identifies the GitHub artifact archive, not the extracted NRO file.
+Download the latest validated build from [CI run 38522872471](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38522872471) or use the [workflow runs page](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions).
+The artifact for run 38522872471 was uploaded successfully (archive size 52,815 bytes; SHA-256 digest reported by GitHub for the artifact archive: `793a22d685dec40c791a81740687d69edf33c18f69148dae6a80a12fe5f52faa`). This digest identifies the GitHub artifact archive, not the extracted NRO file. The CI run also checked the NRO magic, declared size, and segment bounds.
 A successful CI build confirms compilation and packaging only; it does not confirm runtime behavior.
 
 ## Upstream
