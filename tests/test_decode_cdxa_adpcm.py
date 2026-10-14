@@ -1,4 +1,5 @@
 """Unit tests for the experimental CD-XA ADPCM decoder."""
+import struct
 import sys
 import tempfile
 import wave
@@ -28,10 +29,7 @@ class DecodeCdXaAdpcmTests(unittest.TestCase):
                 group[16 + row * 4 + chunk] = 0x21
         pcm = decode_group(bytes(group), [[0, 0], [0, 0]])
         self.assertEqual(len(pcm), 112 * 2 * 2)
-        with tempfile.TemporaryDirectory() as temp:
-            path = Path(temp) / "samples.raw"
-            path.write_bytes(pcm)
-            samples = __import__("struct").unpack("<" + "h" * (len(pcm) // 2), pcm)
+        samples = struct.unpack("<" + "h" * (len(pcm) // 2), pcm)
         self.assertEqual(samples, (1, 2) * 112)
 
     def test_rejects_bad_group_length_and_parameter_copy(self):
