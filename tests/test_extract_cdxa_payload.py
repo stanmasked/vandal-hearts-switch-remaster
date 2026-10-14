@@ -23,8 +23,11 @@ class ExtractCdXaPayloadTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             src, dst, report_path = root / "disc.bin", root / "payload.bin", root / "report.json"
+            bad_sync = bytearray(sector(marker=0x66))
+            bad_sync[0] = 0x01
             src.write_bytes(sector(marker=0x11) + sector(submode=0x00, marker=0x22) +
-                            sector(duplicate=False, marker=0x33) + sector(mode=1, marker=0x44))
+                            sector(duplicate=False, marker=0x33) + sector(mode=1, marker=0x44) +
+                            bytes(bad_sync))
             report = extract_audio_payloads(src, dst, report_path=report_path)
             self.assertEqual(dst.read_bytes(), bytes([0x11]) * 2304)
             self.assertEqual(report["audio_form2_sectors_written"], 1)
