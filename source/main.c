@@ -3,6 +3,7 @@
 
 #include "game_rules.h"
 #include "game_state.h"
+#include "platform_input.h"
 
 #define FB_WIDTH 1280
 #define FB_HEIGHT 720
@@ -186,20 +187,17 @@ int main(int argc, char **argv) {
         padUpdate(&pad);
         const u64 buttons_down = padGetButtonsDown(&pad);
 
-        if (buttons_down & HidNpadButton_Plus) break;
-        if (buttons_down & HidNpadButton_Left)
-            vh_move_cursor(&state, -1, 0, GRID_WIDTH, GRID_HEIGHT);
-        if (buttons_down & HidNpadButton_Right)
-            vh_move_cursor(&state, 1, 0, GRID_WIDTH, GRID_HEIGHT);
-        if (buttons_down & HidNpadButton_Up)
-            vh_move_cursor(&state, 0, -1, GRID_WIDTH, GRID_HEIGHT);
-        if (buttons_down & HidNpadButton_Down)
-            vh_move_cursor(&state, 0, 1, GRID_WIDTH, GRID_HEIGHT);
+        unsigned int actions = 0;
+        if (buttons_down & HidNpadButton_Left)  actions |= VH_INPUT_LEFT;
+        if (buttons_down & HidNpadButton_Right) actions |= VH_INPUT_RIGHT;
+        if (buttons_down & HidNpadButton_Up)    actions |= VH_INPUT_UP;
+        if (buttons_down & HidNpadButton_Down)  actions |= VH_INPUT_DOWN;
+        if (buttons_down & HidNpadButton_A)     actions |= VH_INPUT_CONFIRM;
+        if (buttons_down & HidNpadButton_B)     actions |= VH_INPUT_CANCEL;
+        if (buttons_down & HidNpadButton_Plus)  actions |= VH_INPUT_QUIT;
 
-        if (buttons_down & HidNpadButton_A)
-            vh_activate_cursor(&state, GRID_WIDTH, GRID_HEIGHT, MOVE_RANGE);
-        if (buttons_down & HidNpadButton_B)
-            vh_cancel_selection(&state);
+        if (vh_process_input(&state, actions, GRID_WIDTH, GRID_HEIGHT, MOVE_RANGE))
+            break;
 
         u32 stride_bytes = 0;
         u32 *pixels = (u32 *)framebufferBegin(&fb, &stride_bytes);
