@@ -3,6 +3,9 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../source/rgb24_frame.h"
+#include "../source/switch_presenter_layout.h"
+
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 720
 #define FRAME_WIDTH 321
@@ -135,6 +138,21 @@ int main(void) {
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(quad), quad, GL_STATIC_DRAW);
     fill_bottom_up_rgb24();
+    const VhRgb24Frame frame = {frame_pixels, FRAME_STRIDE, FRAME_WIDTH, FRAME_HEIGHT};
+    VhPresenterRect destination;
+    if (!vh_rgb24_frame_valid(&frame) ||
+        !vh_presenter_fit_rect(frame.width, frame.height,
+                               WINDOW_WIDTH, WINDOW_HEIGHT, &destination)) {
+        fprintf(stderr, "RGB24 presenter rejected frame/layout\\n");
+        glDeleteBuffers(1, &vbo);
+        glDeleteProgram(program);
+        SDL_GL_DeleteContext(context);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 6;
+    }
+    fprintf(stderr, "Presenter viewport: x=%d y=%d width=%d height=%d\\n",
+            destination.x, destination.y, destination.width, destination.height);
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -143,8 +161,8 @@ int main(void) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     /* 321 RGB pixels = 963 bytes/row, intentionally not divisible by four. */
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, FRAME_WIDTH, FRAME_HEIGHT, 0,
-                 GL_RGB, GL_UNSIGNED_BYTE, frame_pixels);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, frame.width, frame.height, 0,
+                 GL_RGB, GL_UNSIGNED_BYTE, frame.pixels);
     GLenum upload_error = glGetError();
     fprintf(stderr, "RGB24 upload: %dx%d stride=%d unpack_alignment=1 gl_error=0x%04x\n",
             FRAME_WIDTH, FRAME_HEIGHT, FRAME_STRIDE, (unsigned int)upload_error);
@@ -156,6 +174,9 @@ int main(void) {
         while (SDL_PollEvent(&event)) if (event.type == SDL_QUIT) running = 0;
         glClearColor(0.02f, 0.02f, 0.03f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
+        /* Fit RGB24 frame into the window without cropping or stretching. */
+        glViewport(destination.x, WINDOW_HEIGHT - destination.y - destination.height,
+                   destination.width, destination.height);
         glUseProgram(program);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, texture);
