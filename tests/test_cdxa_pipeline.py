@@ -64,5 +64,30 @@ class CdXaPipelineTests(unittest.TestCase):
             self.assertEqual(payload.read_bytes(), b"")
 
 
+    def test_report_preserves_source_lba_gap_when_non_audio_sector_is_skipped(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "synthetic-disc.bin"
+            payload = root / "audio-payload.bin"
+            non_audio = bytearray(xa_audio_sector())
+            non_audio[18] = 0x00
+            non_audio[22] = 0x00
+            source.write_bytes(xa_audio_sector() + bytes(non_audio) + xa_audio_sector())
+
+            report = extract_audio_payloads(source, payload)
+            self.assertEqual(report["audio_form2_sectors_written"], 2)
+            self.assertEqual(report["noncontiguous_audio_transitions"], 1)
+            self.assertEqual(report["audio_lbas"], [0, 2])
+            self.assertEqual(report["audio_lba_offsets"], [
+                {"lba": 0, "payload_offset": 0, "missing_source_sectors_before": 0},
+                {
+                    "lba": 2,
+                    "payload_offset": AUDIO_BYTES_PER_SECTOR,
+                    "missing_source_sectors_before": 1,
+                },
+            ])
+            self.assertEqual(payload.stat().st_size, AUDIO_BYTES_PER_SECTOR * 2)
+
+
 if __name__ == "__main__":
     unittest.main()
