@@ -33,7 +33,7 @@ int main(int argc, char **argv) {
         samples[i] = ((i % 50) < 25) ? 6000 : -6000;
     }
 
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
         return 1;
     }
