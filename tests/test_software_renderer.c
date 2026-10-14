@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 
@@ -89,6 +90,13 @@ int main(void) {
     assert(pixels[2 * STRIDE + 1] == 0xABCDEF01u);
     assert(pixels[STRIDE + 1] == 0xA5A5A5A5u);
     vh_canvas_draw_rect_outline(&canvas, 0, 0, 0, 3, 0xFFFFFFFFu);
+
+    /* Extreme coordinates must clip safely without signed overflow. */
+    for (int i = 0; i < STORAGE; ++i) pixels[i] = 0xA5A5A5A5u;
+    vh_canvas_draw_rect_outline(&canvas, INT_MAX - 1, 0, INT_MAX, 3, 0x10203040u);
+    vh_canvas_draw_rect_outline(&canvas, INT_MIN, 0, INT_MAX, 3, 0x50607080u);
+    vh_canvas_fill_rect(&canvas, INT_MAX - 1, 1, INT_MAX, 2, 0x90A0B0C0u);
+    for (int i = 0; i < STORAGE; ++i) assert(pixels[i] == 0xA5A5A5A5u);
 
     puts("All software renderer tests passed.");
     return 0;
