@@ -92,7 +92,7 @@ jobs:
           echo "NEXIUM_BIN=$emu_bin" >> "$GITHUB_ENV"
           echo "NeXium executable: $emu_bin"
           ldd "$emu_bin" || true
-      - name: Assert OpenAL source enters playback state
+      - name: Verify visible OpenAL playback status
         shell: bash
         run: |
           set -euo pipefail
@@ -102,8 +102,9 @@ jobs:
           export VK_ICD_FILENAMES="$icd"
           export NRO="nros/openal-switch-probe.nro"
           export LOG="runtime-evidence/openal-nexium.log"
+          export SHOT="runtime-evidence/openal-status.png"
           if ! timeout --kill-after=5s 55s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
-            set -uo pipefail
+            set -euo pipefail
             "$NEXIUM_BIN" "$NRO" >"$LOG" 2>&1 &
             pid=$!
             cleanup() {
@@ -113,33 +114,46 @@ jobs:
               wait "$pid" 2>/dev/null || true
             }
             trap cleanup EXIT
-            for i in $(seq 1 25); do
-              sleep 1
-              if grep -q "OpenAL source entered AL_PLAYING successfully" "$LOG"; then
-                cat "$LOG"
-                echo "OpenAL runtime assertion passed"
-                exit 0
-              fi
-              if grep -Eqi "alcOpenDevice failed|alcCreateContext failed|OpenAL.*failed|OpenAL source did not enter AL_PLAYING" "$LOG"; then
-                cat "$LOG"
-                echo "OpenAL runtime reported an error" >&2
-                exit 1
-              fi
-              state="$(ps -o stat= -p "$pid" 2>/dev/null | tr -d " " || true)"
-              if [ -z "$state" ] || [[ "$state" == Z* ]] || ! kill -0 "$pid" 2>/dev/null; then
-                wait "$pid" || rc=$?
-                cat "$LOG"
-                echo "NeXium exited before OpenAL assertion" >&2
-                exit 1
-              fi
-            done
+            sleep 4
+            state="$(ps -o stat= -p "$pid" 2>/dev/null | tr -d " " || true)"
+            if [ -z "$state" ] || [[ "$state" == Z* ]] || ! kill -0 "$pid" 2>/dev/null; then
+              cat "$LOG"
+              echo "NeXium exited before status capture" >&2
+              exit 1
+            fi
+            window="$(xdotool search --onlyvisible --name "NeXium" 2>/dev/null | tail -n 1 || true)"
+            if [ -z "$window" ]; then
+              cat "$LOG"
+              echo "NeXium window not found" >&2
+              exit 1
+            fi
+            timeout --kill-after=2s 10s import -window "$window" "$SHOT"
+            test -s "$SHOT"
             cat "$LOG"
-            echo "Timed out waiting for OpenAL AL_PLAYING assertion" >&2
-            exit 1
           '; then
-            echo "OpenAL runtime verification failed" >&2
+            echo "OpenAL runtime launch/screenshot failed" >&2
             exit 1
           fi
+          python3 - "$SHOT" <<'PY'
+          from PIL import Image
+          import sys
+
+          image = Image.open(sys.argv[1]).convert("RGB")
+          print(f"OpenAL status screenshot: size={image.size}")
+          if image.size != (1280, 720):
+              raise SystemExit("Unexpected screenshot dimensions")
+          samples = [image.getpixel((x, y)) for x, y in
+                     [(640, 360), (320, 180), (960, 540), (640, 100)]]
+          print(f"OpenAL status samples: {samples}")
+          green = sum(1 for r, g, b in samples if g > 100 and g > r * 1.5 and g > b * 1.15)
+          red = sum(1 for r, g, b in samples if r > 120 and r > g * 1.5 and r > b * 1.25)
+          if green >= 3:
+              print("OpenAL AL_PLAYING status visible")
+          elif red >= 3:
+              raise SystemExit("OpenAL probe displayed failure status (red)")
+          else:
+              raise SystemExit("Could not recognize OpenAL status screen")
+          PY
       - name: Upload OpenAL runtime evidence
         if: always()
         uses: actions/upload-artifact@v4
