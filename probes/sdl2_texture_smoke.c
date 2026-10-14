@@ -130,7 +130,7 @@ static void move_cursor(VhGameState *state, int dx, int dy) {
 int main(int argc, char **argv) {
     (void)argc;
     (void)argv;
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK) != 0) {
         fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
         return 1;
     }
@@ -194,13 +194,10 @@ int main(int argc, char **argv) {
                  GL_RGBA, GL_UNSIGNED_BYTE, frame_pixels);
     GLint sampler = glGetUniformLocation(program, "uTexture");
 
-    SDL_GameController *controller = NULL;
-    for (int i = 0; i < SDL_NumJoysticks(); i++) {
-        if (SDL_IsGameController(i)) {
-            controller = SDL_GameControllerOpen(i);
-            if (controller) break;
-        }
-    }
+    const int joystick_count = SDL_NumJoysticks();
+    fprintf(stderr, "SDL joystick count: %d\n", joystick_count);
+    SDL_Joystick *joystick = joystick_count > 0 ? SDL_JoystickOpen(0) : NULL;
+    if (!joystick) fprintf(stderr, "SDL_JoystickOpen(0) failed: %s\n", SDL_GetError());
 
     int running = 1;
     while (running) {
@@ -222,17 +219,17 @@ int main(int argc, char **argv) {
                     default: break;
                 }
             }
-            if (event.type == SDL_CONTROLLERBUTTONDOWN) {
-                switch (event.cbutton.button) {
-                    case SDL_CONTROLLER_BUTTON_DPAD_LEFT: move_cursor(&state, -1, 0); break;
-                    case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: move_cursor(&state, 1, 0); break;
-                    case SDL_CONTROLLER_BUTTON_DPAD_UP: move_cursor(&state, 0, -1); break;
-                    case SDL_CONTROLLER_BUTTON_DPAD_DOWN: move_cursor(&state, 0, 1); break;
-                    case SDL_CONTROLLER_BUTTON_A:
-                        vh_activate_cursor(&state, GRID_WIDTH, GRID_HEIGHT, MOVE_RANGE);
-                        break;
-                    case SDL_CONTROLLER_BUTTON_B: vh_cancel_selection(&state); break;
-                    case SDL_CONTROLLER_BUTTON_START: running = 0; break;
+            /* devkitPro's Switch SDL2 backend reports pad buttons as SDL_JOYBUTTONDOWN. */
+            if (joystick && event.type == SDL_JOYBUTTONDOWN &&
+                event.jbutton.which == SDL_JoystickInstanceID(joystick)) {
+                switch (event.jbutton.button) {
+                    case 12: move_cursor(&state, -1, 0); break; /* D-pad left */
+                    case 14: move_cursor(&state, 1, 0); break;  /* D-pad right */
+                    case 13: move_cursor(&state, 0, -1); break; /* D-pad up */
+                    case 15: move_cursor(&state, 0, 1); break;  /* D-pad down */
+                    case 0: vh_activate_cursor(&state, GRID_WIDTH, GRID_HEIGHT, MOVE_RANGE); break; /* A */
+                    case 1: vh_cancel_selection(&state); break; /* B */
+                    case 10: running = 0; break; /* Plus */
                     default: break;
                 }
             }
@@ -258,7 +255,7 @@ int main(int argc, char **argv) {
         SDL_Delay(16);
     }
 
-    if (controller) SDL_GameControllerClose(controller);
+    if (joystick) SDL_JoystickClose(joystick);
     glDeleteTextures(1, &texture);
     glDeleteBuffers(1, &vbo);
     glDeleteProgram(program);
