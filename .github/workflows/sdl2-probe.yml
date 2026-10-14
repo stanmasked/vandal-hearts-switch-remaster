@@ -26,25 +26,31 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Switch SDL2 package
+      - name: Build official Switch SDL2 source with pinned checksums
         shell: bash
         run: |
           set -euxo pipefail
-          # The devkitPro package endpoint can return HTTP 403 to command-line
-          # clients behind its CDN/WAF. Try curl with a conventional browser UA;
-          # do not bypass TLS checks or substitute unverified package sources.
-          pacman_conf="${DEVKITPRO:-/opt/devkitpro}/pacman/etc/pacman.conf"
-          if [ -f "$pacman_conf" ] && ! grep -q '^XferCommand[[:space:]]*=' "$pacman_conf"; then
-            sed -i '/^\[options\]/a XferCommand = /usr/bin/curl --user-agent "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" -L -C - -f -o %o %u' "$pacman_conf"
-          fi
-          for attempt in 1 2 3 4 5; do
-            if dkp-pacman -Sy --noconfirm switch-sdl2; then
-              break
-            fi
-            if [ "$attempt" -eq 5 ]; then exit 1; fi
-            echo "Package mirror unavailable; retrying ($attempt/5)" >&2
-            sleep $((attempt * 5))
-          done
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export PATH="$DEVKITPRO/devkitA64/bin:$DEVKITPRO/tools/bin:$DEVKITPRO/portlibs/switch/bin:$PATH"
+          workdir="$(mktemp -d)"
+          cd "$workdir"
+          curl --fail --location --retry 3 --retry-all-errors \
+            https://www.libsdl.org/release/SDL2-2.28.5.tar.gz -o SDL2-2.28.5.tar.gz
+          curl --fail --location --retry 3 --retry-all-errors \
+            https://raw.githubusercontent.com/devkitPro/pacman-packages/master/switch/SDL2/SDL2-2.28.5.patch \
+            -o SDL2-2.28.5.patch
+          echo "332cb37d0be20cb9541739c61f79bae5a477427d79ae85e352089afdaf6666e4  SDL2-2.28.5.tar.gz" | sha256sum --check
+          echo "eb2da665a014dc540ad3dfeb62b3f7c5e15ae090ebdd631fe8b78c1f272c7aa0  SDL2-2.28.5.patch" | sha256sum --check
+          tar -xzf SDL2-2.28.5.tar.gz
+          cd SDL2-2.28.5
+          patch -p1 -i ../SDL2-2.28.5.patch
+          source "$DEVKITPRO/switchvars.sh"
+          ./configure --prefix="$PORTLIBS_PREFIX" --host=aarch64-none-elf \
+            --disable-shared --enable-static --enable-audio --enable-joystick \
+            --disable-power --disable-filesystem --enable-cpuinfo \
+            --enable-pthreads --enable-timers --enable-video
+          make -j2
+          make install
           export PATH="$DEVKITPRO/portlibs/switch/bin:$PATH"
           command -v sdl2-config
           sdl2-config --version
