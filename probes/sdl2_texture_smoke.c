@@ -34,7 +34,7 @@ static void fill_rect(int x, int y, int width, int height,
     }
 }
 
-static void draw_cpu_frame(const VhGameState *state) {
+static void draw_cpu_frame(const VhGameState *state, unsigned int frame_tick) {
     fill_rect(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, 12, 18, 34);
     for (int y = 0; y < GRID_HEIGHT; y++) {
         for (int x = 0; x < GRID_WIDTH; x++) {
@@ -67,6 +67,10 @@ static void draw_cpu_frame(const VhGameState *state) {
             }
         }
     }
+
+    /* Diagnostic heartbeat bar: changing length proves SDL2 frames keep updating. */
+    fill_rect(1000, 600, 96, 8, 58, 74, 96);
+    fill_rect(1000, 600, 8 + (int)(frame_tick % 89), 8, 86, 190, 244);
 }
 
 static GLuint compile_shader(GLenum type, const char *source) {
@@ -200,6 +204,7 @@ int main(int argc, char **argv) {
     if (!joystick) fprintf(stderr, "SDL_JoystickOpen(0) failed: %s\n", SDL_GetError());
 
     int running = 1;
+    unsigned int frame_tick = 0;
     while (running) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -235,7 +240,7 @@ int main(int argc, char **argv) {
             }
         }
 
-        draw_cpu_frame(&state);
+        draw_cpu_frame(&state, frame_tick++);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, texture);
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT,
