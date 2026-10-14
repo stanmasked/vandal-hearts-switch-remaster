@@ -107,9 +107,11 @@ jobs:
             local label="$2"
             local check_input="${3:-0}"
             local shot="runtime-evidence/$label.png"
-            local shot_after="runtime-evidence/$label-after-right.png"
+            local shot_selected="runtime-evidence/$label-selected.png"
+            local shot_cancelled="runtime-evidence/$label-cancelled.png"
+            local shot_after="runtime-evidence/$label-after-move.png"
             local log="runtime-evidence/$label.log"
-            export NRO="$nro" SHOT="$shot" SHOT_AFTER="$shot_after" LOG="$log" CHECK_INPUT="$check_input" VK_ICD_FILENAMES="$icd"
+            export NRO="$nro" SHOT="$shot" SHOT_SELECTED="$shot_selected" SHOT_CANCELLED="$shot_cancelled" SHOT_AFTER="$shot_after" LOG="$log" CHECK_INPUT="$check_input" VK_ICD_FILENAMES="$icd"
             echo "Launching $nro in NeXium" | tee -a runtime-evidence/runner.log
 
             if ! timeout --kill-after=5s 60s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
@@ -134,17 +136,38 @@ jobs:
               timeout --kill-after=2s 10s import -window "$window" "$SHOT"
               if [ "$CHECK_INPUT" = "1" ]; then
                 timeout --kill-after=1s 3s xdotool windowfocus --sync "$window" || true
+                timeout --kill-after=1s 3s xdotool keydown --window "$window" c
+                sleep 0.15
+                timeout --kill-after=1s 3s xdotool keyup --window "$window" c
+                sleep 0.3
+                timeout --kill-after=2s 10s import -window "$window" "$SHOT_SELECTED"
+                timeout --kill-after=1s 3s xdotool keydown --window "$window" x
+                sleep 0.15
+                timeout --kill-after=1s 3s xdotool keyup --window "$window" x
+                sleep 0.3
+                timeout --kill-after=2s 10s import -window "$window" "$SHOT_CANCELLED"
+                timeout --kill-after=1s 3s xdotool keydown --window "$window" c
+                sleep 0.15
+                timeout --kill-after=1s 3s xdotool keyup --window "$window" c
+                sleep 0.15
                 for press in 1 2; do
                   timeout --kill-after=1s 3s timeout --kill-after=1s 3s xdotool keydown --window "$window" Right
                   sleep 0.15
                   timeout --kill-after=1s 3s timeout --kill-after=1s 3s xdotool keyup --window "$window" Right
                   sleep 0.15
                 done
+                timeout --kill-after=1s 3s xdotool keydown --window "$window" c
+                sleep 0.15
+                timeout --kill-after=1s 3s xdotool keyup --window "$window" c
               fi
               sleep 1
               timeout --kill-after=2s 10s import -window "$window" "$SHOT_AFTER"
               test -s "$SHOT"
               test -s "$SHOT_AFTER"
+              if [ "$CHECK_INPUT" = "1" ]; then
+                test -s "$SHOT_SELECTED"
+                test -s "$SHOT_CANCELLED"
+              fi
               kill -INT "$pid" 2>/dev/null || true
               sleep 2
               kill -KILL "$pid" 2>/dev/null || true
@@ -155,13 +178,15 @@ jobs:
               return
             fi
 
-            if ! python3 - "$shot" "$shot_after" "$label" <<'PY'
+            if ! python3 - "$shot" "$shot_selected" "$shot_cancelled" "$shot_after" "$label" <<'PY'
           from PIL import Image
           import sys
 
           before = Image.open(sys.argv[1]).convert("RGB")
-          after = Image.open(sys.argv[2]).convert("RGB")
-          label = sys.argv[3]
+          selected = Image.open(sys.argv[2]).convert("RGB") if sys.argv[2] else None
+          cancelled = Image.open(sys.argv[3]).convert("RGB") if sys.argv[3] else None
+          after = Image.open(sys.argv[4]).convert("RGB")
+          label = sys.argv[5]
           hero = (86, 190, 244)
           cursor = (255, 219, 102)
 
@@ -206,8 +231,23 @@ jobs:
               if not (before_one >= 300 and before_two <= 100 and before_three <= 100 and
                       after_one <= 100 and after_two <= 100 and after_three >= 300):
                   raise SystemExit("Two Right-arrow presses did not move the cursor exactly two tiles")
+
+              if selected is None or cancelled is None:
+                  raise SystemExit("Missing selection/cancel screenshots")
+              range_color = (43, 91, 91)
+              range_selected = near_color_count(selected, range_color, tile_two)
+              range_cancelled = near_color_count(cancelled, range_color, tile_two)
+              hero_start = near_color_count(before, hero, tile_one)
+              hero_start_after = near_color_count(after, hero, tile_one)
+              hero_destination = near_color_count(after, hero, tile_three)
+              print(f"{label}: range tile pixels selected={range_selected} cancelled={range_cancelled}")
+              print(f"{label}: hero pixels start before={hero_start} after={hero_start_after}; destination after={hero_destination}")
+              if not (range_selected >= 300 and range_cancelled <= 100):
+                  raise SystemExit("A selection / B cancel did not toggle the movement-range highlight")
+              if not (hero_start >= 300 and hero_start_after <= 100 and hero_destination >= 300):
+                  raise SystemExit("Valid selected move did not relocate the hero two tiles right")
           else:
-              print("SDL2 input is not asserted here; NeXium's host-key path did not move the SDL2 probe cursor in the exploratory run.")
+              print("SDL2 input is not asserted here; SDL2 joystick input is checked in the separate workflow.")
           PY
             then
               echo "Render or right-arrow input check failed for $label" | tee -a runtime-evidence/runner.log
