@@ -160,7 +160,8 @@ jobs:
                 timeout --kill-after=1s 3s xdotool keydown --window "$window" c
                 sleep 0.15
                 timeout --kill-after=1s 3s xdotool keyup --window "$window" c
-                sleep 0.15
+                sleep 0.3
+                timeout --kill-after=2s 10s import -window "$window" "$SHOT_AFTER"
                 timeout --kill-after=1s 3s xdotool keydown --window "$window" c
                 sleep 0.15
                 timeout --kill-after=1s 3s xdotool keyup --window "$window" c
@@ -178,7 +179,6 @@ jobs:
                 timeout --kill-after=2s 10s import -window "$window" "$SHOT_INVALID"
               fi
               sleep 1
-              timeout --kill-after=2s 10s import -window "$window" "$SHOT_AFTER"
               test -s "$SHOT"
               test -s "$SHOT_AFTER"
               if [ "$CHECK_INPUT" = "1" ]; then
