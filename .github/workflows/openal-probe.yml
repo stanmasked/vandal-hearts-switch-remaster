@@ -114,13 +114,35 @@ jobs:
               wait "$pid" 2>/dev/null || true
             }
             trap cleanup EXIT
-            # Prefer a window whose title proves the guest SDL app is visible.
-            # The emulator host window can exist while the NRO is still black/loading.
-            window=""
-            for attempt in $(seq 1 30); do
-              state="$(ps -o stat= -p "$pid" 2>/dev/null | tr -d " " || true)"
-              if [ -z "$state" ] || [[ "$state" == Z* ]] || ! kill -0 "$pid" 2>/dev/null; then
-                cat "$LOG"
+            sleep 8
+            state="$(ps -o stat= -p "$pid" 2>/dev/null | tr -d " " || true)"
+            if [ -z "$state" ] || [[ "$state" == Z* ]] || ! kill -0 "$pid" 2>/dev/null; then
+              cat "$LOG"
+              echo "NeXium exited before status capture" >&2
+              exit 1
+            fi
+            echo "Visible X11 windows at capture time:" >&2
+            xdotool search --onlyvisible --name ".*" 2>/dev/null | while read -r id; do
+              printf "window=%s title=" "$id" >&2
+              xdotool getwindowname "$id" 2>/dev/null >&2 || true
+              xwininfo -id "$id" 2>/dev/null | grep -E "Absolute upper-left|Width:|Height:" >&2 || true
+            done
+            # NeXium owns the host window; guest SDL titles are not guaranteed to be
+            # exposed as separate X11 windows, so capture the host window and desktop.
+            window="$(xdotool search --onlyvisible --name "NeXium" 2>/dev/null | tail -n 1 || true)"
+            if [ -z "$window" ]; then
+              window="$(xdotool search --onlyvisible --name ".*" 2>/dev/null | tail -n 1 || true)"
+            fi
+            if [ -z "$window" ]; then
+              cat "$LOG"
+              echo "No visible emulator window found" >&2
+              exit 1
+            fi
+            echo "Capturing emulator host window id=$window title=$(xdotool getwindowname "$window")" >&2
+            timeout --kill-after=2s 10s import -window "$window" "$SHOT"
+            timeout --kill-after=2s 10s import -window root runtime-evidence/openal-desktop.png
+            test -s "$SHOT"
+            cat "$LOG"
                 echo "NeXium exited before status capture" >&2
                 exit 1
               fi
