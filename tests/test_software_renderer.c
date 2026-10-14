@@ -120,10 +120,10 @@ int main(void) {
     for (int x = 1; x < 5; ++x) assert(pixels[x] == palette.border);
     vh_render_grid_tile(&canvas, 0, 0, 5, palette);
     assert(pixels[0] == palette.border);
-    assert(pixels[1 * STRIDE + 1] == palette.tile);
-    assert(pixels[1 * STRIDE + 2] == palette.tile);
-    assert(pixels[1 * STRIDE + 3] == palette.tile);
-    assert(pixels[1 * STRIDE + 4] == palette.border);
+    assert(pixels[2 * STRIDE + 1] == palette.border);
+    assert(pixels[2 * STRIDE + 2] == palette.tile);
+    assert(pixels[2 * STRIDE + 3] == palette.tile);
+    assert(pixels[2 * STRIDE + 4] == palette.border);
     assert(pixels[1 * STRIDE + WIDTH] == 0xA5A5A5A5u);
     vh_render_grid_tile(&canvas, -2, -2, 5, palette);
     assert(pixels[0] == palette.border);
