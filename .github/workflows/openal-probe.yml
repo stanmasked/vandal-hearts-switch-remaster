@@ -103,7 +103,7 @@ jobs:
           export NRO="nros/openal-switch-probe.nro"
           export LOG="runtime-evidence/openal-nexium.log"
           export SHOT="runtime-evidence/openal-status.png"
-          if ! timeout --kill-after=5s 55s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
+          timeout --kill-after=5s 55s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
             set -euo pipefail
             "$NEXIUM_BIN" "$NRO" >"$LOG" 2>&1 &
             pid=$!
