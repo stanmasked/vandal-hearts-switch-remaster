@@ -67,10 +67,10 @@ The current source draws a software-rendered 8×6 grid into a libnx RGBA8888 fra
 - [x] Compile/link and package a second probe requesting an OpenGL ES 2.0 context.
 - [x] Compile/link and package a third probe uploading a CPU-rendered RGBA framebuffer into an OpenGL ES texture.
 - [x] Run the CPU-framebuffer-to-GLES2-texture probe in NeXium and detect the expected marker.
-- [x] Verify one Right-arrow movement in the SDL2 texture probe via `SDL_JOYBUTTONDOWN` on NeXium ([CI run 38526810434](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38526810434)).
-- [ ] Run the SDL2 software-renderer and bare GLES2-context probes in a runtime environment.
+- [x] Verify two Right-arrow presses, A selection, and B cancellation in the SDL2 texture probe on NeXium ([CI run 38584421931](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38584421931)).
+- [x] Run the SDL2 software-renderer and bare GLES2-context probes in NeXium and validate their 1280×720 screenshots ([CI run 38584421931](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38584421931)).
 - [x] Build an SDL_GL/OpenGL ES context probe separately from the software renderer.
-- [x] Run the GLES2 texture-upload probe and verify one joystick-driven Right move in NeXium; standalone context and software-renderer runtime remain unverified.
+- [x] Run the GLES2 texture-upload probe and verify joystick-driven input in NeXium; the standalone GLES2 context probe has a separate screenshot-based launch check.
 
 The software-renderer and OpenGL ES 2.0 NROs now pass runtime screenshot checks in NeXium, and the CPU-framebuffer-to-texture NRO passes repeated joystick movement plus A/B selection/cancellation checks in [SDL2 run 38584421931](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38584421931). The software-renderer and standalone GLES2 probes are rendering/context smoke tests rather than full interactive gameplay tests.
 
@@ -81,7 +81,8 @@ The software-renderer and OpenGL ES 2.0 NROs now pass runtime screenshot checks 
 - [x] Implement a generated framebuffer pattern/grid without loading game assets.
 - [x] Compile and package the framebuffer implementation in CI.
 - [x] Verify initial 1280×720 framebuffer presentation and hero-marker visibility in NeXium.
-- [ ] Verify orientation and repeated frame updates over time, including after controller input.
+- [ ] Verify orientation on target hardware.
+- [x] Verify visible frame changes after controller input in the SDL2 texture-upload probe in NeXium ([CI run 38584421931](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38584421931)).
 - [ ] Record chosen API, pixel format, stride handling, and any scaling.
 - [ ] Check that the app exits cleanly.
 
