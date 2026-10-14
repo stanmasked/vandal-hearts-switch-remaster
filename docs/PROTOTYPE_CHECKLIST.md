@@ -117,7 +117,7 @@ Only after P1–P3 pass:
 | Target environment | NeXium emulator on Ubuntu 26.04 with Lavapipe software Vulkan; initial-frame screenshots checked |
 | Exact command | Root Makefile build via CI workflow |
 | Build exit code | 0 (workflow build step succeeded) |
-| Artifact path and checksum | Artifact `nexium-runtime-evidence`; archive SHA-256: `b871f2e3d1d2d86e0c28bce4d39f8fdd03e4a2f03edb1c9ef1e9e...` |
+| Artifact path and checksum | Artifact `nexium-runtime-evidence`; archive SHA-256: `b87166a30807f4df404234e05784b0a1c652b8701862ccf33a00a18e97244b16` |
 | Runtime steps | Launch libnx NRO in NeXium; wait 30 seconds; capture a screenshot; inject one Right-arrow press; capture the second screenshot; compare cursor-border pixels |
 | Observed result | Both screenshots were 1280×720; cursor yellow counts moved from (371, 0) to (0, 481), confirming one tile of Right-arrow movement; SDL2 input and audio remain unverified |
 | Logs / screenshots location | [Main build 38524223405](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223405); [NeXium input check 38525585386](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38525585386); [input evidence artifact](https://api.github.com/repos/stanmasked/vandal-hearts-switch-remaster/actions/artifacts/11874464900/zip); [SDL2 graphics evidence](https://api.github.com/repos/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524564337); [SDL2 builds 38524223415](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223415) |
