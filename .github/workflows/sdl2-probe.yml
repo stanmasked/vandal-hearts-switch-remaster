@@ -153,7 +153,7 @@ jobs:
             timeout --kill-after=2s 10s import -window "$window" "$SHOT"
             timeout --kill-after=1s 3s xdotool windowfocus --sync "$window" || true
             timeout --kill-after=1s 3s xdotool keydown --window "$window" Right
-            sleep 0.15
+            sleep 0.03
             timeout --kill-after=1s 3s xdotool keyup --window "$window" Right
             sleep 1
             timeout --kill-after=2s 10s import -window "$window" "$SHOT_AFTER"
@@ -192,15 +192,23 @@ jobs:
           def tile_box(x, y):
               return (x + 4, y + 4, x + cell - 4, y + cell - 4)
 
-          tile_one = tile_box(grid_x + cell, grid_y + 2 * cell)
-          tile_two = tile_box(grid_x + 2 * cell, grid_y + 2 * cell)
-          before_one = near_color_count(before, cursor, tile_one)
-          before_two = near_color_count(before, cursor, tile_two)
-          after_one = near_color_count(after, cursor, tile_one)
-          after_two = near_color_count(after, cursor, tile_two)
-          print(f"SDL2 cursor yellow counts before=({before_one},{before_two}) after=({after_one},{after_two})")
-          if not (before_one >= 300 and before_two <= 100 and after_one <= 100 and after_two >= 300):
-              raise SystemExit("SDL2 Switch joystick event did not move the cursor one tile right")
+          def cursor_cells(image):
+              found = []
+              for row in range(6):
+                  for col in range(8):
+                      x, y = grid_x + col * cell, grid_y + row * cell
+                      count = near_color_count(image, cursor, tile_box(x, y))
+                      if count > 100:
+                          found.append((col, row, count))
+              return found
+
+          before_cells = cursor_cells(before)
+          after_cells = cursor_cells(after)
+          print(f"SDL2 cursor cells before={before_cells} after={after_cells}")
+          if not (len(before_cells) == 1 and before_cells[0][:2] == (1, 2) and
+                  len(after_cells) == 1 and after_cells[0][:2] == (2, 2) and
+                  before_cells[0][2] >= 300 and after_cells[0][2] >= 300):
+              raise SystemExit("SDL2 Switch joystick event did not move the cursor exactly one tile right")
           PY
 
       - name: Upload SDL2 runtime evidence
