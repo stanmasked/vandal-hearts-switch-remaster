@@ -33,7 +33,7 @@ Portable unit tests run with `make test` and are included in CI. They cover Manh
 
 The current prototype renders an 8×6 grid into a 1280×720 RGBA framebuffer using a generated 5×7 bitmap font; it requires no external fonts or game assets. D-pad moves the cursor; A selects the hero or attempts to move it; B cancels selection; Plus exits. Movement is limited to a Manhattan distance of two tiles, and the enemy tile is blocked. This is a mechanics/input experiment, not the original game's battle system. A successful build does not prove that the framebuffer presents correctly at runtime.
 
-The SDL2 feasibility workflow installs `switch-sdl2` and builds both a software-renderer/input probe and a separate OpenGL ES 2.0 context probe. The latest build, NRO validation, and artifact uploads passed in [CI run 38523844795](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523844795). Neither probe has been run on an emulator or console; a GLES2 context build does not prove that the upstream desktop OpenGL renderer is compatible.
+The SDL2 feasibility workflow installs `switch-sdl2` and builds three probes: software rendering/input, OpenGL ES 2.0 context creation, and CPU framebuffer upload into an OpenGL ES texture. The latest builds, NRO validation, and artifact uploads passed in [CI run 38523937214](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523937214). None has been run on an emulator or console; these probes do not prove that the upstream desktop OpenGL renderer is compatible.
 
 See the [upstream audit](docs/UPSTREAM_AUDIT.md), [porting plan](docs/PORTING_PLAN.md),
 [build notes](docs/BUILDING.md), [toolchain diagnostic instructions](docs/TOOLCHAIN_CHECK.md),
@@ -43,12 +43,13 @@ See the [upstream audit](docs/UPSTREAM_AUDIT.md), [porting plan](docs/PORTING_PL
 ## Build artifact
 
 The CI workflow creates an artifact named `vandal-hearts-switch-prototype`.
-Download the latest main prototype from [CI run 38523844738](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523844738) or use the [workflow runs page](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions).
-The `vandal-hearts-switch-prototype` artifact for run 38523844738 is 53,315 bytes; GitHub reports archive SHA-256 `86889244ff4d651ab2ec4cc09a59bd7514675dfc6edf07ca684f38e2a048f8b5`. This digest identifies the GitHub artifact archive, not the extracted NRO file. The CI run checked the NRO magic, declared size, and segment bounds.
+Download the latest main prototype from [CI run 38523936883](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523936883) or use the [workflow runs page](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions).
+The `vandal-hearts-switch-prototype` artifact for run 38523936883 is 53,315 bytes; GitHub reports archive SHA-256 `02515abc9bc6bd850a5cc132e28b5018c9e3bacb457fc8e31f28c5a3a6c20ee1`. This digest identifies the GitHub artifact archive, not the extracted NRO file. The CI run checked the NRO magic, declared size, and segment bounds.
 
-The separate [SDL2 probe run 38523844795](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523844795) uploaded two artifacts:
-- [Software-renderer probe](https://api.github.com/repos/stanmasked/vandal-hearts-switch-remaster/actions/artifacts/11875177043/zip): archive size 2,796,343 bytes; archive SHA-256 `b34736727bcef49ee8e22327244c0b66389f003b4eff09950c0bb9b87282807b`.
-- [OpenGL ES 2.0 probe](https://api.github.com/repos/stanmasked/vandal-hearts-switch-remaster/actions/artifacts/11875491119/zip): archive size 2,515,684 bytes; archive SHA-256 `68e087af196709e90c09062d26a549bb336f953244da7e5161103961bc7cc33f`.
+The separate [SDL2 probe run 38523937214](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523937214) uploaded three artifacts:
+- [Software-renderer probe](https://api.github.com/repos/stanmasked/vandal-hearts-switch-remaster/actions/artifacts/11874577442/zip): archive size 2,796,343 bytes; archive SHA-256 `1c99cf845b80ccda2fa41bb001aec592dde6d75725c1eb28f4e0dadafd73e06f`.
+- [OpenGL ES 2.0 context probe](https://api.github.com/repos/stanmasked/vandal-hearts-switch-remaster/actions/artifacts/11874857230/zip): archive size 2,515,684 bytes; archive SHA-256 `57ab587f1ac7cf62f89e603294095c0588da31e4d6b4d7ebfd5e3187966331b6`.
+- [CPU framebuffer-to-texture probe](https://api.github.com/repos/stanmasked/vandal-hearts-switch-remaster/actions/artifacts/11874567521/zip): archive size 2,517,588 bytes; archive SHA-256 `985bddb0751d0e9c93a439ed7469930295b97fc056b49072ea610839ce8c4f7a`.
 These digests identify GitHub artifact archives, not the extracted NRO files. All results prove compilation and packaging only; none confirms runtime behavior.
 
 ## Upstream
