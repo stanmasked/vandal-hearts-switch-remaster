@@ -6,7 +6,7 @@ This checklist tracks the smallest useful Switch homebrew experiment before any 
 
 **Status: graphical framebuffer prototype compiles and packages in CI; runtime presentation and controller behavior remain unverified.**
 
-The prototype uses devkitPro/devkitA64 and libnx. CI run [38483880113](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38483880113) successfully ran toolchain checks, host-side rule tests, the Switch build, and NRO artifact upload. This confirms the build and packaging pipeline, not that the app runs on a console or emulator. GitHub reports the uploaded artifact archive digest as `sha256:f22f0ef243bb1db0367a03ca1f75c3c21b41ab73c1556f59a965c64cf1e90cb3`; this is not a checksum of the extracted NRO.
+The prototype uses devkitPro/devkitA64 and libnx. The latest bitmap-label build passed toolchain checks, host-side rule tests, NRO header/segment validation, and artifact upload in [CI run 38522872471](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38522872471). This confirms the build and packaging pipeline, not that the app runs on a console or emulator. GitHub reports the uploaded artifact archive digest as `sha256:793a22d685dec40c791a81740687d69edf33c18f69148dae6a80a12fe5f52faa`; this is not a checksum of the extracted NRO.
 
 ## Scope boundary
 
@@ -88,16 +88,16 @@ Only after P1–P3 pass:
 | Field | Value |
 | --- | --- |
 | Date/time | |
-| Source revision | `737485a9645f33cdade195fc8c4fce75d7f4f872` |
+| Source revision | `c4b98e4af743daea4b2d43d8152c84b667eeabc2` |
 | Host OS | GitHub Actions runner/container (see workflow logs) |
 | Toolchain and library versions | Toolchain verification passed; exact versions not yet recorded here |
 | Target environment | CI build only; runtime target not yet tested |
 | Exact command | Root Makefile build via CI workflow |
 | Build exit code | 0 (workflow build step succeeded) |
-| Artifact path and checksum | Artifact `vandal-hearts-switch-prototype`; archive SHA-256: `f22f0ef243bb1db0367a03ca1f75c3c21b41ab73c1556f59a965c64cf1e90cb3` |
+| Artifact path and checksum | Artifact `vandal-hearts-switch-prototype`; archive SHA-256: `793a22d685dec40c791a81740687d69edf33c18f69148dae6a80a12fe5f52faa` |
 | Runtime steps | Not yet run |
 | Observed result | CI build and upload succeeded; no runtime claim |
-| Logs / screenshots location | [CI run 38483880113](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38483880113) |
+| Logs / screenshots location | [CI run 38522872471](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38522872471) |
 | Known limitations | Compile verified only; emulator/device behavior unverified |
 
 Do not commit proprietary game files or include them in CI artifacts. Use generated test data only.
