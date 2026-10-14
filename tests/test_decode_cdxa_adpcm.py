@@ -51,6 +51,14 @@ class DecodeCdXaAdpcmTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "copies do not match"):
             decode_group(bytes(bad), [[0, 0], [0, 0]])
 
+    def test_rejects_unsupported_filter_and_shift_parameters(self):
+        for parameter, message in ((0x4C, "invalid XA filter"), (0x0D, "invalid XA shift")):
+            with self.subTest(parameter=hex(parameter)):
+                group = bytearray(GROUP_SIZE)
+                group[:16] = bytes([parameter]) * 16
+                with self.assertRaisesRegex(ValueError, message):
+                    decode_group(bytes(group), [[0, 0], [0, 0]])
+
     def test_writes_wav_with_expected_format_and_frame_count(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -84,7 +92,7 @@ class DecodeCdXaAdpcmTests(unittest.TestCase):
             source.write_bytes(b"bad")
             with self.assertRaisesRegex(ValueError, "divisible"):
                 decode_payload_file(source, output)
-            source.write_bytes(bytes(AUDIO_BYTES_PER_SECTOR) + b"\x01" + bytes(19))
+            source.write_bytes(bytes(AUDIO_BYTES_PER_SECTOR) + b"\\x01" + bytes(19))
             with self.assertRaisesRegex(ValueError, "non-zero padding"):
                 decode_payload_file(source, output)
             with self.assertRaisesRegex(ValueError, "overwrite"):
