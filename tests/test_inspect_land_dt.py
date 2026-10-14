@@ -1,11 +1,17 @@
-"""Tests for raw LAND_DT texture-record inspection."""
+"""Tests for raw LAND_DT texture-record inspection and comparison."""
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from tools.inspect_land_dt import BLOCK_SIZE, CLUT_DATA_OFFSET, CLUT_INDEX_OFFSET, inspect_land_dt
+from tools.inspect_land_dt import (
+    BLOCK_SIZE,
+    CLUT_DATA_OFFSET,
+    CLUT_INDEX_OFFSET,
+    compare_land_dt,
+    inspect_land_dt,
+)
 
 
 class InspectLandDtTests(unittest.TestCase):
@@ -56,6 +62,42 @@ class InspectLandDtTests(unittest.TestCase):
             self.assertEqual(report["records"][0]["bytes"], [21, 22, 23, 24])
             self.assertEqual(report["records"][1]["bytes"], [31, 32, 33, 34])
             self.assertEqual([r["clut_index"] for r in report["records"]], [6, 7])
+
+    def test_compare_maps_reports_record_and_clut_differences(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "LAND_DT.DAT"
+            data = bytearray(BLOCK_SIZE * 3)
+            data[0 * BLOCK_SIZE + 241 * 4:0 * BLOCK_SIZE + 241 * 4 + 4] = bytes((1, 2, 3, 4))
+            data[1 * BLOCK_SIZE + 241 * 4:1 * BLOCK_SIZE + 241 * 4 + 4] = bytes((1, 2, 3, 4))
+            data[2 * BLOCK_SIZE + 241 * 4:2 * BLOCK_SIZE + 241 * 4 + 4] = bytes((0, 0, 0, 0))
+            data[0 * BLOCK_SIZE + CLUT_INDEX_OFFSET + 241] = 5
+            data[1 * BLOCK_SIZE + CLUT_INDEX_OFFSET + 241] = 5
+            data[2 * BLOCK_SIZE + CLUT_INDEX_OFFSET + 241] = 0
+            path.write_bytes(data)
+
+            report = compare_land_dt(path, map_numbers=(0, 1, 2), gfx_ids=(241,))
+            diff = report["differences"][0]
+            self.assertTrue(diff["differs_between_maps"])
+            self.assertEqual([v["raw_hex"] for v in diff["values"]], ["01 02 03 04", "01 02 03 04", "00 00 00 00"])
+            self.assertEqual([v["clut_index"] for v in diff["values"]], [5, 5, 0])
+
+    def test_compare_maps_reports_identical_records(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "LAND_DT.DAT"
+            path.write_bytes(bytes(BLOCK_SIZE * 2))
+            report = compare_land_dt(path, map_numbers=(0, 1), gfx_ids=(241, 243))
+            self.assertFalse(any(d["differs_between_maps"] for d in report["differences"]))
+
+    def test_compare_rejects_invalid_selection(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "LAND_DT.DAT"
+            path.write_bytes(bytes(BLOCK_SIZE))
+            with self.assertRaisesRegex(ValueError, "at least two"):
+                compare_land_dt(path, map_numbers=(0,))
+            with self.assertRaisesRegex(ValueError, "outside the input"):
+                compare_land_dt(path, map_numbers=(0, 1))
+            with self.assertRaisesRegex(ValueError, "unique"):
+                compare_land_dt(path, map_numbers=(0, 0))
 
     def test_rejects_invalid_size_and_map_number(self):
         with tempfile.TemporaryDirectory() as temp:
