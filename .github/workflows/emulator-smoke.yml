@@ -109,9 +109,10 @@ jobs:
             local shot="runtime-evidence/$label.png"
             local shot_selected="runtime-evidence/$label-selected.png"
             local shot_cancelled="runtime-evidence/$label-cancelled.png"
+            local shot_invalid="runtime-evidence/$label-invalid-move.png"
             local shot_after="runtime-evidence/$label-after-move.png"
             local log="runtime-evidence/$label.log"
-            export NRO="$nro" SHOT="$shot" SHOT_SELECTED="$shot_selected" SHOT_CANCELLED="$shot_cancelled" SHOT_AFTER="$shot_after" LOG="$log" CHECK_INPUT="$check_input" VK_ICD_FILENAMES="$icd"
+            export NRO="$nro" SHOT="$shot" SHOT_SELECTED="$shot_selected" SHOT_CANCELLED="$shot_cancelled" SHOT_INVALID="$shot_invalid" SHOT_AFTER="$shot_after" LOG="$log" CHECK_INPUT="$check_input" VK_ICD_FILENAMES="$icd"
             echo "Launching $nro in NeXium" | tee -a runtime-evidence/runner.log
 
             if ! timeout --kill-after=5s 60s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
@@ -159,6 +160,18 @@ jobs:
                 timeout --kill-after=1s 3s xdotool keydown --window "$window" c
                 sleep 0.15
                 timeout --kill-after=1s 3s xdotool keyup --window "$window" c
+                sleep 0.15
+                for press in 1 2 3; do
+                  timeout --kill-after=1s 3s timeout --kill-after=1s 3s xdotool keydown --window "$window" Right
+                  sleep 0.15
+                  timeout --kill-after=1s 3s timeout --kill-after=1s 3s xdotool keyup --window "$window" Right
+                  sleep 0.15
+                done
+                timeout --kill-after=1s 3s xdotool keydown --window "$window" c
+                sleep 0.15
+                timeout --kill-after=1s 3s xdotool keyup --window "$window" c
+                sleep 0.3
+                timeout --kill-after=2s 10s import -window "$window" "$SHOT_INVALID"
               fi
               sleep 1
               timeout --kill-after=2s 10s import -window "$window" "$SHOT_AFTER"
@@ -167,6 +180,7 @@ jobs:
               if [ "$CHECK_INPUT" = "1" ]; then
                 test -s "$SHOT_SELECTED"
                 test -s "$SHOT_CANCELLED"
+                test -s "$SHOT_INVALID"
               fi
               kill -INT "$pid" 2>/dev/null || true
               sleep 2
@@ -178,7 +192,7 @@ jobs:
               return
             fi
 
-            if ! python3 - "$shot" "$shot_selected" "$shot_cancelled" "$shot_after" "$label" <<'PY'
+            if ! python3 - "$shot" "$shot_selected" "$shot_cancelled" "$shot_invalid" "$shot_after" "$label" <<'PY'
           from PIL import Image
           from pathlib import Path
           import sys
@@ -186,8 +200,9 @@ jobs:
           before = Image.open(sys.argv[1]).convert("RGB")
           selected = Image.open(sys.argv[2]).convert("RGB") if Path(sys.argv[2]).exists() else None
           cancelled = Image.open(sys.argv[3]).convert("RGB") if Path(sys.argv[3]).exists() else None
-          after = Image.open(sys.argv[4]).convert("RGB")
-          label = sys.argv[5]
+          invalid = Image.open(sys.argv[4]).convert("RGB") if Path(sys.argv[4]).exists() else None
+          after = Image.open(sys.argv[5]).convert("RGB")
+          label = sys.argv[6]
           hero = (86, 190, 244)
           cursor = (255, 219, 102)
 
@@ -247,6 +262,17 @@ jobs:
                   raise SystemExit("A selection / B cancel did not toggle the movement-range highlight")
               if not (hero_start >= 300 and hero_start_after <= 100 and hero_destination >= 300):
                   raise SystemExit("Valid selected move did not relocate the hero two tiles right")
+
+              if invalid is None:
+                  raise SystemExit("Missing invalid-move screenshot")
+              tile_four = tile_box(grid_x + 4 * cell, grid_y + 2 * cell)
+              tile_six = tile_box(grid_x + 6 * cell, grid_y + 2 * cell)
+              invalid_hero = near_color_count(invalid, hero, tile_three)
+              invalid_cursor = near_color_count(invalid, cursor, tile_six)
+              invalid_range = near_color_count(invalid, range_color, tile_four)
+              print(f"{label}: after out-of-range attempt hero-at-origin-destination={invalid_hero}, cursor-at-invalid-tile={invalid_cursor}, selected-range={invalid_range}")
+              if not (invalid_hero >= 300 and invalid_cursor >= 300 and invalid_range >= 300):
+                  raise SystemExit("Out-of-range move was not rejected while preserving hero position and selection")
           else:
               print("SDL2 input is not asserted here; SDL2 joystick input is checked in the separate workflow.")
           PY
