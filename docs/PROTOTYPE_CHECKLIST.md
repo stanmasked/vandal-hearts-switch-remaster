@@ -4,7 +4,7 @@
 
 This checklist tracks the smallest useful Switch homebrew experiment before any game code or game data is ported.
 
-**Status: graphical framebuffer prototype compiles and packages in CI; runtime presentation and controller behavior remain unverified.**
+**Status: initial framebuffer presentation has been confirmed in NeXium; controller behavior, audio output, and physical-console behavior remain unverified.**
 
 The prototype uses devkitPro/devkitA64 and libnx. The latest main prototype passed toolchain checks, host-side rule tests, NRO header/segment validation, and artifact upload in [CI run 38524223405](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223405). The SDL2 software-renderer, OpenGL ES 2.0 context, and CPU framebuffer-to-texture probes passed package installation, compilation/linking, NRO validation, and artifact upload in [CI run 38524223415](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223415). These confirm build and packaging only, not runtime behavior. The texture-probe archive digest is `sha256:985bddb0751d0e9c93a439ed7469930295b97fc056b49072ea610839ce8c4f7a`; it is not a checksum of the extracted NRO.
 
@@ -37,7 +37,9 @@ The movement rules and input-state transitions are shared by the libnx prototype
 
 ### P2 — Verify runtime and controller input
 
-- [ ] Launch the application in the explicitly named environment (emulator or physical console).
+- [x] Launch the main framebuffer NRO and SDL2 texture-upload probe in NeXium (software Vulkan).
+- [x] Capture 1280×720 screenshots and detect the expected hero-marker color in both probes.
+- [ ] Launch the application on physical Switch hardware.
 - [ ] Confirm the title and control hints are visible and correctly oriented.
 - [ ] Verify D-pad moves the cursor and clamps it to the 8×6 board edges.
 - [ ] Press A while the cursor is on the hero to select it and reveal the movement range.
@@ -49,7 +51,7 @@ The movement rules and input-state transitions are shared by the libnx prototype
 
 For a manual run, download the `vandal-hearts-switch-prototype` artifact from a successful workflow run, extract the `.nro`, copy it to `sd:/switch/vandal-hearts-prototype.nro`, and launch it from the Homebrew Menu. Use a Switch homebrew-capable test environment you control; do not include game images or proprietary assets.
 
-The current source draws a software-rendered 8×6 grid into a libnx RGBA8888 framebuffer and uses a generated 5×7 bitmap font for labels. The separate SDL2 texture probe compiles a CPU-generated RGBA frame upload to a GLES2 texture and fullscreen-quad presentation path. An OpenAL Soft probe generates a short tone and successfully compiles/packages, but audible output is not yet confirmed. Runtime behavior is not yet confirmed.
+The current source draws a software-rendered 8×6 grid into a libnx RGBA8888 framebuffer and uses a generated 5×7 bitmap font for labels. The separate SDL2 texture probe uploads a CPU-generated RGBA frame to a GLES2 texture and presents it with a fullscreen quad. The NeXium run detected the hero-marker color in both 1280×720 screenshots ([run 38524363654](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524363654)); see the [runtime evidence artifact](https://api.github.com/repos/stanmasked/vandal-hearts-switch-remaster/actions/artifacts/11875333264/zip). An OpenAL Soft probe compiles/packages a generated-tone test, but audible output is not yet confirmed.
 
 **Pass condition:** launch and input are observed in the named environment. Emulator results and physical-device results must be reported separately.
 
@@ -73,7 +75,8 @@ The software-renderer and OpenGL ES 2.0 builds and artifact uploads passed in [C
 
 - [x] Implement a generated framebuffer pattern/grid without loading game assets.
 - [x] Compile and package the framebuffer implementation in CI.
-- [ ] Verify correct orientation, expected dimensions, and repeated frame updates at runtime.
+- [x] Verify initial 1280×720 framebuffer presentation and hero-marker visibility in NeXium.
+- [ ] Verify orientation and repeated frame updates over time, including after controller input.
 - [ ] Record chosen API, pixel format, stride handling, and any scaling.
 - [ ] Check that the app exits cleanly.
 
@@ -108,12 +111,12 @@ Only after P1–P3 pass:
 | Source revision | `3d95e0e353b95136a33ec9b886c1a5eb2f39bc4b` |
 | Host OS | GitHub Actions runner/container (see workflow logs) |
 | Toolchain and library versions | Toolchain verification passed; exact versions not yet recorded here |
-| Target environment | CI build only; runtime target not yet tested |
+| Target environment | NeXium emulator on Ubuntu 26.04 with Lavapipe software Vulkan; initial-frame screenshots checked |
 | Exact command | Root Makefile build via CI workflow |
 | Build exit code | 0 (workflow build step succeeded) |
 | Artifact path and checksum | Artifact `vandal-hearts-switch-prototype`; archive SHA-256: `e79c0dff04aec3f2cf0d37c5427f4deb77106a94da96dd7af98cd4f026bde95b` |
-| Runtime steps | Not yet run |
-| Observed result | CI build and upload succeeded; no runtime claim |
+| Runtime steps | Launch both NROs in NeXium; wait 30 seconds; capture screenshots; check for hero-marker color |
+| Observed result | Both screenshots were 1280×720 and passed hero-marker pixel checks; controller and audio behavior unverified |
 | Logs / screenshots location | [Main build 38523589997](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523589997); [SDL2 probes 38524223415](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223415) |
 | Known limitations | Compile verified only; emulator/device behavior unverified |
 
