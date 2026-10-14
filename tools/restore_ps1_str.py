@@ -18,6 +18,25 @@ RAW_CD_SECTOR_SIZE = 2352
 STR_MAGIC = b"\x60\x01\x01\x80"
 
 
+def inspect_stream(source: Path) -> tuple[int, int]:
+    """Count sectors and STR-tagged video sectors without writing any files."""
+    size = source.stat().st_size
+    if size % SECTOR_SIZE:
+        raise ValueError(
+            f"Input size {size} is not divisible by {SECTOR_SIZE}; "
+            "expected a 2048-byte-sector extraction."
+        )
+    sectors = 0
+    video_sectors = 0
+    with source.open("rb") as stream:
+        while payload := stream.read(SECTOR_SIZE):
+            if len(payload) != SECTOR_SIZE:
+                raise ValueError("Input ended in the middle of a sector.")
+            sectors += 1
+            video_sectors += int(payload.startswith(STR_MAGIC))
+    return sectors, video_sectors
+
+
 def repack(source: Path, destination: Path) -> tuple[int, int]:
     # Refuse in-place conversion: opening destination would truncate source data.
     if source.resolve() == destination.resolve():
@@ -67,6 +86,11 @@ def main() -> int:
     parser.add_argument("--height", type=int, default=720)
     parser.add_argument("--crf", type=int, default=17)
     parser.add_argument("--keep-intermediate", action="store_true")
+    parser.add_argument(
+        "--inspect-only",
+        action="store_true",
+        help="count sectors and STR video tags without encoding or creating output files",
+    )
     args = parser.parse_args()
 
     if args.width <= 0 or args.height <= 0:
@@ -82,6 +106,19 @@ def main() -> int:
         parser.error(f"Input file not found: {source}")
     if source.stat().st_size == 0:
         parser.error("Input file is empty; expected a non-empty STR stream.")
+
+    if args.inspect_only:
+        try:
+            sectors, video_sectors = inspect_stream(source)
+        except ValueError as error:
+            parser.error(str(error))
+        print(f"Input: {source}")
+        print(f"Size: {source.stat().st_size} bytes")
+        print(f"2048-byte sectors: {sectors}")
+        print(f"STR-tagged video sectors: {video_sectors}")
+        if video_sectors == 0:
+            print("Warning: no sectors begin with the expected STR video tag.")
+        return 0
 
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
