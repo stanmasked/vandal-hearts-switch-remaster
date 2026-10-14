@@ -166,6 +166,16 @@ int main(void) {
     GLenum upload_error = glGetError();
     fprintf(stderr, "RGB24 upload: %dx%d stride=%d unpack_alignment=1 gl_error=0x%04x\n",
             FRAME_WIDTH, FRAME_HEIGHT, FRAME_STRIDE, (unsigned int)upload_error);
+    if (upload_error != GL_NO_ERROR) {
+        fprintf(stderr, "RGB24 texture upload failed; refusing to present an invalid texture\\n");
+        glDeleteTextures(1, &texture);
+        glDeleteBuffers(1, &vbo);
+        glDeleteProgram(program);
+        SDL_GL_DeleteContext(context);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 7;
+    }
     GLint sampler = glGetUniformLocation(program, "uTexture");
 
     int running = 1;
