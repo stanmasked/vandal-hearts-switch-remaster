@@ -128,7 +128,7 @@ jobs:
                 printf "window=%s title=" "$id" >&2
                 xdotool getwindowname "$id" 2>/dev/null >&2 || true
               done
-              # Some NROs replace the emulator's title with the guest app title.
+              # Some NROs replace the emulator window title with the guest app title.
               window="$(xdotool search --onlyvisible --name ".*" 2>/dev/null | tail -n 1 || true)"
             fi
             if [ -z "$window" ]; then
