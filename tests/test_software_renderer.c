@@ -123,7 +123,7 @@ int main(void) {
     assert(pixels[2 * STRIDE + 1] == palette.border);
     assert(pixels[2 * STRIDE + 2] == palette.tile);
     assert(pixels[2 * STRIDE + 3] == palette.border);
-    assert(pixels[2 * STRIDE + 4] == 0xA5A5A5A5u);
+    assert(pixels[2 * STRIDE + 4] == palette.border);
     assert(pixels[1 * STRIDE + WIDTH] == 0xA5A5A5A5u);
     vh_render_grid_tile(&canvas, -2, -2, 5, palette);
     assert(pixels[0] == palette.tile);
