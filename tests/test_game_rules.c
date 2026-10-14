@@ -110,6 +110,15 @@ int main(void) {
     assert(vh_process_input(&state, VH_INPUT_QUIT, 8, 6, 2));
     assert(state.hero_x == 2 && state.hero_y == 2);
 
+    /* Quit takes precedence over gameplay actions in the same input frame. */
+    const VhGameState before_quit = state;
+    assert(vh_process_input(&state, VH_INPUT_QUIT | VH_INPUT_RIGHT |
+                            VH_INPUT_CONFIRM, 8, 6, 2));
+    assert(state.cursor_x == before_quit.cursor_x);
+    assert(state.cursor_y == before_quit.cursor_y);
+    assert(state.hero_x == before_quit.hero_x && state.hero_y == before_quit.hero_y);
+    assert(state.hero_selected == before_quit.hero_selected);
+
     puts("All tactical movement and platform-neutral input tests passed.");
     return 0;
 }
