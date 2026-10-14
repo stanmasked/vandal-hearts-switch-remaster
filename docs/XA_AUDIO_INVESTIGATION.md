@@ -40,3 +40,11 @@ python3 tools/inspect_cdxa.py /path/to/local-disc-image.bin
 ```
 
 It reports sync-pattern, Mode 2, duplicated-subheader, XA audio and Form 2 audio counts, plus submode/coding-info distributions. Synthetic tests cover valid audio metadata, mismatched subheaders, non-Mode-2 sectors, empty input, and invalid sector alignment. The helper does **not** decode ADPCM or write audio files. Run it on a local, legally obtained raw BIN; do not upload the disc image to the public repository.
+
+To focus on the `XA_STR1.` file range in the full BIN, pass its start LBA and sector count. The currently documented range is 111,072 raw sectors starting at LBA 19469:
+
+```sh
+python3 tools/inspect_cdxa.py /path/to/local-disc-image.bin --start-lba 19469 --sector-count 111072
+```
+
+The range options are bounds-checked; they do not alter the input image. Use them to compare a targeted scan with the previously recorded counts before attempting any audio extraction.
