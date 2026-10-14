@@ -130,8 +130,8 @@ int main(int argc, char **argv) {
 
 cleanup:
     show_status(renderer, result);
-    /* Keep the color-coded result on screen long enough for CI to capture it. */
-    SDL_Delay(15000);
+    /* NeXium CI waits 30 seconds before capture; keep the final status visible past that point. */
+    SDL_Delay(45000);
     if (context_current) {
         if (source != 0) {
             alSourceStop(source);
