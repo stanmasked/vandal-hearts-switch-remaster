@@ -19,7 +19,6 @@ def xa_audio_sector(payload_marker: int = 0) -> bytes:
     sector[16:20] = subheader
     sector[20:24] = subheader
     sector[24:24 + AUDIO_BYTES_PER_SECTOR] = bytes(AUDIO_BYTES_PER_SECTOR)
-    sector[24 + AUDIO_BYTES_PER_SECTOR:2328] = bytes(20)
     return bytes(sector)
 
 
