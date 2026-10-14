@@ -114,21 +114,33 @@ int vh_switch_rgb24_presenter_upload(VhSwitchRgb24Presenter *presenter,
 
 int vh_switch_rgb24_presenter_draw(VhSwitchRgb24Presenter *presenter,
                                    int viewport_width, int viewport_height) {
-    if (!presenter || !presenter->initialized) return 0;
-    GLint texture_width = 0, texture_height = 0;
+    if (!presenter || !presenter->initialized ||
+        presenter->frame_width <= 0 || presenter->frame_height <= 0)
+        return 0;
+    VhPresenterRect destination;
+    if (!vh_presenter_fit_rect(presenter->frame_width, presenter->frame_height,
+                               viewport_width, viewport_height, &destination))
+        return 0;
+
+    glViewport(destination.x, viewport_height - destination.y - destination.height,
+               destination.width, destination.height);
+    glUseProgram(presenter->program);
+    glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, presenter->texture);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texture_width);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texture_height);
-    /* GLES2 does not provide glGetTexLevelParameteriv; dimensions are tracked at upload. */
-    (void)texture_width;
-    (void)texture_height;
-    return 0;
+    glUniform1i(presenter->sampler_location, 0);
+    glBindBuffer(GL_ARRAY_BUFFER, presenter->vertex_buffer);
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), (const void *)0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat),
+                          (const void *)(2 * sizeof(GLfloat)));
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    GLenum error = glGetError();
+    if (error != GL_NO_ERROR) {
+        fprintf(stderr, "RGB24 presenter draw failed: GL error 0x%04x\\n",
+                (unsigned int)error);
+        return 0;
+    }
+    return 1;
 }
 
-void vh_switch_rgb24_presenter_destroy(VhSwitchRgb24Presenter *presenter) {
-    if (!presenter) return;
-    if (presenter->texture) glDeleteTextures(1, &presenter->texture);
-    if (presenter->vertex_buffer) glDeleteBuffers(1, &presenter->vertex_buffer);
-    if (presenter->program) glDeleteProgram(presenter->program);
-    memset(presenter, 0, sizeof(*presenter));
-}
