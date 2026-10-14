@@ -92,7 +92,7 @@ class DecodeCdXaAdpcmTests(unittest.TestCase):
             source.write_bytes(b"bad")
             with self.assertRaisesRegex(ValueError, "divisible"):
                 decode_payload_file(source, output)
-            source.write_bytes(bytes(AUDIO_BYTES_PER_SECTOR) + b"\\x01" + bytes(19))
+            source.write_bytes(bytes(AUDIO_BYTES_PER_SECTOR) + bytes([1]) + bytes(19))
             with self.assertRaisesRegex(ValueError, "non-zero padding"):
                 decode_payload_file(source, output)
             with self.assertRaisesRegex(ValueError, "overwrite"):
