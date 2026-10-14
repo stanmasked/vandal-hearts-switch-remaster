@@ -161,6 +161,10 @@ jobs:
                 sleep 0.15
                 timeout --kill-after=1s 3s xdotool keyup --window "$window" c
                 sleep 0.15
+                timeout --kill-after=1s 3s xdotool keydown --window "$window" c
+                sleep 0.15
+                timeout --kill-after=1s 3s xdotool keyup --window "$window" c
+                sleep 0.15
                 for press in 1 2 3; do
                   timeout --kill-after=1s 3s timeout --kill-after=1s 3s xdotool keydown --window "$window" Right
                   sleep 0.15
