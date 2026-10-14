@@ -175,7 +175,7 @@ jobs:
           green = sum(1 for r, g, b in samples if g > 100 and g > r * 1.5 and g > b * 1.15)
           red = sum(1 for r, g, b in samples if r > 120 and r > g * 1.5 and r > b * 1.25)
           if green >= 3:
-              print("OpenAL AL_PLAYING status visible")
+              print("OpenAL alSourcePlay call returned (audible output not verified)")
           elif len(set(samples)) == 1:
               rgb = samples[0]
               raise SystemExit(
