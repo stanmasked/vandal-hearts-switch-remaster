@@ -28,8 +28,9 @@ LDLIBS   := -L$(DEVKITPRO)/libnx/lib -lnx
 .PHONY: all clean test verify-nro sdl2-probe sdl2-gl-probe sdl2-texture-probe sdl2-audio-probe openal-probe
 all: $(BUILD)/$(TARGET).nro
 
-test: $(BUILD)/test_game_rules
+test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer
 	./$(BUILD)/test_game_rules
+	./$(BUILD)/test_software_renderer
 
 verify-nro: $(BUILD)/$(TARGET).nro
 	python3 tests/check_nro.py $<
@@ -55,7 +56,10 @@ $(BUILD):
 $(BUILD)/test_game_rules: tests/test_game_rules.c source/game_rules.h source/game_state.h source/platform_input.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@
 
-$(BUILD)/$(TARGET).elf: $(SOURCES)/main.c $(SOURCES)/game_rules.h $(SOURCES)/game_state.h $(SOURCES)/platform_input.h | $(BUILD)
+$(BUILD)/test_software_renderer: tests/test_software_renderer.c source/software_renderer.h | $(BUILD)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@
+
+$(BUILD)/$(TARGET).elf: $(SOURCES)/main.c $(SOURCES)/game_rules.h $(SOURCES)/game_state.h $(SOURCES)/platform_input.h $(SOURCES)/software_renderer.h | $(BUILD)
 	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ $(LDLIBS)
 
 $(BUILD)/$(TARGET).nacp: | $(BUILD)
