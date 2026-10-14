@@ -31,3 +31,6 @@ A later OpenAL runtime attempt, [run 38645987677](https://github.com/stanmasked/
 
 Next diagnostic step: make the runtime evidence distinguish the transient white checkpoint from a final status frame, and preserve the guest log/screenshot together. Do not treat the white checkpoint as either proof of audio success or proof of audio failure.
 
+
+
+The follow-up OpenAL status capture in run [38650120494](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38650120494) again sampled a white frame, despite the probe's 45-second final-status hold. The frame is the explicit stage-13 checkpoint drawn immediately after `alSourcePlay()`; it does not show that the call failed, nor does it establish whether later guest instructions progressed. To remove the ambiguous intermediate frame, commit [53d7719](https://github.com/stanmasked/vandal-hearts-switch-remaster/commit/53d7719c66f7a250e274ac8c585b6cf2085780ac) changes the immediate post-call display to the green status. In this probe, green is deliberately defined only as “`alSourcePlay()` returned”; it does not certify an error-free post-call state or audible output. The revised workflow still needs a fresh runtime run before this change can be considered validated.
