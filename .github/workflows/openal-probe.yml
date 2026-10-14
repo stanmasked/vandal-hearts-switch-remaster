@@ -127,7 +127,7 @@ jobs:
             }
             trap cleanup EXIT
             # Match the 30-second boot allowance used by the passing SDL2 probe.
-            # The previous capture still showed NeXium's startup splash, not the guest NRO.
+            # The previous capture still showed the NeXium startup splash, not the guest NRO.
             sleep 30
             state="$(ps -o stat= -p "$pid" 2>/dev/null | tr -d " " || true)"
             if [ -z "$state" ] || [[ "$state" == Z* ]] || ! kill -0 "$pid" 2>/dev/null; then
