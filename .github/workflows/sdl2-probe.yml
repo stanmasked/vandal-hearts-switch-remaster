@@ -59,6 +59,7 @@ jobs:
           make sdl2-probe
           make sdl2-gl-probe
           make sdl2-texture-probe
+          make rgb24-texture-probe
           make sdl2-audio-probe
 
       - name: Upload SDL2 software-renderer probe
@@ -80,6 +81,13 @@ jobs:
         with:
           name: sdl2-texture-switch-probe
           path: build/sdl2-texture-switch-probe.nro
+          if-no-files-found: error
+
+      - name: Upload RGB24 odd-stride texture probe
+        uses: actions/upload-artifact@v4
+        with:
+          name: rgb24-texture-switch-probe
+          path: build/rgb24-texture-switch-probe.nro
           if-no-files-found: error
 
       - name: Upload SDL2 audio probe
@@ -119,6 +127,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: sdl2-audio-switch-probe
+          path: nros
+
+      - name: Download RGB24 texture probe NRO
+        uses: actions/download-artifact@v4
+        with:
+          name: rgb24-texture-switch-probe
           path: nros
 
       - name: Install headless display and Vulkan runtime
@@ -280,6 +294,73 @@ jobs:
                   len(after_cells) == 1 and after_cells[0][:2] == (3, 2) and
                   before_cells[0][2] >= 300 and after_cells[0][2] >= 300):
               raise SystemExit("Two SDL2 Switch joystick events did not move the cursor exactly two tiles right")
+          PY
+
+      - name: Verify odd-stride RGB24 texture upload in NeXium
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime-evidence
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+          export NRO="nros/rgb24-texture-switch-probe.nro"
+          export LOG="runtime-evidence/rgb24-texture-nexium.log"
+          export SHOT="runtime-evidence/rgb24-texture.png"
+          timeout --kill-after=5s 60s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
+            set -euo pipefail
+            "$NEXIUM_BIN" "$NRO" >"$LOG" 2>&1 &
+            pid=$!
+            for i in $(seq 1 30); do
+              sleep 1
+              state="$(ps -o stat= -p "$pid" 2>/dev/null | tr -d " " || true)"
+              if [ -z "$state" ] || [[ "$state" == Z* ]] || ! kill -0 "$pid" 2>/dev/null; then
+                wait "$pid" || rc=$?
+                cat "$LOG"
+                echo "NeXium exited before RGB24 screenshot (status ${rc:-unknown})"
+                exit 1
+              fi
+            done
+            window="$(xdotool search --onlyvisible --name "NeXium" 2>/dev/null | tail -n 1 || true)"
+            test -n "$window"
+            sleep 2
+            timeout --kill-after=2s 10s import -window "$window" "$SHOT"
+            test -s "$SHOT"
+            kill -INT "$pid" 2>/dev/null || true
+            sleep 2
+            kill -KILL "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+          '
+          python3 - "$SHOT" "$LOG" <<'PY'
+          from PIL import Image
+          import sys
+
+          image = Image.open(sys.argv[1]).convert("RGB")
+          if image.size != (1280, 720):
+              raise SystemExit(f"Unexpected screenshot dimensions: {image.size}")
+
+          # Ignore the outer few pixels and sample the four screen corners.
+          boxes = {
+              "top-left-red": ((8, 8, 80, 64), (255, 0, 0)),
+              "top-right-green": ((1200, 8, 1272, 64), (0, 255, 0)),
+              "bottom-left-blue": ((8, 656, 80, 712), (0, 0, 255)),
+              "bottom-right-yellow": ((1200, 656, 1272, 712), (255, 255, 0)),
+          }
+          for name, (box, target) in boxes.items():
+              crop = image.crop(box)
+              matches = sum(
+                  1 for r, g, b in crop.getdata()
+                  if max(abs(r-target[0]), abs(g-target[1]), abs(b-target[2])) <= 35
+              )
+              print(f"{name}: {matches} matching pixels")
+              if matches < 1000:
+                  raise SystemExit(f"Expected corner marker not found: {name}")
+
+          log = open(sys.argv[2], encoding="utf-8", errors="replace").read()
+          print(log)
+          if "stride=963 unpack_alignment=1 gl_error=0x0000" not in log:
+              raise SystemExit("RGB24 upload did not report the expected stride/alignment and GL_NO_ERROR")
+          print("PASS: odd-stride RGB24 upload, channel colors, and orientation markers detected.")
           PY
 
       - name: Verify SDL2 software renderer and OpenGL ES runtime
