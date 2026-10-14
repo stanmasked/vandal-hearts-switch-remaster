@@ -15,7 +15,7 @@ def xa_audio_sector(payload_marker: int = 0) -> bytes:
     sector = bytearray([payload_marker] * SECTOR_SIZE)
     sector[:12] = SYNC
     sector[15] = 2  # Mode 2
-    subheader = bytes((1, 0, 0x64, 0x01))  # file, channel, audio + Form 2, 4-bit stereo profile
+    subheader = bytes((1, 0, 0x64, 0x04))  # file, channel, audio + Form 2, 4-bit stereo at 37.8 kHz
     sector[16:20] = subheader
     sector[20:24] = subheader
     sector[24:24 + AUDIO_BYTES_PER_SECTOR] = bytes([payload_marker]) * AUDIO_BYTES_PER_SECTOR
@@ -24,7 +24,7 @@ def xa_audio_sector(payload_marker: int = 0) -> bytes:
 
 def set_xa_file_channel(sector: bytes, file_number: int, channel: int) -> bytes:
     updated = bytearray(sector)
-    subheader = bytes((file_number, channel, 0x64, 0x01))
+    subheader = bytes((file_number, channel, 0x64, 0x04))
     updated[16:20] = subheader
     updated[20:24] = subheader
     return bytes(updated)
@@ -41,7 +41,7 @@ class CdXaPipelineTests(unittest.TestCase):
 
             extraction = extract_audio_payloads(source, payload)
             self.assertEqual(extraction["audio_form2_sectors_written"], 1)
-            self.assertEqual(extraction["coding_info_counts"], {"0x01": 1})
+            self.assertEqual(extraction["coding_info_counts"], {"0x04": 1})
             self.assertEqual(extraction["audio_lbas"], [0])
             self.assertEqual(extraction["audio_lba_offsets"], [
                 {"lba": 0, "payload_offset": 0, "missing_source_sectors_before": 0}
