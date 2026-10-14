@@ -152,9 +152,12 @@ jobs:
             fi
             timeout --kill-after=2s 10s import -window "$window" "$SHOT"
             timeout --kill-after=1s 3s xdotool windowfocus --sync "$window" || true
-            timeout --kill-after=1s 3s xdotool keydown --window "$window" Right
-            sleep 0.03
-            timeout --kill-after=1s 3s xdotool keyup --window "$window" Right
+            for press in 1 2; do
+              timeout --kill-after=1s 3s xdotool keydown --window "$window" Right
+              sleep 0.15
+              timeout --kill-after=1s 3s xdotool keyup --window "$window" Right
+              sleep 0.15
+            done
             sleep 1
             timeout --kill-after=2s 10s import -window "$window" "$SHOT_AFTER"
             test -s "$SHOT" && test -s "$SHOT_AFTER"
@@ -214,9 +217,9 @@ jobs:
           after_cells = cursor_cells(after)
           print(f"SDL2 cursor cells before={before_cells} after={after_cells}")
           if not (len(before_cells) == 1 and before_cells[0][:2] == (1, 2) and
-                  len(after_cells) == 1 and after_cells[0][:2] == (2, 2) and
+                  len(after_cells) == 1 and after_cells[0][:2] == (3, 2) and
                   before_cells[0][2] >= 300 and after_cells[0][2] >= 300):
-              raise SystemExit("SDL2 Switch joystick event did not move the cursor exactly one tile right")
+              raise SystemExit("Two SDL2 Switch joystick events did not move the cursor exactly two tiles right")
           PY
 
       - name: Upload SDL2 runtime evidence
