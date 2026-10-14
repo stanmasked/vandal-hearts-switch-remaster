@@ -22,6 +22,14 @@ def xa_audio_sector(payload_marker: int = 0) -> bytes:
     return bytes(sector)
 
 
+def set_xa_file_channel(sector: bytes, file_number: int, channel: int) -> bytes:
+    updated = bytearray(sector)
+    subheader = bytes((file_number, channel, 0x64, 0x01))
+    updated[16:20] = subheader
+    updated[20:24] = subheader
+    return bytes(updated)
+
+
 class CdXaPipelineTests(unittest.TestCase):
     def test_extracts_sector_payload_and_decodes_it_to_expected_wav(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -67,7 +75,6 @@ class CdXaPipelineTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "empty"):
                 decode_payload_file(payload, root / "decoded.wav", extracted_groups=True)
 
-
     def test_report_preserves_source_lba_gap_when_non_audio_sector_is_skipped(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -92,7 +99,6 @@ class CdXaPipelineTests(unittest.TestCase):
             ])
             self.assertEqual(payload.stat().st_size, AUDIO_BYTES_PER_SECTOR * 2)
 
-
     def test_mismatched_duplicate_subheader_is_rejected(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -108,7 +114,6 @@ class CdXaPipelineTests(unittest.TestCase):
             self.assertEqual(report["audio_form2_sectors_written"], 0)
             self.assertEqual(report["payload_bytes_written"], 0)
             self.assertEqual(payload.read_bytes(), b"")
-
 
     def test_invalid_sync_and_non_mode2_sectors_are_skipped(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -128,6 +133,27 @@ class CdXaPipelineTests(unittest.TestCase):
             self.assertEqual(report["audio_form2_sectors_written"], 1)
             self.assertEqual(report["audio_lbas"], [2])
             self.assertEqual(payload.stat().st_size, AUDIO_BYTES_PER_SECTOR)
+
+    def test_file_and_channel_filters_select_only_matching_audio_sector(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "synthetic-disc.bin"
+            payload = root / "audio-payload.bin"
+            first = set_xa_file_channel(xa_audio_sector(0x11), file_number=7, channel=0)
+            selected = set_xa_file_channel(xa_audio_sector(0x22), file_number=7, channel=1)
+            other_channel = set_xa_file_channel(xa_audio_sector(0x33), file_number=7, channel=2)
+            other_file = set_xa_file_channel(xa_audio_sector(0x44), file_number=8, channel=1)
+            source.write_bytes(first + selected + other_channel + other_file)
+
+            report = extract_audio_payloads(
+                source, payload, channel=1, file_number=7
+            )
+            self.assertEqual(report["sectors_scanned"], 4)
+            self.assertEqual(report["audio_form2_sectors_written"], 1)
+            self.assertEqual(report["audio_lbas"], [1])
+            self.assertEqual(report["first_audio_lba"], 1)
+            self.assertEqual(report["last_audio_lba"], 1)
+            self.assertEqual(payload.read_bytes(), selected[24:24 + AUDIO_BYTES_PER_SECTOR])
 
 
 if __name__ == "__main__":
