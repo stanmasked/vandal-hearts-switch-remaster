@@ -17,15 +17,15 @@ def main() -> int:
     # followed by version, declared NRO size, and flags.
     header_offset = 0x10
     size_offset = 0x18
-    if len(data) < 0x20:
-        print(f"FAIL: {path} is too small to contain an NRO header ({len(data)} bytes)")
+    if len(data) < 0x80:
+        print(f"FAIL: {path} is too small to contain a complete NRO header ({len(data)} bytes)")
         return 1
     if data[header_offset:header_offset + 4] != b"NRO0":
         print(f"FAIL: {path} does not contain NRO0 magic at offset 0x10")
         return 1
 
     declared_size = struct.unpack_from("<I", data, size_offset)[0]
-    if declared_size < 0x20:
+    if declared_size < 0x80:
         print(f"FAIL: invalid declared NRO size: {declared_size}")
         return 1
     if declared_size > len(data):
@@ -34,8 +34,23 @@ def main() -> int:
         )
         return 1
 
+    # Each segment header stores its file offset and byte size. Reject any
+    # segment that points outside the binary image (assets may follow it).
+    for segment_name, offset_field in (("text", 0x20), ("rodata", 0x28), ("data", 0x30)):
+        segment_offset, segment_size = struct.unpack_from("<II", data, offset_field)
+        if segment_size == 0:
+            print(f"FAIL: {segment_name} segment has zero size")
+            return 1
+        if segment_offset >= declared_size or segment_offset + segment_size > declared_size:
+            print(
+                f"FAIL: {segment_name} segment range "
+                f"[{segment_offset}, {segment_offset + segment_size}) exceeds "
+                f"declared NRO size {declared_size}"
+            )
+            return 1
+
     print(
-        f"PASS: {path} has an NRO0 header; "
+        f"PASS: {path} has an NRO0 header and three in-bounds segments; "
         f"declared binary size={declared_size} bytes, file size={len(data)} bytes"
     )
     return 0
