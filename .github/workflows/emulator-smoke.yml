@@ -134,9 +134,12 @@ jobs:
               timeout --kill-after=2s 10s import -window "$window" "$SHOT"
               if [ "$CHECK_INPUT" = "1" ]; then
                 timeout --kill-after=1s 3s xdotool windowfocus --sync "$window" || true
-                timeout --kill-after=1s 3s timeout --kill-after=1s 3s xdotool keydown --window "$window" Right
-                sleep 0.15
-                timeout --kill-after=1s 3s timeout --kill-after=1s 3s xdotool keyup --window "$window" Right
+                for press in 1 2; do
+                  timeout --kill-after=1s 3s timeout --kill-after=1s 3s xdotool keydown --window "$window" Right
+                  sleep 0.15
+                  timeout --kill-after=1s 3s timeout --kill-after=1s 3s xdotool keyup --window "$window" Right
+                  sleep 0.15
+                done
               fi
               sleep 1
               timeout --kill-after=2s 10s import -window "$window" "$SHOT_AFTER"
@@ -192,13 +195,17 @@ jobs:
                   return (x + 4, y + 4, x + cell - 4, y + cell - 4)
               tile_one = tile_box(grid_x + cell, grid_y + 2 * cell)
               tile_two = tile_box(grid_x + 2 * cell, grid_y + 2 * cell)
+              tile_three = tile_box(grid_x + 3 * cell, grid_y + 2 * cell)
               before_one = near_color_count(before, cursor, tile_one)
               before_two = near_color_count(before, cursor, tile_two)
+              before_three = near_color_count(before, cursor, tile_three)
               after_one = near_color_count(after, cursor, tile_one)
               after_two = near_color_count(after, cursor, tile_two)
-              print(f"{label}: cursor yellow counts before=({before_one},{before_two}) after=({after_one},{after_two})")
-              if not (before_one >= 300 and before_two <= 100 and after_one <= 100 and after_two >= 300):
-                  raise SystemExit("Right-arrow input did not move the cursor exactly one tile")
+              after_three = near_color_count(after, cursor, tile_three)
+              print(f"{label}: cursor yellow counts before=({before_one},{before_two},{before_three}) after=({after_one},{after_two},{after_three})")
+              if not (before_one >= 300 and before_two <= 100 and before_three <= 100 and
+                      after_one <= 100 and after_two <= 100 and after_three >= 300):
+                  raise SystemExit("Two Right-arrow presses did not move the cursor exactly two tiles")
           else:
               print("SDL2 input is not asserted here; NeXium's host-key path did not move the SDL2 probe cursor in the exploratory run.")
           PY
