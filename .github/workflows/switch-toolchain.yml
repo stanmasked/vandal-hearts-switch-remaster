@@ -50,14 +50,14 @@ jobs:
           set -euxo pipefail
           make test
 
-      - name: Build project
+      - name: Build and validate NRO
         shell: bash
         run: |
           set -euxo pipefail
           export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
           export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
           export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
-          make
+          make verify-nro
 
       - name: Upload NRO artifact
         uses: actions/upload-artifact@v4
