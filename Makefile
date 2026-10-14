@@ -32,6 +32,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer
 	./$(BUILD)/test_game_rules
 	./$(BUILD)/test_software_renderer
 	python3 tests/test_restore_ps1_str.py
+	python3 tests/test_inspect_cdxa.py
 
 # Host-only memory and undefined-behavior checks; requires GCC or Clang sanitizers.
 test-sanitize: | $(BUILD)
