@@ -61,6 +61,32 @@ int main(void) {
     vh_cancel_selection(&state);
     assert(state.hero_selected == 0);
 
+    /* Exhaustive bounds check: every cursor position and direction stays on-grid. */
+    for (int y = 0; y < 6; y++) {
+        for (int x = 0; x < 8; x++) {
+            const int dxs[] = {-1, 0, 1};
+            const int dys[] = {-1, 0, 1};
+            for (unsigned int ix = 0; ix < sizeof(dxs) / sizeof(dxs[0]); ix++) {
+                for (unsigned int iy = 0; iy < sizeof(dys) / sizeof(dys[0]); iy++) {
+                    VhGameState edge = {x, y, 1, 2, 6, 3, 0};
+                    vh_move_cursor(&edge, dxs[ix], dys[iy], 8, 6);
+                    assert(vh_is_inside_grid(edge.cursor_x, edge.cursor_y, 8, 6));
+                    assert(edge.cursor_x >= 0 && edge.cursor_x <= 7);
+                    assert(edge.cursor_y >= 0 && edge.cursor_y <= 5);
+                }
+            }
+        }
+    }
+
+    /* Exhaustively check movement range and enemy blocking over the board. */
+    for (int y = 0; y < 6; y++) {
+        for (int x = 0; x < 8; x++) {
+            const int allowed = vh_manhattan_distance(1, 2, x, y) <= 2 &&
+                                !(x == 6 && y == 3);
+            assert(vh_can_move(1, 2, x, y, 8, 6, 2, 6, 3) == allowed);
+        }
+    }
+
     puts("All tactical movement rule tests passed.");
     return 0;
 }
