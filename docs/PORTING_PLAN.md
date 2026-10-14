@@ -31,7 +31,7 @@ The official devkitPro package recipes provide a plausible path closer to the up
 - [switch-mesa package recipe](https://github.com/devkitPro/pacman-packages/blob/master/switch/mesa/PKGBUILD) provides the Mesa graphics library for the Switch package set.
 - [switch-openal-soft package recipe](https://github.com/devkitPro/pacman-packages/blob/master/switch/openal-soft/PKGBUILD) builds OpenAL Soft and depends on `switch-sdl2`.
 
-This establishes that package recipes exist. The [SDL2 probe CI run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523937214) confirms `switch-sdl2` installs in the CI image and links into three NROs: a software-renderer/input probe, an OpenGL ES 2.0 context probe, and a CPU-framebuffer-to-GL-texture upload probe. None has been run on an emulator or console. The texture probe checks the intended transfer path at compile/link level only; it does not establish visual correctness or compatibility with the upstream desktop renderer. Next, run the probes on an emulator or console and test OpenAL independently before choosing the upstream port architecture.
+This establishes that package recipes exist. The [SDL2 probe CI run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523937214) confirms `switch-sdl2` installs in the CI image and links into three NROs: a software-renderer/input probe, an OpenGL ES 2.0 context probe, and a CPU-framebuffer-to-GL-texture upload probe. None has been run on an emulator or console. The texture probe checks the intended transfer path at compile/link level only; it does not establish visual correctness or compatibility with the upstream desktop renderer. An [OpenAL Soft probe](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223445) also installs `switch-openal-soft`, links an NRO, and packages a generated-tone test. This confirms build/link feasibility only, not audible output. Next, run the graphics and audio probes on an emulator or console before choosing the upstream port architecture.
 
 ## Phase 3 — Switch homebrew feasibility prototype
 
@@ -45,7 +45,8 @@ This establishes that package recipes exist. The [SDL2 probe CI run](https://git
 - [x] Build and package a CPU framebuffer upload-to-texture probe using SDL2/OpenGL ES.
 - [ ] Verify the framebuffer and SDL2 probes in an emulator or on actual hardware.
 - [ ] Measure frame pacing and memory use on actual hardware.
-- [ ] Verify audio and thread support independently.
+- [x] Build and package an OpenAL Soft generated-tone probe in CI.
+- [ ] Verify audio output and thread support independently.
 
 **Exit condition:** reproducible homebrew test app with input and framebuffer presentation on the intended test environment.
 
