@@ -176,6 +176,12 @@ jobs:
           red = sum(1 for r, g, b in samples if r > 120 and r > g * 1.5 and r > b * 1.25)
           if green >= 3:
               print("OpenAL AL_PLAYING status visible")
+          elif len(set(samples)) == 1:
+              rgb = samples[0]
+              raise SystemExit(
+                  f"OpenAL guest rendered a stable status color RGB={rgb}; "
+                  "inspect probes/openal_smoke.c color map to identify the failing stage"
+              )
           elif red >= 3:
               raise SystemExit("OpenAL probe displayed failure status (red)")
           else:
