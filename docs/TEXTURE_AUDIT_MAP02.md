@@ -104,3 +104,10 @@ For map number 2, the loader's block base expression mapNum * 1797 gives a base 
 This narrows the next verification to a small, deterministic byte range and provides a way to compare the parser's output with the upstream layout. A raw dump or extractor output can be checked at these offsets; if the four source bytes are nonzero while parsed metadata becomes zero, the extraction/parsing stage becomes the leading suspect. If they are zero in the source block too, that still does not by itself establish whether the record is intentional or visually defective.
 
 **Evidence boundary:** no original LAND_DT binary, disc image, or extracted block was available in the repository files inspected during this check. No byte values have been read or asserted here.
+
+
+## Reproducible raw-record inspection tool (2026-10-15)
+
+Added `tools/inspect_land_dt.py` to report raw four-byte records and CLUT-index bytes for GFX 241 and 243. It supports either a concatenated LAND_DT stream (`--map-number 2`, using zero-based block indexing) or a single extracted 1797-byte block (`--block`). It reports offsets and byte values as JSON and explicitly warns that metadata alone does not prove a visual defect.
+
+Added `tests/test_inspect_land_dt.py` with synthetic data tests for the selected block, expected offsets, raw bytes, CLUT indices, single-block mode, and invalid input sizes/map selection. `make test` now includes this test file. These are tests against synthetic fixtures; they do not validate any original game asset because no LAND_DT binary was available in the repository.
