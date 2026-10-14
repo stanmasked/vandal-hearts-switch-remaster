@@ -26,3 +26,8 @@ The OpenAL Soft generated-tone probe is separate from the SDL2 audio test. Recen
 - Graphics and input probes have passed their documented NeXium checks; see the [SDL2 feasibility workflow](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/workflows/sdl2-probe.yml).
 - Audio library compilation, audio-device availability in a headless CI runner, audible playback in an emulator, and audible playback on physical Switch hardware are distinct questions.
 - Audio remains unverified until a supported runtime produces evidence of audible output. The physical-console test remains outstanding.
+
+A later OpenAL runtime attempt, [run 38645987677](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38645987677), did reach NeXium and captured a 1280×720 status screenshot. The sampled pixels were white, matching status stage 13 in `probes/openal_smoke.c`: the guest had rendered the checkpoint immediately after `alSourcePlay()` returned. The workflow classified this as a failed run because it did not capture the later green success status. **This is not evidence that audio playback failed**: white only establishes that the screenshot saw the post-call checkpoint, while the intended green state would additionally require the subsequent OpenAL error check and guest cleanup path to advance. The run therefore remains inconclusive about OpenAL playback, and certainly does not verify audible output.
+
+Next diagnostic step: make the runtime evidence distinguish the transient white checkpoint from a final status frame, and preserve the guest log/screenshot together. Do not treat the white checkpoint as either proof of audio success or proof of audio failure.
+
