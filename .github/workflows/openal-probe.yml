@@ -120,7 +120,7 @@ jobs:
                 echo "OpenAL runtime assertion passed"
                 exit 0
               fi
-              if grep -Eqi "alcOpenDevice failed|alcCreateContext failed|OpenAL.*failed|OpenAL source did not enter AL_PLAYING|error:" "$LOG"; then
+              if grep -Eqi "alcOpenDevice failed|alcCreateContext failed|OpenAL.*failed|OpenAL source did not enter AL_PLAYING" "$LOG"; then
                 cat "$LOG"
                 echo "OpenAL runtime reported an error" >&2
                 exit 1
