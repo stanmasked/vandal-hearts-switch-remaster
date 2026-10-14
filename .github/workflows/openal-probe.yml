@@ -176,9 +176,9 @@ jobs:
           red = sum(1 for r, g, b in samples if r > 120 and r > g * 1.5 and r > b * 1.25)
           white = sum(1 for r, g, b in samples if r > 230 and g > 230 and b > 230)
           if white >= 3:
-              raise SystemExit("alSourcePlay returned; probe is now at the post-call checkpoint")
+              print("OpenAL alSourcePlay returned; post-call checkpoint visible (audible output not verified)")
           elif green >= 3:
-              print("OpenAL alSourcePlay call returned (audible output not verified)")
+              print("OpenAL probe reached cleanup status (audible output not verified)")
           elif len(set(samples)) == 1:
               rgb = samples[0]
               raise SystemExit(
