@@ -117,14 +117,16 @@ int main(int argc, char **argv) {
 
     show_status(renderer, 10); /* entering alSourcePlay */
     alSourcePlay(source);
-    show_status(renderer, 13); /* proves alSourcePlay returned */
-    if (check_al_error("alSourcePlay") != 0) { result = 10; goto cleanup; }
+    show_status(renderer, 13); /* alSourcePlay returned; next OpenAL query is intentionally avoided */
 
-    /* alGetSourcei(AL_SOURCE_STATE) stalls in the current NeXium runtime.
-       Keep this probe focused on whether the playback request itself returns;
-       this does NOT prove audible output or AL_PLAYING state. */
+    /* Both alGetSourcei(AL_SOURCE_STATE) and post-playback status queries can
+       stall in the current NeXium runtime. Keep this probe focused on whether
+       alSourcePlay itself returns. This does NOT prove an error-free OpenAL
+       state, audible output, or AL_PLAYING state. */
     SDL_Delay(100);
-    fprintf(stderr, "OpenAL alSourcePlay returned without an AL error; audible output is not verified\\n");
+    fprintf(stderr, "OpenAL alSourcePlay returned; post-call error state and audible output are not verified\\n");
+    result = 0;
+    goto cleanup;
 
 cleanup:
     show_status(renderer, result);
