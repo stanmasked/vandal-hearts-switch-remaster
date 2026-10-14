@@ -53,6 +53,7 @@ jobs:
           make sdl2-probe
           make sdl2-gl-probe
           make sdl2-texture-probe
+          make sdl2-audio-probe
 
       - name: Upload SDL2 software-renderer probe
         uses: actions/upload-artifact@v4
@@ -73,6 +74,13 @@ jobs:
         with:
           name: sdl2-texture-switch-probe
           path: build/sdl2-texture-switch-probe.nro
+          if-no-files-found: error
+
+      - name: Upload SDL2 audio probe
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdl2-audio-switch-probe
+          path: build/sdl2-audio-switch-probe.nro
           if-no-files-found: error
 
   sdl2-runtime:
