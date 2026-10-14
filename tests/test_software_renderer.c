@@ -64,6 +64,27 @@ int main(void) {
     vh_canvas_draw_vline(&canvas, WIDTH, 0, 3, 0xFFFFFFFFu);
     vh_canvas_put_pixel(NULL, 0, 0, 0xFFFFFFFFu);
 
+
+    /* Rectangle outlines draw borders without touching the interior. */
+    for (int i = 0; i < STORAGE; ++i) pixels[i] = 0xA5A5A5A5u;
+    vh_canvas_draw_rect_outline(&canvas, 1, 1, 3, 2, 0x0BADF00Du);
+    assert(pixels[STRIDE + 1] == 0x0BADF00Du);
+    assert(pixels[STRIDE + 2] == 0x0BADF00Du);
+    assert(pixels[STRIDE + 3] == 0x0BADF00Du);
+    assert(pixels[2 * STRIDE + 1] == 0x0BADF00Du);
+    assert(pixels[2 * STRIDE + 2] == 0x0BADF00Du);
+    assert(pixels[2 * STRIDE + 3] == 0x0BADF00Du);
+    assert(pixels[STRIDE + 4] == 0xA5A5A5A5u);
+    assert(pixels[STRIDE + WIDTH] == 0xA5A5A5A5u);
+
+    for (int i = 0; i < STORAGE; ++i) pixels[i] = 0xA5A5A5A5u;
+    vh_canvas_draw_rect_outline(&canvas, -1, -1, 3, 3, 0xABCDEF01u);
+    assert(pixels[0] == 0xABCDEF01u);
+    assert(pixels[1] == 0xABCDEF01u);
+    assert(pixels[STRIDE] == 0xABCDEF01u);
+    assert(pixels[STRIDE + 1] == 0xA5A5A5A5u);
+    vh_canvas_draw_rect_outline(&canvas, 0, 0, 0, 3, 0xFFFFFFFFu);
+
     puts("All software renderer tests passed.");
     return 0;
 }
