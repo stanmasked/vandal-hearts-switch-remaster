@@ -126,7 +126,9 @@ jobs:
               wait "$pid" 2>/dev/null || true
             }
             trap cleanup EXIT
-            sleep 8
+            # NeXium may spend several seconds on first-run Vulkan initialization.
+            # Allow the guest NRO to boot and present its status screen before capture.
+            sleep 20
             state="$(ps -o stat= -p "$pid" 2>/dev/null | tr -d " " || true)"
             if [ -z "$state" ] || [[ "$state" == Z* ]] || ! kill -0 "$pid" 2>/dev/null; then
               cat "$LOG"
