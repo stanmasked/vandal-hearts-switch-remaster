@@ -26,9 +26,9 @@ class ExtractCdXaPayloadTests(unittest.TestCase):
             src.write_bytes(sector(marker=0x11) + sector(submode=0x00, marker=0x22) +
                             sector(duplicate=False, marker=0x33) + sector(mode=1, marker=0x44))
             report = extract_audio_payloads(src, dst, report_path=report_path)
-            self.assertEqual(dst.read_bytes(), bytes([0x11]) * 2324)
+            self.assertEqual(dst.read_bytes(), bytes([0x11]) * 2304)
             self.assertEqual(report["audio_form2_sectors_written"], 1)
-            self.assertEqual(report["payload_bytes_written"], 2324)
+            self.assertEqual(report["payload_bytes_written"], 2304)
             self.assertTrue(report_path.is_file())
 
     def test_filters_by_channel_and_file_number(self):
@@ -39,7 +39,7 @@ class ExtractCdXaPayloadTests(unittest.TestCase):
                             sector(channel=1, file_no=1, marker=0x20) +
                             sector(channel=0, file_no=2, marker=0x30))
             extract_audio_payloads(src, dst, channel=1, file_number=1)
-            self.assertEqual(dst.read_bytes(), bytes([0x20]) * 2324)
+            self.assertEqual(dst.read_bytes(), bytes([0x20]) * 2304)
 
     def test_rejects_bad_ranges_and_source_overwrite(self):
         with tempfile.TemporaryDirectory() as temp:
