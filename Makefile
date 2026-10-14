@@ -28,9 +28,10 @@ LDLIBS   := -L$(DEVKITPRO)/libnx/lib -lnx
 .PHONY: all clean test test-sanitize verify-nro sdl2-probe sdl2-gl-probe sdl2-texture-probe sdl2-audio-probe openal-probe
 all: $(BUILD)/$(TARGET).nro
 
-test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer
+test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_texture_sample
 	./$(BUILD)/test_game_rules
 	./$(BUILD)/test_software_renderer
+	./$(BUILD)/test_texture_sample
 	python3 tests/test_restore_ps1_str.py
 	python3 tests/test_inspect_cdxa.py
 	python3 tests/test_inspect_land_dt.py
@@ -69,6 +70,9 @@ $(BUILD)/test_game_rules: tests/test_game_rules.c source/game_rules.h source/gam
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@
 
 $(BUILD)/test_software_renderer: tests/test_software_renderer.c source/software_renderer.h source/game_renderer.h | $(BUILD)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@
+
+$(BUILD)/test_texture_sample: tests/test_texture_sample.c source/texture_sample.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@
 
 $(BUILD)/$(TARGET).elf: $(SOURCES)/main.c $(SOURCES)/game_rules.h $(SOURCES)/game_state.h $(SOURCES)/platform_input.h $(SOURCES)/software_renderer.h $(SOURCES)/game_renderer.h | $(BUILD)
