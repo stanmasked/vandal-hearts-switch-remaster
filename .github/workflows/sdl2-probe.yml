@@ -109,6 +109,12 @@ jobs:
           name: sdl2-gl-switch-probe
           path: nros
 
+      - name: Download SDL2 audio NRO
+        uses: actions/download-artifact@v4
+        with:
+          name: sdl2-audio-switch-probe
+          path: nros
+
       - name: Install headless display and Vulkan runtime
         shell: bash
         run: |
@@ -318,6 +324,63 @@ jobs:
 
           run_static_probe "nros/sdl2-switch-probe.nro" "sdl2-software-renderer"
           run_static_probe "nros/sdl2-gl-switch-probe.nro" "sdl2-opengles2"
+
+      - name: Verify SDL2 audio callback runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime-evidence
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+          export NRO="nros/sdl2-audio-switch-probe.nro"
+          export LOG="runtime-evidence/sdl2-audio-nexium.log"
+          export SHOT="runtime-evidence/sdl2-audio-status.png"
+          timeout --kill-after=5s 50s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
+            set -euo pipefail
+            "$NEXIUM_BIN" "$NRO" >"$LOG" 2>&1 &
+            pid=$!
+            for i in $(seq 1 30); do
+              sleep 1
+              state="$(ps -o stat= -p "$pid" 2>/dev/null | tr -d " " || true)"
+              if [ -z "$state" ] || [[ "$state" == Z* ]] || ! kill -0 "$pid" 2>/dev/null; then
+                wait "$pid" || rc=$?
+                cat "$LOG"
+                echo "NeXium exited before audio status screenshot (status ${rc:-unknown})"
+                exit 1
+              fi
+            done
+            window="$(xdotool search --onlyvisible --name "NeXium" 2>/dev/null | tail -n 1 || true)"
+            test -n "$window"
+            sleep 5
+            timeout --kill-after=2s 10s import -window "$window" "$SHOT"
+            test -s "$SHOT"
+            kill -INT "$pid" 2>/dev/null || true
+            sleep 2
+            kill -KILL "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+          '
+          python3 - "$SHOT" "$LOG" <<'PY'
+          from PIL import Image
+          import sys
+
+          image = Image.open(sys.argv[1]).convert("RGB")
+          if image.size != (1280, 720):
+              raise SystemExit(f"Unexpected screenshot dimensions: {image.size}")
+          pixels = list(image.getdata())
+          green = sum(1 for r, g, b in pixels if g > 130 and r < 70 and b < 130)
+          orange = sum(1 for r, g, b in pixels if r > 160 and 70 < g < 200 and b < 70)
+          red = sum(1 for r, g, b in pixels if r > 140 and g < 90 and b < 100)
+          print(f"Audio probe status pixels: green={green}, orange={orange}, red={red}")
+          log = open(sys.argv[2], encoding="utf-8", errors="replace").read()
+          print(log)
+          if "SDL audio callback observed" in log and green > 1000:
+              print("PASS: SDL2 audio callback executed in NeXium; audible output is not verified.")
+          elif "SDL_OpenAudioDevice failed" in log or red > 1000:
+              raise SystemExit("SDL2 audio device failed to open in NeXium.")
+          else:
+              raise SystemExit("Audio callback execution was not confirmed by runtime log and screenshot.")
+          PY
 
       - name: Upload SDL2 runtime evidence
         if: always()
