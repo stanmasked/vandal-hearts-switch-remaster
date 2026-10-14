@@ -36,6 +36,7 @@ static void show_status(SDL_Renderer *renderer, int result) {
         case 10: SDL_SetRenderDrawColor(renderer, 255, 130, 0, 255); break; /* play */
         case 11: SDL_SetRenderDrawColor(renderer, 0, 130, 130, 255); break; /* query */
         case 12: SDL_SetRenderDrawColor(renderer, 255, 0, 180, 255); break; /* not playing */
+        case 13: SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255); break; /* alSourcePlay returned */
         default: SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255); break;
     }
     SDL_RenderClear(renderer);
@@ -116,6 +117,7 @@ int main(int argc, char **argv) {
 
     show_status(renderer, 10); /* entering alSourcePlay */
     alSourcePlay(source);
+    show_status(renderer, 13); /* proves alSourcePlay returned */
     if (check_al_error("alSourcePlay") != 0) { result = 10; goto cleanup; }
 
     /* alGetSourcei(AL_SOURCE_STATE) stalls in the current NeXium runtime.
