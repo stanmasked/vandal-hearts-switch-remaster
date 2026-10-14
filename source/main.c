@@ -93,7 +93,7 @@ static void draw_text(u32 *pixels, u32 stride, int x, int y,
 
 static void draw_frame(u32 *pixels, u32 stride, int cursor_x, int cursor_y,
                        int hero_x, int hero_y, int enemy_x, int enemy_y,
-                       int hero_selected) {
+                       int hero_selected, u32 frame_tick) {
     fill_rect(pixels, stride, 0, 0, FB_WIDTH, FB_HEIGHT, COLOR_BG);
 
     /* Compact bitmap labels keep the prototype self-contained and asset-free. */
@@ -150,6 +150,11 @@ static void draw_frame(u32 *pixels, u32 stride, int cursor_x, int cursor_y,
     draw_text(pixels, stride, 252, 622, "HERO ENEMY CURSOR", COLOR_WHITE, 1);
     draw_text(pixels, stride, 72, 674, "D-PAD MOVE  A SELECT  B CANCEL  PLUS EXIT", COLOR_MUTED, 1);
 
+    /* Diagnostic heartbeat bar: changing length proves the framebuffer is being redrawn. */
+    fill_rect(pixels, stride, 1000, 600, 96, 8, COLOR_GRID);
+    fill_rect(pixels, stride, 1000, 600, 8 + (int)(frame_tick % 89), 8, COLOR_HERO);
+    draw_text(pixels, stride, 1000, 612, "FRAME", COLOR_MUTED, 1);
+
     /* Small status indicator changes color while the unit is selected. */
     fill_rect(pixels, stride, FB_WIDTH - 116, 42, 44, 44,
               hero_selected ? COLOR_CURSOR : COLOR_HERO);
@@ -175,6 +180,7 @@ int main(int argc, char **argv) {
     }
 
     VhGameState state = {1, 2, 1, 2, 6, 3, 0};
+    u32 frame_tick = 0;
 
     while (appletMainLoop()) {
         padUpdate(&pad);
@@ -201,7 +207,7 @@ int main(int argc, char **argv) {
             const u32 stride_pixels = stride_bytes / sizeof(u32);
             draw_frame(pixels, stride_pixels, state.cursor_x, state.cursor_y,
                        state.hero_x, state.hero_y, state.enemy_x, state.enemy_y,
-                       state.hero_selected);
+                       state.hero_selected, frame_tick++);
         }
         framebufferEnd(&fb);
     }
