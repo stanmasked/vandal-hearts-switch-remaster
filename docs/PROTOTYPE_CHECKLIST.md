@@ -108,13 +108,13 @@ Only after P1–P3 pass:
 | Field | Value |
 | --- | --- |
 | Date/time | |
-| Source revision | `3d95e0e353b95136a33ec9b886c1a5eb2f39bc4b` |
+| Source revision | `c2847256a3c...` |
 | Host OS | GitHub Actions runner/container (see workflow logs) |
 | Toolchain and library versions | Toolchain verification passed; exact versions not yet recorded here |
 | Target environment | NeXium emulator on Ubuntu 26.04 with Lavapipe software Vulkan; initial-frame screenshots checked |
 | Exact command | Root Makefile build via CI workflow |
 | Build exit code | 0 (workflow build step succeeded) |
-| Artifact path and checksum | Artifact `vandal-hearts-switch-prototype`; archive SHA-256: `e79c0dff04aec3f2cf0d37c5427f4deb77106a94da96dd7af98cd4f026bde95b` |
+| Artifact path and checksum | Artifact `runtime-smoke-nros`; archive SHA-256: `d1f459bcd25cbbb524ca7a0b8fd974d2a401aca99215e1d79805446ec441b92f` |
 | Runtime steps | Launch both NROs in NeXium; wait 30 seconds; capture screenshots; check for hero-marker color |
 | Observed result | Both screenshots were 1280×720 and passed hero-marker pixel checks; controller and audio behavior unverified |
 | Logs / screenshots location | [Main build 38523589997](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523589997); [SDL2 probes 38524223415](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223415) |
