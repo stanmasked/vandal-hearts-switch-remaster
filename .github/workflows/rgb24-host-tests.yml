@@ -1,0 +1,28 @@
+name: RGB24 host contract tests
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/rgb24-host-tests.yml'
+      - 'source/rgb24_frame.h'
+      - 'tests/test_rgb24_frame.c'
+      - 'Makefile'
+
+permissions:
+  contents: read
+
+jobs:
+  host-tests:
+    name: Run host-side frame contract tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run portable C tests
+        run: |
+          set -euxo pipefail
+          gcc --version
+          make test
