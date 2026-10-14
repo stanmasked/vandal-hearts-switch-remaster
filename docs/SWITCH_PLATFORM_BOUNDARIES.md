@@ -9,7 +9,9 @@ Track the platform-specific work required before integrating the upstream Vandal
 - The upstream PC port separates the matching game decompilation from the native C platform layer under `platform/pc/`.
 - The desktop build uses SDL2 for window/input, OpenGL on Windows/Linux (including legacy pixel-presentation calls), and an SDL Metal renderer on macOS.
 - The PC backend uses OpenAL for audio and a threaded rasterizer; its bootstrap contains Windows, POSIX, and macOS-specific memory/executable handling.
-- The existing Switch SDL2 probes compile and run in NeXium, including a CPU-framebuffer-to-GLES2-texture presentation path and joystick input. This demonstrates feasibility of the probe only, not compatibility of the upstream renderer.
+- The upstream presentation contract was source-audited at commit `14552fffa0e0b47e02b57592e274fc6e7a649923`: packed RGB24, tightly packed `width * 3` stride, bottom-up rows, RGB channel order, and 5-bit channel expansion by bit replication. The scratch buffer is call-scoped and must be consumed/copied before the presenter returns.
+- The SDL2 feasibility workflow [38644241528](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38644241528) built five NRO probes from pinned SDL2 source and passed NeXium checks for joystick input/texture presentation, odd-stride RGB24 texture upload, SDL2 software rendering, and OpenGL ES runtime.
+- That same run's audio check completed as **INCONCLUSIVE** when the CI environment reported no usable ALSA default device. A green workflow result is not evidence of an executed SDL audio callback or audible output in this environment.
 - The separate libnx prototype verifies cursor movement and basic selection/movement rules in NeXium. Physical Switch behavior, graceful exit, sustained sessions, and audible audio remain unverified.
 - The upstream audit was performed against commit `14552fffa0e0b47e02b57592e274fc6e7a649923`; re-audit the upstream revision before implementation if the dependency changes.
 
@@ -17,10 +19,11 @@ Track the platform-specific work required before integrating the upstream Vandal
 
 ### Presentation
 
-- [ ] Trace the upstream framebuffer format, dimensions, stride, orientation, and scaling from rasterizer output to presentation.
-- [ ] Identify every call in the upstream presentation path that is unavailable in GLES2, especially legacy `glDrawPixels`, `glPixelZoom`, and `glRasterPos2f`.
-- [ ] Define a small presentation interface that accepts a CPU framebuffer and presents it without changing the byte-matching game source.
-- [ ] Compare the proposed texture-upload backend against a known desktop frame, including orientation and pixel format.
+- [x] Trace the upstream framebuffer format, dimensions, stride, orientation, and scaling from rasterizer output to presentation.
+- [x] Identify legacy desktop presentation calls unavailable in GLES2, including `glDrawPixels`, `glPixelZoom`, and `glRasterPos2f`.
+- [x] Define and host-test a frame view contract for packed RGB24, stride, bounds, and bottom-up row access in `source/rgb24_frame.h`.
+- [ ] Implement a Switch presenter adapter for the upstream frame without changing the byte-matching game source.
+- [ ] Compare that adapter against a known desktop frame for orientation, color channels, scaling, filtering, and letterboxing.
 - [ ] Confirm sustained frame updates and clean shutdown on target hardware.
 
 ### Input
@@ -38,18 +41,18 @@ Track the platform-specific work required before integrating the upstream Vandal
 
 ### Audio and threading
 
-- [ ] Verify the actual Switch OpenAL Soft runtime output, not just package installation, linking, or NRO packaging.
+- [ ] Verify actual SDL/OpenAL audio callback/output on a supported Switch target; the CI ALSA check is inconclusive.
 - [ ] Trace CD/XA/SPU audio data flow separately from the generated-tone probe.
 - [ ] Confirm thread creation, synchronization, and rasterizer worker-pool behavior with the selected toolchain.
 - [ ] Measure memory use and frame pacing on a physical device.
 
 ## Recommended order
 
-1. Complete a source-level inventory of bootstrap and presentation APIs.
-2. Keep the smallest presentation/input adapters isolated from game logic.
+1. Complete the source-level inventory of bootstrap, presentation, and input APIs.
+2. Implement the smallest presenter/input adapters isolated from game logic.
 3. Add focused host-side tests for adapter/state transitions.
 4. Run CI build and NeXium smoke tests after each isolated change.
-5. Only then attempt an upstream desktop baseline build with locally supplied, legally obtained game data.
+5. Attempt an upstream desktop baseline build with locally supplied, legally obtained game data before attempting the Switch integration.
 6. Treat physical Switch, audio, sustained-session, and performance checks as separate acceptance gates.
 
 ## Evidence discipline
