@@ -142,6 +142,8 @@ int main(void) {
     vh_render_grid_tile(&canvas, 1, 1, 0, palette);
     vh_render_grid_tile(&canvas, 1, 1, -3, palette);
     vh_render_grid_tile(NULL, 1, 1, 5, palette);
+    /* Start from a clean canvas before testing partial off-screen clipping. */
+    for (int i = 0; i < STORAGE; ++i) pixels[i] = 0xA5A5A5A5u;
     assert(pixels[1 * STRIDE + 1] == 0xA5A5A5A5u);
     vh_render_grid_tile(&canvas, 3, 2, 5, palette);
     assert(pixels[2 * STRIDE + 3] == palette.border);
