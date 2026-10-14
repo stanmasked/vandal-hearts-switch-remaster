@@ -90,3 +90,12 @@ The helper deliberately does not own or copy pixels. It validates the documented
 
 **Important limitation:** the helper is a host-testable contract boundary, not yet called by the SDL2/GLES2 probe or the upstream game renderer. This verifies row interpretation and metadata validation only; it does not yet verify GPU texture upload, shader UVs, scaling, or emulator/console output.
 
+## 6. Dedicated GLES2 RGB24 upload probe
+
+Added `probes/rgb24_texture_smoke.c` and a `make rgb24-texture-probe` build target on this isolated branch. Unlike the existing gameplay-like texture probe, this one uploads a packed **RGB24** texture with dimensions **321×240** and a **963-byte row stride**, deliberately exercising rows that are not four-byte aligned.
+
+The synthetic frame is stored bottom-up and has distinct red, green, blue, and yellow corner markers plus an interior gradient. The probe sets `GL_UNPACK_ALIGNMENT` to `1`, uploads with `GL_RGB / GL_UNSIGNED_BYTE`, uses nearest-neighbour filtering, and maps texture coordinates to preserve the bottom-up orientation. It logs the dimensions, stride, alignment, and immediate GL error code after upload.
+
+**What this establishes:** there is now a dedicated, buildable-in-principle target for exercising the exact RGB24/GLES2 boundary, including the awkward row-stride case and orientation markers.
+
+**Not yet confirmed:** this source has not yet been built with devkitPro, run in NeXium, or checked against a captured screenshot. A successful NRO build alone would not prove the colors and orientation are correct; the corner markers must be visually or automatically checked in the emulator. The original upstream renderer remains untouched.
