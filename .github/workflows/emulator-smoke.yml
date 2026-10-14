@@ -8,7 +8,6 @@ on:
       - 'source/main.c'
       - 'source/game_state.h'
       - 'source/game_rules.h'
-      - 'probes/sdl2_texture_smoke.c'
       - 'Makefile'
       - 'tests/check_nro.py'
 
@@ -17,7 +16,7 @@ permissions:
 
 jobs:
   build:
-    name: Build homebrew NROs
+    name: Build libnx NRO for runtime smoke test
     runs-on: ubuntu-latest
     container:
       image: devkitpro/devkita64:latest
@@ -26,32 +25,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Switch SDL2 package
+      - name: Build and test libnx prototype
         shell: bash
         run: |
           set -euxo pipefail
-          for attempt in 1 2 3; do
-            if dkp-pacman -Sy --noconfirm switch-sdl2; then
-              break
-            fi
-            if [ "$attempt" -eq 3 ]; then exit 1; fi
-            echo "Package mirror unavailable; retrying ($attempt/3)" >&2
-            sleep $((attempt * 5))
-          done
           export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
           export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
           export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$DEVKITPRO/portlibs/switch/bin:$PATH"
           make test
           make verify-nro
-          make sdl2-texture-probe
 
       - name: Upload NROs for emulator smoke test
         uses: actions/upload-artifact@v4
         with:
-          name: runtime-smoke-nros
-          path: |
-            build/vandal-hearts-prototype.nro
-            build/sdl2-texture-switch-probe.nro
+          name: runtime-smoke-nro
+          path: build/vandal-hearts-prototype.nro
           if-no-files-found: error
 
   run-in-emulator:
@@ -66,7 +54,7 @@ jobs:
       - name: Download test NROs
         uses: actions/download-artifact@v4
         with:
-          name: runtime-smoke-nros
+          name: runtime-smoke-nro
           path: nros
 
       - name: Install headless display and Vulkan runtime
@@ -142,7 +130,7 @@ jobs:
               fi
               timeout --kill-after=2s 10s import -window "$window" "$SHOT"
               if [ "$CHECK_INPUT" = "1" ]; then
-                timeout --kill-after=1s 3s timeout --kill-after=1s 3s xdotool windowfocus --sync "$window" || true
+                timeout --kill-after=1s 3s xdotool windowfocus --sync "$window" || true
                 timeout --kill-after=1s 3s timeout --kill-after=1s 3s xdotool keydown --window "$window" Right
                 sleep 0.15
                 timeout --kill-after=1s 3s timeout --kill-after=1s 3s xdotool keyup --window "$window" Right
@@ -210,7 +198,6 @@ jobs:
           }
 
           run_probe "nros/vandal-hearts-prototype.nro" "libnx-framebuffer" "1"
-          run_probe "nros/sdl2-texture-switch-probe.nro" "sdl2-texture-upload" "0"
           exit "$result"
 
       - name: Upload runtime evidence
