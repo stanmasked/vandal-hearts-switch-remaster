@@ -82,9 +82,11 @@ int main(void) {
 
     for (int i = 0; i < STORAGE; ++i) pixels[i] = 0xA5A5A5A5u;
     vh_canvas_draw_rect_outline(&canvas, -1, -1, 4, 4, 0xABCDEF01u);
-    assert(pixels[0] == 0xABCDEF01u);
-    assert(pixels[1] == 0xABCDEF01u);
-    assert(pixels[STRIDE] == 0xABCDEF01u);
+    /* Only the clipped right and bottom edges remain visible. */
+    assert(pixels[2] == 0xABCDEF01u);
+    assert(pixels[STRIDE + 2] == 0xABCDEF01u);
+    assert(pixels[2 * STRIDE] == 0xABCDEF01u);
+    assert(pixels[2 * STRIDE + 1] == 0xABCDEF01u);
     assert(pixels[STRIDE + 1] == 0xA5A5A5A5u);
     vh_canvas_draw_rect_outline(&canvas, 0, 0, 0, 3, 0xFFFFFFFFu);
 
