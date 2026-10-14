@@ -19,6 +19,21 @@ class DecodeCdXaAdpcmTests(unittest.TestCase):
         self.assertEqual(len(pcm), 112 * 2 * 2)
         self.assertEqual(pcm, bytes(len(pcm)))
 
+    def test_decodes_low_nibble_left_and_high_nibble_right(self):
+        group = bytearray(GROUP_SIZE)
+        # Filter 0, shift 0 (parameter low nibble 12); duplicate parameters.
+        group[:16] = bytes([0x0C]) * 16
+        for row in range(28):
+            for chunk in range(4):
+                group[16 + row * 4 + chunk] = 0x21
+        pcm = decode_group(bytes(group), [[0, 0], [0, 0]])
+        self.assertEqual(len(pcm), 112 * 2 * 2)
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "samples.raw"
+            path.write_bytes(pcm)
+            samples = __import__("struct").unpack("<" + "h" * (len(pcm) // 2), pcm)
+        self.assertEqual(samples, (1, 2) * 112)
+
     def test_rejects_bad_group_length_and_parameter_copy(self):
         with self.assertRaisesRegex(ValueError, "exactly 128"):
             decode_group(bytes(127), [[0, 0], [0, 0]])
