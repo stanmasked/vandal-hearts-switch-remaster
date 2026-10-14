@@ -32,7 +32,7 @@ The official devkitPro package recipes provide a plausible path closer to the up
 - [switch-mesa package recipe](https://github.com/devkitPro/pacman-packages/blob/master/switch/mesa/PKGBUILD) provides the Mesa graphics library for the Switch package set.
 - [switch-openal-soft package recipe](https://github.com/devkitPro/pacman-packages/blob/master/switch/openal-soft/PKGBUILD) builds OpenAL Soft and depends on `switch-sdl2`.
 
-This establishes that package recipes exist. The [SDL2 probe CI run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223415) confirms `switch-sdl2` installs in the CI image and links into three NROs: a software-renderer/input probe, an OpenGL ES 2.0 context probe, and a CPU-framebuffer-to-GL-texture upload probe. None has been run on an emulator or console. The texture probe checks the intended transfer path at compile/link level only; it does not establish visual correctness or compatibility with the upstream desktop renderer. An [OpenAL Soft probe](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223445) also installs `switch-openal-soft`, links an NRO, and packages a generated-tone test. This confirms build/link feasibility only, not audible output. Next, run the graphics and audio probes on an emulator or console before choosing the upstream port architecture.
+This establishes that package recipes exist. The [SDL2 probe CI run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223415) confirms `switch-sdl2` installs in the CI image and links into three NROs: a software-renderer/input probe, an OpenGL ES 2.0 context probe, and a CPU-framebuffer-to-GL-texture upload probe. The texture-upload NRO has now run in NeXium and confirmed two Right-arrow movements ([run 38577968731](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38577968731)). The main libnx framebuffer NRO has also confirmed A selection, B cancellation, valid movement, out-of-range rejection, and enemy-tile rejection in NeXium ([run 38581542690](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38581542690)). These emulator results do not establish physical Switch compatibility or compatibility with the upstream desktop renderer. An [OpenAL Soft probe](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223445) installs `switch-openal-soft`, links an NRO, and packages a generated-tone test; audible output remains unverified. Next, validate graceful exit, audio, and physical-device behavior before choosing the upstream port architecture.
 
 ## Phase 3 — Switch homebrew feasibility prototype
 
@@ -55,7 +55,7 @@ This establishes that package recipes exist. The [SDL2 probe CI run](https://git
 - [x] Build and package an OpenAL Soft generated-tone probe in CI.
 - [ ] Verify audio output and thread support independently.
 
-**Exit condition:** initial framebuffer presentation and one input transition are now reproducible in NeXium; sustained interaction, audio, and physical Switch validation remain open.
+**Exit condition:** initial framebuffer presentation, repeated cursor movement in both libnx and SDL2 texture paths, and selection/valid/invalid movement in the libnx prototype are reproducible in NeXium. Graceful exit, sustained-session stability, audio, and physical Switch validation remain open.
 
 ## Phase 4 — Port platform services
 
