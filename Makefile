@@ -25,12 +25,19 @@ CFLAGS   := -g -Wall -Wextra -O2 -fPIE -ffunction-sections -fdata-sections -I$(D
 LDFLAGS  := -specs=$(DEVKITPRO)/libnx/switch.specs -Wl,--gc-sections -pie
 LDLIBS   := -L$(DEVKITPRO)/libnx/lib -lnx
 
-.PHONY: all clean test verify-nro sdl2-probe sdl2-gl-probe sdl2-texture-probe sdl2-audio-probe openal-probe
+.PHONY: all clean test test-sanitize verify-nro sdl2-probe sdl2-gl-probe sdl2-texture-probe sdl2-audio-probe openal-probe
 all: $(BUILD)/$(TARGET).nro
 
 test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer
 	./$(BUILD)/test_game_rules
 	./$(BUILD)/test_software_renderer
+
+# Host-only memory and undefined-behavior checks; requires GCC or Clang sanitizers.
+test-sanitize: | $(BUILD)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_game_rules.c -o $(BUILD)/test_game_rules_sanitize
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_software_renderer.c -o $(BUILD)/test_software_renderer_sanitize
+	./$(BUILD)/test_game_rules_sanitize
+	./$(BUILD)/test_software_renderer_sanitize
 
 verify-nro: $(BUILD)/$(TARGET).nro
 	python3 tests/check_nro.py $<
