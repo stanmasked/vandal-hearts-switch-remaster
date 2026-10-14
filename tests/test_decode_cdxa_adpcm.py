@@ -66,6 +66,17 @@ class DecodeCdXaAdpcmTests(unittest.TestCase):
                 self.assertEqual(wav.getnframes(), 2016)
                 self.assertEqual(wav.readframes(2016), bytes(2016 * 4))
 
+    def test_decodes_extracted_2304_byte_sound_group_stream(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source, output = root / "extracted.bin", root / "out.wav"
+            source.write_bytes(bytes(AUDIO_BYTES_PER_SECTOR))
+            report = decode_payload_file(source, output, extracted_groups=True)
+            self.assertEqual(report, {"sectors": 1, "groups": 18, "frames": 2016})
+            with wave.open(str(output), "rb") as wav:
+                self.assertEqual(wav.getnframes(), 2016)
+                self.assertEqual(wav.readframes(2016), bytes(2016 * 4))
+
     def test_rejects_bad_size_nonzero_padding_and_in_place_output(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
