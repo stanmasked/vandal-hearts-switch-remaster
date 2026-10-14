@@ -112,7 +112,7 @@ int main(int argc, char **argv) {
 cleanup:
     show_status(renderer, result == 0);
     /* Keep the color-coded result on screen long enough for CI to capture it. */
-    SDL_Delay(5000);
+    SDL_Delay(15000);
     if (context_current) {
         if (source != 0) {
             alSourceStop(source);
