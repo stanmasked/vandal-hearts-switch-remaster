@@ -26,7 +26,8 @@ int main(void) {
     assert(pixels[0] == 0x01020304u);
     assert(pixels[1] == 0x01020304u);
     assert(pixels[STRIDE] == 0x01020304u);
-    assert(pixels[STRIDE + 1] == 0x11223344u);
+    assert(pixels[STRIDE + 1] == 0x01020304u);
+    assert(pixels[STRIDE + 2] == 0x11223344u);
 
     /* Right/bottom clipping and wholly off-screen rectangles are safe. */
     vh_canvas_fill_rect(&canvas, 4, 3, 10, 10, 0x55667788u);
