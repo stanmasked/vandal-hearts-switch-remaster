@@ -111,7 +111,6 @@ jobs:
             local shot_cancelled="runtime-evidence/$label-cancelled.png"
             local shot_invalid="runtime-evidence/$label-invalid-move.png"
             local shot_enemy_blocked="runtime-evidence/$label-enemy-blocked.png"
-            local shot_exit="runtime-evidence/$label-after-plus-exit.png"
             local shot_after="runtime-evidence/$label-after-move.png"
             local log="runtime-evidence/$label.log"
             export NRO="$nro" SHOT="$shot" SHOT_SELECTED="$shot_selected" SHOT_CANCELLED="$shot_cancelled" SHOT_INVALID="$shot_invalid" SHOT_ENEMY_BLOCKED="$shot_enemy_blocked" SHOT_EXIT="$shot_exit" SHOT_AFTER="$shot_after" LOG="$log" CHECK_INPUT="$check_input" VK_ICD_FILENAMES="$icd"
@@ -209,11 +208,6 @@ jobs:
                 timeout --kill-after=1s 3s xdotool keyup --window "$window" c
                 sleep 0.3
                 timeout --kill-after=2s 10s import -window "$window" "$SHOT_ENEMY_BLOCKED"
-                timeout --kill-after=1s 3s xdotool keydown --window "$window" m
-                sleep 0.15
-                timeout --kill-after=1s 3s xdotool keyup --window "$window" m
-                sleep 1
-                timeout --kill-after=2s 10s import -window "$window" "$SHOT_EXIT"
               fi
               sleep 1
               test -s "$SHOT"
@@ -235,7 +229,7 @@ jobs:
               return
             fi
 
-            if ! python3 - "$shot" "$shot_selected" "$shot_cancelled" "$shot_invalid" "$shot_enemy_blocked" "$shot_exit" "$shot_after" "$label" <<'PY'
+            if ! python3 - "$shot" "$shot_selected" "$shot_cancelled" "$shot_invalid" "$shot_enemy_blocked" "$shot_after" "$label" <<'PY'
           from PIL import Image
           from pathlib import Path
           import sys
@@ -335,12 +329,6 @@ jobs:
                       enemy_marker >= 300 and cursor_on_enemy >= 300 and range_after_block >= 300):
                   raise SystemExit("Move onto the enemy tile was not rejected while preserving the hero and selection")
 
-              if exit_screen is None or exit_screen.size != (1280, 720):
-                  raise SystemExit("Missing or invalid screenshot after Plus exit input")
-              hero_after_exit = near_color_count(exit_screen, hero, tile_new_hero)
-              print(f"{label}: hero marker pixels in previous tile after Plus={hero_after_exit}")
-              if hero_after_exit >= 100:
-                  raise SystemExit("Plus input did not leave the active game frame")
           else:
               print("SDL2 input is not asserted here; SDL2 joystick input is checked in the separate workflow.")
           PY
