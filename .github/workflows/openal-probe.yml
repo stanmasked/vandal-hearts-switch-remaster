@@ -125,7 +125,7 @@ jobs:
             if [ -z "$window" ]; then
               echo "No window title matched NeXium; visible windows:" >&2
               xdotool search --onlyvisible --name ".*" 2>/dev/null | while read -r id; do
-                printf 'window=%s title=' "$id" >&2
+                printf "window=%s title=" "$id" >&2
                 xdotool getwindowname "$id" 2>/dev/null >&2 || true
               done
               # Some NROs replace the emulator's title with the guest app title.
