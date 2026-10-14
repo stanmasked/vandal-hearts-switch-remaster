@@ -3,6 +3,7 @@
 
 #include "../source/game_rules.h"
 #include "../source/game_state.h"
+#include "../source/platform_input.h"
 
 int main(void) {
     assert(vh_manhattan_distance(1, 2, 1, 2) == 0);
@@ -91,6 +92,24 @@ int main(void) {
         }
     }
 
-    puts("All tactical movement rule tests passed.");
+    /* Platform-neutral action mapping can be tested without libnx headers. */
+    state = (VhGameState){1, 2, 1, 2, 6, 3, 0};
+    assert(!vh_process_input(&state, VH_INPUT_RIGHT, 8, 6, 2));
+    assert(state.cursor_x == 2 && state.cursor_y == 2);
+    assert(!vh_process_input(&state, VH_INPUT_CONFIRM, 8, 6, 2));
+    assert(state.hero_selected == 0); /* Cursor is not on the hero. */
+    state.cursor_x = state.hero_x;
+    state.cursor_y = state.hero_y;
+    assert(!vh_process_input(&state, VH_INPUT_CONFIRM, 8, 6, 2));
+    assert(state.hero_selected == 1);
+    assert(!vh_process_input(&state, VH_INPUT_RIGHT | VH_INPUT_CONFIRM, 8, 6, 2));
+    assert(state.hero_x == 2 && state.hero_y == 2 && state.hero_selected == 0);
+    state.hero_selected = 1;
+    assert(!vh_process_input(&state, VH_INPUT_CANCEL, 8, 6, 2));
+    assert(state.hero_selected == 0);
+    assert(vh_process_input(&state, VH_INPUT_QUIT, 8, 6, 2));
+    assert(state.hero_x == 2 && state.hero_y == 2);
+
+    puts("All tactical movement and platform-neutral input tests passed.");
     return 0;
 }
