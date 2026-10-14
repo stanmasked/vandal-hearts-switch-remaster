@@ -193,7 +193,7 @@ int main(int argc, char **argv) {
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 
     VhGameState state = {1, 2, 1, 2, 6, 3, 0};
-    draw_cpu_frame(&state);
+    draw_cpu_frame(&state, 0);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, WINDOW_WIDTH, WINDOW_HEIGHT, 0,
                  GL_RGBA, GL_UNSIGNED_BYTE, frame_pixels);
     GLint sampler = glGetUniformLocation(program, "uTexture");
