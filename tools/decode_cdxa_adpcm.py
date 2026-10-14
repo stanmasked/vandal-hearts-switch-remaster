@@ -58,15 +58,19 @@ def decode_group(frame: bytes, history: list[list[int]]) -> bytes:
         pcm.extend(struct.pack("<hh", channels[0][row], channels[1][row]))
     return bytes(pcm)
 
-def decode_payload_file(source: Path, destination: Path, sectors: int | None = None) -> dict[str, int]:
+def decode_payload_file(
+    source: Path, destination: Path, sectors: int | None = None,
+    extracted_groups: bool = False,
+) -> dict[str, int]:
     if source.resolve() == destination.resolve():
         raise ValueError("output must not overwrite the input payload")
     size = source.stat().st_size
     if size == 0:
         raise ValueError("input payload is empty")
-    if size % SECTOR_PAYLOAD:
-        raise ValueError(f"input size must be divisible by {SECTOR_PAYLOAD} bytes")
-    available = size // SECTOR_PAYLOAD
+    sector_size = AUDIO_BYTES_PER_SECTOR if extracted_groups else SECTOR_PAYLOAD
+    if size % sector_size:
+        raise ValueError(f"input size must be divisible by {sector_size} bytes")
+    available = size // sector_size
     count = available if sectors is None else sectors
     if count < 1 or count > available:
         raise ValueError(f"sector count must be between 1 and {available}")
@@ -78,11 +82,11 @@ def decode_payload_file(source: Path, destination: Path, sectors: int | None = N
         dst.setsampwidth(2)
         dst.setframerate(SAMPLE_RATE)
         for sector_index in range(count):
-            sector = src.read(SECTOR_PAYLOAD)
-            if len(sector) != SECTOR_PAYLOAD:
+            sector = src.read(sector_size)
+            if len(sector) != sector_size:
                 raise ValueError(f"incomplete payload sector {sector_index}")
             audio = sector[:AUDIO_BYTES_PER_SECTOR]
-            padding = sector[AUDIO_BYTES_PER_SECTOR:]
+            padding = sector[AUDIO_BYTES_PER_SECTOR:] if not extracted_groups else b""
             if any(padding):
                 raise ValueError(f"non-zero padding in payload sector {sector_index}")
             pcm = bytearray()
@@ -98,9 +102,13 @@ def main() -> int:
     parser.add_argument("payload", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("--sectors", type=int, help="number of sectors to decode (default: all)")
+    parser.add_argument(
+        "--extracted-groups", action="store_true",
+        help="input is the 2304-byte-per-sector stream from extract_cdxa_payload.py",
+    )
     args = parser.parse_args()
     try:
-        report = decode_payload_file(args.payload, args.output, args.sectors)
+        report = decode_payload_file(args.payload, args.output, args.sectors, args.extracted_groups)
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
     print(f"Decoded sectors: {report['sectors']}")
