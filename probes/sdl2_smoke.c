@@ -115,7 +115,7 @@ int main(int argc, char **argv) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) running = 0;
-            if (event.type == SDL_KEYDOWN) {
+            if (!joystick && event.type == SDL_KEYDOWN) {
                 switch (event.key.keysym.sym) {
                     case SDLK_ESCAPE: running = 0; break;
                     case SDLK_LEFT: vh_move_cursor(&state, -1, 0, GRID_WIDTH, GRID_HEIGHT); break;
