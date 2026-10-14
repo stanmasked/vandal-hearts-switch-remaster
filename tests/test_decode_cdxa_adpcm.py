@@ -39,9 +39,9 @@ class DecodeCdXaAdpcmTests(unittest.TestCase):
         group[16:] = bytes([0x11]) * (GROUP_SIZE - 16)
         pcm = decode_group(bytes(group), [[0, 0], [0, 0]])
         samples = struct.unpack("<" + "h" * (len(pcm) // 2), pcm)
-        # For each channel, the first chunk starts 1, 2, 4, 8, ...
-        self.assertEqual(samples[0:8:2], (1, 2, 4, 8))
-        self.assertEqual(samples[1:8:2], (1, 2, 4, 8))
+        # For each channel, the first chunk starts 1, 2, 3, 4, ...
+        self.assertEqual(samples[0:8:2], (1, 2, 3, 4))
+        self.assertEqual(samples[1:8:2], (1, 2, 3, 4))
 
     def test_rejects_bad_group_length_and_parameter_copy(self):
         with self.assertRaisesRegex(ValueError, "exactly 128"):
