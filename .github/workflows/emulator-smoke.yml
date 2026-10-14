@@ -5,6 +5,12 @@ on:
   push:
     paths:
       - '.github/workflows/emulator-smoke.yml'
+      - 'source/main.c'
+      - 'source/game_state.h'
+      - 'source/game_rules.h'
+      - 'probes/sdl2_texture_smoke.c'
+      - 'Makefile'
+      - 'tests/check_nro.py'
 
 permissions:
   contents: read
@@ -92,7 +98,7 @@ jobs:
           echo "NeXium executable: $emu_bin"
           ldd "$emu_bin" || true
 
-      - name: Run framebuffer and SDL2 texture probes
+      - name: Run framebuffer, texture, and input probes
         shell: bash
         run: |
           set -uo pipefail
@@ -109,8 +115,9 @@ jobs:
             local nro="$1"
             local label="$2"
             local shot="runtime-evidence/$label.png"
+            local shot_after="runtime-evidence/$label-after-right.png"
             local log="runtime-evidence/$label.log"
-            export NRO="$nro" SHOT="$shot" LOG="$log" VK_ICD_FILENAMES="$icd"
+            export NRO="$nro" SHOT="$shot" SHOT_AFTER="$shot_after" LOG="$log" VK_ICD_FILENAMES="$icd"
             echo "Launching $nro in NeXium" | tee -a runtime-evidence/runner.log
 
             if ! timeout 60s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
@@ -128,13 +135,19 @@ jobs:
                 fi
               done
               window="$(xdotool search --onlyvisible --name "NeXium" 2>/dev/null | tail -n 1 || true)"
-              if [ -n "$window" ]; then
-                timeout 10s import -window "$window" "$SHOT" || true
+              if [ -z "$window" ]; then
+                echo "NeXium window not found" >&2
+                exit 1
               fi
-              if [ ! -s "$SHOT" ]; then
-                timeout 10s import -window root "$SHOT"
-              fi
+              timeout --kill-after=2s 10s import -window "$window" "$SHOT"
+              xdotool windowfocus --sync "$window" || true
+              xdotool keydown --window "$window" Right
+              sleep 0.15
+              xdotool keyup --window "$window" Right
+              sleep 1
+              timeout --kill-after=2s 10s import -window "$window" "$SHOT_AFTER"
               test -s "$SHOT"
+              test -s "$SHOT_AFTER"
               kill -INT "$pid" 2>/dev/null || true
               sleep 2
               kill -KILL "$pid" 2>/dev/null || true
@@ -145,21 +158,52 @@ jobs:
               return
             fi
 
-            if ! python3 - "$shot" <<'PY'
+            if ! python3 - "$shot" "$shot_after" "$label" <<'PY'
           from PIL import Image
           import sys
-          image = Image.open(sys.argv[1]).convert("RGB")
-          target = (86, 190, 244)
-          matches = sum(
-              1 for r, g, b in image.getdata()
-              if max(abs(r - target[0]), abs(g - target[1]), abs(b - target[2])) <= 16
-          )
-          print(f"{sys.argv[1]}: size={image.size}, hero-color-like pixels={matches}")
-          if matches < 50:
-              raise SystemExit("Expected hero marker color was not detected in screenshot")
+
+          before = Image.open(sys.argv[1]).convert("RGB")
+          after = Image.open(sys.argv[2]).convert("RGB")
+          label = sys.argv[3]
+          hero = (86, 190, 244)
+          cursor = (255, 219, 102)
+
+          def near_color_count(image, color, box):
+              crop = image.crop(box)
+              return sum(
+                  1 for r, g, b in crop.getdata()
+                  if max(abs(r - color[0]), abs(g - color[1]), abs(b - color[2])) <= 16
+              )
+
+          hero_before = near_color_count(before, hero, (0, 0, before.width, before.height))
+          hero_after = near_color_count(after, hero, (0, 0, after.width, after.height))
+          print(f"{sys.argv[1]}: size={before.size}, hero pixels={hero_before}")
+          print(f"{sys.argv[2]}: size={after.size}, hero pixels={hero_after}")
+          if before.size != (1280, 720) or after.size != (1280, 720):
+              raise SystemExit("Unexpected screenshot dimensions")
+          if hero_before < 50 or hero_after < 50:
+              raise SystemExit("Expected hero marker color was not detected")
+
+          if label == "libnx-framebuffer":
+              grid_x, grid_y, cell = 352, 100, 72
+          else:
+              grid_x, grid_y, cell = 384, 120, 64
+
+          def tile_box(x, y):
+              return (x + 4, y + 4, x + cell - 4, y + cell - 4)
+
+          tile_one = tile_box(grid_x + cell, grid_y + 2 * cell)
+          tile_two = tile_box(grid_x + 2 * cell, grid_y + 2 * cell)
+          before_one = near_color_count(before, cursor, tile_one)
+          before_two = near_color_count(before, cursor, tile_two)
+          after_one = near_color_count(after, cursor, tile_one)
+          after_two = near_color_count(after, cursor, tile_two)
+          print(f"{label}: cursor yellow counts before=({before_one},{before_two}) after=({after_one},{after_two})")
+          if not (before_one >= 300 and before_two <= 100 and after_one <= 100 and after_two >= 300):
+              raise SystemExit("Right-arrow input did not move the cursor exactly one tile")
           PY
             then
-              echo "Expected rendered marker not detected for $label" | tee -a runtime-evidence/runner.log
+              echo "Render or right-arrow input check failed for $label" | tee -a runtime-evidence/runner.log
               result=1
             fi
           }
