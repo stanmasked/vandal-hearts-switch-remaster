@@ -26,6 +26,14 @@ Bounds are widened during arithmetic to avoid signed integer overflow when addin
 
 Run `make test` to execute both the tactical-rule/input tests and `tests/test_software_renderer.c`. The renderer tests cover ordinary fills, padded row strides, clipping at all relevant edges, off-screen and empty rectangles, and malformed canvas inputs.
 
+## Pixel and line primitives
+
+- `vh_canvas_put_pixel` writes one pixel only when its coordinates are inside the visible canvas.
+- `vh_canvas_draw_hline` and `vh_canvas_draw_vline` draw clipped horizontal and vertical lines using a positive length and a starting coordinate. The implementation shares rectangle-fill clipping, so partially off-screen lines are clipped and invalid lengths are no-ops.
+- All primitives honor `stride_pixels` and leave row padding untouched.
+
+The host-side renderer tests now cover valid and out-of-bounds pixel writes, clipped horizontal/vertical lines, and padding preservation.
+
 ## Current limitation
 
 The Switch prototype still owns framebuffer acquisition and presentation in `source/main.c`. This contract only isolates the rectangle rasterization primitive; it is not a complete rendering backend and does not yet render the original Vandal Hearts game.
