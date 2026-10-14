@@ -82,10 +82,11 @@ static inline void vh_canvas_draw_rect_outline(VhCanvas *canvas, int x, int y,
     if (height > 1 && bottom >= INT_MIN && bottom <= INT_MAX) {
         vh_canvas_draw_hline(canvas, x, (int)bottom, width, color);
     }
-    if (height > 2) {
-        vh_canvas_draw_vline(canvas, x, y + 1, height - 2, color);
+    int64_t inner_top = (int64_t)y + 1;
+    if (height > 2 && inner_top >= INT_MIN && inner_top <= INT_MAX) {
+        vh_canvas_draw_vline(canvas, x, (int)inner_top, height - 2, color);
         if (width > 1 && right >= INT_MIN && right <= INT_MAX) {
-            vh_canvas_draw_vline(canvas, (int)right, y + 1,
+            vh_canvas_draw_vline(canvas, (int)right, (int)inner_top,
                                  height - 2, color);
         }
     }
