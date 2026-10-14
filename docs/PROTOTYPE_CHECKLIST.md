@@ -4,7 +4,7 @@
 
 This checklist tracks the smallest useful Switch homebrew experiment before any game code or game data is ported.
 
-**Status: initial framebuffer presentation has been confirmed in NeXium; controller behavior, audio output, and physical-console behavior remain unverified.**
+**Status: initial framebuffer and SDL2 texture-upload presentation are confirmed in NeXium; one Right-arrow move is confirmed for the main libnx prototype. SDL2 input, full interaction, audio output, and physical-console behavior remain unverified.**
 
 The prototype uses devkitPro/devkitA64 and libnx. The latest main prototype passed toolchain checks, host-side rule tests, NRO header/segment validation, and artifact upload in [CI run 38524223405](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223405). The SDL2 software-renderer, OpenGL ES 2.0 context, and CPU framebuffer-to-texture probes passed package installation, compilation/linking, NRO validation, and artifact upload in [CI run 38524223415](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223415). The software-renderer and GLES2-context probes are compile/package evidence; the CPU-framebuffer texture-upload probe also passed the NeXium initial-frame screenshot check in [run 38524564337](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524564337). It does not prove compatibility with the upstream desktop OpenGL path. The latest texture-probe archive digest is `sha256:85b154a316d66b7d51eb7aa0c1bb057d967cec3a18178b2a5b3ae998c4984131`; it is not a checksum of the extracted NRO.
 
@@ -41,7 +41,8 @@ The movement rules and input-state transitions are shared by the libnx prototype
 - [x] Capture 1280×720 screenshots and detect the expected hero-marker color in both probes.
 - [ ] Launch the application on physical Switch hardware.
 - [ ] Confirm the title and control hints are visible and correctly oriented.
-- [ ] Verify D-pad moves the cursor and clamps it to the 8×6 board edges.
+- [x] Verify one Right-arrow input moves the cursor exactly one tile in the main libnx prototype via NeXium's keyboard-to-controller mapping ([CI run 38525585386](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38525585386)).
+- [ ] Verify D-pad edge clamping, physical-controller input, and all other controller actions.
 - [ ] Press A while the cursor is on the hero to select it and reveal the movement range.
 - [ ] Move to an in-range empty tile and press A; verify the hero moves and selection clears.
 - [ ] Try to move onto the enemy tile or outside the movement range; verify the move is rejected.
@@ -51,7 +52,7 @@ The movement rules and input-state transitions are shared by the libnx prototype
 
 For a manual run, download the `vandal-hearts-switch-prototype` artifact from a successful workflow run, extract the `.nro`, copy it to `sd:/switch/vandal-hearts-prototype.nro`, and launch it from the Homebrew Menu. Use a Switch homebrew-capable test environment you control; do not include game images or proprietary assets.
 
-The current source draws a software-rendered 8×6 grid into a libnx RGBA8888 framebuffer and uses a generated 5×7 bitmap font for labels. The separate SDL2 texture probe uploads a CPU-generated RGBA frame to a GLES2 texture and presents it with a fullscreen quad. The NeXium run detected the hero-marker color in both 1280×720 screenshots ([run 38524564337](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524564337)); see the [runtime evidence artifact](https://api.github.com/repos/stanmasked/vandal-hearts-switch-remaster/actions/artifacts/11874289721/zip). An OpenAL Soft probe compiles/packages a generated-tone test, but audible output is not yet confirmed.
+The current source draws a software-rendered 8×6 grid into a libnx RGBA8888 framebuffer and uses a generated 5×7 bitmap font for labels. The separate SDL2 texture probe uploads a CPU-generated RGBA frame to a GLES2 texture and presents it with a fullscreen quad. The NeXium graphics run detected the hero-marker color in both 1280×720 screenshots ([run 38524564337](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524564337)); the [latest libnx input evidence](https://api.github.com/repos/stanmasked/vandal-hearts-switch-remaster/actions/artifacts/11874464900/zip) contains before/after screenshots. An OpenAL Soft probe compiles/packages a generated-tone test, but audible output is not yet confirmed.
 
 **Pass condition:** launch and input are observed in the named environment. Emulator results and physical-device results must be reported separately.
 
@@ -62,12 +63,14 @@ The current source draws a software-rendered 8×6 grid into a libnx RGBA8888 fra
 - [x] Package the probe as an NRO and validate its header and segment bounds.
 - [x] Compile/link and package a second probe requesting an OpenGL ES 2.0 context.
 - [x] Compile/link and package a third probe uploading a CPU-rendered RGBA framebuffer into an OpenGL ES texture.
-- [ ] Run the SDL2 probes in an emulator or on physical hardware.
+- [x] Run the CPU-framebuffer-to-GLES2-texture probe in NeXium and detect the expected marker.
+- [ ] Run the SDL2 software-renderer/input and bare GLES2-context probes in a runtime environment.
 - [ ] Verify SDL2 event mapping and stable frame presentation at runtime.
 - [x] Build an SDL_GL/OpenGL ES context probe separately from the software renderer.
-- [ ] Run the GLES2 context and texture-upload probes on hardware/emulator before attempting the upstream renderer.
+- [x] Run the GLES2 texture-upload probe in NeXium; the standalone context and SDL2 event-mapping paths remain unverified.
+- [ ] Verify SDL2 event mapping and stable frame presentation at runtime.
 
-The software-renderer and OpenGL ES 2.0 builds and artifact uploads passed in [CI run 38524223415](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223415). The generated NROs are about 6.7 MB and 6.1 MB before compression. This is compile/link evidence only.
+The software-renderer and OpenGL ES 2.0 builds and artifact uploads passed in [CI run 38524223415](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223415). The CPU-framebuffer-to-texture NRO also passed the NeXium initial-frame check. SDL2 input event delivery remains unverified.
 
 **Pass condition:** the probe launches, presents repeated frames, and responds to controller input in a named runtime environment. A successful SDL2 link is not proof that the upstream OpenGL path works.
 
@@ -108,17 +111,17 @@ Only after P1–P3 pass:
 | Field | Value |
 | --- | --- |
 | Date/time | |
-| Source revision | `41176e2462d24b2e5e4a45e37c6f1075180954e6` |
+| Source revision | `5e49689c58e925fc0c9075034e231e44b275a91c` |
 | Host OS | GitHub Actions runner/container (see workflow logs) |
 | Toolchain and library versions | Toolchain verification passed; exact versions not yet recorded here |
 | Target environment | NeXium emulator on Ubuntu 26.04 with Lavapipe software Vulkan; initial-frame screenshots checked |
 | Exact command | Root Makefile build via CI workflow |
 | Build exit code | 0 (workflow build step succeeded) |
-| Artifact path and checksum | Artifact `nexium-runtime-evidence`; archive SHA-256: `6a77bd79132a273c1e070bebc0e52baad0bf4c83be07a2ecbef7902e61103929` |
-| Runtime steps | Launch both NROs in NeXium; wait 30 seconds; capture screenshots; check for hero-marker color |
-| Observed result | Both screenshots were 1280×720; framebuffer had 6,561 hero-color-like pixels and SDL2 texture probe had 1,032; controller and audio behavior unverified |
-| Logs / screenshots location | [Main build 38524223405](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223405); [NeXium runtime smoke 38524564337](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524564337); [runtime evidence artifact](https://api.github.com/repos/stanmasked/vandal-hearts-switch-remaster/actions/artifacts/11874289721/zip); [SDL2 probes 38524223415](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223415) |
-| Known limitations | Initial graphics frame verified in NeXium only; input, audio output, and physical-device behavior unverified |
+| Artifact path and checksum | Artifact `nexium-runtime-evidence`; archive SHA-256: `b871f2e3d1d2d86e0c28bce4d39f8fdd03e4a2f03edb1c9ef1e9e...` |
+| Runtime steps | Launch libnx NRO in NeXium; wait 30 seconds; capture a screenshot; inject one Right-arrow press; capture the second screenshot; compare cursor-border pixels |
+| Observed result | Both screenshots were 1280×720; cursor yellow counts moved from (371, 0) to (0, 481), confirming one tile of Right-arrow movement; SDL2 input and audio remain unverified |
+| Logs / screenshots location | [Main build 38524223405](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223405); [NeXium input check 38525585386](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38525585386); [input evidence artifact](https://api.github.com/repos/stanmasked/vandal-hearts-switch-remaster/actions/artifacts/11874464900/zip); [SDL2 graphics evidence](https://api.github.com/repos/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524564337); [SDL2 builds 38524223415](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223415) |
+| Known limitations | One libnx D-pad move verified in NeXium; SDL2 input, full interaction, audio output, and physical-device behavior unverified |
 
 Do not commit proprietary game files or include them in CI artifacts. Use generated test data only.
 
