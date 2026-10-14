@@ -37,15 +37,68 @@ static void fill_rect(u32 *pixels, u32 stride, int x, int y, int width, int heig
     }
 }
 
+/* Tiny generated 5x7 font: no copyrighted game fonts or external assets. */
+static const u8 FONT_5X7[36][5] = {
+    {0x7E,0x11,0x11,0x11,0x7E}, {0x7F,0x49,0x49,0x49,0x36},
+    {0x3E,0x41,0x41,0x41,0x22}, {0x7F,0x41,0x41,0x22,0x1C},
+    {0x7F,0x49,0x49,0x49,0x41}, {0x7F,0x09,0x09,0x09,0x01},
+    {0x3E,0x41,0x49,0x49,0x7A}, {0x7F,0x08,0x08,0x08,0x7F},
+    {0x00,0x41,0x7F,0x41,0x00}, {0x20,0x40,0x41,0x3F,0x01},
+    {0x7F,0x08,0x14,0x22,0x41}, {0x7F,0x40,0x40,0x40,0x40},
+    {0x7F,0x02,0x0C,0x02,0x7F}, {0x7F,0x04,0x08,0x10,0x7F},
+    {0x3E,0x41,0x41,0x41,0x3E}, {0x7F,0x09,0x09,0x09,0x06},
+    {0x3E,0x41,0x51,0x21,0x5E}, {0x7F,0x09,0x19,0x29,0x46},
+    {0x46,0x49,0x49,0x49,0x31}, {0x01,0x01,0x7F,0x01,0x01},
+    {0x3F,0x40,0x40,0x40,0x3F}, {0x1F,0x20,0x40,0x20,0x1F},
+    {0x3F,0x40,0x38,0x40,0x3F}, {0x63,0x14,0x08,0x14,0x63},
+    {0x07,0x08,0x70,0x08,0x07}, {0x61,0x51,0x49,0x45,0x43},
+    {0x3E,0x45,0x49,0x51,0x3E}, {0x00,0x42,0x7F,0x40,0x00},
+    {0x62,0x51,0x49,0x49,0x46}, {0x22,0x41,0x49,0x49,0x36},
+    {0x18,0x14,0x12,0x7F,0x10}, {0x2F,0x49,0x49,0x49,0x31},
+    {0x3E,0x49,0x49,0x49,0x32}, {0x01,0x71,0x09,0x05,0x03},
+    {0x36,0x49,0x49,0x49,0x36}, {0x26,0x49,0x49,0x49,0x3E}
+};
+
+static const u8 *font_glyph(char ch) {
+    static const u8 blank[5] = {0,0,0,0,0};
+    static const u8 dash[5] = {0,0,0x08,0,0};
+    static const u8 plus[5] = {0x08,0x08,0x3E,0x08,0x08};
+    if (ch >= 'A' && ch <= 'Z') return FONT_5X7[ch - 'A'];
+    if (ch >= '0' && ch <= '9') return FONT_5X7[26 + ch - '0'];
+    if (ch == '-') return dash;
+    if (ch == '+') return plus;
+    return blank;
+}
+
+static void draw_text(u32 *pixels, u32 stride, int x, int y,
+                      const char *text, u32 color, int scale) {
+    for (const char *p = text; *p; p++) {
+        if (*p == ' ') {
+            x += 6 * scale;
+            continue;
+        }
+        const u8 *glyph = font_glyph(*p);
+        for (int col = 0; col < 5; col++) {
+            for (int row = 0; row < 7; row++) {
+                if (glyph[col] & (1u << row)) {
+                    fill_rect(pixels, stride, x + col * scale, y + row * scale,
+                              scale, scale, color);
+                }
+            }
+        }
+        x += 6 * scale;
+    }
+}
+
 static void draw_frame(u32 *pixels, u32 stride, int cursor_x, int cursor_y,
                        int hero_x, int hero_y, int enemy_x, int enemy_y,
                        int hero_selected) {
     fill_rect(pixels, stride, 0, 0, FB_WIDTH, FB_HEIGHT, COLOR_BG);
 
-    /* Header and footer panels are deliberately graphical: no font/assets required. */
-    fill_rect(pixels, stride, 72, 42, FB_WIDTH - 144, 8, COLOR_HERO);
-    fill_rect(pixels, stride, 72, 62, 330, 10, COLOR_WHITE);
-    fill_rect(pixels, stride, 72, 82, 210, 6, COLOR_MUTED);
+    /* Compact bitmap labels keep the prototype self-contained and asset-free. */
+    draw_text(pixels, stride, 72, 28, "VANDAL HEARTS", COLOR_WHITE, 3);
+    draw_text(pixels, stride, 72, 59, "TACTICAL PROTOTYPE", COLOR_MUTED, 1);
+    fill_rect(pixels, stride, 72, 82, FB_WIDTH - 144, 2, COLOR_HERO);
 
     for (int y = 0; y < GRID_HEIGHT; y++) {
         for (int x = 0; x < GRID_WIDTH; x++) {
@@ -90,8 +143,8 @@ static void draw_frame(u32 *pixels, u32 stride, int cursor_x, int cursor_y,
     fill_rect(pixels, stride, 72, 615, 42, 42, COLOR_HERO);
     fill_rect(pixels, stride, 132, 615, 42, 42, COLOR_ENEMY);
     fill_rect(pixels, stride, 192, 615, 42, 42, COLOR_CURSOR);
-    fill_rect(pixels, stride, 252, 622, 250, 8, COLOR_WHITE);
-    fill_rect(pixels, stride, 252, 640, 330, 6, COLOR_MUTED);
+    draw_text(pixels, stride, 252, 622, "HERO ENEMY CURSOR", COLOR_WHITE, 1);
+    draw_text(pixels, stride, 72, 674, "D-PAD MOVE  A SELECT  B CANCEL  PLUS EXIT", COLOR_MUTED, 1);
 
     /* Small status indicator changes color while the unit is selected. */
     fill_rect(pixels, stride, FB_WIDTH - 116, 42, 44, 44,
