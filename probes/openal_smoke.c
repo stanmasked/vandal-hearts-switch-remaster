@@ -17,10 +17,27 @@ static int check_al_error(const char *operation) {
     return -1;
 }
 
-static void show_status(SDL_Renderer *renderer, int success) {
+static void show_status(SDL_Renderer *renderer, int result) {
     if (!renderer) return;
-    if (success) SDL_SetRenderDrawColor(renderer, 20, 180, 70, 255);
-    else SDL_SetRenderDrawColor(renderer, 210, 35, 45, 255);
+
+    /* Distinct full-screen colors let headless CI identify guest-side failures
+       even when the emulator does not forward the NRO's stderr. */
+    switch (result) {
+        case 0:  SDL_SetRenderDrawColor(renderer, 20, 180, 70, 255); break;
+        case 1:  SDL_SetRenderDrawColor(renderer, 210, 35, 45, 255); break; /* SDL init */
+        case 2:  SDL_SetRenderDrawColor(renderer, 220, 110, 20, 255); break; /* display */
+        case 3:  SDL_SetRenderDrawColor(renderer, 150, 40, 190, 255); break; /* OpenAL device */
+        case 4:  SDL_SetRenderDrawColor(renderer, 30, 100, 210, 255); break; /* context */
+        case 5:  SDL_SetRenderDrawColor(renderer, 20, 180, 200, 255); break; /* current context */
+        case 6:  SDL_SetRenderDrawColor(renderer, 230, 190, 20, 255); break; /* buffer gen */
+        case 7:  SDL_SetRenderDrawColor(renderer, 120, 190, 40, 255); break; /* buffer data */
+        case 8:  SDL_SetRenderDrawColor(renderer, 230, 100, 150, 255); break; /* source gen */
+        case 9:  SDL_SetRenderDrawColor(renderer, 110, 80, 220, 255); break; /* source buffer */
+        case 10: SDL_SetRenderDrawColor(renderer, 255, 130, 0, 255); break; /* play */
+        case 11: SDL_SetRenderDrawColor(renderer, 0, 130, 130, 255); break; /* query */
+        case 12: SDL_SetRenderDrawColor(renderer, 255, 0, 180, 255); break; /* not playing */
+        default: SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255); break;
+    }
     SDL_RenderClear(renderer);
     SDL_RenderPresent(renderer);
 }
@@ -56,7 +73,7 @@ int main(int argc, char **argv) {
         result = 2;
         goto cleanup;
     }
-    show_status(renderer, 0);
+    show_status(renderer, 1);
 
     device = alcOpenDevice(NULL);
     if (!device) {
@@ -110,7 +127,7 @@ int main(int argc, char **argv) {
     fprintf(stderr, "OpenAL source entered AL_PLAYING successfully\n");
 
 cleanup:
-    show_status(renderer, result == 0);
+    show_status(renderer, result);
     /* Keep the color-coded result on screen long enough for CI to capture it. */
     SDL_Delay(15000);
     if (context_current) {
