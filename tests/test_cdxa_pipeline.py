@@ -18,7 +18,7 @@ def xa_audio_sector(payload_marker: int = 0) -> bytes:
     subheader = bytes((1, 0, 0x64, 0x01))  # file, channel, audio + Form 2, 4-bit stereo profile
     sector[16:20] = subheader
     sector[20:24] = subheader
-    sector[24:24 + AUDIO_BYTES_PER_SECTOR] = bytes(AUDIO_BYTES_PER_SECTOR)
+    sector[24:24 + AUDIO_BYTES_PER_SECTOR] = bytes([payload_marker]) * AUDIO_BYTES_PER_SECTOR
     return bytes(sector)
 
 
