@@ -91,6 +91,20 @@ int main(void) {
     assert(pixels[STRIDE + 1] == 0xA5A5A5A5u);
     vh_canvas_draw_rect_outline(&canvas, 0, 0, 0, 3, 0xFFFFFFFFu);
 
+    /* Degenerate positive extents still produce a border, not an interior. */
+    for (int i = 0; i < STORAGE; ++i) pixels[i] = 0xA5A5A5A5u;
+    vh_canvas_draw_rect_outline(&canvas, 2, 1, 1, 1, 0x31415926u);
+    assert(pixels[STRIDE + 2] == 0x31415926u);
+    assert(pixels[STRIDE + 1] == 0xA5A5A5A5u);
+    vh_canvas_draw_rect_outline(&canvas, 1, 1, 1, 3, 0x27182818u);
+    assert(pixels[STRIDE + 1] == 0x27182818u);
+    assert(pixels[2 * STRIDE + 1] == 0x27182818u);
+    assert(pixels[3 * STRIDE + 1] == 0x27182818u);
+    vh_canvas_draw_rect_outline(&canvas, 0, 2, 3, 1, 0x16180339u);
+    assert(pixels[2 * STRIDE] == 0x16180339u);
+    assert(pixels[2 * STRIDE + 1] == 0x16180339u);
+    assert(pixels[2 * STRIDE + 2] == 0x16180339u);
+
     /* Extreme coordinates must clip safely without signed overflow. */
     for (int i = 0; i < STORAGE; ++i) pixels[i] = 0xA5A5A5A5u;
     vh_canvas_draw_rect_outline(&canvas, INT_MAX - 1, 0, INT_MAX, 3, 0x10203040u);
