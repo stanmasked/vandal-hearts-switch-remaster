@@ -129,6 +129,25 @@ int main(void) {
     assert(pixels[0] == palette.tile);
     assert(pixels[1] == palette.border);
 
+    /* Tiny and invalid tiles have deterministic behavior and never overdraw. */
+    for (int i = 0; i < STORAGE; ++i) pixels[i] = 0xA5A5A5A5u;
+    vh_render_grid_tile(&canvas, 0, 0, 1, palette);
+    assert(pixels[0] == palette.border);
+    vh_render_grid_tile(&canvas, 1, 0, 2, palette);
+    assert(pixels[1] == palette.border && pixels[2] == palette.border);
+    vh_render_grid_tile(&canvas, 0, 1, 3, palette);
+    assert(pixels[STRIDE] == palette.border);
+    assert(pixels[STRIDE + 1] == palette.border);
+    assert(pixels[STRIDE + 2] == palette.border);
+    vh_render_grid_tile(&canvas, 1, 1, 0, palette);
+    vh_render_grid_tile(&canvas, 1, 1, -3, palette);
+    vh_render_grid_tile(NULL, 1, 1, 5, palette);
+    assert(pixels[1 * STRIDE + 1] == 0xA5A5A5A5u);
+    vh_render_grid_tile(&canvas, 3, 2, 5, palette);
+    assert(pixels[2 * STRIDE + 3] == palette.border);
+    assert(pixels[2 * STRIDE + 4] == palette.border);
+    assert(pixels[2 * STRIDE + 2] == 0xA5A5A5A5u);
+
     puts("All software renderer tests passed.");
     return 0;
 }
