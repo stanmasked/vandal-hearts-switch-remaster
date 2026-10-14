@@ -23,6 +23,16 @@ The upstream PC port is a native C project with a portable hardware-interface la
 - [ ] Evaluate SDL2, graphics, audio, threading, filesystem, and memory APIs against the chosen Switch homebrew toolchain.
 - [ ] Keep changes out of the byte-matching game source unless there is a documented, gated reason.
 
+## Switch package availability findings
+
+The official devkitPro package recipes provide a plausible path closer to the upstream desktop dependencies:
+
+- [switch-sdl2 package recipe](https://github.com/devkitPro/pacman-packages/blob/master/switch/SDL2/PKGBUILD) builds SDL2 for the Switch target and declares dependencies on `switch-mesa` and `libnx`.
+- [switch-mesa package recipe](https://github.com/devkitPro/pacman-packages/blob/master/switch/mesa/PKGBUILD) provides the Mesa graphics library for the Switch package set.
+- [switch-openal-soft package recipe](https://github.com/devkitPro/pacman-packages/blob/master/switch/openal-soft/PKGBUILD) builds OpenAL Soft and depends on `switch-sdl2`.
+
+This establishes that package recipes exist; it does **not** yet prove these libraries install in the current CI image, link with this project, or run correctly on hardware. Next, build a small SDL2 window/input probe as a separate target, then test OpenAL and renderer compatibility independently before choosing the upstream port architecture.
+
 ## Phase 3 — Switch homebrew feasibility prototype
 
 - [x] Confirm devkitPro/devkitA64/libnx are available in the CI container.
