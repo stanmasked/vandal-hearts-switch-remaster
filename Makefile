@@ -42,8 +42,10 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_tex
 test-sanitize: | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_game_rules.c -o $(BUILD)/test_game_rules_sanitize
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_software_renderer.c -o $(BUILD)/test_software_renderer_sanitize
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_texture_sample.c -o $(BUILD)/test_texture_sample_sanitize
 	./$(BUILD)/test_game_rules_sanitize
 	./$(BUILD)/test_software_renderer_sanitize
+	./$(BUILD)/test_texture_sample_sanitize
 
 verify-nro: $(BUILD)/$(TARGET).nro
 	python3 tests/check_nro.py $<
