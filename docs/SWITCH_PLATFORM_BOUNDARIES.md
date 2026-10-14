@@ -22,6 +22,7 @@ Track the platform-specific work required before integrating the upstream Vandal
 - [x] Trace the upstream framebuffer format, dimensions, stride, orientation, and scaling from rasterizer output to presentation.
 - [x] Identify legacy desktop presentation calls unavailable in GLES2, including `glDrawPixels`, `glPixelZoom`, and `glRasterPos2f`.
 - [x] Define and host-test a frame view contract for packed RGB24, stride, bounds, and bottom-up row access in `source/rgb24_frame.h`.
+- [x] Add and host-test centered aspect-preserving destination-rectangle calculation in `source/switch_presenter_layout.h`.
 - [ ] Implement a Switch presenter adapter for the upstream frame without changing the byte-matching game source.
 - [ ] Compare that adapter against a known desktop frame for orientation, color channels, scaling, filtering, and letterboxing.
 - [ ] Confirm sustained frame updates and clean shutdown on target hardware.
