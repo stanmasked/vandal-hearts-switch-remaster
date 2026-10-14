@@ -96,6 +96,11 @@ def extract_audio_payloads(
         "noncontiguous_audio_transitions": gaps,
         "first_audio_lba": audio_lbas[0] if audio_lbas else None,
         "last_audio_lba": audio_lbas[-1] if audio_lbas else None,
+        "audio_lbas": audio_lbas,
+        "audio_lba_offsets": [
+            {"lba": lba, "payload_offset": index * (PAYLOAD_END - PAYLOAD_START)}
+            for index, lba in enumerate(audio_lbas)
+        ],
         "submode_counts": {f"0x{k:02X}": v for k, v in sorted(submodes.items())},
         "coding_info_counts": {f"0x{k:02X}": v for k, v in sorted(coding_info.items())},
         "warning": "Payload extraction only; not decoded PCM. Removing non-audio sectors may lose timing/gap information.",
