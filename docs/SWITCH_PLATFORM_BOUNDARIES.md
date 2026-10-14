@@ -59,3 +59,16 @@ Track the platform-specific work required before integrating the upstream Vandal
 ## Evidence discipline
 
 Mark a task complete only when the linked workflow, log, test output, or device observation directly verifies it. A successful compile or a passing emulator probe must not be presented as proof that the upstream game port runs on physical Switch hardware.
+
+
+## RGB24 GLES2 probe: runtime evidence (2026-10-14)
+
+- [Run 38647421497](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38647421497) passed after replacing the overly strict near-black letterbox heuristic with viewport-boundary and corner-marker checks.
+- [Run 38649912686](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38649912686) passed the SDL2 build and NeXium runtime jobs, including the RGB24 texture-upload probe with an immediate GL upload-error checkpoint.
+- [Run 38650056910](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38650056910) passed the same checks after draining stale GLES error state immediately before the RGB24 upload. The checkpoint therefore tests the upload operation rather than reporting an unrelated earlier GL error.
+- The synthetic frame is 321×240 RGB24 with a tightly packed 963-byte row, bottom-up source storage, distinct corner markers, and a gradient. “Odd-stride” here means a row byte count not divisible by four; it is not padded row storage.
+- This evidence covers the isolated probe under NeXium. It does not verify the upstream renderer integration, physical Switch, long-running frame pacing, or original-game assets.
+
+## Next implementation boundary
+
+The next step is to extract the GLES2 presentation resources and operations from `probes/rgb24_texture_smoke.c` into a reusable module that assumes an already-current GLES2 context. SDL window/context creation, synthetic test-frame generation, event handling, and buffer swapping should remain owned by the probe/caller. The module should own only its GL program, vertex buffer, and texture; expose explicit initialization, frame upload/draw, and destruction; validate frame/layout inputs; and propagate GL failures instead of silently presenting stale texture contents. Integrate it into the probe first, then rerun host tests and the NeXium screenshot checks before considering any upstream renderer change.
