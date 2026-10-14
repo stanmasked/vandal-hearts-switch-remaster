@@ -31,6 +31,22 @@ class ExtractCdXaPayloadTests(unittest.TestCase):
             self.assertEqual(report["payload_bytes_written"], 2304)
             self.assertTrue(report_path.is_file())
 
+    def test_report_preserves_source_lbas_and_payload_offsets_across_gaps(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            src, dst = root / "disc.bin", root / "payload.bin"
+            src.write_bytes(sector(marker=0x10) + sector(submode=0x00, marker=0x20) +
+                            sector(marker=0x30) + sector(mode=1, marker=0x40) +
+                            sector(marker=0x50))
+            report = extract_audio_payloads(src, dst)
+            self.assertEqual(report["audio_lbas"], [0, 2, 4])
+            self.assertEqual(report["audio_lba_offsets"], [
+                {"lba": 0, "payload_offset": 0},
+                {"lba": 2, "payload_offset": 2304},
+                {"lba": 4, "payload_offset": 4608},
+            ])
+            self.assertEqual(report["noncontiguous_audio_transitions"], 2)
+
     def test_filters_by_channel_and_file_number(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
