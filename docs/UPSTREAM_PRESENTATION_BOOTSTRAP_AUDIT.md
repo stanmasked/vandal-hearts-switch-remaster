@@ -13,20 +13,35 @@ Relevant source locations:
 - Around lines 906–908, the desktop OpenGL path uses `glPixelZoom`, `glRasterPos2f`, and `glDrawPixels(w, h, GL_RGB, GL_UNSIGNED_BYTE, s_rgbaScratch)`.
 - Around lines 913–915, presentation branches to `SDL_RenderPresent` for SDL renderer mode or `SDL_GL_SwapWindow` for the desktop GL window.
 
+### Exact scratch-buffer contract: now confirmed
+
+The frame-preparation code in `PC_GpuPresent` (around lines 780–820 at the audited revision) confirms:
+- **Pixel format:** packed RGB24, in byte order R, G, B; there is no alpha byte in this scratch buffer. The variable name `s_rgbaScratch` is misleading.
+- **Allocation:** `w * h * 3` bytes, grown when needed.
+- **Row stride:** exactly `w * 3` bytes; rows are tightly packed, with no explicit per-row padding.
+- **Orientation:** bottom-up. For source row `py`, the output row is `h - 1 - py`. The comments explicitly preserve this orientation for the GL raster path.
+- **Color conversion:** each 16-bit VRAM pixel is interpreted as 5-bit red in bits 0–4, green in bits 5–9, and blue in bits 10–14. Each 5-bit channel expands to 8 bits by bit replication `(v << 3) | (v >> 2)`, mapping 31 to 255.
+- **HD movie overlay:** the RGB24 movie path is already RGB triples; it copies each row into the same bottom-up scratch layout.
+- **Post-processing:** subtitle covers/text and optional OSD/overlay are drawn into this same RGB24 buffer before presentation.
+- **Presentation:** the desktop GL path supplies the buffer as `GL_RGB / GL_UNSIGNED_BYTE`; the Apple SDL texture path also declares RGB24 and explicitly flips vertically during copy.
+
+These details define a much stronger adapter contract than the earlier name-only inference. The framebuffer pointer is only valid for the duration of the call unless a backend copies/uploads it before returning.
+
 ### Consequence
 
 The clearest first graphics boundary is the final presentation of the CPU-rendered frame, not the software rasterizer itself. A Switch backend should accept the already-rendered pixels and upload/draw them with an API supported by the chosen Switch target. The existing GLES2 texture-upload probe is a plausible experiment, but it is not yet proven to preserve upstream pixel format, scaling, orientation, filtering, or frame pacing.
 
-Important data-contract detail: the audited call passes `GL_RGB` and `GL_UNSIGNED_BYTE` with a buffer named `s_rgbaScratch`. Do not assume the name proves four-channel RGBA storage; inspect allocation, row stride, conversion, and pixel-store state before designing an upload adapter. Record whether alpha exists, the exact bytes per pixel, and whether rows are top-down or bottom-up.
+The desktop GL call uses `glDrawPixels` and `glPixelZoom`; these are not part of the OpenGL ES 2.0 API. Replace only this final presentation operation for the Switch path, rather than attempting to carry the desktop immediate/raster API across unchanged.
 
 ### Proposed implementation boundary
 
 1. Keep the upstream software rasterizer and game logic untouched initially.
-2. Identify the exact buffer preparation immediately before the presentation calls.
-3. Define an adapter contract containing pointer, width, height, pixel format, and row stride (or document why stride is implicit).
-4. Implement the Switch presenter as a separate platform-specific path, initially using the already-tested SDL2/GLES2 texture upload route.
-5. Compare a captured upstream desktop frame with the Switch presenter output using a known test frame; check orientation, RGB/RGBA interpretation, row alignment, scaling, and letterboxing.
-6. Retain the existing desktop path unchanged and rerun upstream's byte-matching check after any build integration.
+2. Define a frame contract: pointer, width, height, RGB24 format, tightly packed stride `width * 3`, bottom-up row order, and call-scoped lifetime.
+3. Implement the Switch presenter as a separate platform-specific path, initially using the already-tested SDL2/GLES2 texture-upload route.
+4. Upload as RGB data and account for row orientation explicitly: either retain the bottom-up data and flip texture coordinates, or flip rows once—not both.
+5. Set/check the unpack alignment for RGB uploads. OpenGL texture uploads have row-alignment rules; RGB rows whose byte length is not divisible by the default alignment can be misread. The current native width of 320 gives a 960-byte row, but arbitrary-size movie frames need not.
+6. Preserve the aspect-ratio letterbox calculation and nearest-neighbour intent; compare a captured known frame against the Switch presenter output for orientation, color channels, scaling, and black bars.
+7. Retain the existing desktop path unchanged and rerun upstream's byte-matching check after any build integration.
 
 ## 2. Input path: adapter needed
 
@@ -55,8 +70,12 @@ These are not interchangeable convenience wrappers: the bootstrap accommodates t
 
 Recommended first integration target: **a standalone presentation adapter with a documented frame contract**, while continuing the bootstrap and input inventories in parallel as read-only analysis.
 
+The next implementation should be a small, independently testable presenter module or harness, not a patch to the upstream renderer yet. It should exercise a synthetic RGB24 frame with non-symmetric corner markers, a gradient, and widths that do and do not produce four-byte-aligned rows. That can catch orientation, channel order, and row-stride bugs before the adapter is wired into the upstream project.
+
 Do not yet attempt to declare the whole upstream port Switch-compatible. The existing probes validate their own narrow behavior; they do not validate the original game framebuffer, its memory assumptions, full input API, audio, threads, or physical-console runtime.
 
 ## Evidence and limits
 
 This document records source observations, not a successful upstream build or device test. Source locations refer to the audited upstream revision above. Re-check the source if the pinned upstream commit changes.
+
+Relevant API reference: [OpenGL ES 2.0 reference pages](https://registry.khronos.org/OpenGL-Refpages/es2.0/xhtml/) and [texture upload row-alignment explanation](https://docs.gl/es2/glTexImage2D).
