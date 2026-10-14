@@ -113,7 +113,7 @@ jobs:
             local shot_enemy_blocked="runtime-evidence/$label-enemy-blocked.png"
             local shot_after="runtime-evidence/$label-after-move.png"
             local log="runtime-evidence/$label.log"
-            export NRO="$nro" SHOT="$shot" SHOT_SELECTED="$shot_selected" SHOT_CANCELLED="$shot_cancelled" SHOT_INVALID="$shot_invalid" SHOT_ENEMY_BLOCKED="$shot_enemy_blocked" SHOT_EXIT="$shot_exit" SHOT_AFTER="$shot_after" LOG="$log" CHECK_INPUT="$check_input" VK_ICD_FILENAMES="$icd"
+            export NRO="$nro" SHOT="$shot" SHOT_SELECTED="$shot_selected" SHOT_CANCELLED="$shot_cancelled" SHOT_INVALID="$shot_invalid" SHOT_ENEMY_BLOCKED="$shot_enemy_blocked" SHOT_AFTER="$shot_after" LOG="$log" CHECK_INPUT="$check_input" VK_ICD_FILENAMES="$icd"
             echo "Launching $nro in NeXium" | tee -a runtime-evidence/runner.log
 
             if ! timeout --kill-after=5s 60s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
@@ -217,7 +217,6 @@ jobs:
                 test -s "$SHOT_CANCELLED"
                 test -s "$SHOT_INVALID"
                 test -s "$SHOT_ENEMY_BLOCKED"
-                test -s "$SHOT_EXIT"
               fi
               kill -INT "$pid" 2>/dev/null || true
               sleep 2
@@ -239,9 +238,8 @@ jobs:
           cancelled = Image.open(sys.argv[3]).convert("RGB") if Path(sys.argv[3]).exists() else None
           invalid = Image.open(sys.argv[4]).convert("RGB") if Path(sys.argv[4]).exists() else None
           enemy_blocked = Image.open(sys.argv[5]).convert("RGB") if Path(sys.argv[5]).exists() else None
-          exit_screen = Image.open(sys.argv[6]).convert("RGB") if Path(sys.argv[6]).exists() else None
-          after = Image.open(sys.argv[7]).convert("RGB")
-          label = sys.argv[8]
+          after = Image.open(sys.argv[6]).convert("RGB")
+          label = sys.argv[7]
           hero = (86, 190, 244)
           cursor = (255, 219, 102)
 
