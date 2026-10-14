@@ -180,11 +180,12 @@ jobs:
 
             if ! python3 - "$shot" "$shot_selected" "$shot_cancelled" "$shot_after" "$label" <<'PY'
           from PIL import Image
+          from pathlib import Path
           import sys
 
           before = Image.open(sys.argv[1]).convert("RGB")
-          selected = Image.open(sys.argv[2]).convert("RGB") if sys.argv[2] else None
-          cancelled = Image.open(sys.argv[3]).convert("RGB") if sys.argv[3] else None
+          selected = Image.open(sys.argv[2]).convert("RGB") if Path(sys.argv[2]).exists() else None
+          cancelled = Image.open(sys.argv[3]).convert("RGB") if Path(sys.argv[3]).exists() else None
           after = Image.open(sys.argv[4]).convert("RGB")
           label = sys.argv[5]
           hero = (86, 190, 244)
