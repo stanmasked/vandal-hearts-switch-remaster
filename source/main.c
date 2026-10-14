@@ -100,6 +100,7 @@ static void draw_frame(u32 *pixels, u32 stride, int cursor_x, int cursor_y,
               COLOR_WHITE, 1);
     fill_rect(pixels, stride, 72, 82, FB_WIDTH - 144, 2, COLOR_HERO);
 
+    VhCanvas canvas = {(uint32_t *)pixels, (size_t)stride, FB_WIDTH, FB_HEIGHT};
     for (int y = 0; y < GRID_HEIGHT; y++) {
         for (int x = 0; x < GRID_WIDTH; x++) {
             const int px = GRID_X + x * CELL_SIZE;
@@ -112,7 +113,6 @@ static void draw_frame(u32 *pixels, u32 stride, int cursor_x, int cursor_y,
                 tile = COLOR_RANGE;
             }
 
-            VhCanvas canvas = {(uint32_t *)pixels, (size_t)stride, FB_WIDTH, FB_HEIGHT};
             VhTilePalette palette = {tile, COLOR_GRID};
             vh_render_grid_tile(&canvas, px, py, CELL_SIZE, palette);
 
