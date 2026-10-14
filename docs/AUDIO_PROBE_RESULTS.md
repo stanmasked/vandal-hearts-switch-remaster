@@ -13,7 +13,7 @@ The SDL2 probe requests a 22,050 Hz, mono, signed 16-bit audio device and queues
 - NeXium run [38610398658](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38610398658) reached the runtime stage, but the host audio backend reported that ALSA's default PCM device was unavailable (`Unknown PCM default`).
 - This is an inconclusive audio-output result for that CI environment. It is not evidence that audio fails on a Switch, nor does a successful NRO build prove audible sound.
 
-The follow-up workflow change in commit [ff3e89b](https://github.com/stanmasked/vandal-hearts-switch-remaster/commit/ff3e89b35044585e716eaac130eb9aefbc44fa1d) distinguishes a missing host audio device from a genuine probe failure where possible. Follow-up run: [38610973016](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38610973016).
+The follow-up workflow change in commit [ff3e89b](https://github.com/stanmasked/vandal-hearts-switch-remaster/commit/ff3e89b35044585e716eaac130eb9aefbc44fa1d) was committed, but follow-up run [38610973016](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38610973016) did not reach the probe: its package-install step again received HTTP 403 for `dkp-linux.db` and `dkp-libs.db` after five attempts. Build and runtime steps were skipped, so this run neither validates nor invalidates the workflow's audio-result classification.
 
 ## OpenAL Soft probe
 
