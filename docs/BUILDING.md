@@ -48,7 +48,7 @@ The minimal prototype now implements:
 3. A generated software-rendered framebuffer grid in RGBA8888 format.
 4. A simple cursor, hero marker, enemy marker, and movement-range visualization.
 
-Next, verify SDL2 input, repeated frame updates, and behavior on physical hardware. Record the environment and evidence; do not infer runtime success from compilation.
+Next, verify graceful exit, audio output, long-session stability, and behavior on physical hardware. Record the environment and evidence; do not infer runtime success from compilation.
 
 Then create a dependency/API inventory for the upstream platform layer and port one interface at a time.
 
