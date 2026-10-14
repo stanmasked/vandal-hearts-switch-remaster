@@ -50,6 +50,12 @@ jobs:
           set -euxo pipefail
           make test
 
+      - name: Run sanitizer-enabled host tests
+        shell: bash
+        run: |
+          set -euxo pipefail
+          make test-sanitize
+
       - name: Build and validate NRO
         shell: bash
         run: |
