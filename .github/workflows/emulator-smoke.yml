@@ -210,7 +210,7 @@ jobs:
                 sleep 0.3
                 timeout --kill-after=2s 10s import -window "$window" "$SHOT_ENEMY_BLOCKED"
 
-                # NeXium's default keyboard mapping sends M as the Switch Plus button.
+                # NeXium default keyboard mapping sends M as the Switch Plus button.
                 # Capture the guest after Plus to gather evidence that applet exit is handled.
                 timeout --kill-after=1s 3s xdotool keydown --window "$window" m
                 sleep 0.2
