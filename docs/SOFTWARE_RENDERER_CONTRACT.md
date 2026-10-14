@@ -24,7 +24,7 @@ Bounds are widened during arithmetic to avoid signed integer overflow when addin
 
 ## Tests
 
-Run `make test` to execute both the tactical-rule/input tests and `tests/test_software_renderer.c`. The renderer tests cover ordinary fills, padded row strides, clipping at all relevant edges, off-screen and empty rectangles, and malformed canvas inputs.
+Run `make test` to execute both the tactical-rule/input tests and `tests/test_software_renderer.c`. The renderer tests cover ordinary fills, padded row strides, clipping at all relevant edges, off-screen and empty rectangles, malformed canvas inputs, rectangle outlines clipped at negative origins, and coordinates near `INT_MIN`/`INT_MAX`.
 
 ## Pixel and line primitives
 
@@ -34,7 +34,7 @@ Run `make test` to execute both the tactical-rule/input tests and `tests/test_so
 
 - `vh_canvas_draw_rect_outline` draws a one-pixel border around a rectangle with the requested width and height. The same clipping and stride guarantees apply; non-positive extents are no-ops. Coordinate arithmetic for the far edges is widened before use.
 
-The host-side renderer tests now cover valid and out-of-bounds pixel writes, clipped horizontal/vertical lines, and padding preservation.
+The host-side renderer tests cover valid and out-of-bounds pixel writes, clipped horizontal/vertical lines, rectangle borders and untouched interiors, extreme integer coordinates, and padding preservation. `make test-sanitize` runs the same tests with AddressSanitizer and UndefinedBehaviorSanitizer when the host compiler supports them.
 
 ## Current limitation
 
