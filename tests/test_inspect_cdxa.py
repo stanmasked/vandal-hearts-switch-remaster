@@ -47,6 +47,27 @@ class InspectCdXaTests(unittest.TestCase):
             self.assertEqual(report["mode2"], 0)
             self.assertEqual(report["xa_audio"], 0)
 
+
+    def test_inspects_only_requested_sector_range(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "raw.bin"
+            path.write_bytes(sector(submode=0x00) + sector() + sector(submode=0x00))
+            report = inspect_raw_cd(path, start_lba=1, sector_count=1)
+            self.assertEqual(report["sectors"], 1)
+            self.assertEqual(report["xa_audio"], 1)
+            self.assertEqual(report["form2_audio"], 1)
+
+    def test_rejects_out_of_bounds_sector_range(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "raw.bin"
+            path.write_bytes(sector())
+            with self.assertRaisesRegex(ValueError, "outside the input"):
+                inspect_raw_cd(path, start_lba=1)
+            with self.assertRaisesRegex(ValueError, "positive"):
+                inspect_raw_cd(path, sector_count=0)
+            with self.assertRaisesRegex(ValueError, "beyond input"):
+                inspect_raw_cd(path, start_lba=0, sector_count=2)
+
     def test_rejects_empty_or_unaligned_input(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "bad.bin"
