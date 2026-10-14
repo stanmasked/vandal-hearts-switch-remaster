@@ -120,7 +120,7 @@ jobs:
             export NRO="$nro" SHOT="$shot" SHOT_AFTER="$shot_after" LOG="$log" VK_ICD_FILENAMES="$icd"
             echo "Launching $nro in NeXium" | tee -a runtime-evidence/runner.log
 
-            if ! timeout 60s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
+            if ! timeout --kill-after=5s 60s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
               set -euo pipefail
               "$NEXIUM_BIN" "$NRO" >"$LOG" 2>&1 &
               pid=$!
