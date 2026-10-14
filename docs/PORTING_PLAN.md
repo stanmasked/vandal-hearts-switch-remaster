@@ -2,7 +2,7 @@
 
 ## Current status
 
-**Source audit complete; initial framebuffer and SDL2 texture output, two-step Right-arrow movement in both paths, and A/B/valid-move interaction in the main libnx prototype are confirmed in NeXium. Invalid-move handling, exit behavior, sustained interaction, audio output, and physical Switch behavior remain unverified.**
+**Source audit complete; initial framebuffer and SDL2 texture output, two-step Right-arrow movement in both paths, A/B/valid-move interaction, and rejection of out-of-range and enemy-tile moves in the main libnx prototype are confirmed in NeXium. Graceful exit, sustained interaction, audio output, and physical Switch behavior remain unverified.**
 
 The upstream PC port is a native C project with a portable hardware-interface layer, but it is designed for desktop Windows/Linux/macOS. See [Upstream Audit](UPSTREAM_AUDIT.md) for findings and [Build Notes](BUILDING.md) for the dependency inventory.
 
@@ -49,6 +49,7 @@ This establishes that package recipes exist. The [SDL2 probe CI run](https://git
 - [x] Verify one Right-arrow movement in the SDL2 texture probe through NeXium's joystick API ([CI run 38526810434](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38526810434)).
 - [x] Verify two separate Right-arrow presses in both libnx and SDL2 texture probes ([libnx run 38577626136](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38577626136), [SDL2 run 38577968731](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38577968731)).
 - [x] Verify A selection, B cancellation, and a valid two-tile hero move in NeXium ([CI run 38578473844](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38578473844)).
+- [x] Verify out-of-range and enemy-tile moves are rejected while preserving hero position and selection ([CI run 38579336397](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38579336397)).
 - [ ] Verify sustained frame updates, audio output, and behavior on physical hardware.
 - [ ] Measure frame pacing and memory use on actual hardware.
 - [x] Build and package an OpenAL Soft generated-tone probe in CI.
