@@ -143,6 +143,7 @@ jobs:
             timeout --kill-after=2s 10s import -window root runtime-evidence/openal-desktop.png
             test -s "$SHOT"
             cat "$LOG"
+          '
           python3 - "$SHOT" <<'PY'
           from PIL import Image
           import sys
