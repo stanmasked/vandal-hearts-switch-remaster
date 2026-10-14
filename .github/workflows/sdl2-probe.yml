@@ -114,11 +114,14 @@ jobs:
 
       - name: Download NeXium nightly
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euxo pipefail
-          asset_url="$(curl -fsSL https://api.github.com/repos/nexium-emu/nexium-nightly/releases/tags/nightly | jq -r '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
+          release_json="$(curl -fsSL --retry 3 --retry-all-errors -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/nexium-emu/nexium-nightly/releases/tags/nightly)"
+          asset_url="$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
           test -n "$asset_url"
-          curl -fL --retry 3 "$asset_url" -o /tmp/nexium-linux.tar.gz
+          curl -fL --retry 3 --retry-all-errors "$asset_url" -o /tmp/nexium-linux.tar.gz
           mkdir -p /tmp/nexium
           tar -xzf /tmp/nexium-linux.tar.gz -C /tmp/nexium
           emu_bin="$(find /tmp/nexium -type f -executable \( -name 'nexium-gui' -o -name 'nexium' \) -print -quit)"
