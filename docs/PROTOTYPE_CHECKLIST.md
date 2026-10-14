@@ -6,7 +6,7 @@ This checklist tracks the smallest useful Switch homebrew experiment before any 
 
 **Status: graphical framebuffer prototype compiles and packages in CI; runtime presentation and controller behavior remain unverified.**
 
-The prototype uses devkitPro/devkitA64 and libnx. The latest main prototype passed toolchain checks, host-side rule tests, NRO header/segment validation, and artifact upload in [CI run 38523386542](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523386542). The separate SDL2 software-renderer and OpenGL ES 2.0 probes passed package installation, compilation/linking, NRO validation, and artifact upload in [CI run 38523589761](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523589761). These confirm build and packaging only, not runtime behavior. The OpenGL ES probe archive digest is `sha256:0aadb229f705cb5ef3f8a8709ee2f9fd9c28b30c0e12c2b61a89ab34f46e0c9c`; it is not a checksum of the extracted NRO.
+The prototype uses devkitPro/devkitA64 and libnx. The latest main prototype passed toolchain checks, host-side rule tests, NRO header/segment validation, and artifact upload in [CI run 38523844738](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523844738). The separate SDL2 software-renderer and OpenGL ES 2.0 probes passed package installation, compilation/linking, NRO validation, and artifact upload in [CI run 38523844795](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523844795). These confirm build and packaging only, not runtime behavior. The OpenGL ES probe archive digest is `sha256:0aadb229f705cb5ef3f8a8709ee2f9fd9c28b30c0e12c2b61a89ab34f46e0c9c`; it is not a checksum of the extracted NRO.
 
 ## Scope boundary
 
@@ -14,7 +14,7 @@ The prototype must be independent of Vandal Hearts and must not require a disc i
 
 ## Automated rule tests
 
-The movement-rule helpers are shared by the prototype and a host-side test executable. `make test` checks Manhattan distance, board bounds, valid movement range, and the blocked enemy tile. These tests passed as part of [CI run 38483880113](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38483880113). They validate the extracted rule functions, not controller behavior or runtime graphics.
+The movement rules and input-state transitions are shared by the libnx prototype and SDL2 software-renderer probe. `make test` checks Manhattan distance, board bounds, movement range, the blocked enemy tile, cursor clamping, hero selection, valid/invalid moves, and canceling selection. These tests passed in [CI run 38523844738](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523844738). They validate state logic, not actual controller hardware or runtime graphics.
 
 ## Milestones and required evidence
 
@@ -63,7 +63,7 @@ The current source draws a software-rendered 8×6 grid into a libnx RGBA8888 fra
 - [ ] Verify SDL2 event mapping and stable frame presentation at runtime.
 - [ ] Test an SDL_GL/OpenGL context separately before attempting the upstream renderer.
 
-The software-renderer and OpenGL ES 2.0 builds and artifact uploads passed in [CI run 38523589761](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523589761). The generated NROs are about 6.7 MB and 6.1 MB before compression. This is compile/link evidence only.
+The software-renderer and OpenGL ES 2.0 builds and artifact uploads passed in [CI run 38523844795](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523844795). The generated NROs are about 6.7 MB and 6.1 MB before compression. This is compile/link evidence only.
 
 **Pass condition:** the probe launches, presents repeated frames, and responds to controller input in a named runtime environment. A successful SDL2 link is not proof that the upstream OpenGL path works.
 
@@ -102,16 +102,16 @@ Only after P1–P3 pass:
 | Field | Value |
 | --- | --- |
 | Date/time | |
-| Source revision | `c7539e7cb980dc8d121a4bb5398256056602f12e` |
+| Source revision | `f98efb34245d34378d267d625ad9ac450839272b` |
 | Host OS | GitHub Actions runner/container (see workflow logs) |
 | Toolchain and library versions | Toolchain verification passed; exact versions not yet recorded here |
 | Target environment | CI build only; runtime target not yet tested |
 | Exact command | Root Makefile build via CI workflow |
 | Build exit code | 0 (workflow build step succeeded) |
-| Artifact path and checksum | Artifact `vandal-hearts-switch-prototype`; archive SHA-256: `875b0030f79f398b53e32d7456ce783423757cec8b93057ea2bf6bff760505f8` |
+| Artifact path and checksum | Artifact `vandal-hearts-switch-prototype`; archive SHA-256: `86889244ff4d651ab2ec4cc09a59bd7514675dfc6edf07ca684f38e2a048f8b5` |
 | Runtime steps | Not yet run |
 | Observed result | CI build and upload succeeded; no runtime claim |
-| Logs / screenshots location | [Main build 38523589997](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523589997); [SDL2 probes 38523589761](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523589761) |
+| Logs / screenshots location | [Main build 38523589997](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523589997); [SDL2 probes 38523844795](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523844795) |
 | Known limitations | Compile verified only; emulator/device behavior unverified |
 
 Do not commit proprietary game files or include them in CI artifacts. Use generated test data only.
