@@ -103,6 +103,8 @@ Only after P1–P3 pass:
 
 - [ ] Test filesystem access in an app-appropriate location using a generated non-proprietary file.
 - [x] Build and package a generated-tone probe using OpenAL Soft.
+- [x] Add OpenAL error checks and an `AL_SOURCE_STATE == AL_PLAYING` assertion after playback starts (compiled and packaged in [CI run 38586168203](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38586168203)).
+- [ ] Run the updated OpenAL NRO in a supported runtime and confirm the playback-state assertion succeeds.
 - [ ] Confirm audible tone output in an emulator or on physical hardware.
 - [ ] Test thread creation/synchronization only if the intended port requires it.
 - [ ] Record API/library versions, result, and cleanup behavior for each probe.
