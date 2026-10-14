@@ -71,3 +71,25 @@ locally by each user, where applicable and permitted by law.
 At this stage, useful contributions include source-code analysis, dependency
 inventory, documentation, build-system research, and reproducible test notes.
 Do not describe Switch support as working until it has been built and tested.
+
+
+## Experimental CD-XA audio investigation
+
+The repository also contains an experimental 4-bit stereo CD-XA decoder at
+[`tools/decode_cdxa_adpcm.py`](tools/decode_cdxa_adpcm.py), with host tests in
+[`tests/test_decode_cdxa_adpcm.py`](tests/test_decode_cdxa_adpcm.py). The decoder
+currently targets the common 37.8 kHz stereo profile and emits 16-bit PCM WAV.
+Its group layout and left/right nibble mapping have been corrected against the
+reference implementation in FFmpeg; CI tests cover silent groups, parameter
+copy validation, output format/frame counts, and a synthetic stereo channel-order
+vector ([latest passing decoder test run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38635559140)).
+
+**This is not yet a validated restoration of the game's audio.** The current
+extractor concatenates sectors with the XA AUDIO submode bit set. If non-audio
+sectors occur between audio sectors, concatenation removes those time gaps and
+may alter timing. The decoded output has not yet been independently compared
+against vgmstream or verified by listening. Do not treat the experimental WAV
+as a finished soundtrack or as proof of correct stream synchronization. A next
+step is to decode directly from raw 2352-byte sectors while preserving sector
+timestamps/order and to compare a representative sample against an independent
+decoder.
