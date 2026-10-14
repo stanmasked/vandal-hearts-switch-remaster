@@ -66,11 +66,10 @@ The current source draws a software-rendered 8×6 grid into a libnx RGBA8888 fra
 - [x] Run the CPU-framebuffer-to-GLES2-texture probe in NeXium and detect the expected marker.
 - [x] Verify one Right-arrow movement in the SDL2 texture probe via `SDL_JOYBUTTONDOWN` on NeXium ([CI run 38526810434](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38526810434)).
 - [ ] Run the SDL2 software-renderer and bare GLES2-context probes in a runtime environment.
-- [ ] Verify SDL2 event mapping and stable frame presentation at runtime.
 - [x] Build an SDL_GL/OpenGL ES context probe separately from the software renderer.
-- [x] Run the GLES2 texture-upload probe in NeXium; the standalone context and SDL2 event-mapping paths remain unverified.
+- [x] Run the GLES2 texture-upload probe and verify one joystick-driven Right move in NeXium; standalone context and software-renderer runtime remain unverified.
 
-The software-renderer and OpenGL ES 2.0 builds and artifact uploads passed in [CI run 38524223415](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223415). The CPU-framebuffer-to-texture NRO also passed the NeXium initial-frame check. SDL2 input event delivery remains unverified.
+The software-renderer and OpenGL ES 2.0 builds and artifact uploads passed in [CI run 38524223415](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223415). The CPU-framebuffer-to-texture NRO passed the NeXium frame and one-step joystick-input checks in [run 38526810434](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38526810434). Repeated interaction and runtime behavior of the software-renderer and standalone context probes remain unverified.
 
 **Pass condition:** the probe launches, presents repeated frames, and responds to controller input in a named runtime environment. A successful SDL2 link is not proof that the upstream OpenGL path works.
 
