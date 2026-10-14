@@ -98,7 +98,13 @@ def extract_audio_payloads(
         "last_audio_lba": audio_lbas[-1] if audio_lbas else None,
         "audio_lbas": audio_lbas,
         "audio_lba_offsets": [
-            {"lba": lba, "payload_offset": index * (PAYLOAD_END - PAYLOAD_START)}
+            {
+                "lba": lba,
+                "payload_offset": index * (PAYLOAD_END - PAYLOAD_START),
+                "missing_source_sectors_before": (
+                    0 if index == 0 else max(0, lba - audio_lbas[index - 1] - 1)
+                ),
+            }
             for index, lba in enumerate(audio_lbas)
         ],
         "submode_counts": {f"0x{k:02X}": v for k, v in sorted(submodes.items())},
