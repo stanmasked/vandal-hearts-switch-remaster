@@ -52,10 +52,10 @@ sdl2-audio-probe: $(BUILD)/$(SDL2_AUDIO_TARGET).nro
 $(BUILD):
 	mkdir -p $@
 
-$(BUILD)/test_game_rules: tests/test_game_rules.c source/game_rules.h source/game_state.h | $(BUILD)
+$(BUILD)/test_game_rules: tests/test_game_rules.c source/game_rules.h source/game_state.h source/platform_input.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@
 
-$(BUILD)/$(TARGET).elf: $(SOURCES)/main.c $(SOURCES)/game_rules.h $(SOURCES)/game_state.h | $(BUILD)
+$(BUILD)/$(TARGET).elf: $(SOURCES)/main.c $(SOURCES)/game_rules.h $(SOURCES)/game_state.h $(SOURCES)/platform_input.h | $(BUILD)
 	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ $(LDLIBS)
 
 $(BUILD)/$(TARGET).nacp: | $(BUILD)
