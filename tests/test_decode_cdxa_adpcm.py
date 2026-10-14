@@ -13,10 +13,10 @@ from tools.decode_cdxa_adpcm import (
 
 
 class DecodeCdXaAdpcmTests(unittest.TestCase):
-    def test_silent_group_decodes_to_224_stereo_frames(self):
+    def test_silent_group_decodes_to_112_stereo_frames(self):
         group = bytes(GROUP_SIZE)
         pcm = decode_group(group, [[0, 0], [0, 0]])
-        self.assertEqual(len(pcm), 28 * 2 * 2)
+        self.assertEqual(len(pcm), 112 * 2 * 2)
         self.assertEqual(pcm, bytes(len(pcm)))
 
     def test_rejects_bad_group_length_and_parameter_copy(self):
@@ -34,13 +34,13 @@ class DecodeCdXaAdpcmTests(unittest.TestCase):
             # One sector: 18 silent groups plus the 20-byte padding area.
             source.write_bytes(bytes(AUDIO_BYTES_PER_SECTOR) + bytes(SECTOR_PAYLOAD - AUDIO_BYTES_PER_SECTOR))
             report = decode_payload_file(source, output)
-            self.assertEqual(report, {"sectors": 1, "groups": 18, "frames": 504})
+            self.assertEqual(report, {"sectors": 1, "groups": 18, "frames": 2016})
             with wave.open(str(output), "rb") as wav:
                 self.assertEqual(wav.getnchannels(), 2)
                 self.assertEqual(wav.getsampwidth(), 2)
                 self.assertEqual(wav.getframerate(), 37800)
-                self.assertEqual(wav.getnframes(), 504)
-                self.assertEqual(wav.readframes(504), bytes(504 * 4))
+                self.assertEqual(wav.getnframes(), 2016)
+                self.assertEqual(wav.readframes(2016), bytes(2016 * 4))
 
     def test_rejects_bad_size_nonzero_padding_and_in_place_output(self):
         with tempfile.TemporaryDirectory() as temp:
