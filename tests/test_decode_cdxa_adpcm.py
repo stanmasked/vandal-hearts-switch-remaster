@@ -1,0 +1,60 @@
+"""Unit tests for the experimental CD-XA ADPCM decoder."""
+import sys
+import tempfile
+import wave
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tools.decode_cdxa_adpcm import (
+    AUDIO_BYTES_PER_SECTOR, GROUP_SIZE, SECTOR_PAYLOAD, decode_group,
+    decode_payload_file,
+)
+
+
+class DecodeCdXaAdpcmTests(unittest.TestCase):
+    def test_silent_group_decodes_to_224_stereo_frames(self):
+        group = bytes(GROUP_SIZE)
+        pcm = decode_group(group, [[0, 0], [0, 0]])
+        self.assertEqual(len(pcm), 28 * 2 * 2)
+        self.assertEqual(pcm, bytes(len(pcm)))
+
+    def test_rejects_bad_group_length_and_parameter_copy(self):
+        with self.assertRaisesRegex(ValueError, "exactly 128"):
+            decode_group(bytes(127), [[0, 0], [0, 0]])
+        bad = bytearray(GROUP_SIZE)
+        bad[4] = 1
+        with self.assertRaisesRegex(ValueError, "copies do not match"):
+            decode_group(bytes(bad), [[0, 0], [0, 0]])
+
+    def test_writes_wav_with_expected_format_and_frame_count(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source, output = root / "payload.bin", root / "out.wav"
+            # One sector: 18 silent groups plus the 20-byte padding area.
+            source.write_bytes(bytes(AUDIO_BYTES_PER_SECTOR) + bytes(SECTOR_PAYLOAD - AUDIO_BYTES_PER_SECTOR))
+            report = decode_payload_file(source, output)
+            self.assertEqual(report, {"sectors": 1, "groups": 18, "frames": 504})
+            with wave.open(str(output), "rb") as wav:
+                self.assertEqual(wav.getnchannels(), 2)
+                self.assertEqual(wav.getsampwidth(), 2)
+                self.assertEqual(wav.getframerate(), 37800)
+                self.assertEqual(wav.getnframes(), 504)
+                self.assertEqual(wav.readframes(504), bytes(504 * 4))
+
+    def test_rejects_bad_size_nonzero_padding_and_in_place_output(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source, output = root / "payload.bin", root / "out.wav"
+            source.write_bytes(b"bad")
+            with self.assertRaisesRegex(ValueError, "divisible"):
+                decode_payload_file(source, output)
+            source.write_bytes(bytes(AUDIO_BYTES_PER_SECTOR) + b"\x01" + bytes(19))
+            with self.assertRaisesRegex(ValueError, "non-zero padding"):
+                decode_payload_file(source, output)
+            with self.assertRaisesRegex(ValueError, "overwrite"):
+                decode_payload_file(source, source)
+
+
+if __name__ == "__main__":
+    unittest.main()
