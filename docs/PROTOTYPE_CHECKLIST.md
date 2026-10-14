@@ -68,7 +68,6 @@ The current source draws a software-rendered 8×6 grid into a libnx RGBA8888 fra
 - [ ] Verify SDL2 event mapping and stable frame presentation at runtime.
 - [x] Build an SDL_GL/OpenGL ES context probe separately from the software renderer.
 - [x] Run the GLES2 texture-upload probe in NeXium; the standalone context and SDL2 event-mapping paths remain unverified.
-- [ ] Verify SDL2 event mapping and stable frame presentation at runtime.
 
 The software-renderer and OpenGL ES 2.0 builds and artifact uploads passed in [CI run 38524223415](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223415). The CPU-framebuffer-to-texture NRO also passed the NeXium initial-frame check. SDL2 input event delivery remains unverified.
 
