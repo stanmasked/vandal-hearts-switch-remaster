@@ -6,7 +6,7 @@ This checklist tracks the smallest useful Switch homebrew experiment before any 
 
 **Status: graphical framebuffer prototype compiles and packages in CI; runtime presentation and controller behavior remain unverified.**
 
-The prototype uses devkitPro/devkitA64 and libnx. The latest main prototype passed toolchain checks, host-side rule tests, NRO header/segment validation, and artifact upload in [CI run 38523844738](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523844738). The separate SDL2 software-renderer and OpenGL ES 2.0 probes passed package installation, compilation/linking, NRO validation, and artifact upload in [CI run 38523844795](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523844795). These confirm build and packaging only, not runtime behavior. The OpenGL ES probe archive digest is `sha256:0aadb229f705cb5ef3f8a8709ee2f9fd9c28b30c0e12c2b61a89ab34f46e0c9c`; it is not a checksum of the extracted NRO.
+The prototype uses devkitPro/devkitA64 and libnx. The latest main prototype passed toolchain checks, host-side rule tests, NRO header/segment validation, and artifact upload in [CI run 38523936883](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523936883). The SDL2 software-renderer, OpenGL ES 2.0 context, and CPU framebuffer-to-texture probes passed package installation, compilation/linking, NRO validation, and artifact upload in [CI run 38523937214](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523937214). These confirm build and packaging only, not runtime behavior. The texture-probe archive digest is `sha256:985bddb0751d0e9c93a439ed7469930295b97fc056b49072ea610839ce8c4f7a`; it is not a checksum of the extracted NRO.
 
 ## Scope boundary
 
@@ -14,7 +14,7 @@ The prototype must be independent of Vandal Hearts and must not require a disc i
 
 ## Automated rule tests
 
-The movement rules and input-state transitions are shared by the libnx prototype and SDL2 software-renderer probe. `make test` checks Manhattan distance, board bounds, movement range, the blocked enemy tile, cursor clamping, hero selection, valid/invalid moves, and canceling selection. These tests passed in [CI run 38523844738](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523844738). They validate state logic, not actual controller hardware or runtime graphics.
+The movement rules and input-state transitions are shared by the libnx prototype and SDL2 software-renderer probe. `make test` checks Manhattan distance, board bounds, movement range, the blocked enemy tile, cursor clamping, hero selection, valid/invalid moves, and canceling selection. These tests passed in [CI run 38523936883](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523936883). They validate state logic, not actual controller hardware or runtime graphics.
 
 ## Milestones and required evidence
 
@@ -59,11 +59,12 @@ The current source draws a software-rendered 8×6 grid into a libnx RGBA8888 fra
 - [x] Compile/link an SDL2 window, software-renderer, and controller/keyboard event probe.
 - [x] Package the probe as an NRO and validate its header and segment bounds.
 - [x] Compile/link and package a second probe requesting an OpenGL ES 2.0 context.
+- [x] Compile/link and package a third probe uploading a CPU-rendered RGBA framebuffer into an OpenGL ES texture.
 - [ ] Run the SDL2 probes in an emulator or on physical hardware.
 - [ ] Verify SDL2 event mapping and stable frame presentation at runtime.
 - [ ] Test an SDL_GL/OpenGL context separately before attempting the upstream renderer.
 
-The software-renderer and OpenGL ES 2.0 builds and artifact uploads passed in [CI run 38523844795](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523844795). The generated NROs are about 6.7 MB and 6.1 MB before compression. This is compile/link evidence only.
+The software-renderer and OpenGL ES 2.0 builds and artifact uploads passed in [CI run 38523937214](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523937214). The generated NROs are about 6.7 MB and 6.1 MB before compression. This is compile/link evidence only.
 
 **Pass condition:** the probe launches, presents repeated frames, and responds to controller input in a named runtime environment. A successful SDL2 link is not proof that the upstream OpenGL path works.
 
@@ -102,16 +103,16 @@ Only after P1–P3 pass:
 | Field | Value |
 | --- | --- |
 | Date/time | |
-| Source revision | `f98efb34245d34378d267d625ad9ac450839272b` |
+| Source revision | `5e4b443da076b133f59e983346eac13ec0424141` |
 | Host OS | GitHub Actions runner/container (see workflow logs) |
 | Toolchain and library versions | Toolchain verification passed; exact versions not yet recorded here |
 | Target environment | CI build only; runtime target not yet tested |
 | Exact command | Root Makefile build via CI workflow |
 | Build exit code | 0 (workflow build step succeeded) |
-| Artifact path and checksum | Artifact `vandal-hearts-switch-prototype`; archive SHA-256: `86889244ff4d651ab2ec4cc09a59bd7514675dfc6edf07ca684f38e2a048f8b5` |
+| Artifact path and checksum | Artifact `vandal-hearts-switch-prototype`; archive SHA-256: `02515abc9bc6bd850a5cc132e28b5018c9e3bacb457fc8e31f28c5a3a6c20ee1` |
 | Runtime steps | Not yet run |
 | Observed result | CI build and upload succeeded; no runtime claim |
-| Logs / screenshots location | [Main build 38523589997](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523589997); [SDL2 probes 38523844795](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523844795) |
+| Logs / screenshots location | [Main build 38523589997](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523589997); [SDL2 probes 38523937214](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523937214) |
 | Known limitations | Compile verified only; emulator/device behavior unverified |
 
 Do not commit proprietary game files or include them in CI artifacts. Use generated test data only.
