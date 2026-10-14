@@ -112,8 +112,9 @@ jobs:
             local shot_invalid="runtime-evidence/$label-invalid-move.png"
             local shot_enemy_blocked="runtime-evidence/$label-enemy-blocked.png"
             local shot_after="runtime-evidence/$label-after-move.png"
+            local shot_plus="runtime-evidence/$label-after-plus.png"
             local log="runtime-evidence/$label.log"
-            export NRO="$nro" SHOT="$shot" SHOT_SELECTED="$shot_selected" SHOT_CANCELLED="$shot_cancelled" SHOT_INVALID="$shot_invalid" SHOT_ENEMY_BLOCKED="$shot_enemy_blocked" SHOT_AFTER="$shot_after" LOG="$log" CHECK_INPUT="$check_input" VK_ICD_FILENAMES="$icd"
+            export NRO="$nro" SHOT="$shot" SHOT_SELECTED="$shot_selected" SHOT_CANCELLED="$shot_cancelled" SHOT_INVALID="$shot_invalid" SHOT_ENEMY_BLOCKED="$shot_enemy_blocked" SHOT_AFTER="$shot_after" SHOT_PLUS="$shot_plus" LOG="$log" CHECK_INPUT="$check_input" VK_ICD_FILENAMES="$icd"
             echo "Launching $nro in NeXium" | tee -a runtime-evidence/runner.log
 
             if ! timeout --kill-after=5s 60s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
@@ -208,6 +209,16 @@ jobs:
                 timeout --kill-after=1s 3s xdotool keyup --window "$window" c
                 sleep 0.3
                 timeout --kill-after=2s 10s import -window "$window" "$SHOT_ENEMY_BLOCKED"
+
+                # NeXium's default keyboard mapping sends M as the Switch Plus button.
+                # Capture the guest after Plus to gather evidence that applet exit is handled.
+                timeout --kill-after=1s 3s xdotool keydown --window "$window" m
+                sleep 0.2
+                timeout --kill-after=1s 3s xdotool keyup --window "$window" m
+                sleep 1
+                if xdotool getwindowname "$window" >/dev/null 2>&1; then
+                  timeout --kill-after=2s 10s import -window "$window" "$SHOT_PLUS" || true
+                fi
               fi
               sleep 1
               test -s "$SHOT"
@@ -228,7 +239,7 @@ jobs:
               return
             fi
 
-            if ! python3 - "$shot" "$shot_selected" "$shot_cancelled" "$shot_invalid" "$shot_enemy_blocked" "$shot_after" "$label" <<'PY'
+            if ! python3 - "$shot" "$shot_selected" "$shot_cancelled" "$shot_invalid" "$shot_enemy_blocked" "$shot_after" "$shot_plus" "$label" <<'PY'
           from PIL import Image
           from pathlib import Path
           import sys
@@ -239,7 +250,15 @@ jobs:
           invalid = Image.open(sys.argv[4]).convert("RGB") if Path(sys.argv[4]).exists() else None
           enemy_blocked = Image.open(sys.argv[5]).convert("RGB") if Path(sys.argv[5]).exists() else None
           after = Image.open(sys.argv[6]).convert("RGB")
-          label = sys.argv[7]
+          plus = Image.open(sys.argv[7]).convert("RGB") if Path(sys.argv[7]).exists() else None
+          label = sys.argv[8]
+          if plus is not None:
+              from PIL import ImageChops
+              diff = ImageChops.difference(enemy_blocked, plus)
+              changed = sum(1 for pixel in diff.getdata() if max(pixel) > 24)
+              print(f"{label}: pixels changed after Plus/M input={changed}; screenshot saved for inspection")
+          else:
+              print(f"{label}: no post-Plus screenshot captured; emulator/app may have closed its window")
           hero = (86, 190, 244)
           cursor = (255, 219, 102)
 
