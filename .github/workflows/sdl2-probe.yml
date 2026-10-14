@@ -368,6 +368,8 @@ jobs:
           # The four corner markers establish the fitted image's bounds and
           # orientation. Do not infer letterboxing from near-black pixels:
           # emulator/window compositing can alter background RGB values.
+          # The expected fitted rectangle is x=[158,1121), y=[0,720).
+          # Marker ROIs above are intentionally inset from those edges.
           print("PASS: all four RGB24 corner markers are inside the expected fitted viewport.")
 
           log = open(sys.argv[2], encoding="utf-8", errors="replace").read()
