@@ -2,7 +2,7 @@
 
 ## Status
 
-The minimal devkitPro/devkitA64/libnx homebrew build is verified in GitHub Actions: CI compiles the prototype and packages an `.nro` artifact. The current source includes a software-rendered 1280×720 RGBA framebuffer grid. This verifies compilation and packaging only; the application has not yet been verified on a Switch console or emulator, and it is not a port of the original game.
+The minimal devkitPro/devkitA64/libnx homebrew build is verified in GitHub Actions: CI compiles the prototype and packages an `.nro` artifact. The current source includes a software-rendered 1280×720 RGBA framebuffer grid. An experimental NeXium smoke test launched the main framebuffer NRO and SDL2 texture-upload probe under software Vulkan and detected the expected hero marker in 1280×720 screenshots ([CI run 38524363654](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524363654)). This confirms initial frame presentation in that emulator only; controller input, audio output, and physical Switch behavior remain unverified. This is not a port of the original game.
 
 ## Verified minimal Switch build
 
