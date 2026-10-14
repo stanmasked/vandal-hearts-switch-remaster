@@ -346,12 +346,14 @@ jobs:
           if image.size != (1280, 720):
               raise SystemExit(f"Unexpected screenshot dimensions: {image.size}")
 
-          # Ignore the outer few pixels and sample the four screen corners.
+          # The 321x240 source is aspect-fitted into 1280x720:
+          # destination x=158, y=0, width=963, height=720.
+          # Markers therefore sit inside the viewport, not at screen corners.
           boxes = {
-              "top-left-red": ((8, 8, 80, 64), (255, 0, 0)),
-              "top-right-green": ((1200, 8, 1272, 64), (0, 255, 0)),
-              "bottom-left-blue": ((8, 656, 80, 712), (0, 0, 255)),
-              "bottom-right-yellow": ((1200, 656, 1272, 712), (255, 255, 0)),
+              "top-left-red": ((164, 8, 222, 64), (255, 0, 0)),
+              "top-right-green": ((1055, 8, 1115, 64), (0, 255, 0)),
+              "bottom-left-blue": ((164, 656, 222, 712), (0, 0, 255)),
+              "bottom-right-yellow": ((1055, 656, 1115, 712), (255, 255, 0)),
           }
           for name, (box, target) in boxes.items():
               crop = image.crop(box)
@@ -361,7 +363,21 @@ jobs:
               )
               print(f"{name}: {matches} matching pixels")
               if matches < 100:
-                  raise SystemExit(f"Expected corner marker not found: {name}")
+                  raise SystemExit(f"Expected RGB24 viewport marker not found: {name}")
+
+          # Confirm aspect fitting leaves background bars on the left and right.
+          for name, box in {
+              "left letterbox": (8, 200, 120, 520),
+              "right letterbox": (1160, 200, 1272, 520),
+          }.items():
+              crop = image.crop(box)
+              pixels = list(crop.getdata())
+              background = sum(1 for r, g, b in pixels
+                               if r <= 12 and g <= 12 and b <= 16)
+              ratio = background / max(1, len(pixels))
+              print(f"{name}: background ratio={ratio:.3f}")
+              if ratio < 0.95:
+                  raise SystemExit(f"Expected {name} to remain clear of the fitted image")
 
           log = open(sys.argv[2], encoding="utf-8", errors="replace").read()
           print("NeXium host log (NRO stderr may not be forwarded by the emulator):")
