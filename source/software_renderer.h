@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <limits.h>
 
 /*
  * Platform-neutral view of a packed 32-bit software framebuffer.
@@ -73,18 +74,20 @@ static inline void vh_canvas_draw_rect_outline(VhCanvas *canvas, int x, int y,
                                                int width, int height,
                                                uint32_t color) {
     if (width <= 0 || height <= 0) return;
+
     vh_canvas_draw_hline(canvas, x, y, width, color);
-    if (height > 1) {
-        vh_canvas_draw_hline(canvas, x, y + height - 1, width, color);
+
+    int64_t bottom = (int64_t)y + height - 1;
+    int64_t right = (int64_t)x + width - 1;
+    if (height > 1 && bottom >= INT_MIN && bottom <= INT_MAX) {
+        vh_canvas_draw_hline(canvas, x, (int)bottom, width, color);
     }
     if (height > 2) {
         vh_canvas_draw_vline(canvas, x, y + 1, height - 2, color);
-        if (width > 1) {
-            vh_canvas_draw_vline(canvas, x + width - 1, y + 1,
+        if (width > 1 && right >= INT_MIN && right <= INT_MAX) {
+            vh_canvas_draw_vline(canvas, (int)right, y + 1,
                                  height - 2, color);
         }
-    } else if (height == 2 && width > 1) {
-        /* Both horizontal edges already cover the complete two-row border. */
     }
 }
 
