@@ -24,6 +24,10 @@ int main(void) {
     assert(!vh_can_move(1, 2, 4, 2, 8, 6, 2, 6, 3));
     assert(!vh_can_move(1, 2, -1, 2, 8, 6, 2, 6, 3));
     assert(!vh_can_move(1, 2, 6, 3, 8, 6, 20, 6, 3));
+    /* Invalid source coordinates and negative movement ranges are rejected. */
+    assert(!vh_can_move(-1, 2, 0, 2, 8, 6, 2, 6, 3));
+    assert(!vh_can_move(8, 2, 7, 2, 8, 6, 2, 6, 3));
+    assert(!vh_can_move(1, 2, 1, 2, 8, 6, -1, 6, 3));
 
     /* Cursor clamps to the grid edges. */
     VhGameState state = {0, 0, 1, 2, 6, 3, 0};
