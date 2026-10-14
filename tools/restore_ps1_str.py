@@ -19,6 +19,9 @@ STR_MAGIC = b"\x60\x01\x01\x80"
 
 
 def repack(source: Path, destination: Path) -> tuple[int, int]:
+    # Refuse in-place conversion: opening destination would truncate source data.
+    if source.resolve() == destination.resolve():
+        raise ValueError("Input and output paths must be different.")
     size = source.stat().st_size
     if size % SECTOR_SIZE:
         raise ValueError(
@@ -66,11 +69,18 @@ def main() -> int:
     parser.add_argument("--keep-intermediate", action="store_true")
     args = parser.parse_args()
 
+    if args.width <= 0 or args.height <= 0:
+        parser.error("--width and --height must be positive integers.")
+    if not 0 <= args.crf <= 51:
+        parser.error("--crf must be between 0 and 51.")
+
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         parser.error("FFmpeg was not found on PATH.")
     source = args.input.resolve()
     output = args.output.resolve()
+    if source == output:
+        parser.error("Input and output paths must be different.")
     if not source.is_file():
         parser.error(f"Input file not found: {source}")
     output.parent.mkdir(parents=True, exist_ok=True)
