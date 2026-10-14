@@ -106,5 +106,25 @@ class CdXaPipelineTests(unittest.TestCase):
             self.assertEqual(payload.read_bytes(), b"")
 
 
+    def test_invalid_sync_and_non_mode2_sectors_are_skipped(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "synthetic-disc.bin"
+            payload = root / "audio-payload.bin"
+            bad_sync = bytearray(xa_audio_sector())
+            bad_sync[0] = 1
+            wrong_mode = bytearray(xa_audio_sector())
+            wrong_mode[15] = 1
+            source.write_bytes(bytes(bad_sync) + bytes(wrong_mode) + xa_audio_sector())
+
+            report = extract_audio_payloads(source, payload)
+            self.assertEqual(report["sectors_scanned"], 3)
+            self.assertEqual(report["mode2_sectors"], 1)
+            self.assertEqual(report["matching_subheaders"], 1)
+            self.assertEqual(report["audio_form2_sectors_written"], 1)
+            self.assertEqual(report["audio_lbas"], [2])
+            self.assertEqual(payload.stat().st_size, AUDIO_BYTES_PER_SECTOR)
+
+
 if __name__ == "__main__":
     unittest.main()
