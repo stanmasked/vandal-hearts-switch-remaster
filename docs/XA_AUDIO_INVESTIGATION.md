@@ -51,11 +51,11 @@ The range options are bounds-checked; they do not alter the input image. Use the
 
 ## Payload extraction helper
 
-A separate helper now extracts the 2324-byte payload from each sector whose duplicated subheader identifies Mode 2 Form 2 XA audio. It supports LBA ranges and optional XA file/channel filters, and can write a JSON report:
+A separate helper now extracts the 2304-byte sound-group area from each sector whose duplicated subheader identifies Mode 2 Form 2 XA audio. The 2324-byte Form 2 user-data area includes 20 trailing bytes that are not part of the 18 × 128-byte XA sound groups; the extractor deliberately excludes that padding. It supports LBA ranges and optional XA file/channel filters, and can write a JSON report:
 
 ```sh
 python3 tools/extract_cdxa_payload.py /path/to/local-disc-image.bin ./xa-payload.bin \
   --start-lba 19469 --sector-count 111072 --report ./xa-report.json
 ```
 
-The payload file is an intermediate compressed-data stream, **not a playable WAV**. The helper skips non-audio sectors and records non-contiguous audio-sector transitions; those transitions may represent timing gaps, so do not assume that concatenation alone preserves original playback timing. It never overwrites the source image. Keep output files local if they contain copyrighted game data.
+The output is an intermediate compressed-data stream containing XA sound groups, **not a playable WAV**. The helper skips non-audio sectors and records non-contiguous audio-sector transitions; those transitions may represent timing gaps, so do not assume that concatenation alone preserves original playback timing. It never overwrites the source image. Keep output files local if they contain copyrighted game data.
