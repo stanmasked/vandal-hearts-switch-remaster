@@ -51,7 +51,7 @@ The movement rules and input-state transitions are shared by the libnx prototype
 
 For a manual run, download the `vandal-hearts-switch-prototype` artifact from a successful workflow run, extract the `.nro`, copy it to `sd:/switch/vandal-hearts-prototype.nro`, and launch it from the Homebrew Menu. Use a Switch homebrew-capable test environment you control; do not include game images or proprietary assets.
 
-The current source draws a software-rendered 8×6 grid into a libnx RGBA8888 framebuffer and uses a generated 5×7 bitmap font for labels. The separate SDL2 texture probe uploads a CPU-generated RGBA frame to a GLES2 texture and presents it with a fullscreen quad. The NeXium run detected the hero-marker color in both 1280×720 screenshots ([run 38524363654](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524363654)); see the [runtime evidence artifact](https://api.github.com/repos/stanmasked/vandal-hearts-switch-remaster/actions/artifacts/11875333264/zip). An OpenAL Soft probe compiles/packages a generated-tone test, but audible output is not yet confirmed.
+The current source draws a software-rendered 8×6 grid into a libnx RGBA8888 framebuffer and uses a generated 5×7 bitmap font for labels. The separate SDL2 texture probe uploads a CPU-generated RGBA frame to a GLES2 texture and presents it with a fullscreen quad. The NeXium run detected the hero-marker color in both 1280×720 screenshots ([run 38524564337](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524564337)); see the [runtime evidence artifact](https://api.github.com/repos/stanmasked/vandal-hearts-switch-remaster/actions/artifacts/11874289721/zip). An OpenAL Soft probe compiles/packages a generated-tone test, but audible output is not yet confirmed.
 
 **Pass condition:** launch and input are observed in the named environment. Emulator results and physical-device results must be reported separately.
 
@@ -108,13 +108,13 @@ Only after P1–P3 pass:
 | Field | Value |
 | --- | --- |
 | Date/time | |
-| Source revision | `c28472562643b0a0c6694aac8ca290f248027fe7` |
+| Source revision | `41176e2462d24b2e5e4a45e37c6f1075180954e6` |
 | Host OS | GitHub Actions runner/container (see workflow logs) |
 | Toolchain and library versions | Toolchain verification passed; exact versions not yet recorded here |
 | Target environment | NeXium emulator on Ubuntu 26.04 with Lavapipe software Vulkan; initial-frame screenshots checked |
 | Exact command | Root Makefile build via CI workflow |
 | Build exit code | 0 (workflow build step succeeded) |
-| Artifact path and checksum | Artifact `runtime-smoke-nros`; archive SHA-256: `d1f459bcd25cbbb524ca7a0b8fd974d2a401aca99215e1d79805446ec441b92f` |
+| Artifact path and checksum | Artifact `nexium-runtime-evidence`; archive SHA-256: `6a77bd79132a273c1e070bebc0e52baad0bf4c83be07a2ecbef7902e61103929` |
 | Runtime steps | Launch both NROs in NeXium; wait 30 seconds; capture screenshots; check for hero-marker color |
 | Observed result | Both screenshots were 1280×720 and passed hero-marker pixel checks; controller and audio behavior unverified |
 | Logs / screenshots location | [Main build 38523589997](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523589997); [SDL2 probes 38524223415](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223415) |
