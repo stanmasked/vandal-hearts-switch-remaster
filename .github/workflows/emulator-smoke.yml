@@ -175,6 +175,13 @@ jobs:
           if hero_before < 50 or hero_after < 50:
               raise SystemExit("Expected hero marker color was not detected")
 
+          heartbeat_box = (1000, 600, 1120, 609)
+          heartbeat_before = near_color_count(before, hero, heartbeat_box)
+          heartbeat_after = near_color_count(after, hero, heartbeat_box)
+          print(f"{label}: heartbeat pixels before={heartbeat_before} after={heartbeat_after}")
+          if abs(heartbeat_after - heartbeat_before) < 80:
+              raise SystemExit("Framebuffer heartbeat did not change between screenshots")
+
           if label == "libnx-framebuffer":
               grid_x, grid_y, cell = 352, 100, 72
               def tile_box(x, y):
