@@ -12,18 +12,33 @@ MODE_OFFSET = 15
 SUBHEADER_OFFSET = 16
 
 
-def inspect_raw_cd(path: Path) -> dict[str, object]:
+def inspect_raw_cd(path: Path, start_lba: int = 0, sector_count: int | None = None) -> dict[str, object]:
     size = path.stat().st_size
     if size == 0:
         raise ValueError("Input file is empty.")
     if size % SECTOR_SIZE:
         raise ValueError(f"Input size {size} is not divisible by {SECTOR_SIZE}; expected raw 2352-byte sectors.")
 
+    total_sectors = size // SECTOR_SIZE
+    if start_lba < 0:
+        raise ValueError("Start LBA must be non-negative.")
+    if start_lba >= total_sectors:
+        raise ValueError(f"Start LBA {start_lba} is outside the input ({total_sectors} sectors).")
+    if sector_count is not None and sector_count <= 0:
+        raise ValueError("Sector count must be positive.")
+    count = total_sectors - start_lba if sector_count is None else sector_count
+    if start_lba + count > total_sectors:
+        raise ValueError(f"Requested sector range ends at {start_lba + count}, beyond input ({total_sectors} sectors).")
+
     sectors = mode2 = sync_ok = duplicate_ok = xa_audio = form2_audio = 0
     submodes: Counter[int] = Counter()
     coding: Counter[int] = Counter()
     with path.open("rb") as stream:
-        while sector := stream.read(SECTOR_SIZE):
+        stream.seek(start_lba * SECTOR_SIZE)
+        for _ in range(count):
+            sector = stream.read(SECTOR_SIZE)
+            if len(sector) != SECTOR_SIZE:
+                raise ValueError("Unexpected end of file while reading requested sector range.")
             sectors += 1
             if sector[:12] == SYNC:
                 sync_ok += 1
@@ -58,14 +73,17 @@ def inspect_raw_cd(path: Path) -> dict[str, object]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input", type=Path, help="raw BIN or extracted raw-sector stream (2352 bytes/sector)")
+    parser.add_argument("--start-lba", type=int, default=0, help="first sector to inspect (default: 0)")
+    parser.add_argument("--sector-count", type=int, help="maximum number of sectors to inspect from --start-lba")
     args = parser.parse_args()
     if not args.input.is_file():
         parser.error(f"Input file not found: {args.input}")
     try:
-        report = inspect_raw_cd(args.input)
+        report = inspect_raw_cd(args.input, args.start_lba, args.sector_count)
     except ValueError as error:
         parser.error(str(error))
     print(f"File: {args.input}")
+    print(f"start LBA: {args.start_lba}")
     for key in ("sectors", "sync_ok", "mode2", "duplicate_subheaders", "xa_audio", "form2_audio"):
         print(f"{key.replace('_', ' ')}: {report[key]}")
     print("submode counts:", ", ".join(f"0x{k:02X}={v}" for k, v in report["submodes"].items()) or "none")
