@@ -179,7 +179,7 @@ jobs:
           elif red >= 3:
               raise SystemExit("OpenAL probe displayed failure status (red)")
           else:
-              print("Framebuffer status inconclusive; inspect runtime log and desktop capture")
+              raise SystemExit("Framebuffer status inconclusive; OpenAL playback is not confirmed")
           PY
       - name: Upload OpenAL runtime evidence
         if: always()
