@@ -16,7 +16,9 @@ static inline int vh_is_inside_grid(int x, int y, int width, int height) {
 static inline int vh_can_move(int from_x, int from_y, int to_x, int to_y,
                               int grid_width, int grid_height, int move_range,
                               int blocked_x, int blocked_y) {
+    if (!vh_is_inside_grid(from_x, from_y, grid_width, grid_height)) return 0;
     if (!vh_is_inside_grid(to_x, to_y, grid_width, grid_height)) return 0;
+    if (move_range < 0) return 0;
     if (to_x == blocked_x && to_y == blocked_y) return 0;
     return vh_manhattan_distance(from_x, from_y, to_x, to_y) <= move_range;
 }
