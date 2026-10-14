@@ -6,7 +6,7 @@ This checklist tracks the smallest useful Switch homebrew experiment before any 
 
 **Status: initial framebuffer presentation has been confirmed in NeXium; controller behavior, audio output, and physical-console behavior remain unverified.**
 
-The prototype uses devkitPro/devkitA64 and libnx. The latest main prototype passed toolchain checks, host-side rule tests, NRO header/segment validation, and artifact upload in [CI run 38524223405](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223405). The SDL2 software-renderer, OpenGL ES 2.0 context, and CPU framebuffer-to-texture probes passed package installation, compilation/linking, NRO validation, and artifact upload in [CI run 38524223415](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223415). These confirm build and packaging only, not runtime behavior. The texture-probe archive digest is `sha256:985bddb0751d0e9c93a439ed7469930295b97fc056b49072ea610839ce8c4f7a`; it is not a checksum of the extracted NRO.
+The prototype uses devkitPro/devkitA64 and libnx. The latest main prototype passed toolchain checks, host-side rule tests, NRO header/segment validation, and artifact upload in [CI run 38524223405](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223405). The SDL2 software-renderer, OpenGL ES 2.0 context, and CPU framebuffer-to-texture probes passed package installation, compilation/linking, NRO validation, and artifact upload in [CI run 38524223415](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223415). The software-renderer and GLES2-context probes are compile/package evidence; the CPU-framebuffer texture-upload probe also passed the NeXium initial-frame screenshot check in [run 38524564337](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524564337). It does not prove compatibility with the upstream desktop OpenGL path. The latest texture-probe archive digest is `sha256:85b154a316d66b7d51eb7aa0c1bb057d967cec3a18178b2a5b3ae998c4984131`; it is not a checksum of the extracted NRO.
 
 ## Scope boundary
 
@@ -116,9 +116,9 @@ Only after P1–P3 pass:
 | Build exit code | 0 (workflow build step succeeded) |
 | Artifact path and checksum | Artifact `nexium-runtime-evidence`; archive SHA-256: `6a77bd79132a273c1e070bebc0e52baad0bf4c83be07a2ecbef7902e61103929` |
 | Runtime steps | Launch both NROs in NeXium; wait 30 seconds; capture screenshots; check for hero-marker color |
-| Observed result | Both screenshots were 1280×720 and passed hero-marker pixel checks; controller and audio behavior unverified |
-| Logs / screenshots location | [Main build 38523589997](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523589997); [SDL2 probes 38524223415](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223415) |
-| Known limitations | Compile verified only; emulator/device behavior unverified |
+| Observed result | Both screenshots were 1280×720; framebuffer had 6,561 hero-color-like pixels and SDL2 texture probe had 1,032; controller and audio behavior unverified |
+| Logs / screenshots location | [Main build 38524223405](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223405); [NeXium runtime smoke 38524564337](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524564337); [runtime evidence artifact](https://api.github.com/repos/stanmasked/vandal-hearts-switch-remaster/actions/artifacts/11874289721/zip); [SDL2 probes 38524223415](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223415) |
+| Known limitations | Initial graphics frame verified in NeXium only; input, audio output, and physical-device behavior unverified |
 
 Do not commit proprietary game files or include them in CI artifacts. Use generated test data only.
 
