@@ -32,6 +32,8 @@ Run `make test` to execute both the tactical-rule/input tests and `tests/test_so
 - `vh_canvas_draw_hline` and `vh_canvas_draw_vline` draw clipped horizontal and vertical lines using a positive length and a starting coordinate. The implementation shares rectangle-fill clipping, so partially off-screen lines are clipped and invalid lengths are no-ops.
 - All primitives honor `stride_pixels` and leave row padding untouched.
 
+- `vh_canvas_draw_rect_outline` draws a one-pixel border around a rectangle with the requested width and height. The same clipping and stride guarantees apply; non-positive extents are no-ops. Coordinate arithmetic for the far edges is widened before use.
+
 The host-side renderer tests now cover valid and out-of-bounds pixel writes, clipped horizontal/vertical lines, and padding preservation.
 
 ## Current limitation
