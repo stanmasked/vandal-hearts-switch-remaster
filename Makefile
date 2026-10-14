@@ -4,6 +4,8 @@
 DEVKITPRO ?= /opt/devkitpro
 DEVKITA64 ?= $(DEVKITPRO)/devkitA64
 TARGET     := vandal-hearts-prototype
+SDL2_TARGET := sdl2-switch-probe
+SDL2_CONFIG ?= $(DEVKITPRO)/portlibs/switch/bin/sdl2-config
 BUILD      := build
 SOURCES    := source
 APP_TITLE  := Vandal Hearts Switch Prototype
@@ -18,13 +20,16 @@ CFLAGS   := -g -Wall -Wextra -O2 -fPIE -ffunction-sections -fdata-sections -I$(D
 LDFLAGS  := -specs=$(DEVKITPRO)/libnx/switch.specs -Wl,--gc-sections -pie
 LDLIBS   := -L$(DEVKITPRO)/libnx/lib -lnx
 
-.PHONY: all clean test verify-nro
+.PHONY: all clean test verify-nro sdl2-probe
 all: $(BUILD)/$(TARGET).nro
 
 test: $(BUILD)/test_game_rules
 	./$(BUILD)/test_game_rules
 
 verify-nro: $(BUILD)/$(TARGET).nro
+	python3 tests/check_nro.py $<
+
+sdl2-probe: $(BUILD)/$(SDL2_TARGET).nro
 	python3 tests/check_nro.py $<
 
 $(BUILD):

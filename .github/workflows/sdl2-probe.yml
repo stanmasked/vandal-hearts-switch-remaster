@@ -1,0 +1,51 @@
+name: SDL2 Switch feasibility probe
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/sdl2-probe.yml'
+      - 'probes/**'
+      - 'Makefile'
+      - 'source/game_rules.h'
+      - 'tests/check_nro.py'
+
+permissions:
+  contents: read
+
+jobs:
+  sdl2-probe:
+    name: Build SDL2 Switch probe
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Switch SDL2 package
+        shell: bash
+        run: |
+          set -euxo pipefail
+          dkp-pacman -Sy --noconfirm switch-sdl2
+          export PATH="$DEVKITPRO/portlibs/switch/bin:$PATH"
+          command -v sdl2-config
+          sdl2-config --version
+
+      - name: Build and validate SDL2 probe
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$DEVKITPRO/portlibs/switch/bin:$PATH"
+          make test
+          make sdl2-probe
+
+      - name: Upload SDL2 probe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdl2-switch-probe
+          path: build/sdl2-switch-probe.nro
+          if-no-files-found: error
