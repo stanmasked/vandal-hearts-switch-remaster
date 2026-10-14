@@ -85,7 +85,7 @@ def decode_payload_file(source: Path, destination: Path, sectors: int | None = N
                 pcm.extend(decode_group(audio[offset:offset + GROUP_SIZE], history))
                 groups += 1
             dst.writeframesraw(pcm)
-    return {"sectors": count, "groups": groups, "frames": groups * 28}
+    return {"sectors": count, "groups": groups, "frames": groups * 112}
 
 
 def main() -> int:
