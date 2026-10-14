@@ -18,11 +18,14 @@ CFLAGS   := -g -Wall -Wextra -O2 -fPIE -ffunction-sections -fdata-sections -I$(D
 LDFLAGS  := -specs=$(DEVKITPRO)/libnx/switch.specs -Wl,--gc-sections -pie
 LDLIBS   := -L$(DEVKITPRO)/libnx/lib -lnx
 
-.PHONY: all clean test
+.PHONY: all clean test verify-nro
 all: $(BUILD)/$(TARGET).nro
 
 test: $(BUILD)/test_game_rules
 	./$(BUILD)/test_game_rules
+
+verify-nro: $(BUILD)/$(TARGET).nro
+	python3 tests/check_nro.py $<
 
 $(BUILD):
 	mkdir -p $@
