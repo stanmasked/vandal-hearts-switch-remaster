@@ -41,9 +41,9 @@ class ExtractCdXaPayloadTests(unittest.TestCase):
             report = extract_audio_payloads(src, dst)
             self.assertEqual(report["audio_lbas"], [0, 2, 4])
             self.assertEqual(report["audio_lba_offsets"], [
-                {"lba": 0, "payload_offset": 0},
-                {"lba": 2, "payload_offset": 2304},
-                {"lba": 4, "payload_offset": 4608},
+                {"lba": 0, "payload_offset": 0, "missing_source_sectors_before": 0},
+                {"lba": 2, "payload_offset": 2304, "missing_source_sectors_before": 1},
+                {"lba": 4, "payload_offset": 4608, "missing_source_sectors_before": 1},
             ])
             self.assertEqual(report["noncontiguous_audio_transitions"], 2)
 
