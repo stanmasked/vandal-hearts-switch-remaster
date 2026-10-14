@@ -4,6 +4,17 @@
 
 These checks investigate whether a generated test tone can be built and scheduled through candidate audio APIs. They do not implement the game's soundtrack and do not prove audible output on a Nintendo Switch.
 
+## CD-XA extraction and decoding pipeline
+
+The repository now has an end-to-end host-side integration test that feeds a synthetic raw Mode 2 Form 2 XA sector through the payload extractor and ADPCM decoder.
+
+- The test checks that one valid synthetic audio sector produces exactly 2304 bytes of sound-group payload.
+- It checks that the decoder writes a stereo, signed 16-bit WAV at 37,800 Hz with 2016 frames for one sector.
+- It checks that a synthetic non-audio sector is excluded from the decoder input.
+- The integration test is included in `make test`; [Switch toolchain readiness run 38645167013](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38645167013) passed the host tests, sanitizer-enabled tests, NRO validation/build, and artifact upload after the sector-size test-fixture bug was fixed.
+
+**Limit:** this is a synthetic-data test, not a decode of the original Vandal Hearts soundtrack. It does not establish that a user-owned disc dump has been identified, demultiplexed, decoded, or played back correctly. Real-disc testing is still required, and the extractor's report must be used to assess sector gaps/timing before relying on the resulting audio stream.
+
 ## SDL2 audio probe
 
 The SDL2 probe requests a 22,050 Hz, mono, signed 16-bit audio device and queues a generated square wave. It reports whether the device opens and whether the audio callback is observed.
@@ -24,5 +35,6 @@ The OpenAL Soft generated-tone probe is separate from the SDL2 audio test. Recen
 ## Current conclusion
 
 - Graphics and input probes have passed their documented NeXium checks; see the [SDL2 feasibility workflow](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/workflows/sdl2-probe.yml).
+- The synthetic CD-XA pipeline test now passes as part of the host test suite, but it does not validate a real game disc or soundtrack.
 - Audio library compilation, audio-device availability in a headless CI runner, audible playback in an emulator, and audible playback on physical Switch hardware are distinct questions.
 - Audio remains unverified until a supported runtime produces evidence of audible output. The physical-console test remains outstanding.
