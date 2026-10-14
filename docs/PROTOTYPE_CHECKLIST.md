@@ -123,7 +123,7 @@ Only after P1–P3 pass:
 | Runtime steps | Launch libnx NRO in NeXium; wait 30 seconds; capture a screenshot; inject one Right-arrow press; capture the second screenshot; compare cursor-border pixels |
 | Observed result | Both screenshots were 1280×720; cursor yellow counts moved from (371, 0) to (0, 481), confirming one tile of Right-arrow movement; SDL2 input and audio remain unverified |
 | Logs / screenshots location | [Main build 38524223405](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223405); [NeXium input check 38525585386](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38525585386); [input evidence artifact](https://api.github.com/repos/stanmasked/vandal-hearts-switch-remaster/actions/artifacts/11874464900/zip); [SDL2 graphics evidence](https://api.github.com/repos/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524564337); [SDL2 builds 38524223415](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223415) |
-| Known limitations | One libnx D-pad move verified in NeXium; SDL2 input, full interaction, audio output, and physical-device behavior unverified |
+| Known limitations | Main libnx selection, valid move, out-of-range rejection, and enemy-tile rejection verified in NeXium; graceful exit, audio output, long-session stability, and physical-device behavior remain unverified |
 
 ## SDL2 joystick runtime evidence
 
@@ -135,7 +135,7 @@ Only after P1–P3 pass:
 | Runtime steps | Launch SDL2 texture NRO; wait 30 seconds; capture frame; inject one Right press for 30 ms; capture second frame; scan all 48 grid cells for cursor outline |
 | Observed result | Both screenshots were 1280×720; hero-marker pixels were 1,035 and 1,036; cursor moved from cell `(1, 2)` to `(2, 2)` with yellow-border counts 360 and 413 |
 | Logs / screenshots location | [NeXium SDL2 runtime run 38526810434](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38526810434); [evidence artifact](https://api.github.com/repos/stanmasked/vandal-hearts-switch-remaster/actions/artifacts/11876567065/zip) |
-| Known limitations | Confirms one SDL2 joystick input transition only; long-session stability, other buttons, audio, and physical Switch remain unverified |
+| Known limitations | Two SDL2 Right-arrow presses verified; A/B interaction, long-session stability, audio, and physical Switch behavior remain unverified |
 
 Do not commit proprietary game files or include them in CI artifacts. Use generated test data only.
 
