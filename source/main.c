@@ -4,6 +4,7 @@
 #include "game_rules.h"
 #include "game_state.h"
 #include "platform_input.h"
+#include "software_renderer.h"
 
 #define FB_WIDTH 1280
 #define FB_HEIGHT 720
@@ -26,17 +27,10 @@
 #define COLOR_WHITE    RGBA8_MAXALPHA(224, 234, 246)
 #define COLOR_MUTED    RGBA8_MAXALPHA(105, 126, 151)
 
-static void fill_rect(u32 *pixels, u32 stride, int x, int y, int width, int height, u32 color) {
-    if (x < 0) { width += x; x = 0; }
-    if (y < 0) { height += y; y = 0; }
-    if (x + width > FB_WIDTH) width = FB_WIDTH - x;
-    if (y + height > FB_HEIGHT) height = FB_HEIGHT - y;
-    if (width <= 0 || height <= 0) return;
-
-    for (int row = y; row < y + height; row++) {
-        u32 *line = pixels + (u32)row * stride;
-        for (int col = x; col < x + width; col++) line[col] = color;
-    }
+static void fill_rect(u32 *pixels, u32 stride, int x, int y,
+                      int width, int height, u32 color) {
+    VhCanvas canvas = {(uint32_t *)pixels, (size_t)stride, FB_WIDTH, FB_HEIGHT};
+    vh_canvas_fill_rect(&canvas, x, y, width, height, color);
 }
 
 /* Tiny generated 5x7 font: no copyrighted game fonts or external assets. */
