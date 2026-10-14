@@ -40,6 +40,17 @@ class RepackTests(unittest.TestCase):
 
             self.assertFalse(destination.exists())
 
+    def test_rejects_same_input_and_output_path_without_changing_source(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "input.str"
+            original = STR_MAGIC + bytes(SECTOR_SIZE - len(STR_MAGIC))
+            source.write_bytes(original)
+
+            with self.assertRaisesRegex(ValueError, "must be different"):
+                repack(source, source)
+
+            self.assertEqual(source.read_bytes(), original)
+
     def test_empty_stream_is_valid_and_empty(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
