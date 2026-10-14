@@ -111,3 +111,14 @@ This narrows the next verification to a small, deterministic byte range and prov
 Added `tools/inspect_land_dt.py` to report raw four-byte records and CLUT-index bytes for GFX 241 and 243. It supports either a concatenated LAND_DT stream (`--map-number 2`, using zero-based block indexing) or a single extracted 1797-byte block (`--block`). It reports offsets and byte values as JSON and explicitly warns that metadata alone does not prove a visual defect.
 
 Added `tests/test_inspect_land_dt.py` with synthetic data tests for the selected block, expected offsets, raw bytes, CLUT indices, single-block mode, and invalid input sizes/map selection. `make test` now includes this test file. These are tests against synthetic fixtures; they do not validate any original game asset because no LAND_DT binary was available in the repository.
+
+
+## Expanded GFX comparison support (2026-10-15)
+
+The raw inspector now accepts arbitrary GFX indices through `--gfx`, while retaining 241 and 243 as defaults. This allows the same raw-data procedure to compare the map 02 suspect records against neighboring GFX entries without changing the source data. For example:
+
+```sh
+python3 tools/inspect_land_dt.py path/to/LAND_DT.DAT --map-number 2 --gfx 78 95 145 207 241 243
+```
+
+For one extracted block, use `--block --gfx 78 95 145 207 241 243`. Valid indices are 0–256. The tests include synthetic custom-index fixtures and invalid-index handling. These changes improve repeatability; they do not resolve the original asset question until real source bytes are supplied or lawfully extracted and inspected.
