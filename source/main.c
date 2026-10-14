@@ -98,6 +98,9 @@ static void draw_frame(u32 *pixels, u32 stride, int cursor_x, int cursor_y,
     /* Compact bitmap labels keep the prototype self-contained and asset-free. */
     draw_text(pixels, stride, 72, 28, "VANDAL HEARTS", COLOR_WHITE, 3);
     draw_text(pixels, stride, 72, 59, "TACTICAL PROTOTYPE", COLOR_MUTED, 1);
+    draw_text(pixels, stride, 700, 59,
+              hero_selected ? "CHOOSE DESTINATION" : "SELECT HERO",
+              COLOR_WHITE, 1);
     fill_rect(pixels, stride, 72, 82, FB_WIDTH - 144, 2, COLOR_HERO);
 
     for (int y = 0; y < GRID_HEIGHT; y++) {
