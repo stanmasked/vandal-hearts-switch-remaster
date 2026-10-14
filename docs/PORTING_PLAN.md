@@ -2,7 +2,7 @@
 
 ## Current status
 
-**Source audit complete; initial framebuffer and SDL2 texture output are confirmed in NeXium, and one Right-arrow movement is confirmed in the main libnx prototype. SDL2 input, sustained interaction, audio output, and physical Switch behavior remain unverified.**
+**Source audit complete; initial framebuffer and SDL2 texture output are confirmed in NeXium, and one Right-arrow movement is confirmed in both the main libnx prototype and SDL2 joystick probe. Sustained interaction, audio output, and physical Switch behavior remain unverified.**
 
 The upstream PC port is a native C project with a portable hardware-interface layer, but it is designed for desktop Windows/Linux/macOS. See [Upstream Audit](UPSTREAM_AUDIT.md) for findings and [Build Notes](BUILDING.md) for the dependency inventory.
 
@@ -45,7 +45,8 @@ This establishes that package recipes exist. The [SDL2 probe CI run](https://git
 - [x] Build and package a CPU framebuffer upload-to-texture probe using SDL2/OpenGL ES.
 - [x] Launch the framebuffer NRO and SDL2 texture-upload probe in NeXium; verify the expected hero-marker color in 1280×720 screenshots.
 - [x] Verify one Right-arrow movement in the main libnx prototype using NeXium's keyboard-to-controller mapping ([CI run 38525585386](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38525585386)).
-- [ ] Verify SDL2 input, sustained frame updates, and behavior on physical hardware.
+- [x] Verify one Right-arrow movement in the SDL2 texture probe through NeXium's joystick API ([CI run 38526810434](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38526810434)).
+- [ ] Verify sustained frame updates, audio output, and behavior on physical hardware.
 - [ ] Measure frame pacing and memory use on actual hardware.
 - [x] Build and package an OpenAL Soft generated-tone probe in CI.
 - [ ] Verify audio output and thread support independently.
