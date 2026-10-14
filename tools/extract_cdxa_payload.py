@@ -2,7 +2,7 @@
 """Extract CD-XA audio sector payloads from a raw 2352-byte BIN.
 
 This utility is intentionally a payload extractor, not an ADPCM decoder. It
-writes 2324-byte Mode 2 Form 2 payloads for sectors whose duplicated subheader
+writes the 2304-byte CD-XA sound-group area from Mode 2 Form 2 sectors for sectors whose duplicated subheader
 marks them as audio. The report records sector positions and gaps so callers
 can assess timing before decoding.
 """
@@ -14,7 +14,7 @@ from pathlib import Path
 
 SECTOR_SIZE = 2352
 PAYLOAD_START = 24
-PAYLOAD_END = 2348
+PAYLOAD_END = 2328  # 2304 bytes of sound groups; exclude 20 trailing padding bytes
 MODE_OFFSET = 15
 SUBHEADER_OFFSET = 16
 SYNC = b"\x00" + b"\xff" * 10 + b"\x00"
