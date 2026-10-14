@@ -62,6 +62,8 @@ def extract_audio_payloads(
             sector = src.read(SECTOR_SIZE)
             if len(sector) != SECTOR_SIZE:
                 raise ValueError(f"Unexpected end of file at LBA {lba}.")
+            if sector[:12] != SYNC:
+                continue
             if sector[MODE_OFFSET] != 2:
                 continue
             mode2 += 1
