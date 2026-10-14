@@ -2,7 +2,7 @@
 
 ## Current status
 
-**Source audit complete; initial framebuffer and SDL2 texture output have been confirmed in the NeXium emulator; controller input, sustained interaction, audio output, and physical Switch behavior remain unverified.**
+**Source audit complete; initial framebuffer and SDL2 texture output are confirmed in NeXium, and one Right-arrow movement is confirmed in the main libnx prototype. SDL2 input, sustained interaction, audio output, and physical Switch behavior remain unverified.**
 
 The upstream PC port is a native C project with a portable hardware-interface layer, but it is designed for desktop Windows/Linux/macOS. See [Upstream Audit](UPSTREAM_AUDIT.md) for findings and [Build Notes](BUILDING.md) for the dependency inventory.
 
@@ -31,7 +31,7 @@ The official devkitPro package recipes provide a plausible path closer to the up
 - [switch-mesa package recipe](https://github.com/devkitPro/pacman-packages/blob/master/switch/mesa/PKGBUILD) provides the Mesa graphics library for the Switch package set.
 - [switch-openal-soft package recipe](https://github.com/devkitPro/pacman-packages/blob/master/switch/openal-soft/PKGBUILD) builds OpenAL Soft and depends on `switch-sdl2`.
 
-This establishes that package recipes exist. The [SDL2 probe CI run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523937214) confirms `switch-sdl2` installs in the CI image and links into three NROs: a software-renderer/input probe, an OpenGL ES 2.0 context probe, and a CPU-framebuffer-to-GL-texture upload probe. None has been run on an emulator or console. The texture probe checks the intended transfer path at compile/link level only; it does not establish visual correctness or compatibility with the upstream desktop renderer. An [OpenAL Soft probe](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223445) also installs `switch-openal-soft`, links an NRO, and packages a generated-tone test. This confirms build/link feasibility only, not audible output. Next, run the graphics and audio probes on an emulator or console before choosing the upstream port architecture.
+This establishes that package recipes exist. The [SDL2 probe CI run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223415) confirms `switch-sdl2` installs in the CI image and links into three NROs: a software-renderer/input probe, an OpenGL ES 2.0 context probe, and a CPU-framebuffer-to-GL-texture upload probe. None has been run on an emulator or console. The texture probe checks the intended transfer path at compile/link level only; it does not establish visual correctness or compatibility with the upstream desktop renderer. An [OpenAL Soft probe](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38524223445) also installs `switch-openal-soft`, links an NRO, and packages a generated-tone test. This confirms build/link feasibility only, not audible output. Next, run the graphics and audio probes on an emulator or console before choosing the upstream port architecture.
 
 ## Phase 3 — Switch homebrew feasibility prototype
 
@@ -44,7 +44,8 @@ This establishes that package recipes exist. The [SDL2 probe CI run](https://git
 - [x] Build and package a separate SDL2 OpenGL ES 2.0 context probe in CI.
 - [x] Build and package a CPU framebuffer upload-to-texture probe using SDL2/OpenGL ES.
 - [x] Launch the framebuffer NRO and SDL2 texture-upload probe in NeXium; verify the expected hero-marker color in 1280×720 screenshots.
-- [ ] Verify controller input, sustained frame updates, and the same behavior on physical hardware.
+- [x] Verify one Right-arrow movement in the main libnx prototype using NeXium's keyboard-to-controller mapping ([CI run 38525585386](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38525585386)).
+- [ ] Verify SDL2 input, sustained frame updates, and behavior on physical hardware.
 - [ ] Measure frame pacing and memory use on actual hardware.
 - [x] Build and package an OpenAL Soft generated-tone probe in CI.
 - [ ] Verify audio output and thread support independently.
