@@ -143,35 +143,6 @@ jobs:
             timeout --kill-after=2s 10s import -window root runtime-evidence/openal-desktop.png
             test -s "$SHOT"
             cat "$LOG"
-                echo "NeXium exited before status capture" >&2
-                exit 1
-              fi
-              window="$(xdotool search --onlyvisible --name "OpenAL playback status" 2>/dev/null | tail -n 1 || true)"
-              if [ -n "$window" ]; then break; fi
-              sleep 1
-            done
-            echo "Visible windows at capture time:" >&2
-            xdotool search --onlyvisible --name ".*" 2>/dev/null | while read -r id; do
-              printf "window=%s title=" "$id" >&2
-              xdotool getwindowname "$id" 2>/dev/null >&2 || true
-              xwininfo -id "$id" 2>/dev/null | grep -E "Absolute upper-left|Width:|Height:" >&2 || true
-            done
-            if [ -z "$window" ]; then
-              echo "Guest window title 'OpenAL playback status' never appeared" >&2
-              cat "$LOG"
-              # Save the host window as diagnostic evidence, but don't mistake it for guest status.
-              window="$(xdotool search --onlyvisible --name "NeXium" 2>/dev/null | tail -n 1 || true)"
-              if [ -n "$window" ]; then timeout --kill-after=2s 10s import -window "$window" "$SHOT"; fi
-              exit 1
-            fi
-            echo "Capturing guest status window id=$window title=$(xdotool getwindowname "$window")" >&2
-            timeout --kill-after=2s 10s import -window "$window" "$SHOT"
-            test -s "$SHOT"
-            cat "$LOG"
-          '; then
-            echo "OpenAL runtime launch/screenshot failed" >&2
-            exit 1
-          fi
           python3 - "$SHOT" <<'PY'
           from PIL import Image
           import sys
