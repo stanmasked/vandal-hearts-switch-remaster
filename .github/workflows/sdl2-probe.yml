@@ -10,6 +10,7 @@ on:
       - 'source/game_rules.h'
       - 'source/game_state.h'
       - 'tests/check_nro.py'
+      - 'tests/check_sdl2_runtime_screenshot.py'
 
 permissions:
   contents: read
@@ -84,6 +85,17 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: sdl2-texture-switch-probe
+          path: nros
+      - name: Download SDL2 software-renderer NRO
+        uses: actions/download-artifact@v4
+        with:
+          name: sdl2-switch-probe
+          path: nros
+
+      - name: Download SDL2 OpenGL ES NRO
+        uses: actions/download-artifact@v4
+        with:
+          name: sdl2-gl-switch-probe
           path: nros
 
       - name: Install headless display and Vulkan runtime
@@ -243,6 +255,55 @@ jobs:
                   before_cells[0][2] >= 300 and after_cells[0][2] >= 300):
               raise SystemExit("Two SDL2 Switch joystick events did not move the cursor exactly two tiles right")
           PY
+
+      - name: Verify SDL2 software renderer and OpenGL ES runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime-evidence
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+
+          run_static_probe() {
+            local nro="$1"
+            local label="$2"
+            local shot="runtime-evidence/$label.png"
+            local log="runtime-evidence/$label.log"
+            export NRO="$nro" SHOT="$shot" LOG="$log"
+            echo "Launching $nro in NeXium"
+            timeout --kill-after=5s 60s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
+              set -euo pipefail
+              "$NEXIUM_BIN" "$NRO" >"$LOG" 2>&1 &
+              pid=$!
+              for i in $(seq 1 30); do
+                sleep 1
+                state="$(ps -o stat= -p "$pid" 2>/dev/null | tr -d " " || true)"
+                if [ -z "$state" ] || [[ "$state" == Z* ]] || ! kill -0 "$pid" 2>/dev/null; then
+                  wait "$pid" || rc=$?
+                  cat "$LOG"
+                  echo "NeXium exited before screenshot (status ${rc:-unknown})"
+                  exit 1
+                fi
+              done
+              window="$(xdotool search --onlyvisible --name "NeXium" 2>/dev/null | tail -n 1 || true)"
+              if [ -z "$window" ]; then
+                echo "NeXium window not found" >&2
+                exit 1
+              fi
+              sleep 2
+              timeout --kill-after=2s 10s import -window "$window" "$SHOT"
+              test -s "$SHOT"
+              kill -INT "$pid" 2>/dev/null || true
+              sleep 2
+              kill -KILL "$pid" 2>/dev/null || true
+              wait "$pid" 2>/dev/null || true
+            '
+            python3 tests/check_sdl2_runtime_screenshot.py "$shot" "$label"
+          }
+
+          run_static_probe "nros/sdl2-switch-probe.nro" "sdl2-software-renderer"
+          run_static_probe "nros/sdl2-gl-switch-probe.nro" "sdl2-opengles2"
 
       - name: Upload SDL2 runtime evidence
         if: always()
