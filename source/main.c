@@ -3,6 +3,7 @@
 
 #include "game_rules.h"
 #include "game_state.h"
+#include "game_renderer.h"
 #include "platform_input.h"
 #include "software_renderer.h"
 
@@ -111,11 +112,9 @@ static void draw_frame(u32 *pixels, u32 stride, int cursor_x, int cursor_y,
                 tile = COLOR_RANGE;
             }
 
-            fill_rect(pixels, stride, px + 2, py + 2, CELL_SIZE - 4, CELL_SIZE - 4, tile);
-            fill_rect(pixels, stride, px, py, CELL_SIZE, 2, COLOR_GRID);
-            fill_rect(pixels, stride, px, py + CELL_SIZE - 2, CELL_SIZE, 2, COLOR_GRID);
-            fill_rect(pixels, stride, px, py, 2, CELL_SIZE, COLOR_GRID);
-            fill_rect(pixels, stride, px + CELL_SIZE - 2, py, 2, CELL_SIZE, COLOR_GRID);
+            VhCanvas canvas = {(uint32_t *)pixels, (size_t)stride, FB_WIDTH, FB_HEIGHT};
+            VhTilePalette palette = {tile, COLOR_GRID};
+            vh_render_grid_tile(&canvas, px, py, CELL_SIZE, palette);
 
             if (x == hero_x && y == hero_y) {
                 const int inset = hero_selected ? 13 : 18;
