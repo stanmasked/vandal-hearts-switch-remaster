@@ -33,6 +33,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer
 	./$(BUILD)/test_software_renderer
 	python3 tests/test_restore_ps1_str.py
 	python3 tests/test_inspect_cdxa.py
+	python3 tests/test_inspect_land_dt.py
 	python3 tests/test_extract_cdxa_payload.py
 	python3 tests/test_decode_cdxa_adpcm.py
 
