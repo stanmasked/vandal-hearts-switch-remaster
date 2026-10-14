@@ -11,6 +11,8 @@ typedef struct {
     GLuint vertex_buffer;
     GLuint texture;
     GLint sampler_location;
+    int frame_width;
+    int frame_height;
     int initialized;
 } VhSwitchRgb24Presenter;
 
