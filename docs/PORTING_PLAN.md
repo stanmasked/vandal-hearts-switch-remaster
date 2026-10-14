@@ -31,7 +31,7 @@ The official devkitPro package recipes provide a plausible path closer to the up
 - [switch-mesa package recipe](https://github.com/devkitPro/pacman-packages/blob/master/switch/mesa/PKGBUILD) provides the Mesa graphics library for the Switch package set.
 - [switch-openal-soft package recipe](https://github.com/devkitPro/pacman-packages/blob/master/switch/openal-soft/PKGBUILD) builds OpenAL Soft and depends on `switch-sdl2`.
 
-This establishes that package recipes exist; it does **not** yet prove these libraries install in the current CI image, link with this project, or run correctly on hardware. Next, build a small SDL2 window/input probe as a separate target, then test OpenAL and renderer compatibility independently before choosing the upstream port architecture.
+This establishes that package recipes exist. The separate [SDL2 probe CI run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523386492) now confirms `switch-sdl2` installs in the CI image and links into an NRO with a software renderer and controller/keyboard event handling. It does **not** yet prove runtime behavior or compatibility with the upstream OpenGL renderer. Next, run the probe on an emulator or console, then test an SDL_GL/OpenGL context and OpenAL independently before choosing the upstream port architecture.
 
 ## Phase 3 — Switch homebrew feasibility prototype
 
@@ -39,7 +39,8 @@ This establishes that package recipes exist; it does **not** yet prove these lib
 - [x] Build a minimal test application without game code or game data.
 - [x] Implement a controller-driven tactical grid and basic unit movement rules.
 - [x] Implement and compile a software-rendered RGBA8888 framebuffer grid.
-- [ ] Verify the application and controller behavior in an emulator or on actual hardware.
+- [x] Build and package a separate SDL2 window/input/software-renderer probe in CI.
+- [ ] Verify the framebuffer and SDL2 probes in an emulator or on actual hardware.
 - [ ] Measure frame pacing and memory use on actual hardware.
 - [ ] Verify audio and thread support independently.
 

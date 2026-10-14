@@ -33,6 +33,8 @@ Portable movement-rule unit tests run with `make test` and are included in CI; t
 
 The current prototype renders an 8×6 grid into a 1280×720 RGBA framebuffer using a generated 5×7 bitmap font; it requires no external fonts or game assets. D-pad moves the cursor; A selects the hero or attempts to move it; B cancels selection; Plus exits. Movement is limited to a Manhattan distance of two tiles, and the enemy tile is blocked. This is a mechanics/input experiment, not the original game's battle system. A successful build does not prove that the framebuffer presents correctly at runtime.
 
+A separate SDL2 feasibility probe also compiles and packages in [CI run 38523386492](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523386492). It uses an SDL2 window, software renderer, and controller/keyboard event handling. This confirms the Switch SDL2 package can be installed and linked in CI; the probe has not yet been run on an emulator or console and does not test the upstream OpenGL renderer.
+
 See the [upstream audit](docs/UPSTREAM_AUDIT.md), [porting plan](docs/PORTING_PLAN.md),
 [build notes](docs/BUILDING.md), [toolchain diagnostic instructions](docs/TOOLCHAIN_CHECK.md),
 [prototype acceptance checklist](docs/PROTOTYPE_CHECKLIST.md), and
@@ -41,9 +43,11 @@ See the [upstream audit](docs/UPSTREAM_AUDIT.md), [porting plan](docs/PORTING_PL
 ## Build artifact
 
 The CI workflow creates an artifact named `vandal-hearts-switch-prototype`.
-Download the latest validated build from [CI run 38522872471](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38522872471) or use the [workflow runs page](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions).
-The artifact for run 38522872471 was uploaded successfully (archive size 52,815 bytes; SHA-256 digest reported by GitHub for the artifact archive: `793a22d685dec40c791a81740687d69edf33c18f69148dae6a80a12fe5f52faa`). This digest identifies the GitHub artifact archive, not the extracted NRO file. The CI run also checked the NRO magic, declared size, and segment bounds.
-A successful CI build confirms compilation and packaging only; it does not confirm runtime behavior.
+Download the latest main prototype from [CI run 38523386542](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523386542) or use the [workflow runs page](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions).
+The `vandal-hearts-switch-prototype` artifact for run 38523386542 is 52,944 bytes; GitHub reports archive SHA-256 `c38f23d4b24f037523d2a989ee52c6a2c8b113df82f1c2be7ae7a9e536ac80e2`. This digest identifies the GitHub artifact archive, not the extracted NRO file. The CI run checked the NRO magic, declared size, and segment bounds.
+
+The separate [SDL2 probe run 38523386492](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38523386492) uploaded `sdl2-switch-probe` (archive size 2,796,334 bytes; archive SHA-256 `20a87e35c789ba484c82952bbf4246499594bbf0e22627ad196331bbdd40c276`). Its NRO passed the same structural check (declared binary size 6,721,536 bytes; file size 6,737,976 bytes).
+Both results prove compilation and packaging only; neither confirms runtime behavior.
 
 ## Upstream
 
