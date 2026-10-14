@@ -46,6 +46,12 @@ The current renderer presents the finished framebuffer through OpenGL calls on W
 
 **Concrete graphics API mismatch:** at the audited upstream revision, `platform/pc/src/pc_gpu_window.c` presents the software rasterizer output with `glPixelZoom`, `glRasterPos2f`, and `glDrawPixels` ([source lines 906–908](https://github.com/HalmyLyseas/VandalHearts-PcPort/blob/14552fffa0e0b47e02b57592e274fc6e7a649923/platform/pc/src/pc_gpu_window.c#L906-L908)). These are legacy desktop OpenGL APIs and are not part of OpenGL ES 2.0. Therefore, successfully creating a GLES2 context does not make the upstream presentation path compatible. The new texture-upload probe tests one possible replacement—uploading a CPU-generated RGBA frame to a GLES2 texture and drawing a fullscreen quad. NeXium runtime smoke now confirms its initial frame and one joystick-driven Right movement ([run 38526810434](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38526810434)); physical-device validation and comparison against the upstream frame format, stride, orientation, and scaling behavior remain outstanding.
 
+### Input API mismatch
+
+The audited upstream input path in `platform/pc/src/libetc.c` maps desktop keys with `SDL_GetKeyboardState` and opens optional gamepads with `SDL_GameControllerOpen`. The devkitPro Switch SDL2 backend exposes Switch pad buttons through `SDL_JOYBUTTONDOWN` and the joystick API. The updated SDL2 probe confirms one Right-arrow movement through this joystick path in NeXium ([run 38526810434](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38526810434)).
+
+**Porting implication:** do not assume the upstream game-controller path works unchanged on Switch. Add a platform-specific input adapter using SDL joystick events or libnx `pad` APIs, then test physical controller behavior.
+
 ### 2. OS memory and executable assumptions
 
 `platform/pc/src/pc_bootstrap.c` contains platform-specific branches for Windows APIs such as `VirtualAlloc`/`VirtualProtect`, POSIX `mmap`/`mprotect` and ELF inspection, and macOS Mach-O/dyld APIs. It also implements behavior needed to accommodate the original game's memory assumptions. A Switch implementation needs a careful audit of each behavior, not just replacement of the window code.
