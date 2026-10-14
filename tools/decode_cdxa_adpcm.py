@@ -48,9 +48,10 @@ def decode_group(frame: bytes, history: list[list[int]]) -> bytes:
                 signed_nibble = nibble if nibble < 8 else nibble - 16
                 sample = signed_nibble * (1 << shift)
                 sample += (K0[filt] * h1 + K1[filt] * h2 + 32) >> 6
-                sample = max(-32768, min(32767, sample))
+                # Match the common XA decoder reference behavior: keep the
+                # predictor history unclipped, and clamp only the emitted PCM.
                 h2, h1 = h1, sample
-                channels[channel].append(sample)
+                channels[channel].append(max(-32768, min(32767, sample)))
             history[channel] = [h1, h2]
 
     pcm = bytearray()
