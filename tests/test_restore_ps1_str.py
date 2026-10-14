@@ -1,4 +1,5 @@
 """Unit tests for the PS1 STR sector repacking utility."""
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -51,15 +52,29 @@ class RepackTests(unittest.TestCase):
 
             self.assertEqual(source.read_bytes(), original)
 
-    def test_empty_stream_is_valid_and_empty(self):
+    def test_empty_stream_is_rejected_by_cli_before_ffmpeg_lookup(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             source = root / "empty.str"
-            destination = root / "out.str"
+            destination = root / "out.mp4"
             source.write_bytes(b"")
 
-            self.assertEqual(repack(source, destination), (0, 0))
-            self.assertEqual(destination.read_bytes(), b"")
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(Path(__file__).resolve().parents[1] / "tools" / "restore_ps1_str.py"),
+                    str(source),
+                    "--output",
+                    str(destination),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("Input file is empty", result.stderr)
+            self.assertFalse(destination.exists())
 
 
 if __name__ == "__main__":
