@@ -45,4 +45,26 @@ static inline void vh_canvas_fill_rect(VhCanvas *canvas, int x, int y,
     }
 }
 
+/* Write one pixel if it lies inside the visible canvas. */
+static inline void vh_canvas_put_pixel(VhCanvas *canvas, int x, int y,
+                                      uint32_t color) {
+    if (!canvas || !canvas->pixels || canvas->width <= 0 ||
+        canvas->height <= 0 || canvas->stride_pixels < (size_t)canvas->width ||
+        x < 0 || y < 0 || x >= canvas->width || y >= canvas->height) {
+        return;
+    }
+    canvas->pixels[(size_t)y * canvas->stride_pixels + (size_t)x] = color;
+}
+
+/* Draw clipped horizontal and vertical lines; endpoints are inclusive. */
+static inline void vh_canvas_draw_hline(VhCanvas *canvas, int x, int y,
+                                        int length, uint32_t color) {
+    vh_canvas_fill_rect(canvas, x, y, length, 1, color);
+}
+
+static inline void vh_canvas_draw_vline(VhCanvas *canvas, int x, int y,
+                                        int length, uint32_t color) {
+    vh_canvas_fill_rect(canvas, x, y, 1, length, color);
+}
+
 #endif
