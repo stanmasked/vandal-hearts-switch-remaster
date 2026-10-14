@@ -62,6 +62,10 @@ class CdXaPipelineTests(unittest.TestCase):
             report = extract_audio_payloads(source, payload)
             self.assertEqual(report["audio_form2_sectors_written"], 0)
             self.assertEqual(payload.read_bytes(), b"")
+            # The pipeline must fail clearly rather than create a silent WAV
+            # when extraction found no eligible audio sectors.
+            with self.assertRaisesRegex(ValueError, "empty"):
+                decode_payload_file(payload, root / "decoded.wav", extracted_groups=True)
 
 
     def test_report_preserves_source_lba_gap_when_non_audio_sector_is_skipped(self):
