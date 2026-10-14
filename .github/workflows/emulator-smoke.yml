@@ -1,0 +1,167 @@
+name: Experimental NRO runtime smoke test
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/emulator-smoke.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build homebrew NROs
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Switch SDL2 package
+        shell: bash
+        run: |
+          set -euxo pipefail
+          dkp-pacman -Sy --noconfirm switch-sdl2
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$DEVKITPRO/portlibs/switch/bin:$PATH"
+          make test
+          make verify-nro
+          make sdl2-texture-probe
+
+      - name: Upload NROs for emulator smoke test
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-smoke-nros
+          path: |
+            build/vandal-hearts-prototype.nro
+            build/sdl2-texture-switch-probe.nro
+          if-no-files-found: error
+
+  run-in-emulator:
+    name: Launch NROs in NeXium
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download test NROs
+        uses: actions/download-artifact@v4
+        with:
+          name: runtime-smoke-nros
+          path: nros
+
+      - name: Install headless display and Vulkan runtime
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl jq xvfb xauth xdotool imagemagick python3-pil \
+            libgtk-3-0t64 libasound2t64 libudev1 libxkbcommon0 libxkbcommon-x11-0 \
+            libx11-xcb1 libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
+            libvulkan1 mesa-vulkan-drivers
+
+      - name: Download NeXium nightly
+        shell: bash
+        run: |
+          set -euxo pipefail
+          asset_url="$(curl -fsSL https://api.github.com/repos/nexium-emu/nexium-nightly/releases/tags/nightly | jq -r '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
+          test -n "$asset_url"
+          curl -fL --retry 3 "$asset_url" -o /tmp/nexium-linux.tar.gz
+          mkdir -p /tmp/nexium
+          tar -xzf /tmp/nexium-linux.tar.gz -C /tmp/nexium
+          emu_bin="$(find /tmp/nexium -type f -executable \( -name 'nexium-gui' -o -name 'nexium' \) -print -quit)"
+          if [ -z "$emu_bin" ]; then
+            emu_bin="$(find /tmp/nexium -type f -executable ! -name 'ffmpeg' -print -quit)"
+          fi
+          test -n "$emu_bin"
+          echo "NEXIUM_BIN=$emu_bin" >> "$GITHUB_ENV"
+          echo "NeXium executable: $emu_bin"
+          ldd "$emu_bin" || true
+
+      - name: Run framebuffer and SDL2 texture probes
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p runtime-evidence
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          if [ -z "$icd" ]; then
+            echo "Lavapipe Vulkan ICD not found" | tee runtime-evidence/runner.log
+            exit 1
+          fi
+          echo "Vulkan ICD: $icd" | tee runtime-evidence/runner.log
+          result=0
+
+          run_probe() {
+            local nro="$1"
+            local label="$2"
+            local shot="runtime-evidence/$label.png"
+            local log="runtime-evidence/$label.log"
+            export NRO="$nro" SHOT="$shot" LOG="$log" VK_ICD_FILENAMES="$icd"
+            echo "Launching $nro in NeXium" | tee -a runtime-evidence/runner.log
+
+            if ! xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
+              set -euo pipefail
+              "$NEXIUM_BIN" "$NRO" >"$LOG" 2>&1 &
+              pid=$!
+              for i in $(seq 1 30); do
+                sleep 1
+                if ! kill -0 "$pid" 2>/dev/null; then
+                  wait "$pid" || rc=$?
+                  cat "$LOG"
+                  echo "NeXium exited before screenshot (status ${rc:-unknown})"
+                  exit 1
+                fi
+              done
+              window="$(xdotool search --onlyvisible --name "NeXium" 2>/dev/null | tail -n 1 || true)"
+              if [ -n "$window" ]; then
+                import -window "$window" "$SHOT"
+              else
+                import -window root "$SHOT"
+              fi
+              kill -INT "$pid" 2>/dev/null || true
+              sleep 2
+              kill -KILL "$pid" 2>/dev/null || true
+              wait "$pid" 2>/dev/null || true
+            '; then
+              echo "Runtime launch/screenshot failed for $label" | tee -a runtime-evidence/runner.log
+              result=1
+              return
+            fi
+
+            if ! python3 - "$shot" <<'PY'
+          from PIL import Image
+          import sys
+          image = Image.open(sys.argv[1]).convert("RGB")
+          target = (86, 190, 244)
+          matches = sum(
+              1 for r, g, b in image.getdata()
+              if max(abs(r - target[0]), abs(g - target[1]), abs(b - target[2])) <= 16
+          )
+          print(f"{sys.argv[1]}: size={image.size}, hero-color-like pixels={matches}")
+          if matches < 50:
+              raise SystemExit("Expected hero marker color was not detected in screenshot")
+          PY
+            then
+              echo "Expected rendered marker not detected for $label" | tee -a runtime-evidence/runner.log
+              result=1
+            fi
+          }
+
+          run_probe "nros/vandal-hearts-prototype.nro" "libnx-framebuffer"
+          run_probe "nros/sdl2-texture-switch-probe.nro" "sdl2-texture-upload"
+          exit "$result"
+
+      - name: Upload runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          path: runtime-evidence/
+          if-no-files-found: warn
