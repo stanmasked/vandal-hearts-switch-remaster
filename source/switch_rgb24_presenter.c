@@ -109,6 +109,8 @@ int vh_switch_rgb24_presenter_upload(VhSwitchRgb24Presenter *presenter,
                 (unsigned int)error);
         return 0;
     }
+    presenter->frame_width = frame->width;
+    presenter->frame_height = frame->height;
     return 1;
 }
 
