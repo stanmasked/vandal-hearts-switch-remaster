@@ -67,4 +67,25 @@ static inline void vh_canvas_draw_vline(VhCanvas *canvas, int x, int y,
     vh_canvas_fill_rect(canvas, x, y, 1, length, color);
 }
 
+
+/* Draw a one-pixel rectangle border; width/height are pixel extents. */
+static inline void vh_canvas_draw_rect_outline(VhCanvas *canvas, int x, int y,
+                                               int width, int height,
+                                               uint32_t color) {
+    if (width <= 0 || height <= 0) return;
+    vh_canvas_draw_hline(canvas, x, y, width, color);
+    if (height > 1) {
+        vh_canvas_draw_hline(canvas, x, y + height - 1, width, color);
+    }
+    if (height > 2) {
+        vh_canvas_draw_vline(canvas, x, y + 1, height - 2, color);
+        if (width > 1) {
+            vh_canvas_draw_vline(canvas, x + width - 1, y + 1,
+                                 height - 2, color);
+        }
+    } else if (height == 2 && width > 1) {
+        /* Both horizontal edges already cover the complete two-row border. */
+    }
+}
+
 #endif
