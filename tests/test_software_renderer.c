@@ -4,6 +4,7 @@
 #include <stdio.h>
 
 #include "../source/software_renderer.h"
+#include "../source/game_renderer.h"
 
 int main(void) {
     enum { WIDTH = 5, HEIGHT = 4, STRIDE = 7, STORAGE = STRIDE * HEIGHT };
@@ -111,6 +112,21 @@ int main(void) {
     vh_canvas_draw_rect_outline(&canvas, INT_MIN, 0, INT_MAX, 3, 0x50607080u);
     vh_canvas_fill_rect(&canvas, INT_MAX - 1, 1, INT_MAX, 2, 0x90A0B0C0u);
     for (int i = 0; i < STORAGE; ++i) assert(pixels[i] == 0xA5A5A5A5u);
+
+    /* Platform-neutral tactical tile renderer: fill, frame, and clipping. */
+    for (int i = 0; i < STORAGE; ++i) pixels[i] = 0xA5A5A5A5u;
+    VhTilePalette palette = {0x1122AABBu, 0xCC334455u};
+    vh_render_grid_tile(&canvas, 1, 0, 4, palette);
+    for (int x = 1; x < 5; ++x) assert(pixels[x] == palette.border);
+    vh_render_grid_tile(&canvas, 0, 0, 5, palette);
+    assert(pixels[0] == palette.border);
+    assert(pixels[1 * STRIDE + 1] == palette.tile);
+    assert(pixels[1 * STRIDE + 2] == palette.tile);
+    assert(pixels[1 * STRIDE + 3] == palette.tile);
+    assert(pixels[1 * STRIDE + 4] == palette.border);
+    assert(pixels[1 * STRIDE + WIDTH] == 0xA5A5A5A5u);
+    vh_render_grid_tile(&canvas, -2, -2, 5, palette);
+    assert(pixels[0] == palette.border);
 
     puts("All software renderer tests passed.");
     return 0;
