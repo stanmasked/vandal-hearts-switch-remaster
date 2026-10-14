@@ -20,38 +20,43 @@ K1 = (0, 0, -52, -55)
 
 
 def decode_group(frame: bytes, history: list[list[int]]) -> bytes:
-    """Decode one 128-byte, 8-unit 4-bit stereo XA sound group."""
+    """Decode one 128-byte, 4-bit stereo XA sound group.
+
+    The four parameter pairs are stored at bytes 4..11; bytes 0..3 and
+    12..15 are their duplicate copies. Each of the four 28-sample chunks
+    stores left/right nibbles in the same byte, low nibble first.
+    """
     if len(frame) != GROUP_SIZE:
         raise ValueError("XA sound group must be exactly 128 bytes")
     if frame[0:4] != frame[4:8] or frame[8:12] != frame[12:16]:
         raise ValueError("XA sound-parameter copies do not match")
-    params = list(frame[0:4]) + list(frame[8:12])
-    unit_samples: list[list[int]] = [[] for _ in range(8)]
-    for unit, param in enumerate(params):
-        filt, shift = (param >> 4) & 0x0F, param & 0x0F
-        if filt >= len(K0):
-            raise ValueError(f"invalid XA filter {filt}")
-        if shift > 12:
-            shift = 9
-        channel = unit & 1
-        h1, h2 = history[channel]
-        for row in range(28):
-            packed = frame[16 + row * 4 + unit // 2]
-            nibble = (packed >> 4) & 0x0F if unit & 1 else packed & 0x0F
-            signed_nibble = nibble if nibble < 8 else nibble - 16
-            sample = (signed_nibble << 12) >> shift
-            sample += (K0[filt] * h1 + K1[filt] * h2 + 32) >> 6
-            sample = max(-32768, min(32767, sample))
-            h2, h1 = h1, sample
-            unit_samples[unit].append(sample)
-        history[channel] = [h1, h2]
-    pcm = bytearray()
-    for row in range(28):
-        for pair in range(4):
-            pcm.extend(struct.pack("<hh", unit_samples[pair * 2][row],
-                                   unit_samples[pair * 2 + 1][row]))
-    return bytes(pcm)
 
+    channels: list[list[int]] = [[], []]
+    for chunk in range(4):
+        for channel in range(2):
+            param = frame[4 + chunk * 2 + channel]
+            filt, low_shift = (param >> 4) & 0x0F, param & 0x0F
+            if filt >= len(K0):
+                raise ValueError(f"invalid XA filter {filt}")
+            shift = 12 - low_shift
+            if shift < 0:
+                raise ValueError(f"invalid XA shift {low_shift}")
+            h1, h2 = history[channel]
+            for row in range(28):
+                packed = frame[16 + row * 4 + chunk]
+                nibble = (packed >> 4) & 0x0F if channel else packed & 0x0F
+                signed_nibble = nibble if nibble < 8 else nibble - 16
+                sample = signed_nibble * (1 << shift)
+                sample += (K0[filt] * h1 + K1[filt] * h2 + 32) >> 6
+                sample = max(-32768, min(32767, sample))
+                h2, h1 = h1, sample
+                channels[channel].append(sample)
+            history[channel] = [h1, h2]
+
+    pcm = bytearray()
+    for row in range(112):
+        pcm.extend(struct.pack("<hh", channels[0][row], channels[1][row]))
+    return bytes(pcm)
 
 def decode_payload_file(source: Path, destination: Path, sectors: int | None = None) -> dict[str, int]:
     if source.resolve() == destination.resolve():
