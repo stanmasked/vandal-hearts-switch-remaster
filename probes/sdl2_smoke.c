@@ -1,7 +1,7 @@
 #include <SDL.h>
 #include <stdio.h>
 
-#include "game_rules.h"
+#include "game_state.h"
 
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 720
@@ -11,30 +11,6 @@
 #define GRID_X 384
 #define GRID_Y 120
 #define MOVE_RANGE 2
-
-static void move_cursor(int *x, int *y, int dx, int dy) {
-    *x += dx;
-    *y += dy;
-    if (*x < 0) *x = 0;
-    if (*x >= GRID_WIDTH) *x = GRID_WIDTH - 1;
-    if (*y < 0) *y = 0;
-    if (*y >= GRID_HEIGHT) *y = GRID_HEIGHT - 1;
-}
-
-static void activate(int *cursor_x, int *cursor_y, int *hero_x, int *hero_y,
-                     int enemy_x, int enemy_y, int *selected) {
-    if (!*selected) {
-        if (*cursor_x == *hero_x && *cursor_y == *hero_y) *selected = 1;
-        return;
-    }
-
-    if (vh_can_move(*hero_x, *hero_y, *cursor_x, *cursor_y,
-                    GRID_WIDTH, GRID_HEIGHT, MOVE_RANGE, enemy_x, enemy_y)) {
-        *hero_x = *cursor_x;
-        *hero_y = *cursor_y;
-        *selected = 0;
-    }
-}
 
 static void set_color(SDL_Renderer *renderer, Uint8 r, Uint8 g, Uint8 b) {
     SDL_SetRenderDrawColor(renderer, r, g, b, 255);
@@ -135,10 +111,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    int cursor_x = 1, cursor_y = 2;
-    int hero_x = 1, hero_y = 2;
-    const int enemy_x = 6, enemy_y = 3;
-    int selected = 0;
+    VhGameState state = {1, 2, 1, 2, 6, 3, 0};
     int running = 1;
 
     while (running) {
@@ -148,38 +121,36 @@ int main(int argc, char **argv) {
             if (event.type == SDL_KEYDOWN) {
                 switch (event.key.keysym.sym) {
                     case SDLK_ESCAPE: running = 0; break;
-                    case SDLK_LEFT: move_cursor(&cursor_x, &cursor_y, -1, 0); break;
-                    case SDLK_RIGHT: move_cursor(&cursor_x, &cursor_y, 1, 0); break;
-                    case SDLK_UP: move_cursor(&cursor_x, &cursor_y, 0, -1); break;
-                    case SDLK_DOWN: move_cursor(&cursor_x, &cursor_y, 0, 1); break;
+                    case SDLK_LEFT: vh_move_cursor(&state, -1, 0, GRID_WIDTH, GRID_HEIGHT); break;
+                    case SDLK_RIGHT: vh_move_cursor(&state, 1, 0, GRID_WIDTH, GRID_HEIGHT); break;
+                    case SDLK_UP: vh_move_cursor(&state, 0, -1, GRID_WIDTH, GRID_HEIGHT); break;
+                    case SDLK_DOWN: vh_move_cursor(&state, 0, 1, GRID_WIDTH, GRID_HEIGHT); break;
                     case SDLK_RETURN:
                     case SDLK_SPACE:
-                        activate(&cursor_x, &cursor_y, &hero_x, &hero_y,
-                                 enemy_x, enemy_y, &selected);
+                        vh_activate_cursor(&state, GRID_WIDTH, GRID_HEIGHT, MOVE_RANGE);
                         break;
-                    case SDLK_x: selected = 0; break;
+                    case SDLK_x: vh_cancel_selection(&state); break;
                     default: break;
                 }
             }
             if (event.type == SDL_CONTROLLERBUTTONDOWN) {
                 switch (event.cbutton.button) {
-                    case SDL_CONTROLLER_BUTTON_DPAD_LEFT: move_cursor(&cursor_x, &cursor_y, -1, 0); break;
-                    case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: move_cursor(&cursor_x, &cursor_y, 1, 0); break;
-                    case SDL_CONTROLLER_BUTTON_DPAD_UP: move_cursor(&cursor_x, &cursor_y, 0, -1); break;
-                    case SDL_CONTROLLER_BUTTON_DPAD_DOWN: move_cursor(&cursor_x, &cursor_y, 0, 1); break;
+                    case SDL_CONTROLLER_BUTTON_DPAD_LEFT: vh_move_cursor(&state, -1, 0, GRID_WIDTH, GRID_HEIGHT); break;
+                    case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: vh_move_cursor(&state, 1, 0, GRID_WIDTH, GRID_HEIGHT); break;
+                    case SDL_CONTROLLER_BUTTON_DPAD_UP: vh_move_cursor(&state, 0, -1, GRID_WIDTH, GRID_HEIGHT); break;
+                    case SDL_CONTROLLER_BUTTON_DPAD_DOWN: vh_move_cursor(&state, 0, 1, GRID_WIDTH, GRID_HEIGHT); break;
                     case SDL_CONTROLLER_BUTTON_A:
-                        activate(&cursor_x, &cursor_y, &hero_x, &hero_y,
-                                 enemy_x, enemy_y, &selected);
+                        vh_activate_cursor(&state, GRID_WIDTH, GRID_HEIGHT, MOVE_RANGE);
                         break;
-                    case SDL_CONTROLLER_BUTTON_B: selected = 0; break;
+                    case SDL_CONTROLLER_BUTTON_B: vh_cancel_selection(&state); break;
                     case SDL_CONTROLLER_BUTTON_START: running = 0; break;
                     default: break;
                 }
             }
         }
 
-        draw_frame(renderer, cursor_x, cursor_y, hero_x, hero_y,
-                   enemy_x, enemy_y, selected);
+        draw_frame(renderer, state.cursor_x, state.cursor_y, state.hero_x,
+                   state.hero_y, state.enemy_x, state.enemy_y, state.hero_selected);
         SDL_Delay(16);
     }
 
