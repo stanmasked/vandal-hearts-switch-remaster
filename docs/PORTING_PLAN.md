@@ -2,7 +2,7 @@
 
 ## Current status
 
-**Source audit complete; graphical framebuffer NRO builds in CI; interactive runtime input and graphics presentation are not yet verified on an emulator or physical Switch.**
+**Source audit complete; initial framebuffer and SDL2 texture output have been confirmed in the NeXium emulator; controller input, sustained interaction, audio output, and physical Switch behavior remain unverified.**
 
 The upstream PC port is a native C project with a portable hardware-interface layer, but it is designed for desktop Windows/Linux/macOS. See [Upstream Audit](UPSTREAM_AUDIT.md) for findings and [Build Notes](BUILDING.md) for the dependency inventory.
 
@@ -43,7 +43,8 @@ This establishes that package recipes exist. The [SDL2 probe CI run](https://git
 - [x] Build and package a separate SDL2 window/input/software-renderer probe in CI.
 - [x] Build and package a separate SDL2 OpenGL ES 2.0 context probe in CI.
 - [x] Build and package a CPU framebuffer upload-to-texture probe using SDL2/OpenGL ES.
-- [ ] Verify the framebuffer and SDL2 probes in an emulator or on actual hardware.
+- [x] Launch the framebuffer NRO and SDL2 texture-upload probe in NeXium; verify the expected hero-marker color in 1280×720 screenshots.
+- [ ] Verify controller input, sustained frame updates, and the same behavior on physical hardware.
 - [ ] Measure frame pacing and memory use on actual hardware.
 - [x] Build and package an OpenAL Soft generated-tone probe in CI.
 - [ ] Verify audio output and thread support independently.
