@@ -43,7 +43,7 @@ jobs:
 
   run-in-emulator:
     name: Launch NROs in NeXium
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs: build
     timeout-minutes: 15
     steps:
