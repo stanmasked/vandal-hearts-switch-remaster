@@ -32,6 +32,17 @@ class DecodeCdXaAdpcmTests(unittest.TestCase):
         samples = struct.unpack("<" + "h" * (len(pcm) // 2), pcm)
         self.assertEqual(samples, (1, 2) * 112)
 
+    def test_applies_reference_predictor_filter(self):
+        group = bytearray(GROUP_SIZE)
+        # Filter 1 has coefficients (60, 0); shift is zero at low nibble 12.
+        group[:16] = bytes([0x1C]) * 16
+        group[16:] = bytes([0x11]) * (GROUP_SIZE - 16)
+        pcm = decode_group(bytes(group), [[0, 0], [0, 0]])
+        samples = struct.unpack("<" + "h" * (len(pcm) // 2), pcm)
+        # For each channel, the first chunk starts 1, 2, 4, 8, ...
+        self.assertEqual(samples[0:8:2], (1, 2, 4, 8))
+        self.assertEqual(samples[1:8:2], (1, 2, 4, 8))
+
     def test_rejects_bad_group_length_and_parameter_copy(self):
         with self.assertRaisesRegex(ValueError, "exactly 128"):
             decode_group(bytes(127), [[0, 0], [0, 0]])
