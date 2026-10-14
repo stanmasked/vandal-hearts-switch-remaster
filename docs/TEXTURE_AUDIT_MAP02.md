@@ -45,3 +45,21 @@ The fact that the faces are active in geometry makes them worth investigating, b
 ## Evidence boundary
 
 The slot values, tile/GFX associations, and count of other blocks are recorded from the ongoing audit report. This note does not independently validate the original disc bytes or confirm a visible in-game defect. No source game data or extracted copyrighted assets are included in this repository.
+
+
+## Upstream loader cross-check (2026-10-15)
+
+At upstream PC-port commit [`14552fffa0e0b47e02b57592e274fc6e7a649923`](https://github.com/HalmyLyseas/VandalHearts-PcPort/commit/14552fffa0e0b47e02b57592e274fc6e7a649923), `src/states/game_setup.c` contains `LoadMapTextures()` (lines 1216–1400). The loader:
+
+- loads `CDF_LAND_DT_DAT`;
+- selects the map's block with `pFileData = &gScratch3_80180210[gState.mapNum * 1797]`;
+- reads four bytes per entry into `gGfxSubTextures[i][0..3]` for 257 map-texture entries;
+- then reads a CLUT index for each entry, reads 512 bytes of CLUT data, and resolves the CLUT and texture-page IDs.
+
+This is a useful independent cross-check: the upstream runtime consumes map-specific records from a fixed 1797-byte block and copies the four per-entry values directly into its texture-subtexture table. It does **not** prove what the four values for map 02 slots 641/643 should be, nor whether the observed zero-sized records are intentional. It also does not establish whether the current extraction tool preserved the source bytes correctly.
+
+Source: [upstream `game_setup.c` at the audited commit](https://github.com/HalmyLyseas/VandalHearts-PcPort/blob/14552fffa0e0b47e02b57592e274fc6e7a649923/src/states/game_setup.c#L1216-L1400).
+
+### Revised priority
+
+Before attempting visual repair, compare the exact raw 1797-byte block for map 02 with the corresponding blocks from known-good maps and verify the parser's byte offsets against the upstream loader layout. In particular, confirm whether “slot 641/643” refers to the same table indexing in the extracted representation as in the upstream `gGfxSubTextures`/CLUT arrays. Keep the two records unmodified until that mapping and the source bytes are validated.
