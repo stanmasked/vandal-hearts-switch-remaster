@@ -47,8 +47,9 @@ class VoiceLifetimeTests(unittest.TestCase):
         clock = SpuVoiceClock(LOOP, 0)
         self.assertIsNone(clock.advance_to(3))
         self.assertIsNone(clock.key_off(3))
-        self.assertEqual(clock.advance_to(4), 3)
-        self.assertEqual(clock.terminal_frame, 3)
+        self.assertIsNone(clock.advance_to(4))
+        self.assertEqual(clock.advance_to(5), 4)
+        self.assertEqual(clock.terminal_frame, 4)
 
     def test_auto_sustain_fade_releases_still_held_voice(self):
         song = report([
@@ -102,7 +103,7 @@ class VoiceLifetimeTests(unittest.TestCase):
         self.assertEqual(modeled[-1]["voice_slot"], 0)
         self.assertEqual(fixed[-1]["voice_slot"], 1)
         self.assertEqual(modeled[0]["hold_frames"], 5)
-        self.assertEqual(modeled[0]["tail_frames"], 0)
+        self.assertEqual(modeled[0]["tail_frames"], 1)
         self.assertEqual(fixed[0]["tail_frames"], 15)
 
     def test_invalid_spec_and_clock_limits(self):
@@ -134,12 +135,12 @@ class VoiceLifetimeTests(unittest.TestCase):
             )
             self.assertEqual(fixed["voice_lifetime_model"], "fixed")
             self.assertEqual(adsr["voice_lifetime_model"], "adsr")
-            self.assertEqual(adsr["voices"][0]["tail_frames"], 0)
+            self.assertEqual(adsr["voices"][0]["tail_frames"], 1)
             self.assertEqual(fixed["voices"][0]["tail_frames"], 500)
-            self.assertEqual(adsr["frames"], 45)
+            self.assertEqual(adsr["frames"], 46)
             self.assertEqual(fixed["frames"], 545)
             with wave.open(io.BytesIO(adsr_wav), "rb") as reader:
-                self.assertEqual(reader.getnframes(), 45)
+                self.assertEqual(reader.getnframes(), 46)
             self.assertEqual(vh.read_bytes(), raw_vh)
             self.assertEqual(vb.read_bytes(), raw_vb)
 
