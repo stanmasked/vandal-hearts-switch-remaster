@@ -84,6 +84,32 @@ jobs:
             build/aarch64-frame/libvhframe.a build/aarch64-frame/*.o
           "$DEVKITA64/bin/aarch64-none-elf-ar" t build/aarch64-frame/libvhframe.a
 
+      - name: Cross-compile pinned upstream exclusive present tail
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          mkdir -p build/aarch64-upstream
+          curl --fail --location --silent --show-error --retry 3 \
+            https://raw.githubusercontent.com/HalmyLyseas/VandalHearts-PcPort/14552fffa0e0b47e02b57592e274fc6e7a649923/platform/pc/src/pc_gpu_window.c \
+            -o build/aarch64-upstream/pc_gpu_window.c
+          python3 tools/patch_pc_gpu_present_exclusive.py \
+            build/aarch64-upstream/pc_gpu_window.c \
+            build/aarch64-upstream/pc_gpu_window_exclusive.c
+          python3 tools/isolate_pc_gpu_exclusive_tail.py \
+            build/aarch64-upstream/pc_gpu_window_exclusive.c \
+            build/aarch64-upstream/present_tail.c
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" \
+            -std=c11 -Wall -Wextra -Werror -O2 \
+            -DVH_SWITCH_EXCLUSIVE_PRESENT \
+            -I"$DEVKITPRO/portlibs/switch/include" \
+            -Isource -c build/aarch64-upstream/present_tail.c \
+            -o build/aarch64-upstream/present_tail.o
+          "$DEVKITA64/bin/aarch64-none-elf-nm" \
+            build/aarch64-upstream/present_tail.o \
+            | grep -F VH_ObserveCompletedRGB24
+
       - name: Build and validate NRO
         shell: bash
         run: |
