@@ -1,0 +1,657 @@
+name: Original DrawOTag raster to Switch NRO
+
+on:
+  push:
+    branches:
+      - feat/upstream-rgb24-observer-binding
+    paths:
+      - "tools/patch_pc_gpu_present_observer.py"
+      - "tools/switch_psyq_compat.h"
+      - "probes/pinned_drawotag_switch_smoke.c"
+      - "tests/test_pc_gpu_present_observer_patch.py"
+      - "probes/pinned_pc_gpu_switch_smoke.c"
+      - "source/switch_upstream_observer.*"
+      - "source/switch_sdl2_observer_backend.*"
+      - ".github/workflows/pinned-drawotag-switch-runtime.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cross-compile:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build official Switch SDL2 source with pinned checksums
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export PATH="$DEVKITPRO/devkitA64/bin:$DEVKITPRO/tools/bin:$DEVKITPRO/portlibs/switch/bin:$PATH"
+          workdir="$(mktemp -d)"
+          cd "$workdir"
+          curl --fail --location --retry 3 --retry-all-errors \
+            https://www.libsdl.org/release/SDL2-2.28.5.tar.gz -o SDL2-2.28.5.tar.gz
+          curl --fail --location --retry 3 --retry-all-errors \
+            https://raw.githubusercontent.com/devkitPro/pacman-packages/master/switch/SDL2/SDL2-2.28.5.patch \
+            -o SDL2-2.28.5.patch
+          echo "332cb37d0be20cb9541739c61f79bae5a477427d79ae85e352089afdaf6666e4  SDL2-2.28.5.tar.gz" | sha256sum --check
+          echo "eb2da665a014dc540ad3dfeb62b3f7c5e15ae090ebdd631fe8b78c1f272c7aa0  SDL2-2.28.5.patch" | sha256sum --check
+          tar -xzf SDL2-2.28.5.tar.gz
+          cd SDL2-2.28.5
+          patch -p1 -i ../SDL2-2.28.5.patch
+          source "$DEVKITPRO/switchvars.sh"
+          ./configure --prefix="$PORTLIBS_PREFIX" --host=aarch64-none-elf \
+            --disable-shared --enable-static --enable-audio --enable-joystick \
+            --disable-power --disable-filesystem --enable-cpuinfo \
+            --enable-pthreads --enable-timers --enable-video
+          make -j2
+          make install
+          export PATH="$DEVKITPRO/portlibs/switch/bin:$PATH"
+          command -v sdl2-config
+          sdl2-config --version
+
+      - name: Cross-compile pinned GPU translation unit with Switch GLES2
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$DEVKITPRO/portlibs/switch/bin:$PATH"
+          git clone --filter=blob:none --no-checkout https://github.com/HalmyLyseas/VandalHearts-PcPort.git /tmp/vh-cross-upstream
+          git -C /tmp/vh-cross-upstream checkout --detach 14552fffa0e0b47e02b57592e274fc6e7a649923
+          python3 tools/patch_pc_gpu_present_observer.py /tmp/vh-cross-upstream/platform/pc/src/pc_gpu_window.c /tmp/vh-cross-upstream/platform/pc/src/pc_gpu_window_instrumented.c
+          mkdir -p build/upstream-cross
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" -std=c11 -O2 -Wall -Wextra -flto -ffat-lto-objects -ffunction-sections -fdata-sections -DVH_SWITCH_COMPLETED_FRAME_OBSERVER -DVH_SWITCH_EXCLUSIVE_PRESENT -I/tmp/vh-cross-upstream/platform/pc/include -I/tmp/vh-cross-upstream/platform/pc/src $(sdl2-config --cflags) -c /tmp/vh-cross-upstream/platform/pc/src/pc_gpu_window_instrumented.c -o build/upstream-cross/pinned_gpu_switch.o
+          "$DEVKITA64/bin/aarch64-none-elf-nm" build/upstream-cross/pinned_gpu_switch.o | grep ' PC_GpuPresent'
+          echo "Pinned GPU translation unit cross-compilation passed (object only)."
+      - name: Inventory unresolved original GPU platform dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          "$DEVKITPRO/devkitA64/bin/aarch64-none-elf-nm" --undefined-only build/upstream-cross/pinned_gpu_switch.o > build/upstream-cross/undefined-symbols.txt
+          echo "Undefined external symbols in original pinned GPU translation unit:"
+          cat build/upstream-cross/undefined-symbols.txt
+          grep -q 'VH_ObserveCompletedRGB24' build/upstream-cross/undefined-symbols.txt
+          if grep -Eq 'glDrawPixels|glPixelZoom|glRasterPos2f' build/upstream-cross/undefined-symbols.txt; then
+            echo "Legacy desktop-only GL symbol leaked into Switch GPU object" >&2
+            exit 1
+          fi
+          echo "Legacy glDrawPixels/glPixelZoom/glRasterPos2f dependencies are absent."
+      - name: Compile original DrawOTag and native software rasterizer
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" -std=c11 -O2 -Wall -Wextra \
+            -flto -ffat-lto-objects -ffunction-sections -fdata-sections \
+            -include tools/switch_psyq_compat.h \
+            -I/tmp/vh-cross-upstream/platform/pc/include \
+            -I/tmp/vh-cross-upstream/platform/pc/src \
+            -I/tmp/vh-cross-upstream/include \
+            -I"$DEVKITPRO/libnx/include" \
+            -c /tmp/vh-cross-upstream/platform/pc/src/libgpu.c \
+            -o build/upstream-cross/libgpu-switch.o
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" -std=c11 -O2 -Wall -Wextra \
+            -flto -ffat-lto-objects -ffunction-sections -fdata-sections \
+            -include tools/switch_psyq_compat.h \
+            -I/tmp/vh-cross-upstream/platform/pc/include \
+            -I/tmp/vh-cross-upstream/platform/pc/src \
+            -I/tmp/vh-cross-upstream/include \
+            -I"$DEVKITPRO/libnx/include" \
+            -c /tmp/vh-cross-upstream/platform/pc/src/pc_raster.c \
+            -o build/upstream-cross/raster-switch.o
+          "$DEVKITA64/bin/aarch64-none-elf-nm" --defined-only \
+            build/upstream-cross/libgpu-switch.o | grep ' DrawOTag
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$DEVKITPRO/portlibs/switch/bin:$PATH"
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" -O2 -flto -ffunction-sections -fdata-sections -Isource \
+            -I"$DEVKITPRO/libnx/include" \
+            $(sdl2-config --cflags) \
+            -specs="$DEVKITPRO/libnx/switch.specs" -Wl,--gc-sections -pie \
+            -I/tmp/vh-cross-upstream/platform/pc/include \
+            -I/tmp/vh-cross-upstream/platform/pc/src \
+            -include tools/switch_psyq_compat.h \
+            probes/pinned_drawotag_switch_smoke.c source/switch_sdl2_observer_backend.c \
+            source/switch_rgb24_presenter.c source/frame_conversion.c \
+            source/switch_frame_bridge.c source/switch_completed_frame.c \
+            source/switch_present_hook.c source/switch_upstream_observer.c \
+            build/upstream-cross/libgpu-switch.o build/upstream-cross/raster-switch.o \
+            build/upstream-cross/pinned_gpu_switch.o \
+            -o build/upstream-cross/pinned-drawotag-switch.elf \
+            $(sdl2-config --libs) -lGLESv2 -L"$DEVKITPRO/libnx/lib" -lnx -lm
+          "$DEVKITPRO/tools/bin/nacptool" --create "Original DrawOTag Raster Probe" "Vandal Hearts Switch Remaster" "0.1.0" build/upstream-cross/pinned-drawotag-switch.nacp
+          "$DEVKITPRO/tools/bin/elf2nro" build/upstream-cross/pinned-drawotag-switch.elf build/upstream-cross/pinned-drawotag-switch.nro --nacp=build/upstream-cross/pinned-drawotag-switch.nacp
+          python3 tests/check_nro.py build/upstream-cross/pinned-drawotag-switch.nro
+      - name: Upload pinned GPU NRO
+        uses: actions/upload-artifact@v4
+        with:
+          name: pinned-original-drawotag-switch-nro
+          path: build/upstream-cross/pinned-drawotag-switch.nro
+          if-no-files-found: error
+      - name: Upload GPU cross-compile evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pinned-original-drawotag-switch-object-audit
+          path: build/upstream-cross/
+          if-no-files-found: error
+
+  runtime:
+    name: Run original DrawOTag raster NRO in NeXium
+    runs-on: ubuntu-26.04
+    needs: cross-compile
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: pinned-original-drawotag-switch-nro
+          path: nros
+      - name: Install emulator runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl jq xvfb xauth xdotool imagemagick python3-pil \
+            libgtk-3-0t64 libasound2t64 libudev1 libxkbcommon0 libxkbcommon-x11-0 \
+            libx11-xcb1 libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
+            libvulkan1 mesa-vulkan-drivers
+      - name: Download NeXium nightly
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_json="$(curl -fsSL --retry 3 --retry-all-errors -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/nexium-emu/nexium-nightly/releases/tags/nightly)"
+          asset_url="$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
+          test -n "$asset_url"
+          curl -fL --retry 3 --retry-all-errors "$asset_url" -o /tmp/nexium-linux.tar.gz
+          mkdir -p /tmp/nexium
+          tar -xzf /tmp/nexium-linux.tar.gz -C /tmp/nexium
+          emu_bin="$(find /tmp/nexium -type f -executable \( -name 'nexium-gui' -o -name 'nexium' \) -print -quit)"
+          test -n "$emu_bin"
+          echo "NEXIUM_BIN=$emu_bin" >> "$GITHUB_ENV"
+      - name: Observe RGB24 frame on emulator display
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime-evidence
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+          export NRO="nros/pinned-drawotag-switch.nro"
+          export SHOT="runtime-evidence/observer.png"
+          export SHOT_AFTER="runtime-evidence/observer-after.png"
+          export LOG="runtime-evidence/observer-nexium.log"
+          timeout --kill-after=5s 65s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
+            set -euo pipefail
+            "$NEXIUM_BIN" "$NRO" >"$LOG" 2>&1 &
+            pid=$!
+            # NeXium sometimes needs longer than a fixed 20s to display
+            # the guest frame. Wait for our actual rendered red corner,
+            # not merely an emulator window or a nonblack screenshot.
+            ready=0
+            sleep 10
+            for attempt in $(seq 1 20); do
+              if ! kill -0 "$pid" 2>/dev/null; then
+                echo "NeXium exited before observer frame was ready" >&2
+                tail -n 80 "$LOG" >&2 || true
+                exit 1
+              fi
+              window="$(xdotool search --onlyvisible --name "NeXium" 2>/dev/null | tail -n 1 || true)"
+              if [ -n "$window" ]; then
+                import -window "$window" "$SHOT"
+                if python3 -c "import sys; from PIL import Image; p=Image.open(sys.argv[1]).convert(\"RGB\").getpixel((250,90)); sys.exit(0 if p[0]>=220 and p[1]<=35 and p[2]<=35 else 1)" "$SHOT"; then
+                  echo "Observer RGB frame ready on poll $attempt"
+                  ready=1
+                  break
+                fi
+              fi
+              sleep 2
+            done
+            if [ "$ready" -ne 1 ]; then
+              echo "Observer frame never became ready" >&2
+              tail -n 80 "$LOG" >&2 || true
+              exit 1
+            fi
+            sleep 2
+            import -window "$window" "$SHOT_AFTER"
+            test -s "$SHOT_AFTER"
+            kill -INT "$pid" 2>/dev/null || true
+            sleep 1
+            kill -KILL "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+          '
+          echo "NeXium runtime diagnostics (last 80 lines):"
+          tail -n 80 "$LOG" || true
+          python3 - "$SHOT" "$SHOT_AFTER" <<'PY'
+          from PIL import Image
+          import sys
+          im = Image.open(sys.argv[1]).convert("RGB")
+          print("NeXium screenshot:", im.size)
+          if im.size != (1280, 720):
+              raise SystemExit("Unexpected emulator screenshot size")
+          after = Image.open(sys.argv[2]).convert("RGB")
+          if after.size != im.size:
+              raise SystemExit("Frame dimensions changed unexpectedly")
+          sample = im.crop((320, 100, 960, 620))
+          distinct = len(set(sample.resize((80, 65)).getdata()))
+          print("Observer screenshot distinct sampled RGB colors:", distinct)
+          if distinct < 5:
+              raise SystemExit("Expected five original-raster tile colors missing")
+          # Corner colors check bottom-up orientation and exact RGB channel order.
+          # Source 12x9 fills a centered 926x720 viewport in 1280x720.
+          markers = (
+              ("top-left red", (255, 0, 0), (250, 90)),
+              ("top-right green", (0, 255, 0), (1030, 90)),
+              ("bottom-left blue", (0, 0, 255), (250, 630)),
+              ("bottom-right yellow", (255, 255, 0), (1030, 630)),
+          )
+          for name, expected, (x, y) in markers:
+              observed = im.getpixel((x, y))
+              print(f"Observer marker {name}: expected {expected}, observed {observed}")
+              if max(abs(a - b) for a, b in zip(observed, expected)) > 36:
+                  raise SystemExit(f"RGB order or frame orientation mismatch: {name}")
+          # The center pixel is deliberately dynamic: R=12->99, G=12->99,
+          # B=frame*3 modulo 256. Verify the intended channel changes,
+          # not merely a window animation elsewhere in the screenshot.
+          first_center = im.getpixel((640, 360))
+          second_center = after.getpixel((640, 360))
+          print("Observer RGB center first/after:", first_center, second_center)
+          for observed in (first_center, second_center):
+              if abs(observed[0] - 99) > 20 or abs(observed[1] - 99) > 20:
+                  raise SystemExit("Center RGB gradient channels are incorrect")
+          if abs(second_center[2] - first_center[2]) <= 15:
+              raise SystemExit("Expected moving blue channel did not update")
+          # The four corner markers must stay fixed across time.
+          for name, expected, (x, y) in markers:
+              observed = after.getpixel((x, y))
+              if max(abs(a - b) for a, b in zip(observed, expected)) > 36:
+                  raise SystemExit(f"Corner marker changed after frame update: {name}")
+          previous = im.crop((320, 100, 960, 620)).resize((160, 130))
+          following = after.crop((320, 100, 960, 620)).resize((160, 130))
+          changed = sum(max(abs(a[k] - b[k]) for k in range(3)) > 15
+                        for a, b in zip(previous.getdata(), following.getdata()))
+          print("Observer changed sample pixels across frames:", changed)
+          if changed < 300:
+              raise SystemExit("Observer image appears static between captures")
+          PY
+      - name: Upload runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pinned-drawotag-nexium-evidence
+          path: runtime-evidence/
+          if-no-files-found: ignore
+
+          "$DEVKITA64/bin/aarch64-none-elf-nm" --defined-only \
+            build/upstream-cross/raster-switch.o | grep ' PC_GpuVram
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$DEVKITPRO/portlibs/switch/bin:$PATH"
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" -O2 -flto -ffunction-sections -fdata-sections -Isource \
+            -I"$DEVKITPRO/libnx/include" \
+            $(sdl2-config --cflags) \
+            -specs="$DEVKITPRO/libnx/switch.specs" -Wl,--gc-sections -pie \
+            probes/pinned_pc_gpu_switch_smoke.c source/switch_sdl2_observer_backend.c \
+            source/switch_rgb24_presenter.c source/frame_conversion.c \
+            source/switch_frame_bridge.c source/switch_completed_frame.c \
+            source/switch_present_hook.c source/switch_upstream_observer.c \
+            build/upstream-cross/pinned_gpu_switch.o \
+            -o build/upstream-cross/pinned-drawotag-switch.elf \
+            $(sdl2-config --libs) -lGLESv2 -L"$DEVKITPRO/libnx/lib" -lnx -lm
+          "$DEVKITPRO/tools/bin/nacptool" --create "Original DrawOTag Raster Probe" "Vandal Hearts Switch Remaster" "0.1.0" build/upstream-cross/pinned-drawotag-switch.nacp
+          "$DEVKITPRO/tools/bin/elf2nro" build/upstream-cross/pinned-drawotag-switch.elf build/upstream-cross/pinned-drawotag-switch.nro --nacp=build/upstream-cross/pinned-drawotag-switch.nacp
+          python3 tests/check_nro.py build/upstream-cross/pinned-drawotag-switch.nro
+      - name: Upload pinned GPU NRO
+        uses: actions/upload-artifact@v4
+        with:
+          name: pinned-original-drawotag-switch-nro
+          path: build/upstream-cross/pinned-drawotag-switch.nro
+          if-no-files-found: error
+      - name: Upload GPU cross-compile evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pinned-original-drawotag-switch-object-audit
+          path: build/upstream-cross/
+          if-no-files-found: error
+
+  runtime:
+    name: Run original pinned PC_GpuPresent NRO in NeXium
+    runs-on: ubuntu-26.04
+    needs: cross-compile
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: pinned-original-drawotag-switch-nro
+          path: nros
+      - name: Install emulator runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl jq xvfb xauth xdotool imagemagick python3-pil \
+            libgtk-3-0t64 libasound2t64 libudev1 libxkbcommon0 libxkbcommon-x11-0 \
+            libx11-xcb1 libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
+            libvulkan1 mesa-vulkan-drivers
+      - name: Download NeXium nightly
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_json="$(curl -fsSL --retry 3 --retry-all-errors -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/nexium-emu/nexium-nightly/releases/tags/nightly)"
+          asset_url="$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
+          test -n "$asset_url"
+          curl -fL --retry 3 --retry-all-errors "$asset_url" -o /tmp/nexium-linux.tar.gz
+          mkdir -p /tmp/nexium
+          tar -xzf /tmp/nexium-linux.tar.gz -C /tmp/nexium
+          emu_bin="$(find /tmp/nexium -type f -executable \( -name 'nexium-gui' -o -name 'nexium' \) -print -quit)"
+          test -n "$emu_bin"
+          echo "NEXIUM_BIN=$emu_bin" >> "$GITHUB_ENV"
+      - name: Observe RGB24 frame on emulator display
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime-evidence
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+          export NRO="nros/pinned-drawotag-switch.nro"
+          export SHOT="runtime-evidence/observer.png"
+          export SHOT_AFTER="runtime-evidence/observer-after.png"
+          export LOG="runtime-evidence/observer-nexium.log"
+          timeout --kill-after=5s 65s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
+            set -euo pipefail
+            "$NEXIUM_BIN" "$NRO" >"$LOG" 2>&1 &
+            pid=$!
+            # NeXium sometimes needs longer than a fixed 20s to display
+            # the guest frame. Wait for our actual rendered red corner,
+            # not merely an emulator window or a nonblack screenshot.
+            ready=0
+            sleep 10
+            for attempt in $(seq 1 20); do
+              if ! kill -0 "$pid" 2>/dev/null; then
+                echo "NeXium exited before observer frame was ready" >&2
+                tail -n 80 "$LOG" >&2 || true
+                exit 1
+              fi
+              window="$(xdotool search --onlyvisible --name "NeXium" 2>/dev/null | tail -n 1 || true)"
+              if [ -n "$window" ]; then
+                import -window "$window" "$SHOT"
+                if python3 -c "import sys; from PIL import Image; p=Image.open(sys.argv[1]).convert(\"RGB\").getpixel((250,90)); sys.exit(0 if p[0]>=220 and p[1]<=35 and p[2]<=35 else 1)" "$SHOT"; then
+                  echo "Observer RGB frame ready on poll $attempt"
+                  ready=1
+                  break
+                fi
+              fi
+              sleep 2
+            done
+            if [ "$ready" -ne 1 ]; then
+              echo "Observer frame never became ready" >&2
+              tail -n 80 "$LOG" >&2 || true
+              exit 1
+            fi
+            sleep 2
+            import -window "$window" "$SHOT_AFTER"
+            test -s "$SHOT_AFTER"
+            kill -INT "$pid" 2>/dev/null || true
+            sleep 1
+            kill -KILL "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+          '
+          echo "NeXium runtime diagnostics (last 80 lines):"
+          tail -n 80 "$LOG" || true
+          python3 - "$SHOT" "$SHOT_AFTER" <<'PY'
+          from PIL import Image
+          import sys
+          im = Image.open(sys.argv[1]).convert("RGB")
+          print("NeXium screenshot:", im.size)
+          if im.size != (1280, 720):
+              raise SystemExit("Unexpected emulator screenshot size")
+          after = Image.open(sys.argv[2]).convert("RGB")
+          if after.size != im.size:
+              raise SystemExit("Frame dimensions changed unexpectedly")
+          sample = im.crop((320, 100, 960, 620))
+          distinct = len(set(sample.resize((80, 65)).getdata()))
+          print("Observer screenshot distinct sampled RGB colors:", distinct)
+          if distinct < 40:
+              raise SystemExit("No sufficiently varied RGB24 frame detected")
+          # Corner colors check bottom-up orientation and exact RGB channel order.
+          # Source 12x9 fills a centered 926x720 viewport in 1280x720.
+          markers = (
+              ("top-left red", (255, 0, 0), (250, 90)),
+              ("top-right green", (0, 255, 0), (1030, 90)),
+              ("bottom-left blue", (0, 0, 255), (250, 630)),
+              ("bottom-right yellow", (255, 255, 0), (1030, 630)),
+          )
+          for name, expected, (x, y) in markers:
+              observed = im.getpixel((x, y))
+              print(f"Observer marker {name}: expected {expected}, observed {observed}")
+              if max(abs(a - b) for a, b in zip(observed, expected)) > 36:
+                  raise SystemExit(f"RGB order or frame orientation mismatch: {name}")
+          # The center pixel is deliberately dynamic: R=12->99, G=12->99,
+          # B=frame*3 modulo 256. Verify the intended channel changes,
+          # not merely a window animation elsewhere in the screenshot.
+          first_center = im.getpixel((640, 360))
+          second_center = after.getpixel((640, 360))
+          print("Observer RGB center first/after:", first_center, second_center)
+          for observed in (first_center, second_center):
+              if abs(observed[0] - 99) > 20 or abs(observed[1] - 99) > 20:
+                  raise SystemExit("Center RGB gradient channels are incorrect")
+          if abs(second_center[2] - first_center[2]) <= 15:
+              raise SystemExit("Expected moving blue channel did not update")
+          # The four corner markers must stay fixed across time.
+          for name, expected, (x, y) in markers:
+              observed = after.getpixel((x, y))
+              if max(abs(a - b) for a, b in zip(observed, expected)) > 36:
+                  raise SystemExit(f"Corner marker changed after frame update: {name}")
+          previous = im.crop((320, 100, 960, 620)).resize((160, 130))
+          following = after.crop((320, 100, 960, 620)).resize((160, 130))
+          changed = sum(max(abs(a[k] - b[k]) for k in range(3)) > 15
+                        for a, b in zip(previous.getdata(), following.getdata()))
+          print("Observer changed sample pixels across frames:", changed)
+          if changed < 300:
+              raise SystemExit("Observer image appears static between captures")
+          PY
+      - name: Upload runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pinned-drawotag-nexium-evidence
+          path: runtime-evidence/
+          if-no-files-found: ignore
+
+      - name: Link original DrawOTag, rasterizer and pinned presenter into NRO
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$DEVKITPRO/portlibs/switch/bin:$PATH"
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" -O2 -flto -ffunction-sections -fdata-sections -Isource \
+            -I"$DEVKITPRO/libnx/include" \
+            $(sdl2-config --cflags) \
+            -specs="$DEVKITPRO/libnx/switch.specs" -Wl,--gc-sections -pie \
+            probes/pinned_pc_gpu_switch_smoke.c source/switch_sdl2_observer_backend.c \
+            source/switch_rgb24_presenter.c source/frame_conversion.c \
+            source/switch_frame_bridge.c source/switch_completed_frame.c \
+            source/switch_present_hook.c source/switch_upstream_observer.c \
+            build/upstream-cross/pinned_gpu_switch.o \
+            -o build/upstream-cross/pinned-drawotag-switch.elf \
+            $(sdl2-config --libs) -lGLESv2 -L"$DEVKITPRO/libnx/lib" -lnx -lm
+          "$DEVKITPRO/tools/bin/nacptool" --create "Original DrawOTag Raster Probe" "Vandal Hearts Switch Remaster" "0.1.0" build/upstream-cross/pinned-drawotag-switch.nacp
+          "$DEVKITPRO/tools/bin/elf2nro" build/upstream-cross/pinned-drawotag-switch.elf build/upstream-cross/pinned-drawotag-switch.nro --nacp=build/upstream-cross/pinned-drawotag-switch.nacp
+          python3 tests/check_nro.py build/upstream-cross/pinned-drawotag-switch.nro
+      - name: Upload pinned GPU NRO
+        uses: actions/upload-artifact@v4
+        with:
+          name: pinned-original-drawotag-switch-nro
+          path: build/upstream-cross/pinned-drawotag-switch.nro
+          if-no-files-found: error
+      - name: Upload GPU cross-compile evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pinned-original-drawotag-switch-object-audit
+          path: build/upstream-cross/
+          if-no-files-found: error
+
+  runtime:
+    name: Run original pinned PC_GpuPresent NRO in NeXium
+    runs-on: ubuntu-26.04
+    needs: cross-compile
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: pinned-original-drawotag-switch-nro
+          path: nros
+      - name: Install emulator runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl jq xvfb xauth xdotool imagemagick python3-pil \
+            libgtk-3-0t64 libasound2t64 libudev1 libxkbcommon0 libxkbcommon-x11-0 \
+            libx11-xcb1 libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
+            libvulkan1 mesa-vulkan-drivers
+      - name: Download NeXium nightly
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_json="$(curl -fsSL --retry 3 --retry-all-errors -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/nexium-emu/nexium-nightly/releases/tags/nightly)"
+          asset_url="$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
+          test -n "$asset_url"
+          curl -fL --retry 3 --retry-all-errors "$asset_url" -o /tmp/nexium-linux.tar.gz
+          mkdir -p /tmp/nexium
+          tar -xzf /tmp/nexium-linux.tar.gz -C /tmp/nexium
+          emu_bin="$(find /tmp/nexium -type f -executable \( -name 'nexium-gui' -o -name 'nexium' \) -print -quit)"
+          test -n "$emu_bin"
+          echo "NEXIUM_BIN=$emu_bin" >> "$GITHUB_ENV"
+      - name: Observe RGB24 frame on emulator display
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime-evidence
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+          export NRO="nros/pinned-drawotag-switch.nro"
+          export SHOT="runtime-evidence/observer.png"
+          export SHOT_AFTER="runtime-evidence/observer-after.png"
+          export LOG="runtime-evidence/observer-nexium.log"
+          timeout --kill-after=5s 65s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
+            set -euo pipefail
+            "$NEXIUM_BIN" "$NRO" >"$LOG" 2>&1 &
+            pid=$!
+            # NeXium sometimes needs longer than a fixed 20s to display
+            # the guest frame. Wait for our actual rendered red corner,
+            # not merely an emulator window or a nonblack screenshot.
+            ready=0
+            sleep 10
+            for attempt in $(seq 1 20); do
+              if ! kill -0 "$pid" 2>/dev/null; then
+                echo "NeXium exited before observer frame was ready" >&2
+                tail -n 80 "$LOG" >&2 || true
+                exit 1
+              fi
+              window="$(xdotool search --onlyvisible --name "NeXium" 2>/dev/null | tail -n 1 || true)"
+              if [ -n "$window" ]; then
+                import -window "$window" "$SHOT"
+                if python3 -c "import sys; from PIL import Image; p=Image.open(sys.argv[1]).convert(\"RGB\").getpixel((250,90)); sys.exit(0 if p[0]>=220 and p[1]<=35 and p[2]<=35 else 1)" "$SHOT"; then
+                  echo "Observer RGB frame ready on poll $attempt"
+                  ready=1
+                  break
+                fi
+              fi
+              sleep 2
+            done
+            if [ "$ready" -ne 1 ]; then
+              echo "Observer frame never became ready" >&2
+              tail -n 80 "$LOG" >&2 || true
+              exit 1
+            fi
+            sleep 2
+            import -window "$window" "$SHOT_AFTER"
+            test -s "$SHOT_AFTER"
+            kill -INT "$pid" 2>/dev/null || true
+            sleep 1
+            kill -KILL "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+          '
+          echo "NeXium runtime diagnostics (last 80 lines):"
+          tail -n 80 "$LOG" || true
+          python3 - "$SHOT" "$SHOT_AFTER" <<'PY'
+          from PIL import Image
+          import sys
+          im = Image.open(sys.argv[1]).convert("RGB")
+          print("NeXium screenshot:", im.size)
+          if im.size != (1280, 720):
+              raise SystemExit("Unexpected emulator screenshot size")
+          after = Image.open(sys.argv[2]).convert("RGB")
+          if after.size != im.size:
+              raise SystemExit("Frame dimensions changed unexpectedly")
+          sample = im.crop((320, 100, 960, 620))
+          distinct = len(set(sample.resize((80, 65)).getdata()))
+          print("Observer screenshot distinct sampled RGB colors:", distinct)
+          if distinct < 40:
+              raise SystemExit("No sufficiently varied RGB24 frame detected")
+          # Corner colors check bottom-up orientation and exact RGB channel order.
+          # Source 12x9 fills a centered 926x720 viewport in 1280x720.
+          markers = (
+              ("top-left red", (255, 0, 0), (250, 90)),
+              ("top-right green", (0, 255, 0), (1030, 90)),
+              ("bottom-left blue", (0, 0, 255), (250, 630)),
+              ("bottom-right yellow", (255, 255, 0), (1030, 630)),
+          )
+          for name, expected, (x, y) in markers:
+              observed = im.getpixel((x, y))
+              print(f"Observer marker {name}: expected {expected}, observed {observed}")
+              if max(abs(a - b) for a, b in zip(observed, expected)) > 36:
+                  raise SystemExit(f"RGB order or frame orientation mismatch: {name}")
+          # The center pixel is deliberately dynamic: R=12->99, G=12->99,
+          # B=frame*3 modulo 256. Verify the intended channel changes,
+          # not merely a window animation elsewhere in the screenshot.
+          first_center = im.getpixel((640, 360))
+          second_center = after.getpixel((640, 360))
+          print("Observer RGB center first/after:", first_center, second_center)
+          for observed in (first_center, second_center):
+              if abs(observed[0] - 99) > 20 or abs(observed[1] - 99) > 20:
+                  raise SystemExit("Center RGB gradient channels are incorrect")
+          if abs(second_center[2] - first_center[2]) <= 15:
+              raise SystemExit("Expected moving blue channel did not update")
+          # The four corner markers must stay fixed across time.
+          for name, expected, (x, y) in markers:
+              observed = after.getpixel((x, y))
+              if max(abs(a - b) for a, b in zip(observed, expected)) > 36:
+                  raise SystemExit(f"Corner marker changed after frame update: {name}")
+          previous = im.crop((320, 100, 960, 620)).resize((160, 130))
+          following = after.crop((320, 100, 960, 620)).resize((160, 130))
+          changed = sum(max(abs(a[k] - b[k]) for k in range(3)) > 15
+                        for a, b in zip(previous.getdata(), following.getdata()))
+          print("Observer changed sample pixels across frames:", changed)
+          if changed < 300:
+              raise SystemExit("Observer image appears static between captures")
+          PY
+      - name: Upload runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pinned-drawotag-nexium-evidence
+          path: runtime-evidence/
+          if-no-files-found: ignore
