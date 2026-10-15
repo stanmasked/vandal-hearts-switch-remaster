@@ -148,14 +148,22 @@ def check_geometry(image_path):
     frame = Image.open(image_path).convert("RGB")
     if frame.size != (1280, 720):
         raise ValueError("unexpected private geometry screenshot size")
-    border = frame.getpixel((210, 90))
+    # Actual pinned GTE RTPT/RTPS perspective (not old orthographic
+    # projection): with pitch -512, H=14, Z=96, the first face projects
+    # TL=(0,1), TR=(6,1), BL=(2,6), BR=(6,6) in native 12x9 pixels.
+    # The formerly checked (210,90) now LIES INSIDE the upper quad.
+    border = frame.getpixel((50, 40))
     if max(border) > 45:
-        raise ValueError("private geometry border is not black")
+        raise ValueError("GTE geometry upper border is not black")
     probes = (
-        ("left top red", (400,205), (255,0,0)),
-        ("right top magenta", (880,205), (255,0,255)),
-        ("left bottom blue", (400,510), (0,0,255)),
-        ("right bottom cyan", (880,510), (0,255,255)),
+        ("left top red", (260,210), (255,0,0)),
+        ("right top magenta", (850,210), (255,0,255)),
+        ("left bottom blue", (330,400), (0,0,255)),
+        ("right bottom cyan", (850,400), (0,255,255)),
+        # Orthographic former left edge starts at x=2; the real GTE
+        # projection moves its top edge left to x=0, so only the GTE
+        # implementation can color this sample.
+        ("perspective-only red left edge", (120,205), (255,0,0)),
     )
     for title, (x,y), expected in probes:
         pixel = frame.getpixel((x,y))
