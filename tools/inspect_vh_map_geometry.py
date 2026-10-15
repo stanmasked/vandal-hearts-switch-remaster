@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 import struct
 
+from decode_vh_map_prs import decode_map_prs, MAX_COMPRESSED_BYTES
 from inspect_vh_map_texture_bank import (
     LAND_BYTES, MAP_COUNT, MAP_RECORD_BYTES, SLOT_COUNT,
 )
@@ -107,16 +108,29 @@ def attach_land_uv_faces(tile, land, map_number=11):
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("unpacked_models", type=Path,
-                   help="EXACTLY 28x12 MapTileModel records; NOT compressed PRS")
+                   help="28x12 raw MapTileModel data; or compressed PRS with --prs")
+    p.add_argument("--prs", action="store_true",
+                   help="decode bounded original PRS before inspecting first 28x12 tiles")
     p.add_argument("--x", type=int, required=True)
     p.add_argument("--z", type=int, required=True)
     p.add_argument("--land", type=Path, help="optional original LAND_DT.DAT")
     args = p.parse_args(argv)
-    if args.unpacked_models.stat().st_size != MAP_11_BYTES:
-        p.error(f"expected exactly {MAP_11_BYTES} unpacked map model bytes; "
-                "M_MAP02.PRS must be decompressed separately")
-    data = args.unpacked_models.read_bytes()
+    file_size = args.unpacked_models.stat().st_size
+    if args.prs:
+        if file_size > MAX_COMPRESSED_BYTES + 4:
+            p.error("compressed PRS input exceeds byte limit")
+    elif file_size != MAP_11_BYTES:
+        p.error(f"expected exactly {MAP_11_BYTES} already-unpacked model bytes")
     try:
+        raw = args.unpacked_models.read_bytes()
+        if args.prs:
+            decoded = decode_map_prs(raw, min_output=MAP_11_BYTES)
+            # Source LoadMap indexes a 28x12 map-11 tile area. A PRS
+            # stream may contain additional original backing rows; only
+            # the verified prefix is passed to our exact 304-byte parser.
+            data = decoded[:MAP_11_BYTES]
+        else:
+            data = raw
         result = parse_tile(data, args.x, args.z)
         if args.land:
             if args.land.stat().st_size != LAND_BYTES:
