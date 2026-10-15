@@ -86,6 +86,24 @@ class CheckMap02RawTests(unittest.TestCase):
             errors = check_raw_records(report)
             self.assertIn("LAND_DT block base offset expected 0", errors)
 
+    def test_raw_hex_mismatch_detected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "map02.bin"
+            path.write_bytes(bytes(BLOCK_SIZE))
+            report = inspect_land_dt(path, single_block=True)
+            report["records"][0]["raw_hex"] = "01 00 00 00"
+            self.assertTrue(any("raw_hex does not match bytes" in e for e in
+                                check_raw_records(report)))
+
+    def test_invalid_raw_byte_type_detected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "map02.bin"
+            path.write_bytes(bytes(BLOCK_SIZE))
+            report = inspect_land_dt(path, single_block=True)
+            report["records"][1]["bytes"] = [False, 0, 0, 0]
+            self.assertTrue(any("invalid raw texture bytes" in e for e in
+                                check_raw_records(report)))
+
     def test_rejects_wrong_map(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "land.bin"
