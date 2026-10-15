@@ -18,6 +18,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.inspect_ps1_seq import MAX_SEQ_BYTES, parse_seq
+from tools.decode_spu_adpcm import decode_spu_blocks
+from tools.resolve_vab_note import resolve_note
+from tools.spu_voice_lifetime import SpuVoiceSpec
 from tools.render_vab_chord import render_vab_chord
 from tools.repeat_ps1_seq import expand_seq_repeats
 from tools.seq_to_chord_schedule import seq_to_schedule
@@ -31,12 +34,43 @@ def render_ps1_seq(
     seq_right: int = 127,
     repeat_count: int = 1,
     max_frames: int | None = None,
+    voice_lifetime: str = "fixed",
 ) -> tuple[bytes, dict[str, object]]:
     original = parse_seq(seq)
     parsed = expand_seq_repeats(
         original, repeat_count=repeat_count, max_frames=max_frames,
     )
-    schedule = seq_to_schedule(parsed, release_frames=release_frames)
+    if voice_lifetime not in ("fixed", "adsr"):
+        raise ValueError("voice_lifetime must be fixed or adsr")
+    spec_cache: dict[tuple[int, int], SpuVoiceSpec] = {}
+    sample_cache: dict[tuple[int, int], object] = {}
+
+    def find_voice_spec(program: int, note: int) -> SpuVoiceSpec:
+        key = (program, note)
+        if key not in spec_cache:
+            tone = resolve_note(vh, program=program, note=note, vb=vb)
+            sample_key = (tone["adpcm_offset_in_vb"], tone["adpcm_size_bytes"])
+            if sample_key not in sample_cache:
+                with vb.open("rb") as stream:
+                    stream.seek(sample_key[0])
+                    raw = stream.read(sample_key[1])
+                if len(raw) != sample_key[1]:
+                    raise ValueError("local VB sample truncated during ADSR inspection")
+                sample_cache[sample_key] = decode_spu_blocks(raw)
+            decoded = sample_cache[sample_key]
+            spec_cache[key] = SpuVoiceSpec(
+                adsr1=tone["adsr1"], adsr2=tone["adsr2"],
+                pcm_frames=decoded.frames,
+                pitch_step=tone["pitch_step_approx"],
+                loop_start=decoded.loop_start_frame,
+                loop_end=decoded.loop_end_frame,
+            )
+        return spec_cache[key]
+
+    schedule = seq_to_schedule(
+        parsed, release_frames=release_frames,
+        voice_spec_for_note=find_voice_spec if voice_lifetime == "adsr" else None,
+    )
     wav, report = render_vab_chord(
         vh, vb, schedule["voices"], interpolation=interpolation,
         seq_left=seq_left, seq_right=seq_right,
@@ -49,6 +83,7 @@ def render_ps1_seq(
     ]
     report["seq_events"] = len(parsed["events"])
     report["seq_end_frame"] = parsed["total_frames"]
+    report["voice_lifetime_model"] = voice_lifetime
     report["repeat_count_requested"] = repeat_count
     report["repeat_cycles_completed"] = parsed["cycles_completed"]
     report["repeat_window_stop"] = parsed["stopped_by_window"]
@@ -75,6 +110,9 @@ def main() -> int:
                         help="44100 Hz frame limit, mandatory for infinite repeats")
     parser.add_argument("--interpolation", choices=("gaussian", "nearest"),
                         default="gaussian")
+    parser.add_argument("--voice-lifetime", choices=("fixed", "adsr"),
+                        default="fixed",
+                        help="fixed tail (legacy) or actual SPU ADSR/PCM liveness")
     parser.add_argument("--seq-left", type=int, default=127)
     parser.add_argument("--seq-right", type=int, default=127)
     args = parser.parse_args()
@@ -91,6 +129,7 @@ def main() -> int:
             interpolation=args.interpolation,
             seq_left=args.seq_left, seq_right=args.seq_right,
             repeat_count=args.repeat_count, max_frames=args.max_frames,
+            voice_lifetime=args.voice_lifetime,
         )
         with args.output.open("xb") as destination:
             destination.write(wav)
