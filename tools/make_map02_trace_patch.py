@@ -78,6 +78,26 @@ static void VH_Map02TraceDraw(const MapTileModel *tile, int face, int gfx,
           (unsigned)poly->clut, (unsigned)poly->tpage, path);
 }
 
+/* A tile visit is logged even when faceCt == 0 and the face loop never runs. */
+static void VH_Map02TraceVisit(const MapTileModel *tile, const char *path) {
+   int z, x, count, gfx;
+   if (gState.mapNum != 11) return;
+   if (tile == &gMapRowPointers[8][19]) {
+      z = 8;
+      x = 19;
+   } else if (tile == &gMapRowPointers[11][11]) {
+      z = 11;
+      x = 11;
+   } else {
+      return;
+   }
+   count = tile->faceCt;
+   gfx = count ? tile->gfx[0] : 0;
+   printf("{\"z\":%d,\"x\":%d,\"face\":0,\"stage\":\"visit\","
+          "\"gfx\":%d,\"frame\":%u,\"path\":\"%s\",\"face_count\":%d}\n",
+          z, x, gfx, (unsigned)gState.frameCounter, path, count);
+}
+
 /* Explain why a target face was considered but not submitted to AddPrim. */
 static void VH_Map02TraceSkip(const MapTileModel *tile, int face, int gfx,
                               const char *path, const char *reason) {
@@ -116,7 +136,108 @@ static void VH_Map02TraceSkip(const MapTileModel *tile, int face, int gfx,
         if start < 0 or end < 0:
             raise ValueError(f"cannot locate {name} function bounds")
         body = source[start:end]
-        expr = re.compile(r'(?m)^([ \t]*)AddPrim\(ot \+ OT_SIZE - otz, poly\);$')
+        # Before the face loop, log that the field renderer reached the tile,
+        # including a face count of zero that would otherwise emit no events.
+        visit_anchor = "   poly = &gGraphicsPtr->quads[gQuadIndex];"
+        if body.count(visit_anchor) != 1:
+            raise ValueError(f"{name}: expected one renderer entry anchor")
+        visit_hook = (
+            "#if defined(PC_FEAT) && defined(VH_TRACE_MAP02)\n"
+            f'   VH_Map02TraceVisit(tileModel, "{path}");\n'
+            "#endif\n"
+        )
+        body = body.replace(visit_anchor, visit_hook + visit_anchor, 1)
+        expr = re.compile(r'(?m)^([ \t]*)AddPrim\(ot \+ OT_SIZE - otz, poly\);
+        matches = list(expr.finditer(body))
+        if len(matches) != 1:
+            raise ValueError(f"{name}: expected one AddPrim, found {len(matches)}")
+        match = matches[0]
+        indent = match.group(1)
+        call = (
+            f"{indent}#if defined(PC_FEAT) && defined(VH_TRACE_MAP02)\n"
+            f'{indent}VH_Map02TraceDraw(tileModel, faceIdx, gfx, poly, "{path}");\n'
+            f"{indent}#endif\n"
+        )
+        body = body[:match.start()] + call + body[match.start():]
+
+        # Normal/overhead paths reject zero-texture faces before projection.
+        if name != "RenderEdgeMapTile":
+            null_anchor = "      if (gfx != GFX_NULL) {"
+            if body.count(null_anchor) != 1:
+                raise ValueError(f"{name}: expected exactly one GFX_NULL guard")
+            null_hook = (
+                "      #if defined(PC_FEAT) && defined(VH_TRACE_MAP02)\n"
+                f'      if (gfx == GFX_NULL) VH_Map02TraceSkip(tileModel, faceIdx, gfx, "{path}", "null_gfx");\n'
+                "      #endif\n"
+            )
+            body = body.replace(null_anchor, null_hook + null_anchor, 1)
+
+        # Each path computes opz before the front-face test; distinguish culling.
+        stop_anchor = "         gte_stopz(&opz);" if name != "RenderEdgeMapTile" else "      gte_stopz(&opz);"
+        if body.count(stop_anchor) != 1:
+            raise ValueError(f"{name}: expected exactly one GTE depth test")
+        edge_gfx = "tileModel->gfx[faceIdx]" if name == "RenderEdgeMapTile" else "gfx"
+        stop_hook = (
+            "\n#if defined(PC_FEAT) && defined(VH_TRACE_MAP02)\n"
+            f'      if (opz <= 0) VH_Map02TraceSkip(tileModel, faceIdx, {edge_gfx}, "{path}", "backface");\n'
+            "#endif"
+        )
+        body = body.replace(stop_anchor, stop_anchor + stop_hook, 1)
+        source = source[:start] + body + source[end:]
+    return source
+
+
+def create_patch(loader: str, graphics: str) -> str:
+    updates = (
+        (LOADER_PATH, loader, instrument_loader(loader)),
+        (GRAPHICS_PATH, graphics, instrument_graphics(graphics)),
+    )
+    chunks = []
+    for path, old, new in updates:
+        chunks.extend(difflib.unified_diff(
+            old.splitlines(keepends=True), new.splitlines(keepends=True),
+            fromfile=f"a/{path}", tofile=f"b/{path}",
+        ))
+    return "".join(chunks)
+
+
+def git_text(upstream: Path, *args: str) -> str:
+    result = subprocess.run(
+        ["git", "-C", str(upstream), *args], capture_output=True,
+        text=True, check=True,
+    )
+    return result.stdout.strip()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("upstream", type=Path, help="local PC-port checkout at pinned revision")
+    parser.add_argument("--output", type=Path, required=True, help="output .patch file")
+    args = parser.parse_args()
+    root = args.upstream.resolve()
+    try:
+        sha = git_text(root, "rev-parse", "HEAD")
+        if sha != UPSTREAM_COMMIT:
+            raise ValueError(f"expected upstream commit {UPSTREAM_COMMIT}; got {sha}")
+        if git_text(root, "status", "--porcelain", "--", LOADER_PATH, GRAPHICS_PATH):
+            raise ValueError("upstream target files have uncommitted edits")
+        patch = create_patch(
+            (root / LOADER_PATH).read_text(encoding="utf-8"),
+            (root / GRAPHICS_PATH).read_text(encoding="utf-8"),
+        )
+        if not patch:
+            raise ValueError("empty patch")
+        with args.output.open("x", encoding="utf-8") as output:
+            output.write(patch)
+    except (OSError, ValueError, subprocess.CalledProcessError) as exc:
+        parser.error(str(exc))
+    print(f"Wrote optional instrumentation patch to {args.output}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+)
         matches = list(expr.finditer(body))
         if len(matches) != 1:
             raise ValueError(f"{name}: expected one AddPrim, found {len(matches)}")
