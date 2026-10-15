@@ -724,9 +724,12 @@ The exact US executable MD5 is
 `596bb082a2de5f1fe977dd3d7e160b03`. A localized
 disc's executable may boot at runtime while **failing the PC-port build-time
 data-generator MD5 guard**. Do not bypass that guard or substitute the
-`M_MAP02.DAT` variant to compensate. The KROM/BIOS check verifies the
-presence and minimal size of a source file, not the complete font
-generator's required content hash; the disc probe only confirms the
+`M_MAP02.DAT` variant to compensate. The KROM/BIOS check now validates the **exact 209-glyph US
+charset-2 SHA-256** required by the pinned upstream font generator. Both
+KROMDAT input and a 512 KiB user-owned BIOS image (charset at offset
+`0x66000`) are supported. Wrong-region data and arbitrary placeholder bytes
+are rejected before attempting a full build. The public-source CI checks
+that this expected digest still matches the pinned generator; the disc probe only confirms the
 raw-sector/ISO structure, not the title, region, or ownership. A successful
 preflight **does not prove** that the full PC-port compiles, runs, reaches
 map 11 or displays the bridge correctly.
