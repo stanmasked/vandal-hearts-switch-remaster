@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Recheck a saved local CD-XA audit against files without extracting or decoding.
+"""Recheck a saved local CD-XA audit against files without extraction; optional WAV regeneration verifies the PCM.
 
 The original raw BIN must be supplied explicitly. For previously compared
 WAVs, also supply the original reference file.
@@ -9,16 +9,19 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.compare_cdxa_wavs import compare_wavs, sha256_file
 from tools.analyze_cdxa_wav_quality import analyze_wav
 from tools.validate_cdxa_extraction import validate_extraction
+from tools.decode_cdxa_adpcm import decode_payload_file
 
 
 def verify_audit(audit_file: Path, source_bin: Path,
-                 reference_wav: Path | None = None) -> dict[str, object]:
+                 reference_wav: Path | None = None,
+                 redecode: bool = False) -> dict[str, object]:
     audit = json.loads(audit_file.read_text(encoding="utf-8"))
     if not isinstance(audit, dict):
         raise ValueError("audit must be a JSON object")
@@ -73,6 +76,15 @@ def verify_audit(audit_file: Path, source_bin: Path,
         raise ValueError("file/channel selection differs from saved audit")
     # File hashes alone do not authenticate an editable audit's verdict.
     # Re-derive it from the exact PCM comparison instead.
+    if redecode:
+        # Leave the original audit files intact; decoded output is temporary.
+        with tempfile.TemporaryDirectory(prefix="xa-audit-redecode-") as directory:
+            regenerated = Path(directory) / "regenerated.wav"
+            decoded = decode_payload_file(payload, regenerated, extracted_groups=True)
+            if decoded["frames"] != verified["pcm_frames"]:
+                raise ValueError("redecoded XA frame count differs from extraction report")
+            if not compare_wavs(regenerated, wav)["exact_match"]:
+                raise ValueError("saved WAV PCM differs from redecoded XA payload")
     if "comparison" in audit:
         if reference_wav is None:
             raise ValueError("reference WAV required to recheck saved comparison")
@@ -102,6 +114,7 @@ def verify_audit(audit_file: Path, source_bin: Path,
         "source_bin_sha256": expected["source_bin_sha256"][0],
         "decoded_wav_sha256": expected["decoded_wav_sha256"][0],
         "reference_comparison_rechecked": "comparison" in audit,
+        "payload_redecoded": redecode,
     }
 
 
@@ -110,9 +123,10 @@ def main() -> int:
     parser.add_argument("audit_file", type=Path)
     parser.add_argument("--source-bin", type=Path, required=True)
     parser.add_argument("--reference-wav", type=Path)
+    parser.add_argument("--redecode", action="store_true", help="verify WAV by redecoding payload into temporary storage")
     args = parser.parse_args()
     try:
-        result = verify_audit(args.audit_file, args.source_bin, args.reference_wav)
+        result = verify_audit(args.audit_file, args.source_bin, args.reference_wav, args.redecode)
     except (OSError, ValueError, json.JSONDecodeError) as error:
         parser.error(str(error))
     print(json.dumps(result, indent=2))
