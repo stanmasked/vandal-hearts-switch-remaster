@@ -9,6 +9,8 @@ on:
       - 'Makefile'
       - 'source/game_rules.h'
       - 'source/game_state.h'
+      - 'source/switch_rgb24_presenter.c'
+      - 'source/switch_rgb24_presenter.h'
       - 'tests/check_nro.py'
       - 'tests/check_sdl2_runtime_screenshot.py'
 
