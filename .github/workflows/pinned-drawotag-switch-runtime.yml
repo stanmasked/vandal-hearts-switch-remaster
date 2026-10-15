@@ -299,6 +299,20 @@ jobs:
                   print(f"Original FT4 direct {name}: {observed}")
                   if max(abs(a-b) for a,b in zip(observed, expected)) > 36:
                       raise SystemExit(f"Original 15bpp direct texture is incorrect: {name}")
+          # 0x0000 direct texel is transparent: it preserves the TILE's
+          # changing blue channel; adjacent nonzero cyan texel must render.
+          transparent_before = im.getpixel((370, 280))
+          transparent_after = after.getpixel((370, 280))
+          for pix in (transparent_before, transparent_after):
+              if abs(pix[0] - 99) > 20 or abs(pix[1] - 99) > 20:
+                  raise SystemExit(f"Zero texel failed to expose background: {pix}")
+          if abs(transparent_after[2] - transparent_before[2]) <= 15:
+              raise SystemExit("Zero texel does not expose changing background")
+          for frame_image in (im, after):
+              cyan = frame_image.getpixel((447, 280))
+              print("Original transparent FT4 cyan neighbour:", cyan)
+              if max(abs(a-b) for a,b in zip(cyan, (0,255,255))) > 36:
+                  raise SystemExit("Opaque neighbour of transparent texel not drawn")
           # The center pixel is deliberately dynamic: R=12->99, G=12->99,
           # B=frame*3 modulo 256. Verify the intended channel changes,
           # not merely a window animation elsewhere in the screenshot.
