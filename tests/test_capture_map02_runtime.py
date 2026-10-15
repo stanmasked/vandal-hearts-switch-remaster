@@ -159,6 +159,15 @@ class CaptureMap02RuntimeTests(unittest.TestCase):
                 capture(exe, trace_dir, base / "run")
             self.assertFalse((base / "run").exists())
 
+    def test_provenance_root_must_be_an_object(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            exe, trace_dir = fixture(base)
+            (trace_dir / "source_provenance.json").write_text("[]", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "must be a JSON object"):
+                capture(exe, trace_dir, base / "run")
+            self.assertFalse((base / "run").exists())
+
     def test_source_manifest_cannot_forge_pinned_match_flag(self):
         with tempfile.TemporaryDirectory() as folder:
             base = Path(folder)
