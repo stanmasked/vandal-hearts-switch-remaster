@@ -144,13 +144,17 @@ def parse_trace_text(text):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("trace", type=Path, help="JSON array of captured runtime observations")
+    parser.add_argument("--require-uniform-variant", action="store_true",
+                        help="fail if the two target faces are not uniformly PRS or DAT at both stages")
     args = parser.parse_args()
     try:
         result = evaluate_trace(parse_trace_text(args.trace.read_text(encoding="utf-8")))
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         parser.error(str(exc))
     print(json.dumps(result, indent=2))
-    return int(bool(result["errors"]))
+    uniform = (result["post_load_overall_variant"] in ("PRS", "DAT") and
+               result["post_load_overall_variant"] == result["draw_overall_variant"])
+    return int(bool(result["errors"]) or (args.require_uniform_variant and not uniform))
 
 
 if __name__ == "__main__":
