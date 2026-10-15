@@ -74,6 +74,22 @@ class RuntimeTraceTests(unittest.TestCase):
         self.assertTrue(any("duplicate draw observation" in e
                             for e in evaluate_trace(entries)["errors"]))
 
+    def test_metadata_drift_in_later_frame_detected(self):
+        entries = observations()
+        entries[2].update({"frame": 1, "u": 240, "clut": 35})
+        entries.append({"z": 8, "x": 19, "face": 0, "stage": "draw",
+                        "gfx": 641, "frame": 2, "u": 239, "clut": 35})
+        errors = evaluate_trace(entries)["errors"]
+        self.assertTrue(any("u changed across frames" in e for e in errors))
+
+    def test_invalid_metadata_in_later_frame_detected(self):
+        entries = observations()
+        entries[2].update({"frame": 1, "clut": 35})
+        entries.append({"z": 8, "x": 19, "face": 0, "stage": "draw",
+                        "gfx": 641, "frame": 2, "clut": False})
+        self.assertTrue(any("clut must be an integer" in e
+                            for e in evaluate_trace(entries)["errors"]))
+
     def test_json_lines_loader_output(self):
         entries = observations()
         payload = "\n".join(json.dumps(entry) for entry in entries) + "\n"
