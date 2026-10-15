@@ -371,3 +371,37 @@ page and selected local CLUT. **Not yet established:** use of authentic
 disc, a complete terrain mesh/map scene, lighting, actual game logic or
 hardware Nintendo Switch. No proprietary assets have entered GitHub
 source, CI artifacts or release builds.
+
+## Verified native private-SD four-quadrant UV + CLUT orientation (CI #38823499785)
+
+**Expanded GPU acceptance passed:** [GitHub Actions #38823499785](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38823499785)
+at code/workflow revision `6139d7a9a2bdc09655b4b4e37a9b8db034bdd12a`
+completed with **cross-compile SUCCESS, original synthetic raster
+NeXium SUCCESS, and isolated virtual-SD private map-preview NeXium
+SUCCESS**. Before NRO compilation, 56 Python tests passed (16 pinned
+DrawOTag, 15 standalone TIM, 13 map bank/CD Mode2, 5 private staging,
+4 four-quadrant synthetic SD fixture, 3 Python-to-C file bridge);
+separate C host file-loader checks also passed. Switch NRO0 structural
+validation succeeded.
+
+The updated asset-free private SD fixture at map #11, slot 241,
+UVWH=(240,192,15,15), local CLUT=35 distinguishes **four independent
+UV quadrants**: red BGR555 0x001f in upper left, green 0x03e0 in upper
+right, blue 0x7c00 in lower left and yellow 0x03ff in lower right.
+On both sides of the source-format → C loader → `LoadImage` →
+original `POLY_FT4/DrawOTag` chain, the 1280x720 NeXium capture
+checked exact interior pixels: (400,205)=(255,0,0),
+(880,205)=(0,255,0), (400,510)=(0,0,255),
+(880,510)=(255,255,0). The screenshot also requires a dark external
+border, eliminating a false-positive legacy scene. Explicit
+`tests/test_private_sd_nexium_fixture.py` reference checks protect
+little-endian PS1 4bpp row packing, source UV boundaries, fourth CLUT
+row, and the owner-only stager's file bytes. All previous STP/ABR,
+TIM, texture-window and baseline GPU regression checks remained green.
+
+This is stronger proof of **both U and V texture coordinate mapping
+and local CLUT row selection** than the earlier red/green-only smoke.
+These files are synthetic, **not authentic game data**. The first
+retail textured map fragment, full map geometry and any hardware Switch
+trial remain unverified. Complete details in
+`docs/ORIGINAL_MAP_TEXTURE_BANK.md` (commit `88d6872a`).
