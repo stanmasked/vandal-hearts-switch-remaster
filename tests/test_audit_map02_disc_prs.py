@@ -8,7 +8,7 @@ from pathlib import Path
 
 from tools.audit_map02_disc_prs import (
     START_SECTOR, SECTOR_COUNT, USER_BYTES, RAW_BYTES, SYNC,
-    audit_prs, read_sectors, unpack_prs,
+    audit_prs, read_sectors, unpack_prs, xa_edc,
 )
 from tools.compare_map02_variants import (
     EXPECTED_LENGTH, RECORD_SIZE, FACE_GFX_OFFSET, TARGET_RECORDS,
@@ -57,8 +57,10 @@ def write_fake_image(path: Path, payload: bytes, layout: str, bias: int = 0):
         for i in range(SECTOR_COUNT):
             chunk = padded[i * USER_BYTES:(i + 1) * USER_BYTES]
             if layout == "mode2-2352":
-                # Mode 2 Form 1; 280 bytes for EDC+ECC, uninterpreted here.
-                sector = SYNC + bytes(3) + b"\x02" + bytes(8) + chunk + bytes(280)
+                # Valid Mode2 Form1 EDC; P/Q ECC parity remains out of scope.
+                prefix = SYNC + bytes(3) + b"\x02" + bytes(8) + chunk
+                sector = (prefix + xa_edc(prefix[16:2072]).to_bytes(4, "little")
+                          + bytes(276))
             else:
                 sector = chunk
             assert len(sector) == sector_size
@@ -153,6 +155,47 @@ class AuditMap02DiscPRSTests(unittest.TestCase):
             self.assertTrue(audit_prs(read_sectors(image, "iso-2048", bias=150))
                             ["matches_prior_target_gfx"])
 
+    def test_xa_edc_known_crc_vector_and_corrupt_sector(self):
+        self.assertEqual(xa_edc(b"123456789"), 0x6EC2EDC4)
+        with tempfile.TemporaryDirectory() as folder:
+            file = Path(folder) / "valid.bin"
+            write_fake_image(file, self.prs, "mode2-2352")
+            self.assertTrue(audit_prs(read_sectors(file, "mode2-2352"))
+                            ["matches_prior_target_gfx"])
+            for offset in (24, 2071, 2072, 2075):
+                with self.subTest(offset=offset):
+                    with file.open("r+b") as handle:
+                        handle.seek(START_SECTOR * RAW_BYTES + offset)
+                        original = handle.read(1)
+                        handle.seek(START_SECTOR * RAW_BYTES + offset)
+                        handle.write(bytes((original[0] ^ 1,)))
+                    with self.assertRaisesRegex(ValueError, "EDC mismatch"):
+                        read_sectors(file, "mode2-2352")
+                    with file.open("r+b") as handle:
+                        handle.seek(START_SECTOR * RAW_BYTES + offset)
+                        handle.write(original)
+
+    def test_bad_edc_in_later_sector_is_not_ignored(self):
+        with tempfile.TemporaryDirectory() as folder:
+            image = Path(folder) / "later-sector.bin"
+            write_fake_image(image, self.prs, "mode2-2352")
+            with image.open("r+b") as handle:
+                handle.seek((START_SECTOR + 11) * RAW_BYTES + 24)
+                byte = handle.read(1)
+                handle.seek((START_SECTOR + 11) * RAW_BYTES + 24)
+                handle.write(bytes((byte[0] ^ 0x80,)))
+            with self.assertRaisesRegex(ValueError, "sector 11: Mode2 Form1 EDC mismatch"):
+                read_sectors(image, "mode2-2352")
+
+    def test_archived_dat_digest_is_required_for_strict_provenance(self):
+        decompressed = bytearray(unpack_prs(self.prs))
+        for record, local in zip(TARGET_RECORDS, (98, 150)):
+            decompressed[record * RECORD_SIZE + FACE_GFX_OFFSET] = local
+        report = audit_prs(self.prs, dat=bytes(decompressed))
+        self.assertTrue(report["dat_comparison"]["matches_prior_disc_audit"])
+        self.assertFalse(report["dat_comparison"]["matches_prior_dat_sha256"])
+        self.assertEqual(report["dat_comparison"]["dat_byte_count"], EXPECTED_LENGTH)
+
     def test_rejects_bad_raw_sector_headers_and_form2(self):
         for index, wrong in ((15, 1), (18, 32), (20, 1), (0, 99)):
             with self.subTest(index=index):
@@ -206,6 +249,7 @@ class AuditMap02DiscPRSTests(unittest.TestCase):
             self.assertEqual(report["sector_count"], 12)
             self.assertEqual(report["input_type"], "disc_image")
             self.assertEqual(report["sector_bias"], 0)
+            self.assertEqual(report["mode2_form1_edc_verified_sectors"], 12)
 
 
 if __name__ == "__main__":
