@@ -247,6 +247,32 @@ class LocalXaCheckTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "status contradicts"):
             verify_audit(mismatch_audit, self.source, wrong)
 
+    def test_recheck_rejects_modified_pcm_diagnostics(self):
+        directory = self.root / "pcm-diagnostics-recheck"
+        run_local_check(
+            self.source, directory, file_number=1, channel=0,
+            start_lba=1, sector_count=3,
+        )
+        audit_path = directory / "audit-result.json"
+        original = audit_path.read_bytes()
+        self.assertEqual(verify_audit(audit_path, self.source)["status"], "audit_files_verified")
+        for mutation in ("peak", "frames", "missing", "wrong_type"):
+            with self.subTest(mutation=mutation):
+                saved = json.loads(original)
+                if mutation == "peak":
+                    saved["pcm_signal_diagnostics"]["peak_abs_sample"][0] = 1
+                elif mutation == "frames":
+                    saved["pcm_signal_diagnostics"]["frames"] += 1
+                elif mutation == "missing":
+                    del saved["pcm_signal_diagnostics"]
+                else:
+                    saved["pcm_signal_diagnostics"] = "all good"
+                audit_path.write_text(json.dumps(saved), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "PCM signal diagnostics"):
+                    verify_audit(audit_path, self.source)
+        audit_path.write_bytes(original)
+        self.assertEqual(verify_audit(audit_path, self.source)["status"], "audit_files_verified")
+
     def test_saved_audit_rejects_tampered_lbas_frames_and_stream(self):
         directory = self.root / "metadata-audit"
         run_local_check(
