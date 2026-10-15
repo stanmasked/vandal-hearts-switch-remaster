@@ -69,6 +69,18 @@ def fixture(root: Path, mode="complete", modified=False, trace_mode="legacy"):
                           "path": "normal", "face_count": 4})
     if mode == "empty":
         events = []
+    if trace_mode == "full" and events:
+        # Full C renderer emits a visit before each face's first draw.
+        # Include frame and path to exercise strict capture validation.
+        events = [
+            events[0], events[1],
+            {"z": 8, "x": 19, "face": 0, "stage": "visit", "gfx": 641,
+             "frame": 8, "path": "normal", "face_count": 4},
+            {**events[2], "frame": 8, "path": "normal"},
+            {"z": 11, "x": 11, "face": 0, "stage": "visit", "gfx": 643,
+             "frame": 8, "path": "normal", "face_count": 4},
+            {**events[3], "frame": 8, "path": "normal"},
+        ]
     lines = ["booting pc-port", *(json.dumps(ev) for ev in events), "normal shutdown"]
     source = "#!/usr/bin/env python3\n" + "\n".join(
         ["import sys", f"print({chr(10).join(lines)!r})",
@@ -318,6 +330,20 @@ class CaptureMap02RuntimeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "changed since preparation"):
                 capture(exe, trace_dir, base / "run")
             self.assertFalse((base / "run").exists())
+
+    def test_full_capture_requires_visit_before_a_draw(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            exe, prepared = fixture(base, trace_mode="full")
+            report_dir = base / "successful"
+            self.assertEqual(capture(exe, prepared, report_dir), 0)
+            report = json.loads((report_dir / "capture_report.json").read_text())
+            self.assertEqual(report["trace_events"], 6)
+            self.assertEqual(report["analysis"]["errors"], [])
+            self.assertEqual(
+                [r["visit_draw_contexts_checked"] for r in report["analysis"]["observations"]],
+                [1, 1],
+            )
 
     def test_full_trace_generated_inputs_are_verified_before_game_launch(self):
         with tempfile.TemporaryDirectory() as folder:
