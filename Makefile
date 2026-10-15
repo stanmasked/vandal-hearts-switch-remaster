@@ -29,7 +29,7 @@ LDLIBS   := -L$(DEVKITPRO)/libnx/lib -lnx
 .PHONY: all clean test test-sanitize verify-nro sdl2-probe sdl2-gl-probe sdl2-texture-probe rgb24-texture-probe sdl2-audio-probe openal-probe
 all: $(BUILD)/$(TARGET).nro
 
-test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_rgb24_frame $(BUILD)/test_switch_presenter_layout $(BUILD)/test_ps1_memory_view $(BUILD)/test_map_buffer_gate $(BUILD)/test_map_decode_checked $(BUILD)/test_map_load_checked
+test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_rgb24_frame $(BUILD)/test_switch_presenter_layout $(BUILD)/test_ps1_memory_view $(BUILD)/test_map_buffer_gate $(BUILD)/test_map_decode_checked $(BUILD)/test_map_load_checked $(BUILD)/test_map_decode_reference
 	./$(BUILD)/test_game_rules
 	./$(BUILD)/test_software_renderer
 	./$(BUILD)/test_rgb24_frame
@@ -38,6 +38,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_rgb
 	./$(BUILD)/test_map_buffer_gate
 	./$(BUILD)/test_map_decode_checked
 	./$(BUILD)/test_map_load_checked
+	./$(BUILD)/test_map_decode_reference
 	python3 tests/test_restore_ps1_str.py
 	python3 tests/test_inspect_cdxa.py
 	python3 tests/test_extract_cdxa_payload.py
@@ -52,6 +53,7 @@ test-sanitize: | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_map_buffer_gate.c -o $(BUILD)/test_map_buffer_gate_sanitize
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_map_decode_checked.c -o $(BUILD)/test_map_decode_checked_sanitize
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_map_load_checked.c -o $(BUILD)/test_map_load_checked_sanitize
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_map_decode_reference.c -o $(BUILD)/test_map_decode_reference_sanitize
 	./$(BUILD)/test_game_rules_sanitize
 	./$(BUILD)/test_software_renderer_sanitize
 	./$(BUILD)/test_rgb24_frame_sanitize
@@ -60,6 +62,7 @@ test-sanitize: | $(BUILD)
 	./$(BUILD)/test_map_buffer_gate_sanitize
 	./$(BUILD)/test_map_decode_checked_sanitize
 	./$(BUILD)/test_map_load_checked_sanitize
+	./$(BUILD)/test_map_decode_reference_sanitize
 
 verify-nro: $(BUILD)/$(TARGET).nro
 	python3 tests/check_nro.py $<
@@ -107,6 +110,9 @@ $(BUILD)/test_map_decode_checked: tests/test_map_decode_checked.c source/map_dec
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@
 
 $(BUILD)/test_map_load_checked: tests/test_map_load_checked.c source/map_load_checked.h source/map_buffer_gate.h source/map_decode_checked.h source/ps1_memory_view.h | $(BUILD)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@
+
+$(BUILD)/test_map_decode_reference: tests/test_map_decode_reference.c source/map_decode_checked.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@
 
 $(BUILD)/$(TARGET).elf: $(SOURCES)/main.c $(SOURCES)/game_rules.h $(SOURCES)/game_state.h $(SOURCES)/platform_input.h $(SOURCES)/software_renderer.h $(SOURCES)/game_renderer.h | $(BUILD)
