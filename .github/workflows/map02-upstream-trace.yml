@@ -90,6 +90,7 @@ jobs:
             platform/pc/Makefile
             platform/pc/tools/gen_kanji_font.py
             platform/pc/tools/build_data_segment.py
+            platform/pc/src/libcd.c
           sparse-checkout-cone-mode: false
 
       - name: Audit local preflight against public pinned upstream
@@ -111,7 +112,12 @@ jobs:
                   "disc_image_not_specified"}.issubset(result["blockers"]), result
           generator = Path("upstream/platform/pc/tools/gen_kanji_font.py").read_text()
           assert KROM_US_SHA256 in generator, "KROM digest must match pinned font generator"
-          print("Pinned public source and font-generator constants match the preflight.")
+          disc_backend = Path("upstream/platform/pc/src/libcd.c").read_text()
+          for literal in ("SLUS_BOOT_LBA 23", "SLPM_BOOT_LBA 15200",
+                          "BASLUS-00447VH", "BISCPS-45183VH", "BISLPM-86007VH",
+                          "SECTOR_DATA_OFFSET"):
+              assert literal in disc_backend, f"preflight disc probe drift: {literal}"
+          print("Pinned source, font hash and disc boot identifiers match the local preflight.")
           PY
 
       - name: Run patch generator regression tests
