@@ -23,7 +23,12 @@ class VerifyMap02CaptureTests(unittest.TestCase):
             outcome = verify_bundle(bundle)
             self.assertEqual(outcome["integrity"], "verified")
             self.assertTrue(outcome["complete_capture"])
-            self.assertEqual(outcome["trace_events"], 4)
+            self.assertEqual(outcome["trace_events"], 6)
+            self.assertEqual(
+                [json.loads(line)["stage"] for line in
+                 (bundle / "map02_trace.jsonl").read_text().splitlines()],
+                ["post_load", "post_load", "visit", "draw", "visit", "draw"],
+            )
             self.assertEqual(len(outcome["raw_log_sha256"]), 64)
             self.assertEqual(len(outcome["trace_jsonl_sha256"]), 64)
             strict = subprocess.run(
@@ -32,7 +37,7 @@ class VerifyMap02CaptureTests(unittest.TestCase):
                 text=True, capture_output=True,
             )
             self.assertEqual(strict.returncode, 0, strict.stderr)
-            self.assertEqual(json.loads(strict.stdout)["trace_events"], 4)
+            self.assertEqual(json.loads(strict.stdout)["trace_events"], 6)
 
     def test_incomplete_and_invalid_traces_are_verified_but_not_complete(self):
         for mode in ("incomplete", "invalid", "empty", "bad_stage"):
