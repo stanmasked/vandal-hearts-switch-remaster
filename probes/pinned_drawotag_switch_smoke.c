@@ -7,6 +7,7 @@
 #include <signal.h>
 #include "PsyQ/libgpu.h"
 #include "pc_gpu_internal.h"
+#include "pc_platform.h"
 #include "switch_sdl2_observer_backend.h"
 
 extern int PC_GpuInit(int width, int height, const char *title);
