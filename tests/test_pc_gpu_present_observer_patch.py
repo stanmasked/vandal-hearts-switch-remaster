@@ -10,6 +10,11 @@ spec.loader.exec_module(module)
 class ObserverPatchTests(unittest.TestCase):
     def setUp(self):
         self.upstream = """void PC_GpuPresent(unsigned short *vram, int a) {
+#if defined(__APPLE__)
+    if (!s_window || !s_renderer) return; /* headless: no-op */
+#else
+    if (!s_window || !s_glCtx) return; /* headless: no-op */
+#endif
     if (PC_OverlayIsOpen()) PC_GpuDrawOverlay(w, h);   /* options overlay, on top */
     SDL_GL_SwapWindow(s_window);
 }
@@ -18,6 +23,9 @@ class ObserverPatchTests(unittest.TestCase):
     def test_exact_insertion_and_default_disabled(self):
         result = module.patch(self.upstream)
         self.assertEqual(result.count("VH_ObserveCompletedRGB24(s_rgbaScratch"), 1)
+        self.assertIn("#if !defined(VH_SWITCH_EXCLUSIVE_PRESENT)\n#if defined(__APPLE__)", result)
+        self.assertEqual(result.count("if (!s_window || !s_glCtx) return;"), 1)
+        self.assertLess(result.index("desktop-only window prerequisite"), result.index("PC_GpuDrawOverlay(w, h);"))
         self.assertIn("#if defined(VH_SWITCH_COMPLETED_FRAME_OBSERVER)", result)
         self.assertLess(result.index("PC_GpuDrawOverlay(w, h);"),
                         result.index("VH_ObserveCompletedRGB24(s_rgbaScratch"))
@@ -47,6 +55,8 @@ class ObserverPatchTests(unittest.TestCase):
             module.patch(self.upstream.replace(module.ANCHOR, module.ANCHOR + module.ANCHOR))
         with self.assertRaisesRegex(ValueError, "not the pinned"):
             module.patch(self.upstream.replace("PC_GpuPresent", "WrongName"))
+        with self.assertRaisesRegex(ValueError, "precisely one desktop window guard"):
+            module.patch(self.upstream.replace(module.WINDOW_GUARD, ""))
         with self.assertRaisesRegex(ValueError, "tail not found"):
             module.patch(self.upstream.replace("SDL_GL_SwapWindow(s_window);", ""))
 
