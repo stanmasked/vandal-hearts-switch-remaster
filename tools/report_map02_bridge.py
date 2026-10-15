@@ -62,6 +62,7 @@ def review_capture(directory: Path) -> dict:
         faces = faces_for(episode)
         map_loads.append({
             "number": index,
+            "event_range": episode.get("event_range"),
             "post_load_variant": episode.get("post_load_overall_variant"),
             "draw_variant": episode.get("draw_overall_variant"),
             "errors": episode.get("errors") or [],
@@ -121,7 +122,10 @@ def markdown_review(report: dict) -> str:
     ]
     for load in report["map_loads"]:
         if report["map_load_count"] > 1:
-            lines.extend(["", f'## Map load {load["number"]}',
+            bounds = load.get("event_range")
+            suffix = (f' — JSONL events {bounds["first"]}–{bounds["last"]}'
+                      if bounds is not None else "")
+            lines.extend(["", f'## Map load {load["number"]}{suffix}',
                           f'Post-load variant: {load["post_load_variant"]}; '
                           f'AddPrim variant: {load["draw_variant"]}'])
         lines.extend([
