@@ -37,7 +37,7 @@ class TraceByteStream:
         self._pending = b""
         self.line_number = 0
 
-    def feed(self, chunk: bytes) -> list:
+    def feed(self, chunk: bytes, on_event=None) -> list:
         if not chunk:
             return []
         pieces = (self._pending + chunk).split(b"\n")
@@ -47,7 +47,10 @@ class TraceByteStream:
             self.line_number += 1
             entry = parse_trace_line(piece.decode("utf-8", errors="replace"), self.line_number)
             if entry is not None:
-                events.append(entry)
+                if on_event is None:
+                    events.append(entry)
+                else:
+                    on_event(entry)
         return events
 
     def finish(self) -> list:
