@@ -1,4 +1,5 @@
 """End-to-end tests for extracting CD-XA sectors and decoding their audio payload."""
+import hashlib
 import sys
 import tempfile
 import unittest
@@ -47,6 +48,7 @@ class CdXaPipelineTests(unittest.TestCase):
                 {"lba": 0, "payload_offset": 0, "missing_source_sectors_before": 0}
             ])
             self.assertEqual(payload.stat().st_size, AUDIO_BYTES_PER_SECTOR)
+            self.assertEqual(extraction["payload_sha256"], hashlib.sha256(payload.read_bytes()).hexdigest())
 
             decoded = decode_payload_file(payload, output, extracted_groups=True)
             self.assertEqual(decoded, {"sectors": 1, "groups": 18, "frames": 2016})
