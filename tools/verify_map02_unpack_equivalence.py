@@ -121,6 +121,47 @@ def make_corpus() -> list[tuple[str, bytes]]:
         for _, chunk in block:
             encoded.extend(chunk)
     corpus.append(("synthetic_full_map", prs_payload(bytes(encoded))))
+
+    def pack_token_blocks(tokens: list[tuple[int, bytes]]) -> bytes:
+        encoded = bytearray()
+        for start in range(0, len(tokens), 8):
+            block = tokens[start:start + 8]
+            encoded.append(sum(bit << j for j, (bit, _) in enumerate(block)))
+            for _, token in block:
+                encoded.extend(token)
+        return prs_payload(bytes(encoded))
+
+    # Drive the dictionary pointer through a full 1KiB wrap, then exercise
+    # overlapping relative and absolute references on newly written bytes.
+    wrap_tokens = [(0, bytes((rng.randrange(256),))) for _ in range(1200)]
+    wrap_tokens.extend((1, bytes((0x80 | ((length - 2) << 4) | distance,)))
+                       for length, distance in ((2, 0), (5, 1), (4, 15), (3, 3)))
+    wrap_tokens.extend((1, bytes((((length - 3) << 2) | (idx >> 8), idx & 255)))
+                       for length, idx in ((3, 1023), (34, 990), (17, 0), (7, 512)))
+    corpus.append(("wrapped_cache", pack_token_blocks(wrap_tokens)))
+
+    # Repeatable, mixed-token differential corpus with nonzero dictionary
+    # entries, varied cache distances and literal runs crossing bit groups.
+    for case in range(32):
+        tokens = []
+        for _ in range(180):
+            kind = rng.randrange(4)
+            if kind == 0:
+                tokens.append((0, bytes((rng.randrange(256),))))
+            elif kind == 1:
+                length = rng.randint(3, 34)
+                index = rng.randrange(1024)
+                tokens.append((1, bytes((((length - 3) << 2) | (index >> 8),
+                                          index & 255))))
+            elif kind == 2:
+                length = rng.randint(2, 5)
+                distance = rng.randrange(16)
+                tokens.append((1, bytes((0x80 | ((length - 2) << 4) | distance,))))
+            else:
+                length = rng.randint(8, 26)
+                literals = bytes(rng.randrange(256) for _ in range(length))
+                tokens.append((1, bytes((0xC0 | (length - 8),)) + literals))
+        corpus.append((f"mixed_fuzz_{case:02d}", pack_token_blocks(tokens)))
     return corpus
 
 
