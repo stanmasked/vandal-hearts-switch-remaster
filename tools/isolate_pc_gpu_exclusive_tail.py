@@ -23,6 +23,7 @@ def isolate(patched: str) -> str:
         '#include "switch_upstream_observer.h"\n'
         "static unsigned char *s_rgbaScratch;\n"
         "static int s_scratchCap;\n"
+        "extern double presentNowMs(void);\n"
         "void vh_compile_check_upstream_present_tail(int w, int h) {\n"
         "    int s_ptTime = 0;\n"
         "    double pt2 = 0;\n"
