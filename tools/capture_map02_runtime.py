@@ -38,6 +38,18 @@ def executable_contains_marker(path: Path, marker: str) -> bool:
     return False
 
 
+
+def evidence_fingerprints(output_directory: Path) -> dict:
+    """Fingerprint exactly the evidence files saved on disk, if present."""
+    result = {}
+    for prefix, filename in (("raw_log", "game_stdout.log"),
+                             ("trace_jsonl", "map02_trace.jsonl")):
+        path = output_directory / filename
+        result[prefix + "_sha256"] = sha256_file(path) if path.is_file() else None
+        result[prefix + "_bytes"] = path.stat().st_size if path.is_file() else None
+    return result
+
+
 def capture(executable: Path, trace_directory: Path, output_directory: Path,
             game_args=(), allow_modified_source=False) -> int:
     executable = executable.resolve(strict=True)
@@ -191,6 +203,7 @@ def capture(executable: Path, trace_directory: Path, output_directory: Path,
             "source_provenance": provenance,
             "warning": "The game did not complete a diagnostic capture.",
         }
+        failure.update(evidence_fingerprints(output_directory))
         (output_directory / "capture_report.json").write_text(
             json.dumps(failure, indent=2) + "\n", encoding="utf-8")
         print(f"Map02 game launch/capture failed: {exc}", file=sys.stderr)
@@ -214,6 +227,7 @@ def capture(executable: Path, trace_directory: Path, output_directory: Path,
             summary["analysis"] = evaluate_trace(
                 json.loads(line) for line in trace if line.strip()
             )
+    summary.update(evidence_fingerprints(output_directory))
     (output_directory / "capture_report.json").write_text(
         json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     errors = summary["analysis"]["errors"]
