@@ -64,6 +64,8 @@ class LocalXaCheckTests(unittest.TestCase):
         self.assertEqual(diagnostics["peak_abs_sample"], [0, 0])
         self.assertEqual(diagnostics["silent_stereo_frame_fraction"], 1.0)
         self.assertEqual(diagnostics["rms_amplitude"], [0.0, 0.0])
+        self.assertEqual(result["extraction_report_sha256"], hashlib.sha256(
+            (output / "extraction.json").read_bytes()).hexdigest())
         self.assertEqual(result["source_bin_bytes"], self.source.stat().st_size)
         self.assertEqual(result["source_bin_sha256"], hashlib.sha256(
             self.source.read_bytes()).hexdigest())
@@ -343,6 +345,24 @@ class LocalXaCheckTests(unittest.TestCase):
         directory.rename(moved)
         self.assertEqual(verify_audit(moved / "audit-result.json", self.source)["status"],
                          "audit_files_verified")
+
+    def test_extraction_report_fingerprint_detects_nonsemantic_changes(self):
+        directory = self.root / "report-fingerprint"
+        run_local_check(self.source, directory, file_number=1, channel=0,
+                        start_lba=1, sector_count=3)
+        report = directory / "extraction.json"
+        audit = directory / "audit-result.json"
+        original = report.read_bytes()
+        self.assertEqual(verify_audit(audit, self.source)["status"], "audit_files_verified")
+        # JSON whitespace has no effect on source validation; the saved
+        # fingerprint must nevertheless detect changes to the report bytes.
+        report.write_bytes(original + b"\\n")
+        try:
+            with self.assertRaisesRegex(ValueError, "extraction_report_sha256"):
+                verify_audit(audit, self.source)
+        finally:
+            report.write_bytes(original)
+        self.assertEqual(verify_audit(audit, self.source)["status"], "audit_files_verified")
 
     def test_saved_audit_rejects_tampered_lbas_frames_and_stream(self):
         directory = self.root / "metadata-audit"
