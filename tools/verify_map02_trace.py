@@ -65,6 +65,8 @@ def evaluate_trace(entries):
                             errors.append(f"entry {i}: {field} must be an integer from 0 to {limit}")
                         elif field in draw_metadata.get(pos, {}) and draw_metadata[pos][field] != value:
                             errors.append(f"{field} changed across frames for {pos}")
+                        else:
+                            draw_metadata.setdefault(pos, {}).setdefault(field, value)
                 continue
         elif (pos, stage) in found:
             errors.append(f"duplicate observation for {pos} at {stage}")
