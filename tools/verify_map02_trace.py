@@ -32,6 +32,11 @@ def evaluate_trace(entries):
     visit_paths = {}
     observed_face_counts = {}
     seen_skips = set()
+    # Full-trace C hooks record each renderer entry before face submission.
+    # Correlate by (face, frame, rendering path), not by frame alone.
+    visit_gfx_by_context = {}
+    draw_gfx_by_context = {}
+    backface_gfx_by_context = {}
     errors = []
     for i, entry in enumerate(entries):
         if not isinstance(entry, dict):
@@ -61,6 +66,8 @@ def evaluate_trace(entries):
                 errors.append(f"entry {i}: face_count must be an integer from 0 to 18")
                 continue
             visit_count[pos] = visit_count.get(pos, 0) + 1
+            if face_count > 0:
+                visit_gfx_by_context.setdefault((pos, frame, path), set()).add(entry["gfx"])
             visit_paths.setdefault(pos, set()).add(path)
             observed_face_counts.setdefault(pos, set()).add(face_count)
             if face_count == 0 and entry["gfx"] != 0:
@@ -88,8 +95,10 @@ def evaluate_trace(entries):
             seen_skips.add(key)
             skip_count[pos] = skip_count.get(pos, 0) + 1
             skip_reasons.setdefault(pos, set()).add(reason)
-            if reason == "backface" and entry["gfx"] not in TARGETS[pos]:
-                errors.append(f"unexpected GFX {entry['gfx']} for {pos} at skip")
+            if reason == "backface":
+                backface_gfx_by_context.setdefault((pos, frame, path), set()).add(entry["gfx"])
+                if entry["gfx"] not in TARGETS[pos]:
+                    errors.append(f"unexpected GFX {entry['gfx']} for {pos} at skip")
             if reason == "null_gfx" and entry["gfx"] != 0:
                 errors.append(f"null_gfx skip must have GFX 0 for {pos}")
             continue
@@ -119,6 +128,8 @@ def evaluate_trace(entries):
                 errors.append(f"duplicate draw observation for {pos} in frame {frame}")
                 continue
             seen_draw_frames.add(key)
+            if tagged_path:
+                draw_gfx_by_context.setdefault((pos, frame, entry["path"]), set()).add(entry["gfx"])
             draw_paths.setdefault(pos, set()).add(entry.get("path", "unspecified"))
             draw_count[pos] = draw_count.get(pos, 0) + 1
             if (pos, stage) in found:
@@ -155,6 +166,26 @@ def evaluate_trace(entries):
             draw_metadata[pos] = metadata
         if entry["gfx"] not in TARGETS[pos]:
             errors.append(f"unexpected GFX {entry['gfx']} for {pos} at {stage}")
+    # A visit and its subsequent draw/backface rejection sample the same
+    # tile face. In the full trace they must agree within that frame/path.
+    context_matches = {pos: {"draw": 0, "backface": 0} for pos in TARGETS}
+    for context, visited in visit_gfx_by_context.items():
+        pos, frame, path = context
+        if len(visited) > 1:
+            errors.append(
+                f"GFX changed among visits for {pos} in frame {frame}, path {path}"
+            )
+        for label, samples in (("draw", draw_gfx_by_context),
+                               ("backface", backface_gfx_by_context)):
+            if context not in samples:
+                continue
+            context_matches[pos][label] += 1
+            if samples[context] != visited:
+                errors.append(
+                    f"GFX mismatch between visit and {label} for {pos}"
+                    f" in frame {frame}, path {path}:"
+                    f" visited {sorted(visited)}, observed {sorted(samples[context])}"
+                )
     rows = []
     for pos, (prs, dat) in TARGETS.items():
         after = found.get((pos, "post_load"))
@@ -175,6 +206,8 @@ def evaluate_trace(entries):
             "visit_observation_count": visit_count.get(pos, 0),
             "visit_paths": sorted(visit_paths.get(pos, set())),
             "observed_face_counts": sorted(observed_face_counts.get(pos, set())),
+            "visit_draw_contexts_checked": context_matches[pos]["draw"],
+            "visit_backface_contexts_checked": context_matches[pos]["backface"],
             "draw_status": ("submitted" if drawn is not None else
                             "skipped_in_observed_passes" if skip_count.get(pos, 0) else
                             "no_faces_in_observed_passes" if observed_face_counts.get(pos) == {0} else
