@@ -7,7 +7,8 @@ import unittest
 from pathlib import Path
 
 from tools.audit_map02_disc_prs import (
-    START_SECTOR, SECTOR_COUNT, USER_BYTES, RAW_BYTES, SYNC,
+    START_SECTOR, SECTOR_COUNT, DAT_START_SECTOR, DAT_SECTOR_COUNT,
+    PRIOR_DAT_LENGTH, USER_BYTES, RAW_BYTES, SYNC,
     audit_prs, read_sectors, unpack_prs, xa_edc,
 )
 from tools.compare_map02_variants import (
@@ -65,6 +66,25 @@ def write_fake_image(path: Path, payload: bytes, layout: str, bias: int = 0):
                 sector = chunk
             assert len(sector) == sector_size
             handle.write(sector)
+
+
+def write_fake_dat_sectors(path: Path, dat: bytes, layout: str, bias: int = 0):
+    """Put DAT before PRS in the same synthetic ISO/Mode2 disc image."""
+    assert len(dat) == PRIOR_DAT_LENGTH
+    padded = dat.ljust(DAT_SECTOR_COUNT * USER_BYTES, b"\x00")
+    sector_size = RAW_BYTES if layout == "mode2-2352" else USER_BYTES
+    with path.open("r+b") as handle:
+        handle.seek((DAT_START_SECTOR + bias) * sector_size)
+        for index in range(DAT_SECTOR_COUNT):
+            data = padded[index * USER_BYTES:(index + 1) * USER_BYTES]
+            if layout == "mode2-2352":
+                prefix = SYNC + bytes(3) + b"\x02" + bytes(8) + data
+                sector = (prefix + xa_edc(prefix[16:2072]).to_bytes(4, "little")
+                          + bytes(276))
+            else:
+                sector = data
+            handle.write(sector)
+
 
 
 class AuditMap02DiscPRSTests(unittest.TestCase):
@@ -234,6 +254,72 @@ class AuditMap02DiscPRSTests(unittest.TestCase):
             self.assertTrue(data["matches_prior_target_gfx"])
             cmd.remove("--require-prior-provenance")
             self.assertEqual(subprocess.run(cmd, capture_output=True).returncode, 0)
+
+    def test_same_disc_prs_dat_audit_with_valid_crc_and_exact_dat_length(self):
+        dat = bytearray(unpack_prs(self.prs))
+        for record, value in zip(TARGET_RECORDS, (98, 150)):
+            dat[record * RECORD_SIZE + FACE_GFX_OFFSET] = value
+        dat = bytes(dat).ljust(PRIOR_DAT_LENGTH, b"\x00")
+        for layout in ("mode2-2352", "iso-2048"):
+            with self.subTest(layout=layout):
+                with tempfile.TemporaryDirectory() as folder:
+                    path = Path(folder) / "disc.bin"
+                    write_fake_image(path, self.prs, layout)
+                    write_fake_dat_sectors(path, dat, layout)
+                    decoded = read_sectors(
+                        path, layout, start_sector=DAT_START_SECTOR,
+                        sector_count=DAT_SECTOR_COUNT,
+                    )
+                    self.assertEqual(decoded[:PRIOR_DAT_LENGTH], dat)
+                    command = [sys.executable, "-m", "tools.audit_map02_disc_prs",
+                               "--disc-image", str(path), "--layout", layout,
+                               "--dat-from-disc"]
+                    proc = subprocess.run(command, capture_output=True, text=True)
+                    self.assertEqual(proc.returncode, 0, proc.stderr)
+                    report = json.loads(proc.stdout)
+                    self.assertEqual(report["dat_source"], "disc_image")
+                    self.assertEqual(report["dat_start_sector"], 6999)
+                    self.assertEqual(report["dat_sector_count"], 117)
+                    self.assertEqual(report["dat_comparison"]["dat_byte_count"], PRIOR_DAT_LENGTH)
+                    self.assertEqual(report["dat_comparison"]["difference_count"], 2)
+                    self.assertTrue(report["dat_comparison"]["matches_prior_disc_audit"])
+                    self.assertFalse(report["dat_comparison"]["matches_prior_dat_sha256"])
+                    expected_edc = 117 if layout == "mode2-2352" else None
+                    self.assertEqual(report["dat_mode2_form1_edc_verified_sectors"],
+                                     expected_edc)
+
+    def test_same_disc_dat_crc_corruption_is_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "disc.bin"
+            write_fake_image(path, self.prs, "mode2-2352")
+            dat = bytes(unpack_prs(self.prs)).ljust(PRIOR_DAT_LENGTH, b"\x00")
+            write_fake_dat_sectors(path, dat, "mode2-2352")
+            with path.open("r+b") as handle:
+                handle.seek((DAT_START_SECTOR + 1) * RAW_BYTES + 24)
+                original = handle.read(1)
+                handle.seek((DAT_START_SECTOR + 1) * RAW_BYTES + 24)
+                handle.write(bytes((original[0] ^ 1,)))
+            cmd = [sys.executable, "-m", "tools.audit_map02_disc_prs",
+                   "--disc-image", str(path), "--layout", "mode2-2352",
+                   "--dat-from-disc"]
+            failed = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertIn("sector 1: Mode2 Form1 EDC mismatch", failed.stderr)
+
+    def test_disc_dat_source_requires_disc_image_and_excludes_file(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "map.prs"
+            path.write_bytes(self.prs)
+            base = [sys.executable, "-m", "tools.audit_map02_disc_prs"]
+            for args in (
+                ["--prs-file", str(path), "--dat-from-disc"],
+                ["--disc-image", str(path), "--layout", "mode2-2352",
+                 "--dat-from-disc", "--dat-file", str(path)],
+            ):
+                with self.subTest(args=args):
+                    proc = subprocess.run(base + args, capture_output=True, text=True)
+                    self.assertNotEqual(proc.returncode, 0)
+                    self.assertIn("error:", proc.stderr)
 
     def test_cd_image_cli_reports_pinned_sector_table(self):
         with tempfile.TemporaryDirectory() as folder:
