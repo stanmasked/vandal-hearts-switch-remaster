@@ -175,3 +175,24 @@ $(BUILD)/$(OPENAL_TARGET).nro: $(BUILD)/$(OPENAL_TARGET).elf $(BUILD)/$(OPENAL_T
 
 clean:
 	rm -rf $(BUILD)
+
+# Standalone end-to-end observer NRO, using SDL2 to own the GLES2 context.
+OBSERVER_TARGET := upstream-rgb24-observer-probe
+OBSERVER_MODULES := source/switch_rgb24_presenter.c source/frame_conversion.c \
+	source/switch_frame_bridge.c source/switch_completed_frame.c \
+	source/switch_present_hook.c source/switch_upstream_observer.c
+
+.PHONY: upstream-observer-probe
+upstream-observer-probe: $(BUILD)/$(OBSERVER_TARGET).nro
+	python3 tests/check_nro.py $<
+
+$(BUILD)/$(OBSERVER_TARGET).elf: probes/upstream_rgb24_observer_smoke.c $(OBSERVER_MODULES) | $(BUILD)
+	$(CC) $(CFLAGS) -Isource $(LDFLAGS) $(shell $(SDL2_CONFIG) --cflags) \
+		probes/upstream_rgb24_observer_smoke.c $(OBSERVER_MODULES) -o $@ \
+		$(shell $(SDL2_CONFIG) --libs) -lGLESv2 $(LDLIBS) -lm
+
+$(BUILD)/$(OBSERVER_TARGET).nacp: | $(BUILD)
+	$(NACPTOOL) --create "VH RGB24 Observer Probe" "$(APP_AUTHOR)" "$(APP_VERSION)" $@
+
+$(BUILD)/$(OBSERVER_TARGET).nro: $(BUILD)/$(OBSERVER_TARGET).elf $(BUILD)/$(OBSERVER_TARGET).nacp
+	$(ELF2NRO) $< $@ --nacp=$(BUILD)/$(OBSERVER_TARGET).nacp
