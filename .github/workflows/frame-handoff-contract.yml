@@ -6,6 +6,8 @@ on:
       - audit/switch-platform-boundaries
     paths:
       - "source/rgb24_frame.h"
+      - "source/rgb24_scratch.h"
+      - "source/rgb24_scratch.c"
       - "source/frame_conversion.h"
       - "source/frame_conversion.c"
       - "source/switch_converted_frame.h"
@@ -14,6 +16,7 @@ on:
       - "source/switch_frame_bridge.h"
       - "source/switch_frame_bridge.c"
       - "tests/test_rgb24_frame.c"
+      - "tests/test_rgb24_scratch.c"
       - "tests/test_frame_conversion.c"
       - "tests/test_switch_converted_frame.c"
       - "tests/test_frame_handoff.c"
@@ -22,6 +25,8 @@ on:
   pull_request:
     paths:
       - "source/rgb24_frame.h"
+      - "source/rgb24_scratch.h"
+      - "source/rgb24_scratch.c"
       - "source/frame_conversion.h"
       - "source/frame_conversion.c"
       - "source/switch_converted_frame.h"
@@ -30,6 +35,7 @@ on:
       - "source/switch_frame_bridge.h"
       - "source/switch_frame_bridge.c"
       - "tests/test_rgb24_frame.c"
+      - "tests/test_rgb24_scratch.c"
       - "tests/test_frame_conversion.c"
       - "tests/test_switch_converted_frame.c"
       - "tests/test_frame_handoff.c"
@@ -78,3 +84,8 @@ jobs:
             source/switch_frame_bridge.c source/switch_converted_frame.c \
             -o build-tests/test_switch_converted_frame
           ./build-tests/test_switch_converted_frame
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g \
+            -fsanitize=undefined,address -fno-sanitize-recover=all \
+            tests/test_rgb24_scratch.c source/rgb24_scratch.c source/frame_conversion.c \
+            -o build-tests/test_rgb24_scratch
+          ./build-tests/test_rgb24_scratch
