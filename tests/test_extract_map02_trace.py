@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.extract_map02_trace import extract_trace_lines, extract_trace_text
+from tools.extract_map02_trace import TraceByteStream, extract_trace_lines, extract_trace_text
 
 
 def entries():
@@ -26,6 +26,30 @@ class ExtractMap02TraceTests(unittest.TestCase):
     def test_extracts_events_and_keeps_order_and_duplicates(self):
         events = entries() + [dict(entries()[-1])]
         self.assertEqual(extract_trace_text(capture(events)), events)
+
+    def test_chunked_raw_pipe_preserves_event_lines_and_utf8_boundaries(self):
+        payload = (b"startup: " + bytes((255, 254)) + b"\n"
+                   + capture(entries()).encode("utf-8"))
+        reader = TraceByteStream()
+        captured = []
+        for i in range(0, len(payload), 7):
+            captured.extend(reader.feed(payload[i:i + 7]))
+        captured.extend(reader.finish())
+        self.assertEqual(captured, entries())
+        self.assertEqual(reader.line_number, len(payload.splitlines()))
+
+    def test_final_event_without_newline_and_malformed_trace_line_numbers(self):
+        event = json.dumps(entries()[0]).encode("utf-8")
+        reader = TraceByteStream()
+        self.assertEqual(reader.feed(b"boot log\n" + event[:13]), [])
+        self.assertEqual(reader.feed(event[13:]), [])
+        self.assertEqual(reader.finish(), [entries()[0]])
+        self.assertEqual(reader.finish(), [])
+        invalid = TraceByteStream()
+        self.assertEqual(invalid.feed(b"boot\nsome noise\n"), [])
+        malformed = b'{"z":8,"x":19,"face":0,"stage":"draw","gfx":\n'
+        with self.assertRaisesRegex(ValueError, "line 3"):
+            invalid.feed(malformed)
 
     def test_ignores_other_json_structures(self):
         ev = entries()[0]
