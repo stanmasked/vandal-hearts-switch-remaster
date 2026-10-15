@@ -94,7 +94,7 @@ def patch(source: str) -> str:
         raise ValueError("expected exact pinned PC_GpuInit lifecycle anchors")
     if not source.rstrip().endswith("}"):
         raise ValueError("expected final PC_GpuPresent closing brace")
-    result = (source.replace(INIT_ANCHOR, INIT_ANCHOR + "\\n" + INIT_PREFIX, 1)
+    result = (source.replace(INIT_ANCHOR, INIT_ANCHOR + "\n" + INIT_PREFIX, 1)
               .replace(INIT_END, INIT_SUFFIX, 1)
               .replace(GL_HEADER, TARGET_GL_HEADER, 1)
               .replace(TIMING_ANCHOR, TIMING_EXCLUSIVE, 1)
