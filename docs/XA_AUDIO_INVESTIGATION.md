@@ -161,3 +161,25 @@ Use `--file-number` and `--channel` on the extractor to isolate one stream
 and regenerate both the payload and report. The report is diagnostic metadata
 only; even a single stream does not prove correct timing or sound quality.
 Legacy reports without `file_channel_counts` must be regenerated locally.
+
+
+### Inspect decoded sector-boundary discontinuities
+
+After extracting **one** file/channel stream, validating its report and
+decoding to WAV, the following read-only tool reports PCM amplitude jumps
+between the final stereo frame of one selected XA sector and the first stereo
+frame of the next:
+
+```sh
+python3 tools/analyze_cdxa_boundaries.py ./xa-sample.json ./xa-sample.bin \
+  ./xa-sample.wav --threshold 8192 --top 10
+```
+
+The report lists the largest sector-boundary jumps, source LBAs, and skipped
+raw sectors. The threshold is measured in 16-bit PCM amplitude units; it is
+a *diagnostic threshold*, not an objective click detector. Natural transients,
+interleaving, intentional silence, and a discontinuous capture range can all
+produce jumps. Conversely, codec artifacts may occur **within** a sector and
+will not appear in this boundary-only report. Listen to the source and compare
+with a known-good decoder before attributing any discontinuity to decoding.
+The analyzer reads but does not alter the WAV, payload, or JSON report.
