@@ -18,7 +18,7 @@ SKIP_REASONS = {"null_gfx", "backface"}
 
 def evaluate_trace(entries):
     if isinstance(entries, (str, bytes, dict)) or not isinstance(entries, Iterable):
-        raise ValueError("trace must be an iterable of observation objects")
+        raise ValueError("trace must be a JSON list or iterable of observation objects")
     found = {}
     draw_metadata = {}
     seen_draw_frames = set()
