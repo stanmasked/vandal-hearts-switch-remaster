@@ -53,6 +53,9 @@ class TextureFixtureTests(unittest.TestCase):
         upload(self.vram, 192, 0, 2, 2, [0x03FF, 0x7C1F] * 2)
         upload(self.vram, 256, 0, 2, 2, [0, 0x7FE0] * 2)
         upload(self.vram, 320, 0, 2, 2, [0x801F, 0x03E0] * 2)
+        upload(self.vram, 324, 16, 1, 2, [0x2121, 0x2121])
+        upload(self.vram, 672, 496, 16, 16,
+               [0, 0x001F, 0x03E0] + [0] * 253)
 
     def test_4bpp_clut(self):
         self.assertEqual([sample(self.vram, tpage(0, 64), clut(0, 40), u, 0)
@@ -352,6 +355,49 @@ class TextureFixtureTests(unittest.TestCase):
             palette[index * 2 + 1] = word >> 16
         self.assertEqual([palette[(0x2121 >> (u * 4)) & 15]
                           for u in (0, 1)], [0x001F, 0x03E0])
+
+    def test_original_raw_map_bank_vram_and_land_clut_bridge(self):
+        """Checks the F_TEX/LAND_DT native GPU path, not TIM encoding."""
+        guest = (Path(__file__).resolve().parents[1] /
+                 'probes/pinned_drawotag_switch_smoke.c').read_text()
+        for token in (
+            'map_tex_words[64 * 256]',
+            'map_clut_words[16 * 16]',
+            'map_land_record[1797]',
+            '[0] = 16, [1] = 16, [2] = 15, [3] = 15',
+            '[257 * 4] = 32',
+            '[257 * 5 + 2] = 0x1f',
+            '[257 * 5 + 4] = 0xe0',
+            '[257 * 5 + 5] = 0x03',
+            'RECT map_tex_rect = {320, 0, 64, 256};',
+            'RECT map_clut_rect = {672, 496, 16, 16};',
+            'map_tex_words[16 * 64 + 4] = 0x2121;',
+            'map_tex_words[17 * 64 + 4] = 0x2121;',
+            'memcpy(map_clut_words, map_land_record + 257 * 5',
+            'LoadImage(&map_tex_rect, (unsigned int *)map_tex_words);',
+            'LoadImage(&map_clut_rect, (unsigned int *)map_clut_words);',
+            'SetSprt(&map_sprite);',
+            'setXY0(&map_sprite, 8, 7);',
+            'setWH(&map_sprite, 2, 2);',
+            'setUV0(&map_sprite, map_land_record[0], map_land_record[1]);',
+            'setClut(&map_sprite, 672, 496);',
+            'SetDrawMode(&map_mode, 0, 0, GetTPage(0, 0, 320, 0), &reset_rect);',
+        ):
+            self.assertIn(token, guest)
+        self.assertLess(guest.index('LoadImage(&map_tex_rect'),
+                        guest.index('LoadImage(&stp_rect'),
+                        'The narrow 15bpp fixture must restore its original'
+                        ' pixels after the full raw 4bpp page upload')
+        self.assertLess(guest.index('AddPrim(&ot[0], &map_sprite);'),
+                        guest.index('AddPrim(&ot[0], &map_mode);'),
+                        'DR_MODE must execute before sprite in head-inserted OT')
+        self.assertEqual([
+            sample(self.vram, tpage(0, 320), clut(672, 496), u, 16)
+            for u in (16, 17)
+        ], [0x001F, 0x03E0])
+        # CLUT and raw texture bank are off-screen and non-overlapping.
+        self.assertGreaterEqual(320, 12)
+        self.assertGreaterEqual(496, 9)
 
     def test_stp_is_per_texel(self):
         values = [sample(self.vram, tpage(2, 320), 0, u, 0)
