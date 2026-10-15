@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Validate captured map-11 (resource M_MAP02) runtime face GFX observations.
 
-Input: JSON list of objects with integer z,x,face,gfx and string stage.
+Input: JSON array or JSON Lines of objects with integer z,x,face,gfx and string stage.
 Stage is 'post_load' or 'draw'. gfx is the *global* index (after +400).
 This is an observational consistency checker, not a proof of visual correctness.
 """
@@ -59,12 +59,34 @@ def evaluate_trace(entries):
             "warning": "GFX identity alone cannot prove visually correct texture or tpage/CLUT state."}
 
 
+
+def parse_trace_text(text):
+    """Accept a JSON array or a JSON Lines stream of observation objects."""
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        entries = []
+        for line_number, line in enumerate(text.splitlines(), 1):
+            if not line.strip():
+                continue
+            try:
+                entries.append(json.loads(line))
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"invalid JSON Lines entry at line {line_number}: {exc.msg}") from exc
+        if not entries:
+            raise ValueError("trace contains no observations")
+        data = entries
+    if not isinstance(data, list):
+        raise ValueError("trace must be a JSON array or JSON Lines objects")
+    return data
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("trace", type=Path, help="JSON array of captured runtime observations")
     args = parser.parse_args()
     try:
-        result = evaluate_trace(json.loads(args.trace.read_text(encoding="utf-8")))
+        result = evaluate_trace(parse_trace_text(args.trace.read_text(encoding="utf-8")))
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         parser.error(str(exc))
     print(json.dumps(result, indent=2))
