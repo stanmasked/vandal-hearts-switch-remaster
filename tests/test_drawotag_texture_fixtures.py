@@ -47,6 +47,7 @@ class TextureFixtureTests(unittest.TestCase):
         upload(self.vram, 0, 41, 256, 1, [0, 0x7C00, 0x7FFF] + [0] * 253)
         upload(self.vram, 192, 0, 2, 2, [0x03FF, 0x7C1F] * 2)
         upload(self.vram, 256, 0, 2, 2, [0, 0x7FE0] * 2)
+        upload(self.vram, 320, 0, 2, 2, [0x801F, 0x03E0] * 2)
 
     def test_4bpp_clut(self):
         self.assertEqual([sample(self.vram, tpage(0, 64), clut(0, 40), u, 0)
@@ -63,6 +64,13 @@ class TextureFixtureTests(unittest.TestCase):
     def test_zero_texel(self):
         self.assertEqual([sample(self.vram, tpage(2, 256), 0, u, 0)
                           for u in range(2)], [0, 0x7FE0])
+
+    def test_stp_is_per_texel(self):
+        values = [sample(self.vram, tpage(2, 320), 0, u, 0)
+                  for u in range(2)]
+        self.assertEqual(values, [0x801F, 0x03E0])
+        self.assertEqual([bool(v & 0x8000) for v in values], [True, False])
+        self.assertTrue(all(v != 0 for v in values))
 
     def test_vram_fixture_regions_do_not_overlap_display(self):
         self.assertFalse(any(x < 12 and y < 9 for x, y in self.vram))
