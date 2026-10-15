@@ -46,6 +46,21 @@ def capture(executable: Path, trace_directory: Path, output_directory: Path,
                    for value in source_files.values())
     ):
         raise ValueError("source provenance is modified; use --allow-modified-source explicitly")
+    generated_files = provenance.get("generated_files")
+    expected_names = {"game_setup.trace.c", "graphics.trace.c", "map02_trace.mk"}
+    if generated_files is None:
+        if provenance["trace_mode"] == "full":
+            raise ValueError("full trace provenance must fingerprint generated files")
+    else:
+        if not isinstance(generated_files, dict) or set(generated_files) != expected_names:
+            raise ValueError("generated_files must fingerprint the three diagnostic build inputs")
+        for filename, expected_sha256 in generated_files.items():
+            if (type(expected_sha256) is not str or len(expected_sha256) != 64
+                    or any(char not in "0123456789abcdef" for char in expected_sha256)):
+                raise ValueError(f"{filename}: invalid generated source SHA-256")
+            current_path = trace_directory / filename
+            if sha256_file(current_path) != expected_sha256:
+                raise ValueError(f"{filename}: generated diagnostic build input changed since preparation")
     output_directory = output_directory.resolve()
     if output_directory.exists():
         raise ValueError("output directory already exists; refusing to overwrite")
