@@ -182,5 +182,35 @@ class ExtractCdXaPayloadTests(unittest.TestCase):
             self.assertEqual(list(root.glob(".*.tmp")), [])
 
 
+    def test_failed_rollback_preserves_old_payload_backup(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            src, dst, report = root / "disc.bin", root / "payload.bin", root / "report.json"
+            src.write_bytes(sector(marker=0x72))
+            dst.write_bytes(b"original payload protected")
+            report.write_text("previous report", encoding="utf-8")
+            from tools import extract_cdxa_payload as extractor
+            real_replace = extractor.os.replace
+
+            def fail_report_and_rollback(source, target):
+                if Path(target) == report:
+                    raise OSError("injected report publication failure")
+                if Path(target) == dst and Path(source).name.startswith(".payload.bin."):
+                    # First payload publication succeeds, but restoring backup fails.
+                    if dst.read_bytes() == bytes([0x72]) * 2304:
+                        raise OSError("injected rollback failure")
+                return real_replace(source, target)
+
+            with mock.patch.object(extractor.os, "replace", side_effect=fail_report_and_rollback):
+                with self.assertRaisesRegex(OSError, "Previous payload preserved at"):
+                    extract_audio_payloads(src, dst, report_path=report)
+
+            backups = list(root.glob(".payload.bin.*.tmp"))
+            self.assertEqual(len(backups), 1)
+            self.assertEqual(backups[0].read_bytes(), b"original payload protected")
+            self.assertEqual(report.read_text(encoding="utf-8"), "previous report")
+            self.assertEqual(list(root.glob(".report.json.*.tmp")), [])
+
+
 if __name__ == "__main__":
     unittest.main()
