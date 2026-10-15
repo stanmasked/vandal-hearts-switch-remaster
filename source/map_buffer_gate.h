@@ -13,6 +13,8 @@
 
 #define VH_MAP_INPUT_ADDR UINT32_C(0x801317c0)
 #define VH_MAP_OUTPUT_ADDR UINT32_C(0x80180210)
+/* Address distance is NOT a proven game-file size or decoded capacity. */
+#define VH_MAP_INPUT_OUTPUT_GAP ((size_t)(VH_MAP_OUTPUT_ADDR - VH_MAP_INPUT_ADDR))
 
 typedef struct VhMapBuffers {
     const uint8_t *compressed;
@@ -48,6 +50,10 @@ static inline int vh_map_buffers_prepare(const VhPs1MemoryView *mem,
     /* Upstream takes signed s32 len, so reject unrepresentable lengths. */
     if (declared == 0 || declared > INT32_MAX ||
         (size_t)declared > input_available - 4) return 0;
+    /* Conservative integration contract: the four-byte header plus input
+     * payload must end before output begins. The upstream game may reuse
+     * memory over time; this standalone adapter forbids live overlap. */
+    if ((size_t)declared > VH_MAP_INPUT_OUTPUT_GAP - 4) return 0;
     input = vh_ps1_memory_span(mem, VH_MAP_INPUT_ADDR + 4, declared);
     output = vh_ps1_memory_span(mem, VH_MAP_OUTPUT_ADDR, output_capacity);
     if (input == NULL || output == NULL) return 0;
