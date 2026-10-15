@@ -1,6 +1,8 @@
 """Host-only tests for the opt-in local map02 runtime capture command."""
 import hashlib
 import json
+import shutil
+import subprocess
 import stat
 import tempfile
 import unittest
@@ -31,6 +33,9 @@ def fixture(root: Path, mode="complete", modified=False, trace_mode="legacy"):
         "graphics.trace.c": "/* generated renderer trace */\n",
         "map02_trace.mk": "# generated diagnostic Make overlay\n",
     }
+    if trace_mode == "full":
+        provenance["binary_marker"] = ("VH_MAP02_TRACE_BUILD_ID:" +
+                                       hashlib.sha256(b"synthetic map02 fixture").hexdigest())
     provenance["generated_files"] = {
         name: hashlib.sha256(content.encode("utf-8")).hexdigest()
         for name, content in payloads.items()
@@ -60,8 +65,26 @@ def fixture(root: Path, mode="complete", modified=False, trace_mode="legacy"):
         source = source.replace(
             "import sys\n", "import sys\nsys.stdout.buffer.write(bytes((255, 254, 10)))\n", 1
         )
-    executable.write_text(source, encoding="utf-8")
-    executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
+    if trace_mode == "full":
+        compiler = shutil.which("gcc") or shutil.which("cc")
+        if compiler is None:
+            raise unittest.SkipTest("C compiler required for full-trace executable test")
+        marker = provenance["binary_marker"]
+        c_lines = [
+            "#include <stdio.h>",
+            f'__attribute__((used)) const char vh_map02_trace_build_marker[] = "{marker}";',
+            "int main(void) {",
+            *[f"puts({json.dumps(line)});" for line in lines],
+            "return 0;",
+            "}",
+        ]
+        c_source = root / "fake-pcport.c"
+        c_source.write_text("\n".join(c_lines) + "\n", encoding="utf-8")
+        subprocess.run([compiler, "-std=c11", str(c_source), "-o", str(executable)],
+                       check=True, capture_output=True, text=True)
+    else:
+        executable.write_text(source, encoding="utf-8")
+        executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
     return executable, trace_dir
 
 
@@ -220,6 +243,24 @@ class CaptureMap02RuntimeTests(unittest.TestCase):
                         capture(exe, trace_dir, base / "should-not-exist")
                     self.assertFalse((base / "should-not-exist").exists())
             manifest_path.write_text(json.dumps(original))
+
+    def test_full_trace_rejects_unlinked_or_incorrect_build_marker(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            exe, trace_dir = fixture(base, trace_mode="full")
+            manifest_path = trace_dir / "source_provenance.json"
+            manifest = json.loads(manifest_path.read_text())
+            wrong = dict(manifest, binary_marker="VH_MAP02_TRACE_BUILD_ID:" + "f" * 64)
+            manifest_path.write_text(json.dumps(wrong))
+            output = base / "wrong-build"
+            with self.assertRaisesRegex(ValueError, "wrong or unlinked binary"):
+                capture(exe, trace_dir, output)
+            self.assertFalse(output.exists())
+            wrong["binary_marker"] = "not-a-valid-marker"
+            manifest_path.write_text(json.dumps(wrong))
+            with self.assertRaisesRegex(ValueError, "valid binary marker"):
+                capture(exe, trace_dir, output)
+            manifest_path.write_text(json.dumps(manifest))
 
     def test_process_failure_is_not_mistaken_for_success(self):
         with tempfile.TemporaryDirectory() as folder:
