@@ -312,3 +312,5 @@ This proves byte-level extraction consistency for that local image, not
 correct audio playback or the fidelity of the decoder.
 
 Additional synthetic source-BIN regression cases verify that a malformed duplicated XA subheader, an altered sector mode, an unsupported coding byte, or a source image shorter than its declared LBA range causes verification to fail. Such checks test detection only; they do not verify real game audio decoding or Nintendo Switch playback.
+
+When `--source-bin` is supplied, the validator also independently recomputes the number of Mode 2 sectors and the number with matching duplicated XA subheaders across the declared scan range. Both values must agree with the extractor's `mode2_sectors` and `matching_subheaders` counters. Tests reject forged integer counts and boolean lookalikes. This additional integrity check is available only with the local raw source; report-only checks cannot independently establish these counts.
