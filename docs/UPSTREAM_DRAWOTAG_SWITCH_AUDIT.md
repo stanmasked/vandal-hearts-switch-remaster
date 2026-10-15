@@ -160,3 +160,16 @@ The already accepted asset-free GP0(E2h) XY-window baseline is [run #38813978935
 Commits `54dc7ccc`, `03bfa948` and `273bf5d1` add three **independent source-backed synthetic raster probes** using original `SetPolyFT4`/`setTPage`/`SetSemiTrans`/`AddPrim` and the existing STP red=0x801f and unmarked green=0x03e0 texture at VRAM (320,0). The ABR1/2/3 quads occupy the free bottom strip at native (2,7), (4,7), (6,7), respectively, outside the original corner tiles and all earlier probes. Expected red BGR555 channels with background 12/31 and foreground 31/31 are ABR1 31/31 (RGB~255), ABR2 0/31 (RGB~0), ABR3 19/31 (RGB~156). Green remains 12/31 background (~99 RGB); the unmarked green neighbouring texel must be fully opaque (0,255,0) for each mode. The workflow checks both screenshots; the reference Python suite includes a 13th test for the exact 5-bit calculation and the C primitive attributes.
 
 **Awaiting the latest Switch NRO and NeXium success.** The first C-only push triggered the expected fail-fast texture test mismatch before the Python fixture update; it does not indicate a native raster regression. Once the current full-code run is green, record its run ID and observed colours before accepting ABR1/2/3. No actual game assets or physical Switch execution are covered.
+
+## Original textured ABR=1/2/3 accepted in NeXium (CI #38815823959)
+
+**ABR1/2/3 pending gate above is now passed.** [GitHub Actions run #38815823959](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38815823959), built from `273bf5d1593c6fe3585985571a9f9921c7b09bd4`, completed with **cross-compile success** and **Run original DrawOTag raster NRO in NeXium success**. Host preflight logged **Ran 13 tests in 0.005s / OK**.
+
+Native 1280x720 screenshot evidence on **both** sampled frames from the original `SetPolyFT4 → SetSemiTrans → DrawOTag → FillQuad → BlendG1` 15bpp STP path:
+- **ABR1** (`B+F` saturate): red/green/blue = (255,99,206) → (255,99,33).
+- **ABR2** (`B−F` floor zero): (0,99,206) → (0,99,33).
+- **ABR3** (`B+F/4`): (156,99,206) → (156,99,33).
+- Three adjacent **non-STP green** texels remained completely opaque (0,255,0) on both frames.
+- Previous ABR0, zero-texel alpha, indexed/direct FT4 modes, SPRT and horizontal/vertical GP0(E2h) texture-window tests all passed; animated center (99,99,206) → (99,99,33); 7,550 changed sampled pixels.
+
+**Native smoke milestone: ABR0, ABR1, ABR2 and ABR3 are all confirmed** for synthetic 15bpp STP-marked texels on pinned original upstream PC-port raster running as a Switch NRO under NeXium. No real Vandal Hearts textures/game scenes or physical hardware test is implied. A separate live game-assets bootstrap remains the next substantive integration milestone. The earlier C-only partial push failed as expected on source/fixture drift before its Python companion was committed, superseded by this green full-source run.
