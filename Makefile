@@ -38,6 +38,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer
 	python3 tests/test_cdxa_pipeline.py
 	python3 tests/test_validate_cdxa_extraction.py
 	python3 tests/test_analyze_cdxa_boundaries.py
+	python3 tests/test_compare_cdxa_wavs.py
 
 # Host-only memory and undefined-behavior checks; requires GCC or Clang sanitizers.
 test-sanitize: | $(BUILD)
