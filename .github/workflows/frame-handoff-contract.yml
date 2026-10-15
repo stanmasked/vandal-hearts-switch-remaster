@@ -11,6 +11,7 @@ on:
       - "source/switch_frame_bridge.c"
       - "tests/test_rgb24_frame.c"
       - "tests/test_frame_handoff.c"
+      - "tests/test_switch_frame_bridge.c"
       - ".github/workflows/frame-handoff-contract.yml"
   pull_request:
     paths:
@@ -20,6 +21,7 @@ on:
       - "source/switch_frame_bridge.c"
       - "tests/test_rgb24_frame.c"
       - "tests/test_frame_handoff.c"
+      - "tests/test_switch_frame_bridge.c"
       - ".github/workflows/frame-handoff-contract.yml"
   workflow_dispatch:
 
@@ -48,3 +50,8 @@ jobs:
           ./build-tests/test_frame_handoff
           cc -std=c11 -Wall -Wextra -Werror -Isource -c \
             source/switch_frame_bridge.c -o build-tests/switch_frame_bridge.o
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g \
+            -fsanitize=undefined -fno-sanitize-recover=all \
+            tests/test_switch_frame_bridge.c source/switch_frame_bridge.c \
+            -o build-tests/test_switch_frame_bridge
+          ./build-tests/test_switch_frame_bridge
