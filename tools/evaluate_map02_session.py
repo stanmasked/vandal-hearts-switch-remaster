@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Evaluate repeated Map02 loads as separate, ordered gameplay episodes.
 
-A second post_load for a previously loaded target *after renderer activity*
-marks a new map-load episode. Ambiguous repetitions before renderer activity
-remain invalid duplicates in the original single-load validator.
+A new post_load after any face-renderer activity marks another map-load
+attempt, even if the new loader record is for a face missed in the earlier
+episode. A repeated post_load before renderer activity is still an invalid
+duplicate in the original single-load validator. This conservative boundary
+prevents two incomplete loads from combining into one apparent success.
 """
 from tools.verify_map02_trace import TARGETS, evaluate_trace
 
@@ -18,7 +20,6 @@ def evaluate_capture_session(entries, *, require_full_trace=False):
     while True:
         started = False
         episode_first = events_yielded + 1
-        loaded_faces = set()
         renderer_seen = False
 
         def this_episode():
@@ -41,11 +42,13 @@ def evaluate_capture_session(entries, *, require_full_trace=False):
                           and (entry["z"], entry["x"], entry["face"]) in TARGETS)
                 stage = entry.get("stage") if isinstance(entry, dict) else None
                 if target and stage == "post_load":
-                    pos = (entry["z"], entry["x"], entry["face"])
-                    if pos in loaded_faces and renderer_seen:
+                    # The PC-port map loader emits its target-face post_load
+                    # records together, before any renderer visit. A later
+                    # loader record cannot complete a previously rendered
+                    # partial map load, even if its tile was not yet seen.
+                    if renderer_seen:
                         pending = entry
                         return
-                    loaded_faces.add(pos)
                 elif target and stage in ("visit", "skip", "draw"):
                     renderer_seen = True
                 started = True
