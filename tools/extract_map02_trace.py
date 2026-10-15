@@ -15,9 +15,10 @@ from tools.verify_map02_trace import evaluate_trace
 TRACE_FIELDS = frozenset(("z", "x", "face", "stage"))
 
 
-def extract_trace_text(text: str) -> list:
+def extract_trace_lines(lines) -> list:
+    """Extract from a line iterator without materializing the entire raw log."""
     entries = []
-    for lineno, raw_line in enumerate(text.splitlines(), 1):
+    for lineno, raw_line in enumerate(lines, 1):
         line = raw_line.strip()
         if not line.startswith("{"):
             continue
@@ -34,6 +35,11 @@ def extract_trace_text(text: str) -> list:
     return entries
 
 
+def extract_trace_text(text: str) -> list:
+    """Compatibility wrapper for in-memory captures and existing callers."""
+    return extract_trace_lines(text.splitlines())
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("capture", help="full game stdout/stderr capture, or '-' for stdin")
@@ -42,8 +48,12 @@ def main() -> int:
                         help="reject traces without both post_load and draw samples for both faces")
     args = parser.parse_args()
     try:
-        content = sys.stdin.read() if args.capture == "-" else Path(args.capture).read_text(encoding="utf-8")
-        entries = extract_trace_text(content)
+        if args.capture == "-":
+            entries = extract_trace_lines(sys.stdin)
+        else:
+            with Path(args.capture).open("r", encoding="utf-8",
+                                         errors="replace") as handle:
+                entries = extract_trace_lines(handle)
         if args.require_complete:
             result = evaluate_trace(entries)
             if result["errors"]:
