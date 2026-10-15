@@ -60,3 +60,11 @@ Commit `c9a8d5cc425b513b0bdc09251580f5d31ec5d555` adds a runtime pixel readback 
 Run https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38781029048 passed its NRO build and NeXium runtime jobs, including the pre-swap GLES2 `glReadPixels` checks for gray synthetic frames after 320×240 and 4×3 texture uploads. The screenshot still showed expected corner markers and 18,820 changed sampled pixels. This is an actual framebuffer-content check, but still **not** a run of original game frames.
 
 Commit `99b537c5ef0c9477e2387945d75188615b6351e7` strengthens the runtime probe: after a valid 4×3 RGB24 frame, it submits a one-byte-short buffer and asserts the observer fails without issuing a buffer swap or changing the stored frame dimensions. The swap callback counts completed swaps. This new gate is **pending CI validation**; previous host tests already covered invalid capacity.
+
+## NeXium invalid-frame handling and target callback recovery (2026-10-15)
+
+CI https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38781442357 passed build and NeXium runtime after the synthetic NRO submitted one RGB24 buffer whose declared capacity was one byte short. The C probe explicitly asserts that the observer rejects the submission, that its swap counter does not advance, and that the valid frame dimensions remain unchanged. The existing screenshot regression also passed.
+
+Commit `61e321897e4b78fdb3b310f52be1a4a8c6ae28b6` extends the same NRO probe with one injected target swap failure, requiring failed observer status and no successful swap followed by recovery on the very next valid frame. Runtime CI confirmation is pending.
+
+**Original PC renderer boundary:** Pinned `PC_GpuPresent` checks `s_window` and `s_glCtx` (or `s_renderer` on Apple) before compositing and pumps SDL events. Its injected completed-frame observer is an intermediate instrumented desktop translation unit, **not** a standalone headless or libnx graphics backend. A target-side platform initialization and event-loop adaptation are required before original game frames can drive the NRO.
