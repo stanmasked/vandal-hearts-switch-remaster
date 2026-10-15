@@ -29,7 +29,7 @@ LDLIBS   := -L$(DEVKITPRO)/libnx/lib -lnx
 .PHONY: all clean test test-sanitize verify-nro sdl2-probe sdl2-gl-probe sdl2-texture-probe rgb24-texture-probe sdl2-audio-probe openal-probe
 all: $(BUILD)/$(TARGET).nro
 
-test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_rgb24_frame $(BUILD)/test_switch_presenter_layout $(BUILD)/test_ps1_memory_view $(BUILD)/test_map_buffer_gate $(BUILD)/test_map_decode_checked $(BUILD)/test_map_load_checked $(BUILD)/test_map_decode_reference $(BUILD)/test_map_unit_boundary $(BUILD)/test_map_unit_phase $(BUILD)/test_scene_map_order $(BUILD)/test_scratch3_resource_write
+test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_rgb24_frame $(BUILD)/test_switch_presenter_layout $(BUILD)/test_ps1_memory_view $(BUILD)/test_map_buffer_gate $(BUILD)/test_map_decode_checked $(BUILD)/test_map_load_checked $(BUILD)/test_map_decode_reference $(BUILD)/test_map_unit_boundary $(BUILD)/test_map_unit_phase $(BUILD)/test_scene_map_order $(BUILD)/test_scratch3_resource_write $(BUILD)/test_cd_scratch3_gate
 	./$(BUILD)/test_game_rules
 	./$(BUILD)/test_software_renderer
 	./$(BUILD)/test_rgb24_frame
@@ -43,6 +43,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_rgb
 	./$(BUILD)/test_map_unit_phase
 	./$(BUILD)/test_scene_map_order
 	./$(BUILD)/test_scratch3_resource_write
+	./$(BUILD)/test_cd_scratch3_gate
 	python3 tests/test_restore_ps1_str.py
 	python3 tests/test_inspect_cdxa.py
 	python3 tests/test_extract_cdxa_payload.py
@@ -62,6 +63,7 @@ test-sanitize: | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_map_unit_phase.c -o $(BUILD)/test_map_unit_phase_sanitize
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_scene_map_order.c -o $(BUILD)/test_scene_map_order_sanitize
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_scratch3_resource_write.c -o $(BUILD)/test_scratch3_resource_write_sanitize
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_cd_scratch3_gate.c -o $(BUILD)/test_cd_scratch3_gate_sanitize
 	./$(BUILD)/test_game_rules_sanitize
 	./$(BUILD)/test_software_renderer_sanitize
 	./$(BUILD)/test_rgb24_frame_sanitize
@@ -75,6 +77,7 @@ test-sanitize: | $(BUILD)
 	./$(BUILD)/test_map_unit_phase_sanitize
 	./$(BUILD)/test_scene_map_order_sanitize
 	./$(BUILD)/test_scratch3_resource_write_sanitize
+	./$(BUILD)/test_cd_scratch3_gate_sanitize
 
 verify-nro: $(BUILD)/$(TARGET).nro
 	python3 tests/check_nro.py $<
@@ -137,6 +140,9 @@ $(BUILD)/test_scene_map_order: tests/test_scene_map_order.c source/scene_map_ord
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@
 
 $(BUILD)/test_scratch3_resource_write: tests/test_scratch3_resource_write.c source/scratch3_resource_write.h source/map_unit_phase.h source/map_unit_boundary.h source/map_load_checked.h source/map_buffer_gate.h source/map_decode_checked.h source/ps1_memory_view.h | $(BUILD)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@
+
+$(BUILD)/test_cd_scratch3_gate: tests/test_cd_scratch3_gate.c source/cd_scratch3_gate.h source/scratch3_resource_write.h source/map_unit_phase.h source/map_unit_boundary.h source/map_load_checked.h source/map_buffer_gate.h source/map_decode_checked.h source/ps1_memory_view.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@
 
 $(BUILD)/$(TARGET).elf: $(SOURCES)/main.c $(SOURCES)/game_rules.h $(SOURCES)/game_state.h $(SOURCES)/platform_input.h $(SOURCES)/software_renderer.h $(SOURCES)/game_renderer.h | $(BUILD)
