@@ -16,6 +16,8 @@ on:
       - 'tools/verify_map02_capture.py'
       - 'tests/test_verify_map02_capture.py'
       - 'tools/verify_map02_trace.py'
+      - 'tools/audit_map02_load_source.py'
+      - 'tests/test_audit_map02_load_source.py'
       - 'tests/test_verify_map02_trace.py'
       - 'tests/test_capture_map02_runtime.py'
       - 'tests/test_make_map02_trace_patch.py'
@@ -36,6 +38,8 @@ on:
       - 'tools/verify_map02_capture.py'
       - 'tests/test_verify_map02_capture.py'
       - 'tools/verify_map02_trace.py'
+      - 'tools/audit_map02_load_source.py'
+      - 'tests/test_audit_map02_load_source.py'
       - 'tests/test_verify_map02_trace.py'
       - 'tests/test_capture_map02_runtime.py'
       - 'tests/test_make_map02_trace_patch.py'
@@ -145,9 +149,12 @@ jobs:
             python3 -m unittest discover -s tests -p 'test_capture_map02_runtime.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_capture.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_trace.py' -v
+            python3 -m unittest discover -s tests -p 'test_audit_map02_load_source.py' -v
             python3 -m unittest discover -s tests -p 'test_instrument_map02_renderer.py' -v
             python3 -m unittest discover -s tests -p 'test_map02_renderer_smoke.py' -v
           )
+          PYTHONPATH=remaster python3 -m tools.audit_map02_load_source upstream/src/states/game_setup.c > /tmp/vh-map02-source-audit.json
+          python3 -c 'import json; x=json.load(open("/tmp/vh-map02-source-audit.json")); assert x["matches_pinned"] and x["load_resource"] == "CDF_M_MAP02_PRS" and len(x["target_faces"]) == 2; print("Pinned PC-port LoadMap case 11 selects PRS.")'
           PYTHONPATH=remaster python3 -m tools.prepare_map02_pcport upstream /tmp/vh-map02-upstream-overlay-ci
           PYTHONPATH=remaster python3 -m tools.prepare_map02_pcport upstream /tmp/vh-map02-upstream-full-ci --full-trace
           python3 -c 'import json; p=json.load(open("/tmp/vh-map02-upstream-full-ci/source_provenance.json")); assert p["trace_mode"] == "full" and all(x["matches_pinned"] for x in p["source_files"].values())'
