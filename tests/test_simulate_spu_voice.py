@@ -53,12 +53,7 @@ class EnvelopeTests(unittest.TestCase):
         self.assertEqual((env.level, env.phase), (2048, "sustain"))
         env.key_off()
         self.assertEqual(env.phase, "release")
-        self.assertTrue(env.advance())
-        self.assertEqual(env.level, 0) if False else None
-        # Depending on ADSR release saturation, it terminates quickly.
-        for _ in range(10):
-            if not env.advance():
-                break
+        self.assertFalse(env.advance())
         self.assertEqual((env.level, env.phase), (0, "off"))
         self.assertFalse(env.advance())
 
