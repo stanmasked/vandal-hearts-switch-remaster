@@ -75,14 +75,16 @@ class DecodeCdXaAdpcmTests(unittest.TestCase):
         for group_index in range(2):
             group = bytearray(GROUP_SIZE)
             params = (
-                (0x1B, 0x2C, 0x3B, 0x0C) if group_index == 0
-                else (0x2A, 0x3C, 0x1C, 0x0B)
+                (0x1B, 0x2C, 0x3B, 0x0C, 0x2B, 0x1C, 0x3C, 0x0B)
+                if group_index == 0 else
+                (0x2A, 0x3C, 0x1C, 0x0B, 0x3A, 0x2C, 0x1B, 0x0C)
             )
-            # XA carries four left/right parameter pairs, duplicated in header.
-            group[0:4] = bytes(params)
-            group[4:8] = bytes(params)
-            group[8:12] = bytes(params)
-            group[12:16] = bytes(params)
+            # Four chunks * two channels = eight parameters. Each four-byte
+            # half has a separate duplicate within the XA header.
+            group[0:4] = bytes(params[:4])
+            group[4:8] = bytes(params[:4])
+            group[8:12] = bytes(params[4:])
+            group[12:16] = bytes(params[4:])
             for row in range(28):
                 for chunk in range(4):
                     low = (row + chunk + group_index * 3) & 15
