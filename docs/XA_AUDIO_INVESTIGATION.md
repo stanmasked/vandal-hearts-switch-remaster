@@ -260,3 +260,17 @@ report validation, WAV decoding, and exact PCM comparison.
 This verifies state continuity for one predictive-filter profile on synthetic
 data. It does not establish exact hardware equivalence for all filter modes,
 resampling, stream timing, or actual Vandal Hearts sound.
+
+
+### Cross-sector two-tap ADPCM regression
+
+`test_two_tap_predictive_filters_across_sector_boundary` generates two
+synthetic raw Mode 2 Form 2 sectors with changing XA predictive filters
+2 and 3. A separate scalar calculation follows both predictor taps for
+each stereo channel, including group and sector boundaries. Extraction,
+metadata validation, ADPCM decoding, and exact comparison against its
+generated reference WAV run end to end.
+
+This test adds coverage for the two-coefficient recurrence but does not
+substitute for comparing with a separately executed reference decoder or
+listening to legally obtained local game audio.
