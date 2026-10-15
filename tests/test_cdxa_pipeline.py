@@ -156,5 +156,50 @@ class CdXaPipelineTests(unittest.TestCase):
             self.assertEqual(payload.read_bytes(), selected[24:24 + AUDIO_BYTES_PER_SECTOR])
 
 
+    def test_lba_range_uses_absolute_source_sector_numbers(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "synthetic-disc.bin"
+            payload = root / "audio-payload.bin"
+            source.write_bytes(
+                xa_audio_sector(0x10)
+                + xa_audio_sector(0x20)
+                + xa_audio_sector(0x30)
+                + xa_audio_sector(0x40)
+            )
+
+            report = extract_audio_payloads(
+                source, payload, start_lba=1, sector_count=2
+            )
+            self.assertEqual(report["start_lba"], 1)
+            self.assertEqual(report["sectors_scanned"], 2)
+            self.assertEqual(report["audio_lbas"], [1, 2])
+            self.assertEqual(
+                payload.read_bytes(),
+                source.read_bytes()[SECTOR_SIZE + 24:SECTOR_SIZE + 24 + AUDIO_BYTES_PER_SECTOR]
+                + source.read_bytes()[2 * SECTOR_SIZE + 24:2 * SECTOR_SIZE + 24 + AUDIO_BYTES_PER_SECTOR],
+            )
+
+    def test_invalid_lba_ranges_fail_before_creating_output(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "synthetic-disc.bin"
+            source.write_bytes(xa_audio_sector() * 2)
+
+            invalid_ranges = (
+                {"start_lba": -1},
+                {"start_lba": 2},
+                {"start_lba": 0, "sector_count": 0},
+                {"start_lba": 1, "sector_count": 2},
+            )
+            for index, kwargs in enumerate(invalid_ranges):
+                with self.subTest(kwargs=kwargs):
+                    payload = root / f"invalid-{index}.bin"
+                    with self.assertRaises(ValueError):
+                        extract_audio_payloads(source, payload, **kwargs)
+                    self.assertFalse(payload.exists())
+            self.assertEqual(source.stat().st_size, SECTOR_SIZE * 2)
+
+
 if __name__ == "__main__":
     unittest.main()
