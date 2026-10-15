@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Read-only structural inspection of the 32-byte Sony VAB VH header.
 
-This deliberately does not interpret program/tone tables or VB sample offsets.
+This validates complete program/tone metadata only; it never reads VB audio.
 """
 from __future__ import annotations
 import argparse
@@ -11,6 +11,8 @@ import struct
 from pathlib import Path
 
 HEADER_SIZE = 32
+PROGRAM_TABLE_SIZE = 128 * 16
+TONE_BLOCK_SIZE = 16 * 32
 
 def inspect_vab_header(path: Path) -> dict[str, int | str]:
     with path.open("rb") as f:
@@ -38,7 +40,7 @@ def inspect_vab_header(path: Path) -> dict[str, int | str]:
         "master_pan": master_pan,
         "bank_attr": bank_attr,
         "attr2": attr2,
-        "scope": "header_only_not_a_VB_bounds_or_sample_validation",
+        "scope": "VH_structural_metadata_only_not_a_VB_or_audio_decode",
     }
     # The 128-entry program table is fixed-size, even when fewer programs
     # are populated. Only report it if the complete table is available.
@@ -57,9 +59,52 @@ def inspect_vab_header(path: Path) -> dict[str, int | str]:
                              "volume": record[1], "pan": record[4]})
         result["program_table_complete"] = True
         result["populated_programs"] = used
-        result["packed_tone_blocks_bytes"] = len(used) * 16 * 32
+        result["packed_tone_blocks_bytes"] = len(used) * TONE_BLOCK_SIZE
+        result["tone_table_offset"] = HEADER_SIZE + PROGRAM_TABLE_SIZE
+        result["vag_size_table_offset"] = (
+            result["tone_table_offset"] + result["packed_tone_blocks_bytes"]
+        )
+        # A file may contain a header only or a partial transfer. Never
+        # claim tone validation unless every packed 16-tone block is present.
+        with path.open("rb") as f:
+            f.seek(result["tone_table_offset"])
+            raw_tones = f.read(result["packed_tone_blocks_bytes"])
+        result["tone_table_complete"] = (
+            len(raw_tones) == result["packed_tone_blocks_bytes"]
+        )
+        if result["tone_table_complete"]:
+            for block_index, program in enumerate(used):
+                program["block_index"] = block_index
+                tones_in_use = []
+                for tone_index in range(program["tones"]):
+                    start = block_index * TONE_BLOCK_SIZE + tone_index * 32
+                    record = raw_tones[start:start + 32]
+                    low, high = record[6], record[7]
+                    adsr1, adsr2, parent, vag = struct.unpack_from("<HHhh", record, 16)
+                    if low > 127 or high > 127 or low > high:
+                        raise ValueError(
+                            f"program {program['program']} tone {tone_index}: invalid key range"
+                        )
+                    if parent != program["program"]:
+                        raise ValueError(
+                            f"program {program['program']} tone {tone_index}: wrong parent program"
+                        )
+                    if not 1 <= vag <= vags:
+                        raise ValueError(
+                            f"program {program['program']} tone {tone_index}: VAG index out of range"
+                        )
+                    tones_in_use.append({
+                        "tone": tone_index, "vag": vag,
+                        "key_min": low, "key_max": high,
+                        "center": record[4], "fine_tune": record[5],
+                        "volume": record[2], "pan": record[3],
+                        "mode": record[1], "adsr1": adsr1, "adsr2": adsr2,
+                    })
+                program["active_tones"] = tones_in_use
+            result["tone_table_sha256"] = hashlib.sha256(raw_tones).hexdigest()
     else:
         result["program_table_complete"] = False
+        result["tone_table_complete"] = False
     return result
 
 def main() -> int:
