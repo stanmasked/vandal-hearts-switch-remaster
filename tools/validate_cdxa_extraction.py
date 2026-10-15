@@ -52,6 +52,22 @@ def validate_extraction(report_path: Path, payload_path: Path, wav_path: Path | 
     if type(coding[SUPPORTED_CODING]) is not int or coding[SUPPORTED_CODING] != count:
         raise ValueError("coding-info sector count does not match selected audio sectors")
 
+    streams = report.get("file_channel_counts")
+    if not isinstance(streams, dict) or not streams:
+        raise ValueError("report must include CD-XA file/channel counts")
+    if len(streams) != 1:
+        raise ValueError(
+            "multiple CD-XA file/channel streams selected; extract a single "
+            "stream using --file-number and --channel before decoding"
+        )
+    stream_key, stream_count = next(iter(streams.items()))
+    parts = stream_key.split(":") if isinstance(stream_key, str) else []
+    if len(parts) != 2 or any(
+        not part.isdecimal() or not 0 <= int(part) <= 255 or str(int(part)) != part
+        for part in parts
+    ) or type(stream_count) is not int or stream_count != count:
+        raise ValueError("invalid CD-XA file/channel count metadata")
+
     lbas = report.get("audio_lbas")
     offsets = report.get("audio_lba_offsets")
     if not isinstance(lbas, list) or len(lbas) != count:
