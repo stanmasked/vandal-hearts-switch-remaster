@@ -27,6 +27,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Validate original GPU texture test vectors
+        run: python3 tests/test_drawotag_texture_fixtures.py
       - name: Build official Switch SDL2 source with pinned checksums
         shell: bash
         run: |
@@ -56,8 +58,6 @@ jobs:
           command -v sdl2-config
           sdl2-config --version
 
-      - name: Validate original GPU texture test vectors
-        run: python3 tests/test_drawotag_texture_fixtures.py
       - name: Cross-compile pinned GPU translation unit with Switch GLES2
         shell: bash
         run: |
