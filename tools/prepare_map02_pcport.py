@@ -92,6 +92,7 @@ $(BUILD_DIR)/src/core/graphics.o: $(VH_MAP02_TRACE_DIR)/graphics.trace.c | stage
     # The marker ties the compiled renderer to these exact generated inputs.
     # Derive it before insertion to avoid a self-referential source hash.
     binary_marker = None
+    loader_marker = None
     if full_trace:
         identity = hashlib.sha256(json.dumps({
             "loader": loader_result,
@@ -99,6 +100,13 @@ $(BUILD_DIR)/src/core/graphics.o: $(VH_MAP02_TRACE_DIR)/graphics.trace.c | stage
             "make_overlay": make_overlay,
         }, sort_keys=True).encode("utf-8")).hexdigest()
         binary_marker = "VH_MAP02_TRACE_BUILD_ID:" + identity
+        loader_marker = "VH_MAP02_TRACE_LOADER_ID:" + identity
+        loader_result += (
+            "\n#if defined(PC_FEAT) && defined(VH_TRACE_MAP02)\n"
+            '__attribute__((used, visibility("default"))) '
+            f'const char vh_map02_trace_loader_marker[] = "{loader_marker}";\n'
+            "#endif\n"
+        )
         renderer_result += (
             "\n#if defined(PC_FEAT) && defined(VH_TRACE_MAP02)\n"
             '__attribute__((used, visibility("default"))) '
@@ -114,6 +122,7 @@ $(BUILD_DIR)/src/core/graphics.o: $(VH_MAP02_TRACE_DIR)/graphics.trace.c | stage
         "allow_modified_source": allow_modified_source,
         "trace_mode": "full" if full_trace else "legacy",
         **({"binary_marker": binary_marker} if binary_marker else {}),
+        **({"binary_loader_marker": loader_marker} if loader_marker else {}),
         "source_files": identities,
         "generated_files": {
             name: hashlib.sha256(contents.encode("utf-8")).hexdigest()
