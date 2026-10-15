@@ -50,3 +50,23 @@ Example of the expected **data shape only**, not an actual runtime observation:
 {"z":8,"x":19,"face":0,"stage":"draw","gfx":641,"u":240,"v":192,"clut":35,"tpage":5}
 ```
 
+
+## Multi-frame capture
+
+When tracing actual render loops, append an integer `frame` (starting at 0) to
+each draw event. Repeated draw events for the same face in **different frames**
+are expected, not duplicate records. The checker retains the first draw
+observation, counts all frame-tagged draw samples, and reports any changes in
+GFX or recorded UV/CLUT/tpage across frames. Two draw entries for the same
+face and same `frame` remain an error. Without `frame`, the older
+single-observation behavior is preserved.
+
+Example shape (illustrative, not captured from an actual game):
+
+```jsonl
+{"z":8,"x":19,"face":0,"stage":"draw","gfx":641,"frame":1,"u":240,"v":192,"clut":35,"tpage":5}
+{"z":8,"x":19,"face":0,"stage":"draw","gfx":641,"frame":2,"u":240,"v":192,"clut":35,"tpage":5}
+```
+
+Metadata that is absent from a sample cannot be compared. A stable trace
+does not establish whether the pixel colors or geometry are visually correct.
