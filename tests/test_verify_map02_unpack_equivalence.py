@@ -20,12 +20,14 @@ def fake_decoder() -> str:
 class UnpackEquivalenceTests(unittest.TestCase):
     def test_synthetic_corpus_covers_prs_token_types_and_full_map(self):
         corpus = make_corpus()
-        self.assertEqual(len(corpus), 7)
+        self.assertEqual(len(corpus), 40)
         self.assertEqual(len({label for label, _ in corpus}), len(corpus))
         expected = {"literal", "cache_absolute", "cache_relative",
                     "long_literals", "mixed_tokens", "random_literals",
                     "synthetic_full_map"}
-        self.assertEqual(set(label for label, _ in corpus), expected)
+        self.assertTrue(expected.issubset(set(label for label, _ in corpus)))
+        self.assertIn("wrapped_cache", dict(corpus))
+        self.assertEqual(len([label for label, _ in corpus if label.startswith("mixed_fuzz_")]), 32)
         for label, sample in corpus:
             with self.subTest(name=label):
                 result = unpack_prs(sample)
