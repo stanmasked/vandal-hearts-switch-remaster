@@ -22,9 +22,24 @@ static inline void vh_map_unit_phase_init(VhMapUnitPhase *phase,
     phase->map_valid = 0;
 }
 
-/* Call BEFORE staging a unit file into shared scratch3 base. */
+/* Conservative lifetime fence for ANY writer into scratch3.
+ * Offsets are relative to VH_MAP_OUTPUT_ADDR. [0, unit-start) is treated
+ * as potentially containing map data, not as a proven decoded map span.
+ * For unknown/overflowing ranges, invalidate conservatively.
+ * Call before the external writer changes shared memory.
+ */
+static inline void vh_map_unit_phase_scratch3_write(
+    VhMapUnitPhase *phase, size_t offset, size_t length) {
+    size_t boundary;
+    if (phase == NULL || length == 0) return;
+    boundary = vh_map_capacity_before_units(phase->map_number);
+    if (offset < boundary || offset > SIZE_MAX - length)
+        phase->map_valid = 0;
+}
+
+/* Unit files are staged at scratch3 offset zero. */
 static inline void vh_map_unit_phase_stage_units(VhMapUnitPhase *phase) {
-    if (phase) phase->map_valid = 0;
+    vh_map_unit_phase_scratch3_write(phase, 0, 1);
 }
 
 static inline int vh_map_unit_phase_can_read_map(const VhMapUnitPhase *phase) {
