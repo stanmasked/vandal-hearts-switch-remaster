@@ -30,18 +30,20 @@ int main(void) {
     memset(decoded, 0x7f, 8);
     status = vh_map_load_checked(&mem, sizeof fixture, 2, &decode, &written);
     assert(status == VH_MAP_LOAD_DECODE_FAILED);
-    assert(decode == VH_MAP_DECODE_OUTPUT_FULL && written == 2);
-    assert(decoded[2] == 0x7f);
+    assert(decode == VH_MAP_DECODE_OUTPUT_FULL && written == 0);
+    for (size_t i = 0; i < 8; ++i) assert(decoded[i] == 0x7f);
 
     written = 999;
     status = vh_map_load_checked(&mem, sizeof fixture - 1, 8, &decode, &written);
     assert(status == VH_MAP_LOAD_PREFLIGHT_FAILED && written == 0);
     assert(decode == VH_MAP_DECODE_INVALID_ARGUMENT);
+    for (size_t i = 0; i < 8; ++i) assert(decoded[i] == 0x7f);
 
     compressed[0] = 0xff; compressed[1] = 0xff;
     compressed[2] = 0xff; compressed[3] = 0xff;
     status = vh_map_load_checked(&mem, sizeof fixture, 8, &decode, &written);
     assert(status == VH_MAP_LOAD_PREFLIGHT_FAILED && written == 0);
+    for (size_t i = 0; i < 8; ++i) assert(decoded[i] == 0x7f);
 
     assert(vh_map_load_checked(&mem, 8, 8, NULL, &written)
            == VH_MAP_LOAD_PREFLIGHT_FAILED);
