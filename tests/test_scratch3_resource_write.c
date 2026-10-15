@@ -79,6 +79,18 @@ int main(void) {
     assert(vh_scratch3_resource_write(&phase, &memory, 0, resource, 1)
            == VH_SCRATCH3_WRITE_OUT_OF_RANGE);
     assert(vh_map_unit_phase_can_read_map(&phase));
+    /* A synthetic resource can be copied within the same scratch3 area.
+     * The overlapping ranges exercise memmove rather than unsafe memcpy. */
+    memory.ram_size = VH_PS1_RAM_SIZE;
+    memcpy(output, "ABCDEFGH", 8);
+    assert(vh_map_unit_phase_reload(&phase, &memory, sizeof fixture, 32,
+                                   &decode, &written) == VH_MAP_LOAD_OK);
+    memcpy(output, "ABCDEFGH", 8);
+    assert(vh_scratch3_resource_write(&phase, &memory, 2, output, 6)
+           == VH_SCRATCH3_WRITE_OK);
+    assert(memcmp(output, "ABABCDEF", 8) == 0);
+    assert(!vh_map_unit_phase_can_read_map(&phase));
+
     free(ram);
     puts("Scratch3 resource write tests passed.");
     return 0;
