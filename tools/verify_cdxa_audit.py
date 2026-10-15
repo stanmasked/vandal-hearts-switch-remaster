@@ -113,6 +113,9 @@ def verify_audit(audit_file: Path, source_bin: Path,
         if (not isinstance(provenance, dict)
                 or provenance.get("status") != "user_supplied_not_independently_verified"):
             raise ValueError("saved reference provenance status is invalid")
+        pinned = provenance.get("expected_reference_sha256")
+        if pinned is not None and pinned != current["reference_wav_sha256"]:
+            raise ValueError("saved expected reference SHA-256 differs from reference WAV")
     else:
         if reference_wav is not None:
             raise ValueError("audit has no reference comparison to recheck")
