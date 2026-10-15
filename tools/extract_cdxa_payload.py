@@ -142,12 +142,12 @@ def extract_audio_payloads(
         if report_path is not None:
             report_path.parent.mkdir(parents=True, exist_ok=True)
             with tempfile.NamedTemporaryFile(
-                mode="w", encoding="utf-8", newline="\\n",
+                mode="w", encoding="utf-8", newline="\n",
                 prefix=f".{report_path.name}.", suffix=".tmp",
                 dir=report_path.parent, delete=False,
             ) as staged_report:
                 temp_report = Path(staged_report.name)
-                staged_report.write(json.dumps(report, indent=2) + "\\n")
+                staged_report.write(json.dumps(report, indent=2) + "\n")
                 staged_report.flush()
                 os.fsync(staged_report.fileno())
 
