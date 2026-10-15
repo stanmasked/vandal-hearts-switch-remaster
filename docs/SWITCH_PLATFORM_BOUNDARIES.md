@@ -10,7 +10,7 @@ Track the platform-specific work required before integrating the upstream Vandal
 - The desktop build uses SDL2 for window/input, OpenGL on Windows/Linux (including legacy pixel-presentation calls), and an SDL Metal renderer on macOS.
 - The PC backend uses OpenAL for audio and a threaded rasterizer; its bootstrap contains Windows, POSIX, and macOS-specific memory/executable handling.
 - The upstream presentation contract was source-audited at commit `14552fffa0e0b47e02b57592e274fc6e7a649923`: packed RGB24, tightly packed `width * 3` stride, bottom-up rows, RGB channel order, and 5-bit channel expansion by bit replication. The scratch buffer is call-scoped and must be consumed/copied before the presenter returns.
-- The SDL2 feasibility workflow [38644241528](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38644241528) built five NRO probes from pinned SDL2 source and passed NeXium checks for joystick input/texture presentation, odd-stride RGB24 texture upload, SDL2 software rendering, and OpenGL ES runtime.
+- The latest SDL2 feasibility workflow [38691365198](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38691365198) built five NRO probes from checksum-pinned SDL2 source and passed NeXium checks for joystick input/texture presentation, odd-stride RGB24 texture upload, SDL2 software rendering, and OpenGL ES runtime. The [runtime evidence archive](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38691365198/artifacts/11951579038) contains the captured screenshots/logs; detailed results are recorded in [SDL2 probe results](SDL2_PROBE_RESULTS.md).
 - That same run's audio check completed as **INCONCLUSIVE** when the CI environment reported no usable ALSA default device. A green workflow result is not evidence of an executed SDL audio callback or audible output in this environment.
 - The separate libnx prototype verifies cursor movement and basic selection/movement rules in NeXium. Physical Switch behavior, graceful exit, sustained sessions, and audible audio remain unverified.
 - The upstream audit was performed against commit `14552fffa0e0b47e02b57592e274fc6e7a649923`; re-audit the upstream revision before implementation if the dependency changes.
@@ -23,7 +23,8 @@ Track the platform-specific work required before integrating the upstream Vandal
 - [x] Identify legacy desktop presentation calls unavailable in GLES2, including `glDrawPixels`, `glPixelZoom`, and `glRasterPos2f`.
 - [x] Define and host-test a frame view contract for packed RGB24, stride, bounds, and bottom-up row access in `source/rgb24_frame.h`.
 - [x] Add and host-test centered aspect-preserving destination-rectangle calculation in `source/switch_presenter_layout.h`.
-- [ ] Implement a Switch presenter adapter for the upstream frame without changing the byte-matching game source.
+- [x] Implement and runtime-test a reusable GLES2 RGB24 presenter module in the isolated probe; it accepts the audited bottom-up, tightly packed RGB24 frame contract and does not create the SDL window/context.
+- [ ] Integrate that presenter into the upstream PC port behind a Switch-specific presentation seam without changing the byte-matching game source.
 - [ ] Compare that adapter against a known desktop frame for orientation, color channels, scaling, filtering, and letterboxing.
 - [ ] Confirm sustained frame updates and clean shutdown on target hardware.
 
