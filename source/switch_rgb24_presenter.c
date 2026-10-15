@@ -131,6 +131,8 @@ int vh_switch_rgb24_presenter_draw(VhSwitchRgb24Presenter *presenter,
                                viewport_width, viewport_height, &destination))
         return 0;
 
+    /* Ignore GL errors left by upstream rendering before this draw checkpoint. */
+    while (glGetError() != GL_NO_ERROR) {}
     glViewport(destination.x, viewport_height - destination.y - destination.height,
                destination.width, destination.height);
     glUseProgram(presenter->program);
