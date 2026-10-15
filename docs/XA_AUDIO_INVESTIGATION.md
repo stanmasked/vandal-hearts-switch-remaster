@@ -286,3 +286,5 @@ endpoints must agree with `audio_lbas`. Older synthetic reports without
 any source-range fields remain accepted, but partial or contradictory metadata
 is rejected. This is a **consistency** check, not a verification against the
 original disc image.
+
+The validator now strictly requires JSON integers for each `audio_lba_offsets` entry (`lba`, `payload_offset`, and `missing_source_sectors_before`). Values such as `false`, `true`, or `2304.0` are rejected even where Python's normal equality operator would treat them as equal to the expected integer. Regression tests cover these deceptive type substitutions.
