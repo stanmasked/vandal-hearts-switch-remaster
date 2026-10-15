@@ -1,0 +1,25 @@
+name: Host audio and regression tests
+
+on:
+  pull_request:
+    paths:
+      - "tools/**"
+      - "tests/**"
+      - "source/**"
+      - "Makefile"
+      - "docs/VAB_STRUCTURE_AUDIT.md"
+      - ".github/workflows/host-audio-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  host-regressions:
+    name: host-regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Python syntax checks
+        run: python3 -m compileall -q tools tests
+      - name: Run complete host regression suite including VAB and SPU
+        run: make test
