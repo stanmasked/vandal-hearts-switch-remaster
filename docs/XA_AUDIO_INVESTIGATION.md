@@ -365,3 +365,19 @@ Hashes establish the bytes compared, **not** independent provenance or
 correct audio timing.
 
 The one-command local workflow saves `audit-result.json` in its newly created output directory after a successful decode/source verification and also when a reference PCM comparison reports a mismatch. The JSON records the status, selected LBAs, frame count, and (when compared) full-file SHA-256 fingerprints and first/sample-wise PCM differences. A mismatch still makes the command exit unsuccessfully, but the structured report and WAV remain available for diagnosis. Failures before the comparison stage may not produce an audit JSON; partial extraction outputs remain for inspection. These reports establish what was checked, not the provenance of an independently decoded reference.
+
+
+### Reference WAV provenance notes
+
+The local runner accepts optional `--reference-decoder "decoder name/version"`
+and `--reference-command "command used to generate WAV"` alongside
+`--reference-wav`. For example, append those two options to the command
+above using the **actual** independent decoder invocation.
+
+When a reference is compared, `audit-result.json` now contains
+`reference_provenance`, including supplied decoder identification, command,
+and an explicit `user_supplied_not_independently_verified` status. If the
+information was not supplied, the fields remain null rather than fabricating
+a decoder. Provenance labels without `--reference-wav` are rejected.
+This records audit context; the script **does not execute or verify** the
+independent reference decoder and cannot certify the claimed origin.
