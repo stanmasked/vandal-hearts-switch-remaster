@@ -19,7 +19,8 @@ static void test_absolute(void) {
     const uint8_t code[] = {0x02, 'A', 0x03, 0xde};
     uint8_t out[8] = {0}; size_t n = 0;
     assert(vh_map_decode_checked(code,sizeof(code),out,sizeof(out),&n)==VH_MAP_DECODE_OK);
-    assert(n==4 && out[0]=='A' && out[1]=='A' && out[2]=='A' && out[3]==0);
+    /* The dictionary is updated during copy: each overlapping byte repeats A. */
+    assert(n==4 && out[0]=='A' && out[1]=='A' && out[2]=='A' && out[3]=='A');
 }
 
 static void test_relative(void) {
