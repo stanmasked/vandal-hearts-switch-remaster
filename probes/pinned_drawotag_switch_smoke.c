@@ -5,6 +5,7 @@
 #include <SDL2/SDL.h>
 #include <stdio.h>
 #include <signal.h>
+#include <string.h>
 #include "PsyQ/libgpu.h"
 #include "pc_gpu_internal.h"
 #include "pc_platform.h"
@@ -24,6 +25,20 @@ static void tile(TILE *out, short x, short y, short w, short h,
 /* The original OT walker draws newest-inserted first. Insert the four
  * corner tiles first and the full-screen background last, so corners
  * cover the background during real DrawOTag rasterization. */
+/* Exact original LoadMapTextures data layout (not a TIM file):
+ * F_TEXxx.DAT is a 32768-byte raw 4bpp page, LAND_DT map record is
+ * 257 UVWH groups + 257 CLUT selectors + 512 palette bytes.
+ * These are synthetic values, NOT bytes copied from a retail disc. */
+static unsigned short map_tex_words[64 * 256];
+static unsigned short map_clut_words[16 * 16];
+static const unsigned char map_land_record[1797] = {
+    [0] = 16, [1] = 16, [2] = 15, [3] = 15,
+    [257 * 4] = 32,              /* Slot 0 -> first local CLUT row */
+    [257 * 5 + 2] = 0x1f,       /* CLUT[1] = red 0x001f */
+    [257 * 5 + 4] = 0xe0,       /* CLUT[2] = green 0x03e0 */
+    [257 * 5 + 5] = 0x03
+};
+
 static int draw_frame(int frame) {
     DRAWENV draw;
     DISPENV display;
@@ -32,10 +47,12 @@ static int draw_frame(int frame) {
     POLY_F4 polygon;
     POLY_FT4 textured, textured8, textured15, transparent15, semi15;
     POLY_FT4 abr_add, abr_sub, abr_quarter;
-    SPRT sprite, window_sprite, v_window_sprite, tim_sprite;
-    DR_MODE mode, window_mode, window_reset, v_window_mode, v_window_reset, tim_mode;
+    SPRT sprite, window_sprite, v_window_sprite, tim_sprite, map_sprite;
+    DR_MODE mode, window_mode, window_reset, v_window_mode, v_window_reset, tim_mode, map_mode;
     RECT window_rect, reset_rect, v_window_rect, v_reset_rect;
     TIM_IMAGE tim_image;
+    RECT map_tex_rect = {320, 0, 64, 256};
+    RECT map_clut_rect = {672, 496, 16, 16};
     /* One valid 4bpp TIM byte stream (PS1 little-endian word layout),
      * NOT extracted game artwork. CLUT is 16x1 at (0,42); packed
      * image is 2x2 VRAM words at (384,0), 8x2 logical texels.
@@ -66,6 +83,20 @@ static int draw_frame(int frame) {
     SetDefDispEnv(&display, 0, 0, 12, 9);
     PutDrawEnv(&draw);
     PutDispEnv(&display);
+    /* The original LoadMapTextures path uploads a RAW F_TEX page, then
+     * 512 palette bytes from LAND_DT at record offset 1285. The test
+     * page's only coloured texels are at U16/17,V16/17 to avoid the
+     * existing 15bpp STP test at VRAM x320,y0. */
+    map_tex_words[16 * 64 + 4] = 0x2121;
+    map_tex_words[17 * 64 + 4] = 0x2121;
+    memcpy(map_clut_words, map_land_record + 257 * 5, sizeof(map_clut_words));
+    if (map_land_record[257 * 4] != 32 ||
+        map_land_record[0] != 16 || map_land_record[1] != 16) {
+        fprintf(stderr, "Native map bank: invalid synthetic LAND_DT record\n");
+        return 0;
+    }
+    LoadImage(&map_tex_rect, (unsigned int *)map_tex_words);
+    LoadImage(&map_clut_rect, (unsigned int *)map_clut_words);
     /* Upload to off-screen VRAM through the ORIGINAL LoadImage. The 4bpp
      * page begins at x=64,y=0; U=0..3 samples VRAM word x=64.
      * CLUT occupies x=0..15,y=40, clear of the displayed 12x9 area. */
@@ -190,6 +221,18 @@ static int draw_frame(int frame) {
     AddPrim(&ot[0], &tim_sprite);
     SetDrawMode(&tim_mode, 0, 0, GetTPage(0, 0, 384, 0), &reset_rect);
     AddPrim(&ot[0], &tim_mode);
+    /* Raw map texture bank -> original LoadImage -> SPRT/DR_MODE.
+     * Native x8..10,y7..9 is the last unused 2x2 region. Slot 0
+     * UVWH=(16,16,15,15), CLUT ID 32 maps to (672,496). */
+    SetSprt(&map_sprite);
+    setXY0(&map_sprite, 8, 7);
+    setWH(&map_sprite, 2, 2);
+    setUV0(&map_sprite, map_land_record[0], map_land_record[1]);
+    setRGB0(&map_sprite, 128, 128, 128);
+    setClut(&map_sprite, 672, 496);
+    AddPrim(&ot[0], &map_sprite);
+    SetDrawMode(&map_mode, 0, 0, GetTPage(0, 0, 320, 0), &reset_rect);
+    AddPrim(&ot[0], &map_mode);
     /* ABR=0: STP-marked red blends 50/50 with background;
      * unmarked green stays opaque within the same semi-trans FT4. */
     SetPolyFT4(&semi15);
