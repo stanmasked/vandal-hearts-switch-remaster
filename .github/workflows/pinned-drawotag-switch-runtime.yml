@@ -8,6 +8,7 @@ on:
       - "tools/patch_pc_gpu_present_observer.py"
       - "tools/switch_psyq_compat.h"
       - "probes/pinned_drawotag_switch_smoke.c"
+      - "tests/test_drawotag_texture_fixtures.py"
       - "tests/test_pc_gpu_present_observer_patch.py"
       - "probes/pinned_pc_gpu_switch_smoke.c"
       - "source/switch_upstream_observer.*"
@@ -55,6 +56,8 @@ jobs:
           command -v sdl2-config
           sdl2-config --version
 
+      - name: Validate original GPU texture test vectors
+        run: python3 tests/test_drawotag_texture_fixtures.py
       - name: Cross-compile pinned GPU translation unit with Switch GLES2
         shell: bash
         run: |
