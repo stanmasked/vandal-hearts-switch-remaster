@@ -207,3 +207,27 @@ This is a **source-algorithm comparison**, not a claim that vgmstream itself
 was executed in CI, nor a bit-exact test against original game audio.
 Both implementations may still share format assumptions; a local game sample
 and a separately executed trusted decoder remain essential for fidelity.
+
+
+### Compare our PCM with a separately decoded reference WAV
+
+To compare exactly the same **single-file, single-channel** XA sector selection
+decoded by our tool and by an independently run reference decoder, use:
+
+```sh
+python3 tools/compare_cdxa_wavs.py ./xa-sample.wav ./reference-decoder.wav --require-exact
+```
+
+The read-only comparator requires both WAVs to be uncompressed 16-bit stereo at
+37,800 Hz with the same frame count. It reports first different frame, number
+of differing stereo frames and channel samples, maximum absolute per-sample
+difference, and mean absolute per-sample difference. It streams PCM in bounded
+chunks rather than loading entire recordings into memory. With `--require-exact`
+it exits unsuccessfully when PCM differs. Do not compare files with different
+sector selections, histories, channel mappings, or timing arrangements:
+mismatches in those cases do not isolate a decoder bug.
+
+An actual second decoder has **not** been run by this tool: supply a reference
+WAV produced separately using the same source and selection. Source game audio
+and reference WAVs must remain local; do not commit them to this repository.
+Even exact PCM agreement does not independently prove original playback timing.
