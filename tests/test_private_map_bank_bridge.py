@@ -48,9 +48,8 @@ def invoke(loader, texture, land):
 class CPrivateMapBridgeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        if len(sys.argv) < 2:
+        if not hasattr(cls, "loader") or not cls.loader.is_file():
             raise ValueError("pass prebuilt C bridge binary after test script")
-        cls.loader = Path(sys.argv[1]).resolve()
 
     def test_private_local_staging_c_loader_and_pixel_sample(self):
         texture, land = make_fixture()
