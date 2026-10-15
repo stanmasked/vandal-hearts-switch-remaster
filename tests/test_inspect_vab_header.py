@@ -1,5 +1,6 @@
 """Synthetic tests for standalone VAB VH header metadata."""
 import struct
+import hashlib
 import sys
 import tempfile
 import unittest
@@ -20,6 +21,7 @@ class VABHeaderTests(unittest.TestCase):
             struct.pack_into("<BBBB", data, 24, 127, 64, 0, 1)
             path.write_bytes(data)
             result = inspect_vab_header(path)
+            self.assertEqual(result["header_sha256"], hashlib.sha256(data).hexdigest())
             self.assertEqual((result["programs"], result["tones"], result["vags"]), (3, 10, 5))
             self.assertEqual((result["master_volume"], result["master_pan"]), (127, 64))
             self.assertEqual(path.read_bytes(), data)
