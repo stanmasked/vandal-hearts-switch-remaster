@@ -24,6 +24,10 @@ TARGET_GFX = (241, 243)
 def _validate_gfx(gfx_ids: tuple[int, ...]) -> None:
     if not gfx_ids:
         raise ValueError("At least one GFX index is required.")
+    if any(type(gfx) is not int for gfx in gfx_ids):
+        raise ValueError("GFX indices must be integers.")
+    if len(set(gfx_ids)) != len(gfx_ids):
+        raise ValueError("GFX indices must be unique.")
     invalid_gfx = [gfx for gfx in gfx_ids if gfx < 0 or gfx >= TEXTURE_RECORD_COUNT]
     if invalid_gfx:
         raise ValueError(
