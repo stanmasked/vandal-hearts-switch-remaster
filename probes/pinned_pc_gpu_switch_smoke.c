@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include "switch_sdl2_observer_backend.h"
 
+extern int PC_GpuInit(int width, int height, const char *title);
+extern void PC_GpuGetWindowSize(int *width, int *height, int *scale);
 extern void PC_GpuPresent(unsigned short *vram, int vramW, int vramH,
                           int x, int y, int w, int h);
 
@@ -21,11 +23,31 @@ int main(void) {
     VhSwitchSdl2ObserverBackend backend = {0};
     unsigned short vram[12 * 9];
     int ok = 0;
+    /* Original GPU init must never open a competing SDL/desktop GL window. */
+    if (PC_GpuInit(320, 240, "must not create desktop window")) {
+        fprintf(stderr, "PC_GpuInit unexpectedly succeeded before Switch backend\n");
+        goto finish;
+    }
     if (!vh_switch_sdl2_observer_backend_init(
             &backend, "VH pinned GPU Switch probe", 1280, 720)) {
         fprintf(stderr, "pinned GPU backend initialization failed: %s\n",
                 SDL_GetError());
         goto finish;
+    }
+    {
+        int drawable_w = 0, drawable_h = 0, scale = 0;
+        if (!PC_GpuInit(320, 240, "Switch owned context")) {
+            fprintf(stderr, "Pinned PC_GpuInit failed to accept Switch backend\n");
+            goto finish;
+        }
+        PC_GpuGetWindowSize(&drawable_w, &drawable_h, &scale);
+        if (drawable_w != 1280 || drawable_h != 720 || scale != 1) {
+            fprintf(stderr, "Pinned GPU target dimensions: %dx%d scale=%d\n",
+                    drawable_w, drawable_h, scale);
+            goto finish;
+        }
+        fprintf(stderr, "Pinned GPU init accepted Switch backend: %dx%d\n",
+                drawable_w, drawable_h);
     }
     for (int frame = 0; frame < 3600; ++frame) {
         SDL_Event event;
