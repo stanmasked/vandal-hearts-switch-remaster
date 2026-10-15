@@ -6,20 +6,26 @@ on:
       - audit/switch-platform-boundaries
     paths:
       - "source/rgb24_frame.h"
+      - "source/frame_conversion.h"
+      - "source/frame_conversion.c"
       - "source/frame_handoff.h"
       - "source/switch_frame_bridge.h"
       - "source/switch_frame_bridge.c"
       - "tests/test_rgb24_frame.c"
+      - "tests/test_frame_conversion.c"
       - "tests/test_frame_handoff.c"
       - "tests/test_switch_frame_bridge.c"
       - ".github/workflows/frame-handoff-contract.yml"
   pull_request:
     paths:
       - "source/rgb24_frame.h"
+      - "source/frame_conversion.h"
+      - "source/frame_conversion.c"
       - "source/frame_handoff.h"
       - "source/switch_frame_bridge.h"
       - "source/switch_frame_bridge.c"
       - "tests/test_rgb24_frame.c"
+      - "tests/test_frame_conversion.c"
       - "tests/test_frame_handoff.c"
       - "tests/test_switch_frame_bridge.c"
       - ".github/workflows/frame-handoff-contract.yml"
@@ -55,3 +61,8 @@ jobs:
             tests/test_switch_frame_bridge.c source/switch_frame_bridge.c \
             -o build-tests/test_switch_frame_bridge
           ./build-tests/test_switch_frame_bridge
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g \
+            -fsanitize=undefined -fno-sanitize-recover=all \
+            tests/test_frame_conversion.c source/frame_conversion.c \
+            -o build-tests/test_frame_conversion
+          ./build-tests/test_frame_conversion
