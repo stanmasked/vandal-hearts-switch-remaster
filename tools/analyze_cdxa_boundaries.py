@@ -12,9 +12,10 @@ import struct
 import wave
 from pathlib import Path
 
-from tools.validate_cdxa_extraction import (
-    PCM_FRAMES_PER_SECTOR, validate_extraction,
-)
+if __package__:
+    from .validate_cdxa_extraction import PCM_FRAMES_PER_SECTOR, validate_extraction
+else:
+    from validate_cdxa_extraction import PCM_FRAMES_PER_SECTOR, validate_extraction
 
 
 def analyze_boundaries(
