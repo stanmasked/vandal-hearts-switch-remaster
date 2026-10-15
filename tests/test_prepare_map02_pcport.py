@@ -1,11 +1,12 @@
 """Build-overlay tests using a tiny upstream-shaped checkout (no game data)."""
+import json
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
 from tools.instrument_map02_loader import ANCHOR
-from tools.prepare_map02_pcport import prepare
+from tools.prepare_map02_pcport import prepare, git_blob_sha1
 from tests.test_instrument_map02_renderer import fixture as graphics_fixture
 
 
@@ -30,17 +31,21 @@ class PrepareTests(unittest.TestCase):
             root, out = Path(tmp) / "pcport", Path(tmp) / "trace"
             fake_upstream(root)
             original = (root / "src/core/graphics.c").read_text()
-            result = prepare(root, out)
+            result = prepare(root, out, allow_modified_source=True)
             self.assertEqual(result, out / "map02_trace.mk")
             self.assertEqual((root / "src/core/graphics.c").read_text(), original)
             self.assertIn("VH_TRACE_MAP02_DRAW", (out / "graphics.trace.c").read_text())
             self.assertIn("VH_TRACE_MAP02_POST_LOAD", (out / "game_setup.trace.c").read_text())
+            provenance = json.loads((out / "source_provenance.json").read_text())
+            self.assertTrue(provenance["allow_modified_source"])
+            self.assertEqual(len(provenance["source_files"]), 3)
+            self.assertFalse(all(item["matches_pinned"] for item in provenance["source_files"].values()))
             overlay = result.read_text()
             self.assertIn("-DVH_TRACE_MAP02_DRAW", overlay)
             self.assertIn("-DVH_TRACE_MAP02_POST_LOAD", overlay)
             self.assertIn("$(BUILD_DIR)/src/core/graphics.o", overlay)
             with self.assertRaisesRegex(ValueError, "already exists"):
-                prepare(root, out)
+                prepare(root, out, allow_modified_source=True)
 
     def test_make_dry_run_uses_generated_source_and_feature_defines(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -56,7 +61,7 @@ stage:
 $(BUILD_DIR)/src/%.o: $(SRC_DIR)/%.c | stage
 \t$(CC) $(GAME_C_FLAGS) -MMD -MP -c -o $@ $<
 """)
-            prepare(root, out)
+            prepare(root, out, allow_modified_source=True)
             for name, macro in (("states/game_setup", "VH_TRACE_MAP02_POST_LOAD"),
                                 ("core/graphics", "VH_TRACE_MAP02_DRAW")):
                 result = subprocess.run(
@@ -66,12 +71,33 @@ $(BUILD_DIR)/src/%.o: $(SRC_DIR)/%.c | stage
                 self.assertIn(f"-D{macro}", result.stdout)
                 self.assertIn(f"{name.rsplit('/', 1)[-1]}.trace.c", result.stdout)
 
+    def test_real_pinned_blob_hash_algorithm(self):
+        self.assertEqual(git_blob_sha1(b"hello"),
+                         "b6fc4c620b67d95f953a5c1c1230aaab5db5a1b0")
+
+    def test_pinned_sources_required_by_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, out = Path(tmp) / "pcport", Path(tmp) / "trace"
+            fake_upstream(root)
+            with self.assertRaisesRegex(ValueError, "differs from pinned upstream"):
+                prepare(root, out)
+            self.assertFalse(out.exists())
+
+    def test_output_path_rejects_shell_metacharacters(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "pcport"
+            fake_upstream(root)
+            for unsafe in ("bad;echo", "bad&echo", "bad'quote"):
+                with self.subTest(path=unsafe):
+                    with self.assertRaisesRegex(ValueError, "shell/make-special"):
+                        prepare(root, Path(tmp) / unsafe, allow_modified_source=True)
+
     def test_rejects_writes_inside_checkout(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "pcport"
             fake_upstream(root)
             with self.assertRaisesRegex(ValueError, "outside upstream"):
-                prepare(root, root / "diagnostics")
+                prepare(root, root / "diagnostics", allow_modified_source=True)
 
     def test_rejects_makefile_drift(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -79,7 +105,7 @@ $(BUILD_DIR)/src/%.o: $(SRC_DIR)/%.c | stage
             fake_upstream(root)
             (root / "platform/pc/Makefile").write_text("different make recipe")
             with self.assertRaisesRegex(ValueError, "not the expected"):
-                prepare(root, out)
+                prepare(root, out, allow_modified_source=True)
             self.assertFalse(out.exists())
 
 
