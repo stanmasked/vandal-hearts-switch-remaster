@@ -26,6 +26,16 @@ int vh_switch_observer_last_result(void) {
     return last_result;
 }
 
+int vh_switch_observer_query_viewport(int *width, int *height) {
+    int w = 0, h = 0;
+    if (!registered || !width || !height || !active_hook.query_viewport ||
+        !active_hook.query_viewport(active_hook.context, &w, &h) ||
+        w <= 0 || h <= 0) return 0;
+    *width = w;
+    *height = h;
+    return 1;
+}
+
 void VH_ObserveCompletedRGB24(const unsigned char *pixels,
                               size_t capacity, int width, int height) {
     last_result = registered
