@@ -245,6 +245,59 @@ class ValidateXaExtractionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "scan range exceeds"):
             validate_extraction(self.report, self.payload, source_bin=raw)
 
+    def test_source_mutations_after_extraction_preserve_report_and_payload(self):
+        # A distinct file/channel outside the selected stream may change,
+        # but any mutation of the selected stream must invalidate verification.
+        from tools.extract_cdxa_payload import extract_audio_payloads
+
+        raw = self.report.parent / "original.bin"
+
+        def make_sector(channel, marker):
+            sector = bytearray(2352)
+            sector[:12] = bytes([0]) + bytes([255]) * 10 + bytes([0])
+            sector[15] = 2
+            sector[16:20] = sector[20:24] = bytes((1, channel, 0x64, 0x01))
+            sector[24:2328] = bytes([marker]) * 2304
+            return bytes(sector)
+
+        pristine = make_sector(0, 11) + make_sector(1, 29) + make_sector(0, 47)
+        raw.write_bytes(pristine)
+        extract_audio_payloads(
+            raw, self.payload, file_number=1, channel=0,
+            report_path=self.report,
+        )
+        frozen_report = self.report.read_bytes()
+        frozen_payload = self.payload.read_bytes()
+        self.assertEqual(
+            validate_extraction(self.report, self.payload, source_bin=raw)["audio_sectors"], 2
+        )
+
+        # Editing a different stream must not invalidate this stream's
+        # source verification or change the extraction artefacts.
+        changed = bytearray(pristine)
+        changed[2352 + 24 + 77] ^= 1
+        raw.write_bytes(changed)
+        self.assertEqual(
+            validate_extraction(self.report, self.payload, source_bin=raw)["audio_sectors"], 2
+        )
+
+        # Both selected sectors are independently checked. A one-byte
+        # change at either location is detected despite identical file sizes.
+        for offset in (24 + 95, 2 * 2352 + 24 + 123):
+            with self.subTest(source_offset=offset):
+                changed = bytearray(pristine)
+                changed[offset] ^= 1
+                raw.write_bytes(changed)
+                with self.assertRaisesRegex(ValueError, "source BIN payload mismatch"):
+                    validate_extraction(self.report, self.payload, source_bin=raw)
+                self.assertEqual(self.report.read_bytes(), frozen_report)
+                self.assertEqual(self.payload.read_bytes(), frozen_payload)
+
+        raw.write_bytes(pristine)
+        self.assertEqual(
+            validate_extraction(self.report, self.payload, source_bin=raw)["audio_sectors"], 2
+        )
+
     def test_source_bin_needs_full_scan_range(self):
         raw = self.report.parent / "source.bin"
         raw.write_bytes(bytes(2352))
