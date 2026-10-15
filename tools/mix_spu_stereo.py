@@ -18,6 +18,8 @@ from tools.interpolate_spu_gaussian import gaussian_voice_sample
 from tools.simulate_spu_voice import ADSR_MAX, RATE, SpuEnvelope, SpuSampleCursor
 
 MAX_VOICES = 32
+MAX_SEQ_VOICES = 20
+MAX_SCHEDULE_NOTES = 2048
 MAX_FRAMES = RATE * 20
 
 
@@ -86,6 +88,7 @@ class StereoVoice:
     tail_frames: int
     gain_left: float
     gain_right: float
+    voice_slot: int | None = None  # optional sequencer slot 0..19
 
 
 def render_stereo_voices(
@@ -168,6 +171,116 @@ def render_stereo_voices(
             "start_frame": v.start_frame,
         })
     return bytes(output), diagnostics
+
+
+def render_stereo_timeline(
+    voices: Sequence[StereoVoice], *, frames: int,
+    interpolation: str = "gaussian",
+) -> tuple[bytes, list[dict[str, object]]]:
+    """Mix up to 2048 scheduled notes over 20 reusable SEQ slots.
+
+    At most 20 scheduled note instances can be active on any output frame.
+    The timeline must explicitly truncate a stolen note so same-slot
+    intervals never overlap. A strict overlap error catches broken
+    schedulers rather than accidentally playing 21+ concurrent voices.
+    """
+    if interpolation not in ("gaussian", "nearest"):
+        raise ValueError("interpolation must be gaussian or nearest")
+    if type(frames) is not int or not 1 <= frames <= MAX_FRAMES:
+        raise ValueError("frames must be an integer in 1..882000")
+    if not isinstance(voices, (tuple, list)) or not 1 <= len(voices) <= MAX_SCHEDULE_NOTES:
+        raise ValueError("timeline requires 1..2048 scheduled notes")
+
+    starts: dict[int, list[int]] = {}
+    latest_end = [-1] * MAX_SEQ_VOICES
+    prepared = []
+    for number, v in enumerate(voices):
+        if not isinstance(v, StereoVoice):
+            raise ValueError(f"voice {number}: expected StereoVoice")
+        slot = v.voice_slot
+        if type(slot) is not int or not 0 <= slot < MAX_SEQ_VOICES:
+            raise ValueError(f"voice {number}: expected SEQ slot 0..19")
+        if not v.pcm or len(v.pcm) % 2:
+            raise ValueError(f"voice {number}: invalid 16-bit PCM")
+        if type(v.start_frame) is not int or v.start_frame < 0:
+            raise ValueError(f"voice {number}: invalid start frame")
+        if type(v.hold_frames) is not int or v.hold_frames < 1:
+            raise ValueError(f"voice {number}: invalid hold frames")
+        if type(v.tail_frames) is not int or v.tail_frames < 0:
+            raise ValueError(f"voice {number}: invalid tail frames")
+        ending = v.start_frame + v.hold_frames + v.tail_frames
+        if ending > frames:
+            raise ValueError(f"voice {number}: timeline exceeds render duration")
+        for gain in (v.gain_left, v.gain_right):
+            if type(gain) not in (float, int) or not math.isfinite(gain) or not 0 <= gain <= 2:
+                raise ValueError(f"voice {number}: gain must be finite in 0..2")
+        # Validate chronological overlap independently of input list order
+        # using a per-slot interval scan further below.
+        prepared.append((
+            v, struct.unpack("<" + "h" * (len(v.pcm) // 2), v.pcm),
+            SpuEnvelope(v.adsr1, v.adsr2),
+            SpuSampleCursor(
+                len(v.pcm) // 2,
+                -1 if v.loop_start is None else v.loop_start,
+                -1 if v.loop_end is None else v.loop_end,
+                v.pitch_step,
+            ),
+            {"voice": number, "voice_slot": slot, "active_frames": 0},
+        ))
+        starts.setdefault(v.start_frame, []).append(number)
+
+    for number in sorted(range(len(prepared)),
+                         key=lambda n: (prepared[n][0].start_frame, n)):
+        v = prepared[number][0]
+        slot = v.voice_slot
+        if v.start_frame < latest_end[slot]:
+            raise ValueError(f"voice {number}: overlapping SEQ slot {slot}")
+        latest_end[slot] = v.start_frame + v.hold_frames + v.tail_frames
+
+    active: dict[int, int] = {}
+    output = bytearray()
+    for frame in range(frames):
+        # Expired voices are removed before new key-ons at the same frame.
+        for slot, number in tuple(active.items()):
+            v = prepared[number][0]
+            if frame >= v.start_frame + v.hold_frames + v.tail_frames:
+                del active[slot]
+        for number in starts.get(frame, ()):
+            v = prepared[number][0]
+            if v.voice_slot in active:
+                raise ValueError(f"overlap at frame {frame}, slot {v.voice_slot}")
+            active[v.voice_slot] = number
+        left = right = 0.0
+        for slot in sorted(active):
+            v, source, env, cursor, info = prepared[active[slot]]
+            elapsed = frame - v.start_frame
+            if elapsed == v.hold_frames:
+                env.key_off()
+            if not cursor.active or env.phase == "off":
+                continue
+            sample = (gaussian_voice_sample(source, cursor)
+                      if interpolation == "gaussian" else source[cursor.index])
+            if not env.advance():
+                continue
+            level = env.level / ADSR_MAX
+            left += sample * level * v.gain_left
+            right += sample * level * v.gain_right
+            cursor.advance()
+            info["active_frames"] += 1
+        output += struct.pack(
+            "<hh",
+            max(-32768, min(32767, int(left))),
+            max(-32768, min(32767, int(right))),
+        )
+    diag = [
+        {**info, "looped": cursor.looped,
+         "effective_pitch_step": cursor.pitch_step,
+         "final_adsr_phase": env.phase,
+         "final_adsr_level": env.level,
+         "start_frame": v.start_frame}
+        for v, source, env, cursor, info in prepared
+    ]
+    return bytes(output), diag
 
 
 def stereo_wav(pcm: bytes) -> bytes:
