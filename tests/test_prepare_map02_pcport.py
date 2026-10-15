@@ -129,7 +129,8 @@ $(BUILD_DIR)/src/%.o: $(SRC_DIR)/%.c | stage
                 self.assertIn("-DVH_TRACE_MAP02", proc.stdout)
                 self.assertIn(part.rsplit("/", 1)[-1] + ".trace.c",
                               proc.stdout)
-                self.assertNotIn(" -c -o build/src/", proc.stdout)
+                self.assertEqual(proc.stdout.count(".trace.c"), 1)
+                self.assertNotIn(" ../../src/", proc.stdout)
 
     def test_real_pinned_blob_hash_algorithm(self):
         self.assertEqual(git_blob_sha1(b"hello"),
