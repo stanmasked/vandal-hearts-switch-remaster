@@ -7,9 +7,11 @@
 
 /* Diagnostic PC-port-style mixer: 20 music voice slots, 512-frame blocks.
  * Caller owns decoded PCM and keeps it alive until note terminates.
- * Not a game SEQ parser or hardware-accurate Gaussian/reverb renderer.
+ * Not a game SEQ parser, reverb engine or hardware-cycle emulator.
  */
 #define VH_NATIVE_MUSIC_VOICES 20u
+#define VH_SPU_NEAREST 0u
+#define VH_SPU_GAUSSIAN 1u
 
 typedef enum {
     VH_ADSR_OFF = 0,
@@ -34,6 +36,7 @@ typedef struct {
     int64_t loop_end;
     uint64_t phase;
     uint32_t pitch_step;
+    int looped; /* true after crossing first repeat-loop boundary */
     float gain_left;
     float gain_right;
     VhAdsrState adsr;
@@ -43,10 +46,13 @@ typedef struct {
 typedef struct {
     VhNativeVoice voice[VH_NATIVE_MUSIC_VOICES];
     unsigned int steal_index;
+    unsigned interpolation; /* default nearest, optional 4-tap Gaussian */
     uint64_t frames_rendered;
 } VhNativeSpu;
 
 void vh_native_spu_reset(VhNativeSpu *spu);
+/* Set VH_SPU_NEAREST (0) or VH_SPU_GAUSSIAN (1); -1 on invalid. */
+int vh_native_spu_set_interpolation(VhNativeSpu *spu, unsigned mode);
 /* First free music slot, or round-robin steal among 20 occupied slots. */
 int vh_native_spu_allocate_slot(VhNativeSpu *spu);
 /* Returns 0 for success, -1 for invalid params; replaces existing slot. */
@@ -57,7 +63,7 @@ int vh_native_spu_note_on(
 void vh_native_spu_note_off(VhNativeSpu *spu, unsigned slot);
 int vh_native_spu_voice_active(const VhNativeSpu *spu, unsigned slot);
 
-/* Dry stereo output, nearest-sample fetch and PC-port ADSR. No allocations.
+/* Dry stereo output, selectable nearest/4-tap Gaussian, PC-port ADSR.
  * One output-sample render call is reflected in frames_rendered.
  */
 void vh_native_spu_render(VhNativeSpu *spu, int16_t *out_stereo, size_t frames);
