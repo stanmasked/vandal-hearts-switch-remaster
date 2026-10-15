@@ -31,6 +31,8 @@ static void draw_frame(int frame) {
     TILE corner[4], background;
     POLY_F4 polygon;
     POLY_FT4 textured, textured8, textured15, transparent15, semi15;
+    SPRT sprite;
+    DR_MODE mode;
     /* 4bpp: four texels (1,2,1,2) per packed 16-bit VRAM word. */
     unsigned short texels[2] = {0x2121, 0x2121};
     unsigned short palette[16] = {0, 0x001f, 0x03e0};
@@ -63,6 +65,18 @@ static void draw_frame(int frame) {
     setRECT(&stp_rect, 320, 0, 2, 2);
     LoadImage(&stp_rect, (unsigned int *)texels_stp);
     ClearOTag(ot, 1);
+    /* Original textured SPRT path: sprite has NO tpage field. DrawOTag
+     * must read its page from DR_MODE in OT order (mode before sprite).
+     * Reuse the 4bpp red/green CLUT and keep away from other test quads. */
+    SetSprt(&sprite);
+    setXY0(&sprite, 0, 3);
+    setWH(&sprite, 2, 2);
+    setUV0(&sprite, 0, 0);
+    setRGB0(&sprite, 128, 128, 128);
+    setClut(&sprite, 0, 40);
+    AddPrim(&ot[0], &sprite);
+    SetDrawMode(&mode, 0, 0, GetTPage(0, 0, 64, 0), NULL);
+    AddPrim(&ot[0], &mode);
     /* ABR=0: STP-marked red blends 50/50 with background;
      * unmarked green stays opaque within the same semi-trans FT4. */
     SetPolyFT4(&semi15);
