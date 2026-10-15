@@ -40,6 +40,10 @@ def fixture(root: Path, mode="complete", modified=False):
         ["import sys", f"print({chr(10).join(lines)!r})",
          f"raise SystemExit({7 if mode == 'crash' else 0})"]
     ) + "\n"
+    if mode == "non_utf8":
+        source = source.replace(
+            "import sys\n", "import sys\nsys.stdout.buffer.write(bytes((255, 254, 10)))\n", 1
+        )
     executable.write_text(source, encoding="utf-8")
     executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
     return executable, trace_dir
@@ -73,6 +77,17 @@ class CaptureMap02RuntimeTests(unittest.TestCase):
                     self.assertTrue((dest / "game_stdout.log").exists())
                     report = json.loads((dest / "capture_report.json").read_text())
                     self.assertTrue(report["analysis"]["errors"])
+
+    def test_non_utf8_game_output_is_preserved_byte_for_byte(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            exe, trace_dir = fixture(base, mode="non_utf8")
+            dest = base / "run"
+            self.assertEqual(capture(exe, trace_dir, dest), 0)
+            self.assertTrue((dest / "game_stdout.log").read_bytes().startswith(bytes((255, 254, 10))))
+            report = json.loads((dest / "capture_report.json").read_text())
+            self.assertEqual(report["trace_events"], 4)
+            self.assertEqual(report["analysis"]["errors"], [])
 
     def test_modified_provenance_requires_explicit_override(self):
         with tempfile.TemporaryDirectory() as folder:
