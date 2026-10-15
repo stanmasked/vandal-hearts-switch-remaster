@@ -693,3 +693,62 @@ file immutability and the complete synthetic SEQ/VH/VB-to-WAV pipeline.
 
 All inputs and generated game audio must remain local; no proprietary
 music assets are included or uploaded.
+
+
+## Native Switch PCM transport foundation (C, asset-free)
+
+`source/vh_audio_stream.h` and `source/vh_audio_stream.c` introduce a
+portable C11 audio FIFO for the eventual native SEQ/SPU producer. It
+transports **interleaved signed 16-bit stereo PCM at 44,100 Hz**.
+The ring holds 4096 stereo frames (~93 ms), and uses 512-frame producer
+blocks to match the reference PC-port software SPU's render granularity.
+
+The FIFO has no heap allocation, SDL dependency, file access or
+decoding in its reader. Underruns are explicitly zero-filled, overruns
+never overwrite unread audio, and both are counted separately. A
+callback that reads more than was queued receives all requested frames,
+with the missing tail filled with silence. Source files stay untouched.
+
+`probes/sdl2_audio_smoke.c` now uses the FIFO in the Switch SDL2
+audio callback. Its main thread generates a **synthetic** 441 Hz stereo
+square wave (different left/right levels) in 512-frame blocks and
+buffers approximately 2048 frames. `SDL_LockAudioDevice()` protects
+main-thread producer access; the callback reads without locking,
+allocating, decoding or waiting on the sequencer. The SDL device
+is opened with `AUDIO_S16SYS`, 44,100 Hz, two channels and requested
+512-frame callbacks without permitting format/rate substitution.
+
+This is a **transport feasibility probe**, not Vandal Hearts music
+playback: the native C engine does not yet parse SEQ, decode VAG,
+synthesize 20 musical voices, or connect to the game's NRO. An
+observed callback means the SDL callback ran; it does **not** prove
+that the Switch speaker/headphone path emitted audible sound.
+
+Build and test locally:
+
+```sh
+# Pure C11 host tests: no SDL, game assets or Switch required.
+make test-audio-stream
+
+# With installed devkitPro Switch SDL2 portlibs:
+make sdl2-audio-probe
+
+# A generated NRO can be sanity-checked for its binary container:
+python3 tests/check_nro.py build/sdl2-audio-switch-probe.nro
+```
+
+`tests/test_vh_audio_stream.c` checks frame order, stereo interleave,
+FIFO wraparound, full-ring overflow, silence on underrun, reset,
+NULL-input safety and 6000 deterministic randomized enqueue/dequeue
+operations. `.github/workflows/host-audio-tests.yml` compiles/runs
+the host regression with warnings-as-errors and again under UBSan.
+`.github/workflows/switch-native-pcm.yml` separately cross-compiles
+the C transport with devkitPro's AArch64 compiler. Cross-compilation
+alone is **not** evidence of a successfully linked NRO or on-device
+audio output.
+
+**Still pending:** one integrated native PCM producer sourcing the
+actual SEQ/VAB/SPU work rather than a synthetic tone, Switch NRO linking
+and runtime confirmation, sound quality against the original,
+threaded mixer backpressure/latency profiling and hardware testing.
+Original game resources and generated game audio remain local.
