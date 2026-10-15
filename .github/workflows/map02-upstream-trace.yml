@@ -4,11 +4,23 @@ on:
   push:
     paths:
       - 'tools/make_map02_trace_patch.py'
+      - 'tools/prepare_map02_pcport.py'
+      - 'tools/instrument_map02_loader.py'
+      - 'tools/instrument_map02_renderer.py'
+      - 'tests/test_prepare_map02_pcport.py'
+      - 'tests/test_instrument_map02_renderer.py'
+      - 'tests/test_map02_renderer_smoke.py'
       - 'tests/test_make_map02_trace_patch.py'
       - '.github/workflows/map02-upstream-trace.yml'
   pull_request:
     paths:
       - 'tools/make_map02_trace_patch.py'
+      - 'tools/prepare_map02_pcport.py'
+      - 'tools/instrument_map02_loader.py'
+      - 'tools/instrument_map02_renderer.py'
+      - 'tests/test_prepare_map02_pcport.py'
+      - 'tests/test_instrument_map02_renderer.py'
+      - 'tests/test_map02_renderer_smoke.py'
       - 'tests/test_make_map02_trace_patch.py'
       - '.github/workflows/map02-upstream-trace.yml'
   workflow_dispatch:
@@ -40,6 +52,7 @@ jobs:
             src/core/graphics.c
             include/
             platform/pc/include/
+            platform/pc/Makefile
           sparse-checkout-cone-mode: false
 
       - name: Run patch generator regression tests
@@ -98,3 +111,32 @@ jobs:
           git apply --reverse --check ../map02-trace.patch
           git apply --reverse ../map02-trace.patch
           test -z "$(git status --porcelain -- src/core/graphics.c src/states/game_setup.c)"
+
+      - name: Verify pinned make-overlay diagnostic object compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd remaster
+            python3 -m unittest discover -s tests -p 'test_prepare_map02_pcport.py' -v
+            python3 -m unittest discover -s tests -p 'test_instrument_map02_renderer.py' -v
+            python3 -m unittest discover -s tests -p 'test_map02_renderer_smoke.py' -v
+          )
+          PYTHONPATH=remaster python3 -m tools.prepare_map02_pcport upstream /tmp/vh-map02-upstream-overlay-ci
+          python3 -c 'import json; p=json.load(open("/tmp/vh-map02-upstream-overlay-ci/source_provenance.json")); assert all(x["matches_pinned"] for x in p["source_files"].values())'
+          (
+            cd upstream/platform/pc
+            mkdir -p build/map02-trace-objects
+            flags=(
+              -m64 -std=gnu89 -fno-builtin-csqrt
+              -DPERMUTER -DPC_PORT -DPC_FEAT -DVH_REGION_US
+              '-Dasm(x)=' -Ibuild/include_stage -Iinclude -I../..
+              -include pc_forward_decls.h
+              -Wno-incompatible-pointer-types -Wno-builtin-declaration-mismatch
+              -Wno-discarded-qualifiers -Wno-pointer-to-int-cast
+              -Wno-int-to-pointer-cast -Wno-int-conversion
+            )
+            gcc "${flags[@]}" -DVH_TRACE_MAP02_POST_LOAD -c /tmp/vh-map02-upstream-overlay-ci/game_setup.trace.c -o build/map02-trace-objects/game_setup.overlay.o
+            gcc "${flags[@]}" -DVH_TRACE_MAP02_DRAW -c /tmp/vh-map02-upstream-overlay-ci/graphics.trace.c -o build/map02-trace-objects/graphics.overlay.o
+            nm -a build/map02-trace-objects/graphics.overlay.o | grep vh_trace_map02_draw
+          )
