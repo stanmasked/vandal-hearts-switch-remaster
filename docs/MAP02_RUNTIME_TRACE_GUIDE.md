@@ -289,3 +289,37 @@ The override and generator behavior are covered by host tests, including
 `make -n` checks that each object uses the generated source and feature
 flag. Run `make test` from the remaster repo for those tests. No proprietary
 data should be committed to GitHub.
+
+## Extracting trace events from mixed game logs
+
+The PC port also prints ordinary SDL/renderer diagnostic messages, so capture
+the unmodified combined stdout/stderr first. On a local PC-port diagnostic
+build, for example:
+
+```sh
+./build-map02-trace/vandalhearts_pc 2>&1 | tee /tmp/vh-map02-game.log
+```
+
+From the **remaster** repository root, extract the tagged JSON objects
+without changing the original log:
+
+```sh
+python3 -m tools.extract_map02_trace /tmp/vh-map02-game.log \
+  -o /tmp/vh-map02-trace.jsonl
+python3 -m tools.verify_map02_trace /tmp/vh-map02-trace.jsonl \
+  --require-uniform-variant
+```
+
+Pass `--require-complete` to the extractor to demand a complete and
+internally consistent two-face post-load/draw trace **before creating its
+output**. An incomplete capture can still be extracted without that option
+for investigation of `visit`/`skip` events. The extractor preserves all
+observation events in order, including repeated entries, and rejects
+malformed trace-looking JSON rather than silently deleting evidence. Other
+console log lines are ignored. It never overwrites an existing output file.
+
+Logs made by the alternative combined patch can include `visit` and
+`skip` stages to explain missing submissions. Their presence is useful
+evidence but **does not substitute for successful `draw` events** when
+requiring complete rendering evidence. Do not commit raw game logs without
+checking them for personal paths or copyrighted contents.
