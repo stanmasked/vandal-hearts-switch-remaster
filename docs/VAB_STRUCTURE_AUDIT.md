@@ -517,3 +517,62 @@ slot are rejected.
 The dedicated `Host SPU audio regressions` workflow runs these tests,
 rather than relying on the unrelated texture-only workflow. A passing
 host regression is evidence of synthetic behavior only.
+
+
+## Bounded Sony SEQ track repeats (offline)
+
+`tools/repeat_ps1_seq.py` implements the PC-port `SsSeqPlay`
+`repeatCount` convention at the **event level**:
+
+- `--repeat-count 1`: play once, the default.
+- `--repeat-count 2..64`: play the track that many times.
+- `--repeat-count 0`: repeat indefinitely, **only** when
+  `--max-frames` explicitly sets a finite stopping window at 44100 Hz.
+
+```sh
+# Inspect three play-throughs without creating audio:
+python3 tools/repeat_ps1_seq.py /local/path/music.seq --repeat-count 3
+
+# Inspect a bounded 'infinite' loop, stopping at 10 seconds:
+python3 tools/repeat_ps1_seq.py /local/path/music.seq \
+  --repeat-count 0 --max-frames 441000
+
+# Direct local VH/VB dry stereo rendering, no intermediate JSON:
+python3 tools/render_ps1_seq.py \
+  /local/path/music.seq /local/path/music.vh /local/path/music.vb \
+  /local/path/repeated-note.wav --repeat-count 2
+
+# One bounded 'infinite' 10-second diagnostic render:
+python3 tools/render_ps1_seq.py \
+  /local/path/music.seq /local/path/music.vh /local/path/music.vb \
+  /local/path/bounded-loop.wav --repeat-count 0 --max-frames 441000
+python3 tests/test_repeat_ps1_seq.py
+```
+
+For clean `FF 2F` seams before the last iteration, the event stream
+uses `loop_boundary` instead of `end_of_track`. Like the reference
+PC port, this **does not issue note-offs to held voices** and it
+preserves controller/program state and the current tempo. It resets
+the implicit MIDI running status by parsing the original event stream
+on each iteration. Each tick delta is converted to a 44100-Hz frame
+using exact rational arithmetic, *including inherited tempo at the
+start of later cycles*. This avoids restarting every cycle at the
+header tempo when a prior cycle ended with a tempo change.
+
+The final finite loop terminates at `end_of_track` and releases
+held notes. In infinite mode the specified `--max-frames` hard
+stop produces a marked end event (`truncated_by_window`) and
+truncates any pending release tail rather than writing past the
+requested window. A zero-tick sequence is rejected for infinite
+replay; count, event and 20-second output limits prevent runaway work.
+
+This is **not exact original playback timing**: the PC-port advances
+musical ticks in audio-buffer blocks via `PC_SeqAdvanceSamples`.
+Its end-of-track handler resets accumulated tick budget; our offline
+tool models ideal continuous tempo integration across loop seams.
+Real-world song repetition, note scheduling, voice lifetime, pitch,
+reverb and Switch output still need comparison to the actual game
+runtime and a hardware/PC recording.
+
+No original SEQ/VH/VB files or generated game audio are committed.
+Only synthetic tests and parser/rendering code are included.
