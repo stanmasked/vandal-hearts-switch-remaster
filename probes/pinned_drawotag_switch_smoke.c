@@ -7,6 +7,7 @@
 #include <signal.h>
 #include <string.h>
 #include "PsyQ/libgpu.h"
+#include "PsyQ/libgte.h"
 #include "pc_gpu_internal.h"
 #include "pc_platform.h"
 #include "switch_sdl2_observer_backend.h"
@@ -330,6 +331,20 @@ static int draw_private_map_preview(void) {
     LoadImage(&palette, (unsigned int *)map_clut_words);
     ClearOTag(ot, 1);
     if (private_geometry_active) {
+        MATRIX camera = {0};
+        SVECTOR pitch = {-512, 0, 0, 0};
+        VECTOR camera_zoom = {0, 0, 96, 0};
+        /* The pinned ORIGINAL PC-port libgte.c models PS1 RTPT,
+         * RTPS, perspective division and depth quantization. This
+         * neutral test camera is selected solely for our 12x9 probe,
+         * NOT copied from the game's battle camera state. */
+        InitGeom();
+        SetGeomOffset(6, 4);
+        SetGeomScreen(14);
+        RotMatrix(&pitch, &camera);
+        TransMatrix(&camera, &camera_zoom);
+        SetRotMatrix(&camera);
+        SetTransMatrix(&camera);
         /* Source-authored MapTileModel face indices/vertices, independent
          * GFX slot -> LAND_DT UVWH / CLUT. This intentionally uses a
          * deterministic ORTHOGRAPHIC preview transform, NOT yet the
@@ -339,7 +354,8 @@ static int draw_private_map_preview(void) {
             const VhPreviewFace *face = &private_geometry.faces[face_index];
             unsigned slot, palette_id;
             const unsigned char *uv;
-            int sx[4], sy[4];
+            SVECTOR source_vertices[4];
+            int projected[4], projected_ir0, projected_flags, otz;
             unsigned i;
             POLY_FT4 *poly;
             if (face->local_gfx <= 0) continue;
@@ -353,16 +369,30 @@ static int draw_private_map_preview(void) {
                 (unsigned)uv[1] + uv[3] >= 256u)
                 return 0;
             for (i = 0; i < 4; ++i) {
-                sx[i] = 6 + face->vertex[i][0] / 8;
-                sy[i] = 4 + face->vertex[i][2] / 8 -
-                        face->vertex[i][1] / 16;
+                source_vertices[i].vx = face->vertex[i][0];
+                source_vertices[i].vy = face->vertex[i][1];
+                source_vertices[i].vz = face->vertex[i][2];
+                source_vertices[i].pad = 0;
             }
+            /* RotTransPers4 invokes actual upstream GTE RTPT then RTPS
+             * and AVSZ4. It returns four signed packed screen XY pairs. */
+            otz = RotTransPers4(
+                &source_vertices[0], &source_vertices[1],
+                &source_vertices[2], &source_vertices[3],
+                &projected[0], &projected[1],
+                &projected[2], &projected[3],
+                &projected_ir0, &projected_flags);
+            if (otz <= 0) continue;
             poly = &terrain_faces[face_drawn++];
             SetPolyFT4(poly);
-            poly->x0 = sx[0]; poly->y0 = sy[0];
-            poly->x1 = sx[1]; poly->y1 = sy[1];
-            poly->x2 = sx[2]; poly->y2 = sy[2];
-            poly->x3 = sx[3]; poly->y3 = sy[3];
+            poly->x0 = (short)(projected[0] & 0xffff);
+            poly->y0 = (short)((unsigned)projected[0] >> 16);
+            poly->x1 = (short)(projected[1] & 0xffff);
+            poly->y1 = (short)((unsigned)projected[1] >> 16);
+            poly->x2 = (short)(projected[2] & 0xffff);
+            poly->y2 = (short)((unsigned)projected[2] >> 16);
+            poly->x3 = (short)(projected[3] & 0xffff);
+            poly->y3 = (short)((unsigned)projected[3] >> 16);
             setUVWH(poly, uv[0], uv[1], uv[2], uv[3]);
             setRGB0(poly, 128, 128, 128);
             setTPage(poly, 0, 0, 320, 0);
