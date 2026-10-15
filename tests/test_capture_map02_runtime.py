@@ -7,8 +7,9 @@ import stat
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from tools.capture_map02_runtime import capture, executable_contains_marker
+from tools.capture_map02_runtime import capture, sha256_file, executable_contains_marker
 from tools.prepare_map02_pcport import PINNED_BLOB_SHA1, PINNED_UPSTREAM_REF
 
 
@@ -271,6 +272,43 @@ class CaptureMap02RuntimeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "valid binary marker"):
                 capture(exe, trace_dir, output)
             manifest_path.write_text(json.dumps(manifest))
+
+    def test_failed_process_launch_keeps_report_and_binary_identity(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            exe, trace_dir = fixture(base)
+            exe.write_text("#!/definitely/no/such/python3\n", encoding="utf-8")
+            original_sha = sha256_file(exe)
+            output = base / "run"
+            self.assertEqual(capture(exe, trace_dir, output), 1)
+            self.assertTrue((output / "game_stdout.log").exists())
+            report = json.loads((output / "capture_report.json").read_text())
+            self.assertEqual(report["binary_sha256"], original_sha)
+            self.assertIsNone(report["game_exit_code"])
+            self.assertIn("launch_error", report)
+            self.assertTrue(report["analysis"]["errors"])
+            self.assertFalse((output / "map02_trace.jsonl").exists())
+
+    def test_closed_terminal_output_does_not_destroy_raw_capture(self):
+        class BrokenOutput:
+            class Buffer:
+                def write(self, _):
+                    raise BrokenPipeError("simulated terminal closing")
+
+                def flush(self):
+                    pass
+
+            buffer = Buffer()
+
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            exe, trace_dir = fixture(base)
+            output = base / "run"
+            with patch("tools.capture_map02_runtime.sys.stdout", BrokenOutput()):
+                self.assertEqual(capture(exe, trace_dir, output), 0)
+            self.assertIn(b"booting pc-port", (output / "game_stdout.log").read_bytes())
+            self.assertEqual(json.loads((output / "capture_report.json").read_text())
+                             ["analysis"]["errors"], [])
 
     def test_process_failure_is_not_mistaken_for_success(self):
         with tempfile.TemporaryDirectory() as folder:
