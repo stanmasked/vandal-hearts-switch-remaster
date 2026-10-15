@@ -86,6 +86,8 @@ def main() -> int:
     parser.add_argument("-o", "--output", default="-", help="new JSONL output path, or '-' for stdout")
     parser.add_argument("--require-complete", action="store_true",
                         help="reject traces without both post_load and draw samples for both faces")
+    parser.add_argument("--require-full-trace", action="store_true",
+                        help="also require a preceding same-frame/path visit for each draw or skip")
     args = parser.parse_args()
     try:
         if args.capture == "-":
@@ -94,8 +96,8 @@ def main() -> int:
             with Path(args.capture).open("r", encoding="utf-8",
                                          errors="replace") as handle:
                 entries = extract_trace_lines(handle)
-        if args.require_complete:
-            result = evaluate_trace(entries)
+        if args.require_complete or args.require_full_trace:
+            result = evaluate_trace(entries, require_full_trace=args.require_full_trace)
             if result["errors"]:
                 raise ValueError("incomplete or invalid Map02 trace: " + "; ".join(result["errors"]))
         payload = "".join(json.dumps(entry, ensure_ascii=False, separators=(",", ":")) + "\n" for entry in entries)
