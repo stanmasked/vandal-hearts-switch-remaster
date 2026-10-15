@@ -46,10 +46,22 @@ def extract_audio_payloads(
         raise ValueError("Channel must be between 0 and 255.")
     if file_number is not None and not 0 <= file_number <= 255:
         raise ValueError("File number must be between 0 and 255.")
-    if source.resolve() == destination.resolve():
+    source_resolved = source.resolve()
+    destination_resolved = destination.resolve()
+    if source_resolved == destination_resolved or (
+        destination.exists() and source.exists() and destination.samefile(source)
+    ):
         raise ValueError("Output must not overwrite the source image.")
-    if report_path is not None and report_path.resolve() in {source.resolve(), destination.resolve()}:
-        raise ValueError("Report path must differ from source and output paths.")
+    if report_path is not None:
+        report_resolved = report_path.resolve()
+        report_aliases_source = report_resolved == source_resolved or (
+            report_path.exists() and source.exists() and report_path.samefile(source)
+        )
+        report_aliases_destination = report_resolved == destination_resolved or (
+            report_path.exists() and destination.exists() and report_path.samefile(destination)
+        )
+        if report_aliases_source or report_aliases_destination:
+            raise ValueError("Report path must differ from source and output paths.")
 
     audio_lbas: list[int] = []
     selected = mode2 = valid_subheaders = 0
