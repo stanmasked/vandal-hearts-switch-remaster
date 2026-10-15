@@ -310,3 +310,5 @@ Verification is read-only and does not upload, copy or publish game assets.
 Without `--source-bin`, existing report/payload-only validation still works.
 This proves byte-level extraction consistency for that local image, not
 correct audio playback or the fidelity of the decoder.
+
+Additional synthetic source-BIN regression cases verify that a malformed duplicated XA subheader, an altered sector mode, an unsupported coding byte, or a source image shorter than its declared LBA range causes verification to fail. Such checks test detection only; they do not verify real game audio decoding or Nintendo Switch playback.
