@@ -146,3 +146,11 @@ int vh_switch_rgb24_presenter_draw(VhSwitchRgb24Presenter *presenter,
     return 1;
 }
 
+
+void vh_switch_rgb24_presenter_destroy(VhSwitchRgb24Presenter *presenter) {
+    if (!presenter) return;
+    if (presenter->texture) glDeleteTextures(1, &presenter->texture);
+    if (presenter->vertex_buffer) glDeleteBuffers(1, &presenter->vertex_buffer);
+    if (presenter->program) glDeleteProgram(presenter->program);
+    memset(presenter, 0, sizeof(*presenter));
+}
