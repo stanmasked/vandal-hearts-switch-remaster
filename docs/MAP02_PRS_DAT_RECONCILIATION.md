@@ -29,6 +29,19 @@ Neither replacing PRS references with DAT references nor assigning synthetic UVs
 
 The read-only `tools/compare_map02_variants.py` accepts a **decompressed** `M_MAP02.PRS` stream and corresponding `M_MAP02.DAT`. The `matches_prior_disc_audit` field checks only the two recorded byte differences: synthetic inputs can satisfy this signature. Use `--require-prior-provenance` to also require the archived decompressed PRS SHA-256 fingerprint. This still does not prove which variant the renderer actually selects. No game assets are committed.
 
+## Classifying post-LoadMap face observations
+
+The read-only comparison tool accepts `--runtime-capture /local/path/capture.json` alongside decompressed PRS and DAT. The JSON file is a list with exactly two entries, each containing integer fields `record_index`, `face`, `local_gfx`, and `runtime_gfx`. For example, a **hypothetical**, not observed, PRS capture:
+
+```json
+[
+  {"record_index": 243, "face": 0, "local_gfx": 241, "runtime_gfx": 641},
+  {"record_index": 319, "face": 0, "local_gfx": 243, "runtime_gfx": 643}
+]
+```
+
+The tool classifies these observations as PRS, DAT, mixed or neither and checks the expected local-to-global GFX translation (+400 for nonzero indices). **This does not collect runtime observations**; the game must be instrumented separately. Nor does a PRS match alone establish texture visibility, tpage, CLUT, flags or screenshot correctness.
+
 ## Next decisive runtime verification
 
 Trace the actual load and drawing of faces `(z=8,x=19,face=0)` and `(z=11,x=11,face=0)`: capture local GFX, global GFX, UV, CLUT, tpage and draw flags after `LoadMap` and on each rendering pass. Compare those records to a gameplay screenshot captured from the original build. Determine whether PRS or DAT data is actually used at runtime before attempting artistic repairs.
