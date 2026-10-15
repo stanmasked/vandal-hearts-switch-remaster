@@ -503,3 +503,27 @@ These are consistency and provenance checks, not a cryptographic signed
 attestation tying every object in a binary to a particular source commit.
 Game-map pixels and choice of PRS or DAT still require a real runtime
 capture and reference comparison.
+
+
+## Long-session capture and interrupted games
+
+The capture helper now preserves a **partial report** when interrupted by
+Ctrl+C. It requests termination of the child PC-port process, waits briefly
+for remaining console output, and kills an unresponsive child if needed.
+The report records `"interrupted": true` and the process exit code. Its
+exit status remains **nonzero** even if four matching trace events happened
+to be present before interruption, because the gameplay session was not
+completed normally.
+
+A busy PC port may produce a very large combined `game_stdout.log` during
+a long map-11 session. Both `tools.capture_map02_runtime` and
+`tools.extract_map02_trace` now **parse that file line by line** instead of
+materializing the entire console log in memory. The complete original
+capture is still saved byte-for-byte; only diagnostic JSON objects are
+retained for the trace analyzer. Long trace sessions with many valid JSON
+events can still consume memory proportional to the number of events.
+
+The host regression tests cover a simulated keyboard interruption,
+20,000 ordinary non-trace messages ahead of real event-format records,
+and console logs containing invalid UTF-8 bytes. These do not constitute
+a game runtime capture or verify a completed GitHub Actions run.
