@@ -23,36 +23,49 @@ def review_capture(directory: Path) -> dict:
     integrity = verify_bundle(directory)  # Replays original stdout and hashes.
     capture = json.loads((directory / "capture_report.json").read_text(encoding="utf-8"))
     analysis = capture.get("analysis") or {}
-    observations = analysis.get("observations") or []
-    by_position = {}
-    for entry in observations:
-        if not isinstance(entry, dict):
-            continue
-        pos = (entry.get("z"), entry.get("x"), entry.get("face"))
-        if pos in TARGETS:
-            by_position[pos] = entry
+    def faces_for(single_analysis):
+        by_position = {}
+        for entry in single_analysis.get("observations") or []:
+            if not isinstance(entry, dict):
+                continue
+            pos = (entry.get("z"), entry.get("x"), entry.get("face"))
+            if pos in TARGETS:
+                by_position[pos] = entry
 
-    faces = []
-    for pos, (prs_gfx, dat_gfx) in TARGETS.items():
-        entry = by_position.get(pos, {})
-        metadata = entry.get("draw_metadata")
-        if not isinstance(metadata, dict):
-            metadata = {}
-        faces.append({
-            "label": FACE_LABELS[pos],
-            "position": {"z": pos[0], "x": pos[1], "face": pos[2]},
-            "expected_prs_gfx": prs_gfx,
-            "expected_dat_gfx": dat_gfx,
-            "post_load_gfx": entry.get("post_load_gfx"),
-            "post_load_variant": entry.get("post_load_variant"),
-            "draw_gfx": entry.get("draw_gfx"),
-            "draw_variant": entry.get("draw_variant"),
-            "draw_status": entry.get("draw_status", "not_observed"),
-            "draw_submissions": entry.get("draw_observation_count", 0),
-            "renderer_visits": entry.get("visit_observation_count", 0),
-            "renderer_skips": entry.get("skip_observation_count", 0),
-            "paths": entry.get("draw_paths", []),
-            "draw_gpu_primitive": {field: metadata.get(field) for field in GPU_FIELDS},
+        faces = []
+        for pos, (prs_gfx, dat_gfx) in TARGETS.items():
+            entry = by_position.get(pos, {})
+            metadata = entry.get("draw_metadata")
+            if not isinstance(metadata, dict):
+                metadata = {}
+            faces.append({
+                "label": FACE_LABELS[pos],
+                "position": {"z": pos[0], "x": pos[1], "face": pos[2]},
+                "expected_prs_gfx": prs_gfx,
+                "expected_dat_gfx": dat_gfx,
+                "post_load_gfx": entry.get("post_load_gfx"),
+                "post_load_variant": entry.get("post_load_variant"),
+                "draw_gfx": entry.get("draw_gfx"),
+                "draw_variant": entry.get("draw_variant"),
+                "draw_status": entry.get("draw_status", "not_observed"),
+                "draw_submissions": entry.get("draw_observation_count", 0),
+                "renderer_visits": entry.get("visit_observation_count", 0),
+                "renderer_skips": entry.get("skip_observation_count", 0),
+                "paths": entry.get("draw_paths", []),
+                "draw_gpu_primitive": {field: metadata.get(field) for field in GPU_FIELDS},
+            })
+        return faces
+
+    loads = analysis.get("map_loads") or [analysis]
+    map_loads = []
+    for index, episode in enumerate(loads, 1):
+        faces = faces_for(episode)
+        map_loads.append({
+            "number": index,
+            "post_load_variant": episode.get("post_load_overall_variant"),
+            "draw_variant": episode.get("draw_overall_variant"),
+            "errors": episode.get("errors") or [],
+            "faces": faces,
         })
     errors = analysis.get("errors") or []
     consistent = integrity["complete_capture"] and not errors
@@ -60,22 +73,31 @@ def review_capture(directory: Path) -> dict:
     draw_variant = analysis.get("draw_overall_variant")
     agreed = (post_variant in ("PRS", "DAT")
               and post_variant == draw_variant
-              and all(face["draw_submissions"] > 0 for face in faces))
+              and all(not load["errors"] and all(face["draw_submissions"] > 0
+                  for face in load["faces"]) for load in map_loads))
     variant = post_variant if consistent and agreed else "undetermined"
+    # With repeated map loads, never expose one flattened pair of face values
+    # that might silently represent different gameplay episodes.
+    faces = map_loads[0]["faces"] if len(map_loads) == 1 else []
     return {
         "kind": "map02_bridge_runtime_review",
         "evidence_integrity": integrity["integrity"],
         "capture_complete": integrity["complete_capture"],
         "runtime_variant": variant,
-        "runtime_variant_scope": ("both target faces: post-load and AddPrim submission"
-                                  if variant != "undetermined"
-                                  else "insufficient or inconsistent runtime evidence"),
+        "runtime_variant_scope": (
+            f"both target faces across {len(map_loads)} independent map load(s): "
+            "post-load and AddPrim submission"
+            if variant != "undetermined"
+            else "insufficient or inconsistent runtime evidence"
+        ),
         "source_trace_mode": (capture.get("source_provenance") or {}).get("trace_mode"),
         "binary_sha256": capture.get("binary_sha256"),
         "raw_log_sha256": integrity.get("raw_log_sha256"),
         "trace_jsonl_sha256": integrity.get("trace_jsonl_sha256"),
         "trace_events": integrity["trace_events"],
         "errors": errors,
+        "map_load_count": len(map_loads),
+        "map_loads": map_loads,
         "faces": faces,
         "pixels_visually_verified": False,
         "caveat": (
@@ -95,27 +117,35 @@ def markdown_review(report: dict) -> str:
         "**Runtime PRS/DAT identification:** " + report["runtime_variant"],
         "**Scope:** " + report["runtime_variant_scope"],
         "**Visible pixels confirmed:** no",
-        "",
-        "| Face (z,x,index) | PRS/DAT GFX | Post-load | AddPrim GFX | "
-        "Submissions / visits / skips |",
-        "| --- | --- | --- | --- | --- |",
+        f'**Map load episodes:** {report["map_load_count"]}',
     ]
-    for face in report["faces"]:
-        pos = face["position"]
-        coordinate = f'{pos["z"]},{pos["x"]},{pos["face"]}'
-        prs_dat = f'{face["expected_prs_gfx"]} / {face["expected_dat_gfx"]}'
-        post = str(face["post_load_gfx"]) if face["post_load_gfx"] is not None else "absent"
-        draw = str(face["draw_gfx"]) if face["draw_gfx"] is not None else "absent"
-        counts = (f'{face["draw_submissions"]} / '
-                  f'{face["renderer_visits"]} / {face["renderer_skips"]}')
-        lines.append(f'| {face["label"]} ({coordinate}) | {prs_dat} | {post} | {draw} | {counts} |')
-    lines.extend(["", "## Submitted GPU primitive fields", ""])
-    for face in report["faces"]:
-        metadata = face["draw_gpu_primitive"]
-        formatted = ", ".join(f"{name}={metadata[name]}" if metadata[name] is not None
-                              else f"{name}=not recorded" for name in GPU_FIELDS)
-        lines.append(f'- {face["label"]}: {formatted}; draw paths: '
-                     + (", ".join(face["paths"]) or "none"))
+    for load in report["map_loads"]:
+        if report["map_load_count"] > 1:
+            lines.extend(["", f'## Map load {load["number"]}',
+                          f'Post-load variant: {load["post_load_variant"]}; '
+                          f'AddPrim variant: {load["draw_variant"]}'])
+        lines.extend([
+            "",
+            "| Face (z,x,index) | PRS/DAT GFX | Post-load | AddPrim GFX | "
+            "Submissions / visits / skips |",
+            "| --- | --- | --- | --- | --- |",
+        ])
+        for face in load["faces"]:
+            pos = face["position"]
+            coordinate = f'{pos["z"]},{pos["x"]},{pos["face"]}'
+            prs_dat = f'{face["expected_prs_gfx"]} / {face["expected_dat_gfx"]}'
+            post = str(face["post_load_gfx"]) if face["post_load_gfx"] is not None else "absent"
+            draw = str(face["draw_gfx"]) if face["draw_gfx"] is not None else "absent"
+            counts = (f'{face["draw_submissions"]} / '
+                      f'{face["renderer_visits"]} / {face["renderer_skips"]}')
+            lines.append(f'| {face["label"]} ({coordinate}) | {prs_dat} | {post} | {draw} | {counts} |')
+        lines.extend(["", "### Submitted GPU primitive fields", ""])
+        for face in load["faces"]:
+            metadata = face["draw_gpu_primitive"]
+            formatted = ", ".join(f"{name}={metadata[name]}" if metadata[name] is not None
+                                  else f"{name}=not recorded" for name in GPU_FIELDS)
+            lines.append(f'- {face["label"]}: {formatted}; draw paths: '
+                         + (", ".join(face["paths"]) or "none"))
     if report["errors"]:
         lines.extend(["", "## Validation errors", ""])
         lines.extend(f"- {error}" for error in report["errors"])
