@@ -472,7 +472,26 @@ The capture directory contains:
 - `game_stdout.log` — byte-for-byte combined stdout/stderr, including non-UTF-8 bytes
 - `map02_trace.jsonl` — extracted events, when any exist
 - `capture_report.json` — consistency analysis, binary SHA-256,
-  source provenance, and game process exit code
+  source provenance, game exit code, and independent SHA-256 + byte counts
+  for raw stdout and derived JSONL (missing files are represented by null)
+
+Once the game capture has finished (including an interrupted or
+failed capture), verify its evidence bundle offline without the game assets:
+
+```sh
+python3 -m tools.verify_map02_capture /path/to/capture-directory
+python3 -m tools.verify_map02_capture /path/to/capture-directory --require-complete
+```
+
+The verifier checks saved byte lengths and SHA-256 values, independently
+replays the original `game_stdout.log` into Map02 events, compares every
+extracted observation with `map02_trace.jsonl`, and recalculates the analysis
+recorded in `capture_report.json`. It detects accidental edits or mismatched
+files and also validates intentionally incomplete captures without claiming
+that missing observations were seen. The strict option returns a nonzero
+status for incomplete sessions even when their saved evidence is consistent.
+This is a **consistency check, not a signed provenance guarantee**: a
+deliberate actor controlling the files and report could rewrite all of them.
 
 The script returns exit status 0 only when the game process exits successfully
 and the analyzer has **no trace errors**; 1 means the game failed, 2 indicates
