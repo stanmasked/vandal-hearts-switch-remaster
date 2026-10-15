@@ -31,6 +31,7 @@ def analyze_boundaries(
     lbas = report["audio_lbas"]
     largest: list[tuple[int, int, dict[str, object]]] = []
     flagged = 0
+    adjacent = gapped = adjacent_flagged = gapped_flagged = 0
     total = max(0, len(lbas) - 1)
     with wave.open(str(wav_path), "rb") as pcm:
         for index in range(1, len(lbas)):
@@ -42,14 +43,23 @@ def analyze_boundaries(
             left_jump = abs(new_left - old_left)
             right_jump = abs(new_right - old_right)
             jump = max(left_jump, right_jump)
+            missing = lbas[index] - lbas[index - 1] - 1
+            if missing:
+                gapped += 1
+            else:
+                adjacent += 1
             if jump >= threshold:
                 flagged += 1
+                if missing:
+                    gapped_flagged += 1
+                else:
+                    adjacent_flagged += 1
             if top:
                 item = {
                     "boundary_index": index,
                     "previous_lba": lbas[index - 1],
                     "next_lba": lbas[index],
-                    "missing_source_sectors": lbas[index] - lbas[index - 1] - 1,
+                    "missing_source_sectors": missing,
                     "left_jump": left_jump,
                     "right_jump": right_jump,
                     "max_jump": jump,
@@ -64,12 +74,17 @@ def analyze_boundaries(
         "boundaries_checked": total,
         "jump_threshold": threshold,
         "boundaries_at_or_above_threshold": flagged,
+        "adjacent_lba_boundaries": adjacent,
+        "gapped_lba_boundaries": gapped,
+        "adjacent_lba_boundaries_above_threshold": adjacent_flagged,
+        "gapped_lba_boundaries_above_threshold": gapped_flagged,
         "largest_boundaries": [
             item for _, _, item in sorted(largest, key=lambda x: (-x[0], x[1]))
         ],
         "warning": (
-            "PCM jumps do not prove audible defects. This does not reconstruct "
-            "original CD-XA interleave or playback timing."
+            "PCM jumps do not prove audible defects. Gaps may reflect interleaved "
+            "CD-XA sectors, not missing audio frames. This does not reconstruct "
+            "original playback timing."
         ),
     }
 
