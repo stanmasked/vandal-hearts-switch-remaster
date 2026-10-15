@@ -98,5 +98,24 @@ class ExtractCdXaPayloadTests(unittest.TestCase):
                 extract_audio_payloads(src, Path(temp) / "out.bin")
 
 
+    def test_failed_report_staging_does_not_publish_partial_payload(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            src, dst = root / "disc.bin", root / "payload.bin"
+            src.write_bytes(sector(marker=0x31))
+            dst.write_bytes(b"keep previous payload")
+            blocker = root / "not-a-directory"
+            blocker.write_text("file blocks report directory", encoding="utf-8")
+            report_path = blocker / "report.json"
+
+            with self.assertRaises(OSError):
+                extract_audio_payloads(src, dst, report_path=report_path)
+
+            self.assertEqual(dst.read_bytes(), b"keep previous payload")
+            self.assertEqual(list(root.glob(".payload.bin.*.tmp")), [])
+            self.assertEqual(list(root.glob(".report.json.*.tmp")), [])
+
+
+
 if __name__ == "__main__":
     unittest.main()
