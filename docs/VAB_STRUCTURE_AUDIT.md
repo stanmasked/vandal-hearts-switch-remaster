@@ -813,3 +813,55 @@ reverb, voice-release comparison on the console, streaming from
 actual game resources or validating audible Switch output. Passing
 synthetic host CI or compiling individual AArch64 objects is not
 proof that the full game music is running on Nintendo Switch.
+
+
+## Native Gaussian four-tap SPU interpolation (C11)
+
+The native SPU engine now includes `source/vh_spu_gaussian.h/.c`.
+This embeds **exactly 512 int16 coefficients** extracted from the
+existing Python `tools/spu_gaussian_table.py` reference, without
+floating-point approximation or use of copyrighted sample assets.
+
+Each fetch uses the source port's index `gi = (phase >> 4) & 0xff`
+and four neighboring samples at positions `index-3`, `index-2`,
+`index-1`, `index`. The four coefficient products are each divided
+by 32768 **with signed floor rounding**, then added and clipped to
+signed 16-bit PCM. This is important: summing before the shift or
+using C's default signed integer division changes the low PCM bits.
+
+Playback before the start of the sample uses zero-filled history.
+When a looping VAG first wraps, the `looped` flag switches earlier
+tap positions to the end of the repeat interval, matching the Python
+host reference. The same flag is reset by a new key-on.
+
+`vh_native_spu_set_interpolation(spu, VH_SPU_GAUSSIAN)` enables
+Gaussian in an initialized SPU state. `VH_SPU_NEAREST` remains the
+zero-initialized default for legacy exact-output comparisons.
+The **SDL2 Switch audio probe now explicitly selects Gaussian**
+for its fabricated looping SPU-ADPCM sample.
+
+Host validation:
+
+```sh
+make test-audio-stream
+python3 tests/test_native_spu_gaussian.py
+```
+
+`tests/test_vh_native_spu.c` checks exact native PCM against
+hard-coded four-tap Gaussian output frames around the first
+loop wrap and subsequent iterations. The Python differential
+test compiles the same native `vh_spu_gaussian.c` C11 source into a
+temporary host library and compares individual integer samples to
+`gaussian_voice_sample()` across a deterministic corpus of signed
+PCM values, fractional phases, startup histories and loop positions.
+The `Host SPU audio regressions` workflow runs these and native
+UBSan checks. `Switch native PCM transport cross-compile`
+includes an AArch64 object for the new Gaussian module.
+
+**Current limits:** although Gaussian coefficients and arithmetic
+follow the software PC reference, the native engine still lacks
+native PS1 SEQ/VAB parsing and timing, original full controller
+and velocity-dependent gain/pan law, reverb, runtime voice ownership,
+and hardware-based auditory acceptance. The synthetic SDL2 probe is
+not playback of original Vandal Hearts music. Cross-compiling
+C objects is not a confirmed NRO playback test.
