@@ -304,6 +304,44 @@ class LocalXaCheckTests(unittest.TestCase):
         verify_audit(directory / "audit-result.json", self.source, redecode=True)
         self.assertEqual(original, {name: (directory / name).read_bytes() for name in names})
 
+    def test_audit_paths_cannot_redirect_verification_outside_directory(self):
+        directory = self.root / "safe-audit"
+        run_local_check(self.source, directory, file_number=1, channel=0,
+                        start_lba=1, sector_count=3)
+        path = directory / "audit-result.json"
+        original = path.read_bytes()
+
+        # Even an existing, valid file outside the audit directory must not
+        # be followed merely because the report JSON names it.
+        for field in ("payload", "report", "wav"):
+            with self.subTest(field=field):
+                edited = json.loads(original)
+                edited[field] = str(self.root / "unrelated.wav")
+                path.write_text(json.dumps(edited), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "unexpected filename"):
+                    verify_audit(path, self.source)
+        path.write_bytes(original)
+
+        payload = directory / "audio-groups.bin"
+        outside = self.root / "outside-payload.bin"
+        outside.write_bytes(payload.read_bytes())
+        payload.unlink()
+        payload.symlink_to(outside)
+        with self.assertRaisesRegex(ValueError, "regular file in audit directory"):
+            verify_audit(path, self.source)
+        payload.unlink()
+        payload.write_bytes(outside.read_bytes())
+        self.assertEqual(verify_audit(path, self.source)["status"], "audit_files_verified")
+
+    def test_moved_audit_folder_with_recorded_old_paths(self):
+        directory = self.root / "original-audit-folder"
+        run_local_check(self.source, directory, file_number=1, channel=0,
+                        start_lba=1, sector_count=3)
+        moved = self.root / "relocated-audit-folder"
+        directory.rename(moved)
+        self.assertEqual(verify_audit(moved / "audit-result.json", self.source)["status"],
+                         "audit_files_verified")
+
     def test_saved_audit_rejects_tampered_lbas_frames_and_stream(self):
         directory = self.root / "metadata-audit"
         run_local_check(
