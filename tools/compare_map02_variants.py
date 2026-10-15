@@ -59,6 +59,58 @@ def compare_map02(prs: bytes, dat: bytes) -> dict:
     }
 
 
+
+def classify_runtime_faces(report: dict, captured: list[dict]) -> dict:
+    """Compare post-LoadMap GFX observations without assuming PRS or DAT wins.
+
+    Captures contain record_index, face, local_gfx and runtime_gfx.
+    A complete, unique observation for each target is required.
+    """
+    if not isinstance(captured, list):
+        raise ValueError("runtime capture must be a list")
+    by_key = {}
+    for item in captured:
+        if not isinstance(item, dict):
+            raise ValueError("runtime capture entries must be objects")
+        for field in ("record_index", "face", "local_gfx", "runtime_gfx"):
+            if type(item.get(field)) is not int:
+                raise ValueError(f"runtime capture {field} must be an integer")
+        key = (item["record_index"], item["face"])
+        if key in by_key:
+            raise ValueError(f"duplicate runtime capture for {key}")
+        if item["local_gfx"] < 0 or item["local_gfx"] > 255:
+            raise ValueError("runtime local_gfx outside byte range")
+        by_key[key] = item
+    expected_keys = {(face["record_index"], face["face"]) for face in report["target_faces"]}
+    if set(by_key) != expected_keys:
+        raise ValueError("runtime captures must contain exactly both target record/face pairs")
+    classifications = []
+    for face in report["target_faces"]:
+        key = (face["record_index"], face["face"])
+        item = by_key[key]
+        local = item["local_gfx"]
+        runtime = item["runtime_gfx"]
+        translated = local + 400 if local else 0
+        consistent = runtime == translated
+        prs = consistent and local == face["prs_local_gfx"]
+        dat = consistent and local == face["dat_local_gfx"]
+        classifications.append({
+            "record_index": key[0], "face": key[1],
+            "observed_local_gfx": local, "observed_runtime_gfx": runtime,
+            "translation_consistent": consistent,
+            "matches_prs": prs, "matches_dat": dat,
+            "classification": (
+                "invalid_translation" if not consistent else
+                "both" if prs and dat else "prs" if prs else "dat" if dat else "neither"
+            ),
+        })
+    return {
+        "faces": classifications,
+        "all_match_prs": all(v["classification"] == "prs" for v in classifications),
+        "all_match_dat": all(v["classification"] == "dat" for v in classifications),
+        "warning": "Post-LoadMap GFX observations only; no draw-call or visual correctness proof.",
+    }
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("decompressed_prs", type=Path)
@@ -67,10 +119,16 @@ def main() -> int:
                         help="exit nonzero if observed differences do not match the documented two bytes")
     parser.add_argument("--require-prior-provenance", action="store_true",
                         help="require both documented two-byte changes and original decompressed PRS SHA-256")
+    parser.add_argument("--runtime-capture", type=Path,
+                        help="JSON list of two post-LoadMap face observations to classify")
     args = parser.parse_args()
     try:
         report = compare_map02(args.decompressed_prs.read_bytes(), args.dat.read_bytes())
-    except (OSError, ValueError) as exc:
+        if args.runtime_capture is not None:
+            report["runtime_capture_comparison"] = classify_runtime_faces(
+                report, json.loads(args.runtime_capture.read_text(encoding="utf-8"))
+            )
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
         parser.error(str(exc))
     print(json.dumps(report, indent=2))
     return int((args.require_prior_variant and not report["matches_prior_disc_audit"]) or
