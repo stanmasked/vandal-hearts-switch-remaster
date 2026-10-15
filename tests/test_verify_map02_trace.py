@@ -61,6 +61,43 @@ class RuntimeTraceTests(unittest.TestCase):
         report = evaluate_trace(observations(draw_a=498))
         self.assertTrue(any("changed between" in error for error in report["errors"]))
 
+    def test_backface_skip_explains_missing_submission(self):
+        entries = observations()[:-1]
+        entries.append({"z": 11, "x": 11, "face": 0, "stage": "skip",
+                        "gfx": 643, "frame": 7, "path": "normal",
+                        "reason": "backface"})
+        report = evaluate_trace(entries)
+        self.assertEqual(report["observations"][1]["draw_status"],
+                         "skipped_in_observed_passes")
+        self.assertEqual(report["observations"][1]["skip_reasons"], ["backface"])
+        self.assertEqual(report["observations"][1]["skip_observation_count"], 1)
+        self.assertTrue(any("missing draw" in e for e in report["errors"]))
+        plain = evaluate_trace(observations()[:-1])
+        self.assertEqual(plain["observations"][1]["draw_status"], "no_renderer_observation")
+
+    def test_null_texture_skip_and_draw_can_coexist(self):
+        entries = observations()
+        entries.append({"z": 8, "x": 19, "face": 0, "stage": "skip",
+                        "gfx": 0, "frame": 7, "path": "overhead",
+                        "reason": "null_gfx"})
+        report = evaluate_trace(entries)
+        self.assertEqual(report["errors"], [])
+        self.assertEqual(report["observations"][0]["draw_status"], "submitted")
+        self.assertEqual(report["observations"][0]["skip_reasons"], ["null_gfx"])
+
+    def test_skip_schema_and_duplicates_are_checked(self):
+        entries = observations()
+        skip = {"z": 8, "x": 19, "face": 0, "stage": "skip",
+                "gfx": 641, "frame": 2, "path": "edge", "reason": "backface"}
+        duplicate = evaluate_trace(entries + [skip, dict(skip)])
+        self.assertTrue(any("duplicate skip" in e for e in duplicate["errors"]))
+        for field, wrong in (("frame", True), ("path", "invalid"), ("reason", "outside")):
+            with self.subTest(field=field):
+                report = evaluate_trace(entries + [{**skip, field: wrong}])
+                self.assertTrue(any("skip" in e for e in report["errors"]))
+        bad_gfx = evaluate_trace(entries + [{**skip, "gfx": 999}])
+        self.assertTrue(any("unexpected GFX 999" in e for e in bad_gfx["errors"]))
+
     def test_missing_draw(self):
         report = evaluate_trace(observations()[:-1])
         self.assertTrue(any("missing draw" in error for error in report["errors"]))
