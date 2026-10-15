@@ -34,7 +34,9 @@ on:
       - "tests/test_switch_upstream_observer.c"
       - "tests/test_switch_present_hook.c"
       - "tools/patch_pc_gpu_present_observer.py"
+      - "tools/patch_pc_gpu_present_exclusive.py"
       - "tests/test_pc_gpu_present_observer_patch.py"
+      - "tests/test_pc_gpu_present_exclusive_patch.py"
       - ".github/workflows/frame-handoff-contract.yml"
   pull_request:
     paths:
@@ -67,7 +69,9 @@ on:
       - "tests/test_switch_upstream_observer.c"
       - "tests/test_switch_present_hook.c"
       - "tools/patch_pc_gpu_present_observer.py"
+      - "tools/patch_pc_gpu_present_exclusive.py"
       - "tests/test_pc_gpu_present_observer_patch.py"
+      - "tests/test_pc_gpu_present_exclusive_patch.py"
       - ".github/workflows/frame-handoff-contract.yml"
   workflow_dispatch:
 
@@ -151,3 +155,9 @@ jobs:
             source/switch_present_hook.c source/switch_upstream_observer.c \
             -o build-tests/test_switch_upstream_observer
           ./build-tests/test_switch_upstream_observer
+          python3 -m unittest discover -s tests -p test_pc_gpu_present_exclusive_patch.py -v
+          python3 tools/patch_pc_gpu_present_exclusive.py \
+            build-tests/upstream_pc_gpu_window.c build-tests/exclusive_pc_gpu_window.c
+          grep -Fq '#if defined(VH_SWITCH_EXCLUSIVE_PRESENT)' build-tests/exclusive_pc_gpu_window.c
+          grep -Fq '#endif /* VH_SWITCH_EXCLUSIVE_PRESENT */' build-tests/exclusive_pc_gpu_window.c
+
