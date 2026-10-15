@@ -176,7 +176,13 @@ before validation; do not assume the entire process log is JSONL. Camera
 culling, overhead view, other changing state and repeated draws can affect
 whether events are emitted. A single face observed multiple times in one frame
 may be rejected by the present validator and merits inspection instead of
-silently dropping records. The patch has not yet been compiled against the
-complete PC port or executed with original game data. It does **not** prove
+silently dropping records. GitHub Actions now checks that the patch applies
+cleanly to the pinned upstream revision, then **syntax-compiles both instrumented
+C translation units** with the upstream PC game compiler flags and
+`-DVH_TRACE_MAP02`. This is not a full linked PC executable or gameplay run;
+there is still no runtime capture from original game data. It does **not** prove
 that the submitted primitive contributed visible pixels or that the source
 artwork is correct.
+
+
+CI source-compilation verification: [Map02 upstream trace patch verification](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/workflows/map02-upstream-trace.yml).
