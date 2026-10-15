@@ -231,3 +231,18 @@ An actual second decoder has **not** been run by this tool: supply a reference
 WAV produced separately using the same source and selection. Source game audio
 and reference WAVs must remain local; do not commit them to this repository.
 Even exact PCM agreement does not independently prove original playback timing.
+
+
+### Nonzero synthetic end-to-end reference test
+
+The regression `test_end_to_end_nonzero_pcm_matches_independent_expected_wav`
+constructs one raw Mode 2 Form 2 XA sector, including nonzero signed
+ADPCM nibbles with filter 0 and unit reconstruction scale. It extracts the
+sound groups, validates the report and payload digest, decodes to WAV, and
+compares its exact PCM against a WAV generated directly from the known
+nibble values (without invoking the decoder for expected samples).
+This checks the **complete** pipeline on a controlled non-silent vector,
+including group order, left/right channel mapping and signed nibble handling.
+
+It does **not** replace testing predictive filters, a third-party decoder
+process or original game audio; those remain separate validation gates.
