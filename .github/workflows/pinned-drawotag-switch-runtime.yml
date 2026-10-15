@@ -12,6 +12,7 @@ on:
       - "source/vh_private_map_geometry.*"
       - "tools/stage_vh_private_map_geometry.py"
       - "tests/test_private_map_geometry.c"
+      - "tests/test_pinned_map_gte_camera.c"
       - "tests/test_stage_vh_private_map_geometry.py"
       - "tests/test_private_map_bank.c"
       - "tests/private_map_bank_bridge.c"
@@ -138,13 +139,23 @@ jobs:
             exit 1
           fi
           echo "Legacy glDrawPixels/glPixelZoom/glRasterPos2f dependencies are absent."
+      - name: Host-check pinned libgte RTPT/RTPS camera projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcc -std=c11 -O2 -Wall -Wextra -ffunction-sections -fdata-sections \
+            -I/tmp/vh-cross-upstream/platform/pc/include \
+            tests/test_pinned_map_gte_camera.c \
+            /tmp/vh-cross-upstream/platform/pc/src/libgte.c \
+            -Wl,--gc-sections -lm -o /tmp/vh-gte-test
+          /tmp/vh-gte-test
       - name: Compile original DrawOTag and native software rasterizer
         shell: bash
         run: |
           set -euxo pipefail
           export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
           export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
-          for item in libgpu pc_raster; do
+          for item in libgpu pc_raster libgte; do
             "$DEVKITA64/bin/aarch64-none-elf-gcc" -std=c11 -O2 -Wall -Wextra \
               -flto -ffat-lto-objects -ffunction-sections -fdata-sections \
               -include tools/switch_psyq_compat.h \
@@ -176,7 +187,7 @@ jobs:
             source/switch_rgb24_presenter.c source/frame_conversion.c \
             source/switch_frame_bridge.c source/switch_completed_frame.c \
             source/switch_present_hook.c source/switch_upstream_observer.c \
-            build/upstream-cross/libgpu.o build/upstream-cross/pc_raster.o \
+            build/upstream-cross/libgpu.o build/upstream-cross/pc_raster.o build/upstream-cross/libgte.o \
             build/upstream-cross/pinned_gpu_switch.o \
             -o build/upstream-cross/pinned-drawotag-switch.elf \
             $(sdl2-config --libs) -lGLESv2 -L"$DEVKITPRO/libnx/lib" -lnx -lm
