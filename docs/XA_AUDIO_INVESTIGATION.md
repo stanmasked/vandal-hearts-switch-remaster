@@ -393,3 +393,27 @@ disc read may take time on large images. Since source verification and hashing
 are separate reads, do not modify the original BIN during a run; the tool
 does not provide atomic snapshots or cryptographic authentication of the
 disc's provenance. Original image bytes remain local and are not uploaded.
+
+
+### Reverify an existing local audio audit
+
+To check that files still match an earlier run without extracting or decoding
+again, use the saved audit JSON and explicitly supply the original BIN:
+
+```sh
+python3 tools/verify_cdxa_audit.py ./xa-audit-result/audit-result.json \
+  --source-bin "/local/path/disc.bin" \
+  --reference-wav "/local/path/reference.wav"
+```
+
+Omit `--reference-wav` **only if the original audit had no reference
+comparison**. The verifier rehashes the complete BIN, extracted 2304-byte
+sector payload and decoded WAV, validates the source sector selection and
+WAV layout again, and recomputes the PCM reference comparison where present.
+It refuses missing reference WAVs for comparisons already recorded in the
+audit. The command is read-only and reports `audit_files_verified` when all
+checks pass. A successful result means the current files match the saved,
+**user-editable** report; it is not a cryptographic signature, proof of
+independent decoding, or proof of audible fidelity. If original output paths
+are no longer available, files with matching standard names can be read from
+the saved audit's directory.
