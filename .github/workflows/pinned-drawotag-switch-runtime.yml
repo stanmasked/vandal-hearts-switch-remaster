@@ -262,6 +262,20 @@ jobs:
               print("Original F4 polygon marker RGB:", polygon_rgb)
               if max(abs(a-b) for a,b in zip(polygon_rgb, (255,0,255))) > 36:
                   raise SystemExit("Original FillQuad polygon color is incorrect")
+          # Original LoadImage + indexed 4bpp SampleTexture + CLUT + FT4 FillQuad.
+          # The test quad spans native x=4..8, y=5..7; sample central texels.
+          indexed_samples = (
+              ("4bpp red 0", (520, 440), (255, 0, 0)),
+              ("4bpp green 1", (600, 440), (0, 255, 0)),
+              ("4bpp red 2", (680, 440), (255, 0, 0)),
+              ("4bpp green 3", (760, 440), (0, 255, 0)),
+          )
+          for frame_image in (im, after):
+              for name, (x, y), expected in indexed_samples:
+                  observed = frame_image.getpixel((x, y))
+                  print(f"Original FT4 CLUT {name}: {observed}")
+                  if max(abs(a-b) for a,b in zip(observed, expected)) > 36:
+                      raise SystemExit(f"Original textured CLUT quad is incorrect: {name}")
           # The center pixel is deliberately dynamic: R=12->99, G=12->99,
           # B=frame*3 modulo 256. Verify the intended channel changes,
           # not merely a window animation elsewhere in the screenshot.
