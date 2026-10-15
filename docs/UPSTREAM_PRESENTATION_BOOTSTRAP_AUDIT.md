@@ -216,3 +216,16 @@ A previously missed alias appears in `src/units/load.c:140-142`: when `gState.ma
 Additional scratch1 aliases are initialized directly in `src/core/card.c:623-626`: `gCardFilenameBufferPtr = gScratch1_801317c0`, `gCardFileBufferPtr = &gScratch1_801317c0[64]`, and `gCardFileVerifyBufferPtr = &gScratch1_801317c0[8256]`. These coexist with the scratch1 offsets `0x5000`, `0x6000` and `0xa000` recorded in section 12. As with the scratch3 offsets, offsets alone are **not** evidence for object sizes or concurrent validity.
 
 **Implementation constraint:** inventory PS1-symbol definitions and linker/PC-port mapping separately from C references. Before implementing region translation, trace map 39 data loading, file-size assumptions, buffer lifetimes, and whether scratch1/scratch3 are portions of the same backing PS1 RAM. Do not allocate just up to the highest referenced offset, and do not assume the PS1 addresses are usable as Switch virtual addresses. This is a pinned-source finding, not a measured memory-safety result.
+
+
+## 15. PC fixed-address reservation versus Switch backing policy (2026-10-15)
+
+Pinned `platform/pc/src/pc_bootstrap.c:39-111` gives the precise desktop boundary:
+
+- `PSX_RAM_BASE` is `0x80000000UL`, `PSX_RAM_SIZE` is `2 * 1024 * 1024`; `PSX_SCRATCHPAD_BASE` is `0x1f800000UL`, and the scratchpad size is `0x400`.
+- The Windows branch of `ReservePsxMemory()` uses `VirtualAlloc(base, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE)` and rejects a NULL or relocated result. The non-Windows, non-Apple POSIX branch uses anonymous private `mmap(..., MAP_FIXED_NOREPLACE, ...)` and likewise expects the exact base.
+- Despite returning failure from `ReservePsxMemory()`, `PC_ReservePsxRam()` ignores the result of both reservation calls; source comments warn that direct fixed-address consumers may crash later. This is **not** acceptable as a silent fallback when making a Switch memory design.
+- Under `__APPLE__`, the fixed reservation calls are skipped; the source comment specifically notes arm64 Mach-O low-address constraints and PC-backed work buffers. This is evidence of a platform-specific strategy, **not** evidence that every fixed-address dereference has been converted or that libnx supports identical mapping.
+- The PS1 KUSEG zero-address mirror is explicitly *not* mapped by this PC bootstrap. Fault emulation is limited to defined host cases; it does not provide general-purpose PS1 address translation.
+
+**Switch design gate:** retain the symbolic PS1 offsets as metadata, identify live aliases and size boundaries, and implement explicit backing storage for verified consumers. Any remaining raw numerical PS1 address cast must be enumerated and adapted or shown safe in a target-specific test; do not assume successful allocation at `0x80000000` on libnx. Make allocation failure fatal at the subsystem boundary, and do not adopt platform-specific signal/VM fault handlers without independent target evidence. Source review only; no libnx memory API test or original game runtime validation has been performed.
