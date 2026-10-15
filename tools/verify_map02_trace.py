@@ -49,6 +49,13 @@ def evaluate_trace(entries):
             if (pos, stage) in found:
                 if found[(pos, stage)] != entry["gfx"]:
                     errors.append(f"GFX changed across frames for {pos}")
+                for field, limit in (("u", 255), ("v", 255), ("clut", 65535), ("tpage", 65535)):
+                    if field in entry:
+                        value = entry[field]
+                        if type(value) is not int or not 0 <= value <= limit:
+                            errors.append(f"entry {i}: {field} must be an integer from 0 to {limit}")
+                        elif field in draw_metadata.get(pos, {}) and draw_metadata[pos][field] != value:
+                            errors.append(f"{field} changed across frames for {pos}")
                 continue
         elif (pos, stage) in found:
             errors.append(f"duplicate observation for {pos} at {stage}")
