@@ -188,6 +188,32 @@ class LocalXaCheckTests(unittest.TestCase):
                     target.write_bytes(pristine)
                 self.assertEqual(verify_audit(audit, self.source, ref), good)
 
+    def test_saved_audit_rejects_tampered_lbas_frames_and_stream(self):
+        directory = self.root / "metadata-audit"
+        run_local_check(
+            self.source, directory, file_number=1, channel=0,
+            start_lba=1, sector_count=3,
+        )
+        path = directory / "audit-result.json"
+        original = path.read_bytes()
+        mutations = (
+            ("selected_lbas", [1, 2], "selected LBAs"),
+            ("pcm_frames", 1, "PCM frame count"),
+            ("file_number", 2, "file/channel selection"),
+            ("channel", 1, "file/channel selection"),
+        )
+        for key, value, message in mutations:
+            with self.subTest(field=key):
+                altered = json.loads(original)
+                altered[key] = value
+                path.write_text(json.dumps(altered), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, message):
+                    verify_audit(path, self.source)
+        path.write_bytes(original)
+        self.assertEqual(
+            verify_audit(path, self.source)["status"], "audit_files_verified"
+        )
+
     def test_source_only_audit_can_be_rechecked(self):
         directory = self.root / "source-only-recheck"
         run_local_check(
