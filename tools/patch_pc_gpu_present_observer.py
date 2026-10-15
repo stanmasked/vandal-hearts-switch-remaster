@@ -29,6 +29,8 @@ TIMING_EXCLUSIVE = """    (void)vramH;
 #endif"""
 PRESENT_TAIL = "    /* Scale the native w*h framebuffer up to fill the current window"
 TARGET_TAIL_PREFIX = "#if !defined(VH_SWITCH_EXCLUSIVE_PRESENT) /* desktop GL draw and swap */\n"
+GL_CONTEXT_DECL = "static SDL_GLContext s_glCtx;"
+TARGET_GL_CONTEXT_DECL = "#if !defined(VH_SWITCH_EXCLUSIVE_PRESENT)\\n" + GL_CONTEXT_DECL + "\\n#endif"
 INIT_ANCHOR = "int PC_GpuInit(int width, int height, const char *title) {"
 INIT_END = "    return 1;\n}\n\n/* Report the actual window size"
 INIT_PREFIX = """#if defined(VH_SWITCH_EXCLUSIVE_PRESENT)
@@ -90,11 +92,14 @@ def patch(source: str) -> str:
         raise ValueError("expected pinned GPU timing anchor")
     if source.count(GL_HEADER) != 1 or source.count(PRESENT_TAIL) != 1:
         raise ValueError("expected pinned desktop OpenGL header and presentation tail")
+    if source.count(GL_CONTEXT_DECL) != 1:
+        raise ValueError("expected pinned desktop GL context declaration")
     if source.count(INIT_ANCHOR) != 1 or source.count(INIT_END) != 1:
         raise ValueError("expected exact pinned PC_GpuInit lifecycle anchors")
     if not source.rstrip().endswith("}"):
         raise ValueError("expected final PC_GpuPresent closing brace")
-    result = (source.replace(INIT_ANCHOR, INIT_ANCHOR + "\n" + INIT_PREFIX, 1)
+    result = (source.replace(GL_CONTEXT_DECL, TARGET_GL_CONTEXT_DECL, 1)
+              .replace(INIT_ANCHOR, INIT_ANCHOR + "\n" + INIT_PREFIX, 1)
               .replace(INIT_END, INIT_SUFFIX, 1)
               .replace(GL_HEADER, TARGET_GL_HEADER, 1)
               .replace(TIMING_ANCHOR, TIMING_EXCLUSIVE, 1)
