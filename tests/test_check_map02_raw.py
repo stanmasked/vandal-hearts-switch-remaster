@@ -183,6 +183,25 @@ class CheckMap02RawTests(unittest.TestCase):
             report["single_block"] = 1
             self.assertIn("single_block flag must be boolean", check_raw_records(report))
 
+    def test_rejects_corrupted_layout_metadata(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "map02.bin"
+            path.write_bytes(bytes(BLOCK_SIZE))
+            for field in ("block_size", "texture_records_bytes",
+                          "clut_index_table_offset", "clut_data_offset", "clut_data_size"):
+                with self.subTest(field=field):
+                    report = inspect_land_dt(path, single_block=True)
+                    report[field] += 1
+                    self.assertTrue(any(field in e for e in check_raw_records(report)))
+
+    def test_rejects_boolean_layout_metadata(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "map02.bin"
+            path.write_bytes(bytes(BLOCK_SIZE))
+            report = inspect_land_dt(path, single_block=True)
+            report["clut_data_size"] = True
+            self.assertTrue(any("clut_data_size" in e for e in check_raw_records(report)))
+
     def test_rejects_wrong_map(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "land.bin"
