@@ -316,6 +316,17 @@ jobs:
               print("Original transparent FT4 cyan neighbour:", cyan)
               if max(abs(a-b) for a,b in zip(cyan, (0,255,255))) > 36:
                   raise SystemExit("Opaque neighbour of transparent texel not drawn")
+          # ABR=0 semi-transparency uses STP per texel. Red STP blends
+          # with the animated background, while adjacent green (no STP)
+          # is opaque even though the polygon has semi-trans enabled.
+          for frame_image in (im, after):
+              blended = frame_image.getpixel((835, 440))
+              opaque = frame_image.getpixel((910, 440))
+              print("Original FT4 STP red blend / opaque green:", blended, opaque)
+              if abs(blended[0] - 173) > 32 or abs(blended[1] - 49) > 28:
+                  raise SystemExit(f"Original STP ABR0 blend mismatch: {blended}")
+              if max(abs(a-b) for a,b in zip(opaque, (0, 255, 0))) > 36:
+                  raise SystemExit(f"Non-STP texel incorrectly blended: {opaque}")
           # The center pixel is deliberately dynamic: R=12->99, G=12->99,
           # B=frame*3 modulo 256. Verify the intended channel changes,
           # not merely a window animation elsewhere in the screenshot.
