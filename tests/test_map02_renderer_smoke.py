@@ -103,6 +103,25 @@ class RendererSmokeTests(unittest.TestCase):
         self.assertEqual(report["draw_overall_variant"], "PRS")
         self.assertEqual([row["draw_observation_count"] for row in report["observations"]], [1, 1])
 
+    def test_compiled_renderer_accepts_consistent_dat_variant(self):
+        """DAT must remain a valid observed alternative, not an automatic error."""
+        modified = C_FIXTURE.replace(
+            'gMapRowPointers[8][19].gfx[0] = 641;',
+            'gMapRowPointers[8][19].gfx[0] = 498;',
+        ).replace(
+            'gMapRowPointers[11][11].gfx[0] = 643;',
+            'gMapRowPointers[11][11].gfx[0] = 550;',
+        )
+        draw_stdout = self._run_compiled_renderer(modified)
+        post_load = (
+            '{"z":8,"x":19,"face":0,"stage":"post_load","gfx":498}\n'
+            '{"z":11,"x":11,"face":0,"stage":"post_load","gfx":550}\n'
+        )
+        report = evaluate_trace(extract_trace_text(post_load + draw_stdout))
+        self.assertEqual(report["errors"], [])
+        self.assertEqual(report["post_load_overall_variant"], "DAT")
+        self.assertEqual(report["draw_overall_variant"], "DAT")
+
     def test_compiled_renderer_detects_post_load_draw_gfx_divergence(self):
         """A deliberately modified synthetic draw sample must fail consistency."""
         modified = C_FIXTURE.replace(
