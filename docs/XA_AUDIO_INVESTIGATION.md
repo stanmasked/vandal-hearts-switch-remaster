@@ -441,3 +441,5 @@ full-scale values are necessarily errors: these statistics do **not** certify
 sound quality, XA timing, correct stream selection, or decoder accuracy.
 Synthetic tests cover silence, RMS/peaks, full-scale samples, read-chunk
 boundaries, and malformed audio.
+
+Saved-audit reverification now **recomputes `pcm_signal_diagnostics`** directly from the decoded WAV and rejects missing or modified peak, RMS, silence, frame and full-scale statistics even if WAV/BIN/payload hashes remain unchanged. This checks report consistency rather than certifying actual CD-XA decoding quality. Reports produced before these diagnostic fields were introduced will fail this newer strict verifier.
