@@ -63,10 +63,12 @@ int main(void) {
         memset(large_frame, 64, sizeof(large_frame));
         memset(small_frame, 192, sizeof(small_frame));
         VH_ObserveCompletedRGB24(large_frame, sizeof(large_frame), 320, 240);
-        if (!vh_switch_observer_last_result()) goto done;
+        if (!vh_switch_observer_last_result() ||
+            presenter.frame_width != 320 || presenter.frame_height != 240) goto done;
         puts("RGB24 observer resize: 320x240 presented");
         VH_ObserveCompletedRGB24(small_frame, sizeof(small_frame), 4, 3);
-        if (!vh_switch_observer_last_result()) goto done;
+        if (!vh_switch_observer_last_result() ||
+            presenter.frame_width != 4 || presenter.frame_height != 3) goto done;
         puts("RGB24 observer resize: 4x3 presented");
     }
 
@@ -92,7 +94,8 @@ int main(void) {
                 }
             }
         VH_ObserveCompletedRGB24(pixels, sizeof(pixels), 9, 7);
-        if (!vh_switch_observer_last_result()) {
+        if (!vh_switch_observer_last_result() ||
+            presenter.frame_width != 9 || presenter.frame_height != 7) {
             fprintf(stderr, "RGB24 observer present failed at frame %d\n", frame);
             goto done;
         }
