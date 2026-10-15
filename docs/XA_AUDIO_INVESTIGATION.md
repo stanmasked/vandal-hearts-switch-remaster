@@ -363,3 +363,5 @@ SHA-256 hashes. The comparator still uses exact PCM samples for
 name/version and stream parameters when auditing a real local game image.
 Hashes establish the bytes compared, **not** independent provenance or
 correct audio timing.
+
+The one-command local workflow saves `audit-result.json` in its newly created output directory after a successful decode/source verification and also when a reference PCM comparison reports a mismatch. The JSON records the status, selected LBAs, frame count, and (when compared) full-file SHA-256 fingerprints and first/sample-wise PCM differences. A mismatch still makes the command exit unsuccessfully, but the structured report and WAV remain available for diagnosis. Failures before the comparison stage may not produce an audit JSON; partial extraction outputs remain for inspection. These reports establish what was checked, not the provenance of an independently decoded reference.
