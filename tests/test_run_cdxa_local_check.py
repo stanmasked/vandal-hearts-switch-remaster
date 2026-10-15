@@ -134,6 +134,49 @@ class LocalXaCheckTests(unittest.TestCase):
         self.assertEqual(first["payload_sha256"], second["payload_sha256"])
         self.assertEqual(first["decoded_wav_sha256"], second["decoded_wav_sha256"])
 
+    def test_pinned_reference_sha256_rejects_wrong_identity_before_outputs(self):
+        ref = self.reference("pinned-reference.wav")
+        digest = hashlib.sha256(ref.read_bytes()).hexdigest()
+        output = self.root / "pinned-reference-result"
+        result = run_local_check(
+            self.source, output, file_number=1, channel=0,
+            start_lba=1, sector_count=3, reference_wav=ref,
+            reference_sha256=digest,
+        )
+        self.assertEqual(
+            result["reference_provenance"]["expected_reference_sha256"], digest
+        )
+        self.assertEqual(result["comparison"]["reference_wav_sha256"], digest)
+        self.assertTrue(verify_audit(output / "audit-result.json", self.source, ref)[
+            "reference_comparison_rechecked"])
+        saved = json.loads((output / "audit-result.json").read_text())
+        saved["reference_provenance"]["expected_reference_sha256"] = "0" * 64
+        (output / "audit-result.json").write_text(json.dumps(saved), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "expected reference SHA-256"):
+            verify_audit(output / "audit-result.json", self.source, ref)
+
+        wrong = self.root / "wrong-pinned-reference"
+        with self.assertRaisesRegex(ValueError, "differs from expected fingerprint"):
+            run_local_check(
+                self.source, wrong, file_number=1, channel=0,
+                reference_wav=ref, reference_sha256="0" * 64,
+            )
+        self.assertFalse(wrong.exists())
+        for invalid in ("ABC" * 21 + "A", "xyz", "0" * 63):
+            with self.subTest(fingerprint=invalid):
+                with self.assertRaisesRegex(ValueError, "64 lowercase"):
+                    run_local_check(
+                        self.source, wrong, file_number=1, channel=0,
+                        reference_wav=ref, reference_sha256=invalid,
+                    )
+                self.assertFalse(wrong.exists())
+        with self.assertRaisesRegex(ValueError, "requires --reference-wav"):
+            run_local_check(
+                self.source, wrong, file_number=1, channel=0,
+                reference_sha256=digest,
+            )
+        self.assertFalse(wrong.exists())
+
     def test_without_reference_reports_verified_decode_only(self):
         output = self.root / "without-reference"
         result = run_local_check(
