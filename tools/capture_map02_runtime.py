@@ -101,20 +101,44 @@ def capture(executable: Path, trace_directory: Path, output_directory: Path,
     output_directory.mkdir(parents=True)
     raw_path = output_directory / "game_stdout.log"
     command = [str(executable), *game_args]
-    with raw_path.open("xb") as raw:
-        # Preserve original bytes. Decode only when displaying or parsing trace events.
-        with subprocess.Popen(command, cwd=executable.parent, stdin=None,
-                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                              bufsize=0) as proc:
-            for chunk in iter(lambda: proc.stdout.read(65536), b""):
-                raw.write(chunk)
-                if hasattr(sys.stdout, "buffer"):
-                    sys.stdout.buffer.write(chunk)
-                    sys.stdout.buffer.flush()
-                else:
-                    sys.stdout.write(chunk.decode("utf-8", errors="replace"))
-                    sys.stdout.flush()
-            returncode = proc.wait()
+    try:
+        with raw_path.open("xb") as raw:
+            # Preserve original bytes. Decode only when displaying or parsing trace events.
+            with subprocess.Popen(command, cwd=executable.parent, stdin=None,
+                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                  bufsize=0) as proc:
+                echo_output = True
+                for chunk in iter(lambda: proc.stdout.read(65536), b""):
+                    raw.write(chunk)
+                    if echo_output:
+                        try:
+                            if hasattr(sys.stdout, "buffer"):
+                                sys.stdout.buffer.write(chunk)
+                                sys.stdout.buffer.flush()
+                            else:
+                                sys.stdout.write(chunk.decode("utf-8", errors="replace"))
+                                sys.stdout.flush()
+                        except BrokenPipeError:
+                            # The user's output pipe closed; raw evidence must survive.
+                            echo_output = False
+                returncode = proc.wait()
+    except OSError as exc:
+        # The output directory already exists: leave a useful report, not an empty folder.
+        failure = {
+            "binary_sha256": binary_sha256_before_launch,
+            "binary": str(executable),
+            "game_exit_code": None,
+            "launch_error": f"{type(exc).__name__}: {exc}",
+            "trace_events": 0,
+            "analysis": {"errors": ["failed to start or capture game process"],
+                         "observations": []},
+            "source_provenance": provenance,
+            "warning": "The game did not complete a diagnostic capture.",
+        }
+        (output_directory / "capture_report.json").write_text(
+            json.dumps(failure, indent=2) + "\n", encoding="utf-8")
+        print(f"Map02 game launch/capture failed: {exc}", file=sys.stderr)
+        return 1
     summary = {
         "binary_sha256": binary_sha256_before_launch,
         "binary": str(executable),
