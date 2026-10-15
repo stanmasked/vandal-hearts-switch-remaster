@@ -187,3 +187,8 @@ The analyzer reads but does not alter the WAV, payload, or JSON report.
 The boundary report now separates `adjacent_lba_boundaries` from `gapped_lba_boundaries` and counts above-threshold jumps separately for both. A gap in raw sector numbering can reflect normal channel interleaving; do not interpret all gapped transitions as missing audio. Compare adjacent-boundary results independently before diagnosing clicks.
 
 The analyzer also reports `local_neighbor_max_jump` for the two immediate PCM changes flanking each sector seam, and `excess_over_local_neighbors` (the nonnegative difference from the seam jump). A steady PCM ramp may have a large seam jump but zero excess; a sudden step from silence may have high excess. This local comparison is only a heuristic and does not establish a recording defect or faithful PS1 playback.
+
+
+### Nonzero ADPCM recurrence cross-check
+
+`tests/test_decode_cdxa_adpcm.py` now includes a separate scalar-oracle calculation with nonzero signed nibbles, differing left/right predictor filters, and state carried across two sound groups. The test checks exact PCM output and final predictor history. This independently written arithmetic check is **not** a comparison against a separate CD-XA implementation or captured PlayStation output: both the oracle and decoder can share a mistaken interpretation of the format. A reference-implementation comparison and listening check on locally owned game audio remain required before claiming audio fidelity.
