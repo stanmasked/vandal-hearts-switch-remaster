@@ -352,7 +352,10 @@ def main():
                         help="require each framed draw/skip to have a preceding same-frame/path nonempty visit")
     args = parser.parse_args()
     try:
-        result = evaluate_trace(
+        # Keep the standalone CLI consistent with live capture and offline
+        # replay: one JSONL file may contain several visits to map 11.
+        from tools.evaluate_map02_session import evaluate_capture_session
+        result = evaluate_capture_session(
             parse_trace_text(args.trace.read_text(encoding="utf-8")),
             require_full_trace=args.require_full_trace,
         )
