@@ -349,6 +349,20 @@ jobs:
                   print(f"Original GP0(E2h) {name}: {observed}")
                   if max(abs(a-b) for a,b in zip(observed, expected)) > 36:
                       raise SystemExit(f"Original GP0(E2h) texture window failed: {name}")
+          # GP0(E2h) vertical mask: V0/1 maps to V8/9 (maskY=1,offY=1).
+          # The 2x2 SPRT at native x2..4,y0..2 has a distinct CLUT
+          # colour in each texel; subsequent DR_MODE clears both masks.
+          for frame_image in (im, after):
+              for name, (x, y), expected in (
+                  ("V-window blue", (370, 40), (0, 0, 255)),
+                  ("V-window white", (447, 40), (255, 255, 255)),
+                  ("V-window magenta", (370, 120), (255, 0, 255)),
+                  ("V-window yellow", (447, 120), (255, 255, 0)),
+              ):
+                  observed = frame_image.getpixel((x, y))
+                  print(f"Original GP0(E2h) {name}: {observed}")
+                  if max(abs(a-b) for a,b in zip(observed, expected)) > 36:
+                      raise SystemExit(f"Original vertical GP0(E2h) window failed: {name}")
           # The center pixel is deliberately dynamic: R=12->99, G=12->99,
           # B=frame*3 modulo 256. Verify the intended channel changes,
           # not merely a window animation elsewhere in the screenshot.
