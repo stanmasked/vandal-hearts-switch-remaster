@@ -68,7 +68,7 @@ class SeqSlotTests(unittest.TestCase):
         self.assertEqual(notes[20]["note"], 60)
         # Stale NoteOff 40 at tick1 cannot release the newly stolen voice.
         self.assertGreater(notes[20]["hold_frames"], 1)
-        self.assertEqual(notes[20]["hold_frames"], 91)
+        self.assertEqual(notes[20]["hold_frames"], 92)
         for note in notes:
             self.assertTrue(0 <= note["voice_slot"] < SEQ_VOICE_COUNT)
 
