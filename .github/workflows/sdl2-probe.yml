@@ -69,9 +69,11 @@ jobs:
           make sdl2-gl-probe
           make sdl2-texture-probe
           make rgb24-texture-probe
-          # The complete upstream callback must survive final NRO linking.
-          "$DEVKITA64/bin/aarch64-none-elf-nm" build/rgb24-texture-switch-probe.elf \
-            | grep -Eq '[[:space:]]T[[:space:]]VH_ObserveCompletedRGB24          make sdl2-audio-probe
+          # Confirm the entire callback chain is retained in the final ELF.
+          "$DEVKITA64/bin/aarch64-none-elf-nm" build/rgb24-texture-switch-probe.elf > build/rgb24-linked-symbols.txt
+          grep -Fq ' VH_ObserveCompletedRGB24' build/rgb24-linked-symbols.txt
+          grep -Fq ' vh_switch_present_upstream_frame' build/rgb24-linked-symbols.txt
+          make sdl2-audio-probe
 
       - name: Upload SDL2 software-renderer probe
         uses: actions/upload-artifact@v4
