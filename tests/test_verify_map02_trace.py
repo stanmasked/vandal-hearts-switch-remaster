@@ -25,6 +25,20 @@ class RuntimeTraceTests(unittest.TestCase):
         self.assertEqual(report["errors"], [])
         self.assertEqual([x["draw_variant"] for x in report["observations"]], ["DAT", "DAT"])
 
+    def test_overall_variants_identify_cross_face_mixing(self):
+        prs = evaluate_trace(observations())
+        self.assertEqual(prs["post_load_overall_variant"], "PRS")
+        self.assertEqual(prs["draw_overall_variant"], "PRS")
+        dat = evaluate_trace(observations(a=498, b=550))
+        self.assertEqual(dat["post_load_overall_variant"], "DAT")
+        self.assertEqual(dat["draw_overall_variant"], "DAT")
+        mixed = evaluate_trace(observations(a=641, b=550))
+        self.assertEqual(mixed["errors"], [])
+        self.assertEqual(mixed["post_load_overall_variant"], "mixed")
+        self.assertEqual(mixed["draw_overall_variant"], "mixed")
+        missing = evaluate_trace(observations()[:-1])
+        self.assertEqual(missing["draw_overall_variant"], "incomplete_or_unknown")
+
     def test_change_between_stages(self):
         report = evaluate_trace(observations(draw_a=498))
         self.assertTrue(any("changed between" in error for error in report["errors"]))
