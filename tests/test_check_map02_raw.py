@@ -121,6 +121,23 @@ class CheckMap02RawTests(unittest.TestCase):
             self.assertEqual(check_block_hash(report, report["block_sha256"]), [])
             self.assertEqual(check_block_hash(report, report["block_sha256"].upper()), [])
 
+    def test_full_stream_and_extracted_block_share_fingerprint(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / "LAND_DT.DAT"
+            extracted = root / "map02.bin"
+            data = bytearray(BLOCK_SIZE * 3)
+            data[2 * BLOCK_SIZE + 50] = 42
+            data[2 * BLOCK_SIZE + 100] = 17
+            source.write_bytes(data)
+            extracted.write_bytes(data[2 * BLOCK_SIZE:3 * BLOCK_SIZE])
+            full_report = inspect_land_dt(source, map_number=2)
+            block_report = inspect_land_dt(extracted, single_block=True)
+            self.assertNotEqual(full_report["input_sha256"], block_report["input_sha256"])
+            self.assertEqual(full_report["block_sha256"], block_report["block_sha256"])
+            self.assertEqual(check_block_hash(block_report, full_report["block_sha256"]), [])
+            self.assertEqual(full_report["records"][0]["bytes"], block_report["records"][0]["bytes"])
+
     def test_expected_block_hash_rejects_mismatch(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "map02.bin"
