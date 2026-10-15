@@ -397,3 +397,53 @@ python3 -m unittest discover -s tests -p 'test_map02_renderer_smoke.py' -v
 These tests compile only the **synthetic** renderer. They do not supply
 copyrighted game resources, prove that the PC-port game boots, or prove
 which map variant is displayed on original hardware.
+
+## One-command local runtime capture
+
+After successfully building **your own** instrumented PC-port executable and
+placing legally owned game data beside the executable as required by upstream,
+you can capture a real session and analyze both disputed faces using a single
+command. From the remaster repository root:
+
+```sh
+python3 -m tools.capture_map02_runtime   /absolute/path/to/VandalHearts-PcPort/platform/pc/build-map02-trace/vandalhearts_pc   /tmp/vh-map02-trace-01   /tmp/vh-map02-run-01
+```
+
+The middle argument points to the folder created by
+`tools.prepare_map02_pcport` (it contains `source_provenance.json`).
+The final argument is a **new**, non-existing directory. The command runs
+the supplied executable in its own directory, streams its output to your
+terminal while keeping an unaltered `game_stdout.log`, and waits until
+you close the game. Navigate to **game map number 11**, make both disputed
+faces visible to the renderer, and exit normally.
+
+The capture directory contains:
+
+- `game_stdout.log` — complete merged stdout and stderr
+- `map02_trace.jsonl` — extracted events, when any exist
+- `capture_report.json` — consistency analysis, binary SHA-256,
+  source provenance, and game process exit code
+
+The script returns exit status 0 only when the game process exits successfully
+and the analyzer has **no trace errors**; 1 means the game failed, 2 indicates
+missing/incomplete/inconsistent trace. Both failure cases retain the raw log
+and report. It never silently treats no observed face as success and never
+overwrites an existing capture folder. Modified-source runs require
+`--allow-modified-source` **before** the positional arguments.
+
+The provenance manifest is not a signed build attestation and cannot prove
+that the chosen executable was built from it. The executable SHA-256 allows
+later identification of the exact binary tested. The diagnostics do not
+download, upload, or modify any game data and cannot claim pixel-perfect
+correctness from texture indices alone.
+
+Host-only tests can exercise this capture procedure with a **fake PC-port
+process** (no game data):
+
+```sh
+python3 -m unittest discover -s tests -p 'test_capture_map02_runtime.py' -v
+```
+
+These tests are separate from an actual play session. The assistant's
+environment does not contain the user's game disc or a full playable binary,
+so actual map02 game observations remain pending.
