@@ -19,6 +19,8 @@ on:
       - 'tests/test_verify_map02_capture.py'
       - 'tools/verify_map02_trace.py'
       - 'tools/audit_map02_load_source.py'
+      - 'tools/audit_map02_disc_prs.py'
+      - 'tests/test_audit_map02_disc_prs.py'
       - 'tests/test_audit_map02_load_source.py'
       - 'tests/test_verify_map02_trace.py'
       - 'tests/test_capture_map02_runtime.py'
@@ -43,6 +45,8 @@ on:
       - 'tests/test_verify_map02_capture.py'
       - 'tools/verify_map02_trace.py'
       - 'tools/audit_map02_load_source.py'
+      - 'tools/audit_map02_disc_prs.py'
+      - 'tests/test_audit_map02_disc_prs.py'
       - 'tests/test_audit_map02_load_source.py'
       - 'tests/test_verify_map02_trace.py'
       - 'tests/test_capture_map02_runtime.py'
@@ -180,6 +184,7 @@ jobs:
             python3 -m unittest discover -s tests -p 'test_preflight_map02_pcport.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_trace.py' -v
             python3 -m unittest discover -s tests -p 'test_audit_map02_load_source.py' -v
+            python3 -m unittest discover -s tests -p 'test_audit_map02_disc_prs.py' -v
             python3 -m unittest discover -s tests -p 'test_instrument_map02_renderer.py' -v
             python3 -m unittest discover -s tests -p 'test_map02_renderer_smoke.py' -v
           )
