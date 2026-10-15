@@ -350,3 +350,5 @@ fidelity. Independent decoder execution, source selection, synchronization
 and listening checks remain separate gates. Original BIN and WAV data must not
 be committed to the repository. The command operates only on local files;
 no network transfer is performed.
+
+The PCM reference comparator refuses a candidate and reference pointing to the **same filesystem file**, including identical paths, symlink aliases and hard links. A self-comparison can never establish decoder independence. Two separate copies with identical PCM can still compare equal, so ensure the reference is genuinely produced by a separate decoder; exact matching samples alone do not prove its provenance. Synthetic regression coverage checks these aliases.
