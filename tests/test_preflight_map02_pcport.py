@@ -166,7 +166,7 @@ class PreflightMap02PcportTests(unittest.TestCase):
             root = Path(folder)
             exe, krom, disc = fake_sources(root)
             def deps(args, *, cwd=None):
-                if "rev-parse" in args:
+                if "rev-parse" in args or "status" in args:
                     return fake_run(args)
                 return SimpleNamespace(returncode=0 if args[-1] in ("sdl2", "openal") else 1,
                                        stdout="")
