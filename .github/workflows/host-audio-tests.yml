@@ -36,6 +36,23 @@ jobs:
              tests/test_vh_audio_stream.c source/vh_audio_stream.c \
              -o build/test_vh_audio_stream_ubsan
           ./build/test_vh_audio_stream_ubsan
+      - name: Native SPU ADPCM + 20-voice mixing regression
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+             tests/test_vh_native_spu.c source/vh_native_spu.c \
+             source/vh_spu_adpcm.c source/vh_audio_stream.c \
+             -lm -o build/test_vh_native_spu
+          ./build/test_vh_native_spu
+      - name: Native SPU and ADPCM undefined-behavior sanitizer
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g \
+             -fsanitize=undefined -fno-omit-frame-pointer -Isource \
+             tests/test_vh_native_spu.c source/vh_native_spu.c \
+             source/vh_spu_adpcm.c source/vh_audio_stream.c \
+             -lm -o build/test_vh_native_spu_ubsan
+          ./build/test_vh_native_spu_ubsan
+      - name: Native SPU ADPCM versus Python differential test
+        run: python3 tests/test_native_spu_adpcm.py
       - name: Run VAB, SPU and synthetic audio tests
         run: |
           python3 tests/test_inspect_spu_vag.py
