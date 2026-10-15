@@ -263,3 +263,52 @@ of synthetic data that matches GFX values but not archived hashes.
 **This new tool has not yet read the actual user's disc image in the
 current working environment**; previous original-disc audit reports
 remain separate historical evidence.
+
+
+## Four-swatch source pixel proof (2026-10-16)
+
+The utility `tools/map02_texture_pixel_proof.py` is a **local-only, read-only**
+source-pixel comparison for the two disputed map faces. It reads from
+the user's own Mode2/2352 BIN or 2048-byte-per-sector ISO:
+
+- `M_MAP02.PRS` at LBA 7116 and `M_MAP02.DAT` at LBA 6999
+- `F_TEX01.DAT` at LBA 4374 (32768 bytes, 16 sectors)
+- `LAND_DT.DAT` at LBA 4954 (123993 bytes, 61 sectors), **block 11**
+
+The PRS model is unpacked and the two target face-0 GFX values are
+validated before any sample is taken. The utility reconstructs
+16×16 palette-indexed atlas swatches using the exact LAND_DT UVWH and
+CLUT mapping: 241 versus 98 for (z=8,x=19), and 243 versus 150 for
+(z=11,x=11). Each swatch is fingerprinted using **unaltered PS1
+16-bit BGR555/STP values** and shape (the same SHA-256 convention as the
+archived `vh_map02_hd_texture_manifest_v23.json`). PNG presentation
+expands the 5-bit RGB channels to 8-bit without blur, scaling or color
+grading. The STP flag and raw-zero-pixel counts remain in JSON, but **PNG
+is not a hardware transparency/semitransparency simulation**.
+
+Use from the remaster repository root (keep output outside Git):
+
+```sh
+python3 -m tools.map02_texture_pixel_proof   --disc-image /path/to/owned/game.bin   --layout mode2-2352   --output-prefix /tmp/map02-prs-vs-dat
+```
+
+It creates `/tmp/map02-prs-vs-dat.png` (two rows, PRS left,
+DAT right) and `/tmp/map02-prs-vs-dat.json` with panel coordinates,
+CLUT/UVWH, zero/STP sample counts, all four source-pixel fingerprints
+and verification flags. Neither the raw disc nor texture atlas are
+written to GitHub. Existing output is not overwritten.
+
+**Fail-closed default:** PNG generation requires matching archived
+compressed and decompressed PRS hashes, the full DAT hash, the atlas
+hash, LAND_DT hash, exact PRS/DAT two-byte signature, and each of four
+decoded pixel hashes. The explicit `--allow-unverified-source`
+override allows exploratory previews of different disc editions; the
+JSON still reports `all_archived_evidence_matches: false` and
+identifies every failed check. This is a source UV-space reference only.
+It cannot prove screen-space placement, 3D visibility, the final GPU
+composite, or the artistic merit of PRS vs DAT.
+
+Six synthetic regression tests verify nibble order, CLUT lookup,
+raw-color SHA-256, PNG contents/panel positions, strict provenance
+rejection and EDC-failure handling. They do not require or embed
+original game pixels.
