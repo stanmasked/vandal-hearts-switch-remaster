@@ -10,7 +10,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from tools.preflight_map02_pcport import (UPSTREAM_COMMIT, REQUIRED_SOURCE_FILES,
-                                          KROM_US_BYTES, check_disc_image, inspect)
+                                          KROM_US_BYTES, check_disc_image,
+                                          identify_disc_release, inspect)
 
 
 def fake_sources(root):
@@ -23,8 +24,13 @@ def fake_sources(root):
     krom = root / "KROMDAT.BIN"
     krom.write_bytes(b"K" * KROM_US_BYTES)
     disc = root / "game.bin"
-    raw = bytearray(18 * 2352)
+    raw = bytearray(500 * 2352)
     raw[16 * 2352 + 24:16 * 2352 + 24 + 7] = b"\x01CD001\x01"
+    raw[23 * 2352 + 24:23 * 2352 + 24 + 8] = b"PS-X EXE"
+    image_offset = (0x800f5551 - 0x80010000) + 0x800
+    ident_offset = ((23 + image_offset // 2048) * 2352
+                    + 24 + image_offset % 2048)
+    raw[ident_offset:ident_offset + 14] = b"BASLUS-00447VH"
     disc.write_bytes(raw)
     return exe, krom, disc
 
@@ -140,6 +146,62 @@ class PreflightMap02PcportTests(unittest.TestCase):
             self.assertEqual(report["checks"]["krom_source_layout"], "full_bios")
             self.assertEqual(report["checks"]["krom_charset2_sha256"],
                              hashlib.sha256(glyphs).hexdigest())
+
+    def test_us_and_asia_disc_boot_id_matches_pinned_libcd(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            exe, krom, disc = fake_sources(root)
+            self.assertEqual(identify_disc_release(disc), "USA")
+            self.assertEqual(check_disc_image(disc)[0], True)
+            image_offset = (0x800f5551 - 0x80010000) + 0x800
+            ident_offset = ((23 + image_offset // 2048) * 2352
+                            + 24 + image_offset % 2048)
+            with disc.open("r+b") as handle:
+                handle.seek(ident_offset)
+                handle.write(b"BISCPS-45183VH")
+            self.assertEqual(identify_disc_release(disc), "Asia")
+            with patch("tools.preflight_map02_pcport._run", side_effect=fake_run), \
+                 patch("tools.preflight_map02_pcport.US_EXE_MD5",
+                       hashlib.md5(exe.read_bytes()).hexdigest()), \
+                 patch("tools.preflight_map02_pcport.KROM_US_SHA256",
+                       hashlib.sha256(krom.read_bytes()).hexdigest()):
+                result = inspect(root, disc_image=disc, krom_source=krom,
+                                 no_webp=True, no_hdvideo=True)
+            self.assertTrue(result["checks"]["disc_supported_by_us_port"])
+            self.assertEqual(result["checks"]["disc_release"], "Asia")
+
+    def test_other_disc_with_valid_iso_pvd_is_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            exe, krom, disc = fake_sources(root)
+            with disc.open("r+b") as handle:
+                handle.seek(23 * 2352 + 24)
+                handle.write(b"OTHER EX")
+            self.assertEqual(identify_disc_release(disc), "unknown")
+            with patch("tools.preflight_map02_pcport._run", side_effect=fake_run):
+                result = inspect(root, disc_image=disc, krom_source=krom)
+            self.assertIn("disc_release_unrecognized", result["blockers"])
+            self.assertTrue(result["checks"]["disc_raw_layout_ok"])
+
+    def test_japanese_disc_is_rejected_for_pinned_us_build(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            exe, krom, disc = fake_sources(root)
+            image_offset = (0x800f76a9 - 0x80010000) + 0x800
+            ident_offset = ((15200 + image_offset // 2048) * 2352
+                            + 24 + image_offset % 2048)
+            with disc.open("r+b") as handle:
+                handle.seek(23 * 2352 + 24)
+                handle.write(b"OTHER EX")
+                handle.seek(15200 * 2352 + 24)
+                handle.write(b"PS-X EXE")
+                handle.seek(ident_offset)
+                handle.write(b"BISLPM-86007VH")
+                handle.truncate(((ident_offset // 2352) + 1) * 2352)
+            self.assertEqual(identify_disc_release(disc), "Japan")
+            with patch("tools.preflight_map02_pcport._run", side_effect=fake_run):
+                result = inspect(root, disc_image=disc, krom_source=krom)
+            self.assertIn("disc_region_not_supported_by_us_build", result["blockers"])
 
     def test_cli_reports_blockers_without_game_files(self):
         with tempfile.TemporaryDirectory() as folder:
