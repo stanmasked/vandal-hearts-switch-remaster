@@ -15,7 +15,14 @@ from tools.inspect_land_dt import BLOCK_SIZE, CLUT_INDEX_OFFSET, TEXTURE_RECORD_
 
 def check_raw_records(report):
     errors = []
-    if report.get("map_number") != 2 and not report.get("single_block"):
+    single_flag = report.get("single_block")
+    map_number = report.get("map_number")
+    if type(single_flag) is not bool:
+        errors.append("single_block flag must be boolean")
+    elif single_flag:
+        if map_number is not None:
+            errors.append("single-block report must have null map_number")
+    elif type(map_number) is not int or map_number != 2:
         errors.append("expected map block 2")
     base = report.get("block_base_offset")
     single_block = report.get("single_block") is True
