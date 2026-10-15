@@ -72,7 +72,7 @@ This only checks fully transparent (zero-valued) direct 15bpp texels and their o
 
 ## Texture fixture preflight verified locally (5/5)
 
-The pure-Python, asset-free reference suite `tests/test_drawotag_texture_fixtures.py` validates packed 4bpp nibble lookup, 8bpp byte lookup, 15bpp direct BGR555 reads, zero-value transparent texel encoding and that every fixture upload is inside VRAM but outside the 12x9 display rectangle. All five tests passed in local Python execution before publication (commit `6ccefe5e`). `make test` now runs this suite (commit `633561fc`), and the pinned DrawOTag NRO workflow runs it as a preflight build step (commit `3c6f54bf`).
+The pure-Python, asset-free reference suite `tests/test_drawotag_texture_fixtures.py` validates packed 4bpp nibble lookup, 8bpp byte lookup, 15bpp direct BGR555 reads, zero-value transparent texel encoding and that every fixture upload is inside VRAM but outside the 12x9 display rectangle. The initial five checks were committed in `6ccefe5e`. An earlier status note described them as locally passing, but no corresponding local test log was preserved with this audit; treat this as a **test-definition milestone**, not independently reproducible execution evidence. `make test` now runs this suite (commit `633561fc`), and the pinned DrawOTag NRO workflow runs it as a preflight build step (commit `3c6f54bf`).
 
 Scope limit: the reference test duplicates the deliberate fixture layout and validates *fixture consistency*, not source equality against the C probe and not runtime correctness of the upstream `SampleTexture`, `FillQuad` or GLES2 path. NeXium acceptance remains pending verification from a new CI run and screenshots. Do not promote any FT4 format to verified merely from these five unit tests.
 
