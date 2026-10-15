@@ -12,6 +12,7 @@ typedef struct {
     int check_center_rgb;
     uint8_t expected_rgb;
     unsigned swaps;
+    int fail_next_swap;
 } WindowState;
 
 static int query_viewport(void *opaque, int *width, int *height) {
@@ -24,6 +25,10 @@ static int query_viewport(void *opaque, int *width, int *height) {
 static int swap_buffers(void *opaque) {
     WindowState *state = (WindowState *)opaque;
     if (!state || !state->window) return 0;
+    if (state->fail_next_swap) {
+        state->fail_next_swap = 0;
+        return 0;
+    }
     if (state->check_center_rgb) {
         GLubyte rgba[4] = {0, 0, 0, 0};
         int w = 0, h = 0;
@@ -106,6 +111,17 @@ int main(void) {
                 presenter.frame_width != 4 || presenter.frame_height != 3)
                 goto done;
             puts("RGB24 observer rejected truncated frame without swap");
+        }
+        {
+            unsigned swaps_before = state.swaps;
+            state.fail_next_swap = 1;
+            VH_ObserveCompletedRGB24(small_frame, sizeof(small_frame), 4, 3);
+            if (vh_switch_observer_last_result() || state.swaps != swaps_before ||
+                state.fail_next_swap) goto done;
+            VH_ObserveCompletedRGB24(small_frame, sizeof(small_frame), 4, 3);
+            if (!vh_switch_observer_last_result() || state.swaps != swaps_before + 1u)
+                goto done;
+            puts("RGB24 observer recovered after injected swap failure");
         }
     }
 
