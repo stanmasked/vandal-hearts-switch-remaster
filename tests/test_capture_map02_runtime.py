@@ -5,6 +5,8 @@ import shutil
 import subprocess
 import stat
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -133,6 +135,72 @@ class CaptureMap02RuntimeTests(unittest.TestCase):
             self.assertTrue(any("invalid stage" in e for e in report["analysis"]["errors"]))
             self.assertEqual(report["trace_events"], 4)
             self.assertEqual(len((target / "map02_trace.jsonl").read_text().splitlines()), 4)
+
+    def test_trace_jsonl_appears_while_game_is_still_running(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            exe, trace_dir = fixture(base)
+            release = base / "release-game"
+            output = base / "capture"
+            events = [
+                {"z": 8, "x": 19, "face": 0, "stage": "post_load", "gfx": 641},
+                {"z": 11, "x": 11, "face": 0, "stage": "post_load", "gfx": 643},
+                {"z": 8, "x": 19, "face": 0, "stage": "draw", "gfx": 641},
+                {"z": 11, "x": 11, "face": 0, "stage": "draw", "gfx": 643},
+            ]
+            program = (
+                "#!/usr/bin/env python3\nimport pathlib\nimport time\n"
+                f"print({json.dumps(events[0])!r}, flush=True)\n"
+                f"release = pathlib.Path({str(release)!r})\n"
+                "for attempt in range(400):\n"
+                "    if release.exists(): break\n"
+                "    time.sleep(0.025)\n"
+                + "".join(f"print({json.dumps(e)!r}, flush=True)\n" for e in events[1:])
+            )
+            exe.write_text(program, encoding="utf-8")
+            result = []
+            worker = threading.Thread(target=lambda: result.append(capture(exe, trace_dir, output)))
+            worker.start()
+            try:
+                deadline = time.monotonic() + 7
+                path = output / "map02_trace.jsonl"
+                while time.monotonic() < deadline:
+                    if path.exists() and path.read_text().count("\n") >= 1:
+                        break
+                    time.sleep(0.025)
+                self.assertTrue(path.exists())
+                self.assertEqual([json.loads(line) for line in path.read_text().splitlines()],
+                                 events[:1])
+                self.assertTrue(worker.is_alive(), "first trace event should be saved before game exit")
+            finally:
+                release.touch()
+                worker.join(timeout=12)
+            self.assertFalse(worker.is_alive())
+            self.assertEqual(result, [0])
+            path = output / "map02_trace.jsonl"
+            self.assertEqual([json.loads(line) for line in path.read_text().splitlines()],
+                             events)
+
+    def test_malformed_game_line_keeps_valid_prefix_in_live_jsonl(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            exe, trace_dir = fixture(base)
+            first = {"z": 8, "x": 19, "face": 0, "stage": "post_load", "gfx": 641}
+            malformed = '{"z":8,"x":19,"face":0,"stage":"draw","gfx":'
+            exe.write_text(
+                "#!/usr/bin/env python3\n"
+                + f"print({json.dumps(first)!r})\n"
+                + f"print({malformed!r})\n", encoding="utf-8"
+            )
+            output = base / "run"
+            self.assertEqual(capture(exe, trace_dir, output), 2)
+            saved = (output / "map02_trace.jsonl").read_text().splitlines()
+            self.assertEqual([json.loads(line) for line in saved], [first])
+            report = json.loads((output / "capture_report.json").read_text())
+            self.assertEqual(report["trace_events"], 1)
+            self.assertTrue(any("malformed Map02" in error
+                                for error in report["analysis"]["errors"]))
+            self.assertIn(malformed, (output / "game_stdout.log").read_text())
 
     def test_non_utf8_game_output_is_preserved_byte_for_byte(self):
         with tempfile.TemporaryDirectory() as folder:
