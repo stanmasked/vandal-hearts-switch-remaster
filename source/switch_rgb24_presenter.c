@@ -112,7 +112,7 @@ int vh_switch_rgb24_presenter_upload(VhSwitchRgb24Presenter *presenter,
     }
     GLenum error = glGetError();
     if (error != GL_NO_ERROR) {
-        fprintf(stderr, "RGB24 presenter upload failed: GL error 0x%04x\\n",
+        fprintf(stderr, "RGB24 presenter upload failed: GL error 0x%04x\n",
                 (unsigned int)error);
         return 0;
     }
