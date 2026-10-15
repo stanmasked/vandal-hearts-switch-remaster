@@ -10,6 +10,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.run_cdxa_local_check import run_local_check
 from tools.verify_cdxa_audit import verify_audit
+from tools.analyze_cdxa_wav_quality import analyze_wav
+from tools.compare_cdxa_wavs import sha256_file
 
 
 def sector(file_number=1, channel=0, marker=0):
@@ -272,6 +274,35 @@ class LocalXaCheckTests(unittest.TestCase):
                     verify_audit(audit_path, self.source)
         audit_path.write_bytes(original)
         self.assertEqual(verify_audit(audit_path, self.source)["status"], "audit_files_verified")
+
+    def test_optional_redecode_detects_wav_not_derived_from_payload(self):
+        directory = self.root / "redecode-audit"
+        run_local_check(self.source, directory, file_number=1, channel=0,
+                        start_lba=1, sector_count=3)
+        audit_path = directory / "audit-result.json"
+        wav = directory / "decoded.wav"
+        self.assertTrue(verify_audit(audit_path, self.source, redecode=True)["payload_redecoded"])
+        # Keep the WAV valid and update all user-editable audit digests and
+        # signal statistics. Only redecoding can identify the inconsistency.
+        modified = bytearray(wav.read_bytes())
+        modified[44] ^= 1
+        wav.write_bytes(modified)
+        saved = json.loads(audit_path.read_text())
+        saved["decoded_wav_sha256"] = sha256_file(wav)
+        saved["pcm_signal_diagnostics"] = analyze_wav(wav)
+        audit_path.write_text(json.dumps(saved), encoding="utf-8")
+        self.assertFalse(verify_audit(audit_path, self.source)["payload_redecoded"])
+        with self.assertRaisesRegex(ValueError, "differs from redecoded XA payload"):
+            verify_audit(audit_path, self.source, redecode=True)
+
+    def test_redecode_keeps_original_audio_artifacts_unchanged(self):
+        directory = self.root / "redecode-preserves"
+        run_local_check(self.source, directory, file_number=1, channel=0,
+                        start_lba=1, sector_count=3)
+        names = ("audio-groups.bin", "decoded.wav", "extraction.json", "audit-result.json")
+        original = {name: (directory / name).read_bytes() for name in names}
+        verify_audit(directory / "audit-result.json", self.source, redecode=True)
+        self.assertEqual(original, {name: (directory / name).read_bytes() for name in names})
 
     def test_saved_audit_rejects_tampered_lbas_frames_and_stream(self):
         directory = self.root / "metadata-audit"
