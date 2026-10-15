@@ -862,7 +862,12 @@ This permits a player to leave map 11 and return in the same PC-port session
 without treating the second legitimate load as a duplicate of the first.
 
 For multiple loads the report records `map_load_count` and a separate
-`map_loads` collection with independent results for both faces.
+`map_loads` collection with independent results for both faces. Each
+`map_loads[].event_range` records the 1-based, inclusive `first` and
+`last` event numbers from the extracted `map02_trace.jsonl`. The
+Markdown review prints these ranges alongside the map-load headings,
+making it possible to locate the exact raw observations. Events that do
+not target either disputed polygon still count toward the offsets.
 The top-level `observations` list is intentionally **empty**:
 GFX, UV/CLUT/tpage and frame counters from separate visits must not be
 presented as one combined face sample. The bridge Markdown report renders
@@ -877,7 +882,11 @@ or contradictory, a good first episode cannot conceal the failure.
 
 A repeated loader record **before any renderer evidence** remains an
 ambiguous duplicate, rather than being silently interpreted as a second
-valid load. This is conservative: the instrumentation has no independent
+valid load. Malformed coordinate objects in captured JSON are handed to
+the validator as invalid records; they cannot crash episode splitting
+before a partial evidence report is written. The standalone
+`tools.verify_map02_trace` command now shares the same episode logic
+as live capture and offline replay. This is conservative: the instrumentation has no independent
 loader invocation serial number. Tests cover actual compiled C emitters,
 repeat visits with identical or changed face indices, and truncated
 second-episode captures. These tests do not establish visible pixels.
