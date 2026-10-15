@@ -39,10 +39,12 @@ def instrument_loader(source: str) -> str:
       if (traceTiles[8][19].faceCt > 0) {
          printf("{\"z\":8,\"x\":19,\"face\":0,\"stage\":\"post_load\",\"gfx\":%d}\n",
                 (int)traceTiles[8][19].gfx[0]);
+         fflush(stdout);
       }
       if (traceTiles[11][11].faceCt > 0) {
          printf("{\"z\":11,\"x\":11,\"face\":0,\"stage\":\"post_load\",\"gfx\":%d}\n",
                 (int)traceTiles[11][11].gfx[0]);
+         fflush(stdout);
       }
    }
 #endif
@@ -76,6 +78,7 @@ static void VH_Map02TraceDraw(const MapTileModel *tile, int face, int gfx,
           z, x, gfx, (unsigned)gState.frameCounter,
           (unsigned)poly->u0, (unsigned)poly->v0,
           (unsigned)poly->clut, (unsigned)poly->tpage, path);
+   fflush(stdout);
 }
 
 /* A tile visit is logged even when faceCt == 0 and the face loop never runs. */
@@ -96,6 +99,7 @@ static void VH_Map02TraceVisit(const MapTileModel *tile, const char *path) {
    printf("{\"z\":%d,\"x\":%d,\"face\":0,\"stage\":\"visit\","
           "\"gfx\":%d,\"frame\":%u,\"path\":\"%s\",\"face_count\":%d}\n",
           z, x, gfx, (unsigned)gState.frameCounter, path, count);
+   fflush(stdout);
 }
 
 /* Explain why a target face was considered but not submitted to AddPrim. */
@@ -116,6 +120,7 @@ static void VH_Map02TraceSkip(const MapTileModel *tile, int face, int gfx,
           "\"gfx\":%d,\"frame\":%u,\"path\":\"%s\","
           "\"reason\":\"%s\"}\n",
           z, x, gfx, (unsigned)gState.frameCounter, path, reason);
+   fflush(stdout);
 }
 #endif
 
