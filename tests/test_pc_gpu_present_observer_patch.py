@@ -15,6 +15,7 @@ class ObserverPatchTests(unittest.TestCase):
 #else
     if (!s_window || !s_glCtx) return; /* headless: no-op */
 #endif
+    PC_GpuPumpEvents();
     if (PC_OverlayIsOpen()) PC_GpuDrawOverlay(w, h);   /* options overlay, on top */
     SDL_GL_SwapWindow(s_window);
 }
@@ -27,6 +28,9 @@ class ObserverPatchTests(unittest.TestCase):
         self.assertEqual(result.count("if (!s_window || !s_glCtx) return;"), 1)
         self.assertLess(result.index("desktop-only window prerequisite"), result.index("PC_GpuDrawOverlay(w, h);"))
         self.assertIn("#if defined(VH_SWITCH_COMPLETED_FRAME_OBSERVER)", result)
+        self.assertIn("#if !defined(VH_SWITCH_EXCLUSIVE_PRESENT)\\n    PC_GpuPumpEvents();", result)
+        self.assertLess(result.index("external Switch event loop owns SDL pumping"),
+                        result.index("PC_GpuDrawOverlay(w, h);"))
         self.assertLess(result.index("PC_GpuDrawOverlay(w, h);"),
                         result.index("VH_ObserveCompletedRGB24(s_rgbaScratch"))
         self.assertLess(result.index("VH_ObserveCompletedRGB24(s_rgbaScratch"),
@@ -57,6 +61,8 @@ class ObserverPatchTests(unittest.TestCase):
             module.patch(self.upstream.replace("PC_GpuPresent", "WrongName"))
         with self.assertRaisesRegex(ValueError, "precisely one desktop window guard"):
             module.patch(self.upstream.replace(module.WINDOW_GUARD, ""))
+        with self.assertRaisesRegex(ValueError, "precisely one desktop SDL event pump"):
+            module.patch(self.upstream.replace(module.EVENT_PUMP, ""))
         with self.assertRaisesRegex(ValueError, "tail not found"):
             module.patch(self.upstream.replace("SDL_GL_SwapWindow(s_window);", ""))
 
