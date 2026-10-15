@@ -144,3 +144,23 @@ Before modifying the upstream bootstrap, build an address-use inventory from the
 **Decision:** prefer explicit source-level backing buffers for each verified memory region over attempting to reserve PS1 virtual addresses on Switch. Keep exact-address reservation only as a separately tested fallback if the target demonstrably supports it. The two examples above justify investigating this strategy; they are not yet evidence that the full game can run with relocated RAM.
 
 **Status:** source review only. No upstream source was copied into this repository, no game data was accessed, and no Switch memory mapping or upstream build was performed.
+
+
+## 9. Initial fixed-address inventory (2026-10-15)
+
+This is the first concrete inventory slice from the pinned upstream revision `14552fffa0e0b47e02b57592e274fc6e7a649923`. It intentionally distinguishes confirmed source facts from information that still needs a whole-tree audit.
+
+| Region / seam | Source location | Current behavior | Size / aliasing | Switch implication |
+| --- | --- | --- | --- | --- |
+| PSX main RAM | `platform/pc/src/pc_bootstrap.c`, `PSX_RAM_BASE` | Attempts to reserve `0x80000000` for 2 MiB; game code may directly dereference addresses in this range | 2 MiB reservation; exact subrange and aliases are not fully inventoried | Do not treat reservation failure as harmless; map direct users before choosing a replacement |
+| PSX scratchpad | `platform/pc/src/pc_bootstrap.c`, `PSX_SCRATCHPAD_BASE` | Attempts to reserve `0x1f800000` for 1 KiB | 1 KiB nominal range; at least one consumer has an existing PC fallback | Use the existing per-consumer fallback pattern only after verifying all scratchpad users |
+| Map decompressor dictionary | `src/maps/unpack.c`, `UnpackMapFileData()` | Under `PC_PORT`, uses static `sPcScratchpad[0x400]`; otherwise uses `0x1f800000` | 1 KiB ring; dictionary indexing wraps with mask `0x3ff` | Good example for a scoped backing store; not evidence that other scratchpad uses are equivalent |
+| Sound-work RAM | `src/core/cd.c`, `SOUND_WORK_PTR(addr)` | PC branch maps known PS1 sound-work addresses into `sPcSoundWorkRam` | Multiple offsets share a backing region; complete consumer extent and overlap must be confirmed | Preserve offsets/aliasing; do not replace each address with unrelated arrays |
+| Writable-data compatibility | `platform/pc/src/pc_bootstrap.c` | Desktop-specific section permission changes / write retry are used | Depends on host loader and section layout | Exclude desktop permission hacks from Switch until each behavior has a demonstrated requirement |
+| Low-address read compatibility | `platform/pc/src/pc_bootstrap.c` | Host-specific fault/read handling includes architecture guards | Not a general memory abstraction | Do not port signal-handler or x86-specific decoding paths as a generic Switch layer |
+
+### Inventory completion criteria
+
+This table is a starting slice, not a completed memory map. The next pass must search all game and platform translation units for (a) casts from integer constants to pointers, (b) arithmetic from RAM base macros, (c) pointer values embedded in tables, and (d) assembly or generated code that assumes the original address layout. For each hit, record the required byte range, read/write behavior, object lifetime, and whether the PC branch already supplies a replacement.
+
+The implementation remains blocked until the table covers the complete selected-region source set and tests demonstrate that any proposed backing regions preserve overlap and pointer arithmetic. No Switch runtime address assumptions are made in this document.
