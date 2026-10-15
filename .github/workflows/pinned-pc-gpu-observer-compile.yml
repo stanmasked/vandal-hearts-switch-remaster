@@ -6,6 +6,7 @@ on:
       - feat/upstream-rgb24-observer-binding
     paths:
       - "tools/patch_pc_gpu_present_observer.py"
+      - "tests/test_pc_gpu_present_observer_patch.py"
       - "source/switch_upstream_observer.*"
       - "source/switch_present_hook.*"
       - "source/switch_completed_frame.*"
@@ -54,3 +55,30 @@ jobs:
             echo 'Observer symbol unresolved after partial link' >&2
             exit 1
           fi
+      - name: Validate exclusive present ownership build modes
+        shell: bash
+        run: |
+          set -euo pipefail
+          src=/tmp/vh-upstream/platform/pc/src/pc_gpu_window_instrumented.c
+          includes="-I/tmp/vh-upstream/platform/pc/include -I/tmp/vh-upstream/platform/pc/src"
+          cc -std=c11 -Wall -Wextra -Werror $includes $(pkg-config --cflags sdl2) \
+            -c "$src" -o build-tests/observer/desktop_default.o
+          cc -std=c11 -Wall -Wextra -Werror $includes $(pkg-config --cflags sdl2) \
+            -DVH_SWITCH_COMPLETED_FRAME_OBSERVER -DVH_SWITCH_EXCLUSIVE_PRESENT \
+            -c "$src" -o build-tests/observer/target_exclusive.o
+          if cc -std=c11 $includes $(pkg-config --cflags sdl2) \
+            -DVH_SWITCH_EXCLUSIVE_PRESENT \
+            -c "$src" -o build-tests/observer/missing_observer.o \
+            2>build-tests/observer/negative.log; then
+            echo "Exclusive mode unexpectedly built without callback" >&2
+            exit 1
+          fi
+          grep -Fq 'VH_SWITCH_EXCLUSIVE_PRESENT requires' build-tests/observer/negative.log
+          cc -r build-tests/observer/target_exclusive.o \
+            build-tests/observer/frame_conversion.o \
+            build-tests/observer/switch_frame_bridge.o \
+            build-tests/observer/switch_completed_frame.o \
+            build-tests/observer/switch_present_hook.o \
+            build-tests/observer/switch_upstream_observer.o \
+            -o build-tests/observer/target_combined.o
+          nm build-tests/observer/target_combined.o | grep -E ' [T] VH_ObserveCompletedRGB24$'
