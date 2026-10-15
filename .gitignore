@@ -17,3 +17,6 @@ LAND_DT.DAT
 
 __pycache__/
 *.pyc
+
+# Original compressed geometry resources (private game data)
+M_*.PRS
