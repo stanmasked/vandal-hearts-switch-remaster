@@ -78,3 +78,16 @@ The desktop presentation code computes a centered aspect-preserving viewport eac
 ## Next implementation gate
 
 Before touching the upstream renderer, add a small integration contract header or adapter interface on the Switch side and a host test for it. Only then connect the exact call site that owns the completed frame. Avoid editing `pc_gpu_window.c` until the platform-specific source split and its build-system inclusion rules are known; changing that desktop file prematurely risks breaking the reference build.
+
+
+## Exact GPU presentation hand-off and build-system constraints
+
+The upstream GPU subsystem documentation identifies the native frame as **320×240** and states that PC_GpuPresent converts the visible VRAM region selected by the active DISPENV from BGR555 to RGB before handing it to the platform presenter. Presentation occurs at the end of DrawOTag, not in PutDispEnv: the PC rasterizer is synchronous, and presenting earlier would expose the previous double-buffer slot. This is a concrete integration boundary, not merely an assumption that a window function happens to run after rendering.
+
+The same source documentation confirms that desktop scaling is display-only nearest-neighbour scaling by default; optional internal-resolution supersampling is a separate path. The Switch adapter must therefore first preserve the native-frame path and compare it against a known desktop capture before considering any supersampling changes. The existing repository RGB24 contract describes the converted frame at the presenter boundary; do not confuse its RGB byte order with the software GPU's internal BGR555 representation.
+
+**Build-system constraint:** upstream contribution guidance requires every new backend source to be registered in both platform/pc/Makefile and platform/pc/CMakeLists.txt; the Makefile has explicit per-source object rules, and a parity checker enforces the two lists. For Switch integration, prefer a separate target-specific adapter/source list or an explicit compile-time seam. Do not add libnx-only symbols to the shared desktop source list, and do not modify the byte-matching game layer to solve a presentation problem.
+
+**Evidence:** upstream GPU subsystem overview: https://github.com/HalmyLyseas/VandalHearts-PcPort/blob/master/docs/pc-port/subsystems/gpu.md ; architecture and source-layer boundary: https://github.com/HalmyLyseas/VandalHearts-PcPort/blob/master/docs/architecture.md ; contribution/build parity rules: https://github.com/HalmyLyseas/VandalHearts-PcPort/blob/master/CONTRIBUTING.md
+
+**Next gate:** add a Switch-side frame-view adapter contract and host tests for dimensions, pixel format, lifetime, and failure behavior; then make the build include it only for the intended target. Do not claim the game is integrated until the real PC_GpuPresent hand-off is exercised by a game frame.
