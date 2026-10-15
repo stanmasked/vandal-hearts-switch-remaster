@@ -78,8 +78,8 @@ class TextureFixtureTests(unittest.TestCase):
             'texels_stp': [0x801F, 0x03E0, 0x801F, 0x03E0],
         }
         for name, values in expected.items():
-            match = re.search(r'unsigned short\\s+' + name +
-                              r'\\s*\\[\\d+\\]\\s*=\\s*\\{([^}]+)\\}', guest)
+            match = re.search(r'unsigned short\s+' + name +
+                              r'\s*\[\d+\]\s*=\s*\{([^}]+)\}', guest)
             self.assertIsNotNone(match, name)
             parsed = [int(n.strip(), 0) for n in match.group(1).split(',')]
             self.assertEqual(parsed, values, name)
