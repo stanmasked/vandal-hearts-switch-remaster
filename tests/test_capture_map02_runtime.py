@@ -81,6 +81,9 @@ def fixture(root: Path, mode="complete", modified=False, trace_mode="legacy"):
              "frame": 8, "path": "normal", "face_count": 4},
             {**events[3], "frame": 8, "path": "normal"},
         ]
+    if trace_mode == "full" and mode == "full_missing_visit":
+        events = [event for event in events
+                  if not (event["stage"] == "visit" and event["z"] == 8)]
     lines = ["booting pc-port", *(json.dumps(ev) for ev in events), "normal shutdown"]
     source = "#!/usr/bin/env python3\n" + "\n".join(
         ["import sys", f"print({chr(10).join(lines)!r})",
@@ -330,6 +333,21 @@ class CaptureMap02RuntimeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "changed since preparation"):
                 capture(exe, trace_dir, base / "run")
             self.assertFalse((base / "run").exists())
+
+    def test_full_capture_rejects_missing_visit_even_when_gfx_matches(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            exe, prepared = fixture(base, mode="full_missing_visit", trace_mode="full")
+            output = base / "missing-visit"
+            self.assertEqual(capture(exe, prepared, output), 2)
+            report = json.loads((output / "capture_report.json").read_text())
+            self.assertTrue(any("draw without preceding nonempty visit" in error
+                                for error in report["analysis"]["errors"]))
+            self.assertEqual(report["analysis"]["post_load_overall_variant"], "PRS")
+            self.assertEqual(report["analysis"]["draw_overall_variant"],
+                             "incomplete_or_unknown")
+            self.assertEqual(report["trace_events"], 5)
+            self.assertTrue((output / "game_stdout.log").exists())
 
     def test_full_capture_requires_visit_before_a_draw(self):
         with tempfile.TemporaryDirectory() as folder:
