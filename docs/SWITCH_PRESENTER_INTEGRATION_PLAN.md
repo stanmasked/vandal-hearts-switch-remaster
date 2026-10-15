@@ -164,3 +164,20 @@ For a Switch target, the safer design is to make startup order explicit in a pla
 
 This is still an integration design: no changes have yet been made to the upstream bootstrap, and the current project repository does not contain the complete upstream game source tree as a build target.
 
+
+
+## Source audit update: preserve the PC build's MIPS-register-hint shim
+
+A targeted inspection of the pinned upstream source found another build-system detail that matters when creating a new target:
+
+- `src/maps/unpack.c:97` contains `register s32 num asm("t0")`, a decompiler/MIPS register-binding hint rather than executable inline assembly.
+- Upstream `platform/pc/include/cmake_game_prelude.h:1-10` explicitly documents that the PC CMake build neutralizes two such hints—one in `maps/unpack.c`, another in `spells/support_magic.c`—with `#define asm(x)`. The comment explicitly says real `__asm__(...)` inline assembly is left intact.
+- The PC CMake configuration force-includes this prelude for game sources. A Switch target must preserve this source-compatibility shim (or an equivalent, narrowly scoped definition); otherwise the AArch64 compiler may try to bind a C variable to the nonexistent MIPS register name `t0`. Do not globally strip or rewrite real inline assembly as a workaround.
+
+This is a source-level portability finding, not a reproduced Switch compile error: the upstream game sources have not yet been compiled with the Switch toolchain. It adds a concrete check to the future upstream target's compile options.
+
+### Updated pre-integration checklist
+
+- [ ] Ensure the Switch target applies the upstream game-source prelude (including the neutralized MIPS register hints) to the same source set that receives it in the PC CMake build.
+- [ ] Audit any remaining true `__asm__` blocks separately for x86/MIPS assumptions before compiling the full source set for AArch64.
+- [ ] Keep `PC_PORT` host-backed scratchpad alternatives enabled for the Switch target; do not accidentally compile the original fixed PS1 scratchpad branch.
