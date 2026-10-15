@@ -111,6 +111,7 @@ def capture(executable: Path, trace_directory: Path, output_directory: Path,
     output_directory.mkdir(parents=True)
     raw_path = output_directory / "game_stdout.log"
     command = [str(executable), *game_args]
+    interrupted = False
     try:
         with raw_path.open("xb") as raw:
             # Preserve original bytes. Decode only when displaying or parsing trace events.
@@ -118,20 +119,35 @@ def capture(executable: Path, trace_directory: Path, output_directory: Path,
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                   bufsize=0) as proc:
                 echo_output = True
-                for chunk in iter(lambda: proc.stdout.read(65536), b""):
-                    raw.write(chunk)
-                    if echo_output:
-                        try:
-                            if hasattr(sys.stdout, "buffer"):
-                                sys.stdout.buffer.write(chunk)
-                                sys.stdout.buffer.flush()
-                            else:
-                                sys.stdout.write(chunk.decode("utf-8", errors="replace"))
-                                sys.stdout.flush()
-                        except BrokenPipeError:
-                            # The user's output pipe closed; raw evidence must survive.
-                            echo_output = False
-                returncode = proc.wait()
+                try:
+                    for chunk in iter(lambda: proc.stdout.read(65536), b""):
+                        raw.write(chunk)
+                        if echo_output:
+                            try:
+                                if hasattr(sys.stdout, "buffer"):
+                                    sys.stdout.buffer.write(chunk)
+                                    sys.stdout.buffer.flush()
+                                else:
+                                    sys.stdout.write(chunk.decode("utf-8", errors="replace"))
+                                    sys.stdout.flush()
+                            except BrokenPipeError:
+                                # The user's output pipe closed; raw evidence must survive.
+                                echo_output = False
+                    returncode = proc.wait()
+                except KeyboardInterrupt:
+                    # Graceful Ctrl+C: stop the child, drain remaining pipe bytes,
+                    # then write a normal capture_report.json below.
+                    interrupted = True
+                    if proc.poll() is None:
+                        proc.terminate()
+                    try:
+                        trailing, _ = proc.communicate(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        trailing, _ = proc.communicate()
+                    if trailing:
+                        raw.write(trailing)
+                    returncode = proc.returncode
     except OSError as exc:
         # The output directory already exists: leave a useful report, not an empty folder.
         failure = {
@@ -153,6 +169,7 @@ def capture(executable: Path, trace_directory: Path, output_directory: Path,
         "binary_sha256": binary_sha256_before_launch,
         "binary": str(executable),
         "game_exit_code": returncode,
+        "interrupted": interrupted,
         "source_provenance": provenance,
         "warning": "A matching source manifest does not establish that the binary was compiled from it.",
     }
@@ -176,6 +193,9 @@ def capture(executable: Path, trace_directory: Path, output_directory: Path,
     else:
         print("Map02 trace complete and internally consistent (not proof of correct pixels).",
               file=sys.stderr)
+    if interrupted:
+        print("Map02 capture interrupted; partial evidence saved.", file=sys.stderr)
+        return 1
     if returncode != 0:
         print(f"Game exited with code {returncode}.", file=sys.stderr)
         return 1
