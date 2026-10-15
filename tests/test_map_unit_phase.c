@@ -86,6 +86,36 @@ int main(void) {
                sizeof map_fixture, 32, &decode, &written) == VH_MAP_LOAD_OK);
     assert(vh_map_unit_phase_can_read_map(&phase));
 
+    /* Other resources (textures, portraits, unit files) share scratch3.
+     * A write to the potential map region revokes an existing map view. */
+    vh_map_unit_phase_init(&phase, 2);
+    memcpy(input, map_fixture, sizeof map_fixture);
+    assert(vh_map_unit_phase_reload(&phase, &memory, sizeof map_fixture,
+                                   32, &decode, &written) == VH_MAP_LOAD_OK);
+    assert(vh_map_unit_phase_can_read_map(&phase));
+    vh_map_unit_phase_scratch3_write(&phase, 0, 0);
+    assert(vh_map_unit_phase_can_read_map(&phase));
+    vh_map_unit_phase_scratch3_write(&phase, VH_MAP_NORMAL_UNIT_OFFSET, 8);
+    assert(vh_map_unit_phase_can_read_map(&phase));
+    vh_map_unit_phase_scratch3_write(&phase, VH_MAP_NORMAL_UNIT_OFFSET - 1, 1);
+    assert(!vh_map_unit_phase_can_read_map(&phase));
+
+    assert(vh_map_unit_phase_reload(&phase, &memory, sizeof map_fixture,
+                                   32, &decode, &written) == VH_MAP_LOAD_OK);
+    vh_map_unit_phase_scratch3_write(&phase, SIZE_MAX, 2);
+    assert(!vh_map_unit_phase_can_read_map(&phase));
+
+    vh_map_unit_phase_init(&phase, 39);
+    assert(vh_map_unit_phase_reload(&phase, &memory, sizeof map_fixture,
+                                   32, &decode, &written) == VH_MAP_LOAD_OK);
+    vh_map_unit_phase_scratch3_write(&phase, VH_MAP_NORMAL_UNIT_OFFSET, 8);
+    assert(!vh_map_unit_phase_can_read_map(&phase));
+    assert(vh_map_unit_phase_reload(&phase, &memory, sizeof map_fixture,
+                                   32, &decode, &written) == VH_MAP_LOAD_OK);
+    vh_map_unit_phase_scratch3_write(&phase, VH_MAP_39_UNIT_OFFSET, 1);
+    assert(vh_map_unit_phase_can_read_map(&phase));
+    vh_map_unit_phase_scratch3_write(NULL, 0, 1);
+
     free(ram);
     puts("Map/unit shared scratch phase tests passed.");
     return 0;
