@@ -64,8 +64,10 @@ int main(void) {
         memset(small_frame, 192, sizeof(small_frame));
         VH_ObserveCompletedRGB24(large_frame, sizeof(large_frame), 320, 240);
         if (!vh_switch_observer_last_result()) goto done;
+        puts("RGB24 observer resize: 320x240 presented");
         VH_ObserveCompletedRGB24(small_frame, sizeof(small_frame), 4, 3);
         if (!vh_switch_observer_last_result()) goto done;
+        puts("RGB24 observer resize: 4x3 presented");
     }
 
     while (running && frame < 3600) {
