@@ -36,3 +36,9 @@ Run https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/387
 A further regression check in commit `590d942d` samples the synthetic center pixel across both frames: R=96 and G=93 must remain stable while the blue channel animates. It also checks all four corners on the second screenshot. Results remain pending until the associated workflow completes.
 
 None of these tests verify output of original Vandal Hearts gameplay or textures. Next meaningful stage: bring legally available local upstream game frames into a separate target integration test, while keeping licensed assets outside the repository.
+
+## Verified channel motion and forthcoming texture resize test (2026-10-15)
+
+NeXium runtime run https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38779397266 passed. The center pixel moved from RGB (96,93,138) to (96,93,245), while all four fixed corner markers retained their exact colors and screenshot orientation; the sampled viewport registered 18,820 changed pixels. This verifies RGB channel motion and orientation for synthetic frames on the SDL2/GLES2 observer path.
+
+The observer NRO probe now also presents 320×240 and 4×3 synthetic RGB24 frames before its 9×7 animated sequence. This drives GLES2 texture allocation and resizing via the existing observer path, and aborts the probe if either upload/draw/swap call fails. The new run is not yet verified. Original Vandal Hearts game frames remain out of scope of this resource-free probe.
