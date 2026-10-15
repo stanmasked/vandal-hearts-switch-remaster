@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ctypes
 import random
+import re
 import subprocess
 import sys
 import tempfile
@@ -17,6 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from tools.interpolate_spu_gaussian import gaussian_voice_sample
+from tools.spu_gaussian_table import GAUSS
 from tools.simulate_spu_voice import SpuSampleCursor
 
 
@@ -60,6 +62,17 @@ class NativeGaussianTests(unittest.TestCase):
             actual, expected,
             (index, fraction, loop_start, loop_end, looped, samples)
         )
+
+    def test_all_512_coefficients_identical_to_python_source(self):
+        native_source = (ROOT / "source/vh_spu_gaussian.c").read_text()
+        declaration = re.search(
+            r"static const int16_t gauss\\[512\\]\\s*=\\s*\\{([^}]*)\\};",
+            native_source, re.S
+        )
+        self.assertIsNotNone(declaration)
+        coeffs = tuple(int(n) for n in re.findall(r"-?\\d+", declaration.group(1)))
+        self.assertEqual(len(coeffs), 512)
+        self.assertEqual(coeffs, GAUSS)
 
     def test_hardcoded_loop_and_first_sample_vectors(self):
         samples = [4000, 8000, 12000, 16000, 20000, 24000, 28000]
