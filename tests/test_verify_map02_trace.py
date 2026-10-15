@@ -63,6 +63,12 @@ class RuntimeTraceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no observations"):
             parse_trace_text("\n  \n")
 
+    def test_single_jsonl_observation(self):
+        entry = observations()[0]
+        self.assertEqual(parse_trace_text(json.dumps(entry) + "\n"), [entry])
+        report = evaluate_trace(parse_trace_text(json.dumps(entry)))
+        self.assertTrue(any("missing draw" in e for e in report["errors"]))
+
     def test_invalid_json_shapes(self):
         with self.assertRaisesRegex(ValueError, "JSON list"):
             evaluate_trace({"z": 8})
