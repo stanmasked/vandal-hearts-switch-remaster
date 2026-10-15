@@ -139,6 +139,8 @@ jobs:
             kill -KILL "$pid" 2>/dev/null || true
             wait "$pid" 2>/dev/null || true
           '
+          echo "NeXium runtime diagnostics (last 80 lines):"
+          tail -n 80 "$LOG" || true
           python3 - "$SHOT" "$SHOT_AFTER" <<'PY'
           from PIL import Image
           import sys
