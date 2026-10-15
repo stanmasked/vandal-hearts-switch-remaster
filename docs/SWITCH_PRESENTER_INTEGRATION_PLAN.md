@@ -226,3 +226,22 @@ This is a confirmed source-tree difference, not a Switch compile/runtime result.
 Inspection of the pinned `platform/pc/CMakeLists.txt` confirms this is not merely an unused alternate source copy: setting `VH_REGION=jp` sets `GAME_ROOT` to the `jp` directory, gathers game sources from that root, and applies `PERMUTER;PC_PORT;PC_FEAT;VH_REGION_JP` to those game translation units. Therefore `jp/src/maps/unpack.c` is in the selected Japanese game-source tree while its direct `0x1f800000` assignment is not protected by a `PC_PORT` conditional.
 
 That makes the Japanese scratchpad use a concrete compatibility defect for a future AArch64/libnx target, unless a Switch-specific source patch or memory mapping is supplied. The narrowest fix to evaluate is to mirror the main tree's 1 KB static host-buffer branch under `PC_PORT`, then validate both region configurations and retain the original literal only in the non-PC_PORT branch. This is a proposed fix, not yet applied or compiled.
+
+## Observer integration guard: avoid two window swaps
+
+The opt-in `VH_SWITCH_COMPLETED_FRAME_OBSERVER` insertion in the pinned upstream
+`PC_GpuPresent()` currently runs **before** the original desktop rendering tail.
+The original `SDL_GL_SwapWindow(s_window)` remains intact. In contrast,
+`vh_switch_present_upstream_frame()` calls the target-provided
+`swap_buffers` callback after its own GLES2 upload/draw. Enabling both
+presentation paths on one window would therefore risk **two buffer swaps per
+frame**, not a working Switch backend.
+
+Keep the patch as a temporary observational/test seam. Before enabling a
+Switch target path in the real upstream renderer, add a compile-time-exclusive
+backend branch that replaces (rather than supplements) the desktop
+draw/swap tail. The Switch branch must use one current GLES2 context, upload
+and draw exactly once, swap only after successful draw, and avoid the original
+desktop swap. Preserve the original desktop path when the Switch backend is
+disabled. The current isolated observer tests do not prove this final source
+integration or a real game frame on Switch.
