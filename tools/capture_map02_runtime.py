@@ -118,21 +118,24 @@ def capture(executable: Path, trace_directory: Path, output_directory: Path,
     parse_error = None
     try:
         with raw_path.open("xb") as raw, trace_path.open("x", encoding="utf-8") as trace:
+            def save_event(entry):
+                nonlocal trace_events
+                trace.write(json.dumps(entry, separators=(",", ":")) + "\n")
+                trace.flush()
+                trace_events += 1
+
             def preserve_chunk(chunk):
-                nonlocal trace_events, parse_error
+                nonlocal parse_error
                 raw.write(chunk)
                 raw.flush()
                 if parse_error is not None:
                     return
                 try:
-                    entries = decoder.feed(chunk)
+                    decoder.feed(chunk, on_event=save_event)
                 except ValueError as exc:
+                    # Save valid observations before the first malformed line,
+                    # even when both appeared in the same pipe read.
                     parse_error = str(exc)
-                    return
-                for entry in entries:
-                    trace.write(json.dumps(entry, separators=(",", ":")) + "\n")
-                    trace.flush()
-                    trace_events += 1
 
             # Keep the raw bytes and the extracted JSONL current while the game runs.
             with subprocess.Popen(command, cwd=executable.parent, stdin=None,
@@ -168,9 +171,7 @@ def capture(executable: Path, trace_directory: Path, output_directory: Path,
             if parse_error is None:
                 try:
                     for entry in decoder.finish():
-                        trace.write(json.dumps(entry, separators=(",", ":")) + "\n")
-                        trace.flush()
-                        trace_events += 1
+                        save_event(entry)
                 except ValueError as exc:
                     parse_error = str(exc)
     except OSError as exc:
