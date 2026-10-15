@@ -89,3 +89,46 @@ and never overwrites its output. Logs contain two post-load JSON Lines for
 game map 11. **Draw-side primitive instrumentation is still required**, and
 no original assets are altered. The generator has not been compiled against
 the complete upstream PC port or executed on console hardware.
+
+## Automated draw-side instrumentation (three renderer paths)
+
+The pinned upstream renderer `src/core/graphics.c` has **three distinct**
+textured tile render functions:
+
+- `RenderMapTile` (interior field tiles)
+- `RenderEdgeMapTile` (edge tiles)
+- `RenderOverheadMapTile` (overhead map view)
+
+Each populates a `POLY_FT4` quad and submits it via `AddPrim`. To instrument all
+three without changing upstream sources in place:
+
+```sh
+python3 -m tools.instrument_map02_renderer   /local/pcport/src/core/graphics.c   /local/pcport/src/core/graphics.map02trace.c
+```
+
+For a **local diagnostic build only**, compile the generated
+`graphics.map02trace.c` *instead of* the original `graphics.c`, with
+`-DVH_TRACE_MAP02_DRAW` and functioning stdout collection. Similarly compile
+the previously generated `game_setup.map02trace.c` instead of the original
+`game_setup.c`, with `-DVH_TRACE_MAP02_POST_LOAD`. Never compile both an
+original and its generated replacement into the same executable.
+
+The draw hook triggers immediately before a PS1-style textured primitive is
+handed to `AddPrim`, for face 0 of the **actual** tile-model pointers at
+(z=8,x=19) or (z=11,x=11), only when `gState.mapNum == 11`. It prints **at
+most one draw event per target face per process**. This deliberately avoids
+overwhelming stdout and is compatible with the validator's unframed JSONL
+mode. For continuous per-frame capture, more invasive instrumentation and
+frame synchronization would be required.
+
+The values `u` and `v` are the primitive's UV fields, whereas `clut`
+and `tpage` are packed **GPU primitive IDs**, **not** the raw LAND_DT
+palette number (33 or 35) or atlas cell index (5). Do not compare those
+numbers directly. Absence of a draw entry can indicate camera culling or an
+unvisited rendering path, not necessarily missing geometry. A draw entry
+indicates submission, not guaranteed final pixels.
+
+The injector checks source anchors and refuses overwriting existing output
+files; its regression tests run with `make test`. These are generator
+tests: successful end-to-end compilation and runtime capture in the PC port
+are **not yet confirmed**. No copyrighted game bytes are added to this repo.
