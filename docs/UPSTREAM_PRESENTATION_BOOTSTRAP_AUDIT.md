@@ -205,3 +205,14 @@ A second pass over pinned `src/core/main.c`, `src/core/engine.c`, `src/states/ga
 The known alias offsets remain: scratch3 base (`gMapDataPtr`), scratch3 + `0x2db80` (`gUnitDataPtr`), and scratch1 + `0x5000`/`0x6000`/`0xa000` (save/card pointers). The largest referenced offset is **not** evidence of the backing allocation size. The next search must cover the selected-region global data objects, assembly/linker-generated symbols, and PC compatibility definitions, not only C translation units. Determine whether the two names denote separately allocated arrays, linker-address aliases, or mapped portions of a larger emulated memory range before implementation.
 
 **No source or binary integration performed.** The Switch memory ownership model remains open pending symbol-definition evidence.
+
+
+## 14. Linker-symbol addresses and map-specific alias (2026-10-15)
+
+Pinned upstream `symbol_addrs.txt` gives **addresses, not allocation sizes**: `gScratch1_801317c0 = 0x801317c0` (line 1652) and `gScratch3_80180210 = 0x80180210` (line 1701). These are addresses in the original PS1 layout and must **not** be cast directly into valid pointers on Nintendo Switch. `include/common.h` still declares both as unsized byte arrays, so the available capacity remains unproven.
+
+A previously missed alias appears in `src/units/load.c:140-142`: when `gState.mapNum == 39`, `gUnitDataPtr` becomes `gScratch3_80180210 + 0x3a300`; otherwise it uses `+ 0x2db80`. The destination pointer therefore has at least two map-dependent offsets, and a single constant partition would be incorrect without checking its users, extent and loading phase.
+
+Additional scratch1 aliases are initialized directly in `src/core/card.c:623-626`: `gCardFilenameBufferPtr = gScratch1_801317c0`, `gCardFileBufferPtr = &gScratch1_801317c0[64]`, and `gCardFileVerifyBufferPtr = &gScratch1_801317c0[8256]`. These coexist with the scratch1 offsets `0x5000`, `0x6000` and `0xa000` recorded in section 12. As with the scratch3 offsets, offsets alone are **not** evidence for object sizes or concurrent validity.
+
+**Implementation constraint:** inventory PS1-symbol definitions and linker/PC-port mapping separately from C references. Before implementing region translation, trace map 39 data loading, file-size assumptions, buffer lifetimes, and whether scratch1/scratch3 are portions of the same backing PS1 RAM. Do not allocate just up to the highest referenced offset, and do not assume the PS1 addresses are usable as Switch virtual addresses. This is a pinned-source finding, not a measured memory-safety result.
