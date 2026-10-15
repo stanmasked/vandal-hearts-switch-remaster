@@ -7,6 +7,7 @@
 static const uint8_t *seen_pixels;
 static size_t seen_stride;
 static int seen_width, seen_height, uploads, draws;
+static int accept_upload = 1, accept_draw = 1;
 static uint8_t seen_top[6];
 
 int vh_switch_rgb24_presenter_upload(VhSwitchRgb24Presenter *presenter,
@@ -21,12 +22,12 @@ int vh_switch_rgb24_presenter_upload(VhSwitchRgb24Presenter *presenter,
     seen_height = frame->height;
     memcpy(seen_top, top, sizeof(seen_top));
     ++uploads;
-    return 1;
+    return accept_upload;
 }
 int vh_switch_rgb24_presenter_draw(VhSwitchRgb24Presenter *presenter, int w, int h) {
     assert(presenter && w == 1280 && h == 720);
     ++draws;
-    return 1;
+    return accept_draw;
 }
 int main(void) {
     VhSwitchRgb24Presenter presenter = {0};
@@ -51,6 +52,24 @@ int main(void) {
     assert(uploads == 2 && draws == 2);
     assert(seen_pixels == completed && seen_top[0] == 77);
 
+    /* Upload failure aborts presentation before any draw. */
+    accept_upload = 0;
+    assert(!vh_switch_present_completed_rgb24(&presenter, completed,
+        sizeof(completed), 2, 2, 1280, 720));
+    assert(uploads == 3 && draws == 2);
+    accept_upload = 1;
+
+    /* Draw failure is propagated, and a later frame may recover. */
+    accept_draw = 0;
+    assert(!vh_switch_present_completed_rgb24(&presenter, completed,
+        sizeof(completed), 2, 2, 1280, 720));
+    assert(uploads == 4 && draws == 3);
+    accept_draw = 1;
+    assert(vh_switch_present_completed_rgb24(&presenter, completed,
+        sizeof(completed), 2, 2, 1280, 720));
+    assert(uploads == 5 && draws == 4);
+    assert(seen_pixels == completed && seen_top[0] == 77);
+
     assert(!vh_switch_present_completed_rgb24(&presenter, completed,
         sizeof(completed) - 1, 2, 2, 1280, 720));
     assert(!vh_switch_present_completed_rgb24(&presenter, NULL,
@@ -65,7 +84,7 @@ int main(void) {
     presenter.initialized = 0;
     assert(!vh_switch_present_completed_rgb24(&presenter, completed,
         sizeof(completed), 2, 2, 1280, 720));
-    assert(uploads == 2 && draws == 2);
+    assert(uploads == 5 && draws == 4);
     puts("Completed RGB24 frame handoff tests passed.");
     return 0;
 }
