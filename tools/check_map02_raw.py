@@ -9,7 +9,7 @@ import argparse
 import json
 from pathlib import Path
 
-from tools.inspect_land_dt import CLUT_INDEX_OFFSET, TEXTURE_RECORD_SIZE, inspect_land_dt
+from tools.inspect_land_dt import BLOCK_SIZE, CLUT_INDEX_OFFSET, TEXTURE_RECORD_SIZE, inspect_land_dt
 
 
 def check_raw_records(report):
@@ -18,7 +18,7 @@ def check_raw_records(report):
         errors.append("expected map block 2")
     base = report.get("block_base_offset")
     single_block = report.get("single_block") is True
-    expected_base = 0 if single_block else 2 * 1797
+    expected_base = 0 if single_block else 2 * BLOCK_SIZE
     if type(base) is not int or base != expected_base:
         errors.append(f"LAND_DT block base offset expected {expected_base}")
     records = {}
