@@ -14,10 +14,12 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.inspect_ps1_seq import MAX_SEQ_BYTES, parse_seq
 from tools.mix_spu_stereo import MAX_FRAMES
+from tools.spu_voice_lifetime import SpuVoiceClock, SpuVoiceSpec
 
 
 # The reference PC port reserves slots 0..19 for SEQ (20..23 for SFX).
@@ -25,14 +27,19 @@ SEQ_VOICE_COUNT = 20
 MAX_SEQ_NOTES = 2048  # bounded offline memory, not a simultaneous voice cap
 
 
-def seq_to_schedule(report: dict[str, object], *, release_frames: int = 4410
-                    ) -> dict[str, object]:
+def seq_to_schedule(
+    report: dict[str, object], *, release_frames: int = 4410,
+    voice_spec_for_note: Callable[[int, int], SpuVoiceSpec] | None = None,
+) -> dict[str, object]:
     """Build a time-bounded note schedule with 20 reusable SEQ voice slots.
 
     The source port takes the lowest free slot, otherwise steals the next
     slot round-robin. Note-off only releases its currently owned voice.
-    ADSR release occupation is approximated by the diagnostic tail length:
-    this is NOT hardware-accurate voice liveness or SEQ block timing.
+    With voice_spec_for_note, the allocator advances the SAME SPU ADSR
+    and sample cursors as the dry renderer, freeing voices on one-shot
+    exhaustion or envelope completion. Otherwise the legacy fixed
+    release_frames approximation is preserved for JSON-only inspection.
+    Neither mode claims original PC audio block scheduling accuracy.
     """
     if type(release_frames) is not int or not 0 <= release_frames <= 44100:
         raise ValueError("release_frames must be an integer in 0..44100")
@@ -47,18 +54,51 @@ def seq_to_schedule(report: dict[str, object], *, release_frames: int = 4410
     scheduled: list[dict] = []
     steal_round_robin = 0
 
+    def refresh(entry: dict, frame: int) -> None:
+        clock = entry.get("_clock")
+        if clock is None:
+            return
+        terminal = clock.advance_to(frame)
+        if terminal is None:
+            return
+        if not entry["_released"]:
+            entry["hold_frames"] = max(1, terminal - entry["start_frame"])
+            entry["tail_frames"] = 0
+            entry["_released"] = True
+            key = entry["_channel"], entry["note"]
+            if held.get(key) is entry:
+                del held[key]
+        else:
+            entry["tail_frames"] = max(
+                0, terminal - entry["start_frame"] - entry["hold_frames"]
+            )
+
     def release(channel: int, note: int, frame: int,
                 *, cutoff: bool = False) -> None:
-        entry = held.pop((channel, note), None)
+        entry = held.get((channel, note))
         if entry is None:
             return
-        entry["hold_frames"] = max(1, frame - entry["start_frame"])
-        # A user-specified infinite-loop render window is a hard stop:
-        # do not render an ADSR release tail past the requested boundary.
-        entry["tail_frames"] = 0 if cutoff else release_frames
+        refresh(entry, frame)
+        if held.get((channel, note)) is not entry:
+            return  # voice already stopped naturally before NoteOff
+        del held[(channel, note)]
+        effective_frame = max(frame, entry["start_frame"] + 1)
+        entry["hold_frames"] = effective_frame - entry["start_frame"]
         entry["_released"] = True
+        if entry.get("_clock") is not None and not cutoff:
+            entry["_clock"].key_off(effective_frame)
+            entry["tail_frames"] = 0  # computed on final ADSR completion
+        else:
+            # Hard-stop windows must not render past their boundary.
+            entry["tail_frames"] = 0 if cutoff else release_frames
+            if cutoff:
+                entry["_clock"] = None
 
-    def end(entry: dict) -> int:
+    def end(entry: dict, frame: int) -> int:
+        refresh(entry, frame)
+        if entry.get("_clock") is not None:
+            terminal = entry["_clock"].terminal_frame
+            return MAX_FRAMES + 1 if terminal is None else terminal
         if not entry["_released"]:
             return MAX_FRAMES + 1
         return (entry["start_frame"] + entry["hold_frames"]
@@ -67,7 +107,7 @@ def seq_to_schedule(report: dict[str, object], *, release_frames: int = 4410
     def allocate(frame: int) -> int:
         nonlocal steal_round_robin
         for slot, old in enumerate(slots):
-            if old is None or end(old) <= frame:
+            if old is None or end(old, frame) <= frame:
                 return slot
         # All 20 SEQ voices are still busy (held or releasing). The source
         # code's RR index advances ONLY when every voice is busy.
@@ -94,6 +134,7 @@ def seq_to_schedule(report: dict[str, object], *, release_frames: int = 4410
                     0, frame - old["start_frame"] - old["hold_frames"]
                 )
         old["_released"] = True
+        old["_clock"] = None  # stolen voice is forcibly stopped
         return slot
 
     for event in report["events"]:
@@ -131,6 +172,11 @@ def seq_to_schedule(report: dict[str, object], *, release_frames: int = 4410
                 "voice_slot": slot,
                 "_channel": channel, "_released": False,
             }
+            if voice_spec_for_note is not None:
+                spec = voice_spec_for_note(state["program"], note)
+                if not isinstance(spec, SpuVoiceSpec):
+                    raise ValueError("voice_spec_for_note must return SpuVoiceSpec")
+                entry["_clock"] = SpuVoiceClock(spec, frame)
             scheduled.append(entry)
             slots[slot] = entry
             held[(channel, note)] = entry
@@ -153,13 +199,24 @@ def seq_to_schedule(report: dict[str, object], *, release_frames: int = 4410
     for idx, entry in enumerate(scheduled):
         if entry.get("_dropped"):
             continue
-        final = end(entry)
+        if entry.get("_clock") is not None:
+            refresh(entry, MAX_FRAMES)
+            if entry["_clock"].terminal_frame is None:
+                # Hard-cap release at the host's 20-second safety limit.
+                cutoff = MAX_FRAMES - entry["start_frame"] - entry["hold_frames"]
+                entry["tail_frames"] = max(0, cutoff)
+                entry["_lifetime_capped"] = True
+        final = (entry["start_frame"] + entry["hold_frames"]
+                 + entry["tail_frames"])
         if final > MAX_FRAMES:
             raise ValueError(
                 f"note {idx}: requested release exceeds 20-second render limit"
             )
-        voices.append({k: v for k, v in entry.items()
-                       if not k.startswith("_")})
+        visible = {k: v for k, v in entry.items()
+                   if not k.startswith("_")}
+        if entry.get("_lifetime_capped"):
+            visible["lifetime_capped"] = True
+        voices.append(visible)
     if not voices:
         raise ValueError("all same-frame notes were stolen before playback")
     return {"voices": voices}
