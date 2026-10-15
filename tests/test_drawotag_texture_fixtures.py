@@ -47,7 +47,7 @@ class TextureFixtureTests(unittest.TestCase):
         upload(self.vram, 66, 0, 1, 2, [0x0043, 0x0043])
         upload(self.vram, 64, 8, 1, 2, [0x0043, 0x0065])
         upload(self.vram, 0, 40, 16, 1,
-               [0, 0x001F, 0x03E0, 0x7C00, 0x7FFF, 0x7C1F, 0x03FF] + [0] * 9
+               [0, 0x001F, 0x03E0, 0x7C00, 0x7FFF, 0x7C1F, 0x03FF] + [0] * 9)
         upload(self.vram, 128, 0, 1, 2, [0x0201, 0x0201])
         upload(self.vram, 0, 41, 256, 1, [0, 0x7C00, 0x7FFF] + [0] * 253)
         upload(self.vram, 192, 0, 2, 2, [0x03FF, 0x7C1F] * 2)
@@ -95,7 +95,7 @@ class TextureFixtureTests(unittest.TestCase):
                  'probes/pinned_drawotag_switch_smoke.c').read_text()
         for name, size, expected in (
             ('palette', 16,
-             [0, 0x001F, 0x03E0, 0x7C00, 0x7FFF, 0x7C1F, 0x03FF] + [0] * 9,
+             [0, 0x001F, 0x03E0, 0x7C00, 0x7FFF, 0x7C1F, 0x03FF] + [0] * 9),
             ('palette8', 256, [0, 0x7C00, 0x7FFF] + [0] * 253),
         ):
             match = re.search(r'unsigned short\s+' + name +
