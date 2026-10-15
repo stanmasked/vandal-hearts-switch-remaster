@@ -89,3 +89,7 @@ NeXium checks that STP red uses the ABR=0 approximately 50/50 red/green blended 
 Commits `7c385b60` and `10b16033` add two reference-suite regressions: a sixth texture-fixture test confirms that 0x801f has STP bit 15 while adjacent 0x03e0 is unmarked and nonzero; a seventh test parses the C probe's fixture word initializers to ensure the Python reference vectors for 4bpp, 8bpp, direct 15bpp, zero-transparency and STP have not drifted from the guest source. These additions remain wired to `make test` and the pinned Switch workflow preflight.
 
 **Validation status:** code committed; successful execution of the expanded seven-test suite and newly instrumented NRO is not claimed here. A fresh workflow success with screenshots is required for actual native STP/raster evidence.
+
+## Fixed fixture-parser regex false failure
+
+Commit `6c2b840e` corrects a double-escaped raw regular expression in `tests/test_drawotag_texture_fixtures.py`: the old expression searched for literal backslash characters rather than C whitespace/bracket syntax, so the C/Python drift check could not reliably match even valid fixture arrays. The corrected regex was inspected against all five current guest C array initializers (4bpp, 8bpp, direct 15bpp, zero-alpha and STP) and all names matched. This is a source/parser check, **not** a complete Python unit-test run or NeXium execution. Current full CI evidence remains to be verified.
