@@ -75,6 +75,26 @@ def validate_extraction(report_path: Path, payload_path: Path, wav_path: Path | 
     if not isinstance(offsets, list) or len(offsets) != count:
         raise ValueError("audio_lba_offsets length does not match selected sector count")
 
+    # The extractor records absolute disc LBAs and the exact scanned range.
+    # When present, these fields must agree with every selected audio sector.
+    range_fields = ("start_lba", "sectors_scanned", "first_audio_lba", "last_audio_lba")
+    if any(field in report for field in range_fields):
+        if not all(field in report for field in range_fields):
+            raise ValueError("incomplete source LBA range metadata")
+        scan_start = integer("start_lba")
+        scanned = integer("sectors_scanned")
+        if scanned == 0:
+            raise ValueError("sectors_scanned must be positive")
+        if (type(report["first_audio_lba"]) is not int
+                or type(report["last_audio_lba"]) is not int):
+            raise ValueError("first/last audio LBA must be integers")
+        if report["first_audio_lba"] != lbas[0] or report["last_audio_lba"] != lbas[-1]:
+            raise ValueError("first/last audio LBA does not match sector list")
+        if not (scan_start <= lbas[0] <= lbas[-1] < scan_start + scanned):
+            raise ValueError("audio LBA outside reported scanned range")
+        if count > scanned:
+            raise ValueError("selected audio sector count exceeds scanned range")
+
     gaps = 0
     previous = None
     for index, (lba, entry) in enumerate(zip(lbas, offsets)):
