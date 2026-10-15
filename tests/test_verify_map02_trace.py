@@ -40,6 +40,14 @@ class RuntimeTraceTests(unittest.TestCase):
         self.assertTrue(any("duplicate" in error for error in errors))
         self.assertTrue(any("unexpected GFX" in error for error in errors))
 
+    def test_duplicate_does_not_overwrite_original_observation(self):
+        entries = observations()
+        entries.append({"z": 8, "x": 19, "face": 0, "stage": "draw", "gfx": 498})
+        report = evaluate_trace(entries)
+        self.assertTrue(any("duplicate observation" in error for error in report["errors"]))
+        self.assertEqual(report["observations"][0]["draw_gfx"], 641)
+        self.assertFalse(any("changed between" in error for error in report["errors"]))
+
     def test_invalid_json_shapes(self):
         with self.assertRaisesRegex(ValueError, "JSON list"):
             evaluate_trace({"z": 8})
