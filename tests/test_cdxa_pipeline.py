@@ -546,7 +546,7 @@ class CdXaPipelineTests(unittest.TestCase):
             altered_report["start_lba"] = 1
             altered_report["sectors_scanned"] = 4
             report_path.write_text(json.dumps(altered_report), encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "source BIN selection differs"):
+            with self.assertRaisesRegex(ValueError, "sector/header counts"):
                 validate_extraction(report_path, output, source_bin=source)
 
 
