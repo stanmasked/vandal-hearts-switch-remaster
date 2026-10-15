@@ -44,7 +44,9 @@ class TextureFixtureTests(unittest.TestCase):
     def setUp(self):
         self.vram = {}
         upload(self.vram, 64, 0, 1, 2, [0x2121, 0x2121])
-        upload(self.vram, 0, 40, 16, 1, [0, 0x001F, 0x03E0] + [0] * 13)
+        upload(self.vram, 66, 0, 1, 2, [0x0043, 0x0043])
+        upload(self.vram, 0, 40, 16, 1,
+               [0, 0x001F, 0x03E0, 0x7C00, 0x7FFF] + [0] * 11)
         upload(self.vram, 128, 0, 1, 2, [0x0201, 0x0201])
         upload(self.vram, 0, 41, 256, 1, [0, 0x7C00, 0x7FFF] + [0] * 253)
         upload(self.vram, 192, 0, 2, 2, [0x03FF, 0x7C1F] * 2)
@@ -72,6 +74,7 @@ class TextureFixtureTests(unittest.TestCase):
                  'probes/pinned_drawotag_switch_smoke.c').read_text()
         expected = {
             'texels': [0x2121, 0x2121],
+            'texels_window': [0x0043, 0x0043],
             'texels8': [0x0201, 0x0201],
             'texels15': [0x03FF, 0x7C1F, 0x03FF, 0x7C1F],
             'texels_alpha': [0, 0x7FE0, 0, 0x7FE0],
@@ -89,7 +92,8 @@ class TextureFixtureTests(unittest.TestCase):
         guest = (Path(__file__).resolve().parents[1] /
                  'probes/pinned_drawotag_switch_smoke.c').read_text()
         for name, size, expected in (
-            ('palette', 16, [0, 0x001F, 0x03E0] + [0] * 13),
+            ('palette', 16,
+             [0, 0x001F, 0x03E0, 0x7C00, 0x7FFF] + [0] * 11),
             ('palette8', 256, [0, 0x7C00, 0x7FFF] + [0] * 253),
         ):
             match = re.search(r'unsigned short\s+' + name +
@@ -105,6 +109,7 @@ class TextureFixtureTests(unittest.TestCase):
                  'probes/pinned_drawotag_switch_smoke.c').read_text()
         expected_uploads = {
             'tex_rect': (64, 0, 1, 2, 'texels'),
+            'tex_window_rect': (66, 0, 1, 2, 'texels_window'),
             'clut_rect': (0, 40, 16, 1, 'palette'),
             'tex8_rect': (128, 0, 1, 2, 'texels8'),
             'clut8_rect': (0, 41, 256, 1, 'palette8'),
@@ -117,9 +122,13 @@ class TextureFixtureTests(unittest.TestCase):
             for name, x, y, w, h in re.findall(
                 r'setRECT\(&(\w+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+)\)', guest)
         }
-        self.assertEqual(rects, {
+        self.assertEqual({name: rects[name] for name in expected_uploads}, {
             name: data[:4] for name, data in expected_uploads.items()
         })
+        self.assertEqual(rects['window_rect'], (8, 0, 248, 256))
+        self.assertEqual(rects['reset_rect'], (0, 0, 256, 256))
+        self.assertEqual(set(rects), set(expected_uploads) |
+                         {'window_rect', 'reset_rect'})
         for name, (x, y, w, h, array) in expected_uploads.items():
             self.assertRegex(guest, r'LoadImage\(&' + name +
                              r',\s*\(unsigned int \*\)' + array + r'\)')
@@ -173,6 +182,42 @@ class TextureFixtureTests(unittest.TestCase):
                         'OT is head-inserted; mode must execute before SPRT')
         self.assertEqual([sample(self.vram, tpage(0, 64), clut(0, 40), u, 0)
                           for u in range(2)], [0x001F, 0x03E0])
+
+    def test_texture_window_gp0_e2_and_ot_reset(self):
+        # Pinned libgpu.c GP0(E2h): 8px mask/offset units.
+        mask_x = ((256 - 248) >> 3) & 31
+        off_x = (8 >> 3) & 31
+        self.assertEqual((mask_x, off_x), (1, 1))
+        def window_u(u):
+            return (u & ~(mask_x * 8)) | ((off_x & mask_x) * 8)
+        self.assertEqual([window_u(u) for u in (0, 1)], [8, 9])
+        self.assertEqual([
+            sample(self.vram, tpage(0, 64), clut(0, 40), window_u(u), 0)
+            for u in (0, 1)
+        ], [0x7C00, 0x7FFF])
+        # A 256-wide reset RECT has mask=0 and restores red/green.
+        self.assertEqual(((256 - 256) >> 3) & 31, 0)
+        self.assertEqual([
+            sample(self.vram, tpage(0, 64), clut(0, 40), u, 0)
+            for u in (0, 1)
+        ], [0x001F, 0x03E0])
+        guest = (Path(__file__).resolve().parents[1] /
+                 'probes/pinned_drawotag_switch_smoke.c').read_text()
+        for name, rect in (('window_rect', '8, 0, 248, 256'),
+                           ('reset_rect', '0, 0, 256, 256')):
+            self.assertIn(f'setRECT(&{name}, {rect});', guest)
+        self.assertIn('SetDrawMode(&window_mode, 0, 0, GetTPage(0, 0, 64, 0), &window_rect);', guest)
+        self.assertIn('SetDrawMode(&window_reset, 0, 0, GetTPage(0, 0, 64, 0), &reset_rect);', guest)
+        self.assertIn('setXY0(&window_sprite, 0, 5);', guest)
+        self.assertIn('setClut(&window_sprite, 0, 40);', guest)
+        # Head-inserted ordering table: execution is reverse AddPrim order.
+        order = ('AddPrim(&ot[0], &sprite);',
+                 'AddPrim(&ot[0], &mode);',
+                 'AddPrim(&ot[0], &window_reset);',
+                 'AddPrim(&ot[0], &window_sprite);',
+                 'AddPrim(&ot[0], &window_mode);')
+        offsets = [guest.index(item) for item in order]
+        self.assertEqual(offsets, sorted(offsets))
 
     def test_stp_is_per_texel(self):
         values = [sample(self.vram, tpage(2, 320), 0, u, 0)
