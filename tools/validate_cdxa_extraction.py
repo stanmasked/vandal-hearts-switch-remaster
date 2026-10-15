@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import wave
 from pathlib import Path
@@ -31,6 +32,17 @@ def validate_extraction(report_path: Path, payload_path: Path, wav_path: Path | 
     actual_size = payload_path.stat().st_size
     if actual_size != expected_size:
         raise ValueError(f"payload size mismatch: expected {expected_size}, got {actual_size}")
+    expected_digest = report.get("payload_sha256")
+    if not isinstance(expected_digest, str) or len(expected_digest) != 64 or any(
+        letter not in "0123456789abcdef" for letter in expected_digest
+    ):
+        raise ValueError("report must include a lowercase SHA-256 payload digest")
+    digest = hashlib.sha256()
+    with payload_path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    if digest.hexdigest() != expected_digest:
+        raise ValueError("payload SHA-256 mismatch; file may not belong to this report")
     if count == 0:
         raise ValueError("no audio sectors selected; refusing empty decode")
 
