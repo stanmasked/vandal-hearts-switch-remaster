@@ -147,3 +147,17 @@ from the local raw BIN; the validator intentionally fails closed when the hash
 is missing. The SHA-256 check protects against accidental file/report mix-ups,
 but it does not establish that ADPCM was decoded correctly or that LBA timing
 was reconstructed.
+
+
+### Prevent accidental mixing of CD-XA streams
+
+A disc resource may interleave different CD-XA file numbers or channels.
+Concatenating their sectors and sharing one ADPCM predictor history can
+produce clicks and discontinuities even when every sound group is structurally
+valid. New extraction reports include `file_channel_counts` such as
+`{"1:0": 123}`; the read-only validator now rejects reports containing
+multiple file/channel identities, even when the coding byte is uniform.
+Use `--file-number` and `--channel` on the extractor to isolate one stream
+and regenerate both the payload and report. The report is diagnostic metadata
+only; even a single stream does not prove correct timing or sound quality.
+Legacy reports without `file_channel_counts` must be regenerated locally.
