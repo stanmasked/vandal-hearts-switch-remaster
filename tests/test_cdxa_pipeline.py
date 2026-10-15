@@ -43,6 +43,7 @@ class CdXaPipelineTests(unittest.TestCase):
             extraction = extract_audio_payloads(source, payload)
             self.assertEqual(extraction["audio_form2_sectors_written"], 1)
             self.assertEqual(extraction["coding_info_counts"], {"0x01": 1})
+            self.assertEqual(extraction["file_channel_counts"], {"1:0": 1})
             self.assertEqual(extraction["audio_lbas"], [0])
             self.assertEqual(extraction["audio_lba_offsets"], [
                 {"lba": 0, "payload_offset": 0, "missing_source_sectors_before": 0}
@@ -153,6 +154,7 @@ class CdXaPipelineTests(unittest.TestCase):
             self.assertEqual(report["sectors_scanned"], 4)
             self.assertEqual(report["audio_form2_sectors_written"], 1)
             self.assertEqual(report["audio_lbas"], [1])
+            self.assertEqual(report["file_channel_counts"], {"7:1": 1})
             self.assertEqual(report["first_audio_lba"], 1)
             self.assertEqual(report["last_audio_lba"], 1)
             self.assertEqual(payload.read_bytes(), selected[24:24 + AUDIO_BYTES_PER_SECTOR])
