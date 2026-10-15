@@ -94,3 +94,9 @@ The standalone `source/switch_sdl2_observer_backend.{h,c}` now owns SDL2 window,
 Build proof: https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38787816642 passed both builds including `sdl2-observer-lifecycle-probe.nro`. This proves an NRO could be built, **not** that its newly extracted lifecycle code rendered pixels.
 
 Commit `61776dc2f96aaa8fbcc7e9b15afedadb56b49839` extends NeXium CI with a dedicated lifecycle NRO runtime screenshot and motion test, checking four RGB corner markers and animated blue channel. This separate run is pending. The screenshot test externally stops the emulator; it does not prove graceful guest shutdown or actual Vandal Hearts game-loop execution. The existing `PC_GpuPresent` still depends on desktop SDL state and remains a separate integration blocker.
+
+## Reusable SDL2 observer backend runtime verification (NeXium)
+
+Run https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38788403755 completed successfully with both NROs built and both NeXium screenshot tests passing. The new reusable-lifecycle backend NRO reached a real RGB frame on polling attempt 4 and displayed the expected four corner markers (validated for both captures). Its center RGB transitioned from (108,92,96) to (108,92,197), proving continuing synthetic frame updates on the extracted SDL2/GLES2 lifecycle path. The original observer NRO also passed, showing 18,820 changed sampled pixels. This confirms image output from the refactored platform module, **not original Vandal Hearts gameplay**.
+
+The lifecycle NRO is terminated externally by the emulator harness after the screenshots; graceful guest shutdown after a full session still requires its own exit assertion or device-level verification.
