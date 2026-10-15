@@ -368,5 +368,72 @@ class CdXaPipelineTests(unittest.TestCase):
             self.assertEqual(comparison["frames_compared"], 2016)
 
 
+    def test_predictive_adpcm_state_survives_sector_boundary(self):
+        # Construct two 2352-byte XA sectors using 4-bit stereo filter 1.
+        # The reference recurrence below does not call the decoder and
+        # retains each channel's predictor state across all 36 groups.
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            disc, payload, report_path = (
+                root / "disc.bin", root / "payload.bin", root / "report.json"
+            )
+            decoded_path, reference_path = root / "actual.wav", root / "reference.wav"
+            frames_expected = []
+            history = [[0, 0], [0, 0]]
+            raw_sectors = []
+            for sector_index in range(2):
+                sector = bytearray(xa_audio_sector())
+                for group_index in range(18):
+                    base = 24 + group_index * 128
+                    sector[base:base + 16] = bytes([0x1C]) * 16
+                    for row in range(28):
+                        for chunk in range(4):
+                            left_code = (row + chunk + sector_index + group_index) % 16
+                            right_code = (3 * row + chunk + sector_index + group_index) % 16
+                            sector[base + 16 + row * 4 + chunk] = (
+                                left_code | (right_code << 4)
+                            )
+                    samples = [[], []]
+                    for chunk in range(4):
+                        for channel in (0, 1):
+                            prev, older = history[channel]
+                            for row in range(28):
+                                code = (
+                                    (row + chunk + sector_index + group_index) % 16
+                                    if channel == 0 else
+                                    (3 * row + chunk + sector_index + group_index) % 16
+                                )
+                                signed = code if code < 8 else code - 16
+                                value = signed + ((60 * prev + 32) // 64)
+                                older, prev = prev, value
+                                samples[channel].append(max(-32768, min(32767, value)))
+                            history[channel] = [prev, older]
+                    frames_expected.extend(zip(*samples))
+                raw_sectors.append(bytes(sector))
+            disc.write_bytes(b"".join(raw_sectors))
+            result = extract_audio_payloads(
+                disc, payload, report_path=report_path
+            )
+            self.assertEqual(result["audio_lbas"], [0, 1])
+            self.assertEqual(result["file_channel_counts"], {"1:0": 2})
+            self.assertEqual(validate_extraction(report_path, payload)["pcm_frames"], 4032)
+            self.assertEqual(
+                decode_payload_file(payload, decoded_path, extracted_groups=True)["frames"],
+                4032,
+            )
+            with wave.open(str(reference_path), "wb") as ref:
+                ref.setnchannels(2)
+                ref.setsampwidth(2)
+                ref.setframerate(SAMPLE_RATE)
+                ref.writeframes(b"".join(
+                    struct.pack("<hh", left, right)
+                    for left, right in frames_expected
+                ))
+            self.assertEqual(len(frames_expected), 4032)
+            comparison = compare_wavs(decoded_path, reference_path)
+            self.assertTrue(comparison["exact_match"], comparison)
+            self.assertEqual(comparison["frames_compared"], 4032)
+
+
 if __name__ == "__main__":
     unittest.main()
