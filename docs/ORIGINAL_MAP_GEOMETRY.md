@@ -100,3 +100,70 @@ a native multi-face geometry frame through original `RenderMapTile`,
 or a real gameplay frame/physical Switch run. Those stages require
 owner-provided input and further native integration; this report
 does not claim they are complete.
+
+## Native owner-only two-face geometry bridge (acceptance candidate)
+
+A newly added NRO branch can consume a THIRD optional, private SD file:
+
+`sdmc:/switch/vandal-hearts-remaster/private-assets/MAP11_MODELS_28X12.BIN`
+
+This is the **decompressed 102144-byte map-11 tile prefix**, not the
+original `M_MAP02.PRS` bitstream. The source `source/vh_private_map_geometry.c`
+checks its exact size, all 336 `MapTileModel.faceCt <= 18` constraints
+and every active face's 4 vertex references (must be 0..21)
+**before** replacing the output model. Missing geometry leaves the
+previously accepted private, single-patch screenshot unchanged.
+Partial, corrupt or incompatible geometry rejects the source rather
+than silently drawing arbitrary vertices.
+
+To stage the *user-owned* compressed PRS safely, after the existing
+F_TEX01/LAND_DT bank is already present on the local Switch SD:
+
+```bash
+python3 tools/stage_vh_private_map_geometry.py \
+  --prs /private/game/DATA/M_MAP02.PRS \
+  --sd-root /path/to/mounted/switch-sd
+```
+
+Or use an exactly 102144-byte, already decompressed map prefix:
+
+```bash
+python3 tools/stage_vh_private_map_geometry.py \
+  --unpacked /private/game/MAP11_PREFIX.BIN \
+  --sd-root /path/to/mounted/switch-sd
+```
+
+The tool validates all tile/face references, refuses to overwrite
+previously staged output, and keeps the map bytes **only on the local
+SD card**. A metadata-only SHA-256 manifest records the local byte set.
+
+If the private NRO finds both original texture files and the optional
+unpacked model file, it extracts **tile (6,3)**, reads its source face
+`gfx[]` IDs and vertex indexes, looks up each local face's individual
+UVWH and CLUT selector in the **same LAND_DT** table, and submits
+multiple original `POLY_FT4` primitives via `DrawOTag`.
+
+**Strict limitation:** the preview uses an explicitly simplified
+orthographic coordinate transform
+`screen_x=6+vertex_x/8`,
+`screen_y=4+vertex_z/8-vertex_y/16`
+inside the 12×9 test framebuffer. This is a **geometry/data-path
+acceptance probe**, NOT the game's original GTE perspective projection,
+backface tests, ordering-table depth, camera, terrain lighting, or
+`RenderMapTile`. It draws only locally mapped CLUT 32..47 faces from
+a selected tile. If a source face uses an external GFX page or CLUT,
+the preview does not pretend to be the original scene.
+
+The synthetic CI counterpart provides tile (6,3) with two adjoining
+flat model faces, independently selects local GFX slots **241 and 242**
+and uses two distinct local CLUT rows **35 and 36**. The image
+acceptance checks red/blue on the left face and magenta/cyan on the
+right to prove original vertex indexes and per-face GFX lookup.
+The original private four-quadrant UV probe is run FIRST without a
+geometry file, so regressions can be isolated from the new renderer.
+
+As of creation this native multi-face candidate has not yet been
+confirmed by a finished NeXium screenshot run. That evidence must be
+recorded before changing the test's status to accepted. The user's
+authentic `M_MAP02.PRS` is still unavailable in CI; no copyrighted
+map bytes are in any public artifact.
