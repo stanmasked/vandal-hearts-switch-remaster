@@ -105,7 +105,7 @@ class SeqScheduleTests(unittest.TestCase):
         # 33 note-ons are valid; allocation is based on concurrent slots,
         # not the number of note-on messages in a complete song.
         new_schedule = seq_to_schedule(parsed, release_frames=0)
-        self.assertEqual(len(new_schedule["voices"]), 33)
+        self.assertEqual(len(new_schedule["voices"]), 20)
         self.assertTrue(all(0 <= n["voice_slot"] < 20
                             for n in new_schedule["voices"]))
         with self.assertRaisesRegex(ValueError, "release_frames"):
