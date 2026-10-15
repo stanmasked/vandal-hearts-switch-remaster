@@ -697,3 +697,41 @@ incomplete even when the top-level GFX values look like consistent
 PRS (641/643) or DAT (498/550). This protects the texture comparison from
 falsely accepting truncated evidence; final pixel visibility remains
 unverified until a genuine gameplay capture is available.
+
+
+## Local runtime readiness audit (before requesting a full gameplay trace)
+
+The preflight command checks **local files only**, without changing any game
+resources, extracting copyrighted content, or starting the game:
+
+```sh
+python3 -m tools.preflight_map02_pcport /path/to/VandalHearts-PcPort \
+  --game-exe /path/to/SLUS_004.47 \
+  --disc-image /path/to/your-game.bin \
+  --krom-source /path/to/KROMDAT.BIN
+```
+
+If building without the optional HD video/WebP dependencies, add
+`--no-hdvideo --no-webp` and use the corresponding upstream Make flags
+`NO_HDVIDEO=1 NO_WEBP=1`. The report lists missing compiler,
+`make`, `pkg-config`, SDL2/OpenAL and optional HD libraries; it also checks
+the pinned checkout revision, needed source files, the **US retail
+`SLUS_004.47` MD5** and the raw 2352-byte disc image layout. Exit 0
+means only that these inspected prerequisites are present; exit 2
+enumerates blockers in JSON.
+
+The exact US executable MD5 is
+`596bb082a2de5f1fe977dd3d7e160b03`. A localized
+disc's executable may boot at runtime while **failing the PC-port build-time
+data-generator MD5 guard**. Do not bypass that guard or substitute the
+`M_MAP02.DAT` variant to compensate. The KROM/BIOS check verifies the
+presence and minimal size of a source file, not the complete font
+generator's required content hash; the disc probe only confirms the
+raw-sector/ISO structure, not the title, region, or ownership. A successful
+preflight **does not prove** that the full PC-port compiles, runs, reaches
+map 11 or displays the bridge correctly.
+
+Run synthetic preflight regression tests with
+```sh
+python3 -m unittest discover -s tests -p 'test_preflight_map02_pcport.py' -v
+```
