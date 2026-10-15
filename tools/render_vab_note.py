@@ -3,8 +3,8 @@
 
 This is a host-only dry note proof-of-pipeline with integer Gaussian fetch. It combines
 validated VAB tone selection, raw SPU-ADPCM decoding, fixed-point sample
-stepping and an ADSR envelope. It deliberately omits PlayStation Gaussian
-hardware-exact timing, per-voice pan, gain laws, reverb, polyphony and SEQ scheduling.
+stepping and an ADSR envelope. It deliberately omits hardware-exact timing, per-voice pan, gain laws,
+reverb, polyphony and SEQ scheduling.
 No game assets are included or uploaded.
 """
 from __future__ import annotations
@@ -112,6 +112,7 @@ def wav_from_mono(pcm: bytes) -> bytes:
 def render_vab_note(
     vh: Path, vb: Path, *, program: int, note: int,
     hold_frames: int, tail_frames: int, gain: float = 1.0,
+    interpolation: str = "gaussian",
 ) -> tuple[bytes, dict[str, object]]:
     """Render one selected VAB tone without extracting an intermediate file."""
     selection = resolve_note(vh, program=program, note=note, vb=vb)
