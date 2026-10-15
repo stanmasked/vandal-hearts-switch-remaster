@@ -91,3 +91,12 @@ The same source documentation confirms that desktop scaling is display-only near
 **Evidence:** upstream GPU subsystem overview: https://github.com/HalmyLyseas/VandalHearts-PcPort/blob/master/docs/pc-port/subsystems/gpu.md ; architecture and source-layer boundary: https://github.com/HalmyLyseas/VandalHearts-PcPort/blob/master/docs/architecture.md ; contribution/build parity rules: https://github.com/HalmyLyseas/VandalHearts-PcPort/blob/master/CONTRIBUTING.md
 
 **Next gate:** add a Switch-side frame-view adapter contract and host tests for dimensions, pixel format, lifetime, and failure behavior; then make the build include it only for the intended target. Do not claim the game is integrated until the real PC_GpuPresent hand-off is exercised by a game frame.
+
+
+## Completed isolated Switch frame bridge gate (2026-10-15)
+
+The project now includes source/frame_handoff.h, source/switch_frame_bridge.h, and source/switch_frame_bridge.c. The bridge synchronously validates a borrowed packed bottom-up RGB24 frame, uploads it to the initialized GLES2 presenter, and draws it into the provided viewport. It does not swap buffers, own the input frame, create a graphics context, or call upstream game code. An upload failure prevents drawing; invalid dimensions and an uninitialized presenter are rejected before upload.
+
+Host tests in tests/test_frame_handoff.c and tests/test_switch_frame_bridge.c exercise callback lifetime assumptions, row orientation, invalid layouts, upload failure, draw failure, and initialization/viewport guards. The CI job also compiles the bridge with GLES2 headers and -Wall -Wextra -Werror. Verified passing workflow: https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38762953578 (commit 7b3603ed4542ad516d1eaef15d4f9fd1632bf602).
+
+**Still required:** identify the exact native call-site arguments and ownership in the pinned upstream pc_gpu_window.c; implement a target-specific backend that calls vh_switch_present_frame from that boundary, with an initialized GLES2 context and explicit buffer swap. Compare real game frames against desktop captures and validate Switch-target linkage/runtime. These host tests do not validate real-game rendering, framebuffer allocation sizes, or hardware presentation.
