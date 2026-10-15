@@ -63,6 +63,15 @@ int main(void) {
         movie, sizeof(movie), 2, 2, 1280, 720));
     assert(uploads == 2 && draws == 2 && scratch.pixels == first);
 
+    /* An input pointing into scratch must be rejected before realloc can free it. */
+    assert(!vh_switch_present_managed_movie(&p, &scratch, 36,
+        scratch.pixels + 3, 12, 2, 2, 1280, 720));
+    assert(!vh_switch_present_managed_bgr555(&p, &scratch, 36,
+        (const uint16_t *)scratch.pixels, 6, 3, 2,
+        0, 0, 3, 2, 1280, 720));
+    assert(uploads == 2 && draws == 2);
+    assert(scratch.pixels == first && scratch.capacity == 18);
+
     vh_rgb24_scratch_destroy(&scratch);
     assert(scratch.capacity == 0 && scratch.pixels == NULL);
     puts("Managed Switch frame pipeline tests passed.");
