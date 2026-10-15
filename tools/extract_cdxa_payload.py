@@ -151,6 +151,11 @@ def extract_audio_payloads(
                 staged_report.flush()
                 os.fsync(staged_report.fileno())
 
+        # Reject an existing directory before publishing the payload: replacing
+        # the report with a file would fail and leave mismatched outputs.
+        if report_path is not None and report_path.is_dir():
+            raise IsADirectoryError(f"Report destination is a directory: {report_path}")
+
         os.replace(temp_payload, destination)
         temp_payload = None
         if temp_report is not None and report_path is not None:
