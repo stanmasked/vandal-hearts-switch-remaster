@@ -195,3 +195,13 @@ jobs:
             build-map02-full-ci/src/states/game_setup.o \
             build-map02-full-ci/src/core/graphics.o
           test -s build-map02-full-ci/map02-instrumented-units.o
+          nm -g --defined-only build-map02-full-ci/map02-instrumented-units.o | grep -F vh_map02_trace_build_marker
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          provenance = json.loads(Path("/tmp/vh-map02-upstream-full-ci/source_provenance.json").read_text())
+          marker = provenance["binary_marker"].encode("ascii") + b"\0"
+          assert marker in Path("build-map02-full-ci/src/core/graphics.o").read_bytes()
+          assert marker in Path("build-map02-full-ci/map02-instrumented-units.o").read_bytes()
+          print("Verified the source-specific build marker in real Make-built and partial-linked objects.")
+          PY
