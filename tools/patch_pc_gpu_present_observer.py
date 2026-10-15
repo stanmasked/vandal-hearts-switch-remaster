@@ -11,6 +11,9 @@ ANCHOR = "    if (PC_OverlayIsOpen()) PC_GpuDrawOverlay(w, h);   /* options over
 BEGIN = "    /* VH_SWITCH_OBSERVER_BEGIN: post-composition RGB24 boundary */"
 END = "    /* VH_SWITCH_OBSERVER_END */"
 INSERT = """    /* VH_SWITCH_OBSERVER_BEGIN: post-composition RGB24 boundary */
+#if defined(VH_SWITCH_EXCLUSIVE_PRESENT) && !defined(VH_SWITCH_COMPLETED_FRAME_OBSERVER)
+#error VH_SWITCH_EXCLUSIVE_PRESENT requires VH_SWITCH_COMPLETED_FRAME_OBSERVER
+#endif
 #if defined(VH_SWITCH_COMPLETED_FRAME_OBSERVER)
     /*
      * Borrowed, packed bottom-up RGB24. Only consume synchronously.
@@ -25,7 +28,11 @@ INSERT = """    /* VH_SWITCH_OBSERVER_BEGIN: post-composition RGB24 boundary */
         VH_ObserveCompletedRGB24(s_rgbaScratch, (size_t)s_scratchCap, w, h);
     }
 #endif
-    /* VH_SWITCH_OBSERVER_END */"""
+    /* VH_SWITCH_OBSERVER_END */
+#if defined(VH_SWITCH_EXCLUSIVE_PRESENT)
+    /* Target owns frame presentation: bypass desktop draw and swap. */
+    return;
+#endif"""
 
 
 def patch(source: str) -> str:
