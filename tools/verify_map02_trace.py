@@ -10,8 +10,9 @@ import json
 from pathlib import Path
 
 TARGETS = {(8, 19, 0): (641, 498), (11, 11, 0): (643, 550)}
-STAGES = {"post_load", "draw"}
+STAGES = {"post_load", "draw", "skip"}
 DRAW_PATHS = {"normal", "edge", "overhead"}
+SKIP_REASONS = {"null_gfx", "backface"}
 
 
 def evaluate_trace(entries):
@@ -24,6 +25,9 @@ def evaluate_trace(entries):
     draw_path_mode = {}
     draw_paths = {}
     draw_count = {}
+    skip_reasons = {}
+    skip_count = {}
+    seen_skips = set()
     errors = []
     for i, entry in enumerate(entries):
         if not isinstance(entry, dict):
@@ -38,6 +42,29 @@ def evaluate_trace(entries):
         stage = entry.get("stage")
         if stage not in STAGES:
             errors.append(f"entry {i}: invalid stage")
+            continue
+        if stage == "skip":
+            frame = entry.get("frame")
+            path = entry.get("path")
+            reason = entry.get("reason")
+            if type(frame) is not int or frame < 0:
+                errors.append(f"entry {i}: skip frame must be a non-negative integer")
+                continue
+            if type(path) is not str or path not in DRAW_PATHS:
+                errors.append(f"entry {i}: skip path must be normal, edge, or overhead")
+                continue
+            if type(reason) is not str or reason not in SKIP_REASONS:
+                errors.append(f"entry {i}: invalid skip reason")
+                continue
+            key = (pos, frame, path, reason)
+            if key in seen_skips:
+                errors.append(f"duplicate skip observation for {pos} in frame {frame}, path {path}")
+                continue
+            seen_skips.add(key)
+            skip_count[pos] = skip_count.get(pos, 0) + 1
+            skip_reasons.setdefault(pos, set()).add(reason)
+            if reason == "backface" and entry["gfx"] not in TARGETS[pos]:
+                errors.append(f"unexpected GFX {entry['gfx']} for {pos} at skip")
             continue
         if stage == "draw":
             framed = "frame" in entry
@@ -114,6 +141,11 @@ def evaluate_trace(entries):
             "draw_metadata": draw_metadata.get(pos, {}),
             "draw_observation_count": draw_count.get(pos, 0),
             "draw_paths": sorted(draw_paths.get(pos, set())),
+            "skip_observation_count": skip_count.get(pos, 0),
+            "skip_reasons": sorted(skip_reasons.get(pos, set())),
+            "draw_status": ("submitted" if drawn is not None else
+                            "skipped_in_observed_passes" if skip_count.get(pos, 0) else
+                            "no_renderer_observation"),
             "post_load_variant": "PRS" if after == prs else "DAT" if after == dat else None,
             "draw_variant": "PRS" if drawn == prs else "DAT" if drawn == dat else None,
         })
@@ -128,7 +160,7 @@ def evaluate_trace(entries):
     return {"observations": rows, "errors": errors,
             "post_load_overall_variant": combined_variant(post_variants),
             "draw_overall_variant": combined_variant(draw_variants),
-            "warning": "Observed draw metadata is not an independent validation of correct UV, CLUT, tpage, or visible pixels."}
+            "warning": "Draw means AddPrim submission, skip is an observed rejection only; neither establishes visible pixels. Missing draw events still fail validation."}
 
 
 
