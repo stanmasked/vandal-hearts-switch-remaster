@@ -186,3 +186,53 @@ artwork is correct.
 
 
 CI source-compilation verification: [Map02 upstream trace patch verification](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/workflows/map02-upstream-trace.yml).
+
+## Noninvasive PC-port diagnostic build (prepared overlay)
+
+The repository now provides a one-command **build preparation** that composes
+both instrumentation generators, producing two diagnostic C translation units
+and a makefile overlay **outside the upstream checkout**. It does not modify the
+PC-port checkout or distribute disc data. Use the pinned upstream revision
+`14552fffa0e0b47e02b57592e274fc6e7a649923` (US source tree).
+
+From the remaster repository root:
+
+```sh
+python3 -m tools.prepare_map02_pcport   /absolute/path/to/VandalHearts-PcPort   /tmp/vh-map02-trace-01
+```
+
+The destination directory must **not already exist** and must be outside the
+PC-port tree. Paths with spaces or make-special characters are rejected. The
+tool refuses incompatible upstream Makefile/source structure.
+
+Then from the **upstream** `platform/pc` directory:
+
+```sh
+make -f Makefile -f /tmp/vh-map02-trace-01/map02_trace.mk   link BUILD_DIR=build-map02-trace
+```
+
+This uses upstream's original full build dependencies (SDL2, OpenAL,
+OpenGL, game-derived build assets supplied locally) while replacing only the
+two build inputs via explicit object recipes:
+
+- `build-map02-trace/src/states/game_setup.o` compiles the generated
+  `game_setup.trace.c` with `-DVH_TRACE_MAP02_POST_LOAD`.
+- `build-map02-trace/src/core/graphics.o` compiles the generated
+  `graphics.trace.c` with `-DVH_TRACE_MAP02_DRAW`.
+
+The normal build folder and upstream sources remain untouched. The output
+binary, if the build succeeds, is at
+`platform/pc/build-map02-trace/vandalhearts_pc`.
+
+Navigate to game map 11 using your own US disc data, arrange for both target
+faces to be rendered, and capture stdout. Filter diagnostic JSON lines from
+ordinary game logging before passing them to
+`python3 -m tools.verify_map02_trace /local/path/map02_trace.jsonl`.
+The draw instrumentation emits at most one observation per face per process.
+**A successful dry-run of make and a synthetic C smoke test do not prove that
+the full game has compiled or that a real draw event was captured.**
+
+The override and generator behavior are covered by host tests, including
+`make -n` checks that each object uses the generated source and feature
+flag. Run `make test` from the remaster repo for those tests. No proprietary
+data should be committed to GitHub.
