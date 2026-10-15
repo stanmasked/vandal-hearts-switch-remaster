@@ -10,6 +10,10 @@ from pathlib import Path
 ANCHOR = "    if (PC_OverlayIsOpen()) PC_GpuDrawOverlay(w, h);   /* options overlay, on top */"
 WINDOW_GUARD = "#if defined(__APPLE__)\n    if (!s_window || !s_renderer) return; /* headless: no-op */\n#else\n    if (!s_window || !s_glCtx) return; /* headless: no-op */\n#endif"
 TARGET_WINDOW_GUARD = "#if !defined(VH_SWITCH_EXCLUSIVE_PRESENT)\n" + WINDOW_GUARD + "\n#endif /* desktop-only window prerequisite */"
+EVENT_PUMP = "    PC_GpuPumpEvents();"
+TARGET_EVENT_PUMP = """#if !defined(VH_SWITCH_EXCLUSIVE_PRESENT)
+    PC_GpuPumpEvents();
+#endif /* external Switch event loop owns SDL pumping */"""
 BEGIN = "    /* VH_SWITCH_OBSERVER_BEGIN: post-composition RGB24 boundary */"
 END = "    /* VH_SWITCH_OBSERVER_END */"
 INSERT = """    /* VH_SWITCH_OBSERVER_BEGIN: post-composition RGB24 boundary */
@@ -48,8 +52,11 @@ def patch(source: str) -> str:
         raise ValueError("desktop presentation tail not found")
     if source.count(WINDOW_GUARD) != 1:
         raise ValueError("expected precisely one desktop window guard")
-    return source.replace(WINDOW_GUARD, TARGET_WINDOW_GUARD, 1).replace(
-        ANCHOR, ANCHOR + "\n\n" + INSERT, 1)
+    if source.count(EVENT_PUMP) != 1:
+        raise ValueError("expected precisely one desktop SDL event pump")
+    return (source.replace(WINDOW_GUARD, TARGET_WINDOW_GUARD, 1)
+            .replace(EVENT_PUMP, TARGET_EVENT_PUMP, 1)
+            .replace(ANCHOR, ANCHOR + "\n\n" + INSERT, 1))
 
 
 def main() -> None:
