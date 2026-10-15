@@ -58,6 +58,7 @@ class PrepareTests(unittest.TestCase):
             provenance = json.loads((out / "source_provenance.json").read_text())
             self.assertTrue(provenance["allow_modified_source"])
             self.assertEqual(provenance["trace_mode"], "legacy")
+            self.assertNotIn("binary_marker", provenance)
             self.assertEqual(len(provenance["source_files"]), 3)
             self.assertEqual(set(provenance["generated_files"]),
                              {"game_setup.trace.c", "graphics.trace.c", "map02_trace.mk"})
@@ -117,6 +118,10 @@ $(BUILD_DIR)/src/%.o: $(SRC_DIR)/%.c | stage
                               full_trace=True)
             provenance = json.loads((out / "source_provenance.json").read_text())
             self.assertEqual(provenance["trace_mode"], "full")
+            self.assertRegex(provenance["binary_marker"],
+                             r"^VH_MAP02_TRACE_BUILD_ID:[0-9a-f]{64}$")
+            self.assertIn(provenance["binary_marker"],
+                          (out / "graphics.trace.c").read_text())
             loader = (out / "game_setup.trace.c").read_text()
             renderer = (out / "graphics.trace.c").read_text()
             self.assertIn("traceTiles[8][19]", loader)
