@@ -75,3 +75,11 @@ This only checks fully transparent (zero-valued) direct 15bpp texels and their o
 The pure-Python, asset-free reference suite `tests/test_drawotag_texture_fixtures.py` validates packed 4bpp nibble lookup, 8bpp byte lookup, 15bpp direct BGR555 reads, zero-value transparent texel encoding and that every fixture upload is inside VRAM but outside the 12x9 display rectangle. All five tests passed in local Python execution before publication (commit `6ccefe5e`). `make test` now runs this suite (commit `633561fc`), and the pinned DrawOTag NRO workflow runs it as a preflight build step (commit `3c6f54bf`).
 
 Scope limit: the reference test duplicates the deliberate fixture layout and validates *fixture consistency*, not source equality against the C probe and not runtime correctness of the upstream `SampleTexture`, `FillQuad` or GLES2 path. NeXium acceptance remains pending verification from a new CI run and screenshots. Do not promote any FT4 format to verified merely from these five unit tests.
+
+## 15bpp STP / ABR0 per-texel blend acceptance candidate (pending CI)
+
+Commits `ea9adcc1` and `fcb10fa9` add a new asset-free direct-colour FT4 probe for semi-transparency. The original `LoadImage` writes (192-independent) 2x2 texels at VRAM (320,0): STP-tagged red 0x801f alternating with untagged opaque green 0x03e0. The quad lives at native x=8..10,y=5..7 (not overlapping the prior indexed/direct probes) and is configured via `SetTPage(...,2,0,320,0)` and original `SetSemiTrans(...,1)`, then rasterized through the original `DrawOTag`/native `SampleTexture` and `FillQuad`.
+
+NeXium checks that STP red uses the ABR=0 approximately 50/50 red/green blended channels (expected RGB approximately 173,49,variable-blue on the animated background), while green without STP remains opaque despite primitive-level semi-trans mode. These approximate channel checks intentionally allow BGR555 quantization and presentation rounding.
+
+**Unverified until a new CI run passes**: the preceding validated NeXium run #38806009204 still establishes only TILE/F4. Passing this candidate would establish ABR0 per-texel STP in the asset-free probe, not other ABR blend modes or gameplay effects.
