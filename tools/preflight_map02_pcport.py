@@ -116,6 +116,22 @@ def inspect(upstream: Path, *, game_exe: Path | None = None,
         checks["upstream_revision"] = revision
         if revision != UPSTREAM_COMMIT:
             blockers.append("upstream_revision_unverified")
+        # A matching HEAD does not imply the source used by Make is pristine.
+        # Ignore untracked files (the user's game resources are gitignored),
+        # but reject edited, staged, deleted, or renamed tracked paths.
+        status = _run([git, "-C", str(upstream), "status", "--porcelain",
+                       "--untracked-files=no"]) if git else None
+        if status is None or status.returncode != 0:
+            checks["upstream_tracked_tree_clean"] = False
+            checks["upstream_modified_tracked_paths"] = None
+            blockers.append("upstream_tracked_tree_unverified")
+        else:
+            changed = [line[3:] for line in status.stdout.splitlines()
+                       if len(line) >= 4]
+            checks["upstream_tracked_tree_clean"] = not bool(changed)
+            checks["upstream_modified_tracked_paths"] = changed
+            if changed:
+                blockers.append("upstream_tracked_tree_dirty")
 
     exe = game_exe or upstream / "SLUS_004.47"
     checks["game_executable_path"] = str(exe)
@@ -199,6 +215,7 @@ def inspect(upstream: Path, *, game_exe: Path | None = None,
         "checks": checks,
         "notes": [
             "Read-only: no game resources extracted, copied, or uploaded.",
+            "Tracked upstream source changes (staged or unstaged) block the pinned build; untracked user files are ignored.",
             "The disc boot/card ID probes mirror pinned libcd.c; they are not a full disc-integrity or ownership check.",
             "Passing does not prove a full compile, playable startup, or visible terrain pixels.",
             "KROM/BIOS verifies the exact US 209-glyph charset-2 SHA-256 required by the pinned generator.",
