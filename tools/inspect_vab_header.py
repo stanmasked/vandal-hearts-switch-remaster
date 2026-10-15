@@ -24,7 +24,7 @@ def inspect_vab_header(path: Path) -> dict[str, int | str]:
         raise ValueError("VAB program or VAG count exceeds format limits")
     if declared_size and declared_size < HEADER_SIZE:
         raise ValueError("declared VAB size is smaller than its header")
-    return {
+    result = {
         "format": "VAB VH",
         "header_sha256": hashlib.sha256(header).hexdigest(),
         "version": version,
@@ -40,6 +40,27 @@ def inspect_vab_header(path: Path) -> dict[str, int | str]:
         "attr2": attr2,
         "scope": "header_only_not_a_VB_bounds_or_sample_validation",
     }
+    # The 128-entry program table is fixed-size, even when fewer programs
+    # are populated. Only report it if the complete table is available.
+    with path.open("rb") as f:
+        f.seek(HEADER_SIZE)
+        table = f.read(128 * 16)
+    if len(table) == 128 * 16:
+        used = []
+        for index in range(128):
+            record = table[index * 16:(index + 1) * 16]
+            ntones = record[0]
+            if ntones > 16:
+                raise ValueError(f"program {index} exceeds 16 tones")
+            if ntones:
+                used.append({"program": index, "tones": ntones,
+                             "volume": record[1], "pan": record[4]})
+        result["program_table_complete"] = True
+        result["populated_programs"] = used
+        result["packed_tone_blocks_bytes"] = len(used) * 16 * 32
+    else:
+        result["program_table_complete"] = False
+    return result
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
