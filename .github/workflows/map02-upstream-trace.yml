@@ -76,6 +76,7 @@ jobs:
           sparse-checkout: |
             src/states/game_setup.c
             src/core/graphics.c
+            src/core/cd.c
             include/
             platform/pc/include/
             platform/pc/Makefile
@@ -158,8 +159,8 @@ jobs:
             python3 -m unittest discover -s tests -p 'test_instrument_map02_renderer.py' -v
             python3 -m unittest discover -s tests -p 'test_map02_renderer_smoke.py' -v
           )
-          PYTHONPATH=remaster python3 -m tools.audit_map02_load_source upstream/src/states/game_setup.c > /tmp/vh-map02-source-audit.json
-          python3 -c 'import json; x=json.load(open("/tmp/vh-map02-source-audit.json")); assert x["matches_pinned"] and x["load_resource"] == "CDF_M_MAP02_PRS" and len(x["target_faces"]) == 2; print("Pinned PC-port LoadMap case 11 selects PRS.")'
+          PYTHONPATH=remaster python3 -m tools.audit_map02_load_source upstream/src/states/game_setup.c --cd-source upstream/src/core/cd.c --cd-header upstream/include/cd_files.h > /tmp/vh-map02-source-audit.json
+          python3 -c 'import json; x=json.load(open("/tmp/vh-map02-source-audit.json")); assert x["matches_pinned"] and x["cd_sources_match_pinned"] and x["load_resource"] == "CDF_M_MAP02_PRS" and x["cd_file_enum"] == 151 and x["cd_table_start_sector"] == 0x1bcc and x["cd_table_sector_count"] == 12 and x["cd_destination"] == "gScratch1_801317c0" and len(x["target_faces"]) == 2; print("Pinned LoadMap selects PRS, CDF index 151 routes 12 sectors to scratch1.")'
           PYTHONPATH=remaster python3 -m tools.prepare_map02_pcport upstream /tmp/vh-map02-upstream-overlay-ci
           PYTHONPATH=remaster python3 -m tools.prepare_map02_pcport upstream /tmp/vh-map02-upstream-full-ci --full-trace
           python3 -c 'import json; p=json.load(open("/tmp/vh-map02-upstream-full-ci/source_provenance.json")); assert p["trace_mode"] == "full" and all(x["matches_pinned"] for x in p["source_files"].values())'
