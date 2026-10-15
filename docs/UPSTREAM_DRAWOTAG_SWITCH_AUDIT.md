@@ -292,3 +292,42 @@ storage or physical Switch, and no authored live map geometry has been
 displayed. CI proves compilation, host asset-reader behavior, state
 branch source contracts, and no regression of the synthetic raster path.
 Do not present this milestone as a successful real-texture or hardware test.
+
+## Private SD staging ↔ actual C reader cross-language contract (CI #38821308211)
+
+A new host-only `tests/private_map_bank_bridge.c` executable links the
+**exact** `source/vh_private_map_bank.c` implementation used by the Switch
+NRO. Its companion `tests/test_private_map_bank_bridge.py` generates
+synthetic full-size map 11 records, stages them using the production
+`stage_vh_private_map_bank.py`, and opens the staged pair with the C
+reader. It independently validates **UVWH=(240,192,15,15)**,
+**local CLUT ID=35**, 4bpp indices **1,2** read in little-endian PS1
+nibble order from F_TEX01, and BGR555 colors **0x001f (red)** and
+**0x03e0 (green)** from the selected fourth LAND_DT local CLUT row.
+It also asserts that both missing files return **0** (synthetic
+fallback), while one-sided files, bad file size and invalid local CLUT
+return **-1**, matching NRO fail-closed behavior. All fixture bytes are
+generated in memory; no proprietary game data is in the test.
+
+**Verified:** [GitHub Actions run #38821308211](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38821308211)
+for source commit `09db3b2d4e376a9bf62aaf9f40c25d1426a29203`
+completed with both **cross-compile = success** and
+**Run original DrawOTag raster NRO in NeXium = success**. The CI host log
+reports **16 DrawOTag fixture tests, 15 TIM tests, 13 original raw map
+bank tests, 5 Python private SD staging tests and 3 Python-to-C roundtrip
+tests: 52 Python checks passed**. The separate native C file-loader
+validation also passed. The built Switch executable passed NRO0 checks.
+On both 1280x720 NeXium frames, the asset-free synthetic original
+F_TEX/LAND_DT path still renders red **(255,0,0)** and green
+**(0,255,0)** exactly; original TIM, ABR and texture-window screenshot
+assertions all remain green. Background animation changed 5,447 sampled
+pixels. The SD staging cross-language tests are now also wired into
+`make test` for host operation.
+
+**Unverified:** SD filesystem access inside NeXium and physical Switch,
+a screenshot of the **private rendering branch** using original
+`F_TEX01.DAT`/`LAND_DT.DAT` bytes, gameplay camera/terrain geometry,
+and a full real asset-driven frame. This milestone shows the local
+file-format compatibility and synthetic GPU fallback, not those later
+stages. See `docs/ORIGINAL_MAP_TEXTURE_BANK.md` for private staging
+instructions and evidence boundaries.
