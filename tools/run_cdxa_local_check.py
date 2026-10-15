@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -24,6 +25,7 @@ def run_local_check(
     reference_wav: Path | None = None,
     reference_decoder: str | None = None,
     reference_command: str | None = None,
+    reference_sha256: str | None = None,
 ) -> dict[str, object]:
     """Create only new outputs; fail if source and reference cannot be verified."""
     if not source.is_file():
@@ -44,6 +46,16 @@ def run_local_check(
             raise ValueError(f"{label} must be a nonempty string")
     if reference_wav is None and (reference_decoder is not None or reference_command is not None):
         raise ValueError("reference provenance requires --reference-wav")
+    if reference_sha256 is not None:
+        if reference_wav is None:
+            raise ValueError("reference SHA-256 requires --reference-wav")
+        if not isinstance(reference_sha256, str) or re.fullmatch(
+            r"[0-9a-f]{64}", reference_sha256
+        ) is None:
+            raise ValueError("reference SHA-256 must be 64 lowercase hexadecimal characters")
+        actual_reference_sha256 = sha256_file(reference_wav)
+        if actual_reference_sha256 != reference_sha256:
+            raise ValueError("reference WAV SHA-256 differs from expected fingerprint")
     # Refuse an existing path, even if it is empty, to avoid overwrites.
     # Also refuse an output path nested inside the input file's parent when
     # it resolves to the input itself; exclusive mkdir is the final guard.
@@ -83,6 +95,7 @@ def run_local_check(
                 "decoder": reference_decoder,
                 "command": reference_command,
                 "status": "user_supplied_not_independently_verified",
+                "expected_reference_sha256": reference_sha256,
             }
             if not comparison["exact_match"]:
                 result["status"] = "reference_pcm_mismatch"
@@ -111,6 +124,7 @@ def main() -> int:
     parser.add_argument("--reference-wav", type=Path, help="optional WAV from an independently run decoder")
     parser.add_argument("--reference-decoder", help="user-provided reference decoder name and version")
     parser.add_argument("--reference-command", help="user-provided command used to create the WAV")
+    parser.add_argument("--reference-sha256", help="optional expected lowercase SHA-256 of the full reference WAV file")
     args = parser.parse_args()
     try:
         result = run_local_check(
@@ -118,6 +132,7 @@ def main() -> int:
             channel=args.channel, start_lba=args.start_lba,
             sector_count=args.sector_count, reference_wav=args.reference_wav,
             reference_decoder=args.reference_decoder, reference_command=args.reference_command,
+            reference_sha256=args.reference_sha256,
         )
     except (OSError, ValueError) as error:
         parser.error(str(error))
