@@ -1,6 +1,10 @@
 """Synthetic tests for the map02 runtime trace checker."""
 import json
+import subprocess
+import sys
+import tempfile
 import unittest
+from pathlib import Path
 
 from tools.verify_map02_trace import evaluate_trace, parse_trace_text
 
@@ -38,6 +42,20 @@ class RuntimeTraceTests(unittest.TestCase):
         self.assertEqual(mixed["draw_overall_variant"], "mixed")
         missing = evaluate_trace(observations()[:-1])
         self.assertEqual(missing["draw_overall_variant"], "incomplete_or_unknown")
+
+    def test_strict_uniform_variant_cli(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "trace.json"
+            command = [sys.executable, "-m", "tools.verify_map02_trace",
+                       str(path), "--require-uniform-variant"]
+            for a, b, expected in ((641, 643, 0), (498, 550, 0),
+                                   (641, 550, 1)):
+                with self.subTest(a=a, b=b):
+                    path.write_text(json.dumps(observations(a=a, b=b)), encoding="utf-8")
+                    result = subprocess.run(command, capture_output=True)
+                    self.assertEqual(result.returncode, expected)
+            path.write_text(json.dumps(observations(a=641, b=550)), encoding="utf-8")
+            self.assertEqual(subprocess.run(command[:-1], capture_output=True).returncode, 0)
 
     def test_change_between_stages(self):
         report = evaluate_trace(observations(draw_a=498))
