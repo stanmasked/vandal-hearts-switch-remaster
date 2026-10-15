@@ -58,6 +58,11 @@ class PrepareTests(unittest.TestCase):
             self.assertTrue(provenance["allow_modified_source"])
             self.assertEqual(provenance["trace_mode"], "legacy")
             self.assertEqual(len(provenance["source_files"]), 3)
+            self.assertEqual(set(provenance["generated_files"]),
+                             {"game_setup.trace.c", "graphics.trace.c", "map02_trace.mk"})
+            for name, expected_digest in provenance["generated_files"].items():
+                self.assertEqual(expected_digest,
+                                 __import__("hashlib").sha256((out / name).read_bytes()).hexdigest())
             self.assertFalse(all(item["matches_pinned"] for item in provenance["source_files"].values()))
             overlay = result.read_text()
             self.assertIn("-DVH_TRACE_MAP02_DRAW", overlay)
