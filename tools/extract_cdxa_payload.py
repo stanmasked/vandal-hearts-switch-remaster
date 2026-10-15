@@ -180,7 +180,17 @@ def extract_audio_payloads(
                 temp_report = None
             except OSError:
                 if previous_payload is not None:
-                    os.replace(previous_payload, destination)
+                    try:
+                        os.replace(previous_payload, destination)
+                    except OSError as rollback_error:
+                        # Do not delete the only remaining copy of the old
+                        # payload if restoring it also fails.
+                        backup_path = previous_payload
+                        previous_payload = None
+                        raise OSError(
+                            f"Report publication failed, and payload rollback failed. "
+                            f"Previous payload preserved at: {backup_path}"
+                        ) from rollback_error
                     previous_payload = None
                 else:
                     destination.unlink()
