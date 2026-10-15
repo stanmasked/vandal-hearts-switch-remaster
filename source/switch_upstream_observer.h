@@ -6,6 +6,8 @@
  * Install a copy of the target callbacks before frames are presented.
  * Presenter and context objects must outlive registration.
  * Single-threaded rendering only; unregister before destroying the context.
+ * Only one owner may be registered at a time. Duplicate registration fails
+ * without replacing the active callbacks; unregister before re-registering.
  */
 int vh_switch_observer_register(const VhSwitchPresentHook *hook);
 void vh_switch_observer_unregister(void);
