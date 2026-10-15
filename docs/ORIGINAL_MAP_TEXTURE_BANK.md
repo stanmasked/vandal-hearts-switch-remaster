@@ -255,3 +255,50 @@ the linked private reader to original `LoadImage` and
 `POLY_FT4/DrawOTag`. Genuine copyrighted texture bytes are not used
 and are not uploaded to CI. The image is still an enlarged single
 texture patch, **not** a real map geometry or gameplay scene.
+
+## Four-quadrant UV/CLUT correctness gate — native NeXium (2026-10-16)
+
+The private SD-card integration test now goes beyond merely detecting a
+colored quad. In `tests/private_sd_nexium_check.py`, a synthetic map 11
+`F_TEX01.DAT` 4bpp page is generated with an explicitly **asymmetric
+2-by-2 layout of eight-by-eight-texel regions** at UV origin (240,192):
+
+| Private preview region | Palette index | Original BGR555 | Expected screenshot RGB |
+| --- | ---: | --- | --- |
+| Upper-left | 1 | `0x001f` | (255,0,0) red |
+| Upper-right | 2 | `0x03e0` | (0,255,0) green |
+| Lower-left | 3 | `0x7c00` | (0,0,255) blue |
+| Lower-right | 4 | `0x03ff` | (255,255,0) yellow |
+
+The corresponding synthetic LAND_DT map 11, slot 241, uses UVWH
+(240,192,15,15) and local CLUT ID 35 (the **fourth** local palette row
+at VRAM (672,499)). Other CLUT rows are zero-filled as decoys, so
+accidentally selecting the wrong row cannot match all four colors.
+Each 4bpp byte packs equal index values into low and high nibbles,
+with opposite quadrants using distinct palette indices. The
+production `stage_vh_private_map_bank.py` creates the synthetic virtual
+SD tree and the NRO's actual private reader loads the full-sized
+32,768-byte and 123,993-byte assets into the original GPU VRAM.
+
+**Real emulator evidence:** [GitHub Actions run #38823499785](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38823499785)
+completed **all three jobs successfully**, including Switch NRO build,
+baseline DrawOTag/FT4 raster checks, and original private SD map patch.
+The 1280x720 NeXium screenshot samples were exact:
+`(400,205)=(255,0,0)`, `(880,205)=(0,255,0)`,
+`(400,510)=(0,0,255)`, `(880,510)=(255,255,0)`;
+a separate dark outer-border assertion rules out the original
+non-private synthetic scene. The test suite added
+`tests/test_private_sd_nexium_fixture.py`, four **host preflight**
+methods checking the precise UV quadrants, texture packing, CLUT
+selection, and stage/readback roundtrip. The successful cross-compile
+log records **56 Python tests OK** (16 DrawOTag, 15 TIM, 13 map-bank,
+5 staging, 4 four-quadrant, 3 Python-to-C bridge), plus passing C
+file-loader tests.
+
+This **confirms both U and V orientation and local CLUT selection in
+the genuine Switch NRO executing original `POLY_FT4`/`DrawOTag` under
+NeXium, with synthetic files staged via its virtual SD card.**
+It is not evidence of a *retail* Vandal Hearts texture, game-authored
+terrain mesh, battle logic or physical Switch execution. Those still
+require testing the user's own legal resource copy and rendering
+game-native map geometry.
