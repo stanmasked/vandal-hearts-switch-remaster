@@ -98,6 +98,14 @@ $(BUILD_DIR)/src/core/graphics.o: $(VH_MAP02_TRACE_DIR)/graphics.trace.c | stage
         "allow_modified_source": allow_modified_source,
         "trace_mode": "full" if full_trace else "legacy",
         "source_files": identities,
+        "generated_files": {
+            name: hashlib.sha256(contents.encode("utf-8")).hexdigest()
+            for name, contents in (
+                ("game_setup.trace.c", loader_result),
+                ("graphics.trace.c", renderer_result),
+                ("map02_trace.mk", make_overlay),
+            )
+        },
         "warning": "Source provenance only; not evidence of a successful build or actual game trace.",
     }
     (output / "source_provenance.json").write_text(
