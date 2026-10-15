@@ -381,3 +381,5 @@ information was not supplied, the fields remain null rather than fabricating
 a decoder. Provenance labels without `--reference-wav` are rejected.
 This records audit context; the script **does not execute or verify** the
 independent reference decoder and cannot certify the claimed origin.
+
+Every successful source-verified local run now includes `payload_sha256` and `decoded_wav_sha256` in `audit-result.json`, even when no reference WAV was provided. These bind an audit to the exact extracted compressed audio bytes and local decoded WAV; when reference comparison is performed, `decoded_wav_sha256` must equal the comparator's `candidate_wav_sha256`. These checksums do not establish decoder accuracy, and the source BIN itself is not hashed by this workflow.
