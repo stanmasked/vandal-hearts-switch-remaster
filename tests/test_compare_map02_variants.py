@@ -20,6 +20,9 @@ class Map02VariantTests(unittest.TestCase):
         self.assertEqual([x["absolute_offset"] for x in report["differences"]], [74048, 97152])
         self.assertEqual([x["prs_local_gfx"] for x in report["target_faces"]], [241, 243])
         self.assertEqual([x["dat_local_gfx"] for x in report["target_faces"]], [98, 150])
+        self.assertEqual([(x["x"], x["z"], x["face"]) for x in report["target_faces"]], [(19, 8, 0), (11, 11, 0)])
+        self.assertEqual([x["prs_runtime_gfx"] for x in report["target_faces"]], [641, 643])
+        self.assertEqual([x["dat_runtime_gfx"] for x in report["target_faces"]], [498, 550])
 
     def test_additional_difference_is_not_accepted(self):
         prs = bytes(EXPECTED_LENGTH)
