@@ -33,3 +33,4 @@ jobs:
           python3 tests/test_render_vab_note.py
           python3 tests/test_spu_gaussian_interpolation.py
           python3 tests/test_mix_spu_stereo.py
+          python3 tests/test_inspect_ps1_seq.py
