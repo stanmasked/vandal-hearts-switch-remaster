@@ -43,6 +43,17 @@ def synthetic_source():
         land[palette + 2 * index:palette + 2 * index + 2] = color.to_bytes(
             2, "little"
         )
+    # A second, independently authored face uses slot 242 / CLUT ID 36
+    # in a DIFFERENT source page rectangle. The single-patch scene still
+    # uses only slot 241, so its existing four-color proof is unchanged.
+    land[record + 242 * 4:record + 242 * 4 + 4] = bytes((224,192,15,15))
+    land[record + 257 * 4 + 242] = 36
+    alternate = record + 257 * 5 + (36 - 32) * 32
+    land[alternate + 2:alternate + 6] = bytes((0x1f,0x7c,0xe0,0x7f))
+    for v in range(192, 208):
+        for u in range(224, 240, 2):
+            index = 1 if v < 200 else 2
+            tex[v * 128 + u // 2] = index | (index << 4)
     # Each 16x16 UV patch has four 8x8 squares. The low 4 bits of
     # every byte are the LEFT pixel; upper nibble encodes the RIGHT.
     for v in range(V0, V0 + 16):
@@ -53,6 +64,44 @@ def synthetic_source():
             tex[v * 128 + u // 2] = color_id | (color_id << 4)
     return bytes(tex), bytes(land)
 
+
+def synthetic_geometry_models():
+    """336 exact 304-byte map tiles; tile (6,3) has TWO textured faces."""
+    from inspect_vh_map_geometry import (
+        MAP_11_BYTES, MAP_11_STRIDE, TILE_BYTES, VERTICES_BYTES,
+        GFX_BYTES, FACE_BYTES,
+    )
+    models = bytearray(MAP_11_BYTES)
+    tile_base = (3 * MAP_11_STRIDE + 6) * TILE_BYTES
+    points = (
+        (-32, 0, -16), (0, 0, -16), (-32, 0, 24), (0, 0, 24),
+        (0, 0, -16), (32, 0, -16), (0, 0, 24), (32, 0, 24),
+    )
+    for i, (vx, vy, vz) in enumerate(points):
+        models[tile_base + i * 8:tile_base + i * 8 + 8] = (
+            int(vx).to_bytes(2, "little", signed=True) +
+            int(vy).to_bytes(2, "little", signed=True) +
+            int(vz).to_bytes(2, "little", signed=True) + bytes(2)
+        )
+    for n, (gfx, ids) in enumerate(((241, (0,1,2,3)), (242, (4,5,6,7)))):
+        gfx_at = tile_base + VERTICES_BYTES + n * 2
+        models[gfx_at:gfx_at + 2] = gfx.to_bytes(2, "little")
+        faces_at = tile_base + VERTICES_BYTES + GFX_BYTES + n * 4
+        models[faces_at:faces_at + 4] = bytes(ids)
+        models[tile_base + VERTICES_BYTES + GFX_BYTES +
+               FACE_BYTES + n] = n + 1
+    models[tile_base + TILE_BYTES - 2] = 2
+    models[tile_base + TILE_BYTES - 1] = 4
+    return bytes(models)
+
+
+def stage_geometry(sd_root):
+    from stage_vh_private_map_geometry import stage_map11_geometry
+    metadata = stage_map11_geometry(synthetic_geometry_models(), sd_root)
+    assert metadata["active_faces"] == 2
+    assert metadata["populated_tiles"] == 1
+    print("Staged TWO independent MapTileModel FT4 source faces")
+    return metadata
 
 def stage(sd_root):
     texture, land = synthetic_source()
@@ -93,14 +142,44 @@ def check(image_path):
     return True
 
 
+
+def check_geometry(image_path):
+    from PIL import Image
+    frame = Image.open(image_path).convert("RGB")
+    if frame.size != (1280, 720):
+        raise ValueError("unexpected private geometry screenshot size")
+    border = frame.getpixel((210, 90))
+    if max(border) > 45:
+        raise ValueError("private geometry border is not black")
+    probes = (
+        ("left top red", (400,205), (255,0,0)),
+        ("right top magenta", (880,205), (255,0,255)),
+        ("left bottom blue", (400,510), (0,0,255)),
+        ("right bottom cyan", (880,510), (0,255,255)),
+    )
+    for title, (x,y), expected in probes:
+        pixel = frame.getpixel((x,y))
+        print("Original geometry FT4", title, pixel)
+        if max(abs(a-b) for a,b in zip(pixel,expected)) > 36:
+            raise ValueError(f"wrong {title} : {pixel}, expected {expected}")
+    print("Private SD MapTileModel two-face geometry screenshot verified")
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--stage-sd-root", type=Path)
     group.add_argument("--check-screenshot", type=Path)
+    group.add_argument("--stage-geometry-sd-root", type=Path)
+    group.add_argument("--check-geometry-screenshot", type=Path)
     args = parser.parse_args()
     if args.stage_sd_root is not None:
         stage(args.stage_sd_root)
+    elif args.stage_geometry_sd_root is not None:
+        stage_geometry(args.stage_geometry_sd_root)
+    elif args.check_geometry_screenshot is not None:
+        check_geometry(args.check_geometry_screenshot)
     else:
         check(args.check_screenshot)
 
