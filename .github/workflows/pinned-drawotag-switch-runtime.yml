@@ -386,6 +386,18 @@ jobs:
                   print(f"Original FT4 STP {name}: {observed}")
                   if max(abs(a-b) for a,b in zip(observed, (0,255,0))) > 36:
                       raise SystemExit(f"Non-STP texel incorrectly blended in {name}: {observed}")
+          # PS1 TIM wire-format image: original OpenTIM/ReadTIM parses
+          # CLUT and pixel sections, original LoadImage uploads both,
+          # then original SPRT/DR_MODE samples a separate tpage x=384.
+          for frame_image in (im, after):
+              for name, (x, y), expected in (
+                  ("TIM CLUT red", (835, 120), (255, 0, 0)),
+                  ("TIM CLUT green", (910, 120), (0, 255, 0)),
+              ):
+                  observed = frame_image.getpixel((x, y))
+                  print(f"Original serialized TIM SPRT {name}: {observed}")
+                  if max(abs(a-b) for a,b in zip(observed, expected)) > 36:
+                      raise SystemExit(f"Serialized TIM to VRAM/raster mismatch: {name}")
           # The center pixel is deliberately dynamic: R=12->99, G=12->99,
           # B=frame*3 modulo 256. Verify the intended channel changes,
           # not merely a window animation elsewhere in the screenshot.
