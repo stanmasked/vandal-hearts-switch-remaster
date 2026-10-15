@@ -49,6 +49,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_tex
 	python3 -m unittest discover -s tests -p 'test_extract_map02_trace.py'
 	python3 -m unittest discover -s tests -p 'test_capture_map02_runtime.py'
 	python3 -m unittest discover -s tests -p 'test_verify_map02_capture.py'
+	python3 -m unittest discover -s tests -p 'test_evaluate_map02_session.py'
 	python3 -m unittest discover -s tests -p 'test_report_map02_bridge.py'
 	python3 -m unittest discover -s tests -p 'test_preflight_map02_pcport.py'
 	python3 -m unittest discover -s tests -p 'test_prepare_map02_session.py'
