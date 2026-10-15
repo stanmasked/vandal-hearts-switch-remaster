@@ -49,6 +49,31 @@ class RuntimeTraceTests(unittest.TestCase):
         self.assertEqual(report["observations"][0]["draw_gfx"], 641)
         self.assertFalse(any("changed between" in error for error in report["errors"]))
 
+    def test_repeated_draws_across_frames(self):
+        entries = observations()
+        entries[2]["frame"] = 1
+        entries[3]["frame"] = 1
+        entries.append({"z": 8, "x": 19, "face": 0, "stage": "draw",
+                        "gfx": 641, "frame": 2})
+        report = evaluate_trace(entries)
+        self.assertEqual(report["errors"], [])
+        self.assertEqual(report["observations"][0]["draw_observation_count"], 2)
+
+    def test_changed_gfx_in_later_frame_detected(self):
+        entries = observations()
+        entries[2]["frame"] = 1
+        entries.append({"z": 8, "x": 19, "face": 0, "stage": "draw",
+                        "gfx": 498, "frame": 2})
+        self.assertTrue(any("changed across frames" in e
+                            for e in evaluate_trace(entries)["errors"]))
+
+    def test_duplicate_frame_rejected(self):
+        entries = observations()
+        entries[2]["frame"] = 1
+        entries.append(dict(entries[2]))
+        self.assertTrue(any("duplicate draw observation" in e
+                            for e in evaluate_trace(entries)["errors"]))
+
     def test_json_lines_loader_output(self):
         entries = observations()
         payload = "\n".join(json.dumps(entry) for entry in entries) + "\n"
