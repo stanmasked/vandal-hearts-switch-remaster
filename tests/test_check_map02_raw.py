@@ -41,6 +41,33 @@ class CheckMap02RawTests(unittest.TestCase):
             errors = check_raw_records(report)
             self.assertIn("duplicate GFX 241 in inspection report", errors)
 
+    def test_tampered_texture_offset_detected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "map02.bin"
+            path.write_bytes(bytes(BLOCK_SIZE))
+            report = inspect_land_dt(path, single_block=True)
+            report["records"][0]["absolute_input_offset"] += 4
+            self.assertTrue(any("absolute_input_offset" in e for e in
+                                check_raw_records(report)))
+
+    def test_tampered_clut_offset_detected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "map02.bin"
+            path.write_bytes(bytes(BLOCK_SIZE))
+            report = inspect_land_dt(path, single_block=True)
+            report["records"][1]["absolute_clut_index_offset"] -= 1
+            self.assertTrue(any("absolute_clut_index_offset" in e for e in
+                                check_raw_records(report)))
+
+    def test_tampered_block_base_detected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "map02.bin"
+            path.write_bytes(bytes(BLOCK_SIZE))
+            report = inspect_land_dt(path, single_block=True)
+            report["block_base_offset"] = -1
+            self.assertIn("invalid LAND_DT block base offset",
+                          check_raw_records(report))
+
     def test_rejects_wrong_map(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "land.bin"
