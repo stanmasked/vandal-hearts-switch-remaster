@@ -346,3 +346,25 @@ the C trace format is compatible with both Python tools. **It does not
 prove that the full PC port boots with the patch, that a real map uses either
 variant, or that submitted polygons are visible in a framebuffer.**
 
+
+## End-to-end host regression (synthetic map)
+
+`tests/test_map02_renderer_smoke.py` now exercises the **whole diagnostic
+data path** in one test suite: generate and compile a synthetic C renderer
+with GCC/Clang, capture the emitted draw JSONL, mix it with ordinary
+console messages and synthetic `post_load` observations, extract with
+`tools.extract_map02_trace`, and validate with `tools.verify_map02_trace`.
+It covers a stable PRS pair (641, 643), stable DAT pair (498, 550), and a
+deliberate PRS-vs-DAT load/draw mismatch. A consistent DAT observation is
+not automatically an error: the original resource discrepancy is
+unresolved until actual gameplay or a reference capture distinguishes it.
+
+From the remaster root:
+
+```sh
+python3 -m unittest discover -s tests -p 'test_map02_renderer_smoke.py' -v
+```
+
+These tests compile only the **synthetic** renderer. They do not supply
+copyrighted game resources, prove that the PC-port game boots, or prove
+which map variant is displayed on original hardware.
