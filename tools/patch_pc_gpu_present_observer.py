@@ -69,12 +69,12 @@ def patch(source: str) -> str:
     result = (source.replace(GL_HEADER, TARGET_GL_HEADER, 1)
               .replace(WINDOW_GUARD, TARGET_WINDOW_GUARD, 1)
               .replace(EVENT_PUMP, TARGET_EVENT_PUMP, 1)
-              .replace(ANCHOR, ANCHOR + "\\n\\n" + INSERT, 1))
+              .replace(ANCHOR, ANCHOR + "\n\n" + INSERT, 1))
     result = result.replace(PRESENT_TAIL, TARGET_TAIL_PREFIX + PRESENT_TAIL, 1)
-    last = result.rfind("\\n}")
+    last = result.rfind("\n}")
     if last < 0:
         raise ValueError("final PC_GpuPresent brace missing")
-    return result[:last] + "\\n#endif /* desktop presentation tail */" + result[last:]
+    return result[:last] + "\n#endif /* desktop presentation tail */" + result[last:]
 
 
 def main() -> None:
