@@ -39,6 +39,8 @@ class InventoryTests(unittest.TestCase):
         ]))
         found = inventory_streams(self.source)
         self.assertEqual(found["audio_sectors"], 6)
+        self.assertEqual(found["decodable_stream_count"], 2)
+        self.assertEqual(found["decodable_audio_sectors"], 2)
         self.assertEqual(found["invalid_duplicate_subheaders"], 1)
         self.assertEqual(found["unsupported_coding_sectors"], 1)
         self.assertEqual(
@@ -78,6 +80,8 @@ class InventoryTests(unittest.TestCase):
                                     sector_count=count)
         expected_lbas = {(2, 1): [2, 4, 6], (5, 0): [1, 3, 7]}
         self.assertEqual(scanned["audio_sectors"], 6)
+        self.assertEqual(scanned["decodable_stream_count"], 2)
+        self.assertEqual(scanned["decodable_audio_sectors"], 6)
         self.assertEqual(len(scanned["streams"]), 2)
         self.assertEqual(sum(item["audio_sectors"] for item in scanned["streams"]), 6)
         for item in scanned["streams"]:
@@ -119,6 +123,8 @@ class InventoryTests(unittest.TestCase):
                                 + sector(2, 1, coding=0x00))
         found = inventory_streams(self.source)
         self.assertEqual(found["unsupported_coding_sectors"], 1)
+        self.assertEqual(found["decodable_stream_count"], 0)
+        self.assertEqual(found["decodable_audio_sectors"], 0)
         self.assertEqual(found["streams"][0]["coding_counts"],
                          {"0x00": 1, "0x01": 1})
         self.assertFalse(found["streams"][0]["decoder_profile_supported"])
@@ -150,6 +156,8 @@ class InventoryTests(unittest.TestCase):
         self.source.write_bytes(data)
         got = inventory_streams(self.source)
         self.assertEqual(got["audio_sectors"], 0)
+        self.assertEqual(got["decodable_stream_count"], 0)
+        self.assertEqual(got["decodable_audio_sectors"], 0)
         self.assertEqual(got["streams"], [])
         self.assertEqual(self.source.read_bytes(), data)
 
