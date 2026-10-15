@@ -539,3 +539,25 @@ The host regression tests cover a simulated keyboard interruption,
 20,000 ordinary non-trace messages ahead of real event-format records,
 and console logs containing invalid UTF-8 bytes. These do not constitute
 a game runtime capture or verify a completed GitHub Actions run.
+
+
+## Trace schema robustness (malformed events)
+
+The verifier handles malformed JSON observation shapes without aborting:
+`stage` must be one of `post_load`, `visit`, `skip`, or `draw`, and
+must be a **string**. Arrays, objects, numbers, and null values are
+reported as `invalid stage`; they must never crash a game-log analysis.
+Likewise, draw `frame` must be a nonnegative integer (boolean values
+are not accepted). Invalid frame entries are rejected **before** they can
+change whether a face's draw stream is treated as framed or unframed.
+
+The `null_gfx` skip reason is emitted only for GFX index **0**:
+the pinned PC-port `include/graphics.h` defines `GFX_NULL = 0`.
+The verifier now rejects a `null_gfx` skip with any other texture index,
+so a corrupt observation cannot explain away a missing primitive.
+
+Regression tests cover invalid stages including unhashable JSON arrays
+and objects, invalid frame recovery, and a malformed-stage event passing
+through a simulated game process, raw-byte capture, event extraction and
+the final JSON report. This strengthens the diagnostics, but does not
+resolve the original PRS/DAT discrepancy without actual gameplay evidence.
