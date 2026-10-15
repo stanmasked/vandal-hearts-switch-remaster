@@ -33,6 +33,7 @@ jobs:
           mkdir -p build/drawotag
           "$DEVKITA64/bin/aarch64-none-elf-gcc" -std=c11 -O2 -Wall -Wextra \
             -ffunction-sections -fdata-sections \
+            -include tools/switch_psyq_compat.h \
             -I/tmp/vh-raster-upstream/platform/pc/include \
             -I/tmp/vh-raster-upstream/platform/pc/src \
             -I/tmp/vh-raster-upstream/include \
