@@ -59,3 +59,12 @@ python3 tools/extract_cdxa_payload.py /path/to/local-disc-image.bin ./xa-payload
 ```
 
 The output is an intermediate compressed-data stream containing XA sound groups, **not a playable WAV**. The helper skips non-audio sectors and records non-contiguous audio-sector transitions; those transitions may represent timing gaps, so do not assume that concatenation alone preserves original playback timing. It never overwrites the source image. Keep output files local if they contain copyrighted game data.
+
+
+## Experimental decoder profile and compatibility notes
+
+`tools/decode_cdxa_adpcm.py` currently implements the common 4-bit stereo, 37.8 kHz profile only. It validates the duplicated parameter headers and rejects filter indices outside 0–3 and raw shift nibbles above 12 rather than silently interpreting malformed or unusual headers.
+
+This strict policy is intentional for the first validation pass: it makes suspicious sectors visible instead of quietly changing their meaning. It differs from some playback decoders, including vgmstream, which warn about shift nibbles above 12 and substitute a fallback shift of 9. If a real local dump contains such values, record their sector/group offsets first; then decide whether a separate permissive compatibility mode is warranted. Do not weaken strict validation globally based only on another decoder's fallback behavior.
+
+Predictor history is currently kept unclipped while the emitted signed 16-bit PCM is clamped. Decoder implementations differ on history clipping and integer rounding, so this is a documented implementation choice rather than proof of bit-exact equivalence with every PlayStation CD-XA decoder. The synthetic tests verify this implementation's recurrence, layout, WAV format, and extraction-to-decoding plumbing; they do not replace comparison against a trusted reference vector or listening to a local game dump.
