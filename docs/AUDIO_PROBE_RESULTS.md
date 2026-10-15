@@ -15,7 +15,7 @@ The SDL2 probe requests a 22,050 Hz, mono, signed 16-bit audio device and queues
 
 The follow-up workflow change in commit [ff3e89b](https://github.com/stanmasked/vandal-hearts-switch-remaster/commit/ff3e89b35044585e716eaac130eb9aefbc44fa1d) was committed, but follow-up run [38610973016](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38610973016) did not reach the probe: its package-install step again received HTTP 403 for `dkp-linux.db` and `dkp-libs.db` after five attempts. Build and runtime steps were skipped, so this run neither validates nor invalidates the workflow's audio-result classification.
 
-A second attempt changed pacman's external downloader to `curl` with a pacman-style User-Agent in commit [a3a55e2](https://github.com/stanmasked/vandal-hearts-switch-remaster/commit/a3a55e2b234739a3be3280fb6878ed7f496cd5f4). SDL2 workflow run [38611796465](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38611796465) still received HTTP 403 from the package database endpoint on all five attempts. The workaround is therefore **not effective in this CI environment**; compilation and runtime were skipped again. The main libnx prototype toolchain workflow independently passed at [38611751198](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38611751198).
+A second attempt changed pacman's external downloader to `curl` with a pacman-style User-Agent in commit [a3a55e2](https://github.com/stanmasked/vandal-hearts-switch-remaster/commit/a3a55e2b234739a3be3280fb6878ed7f496cd5f4). SDL2 workflow run [38611796465](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38611796465) still received HTTP 403 from the package database endpoint on all five attempts. The workaround was therefore **not effective in that CI environment**; compilation and runtime were skipped again. The main libnx prototype toolchain workflow independently passed at [38611751198](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38611751198).
 
 ## OpenAL Soft probe
 
@@ -23,7 +23,7 @@ The OpenAL Soft generated-tone probe is separate from the SDL2 audio test. Recen
 
 ## Latest SDL2 audio runtime check
 
-The latest combined SDL2 runtime workflow, [38691365198](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38691365198), completed successfully overall, but the audio step was **inconclusive**. The log reports ALSA `cannot find card '0'` and `Unknown PCM default`; the CI host has no usable default audio device. The captured status screenshot did not meet the green-pixel threshold required to classify the SDL callback as observed. The workflow accepts this known missing-device case as inconclusive rather than failing the entire graphics/input run.
+The latest combined SDL2 runtime workflow, [38693397077](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38693397077), completed successfully overall, but the audio step was **inconclusive**. The log reports ALSA `cannot find card '0'` and `Unknown PCM default`; the CI host has no usable default audio device. The status classifier did not confirm an observed SDL audio callback. The workflow accepts this known missing-device case as inconclusive rather than failing the graphics/input run.
 
 This run confirms neither callback execution nor audible output. Do not interpret the overall workflow's green status as an audio pass.
 
