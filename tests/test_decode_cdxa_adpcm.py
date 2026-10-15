@@ -62,6 +62,58 @@ class DecodeCdXaAdpcmTests(unittest.TestCase):
             h2, h1 = h1, sample
         self.assertEqual(history[0], [h1, h2])
 
+
+    def test_mixed_filter_reference_vector_across_two_groups(self):
+        # An independent scalar oracle: build samples in playback order from
+        # nibble values, without calling the production decode_group routine.
+        # Distinct left/right filters and negative values exercise predictors,
+        # nibble signs, group boundaries, and history carry-over.
+        coeff = ((0, 0), (60, 0), (115, -52), (98, -55))
+        history = [[0, 0], [0, 0]]
+        production_history = [[0, 0], [0, 0]]
+        expected = bytearray()
+        for group_index in range(2):
+            group = bytearray(GROUP_SIZE)
+            params = (
+                (0x1B, 0x2C, 0x3B, 0x0C) if group_index == 0
+                else (0x2A, 0x3C, 0x1C, 0x0B)
+            )
+            # XA carries four left/right parameter pairs, duplicated in header.
+            group[0:4] = bytes(params)
+            group[4:8] = bytes(params)
+            group[8:12] = bytes(params)
+            group[12:16] = bytes(params)
+            for row in range(28):
+                for chunk in range(4):
+                    low = (row + chunk + group_index * 3) & 15
+                    high = (15 - row + chunk * 3 + group_index) & 15
+                    group[16 + row * 4 + chunk] = (high << 4) | low
+
+            reference_channels = [[], []]
+            for chunk in range(4):
+                for channel in range(2):
+                    p = params[chunk * 2 + channel]
+                    factor = 1 << (12 - (p & 15))
+                    k0, k1 = coeff[p >> 4]
+                    old1, old2 = history[channel]
+                    for row in range(28):
+                        byte = group[16 + row * 4 + chunk]
+                        code = (byte & 15) if channel == 0 else (byte >> 4)
+                        if code >= 8:
+                            code -= 16
+                        predicted = (old1 * k0 + old2 * k1 + 32) // 64
+                        value = code * factor + predicted
+                        reference_channels[channel].append(min(32767, max(-32768, value)))
+                        old2, old1 = old1, value
+                    history[channel] = [old1, old2]
+            for left, right in zip(*reference_channels):
+                expected.extend(struct.pack("<hh", left, right))
+            self.assertEqual(
+                decode_group(bytes(group), production_history),
+                bytes(expected[-112 * 4:]),
+            )
+            self.assertEqual(production_history, history)
+
     def test_rejects_bad_group_length_and_parameter_copy(self):
         with self.assertRaisesRegex(ValueError, "exactly 128"):
             decode_group(bytes(127), [[0, 0], [0, 0]])
