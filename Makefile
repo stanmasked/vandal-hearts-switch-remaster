@@ -42,6 +42,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_rgb
 	python3 tests/test_inspect_cdxa.py
 	python3 tests/test_extract_cdxa_payload.py
 	python3 tests/test_drawotag_texture_fixtures.py
+	python3 tests/test_inspect_psx_tim.py
 
 # Host-only memory and undefined-behavior checks; requires GCC or Clang sanitizers.
 test-sanitize: | $(BUILD)
