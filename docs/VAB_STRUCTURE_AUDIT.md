@@ -633,3 +633,63 @@ voice liveness when OpenAL buffers underrun, real hardware SPU timing,
 per-voice reverb, and actual Nintendo Switch output have not been
 validated. This model must not be called PS1-perfect or Switch-ready
 solely because host synthetic CI passes.
+
+
+## PC-port 512-frame SEQ scheduling (opt-in host diagnostic)
+
+`tools/schedule_ps1_seq_blocks.py` models the timing order in the
+source PC port's `pc_spu.c` and `libsnd.c`:
+
+1. At the start of every **512-frame** output buffer,
+   `PC_SpuService()` calls `PC_SeqAdvanceSamples(512)`.
+2. `SeqAdvanceByUsec()` adds one whole buffer's worth of musical
+   ticks to its pending tick budget, using the tempo **at the start
+   of the buffer**.
+3. All events whose deltas are now due are dispatched **before**
+   `SpuRenderBlock()` renders those 512 PCM frames. In the diagnostic
+   schedule these events therefore share that block's starting frame.
+4. A tempo event changes the rate of **subsequent** buffers. It does
+   not retroactively modify the current buffer's already calculated
+   tick increment.
+5. A clean SEQ repeat resets the remaining tick budget to zero,
+   but preserves the tempo, instrument/channel state and held notes.
+   Running status starts fresh with the next pass.
+
+For comparison the existing `ideal` mode remains the default.
+The new `pc_block512` mode is selected explicitly:
+
+```sh
+# Inspect SEQ dispatch frames without generating audio:
+python3 tools/schedule_ps1_seq_blocks.py \
+  /local/path/music.seq --repeat-count 2
+
+# Render a user-owned, locally stored SEQ + VH/VB with block scheduling:
+python3 tools/render_ps1_seq.py \
+  /local/path/music.seq /local/path/music.vh /local/path/music.vb \
+  /local/path/block-diagnostic.wav \
+  --timing-mode pc_block512 --voice-lifetime adsr
+
+# Contrast with continuous rational tick integration:
+python3 tools/render_ps1_seq.py \
+  /local/path/music.seq /local/path/music.vh /local/path/music.vb \
+  /local/path/ideal-diagnostic.wav --timing-mode ideal
+
+python3 tests/test_schedule_ps1_seq_blocks.py
+```
+
+The block model uses exact rational arithmetic to make repeatable
+synthetic regression tests; the source PC code uses double-precision
+tick budgets. It reproduces the order of event dispatch versus PCM
+rendering, **not** the real OpenAL queue fill, buffering latency,
+under-runs, audio clock recovery, the extra stuck-note reaper,
+Sony's original hardware timings or real Nintendo Switch playback.
+It is deliberately a separate mode so comparisons can reveal any
+audible differences from the previous idealized timeline.
+
+Host tests cover first-block events, discrete 512-frame boundaries,
+a tempo change in the middle of a single tick-budget drain, repeated
+tracks resetting budget, bounded infinite repeats, validation, local
+file immutability and the complete synthetic SEQ/VH/VB-to-WAV pipeline.
+
+All inputs and generated game audio must remain local; no proprietary
+music assets are included or uploaded.
