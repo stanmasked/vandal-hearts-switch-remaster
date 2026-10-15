@@ -1,4 +1,5 @@
 """Synthetic tests for decoded-versus-reference WAV comparison."""
+import os
 import sys
 import tempfile
 import unittest
@@ -33,6 +34,19 @@ class CompareXaWavsTests(unittest.TestCase):
         result = compare_wavs(a, b)
         self.assertTrue(result["exact_match"])
         self.assertEqual(result["different_frames"], 0)
+
+    def test_rejects_identical_path_and_aliases(self):
+        original = self.make_wav("original.wav", [(1, -1), (2, -2)])
+        with self.assertRaisesRegex(ValueError, "distinct files"):
+            compare_wavs(original, original)
+        symlink = self.root / "alias.wav"
+        symlink.symlink_to(original)
+        with self.assertRaisesRegex(ValueError, "distinct files"):
+            compare_wavs(original, symlink)
+        hardlink = self.root / "hardlink.wav"
+        os.link(original, hardlink)
+        with self.assertRaisesRegex(ValueError, "distinct files"):
+            compare_wavs(original, hardlink)
 
     def test_reports_first_difference_and_two_channel_metrics(self):
         a = self.make_wav("a.wav", [(1, -1), (2, -2), (3, -3)])
