@@ -55,7 +55,7 @@ jobs:
           git apply --check ../map02-trace.patch
           git apply ../map02-trace.patch
           git diff --check
-          # Syntax-check both modified source units using upstream's game compile profile.
+          # Compile both modified source units using upstream's game compile profile.
           (
             cd platform/pc
             mkdir -p build/include_stage
@@ -65,14 +65,31 @@ jobs:
             for item in PsyQ types.h inline_gte.h; do
               ln -sf "$(realpath "include/$item")" "build/include_stage/$item"
             done
-            gcc -fsyntax-only -m64 -std=gnu89 -fno-builtin-csqrt \
-              -DPERMUTER -DPC_PORT -DPC_FEAT -DVH_REGION_US -DVH_TRACE_MAP02 \
-              '-Dasm(x)=' -Ibuild/include_stage -Iinclude -I../.. \
-              -include pc_forward_decls.h \
-              -Wno-incompatible-pointer-types -Wno-builtin-declaration-mismatch \
-              -Wno-discarded-qualifiers -Wno-pointer-to-int-cast \
-              -Wno-int-to-pointer-cast -Wno-int-conversion \
-              ../../src/states/game_setup.c ../../src/core/graphics.c
+            common_flags=(
+              -m64 -std=gnu89 -fno-builtin-csqrt
+              -DPERMUTER -DPC_PORT -DPC_FEAT -DVH_REGION_US
+              '-Dasm(x)=' -Ibuild/include_stage -Iinclude -I../..
+              -include pc_forward_decls.h
+              -Wno-incompatible-pointer-types -Wno-builtin-declaration-mismatch
+              -Wno-discarded-qualifiers -Wno-pointer-to-int-cast
+              -Wno-int-to-pointer-cast -Wno-int-conversion
+            )
+            mkdir -p build/map02-trace-objects
+            # Compile actual relocatable object files, not just a syntax-only pass.
+            for unit in game_setup graphics; do
+              source="../../src/core/$unit.c"
+              if [[ "$unit" == game_setup ]]; then source="../../src/states/$unit.c"; fi
+              gcc "${common_flags[@]}" -DVH_TRACE_MAP02 -c "$source" \
+                -o "build/map02-trace-objects/${unit}.trace.o"
+              gcc "${common_flags[@]}" -c "$source" \
+                -o "build/map02-trace-objects/${unit}.baseline.o"
+            done
+            # Confirm the renderer hook exists only when explicitly enabled.
+            nm -a build/map02-trace-objects/graphics.trace.o | grep VH_Map02TraceDraw
+            if nm -a build/map02-trace-objects/graphics.baseline.o | grep -q VH_Map02TraceDraw; then
+              echo "Unexpected trace hook in baseline graphics object" >&2
+              exit 1
+            fi
           )
           expected=$(printf 'src/core/graphics.c\nsrc/states/game_setup.c')
           actual=$(git diff --name-only)
