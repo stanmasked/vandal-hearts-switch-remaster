@@ -73,12 +73,12 @@ def capture(executable: Path, trace_directory: Path, output_directory: Path,
         summary["analysis"] = {"errors": [str(exc)], "observations": []}
     else:
         (output_directory / "map02_trace.jsonl").write_text(
-            "".join(json.dumps(entry, separators=(",", ":")) + "\\n" for entry in entries),
+            "".join(json.dumps(entry, separators=(",", ":")) + "\n" for entry in entries),
             encoding="utf-8")
         summary["trace_events"] = len(entries)
         summary["analysis"] = evaluate_trace(entries)
     (output_directory / "capture_report.json").write_text(
-        json.dumps(summary, indent=2) + "\\n", encoding="utf-8")
+        json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     errors = summary["analysis"]["errors"]
     if errors:
         print(f"Map02 trace incomplete/invalid ({len(errors)} issue(s)); see capture_report.json",
