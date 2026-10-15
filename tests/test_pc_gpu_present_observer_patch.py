@@ -9,7 +9,8 @@ spec.loader.exec_module(module)
 
 class ObserverPatchTests(unittest.TestCase):
     def setUp(self):
-        self.upstream = """void PC_GpuPresent(unsigned short *vram, int a) {
+        self.upstream = """#include <SDL2/SDL_opengl.h>
+void PC_GpuPresent(unsigned short *vram, int a) {
 #if defined(__APPLE__)
     if (!s_window || !s_renderer) return; /* headless: no-op */
 #else
@@ -28,6 +29,9 @@ class ObserverPatchTests(unittest.TestCase):
         self.assertEqual(result.count("if (!s_window || !s_glCtx) return;"), 1)
         self.assertLess(result.index("desktop-only window prerequisite"), result.index("PC_GpuDrawOverlay(w, h);"))
         self.assertIn("#if defined(VH_SWITCH_COMPLETED_FRAME_OBSERVER)", result)
+        self.assertIn("#include <SDL2/SDL_opengles2.h>", result)
+        self.assertIn("#if !defined(VH_SWITCH_EXCLUSIVE_PRESENT) /* desktop GL draw and swap */", result)
+        self.assertIn("#endif /* desktop presentation tail */", result)
         self.assertLess(result.index("external Switch event loop owns SDL pumping"),
                         result.index("PC_GpuDrawOverlay(w, h);"))
         self.assertLess(result.index("PC_GpuDrawOverlay(w, h);"),
@@ -68,6 +72,8 @@ class ObserverPatchTests(unittest.TestCase):
             module.patch(self.upstream.replace(module.WINDOW_GUARD, ""))
         with self.assertRaisesRegex(ValueError, "precisely one desktop SDL event pump"):
             module.patch(self.upstream.replace(module.EVENT_PUMP, ""))
+        with self.assertRaisesRegex(ValueError, "expected pinned desktop OpenGL header"):
+            module.patch(self.upstream.replace(module.GL_HEADER, ""))
         with self.assertRaisesRegex(ValueError, "tail not found"):
             module.patch(self.upstream.replace("SDL_GL_SwapWindow(s_window);", ""))
 
