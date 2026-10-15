@@ -62,6 +62,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_vh_
 	python3 tests/test_spu_voice_lifetime.py
 	python3 tests/test_schedule_ps1_seq_blocks.py
 	python3 tests/test_native_spu_adpcm.py
+	python3 tests/test_native_spu_gaussian.py
 
 test-audio-stream: $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu
 	./$(BUILD)/test_vh_audio_stream
@@ -105,8 +106,8 @@ $(BUILD)/test_software_renderer: tests/test_software_renderer.c source/software_
 $(BUILD)/test_vh_audio_stream: tests/test_vh_audio_stream.c source/vh_audio_stream.c source/vh_audio_stream.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Isource tests/test_vh_audio_stream.c source/vh_audio_stream.c -o $@
 
-$(BUILD)/test_vh_native_spu: tests/test_vh_native_spu.c source/vh_native_spu.c source/vh_native_spu.h source/vh_spu_adpcm.c source/vh_spu_adpcm.h source/vh_audio_stream.c source/vh_audio_stream.h | $(BUILD)
-	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Isource tests/test_vh_native_spu.c source/vh_native_spu.c source/vh_spu_adpcm.c source/vh_audio_stream.c -lm -o $@
+$(BUILD)/test_vh_native_spu: tests/test_vh_native_spu.c source/vh_native_spu.c source/vh_native_spu.h source/vh_spu_gaussian.c source/vh_spu_gaussian.h source/vh_spu_adpcm.c source/vh_spu_adpcm.h source/vh_audio_stream.c source/vh_audio_stream.h | $(BUILD)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Isource tests/test_vh_native_spu.c source/vh_native_spu.c source/vh_spu_gaussian.c source/vh_spu_adpcm.c source/vh_audio_stream.c -lm -o $@
 
 $(BUILD)/$(TARGET).elf: $(SOURCES)/main.c $(SOURCES)/game_rules.h $(SOURCES)/game_state.h $(SOURCES)/platform_input.h $(SOURCES)/software_renderer.h $(SOURCES)/game_renderer.h | $(BUILD)
 	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ $(LDLIBS)
@@ -145,8 +146,8 @@ $(BUILD)/$(SDL2_TEXTURE_TARGET).nro: $(BUILD)/$(SDL2_TEXTURE_TARGET).elf $(BUILD
 	$(ELF2NRO) $< $@ --nacp=$(BUILD)/$(SDL2_TEXTURE_TARGET).nacp
 
 
-$(BUILD)/$(SDL2_AUDIO_TARGET).elf: probes/sdl2_audio_smoke.c source/vh_audio_stream.c source/vh_audio_stream.h source/vh_spu_adpcm.c source/vh_spu_adpcm.h source/vh_native_spu.c source/vh_native_spu.h | $(BUILD)
-	$(CC) $(CFLAGS) -Isource $(LDFLAGS) $(shell $(SDL2_CONFIG) --cflags) probes/sdl2_audio_smoke.c source/vh_audio_stream.c source/vh_spu_adpcm.c source/vh_native_spu.c -o $@ $(shell $(SDL2_CONFIG) --libs) $(LDLIBS) -lm
+$(BUILD)/$(SDL2_AUDIO_TARGET).elf: probes/sdl2_audio_smoke.c source/vh_audio_stream.c source/vh_audio_stream.h source/vh_spu_adpcm.c source/vh_spu_adpcm.h source/vh_spu_gaussian.c source/vh_spu_gaussian.h source/vh_native_spu.c source/vh_native_spu.h | $(BUILD)
+	$(CC) $(CFLAGS) -Isource $(LDFLAGS) $(shell $(SDL2_CONFIG) --cflags) probes/sdl2_audio_smoke.c source/vh_audio_stream.c source/vh_spu_adpcm.c source/vh_spu_gaussian.c source/vh_native_spu.c -o $@ $(shell $(SDL2_CONFIG) --libs) $(LDLIBS) -lm
 
 $(BUILD)/$(SDL2_AUDIO_TARGET).nacp: | $(BUILD)
 	$(NACPTOOL) --create "Vandal Hearts SDL2 Audio Probe" "$(APP_AUTHOR)" "$(APP_VERSION)" $@
