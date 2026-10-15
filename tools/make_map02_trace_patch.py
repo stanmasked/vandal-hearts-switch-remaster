@@ -77,6 +77,26 @@ static void VH_Map02TraceDraw(const MapTileModel *tile, int face, int gfx,
           (unsigned)poly->u0, (unsigned)poly->v0,
           (unsigned)poly->clut, (unsigned)poly->tpage, path);
 }
+
+/* Explain why a target face was considered but not submitted to AddPrim. */
+static void VH_Map02TraceSkip(const MapTileModel *tile, int face, int gfx,
+                              const char *path, const char *reason) {
+   int z, x;
+   if (gState.mapNum != 11 || face != 0) return;
+   if (tile == &gMapRowPointers[8][19]) {
+      z = 8;
+      x = 19;
+   } else if (tile == &gMapRowPointers[11][11]) {
+      z = 11;
+      x = 11;
+   } else {
+      return;
+   }
+   printf("{\\"z\\":%d,\\"x\\":%d,\\"face\\":0,\\"stage\\":\\"skip\\","
+          "\\"gfx\\":%d,\\"frame\\":%u,\\"path\\":\\"%s\\","
+          "\\"reason\\":\\"%s\\"}\\n",
+          z, x, gfx, (unsigned)gState.frameCounter, path, reason);
+}
 #endif
 
 '''
@@ -108,6 +128,30 @@ static void VH_Map02TraceDraw(const MapTileModel *tile, int face, int gfx,
             f"{indent}#endif\n"
         )
         body = body[:match.start()] + call + body[match.start():]
+
+        # Normal/overhead paths reject zero-texture faces before projection.
+        if name != "RenderEdgeMapTile":
+            null_anchor = "      if (gfx != GFX_NULL) {"
+            if body.count(null_anchor) != 1:
+                raise ValueError(f"{name}: expected exactly one GFX_NULL guard")
+            null_hook = (
+                "      #if defined(PC_FEAT) && defined(VH_TRACE_MAP02)\\n"
+                f'      if (gfx == GFX_NULL) VH_Map02TraceSkip(tileModel, faceIdx, gfx, "{path}", "null_gfx");\\n'
+                "      #endif\\n"
+            )
+            body = body.replace(null_anchor, null_hook + null_anchor, 1)
+
+        # Each path computes opz before the front-face test; distinguish culling.
+        stop_anchor = "         gte_stopz(&opz);" if name != "RenderEdgeMapTile" else "      gte_stopz(&opz);"
+        if body.count(stop_anchor) != 1:
+            raise ValueError(f"{name}: expected exactly one GTE depth test")
+        edge_gfx = "tileModel->gfx[faceIdx]" if name == "RenderEdgeMapTile" else "gfx"
+        stop_hook = (
+            "\\n#if defined(PC_FEAT) && defined(VH_TRACE_MAP02)\\n"
+            f'      if (opz <= 0) VH_Map02TraceSkip(tileModel, faceIdx, {edge_gfx}, "{path}", "backface");\\n'
+            "#endif"
+        )
+        body = body.replace(stop_anchor, stop_anchor + stop_hook, 1)
         source = source[:start] + body + source[end:]
     return source
 
