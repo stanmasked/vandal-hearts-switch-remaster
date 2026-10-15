@@ -4,26 +4,27 @@
 
 The latest SDL2 feasibility workflow completed successfully on 2026-10-15:
 
-- Workflow run: [38692792951](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38692299319)
+- Workflow run: [38693397077](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38693397077)
 - Branch: `audit/switch-platform-boundaries`
-- Commit tested: `a5c19cd70db0f4db495230303041546ace576e55`
+- Commit tested: [74b903662b0956b10514f27c8565ed58d6659c6e](https://github.com/stanmasked/vandal-hearts-switch-remaster/commit/74b903662b0956b10514f27c8565ed58d6659c6e)
 - Build job: successful; official SDL2 2.28.5 source was downloaded, checksum-verified, patched for the Switch port, compiled, and installed in the CI toolchain.
 - Runtime job: successful in the NeXium emulator.
-- Runtime evidence: [sdl2-nexium-runtime-evidence artifact](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38692299319/artifacts/11953021442)
+- Runtime evidence: [sdl2-nexium-runtime-evidence artifact](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38693397077/artifacts/11953615324)
 
 ## Confirmed checks
 
 - SDL2 texture and joystick probe: 1280×720 screenshots captured; A toggled the movement-range highlight, B canceled it, and two Right presses moved the cursor from tile (1, 2) to (3, 2).
 - RGB24 texture upload with an odd source stride: all four expected color/orientation markers were detected in the rendered viewport.
 - Repeated per-frame RGB24 upload: two screenshots taken 0.75 seconds apart showed the animated patch changing, confirming visible updates while the NRO loop repeatedly uploads and draws frames.
-- Optimized steady-state uploads: the presenter allocates texture storage with `glTexImage2D` on first upload/resize and uses `glTexSubImage2D` for same-sized subsequent frames. The optimized build and the repeated-update screenshot check both passed.
+- Optimized steady-state uploads: the presenter allocates texture storage with `glTexImage2D` on first upload/resize and uses `glTexSubImage2D` for same-sized subsequent frames. The optimized build and repeated-update screenshot check passed.
+- Resize round-trip: the probe uploaded a 17×9 frame, restored the original 321×240 frame, checked the presenter dimensions, and continued drawing successfully.
 - SDL2 software renderer: expected generated hero and enemy markers detected in the screenshot.
 - SDL2 OpenGL ES 2.0: expected generated hero and enemy markers detected in the screenshot.
-- The CI artifact archive includes runtime screenshots and logs.
+- The runtime artifact includes captured screenshots and logs. Other artifacts include the built software-renderer, GLES, texture-upload, RGB24 and audio probe NROs.
 
 ## Audio result: inconclusive, not a pass for playback
 
-In this run, the audio step completed under the workflow's documented inconclusive-result rule. Its log reports ALSA `cannot find card '0'` and `Unknown PCM default`; the CI host has no usable default audio device. The screenshot's status-color classifier did not confirm an observed SDL audio callback. Therefore this run does **not** establish callback execution, audible output in NeXium, or sound on physical Switch hardware.
+The audio step completed under the workflow's documented inconclusive-result rule. Its log reports ALSA `cannot find card '0'` and `Unknown PCM default`; the CI host has no usable default audio device. The screenshot status classifier did not confirm an observed SDL audio callback. This run does **not** establish callback execution, audible output in NeXium, or sound on physical Switch hardware.
 
 ## Limits and next steps
 
