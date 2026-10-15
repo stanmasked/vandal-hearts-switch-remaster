@@ -69,6 +69,21 @@ class RuntimeTraceTests(unittest.TestCase):
         report = evaluate_trace(parse_trace_text(json.dumps(entry)))
         self.assertTrue(any("missing draw" in e for e in report["errors"]))
 
+    def test_draw_metadata_is_preserved(self):
+        entries = observations()
+        entries[2].update({"u": 240, "v": 192, "clut": 35, "tpage": 5})
+        report = evaluate_trace(entries)
+        self.assertEqual(report["errors"], [])
+        self.assertEqual(report["observations"][0]["draw_metadata"],
+                         {"u": 240, "v": 192, "clut": 35, "tpage": 5})
+
+    def test_invalid_draw_metadata_is_rejected(self):
+        entries = observations()
+        entries[2].update({"u": True, "v": 256, "clut": -1, "tpage": "5"})
+        errors = evaluate_trace(entries)["errors"]
+        for field in ("u", "v", "clut", "tpage"):
+            self.assertTrue(any(f": {field} must be" in e for e in errors))
+
     def test_invalid_json_shapes(self):
         with self.assertRaisesRegex(ValueError, "JSON list"):
             evaluate_trace({"z": 8})
