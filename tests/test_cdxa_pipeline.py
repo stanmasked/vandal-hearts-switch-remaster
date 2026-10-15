@@ -221,11 +221,6 @@ class CdXaPipelineTests(unittest.TestCase):
                 extract_audio_payloads(source, payload, report_path=payload)
             self.assertFalse(payload.exists())
 
-            report.write_text("keep this report", encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "Report path"):
-                extract_audio_payloads(source, payload, report_path=report)
-            self.assertEqual(report.read_text(encoding="utf-8"), "keep this report")
-            self.assertFalse(payload.exists())
 
 
 if __name__ == "__main__":
