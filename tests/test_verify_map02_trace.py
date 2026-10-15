@@ -147,6 +147,80 @@ class RuntimeTraceTests(unittest.TestCase):
         self.assertTrue(any("duplicate draw" in error
                             for error in duplicate["errors"]))
 
+    def test_full_trace_rejects_draw_and_skip_for_same_renderer_invocation(self):
+        events = self.full_trace_observations()
+        events.insert(4, {"z": 8, "x": 19, "face": 0,
+                          "stage": "skip", "gfx": 641, "frame": 8,
+                          "path": "normal", "reason": "backface"})
+        report = evaluate_trace(events, require_full_trace=True)
+        self.assertTrue(any("multiple terminal outcomes" in error
+                            for error in report["errors"]))
+        self.assertEqual(report["observations"][0]["draw_observation_count"], 1)
+        self.assertEqual(report["observations"][0]["skip_observation_count"], 0)
+
+    def test_full_trace_rejects_two_different_skips_same_invocation(self):
+        events = self.full_trace_observations()
+        events.extend([
+            {"z": 8, "x": 19, "face": 0, "stage": "visit",
+             "gfx": 0, "frame": 11, "path": "normal", "face_count": 2},
+            {"z": 8, "x": 19, "face": 0, "stage": "skip",
+             "gfx": 0, "frame": 11, "path": "normal", "reason": "null_gfx"},
+            {"z": 8, "x": 19, "face": 0, "stage": "skip",
+             "gfx": 0, "frame": 11, "path": "normal", "reason": "backface"},
+        ])
+        report = evaluate_trace(events, require_full_trace=True)
+        self.assertTrue(any("multiple terminal outcomes" in error
+                            for error in report["errors"]))
+
+    def test_full_trace_detects_unfinished_nonempty_visit(self):
+        events = self.full_trace_observations()
+        events.append({"z": 8, "x": 19, "face": 0, "stage": "visit",
+                       "gfx": 641, "frame": 10, "path": "normal",
+                       "face_count": 2})
+        self.assertEqual(evaluate_trace(events)["errors"], [])
+        errors = evaluate_trace(events, require_full_trace=True)["errors"]
+        self.assertTrue(any("nonempty visit without draw or skip" in error
+                            for error in errors))
+
+    def test_full_trace_unfinished_first_of_two_visits_is_not_hidden(self):
+        events = self.full_trace_observations()
+        events.extend([
+            {"z": 8, "x": 19, "face": 0, "stage": "visit",
+             "gfx": 641, "frame": 10, "path": "normal", "face_count": 2},
+            {"z": 8, "x": 19, "face": 0, "stage": "visit",
+             "gfx": 641, "frame": 10, "path": "normal", "face_count": 2},
+            {"z": 8, "x": 19, "face": 0, "stage": "draw",
+             "gfx": 641, "frame": 10, "path": "normal"},
+        ])
+        report = evaluate_trace(events, require_full_trace=True)
+        self.assertEqual(report["observations"][0]["draw_observation_count"], 2)
+        self.assertEqual(sum("nonempty visit without draw or skip" in error
+                             for error in report["errors"]), 1)
+
+    def test_full_trace_null_texture_skip_requires_matching_visit_gfx(self):
+        for path in ("normal", "overhead", "edge"):
+            with self.subTest(path=path):
+                events = self.full_trace_observations()
+                events += [
+                    {"z": 8, "x": 19, "face": 0, "stage": "visit",
+                     "gfx": 641, "frame": 10, "path": path, "face_count": 2},
+                    {"z": 8, "x": 19, "face": 0, "stage": "skip",
+                     "gfx": 0, "frame": 10, "path": path, "reason": "null_gfx"},
+                ]
+                errors = evaluate_trace(events, require_full_trace=True)["errors"]
+                self.assertTrue(any("null_gfx GFX mismatch with latest visit" in e
+                                    for e in errors))
+                if path == "edge":
+                    self.assertTrue(any("edge renderer cannot emit null_gfx" in e
+                                        for e in errors))
+
+    def test_full_trace_allows_zero_face_visit_without_outcome(self):
+        events = self.full_trace_observations()
+        events.append({"z": 8, "x": 19, "face": 0, "stage": "visit",
+                       "gfx": 0, "frame": 17, "path": "normal",
+                       "face_count": 0})
+        self.assertEqual(evaluate_trace(events, require_full_trace=True)["errors"], [])
+
     def test_strict_full_trace_counts_repeated_skips_and_resets_on_zero_faces(self):
         events = self.full_trace_observations()
         visit = {"z": 8, "x": 19, "face": 0, "stage": "visit",
