@@ -19,7 +19,11 @@ INSERT = """    /* VH_SWITCH_OBSERVER_BEGIN: post-composition RGB24 boundary */
      */
     extern void VH_ObserveCompletedRGB24(const unsigned char *pixels,
                                           size_t capacity, int width, int height);
-    VH_ObserveCompletedRGB24(s_rgbaScratch, (size_t)s_scratchCap, w, h);
+    /* Validate the actual allocation without multiplying untrusted ints. */
+    if (s_rgbaScratch && w > 0 && h > 0 && s_scratchCap > 0 &&
+        (size_t)w <= ((size_t)s_scratchCap / 3u) / (size_t)h) {
+        VH_ObserveCompletedRGB24(s_rgbaScratch, (size_t)s_scratchCap, w, h);
+    }
 #endif
     /* VH_SWITCH_OBSERVER_END */"""
 
