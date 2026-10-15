@@ -322,3 +322,31 @@ A regression also covers verifying a **nonzero starting LBA** with a bounded sca
 A post-extraction mutation regression retains the exact extraction report and 2304-byte payload, modifies the raw source image in memory, and runs read-only `--source-bin` validation again. Changes in **either selected audio sector** are rejected, while changes only in an unrelated XA channel inside the same scanned range are accepted. Reverting the source bytes restores success. The original report and payload remain byte-for-byte unchanged throughout. This demonstrates detection of subsequent source changes on synthetic input; it does not independently authenticate the original disc image.
 
 Post-extraction source validation now also has synthetic regression cases for changing the **file number or channel** of a previously selected sector, and for promoting an unrelated channel into the selected stream. Each mutation must fail the independently recomputed selected-LBA sequence, even though the extracted audio bytes and report were kept unchanged. Different valid rejections may occur at the first wrong LBA or when the selected sector count is exhausted.
+
+
+### One-command local CD-XA verification
+
+With your *locally owned* raw 2352-byte-sector disc image and a separately
+decoded reference WAV, run the full chain without uploading game content:
+
+```sh
+python3 tools/run_cdxa_local_check.py "/local/path/disc.bin" ./xa-audit-result \
+  --file-number 1 --channel 0 --start-lba 19469 --sector-count 64 \
+  --reference-wav "/local/path/reference.wav"
+```
+
+**The file/channel and LBA values above are illustrative, not verified audio
+stream addresses**. Choose a confirmed XA stream and scan range for the
+specific local image; do not assume the example stream exists.
+
+The output directory must be new; the command refuses to overwrite existing
+results. It extracts only the chosen file/channel, verifies each selected
+sector against the original BIN, decodes XA sound groups to stereo
+16-bit/37.8 kHz WAV, validates the WAV metadata, and compares exact PCM samples
+with the separately generated reference. If samples differ, the command fails
+and keeps diagnostic files for inspection. Without `--reference-wav`, the
+reported status is **decoded_and_source_verified**, *not* proof of audio
+fidelity. Independent decoder execution, source selection, synchronization
+and listening checks remain separate gates. Original BIN and WAV data must not
+be committed to the repository. The command operates only on local files;
+no network transfer is performed.
