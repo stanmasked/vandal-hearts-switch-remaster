@@ -192,3 +192,18 @@ The analyzer also reports `local_neighbor_max_jump` for the two immediate PCM ch
 ### Nonzero ADPCM recurrence cross-check
 
 `tests/test_decode_cdxa_adpcm.py` now includes a separate scalar-oracle calculation with nonzero signed nibbles, differing left/right predictor filters, and state carried across two sound groups. The test checks exact PCM output and final predictor history. This independently written arithmetic check is **not** a comparison against a separate CD-XA implementation or captured PlayStation output: both the oracle and decoder can share a mistaken interpretation of the format. A reference-implementation comparison and listening check on locally owned game audio remain required before claiming audio fidelity.
+
+
+### Algorithm-level comparison with an independent implementation
+
+The test `test_vgmstream_style_reference_subframes_and_history` cross-checks
+three synthetic nonzero groups using a channel-first reference procedure
+based on [vgmstream's XA decoder](https://github.com/vgmstream/vgmstream/blob/master/src/coding/xa_decoder.c).
+It uses signed 16-bit nibble expansion rather than the production decoder's
+signed-nibble multiply, and independently advances predictor history between
+sound groups. It checks exact stereo PCM and history.
+
+This is a **source-algorithm comparison**, not a claim that vgmstream itself
+was executed in CI, nor a bit-exact test against original game audio.
+Both implementations may still share format assumptions; a local game sample
+and a separately executed trusted decoder remain essential for fidelity.
