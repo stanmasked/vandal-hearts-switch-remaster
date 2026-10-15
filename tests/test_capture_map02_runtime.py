@@ -84,6 +84,14 @@ def fixture(root: Path, mode="complete", modified=False, trace_mode="legacy"):
     if trace_mode == "full" and mode == "full_missing_visit":
         events = [event for event in events
                   if not (event["stage"] == "visit" and event["z"] == 8)]
+    if trace_mode == "full" and mode == "full_draw_and_skip":
+        events.insert(4, {"z": 8, "x": 19, "face": 0, "stage": "skip",
+                          "gfx": 641, "frame": 8, "path": "normal",
+                          "reason": "backface"})
+    if trace_mode == "full" and mode == "full_unfinished_visit":
+        events.append({"z": 8, "x": 19, "face": 0, "stage": "visit",
+                       "gfx": 641, "frame": 15, "path": "normal",
+                       "face_count": 2})
     lines = ["booting pc-port", *(json.dumps(ev) for ev in events), "normal shutdown"]
     source = "#!/usr/bin/env python3\n" + "\n".join(
         ["import sys", f"print({chr(10).join(lines)!r})",
@@ -333,6 +341,25 @@ class CaptureMap02RuntimeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "changed since preparation"):
                 capture(exe, trace_dir, base / "run")
             self.assertFalse((base / "run").exists())
+
+    def test_full_capture_rejects_conflicting_or_unfinished_renderer_passes(self):
+        for mode, expected in (
+            ("full_draw_and_skip", "multiple terminal outcomes"),
+            ("full_unfinished_visit", "nonempty visit without draw or skip"),
+        ):
+            with self.subTest(mode=mode):
+                with tempfile.TemporaryDirectory() as folder:
+                    base = Path(folder)
+                    exe, prepared = fixture(base, mode=mode, trace_mode="full")
+                    output = base / "inconsistent"
+                    self.assertEqual(capture(exe, prepared, output), 2)
+                    report = json.loads((output / "capture_report.json").read_text())
+                    self.assertTrue(any(expected in error for error
+                                        in report["analysis"]["errors"]))
+                    self.assertEqual(report["analysis"]["post_load_overall_variant"], "PRS")
+                    self.assertEqual(report["analysis"]["draw_overall_variant"], "PRS")
+                    self.assertTrue((output / "game_stdout.log").is_file())
+                    self.assertTrue((output / "map02_trace.jsonl").is_file())
 
     def test_full_capture_rejects_missing_visit_even_when_gfx_matches(self):
         with tempfile.TemporaryDirectory() as folder:
