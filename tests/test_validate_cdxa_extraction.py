@@ -136,6 +136,7 @@ class ValidateXaExtractionTests(unittest.TestCase):
 
         self.data.update({
             "start_lba": 0, "sectors_scanned": 3,
+            "mode2_sectors": 3, "matching_subheaders": 3,
             "first_audio_lba": 0, "last_audio_lba": 2,
             "audio_lbas": [0, 2],
             "audio_lba_offsets": [
