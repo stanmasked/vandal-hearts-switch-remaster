@@ -53,7 +53,7 @@ int main(void) {
     hook.context = &state;
     if (!vh_switch_observer_register(&hook)) goto done;
 
-    while (running && frame < 120) {
+    while (running && frame < 3600) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT || event.type == SDL_KEYDOWN)
