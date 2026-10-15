@@ -50,6 +50,42 @@ jobs:
           echo "Original DrawOTag cross-compiled and still calls upstream PC_GpuPresent."
           echo "Unresolved GPU/raster dependencies:"
           cat build/drawotag/undefined-symbols.txt
+      - name: Compile native VRAM software rasterizer for Switch
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" -std=c11 -O2 -Wall -Wextra \
+            -ffunction-sections -fdata-sections -include tools/switch_psyq_compat.h \
+            -I/tmp/vh-raster-upstream/platform/pc/include \
+            -I/tmp/vh-raster-upstream/platform/pc/src \
+            -I/tmp/vh-raster-upstream/include \
+            -I"$DEVKITPRO/libnx/include" \
+            -c /tmp/vh-raster-upstream/platform/pc/src/pc_raster.c \
+            -o build/drawotag/pc_raster_switch.o
+          "$DEVKITA64/bin/aarch64-none-elf-nm" --defined-only build/drawotag/pc_raster_switch.o \
+            > build/drawotag/raster-defined-symbols.txt
+          "$DEVKITA64/bin/aarch64-none-elf-nm" --undefined-only build/drawotag/pc_raster_switch.o \
+            > build/drawotag/raster-undefined-symbols.txt
+          grep -Eq ' [T] PC_GpuVram
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: original-drawotag-switch-object-audit
+          path: build/drawotag/
+          if-no-files-found: ignore
+ build/drawotag/raster-defined-symbols.txt
+          grep -Eq ' [T] FillRect
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: original-drawotag-switch-object-audit
+          path: build/drawotag/
+          if-no-files-found: ignore
+ build/drawotag/raster-defined-symbols.txt
+          echo "Original rasterizer compiled; provides native VRAM and rectangle fill."
+          cat build/drawotag/raster-undefined-symbols.txt
       - name: Upload original DrawOTag dependency audit
         if: always()
         uses: actions/upload-artifact@v4
