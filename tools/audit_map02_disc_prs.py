@@ -20,6 +20,10 @@ SECTOR_COUNT = 0x0C
 USER_BYTES = 2048
 RAW_BYTES = 2352
 PRIOR_COMPRESSED_SHA256 = "c370660f7f13e6d6e76f4126a45418bc9c64c747de8309ca946d37b502516387"
+PRIOR_DAT_SHA256 = "07666bd80b87de763ef7312ecaeaa0bf747ebfe49db032fa68c9af675d151c31"
+PRIOR_DAT_LENGTH = 238336
+XA_EDC_POLYNOMIAL = 0xD8018001
+XA_EDC_OFFSET = 0x818
 SYNC = bytes((0,)) + bytes((255,)) * 10 + bytes((0,))
 MAX_INPUT_SIZE = SECTOR_COUNT * USER_BYTES
 
@@ -28,8 +32,22 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def xa_edc(data: bytes) -> int:
+    """CD-ROM XA reflected CRC with zero initial value and no final XOR.
+
+    Mode2 Form1 checks 2056 bytes at raw sector offsets [0x10, 0x818).
+    The EDC detects corruption but does not validate P/Q ECC parity.
+    """
+    crc = 0
+    for byte in data:
+        crc ^= byte
+        for _ in range(8):
+            crc = ((crc >> 1) ^ (XA_EDC_POLYNOMIAL if crc & 1 else 0))
+    return crc
+
+
 def read_sectors(path: Path, layout: str, bias: int = 0) -> bytes:
-    """Extract only the selected sectors; rejects malformed Mode2 Form1 headers."""
+    """Extract only selected sectors; verify Mode2 Form1 headers and EDC."""
     sector_size = {"mode2-2352": RAW_BYTES, "iso-2048": USER_BYTES}.get(layout)
     if sector_size is None:
         raise ValueError("layout must be mode2-2352 or iso-2048")
@@ -54,6 +72,13 @@ def read_sectors(path: Path, layout: str, bias: int = 0) -> bytes:
                     raise ValueError(f"sector {relative}: inconsistent XA subheader")
                 if sector[18] & 0x20:
                     raise ValueError(f"sector {relative}: Mode2 Form2 not supported")
+                expected_edc = int.from_bytes(sector[XA_EDC_OFFSET:XA_EDC_OFFSET + 4], "little")
+                actual_edc = xa_edc(sector[0x10:XA_EDC_OFFSET])
+                if actual_edc != expected_edc:
+                    raise ValueError(
+                        f"sector {relative}: Mode2 Form1 EDC mismatch"
+                        f" (stored 0x{expected_edc:08x}, computed 0x{actual_edc:08x})"
+                    )
                 data.extend(sector[24:24 + USER_BYTES])
             else:
                 data.extend(sector)
@@ -165,6 +190,11 @@ def audit_prs(source: bytes, dat: bytes | None = None) -> dict:
         comparison = compare_map02(unpacked, dat)
         report["dat_comparison"] = {
             "dat_sha256": comparison["dat_sha256"],
+            "dat_byte_count": len(dat),
+            "matches_prior_dat_sha256": (
+                len(dat) == PRIOR_DAT_LENGTH
+                and comparison["dat_sha256"] == PRIOR_DAT_SHA256
+            ),
             "difference_count": comparison["difference_count"],
             "differences": comparison["differences"],
             "target_faces": comparison["target_faces"],
@@ -189,7 +219,7 @@ def main():
     parser.add_argument("--dat-file", type=Path,
                         help="optional local M_MAP02.DAT to compare against decoded PRS")
     parser.add_argument("--require-prior-provenance", action="store_true",
-                        help="require prior decompressed SHA-256 and face GFX 241/243")
+                        help="require archived compressed/decompressed PRS hashes and optional DAT hash")
     args = parser.parse_args()
     if args.disc_image is not None and args.layout is None:
         parser.error("--disc-image requires --layout")
@@ -208,13 +238,20 @@ def main():
         result["sector_count"] = SECTOR_COUNT
         result["sector_bias"] = args.sector_bias
         result["layout"] = args.layout
+        result["mode2_form1_edc_verified_sectors"] = (
+            SECTOR_COUNT if args.layout == "mode2-2352" else None
+        )
     print(json.dumps(result, indent=2))
-    provenance_matches = (result["matches_prior_decompressed_sha256"]
-                          and result["matches_prior_target_gfx"])
+    provenance_matches = (
+        result["matches_prior_logical_compressed_sha256"]
+        and result["matches_prior_decompressed_sha256"]
+        and result["matches_prior_target_gfx"]
+    )
     if args.dat_file is not None:
         provenance_matches = (
             provenance_matches and
             result["dat_comparison"]["matches_prior_disc_audit_with_provenance"]
+            and result["dat_comparison"]["matches_prior_dat_sha256"]
         )
     return int(args.require_prior_provenance and not provenance_matches)
 
