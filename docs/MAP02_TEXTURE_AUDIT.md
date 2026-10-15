@@ -34,6 +34,19 @@ The observations alone do not distinguish these cases.
 6. Trace the runtime renderer from the model face to the texture lookup and skip conditions; inspect whether zero-size textures are ignored, transparent, or redirected.
 7. Compare screenshots for map 02 against the source game, examining whether those two faces are visible. Only then classify the records as intentional, a parsing error, or unresolved.
 
+## Reproducible raw-byte check
+
+Run the commands from the repository root, using your own legally obtained local extraction:
+
+```sh
+python3 -m unittest discover -s tests -p 'test_check_map02_raw.py'
+python3 -m tools.check_map02_raw /local/path/LAND_DT.DAT
+# Or when the 1797-byte map-02 block has already been extracted:
+python3 -m tools.check_map02_raw /local/path/map02.bin --block
+```
+
+The check prints a SHA-256 fingerprint and reports whether the **four raw texture-record bytes** and the separate CLUT-index byte are zero for GFX 241 and 243. A PASS does not establish the correct map index in the original disc, palette interpretation, renderer behavior, or intentional invisibility. In `--block` mode the input is assumed to be map 02; the tool cannot verify that provenance independently. Keep the input file, its provenance, and the emitted report together outside version control. Do not treat the two zero records as a reason to paint over geometry. All-zero synthetic fixtures test error detection only, not real game assets.
+
 ## Acceptance criteria for a fix
 
 - Two independent readings (raw data + parser) agree on offsets and indexing.
