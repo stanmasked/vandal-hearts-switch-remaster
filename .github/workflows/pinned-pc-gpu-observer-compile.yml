@@ -7,6 +7,7 @@ on:
     paths:
       - "tools/patch_pc_gpu_present_observer.py"
       - "tests/test_pc_gpu_present_observer_patch.py"
+      - "tests/test_pinned_pc_gpu_present_rgb24.c"
       - "source/switch_upstream_observer.*"
       - "source/switch_present_hook.*"
       - "source/switch_completed_frame.*"
@@ -82,3 +83,16 @@ jobs:
             build-tests/observer/switch_upstream_observer.o \
             -o build-tests/observer/target_combined.o
           nm build-tests/observer/target_combined.o | grep -E ' [T] VH_ObserveCompletedRGB24$'
+      - name: Run original pinned VRAM-to-RGB24 conversion contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          includes="-I/tmp/vh-upstream/platform/pc/include -I/tmp/vh-upstream/platform/pc/src"
+          cc -std=c11 -O2 -flto -ffunction-sections -fdata-sections \
+            -DVH_SWITCH_COMPLETED_FRAME_OBSERVER -DVH_SWITCH_EXCLUSIVE_PRESENT \
+            $includes $(pkg-config --cflags sdl2) \
+            /tmp/vh-upstream/platform/pc/src/pc_gpu_window_instrumented.c \
+            tests/test_pinned_pc_gpu_present_rgb24.c \
+            -Wl,--gc-sections -o build-tests/observer/pinned-vram-rgb24 \
+            $(pkg-config --libs sdl2) -lGL
+          ./build-tests/observer/pinned-vram-rgb24
