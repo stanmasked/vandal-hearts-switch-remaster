@@ -101,11 +101,18 @@ int vh_switch_rgb24_presenter_upload(VhSwitchRgb24Presenter *presenter,
     /* Clear unrelated earlier errors so this checkpoint belongs to this upload. */
     while (glGetError() != GL_NO_ERROR) {}
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, frame->width, frame->height, 0,
-                 GL_RGB, GL_UNSIGNED_BYTE, frame->pixels);
+    if (presenter->frame_width != frame->width ||
+        presenter->frame_height != frame->height) {
+        /* Allocate storage on first upload or resize; steady-state frames reuse it. */
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, frame->width, frame->height, 0,
+                     GL_RGB, GL_UNSIGNED_BYTE, frame->pixels);
+    } else {
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, frame->width, frame->height,
+                        GL_RGB, GL_UNSIGNED_BYTE, frame->pixels);
+    }
     GLenum error = glGetError();
     if (error != GL_NO_ERROR) {
-        fprintf(stderr, "RGB24 presenter upload failed: GL error 0x%04x\n",
+        fprintf(stderr, "RGB24 presenter upload failed: GL error 0x%04x\\n",
                 (unsigned int)error);
         return 0;
     }
