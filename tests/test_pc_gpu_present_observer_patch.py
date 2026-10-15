@@ -10,6 +10,7 @@ spec.loader.exec_module(module)
 class ObserverPatchTests(unittest.TestCase):
     def setUp(self):
         self.upstream = """#include <SDL2/SDL_opengl.h>
+static SDL_GLContext s_glCtx;
 int PC_GpuInit(int width, int height, const char *title) {
     /* synthetic desktop init content for patch-anchor testing */
     return 1;
@@ -38,6 +39,7 @@ void PC_GpuPresent(unsigned short *vram, int a) {
         self.assertLess(result.index("desktop-only window prerequisite"), result.index("PC_GpuDrawOverlay(w, h);"))
         self.assertIn("#if defined(VH_SWITCH_COMPLETED_FRAME_OBSERVER)", result)
         self.assertIn("#include <SDL2/SDL_opengles2.h>", result)
+        self.assertIn(module.TARGET_GL_CONTEXT_DECL, result)
         self.assertIn("vh_switch_observer_query_viewport(&drawable_w, &drawable_h)", result)
         self.assertIn("#else /* original desktop SDL window initialization */", result)
         self.assertIn("#endif /* desktop GPU initialization */", result)
