@@ -33,13 +33,12 @@ static inline VhScratch3WriteResult vh_scratch3_resource_write(
                        VH_MAP_OUTPUT_ADDR + (uint32_t)offset, length);
     if (destination == NULL) return VH_SCRATCH3_WRITE_OUT_OF_RANGE;
 
-    /* Source is permitted only when fully outside this entire PS1 RAM
-     * storage: caller-owned immutable staging data. Overlapping host
-     * ranges must use a separate buffer to avoid memcpy undefined behavior.
-     * This adapter's contract is synthetic and leaves that responsibility
-     * with the caller.
+    /* Resources can be staged in another part of shared PS1 RAM.
+     * memmove permits source and destination host spans to overlap.
+     * All destination bounds are verified above; a real loader must also
+     * validate the source span before calling this synthetic adapter.
      */
-    memcpy(destination, bytes, length);
+    memmove(destination, bytes, length);
     vh_map_unit_phase_scratch3_write(phase, offset, length);
     return VH_SCRATCH3_WRITE_OK;
 }
