@@ -193,9 +193,8 @@ int main(void) {
 
         /* Exercise the real per-frame path: mutate borrowed RGB24 pixels, upload, then draw. */
         update_animation_marker(frame_number++);
-        glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
-        glClearColor(0.02f, 0.02f, 0.03f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
+        /* No caller-side clear: the RGB24 presenter owns the full drawable,
+         * including black letterbox borders, before the one buffer swap. */
         VH_ObserveCompletedRGB24(frame_pixels, sizeof(frame_pixels), FRAME_WIDTH, FRAME_HEIGHT);
         if (!vh_switch_observer_last_result()) {
             fprintf(stderr, "RGB24 observer presentation failed at frame %u\\n", frame_number);
