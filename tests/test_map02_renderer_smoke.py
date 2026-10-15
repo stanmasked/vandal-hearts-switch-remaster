@@ -7,6 +7,8 @@ import unittest
 from pathlib import Path
 
 from tools.instrument_map02_renderer import instrument
+from tools.extract_map02_trace import extract_trace_text
+from tools.verify_map02_trace import evaluate_trace
 
 C_FIXTURE = r'''
 #include <stdint.h>
@@ -72,6 +74,52 @@ int main(void) {
 
 
 class RendererSmokeTests(unittest.TestCase):
+    def _run_compiled_renderer(self, fixture_source):
+        compiler = shutil.which('gcc') or shutil.which('cc')
+        if not compiler:
+            self.skipTest('C compiler unavailable')
+        with tempfile.TemporaryDirectory() as temp:
+            src = Path(temp) / 'graphics_trace.c'
+            exe = Path(temp) / 'graphics_trace'
+            src.write_text(instrument(fixture_source), encoding='utf-8')
+            subprocess.run([compiler, '-std=c11', '-Wall', '-Wextra', '-Werror',
+                            '-DVH_TRACE_MAP02_DRAW', str(src), '-o', str(exe)],
+                           check=True, capture_output=True, text=True)
+            return subprocess.run([str(exe)], check=True,
+                                  capture_output=True, text=True).stdout
+
+    def test_compiled_renderer_to_extractor_to_validator_pipeline(self):
+        """Real compiled C draw emissions + synthetic post-load facts (no disc)."""
+        draw_stdout = self._run_compiled_renderer(C_FIXTURE)
+        post_load = (
+            '{"z":8,"x":19,"face":0,"stage":"post_load","gfx":641}\\n'
+            '{"z":11,"x":11,"face":0,"stage":"post_load","gfx":643}\\n'
+        )
+        noisy_capture = "PC boot output\\n" + post_load + "GPU initialized\\n" + draw_stdout
+        observations = extract_trace_text(noisy_capture)
+        report = evaluate_trace(observations)
+        self.assertEqual(report["errors"], [])
+        self.assertEqual(report["post_load_overall_variant"], "PRS")
+        self.assertEqual(report["draw_overall_variant"], "PRS")
+        self.assertEqual([row["draw_observation_count"] for row in report["observations"]], [1, 1])
+
+    def test_compiled_renderer_detects_post_load_draw_gfx_divergence(self):
+        """A deliberately modified synthetic draw sample must fail consistency."""
+        modified = C_FIXTURE.replace(
+            'gMapRowPointers[8][19].gfx[0] = 641;',
+            'gMapRowPointers[8][19].gfx[0] = 498;',
+        )
+        self.assertNotEqual(modified, C_FIXTURE)
+        draw_stdout = self._run_compiled_renderer(modified)
+        header = (
+            '{"z":8,"x":19,"face":0,"stage":"post_load","gfx":641}\\n'
+            '{"z":11,"x":11,"face":0,"stage":"post_load","gfx":643}\\n'
+        )
+        report = evaluate_trace(extract_trace_text(header + draw_stdout))
+        self.assertTrue(any("changed between loading and drawing" in error
+                            for error in report["errors"]))
+        self.assertEqual(report["observations"][0]["draw_variant"], "DAT")
+
     def test_generated_code_compiles_and_emits_two_jsonl_events(self):
         compiler = shutil.which('gcc') or shutil.which('cc')
         if not compiler:
