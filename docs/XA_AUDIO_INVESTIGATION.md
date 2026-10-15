@@ -479,3 +479,30 @@ creating the output directory**. The asserted fingerprint is stored under
 option leaves this field null, rather than inventing a trusted fingerprint.
 This is reference **identity pinning**, not proof that a genuinely
 independent decoder produced the WAV or that the audio is faithful.
+
+
+## Discover the audio streams before choosing file and channel
+
+On a locally owned full raw BIN, use the read-only discovery tool:
+
+```sh
+python3 tools/inventory_cdxa_streams.py /local/path/disc.bin \
+  --start-lba 19469 --sector-count 111072
+```
+
+The LBA window above is a **previously documented candidate resource range**;
+reconfirm it for the actual game dump, rather than treating it as a universal
+address. The tool scans raw 2352-byte sectors with matching Mode 2 duplicated
+subheaders and XA audio/Form 2 bits, then reports each file/channel pair's
+sector count, first and last absolute LBA, number of contiguous LBA runs,
+largest intervening LBA gap, coding-byte counts, and end-of-record/end-of-file
+flags. It reports unsupported coding profiles such as values other than 0x01
+without attempting to decode them. Invalid duplicated subheaders are counted,
+but not treated as trusted audio sectors.
+
+Use a discovered file/channel pair as the inputs for the narrower
+`run_cdxa_local_check.py` command, then verify the source and decode. The
+inventory only characterizes sector metadata: gaps can result from
+interleaving, and neither the sector list nor the flags prove playback timing,
+track identity, or decoding fidelity. No audio or original sector data is
+written or uploaded; stdout contains only counts and LBA metadata.
