@@ -622,3 +622,35 @@ Regression coverage includes a synthetic game process whose post-load
 and draw GFX both report PRS (641), while the same-frame/same-path visit
 reports DAT (498). The capture is correctly marked inconsistent even
 though the two original endpoints matched.
+
+
+## Strict full-trace ordering
+
+The full instrumentation created by `prepare_map02_pcport --full-trace`
+records a `visit` **before** a corresponding `draw` or `skip`
+during each pass. An exact (tile, face, frame, path) match is required:
+a visit in another frame or render path cannot justify a submission.
+The visit must also show `face_count > 0`; a zero-face tile cannot
+justify a subsequent face-0 draw. This is now enforced automatically by
+`tools.capture_map02_runtime` when its preparation manifest declares
+`trace_mode: full`.
+
+Manual validation of a full trace can enforce the same requirement:
+
+```sh
+python3 -m tools.verify_map02_trace /path/to/map02_trace.jsonl --require-full-trace
+python3 -m tools.extract_map02_trace /path/to/game_stdout.log \
+  -o /path/to/strict-map02.jsonl --require-full-trace
+```
+
+The flags reject missing/out-of-order context rather than silently
+accepting an otherwise matching PRS/DAT pair. Legacy traces from the
+older first-draw hooks have no frame/path/visit fields and remain
+supported **without** the flag.
+
+The pinned PC-port defines `GFX_NULL = 0`. A nonempty visit may
+legitimately record GFX 0 before a `null_gfx` skip, and the edge renderer
+can likewise reject a zero-indexed face as back-facing. The verifier
+accepts those observations; they do not satisfy the requirement to
+record a genuine `draw` for both disputed faces. These consistency
+checks still cannot prove visible pixels.
