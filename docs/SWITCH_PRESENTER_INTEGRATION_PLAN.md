@@ -181,3 +181,19 @@ This is a source-level portability finding, not a reproduced Switch compile erro
 - [ ] Ensure the Switch target applies the upstream game-source prelude (including the neutralized MIPS register hints) to the same source set that receives it in the PC CMake build.
 - [ ] Audit any remaining true `__asm__` blocks separately for x86/MIPS assumptions before compiling the full source set for AArch64.
 - [ ] Keep `PC_PORT` host-backed scratchpad alternatives enabled for the Switch target; do not accidentally compile the original fixed PS1 scratchpad branch.
+
+
+## Source audit update: the game-source compatibility profile is a set of coordinated switches
+
+A follow-up check of the pinned upstream tree shows that preserving only the register-hint prelude is insufficient. The desktop port already relies on a coordinated set of compile definitions and include-path choices:
+
+- `platform/pc/CMakeLists.txt` sets `PERMUTER;PC_PORT;PC_FEAT` for its region game sources.
+- `include/include_asm.h` emits raw MIPS assembly through `__asm__` unless `PERMUTER` (or another tooling mode) is defined. Under `PERMUTER`, `INCLUDE_ASM` and `INCLUDE_RODATA` become no-ops.
+- The upstream platform-specific `platform/pc/include/inline_gte.h` replaces GTE macros with calls into the software GTE implementation. The generic `include/inline_gte.h` instead contains MIPS instructions such as `lwc2` and `cop2`; selecting the generic header for the port target would bypass the software replacement.
+- `cmake_game_prelude.h` neutralizes the two MIPS register-binding hints `asm("t0")` and `asm("v1")`, but deliberately does not erase real `__asm__` blocks.
+
+### Switch build requirement
+
+The Switch target should inherit this PC-port compatibility profile deliberately: define `PC_PORT` and `PERMUTER` for the game-source target, preserve the prelude for register-binding hints, and make the PC-port software-GTE header resolve before the generic MIPS-only header. These choices must be scoped to the game-source target so that unrelated tools/probes are not changed.
+
+This is stronger than simply disabling one problematic assembler statement. It is based on the upstream CMake/header contracts; the complete Switch game-source compile has not yet been run, so the profile still needs validation with the actual target toolchain.
