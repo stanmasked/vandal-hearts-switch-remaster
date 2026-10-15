@@ -69,6 +69,46 @@ class Map02EpisodeTests(unittest.TestCase):
                             in e for e in result["errors"]))
         self.assertEqual(result["map_loads"][0]["errors"], [])
 
+    def test_complementary_partial_loads_cannot_create_a_fake_full_map(self):
+        # First load reached only face A, then the next load reports only B.
+        # Older splitting waited for a repeated face and incorrectly merged
+        # these into one apparently complete PRS map.
+        first = [full_events()[0], full_events()[2], full_events()[3]]
+        second = [full_events()[1], full_events()[4], full_events()[5]]
+        trace = first + second
+        report = evaluate_capture_session(iter(trace), require_full_trace=True)
+        self.assertEqual(report["map_load_count"], 2)
+        self.assertEqual([x["event_range"] for x in report["map_loads"]],
+                         [{"first": 1, "last": 3}, {"first": 4, "last": 6}])
+        self.assertTrue(any("map load 1: missing post_load observation" in e
+                            for e in report["errors"]))
+        self.assertTrue(any("map load 2: missing post_load observation" in e
+                            for e in report["errors"]))
+        self.assertTrue(any("map load 1: missing draw observation" in e
+                            for e in report["errors"]))
+        self.assertTrue(any("map load 2: missing draw observation" in e
+                            for e in report["errors"]))
+
+    def test_first_loader_face_of_reentered_map_may_be_different(self):
+        first = full_events()[:4]  # A loaded/drawn, B has no draw.
+        second = [full_events()[1], full_events()[0],
+                  *full_events()[2:]]  # B loader record arrives first.
+        report = evaluate_capture_session(iter(first + second),
+                                          require_full_trace=True)
+        self.assertEqual(report["map_load_count"], 2)
+        self.assertEqual([x["event_range"] for x in report["map_loads"]],
+                         [{"first": 1, "last": 4}, {"first": 5, "last": 10}])
+        self.assertTrue(report["map_loads"][0]["errors"])
+        self.assertEqual(report["map_loads"][1]["errors"], [])
+        self.assertTrue(any("map load 1:" in e for e in report["errors"]))
+
+    def test_load_records_before_any_renderer_stay_in_same_episode(self):
+        trace = [full_events()[0], full_events()[1]]
+        report = evaluate_capture_session(iter(trace), require_full_trace=True)
+        self.assertNotIn("map_loads", report)
+        self.assertEqual(report["post_load_overall_variant"], "PRS")
+        self.assertTrue(any("missing draw" in e for e in report["errors"]))
+
     def test_ambiguous_duplicate_loader_record_is_not_reinterpreted_as_new_map(self):
         events = observations()[:2] + [dict(observations()[0])]
         result = evaluate_capture_session(iter(events))
