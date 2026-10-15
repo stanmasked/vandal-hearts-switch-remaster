@@ -506,3 +506,5 @@ inventory only characterizes sector metadata: gaps can result from
 interleaving, and neither the sector list nor the flags prove playback timing,
 track identity, or decoding fidelity. No audio or original sector data is
 written or uploaded; stdout contains only counts and LBA metadata.
+
+The inventory now has a cross-tool synthetic regression test: for each discovered file/channel in an interleaved, nonzero-LBA disc window, the test extracts that stream, revalidates every sector against the raw BIN, and completes the one-command local decode. It also verifies that a stream with mixed/unsupported coding is reported by the inventory but **rejected** by the narrower decoder validation. This prevents silently treating every discovered XA stream as a supported 4-bit stereo stream. Synthetic integration coverage is not a substitute for running discovery against a real Vandal Hearts BIN.
