@@ -160,6 +160,24 @@ proof that the game data is incorrect until its image layout is known.
 Raw sectors with a mismatched XA subheader, wrong mode, or Form2
 are rejected; the tool does not validate ECC/EDC checksums.
 
+If your local installation also has `M_MAP02.DAT`, add its
+path to the same read-only command:
+
+```sh
+python3 -m tools.audit_map02_disc_prs \
+  --disc-image /your/owned/game.bin --layout mode2-2352 \
+  --dat-file /your/owned/M_MAP02.DAT --require-prior-provenance
+```
+
+The `dat_comparison` report then independently counts differing bytes
+between the decoded 616-tile PRS and the first 187264 bytes of DAT.
+It checks that **only** face-zero GFX bytes differ: PRS local 241 vs DAT
+98 at record 243, and PRS local 243 vs DAT 150 at record 319.
+The strict provenance option requires both this exact two-byte pattern
+and the archived decompressed PRS SHA-256. Test fixtures intentionally
+reproduce the two-byte pattern but cannot pass the authentic PRS digest.
+No PRS or DAT data is exported.
+
 A match with the archived **decompressed PRS SHA-256** and the local
 GFX pair 241/243 would support the archived disc-audit result with
 independent sector extraction. It would **not** prove that the running
