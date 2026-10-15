@@ -136,5 +136,27 @@ class DecodeCdXaAdpcmTests(unittest.TestCase):
             self.assertEqual(alias.read_bytes(), original)
 
 
+    def test_decode_failure_does_not_publish_partial_wav_or_replace_existing_output(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "payload.bin"
+            output = root / "out.wav"
+            malformed = bytearray(AUDIO_BYTES_PER_SECTOR)
+            malformed[GROUP_SIZE + 4] = 1  # Break the duplicate parameter copies in group 2.
+            source.write_bytes(bytes(malformed))
+            output.write_bytes(b"preserve existing output")
+
+            with self.assertRaisesRegex(ValueError, "copies do not match"):
+                decode_payload_file(source, output, extracted_groups=True)
+            self.assertEqual(output.read_bytes(), b"preserve existing output")
+            self.assertEqual(list(root.glob(".out.wav.*.tmp")), [])
+
+            output.unlink()
+            with self.assertRaisesRegex(ValueError, "copies do not match"):
+                decode_payload_file(source, output, extracted_groups=True)
+            self.assertFalse(output.exists())
+            self.assertEqual(list(root.glob(".out.wav.*.tmp")), [])
+
+
 if __name__ == "__main__":
     unittest.main()
