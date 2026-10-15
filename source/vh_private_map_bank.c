@@ -49,6 +49,9 @@ int vh_private_map_bank_load_pair(const char *texture_path,
         fread(record, 1, VH_MAP_RECORD_BYTES, land_file)
             != VH_MAP_RECORD_BYTES)
         goto cleanup;
+    memcpy(candidate.slot_uvwh, record, VH_MAP_SLOTS * 4u);
+    memcpy(candidate.slot_clut_ids, record + VH_MAP_SLOTS * 4u,
+           VH_MAP_SLOTS);
     memcpy(candidate.uvwh, record + slot * 4u, 4);
     /* The CLUT selector block begins after 257 four-byte UVWH entries. */
     candidate.local_clut_id = record[VH_MAP_SLOTS * 4u + slot];
