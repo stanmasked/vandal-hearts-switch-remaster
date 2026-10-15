@@ -573,3 +573,33 @@ and objects, invalid frame recovery, and a malformed-stage event passing
 through a simulated game process, raw-byte capture, event extraction and
 the final JSON report. This strengthens the diagnostics, but does not
 resolve the original PRS/DAT discrepancy without actual gameplay evidence.
+
+
+## Frame/path GFX consistency checks
+
+The full-trace renderer records a `visit` when it enters a tile renderer,
+then either a `draw` immediately before `AddPrim()` or a `skip`
+describing a back-facing/empty-texture rejection. The validator now
+correlates these events using **tile coordinates, face, frame and render
+path** (`normal`, `edge`, or `overhead`).
+
+For each context with a nonempty tile and a matching event, the face-0
+GFX index at `visit` must agree with the later `draw` or `backface`
+observation. A conflict is an error **even if `post_load` and `draw`
+alone agree**. The report records the number of such checks per face
+in `visit_draw_contexts_checked` and
+`visit_backface_contexts_checked`. Multiple different visit GFX values
+for the same frame and path also produce an error.
+
+There are important boundaries to this check. Draws without a `frame`
+or `path` (legacy trace format), visits of a tile with `face_count=0`,
+and visits from *different* renderer paths are not silently paired.
+Absence of a corresponding visit currently leaves this particular
+cross-stage check at zero; it is not interpreted as proof that the face
+was never reached. These checks detect contradictory diagnostic samples,
+not the final visible pixels or which original resource is canonical.
+
+Regression coverage includes a synthetic game process whose post-load
+and draw GFX both report PRS (641), while the same-frame/same-path visit
+reports DAT (498). The capture is correctly marked inconsistent even
+though the two original endpoints matched.
