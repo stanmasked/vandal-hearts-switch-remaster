@@ -327,6 +327,17 @@ jobs:
                   raise SystemExit(f"Original STP ABR0 blend mismatch: {blended}")
               if max(abs(a-b) for a,b in zip(opaque, (0, 255, 0))) > 36:
                   raise SystemExit(f"Non-STP texel incorrectly blended: {opaque}")
+          # SPRT's tpage comes from the preceding DR_MODE OT packet, not
+          # from a per-sprite tpage field. Native x=0..2,y=3..5.
+          for frame_image in (im, after):
+              for name, (x, y), expected in (
+                  ("SPRT red", (210, 280), (255, 0, 0)),
+                  ("SPRT green", (290, 280), (0, 255, 0)),
+              ):
+                  observed = frame_image.getpixel((x, y))
+                  print(f"Original SPRT via DR_MODE {name}: {observed}")
+                  if max(abs(a-b) for a,b in zip(observed, expected)) > 36:
+                      raise SystemExit(f"Original SPRT tpage/CLUT mismatch: {name}")
           # The center pixel is deliberately dynamic: R=12->99, G=12->99,
           # B=frame*3 modulo 256. Verify the intended channel changes,
           # not merely a window animation elsewhere in the screenshot.
