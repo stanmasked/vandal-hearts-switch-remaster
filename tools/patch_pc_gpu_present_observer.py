@@ -20,6 +20,13 @@ TARGET_GL_HEADER = """#if defined(VH_SWITCH_EXCLUSIVE_PRESENT)
 #else
 #include <SDL2/SDL_opengl.h>
 #endif"""
+TIMING_ANCHOR = "    (void)vramH;"
+TIMING_EXCLUSIVE = """    (void)vramH;
+#if defined(VH_SWITCH_EXCLUSIVE_PRESENT)
+    /* Desktop-present timing accumulators are not read by the target path. */
+    (void)pt0; (void)pt1; (void)pt2; (void)pt3;
+    (void)s_ptConv; (void)s_ptOsd; (void)s_ptPresent; (void)s_ptN;
+#endif"""
 PRESENT_TAIL = "    /* Scale the native w*h framebuffer up to fill the current window"
 TARGET_TAIL_PREFIX = "#if !defined(VH_SWITCH_EXCLUSIVE_PRESENT) /* desktop GL draw and swap */\n"
 BEGIN = "    /* VH_SWITCH_OBSERVER_BEGIN: post-composition RGB24 boundary */"
@@ -62,11 +69,14 @@ def patch(source: str) -> str:
         raise ValueError("expected precisely one desktop window guard")
     if source.count(EVENT_PUMP) != 1:
         raise ValueError("expected precisely one desktop SDL event pump")
+    if source.count(TIMING_ANCHOR) != 1:
+        raise ValueError("expected pinned GPU timing anchor")
     if source.count(GL_HEADER) != 1 or source.count(PRESENT_TAIL) != 1:
         raise ValueError("expected pinned desktop OpenGL header and presentation tail")
     if not source.rstrip().endswith("}"):
         raise ValueError("expected final PC_GpuPresent closing brace")
     result = (source.replace(GL_HEADER, TARGET_GL_HEADER, 1)
+              .replace(TIMING_ANCHOR, TIMING_EXCLUSIVE, 1)
               .replace(WINDOW_GUARD, TARGET_WINDOW_GUARD, 1)
               .replace(EVENT_PUMP, TARGET_EVENT_PUMP, 1)
               .replace(ANCHOR, ANCHOR + "\n\n" + INSERT, 1))
