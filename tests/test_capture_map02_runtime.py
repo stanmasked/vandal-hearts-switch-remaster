@@ -60,6 +60,13 @@ def fixture(root: Path, mode="complete", modified=False, trace_mode="legacy"):
         events[2]["gfx"] = 498
     if mode == "bad_stage":
         events[2]["stage"] = []
+    if mode == "visit_draw_mismatch":
+        # Loading and drawing both appear PRS, but the full renderer entry
+        # observed DAT in the same frame/path: this must not pass unnoticed.
+        events[2].update({"frame": 8, "path": "normal"})
+        events.insert(2, {"z": 8, "x": 19, "face": 0,
+                          "stage": "visit", "gfx": 498, "frame": 8,
+                          "path": "normal", "face_count": 4})
     if mode == "empty":
         events = []
     lines = ["booting pc-port", *(json.dumps(ev) for ev in events), "normal shutdown"]
@@ -124,6 +131,21 @@ class CaptureMap02RuntimeTests(unittest.TestCase):
                     self.assertTrue((dest / "game_stdout.log").exists())
                     report = json.loads((dest / "capture_report.json").read_text())
                     self.assertTrue(report["analysis"]["errors"])
+
+    def test_runtime_capture_detects_visit_draw_gfx_mismatch(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            exe, trace_dir = fixture(base, mode="visit_draw_mismatch")
+            output = base / "conflict-run"
+            self.assertEqual(capture(exe, trace_dir, output), 2)
+            report = json.loads((output / "capture_report.json").read_text())
+            self.assertTrue(any("mismatch between visit and draw" in error
+                                for error in report["analysis"]["errors"]))
+            self.assertEqual(report["analysis"]["post_load_overall_variant"], "PRS")
+            self.assertEqual(report["analysis"]["draw_overall_variant"], "PRS")
+            self.assertEqual(report["analysis"]["observations"][0]
+                             ["visit_draw_contexts_checked"], 1)
+            self.assertEqual(len((output / "map02_trace.jsonl").read_text().splitlines()), 5)
 
     def test_malformed_stage_in_game_stdout_yields_report_not_exception(self):
         with tempfile.TemporaryDirectory() as folder:
