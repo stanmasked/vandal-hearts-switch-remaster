@@ -50,6 +50,17 @@ This is a source-based lifecycle recommendation. It has not yet been compiled or
 5. **Lifecycle.** Initialise the presenter only after the GLES2 context is current. Destroy its texture, vertex buffer, and program while that same context is still current; only then destroy the context/window. Handle partial init and repeated init/shutdown without leaks or double destruction.
 6. **Keep non-rendering assumptions separate.** A working presenter does not port bootstrap memory mapping, input mapping, audio, worker threads, or user-supplied disc-data access. Those remain independent acceptance gates.
 
+## Build-system integration findings
+
+The pinned upstream `platform/pc/CMakeLists.txt` currently:
+
+- unconditionally requires SDL2 and OpenAL, and requires desktop `OpenGL` whenever the host is not Apple;
+- compiles `pc_gpu_window.c` into the common `vh_objs` object library;
+- links the executable to `OpenGL::GL` on every non-Apple platform;
+- links pthread-backed `Threads::Threads` for the threaded software rasterizer.
+
+Therefore a Switch build cannot be enabled by changing only the C source. The CMake port needs a target-specific platform branch: omit the desktop OpenGL package/link on the Switch target, provide GLES2 headers/library and SDL2 from the Switch toolchain, and explicitly decide how OpenAL/audio and worker threads are supplied or gated. Avoid globally replacing desktop dependencies because the Windows/Linux builds must remain intact. These dependency decisions are not yet tested against the upstream build.
+
 ## Test plan and acceptance gates
 
 - [x] Unit tests for RGB24 frame validity, bottom-up row access, and aspect-preserving rectangle calculation exist in the Switch research repository.
