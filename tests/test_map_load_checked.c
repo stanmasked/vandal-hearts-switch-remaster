@@ -56,6 +56,34 @@ int main(void) {
         for (size_t i = 0; i < 8; ++i) assert(decoded[i] == 0x6d);
     }
 
+    /* Capacity sweep: no partial publish, no writes past decoded length. */
+    {
+        const uint8_t fixture_again[] = {4, 0, 0, 0, 0, 'R', 'P', 'G'};
+        memcpy(compressed, fixture_again, sizeof fixture_again);
+        for (size_t capacity = 0; capacity <= 64; ++capacity) {
+            memset(decoded, 0x6d, 128);
+            written = 999;
+            status = vh_map_load_checked(&mem, sizeof fixture_again,
+                                         capacity, &decode, &written);
+            if (capacity == 0) {
+                assert(status == VH_MAP_LOAD_PREFLIGHT_FAILED);
+                assert(decode == VH_MAP_DECODE_INVALID_ARGUMENT);
+                assert(written == 0);
+            } else if (capacity < 3) {
+                assert(status == VH_MAP_LOAD_DECODE_FAILED);
+                assert(decode == VH_MAP_DECODE_OUTPUT_FULL);
+                assert(written == 0);
+            } else {
+                assert(status == VH_MAP_LOAD_OK);
+                assert(decode == VH_MAP_DECODE_OK);
+                assert(written == 3);
+                assert(memcmp(decoded, "RPG", 3) == 0);
+            }
+            for (size_t i = capacity >= 3 ? 3 : 0; i < 128; ++i)
+                assert(decoded[i] == 0x6d);
+        }
+    }
+
     assert(vh_map_load_checked(&mem, 8, 8, NULL, &written)
            == VH_MAP_LOAD_PREFLIGHT_FAILED);
     assert(vh_map_load_checked(&mem, 8, 8, &decode, NULL)
