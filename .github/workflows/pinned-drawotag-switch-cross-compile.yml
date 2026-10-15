@@ -7,6 +7,7 @@ on:
     paths:
       - ".github/workflows/pinned-drawotag-switch-cross-compile.yml"
       - "docs/UPSTREAM_DRAWOTAG_SWITCH_AUDIT.md"
+      - "tools/switch_psyq_compat.h"
   workflow_dispatch:
 
 permissions:
