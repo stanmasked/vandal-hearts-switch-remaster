@@ -12,6 +12,10 @@ CHUNK_FRAMES = 4096
 
 
 def compare_wavs(candidate: Path, reference: Path) -> dict[str, object]:
+    # Comparing a WAV to itself cannot validate a second decoder. Resolve
+    # both aliases and hard links before opening either input.
+    if candidate.resolve() == reference.resolve() or candidate.samefile(reference):
+        raise ValueError("candidate and reference must be distinct files")
     try:
         with wave.open(str(candidate), "rb") as left, wave.open(str(reference), "rb") as right:
             expected = (2, 2, 37800, "NONE")
