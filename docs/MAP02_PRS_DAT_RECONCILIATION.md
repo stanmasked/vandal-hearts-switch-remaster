@@ -92,8 +92,22 @@ python3 -m tools.audit_map02_load_source   /path/to/VandalHearts-PcPort/src/stat
 ```
 
 The upstream checkout is also audited in
-`.github/workflows/map02-upstream-trace.yml`. No disc data is
-needed for this source-level finding.
+`.github/workflows/map02-upstream-trace.yml`. The extended audit
+additionally checks two pinned upstream files:
+
+- `include/cd_files.h` assigns `CDF_M_MAP02_PRS = 151`.
+- `src/core/cd.c` maps this index in `gCdFiles` to starting sector
+  `0x1bcc`, 12 sectors (`0x0c`), and destination
+  `gScratch1_801317c0`. `LoadCdFile()` initializes its sector
+  and count directly from the table.
+
+Use `--cd-source /path/to/src/core/cd.c --cd-header
+/path/to/include/cd_files.h` to include these pinned CD-table checks
+in the source audit. The resulting JSON includes the table entry,
+sector count and both source fingerprints. No game disc is needed
+to establish this source-level linkage. These are numbers from the
+**US PC-port's compiled CD file table**, not independent measurements
+of a physical game disc.
 
 **Limits:** requesting `CDF_M_MAP02_PRS` in C does not prove which
 actual disc bytes were supplied, whether another runtime routine
