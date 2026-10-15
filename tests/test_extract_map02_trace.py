@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.extract_map02_trace import extract_trace_text
+from tools.extract_map02_trace import extract_trace_lines, extract_trace_text
 
 
 def entries():
@@ -37,6 +37,27 @@ class ExtractMap02TraceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'line 2'):
             extract_trace_text(text)
         self.assertEqual(extract_trace_text('{bad unrelated json}\n' + json.dumps(entries()[0])), [entries()[0]])
+
+    def test_line_iterator_handles_large_noisy_capture_without_reading_all(self):
+        """Reader receives an iterator; unrelated log lines need no buffering."""
+        def lines():
+            for _ in range(20000):
+                yield "GPU diagnostic message\n"
+            for event in entries():
+                yield json.dumps(event) + "\n"
+        self.assertEqual(extract_trace_lines(lines()), entries())
+
+    def test_cli_can_extract_trace_after_invalid_utf8_console_bytes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "mixed.log"
+            payload = b"GPU logger: " + bytes((255, 254, 10))
+            payload += capture(entries()).encode("utf-8")
+            source.write_bytes(payload)
+            cmd = [sys.executable, "-m", "tools.extract_map02_trace",
+                   str(source), "--require-complete"]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual([json.loads(line) for line in result.stdout.splitlines()], entries())
 
     def test_empty_capture_fails(self):
         with self.assertRaisesRegex(ValueError, 'no Map02'):
