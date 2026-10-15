@@ -56,6 +56,34 @@ jobs:
           set -euxo pipefail
           make test-sanitize
 
+      - name: Cross-compile isolated RGB24 presentation modules for AArch64
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          COMPILER="$DEVKITA64/bin/aarch64-none-elf-gcc"
+          GLES_INCLUDE="$DEVKITPRO/portlibs/switch/include"
+          test -f "$GLES_INCLUDE/GLES2/gl2.h"
+          mkdir -p build/aarch64-frame
+          for unit in \
+            source/frame_conversion.c \
+            source/rgb24_scratch.c \
+            source/switch_rgb24_presenter.c \
+            source/switch_frame_bridge.c \
+            source/switch_completed_frame.c \
+            source/switch_converted_frame.c \
+            source/switch_managed_frame.c \
+            source/switch_present_hook.c \
+            source/switch_upstream_observer.c; do
+            "$COMPILER" -std=c11 -Wall -Wextra -Werror -O2 \
+              -I"$GLES_INCLUDE" -I"$DEVKITPRO/libnx/include" -Isource \
+              -c "$unit" -o "build/aarch64-frame/$(basename "${unit%.c}").o"
+          done
+          "$DEVKITA64/bin/aarch64-none-elf-ar" rcs \
+            build/aarch64-frame/libvhframe.a build/aarch64-frame/*.o
+          "$DEVKITA64/bin/aarch64-none-elf-ar" t build/aarch64-frame/libvhframe.a
+
       - name: Build and validate NRO
         shell: bash
         run: |
