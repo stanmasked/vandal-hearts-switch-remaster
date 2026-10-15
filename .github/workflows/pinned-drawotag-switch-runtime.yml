@@ -10,6 +10,8 @@ on:
       - "probes/pinned_drawotag_switch_smoke.c"
       - "source/vh_private_map_bank.*"
       - "tests/test_private_map_bank.c"
+      - "tools/stage_vh_private_map_bank.py"
+      - "tests/test_stage_vh_private_map_bank.py"
       - "tests/test_drawotag_texture_fixtures.py"
       - "tests/test_inspect_psx_tim.py"
       - "tools/inspect_psx_tim.py"
@@ -39,6 +41,8 @@ jobs:
         run: python3 tests/test_inspect_psx_tim.py
       - name: Verify original map texture bank layout and BIN extraction
         run: python3 tests/test_inspect_vh_map_texture_bank.py
+      - name: Test local-only private SD asset staging
+        run: python3 tests/test_stage_vh_private_map_bank.py
       - name: Host-test private SD map bank file validation
         run: |
           gcc -std=c11 -Wall -Wextra -Werror -O2 \
