@@ -112,6 +112,74 @@ class RuntimeTraceTests(unittest.TestCase):
         zero_face = evaluate_trace(entries + [{**visit, "face_count": 0, "gfx": 641}])
         self.assertTrue(any("zero-face visit" in e for e in zero_face["errors"]))
 
+    def test_matching_visit_and_draw_in_same_frame_and_path(self):
+        entries = observations()
+        entries[2].update({"frame": 17, "path": "normal"})
+        entries.insert(2, {"z": 8, "x": 19, "face": 0,
+                           "stage": "visit", "gfx": 641,
+                           "frame": 17, "path": "normal", "face_count": 4})
+        report = evaluate_trace(entries)
+        self.assertEqual(report["errors"], [])
+        self.assertEqual(report["observations"][0]["visit_draw_contexts_checked"], 1)
+        self.assertEqual(report["observations"][0]["visit_backface_contexts_checked"], 0)
+
+    def test_visit_draw_gfx_conflict_detected_despite_matching_load_and_draw(self):
+        entries = observations()
+        entries[2].update({"frame": 21, "path": "normal"})
+        entries.append({"z": 8, "x": 19, "face": 0, "stage": "visit",
+                        "gfx": 498, "frame": 21, "path": "normal", "face_count": 2})
+        report = evaluate_trace(entries)
+        self.assertTrue(any("mismatch between visit and draw" in e for e in report["errors"]))
+        self.assertEqual(report["observations"][0]["post_load_variant"], "PRS")
+        self.assertEqual(report["observations"][0]["draw_variant"], "PRS")
+
+    def test_visit_and_backface_rejection_must_agree_within_context(self):
+        entries = observations()
+        entries.extend([
+            {"z": 11, "x": 11, "face": 0, "stage": "visit",
+             "gfx": 643, "frame": 9, "path": "edge", "face_count": 2},
+            {"z": 11, "x": 11, "face": 0, "stage": "skip",
+             "gfx": 550, "frame": 9, "path": "edge", "reason": "backface"},
+        ])
+        report = evaluate_trace(entries)
+        self.assertTrue(any("mismatch between visit and backface" in e
+                            for e in report["errors"]))
+        self.assertEqual(report["observations"][1]["visit_backface_contexts_checked"], 1)
+
+    def test_different_render_paths_in_same_frame_not_falsely_compared(self):
+        entries = observations()
+        entries[2].update({"frame": 5, "path": "normal"})
+        entries.extend([
+            {"z": 8, "x": 19, "face": 0, "stage": "visit",
+             "gfx": 498, "frame": 5, "path": "edge", "face_count": 4},
+            {"z": 8, "x": 19, "face": 0, "stage": "visit",
+             "gfx": 641, "frame": 5, "path": "normal", "face_count": 4},
+        ])
+        report = evaluate_trace(entries)
+        self.assertEqual(report["errors"], [])
+        self.assertEqual(report["observations"][0]["visit_draw_contexts_checked"], 1)
+
+    def test_repeated_visits_with_different_gfx_are_explicitly_flagged(self):
+        entries = observations()
+        entries.extend([
+            {"z": 8, "x": 19, "face": 0, "stage": "visit",
+             "gfx": 641, "frame": 3, "path": "normal", "face_count": 4},
+            {"z": 8, "x": 19, "face": 0, "stage": "visit",
+             "gfx": 498, "frame": 3, "path": "normal", "face_count": 4},
+        ])
+        report = evaluate_trace(entries)
+        self.assertTrue(any("changed among visits" in e for e in report["errors"]))
+
+    def test_zero_face_visit_is_not_comparable_to_draw(self):
+        entries = observations()
+        entries[2].update({"frame": 3, "path": "normal"})
+        entries.append({"z": 8, "x": 19, "face": 0,
+                        "stage": "visit", "gfx": 0, "face_count": 0,
+                        "frame": 3, "path": "normal"})
+        report = evaluate_trace(entries)
+        self.assertEqual(report["errors"], [])
+        self.assertEqual(report["observations"][0]["visit_draw_contexts_checked"], 0)
+
     def test_backface_skip_explains_missing_submission(self):
         entries = observations()[:-1]
         entries.append({"z": 11, "x": 11, "face": 0, "stage": "skip",
