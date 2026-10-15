@@ -49,6 +49,37 @@ int main(void) {
     assert(layout.sheet_lengths[1] == 12);
     write32(data + 20, 12);
     assert(layout.strips_offset == 32);
+    /* Requested strip is bounded independently from metadata/sheet spans.
+     * Index 1 is available only when the second full 0x3000-byte strip
+     * is present. Rejections must leave the output offset unchanged. */
+    {
+        size_t strip_offset = SIZE_MAX;
+        assert(vh_unit_file_layout(data, 32, &layout));
+        assert(!vh_unit_file_strip_span(NULL, 32, 0, &strip_offset));
+        assert(!vh_unit_file_strip_span(&layout, 32, 0, NULL));
+        assert(!vh_unit_file_strip_span(&layout, 32, 0, &strip_offset));
+        assert(strip_offset == SIZE_MAX);
+        assert(vh_unit_file_strip_span(&layout, 32 + VH_UNIT_STRIP_BYTES,
+                                       0, &strip_offset));
+        assert(strip_offset == 32);
+        strip_offset = SIZE_MAX;
+        assert(!vh_unit_file_strip_span(&layout,
+                     32 + 2 * VH_UNIT_STRIP_BYTES - 1, 1, &strip_offset));
+        assert(strip_offset == SIZE_MAX);
+        assert(vh_unit_file_strip_span(&layout,
+                     32 + 2 * VH_UNIT_STRIP_BYTES, 1, &strip_offset));
+        assert(strip_offset == 32 + VH_UNIT_STRIP_BYTES);
+        strip_offset = SIZE_MAX;
+        assert(!vh_unit_file_strip_span(&layout,
+                     32 + 6 * VH_UNIT_STRIP_BYTES, 2, &strip_offset));
+        assert(!vh_unit_file_strip_span(&layout,
+                     32 + 6 * VH_UNIT_STRIP_BYTES, 6, &strip_offset));
+        assert(strip_offset == SIZE_MAX);
+        layout.strips_offset = SIZE_MAX;
+        assert(!vh_unit_file_strip_span(&layout,
+                     32 + 2 * VH_UNIT_STRIP_BYTES, 0, &strip_offset));
+        assert(strip_offset == SIZE_MAX);
+    }
     puts("Unit file layout checks passed.");
     return 0;
 }
