@@ -152,7 +152,8 @@ def main() -> int:
         )
         if not patch:
             raise ValueError("empty patch")
-        args.output.write_text(patch, encoding="utf-8")
+        with args.output.open("x", encoding="utf-8") as output:
+            output.write(patch)
     except (OSError, ValueError, subprocess.CalledProcessError) as exc:
         parser.error(str(exc))
     print(f"Wrote optional instrumentation patch to {args.output}")
