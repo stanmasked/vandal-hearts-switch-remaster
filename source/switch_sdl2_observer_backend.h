@@ -6,6 +6,8 @@
 
 /* Intermediate Switch SDL2/GLES2 backend, not an original-game entry point.
  * Single-threaded. Shut down before terminating SDL; registration is global.
+ * Zero-initialize VhSwitchSdl2ObserverBackend before first init. A second init
+ * on a live handle fails without changing or unregistering the active owner.
  */
 typedef struct {
     SDL_Window *window;
