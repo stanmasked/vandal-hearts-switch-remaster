@@ -103,6 +103,13 @@ class PrepareMap02SessionTests(unittest.TestCase):
             self.assertIn("VH_DISC_IMAGE=" + shlex.quote(str(disc)), script)
             self.assertIn("VH_KROM_SOURCE=" + shlex.quote(str(krom)), script)
             self.assertIn("--require-complete", script)
+            self.assertIn("tools.report_map02_bridge", script)
+            self.assertIn("bridge_review.md", script)
+            self.assertIn("bridge_review.json", script)
+            self.assertLess(script.index("tools.verify_map02_capture"),
+                            script.index("tools.report_map02_bridge"))
+            self.assertLess(script.index("tools.report_map02_bridge"),
+                            script.index('if [ "$capture_status" -ne 0 ]'))
             self.assertIn("preflight_at_build.json", script)
             self.assertIn("tools.preflight_map02_pcport", script)
             self.assertIn("--disc-image " + shlex.quote(str(disc)), script)
