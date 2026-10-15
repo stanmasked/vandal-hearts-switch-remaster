@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Dry PS1 SPU stereo note gains and up-to-32-voice offline mixer.
+"""Dry PS1 SPU stereo gains, 32-voice manual mixer and 20-slot timeline.
 
 Models the VandalHearts-PcPort SEQ gain order and pc_spu.c's dry
-per-frame summation, without reverb, voice stealing or an SEQ event parser.
+per-frame summation, including explicitly scheduled slot recycling and\nstealing boundaries. No reverb or live SEQ engine.
 All PCM is generated or loaded locally. This is *not* a Switch backend.
 """
 from __future__ import annotations
