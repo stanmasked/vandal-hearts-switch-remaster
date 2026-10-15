@@ -5,7 +5,7 @@ static int registered;
 static int last_result;
 
 int vh_switch_observer_register(const VhSwitchPresentHook *hook) {
-    if (!hook || !hook->presenter || !hook->query_viewport || !hook->swap_buffers)
+    if (registered || !hook || !hook->presenter || !hook->query_viewport || !hook->swap_buffers)
         return 0;
     active_hook = *hook;
     registered = 1;
