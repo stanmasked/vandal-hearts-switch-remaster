@@ -72,6 +72,12 @@ def inventory_streams(source: Path, *, start_lba: int = 0,
             item["end_of_record_sectors"] += int(bool(submode & 0x01))
             item["end_of_file_sectors"] += int(bool(submode & 0x80))
     ordered = [streams[key] for key in sorted(streams)]
+    for item in ordered:
+        # The current decoder accepts only coding byte 0x01. A mixed-profile
+        # stream must not be auto-selected even when most sectors are valid.
+        supported = set(item["coding_counts"]) == {"0x01"}
+        item["decoder_profile_supported"] = supported
+        item["expected_pcm_frames"] = item["audio_sectors"] * 2016 if supported else None
     return {
         "start_lba": start_lba, "sectors_scanned": scanned,
         "audio_sectors": sum(item["audio_sectors"] for item in ordered),
