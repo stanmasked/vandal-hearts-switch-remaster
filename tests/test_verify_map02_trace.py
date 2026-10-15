@@ -107,6 +107,17 @@ class RuntimeTraceTests(unittest.TestCase):
         self.assertTrue(any("clut must be an integer" in e
                             for e in evaluate_trace(entries)["errors"]))
 
+    def test_metadata_first_appearing_in_later_frame(self):
+        entries = observations()
+        entries[2]["frame"] = 1
+        entries.append({"z": 8, "x": 19, "face": 0, "stage": "draw",
+                        "gfx": 641, "frame": 2, "clut": 35})
+        entries.append({"z": 8, "x": 19, "face": 0, "stage": "draw",
+                        "gfx": 641, "frame": 3, "clut": 33})
+        report = evaluate_trace(entries)
+        self.assertTrue(any("clut changed across frames" in e for e in report["errors"]))
+        self.assertEqual(report["observations"][0]["draw_metadata"]["clut"], 35)
+
     def test_json_lines_loader_output(self):
         entries = observations()
         payload = "\n".join(json.dumps(entry) for entry in entries) + "\n"
