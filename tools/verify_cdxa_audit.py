@@ -66,6 +66,8 @@ def verify_audit(audit_file: Path, source_bin: Path,
             or not isinstance(streams, dict)
             or streams != {expected_stream: verified["audio_sectors"]}):
         raise ValueError("file/channel selection differs from saved audit")
+    # File hashes alone do not authenticate an editable audit's verdict.
+    # Re-derive it from the exact PCM comparison instead.
     if "comparison" in audit:
         if reference_wav is None:
             raise ValueError("reference WAV required to recheck saved comparison")
@@ -75,8 +77,21 @@ def verify_audit(audit_file: Path, source_bin: Path,
         current = compare_wavs(wav, reference_wav)
         if current != saved:
             raise ValueError("saved WAV comparison differs from current files")
-    elif reference_wav is not None:
-        raise ValueError("audit has no reference comparison to recheck")
+        expected_status = ("exact_reference_pcm_match" if current["exact_match"]
+                           else "reference_pcm_mismatch")
+        if audit.get("status") != expected_status:
+            raise ValueError("saved audit status contradicts WAV comparison")
+        provenance = audit.get("reference_provenance")
+        if (not isinstance(provenance, dict)
+                or provenance.get("status") != "user_supplied_not_independently_verified"):
+            raise ValueError("saved reference provenance status is invalid")
+    else:
+        if reference_wav is not None:
+            raise ValueError("audit has no reference comparison to recheck")
+        if audit.get("status") != "decoded_and_source_verified":
+            raise ValueError("saved audit status contradicts source-only verification")
+        if "reference_provenance" in audit:
+            raise ValueError("source-only audit cannot claim reference provenance")
     return {
         "status": "audit_files_verified",
         "source_bin_sha256": expected["source_bin_sha256"][0],
