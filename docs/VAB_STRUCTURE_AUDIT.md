@@ -349,9 +349,13 @@ This is not a calibration of real PS1 hardware.
 The dry mixer runs at 44,100 Hz with per-voice Gaussian sample fetch,
 ADSR advancement, individual pitch cursors and independent L/R gains.
 It sums all active voice contributions in floating point, truncates each
-channel once, and clips the mixed output to signed 16-bit PCM. It can
-schedule up to 32 overlapping notes across 20 seconds, but **does not
-implement the game's voice allocator or voice stealing**.
+channel once, and clips the mixed output to signed 16-bit PCM.
+Manual chords still accept at most **32 total notes**. SEQ schedules
+use a separate **20-slot** timeline renderer that can reuse those
+slots across up to 2048 note-on events during the 20-second host
+diagnostic window. This follows the PC port's division between the
+20 SEQ slots (0–19) and SFX slots (20–23); it does not imply
+32 simultaneously available music voices.
 
 `tools/render_vab_chord.py` turns a user-authored **JSON test schedule**
 into a 16-bit **stereo** WAV from matching, locally owned VH and VB files:
@@ -393,19 +397,22 @@ All timeline numbers are **44,100-Hz output frames**, not SEQ ticks.
 Velocity/channel volume defaults to 127, channel pan to 64 (centre),
 start frame to 0 and release tail to 0 if omitted. The default
 interpolation is integer Gaussian; `--interpolation nearest` allows
-baseline comparison. The schedule is limited to 64 KiB, 1–32 voices,
-and a maximum 20-second output. Destination files must be new: VH, VB,
-the schedule file and existing outputs are never overwritten.
+baseline comparison. A manual chord supports 1–32 notes. A timeline
+from SEQ may hold 1–2048 notes with explicit `voice_slot` indices
+0–19; concurrent overlap in one slot is rejected. JSON input is
+limited to 64 KiB and the output to 20 seconds. Destination files
+must be new: VH, VB, the schedule file and existing outputs are
+never overwritten.
 
 The tests verify hard left/right pan, pan-before-squaring,
 integer-level stage truncation, polyphonic sum-and-clip,
 exact synthetic stereo PCM, delayed note starts, validation, and
 source-file immutability.
 
-This tool is a **dry diagnostic** driven by manually specified notes,
-not a soundtrack renderer. It does not parse a PS1 SEQ, implement
-correct original note timing, perform voice allocation/stealing,
-reverb, precise PlayStation pitch quantization, or run on Switch.
+This tool remains a **dry diagnostic**, not a soundtrack renderer.
+SEQ-to-JSON conversion now models 20 reusable music slots, while
+real-time note scheduling, exact ADSR liveness, reverb, hardware pitch
+quantization and Switch playback remain unimplemented.
 Original game audio remains local and must not be committed.
 
 ## Host audio CI
@@ -478,12 +485,35 @@ never overwrite any input or existing output, and no copyrighted assets
 are committed. The test suite uses only small fabricated SEQ/VAB/VAG
 fixtures and checks the full read-only path to stereo WAV.
 
-**Acceptance boundaries:** this is an **offline diagnostic** rather than
-a music player. A schedule supports a maximum of **32 note-ons in
-total**, not the game's 32 *simultaneous* SPU voices. There is no
-voice stealing/reallocation, automatic sequence repeats, full per-frame
-controller changes, sustain pedal simulation, pitch bend, block-accurate
-PC-port sequencer advancement, reverb or original PlayStation hardware
-pitch rounding. Sequencer-to-SPU audio is not wired into the Nintendo
-Switch NRO. A real-bank listening comparison and a real Switch run
-are still required before claiming music-port fidelity.
+**Acceptance boundaries:** this remains an **offline diagnostic**,
+not a music player. The source PC port allocates 20 music voices
+and reserves other slots for SFX. The converter now uses a 20-slot
+allocator: lowest free slot first, then round-robin stealing only
+when every music slot is busy. On stealing, the former note is
+truncated and its ownership is cleared, so a later stale Note Off
+cannot stop the new owner.
+
+**Approximation:** an ADSR release voice is considered busy for the
+specified diagnostic `release_frames`, not its true live SPU envelope
+lifetime. Same-frame notes stolen before producing a sample are
+omitted. This permits up to 2048 note-on events across 20 seconds,
+but does not implement true SPU voice occupancy, infinite or finite
+sequence repeats, sustain pedal simulation, live controller changes,
+pitch bend, block-accurate PC-port scheduler advancement, reverb or
+exact PlayStation pitch rounding. Sequencer audio is not wired into
+the Nintendo Switch NRO. Real-bank listening comparison and an
+actual Switch run are still required for music-port acceptance.
+
+## Voice-slot regression coverage
+
+`tests/test_seq_voice_slots.py` validates the 20-slot allocator against
+synthetic streams with 45 serial note-ons, a 22-note overflow causing
+round-robin steals of slots 0 and 1, a later stale note-off, and
+same-frame steals. The streaming mixer verifies that two simple
+non-overlapping voices produce byte-for-byte the same PCM as the
+earlier static mixer. Overlapping schedule intervals for a single
+slot are rejected.
+
+The dedicated `Host SPU audio regressions` workflow runs these tests,
+rather than relying on the unrelated texture-only workflow. A passing
+host regression is evidence of synthetic behavior only.
