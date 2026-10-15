@@ -154,6 +154,19 @@ jobs:
           print("Observer screenshot distinct sampled RGB colors:", distinct)
           if distinct < 40:
               raise SystemExit("No sufficiently varied RGB24 frame detected")
+          # Corner colors check bottom-up orientation and exact RGB channel order.
+          # Quad 9x7 fills a centered 926x720 viewport in 1280x720.
+          markers = (
+              ("top-left red", (255, 0, 0), (250, 90)),
+              ("top-right green", (0, 255, 0), (1030, 90)),
+              ("bottom-left blue", (0, 0, 255), (250, 630)),
+              ("bottom-right yellow", (255, 255, 0), (1030, 630)),
+          )
+          for name, expected, (x, y) in markers:
+              observed = im.getpixel((x, y))
+              print(f"Observer marker {name}: expected {expected}, observed {observed}")
+              if max(abs(a - b) for a, b in zip(observed, expected)) > 36:
+                  raise SystemExit(f"RGB order or frame orientation mismatch: {name}")
           previous = im.crop((320, 100, 960, 620)).resize((160, 130))
           following = after.crop((320, 100, 960, 620)).resize((160, 130))
           changed = sum(max(abs(a[k] - b[k]) for k in range(3)) > 15
