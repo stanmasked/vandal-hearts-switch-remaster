@@ -46,6 +46,8 @@ def capture(executable: Path, trace_directory: Path, output_directory: Path,
     trace_directory = trace_directory.resolve(strict=True)
     provenance_file = trace_directory / "source_provenance.json"
     provenance = json.loads(provenance_file.read_text(encoding="utf-8"))
+    if type(provenance) is not dict:
+        raise ValueError("source provenance must be a JSON object")
     if provenance.get("trace_mode") not in ("legacy", "full"):
         raise ValueError("unrecognized trace_mode in source provenance")
     if provenance.get("upstream_reference") != PINNED_UPSTREAM_REF:
