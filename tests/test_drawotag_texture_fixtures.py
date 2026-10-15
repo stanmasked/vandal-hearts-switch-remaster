@@ -162,6 +162,7 @@ class TextureFixtureTests(unittest.TestCase):
             'textured15': (2, 0, 192, 0),
             'transparent15': (2, 0, 256, 0),
             'semi15': (2, 0, 320, 0),
+            'preview': (0, 0, 320, 0),
             'abr_add': (2, 1, 320, 0),
             'abr_sub': (2, 2, 320, 0),
             'abr_quarter': (2, 3, 320, 0),
