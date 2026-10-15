@@ -729,12 +729,62 @@ charset-2 SHA-256** required by the pinned upstream font generator. Both
 KROMDAT input and a 512 KiB user-owned BIOS image (charset at offset
 `0x66000`) are supported. Wrong-region data and arbitrary placeholder bytes
 are rejected before attempting a full build. The public-source CI checks
-that this expected digest still matches the pinned generator; the disc probe only confirms the
-raw-sector/ISO structure, not the title, region, or ownership. A successful
-preflight **does not prove** that the full PC-port compiles, runs, reaches
-map 11 or displays the bridge correctly.
+that this expected digest still matches the pinned generator. The disc
+probe checks 2352-byte sectors/ISO9660 structure and, using the same
+fixed-LBA PS-X EXE and memory-card identifiers as pinned `libcd.c`,
+distinguishes USA, Asia and Japan releases. This US diagnostic build accepts
+USA and Asia; Japanese and unrecognized discs are rejected. These short
+signatures do **not** authenticate the complete image, prove ownership, or
+guarantee uncorrupted data sectors. A successful preflight **does not prove**
+that the full PC-port compiles, runs, reaches map 11, or displays the bridge
+correctly.
 
 Run synthetic preflight regression tests with
 ```sh
 python3 -m unittest discover -s tests -p 'test_preflight_map02_pcport.py' -v
 ```
+
+
+## One-command local full-trace session preparation
+
+Use the higher-level session preparer to combine the exact-resource preflight,
+pinned upstream source-blob verification, full visit/skip/draw overlay
+generation and a **user-executed** build/capture/replay script:
+
+```sh
+python3 -m tools.prepare_map02_session \
+  /path/to/VandalHearts-PcPort \
+  /path/to/new-map02-session \
+  --disc-image '/path/to/your Vandal Hearts (USA).bin' \
+  --krom-source /path/to/KROMDAT.BIN \
+  --no-webp --no-hdvideo
+```
+
+The pinned build generator must find the byte-exact US `SLUS_004.47` in
+the **checkout root**; the disc image and KROM/BIOS input may live elsewhere.
+The session directory must be new and outside the upstream checkout. Nothing
+is compiled or launched by the preparer, and no game data is copied or
+uploaded. If any required resource or dependency fails preflight, no session
+directory is created.
+
+When ready to build and play locally, run the generated script deliberately:
+
+```sh
+sh /path/to/new-map02-session/build_capture_verify.sh
+```
+
+The script uses a unique `BUILD_DIR` under the user's PC-port checkout,
+sets `VH_KROM_SOURCE` and `VH_DISC_IMAGE` to point to the owned inputs,
+compiles the two full-trace replacements via the overlay, starts the resulting
+US PC-port executable, and saves live game output in the session's
+`capture/` directory. Exit the game after visiting **map 11** and showing
+both target bridge faces. If the game fails or is interrupted, the script
+still invokes the **non-strict evidence verifier** on any captured partial
+journal. Only a complete, internally consistent capture passes the final
+`--require-complete` replay.
+
+The generated `session_plan.json` records intended file locations and
+the shell script SHA-256; it says `build_executed: false` because a
+prepared plan is **not** evidence that a real build or game run occurred.
+CI covers this generation using synthetic paths and checks `sh -n` syntax;
+it does not run a proprietary disc or reach the bridge.
