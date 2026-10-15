@@ -89,3 +89,37 @@ ffprobe -v error -show_entries stream=codec_name,sample_rate,channels,bits_per_s
 ```
 
 The `jq` command exits unsuccessfully if the report contains any coding byte other than `0x01`; do not proceed to decode in that case. Review the report's LBA list and non-contiguous transitions before judging duration or continuity: the current payload stream concatenates selected sectors and does not reconstruct missing-sector timing. Finally listen to the WAV and check channel balance, pitch, clicks, gaps, and duration. A valid WAV header and successful decode are necessary checks, not proof of faithful restoration.
+
+
+## First real-disc validation: bounded sample, not a full encode
+
+Before processing the entire XA resource, validate a short local sector window.
+For example, the following scans 256 raw sectors from the previously documented
+starting LBA. This is only a starting point, not a confirmed single continuous
+audio channel:
+
+```sh
+python3 tools/inspect_cdxa.py /path/to/local-disc-image.bin --start-lba 19469 --sector-count 256
+python3 tools/extract_cdxa_payload.py /path/to/local-disc-image.bin ./xa-sample.bin \
+  --start-lba 19469 --sector-count 256 --file-number 1 --channel 0 --report ./xa-sample.json
+jq -e '(.audio_form2_sectors_written > 0) and ((.coding_info_counts | keys) == ["0x01"])' ./xa-sample.json
+python3 tools/decode_cdxa_adpcm.py ./xa-sample.bin ./xa-sample.wav --extracted-groups
+ffprobe -v error -show_entries stream=sample_rate,channels,duration -of default=noprint_wrappers=1 ./xa-sample.wav
+```
+
+The sample must be **listened to**, not just checked for valid WAV structure.
+Verify the chosen file/channel combination from the report; it may be absent
+or may contain unrelated/interleaved material. The extractor intentionally
+concatenates qualifying sectors and does **not** reconstruct CD playback timing.
+
+For the supported decoder profile each selected XA sector yields **2016 stereo
+sample frames**, so the decoded WAV duration is
+`audio_form2_sectors_written * 2016 / 37800` seconds. This is the duration
+of concatenated decoded frames, **not necessarily disc playback duration**.
+At CD speed, 75 raw sectors pass per second and XA channels may be interleaved;
+using the raw LBA span as WAV duration is therefore also incorrect.
+
+If audio contains clicks, silence, pitch errors, or discontinuities, do not
+label it restored. Keep the source BIN and resulting payload/WAV local and
+record only non-copyrighted diagnostics (counts, channel, coding information,
+LBA gaps, decode errors) in the repository.
