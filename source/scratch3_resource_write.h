@@ -43,4 +43,23 @@ static inline VhScratch3WriteResult vh_scratch3_resource_write(
     return VH_SCRATCH3_WRITE_OK;
 }
 
+/* Addressed copy for sources already resident in emulated PS1 RAM or
+ * scratchpad. Both source and destination are span-checked before any
+ * writes or map-validity changes. Uses memmove for aliased RAM.
+ * Unlike the raw-pointer entry point, a forged host pointer cannot be
+ * passed through this interface.
+ */
+static inline VhScratch3WriteResult vh_scratch3_resource_copy_ps1(
+    VhMapUnitPhase *phase, const VhPs1MemoryView *memory,
+    uint32_t source_address, size_t destination_offset, size_t length) {
+    uint8_t *source;
+    if (phase == NULL || memory == NULL)
+        return VH_SCRATCH3_WRITE_INVALID_ARGUMENT;
+    source = vh_ps1_memory_span(memory, source_address, length);
+    if (source == NULL)
+        return VH_SCRATCH3_WRITE_OUT_OF_RANGE;
+    return vh_scratch3_resource_write(phase, memory,
+                                     destination_offset, source, length);
+}
+
 #endif
