@@ -58,7 +58,7 @@ class DecodeCdXaAdpcmTests(unittest.TestCase):
         # retain the unbounded predictor values throughout the group.
         h1, h2 = 32767, -32768
         for _ in range(112):
-            sample = 7 + (115 * h1 - 52 * h2 + 32) >> 6
+            sample = 7 + ((115 * h1 - 52 * h2 + 32) >> 6)
             h2, h1 = h1, sample
         self.assertEqual(history[0], [h1, h2])
 
