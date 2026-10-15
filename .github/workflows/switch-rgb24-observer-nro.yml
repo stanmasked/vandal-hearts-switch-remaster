@@ -6,6 +6,8 @@ on:
       - feat/upstream-rgb24-observer-binding
     paths:
       - "probes/upstream_rgb24_observer_smoke.c"
+      - "probes/sdl2_observer_backend_lifecycle.c"
+      - "source/switch_sdl2_observer_backend.*"
       - "source/switch_upstream_observer.*"
       - "source/switch_present_hook.*"
       - "source/switch_completed_frame.*"
@@ -63,6 +65,14 @@ jobs:
           export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
           export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$DEVKITPRO/portlibs/switch/bin:$PATH"
           make upstream-observer-probe
+          make observer-backend-lifecycle-probe
+
+      - name: Upload lifecycle NRO
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdl2-observer-backend-lifecycle-nro
+          path: build/sdl2-observer-lifecycle-probe.nro
+          if-no-files-found: error
 
       - name: Upload NRO
         uses: actions/upload-artifact@v4
