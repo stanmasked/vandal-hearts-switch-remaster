@@ -147,7 +147,8 @@ static void VH_Map02TraceSkip(const MapTileModel *tile, int face, int gfx,
             "#endif\n"
         )
         body = body.replace(visit_anchor, visit_hook + visit_anchor, 1)
-        expr = re.compile(r'(?m)^([ \t]*)AddPrim\(ot \+ OT_SIZE - otz, poly\);        matches = list(expr.finditer(body))
+        expr = re.compile(r'(?m)^([ \t]*)AddPrim\(ot \+ OT_SIZE - otz, poly\);$')
+        matches = list(expr.finditer(body))
         if len(matches) != 1:
             raise ValueError(f"{name}: expected one AddPrim, found {len(matches)}")
         match = matches[0]
