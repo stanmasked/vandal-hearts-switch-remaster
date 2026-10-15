@@ -99,6 +99,35 @@ class RuntimeTraceTests(unittest.TestCase):
         self.assertEqual(report["errors"], [])
         self.assertEqual(report["observations"][0]["draw_observation_count"], 2)
 
+    def test_two_render_paths_in_one_frame_are_distinct_observations(self):
+        entries = observations()
+        entries[2].update({"frame": 1, "path": "normal", "u": 240, "clut": 35})
+        entries.append({"z": 8, "x": 19, "face": 0, "stage": "draw",
+                        "gfx": 641, "frame": 1, "path": "edge",
+                        "u": 240, "clut": 35})
+        report = evaluate_trace(entries)
+        self.assertEqual(report["errors"], [])
+        self.assertEqual(report["observations"][0]["draw_observation_count"], 2)
+        self.assertEqual(report["observations"][0]["draw_paths"], ["edge", "normal"])
+
+    def test_same_path_in_same_frame_still_rejected(self):
+        entries = observations()
+        entries[2].update({"frame": 1, "path": "normal"})
+        entries.append(dict(entries[2]))
+        self.assertTrue(any("duplicate draw observation" in e
+                            for e in evaluate_trace(entries)["errors"]))
+
+    def test_invalid_or_mixed_draw_path_annotations_rejected(self):
+        invalid = observations()
+        invalid[2].update({"frame": 1, "path": "unknown"})
+        self.assertTrue(any("path must be" in e for e in evaluate_trace(invalid)["errors"]))
+        mixed = observations()
+        mixed[2]["frame"] = 1
+        mixed.append({"z": 8, "x": 19, "face": 0, "stage": "draw",
+                      "gfx": 641, "frame": 2, "path": "normal"})
+        self.assertTrue(any("mixed annotated and unannotated" in e
+                            for e in evaluate_trace(mixed)["errors"]))
+
     def test_changed_gfx_in_later_frame_detected(self):
         entries = observations()
         entries[2]["frame"] = 1
