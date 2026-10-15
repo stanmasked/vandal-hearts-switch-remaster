@@ -515,3 +515,33 @@ track identity, or decoding fidelity. No audio or original sector data is
 written or uploaded; stdout contains only counts and LBA metadata.
 
 The inventory now has a cross-tool synthetic regression test: for each discovered file/channel in an interleaved, nonzero-LBA disc window, the test extracts that stream, revalidates every sector against the raw BIN, and completes the one-command local decode. It also verifies that a stream with mixed/unsupported coding is reported by the inventory but **rejected** by the narrower decoder validation. This prevents silently treating every discovered XA stream as a supported 4-bit stereo stream. Synthetic integration coverage is not a substitute for running discovery against a real Vandal Hearts BIN.
+
+
+## SEQ/SPU music is a separate implementation track
+
+The CD-XA tools in this document target streamed movie/spell audio, **not**
+battle/background music. The native PC-port audio subsystem documents that the
+score uses PsyQ `libsnd` SEQ events against VAB banks, rendered through the
+SPU; specifically `PlayBattleBGM` requests `AUDIO_CMD_PLAY_SEQ`.
+
+Switch audio acceptance must therefore have a distinct SEQ/SPU test plan:
+
+1. Verify `SsSeqOpen(seqData, vabId)` binds to the explicitly requested
+   music VAB rather than whichever bank most recently loaded.
+2. Validate VAB program tables, packed 16-tone blocks (skip empty programs),
+   tone key ranges and VAG body bounds, including partial VB transfers.
+3. Test SEQ running status, note-on/off, velocity-zero note-off, program
+   changes, controller volume/pan, tempo and end events. PS1 SEQ meta tempo
+   events have three raw tempo bytes rather than a Standard MIDI File length.
+4. Decode VAG ADPCM into instrument samples; exercise looping, ADSR, pitch,
+   24-voice allocation and reverb separately from the SEQ parser.
+5. Advance the sequencer on the audio sample clock, prevent orphaned voices
+   on scene transitions, and compare a game-owned local capture against an
+   independently produced/reference hardware rendering.
+6. Keep CD-XA and SEQ/SPU regression results separate. A passing CD-XA
+   integration test cannot certify music playback.
+
+Reference: https://github.com/HalmyLyseas/VandalHearts-PcPort/blob/master/docs/pc-port/subsystems/spu.md
+
+This section is an implementation checklist, **not** a claim that the
+Switch-target SEQ/SPU renderer or hardware playback has passed.
