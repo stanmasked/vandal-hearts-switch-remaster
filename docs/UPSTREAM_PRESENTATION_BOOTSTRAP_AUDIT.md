@@ -106,3 +106,24 @@ The synthetic frame is stored bottom-up and has distinct red, green, blue, and y
 The isolated presenter has now passed the invalid-metadata recovery check in [run 38694397097](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38694397097). The next integration boundary is the final presentation block in `PC_GpuPresent()`: retain conversion, movie-frame handling, subtitles and OSD, and replace only the desktop GL raster calls for a dedicated Switch build. The implementation plan records the ES2 context setup, frame contract, upload/draw sequence, lifecycle ordering, and acceptance tests in [SWITCH_PRESENTER_INTEGRATION_PLAN.md](SWITCH_PRESENTER_INTEGRATION_PLAN.md).
 
 The upstream source is still only audited, not modified or built for Switch. The Switch research repository does not contain the full upstream PC source tree; integration and physical-console validation remain open.
+
+
+## 7. Bootstrap portability gate — follow-up source review (2026-10-15)
+
+The pinned `platform/pc/src/pc_bootstrap.c` and `docs/pc-port/bootstrap.md` show that the bootstrap is more than fixed-address allocation:
+
+- Startup constructor ordering reserves PSX memory, loads configuration, then performs bootstrap work including writable-data preparation, fault-handler setup, disc validation, and GPU initialisation.
+- The code reserves 2 MiB at `0x80000000` and 1 KiB at `0x1f800000`; failure currently emits a warning and continues, even though direct-address game accesses can then fail later.
+- POSIX builds include `sigaction`/signal-stack crash handling, x86-specific low-address read decoding, and `mprotect`-based writable-data retry. These are not portable abstractions that can be replaced wholesale by a Switch stub.
+- The documented low-address-read emulation is limited to native i386. macOS, Windows, and the default Linux x86-64 path rely on source-level guards for these reads; unsupported accesses remain fatal.
+- Bootstrap also derives deployment paths from the executable location and mounts a local disc image before opening the GPU window. Those path and media assumptions need a Switch-specific storage/configuration design.
+
+### Required investigation before an upstream Switch build
+
+1. Inventory every direct dereference of PSX RAM and Scratchpad addresses and identify the minimum memory ranges/aliasing semantics actually used by the selected region.
+2. Determine whether Switch user-mode virtual memory can safely reserve those exact addresses. If it cannot, design a source-level address translation or backing-memory strategy; do not silently ignore reservation failure.
+3. Inventory each fault-handler behavior separately. Do not port host signal handlers blindly, and do not disable them until their relevant recovery behavior has been proven unnecessary on the target.
+4. Replace executable-relative disc/config discovery with an explicit Switch data root and report missing/invalid local data before GPU initialisation.
+5. Only after those decisions, use a source-pinned, data-local build harness to expose compile/link errors. CI must not upload, cache, or package the user's disc image, BIOS/font source, or extracted game assets.
+
+**Status:** this is a source-based risk inventory, not a Switch memory-layout validation or a compiled upstream patch. The current Switch repository still does not contain the full upstream source tree.
