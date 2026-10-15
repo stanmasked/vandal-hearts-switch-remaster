@@ -77,6 +77,13 @@ def main():
     errors = check_raw_records(report)
     print(json.dumps({
         "source_sha256": report["input_sha256"],
+        "block_sha256": report["block_sha256"],
+        "block_base_offset": report["block_base_offset"],
+        "record_offsets": [
+            {"gfx": record["gfx"], "absolute_input_offset": record["absolute_input_offset"],
+             "absolute_clut_index_offset": record["absolute_clut_index_offset"]}
+            for record in report["records"]
+        ],
         "map_number": report["map_number"],
         "single_block": report["single_block"],
         "errors": errors,
