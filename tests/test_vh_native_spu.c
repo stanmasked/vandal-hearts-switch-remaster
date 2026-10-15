@@ -79,6 +79,30 @@ static void test_pitch_one_shot_and_polyphony(void) {
     assert(!vh_native_spu_voice_active(&synth, 0));
 }
 
+static void test_gaussian_integer_voice_and_loop_history(void) {
+    const int16_t pcm[] = {4000, 8000, 12000, 16000,
+                           20000, 24000, 28000};
+    const int16_t expected[] = {
+        0, 518, 3991, 7974, 11959, 15944, 18144, 13719, 15944
+    };
+    vh_native_spu_reset(&synth);
+    assert(synth.interpolation == VH_SPU_NEAREST);
+    assert(vh_native_spu_set_interpolation(&synth, VH_SPU_GAUSSIAN) == 0);
+    assert(vh_native_spu_set_interpolation(&synth, 2u) == -1);
+    assert(synth.interpolation == VH_SPU_GAUSSIAN);
+    assert(vh_native_spu_note_on(&synth, 0, pcm, 7,
+                                 2, 5, 0x1000, 15, 0, 1, 0) == 0);
+    vh_native_spu_render(&synth, out, 9);
+    for (unsigned i = 0; i < 9; ++i) {
+        assert(out[2u * i] == expected[i]);
+        assert(out[2u * i + 1u] == 0);
+    }
+    assert(synth.voice[0].looped);
+    assert(vh_native_spu_voice_active(&synth, 0));
+    assert(vh_native_spu_set_interpolation(&synth, VH_SPU_NEAREST) == 0);
+    assert(vh_native_spu_set_interpolation(NULL, VH_SPU_GAUSSIAN) == -1);
+}
+
 static void test_20_voice_round_robin(void) {
     vh_native_spu_reset(&synth);
     for (unsigned i = 0; i < VH_NATIVE_MUSIC_VOICES; ++i) {
@@ -121,6 +145,7 @@ int main(void) {
     test_adpcm_into_native_mixer();
     test_envelope_release_and_free_slot();
     test_pitch_one_shot_and_polyphony();
+    test_gaussian_integer_voice_and_loop_history();
     test_20_voice_round_robin();
     test_rejected_params_and_ring_backpressure();
     puts("native SPU decoder -> 20 voices -> PCM ring: PASS (synthetic)");
