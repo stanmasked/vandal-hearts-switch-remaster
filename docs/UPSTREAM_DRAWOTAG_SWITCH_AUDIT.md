@@ -99,3 +99,14 @@ Commit `6c2b840e` corrects a double-escaped raw regular expression in `tests/tes
 Commits `62e8c706` and `fde40ec6` strengthen the **asset-free preflight only**. The Python suite now has **nine test methods** and cross-checks the original guest-probe declarations for the 4bpp and 8bpp palette initializers (including C zero-initialization of unused entries), all seven `setRECT` + `LoadImage` upload associations, VRAM bounds/disjointness, five `setTPage` selections, the indexed `setClut` coordinates, and `SetSemiTrans(&semi15,1)`. The CI step runs immediately after checkout, **before** the expensive SDL2 source build, so a fixture regression fails fast.
 
 An independent source-contract audit against GitHub's current `probes/pinned_drawotag_switch_smoke.c` verified seven declared pixel/palette arrays, seven disjoint upload rectangles, five texture-page settings and the early CI step order: **all matched**. This is *not* a completed run of the Python nine-test suite, an NRO build or NeXium screenshots. The GitHub connector's commit status / pull-request workflow lookup did not provide a current push-triggered run to verify. Therefore the last confirmed native runtime remains the earlier TILE/F4-only NeXium run #38806009204. Do not report 4bpp/8bpp/15bpp, alpha or STP native GPU acceptance as passed until the newer run evidence can be retrieved.
+
+## Confirmed native FT4 / CLUT / transparency / STP NeXium acceptance (CI #38810768669)
+
+**New evidence supersedes the earlier pending-status paragraphs above.** [GitHub Actions run #38810768669](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38810768669), built from `fde40ec662a6249c72bc1d499b655efe685ba378`, finished **successfully**, including both `cross-compile` and `Run original DrawOTag raster NRO in NeXium` jobs. The cross-compile log reports **Ran 9 tests in 0.003s** (successful job), and the runtime log verifies a 1280×720 screenshot with all four exact corner markers. It reports on both frames:
+- 4bpp CLUT: alternating red (255,0,0) / green (0,255,0) exactly;
+- 8bpp CLUT: blue (0,0,255) / white (255,255,255) exactly;
+- 15bpp direct: yellow (255,255,0) / magenta (255,0,255) exactly;
+- STP ABR0: marked red over animated background (173,49,123) then (173,49,41); unmarked green (0,255,0) on both frames;
+- animated background center (99,99,247) then (99,99,90); **9,409** changed sampled pixels.
+
+All programmatic screenshot assertions, including the zero-texel transparency checks, finished without error. The result proves asset-free native 4/8/15bpp `POLY_FT4`, CLUT, zero texel and ABR0 STP acceptance in NeXium using original pinned `libgpu.c` / `pc_raster.c` and SDL2/GLES2. It does **not** prove real game assets, an authentic game frame, other ABR modes, handheld hardware or real gameplay. The `fde40ec6` version was the latest source-bearing change before the subsequent documentation-only commits.
