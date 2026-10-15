@@ -132,7 +132,11 @@ def main() -> int:
                         help="require both documented two-byte changes and original decompressed PRS SHA-256")
     parser.add_argument("--runtime-capture", type=Path,
                         help="JSON list of two post-LoadMap face observations to classify")
+    parser.add_argument("--require-runtime-match", action="store_true",
+                        help="fail unless both captured faces consistently match the same PRS or DAT variant")
     args = parser.parse_args()
+    if args.require_runtime_match and args.runtime_capture is None:
+        parser.error("--require-runtime-match requires --runtime-capture")
     try:
         report = compare_map02(args.decompressed_prs.read_bytes(), args.dat.read_bytes())
         if args.runtime_capture is not None:
@@ -143,7 +147,8 @@ def main() -> int:
         parser.error(str(exc))
     print(json.dumps(report, indent=2))
     return int((args.require_prior_variant and not report["matches_prior_disc_audit"]) or
-               (args.require_prior_provenance and not report["matches_prior_disc_audit_with_provenance"]))
+               (args.require_prior_provenance and not report["matches_prior_disc_audit_with_provenance"]) or
+               (args.require_runtime_match and report["runtime_capture_comparison"]["overall_classification"] not in ("prs", "dat")))
 
 
 if __name__ == "__main__":
