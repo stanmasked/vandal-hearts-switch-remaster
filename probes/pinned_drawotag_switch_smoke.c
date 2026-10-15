@@ -11,6 +11,7 @@
 #include "pc_platform.h"
 #include "switch_sdl2_observer_backend.h"
 #include "vh_private_map_bank.h"
+#include "vh_private_map_geometry.h"
 
 extern int PC_GpuInit(int width, int height, const char *title);
 extern void PC_GpuGetWindowSize(int *width, int *height, int *scale);
@@ -34,6 +35,8 @@ static unsigned short map_tex_words[64 * 256];
 static unsigned short map_clut_words[16 * 16];
 static VhPrivateMapBank private_map;
 static int private_map_active;
+static VhPreviewGeometry private_geometry;
+static int private_geometry_active;
 static const unsigned char map_land_record[1797] = {
     [0] = 16, [1] = 16, [2] = 15, [3] = 15,
     [257 * 4] = 32,              /* Slot 0 -> first local CLUT row */
@@ -314,7 +317,8 @@ static int draw_private_map_preview(void) {
     DISPENV display;
     unsigned int ot[1];
     TILE clear;
-    POLY_FT4 preview;
+    POLY_FT4 preview, terrain_faces[VH_MAP_MODEL_MAX_FACES];
+    unsigned face_index, face_drawn = 0;
     RECT page = {320, 0, 64, 256};
     RECT palette = {672, 496, 16, 16};
     if (!private_map_active) return 0;
@@ -325,15 +329,57 @@ static int draw_private_map_preview(void) {
     LoadImage(&page, (unsigned int *)map_tex_words);
     LoadImage(&palette, (unsigned int *)map_clut_words);
     ClearOTag(ot, 1);
-    SetPolyFT4(&preview);
-    setXYWH(&preview, 1, 1, 10, 7);
-    setUVWH(&preview,
-            private_map.uvwh[0], private_map.uvwh[1],
-            private_map.uvwh[2], private_map.uvwh[3]);
-    setRGB0(&preview, 128, 128, 128);
-    setTPage(&preview, 0, 0, 320, 0);
-    setClut(&preview, 672, 496 + private_map.local_clut_id - 32);
-    AddPrim(&ot[0], &preview);
+    if (private_geometry_active) {
+        /* Source-authored MapTileModel face indices/vertices, independent
+         * GFX slot -> LAND_DT UVWH / CLUT. This intentionally uses a
+         * deterministic ORTHOGRAPHIC preview transform, NOT yet the
+         * original GTE camera / RenderMapTile terrain renderer. */
+        for (face_index = 0; face_index < private_geometry.face_count;
+             ++face_index) {
+            const VhPreviewFace *face = &private_geometry.faces[face_index];
+            unsigned slot, palette_id;
+            const unsigned char *uv;
+            int sx[4], sy[4];
+            unsigned i;
+            POLY_FT4 *poly;
+            if (face->local_gfx <= 0) continue;
+            slot = (unsigned)face->local_gfx;
+            if (slot >= VH_MAP_SLOTS) continue; /* another texture page */
+            uv = private_map.slot_uvwh[slot];
+            palette_id = private_map.slot_clut_ids[slot];
+            if (palette_id < 32u || palette_id > 47u ||
+                uv[2] < 1 || uv[3] < 1 ||
+                (unsigned)uv[0] + uv[2] >= 256u ||
+                (unsigned)uv[1] + uv[3] >= 256u)
+                return 0;
+            for (i = 0; i < 4; ++i) {
+                sx[i] = 6 + face->vertex[i][0] / 8;
+                sy[i] = 4 + face->vertex[i][2] / 8 -
+                        face->vertex[i][1] / 16;
+            }
+            poly = &terrain_faces[face_drawn++];
+            SetPolyFT4(poly);
+            setXY4(poly, sx[0], sy[0], sx[1], sy[1],
+                         sx[2], sy[2], sx[3], sy[3]);
+            setUVWH(poly, uv[0], uv[1], uv[2], uv[3]);
+            setRGB0(poly, 128, 128, 128);
+            setTPage(poly, 0, 0, 320, 0);
+            setClut(poly, 672, 496 + palette_id - 32);
+            AddPrim(&ot[0], poly);
+        }
+        if (!face_drawn) return 0;
+    } else {
+        /* Previously accepted single authored-texture patch baseline. */
+        SetPolyFT4(&preview);
+        setXYWH(&preview, 1, 1, 10, 7);
+        setUVWH(&preview,
+                private_map.uvwh[0], private_map.uvwh[1],
+                private_map.uvwh[2], private_map.uvwh[3]);
+        setRGB0(&preview, 128, 128, 128);
+        setTPage(&preview, 0, 0, 320, 0);
+        setClut(&preview, 672, 496 + private_map.local_clut_id - 32);
+        AddPrim(&ot[0], &preview);
+    }
     tile(&clear, 0, 0, 12, 9, 0, 0, 0);
     AddPrim(&ot[0], &clear);
     DrawOTag(ot);
@@ -415,6 +461,16 @@ int main(void) {
                     (unsigned)private_map.local_clut_id,
                     (unsigned)private_map.uvwh[0],
                     (unsigned)private_map.uvwh[1]);
+            {
+                int geometry_status = vh_private_map_geometry_load(
+                    VH_MAP_GEOMETRY_PATH, 6, 3, &private_geometry);
+                if (geometry_status < 0) {
+                    fprintf(stderr,
+                            "Private map11 geometry file malformed; refusing to draw\n");
+                    goto done;
+                }
+                private_geometry_active = geometry_status == 1;
+            }
         }
     }
     ResetGraph(0);
