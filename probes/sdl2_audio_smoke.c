@@ -3,6 +3,8 @@
 #include <stdio.h>
 
 #include "vh_audio_stream.h"
+#include "vh_native_spu.h"
+#include "vh_spu_adpcm.h"
 
 #define WIDTH 1280
 #define HEIGHT 720
@@ -13,8 +15,10 @@
  * PCM or fills underruns with silence. Device locking protects the ring.
  */
 static VhAudioStream pcm_stream;
+static VhNativeSpu native_spu;
+static int16_t decoded_vag[VH_SPU_ADPCM_BLOCK_FRAMES * 2u];
 static SDL_atomic_t callback_count = {0};
-static uint32_t test_phase = 0;
+
 
 static void audio_callback(void *userdata, Uint8 *stream, int length) {
     (void)userdata;
@@ -29,28 +33,45 @@ static void audio_callback(void *userdata, Uint8 *stream, int length) {
     SDL_AtomicAdd(&callback_count, 1);
 }
 
-static void generate_synthetic_stereo(int16_t *out) {
-    for (size_t i = 0; i < VH_AUDIO_BLOCK_FRAMES; ++i) {
-        /* 441 Hz square wave, generated at 44.1 kHz (100 frames/cycle).
-         * Different amplitudes test correct left/right sample ordering.
-         */
-        const int16_t sample = ((test_phase++ % 100u) < 50u) ? 5500 : -5500;
-        out[i * VH_AUDIO_CHANNELS] = sample;
-        out[i * VH_AUDIO_CHANNELS + 1] = (int16_t)(sample / 2);
-    }
+/* Synthetic, headerless PS1 VAG: two 28-sample ADPCM blocks, one
+ * positive and one negative. The second block flags end+repeat.
+ * No game VAG, SEQ or VAB files are included or loaded.
+ */
+static const uint8_t synthetic_vag[32] = {
+    0x02, 0x04, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22,
+    0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22,
+    0x02, 0x03, 0xee, 0xee, 0xee, 0xee, 0xee, 0xee,
+    0xee, 0xee, 0xee, 0xee, 0xee, 0xee, 0xee, 0xee,
+};
+
+static int init_synthetic_spu(void) {
+    VhSpuAdpcmInfo info;
+    if (vh_spu_adpcm_decode(
+        synthetic_vag, sizeof(synthetic_vag), decoded_vag,
+        sizeof(decoded_vag) / sizeof(decoded_vag[0]), &info) != 0)
+        return -1;
+    if (info.frames != 56 || info.loop_start_frame != 0 ||
+        info.loop_end_frame != 56) return -1;
+    vh_native_spu_reset(&native_spu);
+    const int slot = vh_native_spu_allocate_slot(&native_spu);
+    if (slot < 0) return -1;
+    return vh_native_spu_note_on(
+        &native_spu, (unsigned)slot, decoded_vag, info.frames,
+        info.loop_start_frame, info.loop_end_frame, 0x1000,
+        0x000f, 0, 0.6f, 0.3f);
 }
 
 static void pump_synthetic_audio(SDL_AudioDeviceID device) {
     int16_t block[VH_AUDIO_BLOCK_FRAMES * VH_AUDIO_CHANNELS];
-    /* Do not make or decode PCM in the audio callback. Keep about 2048
-     * frames (~46ms) ready using short locks for producer ring writes.
+    /* Audio rendering is on the producer thread OUTSIDE the device lock:
+     * only enqueueing and queue-length inspection need SDL synchronization.
      */
     for (int i = 0; i < 5; ++i) {
         SDL_LockAudioDevice(device);
         const size_t queued = vh_audio_stream_queued(&pcm_stream);
         SDL_UnlockAudioDevice(device);
         if (queued >= 2048u) break;
-        generate_synthetic_stereo(block);
+        vh_native_spu_render(&native_spu, block, VH_AUDIO_BLOCK_FRAMES);
         SDL_LockAudioDevice(device);
         (void)vh_audio_stream_write(&pcm_stream, block, VH_AUDIO_BLOCK_FRAMES);
         SDL_UnlockAudioDevice(device);
@@ -85,6 +106,13 @@ int main(int argc, char **argv) {
 
     show_status(renderer, 220, 110, 20); /* orange until callback observed */
     vh_audio_stream_reset(&pcm_stream);
+    if (init_synthetic_spu() != 0) {
+        fprintf(stderr, "Synthetic VAG decode/SPU init failed\\n");
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 6;
+    }
 
     SDL_AudioSpec wanted, obtained;
     SDL_zero(wanted);
@@ -117,7 +145,7 @@ int main(int argc, char **argv) {
         SDL_Quit();
         return 5;
     }
-    fprintf(stderr, "PCM ring opened: %d Hz, %u channels, %u callback frames\n",
+    fprintf(stderr, "Native SPU-ADPCM PCM ring opened: %d Hz, %u channels, %u callback frames\n",
             obtained.freq, (unsigned)obtained.channels, (unsigned)obtained.samples);
 
     pump_synthetic_audio(device);
