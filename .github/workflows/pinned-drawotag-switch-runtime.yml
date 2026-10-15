@@ -255,6 +255,13 @@ jobs:
               print(f"Observer marker {name}: expected {expected}, observed {observed}")
               if max(abs(a - b) for a, b in zip(observed, expected)) > 36:
                   raise SystemExit(f"RGB order or frame orientation mismatch: {name}")
+          # This is a real original POLY_F4 -> FillQuad, not a VRAM preset.
+          # 12x9 native coordinates (5,2) map to (600,200) in the centered viewport.
+          for frame_image in (im, after):
+              polygon_rgb = frame_image.getpixel((600, 200))
+              print("Original F4 polygon marker RGB:", polygon_rgb)
+              if max(abs(a-b) for a,b in zip(polygon_rgb, (255,0,255))) > 36:
+                  raise SystemExit("Original FillQuad polygon color is incorrect")
           # The center pixel is deliberately dynamic: R=12->99, G=12->99,
           # B=frame*3 modulo 256. Verify the intended channel changes,
           # not merely a window animation elsewhere in the screenshot.
