@@ -18,6 +18,17 @@ The scratch buffer contract observed at the audited revision is:
 
 The existing variable name `s_rgbaScratch` is misleading; the contents are RGB24.
 
+## Source-level lifecycle and context audit
+
+At the audited upstream revision, the following details were checked directly in `platform/pc/src/pc_gpu_window.c`:
+
+- `PC_GpuInit()` creates the non-Apple window with `SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE`, then calls `SDL_GL_CreateContext()`. No explicit `SDL_GL_SetAttribute()` or `SDL_GL_MakeCurrent()` call appears in this file; the Switch-specific context profile therefore needs to be set before window creation, and the adapter should explicitly verify/current-bind the context before presenter initialisation.
+- The final non-Apple draw is exactly the legacy immediate/pixel path: `glViewport()`, `glClear()`, `glPixelZoom()`, `glRasterPos2f()`, and `glDrawPixels()`, followed by `SDL_GL_SwapWindow()`. Only the drawing subsection should branch to GLES2; preserve the swap.
+- This file has no `PC_GpuShutdown()`, `SDL_GL_DeleteContext()`, `SDL_DestroyRenderer()`, or general window teardown path at the audited revision. The only `SDL_DestroyWindow()` calls are error-unwind paths during initialisation. Before adding presenter resources, trace the application-wide shutdown/exit path and decide where a new GPU teardown hook belongs; do not assume a local shutdown function exists.
+- The upstream scratch buffer is bottom-up for both VRAM conversion and the HD movie RGB24 copy. Subtitle and OSD routines mutate this same buffer before final presentation, so the Switch adapter must consume it only after those overlays have completed.
+
+These are source-audit findings, not a compiled patch or runtime result.
+
 ## Integration changes to make when the upstream source is available
 
 1. **Compile-time backend selection.** Introduce a dedicated macro such as `VH_SWITCH_GLES2` in the PC platform layer. Keep the existing Apple Metal/SDL renderer and desktop OpenGL paths unchanged. Do not enable the Switch path by merely removing the desktop GL calls: `glDrawPixels`, `glPixelZoom`, and `glRasterPos2f` are not GLES2 APIs.
