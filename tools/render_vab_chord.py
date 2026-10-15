@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Render at most 32 scheduled local VAB notes into diagnostic stereo WAV.
+"""Render a manual 32-voice chord or 20-slot SEQ timeline to stereo WAV.
 
-The JSON voice schedule is user-authored, not an extracted SEQ. A note
+The JSON may be user-authored or synthesized from a bounded SEQ. A note
 selects a VAB tone, SPU-ADPCM sample and pitch; the dry mixer applies
 three pan stages, PsyQ squared volume law, Gaussian interpolation and
-ADSR. No reverb, voice stealing, SEQ parser or Switch playback.
+ADSR. Slot-based stealing can be scheduled offline, but exact reverb,
+SEQ live scheduling and Switch audio are not implemented.
 """
 from __future__ import annotations
 
@@ -17,7 +18,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.decode_spu_adpcm import decode_spu_blocks
 from tools.mix_spu_stereo import (
-    MAX_FRAMES, MAX_VOICES, StereoVoice, render_stereo_voices,
+    MAX_FRAMES, MAX_VOICES, MAX_SCHEDULE_NOTES, StereoVoice,
+    render_stereo_voices, render_stereo_timeline,
     seq_voice_gains, stereo_wav,
 )
 from tools.resolve_vab_note import resolve_note
@@ -38,8 +40,15 @@ def render_vab_chord(
     seq_left: int = 127, seq_right: int = 127,
 ) -> tuple[bytes, dict[str, object]]:
     """Return diagnostic 44.1-kHz 16-bit stereo WAV and non-audio audit JSON."""
-    if not isinstance(voices, list) or not 1 <= len(voices) <= MAX_VOICES:
-        raise ValueError("voice schedule must contain 1..32 voices")
+    if not isinstance(voices, list) or not 1 <= len(voices) <= MAX_SCHEDULE_NOTES:
+        raise ValueError("voice schedule must contain 1..2048 notes")
+    sequenced = any(isinstance(note, dict) and "voice_slot" in note
+                    for note in voices)
+    if not sequenced and len(voices) > MAX_VOICES:
+        raise ValueError("unassigned manual chord is limited to 32 voices")
+    if sequenced and not all(isinstance(note, dict) and "voice_slot" in note
+                             for note in voices):
+        raise ValueError("timeline voice_slot must be present for every note")
     if interpolation not in ("gaussian", "nearest"):
         raise ValueError("interpolation must be gaussian or nearest")
     planned = []
@@ -51,6 +60,7 @@ def render_vab_chord(
         allowed = {
             "program", "note", "start_frame", "hold_frames",
             "tail_frames", "velocity", "channel_volume", "channel_pan",
+            "voice_slot",
         }
         extra = set(args) - allowed
         if extra:
@@ -59,6 +69,7 @@ def render_vab_chord(
         start = _integer("start_frame", args, 0)
         hold = _integer("hold_frames", args)
         tail = _integer("tail_frames", args, 0)
+        slot = _integer("voice_slot", args) if sequenced else None
         velocity = _integer("velocity", args, 127)
         volume = _integer("channel_volume", args, 127)
         pan = _integer("channel_pan", args, 64)
@@ -89,9 +100,11 @@ def render_vab_chord(
             loop_start=decoded.loop_start_frame, loop_end=decoded.loop_end_frame,
             start_frame=start, hold_frames=hold, tail_frames=tail,
             gain_left=gains[0], gain_right=gains[1],
+            voice_slot=slot,
         ))
         report_voices.append({
             "voice": i, "requested_program": program, "note": note,
+            "voice_slot": slot,
             "selected_program": selected["selected_program"],
             "tone": selected["tone"], "vag": selected["vag"],
             "lookup": selected["lookup"],
@@ -100,8 +113,10 @@ def render_vab_chord(
             "vag_offset_in_vb": key[0], "vag_size_bytes": key[1],
         })
     length = max(v.start_frame + v.hold_frames + v.tail_frames for v in planned)
-    pcm, state = render_stereo_voices(
-        planned, frames=length, interpolation=interpolation
+    pcm, state = (
+        render_stereo_timeline(planned, frames=length, interpolation=interpolation)
+        if sequenced else
+        render_stereo_voices(planned, frames=length, interpolation=interpolation)
     )
     for entry, runtime in zip(report_voices, state):
         entry["active_frames"] = runtime["active_frames"]
@@ -111,12 +126,13 @@ def render_vab_chord(
         "sample_rate_hz": 44100,
         "channels": 2,
         "interpolation": interpolation,
+        "mode": "20_slot_seq_timeline" if sequenced else "manual_chord",
         "voices": report_voices,
         "pcm_sha256": hashlib.sha256(pcm).hexdigest(),
         "warning": (
-            "Dry synthetic-schedule stereo diagnostic; no automatic SEQ "
-            "events, voice stealing, PS1 pitch-table exactness, reverb, "
-            "or comparison to original game audio or Switch hardware."
+            "Dry offline stereo diagnostic; 20-slot SEQ schedule supports "
+            "approximate release and round-robin stealing, but not "
+            "hardware ADSR voice liveness, original timing, reverb or Switch audio."
         ),
     }
 
