@@ -2,6 +2,7 @@
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -133,6 +134,52 @@ class ExtractCdXaPayloadTests(unittest.TestCase):
             self.assertTrue(report_directory.is_dir())
             self.assertEqual(list(root.glob(".payload.bin.*.tmp")), [])
             self.assertEqual(list(root.glob(".report.json.*.tmp")), [])
+
+
+    def test_report_replace_failure_restores_previous_payload(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            src, dst, report = root / "disc.bin", root / "payload.bin", root / "report.json"
+            src.write_bytes(sector(marker=0x77))
+            dst.write_bytes(b"previous payload")
+            report.write_text("previous report", encoding="utf-8")
+            from tools import extract_cdxa_payload as extractor
+            real_replace = extractor.os.replace
+
+            def fail_report_publish(source, target):
+                if Path(target) == report:
+                    raise OSError("injected report publish failure")
+                return real_replace(source, target)
+
+            with mock.patch.object(extractor.os, "replace", side_effect=fail_report_publish):
+                with self.assertRaisesRegex(OSError, "injected report"):
+                    extract_audio_payloads(src, dst, report_path=report)
+
+            self.assertEqual(dst.read_bytes(), b"previous payload")
+            self.assertEqual(report.read_text(encoding="utf-8"), "previous report")
+            self.assertEqual(list(root.glob("*.tmp")), [])
+            self.assertEqual(list(root.glob(".*.tmp")), [])
+
+    def test_report_replace_failure_removes_new_payload(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            src, dst, report = root / "disc.bin", root / "payload.bin", root / "report.json"
+            src.write_bytes(sector(marker=0x77))
+            from tools import extract_cdxa_payload as extractor
+            real_replace = extractor.os.replace
+
+            def fail_report_publish(source, target):
+                if Path(target) == report:
+                    raise OSError("injected report publish failure")
+                return real_replace(source, target)
+
+            with mock.patch.object(extractor.os, "replace", side_effect=fail_report_publish):
+                with self.assertRaisesRegex(OSError, "injected report"):
+                    extract_audio_payloads(src, dst, report_path=report)
+
+            self.assertFalse(dst.exists())
+            self.assertFalse(report.exists())
+            self.assertEqual(list(root.glob(".*.tmp")), [])
 
 
 if __name__ == "__main__":
