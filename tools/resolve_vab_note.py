@@ -62,6 +62,8 @@ def resolve_note(vh: Path, *, program: int, note: int,
             )
             lookup = "global_nearest_lower_bound"
 
+    program_attr = next(p for p in bank["populated_programs"]
+                        if p["program"] == selected_program)
     vag = tone["vag"]
     sample = bank["vag_entries"][vag - 1]
     if not sample["size_bytes"]:
@@ -79,6 +81,9 @@ def resolve_note(vh: Path, *, program: int, note: int,
         "note": note,
         "lookup": lookup,
         "selected_program": selected_program,
+        "bank_master_volume": bank["master_volume"],
+        "program_volume": program_attr["volume"],
+        "program_pan": program_attr["pan"],
         "tone": tone["tone"],
         "vag": vag,
         "key_min": tone["key_min"],
