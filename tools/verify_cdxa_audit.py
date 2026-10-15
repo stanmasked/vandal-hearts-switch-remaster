@@ -54,6 +54,7 @@ def verify_audit(audit_file: Path, source_bin: Path,
         raise ValueError("source BIN byte count differs from saved audit")
     expected = {
         "source_bin_sha256": (sha256_file(source_bin),),
+        "extraction_report_sha256": (sha256_file(report),),
         "payload_sha256": (sha256_file(payload),),
         "decoded_wav_sha256": (sha256_file(wav),),
     }
