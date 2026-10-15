@@ -92,6 +92,33 @@ class ExtractMap02TraceTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual([json.loads(line) for line in result.stdout.splitlines()], entries())
 
+    def test_full_trace_cli_requires_preceding_visit_and_protects_output(self):
+        events = entries()
+        events[2].update({"frame": 7, "path": "normal"})
+        events[3].update({"frame": 7, "path": "normal"})
+        visits = [
+            {"z": 8, "x": 19, "face": 0, "stage": "visit",
+             "gfx": 641, "frame": 7, "path": "normal", "face_count": 3},
+            {"z": 11, "x": 11, "face": 0, "stage": "visit",
+             "gfx": 643, "frame": 7, "path": "normal", "face_count": 3},
+        ]
+        full = [events[0], events[1], visits[0], events[2], visits[1], events[3]]
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "full.log"
+            dest = Path(folder) / "filtered.jsonl"
+            cmd = [sys.executable, "-m", "tools.extract_map02_trace",
+                   str(source), "-o", str(dest), "--require-full-trace"]
+            source.write_text(capture(full), encoding="utf-8")
+            ok = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertEqual(ok.returncode, 0, ok.stderr)
+            self.assertEqual([json.loads(line) for line in dest.read_text().splitlines()], full)
+            dest.unlink()
+            source.write_text(capture(full[:2] + full[3:]), encoding="utf-8")
+            rejected = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("draw without preceding nonempty visit", rejected.stderr)
+            self.assertFalse(dest.exists())
+
     def test_empty_capture_fails(self):
         with self.assertRaisesRegex(ValueError, 'no Map02'):
             extract_trace_text('Launching game\nGame stopped\n')
