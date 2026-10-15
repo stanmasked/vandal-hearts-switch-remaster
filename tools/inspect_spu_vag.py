@@ -27,7 +27,7 @@ def inspect_vag(path: Path) -> dict[str, int | str]:
         actual_size = path.stat().st_size
         if actual_size < HEADER_SIZE + data_size:
             raise ValueError("VAG audio data is truncated")
-        name = header[0x20:0x30].split(b"\\x00", 1)[0].decode("ascii", errors="replace")
+        name = header[0x20:0x30].split(bytes([0]), 1)[0].decode("ascii", errors="replace")
         return {
             "format": "VAGp",
             "version": version,
