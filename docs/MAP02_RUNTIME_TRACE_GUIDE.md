@@ -809,3 +809,44 @@ SHA-256 comparison is a consistency check, not a signature or defense
 against coordinated rewriting of a plan and its inputs.
 CI covers generation and tampering tests using synthetic paths and checks
 `sh -n` syntax; it does not run a proprietary disc or reach the bridge.
+
+
+## Bridge-face runtime review after capture
+
+The user-executed full session now writes two **derived reports** to its
+`capture/` folder:
+
+- `bridge_review.md` — a readable side-by-side review of the disputed faces
+- `bridge_review.json` — the same evidence in a machine-readable form
+
+You can create the reports from an existing capture independently, without
+relaunching the game:
+
+```sh
+python3 -m tools.report_map02_bridge /path/to/session/capture \
+  --markdown /path/to/new-bridge-review.md \
+  --json /path/to/new-bridge-review.json
+```
+
+The review **first verifies the original stdout and JSONL hashes** and
+replays the observations using the capture verifier. It then compares
+`post_load_gfx` and submitted `draw_gfx` for both target faces
+(`z=8,x=19,face=0` and `z=11,x=11,face=0`). The report
+identifies **PRS** only if both faces consistently submit 641/643 at draw
+time after loading those values. It identifies **DAT** only if both faces
+consistently submit 498/550 after loading those values. Incomplete,
+inconsistent, mixed or unverified captures produce **undetermined**, rather
+than a speculative choice.
+
+Draw paths, visit/skip/submission counts and any actually observed primitive
+`u`, `v`, `clut` and `tpage` values are included without
+manufacturing absent metadata. These primitive fields are **not directly
+equal to raw LAND_DT atlas or palette IDs**. Draw events mean submission
+to `AddPrim`, not guaranteed visible or correctly colored framebuffer
+pixels. Genuine gameplay comparison remains necessary before changing art.
+
+Append `--require-complete` if automating a verdict: the command exits
+nonzero unless the verified full capture contains agreeing post-load and
+submitted PRS/DAT observations for both faces. By default, a partially
+captured session still generates useful **explicitly inconclusive** review
+files. Existing outputs cannot be silently overwritten.
