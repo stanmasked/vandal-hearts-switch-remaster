@@ -128,6 +128,8 @@ def validate_extraction(report_path: Path, payload_path: Path, wav_path: Path | 
             raise ValueError("reported scan range exceeds source BIN")
         file_number, channel_number = (int(part) for part in parts)
         selected_index = 0
+        mode2_count = 0
+        matching_subheaders_count = 0
         with source_bin.open("rb") as raw, payload_path.open("rb") as payload:
             raw.seek(scan_start * RAW_SECTOR_BYTES)
             for lba in range(scan_start, scan_start + scanned):
@@ -136,9 +138,11 @@ def validate_extraction(report_path: Path, payload_path: Path, wav_path: Path | 
                     raise ValueError(f"source BIN truncated at LBA {lba}")
                 if sector[:12] != RAW_SYNC or sector[15] != 2:
                     continue
+                mode2_count += 1
                 header = sector[16:20]
                 if header != sector[20:24]:
                     continue
+                matching_subheaders_count += 1
                 source_file, source_channel, submode, coding_byte = header
                 if not (submode & 0x04 and submode & 0x20):
                     continue
@@ -153,6 +157,9 @@ def validate_extraction(report_path: Path, payload_path: Path, wav_path: Path | 
                 selected_index += 1
             if selected_index != count:
                 raise ValueError("source BIN selection does not match report sector count")
+        if (integer("mode2_sectors") != mode2_count
+                or integer("matching_subheaders") != matching_subheaders_count):
+            raise ValueError("source BIN sector/header counts do not match extraction report")
 
     if wav_path is not None:
         try:
