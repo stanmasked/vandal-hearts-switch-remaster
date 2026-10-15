@@ -443,3 +443,19 @@ Synthetic tests cover silence, RMS/peaks, full-scale samples, read-chunk
 boundaries, and malformed audio.
 
 Saved-audit reverification now **recomputes `pcm_signal_diagnostics`** directly from the decoded WAV and rejects missing or modified peak, RMS, silence, frame and full-scale statistics even if WAV/BIN/payload hashes remain unchanged. This checks report consistency rather than certifying actual CD-XA decoding quality. Reports produced before these diagnostic fields were introduced will fail this newer strict verifier.
+
+
+### Optional payload-to-WAV redecoding check
+
+Add `--redecode` to `tools/verify_cdxa_audit.py` to reconstruct PCM from
+the source-verified compressed XA groups into a **temporary** WAV, then compare
+the regenerated PCM with the saved decoded WAV. A successful recheck records
+`payload_redecoded: true` (false without the option). This can find a WAV
+whose bytes and signal metrics were modified alongside the editable audit JSON:
+the saved WAV no longer matches the compressed audio, even though its updated
+hash would otherwise match the report.
+
+This is an optional, more expensive integrity check that leaves stored audio
+artefacts untouched. Both decodes use the **same project decoder**, so this
+does not substitute for comparison against a separate implementation or prove
+the decoder's correctness or audible fidelity.
