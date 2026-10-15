@@ -49,6 +49,8 @@ def evaluate_trace(entries):
             if (pos, stage) in found:
                 if found[(pos, stage)] != entry["gfx"]:
                     errors.append(f"GFX changed across frames for {pos}")
+                if entry["gfx"] not in TARGETS[pos]:
+                    errors.append(f"unexpected GFX {entry['gfx']} for {pos} at {stage}")
                 for field, limit in (("u", 255), ("v", 255), ("clut", 65535), ("tpage", 65535)):
                     if field in entry:
                         value = entry[field]
