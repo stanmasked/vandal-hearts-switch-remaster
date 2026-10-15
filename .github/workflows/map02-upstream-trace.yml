@@ -1,0 +1,62 @@
+name: Map02 upstream trace patch verification
+
+on:
+  push:
+    paths:
+      - 'tools/make_map02_trace_patch.py'
+      - 'tests/test_make_map02_trace_patch.py'
+      - '.github/workflows/map02-upstream-trace.yml'
+  pull_request:
+    paths:
+      - 'tools/make_map02_trace_patch.py'
+      - 'tests/test_make_map02_trace_patch.py'
+      - '.github/workflows/map02-upstream-trace.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-trace-patch:
+    name: Apply generated trace patch to pinned upstream
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout remaster diagnostics
+        uses: actions/checkout@v4
+        with:
+          path: remaster
+          persist-credentials: false
+
+      - name: Checkout pinned public PC-port source
+        uses: actions/checkout@v4
+        with:
+          repository: HalmyLyseas/VandalHearts-PcPort
+          ref: 14552fffa0e0b47e02b57592e274fc6e7a649923
+          path: upstream
+          persist-credentials: false
+          sparse-checkout: |
+            src/states/game_setup.c
+            src/core/graphics.c
+          sparse-checkout-cone-mode: false
+
+      - name: Run patch generator regression tests
+        working-directory: remaster
+        run: python3 -m unittest discover -s tests -p 'test_make_map02_trace_patch.py' -v
+
+      - name: Generate apply check and reverse diagnostic-only patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m remaster.tools.make_map02_trace_patch upstream --output map02-trace.patch
+          cd upstream
+          git apply --check ../map02-trace.patch
+          git apply ../map02-trace.patch
+          git diff --check
+          expected=$(printf 'src/core/graphics.c\nsrc/states/game_setup.c')
+          actual=$(git diff --name-only)
+          test "$actual" = "$expected"
+          test "$(grep -c VH_Map02TraceDraw src/core/graphics.c)" -eq 4
+          git apply --reverse --check ../map02-trace.patch
+          git apply --reverse ../map02-trace.patch
+          test -z "$(git status --porcelain -- src/core/graphics.c src/states/game_setup.c)"
