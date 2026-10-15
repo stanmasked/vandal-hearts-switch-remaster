@@ -12,7 +12,7 @@ from pathlib import Path
 
 from tools.compare_map02_variants import (
     EXPECTED_LENGTH, FACE_GFX_OFFSET, PRIOR_PRS_DECOMPRESSED_SHA256,
-    RECORD_SIZE, TARGET_RECORDS,
+    RECORD_SIZE, TARGET_RECORDS, compare_map02,
 )
 
 START_SECTOR = 0x1BCC
@@ -124,7 +124,7 @@ def unpack_prs(source: bytes, *, max_output: int = EXPECTED_LENGTH) -> bytes:
     return bytes(output)
 
 
-def audit_prs(source: bytes) -> dict:
+def audit_prs(source: bytes, dat: bytes | None = None) -> dict:
     if len(source) < 4:
         raise ValueError("PRS header is missing")
     count = int.from_bytes(source[:4], "little")
@@ -147,7 +147,7 @@ def audit_prs(source: bytes) -> dict:
         })
     compressed_hash = sha256(logical)
     uncompressed_hash = sha256(unpacked)
-    return {
+    report = {
         "compressed_byte_count": count,
         "logical_prs_byte_count": count + 4,
         "available_bytes": len(source),
@@ -161,6 +161,18 @@ def audit_prs(source: bytes) -> dict:
         "matches_prior_target_gfx": [face["local_gfx"] for face in faces] == [241, 243],
         "evidence_scope": "disc/source data only; not live runtime or visible screen pixels",
     }
+    if dat is not None:
+        comparison = compare_map02(unpacked, dat)
+        report["dat_comparison"] = {
+            "dat_sha256": comparison["dat_sha256"],
+            "difference_count": comparison["difference_count"],
+            "differences": comparison["differences"],
+            "target_faces": comparison["target_faces"],
+            "matches_prior_disc_audit": comparison["matches_prior_disc_audit"],
+            "matches_prior_disc_audit_with_provenance":
+                comparison["matches_prior_disc_audit_with_provenance"],
+        }
+    return report
 
 
 def main():
@@ -174,6 +186,8 @@ def main():
                         help="mandatory for --disc-image")
     parser.add_argument("--sector-bias", type=int, default=0,
                         help="track-relative sector adjustment; default 0 (not automatic)")
+    parser.add_argument("--dat-file", type=Path,
+                        help="optional local M_MAP02.DAT to compare against decoded PRS")
     parser.add_argument("--require-prior-provenance", action="store_true",
                         help="require prior decompressed SHA-256 and face GFX 241/243")
     args = parser.parse_args()
@@ -184,7 +198,8 @@ def main():
     try:
         content = (read_sectors(args.disc_image, args.layout, args.sector_bias)
                    if args.disc_image is not None else args.prs_file.read_bytes())
-        result = audit_prs(content)
+        dat = args.dat_file.read_bytes() if args.dat_file is not None else None
+        result = audit_prs(content, dat=dat)
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
     result["input_type"] = "disc_image" if args.disc_image is not None else "prs_file"
@@ -194,9 +209,14 @@ def main():
         result["sector_bias"] = args.sector_bias
         result["layout"] = args.layout
     print(json.dumps(result, indent=2))
-    return int(args.require_prior_provenance and not (
-        result["matches_prior_decompressed_sha256"] and result["matches_prior_target_gfx"]
-    ))
+    provenance_matches = (result["matches_prior_decompressed_sha256"]
+                          and result["matches_prior_target_gfx"])
+    if args.dat_file is not None:
+        provenance_matches = (
+            provenance_matches and
+            result["dat_comparison"]["matches_prior_disc_audit_with_provenance"]
+        )
+    return int(args.require_prior_provenance and not provenance_matches)
 
 
 if __name__ == "__main__":
