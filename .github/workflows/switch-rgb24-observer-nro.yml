@@ -121,16 +121,33 @@ jobs:
             set -euo pipefail
             "$NEXIUM_BIN" "$NRO" >"$LOG" 2>&1 &
             pid=$!
-            sleep 20
-            if ! kill -0 "$pid" 2>/dev/null; then
-              cat "$LOG"
-              echo "NeXium quit before screenshot" >&2
+            # NeXium sometimes needs longer than a fixed 20s to display
+            # the guest frame. Wait for our actual rendered red corner,
+            # not merely an emulator window or a nonblack screenshot.
+            ready=0
+            sleep 10
+            for attempt in $(seq 1 20); do
+              if ! kill -0 "$pid" 2>/dev/null; then
+                echo "NeXium exited before observer frame was ready" >&2
+                tail -n 80 "$LOG" >&2 || true
+                exit 1
+              fi
+              window="$(xdotool search --onlyvisible --name "NeXium" 2>/dev/null | tail -n 1 || true)"
+              if [ -n "$window" ]; then
+                import -window "$window" "$SHOT"
+                if python3 -c "import sys; from PIL import Image; p=Image.open(sys.argv[1]).convert(\"RGB\").getpixel((250,90)); sys.exit(0 if p[0]>=220 and p[1]<=35 and p[2]<=35 else 1)" "$SHOT"; then
+                  echo "Observer RGB frame ready on poll $attempt"
+                  ready=1
+                  break
+                fi
+              fi
+              sleep 2
+            done
+            if [ "$ready" -ne 1 ]; then
+              echo "Observer frame never became ready" >&2
+              tail -n 80 "$LOG" >&2 || true
               exit 1
             fi
-            window="$(xdotool search --onlyvisible --name "NeXium" 2>/dev/null | tail -n 1 || true)"
-            test -n "$window"
-            import -window "$window" "$SHOT"
-            test -s "$SHOT"
             sleep 2
             import -window "$window" "$SHOT_AFTER"
             test -s "$SHOT_AFTER"
