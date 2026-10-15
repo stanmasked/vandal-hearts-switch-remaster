@@ -9,6 +9,8 @@ import unittest
 from unittest.mock import patch
 
 from tools.prepare_map02_session import plan_session
+from tools.prepare_map02_pcport import PINNED_BLOB_SHA1, PINNED_UPSTREAM_REF
+from tools.verify_map02_session import verify_session
 
 
 class PrepareMap02SessionTests(unittest.TestCase):
@@ -31,9 +33,36 @@ class PrepareMap02SessionTests(unittest.TestCase):
         self.assertEqual(options, {"full_trace": True})
         self.assertEqual(directory.name, "trace")
         directory.mkdir(parents=True)
-        overlay = directory / "map02_trace.mk"
-        overlay.write_text("# generated test overlay\n")
-        return overlay
+        identity = "1" * 64
+        renderer_marker = "VH_MAP02_TRACE_BUILD_ID:" + identity
+        loader_marker = "VH_MAP02_TRACE_LOADER_ID:" + identity
+        sources = {
+            relative: {"git_blob_sha1": blob, "matches_pinned": True,
+                       "sha256": "0" * 64}
+            for relative, blob in PINNED_BLOB_SHA1.items()
+        }
+        payloads = {
+            "game_setup.trace.c": '/* fixture */\nconst char *loader = "' + loader_marker + '";\n',
+            "graphics.trace.c": '/* fixture */\nconst char *renderer = "' + renderer_marker + '";\n',
+            "map02_trace.mk": "VH_MAP02_TRACE_DIR := " + str(directory) + "\n",
+        }
+        for name, payload in payloads.items():
+            (directory / name).write_text(payload, encoding="utf-8")
+        provenance = {
+            "upstream_reference": PINNED_UPSTREAM_REF,
+            "trace_mode": "full",
+            "allow_modified_source": False,
+            "source_files": sources,
+            "generated_files": {
+                name: hashlib.sha256(content.encode("utf-8")).hexdigest()
+                for name, content in payloads.items()
+            },
+            "binary_marker": renderer_marker,
+            "binary_loader_marker": loader_marker,
+        }
+        (directory / "source_provenance.json").write_text(
+            json.dumps(provenance) + "\n", encoding="utf-8")
+        return directory / "map02_trace.mk"
 
     def test_prepares_one_build_capture_verify_script_without_executing(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -60,6 +89,14 @@ class PrepareMap02SessionTests(unittest.TestCase):
             script_path = session / "build_capture_verify.sh"
             script = script_path.read_text(encoding="utf-8")
             self.assertEqual(plan["shell_sha256"], hashlib.sha256(script.encode()).hexdigest())
+            self.assertEqual(plan["preflight_sha256"],
+                             hashlib.sha256((session / "preflight.json").read_bytes()).hexdigest())
+            self.assertEqual(plan["provenance_sha256"],
+                             hashlib.sha256((session / "trace/source_provenance.json").read_bytes()).hexdigest())
+            self.assertEqual(verify_session(session)["integrity"], "verified")
+            self.assertIn("tools.verify_map02_session", script)
+            self.assertLess(script.index("tools.verify_map02_session"),
+                            script.index("tools.preflight_map02_pcport"))
             self.assertIn("NO_WEBP=1", script)
             self.assertIn("NO_HDVIDEO=1", script)
             self.assertIn("REGION=us", script)
@@ -86,6 +123,80 @@ class PrepareMap02SessionTests(unittest.TestCase):
                              plan)
             self.assertEqual(json.loads((session / "preflight.json").read_text()),
                              self._preflight(krom))
+
+    def test_tampered_session_script_and_provenance_are_rejected(self):
+        for relative, error in (
+            ("build_capture_verify.sh", "SHA-256 mismatch"),
+            ("preflight.json", "SHA-256 mismatch"),
+            ("trace/source_provenance.json", "SHA-256 mismatch"),
+            ("trace/game_setup.trace.c", "SHA-256 mismatch"),
+            ("trace/graphics.trace.c", "SHA-256 mismatch"),
+            ("trace/map02_trace.mk", "SHA-256 mismatch"),
+        ):
+            with self.subTest(file=relative), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                upstream, _, disc, krom = self._fixture(root)
+                session = root / "session"
+                with patch("tools.prepare_map02_session.inspect",
+                           return_value=self._preflight(krom)), \
+                     patch("tools.prepare_map02_session.prepare",
+                           side_effect=self._prepare):
+                    plan_session(upstream, session, disc_image=disc, krom_source=krom)
+                path = session / relative
+                path.write_bytes(path.read_bytes() + b"\n/* edited */\n")
+                with self.assertRaisesRegex(ValueError, error):
+                    verify_session(session)
+
+    def test_rejects_relocated_or_previously_used_session(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            upstream, _, disc, krom = self._fixture(root)
+            session = root / "session"
+            with patch("tools.prepare_map02_session.inspect",
+                       return_value=self._preflight(krom)), \
+                 patch("tools.prepare_map02_session.prepare",
+                       side_effect=self._prepare):
+                plan_session(upstream, session, disc_image=disc, krom_source=krom)
+            plan_path = session / "session_plan.json"
+            plan = json.loads(plan_path.read_text())
+            original = dict(plan)
+            plan["binary"] = "/tmp/not-the-matching-game"
+            plan_path.write_text(json.dumps(plan))
+            with self.assertRaisesRegex(ValueError, "game binary"):
+                verify_session(session)
+            plan_path.write_text(json.dumps(original))
+            (session / "capture").mkdir()
+            with self.assertRaisesRegex(ValueError, "capture directory already exists"):
+                verify_session(session)
+
+    def test_valid_hashes_cannot_hide_source_or_marker_mismatch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            upstream, _, disc, krom = self._fixture(root)
+            session = root / "session"
+            with patch("tools.prepare_map02_session.inspect",
+                       return_value=self._preflight(krom)), \
+                 patch("tools.prepare_map02_session.prepare",
+                       side_effect=self._prepare):
+                plan_session(upstream, session, disc_image=disc, krom_source=krom)
+
+            prov_path = session / "trace/source_provenance.json"
+            plan_path = session / "session_plan.json"
+            def update_provenance(**changes):
+                provenance = json.loads(prov_path.read_text())
+                provenance.update(changes)
+                prov_path.write_text(json.dumps(provenance))
+                plan = json.loads(plan_path.read_text())
+                plan["provenance_sha256"] = hashlib.sha256(prov_path.read_bytes()).hexdigest()
+                plan_path.write_text(json.dumps(plan))
+
+            update_provenance(allow_modified_source=True)
+            with self.assertRaisesRegex(ValueError, "unmodified pinned full trace"):
+                verify_session(session)
+            update_provenance(allow_modified_source=False,
+                              binary_loader_marker="VH_MAP02_TRACE_LOADER_ID:" + "2" * 64)
+            with self.assertRaisesRegex(ValueError, "build identities do not match"):
+                verify_session(session)
 
     def test_blockers_leave_no_preparation_outputs(self):
         with tempfile.TemporaryDirectory() as tmp:
