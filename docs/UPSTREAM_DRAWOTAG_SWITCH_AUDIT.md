@@ -69,3 +69,9 @@ Commits `ea280273` and `3a67680b` extend the same isolated NeXium NRO probe with
 Commits `03aa0a7d` and `f59881ec` add a new 15bpp direct-colour texture at VRAM (256,0), uploaded by original `LoadImage` with the first texel 0x0000 and the adjacent texel opaque cyan 0x7fe0. The independent `POLY_FT4` is inserted through `AddPrim` and rendered by pinned `DrawOTag`/native `FillQuad`. A NeXium screenshot probe asserts that the transparent texel leaves the animated background visible (RGB red/green near 99 and blue changing between frames), while the adjacent opaque texel stays cyan.
 
 This only checks fully transparent (zero-valued) direct 15bpp texels and their opaque neighbour. It does **not** establish STP-bit semi-transparency or any indexed CLUT transparency, and neither this test nor the preceding 4/8/15bpp probes is marked passed without a fresh CI runtime run. Previous confirmed #38806009204 is restricted to TILE/POLY_F4.
+
+## Texture fixture preflight verified locally (5/5)
+
+The pure-Python, asset-free reference suite `tests/test_drawotag_texture_fixtures.py` validates packed 4bpp nibble lookup, 8bpp byte lookup, 15bpp direct BGR555 reads, zero-value transparent texel encoding and that every fixture upload is inside VRAM but outside the 12x9 display rectangle. All five tests passed in local Python execution before publication (commit `6ccefe5e`). `make test` now runs this suite (commit `633561fc`), and the pinned DrawOTag NRO workflow runs it as a preflight build step (commit `3c6f54bf`).
+
+Scope limit: the reference test duplicates the deliberate fixture layout and validates *fixture consistency*, not source equality against the C probe and not runtime correctness of the upstream `SampleTexture`, `FillQuad` or GLES2 path. NeXium acceptance remains pending verification from a new CI run and screenshots. Do not promote any FT4 format to verified merely from these five unit tests.
