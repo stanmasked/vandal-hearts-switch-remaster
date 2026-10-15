@@ -1,5 +1,6 @@
 """End-to-end bridge review tests using synthetic game stdout, not game assets."""
 import json
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -9,6 +10,7 @@ import unittest
 from tools.capture_map02_runtime import capture
 from tools.report_map02_bridge import markdown_review, review_capture
 from test_capture_map02_runtime import fixture
+from test_evaluate_map02_session import full_events
 
 
 class ReportMap02BridgeTests(unittest.TestCase):
@@ -77,6 +79,71 @@ class ReportMap02BridgeTests(unittest.TestCase):
             self.assertEqual([face["draw_gfx"] for face in report["faces"]],
                              [498, 550])
             self.assertFalse(report["pixels_visually_verified"])
+
+    def test_two_real_c_emitted_map_loads_are_reported_independently(self):
+        compiler = shutil.which("cc") or shutil.which("gcc")
+        if compiler is None:
+            self.skipTest("C compiler required")
+        for second, expected_code, expected_variant in (
+            (full_events(), 0, "PRS"),
+            (full_events(498, 550), 2, "undetermined"),
+        ):
+            with self.subTest(second_variant=second[0]["gfx"]), \
+                 tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                executable, trace_dir = fixture(root, trace_mode="full")
+                source = root / "fake-pcport.c"
+                original = source.read_text(encoding="utf-8")
+                added = "\n".join(f"puts({json.dumps(json.dumps(event))});"
+                                  for event in second)
+                self.assertIn("return 0;", original)
+                source.write_text(original.replace("return 0;", added + "\nreturn 0;"),
+                                  encoding="utf-8")
+                subprocess.run([compiler, "-std=c11", str(source), "-o", str(executable)],
+                               capture_output=True, text=True, check=True)
+                directory = root / "capture"
+                self.assertEqual(capture(executable, trace_dir, directory), expected_code)
+                report = review_capture(directory)
+                self.assertEqual(report["runtime_variant"], expected_variant)
+                self.assertEqual(report["map_load_count"], 2)
+                self.assertEqual(report["trace_events"], 12)
+                self.assertEqual(report["faces"], [],
+                                 "repeated game loads must never flatten two face sets")
+                self.assertEqual([load["post_load_variant"]
+                                  for load in report["map_loads"]],
+                                 ["PRS", "PRS" if expected_code == 0 else "DAT"])
+                self.assertEqual([load["faces"][0]["draw_gfx"]
+                                  for load in report["map_loads"]],
+                                 [641, 641 if expected_code == 0 else 498])
+                self.assertFalse(report["pixels_visually_verified"])
+                markdown = markdown_review(report)
+                self.assertIn("Map load 1", markdown)
+                self.assertIn("Map load 2", markdown)
+                self.assertIn("Visible pixels confirmed:** no", markdown)
+
+    def test_unfinished_second_map_load_prevents_prs_verdict(self):
+        compiler = shutil.which("cc") or shutil.which("gcc")
+        if compiler is None:
+            self.skipTest("C compiler required")
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            executable, trace_dir = fixture(root, trace_mode="full")
+            source = root / "fake-pcport.c"
+            original = source.read_text(encoding="utf-8")
+            incomplete = full_events()[:-1]
+            added = "\n".join(f"puts({json.dumps(json.dumps(event))});"
+                              for event in incomplete)
+            source.write_text(original.replace("return 0;", added + "\nreturn 0;"),
+                              encoding="utf-8")
+            subprocess.run([compiler, "-std=c11", str(source), "-o", str(executable)],
+                           capture_output=True, text=True, check=True)
+            directory = root / "capture"
+            self.assertEqual(capture(executable, trace_dir, directory), 2)
+            report = review_capture(directory)
+            self.assertEqual(report["map_load_count"], 2)
+            self.assertFalse(report["capture_complete"])
+            self.assertEqual(report["runtime_variant"], "undetermined")
+            self.assertTrue(any("map load 2:" in e for e in report["errors"]))
 
     def test_partial_capture_never_declares_runtime_variant(self):
         for mode in ("incomplete", "invalid", "empty", "bad_stage"):
