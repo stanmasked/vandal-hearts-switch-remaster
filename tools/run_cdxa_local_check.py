@@ -21,6 +21,8 @@ def run_local_check(
     source: Path, output_dir: Path, *, file_number: int, channel: int,
     start_lba: int = 0, sector_count: int | None = None,
     reference_wav: Path | None = None,
+    reference_decoder: str | None = None,
+    reference_command: str | None = None,
 ) -> dict[str, object]:
     """Create only new outputs; fail if source and reference cannot be verified."""
     if not source.is_file():
@@ -35,6 +37,12 @@ def run_local_check(
         raise ValueError("sector count must be positive")
     if reference_wav is not None and not reference_wav.is_file():
         raise ValueError("reference WAV must exist before processing")
+    for label, value in (("reference decoder", reference_decoder),
+                         ("reference command", reference_command)):
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            raise ValueError(f"{label} must be a nonempty string")
+    if reference_wav is None and (reference_decoder is not None or reference_command is not None):
+        raise ValueError("reference provenance requires --reference-wav")
     # Refuse an existing path, even if it is empty, to avoid overwrites.
     # Also refuse an output path nested inside the input file's parent when
     # it resolves to the input itself; exclusive mkdir is the final guard.
@@ -62,6 +70,11 @@ def run_local_check(
         if reference_wav is not None:
             comparison = compare_wavs(decoded, reference_wav)
             result["comparison"] = comparison
+            result["reference_provenance"] = {
+                "decoder": reference_decoder,
+                "command": reference_command,
+                "status": "user_supplied_not_independently_verified",
+            }
             if not comparison["exact_match"]:
                 result["status"] = "reference_pcm_mismatch"
                 audit_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
@@ -87,12 +100,15 @@ def main() -> int:
     parser.add_argument("--start-lba", type=int, default=0)
     parser.add_argument("--sector-count", type=int)
     parser.add_argument("--reference-wav", type=Path, help="optional WAV from an independently run decoder")
+    parser.add_argument("--reference-decoder", help="user-provided reference decoder name and version")
+    parser.add_argument("--reference-command", help="user-provided command used to create the WAV")
     args = parser.parse_args()
     try:
         result = run_local_check(
             args.source, args.output_dir, file_number=args.file_number,
             channel=args.channel, start_lba=args.start_lba,
             sector_count=args.sector_count, reference_wav=args.reference_wav,
+            reference_decoder=args.reference_decoder, reference_command=args.reference_command,
         )
     except (OSError, ValueError) as error:
         parser.error(str(error))
