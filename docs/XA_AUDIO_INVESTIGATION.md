@@ -465,3 +465,17 @@ Reverification now resolves only the fixed companion files `extraction.json`, `a
 The local `audit-result.json` now also records `scan_start_lba` and `sectors_scanned`, the exact range read from the raw source BIN. Reverification cross-checks both values with the extraction report, which is independently validated against the source sectors. Changing a saved scan window without changing the checked report now fails, including when the selected audio LBAs themselves are unchanged. These metadata checks are consistency controls, not a digital signature.
 
 A local audit also records `extraction_report_sha256`, the full SHA-256 of its `extraction.json` file. Reverification checks this digest before parsing and validating the report, detecting even whitespace-only or otherwise nonsemantic report edits. This is a **consistency fingerprint** tied to an editable `audit-result.json`, not a signature or a trusted provenance attestation. Older local reports without this field require regeneration using the current tool before the strict verifier will accept them.
+
+
+### Pinning the independently generated reference WAV
+
+With a trusted reference WAV fingerprint known ahead of time, pass
+`--reference-sha256 <64-lowercase-hex-digits>` together with
+`--reference-wav /local/path/reference.wav` to the local runner. It
+computes the full reference WAV's SHA-256 and **rejects a mismatch before
+creating the output directory**. The asserted fingerprint is stored under
+`reference_provenance.expected_reference_sha256` and checked again when
+`verify_cdxa_audit.py` rechecks the saved WAV comparison. Omitting the
+option leaves this field null, rather than inventing a trusted fingerprint.
+This is reference **identity pinning**, not proof that a genuinely
+independent decoder produced the WAV or that the audio is faithful.
