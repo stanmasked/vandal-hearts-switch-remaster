@@ -19,6 +19,8 @@ on:
       - "source/switch_frame_bridge.c"
       - "source/switch_completed_frame.h"
       - "source/switch_completed_frame.c"
+      - "source/switch_present_hook.h"
+      - "source/switch_present_hook.c"
       - "tests/test_rgb24_frame.c"
       - "tests/test_rgb24_scratch.c"
       - "tests/test_switch_managed_frame.c"
@@ -27,6 +29,7 @@ on:
       - "tests/test_frame_handoff.c"
       - "tests/test_switch_frame_bridge.c"
       - "tests/test_switch_completed_frame.c"
+      - "tests/test_switch_present_hook.c"
       - ".github/workflows/frame-handoff-contract.yml"
   pull_request:
     paths:
@@ -44,6 +47,8 @@ on:
       - "source/switch_frame_bridge.c"
       - "source/switch_completed_frame.h"
       - "source/switch_completed_frame.c"
+      - "source/switch_present_hook.h"
+      - "source/switch_present_hook.c"
       - "tests/test_rgb24_frame.c"
       - "tests/test_rgb24_scratch.c"
       - "tests/test_switch_managed_frame.c"
@@ -52,6 +57,7 @@ on:
       - "tests/test_frame_handoff.c"
       - "tests/test_switch_frame_bridge.c"
       - "tests/test_switch_completed_frame.c"
+      - "tests/test_switch_present_hook.c"
       - ".github/workflows/frame-handoff-contract.yml"
   workflow_dispatch:
 
@@ -114,3 +120,9 @@ jobs:
             source/switch_frame_bridge.c source/switch_completed_frame.c \
             -o build-tests/test_switch_completed_frame
           ./build-tests/test_switch_completed_frame
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g \
+            -fsanitize=undefined -fno-sanitize-recover=all \
+            tests/test_switch_present_hook.c source/frame_conversion.c \
+            source/switch_frame_bridge.c source/switch_completed_frame.c \
+            source/switch_present_hook.c -o build-tests/test_switch_present_hook
+          ./build-tests/test_switch_present_hook
