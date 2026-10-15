@@ -10,7 +10,10 @@ import hmac
 import json
 from pathlib import Path
 
-from tools.inspect_land_dt import BLOCK_SIZE, CLUT_INDEX_OFFSET, TEXTURE_RECORD_SIZE, inspect_land_dt
+from tools.inspect_land_dt import (
+    BLOCK_SIZE, CLUT_DATA_OFFSET, CLUT_DATA_SIZE, CLUT_INDEX_OFFSET,
+    TEXTURE_RECORD_SIZE, inspect_land_dt,
+)
 
 
 def check_raw_records(report):
@@ -29,6 +32,15 @@ def check_raw_records(report):
     expected_base = 0 if single_block else 2 * BLOCK_SIZE
     if type(base) is not int or base != expected_base:
         errors.append(f"LAND_DT block base offset expected {expected_base}")
+    for field, expected in (
+        ("block_size", BLOCK_SIZE),
+        ("texture_records_bytes", CLUT_INDEX_OFFSET),
+        ("clut_index_table_offset", CLUT_INDEX_OFFSET),
+        ("clut_data_offset", CLUT_DATA_OFFSET),
+        ("clut_data_size", CLUT_DATA_SIZE),
+    ):
+        if type(report.get(field)) is not int or report[field] != expected:
+            errors.append(f"LAND_DT {field} expected {expected}")
     records = {}
     for record in report["records"]:
         gfx = record["gfx"]
