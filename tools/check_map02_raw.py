@@ -38,7 +38,10 @@ def main():
                         help="input is independently extracted map-02 block (1797 bytes)")
     args = parser.parse_args()
     # Absolute import works when invoked from the repository root with -m.
-    report = inspect_land_dt(args.input, map_number=2, single_block=args.block)
+    try:
+        report = inspect_land_dt(args.input, map_number=2, single_block=args.block)
+    except (OSError, ValueError) as exc:
+        parser.error(str(exc))
     errors = check_raw_records(report)
     print(json.dumps({
         "source_sha256": report["input_sha256"],
