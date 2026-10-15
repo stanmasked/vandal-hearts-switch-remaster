@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from tools.preflight_map02_pcport import (UPSTREAM_COMMIT, REQUIRED_SOURCE_FILES,
-                                          check_disc_image, inspect)
+                                          KROM_US_BYTES, check_disc_image, inspect)
 
 
 def fake_sources(root):
@@ -21,7 +21,7 @@ def fake_sources(root):
     exe = root / "SLUS_004.47"
     exe.write_bytes(b"fixture US game executable")
     krom = root / "KROMDAT.BIN"
-    krom.write_bytes(b"K" * 4096)
+    krom.write_bytes(b"K" * KROM_US_BYTES)
     disc = root / "game.bin"
     raw = bytearray(18 * 2352)
     raw[16 * 2352 + 24:16 * 2352 + 24 + 7] = b"\x01CD001\x01"
@@ -43,7 +43,9 @@ class PreflightMap02PcportTests(unittest.TestCase):
             with patch("tools.preflight_map02_pcport._run", side_effect=fake_run), \
                  patch("tools.preflight_map02_pcport.shutil.which", side_effect=lambda x: "/usr/bin/" + x), \
                  patch("tools.preflight_map02_pcport.US_EXE_MD5",
-                       hashlib.md5(exe.read_bytes()).hexdigest()):
+                       hashlib.md5(exe.read_bytes()).hexdigest()), \
+                 patch("tools.preflight_map02_pcport.KROM_US_SHA256",
+                       hashlib.sha256(krom.read_bytes()).hexdigest()):
                 report = inspect(root, disc_image=disc, krom_source=krom)
             self.assertTrue(report["ready_for_attempt"], report)
             self.assertEqual(report["blockers"], [])
@@ -93,7 +95,9 @@ class PreflightMap02PcportTests(unittest.TestCase):
             with patch("tools.preflight_map02_pcport._run", side_effect=deps), \
                  patch("tools.preflight_map02_pcport.shutil.which", side_effect=lambda x: "/usr/bin/" + x), \
                  patch("tools.preflight_map02_pcport.US_EXE_MD5",
-                       hashlib.md5(exe.read_bytes()).hexdigest()):
+                       hashlib.md5(exe.read_bytes()).hexdigest()), \
+                 patch("tools.preflight_map02_pcport.KROM_US_SHA256",
+                       hashlib.sha256(krom.read_bytes()).hexdigest()):
                 full = inspect(root, disc_image=disc, krom_source=krom)
                 minimal = inspect(root, disc_image=disc, krom_source=krom,
                                   no_webp=True, no_hdvideo=True)
@@ -102,6 +106,40 @@ class PreflightMap02PcportTests(unittest.TestCase):
             self.assertNotIn("pkg_sdl2_missing", full["blockers"])
             self.assertTrue(minimal["ready_for_attempt"])
             self.assertNotIn("pkg_libwebp", minimal["checks"])
+
+    def test_krom_requires_precise_generator_glyph_hash(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            exe, krom, disc = fake_sources(root)
+            with patch("tools.preflight_map02_pcport._run", side_effect=fake_run), \
+                 patch("tools.preflight_map02_pcport.US_EXE_MD5",
+                       hashlib.md5(exe.read_bytes()).hexdigest()):
+                report = inspect(root, disc_image=disc, krom_source=krom)
+            self.assertIn("krom_charset2_sha256_mismatch", report["blockers"])
+            self.assertFalse(report["checks"]["krom_charset2_sha256_matches"])
+            krom.write_bytes(b"K" * (KROM_US_BYTES - 1))
+            short = inspect(root, disc_image=disc, krom_source=krom)
+            self.assertIn("krom_source_too_small", short["blockers"])
+
+    def test_complete_bios_region_is_hashed_from_correct_offset(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            exe, krom, disc = fake_sources(root)
+            glyphs = krom.read_bytes()
+            bios = bytearray(512 * 1024)
+            bios[0x66000:0x66000 + KROM_US_BYTES] = glyphs
+            bios_path = root / "scph1001.bin"
+            bios_path.write_bytes(bios)
+            with patch("tools.preflight_map02_pcport._run", side_effect=fake_run), \
+                 patch("tools.preflight_map02_pcport.US_EXE_MD5",
+                       hashlib.md5(exe.read_bytes()).hexdigest()), \
+                 patch("tools.preflight_map02_pcport.KROM_US_SHA256",
+                       hashlib.sha256(glyphs).hexdigest()):
+                report = inspect(root, disc_image=disc, krom_source=bios_path)
+            self.assertTrue(report["checks"]["krom_charset2_sha256_matches"])
+            self.assertEqual(report["checks"]["krom_source_layout"], "full_bios")
+            self.assertEqual(report["checks"]["krom_charset2_sha256"],
+                             hashlib.sha256(glyphs).hexdigest())
 
     def test_cli_reports_blockers_without_game_files(self):
         with tempfile.TemporaryDirectory() as folder:
