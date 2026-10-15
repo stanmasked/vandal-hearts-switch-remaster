@@ -104,6 +104,7 @@ python3 tools/extract_cdxa_payload.py /path/to/local-disc-image.bin ./xa-sample.
   --start-lba 19469 --sector-count 256 --file-number 1 --channel 0 --report ./xa-sample.json
 python3 tools/validate_cdxa_extraction.py ./xa-sample.json ./xa-sample.bin
 python3 tools/decode_cdxa_adpcm.py ./xa-sample.bin ./xa-sample.wav --extracted-groups
+python3 tools/validate_cdxa_extraction.py ./xa-sample.json ./xa-sample.bin --wav ./xa-sample.wav
 ffprobe -v error -show_entries stream=sample_rate,channels,duration -of default=noprint_wrappers=1 ./xa-sample.wav
 ```
 
@@ -134,3 +135,4 @@ ordered LBA-to-offset mappings and reported gaps, and prints the expected
 PCM frame count and concatenated-WAV duration. This check does not inspect
 ADPCM sample quality or guarantee correct playback timing. It does not alter
 source, report, or payload files.
+\nThe optional `--wav` validator checks stereo 16-bit PCM at 37,800 Hz, the exact expected frame count, and truncated PCM data in bounded-size chunks. It does not prove the samples sound correct.\n
