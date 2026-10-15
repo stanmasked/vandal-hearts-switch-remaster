@@ -7,6 +7,8 @@ on:
     paths:
       - "source/rgb24_frame.h"
       - "source/frame_handoff.h"
+      - "source/switch_frame_bridge.h"
+      - "source/switch_frame_bridge.c"
       - "tests/test_rgb24_frame.c"
       - "tests/test_frame_handoff.c"
       - ".github/workflows/frame-handoff-contract.yml"
@@ -14,6 +16,8 @@ on:
     paths:
       - "source/rgb24_frame.h"
       - "source/frame_handoff.h"
+      - "source/switch_frame_bridge.h"
+      - "source/switch_frame_bridge.c"
       - "tests/test_rgb24_frame.c"
       - "tests/test_frame_handoff.c"
       - ".github/workflows/frame-handoff-contract.yml"
@@ -27,6 +31,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install GLES2 headers
+        run: sudo apt-get update && sudo apt-get install -y libgles2-mesa-dev
       - name: Compile and run frame contract tests
         shell: bash
         run: |
@@ -40,3 +46,5 @@ jobs:
             tests/test_frame_handoff.c -o build-tests/test_frame_handoff
           ./build-tests/test_rgb24_frame
           ./build-tests/test_frame_handoff
+          cc -std=c11 -Wall -Wextra -Werror -Isource -c \
+            source/switch_frame_bridge.c -o build-tests/switch_frame_bridge.o
