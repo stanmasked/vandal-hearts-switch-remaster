@@ -124,3 +124,13 @@ The unit-level single-observer owner tests passed in CI https://github.com/stanm
 ## Duplicate lifecycle init guard: NeXium verified
 
 Run https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38791692288 completed successfully for both NRO build and NeXium runtime, including `sdl2-observer-lifecycle-probe.nro` with an explicit second-init rejection and preserved active window/context/observer registration check. The subsequent live RGB24 rendering assertions passed: center RGB (108,92,227) → (108,92,60) with stable R/G channels, and the original observer probe still changed 18,820 sampled pixels. The lifecycle test continues to use synthetic frames and its teardown is executed by the guest only on its normal exit path; the emulator screenshot harness still terminates execution externally.
+
+## Pinned PC_GpuPresent actual CPU conversion test (resource-free)
+
+A host-only harness `tests/test_pinned_pc_gpu_present_rgb24.c` now links the **actual** `pc_gpu_window.c` at pinned upstream commit `14552fffa0e0b47e02b57592e274fc6e7a649923` after the project's optional observer patch. Unlike the Switch synthetic-pixel probe, this invokes `PC_GpuPresent` with deterministic 16-bit PS1/BGR555-like VRAM input. Its callback asserts the exact produced packed RGB24 bytes including 5-bit-to-8-bit channel replication and bottom-up row order. No user game data or bootstrapped game logic are involved.
+
+CI https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38794088051 **passed** the first 3×2 full-frame case: `Pinned PC_GpuPresent delivered exact RGB24 colors and bottom-up row order.` The follow-up commit `2c4cceb8` adds a 5×3 source VRAM with 3×2 crop and nonzero x/y offsets to check source stride and viewport cropping; its CI result is **pending**.
+
+The exclusive target observer patch also now skips `PC_GpuPumpEvents()` (commit `f908147d`). This is an intentional transfer of event pumping to the future outer Switch SDL2 event loop. Default desktop mode retains its original event pump; patcher tests enforce the conditional. Existing desktop window access and presentation remain unchanged outside opt-in exclusive mode.
+
+This host harness proves an original upstream **conversion function**, not the native Switch game loop, original content, or physical console execution.
