@@ -16,6 +16,8 @@ class Map02VariantTests(unittest.TestCase):
             dat[offset] = d
         report = compare_map02(bytes(prs), bytes(dat))
         self.assertTrue(report["matches_prior_disc_audit"])
+        self.assertFalse(report["matches_prior_prs_digest"])
+        self.assertFalse(report["matches_prior_disc_audit_with_provenance"])
         self.assertEqual(report["difference_count"], 2)
         self.assertEqual([x["absolute_offset"] for x in report["differences"]], [74048, 97152])
         self.assertEqual([x["prs_local_gfx"] for x in report["target_faces"]], [241, 243])
