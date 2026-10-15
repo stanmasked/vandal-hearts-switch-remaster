@@ -72,6 +72,29 @@ jobs:
           grep -Eq ' [T] FillRect$' build/drawotag/raster-defined-symbols.txt
           echo "Original rasterizer compiled; provides native VRAM and rectangle fill."
           cat build/drawotag/raster-undefined-symbols.txt
+      - name: Partially link native DrawOTag to authentic rasterizer
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" -nostdlib -r \
+            build/drawotag/libgpu_switch.o build/drawotag/pc_raster_switch.o \
+            -o build/drawotag/gpu-raster-combined.o
+          "$DEVKITA64/bin/aarch64-none-elf-nm" --undefined-only \
+            build/drawotag/gpu-raster-combined.o \
+            > build/drawotag/combined-undefined-symbols.txt
+          "$DEVKITA64/bin/aarch64-none-elf-nm" --defined-only \
+            build/drawotag/gpu-raster-combined.o \
+            > build/drawotag/combined-defined-symbols.txt
+          grep -Eq ' [T] DrawOTag$' build/drawotag/combined-defined-symbols.txt
+          grep -Eq ' [T] PC_GpuVram$' build/drawotag/combined-defined-symbols.txt
+          grep -Eq ' [U] PC_GpuPresent$' build/drawotag/combined-undefined-symbols.txt
+          if grep -Eq ' [U] (PC_GpuVram|FillRect|FillQuad)$' build/drawotag/combined-undefined-symbols.txt; then
+            echo "Original rasterizer symbol remains unresolved" >&2
+            exit 1
+          fi
+          echo "Original DrawOTag and rasterizer partially linked; PC_GpuPresent stays external."
       - name: Upload original DrawOTag dependency audit
         if: always()
         uses: actions/upload-artifact@v4
