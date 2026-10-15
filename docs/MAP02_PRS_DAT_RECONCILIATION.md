@@ -157,8 +157,8 @@ actual **CUE layout** and supply it explicitly using
 `--sector-bias N`; this tool does *not* guess, parse CUEs, or
 automatically try offsets. A failure at the expected sector is not
 proof that the game data is incorrect until its image layout is known.
-Raw sectors with a mismatched XA subheader, wrong mode, or Form2
-are rejected; the tool does not validate ECC/EDC checksums.
+Raw sectors with a mismatched XA subheader, wrong mode, Form2 or
+incorrect Mode2 Form1 EDC are rejected. P/Q ECC parity is not validated.
 
 If your local installation also has `M_MAP02.DAT`, add its
 path to the same read-only command:
