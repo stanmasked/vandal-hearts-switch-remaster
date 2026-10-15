@@ -211,10 +211,10 @@ class ValidateXaExtractionTests(unittest.TestCase):
                     validate_extraction(self.report, self.payload, source_bin=raw)
         self.report.write_text(clean_report, encoding="utf-8")
         tampered = json.loads(clean_report)
-        tampered["submode_counts"] = {"0x64": 2, "0x60": 1}
+        tampered["submode_counts"] = {"0x64": 1, "0x60": 1}
         self.report.write_text(json.dumps(tampered), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "submode counts"):
-            validate_extraction(self.report, self.payload, source_bin=raw_path)
+            validate_extraction(self.report, self.payload, source_bin=raw)
         self.report.write_text(clean_report, encoding="utf-8")
 
         # Corrupt the duplicated subheader of the second sector: it must
