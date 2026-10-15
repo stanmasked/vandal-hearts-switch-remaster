@@ -33,9 +33,12 @@ class InspectLandDtTests(unittest.TestCase):
             self.assertEqual(first["absolute_input_offset"], 2 * BLOCK_SIZE + 964)
             self.assertEqual(first["bytes"], [7, 8, 9, 10])
             self.assertEqual(first["clut_index"], 40)
+            self.assertEqual(first["clut_index_offset"], CLUT_INDEX_OFFSET + 241)
+            self.assertEqual(first["absolute_clut_index_offset"], 2 * BLOCK_SIZE + CLUT_INDEX_OFFSET + 241)
             self.assertEqual(second["block_offset"], 972)
             self.assertEqual(second["bytes"], [11, 12, 13, 14])
             self.assertEqual(second["clut_index"], 41)
+            self.assertEqual(second["absolute_clut_index_offset"], 2 * BLOCK_SIZE + CLUT_INDEX_OFFSET + 243)
             self.assertEqual(report["clut_data_offset"], CLUT_DATA_OFFSET)
 
     def test_accepts_one_extracted_block(self):
@@ -48,6 +51,7 @@ class InspectLandDtTests(unittest.TestCase):
             self.assertIsNone(report["map_number"])
             self.assertEqual(report["records"][0]["bytes"], [1, 2, 3, 4])
             self.assertEqual(report["records"][0]["absolute_input_offset"], 964)
+            self.assertEqual(report["records"][0]["absolute_clut_index_offset"], CLUT_INDEX_OFFSET + 241)
 
     def test_accepts_custom_gfx_indices(self):
         with tempfile.TemporaryDirectory() as temp:
