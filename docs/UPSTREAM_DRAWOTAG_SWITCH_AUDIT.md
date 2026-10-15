@@ -331,3 +331,43 @@ and a full real asset-driven frame. This milestone shows the local
 file-format compatibility and synthetic GPU fallback, not those later
 stages. See `docs/ORIGINAL_MAP_TEXTURE_BANK.md` for private staging
 instructions and evidence boundaries.
+
+## Virtual SD source-bank preview accepted inside NeXium (CI #38822697671)
+
+**New native milestone:** [GitHub Actions #38822697671](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38822697671), source commit
+`a4aec52f4ccad0ad39aef7fc0991816334b170a8`, completed with
+**all three jobs successful**:
+
+1. `cross-compile`: compiled the unchanged original pinned rasterizer
+   and Switch NRO, confirmed NRO0 and all previous **52 Python**
+   + host C private loader checks.
+2. `Run original DrawOTag raster NRO in NeXium`: retained the prior
+   synthetic TILE/F4/FT4/TIM/CLUT/ABR0–3/X–Y texture-window checks.
+3. `Synthetic SD map 11 preview through original DrawOTag`: created an
+   **isolated virtual SD card**, with host root `NEXIUM_DATA_ROOT` and
+   `$NEXIUM_DATA_ROOT/sdmc/switch/vandal-hearts-remaster/private-assets/`.
+   Staged full-sized synthetic F_TEX01.DAT + LAND_DT.DAT using the
+   production Python stager, loaded the **regular NRO executable**
+   (no fixture compiled inside and no code-path bypass), and verified
+   the *private* `POLY_FT4 → DrawOTag` branch via screenshot at 1280×720.
+
+**Native screenshot measurements:** black outer border **(9,9,12)**,
+private patch center **(255,0,0)**, **235,248 red pixels** and
+**156,156 green pixels** inside the ROI. The previous synthetic
+scene has a bright red outer corner and animated gray center,
+so it cannot pass these acceptance assertions. The NeXium guest
+`fprintf(stderr)` text is not forwarded to the host emulator log:
+earlier attempts #38822375680 and #38822519520 drew the private
+patch successfully but the first failed on a log-grep assertion;
+the stable green run instead asserts the **unique private rendering
+pattern** directly, with accompanying screenshot artifact
+[`pinned-drawotag-private-sd-synthetic-evidence`](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38822697671).
+
+This demonstrates real executable `sdmc:` I/O in NeXium, production
+`vh_private_map_bank_load_pair` for synthetic file inputs, and original
+`LoadImage`/`POLY_FT4`/DrawOTag preview from the private texture
+page and selected local CLUT. **Not yet established:** use of authentic
+`F_TEX01.DAT`/`LAND_DT.DAT` byte content from a user-owned PlayStation
+disc, a complete terrain mesh/map scene, lighting, actual game logic or
+hardware Nintendo Switch. No proprietary assets have entered GitHub
+source, CI artifacts or release builds.
