@@ -10,6 +10,8 @@ on:
       - "probes/pinned_drawotag_switch_smoke.c"
       - "source/vh_private_map_bank.*"
       - "tests/test_private_map_bank.c"
+      - "tests/private_map_bank_bridge.c"
+      - "tests/test_private_map_bank_bridge.py"
       - "tools/stage_vh_private_map_bank.py"
       - "tests/test_stage_vh_private_map_bank.py"
       - "tests/test_drawotag_texture_fixtures.py"
@@ -49,6 +51,12 @@ jobs:
             tests/test_private_map_bank.c source/vh_private_map_bank.c \
             -o /tmp/vh-private-map-test
           /tmp/vh-private-map-test
+      - name: Python staging to native C reader binary roundtrip
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -O2 \
+            tests/private_map_bank_bridge.c source/vh_private_map_bank.c \
+            -o /tmp/vh-map-bank-bridge
+          python3 tests/test_private_map_bank_bridge.py /tmp/vh-map-bank-bridge
       - name: Build official Switch SDL2 source with pinned checksums
         shell: bash
         run: |
