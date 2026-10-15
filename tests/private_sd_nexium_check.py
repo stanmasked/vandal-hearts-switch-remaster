@@ -39,6 +39,21 @@ def check(image_path):
     frame = Image.open(image_path).convert("RGB")
     if frame.size != (1280, 720):
         raise ValueError("unexpected NeXium screenshot dimensions")
+    # Discriminate the PRIVATE preview from the baseline raster probes.
+    # Baseline has a bright red TILE at (210,90) and a dynamic gray
+    # background at the center; private mode draws a black border and
+    # the full color-strip POLY_FT4 patch across the center.
+    border = frame.getpixel((210, 90))
+    center = frame.getpixel((640, 360))
+    border_is_black = max(border) <= 45
+    center_is_texel = (
+        center[0] >= 215 and center[1] <= 45 and center[2] <= 45
+    ) or (
+        center[1] >= 215 and center[0] <= 45 and center[2] <= 45
+    )
+    print("Private preview border / center RGB:", border, center)
+    if not border_is_black or not center_is_texel:
+        raise ValueError("NRO still shows baseline synthetic scene, not SD preview")
     # Only the isolated FT4 patch at native x1..11, y1..8 covers this
     # region. Do not count the NeXium menu, toolbar or emulator background.
     pixels = frame.crop((230,110,1050,630)).getdata()
