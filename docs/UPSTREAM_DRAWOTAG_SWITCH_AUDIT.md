@@ -63,3 +63,9 @@ Commits `d91ad19e` and `40c6198c` add a second indexed-texture quad beside the e
 Commits `ea280273` and `3a67680b` extend the same isolated NeXium NRO probe with a 15bpp direct-colour `POLY_FT4`. The original `LoadImage` uploads a 2x2 BGR555 texture at VRAM (192,0), with alternating yellow (0x03ff) and magenta (0x7c1f). The probe supplies `GetTPage(2,0,192,0)`, which selects the native direct-colour `SampleTexture` path, bypassing CLUT. Independent screenshot probes check both texels on both captured frames and retain the prior TILE, F4, 4bpp and 8bpp assertions.
 
 **Acceptance status: committed but unverified on NeXium.** The legacy #38806009204 run predates all indexed/direct-colour additions and proves only TILE/F4. Current workflow runs after these commits must be checked before promoting the three FT4 modes to passing. No copyrighted game assets are introduced.
+
+## Zero-texel transparency regression (pending CI)
+
+Commits `03aa0a7d` and `f59881ec` add a new 15bpp direct-colour texture at VRAM (256,0), uploaded by original `LoadImage` with the first texel 0x0000 and the adjacent texel opaque cyan 0x7fe0. The independent `POLY_FT4` is inserted through `AddPrim` and rendered by pinned `DrawOTag`/native `FillQuad`. A NeXium screenshot probe asserts that the transparent texel leaves the animated background visible (RGB red/green near 99 and blue changing between frames), while the adjacent opaque texel stays cyan.
+
+This only checks fully transparent (zero-valued) direct 15bpp texels and their opaque neighbour. It does **not** establish STP-bit semi-transparency or any indexed CLUT transparency, and neither this test nor the preceding 4/8/15bpp probes is marked passed without a fresh CI runtime run. Previous confirmed #38806009204 is restricted to TILE/POLY_F4.
