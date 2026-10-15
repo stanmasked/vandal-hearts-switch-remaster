@@ -69,6 +69,51 @@ int main(void) {
                VH_MAP_OUTPUT_ADDR + (uint32_t)(available - 1024),
                source_address, 1) == VH_SCRATCH3_WRITE_OUT_OF_RANGE);
     assert(vh_map_unit_phase_can_read_map(&phase));
+    /* Logical asset payload sizes differ from sector-aligned transfers.
+     * Only independently verified bytes may be copied by this helper. */
+    {
+        const size_t payload_sizes[] = {1, 16, 2047, 2048, 2049, 4096};
+        const size_t sector_counts[] = {1, 1, 1, 1, 2, 2};
+        for (size_t i = 0; i < sizeof payload_sizes / sizeof payload_sizes[0]; ++i) {
+            const size_t logical = payload_sizes[i];
+            memcpy(input, map_file, sizeof map_file);
+            assert(vh_map_unit_phase_reload(&phase, &mem, sizeof map_file,
+                                            32, &decode, &written)
+                   == VH_MAP_LOAD_OK);
+            assert(vh_map_unit_phase_can_read_map(&phase));
+            memset(source, 0x31 + (int)i, VH_CD_USER_SECTOR_BYTES * 2);
+            assert(vh_cd_scratch3_payload_copy(&phase, &mem,
+                        VH_MAP_OUTPUT_ADDR, source_address,
+                        sector_counts[i], logical) == VH_SCRATCH3_WRITE_OK);
+            assert(!vh_map_unit_phase_can_read_map(&phase));
+            assert(output[0] == (uint8_t)(0x31 + i));
+
+            memcpy(input, map_file, sizeof map_file);
+            assert(vh_map_unit_phase_reload(&phase, &mem, sizeof map_file,
+                                            32, &decode, &written)
+                   == VH_MAP_LOAD_OK);
+            assert(vh_cd_scratch3_payload_copy(&phase, &mem,
+                        VH_MAP_OUTPUT_ADDR, source_address,
+                        1, VH_CD_USER_SECTOR_BYTES + 1)
+                   == VH_SCRATCH3_WRITE_OUT_OF_RANGE);
+            assert(vh_map_unit_phase_can_read_map(&phase));
+            assert(memcmp(output, "MAP", 3) == 0);
+        }
+        assert(vh_cd_scratch3_payload_copy(&phase, &mem,
+                   VH_MAP_OUTPUT_ADDR, source_address, 1, 0)
+               == VH_SCRATCH3_WRITE_INVALID_ARGUMENT);
+        assert(vh_cd_scratch3_payload_copy(&phase, &mem,
+                   VH_MAP_OUTPUT_ADDR, source_address, 0, 1)
+               == VH_SCRATCH3_WRITE_INVALID_ARGUMENT);
+        assert(vh_cd_scratch3_payload_copy(&phase, &mem,
+                   VH_MAP_OUTPUT_ADDR, source_address, SIZE_MAX, 1)
+               == VH_SCRATCH3_WRITE_OUT_OF_RANGE);
+        assert(vh_cd_scratch3_payload_copy(&phase, &mem,
+                   VH_MAP_OUTPUT_ADDR, UINT32_C(0xffffffff), 1, 1)
+               == VH_SCRATCH3_WRITE_OUT_OF_RANGE);
+        assert(vh_map_unit_phase_can_read_map(&phase));
+    }
+
     free(ram);
     puts("CD scratch3 sector gate tests passed.");
     return 0;
