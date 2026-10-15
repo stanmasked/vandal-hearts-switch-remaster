@@ -47,6 +47,12 @@ class ObserverPatchTests(unittest.TestCase):
         self.assertLess(result.index("s_rgbaScratch && w > 0"),
                         result.index("VH_ObserveCompletedRGB24(s_rgbaScratch"))
 
+    def test_event_pump_is_not_duplicated_by_patch(self):
+        result = module.patch(self.upstream)
+        self.assertEqual(result.count("    PC_GpuPumpEvents();"), 1)
+        self.assertIn(module.TARGET_EVENT_PUMP, result)
+        self.assertEqual(result.count("external Switch event loop owns SDL pumping"), 1)
+
     def test_reject_repeated_patching(self):
         patched = module.patch(self.upstream)
         with self.assertRaisesRegex(ValueError, "already instrumented"):
