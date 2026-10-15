@@ -14,6 +14,11 @@ import subprocess
 
 UPSTREAM_COMMIT = "14552fffa0e0b47e02b57592e274fc6e7a649923"
 US_EXE_MD5 = "596bb082a2de5f1fe977dd3d7e160b03"
+# From pinned platform/pc/tools/gen_kanji_font.py: US charset-2 glyphs 0..208.
+KROM_US_BYTES = 209 * 30
+KROM_US_SHA256 = "19b1dd839020e62a8a0f6dfc673c320da36105d9bc9bbce876aa151b7bd927a7"
+BIOS_BYTES = 512 * 1024
+BIOS_CHARSET2_OFFSET = 0x66000
 REQUIRED_SOURCE_FILES = (
     "src/core/graphics.c",
     "src/states/game_setup.c",
@@ -96,9 +101,23 @@ def inspect(upstream: Path, *, game_exe: Path | None = None,
     if not krom.is_file():
         blockers.append("krom_source_missing")
     else:
-        checks["krom_source_bytes"] = krom.stat().st_size
-        if krom.stat().st_size < 0x30 + 1024:
+        size = krom.stat().st_size
+        checks["krom_source_bytes"] = size
+        checks["krom_source_layout"] = ("full_bios" if size == BIOS_BYTES
+                                        else "kromdat")
+        offset = BIOS_CHARSET2_OFFSET if size == BIOS_BYTES else 0
+        if size < offset + KROM_US_BYTES:
             blockers.append("krom_source_too_small")
+            checks["krom_charset2_sha256_matches"] = False
+        else:
+            with krom.open("rb") as handle:
+                handle.seek(offset)
+                font_data = handle.read(KROM_US_BYTES)
+            actual_digest = hashlib.sha256(font_data).hexdigest()
+            checks["krom_charset2_sha256"] = actual_digest
+            checks["krom_charset2_sha256_matches"] = actual_digest == KROM_US_SHA256
+            if actual_digest != KROM_US_SHA256:
+                blockers.append("krom_charset2_sha256_mismatch")
 
     checks["disc_path"] = str(disc_image) if disc_image else None
     if disc_image is None:
@@ -138,7 +157,7 @@ def inspect(upstream: Path, *, game_exe: Path | None = None,
         "notes": [
             "Read-only: no game resources extracted, copied, or uploaded.",
             "Passing does not prove a full compile, playable startup, region validity, or visible terrain pixels.",
-            "KROM/BIOS presence does not verify its generator-specific content hash.",
+            "KROM/BIOS verifies the exact US 209-glyph charset-2 SHA-256 required by the pinned generator.",
             "The game executable MD5 is the US data-generator requirement, not merely disc runtime region detection.",
             "For optional HD dependencies use --no-webp and --no-hdvideo with corresponding Makefile options.",
         ],
