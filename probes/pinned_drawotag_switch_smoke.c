@@ -31,6 +31,7 @@ static void draw_frame(int frame) {
     TILE corner[4], background;
     POLY_F4 polygon;
     POLY_FT4 textured, textured8, textured15, transparent15, semi15;
+    POLY_FT4 abr_add, abr_sub, abr_quarter;
     SPRT sprite, window_sprite, v_window_sprite;
     DR_MODE mode, window_mode, window_reset, v_window_mode, v_window_reset;
     RECT window_rect, reset_rect, v_window_rect, v_reset_rect;
@@ -120,6 +121,36 @@ static void draw_frame(int frame) {
     setRECT(&v_window_rect, 0, 8, 256, 248);
     SetDrawMode(&v_window_mode, 0, 0, GetTPage(0, 0, 64, 0), &v_window_rect);
     AddPrim(&ot[0], &v_window_mode);
+    /* Original BGR555 semi-trans modes ABR=1,2,3 on the bottom strip.
+     * Reuse the STP-marked red / unmarked green texels at VRAM (320,0).
+     * Quads x=2..8,y=7..9 avoid the four corner TILE markers and
+     * every existing FT4/SPRT probe. With the red background channel
+     * quantized to 12/31: add=31, subtract=0, quarter=12+(31>>2)=19.
+     * The adjacent unmarked green must remain opaque in every mode. */
+    SetPolyFT4(&abr_add);
+    setXYWH(&abr_add, 2, 7, 2, 2);
+    setUVWH(&abr_add, 0, 0, 2, 2);
+    setRGB0(&abr_add, 128, 128, 128);
+    setTPage(&abr_add, 2, 1, 320, 0);
+    setClut(&abr_add, 0, 0);
+    SetSemiTrans(&abr_add, 1);
+    AddPrim(&ot[0], &abr_add);
+    SetPolyFT4(&abr_sub);
+    setXYWH(&abr_sub, 4, 7, 2, 2);
+    setUVWH(&abr_sub, 0, 0, 2, 2);
+    setRGB0(&abr_sub, 128, 128, 128);
+    setTPage(&abr_sub, 2, 2, 320, 0);
+    setClut(&abr_sub, 0, 0);
+    SetSemiTrans(&abr_sub, 1);
+    AddPrim(&ot[0], &abr_sub);
+    SetPolyFT4(&abr_quarter);
+    setXYWH(&abr_quarter, 6, 7, 2, 2);
+    setUVWH(&abr_quarter, 0, 0, 2, 2);
+    setRGB0(&abr_quarter, 128, 128, 128);
+    setTPage(&abr_quarter, 2, 3, 320, 0);
+    setClut(&abr_quarter, 0, 0);
+    SetSemiTrans(&abr_quarter, 1);
+    AddPrim(&ot[0], &abr_quarter);
     /* ABR=0: STP-marked red blends 50/50 with background;
      * unmarked green stays opaque within the same semi-trans FT4. */
     SetPolyFT4(&semi15);
