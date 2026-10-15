@@ -134,3 +134,21 @@ The earlier GLES2 presenter remains a useful, narrowly scoped component, but it 
 - [ ] Propose a small platform abstraction and host-testable mapping contract before changing the bootstrap.
 - [ ] Keep this bootstrap work independent from the completed standalone presenter tests.
 
+## Source audit update: scratchpad call sites and bootstrap separation
+
+The targeted review of upstream revision `14552fffa0e0b47e02b57592e274fc6e7a649923` now confirms that the second map/unpack-style scratchpad call site is also guarded:
+
+- `src/core/graphics.c:65-69`, in `Objf050_UnitSpritesDecoder`, uses a static `0x400`-byte host scratchpad under `PC_PORT`; the literal `0x1f800000` path is only in the non-`PC_PORT` branch.
+- `src/maps/unpack.c:46-50` follows the same pattern for `UnpackMapFileData`.
+- `src/core/cd.c:62-69, 1275-1285` redirects the known sound work buffers and movie ring buffer under `PC_PORT`.
+
+This narrows the known scratchpad work: these three call sites already have explicit host-backed alternatives and should not be rewritten merely to make the target AArch64. It does **not** establish that every hard-coded PS1 address in the full source tree has been inventoried.
+
+The bootstrap still unconditionally defines the fixed-address ranges and its non-Apple `PC_ReservePsxRam()` path tries to reserve them. Its Linux-specific writable-`.rodata` handling uses `dl_iterate_phdr`/`mprotect`; POSIX crash handling uses signal context and includes x86-only instruction decoding. The Switch build should therefore have an explicit platform-specific bootstrap path that does not invoke desktop address reservation, ELF image walking, or x86 fault recovery. That path must be gated only after an audit verifies that no remaining Switch-compiled call site depends on those mechanisms.
+
+### Narrow next gate
+
+1. Continue the literal-address search across all game/core/map/event sources and classify each match as a guarded PC_PORT fallback, dead/commented code, or a live dependency.
+2. Inspect `PC_BootstrapRegion` initialization ordering and isolate the minimum setup needed for CD/data loading, memory globals, audio, and GPU without desktop-only recovery hooks.
+3. Add compile-time platform guards and host tests only after the call-site inventory is complete; avoid a broad edit to decompiled gameplay files when an existing `PC_PORT` seam already solves the issue.
+
