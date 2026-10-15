@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 TARGETS = {(8, 19, 0): (641, 498), (11, 11, 0): (643, 550)}
-STAGES = {"post_load", "draw", "skip"}
+STAGES = {"post_load", "draw", "skip", "visit"}
 DRAW_PATHS = {"normal", "edge", "overhead"}
 SKIP_REASONS = {"null_gfx", "backface"}
 
@@ -27,6 +27,9 @@ def evaluate_trace(entries):
     draw_count = {}
     skip_reasons = {}
     skip_count = {}
+    visit_count = {}
+    visit_paths = {}
+    observed_face_counts = {}
     seen_skips = set()
     errors = []
     for i, entry in enumerate(entries):
@@ -42,6 +45,27 @@ def evaluate_trace(entries):
         stage = entry.get("stage")
         if stage not in STAGES:
             errors.append(f"entry {i}: invalid stage")
+            continue
+        if stage == "visit":
+            frame = entry.get("frame")
+            path = entry.get("path")
+            face_count = entry.get("face_count")
+            if type(frame) is not int or frame < 0:
+                errors.append(f"entry {i}: visit frame must be a non-negative integer")
+                continue
+            if type(path) is not str or path not in DRAW_PATHS:
+                errors.append(f"entry {i}: visit path must be normal, edge, or overhead")
+                continue
+            if type(face_count) is not int or not 0 <= face_count <= 18:
+                errors.append(f"entry {i}: face_count must be an integer from 0 to 18")
+                continue
+            visit_count[pos] = visit_count.get(pos, 0) + 1
+            visit_paths.setdefault(pos, set()).add(path)
+            observed_face_counts.setdefault(pos, set()).add(face_count)
+            if face_count == 0 and entry["gfx"] != 0:
+                errors.append(f"entry {i}: zero-face visit must have GFX 0")
+            if face_count > 0 and entry["gfx"] not in TARGETS[pos]:
+                errors.append(f"unexpected GFX {entry['gfx']} for {pos} at visit")
             continue
         if stage == "skip":
             frame = entry.get("frame")
@@ -143,8 +167,13 @@ def evaluate_trace(entries):
             "draw_paths": sorted(draw_paths.get(pos, set())),
             "skip_observation_count": skip_count.get(pos, 0),
             "skip_reasons": sorted(skip_reasons.get(pos, set())),
+            "visit_observation_count": visit_count.get(pos, 0),
+            "visit_paths": sorted(visit_paths.get(pos, set())),
+            "observed_face_counts": sorted(observed_face_counts.get(pos, set())),
             "draw_status": ("submitted" if drawn is not None else
                             "skipped_in_observed_passes" if skip_count.get(pos, 0) else
+                            "no_faces_in_observed_passes" if observed_face_counts.get(pos) == {0} else
+                            "visited_without_submission" if visit_count.get(pos, 0) else
                             "no_renderer_observation"),
             "post_load_variant": "PRS" if after == prs else "DAT" if after == dat else None,
             "draw_variant": "PRS" if drawn == prs else "DAT" if drawn == dat else None,
@@ -160,7 +189,7 @@ def evaluate_trace(entries):
     return {"observations": rows, "errors": errors,
             "post_load_overall_variant": combined_variant(post_variants),
             "draw_overall_variant": combined_variant(draw_variants),
-            "warning": "Draw means AddPrim submission, skip is an observed rejection only; neither establishes visible pixels. Missing draw events still fail validation."}
+            "warning": "Visit proves renderer entry, skip a face rejection, draw an AddPrim submission; none guarantees visible pixels. Missing draw events still fail validation."}
 
 
 
