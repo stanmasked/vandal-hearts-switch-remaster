@@ -105,7 +105,15 @@ def evaluate_trace(entries):
         })
         if after is not None and drawn is not None and after != drawn:
             errors.append(f"GFX changed between loading and drawing for {pos}")
+    post_variants = [row["post_load_variant"] for row in rows]
+    draw_variants = [row["draw_variant"] for row in rows]
+    def combined_variant(variants):
+        if any(value is None for value in variants):
+            return "incomplete_or_unknown"
+        return variants[0] if len(set(variants)) == 1 else "mixed"
     return {"observations": rows, "errors": errors,
+            "post_load_overall_variant": combined_variant(post_variants),
+            "draw_overall_variant": combined_variant(draw_variants),
             "warning": "Observed draw metadata is not an independent validation of correct UV, CLUT, tpage, or visible pixels."}
 
 
