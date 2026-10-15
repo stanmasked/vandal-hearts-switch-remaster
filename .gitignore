@@ -1,0 +1,19 @@
+# Generated test builds and private game copies must stay off GitHub.
+/build/
+/private-assets/
+**/private-assets/
+
+# Original discs and extracted user-owned PlayStation data.
+*.bin
+*.BIN
+*.iso
+*.ISO
+*.cue
+*.CUE
+*.chd
+*.CHD
+F_TEX*.DAT
+LAND_DT.DAT
+
+__pycache__/
+*.pyc
