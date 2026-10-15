@@ -167,7 +167,7 @@ RGB24_FRAME_SOURCES := \
 $(BUILD)/$(RGB24_TEXTURE_TARGET).elf: probes/rgb24_texture_smoke.c $(RGB24_FRAME_SOURCES) | $(BUILD)
 	$(CC) $(CFLAGS) -Isource $(LDFLAGS) $(shell $(SDL2_CONFIG) --cflags) \
 	  probes/rgb24_texture_smoke.c $(RGB24_FRAME_SOURCES) \
-	  -Wl,--undefined=vh_switch_observer_register \
+	  -Wl,--undefined=VH_ObserveCompletedRGB24 \
 	  -o $@ $(shell $(SDL2_CONFIG) --libs) -lGLESv2 $(LDLIBS) -lm
 
 $(BUILD)/$(RGB24_TEXTURE_TARGET).nacp: | $(BUILD)
