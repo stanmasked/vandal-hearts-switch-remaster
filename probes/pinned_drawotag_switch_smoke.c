@@ -30,11 +30,32 @@ static void draw_frame(int frame) {
     unsigned int ot[1];
     TILE corner[4], background;
     POLY_F4 polygon;
+    POLY_FT4 textured;
+    /* 4bpp: four texels (1,2,1,2) per packed 16-bit VRAM word. */
+    unsigned short texels[2] = {0x2121, 0x2121};
+    unsigned short palette[16] = {0, 0x001f, 0x03e0};
+    RECT tex_rect, clut_rect;
     SetDefDrawEnv(&draw, 0, 0, 12, 9);
     SetDefDispEnv(&display, 0, 0, 12, 9);
     PutDrawEnv(&draw);
     PutDispEnv(&display);
+    /* Upload to off-screen VRAM through the ORIGINAL LoadImage. The 4bpp
+     * page begins at x=64,y=0; U=0..3 samples VRAM word x=64.
+     * CLUT occupies x=0..15,y=40, clear of the displayed 12x9 area. */
+    setRECT(&tex_rect, 64, 0, 1, 2);
+    setRECT(&clut_rect, 0, 40, 16, 1);
+    LoadImage(&tex_rect, (unsigned int *)texels);
+    LoadImage(&clut_rect, (unsigned int *)palette);
     ClearOTag(ot, 1);
+    /* Dedicated 4bpp CLUT quad below the F4. White-neutral modulation
+     * leaves CLUT red/green easy to distinguish from the background. */
+    SetPolyFT4(&textured);
+    setXYWH(&textured, 4, 5, 4, 2);
+    setUVWH(&textured, 0, 0, 4, 2);
+    setRGB0(&textured, 128, 128, 128);
+    setTPage(&textured, 0, 0, 64, 0);
+    setClut(&textured, 0, 40);
+    AddPrim(&ot[0], &textured);
     /* Real untextured polygon from the original DrawOTag->FillQuad path.
      * The native 12x9 point (5,2) should be magenta. Center (6,4)
      * remains the animated background, avoiding ambiguous motion tests. */
