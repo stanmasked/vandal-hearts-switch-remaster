@@ -13,24 +13,33 @@ class ExclusivePresentPatchTests(unittest.TestCase):
     /* Scale the native w*h framebuffer up to fill the current window, preserving
      * source aspect. */
     glDrawPixels(w, h, GL_RGB, GL_UNSIGNED_BYTE, s_rgbaScratch);
-    SDL_GL_SwapWindow(s_window);
     if (s_ptTime) pt2 = presentNowMs();
+#if defined(__APPLE__)
+    SDL_RenderPresent(s_renderer);
+#else
+    SDL_GL_SwapWindow(s_window);
+#endif
+    if (s_ptTime) {
+        pt3 = presentNowMs();
+    }
 }
 """
 
     def test_mutually_exclusive_and_preserves_desktop_tail(self):
         patched = module.patch(self.original)
         self.assertEqual(patched.count("#if defined(VH_SWITCH_EXCLUSIVE_PRESENT)"), 1)
-        self.assertEqual(patched.count("#else"), 1)
         self.assertEqual(patched.count("#endif /* VH_SWITCH_EXCLUSIVE_PRESENT */"), 1)
         self.assertEqual(patched.count("SDL_GL_SwapWindow(s_window);"), 1)
         self.assertLess(patched.index("VH_ObserveCompletedRGB24(s_rgbaScratch"),
                         patched.index("#else"))
-        self.assertLess(patched.index("#else"), patched.index("glDrawPixels("))\n        self.assertLess(patched.index("SDL_GL_SwapWindow(s_window);"),\n                        patched.index("#endif /* VH_SWITCH_EXCLUSIVE_PRESENT */"))
+        self.assertLess(patched.index("#else"), patched.index("glDrawPixels("))
+        self.assertLess(patched.index("SDL_GL_SwapWindow(s_window);"),
+                        patched.index("#endif /* VH_SWITCH_EXCLUSIVE_PRESENT */"))
         self.assertIn("(size_t)w <= ((size_t)s_scratchCap / 3u) / (size_t)h", patched)
-        self.assertEqual(patched.split("#else\n", 1)[1].split(
-            "#endif /* VH_SWITCH_EXCLUSIVE_PRESENT */", 1)[0],
-            self.original[self.original.index(module.START):self.original.index(module.END)])
+        preserved = patched.split("#else\n", 1)[1].split(
+            "#endif /* VH_SWITCH_EXCLUSIVE_PRESENT */", 1)[0]
+        expected = self.original[self.original.index(module.START):self.original.index(module.END)]
+        self.assertEqual(preserved, expected)
 
     def test_fails_closed_on_unexpected_source(self):
         with self.assertRaisesRegex(ValueError, "already instrumented"):
