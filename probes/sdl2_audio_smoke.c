@@ -107,7 +107,7 @@ int main(int argc, char **argv) {
     show_status(renderer, 220, 110, 20); /* orange until callback observed */
     vh_audio_stream_reset(&pcm_stream);
     if (init_synthetic_spu() != 0) {
-        fprintf(stderr, "Synthetic VAG decode/SPU init failed\\n");
+        fprintf(stderr, "Synthetic VAG decode/SPU init failed\n");
         SDL_DestroyRenderer(renderer);
         SDL_DestroyWindow(window);
         SDL_Quit();
