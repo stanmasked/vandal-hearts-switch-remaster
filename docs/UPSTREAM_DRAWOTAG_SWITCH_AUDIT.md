@@ -240,3 +240,55 @@ lighting, gameplay or physical Switch hardware. Next practical gate:
 user-side read-only extraction/validation of authentic assets and a
 private, reproducible way for the NRO to consume them, without embedding
 copyrighted assets in the public source or GitHub Actions.
+
+## Optional user-owned SD map 11 preview path: code/host CI verified (run #38820440323)
+
+The prior synthetic `F_TEX/LAND_DT` scene was already proven native.
+The next stage preserves that CI fixture and introduces an **opt-in, local-only**
+loading path: `source/vh_private_map_bank.[ch]` validates the exact
+32768-byte `F_TEX01.DAT` and 123993-byte `LAND_DT.DAT` pair from
+`sdmc:/switch/vandal-hearts-remaster/private-assets/`. If **both**
+files are absent, the existing synthetic NeXium smoke remains unchanged.
+If one exists alone, either length is wrong, map 11 slot 241 UVWH extends
+outside the original 256x256 texture page, or its CLUT ID is not in the
+16 local rows 32–47, loading **fails closed**. On success, the probe
+uses the native original `LoadImage` and `POLY_FT4 → DrawOTag` path to
+show the **entire authored slot-241 UVWH patch**, with the selected
+CLUT row from LAND_DT, rather than the earlier two sample texels.
+This is *one isolated, enlarged texture patch*, not the real map geometry,
+battle scene, camera or complete gameplay.
+
+A deliberately invoked **local** stager
+`tools/stage_vh_private_map_bank.py` accepts the user's extracted file
+pair or audited raw 2352-byte-sector disc LBAs, validates all sizes,
+map 11 slot 241 UVWH and local CLUT, and optionally pins both
+SHA-256 hashes to the previously audited Russian v1.6 release via
+`--require-audited-ru-sha`. It writes the two resource files and a
+metadata-only JSON manifest under the mounted Switch SD root.
+It refuses to overwrite pre-existing destination files. See
+`docs/ORIGINAL_MAP_TEXTURE_BANK.md`. The repository's `.gitignore`
+now excludes game disc images, `F_TEX*.DAT`, `LAND_DT.DAT` and
+private-assets directories as additional protection against accidental
+commit of proprietary files.
+
+**Verified source/test milestone:** [GitHub Actions
+#38820440323](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38820440323),
+source-bearing commit `69ba2e37f5d569a8d4da676dc4ed8f242bac22fe`,
+passed **cross-compile** and the original asset-free **NeXium raster**
+jobs. CI logs: **16 original DrawOTag source/pixel fixture tests**, **15
+TIM bounds tests**, **13 map bank/Mode2 tests**, **5 private SD staging
+tests** (49 Python tests, all OK), plus the native-independent C host
+test of missing, partial, invalid and valid owner-bank files (passed).
+The built Switch NRO passes NRO0 structural verification. On both 1280x720
+synthetic screenshots, the original map-bank red is exactly (255,0,0)
+and green exactly (0,255,0); TIM and all established STP/texture-window
+checks also remain passing. 5,450 sampled pixels changed between
+screenshots due to the existing animated background.
+
+**NOT verified:** Neither the actual user's raw game image nor the
+two proprietary `DAT` files were available to the public CI,
+the new *private* rendering branch has not been run on real NeXium SD
+storage or physical Switch, and no authored live map geometry has been
+displayed. CI proves compilation, host asset-reader behavior, state
+branch source contracts, and no regression of the synthetic raster path.
+Do not present this milestone as a successful real-texture or hardware test.
