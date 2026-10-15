@@ -115,6 +115,7 @@ jobs:
           export VK_ICD_FILENAMES="$icd"
           export NRO="nros/upstream-rgb24-observer-probe.nro"
           export SHOT="runtime-evidence/observer.png"
+          export SHOT_AFTER="runtime-evidence/observer-after.png"
           export LOG="runtime-evidence/observer-nexium.log"
           timeout --kill-after=5s 65s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
             set -euo pipefail
@@ -130,23 +131,36 @@ jobs:
             test -n "$window"
             import -window "$window" "$SHOT"
             test -s "$SHOT"
+            sleep 2
+            import -window "$window" "$SHOT_AFTER"
+            test -s "$SHOT_AFTER"
             kill -INT "$pid" 2>/dev/null || true
             sleep 1
             kill -KILL "$pid" 2>/dev/null || true
             wait "$pid" 2>/dev/null || true
           '
-          python3 - "$SHOT" <<'PY'
+          python3 - "$SHOT" "$SHOT_AFTER" <<'PY'
           from PIL import Image
           import sys
           im = Image.open(sys.argv[1]).convert("RGB")
           print("NeXium screenshot:", im.size)
           if im.size != (1280, 720):
               raise SystemExit("Unexpected emulator screenshot size")
+          after = Image.open(sys.argv[2]).convert("RGB")
+          if after.size != im.size:
+              raise SystemExit("Frame dimensions changed unexpectedly")
           sample = im.crop((320, 100, 960, 620))
           distinct = len(set(sample.resize((80, 65)).getdata()))
           print("Observer screenshot distinct sampled RGB colors:", distinct)
           if distinct < 40:
               raise SystemExit("No sufficiently varied RGB24 frame detected")
+          previous = im.crop((320, 100, 960, 620)).resize((160, 130))
+          following = after.crop((320, 100, 960, 620)).resize((160, 130))
+          changed = sum(max(abs(a[k] - b[k]) for k in range(3)) > 15
+                        for a, b in zip(previous.getdata(), following.getdata()))
+          print("Observer changed sample pixels across frames:", changed)
+          if changed < 300:
+              raise SystemExit("Observer image appears static between captures")
           PY
       - name: Upload runtime evidence
         if: always()
