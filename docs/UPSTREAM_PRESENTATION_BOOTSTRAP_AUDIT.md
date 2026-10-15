@@ -99,3 +99,10 @@ The synthetic frame is stored bottom-up and has distinct red, green, blue, and y
 **What this establishes:** there is now a dedicated, buildable-in-principle target for exercising the exact RGB24/GLES2 boundary, including the awkward row-stride case and orientation markers.
 
 **Not yet confirmed:** this source has not yet been built with devkitPro, run in NeXium, or checked against a captured screenshot. A successful NRO build alone would not prove the colors and orientation are correct; the corner markers must be visually or automatically checked in the emulator. The original upstream renderer remains untouched.
+
+
+## Follow-up: concrete GLES2 integration seam
+
+The isolated presenter has now passed the invalid-metadata recovery check in [run 38694397097](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38694397097). The next integration boundary is the final presentation block in `PC_GpuPresent()`: retain conversion, movie-frame handling, subtitles and OSD, and replace only the desktop GL raster calls for a dedicated Switch build. The implementation plan records the ES2 context setup, frame contract, upload/draw sequence, lifecycle ordering, and acceptance tests in [SWITCH_PRESENTER_INTEGRATION_PLAN.md](SWITCH_PRESENTER_INTEGRATION_PLAN.md).
+
+The upstream source is still only audited, not modified or built for Switch. The Switch research repository does not contain the full upstream PC source tree; integration and physical-console validation remain open.
