@@ -289,6 +289,26 @@ class CaptureMap02RuntimeTests(unittest.TestCase):
             self.assertTrue(report["analysis"]["errors"])
             self.assertFalse((output / "map02_trace.jsonl").exists())
 
+    def test_binary_hash_identifies_executable_before_it_changes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            exe, trace_dir = fixture(base)
+            content = exe.read_text(encoding="utf-8")
+            original_end = "raise SystemExit(0)"
+            self.assertIn(original_end, content)
+            mutation = (
+                "with open(__file__, 'ab') as stream: "
+                "stream.write(bytes((35, 32, 99, 104, 97, 110, 103, 101, 100, 10)))"
+            )
+            exe.write_text(content.replace(original_end, mutation + "\n" + original_end),
+                           encoding="utf-8")
+            starting_hash = sha256_file(exe)
+            output = base / "run"
+            self.assertEqual(capture(exe, trace_dir, output), 0)
+            report = json.loads((output / "capture_report.json").read_text())
+            self.assertEqual(report["binary_sha256"], starting_hash)
+            self.assertNotEqual(sha256_file(exe), starting_hash)
+
     def test_closed_terminal_output_does_not_destroy_raw_capture(self):
         class BrokenOutput:
             class Buffer:
