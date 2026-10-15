@@ -61,6 +61,7 @@ def render_vab_chord(
             "program", "note", "start_frame", "hold_frames",
             "tail_frames", "velocity", "channel_volume", "channel_pan",
             "voice_slot",
+            "lifetime_capped",
         }
         extra = set(args) - allowed
         if extra:
@@ -105,6 +106,7 @@ def render_vab_chord(
         report_voices.append({
             "voice": i, "requested_program": program, "note": note,
             "voice_slot": slot,
+            "lifetime_capped": bool(args.get("lifetime_capped", False)),
             "selected_program": selected["selected_program"],
             "tone": selected["tone"], "vag": selected["vag"],
             "lookup": selected["lookup"],
