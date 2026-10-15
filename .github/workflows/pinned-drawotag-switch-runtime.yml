@@ -8,6 +8,8 @@ on:
       - "tools/patch_pc_gpu_present_observer.py"
       - "tools/switch_psyq_compat.h"
       - "probes/pinned_drawotag_switch_smoke.c"
+      - "source/vh_private_map_bank.*"
+      - "tests/test_private_map_bank.c"
       - "tests/test_drawotag_texture_fixtures.py"
       - "tests/test_inspect_psx_tim.py"
       - "tools/inspect_psx_tim.py"
@@ -37,6 +39,12 @@ jobs:
         run: python3 tests/test_inspect_psx_tim.py
       - name: Verify original map texture bank layout and BIN extraction
         run: python3 tests/test_inspect_vh_map_texture_bank.py
+      - name: Host-test private SD map bank file validation
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -O2 \
+            tests/test_private_map_bank.c source/vh_private_map_bank.c \
+            -o /tmp/vh-private-map-test
+          /tmp/vh-private-map-test
       - name: Build official Switch SDL2 source with pinned checksums
         shell: bash
         run: |
@@ -128,6 +136,7 @@ jobs:
             -I/tmp/vh-cross-upstream/platform/pc/src \
             -include tools/switch_psyq_compat.h \
             probes/pinned_drawotag_switch_smoke.c source/switch_sdl2_observer_backend.c \
+            source/vh_private_map_bank.c \
             source/switch_rgb24_presenter.c source/frame_conversion.c \
             source/switch_frame_bridge.c source/switch_completed_frame.c \
             source/switch_present_hook.c source/switch_upstream_observer.c \
