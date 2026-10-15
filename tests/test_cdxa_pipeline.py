@@ -508,5 +508,47 @@ class CdXaPipelineTests(unittest.TestCase):
             self.assertTrue(comparison["exact_match"], comparison)
 
 
+    def test_partial_lba_range_and_interleaved_channels_verify_against_source(self):
+        # The report has absolute LBAs even when extraction starts in the
+        # middle of the disc. Only the requested (file, channel) is selected.
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "disc.bin"
+            output = root / "payload.bin"
+            report_path = root / "report.json"
+            target_a = set_xa_file_channel(xa_audio_sector(), 2, 1)
+            other = set_xa_file_channel(xa_audio_sector(), 2, 0)
+            target_b = set_xa_file_channel(xa_audio_sector(), 2, 1)
+            source.write_bytes(
+                set_xa_file_channel(xa_audio_sector(), 7, 7)
+                + set_xa_file_channel(xa_audio_sector(), 8, 8)
+                + target_a + other + target_b
+                + set_xa_file_channel(xa_audio_sector(), 2, 1)
+            )
+            report = extract_audio_payloads(
+                source, output, start_lba=2, sector_count=3,
+                file_number=2, channel=1, report_path=report_path,
+            )
+            self.assertEqual(report["start_lba"], 2)
+            self.assertEqual(report["sectors_scanned"], 3)
+            self.assertEqual(report["audio_lbas"], [2, 4])
+            self.assertEqual(report["file_channel_counts"], {"2:1": 2})
+            self.assertEqual(report["noncontiguous_audio_transitions"], 1)
+            self.assertEqual(
+                validate_extraction(report_path, output, source_bin=source)["audio_sectors"], 2
+            )
+            # The target sector just *outside* the scanned range must not be
+            # treated as omitted by source verification.
+            self.assertEqual(output.read_bytes(), bytes(AUDIO_BYTES_PER_SECTOR * 2))
+            # Re-pointing the metadata at a different range must not pass.
+            import json
+            altered_report = json.loads(report_path.read_text(encoding="utf-8"))
+            altered_report["start_lba"] = 1
+            altered_report["sectors_scanned"] = 4
+            report_path.write_text(json.dumps(altered_report), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "source BIN selection differs"):
+                validate_extraction(report_path, output, source_bin=source)
+
+
 if __name__ == "__main__":
     unittest.main()
