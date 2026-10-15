@@ -45,6 +45,17 @@ int main(void) {
     assert(status == VH_MAP_LOAD_PREFLIGHT_FAILED && written == 0);
     for (size_t i = 0; i < 8; ++i) assert(decoded[i] == 0x7f);
 
+    /* A truncated command after an earlier literal must not publish partial data. */
+    {
+        const uint8_t broken[] = {3,0,0,0,0x02,'X',0x00};
+        memcpy(compressed, broken, sizeof broken);
+        memset(decoded, 0x6d, 8);
+        status = vh_map_load_checked(&mem, sizeof broken, 8, &decode, &written);
+        assert(status == VH_MAP_LOAD_DECODE_FAILED);
+        assert(decode == VH_MAP_DECODE_TRUNCATED && written == 0);
+        for (size_t i = 0; i < 8; ++i) assert(decoded[i] == 0x6d);
+    }
+
     assert(vh_map_load_checked(&mem, 8, 8, NULL, &written)
            == VH_MAP_LOAD_PREFLIGHT_FAILED);
     assert(vh_map_load_checked(&mem, 8, 8, &decode, NULL)
