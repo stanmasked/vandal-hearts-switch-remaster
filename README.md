@@ -14,6 +14,12 @@ higher-resolution rendering and presentation improvements.
 - Establish a reproducible build and test process before attempting visual changes.
 - Investigate HD improvements only after the baseline game works reliably.
 
+## Latest SDL2 validation
+
+The latest SDL2 Switch feasibility run [38691365198](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38691365198) passed its build and NeXium runtime jobs. Checks covered SDL2 texture/input interaction, RGB24 odd-stride texture upload, software rendering, and OpenGL ES 2.0 output. The [runtime evidence artifact](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38691365198/artifacts/11951579038) contains screenshots and logs. See [SDL2 probe results](docs/SDL2_PROBE_RESULTS.md) for scope and limitations.
+
+The same workflow's audio check was inconclusive because the headless CI host has no usable ALSA default device; its overall success must not be read as proof of audio callback execution or audible playback. See [audio probe results](docs/AUDIO_PROBE_RESULTS.md). All results are emulator-based; physical Switch testing and integration of the upstream game remain outstanding.
+
 ## Project status
 
 1. [x] Review upstream documentation and license.
