@@ -277,9 +277,14 @@ def main():
     parser.add_argument("trace", type=Path, help="JSON array of captured runtime observations")
     parser.add_argument("--require-uniform-variant", action="store_true",
                         help="fail if the two target faces are not uniformly PRS or DAT at both stages")
+    parser.add_argument("--require-full-trace", action="store_true",
+                        help="require each framed draw/skip to have a preceding same-frame/path nonempty visit")
     args = parser.parse_args()
     try:
-        result = evaluate_trace(parse_trace_text(args.trace.read_text(encoding="utf-8")))
+        result = evaluate_trace(
+            parse_trace_text(args.trace.read_text(encoding="utf-8")),
+            require_full_trace=args.require_full_trace,
+        )
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         parser.error(str(exc))
     print(json.dumps(result, indent=2))
