@@ -160,6 +160,25 @@ operation. Do not push this instrumentation into a distribution build.
 To revert this local experiment after the capture, use
 `git apply -R /local/map02-trace.patch` (after checking for any other edits).
 
+The new patch also records `skip` observations when a target face reaches
+a terrain rendering function but is rejected before primitive submission:
+`reason: "null_gfx"` when normal/overhead rendering encounters `GFX_NULL`,
+or `reason: "backface"` when the GTE `opz <= 0` visibility check rejects
+the face. Each event includes `frame`, `path`, and the observed GFX index.
+The edge-render path has no `GFX_NULL` skip guard in the pinned source.
+The trace checker reports a `draw_status` of `submitted`,
+`skipped_in_observed_passes`, or `no_renderer_observation`, along with
+`skip_reasons` and `skip_observation_count`.
+
+A `skip` proves only that a particular rendering pass encountered and
+rejected that face. It does not rule out submission via another path.
+`no_renderer_observation` can mean the tile was outside the camera's
+render window; it is **not proof of missing geometry**. The checker still
+reports a missing `draw` event as an error in strict trace verification,
+even when one or more skips explain why it might be absent. The `frame`
+field is the game's observed `gState.frameCounter`, not a guaranteed count
+of unique hardware refreshes.
+
 The log records `post_load` for each target face when map 11 loads and
 `draw` immediately before `AddPrim` when a target face survives the
 renderer visibility check. Draw samples have a `frame` number,
