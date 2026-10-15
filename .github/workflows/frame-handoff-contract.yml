@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - audit/switch-platform-boundaries
+      - feat/upstream-rgb24-observer-binding
     paths:
       - "source/rgb24_frame.h"
       - "source/rgb24_scratch.h"
@@ -21,6 +22,8 @@ on:
       - "source/switch_completed_frame.c"
       - "source/switch_present_hook.h"
       - "source/switch_present_hook.c"
+      - "source/switch_upstream_observer.h"
+      - "source/switch_upstream_observer.c"
       - "tests/test_rgb24_frame.c"
       - "tests/test_rgb24_scratch.c"
       - "tests/test_switch_managed_frame.c"
@@ -30,6 +33,7 @@ on:
       - "tests/test_switch_frame_bridge.c"
       - "tests/test_switch_completed_frame.c"
       - "tests/test_switch_present_hook.c"
+      - "tests/test_switch_upstream_observer.c"
       - "tools/patch_pc_gpu_present_observer.py"
       - "tests/test_pc_gpu_present_observer_patch.py"
       - ".github/workflows/frame-handoff-contract.yml"
@@ -51,6 +55,8 @@ on:
       - "source/switch_completed_frame.c"
       - "source/switch_present_hook.h"
       - "source/switch_present_hook.c"
+      - "source/switch_upstream_observer.h"
+      - "source/switch_upstream_observer.c"
       - "tests/test_rgb24_frame.c"
       - "tests/test_rgb24_scratch.c"
       - "tests/test_switch_managed_frame.c"
@@ -60,6 +66,7 @@ on:
       - "tests/test_switch_frame_bridge.c"
       - "tests/test_switch_completed_frame.c"
       - "tests/test_switch_present_hook.c"
+      - "tests/test_switch_upstream_observer.c"
       - "tools/patch_pc_gpu_present_observer.py"
       - "tests/test_pc_gpu_present_observer_patch.py"
       - ".github/workflows/frame-handoff-contract.yml"
@@ -138,3 +145,10 @@ jobs:
             build-tests/upstream_pc_gpu_window.c build-tests/instrumented_pc_gpu_window.c
           grep -Fq 'VH_ObserveCompletedRGB24(s_rgbaScratch' build-tests/instrumented_pc_gpu_window.c
           grep -Fq 'SDL_GL_SwapWindow(s_window);' build-tests/instrumented_pc_gpu_window.c
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g \
+            -fsanitize=undefined -fno-sanitize-recover=all \
+            tests/test_switch_upstream_observer.c source/frame_conversion.c \
+            source/switch_frame_bridge.c source/switch_completed_frame.c \
+            source/switch_present_hook.c source/switch_upstream_observer.c \
+            -o build-tests/test_switch_upstream_observer
+          ./build-tests/test_switch_upstream_observer
