@@ -110,3 +110,9 @@ An independent source-contract audit against GitHub's current `probes/pinned_dra
 - animated background center (99,99,247) then (99,99,90); **9,409** changed sampled pixels.
 
 All programmatic screenshot assertions, including the zero-texel transparency checks, finished without error. The result proves asset-free native 4/8/15bpp `POLY_FT4`, CLUT, zero texel and ABR0 STP acceptance in NeXium using original pinned `libgpu.c` / `pc_raster.c` and SDL2/GLES2. It does **not** prove real game assets, an authentic game frame, other ABR modes, handheld hardware or real gameplay. The `fde40ec6` version was the latest source-bearing change before the subsequent documentation-only commits.
+
+## Original SPRT + DR_MODE texture-page acceptance candidate (pending new CI)
+
+The already-passing FT4/CLUT/STP baseline is [run #38810768669](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38810768669). Commits `4ff5f675`, `378a710b` and `559d1d5a` add another **asset-free** original primitive, `SPRT`. The sprite sits at native (0,3) with size 2x2, samples U/V (0,0) from the existing 4bpp packed test texture and CLUT at (0,40), and relies on the original `DR_MODE` primitive for `GetTPage(0,0,64,0)`: `SPRT` itself has **no** tpage field. Because `AddPrim` head-inserts in the one-bucket OT, the sprite is linked first and the `DR_MODE` packet linked next; `DrawOTag` therefore processes the mode before the sprite. The NeXium job checks red (210,280) and green (290,280) on both screenshots.
+
+The host preflight now has **ten** test methods including a source-level assertion of sprite setup, correct CLUT, mode selection and OT insertion order. SPRT is **not accepted until this new NRO compiles and the emulator screenshot job passes**. All real game assets, 8bpp sprites, texture window tests and other semi-transparency modes remain separate gates.
