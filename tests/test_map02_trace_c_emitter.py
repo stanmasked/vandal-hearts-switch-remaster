@@ -138,6 +138,37 @@ class GeneratedCTraceBridgeTests(unittest.TestCase):
                     self.assertEqual(json.loads(validation.stdout)["draw_overall_variant"],
                                      expected)
 
+    def test_trace_events_survive_abrupt_c_exit_without_stdio_shutdown(self):
+        # With stdout piped, printf may be block buffered. _Exit skips
+        # stdio cleanup, proving the generated event hooks flush explicitly.
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / "abrupt_emitter.c"
+            executable = root / "abrupt_emitter"
+            program = generated_emitter_source().replace(
+                "#include <stdio.h>", "#include <stdio.h>\n#include <stdlib.h>", 1
+            )
+            self.assertEqual(program.count("    return 0;\n}"), 1)
+            program = program.replace("    return 0;\n}", "    _Exit(0);\n}", 1)
+            source.write_text(program, encoding="utf-8")
+            subprocess.run(
+                [self.compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
+                 "-DPC_FEAT", "-DVH_TRACE_MAP02",
+                 str(source), "-o", str(executable)],
+                check=True, capture_output=True, text=True,
+            )
+            result = subprocess.run(
+                [str(executable), "prs"], capture_output=True, text=True, check=True
+            )
+            captured = extract_trace_text(result.stdout)
+            self.assertEqual(len(captured), 8)
+            self.assertEqual(
+                [event["stage"] for event in captured],
+                ["post_load", "post_load", "visit", "draw",
+                 "visit", "skip", "visit", "draw"],
+            )
+            self.assertEqual(evaluate_trace(captured)["errors"], [])
+
     def test_zero_face_c_capture_reports_missing_submission_not_visibility(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
