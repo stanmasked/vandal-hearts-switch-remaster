@@ -304,6 +304,42 @@ static int draw_frame(int frame) {
     return 1;
 }
 
+/* PRIVATE preview, only reachable if BOTH user-owned asset files have been
+ * validated and loaded from SD. Draws the source-authored map #11 GFX slot
+ * 241 UVWH and local CLUT as one POLY_FT4 through the original DrawOTag.
+ * It is NOT the original map geometry or game camera. The public CI
+ * cannot enter this branch because no proprietary files are supplied. */
+static int draw_private_map_preview(void) {
+    DRAWENV draw;
+    DISPENV display;
+    unsigned int ot[1];
+    TILE clear;
+    POLY_FT4 preview;
+    RECT page = {320, 0, 64, 256};
+    RECT palette = {672, 496, 16, 16};
+    if (!private_map_active) return 0;
+    SetDefDrawEnv(&draw, 0, 0, 12, 9);
+    SetDefDispEnv(&display, 0, 0, 12, 9);
+    PutDrawEnv(&draw);
+    PutDispEnv(&display);
+    LoadImage(&page, (unsigned int *)map_tex_words);
+    LoadImage(&palette, (unsigned int *)map_clut_words);
+    ClearOTag(ot, 1);
+    SetPolyFT4(&preview);
+    setXYWH(&preview, 1, 1, 10, 7);
+    setUVWH(&preview,
+            private_map.uvwh[0], private_map.uvwh[1],
+            private_map.uvwh[2], private_map.uvwh[3]);
+    setRGB0(&preview, 128, 128, 128);
+    setTPage(&preview, 0, 0, 320, 0);
+    setClut(&preview, 672, 496 + private_map.local_clut_id - 32);
+    AddPrim(&ot[0], &preview);
+    tile(&clear, 0, 0, 12, 9, 0, 0, 0);
+    AddPrim(&ot[0], &clear);
+    DrawOTag(ot);
+    return 1;
+}
+
 /* Test-only inert providers for optional game data, localized overlays,
  * HD packs, debug recording and OSD. They never become game implementations.
  * Original library code still rasterizes BGR555 VRAM and walks the OT.
@@ -387,8 +423,8 @@ int main(void) {
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) goto done;
         }
-        if (!draw_frame(frame)) {
-            fprintf(stderr, "Native raster probe: TIM/DrawOTag frame %d failed\n", frame);
+        if (!(private_map_active ? draw_private_map_preview() : draw_frame(frame))) {
+            fprintf(stderr, "Native raster probe: original DrawOTag frame %d failed\n", frame);
             goto done;
         }
         if (!vh_switch_observer_last_result()) {
