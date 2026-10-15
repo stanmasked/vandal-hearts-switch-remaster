@@ -288,3 +288,25 @@ is rejected. This is a **consistency** check, not a verification against the
 original disc image.
 
 The validator now strictly requires JSON integers for each `audio_lba_offsets` entry (`lba`, `payload_offset`, and `missing_source_sectors_before`). Values such as `false`, `true`, or `2304.0` are rejected even where Python's normal equality operator would treat them as equal to the expected integer. Regression tests cover these deceptive type substitutions.
+
+
+### Read-only raw BIN cross-check
+
+When the original 2352-byte-sector BIN is available locally, cross-check
+**all selected sectors** against the actual disc bytes rather than trusting
+the report alone:
+
+```sh
+python3 tools/validate_cdxa_extraction.py ./xa-sample.json ./xa-sample.bin \
+  --wav ./xa-sample.wav --source-bin "/local/path/to/your/disc.bin"
+```
+
+The optional `--source-bin` mode re-scans the report's declared LBA interval,
+checks the duplicated XA subheaders and file/channel selection, requires
+the same selected LBA sequence, and compares each 2304-byte payload with
+the disc sector at that position. It rejects omitted eligible sectors,
+mismatched bytes, unaligned images and out-of-range source intervals.
+Verification is read-only and does not upload, copy or publish game assets.
+Without `--source-bin`, existing report/payload-only validation still works.
+This proves byte-level extraction consistency for that local image, not
+correct audio playback or the fidelity of the decoder.
