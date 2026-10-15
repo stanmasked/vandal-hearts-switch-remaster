@@ -80,6 +80,49 @@ class AuditMap02DiscPRSTests(unittest.TestCase):
         self.assertFalse(report["matches_prior_decompressed_sha256"])
         self.assertFalse(report["matches_prior_logical_compressed_sha256"])
 
+    def test_decoded_prs_compares_exactly_two_dat_bytes_without_writing_assets(self):
+        decompressed = unpack_prs(self.prs)
+        dat = bytearray(decompressed)
+        for record, local in zip(TARGET_RECORDS, (98, 150)):
+            dat[record * RECORD_SIZE + FACE_GFX_OFFSET] = local
+        comparison = audit_prs(self.prs, dat=bytes(dat))["dat_comparison"]
+        self.assertEqual(comparison["difference_count"], 2)
+        self.assertTrue(comparison["matches_prior_disc_audit"])
+        self.assertFalse(comparison["matches_prior_disc_audit_with_provenance"])
+        self.assertEqual(
+            [(item["prs_local_gfx"], item["dat_local_gfx"]) for item in comparison["target_faces"]],
+            [(241, 98), (243, 150)],
+        )
+        dat[0] ^= 1
+        comparison = audit_prs(self.prs, dat=bytes(dat))["dat_comparison"]
+        self.assertEqual(comparison["difference_count"], 3)
+        self.assertFalse(comparison["matches_prior_disc_audit"])
+
+    def test_dat_comparison_rejects_short_data(self):
+        with self.assertRaisesRegex(ValueError, "DAT must contain"):
+            audit_prs(self.prs, dat=b"not a map")
+
+    def test_cli_dat_option_exposes_only_metadata(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            prs = base / "map.prs"
+            dat = base / "map.dat"
+            prs.write_bytes(self.prs)
+            decoded = bytearray(unpack_prs(self.prs))
+            decoded[TARGET_RECORDS[0] * RECORD_SIZE + FACE_GFX_OFFSET] = 98
+            decoded[TARGET_RECORDS[1] * RECORD_SIZE + FACE_GFX_OFFSET] = 150
+            dat.write_bytes(decoded)
+            proc = subprocess.run(
+                [sys.executable, "-m", "tools.audit_map02_disc_prs",
+                 "--prs-file", str(prs), "--dat-file", str(dat)],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            report = json.loads(proc.stdout)
+            self.assertEqual(report["dat_comparison"]["difference_count"], 2)
+            self.assertTrue(report["dat_comparison"]["matches_prior_disc_audit"])
+            self.assertFalse(report["matches_prior_decompressed_sha256"])
+
     def test_decompress_literal_and_dictionary_tokens(self):
         # A zero bit is a literal. A one bit with a short b1 references cache.
         payload = bytes((0x00,)) + b"abcdefgh"
