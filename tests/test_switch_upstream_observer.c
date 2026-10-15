@@ -34,14 +34,18 @@ int vh_switch_rgb24_presenter_draw(VhSwitchRgb24Presenter *p, int w, int h) {
 
 int main(void) {
     VhSwitchRgb24Presenter presenter = {0};
-    int context = 1;
+    int context = 1, other_context = 2;
     VhSwitchPresentHook hook = {&presenter, viewport, swap, &context};
+    VhSwitchPresentHook other_hook = {&presenter, viewport, swap, &other_context};
     const uint8_t pixels[12] = {1,2,3,4,5,6,7,8,9,10,11,12};
     presenter.initialized = 1;
     VH_ObserveCompletedRGB24(pixels, sizeof(pixels), 2, 2);
     assert(!vh_switch_observer_last_result() && uploads == 0 && swaps == 0);
     assert(!vh_switch_observer_register(NULL));
     assert(vh_switch_observer_register(&hook));
+    /* Registration is single-owner; a second hook must not replace the first. */
+    assert(!vh_switch_observer_register(&hook));
+    assert(!vh_switch_observer_register(&other_hook));
     VH_ObserveCompletedRGB24(pixels, sizeof(pixels), 2, 2);
     assert(vh_switch_observer_last_result() == 1);
     assert(uploads == 1 && draws == 1 && swaps == 1 && seen == pixels);
@@ -57,6 +61,12 @@ int main(void) {
     VH_ObserveCompletedRGB24(pixels, sizeof(pixels), 2, 2);
     assert(!vh_switch_observer_last_result());
     assert(uploads == 2 && swaps == 1);
+    /* The owner can be registered again after explicit teardown. */
+    assert(vh_switch_observer_register(&other_hook));
+    VH_ObserveCompletedRGB24(pixels, sizeof(pixels), 2, 2);
+    assert(vh_switch_observer_last_result() == 1);
+    assert(uploads == 3 && swaps == 2);
+    vh_switch_observer_unregister();
     puts("Upstream RGB24 observer binding tests passed.");
     return 0;
 }
