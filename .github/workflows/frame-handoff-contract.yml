@@ -30,6 +30,8 @@ on:
       - "tests/test_switch_frame_bridge.c"
       - "tests/test_switch_completed_frame.c"
       - "tests/test_switch_present_hook.c"
+      - "tools/patch_pc_gpu_present_observer.py"
+      - "tests/test_pc_gpu_present_observer_patch.py"
       - ".github/workflows/frame-handoff-contract.yml"
   pull_request:
     paths:
@@ -58,6 +60,8 @@ on:
       - "tests/test_switch_frame_bridge.c"
       - "tests/test_switch_completed_frame.c"
       - "tests/test_switch_present_hook.c"
+      - "tools/patch_pc_gpu_present_observer.py"
+      - "tests/test_pc_gpu_present_observer_patch.py"
       - ".github/workflows/frame-handoff-contract.yml"
   workflow_dispatch:
 
@@ -126,3 +130,4 @@ jobs:
             source/switch_frame_bridge.c source/switch_completed_frame.c \
             source/switch_present_hook.c -o build-tests/test_switch_present_hook
           ./build-tests/test_switch_present_hook
+          python3 -m unittest discover -s tests -p test_pc_gpu_present_observer_patch.py -v
