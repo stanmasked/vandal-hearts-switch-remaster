@@ -72,6 +72,7 @@ def extract_audio_payloads(
     selected = mode2 = valid_subheaders = 0
     submodes: dict[int, int] = {}
     coding_info: dict[int, int] = {}
+    stream_counts: dict[tuple[int, int], int] = {}
     destination.parent.mkdir(parents=True, exist_ok=True)
     temp_payload: Path | None = None
     temp_report: Path | None = None
@@ -112,6 +113,8 @@ def extract_audio_payloads(
                 payload_digest.update(audio_groups)
                 audio_lbas.append(lba)
                 coding_info[coding] = coding_info.get(coding, 0) + 1
+                stream_key = (file_no, channel_no)
+                stream_counts[stream_key] = stream_counts.get(stream_key, 0) + 1
                 selected += 1
 
         gaps = sum(1 for a, b in zip(audio_lbas, audio_lbas[1:]) if b != a + 1)
@@ -141,6 +144,10 @@ def extract_audio_payloads(
             ],
             "submode_counts": {f"0x{k:02X}": v for k, v in sorted(submodes.items())},
             "coding_info_counts": {f"0x{k:02X}": v for k, v in sorted(coding_info.items())},
+            "file_channel_counts": {
+                f"{file_no}:{channel_no}": value
+                for (file_no, channel_no), value in sorted(stream_counts.items())
+            },
             "warning": "Payload extraction only; not decoded PCM. Removing non-audio sectors may lose timing/gap information.",
         }
 
