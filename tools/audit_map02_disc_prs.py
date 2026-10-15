@@ -22,6 +22,8 @@ RAW_BYTES = 2352
 PRIOR_COMPRESSED_SHA256 = "c370660f7f13e6d6e76f4126a45418bc9c64c747de8309ca946d37b502516387"
 PRIOR_DAT_SHA256 = "07666bd80b87de763ef7312ecaeaa0bf747ebfe49db032fa68c9af675d151c31"
 PRIOR_DAT_LENGTH = 238336
+DAT_START_SECTOR = 6999
+DAT_SECTOR_COUNT = (PRIOR_DAT_LENGTH + USER_BYTES - 1) // USER_BYTES
 XA_EDC_POLYNOMIAL = 0xD8018001
 XA_EDC_OFFSET = 0x818
 SYNC = bytes((0,)) + bytes((255,)) * 10 + bytes((0,))
@@ -46,21 +48,26 @@ def xa_edc(data: bytes) -> int:
     return crc
 
 
-def read_sectors(path: Path, layout: str, bias: int = 0) -> bytes:
+def read_sectors(path: Path, layout: str, bias: int = 0, *,
+                 start_sector: int = START_SECTOR,
+                 sector_count: int = SECTOR_COUNT) -> bytes:
     """Extract only selected sectors; verify Mode2 Form1 headers and EDC."""
     sector_size = {"mode2-2352": RAW_BYTES, "iso-2048": USER_BYTES}.get(layout)
     if sector_size is None:
         raise ValueError("layout must be mode2-2352 or iso-2048")
     if type(bias) is not int:
         raise ValueError("sector bias must be an integer")
-    first = START_SECTOR + bias
+    if (type(start_sector) is not int or start_sector < 0
+            or type(sector_count) is not int or sector_count < 1):
+        raise ValueError("invalid disc-sector range")
+    first = start_sector + bias
     if first < 0:
         raise ValueError("selected sector before beginning of image")
     data = bytearray()
     with path.open("rb") as handle:
-        if handle.seek(0, 2) < (first + SECTOR_COUNT) * sector_size:
+        if handle.seek(0, 2) < (first + sector_count) * sector_size:
             raise ValueError("disc image is too short for requested MAP02 sectors")
-        for relative in range(SECTOR_COUNT):
+        for relative in range(sector_count):
             handle.seek((first + relative) * sector_size)
             sector = handle.read(sector_size)
             if len(sector) != sector_size:
@@ -216,8 +223,11 @@ def main():
                         help="mandatory for --disc-image")
     parser.add_argument("--sector-bias", type=int, default=0,
                         help="track-relative sector adjustment; default 0 (not automatic)")
-    parser.add_argument("--dat-file", type=Path,
-                        help="optional local M_MAP02.DAT to compare against decoded PRS")
+    dat_source = parser.add_mutually_exclusive_group()
+    dat_source.add_argument("--dat-file", type=Path,
+                            help="optional local M_MAP02.DAT to compare with PRS")
+    dat_source.add_argument("--dat-from-disc", action="store_true",
+                            help="read M_MAP02.DAT from same owned image at LBA 6999")
     parser.add_argument("--require-prior-provenance", action="store_true",
                         help="require archived compressed/decompressed PRS hashes and optional DAT hash")
     args = parser.parse_args()
@@ -225,14 +235,31 @@ def main():
         parser.error("--disc-image requires --layout")
     if args.prs_file is not None and (args.layout is not None or args.sector_bias):
         parser.error("--layout/--sector-bias only apply to --disc-image")
+    if args.dat_from_disc and args.disc_image is None:
+        parser.error("--dat-from-disc requires --disc-image")
     try:
         content = (read_sectors(args.disc_image, args.layout, args.sector_bias)
                    if args.disc_image is not None else args.prs_file.read_bytes())
         dat = args.dat_file.read_bytes() if args.dat_file is not None else None
+        if args.dat_from_disc:
+            dat = read_sectors(
+                args.disc_image, args.layout, args.sector_bias,
+                start_sector=DAT_START_SECTOR,
+                sector_count=DAT_SECTOR_COUNT,
+            )[:PRIOR_DAT_LENGTH]
         result = audit_prs(content, dat=dat)
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
     result["input_type"] = "disc_image" if args.disc_image is not None else "prs_file"
+    if args.dat_from_disc:
+        result["dat_source"] = "disc_image"
+        result["dat_start_sector"] = DAT_START_SECTOR
+        result["dat_sector_count"] = DAT_SECTOR_COUNT
+        result["dat_mode2_form1_edc_verified_sectors"] = (
+            DAT_SECTOR_COUNT if args.layout == "mode2-2352" else None
+        )
+    elif args.dat_file is not None:
+        result["dat_source"] = "dat_file"
     if args.disc_image is not None:
         result["cd_table_start_sector"] = START_SECTOR
         result["sector_count"] = SECTOR_COUNT
@@ -247,7 +274,7 @@ def main():
         and result["matches_prior_decompressed_sha256"]
         and result["matches_prior_target_gfx"]
     )
-    if args.dat_file is not None:
+    if dat is not None:
         provenance_matches = (
             provenance_matches and
             result["dat_comparison"]["matches_prior_disc_audit_with_provenance"]
