@@ -84,6 +84,42 @@ class ValidateXaExtractionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "file/channel counts"):
             self.check()
 
+    def test_source_lba_range_metadata_accepted(self):
+        self.data.update({
+            "start_lba": 10, "sectors_scanned": 3,
+            "first_audio_lba": 10, "last_audio_lba": 12,
+        })
+        self.assertEqual(self.check()["audio_sectors"], 2)
+
+    def test_out_of_range_audio_lba_rejected(self):
+        self.data.update({
+            "start_lba": 11, "sectors_scanned": 2,
+            "first_audio_lba": 10, "last_audio_lba": 12,
+        })
+        with self.assertRaisesRegex(ValueError, "outside reported scanned range"):
+            self.check()
+
+    def test_inconsistent_first_or_last_lba_rejected(self):
+        self.data.update({
+            "start_lba": 10, "sectors_scanned": 3,
+            "first_audio_lba": 11, "last_audio_lba": 12,
+        })
+        with self.assertRaisesRegex(ValueError, "first/last audio LBA"):
+            self.check()
+
+    def test_incomplete_source_range_rejected(self):
+        self.data["start_lba"] = 10
+        with self.assertRaisesRegex(ValueError, "incomplete source LBA"):
+            self.check()
+
+    def test_source_range_must_fit_selected_sector_count(self):
+        self.data.update({
+            "start_lba": 10, "sectors_scanned": 1,
+            "first_audio_lba": 10, "last_audio_lba": 12,
+        })
+        with self.assertRaisesRegex(ValueError, "outside reported scanned range"):
+            self.check()
+
     def test_invalid_offsets_fail(self):
         self.data["audio_lba_offsets"][1]["payload_offset"] = 2305
         with self.assertRaisesRegex(ValueError, "mapping"):
