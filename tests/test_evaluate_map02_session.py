@@ -1,4 +1,9 @@
 """Map02 multi-load splitting and capture-level verdicts (synthetic events only)."""
+import json
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
 import unittest
 
 from tools.evaluate_map02_session import evaluate_capture_session
@@ -101,6 +106,27 @@ class Map02EpisodeTests(unittest.TestCase):
         self.assertEqual([ep["event_range"] for ep in report["map_loads"]],
                          [{"first": 1, "last": 8}, {"first": 9, "last": 14}])
         self.assertEqual(report["errors"], [])
+
+    def test_standalone_cli_uses_same_episode_splitting_as_capture(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "session.jsonl"
+            command = [sys.executable, "-m", "tools.verify_map02_trace",
+                       str(path), "--require-full-trace",
+                       "--require-uniform-variant"]
+            for second, expected_code in ((full_events(), 0),
+                                          (full_events(498, 550), 1)):
+                with self.subTest(second_gfx=second[0]["gfx"]):
+                    path.write_text(
+                        "".join(json.dumps(event) + "\\n"
+                                for event in full_events() + second),
+                        encoding="utf-8",
+                    )
+                    result = subprocess.run(command, capture_output=True, text=True)
+                    self.assertEqual(result.returncode, expected_code, result.stderr)
+                    output = json.loads(result.stdout)
+                    self.assertEqual(output["map_load_count"], 2)
+                    self.assertEqual(output["map_loads"][1]["event_range"],
+                                     {"first": 7, "last": 12})
 
     def test_legacy_repeated_loads_are_separate(self):
         result = evaluate_capture_session(iter(observations() + observations()))
