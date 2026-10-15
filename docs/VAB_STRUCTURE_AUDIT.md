@@ -576,3 +576,60 @@ runtime and a hardware/PC recording.
 
 No original SEQ/VH/VB files or generated game audio are committed.
 Only synthetic tests and parser/rendering code are included.
+
+
+## SPU ADSR-driven SEQ voice lifetime (opt-in)
+
+The host-only `tools/spu_voice_lifetime.py` now implements an ADSR/PCM
+liveness clock for the **20 SEQ voice slots**. Its per-frame operations
+reuse exactly the same `SpuEnvelope` and `SpuSampleCursor` classes as
+the diagnostic stereo renderer. This means slot occupancy ends when
+either the envelope reaches `off` or a nonlooping decoded sample
+reaches its end, rather than when a fixed synthetic release timeout
+expires. A voice in release still occupies its slot until it actually
+becomes inactive. The caller reads the selected tone's **ADSR1/ADSR2**,
+PCM sample count, loop markers and pitch from a validated local VH/VB
+pair (nothing is extracted to an intermediate file).
+
+To compare old and new voice allocation without losing a reproducible
+baseline, the **direct** offline SEQ renderer exposes an explicit
+mode switch:
+
+```sh
+# Historical fixed tail, remains the default:
+python3 tools/render_ps1_seq.py \
+  /local/path/music.seq /local/path/music.vh /local/path/music.vb \
+  /local/path/fixed.wav --voice-lifetime fixed --release-frames 4410
+
+# Sample-accurate synthetic SPU-envelope/cursor liveness:
+python3 tools/render_ps1_seq.py \
+  /local/path/music.seq /local/path/music.vh /local/path/music.vb \
+  /local/path/adsr.wav --voice-lifetime adsr
+
+python3 tests/test_spu_voice_lifetime.py
+```
+
+The `--voice-lifetime adsr` mode is *opt-in*. The standalone
+`seq_to_chord_schedule.py` JSON converter continues to use fixed
+`--release-frames` unless programmatically given VAB-backed
+`voice_spec_for_note` metadata. New regression tests cover natural
+one-shot exhaustion, sustain-level auto-fade, two-frame rapid release,
+20-slot free/reuse and round-robin behavior, stale note-off ownership,
+and byte-level integration from synthetic local SEQ/VH/VB to stereo WAV.
+
+The clock stops at the first inactive output frame. For SPU ADSR
+completion, that frame emits no PCM; for one-shot sample-cursor
+exhaustion, the final cursor-advance frame has already been rendered.
+When release does not finish before the 20-second safety boundary,
+the offline timeline is clipped and a `lifetime_capped` diagnostic
+marker is reported. This is a **bounded diagnostic**, not a substitute
+for the live PC-port audio service.
+
+**Remaining fidelity caveats:** the source port's SEQ advances in
+512-frame audio blocks, and its voice allocator synchronizes with
+`PC_SpuVoiceActive` between blocks; offline event timestamps follow
+the ideal rational frame timeline. Audio-block event boundaries,
+voice liveness when OpenAL buffers underrun, real hardware SPU timing,
+per-voice reverb, and actual Nintendo Switch output have not been
+validated. This model must not be called PS1-perfect or Switch-ready
+solely because host synthetic CI passes.
