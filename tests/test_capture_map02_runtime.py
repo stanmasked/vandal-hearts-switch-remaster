@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from tools.capture_map02_runtime import capture
-from tools.prepare_map02_pcport import PINNED_UPSTREAM_REF
+from tools.prepare_map02_pcport import PINNED_BLOB_SHA1, PINNED_UPSTREAM_REF
 
 
 def fixture(root: Path, mode="complete", modified=False, trace_mode="legacy"):
@@ -18,22 +18,25 @@ def fixture(root: Path, mode="complete", modified=False, trace_mode="legacy"):
         "trace_mode": trace_mode,
         "allow_modified_source": modified,
         "source_files": {
-            name: {"matches_pinned": not modified}
-            for name in ("src/core/graphics.c", "src/states/game_setup.c", "platform/pc/Makefile")
+            name: {
+                "matches_pinned": not modified,
+                "git_blob_sha1": ("0" * 40 if modified else blob),
+                "sha256": hashlib.sha256(name.encode("utf-8")).hexdigest(),
+            }
+            for name, blob in PINNED_BLOB_SHA1.items()
         },
     }
-    if trace_mode == "full":
-        payloads = {
-            "game_setup.trace.c": "/* generated loader trace */\n",
-            "graphics.trace.c": "/* generated renderer trace */\n",
-            "map02_trace.mk": "# generated diagnostic Make overlay\n",
-        }
-        provenance["generated_files"] = {
-            name: hashlib.sha256(content.encode("utf-8")).hexdigest()
-            for name, content in payloads.items()
-        }
-        for name, content in payloads.items():
-            (trace_dir / name).write_text(content, encoding="utf-8")
+    payloads = {
+        "game_setup.trace.c": "/* generated loader trace */\n",
+        "graphics.trace.c": "/* generated renderer trace */\n",
+        "map02_trace.mk": "# generated diagnostic Make overlay\n",
+    }
+    provenance["generated_files"] = {
+        name: hashlib.sha256(content.encode("utf-8")).hexdigest()
+        for name, content in payloads.items()
+    }
+    for name, content in payloads.items():
+        (trace_dir / name).write_text(content, encoding="utf-8")
     (trace_dir / "source_provenance.json").write_text(json.dumps(provenance), encoding="utf-8")
     executable = root / "fake-pcport"
     events = [
@@ -129,6 +132,51 @@ class CaptureMap02RuntimeTests(unittest.TestCase):
             wrong_sources["source_files"]["unknown.c"] = wrong_sources["source_files"].pop("src/core/graphics.c")
             provenance_path.write_text(json.dumps(wrong_sources))
             with self.assertRaisesRegex(ValueError, "three pinned files"):
+                capture(exe, trace_dir, base / "run")
+            self.assertFalse((base / "run").exists())
+
+    def test_source_manifest_cannot_forge_pinned_match_flag(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            exe, trace_dir = fixture(base)
+            manifest = trace_dir / "source_provenance.json"
+            data = json.loads(manifest.read_text())
+            data["source_files"]["src/core/graphics.c"]["git_blob_sha1"] = "f" * 40
+            manifest.write_text(json.dumps(data))
+            with self.assertRaisesRegex(ValueError, "matches_pinned disagrees"):
+                capture(exe, trace_dir, base / "run")
+            self.assertFalse((base / "run").exists())
+
+    def test_invalid_source_hashes_and_manifest_types_are_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            exe, trace_dir = fixture(base)
+            manifest = trace_dir / "source_provenance.json"
+            original = json.loads(manifest.read_text())
+            cases = (
+                ("bad-git-id", {"source_files": {**original["source_files"],
+                  "src/core/graphics.c": {**original["source_files"]["src/core/graphics.c"],
+                                         "git_blob_sha1": "bad"}}}, "invalid Git blob SHA-1"),
+                ("bad-sha256", {"source_files": {**original["source_files"],
+                  "src/core/graphics.c": {**original["source_files"]["src/core/graphics.c"],
+                                         "sha256": "invalid"}}}, "invalid source SHA-256"),
+                ("false-boolean", {"allow_modified_source": "false"}, "must be a boolean"),
+                ("legacy-no-generated-hashes", {"generated_files": None}, "must fingerprint generated files"),
+            )
+            for name, patch, error in cases:
+                with self.subTest(name=name):
+                    manifest.write_text(json.dumps({**original, **patch}))
+                    with self.assertRaisesRegex(ValueError, error):
+                        capture(exe, trace_dir, base / "run")
+                    self.assertFalse((base / "run").exists())
+
+    def test_legacy_generated_input_tampering_is_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            exe, trace_dir = fixture(base, trace_mode="legacy")
+            source = trace_dir / "graphics.trace.c"
+            source.write_text(source.read_text() + "tampered\n")
+            with self.assertRaisesRegex(ValueError, "changed since preparation"):
                 capture(exe, trace_dir, base / "run")
             self.assertFalse((base / "run").exists())
 
