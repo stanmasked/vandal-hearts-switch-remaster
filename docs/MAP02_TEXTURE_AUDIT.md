@@ -1,8 +1,8 @@
 # Map 02 LAND_DT / GFX 241–243 audit
 
-Status: **unresolved — do not generate replacement textures from guessed palettes**.
+Status: **superseded for resource attribution by [M_MAP02 PRS/DAT reconciliation](MAP02_PRS_DAT_RECONCILIATION.md). Do not generate replacement textures from guessed palettes.**
 
-This note records the evidence available from the ongoing map-02 investigation. It is a working audit, **not** proof that either face is intended to be visible.
+**Critical scope distinction:** The `tools/check_map02_raw.py` check is specifically for zero-based LAND_DT **block 2**. The prior source-disc audit associates the resource `M_MAP02.PRS` with runtime map number **11**, using LAND_DT block **11**. A passing block-2 test cannot establish missing/transparent textures for resource `M_MAP02`. Its recorded nonzero PRS GFX slots (241/243) and the DAT alternatives (98/150) require runtime tracing before assigning a visual defect. See [reconciliation](MAP02_PRS_DAT_RECONCILIATION.md).\n\nThis note records the evidence available from the ongoing map-02 investigation. It is a working audit, **not** proof that either face is intended to be visible.
 
 ## Observations to preserve
 
@@ -57,4 +57,4 @@ The check now reports both the full input SHA-256 and the selected map-block SHA
 
 ## Current decision
 
-**Do not patch GFX 241 or 243, assign guessed UVs, or upscale fabricated imagery.** The next technical result must come from validating the raw association/renderer behavior and original-game comparison. This document contains no copyrighted game assets.
+**Do not patch GFX 241 or 243, assign guessed UVs, or upscale fabricated imagery. Treat zero-based block-2 placeholder evidence as irrelevant to `M_MAP02` until a verified runtime association says otherwise.** The next technical result must come from validating the raw association/renderer behavior and original-game comparison. This document contains no copyrighted game assets.
