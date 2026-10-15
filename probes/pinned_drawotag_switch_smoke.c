@@ -56,8 +56,6 @@ void PC_LangPatchFwdUpload(int x, int y, int w, int h, unsigned short *pix) {
     (void)x; (void)y; (void)w; (void)h; (void)pix;
 }
 void PC_UpdateCamOsd(void) {}
-int PC_CpuCount(void) { return 1; }
-volatile sig_atomic_t g_vhHiresDumpReq = 0;
 void TrcInit(void) {}
 void TrcWrite(char op, const void *a, u32 na, const void *b, u32 nb) {
     (void)op; (void)a; (void)na; (void)b; (void)nb;
