@@ -125,6 +125,29 @@ int main(void) {
         SDL_Quit();
         return 9;
     }
+    static uint8_t resized_pixels[17 * 9 * 3];
+    for (int y = 0; y < 9; ++y) {
+        for (int x = 0; x < 17; ++x) {
+            uint8_t *p = resized_pixels + ((size_t)y * 17u + (size_t)x) * 3u;
+            p[0] = (uint8_t)(x * 15);
+            p[1] = (uint8_t)(y * 28);
+            p[2] = 96;
+        }
+    }
+    const VhRgb24Frame resized_frame = {resized_pixels, 17u * 3u, 17, 9};
+    if (!vh_switch_rgb24_presenter_upload(&presenter, &resized_frame) ||
+        presenter.frame_width != 17 || presenter.frame_height != 9 ||
+        !vh_switch_rgb24_presenter_upload(&presenter, &frame) ||
+        presenter.frame_width != FRAME_WIDTH || presenter.frame_height != FRAME_HEIGHT) {
+        fprintf(stderr, "RGB24 presenter resize round-trip failed\\n");
+        vh_switch_rgb24_presenter_destroy(&presenter);
+        SDL_GL_DeleteContext(context);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 12;
+    }
+    fprintf(stderr, "RGB24 resize round-trip: PASS\\n");
+
     if (!vh_switch_rgb24_presenter_draw(&presenter, WINDOW_WIDTH, WINDOW_HEIGHT)) {
         fprintf(stderr, "RGB24 presenter lost valid frame after rejected upload\\n");
         vh_switch_rgb24_presenter_destroy(&presenter);
