@@ -66,6 +66,14 @@ class PrepareMap02SessionTests(unittest.TestCase):
             self.assertIn("VH_DISC_IMAGE=" + shlex.quote(str(disc)), script)
             self.assertIn("VH_KROM_SOURCE=" + shlex.quote(str(krom)), script)
             self.assertIn("--require-complete", script)
+            self.assertIn("preflight_at_build.json", script)
+            self.assertIn("tools.preflight_map02_pcport", script)
+            self.assertIn("--disc-image " + shlex.quote(str(disc)), script)
+            self.assertIn("--krom-source " + shlex.quote(str(krom)), script)
+            self.assertLess(script.index("tools.preflight_map02_pcport"),
+                            script.index("VH_KROM_SOURCE="))
+            self.assertLess(script.index("tools.preflight_map02_pcport"),
+                            script.index("make -f Makefile"))
             self.assertIn("capture_status=0", script)
             self.assertIn("|| capture_status=$?", script)
             self.assertLess(script.index("capture_status=0"),
@@ -132,6 +140,10 @@ class PrepareMap02SessionTests(unittest.TestCase):
             script = Path(plan["user_shell_script"]).read_text()
             self.assertNotIn("NO_WEBP=1", script)
             self.assertNotIn("NO_HDVIDEO=1", script)
+            preflight_line = next(line for line in script.splitlines()
+                                  if "tools.preflight_map02_pcport" in line)
+            self.assertNotIn("--no-webp", preflight_line)
+            self.assertNotIn("--no-hdvideo", preflight_line)
 
 
 if __name__ == "__main__":
