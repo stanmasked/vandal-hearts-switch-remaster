@@ -1,4 +1,5 @@
 """End-to-end tests for the one-command local CD-XA verification workflow."""
+import json
 import sys
 import tempfile
 import unittest
@@ -55,6 +56,10 @@ class LocalXaCheckTests(unittest.TestCase):
         self.assertTrue(result["comparison"]["exact_match"])
         self.assertTrue((output / "decoded.wav").is_file())
         self.assertTrue((output / "extraction.json").is_file())
+        saved = json.loads((output / "audit-result.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved, result)
+        self.assertTrue(saved["comparison"]["candidate_wav_sha256"])
+        self.assertTrue(saved["comparison"]["reference_wav_sha256"])
 
     def test_without_reference_reports_verified_decode_only(self):
         output = self.root / "without-reference"
@@ -64,6 +69,8 @@ class LocalXaCheckTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "decoded_and_source_verified")
         self.assertNotIn("comparison", result)
+        saved = json.loads((output / "audit-result.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved, result)
 
     def test_reference_mismatch_fails_and_keeps_diagnostics(self):
         ref = self.reference("wrong.wav", value=1)
@@ -75,6 +82,12 @@ class LocalXaCheckTests(unittest.TestCase):
             )
         self.assertTrue((output / "decoded.wav").exists())
         self.assertTrue((output / "extraction.json").exists())
+        saved = json.loads((output / "audit-result.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved["status"], "reference_pcm_mismatch")
+        self.assertFalse(saved["comparison"]["exact_match"])
+        self.assertEqual(saved["comparison"]["first_different_frame"], 0)
+        self.assertTrue(saved["comparison"]["candidate_wav_sha256"])
+        self.assertTrue(saved["comparison"]["reference_wav_sha256"])
 
     def test_existing_output_is_never_overwritten(self):
         output = self.root / "existing"
@@ -102,6 +115,7 @@ class LocalXaCheckTests(unittest.TestCase):
                 start_lba=1, sector_count=3,
             )
         self.assertFalse((output / "decoded.wav").exists())
+        self.assertFalse((output / "audit-result.json").exists())
 
 
 if __name__ == "__main__":
