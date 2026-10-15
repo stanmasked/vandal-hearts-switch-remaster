@@ -55,6 +55,23 @@ int main(void) {
                                           scratch, 11, 1280, 720));
     assert(uploads == 2 && draws == 2);
 
+    /* The top-level bridge also rejects source/scratch overlap before upload. */
+    uint8_t aliased_movie[24] = {1,2,3,4,5,6,7,8,9,10,11,12};
+    uint8_t saved_movie[24];
+    memcpy(saved_movie, aliased_movie, sizeof(saved_movie));
+    assert(!vh_switch_present_movie_rgb24(&presenter, aliased_movie, 12,
+                                          2, 2, aliased_movie + 3, 12,
+                                          1280, 720));
+    assert(memcmp(aliased_movie, saved_movie, sizeof(saved_movie)) == 0);
+    uint16_t aliased_vram[16] = {0x001f, 0x03e0, 0x7c00, 0x7fff};
+    uint16_t saved_vram[16];
+    memcpy(saved_vram, aliased_vram, sizeof(saved_vram));
+    assert(!vh_switch_present_bgr555(&presenter, aliased_vram, 16, 4, 4,
+                                     0, 0, 2, 2, (uint8_t *)aliased_vram + 4,
+                                     12, 1280, 720));
+    assert(memcmp(aliased_vram, saved_vram, sizeof(saved_vram)) == 0);
+    assert(uploads == 2 && draws == 2);
+
     accept_upload = 0;
     assert(!vh_switch_present_movie_rgb24(&presenter, movie, sizeof(movie), 2, 2,
                                           scratch, sizeof(scratch), 1280, 720));
