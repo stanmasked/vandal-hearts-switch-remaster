@@ -334,3 +334,87 @@ and loop-history path against known vectors from the PC-port implementation.
 No multi-voice mixing, original PS1 pitch-table rounding, stereo pan/gain,
 reverb, exact Sony hardware timing, or real-game source-bank playback has
 been validated. A WAV from this host diagnostic is not a Switch build.
+
+
+## Dry multivoice stereo rendering
+
+`tools/mix_spu_stereo.py` models the PC port's `SeqNoteOn` velocity
+and level path: four **successive integer /127 truncations** (velocity
+times channel volume, bank master volume, program volume and tone volume),
+then tone/program/channel pan factors, left/right SEQ volume, and finally
+the PsyQ **square law applied to each channel separately**. The same
+PC-port diagnostic SEQ trim of `1.012` is applied after the square law.
+This is not a calibration of real PS1 hardware.
+
+The dry mixer runs at 44,100 Hz with per-voice Gaussian sample fetch,
+ADSR advancement, individual pitch cursors and independent L/R gains.
+It sums all active voice contributions in floating point, truncates each
+channel once, and clips the mixed output to signed 16-bit PCM. It can
+schedule up to 32 overlapping notes across 20 seconds, but **does not
+implement the game's voice allocator or voice stealing**.
+
+`tools/render_vab_chord.py` turns a user-authored **JSON test schedule**
+into a 16-bit **stereo** WAV from matching, locally owned VH and VB files:
+
+```json
+{
+  "voices": [
+    {
+      "program": 7,
+      "note": 60,
+      "velocity": 110,
+      "channel_volume": 127,
+      "channel_pan": 24,
+      "start_frame": 0,
+      "hold_frames": 22050,
+      "tail_frames": 8820
+    },
+    {
+      "program": 7,
+      "note": 64,
+      "velocity": 100,
+      "channel_pan": 102,
+      "start_frame": 4410,
+      "hold_frames": 17640,
+      "tail_frames": 8820
+    }
+  ]
+}
+```
+
+```sh
+python3 tools/render_vab_chord.py \
+  /local/path/music.vh /local/path/music.vb \
+  /local/path/voices.json /local/path/dry-chord.wav
+python3 tests/test_mix_spu_stereo.py
+```
+
+All timeline numbers are **44,100-Hz output frames**, not SEQ ticks.
+Velocity/channel volume defaults to 127, channel pan to 64 (centre),
+start frame to 0 and release tail to 0 if omitted. The default
+interpolation is integer Gaussian; `--interpolation nearest` allows
+baseline comparison. The schedule is limited to 64 KiB, 1–32 voices,
+and a maximum 20-second output. Destination files must be new: VH, VB,
+the schedule file and existing outputs are never overwritten.
+
+The tests verify hard left/right pan, pan-before-squaring,
+integer-level stage truncation, polyphonic sum-and-clip,
+exact synthetic stereo PCM, delayed note starts, validation, and
+source-file immutability.
+
+This tool is a **dry diagnostic** driven by manually specified notes,
+not a soundtrack renderer. It does not parse a PS1 SEQ, implement
+correct original note timing, perform voice allocation/stealing,
+reverb, precise PlayStation pitch quantization, or run on Switch.
+Original game audio remains local and must not be committed.
+
+## Host audio CI
+
+`.github/workflows/host-audio-tests.yml` runs a dedicated Python syntax
+check and the focused VAB/SPU audio test suite on pull requests,
+including the stereo tests. The separate texture-sampling CI is
+**not** an audio acceptance test. The full `make test` target also
+includes unrelated Map02 tests and was observed failing on a
+`test_capture_map02_runtime` binary provenance marker validation;
+that unrelated regression needs its own investigation before claiming
+the repository-wide suite is green.
