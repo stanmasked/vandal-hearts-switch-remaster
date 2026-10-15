@@ -6,6 +6,7 @@ Passing this check supports only the raw-byte observation, NOT the intended
 appearance of a rendered face or the correctness of map-block attribution.
 """
 import argparse
+import hmac
 import json
 from pathlib import Path
 
@@ -63,18 +64,33 @@ def check_raw_records(report):
     return errors
 
 
+def check_block_hash(report, expected_hash):
+    """Verify the selected block against a previously recorded SHA-256 digest."""
+    if expected_hash is None:
+        return []
+    expected = expected_hash.lower()
+    if len(expected) != 64 or any(c not in "0123456789abcdef" for c in expected):
+        return ["expected block SHA-256 must be 64 hexadecimal characters"]
+    observed = report.get("block_sha256")
+    if not isinstance(observed, str) or not hmac.compare_digest(observed.lower(), expected):
+        return ["selected LAND_DT block SHA-256 does not match expected"]
+    return []
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input", type=Path)
     parser.add_argument("--block", action="store_true",
                         help="input is independently extracted map-02 block (1797 bytes)")
+    parser.add_argument("--expected-block-sha256", metavar="HEX",
+                        help="require the selected block to match an independently recorded SHA-256")
     args = parser.parse_args()
     # Absolute import works when invoked from the repository root with -m.
     try:
         report = inspect_land_dt(args.input, map_number=2, single_block=args.block)
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
-    errors = check_raw_records(report)
+    errors = check_raw_records(report) + check_block_hash(report, args.expected_block_sha256)
     print(json.dumps({
         "source_sha256": report["input_sha256"],
         "block_sha256": report["block_sha256"],
