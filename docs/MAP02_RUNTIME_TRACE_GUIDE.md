@@ -285,8 +285,23 @@ instrumentation source from silently retaining the original provenance.
 Full-trace captures require these fingerprints; legacy manifests created
 before this enhancement remain readable for compatibility.
 
-This verifies the prepared diagnostic inputs, **not that the executable was
-actually built from them**. Keep the instrumented object files, compiler
+In full-trace mode the generator additionally embeds a deterministic
+`VH_MAP02_TRACE_BUILD_ID:<sha256>` marker in the renderer translation unit.
+The identifier is calculated from the generated loader, renderer, and
+Makefile-overlay contents **before** inserting the marker. It is recorded
+in `source_provenance.json` as `binary_marker` and then embedded as a
+null-terminated C string. The capture tool requires an exact match in the
+selected executable **before the game launches**. A regular PC-port binary
+without the trace hook, or an older/different full-trace build, is rejected.
+The CI compiles the renderer via real upstream Make rules and verifies that
+the expected marker survives in both its object file and a partially linked
+object.
+
+This checks the presence of a build marker rather than cryptographically
+attesting the entire executable or its runtime behavior. It can be copied,
+removed by an incompatible stripping/linking configuration, or forged; a
+matching marker does not establish that all game objects came from the pinned
+sources. Keep the instrumented object files, compiler
 settings and binary SHA-256 with any decisive visual-reference comparison.
 
 For a deliberately modified PC-port checkout, append
@@ -442,8 +457,11 @@ and report. It never silently treats no observed face as success and never
 overwrites an existing capture folder. Modified-source runs require
 `--allow-modified-source` **before** the positional arguments.
 
-The provenance manifest is not a signed build attestation and cannot prove
-that the chosen executable was built from it. The executable SHA-256 allows
+The full-trace capture refuses to start if the executable lacks the exact
+build marker recorded in the prepared diagnostic manifest. Existing legacy
+captures do not require this marker. The marker check identifies an expected
+diagnostic build but is not a signed build attestation and cannot prove
+that every object in the executable came from the manifest. The executable SHA-256 allows
 later identification of the exact binary tested. The raw log is written as bytes without UTF-8 replacement; decoding with
 replacement occurs **only** in the JSON event extractor. A synthetic host
 test confirms that invalid UTF-8 bytes survive the capture unchanged.
