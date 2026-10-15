@@ -1,5 +1,10 @@
 """Synthetic regression coverage for map02 PRS/DAT disagreement audit."""
+import json
+import subprocess
+import sys
+import tempfile
 import unittest
+from pathlib import Path
 
 from tools.compare_map02_variants import (
     EXPECTED_LENGTH, FACE_GFX_OFFSET, RECORD_SIZE, classify_runtime_faces, compare_map02,
@@ -92,6 +97,33 @@ class Map02VariantTests(unittest.TestCase):
         result = classify_runtime_faces(report, capture)
         self.assertEqual(result["overall_classification"], "unrecognized")
         self.assertFalse(result["recognized_and_consistent"])
+
+    def test_strict_runtime_gate_cli(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            prs = bytearray(EXPECTED_LENGTH)
+            dat = bytearray(EXPECTED_LENGTH)
+            for record, p, d in ((243, 241, 98), (319, 243, 150)):
+                offset = record * RECORD_SIZE + FACE_GFX_OFFSET
+                prs[offset], dat[offset] = p, d
+            (root / "prs.bin").write_bytes(prs)
+            (root / "dat.bin").write_bytes(dat)
+            path = root / "capture.json"
+            command = [sys.executable, "-m", "tools.compare_map02_variants",
+                       str(root / "prs.bin"), str(root / "dat.bin"),
+                       "--runtime-capture", str(path), "--require-runtime-match"]
+            prs_faces = [
+                {"record_index": 243, "face": 0, "local_gfx": 241, "runtime_gfx": 641},
+                {"record_index": 319, "face": 0, "local_gfx": 243, "runtime_gfx": 643},
+            ]
+            path.write_text(json.dumps(prs_faces), encoding="utf-8")
+            self.assertEqual(subprocess.run(command, capture_output=True).returncode, 0)
+            mixed = [prs_faces[0], {"record_index": 319, "face": 0,
+                                    "local_gfx": 150, "runtime_gfx": 550}]
+            path.write_text(json.dumps(mixed), encoding="utf-8")
+            self.assertEqual(subprocess.run(command, capture_output=True).returncode, 1)
+            self.assertNotEqual(subprocess.run(command[:-3] + ["--require-runtime-match"],
+                                               capture_output=True).returncode, 0)
 
     def test_invalid_input_sizes(self):
         with self.assertRaisesRegex(ValueError, "decompressed PRS"):
