@@ -164,7 +164,30 @@ jobs:
           release_json="$(curl -fsSL --retry 3 --retry-all-errors -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/nexium-emu/nexium-nightly/releases/tags/nightly)"
           asset_url="$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
           test -n "$asset_url"
-          curl -fL --retry 3 --retry-all-errors "$asset_url" -o /tmp/nexium-linux.tar.gz
+          # Release CDN occasionally responds 504; refresh the release asset URL
+          # between bounded attempts rather than treating one CDN error as a
+          # renderer/runtime regression.
+          downloaded=0
+          for attempt in 1 2 3 4 5; do
+            if curl --fail --location --silent --show-error \
+                --connect-timeout 20 --max-time 180 \
+                --retry 2 --retry-delay 3 --retry-all-errors \
+                "$asset_url" -o /tmp/nexium-linux.tar.gz && \
+                tar -tzf /tmp/nexium-linux.tar.gz >/dev/null; then
+              downloaded=1
+              break
+            fi
+            rm -f /tmp/nexium-linux.tar.gz
+            echo "NeXium release download attempt $attempt failed; refreshing URL" >&2
+            release_json="$(curl -fsSL --retry 3 --retry-all-errors \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              https://api.github.com/repos/nexium-emu/nexium-nightly/releases/tags/nightly)"
+            asset_url="$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
+            test -n "$asset_url"
+            sleep 5
+          done
+          test "$downloaded" -eq 1
           mkdir -p /tmp/nexium
           tar -xzf /tmp/nexium-linux.tar.gz -C /tmp/nexium
           emu_bin="$(find /tmp/nexium -type f -executable \( -name 'nexium-gui' -o -name 'nexium' \) -print -quit)"
