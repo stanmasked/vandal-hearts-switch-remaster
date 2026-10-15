@@ -9,6 +9,8 @@
 typedef struct {
     SDL_Window *window;
     SDL_GLContext context;
+    int check_center_rgb;
+    uint8_t expected_rgb;
 } WindowState;
 
 static int query_viewport(void *opaque, int *width, int *height) {
@@ -21,6 +23,23 @@ static int query_viewport(void *opaque, int *width, int *height) {
 static int swap_buffers(void *opaque) {
     WindowState *state = (WindowState *)opaque;
     if (!state || !state->window) return 0;
+    if (state->check_center_rgb) {
+        GLubyte rgba[4] = {0, 0, 0, 0};
+        int w = 0, h = 0;
+        SDL_GL_GetDrawableSize(state->window, &w, &h);
+        if (w <= 0 || h <= 0) return 0;
+        /* GLES2 guarantees GL_RGBA/GL_UNSIGNED_BYTE framebuffer readback. */
+        glReadPixels(w / 2, h / 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+        if (glGetError() != GL_NO_ERROR ||
+            rgba[0] != state->expected_rgb ||
+            rgba[1] != state->expected_rgb ||
+            rgba[2] != state->expected_rgb) {
+            fprintf(stderr, "RGB24 readback mismatch expected %u: %u,%u,%u\\n",
+                (unsigned)state->expected_rgb,
+                (unsigned)rgba[0], (unsigned)rgba[1], (unsigned)rgba[2]);
+            return 0;
+        }
+    }
     SDL_GL_SwapWindow(state->window);
     return 1;
 }
@@ -62,14 +81,18 @@ int main(void) {
         uint8_t small_frame[4 * 3 * 3];
         memset(large_frame, 64, sizeof(large_frame));
         memset(small_frame, 192, sizeof(small_frame));
+        state.check_center_rgb = 1;
+        state.expected_rgb = 64;
         VH_ObserveCompletedRGB24(large_frame, sizeof(large_frame), 320, 240);
         if (!vh_switch_observer_last_result() ||
             presenter.frame_width != 320 || presenter.frame_height != 240) goto done;
         puts("RGB24 observer resize: 320x240 presented");
+        state.expected_rgb = 192;
         VH_ObserveCompletedRGB24(small_frame, sizeof(small_frame), 4, 3);
         if (!vh_switch_observer_last_result() ||
             presenter.frame_width != 4 || presenter.frame_height != 3) goto done;
         puts("RGB24 observer resize: 4x3 presented");
+        state.check_center_rgb = 0;
     }
 
     while (running && frame < 3600) {
