@@ -23,6 +23,8 @@ on:
       - 'tests/test_prepare_map02_session.py'
       - 'tests/test_verify_map02_capture.py'
       - 'tools/verify_map02_trace.py'
+      - 'tools/evaluate_map02_session.py'
+      - 'tests/test_evaluate_map02_session.py'
       - 'tools/audit_map02_load_source.py'
       - 'tools/audit_map02_disc_prs.py'
       - 'tools/verify_map02_unpack_equivalence.py'
@@ -56,6 +58,8 @@ on:
       - 'tests/test_prepare_map02_session.py'
       - 'tests/test_verify_map02_capture.py'
       - 'tools/verify_map02_trace.py'
+      - 'tools/evaluate_map02_session.py'
+      - 'tests/test_evaluate_map02_session.py'
       - 'tools/audit_map02_load_source.py'
       - 'tools/audit_map02_disc_prs.py'
       - 'tools/verify_map02_unpack_equivalence.py'
@@ -206,6 +210,7 @@ jobs:
             python3 -m unittest discover -s tests -p 'test_preflight_map02_pcport.py' -v
             python3 -m unittest discover -s tests -p 'test_prepare_map02_session.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_trace.py' -v
+            python3 -m unittest discover -s tests -p 'test_evaluate_map02_session.py' -v
             python3 -m unittest discover -s tests -p 'test_audit_map02_load_source.py' -v
             python3 -m unittest discover -s tests -p 'test_audit_map02_disc_prs.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_unpack_equivalence.py' -v
