@@ -40,27 +40,41 @@ def capture(executable: Path, trace_directory: Path, output_directory: Path,
     source_files = provenance.get("source_files")
     if not isinstance(source_files, dict) or set(source_files) != set(PINNED_BLOB_SHA1):
         raise ValueError("source provenance must list the three pinned files")
+    if type(provenance.get("allow_modified_source")) is not bool:
+        raise ValueError("allow_modified_source must be a boolean in source provenance")
+    for relative, expected_blob in PINNED_BLOB_SHA1.items():
+        record = source_files[relative]
+        if type(record) is not dict:
+            raise ValueError(f"{relative}: source provenance must be an object")
+        blob = record.get("git_blob_sha1")
+        digest = record.get("sha256")
+        if (type(blob) is not str or len(blob) != 40
+                or any(char not in "0123456789abcdef" for char in blob)):
+            raise ValueError(f"{relative}: invalid Git blob SHA-1 in source provenance")
+        if (type(digest) is not str or len(digest) != 64
+                or any(char not in "0123456789abcdef" for char in digest)):
+            raise ValueError(f"{relative}: invalid source SHA-256 in provenance")
+        if record.get("matches_pinned") is not (blob == expected_blob):
+            raise ValueError(f"{relative}: matches_pinned disagrees with Git blob SHA-1")
     if not allow_modified_source and (
-        provenance.get("allow_modified_source")
-        or not all(type(value) is dict and value.get("matches_pinned") is True
-                   for value in source_files.values())
+        provenance["allow_modified_source"]
+        or any(not record["matches_pinned"] for record in source_files.values())
     ):
         raise ValueError("source provenance is modified; use --allow-modified-source explicitly")
     generated_files = provenance.get("generated_files")
     expected_names = {"game_setup.trace.c", "graphics.trace.c", "map02_trace.mk"}
     if generated_files is None:
-        if provenance["trace_mode"] == "full":
-            raise ValueError("full trace provenance must fingerprint generated files")
-    else:
-        if not isinstance(generated_files, dict) or set(generated_files) != expected_names:
-            raise ValueError("generated_files must fingerprint the three diagnostic build inputs")
-        for filename, expected_sha256 in generated_files.items():
-            if (type(expected_sha256) is not str or len(expected_sha256) != 64
-                    or any(char not in "0123456789abcdef" for char in expected_sha256)):
-                raise ValueError(f"{filename}: invalid generated source SHA-256")
-            current_path = trace_directory / filename
-            if sha256_file(current_path) != expected_sha256:
-                raise ValueError(f"{filename}: generated diagnostic build input changed since preparation")
+        raise ValueError("source provenance must fingerprint generated files")
+    if not isinstance(generated_files, dict) or set(generated_files) != expected_names:
+        raise ValueError("generated_files must fingerprint the three diagnostic build inputs")
+    for filename, expected_sha256 in generated_files.items():
+        if (type(expected_sha256) is not str or len(expected_sha256) != 64
+                or any(char not in "0123456789abcdef" for char in expected_sha256)):
+            raise ValueError(f"{filename}: invalid generated source SHA-256")
+        current_path = trace_directory / filename
+        if sha256_file(current_path) != expected_sha256:
+            raise ValueError(f"{filename}: generated diagnostic build input changed since preparation")
+    binary_sha256_before_launch = sha256_file(executable)
     output_directory = output_directory.resolve()
     if output_directory.exists():
         raise ValueError("output directory already exists; refusing to overwrite")
@@ -82,7 +96,7 @@ def capture(executable: Path, trace_directory: Path, output_directory: Path,
                     sys.stdout.flush()
             returncode = proc.wait()
     summary = {
-        "binary_sha256": sha256_file(executable),
+        "binary_sha256": binary_sha256_before_launch,
         "binary": str(executable),
         "game_exit_code": returncode,
         "source_provenance": provenance,
