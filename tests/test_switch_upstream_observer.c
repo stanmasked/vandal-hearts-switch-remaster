@@ -39,10 +39,17 @@ int main(void) {
     VhSwitchPresentHook other_hook = {&presenter, viewport, swap, &other_context};
     const uint8_t pixels[12] = {1,2,3,4,5,6,7,8,9,10,11,12};
     presenter.initialized = 1;
+    { int w = -1, h = -1;
+      assert(!vh_switch_observer_query_viewport(&w, &h));
+      assert(w == -1 && h == -1); }
     VH_ObserveCompletedRGB24(pixels, sizeof(pixels), 2, 2);
     assert(!vh_switch_observer_last_result() && uploads == 0 && swaps == 0);
     assert(!vh_switch_observer_register(NULL));
     assert(vh_switch_observer_register(&hook));
+    { int w = 0, h = 0;
+      assert(vh_switch_observer_query_viewport(&w, &h));
+      assert(w == 1280 && h == 720);
+      assert(!vh_switch_observer_query_viewport(NULL, &h)); }
     /* Registration is single-owner; a second hook must not replace the first. */
     assert(!vh_switch_observer_register(&hook));
     assert(!vh_switch_observer_register(&other_hook));
@@ -58,6 +65,7 @@ int main(void) {
     assert(vh_switch_observer_last_result() == 0);
     assert(uploads == 2 && draws == 1 && swaps == 1);
     vh_switch_observer_unregister();
+    { int w = -1, h = -1; assert(!vh_switch_observer_query_viewport(&w, &h)); }
     VH_ObserveCompletedRGB24(pixels, sizeof(pixels), 2, 2);
     assert(!vh_switch_observer_last_result());
     assert(uploads == 2 && swaps == 1);
