@@ -30,7 +30,7 @@ static void draw_frame(int frame) {
     unsigned int ot[1];
     TILE corner[4], background;
     POLY_F4 polygon;
-    POLY_FT4 textured, textured8, textured15, transparent15;
+    POLY_FT4 textured, textured8, textured15, transparent15, semi15;
     /* 4bpp: four texels (1,2,1,2) per packed 16-bit VRAM word. */
     unsigned short texels[2] = {0x2121, 0x2121};
     unsigned short palette[16] = {0, 0x001f, 0x03e0};
@@ -38,7 +38,8 @@ static void draw_frame(int frame) {
     unsigned short palette8[256] = {0, 0x7c00, 0x7fff};
     unsigned short texels15[4] = {0x03ff, 0x7c1f, 0x03ff, 0x7c1f};
     unsigned short texels_alpha[4] = {0x0000, 0x7fe0, 0x0000, 0x7fe0};
-    RECT tex_rect, clut_rect, tex8_rect, clut8_rect, tex15_rect, alpha_rect;
+    unsigned short texels_stp[4] = {0x801f, 0x03e0, 0x801f, 0x03e0};
+    RECT tex_rect, clut_rect, tex8_rect, clut8_rect, tex15_rect, alpha_rect, stp_rect;
     SetDefDrawEnv(&draw, 0, 0, 12, 9);
     SetDefDispEnv(&display, 0, 0, 12, 9);
     PutDrawEnv(&draw);
@@ -59,7 +60,19 @@ static void draw_frame(int frame) {
     LoadImage(&tex15_rect, (unsigned int *)texels15);
     setRECT(&alpha_rect, 256, 0, 2, 2);
     LoadImage(&alpha_rect, (unsigned int *)texels_alpha);
+    setRECT(&stp_rect, 320, 0, 2, 2);
+    LoadImage(&stp_rect, (unsigned int *)texels_stp);
     ClearOTag(ot, 1);
+    /* ABR=0: STP-marked red blends 50/50 with background;
+     * unmarked green stays opaque within the same semi-trans FT4. */
+    SetPolyFT4(&semi15);
+    setXYWH(&semi15, 8, 5, 2, 2);
+    setUVWH(&semi15, 0, 0, 2, 2);
+    setRGB0(&semi15, 128, 128, 128);
+    setTPage(&semi15, 2, 0, 320, 0);
+    setClut(&semi15, 0, 0);
+    SetSemiTrans(&semi15, 1);
+    AddPrim(&ot[0], &semi15);
     /* Zero-valued direct-colour texels must leave the animated TILE
      * background visible; nonzero cyan neighbours must overwrite it. */
     SetPolyFT4(&transparent15);
