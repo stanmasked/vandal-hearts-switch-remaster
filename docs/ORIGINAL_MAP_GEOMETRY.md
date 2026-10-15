@@ -167,3 +167,54 @@ confirmed by a finished NeXium screenshot run. That evidence must be
 recorded before changing the test's status to accepted. The user's
 authentic `M_MAP02.PRS` is still unavailable in CI; no copyrighted
 map bytes are in any public artifact.
+
+## Confirmed source-model two-face NRO preview (CI #38825754507)
+
+The two-face native geometry **acceptance gate is now passed**:
+[GitHub Actions #38825754507](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38825754507)
+at integration commit `ddf891a0f54cc4be310f0837160615c3df36f5a3`
+completed all **three jobs SUCCESS**: Switch NRO compile, standard original
+DrawOTag raster NeXium, and synthetic private SD NeXium.
+
+Two runs of the **same NRO executable**, using independent staged
+files under the same isolated virtual SD root, produced:
+
+1. With only F_TEX01 + LAND_DT (geometry missing), the prior one-patch
+   screenshot remained red/green/blue/yellow at all four corners.
+2. After staging a complete synthetic `MAP11_MODELS_28X12.BIN`
+   (336 × 304 = 102144 bytes), the original C loader decoded tile
+   (6,3) with **two source `MapTileModel` faces**. The two
+   `gfx[]` references 241 and 242 independently selected
+   source UVWH and CLUT selectors 35 and 36. Native original
+   `SetPolyFT4 → AddPrim → DrawOTag` produced two adjacent
+   polygons at the expected positions.
+
+NeXium 1280×720 screenshot probes for the geometry mode:
+`(400,205)=(255,0,0)` **left top red**;
+`(880,205)=(255,0,255)` **right top magenta**;
+`(400,510)=(0,0,255)` **left bottom blue**;
+`(880,510)=(0,255,255)` **right bottom cyan**.
+The difference from the single-patch color pattern is deliberate;
+it rejects a false success in the earlier private branch. The
+two screenshot passes and earlier original TIM, ABR and window checks
+were all successful.
+
+New host evidence: **85 Python tests** passed in the NRO workflow
+(80 prior plus 5 private geometry staging regressions), and TWO
+separate C host test executables passed, including validation of
+the complete 336-tile source geometry slab, face count and vertex
+indices. The binary NRO0 structure check passed. The private-SD
+evidence artifact for this run includes both the original
+`map11-synthetic.png` and new `map11-multiface.png`, plus
+emulator diagnostics.
+
+**Scope boundary:** This is the first observed **multi-face,
+original-format MapTileModel → per-face UV/CLUT → original pinned
+POLY_FT4/DrawOTag** synthetic integration in a Switch NRO under
+NeXium. The projection remains the explicitly simplified
+orthographic preview described above, NOT `RenderMapTile` or the
+original PS1 camera/GTE. No game-authored model vertices, actual
+`M_MAP02.PRS`, retail terrain scene or physical Switch hardware
+were tested. The next gate is user-side validation of an
+authentic extracted PRS and then reusing native original map
+projection/render logic without publishing copyrighted data.
