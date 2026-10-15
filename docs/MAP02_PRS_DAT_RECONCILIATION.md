@@ -115,3 +115,54 @@ overwrote the target tile indices, or whether a submitted textured
 quad was visible. Source evidence supports PRS as the intended *load
 path*, not as the final validated pixels. The two differing DAT records
 are retained as comparison evidence and are not rewritten.
+
+
+## Read-only sector-to-PRS verification (no asset export)
+
+The pinned US CD table maps `CDF_M_MAP02_PRS` to twelve 2048-byte
+payload sectors starting at `0x1BCC`. The original
+`src/maps/unpack.c` reads the first **four bytes** of the PRS stream
+as a little-endian **compressed payload length**, then unpacks the
+following bytes into map models. The new tool
+`tools/audit_map02_disc_prs.py` reproduces that bounded decompression
+algorithm in Python.
+
+It reads **only** the relevant sectors from a legally owned disc image,
+supports raw 2352-byte Mode2 Form1 sectors (2048-byte data begins at +24)
+or plain 2048-byte ISO sectors, and reports the two face-zero local GFX
+and their would-be global (+400) indices. No asset bytes are written or
+committed. It requires the full 616×304-byte decompressed map and checks
+against the prior archived SHA-256 and PRS GFX values. The archived
+compressed SHA-256 is compared against both the header-determined logical
+PRS stream and the sector-padded payload, since the archived hash's
+padding convention must not be guessed.
+
+From the remaster project root, using an existing extracted PRS file:
+
+```sh
+python3 -m tools.audit_map02_disc_prs   --prs-file /your/owned/M_MAP02.PRS --require-prior-provenance
+```
+
+Or from a **single-track** raw Mode2 Form1 BIN containing the expected
+absolute sector indexing:
+
+```sh
+python3 -m tools.audit_map02_disc_prs   --disc-image /your/owned/game.bin --layout mode2-2352   --require-prior-provenance
+```
+
+Use `--layout iso-2048` for a file consisting of contiguous 2048-byte
+logical sectors. If the BIN starts at another track origin or contains
+a different pregap convention, calculate that track's offset from the
+actual **CUE layout** and supply it explicitly using
+`--sector-bias N`; this tool does *not* guess, parse CUEs, or
+automatically try offsets. A failure at the expected sector is not
+proof that the game data is incorrect until its image layout is known.
+Raw sectors with a mismatched XA subheader, wrong mode, or Form2
+are rejected; the tool does not validate ECC/EDC checksums.
+
+A match with the archived **decompressed PRS SHA-256** and the local
+GFX pair 241/243 would support the archived disc-audit result with
+independent sector extraction. It would **not** prove that the running
+game never modifies tiles, that the hardware draws them, or that the
+visible artwork matches the source. The command is read-only and
+synthetic end-to-end tests require no copyrighted assets.
