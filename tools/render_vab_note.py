@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Render a single local VH/VB instrument note as diagnostic 44.1-kHz mono WAV.
 
-This is a host-only, dry nearest-neighbour proof-of-pipeline. It combines
+This is a host-only dry note proof-of-pipeline with integer Gaussian fetch. It combines
 validated VAB tone selection, raw SPU-ADPCM decoding, fixed-point sample
 stepping and an ADSR envelope. It deliberately omits PlayStation Gaussian
-interpolation, per-voice pan, gain laws, reverb, polyphony and SEQ scheduling.
+hardware-exact timing, per-voice pan, gain laws, reverb, polyphony and SEQ scheduling.
 No game assets are included or uploaded.
 """
 from __future__ import annotations
@@ -21,6 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.decode_spu_adpcm import decode_spu_blocks
+from tools.interpolate_spu_gaussian import gaussian_voice_sample
 from tools.resolve_vab_note import resolve_note
 from tools.simulate_spu_voice import (
     ADSR_MAX, RATE, SpuEnvelope, SpuSampleCursor,
@@ -33,6 +34,7 @@ def render_pcm_note(
     pcm: bytes, *, adsr1: int, adsr2: int, pitch_step: int,
     loop_start: int | None, loop_end: int | None,
     hold_frames: int, tail_frames: int, gain: float = 1.0,
+    interpolation: str = "gaussian",
 ) -> tuple[bytes, dict[str, object]]:
     """Return signed 16-bit mono output and deterministic voice diagnostics.
 
@@ -53,6 +55,9 @@ def render_pcm_note(
     if isinstance(gain, bool) or not math.isfinite(gain) or not 0 <= gain <= 1:
         raise ValueError("gain must be a finite number in 0..1")
 
+    if interpolation not in ("gaussian", "nearest"):
+        raise ValueError("interpolation must be gaussian or nearest")
+    samples = struct.unpack("<" + "h" * (len(pcm) // 2), pcm)
     envelope = SpuEnvelope(adsr1, adsr2)
     cursor = SpuSampleCursor(
         length=len(pcm) // 2,
@@ -68,9 +73,11 @@ def render_pcm_note(
         sample = 0
         if cursor.active and envelope.phase != "off":
             # Read at the *pre-advance* cursor, as in pc_spu.c. This first
-            # diagnostic renderer uses nearest-neighbour rather than PS1
-            # 4-tap Gaussian interpolation.
-            sample = struct.unpack_from("<h", pcm, cursor.index * 2)[0]
+            # Gaussian mode uses the original 512 integer coefficients and
+            # wrap-aware history. Nearest is available for regression tests.
+            sample = (gaussian_voice_sample(samples, cursor)
+                      if interpolation == "gaussian"
+                      else samples[cursor.index])
             if envelope.advance():
                 sample = int(sample * (envelope.level / ADSR_MAX) * gain)
                 sample = max(-32768, min(32767, sample))
@@ -82,6 +89,7 @@ def render_pcm_note(
 
     return bytes(output), {
         "frames": hold_frames + tail_frames,
+        "interpolation": interpolation,
         "frames_active": frames_active,
         "looped": cursor.looped,
         "effective_pitch_step": cursor.pitch_step,
@@ -120,6 +128,7 @@ def render_vab_note(
         loop_start=decoded.loop_start_frame,
         loop_end=decoded.loop_end_frame,
         hold_frames=hold_frames, tail_frames=tail_frames, gain=gain,
+        interpolation=interpolation,
     )
     report = {
         "requested_program": program,
@@ -135,14 +144,14 @@ def render_vab_note(
         "source_pcm_frames": decoded.frames,
         "render_pcm_sha256": hashlib.sha256(pcm).hexdigest(),
         "sample_rate_hz": RATE,
-        "interpolation": "nearest_neighbour_diagnostic",
+        "interpolation": interpolation,
         "gain": gain,
         "loop_start_frame": decoded.loop_start_frame,
         "loop_end_frame": decoded.loop_end_frame,
         "vh_header_sha256": selection["vh_header_sha256"],
         **voice,
         "warning": (
-            "Dry diagnostic note only: no PS1 Gaussian interpolation, "
+            "Dry diagnostic note only: integer PC-port Gaussian fetch is present, "
             "channel/program/tone gain law, pan, reverb, SEQ timing or "
             "hardware pitch-table fidelity; do not treat as a game soundtrack."
         ),
@@ -163,6 +172,8 @@ def main() -> int:
                         help="44100-Hz release frames after key-off")
     parser.add_argument("--gain", type=float, default=1.0,
                         help="additional diagnostic amplitude factor in 0..1")
+    parser.add_argument("--interpolation", choices=("gaussian", "nearest"),
+                        default="gaussian", help="integer 4-tap Gaussian (default) or nearest")
     args = parser.parse_args()
     try:
         if args.output.resolve() in (args.vh.resolve(), args.vb.resolve()):
@@ -170,7 +181,7 @@ def main() -> int:
         wav, report = render_vab_note(
             args.vh, args.vb, program=args.program, note=args.note,
             hold_frames=args.hold_frames, tail_frames=args.tail_frames,
-            gain=args.gain,
+            gain=args.gain, interpolation=args.interpolation,
         )
         with args.output.open("xb") as stream:
             stream.write(wav)
