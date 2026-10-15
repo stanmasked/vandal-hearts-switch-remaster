@@ -8,6 +8,7 @@ It never runs the game or edits upstream source/data.
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 
 from tools.instrument_map02_loader import instrument as instrument_loader
@@ -23,7 +24,7 @@ PINNED_BLOB_SHA1 = {
 
 
 def git_blob_sha1(contents: bytes) -> str:
-    header = f"blob {len(contents)}\\0".encode("ascii").replace(b"\\0", b"\x00")
+    header = f"blob {len(contents)}".encode("ascii") + bytes((0,))
     return hashlib.sha1(header + contents).hexdigest()
 
 
@@ -39,8 +40,8 @@ def prepare(upstream: Path, output: Path, allow_modified_source: bool = False) -
     output = output.resolve()
     if output.is_relative_to(upstream):
         raise ValueError("output must be outside upstream checkout")
-    if any(ch.isspace() or ch in "#$" for ch in str(output)):
-        raise ValueError("output path cannot contain whitespace or make-special characters")
+    if re.fullmatch(r"[/A-Za-z0-9_.-]+", str(output)) is None:
+        raise ValueError("output path contains shell/make-special characters")
     if output.exists():
         raise ValueError("output directory already exists; refusing to overwrite")
     identities = {}
