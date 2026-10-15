@@ -201,6 +201,18 @@ even when one or more skips explain why it might be absent. The `frame`
 field is the game's observed `gState.frameCounter`, not a guaranteed count
 of unique hardware refreshes.
 
+All combined-patch `post_load`, `visit`, `skip` and `draw` events
+now call `fflush(stdout)` immediately after each JSON line. PC-port
+stdout is commonly redirected into a pipe or log file and may otherwise be
+block buffered, losing the last observations if the process exits without
+normal stdio cleanup. A host regression compiles the actual generated C
+emitters and ends the process with `_Exit(0)` (which skips stdio cleanup);
+it verifies that every emitted JSON event survives and still passes the
+trace validator. Flushing is not a guarantee against an interrupted write,
+an operating-system failure or missing observations when code is never
+executed. Full tracing may generate significant output; keep raw logs for
+diagnosis and avoid shipping it in production builds.
+
 The log records `post_load` for each target face when map 11 loads and
 `draw` immediately before `AddPrim` when a target face survives the
 renderer visibility check. Draw samples have a `frame` number,
