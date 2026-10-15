@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.capture_map02_runtime import capture
+from tools.capture_map02_runtime import capture, executable_contains_marker
 from tools.prepare_map02_pcport import PINNED_BLOB_SHA1, PINNED_UPSTREAM_REF
 
 
@@ -243,6 +243,16 @@ class CaptureMap02RuntimeTests(unittest.TestCase):
                         capture(exe, trace_dir, base / "should-not-exist")
                     self.assertFalse((base / "should-not-exist").exists())
             manifest_path.write_text(json.dumps(original))
+
+    def test_full_trace_marker_scanner_handles_binary_chunk_boundary(self):
+        with tempfile.TemporaryDirectory() as folder:
+            binary = Path(folder) / "binary.bin"
+            marker = "VH_MAP02_TRACE_BUILD_ID:" + "a" * 64
+            needle = marker.encode("ascii") + b"\0"
+            binary.write_bytes(b"x" * (65536 - 35) + needle + b"trailer")
+            self.assertTrue(executable_contains_marker(binary, marker))
+            self.assertFalse(executable_contains_marker(
+                binary, "VH_MAP02_TRACE_BUILD_ID:" + "b" * 64))
 
     def test_full_trace_rejects_unlinked_or_incorrect_build_marker(self):
         with tempfile.TemporaryDirectory() as folder:
