@@ -62,11 +62,26 @@ def plan_session(upstream: Path, session_directory: Path, *, disc_image: Path,
         make_command.append("NO_HDVIDEO=1")
 
     binary = pc_dir / build_dir / "vandalhearts_pc"
+    # Recheck the local checkout and owned resources immediately before build:
+    # the files may have changed since this session was prepared.
+    preflight_command = [
+        "python3", "-m", "tools.preflight_map02_pcport", str(upstream),
+        "--disc-image", str(disc_image), "--krom-source", str(krom),
+    ]
+    if no_webp:
+        preflight_command.append("--no-webp")
+    if no_hdvideo:
+        preflight_command.append("--no-hdvideo")
+
     script = "\n".join((
         "#!/bin/sh",
         "set -eu",
         "# Local, user-initiated build + interactive gameplay capture.",
         "# Does not copy the game image or the original executable.",
+        "# Stop if upstream tracked sources or private input files changed.",
+        "cd " + shlex.quote(str(remaster_root)),
+        shell_words(preflight_command) + " > "
+            + shlex.quote(str(session_directory / "preflight_at_build.json")),
         "export VH_KROM_SOURCE=" + shlex.quote(str(krom)),
         "cd " + shlex.quote(str(pc_dir)),
         shell_words(make_command),
