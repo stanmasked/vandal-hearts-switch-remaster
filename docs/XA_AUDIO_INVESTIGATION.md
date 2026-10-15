@@ -102,7 +102,7 @@ audio channel:
 python3 tools/inspect_cdxa.py /path/to/local-disc-image.bin --start-lba 19469 --sector-count 256
 python3 tools/extract_cdxa_payload.py /path/to/local-disc-image.bin ./xa-sample.bin \
   --start-lba 19469 --sector-count 256 --file-number 1 --channel 0 --report ./xa-sample.json
-jq -e '(.audio_form2_sectors_written > 0) and ((.coding_info_counts | keys) == ["0x01"])' ./xa-sample.json
+python3 tools/validate_cdxa_extraction.py ./xa-sample.json ./xa-sample.bin
 python3 tools/decode_cdxa_adpcm.py ./xa-sample.bin ./xa-sample.wav --extracted-groups
 ffprobe -v error -show_entries stream=sample_rate,channels,duration -of default=noprint_wrappers=1 ./xa-sample.wav
 ```
@@ -123,3 +123,14 @@ If audio contains clicks, silence, pitch errors, or discontinuities, do not
 label it restored. Keep the source BIN and resulting payload/WAV local and
 record only non-copyrighted diagnostics (counts, channel, coding information,
 LBA gaps, decode errors) in the repository.
+
+
+### Read-only report/payload consistency check
+
+Use `tools/validate_cdxa_extraction.py` before decoding any extracted stream.
+It verifies the compressed payload length against sector counts, ensures all
+selected sectors use the currently supported `0x01` coding profile, checks
+ordered LBA-to-offset mappings and reported gaps, and prints the expected
+PCM frame count and concatenated-WAV duration. This check does not inspect
+ADPCM sample quality or guarantee correct playback timing. It does not alter
+source, report, or payload files.
