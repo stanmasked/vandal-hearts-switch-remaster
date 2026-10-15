@@ -107,6 +107,9 @@ class ReportMap02BridgeTests(unittest.TestCase):
                 self.assertEqual(report["runtime_variant"], expected_variant)
                 self.assertEqual(report["map_load_count"], 2)
                 self.assertEqual(report["trace_events"], 12)
+                self.assertEqual([episode["event_range"]
+                                  for episode in report["map_loads"]],
+                                 [{"first": 1, "last": 6}, {"first": 7, "last": 12}])
                 self.assertEqual(report["faces"], [],
                                  "repeated game loads must never flatten two face sets")
                 self.assertEqual([load["post_load_variant"]
@@ -117,8 +120,8 @@ class ReportMap02BridgeTests(unittest.TestCase):
                                  [641, 641 if expected_code == 0 else 498])
                 self.assertFalse(report["pixels_visually_verified"])
                 markdown = markdown_review(report)
-                self.assertIn("Map load 1", markdown)
-                self.assertIn("Map load 2", markdown)
+                self.assertIn("Map load 1 — JSONL events 1–6", markdown)
+                self.assertIn("Map load 2 — JSONL events 7–12", markdown)
                 self.assertIn("Visible pixels confirmed:** no", markdown)
 
     def test_unfinished_second_map_load_prevents_prs_verdict(self):
