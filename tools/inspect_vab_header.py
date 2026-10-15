@@ -5,6 +5,7 @@ This deliberately does not interpret program/tone tables or VB sample offsets.
 """
 from __future__ import annotations
 import argparse
+import hashlib
 import json
 import struct
 from pathlib import Path
@@ -25,6 +26,7 @@ def inspect_vab_header(path: Path) -> dict[str, int | str]:
         raise ValueError("declared VAB size is smaller than its header")
     return {
         "format": "VAB VH",
+        "header_sha256": hashlib.sha256(header).hexdigest(),
         "version": version,
         "vab_id": vab_id,
         "declared_size": declared_size,
