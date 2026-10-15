@@ -24,6 +24,12 @@ class ObserverPatchTests(unittest.TestCase):
         self.assertLess(result.index("VH_ObserveCompletedRGB24(s_rgbaScratch"),
                         result.index("SDL_GL_SwapWindow(s_window)"))
         self.assertEqual(result.count("SDL_GL_SwapWindow(s_window)"), 1)
+        self.assertIn("#if defined(VH_SWITCH_EXCLUSIVE_PRESENT)", result)
+        self.assertIn("#error VH_SWITCH_EXCLUSIVE_PRESENT requires", result)
+        self.assertLess(result.index("VH_ObserveCompletedRGB24(s_rgbaScratch"),
+                        result.index("Target owns frame presentation"))
+        self.assertLess(result.index("Target owns frame presentation"),
+                        result.index("SDL_GL_SwapWindow(s_window)"))
         self.assertIn("s_rgbaScratch && w > 0 && h > 0 && s_scratchCap > 0", result)
         self.assertIn("(size_t)w <= ((size_t)s_scratchCap / 3u) / (size_t)h", result)
         self.assertLess(result.index("s_rgbaScratch && w > 0"),
