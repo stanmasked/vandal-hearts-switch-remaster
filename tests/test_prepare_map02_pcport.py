@@ -7,6 +7,7 @@ from pathlib import Path
 
 from tools.instrument_map02_loader import ANCHOR
 from tools.prepare_map02_pcport import prepare, git_blob_sha1
+from test_make_map02_trace_patch import GRAPHICS as FULL_GRAPHICS
 
 
 
@@ -55,6 +56,7 @@ class PrepareTests(unittest.TestCase):
             self.assertIn("VH_TRACE_MAP02_POST_LOAD", (out / "game_setup.trace.c").read_text())
             provenance = json.loads((out / "source_provenance.json").read_text())
             self.assertTrue(provenance["allow_modified_source"])
+            self.assertEqual(provenance["trace_mode"], "legacy")
             self.assertEqual(len(provenance["source_files"]), 3)
             self.assertFalse(all(item["matches_pinned"] for item in provenance["source_files"].values()))
             overlay = result.read_text()
@@ -87,6 +89,47 @@ $(BUILD_DIR)/src/%.o: $(SRC_DIR)/%.c | stage
                     capture_output=True, text=True, check=True)
                 self.assertIn(f"-D{macro}", result.stdout)
                 self.assertIn(f"{name.rsplit('/', 1)[-1]}.trace.c", result.stdout)
+
+    def test_full_trace_make_overlay_replaces_both_sources(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, out = Path(tmp) / "pcport", Path(tmp) / "full-trace"
+            fake_upstream(root)
+            source = root / "src/states/game_setup.c"
+            source.write_text('#include "field.h"\n' + source.read_text())
+            (root / "src/core/graphics.c").write_text(FULL_GRAPHICS)
+            mk = root / "platform/pc/Makefile"
+            mk.write_text("""SRC_DIR := ../../src
+BUILD_DIR := build
+CC := gcc
+GAME_C_FLAGS := -std=gnu89
+stage:
+\t@true
+$(BUILD_DIR)/src/%.o: $(SRC_DIR)/%.c | stage
+\t$(CC) $(GAME_C_FLAGS) -MMD -MP -c -o $@ $<
+""")
+            overlay = prepare(root, out, allow_modified_source=True,
+                              full_trace=True)
+            provenance = json.loads((out / "source_provenance.json").read_text())
+            self.assertEqual(provenance["trace_mode"], "full")
+            loader = (out / "game_setup.trace.c").read_text()
+            renderer = (out / "graphics.trace.c").read_text()
+            self.assertIn("traceTiles[8][19]", loader)
+            self.assertIn("VH_Map02TraceVisit", renderer)
+            self.assertIn("VH_Map02TraceSkip", renderer)
+            self.assertIn("VH_Map02TraceDraw", renderer)
+            self.assertEqual(renderer.count("VH_Map02TraceVisit(tileModel,"), 3)
+            self.assertIn("-DVH_TRACE_MAP02", overlay.read_text())
+            self.assertNotIn("-DVH_TRACE_MAP02_DRAW", overlay.read_text())
+            for part in ("states/game_setup", "core/graphics"):
+                proc = subprocess.run(
+                    ["make", "-n", "-f", "Makefile", "-f", str(overlay),
+                     f"build/src/{part}.o"], cwd=root / "platform/pc",
+                    capture_output=True, text=True, check=True,
+                )
+                self.assertIn("-DVH_TRACE_MAP02", proc.stdout)
+                self.assertIn(part.rsplit("/", 1)[-1] + ".trace.c",
+                              proc.stdout)
+                self.assertNotIn(" -c -o build/src/", proc.stdout)
 
     def test_real_pinned_blob_hash_algorithm(self):
         self.assertEqual(git_blob_sha1(b"hello"),
