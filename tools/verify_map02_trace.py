@@ -76,6 +76,8 @@ def parse_trace_text(text):
         if not entries:
             raise ValueError("trace contains no observations")
         data = entries
+    if isinstance(data, dict):
+        data = [data]  # A single JSONL observation is also valid JSON.
     if not isinstance(data, list):
         raise ValueError("trace must be a JSON array or JSON Lines objects")
     return data
