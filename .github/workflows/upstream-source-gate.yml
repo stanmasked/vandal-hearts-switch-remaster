@@ -28,6 +28,11 @@ jobs:
           path: upstream
           persist-credentials: false
 
+      - name: Install host build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes cmake ninja-build libsdl2-dev libopenal-dev libgl-dev python3
+
       - name: Verify pinned source and required build entry points
         shell: bash
         run: |
@@ -44,4 +49,9 @@ jobs:
           grep -q 'VH_PSX_EXE' upstream/platform/pc/CMakeLists.txt
           grep -q 'SLUS_004.47' upstream/docs/building.md
           echo "Pinned upstream revision and native build entry points verified."
-          echo "This is a source-integrity gate, not a native build or game-runtime test."
+
+      - name: Configure upstream native PC build without optional HD libraries
+        run: |
+          cmake -S upstream/platform/pc -B build-upstream -G Ninja \
+            -DVH_WEBP=OFF -DVH_HDVIDEO=OFF
+          echo "CMake configure passed. No game executable/disc data was supplied; this is not a compile, link, or runtime test."
