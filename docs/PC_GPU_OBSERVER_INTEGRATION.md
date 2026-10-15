@@ -54,3 +54,9 @@ Commit `802a423fa05fb3dbc14270a29d262f22091126af` adds explicit checks of `VhSwi
 Both NRO build and NeXium runtime jobs passed in https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38780267462 . The resource-free probe checked the presenter's dimensions on transitions 320×240 → 4×3 → 9×7; both jobs succeeded. This validates presenter state and successful submission but does not query actual GLES2 texture allocation sizes (OpenGL ES 2.0 does not offer desktop `glGetTexLevelParameteriv`).
 
 Commit `c9a8d5cc425b513b0bdc09251580f5d31ec5d555` adds a runtime pixel readback before swap on the first two synthetic frames. The swap callback reads the drawable's center pixel with guaranteed GLES2 `glReadPixels(..., GL_RGBA, GL_UNSIGNED_BYTE)` and verifies (64,64,64) after the 320×240 upload and (192,192,192) after the 4×3 upload. An error prevents swap and fails the probe. This verifies *visible rendered content* after reallocation, not direct GPU storage dimensions. CI verification is pending.
+
+## NeXium framebuffer readback verified; rejected-buffer runtime gate
+
+Run https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38781029048 passed its NRO build and NeXium runtime jobs, including the pre-swap GLES2 `glReadPixels` checks for gray synthetic frames after 320×240 and 4×3 texture uploads. The screenshot still showed expected corner markers and 18,820 changed sampled pixels. This is an actual framebuffer-content check, but still **not** a run of original game frames.
+
+Commit `99b537c5ef0c9477e2387945d75188615b6351e7` strengthens the runtime probe: after a valid 4×3 RGB24 frame, it submits a one-byte-short buffer and asserts the observer fails without issuing a buffer swap or changing the stored frame dimensions. The swap callback counts completed swaps. This new gate is **pending CI validation**; previous host tests already covered invalid capacity.
