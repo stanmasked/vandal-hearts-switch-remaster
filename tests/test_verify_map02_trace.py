@@ -109,6 +109,22 @@ class RuntimeTraceTests(unittest.TestCase):
         for field in ("u", "v", "clut", "tpage"):
             self.assertTrue(any(f": {field} must be" in e for e in errors))
 
+    def test_later_frame_metadata_is_validated(self):
+        entries = observations()
+        entries[2].update({"frame": 1, "u": 240, "v": 192, "clut": 35, "tpage": 5})
+        entries.append({"z": 8, "x": 19, "face": 0, "stage": "draw",
+                        "frame": 2, "gfx": 641, "u": 256, "clut": 35})
+        errors = evaluate_trace(entries)["errors"]
+        self.assertTrue(any("u must be" in e for e in errors))
+
+    def test_later_frame_metadata_change_is_reported(self):
+        entries = observations()
+        entries[2].update({"frame": 1, "u": 240, "clut": 35})
+        entries.append({"z": 8, "x": 19, "face": 0, "stage": "draw",
+                        "frame": 2, "gfx": 641, "u": 239, "clut": 35})
+        self.assertTrue(any("u changed across frames" in e
+                            for e in evaluate_trace(entries)["errors"]))
+
     def test_invalid_json_shapes(self):
         with self.assertRaisesRegex(ValueError, "JSON list"):
             evaluate_trace({"z": 8})
