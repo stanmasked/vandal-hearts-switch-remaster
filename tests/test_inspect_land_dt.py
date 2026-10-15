@@ -1,4 +1,5 @@
 """Tests for raw LAND_DT texture-record inspection and comparison."""
+import hashlib
 import sys
 import tempfile
 import unittest
@@ -26,6 +27,7 @@ class InspectLandDtTests(unittest.TestCase):
             path.write_bytes(data)
 
             report = inspect_land_dt(path, map_number=2)
+            self.assertEqual(report["input_sha256"], hashlib.sha256(data).hexdigest())
             first, second = report["records"]
             self.assertEqual(first["block_offset"], 964)
             self.assertEqual(first["absolute_input_offset"], 2 * BLOCK_SIZE + 964)
@@ -76,6 +78,7 @@ class InspectLandDtTests(unittest.TestCase):
             path.write_bytes(data)
 
             report = compare_land_dt(path, map_numbers=(0, 1, 2), gfx_ids=(241,))
+            self.assertEqual(report["input_sha256"], hashlib.sha256(data).hexdigest())
             diff = report["differences"][0]
             self.assertTrue(diff["differs_between_maps"])
             self.assertEqual([v["raw_hex"] for v in diff["values"]], ["01 02 03 04", "01 02 03 04", "00 00 00 00"])
