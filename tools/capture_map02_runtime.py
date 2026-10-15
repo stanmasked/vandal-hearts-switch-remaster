@@ -52,15 +52,19 @@ def capture(executable: Path, trace_directory: Path, output_directory: Path,
     output_directory.mkdir(parents=True)
     raw_path = output_directory / "game_stdout.log"
     command = [str(executable), *game_args]
-    with raw_path.open("x", encoding="utf-8") as raw:
-        # Inherit stdin and working directory; game assets generally live beside the PC binary.
+    with raw_path.open("xb") as raw:
+        # Preserve original bytes. Decode only when displaying or parsing trace events.
         with subprocess.Popen(command, cwd=executable.parent, stdin=None,
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                              text=True, encoding="utf-8", errors="replace",
-                              bufsize=1) as proc:
-            for line in proc.stdout:
-                raw.write(line)
-                sys.stdout.write(line)
+                              bufsize=0) as proc:
+            for chunk in iter(lambda: proc.stdout.read(65536), b""):
+                raw.write(chunk)
+                if hasattr(sys.stdout, "buffer"):
+                    sys.stdout.buffer.write(chunk)
+                    sys.stdout.buffer.flush()
+                else:
+                    sys.stdout.write(chunk.decode("utf-8", errors="replace"))
+                    sys.stdout.flush()
             returncode = proc.wait()
     summary = {
         "binary_sha256": sha256_file(executable),
@@ -70,7 +74,7 @@ def capture(executable: Path, trace_directory: Path, output_directory: Path,
         "warning": "A matching source manifest does not establish that the binary was compiled from it.",
     }
     try:
-        entries = extract_trace_text(raw_path.read_text(encoding="utf-8"))
+        entries = extract_trace_text(raw_path.read_bytes().decode("utf-8", errors="replace"))
     except ValueError as exc:
         summary["trace_events"] = 0
         summary["analysis"] = {"errors": [str(exc)], "observations": []}
