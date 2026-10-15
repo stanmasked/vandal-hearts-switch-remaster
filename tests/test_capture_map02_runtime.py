@@ -353,6 +353,57 @@ class CaptureMap02RuntimeTests(unittest.TestCase):
             self.assertEqual(report["binary_sha256"], starting_hash)
             self.assertNotEqual(sha256_file(exe), starting_hash)
 
+    def test_keyboard_interrupt_saves_partial_trace_and_terminates_child(self):
+        """Ctrl+C while reading the output must not strand a child or lose evidence."""
+        class FakeOutput:
+            def __init__(self):
+                self.calls = 0
+
+            def read(self, count):
+                self.calls += 1
+                if self.calls == 1:
+                    return b"PC-port starting\n"
+                raise KeyboardInterrupt
+
+        class FakeProcess:
+            def __init__(self):
+                self.stdout = FakeOutput()
+                self.returncode = None
+                self.terminated = False
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def poll(self):
+                return self.returncode
+
+            def terminate(self):
+                self.terminated = True
+                self.returncode = -15
+
+            def communicate(self, timeout=None):
+                return (b'{"z":8,"x":19,"face":0,"stage":"post_load","gfx":641}\n', None)
+
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            exe, trace_dir = fixture(root)
+            output = root / "interrupted"
+            proc = FakeProcess()
+            with patch("tools.capture_map02_runtime.subprocess.Popen", return_value=proc):
+                self.assertEqual(capture(exe, trace_dir, output), 1)
+            self.assertTrue(proc.terminated)
+            report = json.loads((output / "capture_report.json").read_text())
+            self.assertTrue(report["interrupted"])
+            self.assertEqual(report["game_exit_code"], -15)
+            self.assertEqual(report["trace_events"], 1)
+            self.assertTrue(any("missing draw" in error
+                                for error in report["analysis"]["errors"]))
+            self.assertIn(b"PC-port starting", (output / "game_stdout.log").read_bytes())
+            self.assertIn(b'"stage":"post_load"', (output / "game_stdout.log").read_bytes())
+
     def test_closed_terminal_output_does_not_destroy_raw_capture(self):
         class BrokenOutput:
             class Buffer:
