@@ -12,9 +12,11 @@ SECTOR_BYTES = 2304
 PCM_FRAMES_PER_SECTOR = 2016
 PCM_SAMPLE_RATE = 37800
 SUPPORTED_CODING = "0x01"
+RAW_SECTOR_BYTES = 2352
+RAW_SYNC = bytes([0]) + bytes([255]) * 10 + bytes([0])
 
 
-def validate_extraction(report_path: Path, payload_path: Path, wav_path: Path | None = None) -> dict[str, object]:
+def validate_extraction(report_path: Path, payload_path: Path, wav_path: Path | None = None, source_bin: Path | None = None) -> dict[str, object]:
     report = json.loads(report_path.read_text(encoding="utf-8"))
     if not isinstance(report, dict):
         raise ValueError("report must be a JSON object")
@@ -114,6 +116,44 @@ def validate_extraction(report_path: Path, payload_path: Path, wav_path: Path | 
     if integer("noncontiguous_audio_transitions") != gaps:
         raise ValueError("reported number of audio gaps does not match LBA mapping")
 
+    if source_bin is not None:
+        # Scan the actual source range and verify every selected sector.
+        # This also catches unreported eligible sectors between listed LBAs.
+        if not all(field in report for field in range_fields):
+            raise ValueError("source BIN verification requires scan-range metadata")
+        raw_size = source_bin.stat().st_size
+        if raw_size % RAW_SECTOR_BYTES:
+            raise ValueError("source BIN is not aligned to 2352-byte sectors")
+        if scan_start + scanned > raw_size // RAW_SECTOR_BYTES:
+            raise ValueError("reported scan range exceeds source BIN")
+        file_number, channel_number = (int(part) for part in parts)
+        selected_index = 0
+        with source_bin.open("rb") as raw, payload_path.open("rb") as payload:
+            raw.seek(scan_start * RAW_SECTOR_BYTES)
+            for lba in range(scan_start, scan_start + scanned):
+                sector = raw.read(RAW_SECTOR_BYTES)
+                if len(sector) != RAW_SECTOR_BYTES:
+                    raise ValueError(f"source BIN truncated at LBA {lba}")
+                if sector[:12] != RAW_SYNC or sector[15] != 2:
+                    continue
+                header = sector[16:20]
+                if header != sector[20:24]:
+                    continue
+                source_file, source_channel, submode, coding_byte = header
+                if not (submode & 0x04 and submode & 0x20):
+                    continue
+                if (source_file, source_channel) != (file_number, channel_number):
+                    continue
+                if coding_byte != 0x01:
+                    raise ValueError(f"unsupported coding at source LBA {lba}")
+                if selected_index >= count or lbas[selected_index] != lba:
+                    raise ValueError(f"source BIN selection differs from report at LBA {lba}")
+                if payload.read(SECTOR_BYTES) != sector[24:2328]:
+                    raise ValueError(f"source BIN payload mismatch at LBA {lba}")
+                selected_index += 1
+            if selected_index != count:
+                raise ValueError("source BIN selection does not match report sector count")
+
     if wav_path is not None:
         try:
             with wave.open(str(wav_path), "rb") as wav:
@@ -148,9 +188,10 @@ def main() -> int:
     parser.add_argument("report", type=Path, help="JSON output from extract_cdxa_payload.py")
     parser.add_argument("payload", type=Path, help="2304-byte sound-group stream")
     parser.add_argument("--wav", type=Path, help="optional decoded WAV to verify")
+    parser.add_argument("--source-bin", type=Path, help="optional raw source BIN for read-only verification")
     args = parser.parse_args()
     try:
-        result = validate_extraction(args.report, args.payload, args.wav)
+        result = validate_extraction(args.report, args.payload, args.wav, args.source_bin)
     except (OSError, ValueError, json.JSONDecodeError) as error:
         parser.error(str(error))
     for key, value in result.items():
