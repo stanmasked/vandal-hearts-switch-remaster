@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.audit_map02_load_source import audit_loader_source, EXPECTED_DIMENSIONS
+from tools.audit_map02_load_source import audit_cd_route, audit_loader_source, EXPECTED_DIMENSIONS
 
 
 def fixture(resource="CDF_M_MAP02_PRS"):
@@ -36,6 +36,24 @@ def fixture(resource="CDF_M_MAP02_PRS"):
 void SetupField(void) {{
 }}
 '''
+
+
+CD_SOURCE = """CdFileInfo gCdFiles[712] = {
+    [CDF_M_MAP02_PRS] = {0x1bcc, 0x0c, gScratch1_801317c0},
+};
+void LoadCdFile(s32 cdfIdx, s32 showLoadingScreen) {
+   gCdLoader.cdf = cdfIdx;
+   gCdLoader.loadingVabBody = 0;
+   gCdLoader.sectorsToRead = gCdFiles[cdfIdx].sectorCt;
+   gCdLoader.sector = gCdFiles[cdfIdx].startingSector;
+}
+"""
+CD_HEADER = """typedef enum CdFileInfoIdx {
+   CDF_M_MAP01_PRS = 150,
+   CDF_M_MAP02_PRS = 151,
+   CDF_M_MAP03_PRS = 152,
+} CdFileInfoIdx;
+"""
 
 
 class AuditMap02LoadSourceTests(unittest.TestCase):
@@ -87,6 +105,34 @@ class AuditMap02LoadSourceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "order changed"):
             audit_loader_source(source.replace(decode, setup).replace(
                 setup + "\n}", decode + "\n}"))
+
+    def test_cd_table_proves_symbol_to_sector_mapping(self):
+        result = audit_cd_route(CD_SOURCE, CD_HEADER)
+        self.assertEqual(result["cd_file_enum"], 151)
+        self.assertEqual(result["cd_table_start_sector"], 0x1bcc)
+        self.assertEqual(result["cd_table_sector_count"], 12)
+        self.assertEqual(result["cd_destination"], "gScratch1_801317c0")
+
+    def test_cd_table_rejects_wrong_sector_count_or_destination(self):
+        for replacement in ("0x1bcd, 0x0c, gScratch1_801317c0",
+                            "0x1bcc, 0x0b, gScratch1_801317c0",
+                            "0x1bcc, 0x0c, gScratch3_80180210"):
+            with self.subTest(row=replacement):
+                modified = CD_SOURCE.replace(
+                    "0x1bcc, 0x0c, gScratch1_801317c0", replacement)
+                with self.assertRaisesRegex(ValueError, "sector table|PRS mapping"):
+                    audit_cd_route(modified, CD_HEADER)
+
+    def test_cd_header_rejects_changed_prs_identifier(self):
+        with self.assertRaisesRegex(ValueError, "enum identifier"):
+            audit_cd_route(CD_SOURCE, CD_HEADER.replace("PRS = 151", "PRS = 152"))
+
+    def test_cd_loader_must_take_read_parameters_from_indexed_table(self):
+        broken = CD_SOURCE.replace(
+            "gCdLoader.sectorsToRead = gCdFiles[cdfIdx].sectorCt;",
+            "gCdLoader.sectorsToRead = 12;")
+        with self.assertRaisesRegex(ValueError, "does not initialize sector"):
+            audit_cd_route(broken, CD_HEADER)
 
     def test_cli_refuses_unpinned_source_by_default(self):
         with tempfile.TemporaryDirectory() as folder:
