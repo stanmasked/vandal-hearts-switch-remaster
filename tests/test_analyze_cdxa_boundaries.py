@@ -98,9 +98,10 @@ class XaBoundaryTests(unittest.TestCase):
         self.report.write_text(json.dumps(report), encoding="utf-8")
         self.write_wav([(0, 0)] * 3)
         with self.wav.open("r+b") as stream:
-            # Standard PCM WAV created by wave: first frame begins at 44.
-            # Modify local frames without changing the WAV header or size.
-            stream.seek(44 + (2016 - 2) * 4)
+            # Locate the data chunk instead of assuming a fixed WAV header size.
+            data = stream.read()
+            chunk = data.index(b"data")
+            stream.seek(chunk + 8 + (2016 - 2) * 4)
             for value in (1000, 2000, 3000, 4000):
                 frame = value.to_bytes(2, "little", signed=True)
                 stream.write(frame + frame)
