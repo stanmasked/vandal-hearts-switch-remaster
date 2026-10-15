@@ -36,6 +36,11 @@ def evaluate_trace(entries, *, require_full_trace=False):
     # Correlate by (face, frame, rendering path), not by frame alone.
     visit_gfx_by_context = {}
     preceding_nonempty_visits = set()
+    # A single game frame can contain multiple renderer calls on one tile/path.
+    # Number visits so a second real call is not mistaken for a duplicate.
+    visit_generation = {}
+    latest_visit_nonempty = {}
+    latest_visit_gfx = {}
     draw_gfx_by_context = {}
     backface_gfx_by_context = {}
     errors = []
@@ -67,6 +72,10 @@ def evaluate_trace(entries, *, require_full_trace=False):
                 errors.append(f"entry {i}: face_count must be an integer from 0 to 18")
                 continue
             visit_count[pos] = visit_count.get(pos, 0) + 1
+            context = (pos, frame, path)
+            visit_generation[context] = visit_generation.get(context, 0) + 1
+            latest_visit_nonempty[context] = face_count > 0
+            latest_visit_gfx[context] = entry["gfx"] if face_count > 0 else None
             if face_count > 0:
                 preceding_nonempty_visits.add((pos, frame, path))
                 visit_gfx_by_context.setdefault((pos, frame, path), set()).add(entry["gfx"])
@@ -90,13 +99,20 @@ def evaluate_trace(entries, *, require_full_trace=False):
             if type(reason) is not str or reason not in SKIP_REASONS:
                 errors.append(f"entry {i}: invalid skip reason")
                 continue
-            if require_full_trace and (pos, frame, path) not in preceding_nonempty_visits:
+            context = (pos, frame, path)
+            if require_full_trace and not latest_visit_nonempty.get(context, False):
                 errors.append(
                     f"full trace skip without preceding nonempty visit for {pos}"
                     f" in frame {frame}, path {path}"
                 )
                 continue
-            key = (pos, frame, path, reason)
+            if require_full_trace and reason == "backface" and entry["gfx"] != latest_visit_gfx[context]:
+                errors.append(
+                    f"full trace backface GFX mismatch with latest visit for {pos}"
+                    f" in frame {frame}, path {path}"
+                )
+            key = ((pos, frame, path, reason, visit_generation[context])
+                   if require_full_trace else (pos, frame, path, reason))
             if key in seen_skips:
                 errors.append(f"duplicate skip observation for {pos} in frame {frame}, path {path}")
                 continue
@@ -125,12 +141,18 @@ def evaluate_trace(entries, *, require_full_trace=False):
                 if not framed or not tagged_path:
                     errors.append(f"entry {i}: full trace draw requires frame and path")
                     continue
-                if (pos, entry["frame"], entry["path"]) not in preceding_nonempty_visits:
+                context = (pos, entry["frame"], entry["path"])
+                if not latest_visit_nonempty.get(context, False):
                     errors.append(
                         f"full trace draw without preceding nonempty visit for {pos}"
                         f" in frame {entry['frame']}, path {entry['path']}"
                     )
                     continue
+                if entry["gfx"] != latest_visit_gfx[context]:
+                    errors.append(
+                        f"full trace draw GFX mismatch with latest visit for {pos}"
+                        f" in frame {entry['frame']}, path {entry['path']}"
+                    )
             if pos in draw_frame_mode and draw_frame_mode[pos] != framed:
                 errors.append(f"mixed framed and unframed draw observations for {pos}")
                 continue
@@ -141,7 +163,9 @@ def evaluate_trace(entries, *, require_full_trace=False):
             draw_path_mode[pos] = tagged_path
         if stage == "draw" and "frame" in entry:
             frame = entry["frame"]
-            key = (pos, frame, entry.get("path", "unspecified"))
+            key = ((pos, frame, entry["path"], visit_generation[(pos, frame, entry["path"])])
+                   if require_full_trace else
+                   (pos, frame, entry.get("path", "unspecified")))
             if key in seen_draw_frames:
                 errors.append(f"duplicate draw observation for {pos} in frame {frame}")
                 continue
