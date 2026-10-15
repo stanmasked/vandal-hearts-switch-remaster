@@ -39,7 +39,7 @@ class RenderPcmTests(unittest.TestCase):
         pcm = struct.pack("<8h", *([10000] * 8))
         result, report = render_pcm_note(
             pcm, adsr1=0x000F, adsr2=0, pitch_step=0x1000,
-            loop_start=None, loop_end=None, hold_frames=5, tail_frames=2
+            loop_start=None, loop_end=None, hold_frames=5, tail_frames=2, interpolation="nearest"
         )
         self.assertEqual(struct.unpack("<7h", result),
                          (4375, 8750, 10000, 10000, 10000, 4999, 0))
@@ -52,7 +52,7 @@ class RenderPcmTests(unittest.TestCase):
         result, report = render_pcm_note(
             pcm, adsr1=0x000F, adsr2=0,
             pitch_step=0x800, loop_start=None, loop_end=None,
-            hold_frames=4, tail_frames=0
+            hold_frames=4, tail_frames=0, interpolation="nearest"
         )
         self.assertEqual(struct.unpack("<4h", result), (4375, 8750, 20000, 20000))
         self.assertEqual(report["effective_pitch_step"], 0x800)
@@ -62,14 +62,14 @@ class RenderPcmTests(unittest.TestCase):
         pcm = struct.pack("<4h", 4000, 8000, 12000, 16000)
         result, report = render_pcm_note(
             pcm, adsr1=0x000F, adsr2=0, pitch_step=0x1000,
-            loop_start=1, loop_end=3, hold_frames=6, tail_frames=0
+            loop_start=1, loop_end=3, hold_frames=6, tail_frames=0, interpolation="nearest"
         )
         self.assertEqual(struct.unpack("<6h", result),
                          (1750, 7000, 12000, 8000, 12000, 8000))
         self.assertTrue(report["looped"])
         result, report = render_pcm_note(
             pcm[:4], adsr1=0x000F, adsr2=0, pitch_step=0x1000,
-            loop_start=None, loop_end=None, hold_frames=6, tail_frames=0
+            loop_start=None, loop_end=None, hold_frames=6, tail_frames=0, interpolation="nearest"
         )
         self.assertEqual(struct.unpack("<6h", result),
                          (1750, 7000, 0, 0, 0, 0))
@@ -79,7 +79,7 @@ class RenderPcmTests(unittest.TestCase):
         pcm = struct.pack("<h", 8000)
         base = dict(adsr1=0, adsr2=0, pitch_step=0x1000,
                     loop_start=None, loop_end=None,
-                    hold_frames=1, tail_frames=0)
+                    hold_frames=1, tail_frames=0, interpolation="nearest")
         for data in (b"", bytes([1])):
             with self.assertRaises(ValueError):
                 render_pcm_note(data, **base)
@@ -110,7 +110,7 @@ class RenderBankNoteTests(unittest.TestCase):
     def test_end_to_end_note_pcm_and_coverage(self):
         wav, info = render_vab_note(
             self.vh, self.vb, program=7, note=60,
-            hold_frames=70, tail_frames=4
+            hold_frames=70, tail_frames=4, interpolation="nearest"
         )
         self.assertEqual((info["selected_program"], info["tone"], info["vag"]),
                          (7, 0, 1))
