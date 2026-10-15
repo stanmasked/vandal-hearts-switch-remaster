@@ -39,5 +39,24 @@ class Map02ValidatorTests(unittest.TestCase):
         self.assertTrue(validate(data))
 
 
+    def test_missing_record(self):
+        data = copy.deepcopy(GOOD)
+        data["records"].pop()
+        self.assertIn("missing GFX 243", validate(data))
+
+    def test_swapped_land_dt(self):
+        data = copy.deepcopy(GOOD)
+        data["records"][0]["land_dt"] = 643
+        self.assertTrue(any("land_dt expected 641" in x for x in validate(data)))
+
+    def test_wrong_uv(self):
+        data = copy.deepcopy(GOOD)
+        data["records"][1]["uv"] = [1, 0]
+        self.assertTrue(any("uv must be [0, 0]" in x for x in validate(data)))
+
+    def test_malformed_root(self):
+        self.assertEqual(validate(None), ["root must be an object"])
+
+
 if __name__ == "__main__":
     unittest.main()
