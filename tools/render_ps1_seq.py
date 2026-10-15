@@ -3,7 +3,7 @@
 
 This is an offline integration probe, not a music or game playback engine.
 It uses an ideal rational SEQ timeline mapped to sample frames and a
-20 reusable SEQ slots and up to 2048 note-ons, with approximate\nround-robin stealing, but without SEQ repeat handling,
+20 reusable SEQ slots and up to 2048 note-ons, with approximate\nround-robin stealing, but with bounded SEQ repeat handling,
 reverb, exact hardware pitch, or Nintendo Switch audio output.
 
 No source asset or existing output is overwritten. No asset is uploaded.
@@ -19,6 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.inspect_ps1_seq import MAX_SEQ_BYTES, parse_seq
 from tools.render_vab_chord import render_vab_chord
+from tools.repeat_ps1_seq import expand_seq_repeats
 from tools.seq_to_chord_schedule import seq_to_schedule
 
 
@@ -28,8 +29,13 @@ def render_ps1_seq(
     interpolation: str = "gaussian",
     seq_left: int = 127,
     seq_right: int = 127,
+    repeat_count: int = 1,
+    max_frames: int | None = None,
 ) -> tuple[bytes, dict[str, object]]:
-    parsed = parse_seq(seq)
+    original = parse_seq(seq)
+    parsed = expand_seq_repeats(
+        original, repeat_count=repeat_count, max_frames=max_frames,
+    )
     schedule = seq_to_schedule(parsed, release_frames=release_frames)
     wav, report = render_vab_chord(
         vh, vb, schedule["voices"], interpolation=interpolation,
@@ -43,12 +49,15 @@ def render_ps1_seq(
     ]
     report["seq_events"] = len(parsed["events"])
     report["seq_end_frame"] = parsed["total_frames"]
+    report["repeat_count_requested"] = repeat_count
+    report["repeat_cycles_completed"] = parsed["cycles_completed"]
+    report["repeat_window_stop"] = parsed["stopped_by_window"]
     report["release_frames"] = release_frames
     report["warning"] = (
-        "Synthetic-validated offline PS1 SEQ to stereo WAV diagnostic; "
-        "20 reusable voice slots and round-robin stealing are modeled "
-        "with approximate release lifetimes. No real audio-block SEQ "
-        "scheduler, song repeats, SPU reverb or Switch audio."
+        "Offline PS1 SEQ stereo WAV diagnostic with event-level bounded "
+        "repeat expansion, 20 reused music slots, approximate release "
+        "lifetimes. No hardware-accurate SEQ block scheduling, reverb "
+        "or Switch audio."
     )
     return wav, report
 
@@ -60,6 +69,10 @@ def main() -> int:
     parser.add_argument("vb", type=Path, help="local matching VAB .VB")
     parser.add_argument("output", type=Path, help="new 44.1-kHz stereo WAV")
     parser.add_argument("--release-frames", type=int, default=4410)
+    parser.add_argument("--repeat-count", type=int, default=1,
+                        help="1=once, 2..64=finite, 0=infinite within max-frames")
+    parser.add_argument("--max-frames", type=int,
+                        help="44100 Hz frame limit, mandatory for infinite repeats")
     parser.add_argument("--interpolation", choices=("gaussian", "nearest"),
                         default="gaussian")
     parser.add_argument("--seq-left", type=int, default=127)
@@ -77,6 +90,7 @@ def main() -> int:
             source, args.vh, args.vb, release_frames=args.release_frames,
             interpolation=args.interpolation,
             seq_left=args.seq_left, seq_right=args.seq_right,
+            repeat_count=args.repeat_count, max_frames=args.max_frames,
         )
         with args.output.open("xb") as destination:
             destination.write(wav)
