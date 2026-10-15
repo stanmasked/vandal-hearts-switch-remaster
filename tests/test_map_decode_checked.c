@@ -45,11 +45,32 @@ static void test_raw_run_and_errors(void) {
     assert(vh_map_decode_checked(NULL,4,out,8,&n)==VH_MAP_DECODE_INVALID_ARGUMENT && n==0);
     assert(vh_map_decode_checked(raw,sizeof(raw),out,8,NULL)==VH_MAP_DECODE_INVALID_ARGUMENT);
 }
+static void test_multiple_control_groups(void) {
+    /* A full group of eight literal commands must consume a new control
+     * byte before decoding the next group. */
+    const uint8_t code[] = {
+        0x00, 'a','b','c','d','e','f','g','h',
+        0x02, 'Q', 0x81
+    };
+    uint8_t out[13] = {0};
+    size_t n = 0;
+    assert(vh_map_decode_checked(code, sizeof(code), out, 11, &n)
+           == VH_MAP_DECODE_OK);
+    assert(n == 11);
+    assert(memcmp(out, "abcdefghQQQ", 11) == 0);
+    /* No byte of the following guard position may be touched. */
+    assert(out[11] == 0);
+    assert(vh_map_decode_checked(code, sizeof(code), out, 10, &n)
+           == VH_MAP_DECODE_OUTPUT_FULL);
+    assert(n == 9);
+}
+
 int main(void) {
     test_literal();
     test_absolute();
     test_relative();
     test_raw_run_and_errors();
+    test_multiple_control_groups();
     puts("Checked map decoder tests passed.");
     return 0;
 }
