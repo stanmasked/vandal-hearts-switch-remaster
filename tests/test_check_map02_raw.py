@@ -202,6 +202,15 @@ class CheckMap02RawTests(unittest.TestCase):
             report["clut_data_size"] = True
             self.assertTrue(any("clut_data_size" in e for e in check_raw_records(report)))
 
+    def test_boolean_runtime_index_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "map02.bin"
+            path.write_bytes(bytes(BLOCK_SIZE))
+            report = inspect_land_dt(path, single_block=True)
+            report["records"][0]["runtime_table_index"] = True
+            self.assertIn("GFX 241: unexpected runtime table index",
+                          check_raw_records(report))
+
     def test_rejects_wrong_map(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "land.bin"
