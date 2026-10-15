@@ -112,6 +112,89 @@ class RuntimeTraceTests(unittest.TestCase):
         zero_face = evaluate_trace(entries + [{**visit, "face_count": 0, "gfx": 641}])
         self.assertTrue(any("zero-face visit" in e for e in zero_face["errors"]))
 
+    def full_trace_observations(self):
+        # Loader emits first; both draw events follow renderer visits.
+        entries = observations()
+        entries[2].update({"frame": 8, "path": "normal"})
+        entries[3].update({"frame": 8, "path": "normal"})
+        entries.insert(2, {"z": 8, "x": 19, "face": 0, "stage": "visit",
+                           "gfx": 641, "frame": 8, "path": "normal", "face_count": 2})
+        entries.insert(4, {"z": 11, "x": 11, "face": 0, "stage": "visit",
+                           "gfx": 643, "frame": 8, "path": "normal", "face_count": 2})
+        return entries
+
+    def test_strict_full_trace_accepts_ordered_real_hook_sequence(self):
+        report = evaluate_trace(self.full_trace_observations(), require_full_trace=True)
+        self.assertEqual(report["errors"], [])
+        self.assertEqual([x["visit_draw_contexts_checked"] for x in report["observations"]],
+                         [1, 1])
+
+    def test_strict_full_trace_rejects_draw_without_prior_visit(self):
+        events = self.full_trace_observations()
+        events.pop(2)
+        # Loose mode has historically accepted missing visits.
+        self.assertEqual(evaluate_trace(events)["errors"], [])
+        strict = evaluate_trace(events, require_full_trace=True)
+        self.assertTrue(any("draw without preceding nonempty visit" in e
+                            for e in strict["errors"]))
+
+    def test_strict_full_trace_rejects_visit_that_occurs_after_draw(self):
+        events = self.full_trace_observations()
+        visit = events.pop(2)
+        events.insert(3, visit)
+        strict = evaluate_trace(events, require_full_trace=True)
+        self.assertTrue(any("draw without preceding nonempty visit" in e
+                            for e in strict["errors"]))
+
+    def test_strict_full_trace_rejects_other_frame_or_path(self):
+        for field, value in (("frame", 9), ("path", "overhead")):
+            with self.subTest(field=field):
+                events = self.full_trace_observations()
+                events[2][field] = value
+                errors = evaluate_trace(events, require_full_trace=True)["errors"]
+                self.assertTrue(any("draw without preceding nonempty visit" in e
+                                    for e in errors))
+
+    def test_strict_full_trace_rejects_zero_face_visit_for_draw(self):
+        events = self.full_trace_observations()
+        events[2].update({"face_count": 0, "gfx": 0})
+        report = evaluate_trace(events, require_full_trace=True)
+        self.assertTrue(any("draw without preceding nonempty visit" in e
+                            for e in report["errors"]))
+
+    def test_strict_full_trace_checks_skips_and_legitimate_null_gfx(self):
+        events = self.full_trace_observations()
+        events.extend([
+            {"z": 8, "x": 19, "face": 0, "stage": "visit",
+             "gfx": 0, "frame": 10, "path": "normal", "face_count": 3},
+            {"z": 8, "x": 19, "face": 0, "stage": "skip",
+             "gfx": 0, "frame": 10, "path": "normal", "reason": "null_gfx"},
+            {"z": 11, "x": 11, "face": 0, "stage": "visit",
+             "gfx": 0, "frame": 12, "path": "edge", "face_count": 3},
+            {"z": 11, "x": 11, "face": 0, "stage": "skip",
+             "gfx": 0, "frame": 12, "path": "edge", "reason": "backface"},
+        ])
+        report = evaluate_trace(events, require_full_trace=True)
+        self.assertEqual(report["errors"], [])
+        events.pop(-4)  # Null-GFX skip no longer has its preceding visit.
+        report = evaluate_trace(events, require_full_trace=True)
+        self.assertTrue(any("skip without preceding nonempty visit" in e
+                            for e in report["errors"]))
+
+    def test_full_trace_command_line_is_opt_in(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "full.json"
+            events = self.full_trace_observations()
+            path.write_text(json.dumps(events), encoding="utf-8")
+            base = [sys.executable, "-m", "tools.verify_map02_trace", str(path)]
+            self.assertEqual(subprocess.run(base + ["--require-full-trace"],
+                                            capture_output=True).returncode, 0)
+            events.pop(2)
+            path.write_text(json.dumps(events), encoding="utf-8")
+            self.assertEqual(subprocess.run(base, capture_output=True).returncode, 0)
+            self.assertEqual(subprocess.run(base + ["--require-full-trace"],
+                                            capture_output=True).returncode, 1)
+
     def test_matching_visit_and_draw_in_same_frame_and_path(self):
         entries = observations()
         entries[2].update({"frame": 17, "path": "normal"})
