@@ -80,7 +80,31 @@ jobs:
             include/
             platform/pc/include/
             platform/pc/Makefile
+            platform/pc/tools/gen_kanji_font.py
+            platform/pc/tools/build_data_segment.py
           sparse-checkout-cone-mode: false
+
+      - name: Audit local preflight against public pinned upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          rc=0
+          python3 -m remaster.tools.preflight_map02_pcport upstream \
+            --no-webp --no-hdvideo > /tmp/map02-preflight-public.json || rc=$?
+          test "$rc" -eq 2
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from remaster.tools.preflight_map02_pcport import KROM_US_SHA256, UPSTREAM_COMMIT
+          result = json.loads(Path("/tmp/map02-preflight-public.json").read_text())
+          assert result["checks"]["source_files_missing"] == [], result
+          assert result["checks"]["upstream_revision"] == UPSTREAM_COMMIT, result
+          assert {"retail_executable_missing", "krom_source_missing",
+                  "disc_image_not_specified"}.issubset(result["blockers"]), result
+          generator = Path("upstream/platform/pc/tools/gen_kanji_font.py").read_text()
+          assert KROM_US_SHA256 in generator, "KROM digest must match pinned font generator"
+          print("Pinned public source and font-generator constants match the preflight.")
+          PY
 
       - name: Run patch generator regression tests
         working-directory: remaster
