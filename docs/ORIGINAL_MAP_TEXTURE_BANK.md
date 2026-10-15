@@ -91,3 +91,39 @@ repository.** A verified PNG from a user's actual image proves the offline
 atlas decoding stage; a real GPU frame requires connecting these bytes to
 `LoadImage`, CLUT setup and original map geometry in the NRO, followed
 by separate NeXium and hardware evidence.
+
+## Switch-native raw map-bank integration gate (2026-10-16)
+
+A further synthetic test now exercises the real original **raw terrain page upload**
+path, not only offline PNG decoding or the separate TIM path. Code commit
+[`c612af33`](https://github.com/stanmasked/vandal-hearts-switch-remaster/commit/c612af3343fe22f7fe3cc73d96103b0407a25b58)
+adds a strictly synthetic, asset-free 32768-byte F_TEX-format 4bpp VRAM page
+and a 1797-byte LAND_DT-format map record with local CLUT ID 32. Both the
+raw 4bpp page at (320,0) and the 512-byte CLUT at (672,496) are uploaded
+through **original pinned `LoadImage`**. An original
+`SetSprt → DR_MODE → AddPrim → DrawOTag` draw samples UV(16,16) and the
+first local palette row at native position (8,7). The existing synthetic
+15bpp STP test overlaps two pixels of the large 4bpp upload region; its
+small 15bpp fixture is intentionally re-uploaded **after** the large
+page to preserve prior smoke expectations. All guest resource data is
+generated in the C test source, not extracted from the retail game.
+
+**Verified:** [GitHub Actions #38818976526](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38818976526)
+at commit `a877d4aa642315e2f928970940ea5005bda70893`
+passed both cross-compile and native NeXium emulator jobs. Its preflight
+reports **15 DrawOTag checks, 15 bounded TIM checks, 13 raw map-bank checks
+(43 total), all OK**. Both 1280×720 capture frames show exact
+**(255,0,0)** red and **(0,255,0)** green from the new raw bank at
+(835,630)/(910,630). The original standalone TIM-path checks and all
+earlier ABR/texture-window checks also remain passing. 5,447 sampled
+pixels changed between screenshots due to animated background.
+
+**Boundary:** This proves the **data format → LoadImage → VRAM →
+SPRT/DR_MODE → original DrawOTag** contract using synthetic resources.
+No actual `F_TEX01.DAT`, `LAND_DT.DAT`, retail texture or live map geometry
+has been rendered by the Switch NRO. Real map appearance additionally
+requires the selected `gGfxTPageCells`, per-slot UVWH, CLUT selector,
+render primitives, camera and lighting. The previous local game-image
+audit identifies map 11, texture slot 241 (global GFX 641) as a
+candidate with local CLUT 35 and texture-page cell 5; these are
+**file/revision-specific source-audit findings**, not a native scene capture.
