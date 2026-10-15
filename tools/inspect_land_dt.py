@@ -8,6 +8,7 @@ a concatenated LAND_DT stream and --map-number / --compare-maps.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
@@ -90,6 +91,7 @@ def inspect_land_dt(
 
     return {
         "input": str(path),
+        "input_sha256": hashlib.sha256(data).hexdigest(),
         "map_number": None if single_block else map_number,
         "single_block": single_block,
         "block_size": BLOCK_SIZE,
@@ -148,6 +150,7 @@ def compare_land_dt(
 
     return {
         "input": str(path),
+        "input_sha256": hashlib.sha256(data).hexdigest(),
         "block_size": BLOCK_SIZE,
         "compared_map_numbers": list(map_numbers),
         "maps": maps,
