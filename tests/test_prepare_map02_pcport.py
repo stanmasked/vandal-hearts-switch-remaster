@@ -7,7 +7,24 @@ from pathlib import Path
 
 from tools.instrument_map02_loader import ANCHOR
 from tools.prepare_map02_pcport import prepare, git_blob_sha1
-from tests.test_instrument_map02_renderer import fixture as graphics_fixture
+
+
+
+def graphics_fixture():
+    """Standalone fake renderer, without importing sibling test modules."""
+    parts = []
+    for name in ("RenderMapTile", "RenderEdgeMapTile", "RenderOverheadMapTile"):
+        parts.append(f"""void {name}(u32 *ot, MapTileModel *tileModel, s32 gridColor) {{
+    gfx = tileModel->gfx[faceIdx];
+    poly->clut = gGfxClutIds[gfx];
+    poly->tpage = gGfxTPageIds[gfx];
+    poly->code = GPU_CODE_POLY_FT4;
+    AddPrim(ot + OT_SIZE - otz, poly);
+}}
+""")
+    parts.append("s32 GetBestViewOfTarget(s8 z, s8 x, s32 param_3) { return 0; }")
+    return "\n".join(parts)
+
 
 
 def fake_upstream(root: Path):
