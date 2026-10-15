@@ -63,6 +63,8 @@ def run_local_check(
         result: dict[str, object] = {
             "status": "decoded_and_source_verified",
             "file_number": file_number, "channel": channel,
+            "scan_start_lba": extracted["start_lba"],
+            "sectors_scanned": extracted["sectors_scanned"],
             "selected_lbas": extracted["audio_lbas"],
             "pcm_frames": decoded_info["frames"],
             "payload": str(payload), "report": str(report), "wav": str(decoded),
