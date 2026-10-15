@@ -359,8 +359,10 @@ static int draw_private_map_preview(void) {
             }
             poly = &terrain_faces[face_drawn++];
             SetPolyFT4(poly);
-            setXY4(poly, sx[0], sy[0], sx[1], sy[1],
-                         sx[2], sy[2], sx[3], sy[3]);
+            poly->x0 = sx[0]; poly->y0 = sy[0];
+            poly->x1 = sx[1]; poly->y1 = sy[1];
+            poly->x2 = sx[2]; poly->y2 = sy[2];
+            poly->x3 = sx[3]; poly->y3 = sy[3];
             setUVWH(poly, uv[0], uv[1], uv[2], uv[3]);
             setRGB0(poly, 128, 128, 128);
             setTPage(poly, 0, 0, 320, 0);
