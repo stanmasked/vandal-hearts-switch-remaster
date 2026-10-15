@@ -13,7 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from tools.extract_map02_trace import extract_trace_text
+from tools.extract_map02_trace import extract_trace_lines
 from tools.verify_map02_trace import evaluate_trace
 from tools.prepare_map02_pcport import PINNED_BLOB_SHA1, PINNED_UPSTREAM_REF
 
@@ -174,7 +174,8 @@ def capture(executable: Path, trace_directory: Path, output_directory: Path,
         "warning": "A matching source manifest does not establish that the binary was compiled from it.",
     }
     try:
-        entries = extract_trace_text(raw_path.read_bytes().decode("utf-8", errors="replace"))
+        with raw_path.open("r", encoding="utf-8", errors="replace") as log:
+            entries = extract_trace_lines(log)
     except ValueError as exc:
         summary["trace_events"] = 0
         summary["analysis"] = {"errors": [str(exc)], "observations": []}
