@@ -139,6 +139,19 @@ class InspectLandDtTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "integers"):
                 inspect_land_dt(path, single_block=True, gfx_ids=("241", 243))
 
+    def test_rejects_noninteger_map_numbers(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "land.bin"
+            path.write_bytes(bytes(BLOCK_SIZE * 3))
+            with self.assertRaisesRegex(ValueError, "Map number must be an integer"):
+                inspect_land_dt(path, map_number=True)
+            with self.assertRaisesRegex(ValueError, "Map number must be an integer"):
+                inspect_land_dt(path, map_number="2")
+            with self.assertRaisesRegex(ValueError, "Map numbers must be integers"):
+                compare_land_dt(path, map_numbers=(0, True))
+            with self.assertRaisesRegex(ValueError, "Map numbers must be integers"):
+                compare_land_dt(path, map_numbers=(0, "2"))
+
     def test_rejects_empty_input(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "empty.bin"
