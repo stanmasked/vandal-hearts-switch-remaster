@@ -39,6 +39,23 @@ class VerifyMap02CaptureTests(unittest.TestCase):
             self.assertEqual(strict.returncode, 0, strict.stderr)
             self.assertEqual(json.loads(strict.stdout)["trace_events"], 6)
 
+    def test_full_conflicting_or_unfinished_pass_stays_invalid_on_independent_replay(self):
+        for mode, message in (
+            ("full_draw_and_skip", "multiple terminal outcomes"),
+            ("full_unfinished_visit", "nonempty visit without draw or skip"),
+        ):
+            with self.subTest(mode=mode):
+                with tempfile.TemporaryDirectory() as folder:
+                    root = Path(folder)
+                    executable, prepared = fixture(root, mode=mode, trace_mode="full")
+                    bundle = root / "bundle"
+                    self.assertEqual(capture(executable, prepared, bundle), 2)
+                    integrity = verify_bundle(bundle)
+                    self.assertEqual(integrity["integrity"], "verified")
+                    self.assertFalse(integrity["complete_capture"])
+                    report = json.loads((bundle / "capture_report.json").read_text())
+                    self.assertTrue(any(message in err for err in report["analysis"]["errors"]))
+
     def test_full_capture_missing_visit_is_invalid_but_offline_integrity_verifies(self):
         with tempfile.TemporaryDirectory() as folder:
             base = Path(folder)
