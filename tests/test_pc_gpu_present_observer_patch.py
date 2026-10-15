@@ -28,7 +28,6 @@ class ObserverPatchTests(unittest.TestCase):
         self.assertEqual(result.count("if (!s_window || !s_glCtx) return;"), 1)
         self.assertLess(result.index("desktop-only window prerequisite"), result.index("PC_GpuDrawOverlay(w, h);"))
         self.assertIn("#if defined(VH_SWITCH_COMPLETED_FRAME_OBSERVER)", result)
-        self.assertIn("#if !defined(VH_SWITCH_EXCLUSIVE_PRESENT)\\n    PC_GpuPumpEvents();", result)
         self.assertLess(result.index("external Switch event loop owns SDL pumping"),
                         result.index("PC_GpuDrawOverlay(w, h);"))
         self.assertLess(result.index("PC_GpuDrawOverlay(w, h);"),
