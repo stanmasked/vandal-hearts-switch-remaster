@@ -1,0 +1,419 @@
+"""Read-only validation tests for XA extraction report and payload."""
+import hashlib
+import json
+import sys
+import tempfile
+import unittest
+import wave
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tools.validate_cdxa_extraction import validate_extraction
+
+
+class ValidateXaExtractionTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        root = Path(self.temp.name)
+        self.report = root / "report.json"
+        self.payload = root / "audio.bin"
+        self.data = {
+            "audio_form2_sectors_written": 2,
+            "payload_bytes_written": 4608,
+            "payload_sha256": hashlib.sha256(bytes(4608)).hexdigest(),
+            "coding_info_counts": {"0x01": 2},
+            "file_channel_counts": {"1:0": 2},
+            "audio_lbas": [10, 12],
+            "audio_lba_offsets": [
+                {"lba": 10, "payload_offset": 0, "missing_source_sectors_before": 0},
+                {"lba": 12, "payload_offset": 2304, "missing_source_sectors_before": 1},
+            ],
+            "noncontiguous_audio_transitions": 1,
+        }
+        self.payload.write_bytes(bytes(4608))
+
+    def check(self):
+        self.report.write_text(json.dumps(self.data), encoding="utf-8")
+        return validate_extraction(self.report, self.payload)
+
+    def test_valid_sample_reports_frames_duration_and_gap(self):
+        result = self.check()
+        self.assertEqual(result["pcm_frames"], 4032)
+        self.assertEqual(result["audio_sectors"], 2)
+        self.assertEqual(result["lba_gap_transitions"], 1)
+        self.assertAlmostEqual(result["decoded_seconds"], 4032 / 37800)
+
+    def test_payload_size_mismatch_fails(self):
+        self.payload.write_bytes(bytes(2304))
+        with self.assertRaisesRegex(ValueError, "payload size mismatch"):
+            self.check()
+
+    def test_payload_same_size_but_wrong_contents_fails(self):
+        self.payload.write_bytes(bytes([1]) * 4608)
+        with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
+            self.check()
+
+    def test_missing_digest_fails(self):
+        del self.data["payload_sha256"]
+        with self.assertRaisesRegex(ValueError, "SHA-256 payload digest"):
+            self.check()
+
+    def test_mixed_profiles_fail(self):
+        self.data["coding_info_counts"] = {"0x01": 1, "0x05": 1}
+        with self.assertRaisesRegex(ValueError, "unsupported or mixed"):
+            self.check()
+
+    def test_incorrect_coding_count_fails(self):
+        self.data["coding_info_counts"] = {"0x01": 1}
+        with self.assertRaisesRegex(ValueError, "coding-info sector count"):
+            self.check()
+
+    def test_mixed_file_channels_rejected(self):
+        self.data["file_channel_counts"] = {"1:0": 1, "1:1": 1}
+        with self.assertRaisesRegex(ValueError, "multiple CD-XA"):
+            self.check()
+
+    def test_incorrect_stream_count_rejected(self):
+        self.data["file_channel_counts"] = {"1:0": 1}
+        with self.assertRaisesRegex(ValueError, "file/channel count metadata"):
+            self.check()
+
+    def test_missing_stream_counts_rejected(self):
+        del self.data["file_channel_counts"]
+        with self.assertRaisesRegex(ValueError, "file/channel counts"):
+            self.check()
+
+    def test_source_lba_range_metadata_accepted(self):
+        self.data.update({
+            "start_lba": 10, "sectors_scanned": 3,
+            "first_audio_lba": 10, "last_audio_lba": 12,
+        })
+        self.assertEqual(self.check()["audio_sectors"], 2)
+
+    def test_out_of_range_audio_lba_rejected(self):
+        self.data.update({
+            "start_lba": 11, "sectors_scanned": 2,
+            "first_audio_lba": 10, "last_audio_lba": 12,
+        })
+        with self.assertRaisesRegex(ValueError, "outside reported scanned range"):
+            self.check()
+
+    def test_inconsistent_first_or_last_lba_rejected(self):
+        self.data.update({
+            "start_lba": 10, "sectors_scanned": 3,
+            "first_audio_lba": 11, "last_audio_lba": 12,
+        })
+        with self.assertRaisesRegex(ValueError, "first/last audio LBA"):
+            self.check()
+
+    def test_incomplete_source_range_rejected(self):
+        self.data["start_lba"] = 10
+        with self.assertRaisesRegex(ValueError, "incomplete source LBA"):
+            self.check()
+
+    def test_source_range_must_fit_selected_sector_count(self):
+        self.data.update({
+            "start_lba": 10, "sectors_scanned": 1,
+            "first_audio_lba": 10, "last_audio_lba": 12,
+        })
+        with self.assertRaisesRegex(ValueError, "outside reported scanned range"):
+            self.check()
+
+    def test_read_only_source_bin_matches_exact_selected_stream(self):
+        # Construct two selected XA sectors, separated by a different channel.
+        # Source bytes must equal the report's local payload, not just its hash.
+        root = self.report.parent
+        raw_path = root / "source.bin"
+
+        def sector(channel, fill):
+            data = bytearray(2352)
+            data[:12] = bytes([0]) + bytes([255]) * 10 + bytes([0])
+            data[15] = 2
+            data[16:20] = data[20:24] = bytes((1, channel, 0x64, 0x01))
+            data[24:2328] = bytes([fill]) * 2304
+            return bytes(data)
+
+        self.data.update({
+            "start_lba": 0, "sectors_scanned": 3,
+            "mode2_sectors": 3, "matching_subheaders": 3,
+            "submode_counts": {"0x64": 3},
+            "first_audio_lba": 0, "last_audio_lba": 2,
+            "audio_lbas": [0, 2],
+            "audio_lba_offsets": [
+                {"lba": 0, "payload_offset": 0, "missing_source_sectors_before": 0},
+                {"lba": 2, "payload_offset": 2304, "missing_source_sectors_before": 1},
+            ],
+        })
+        raw_path.write_bytes(sector(0, 17) + sector(1, 55) + sector(0, 33))
+        payload = bytes([17]) * 2304 + bytes([33]) * 2304
+        self.payload.write_bytes(payload)
+        self.data["payload_sha256"] = hashlib.sha256(payload).hexdigest()
+        self.report.write_text(json.dumps(self.data), encoding="utf-8")
+        original = raw_path.read_bytes()
+        self.assertEqual(
+            validate_extraction(self.report, self.payload, source_bin=raw_path)["audio_sectors"], 2
+        )
+        self.assertEqual(raw_path.read_bytes(), original)
+
+        changed = bytearray(original)
+        changed[24] ^= 1
+        raw_path.write_bytes(changed)
+        with self.assertRaisesRegex(ValueError, "source BIN payload mismatch"):
+            validate_extraction(self.report, self.payload, source_bin=raw_path)
+
+        # Hidden eligible sector in a previously interleaved channel slot.
+        raw_path.write_bytes(sector(0, 17) + sector(0, 55) + sector(0, 33))
+        with self.assertRaisesRegex(ValueError, "selection differs"):
+            validate_extraction(self.report, self.payload, source_bin=raw_path)
+
+        raw_path.write_bytes(original[:-1])
+        with self.assertRaisesRegex(ValueError, "not aligned"):
+            validate_extraction(self.report, self.payload, source_bin=raw_path)
+
+    def test_source_bin_rejects_header_damage_and_unsupported_coding(self):
+        from tools.extract_cdxa_payload import extract_audio_payloads
+
+        root = self.report.parent
+        raw = root / "source.bin"
+        def xa_sector(marker):
+            sector = bytearray(2352)
+            sector[:12] = bytes([0]) + bytes([255]) * 10 + bytes([0])
+            sector[15] = 2
+            sector[16:20] = sector[20:24] = bytes((1, 0, 0x64, 0x01))
+            sector[24:2328] = bytes([marker]) * 2304
+            return bytes(sector)
+
+        pristine = xa_sector(17) + xa_sector(37)
+        raw.write_bytes(pristine)
+        extract_audio_payloads(
+            raw, self.payload, file_number=1, channel=0,
+            report_path=self.report,
+        )
+        self.assertEqual(
+            validate_extraction(self.report, self.payload, source_bin=raw)["audio_sectors"],
+            2,
+        )
+
+        # The source scan must independently verify diagnostic counts as
+        # well as the stream payload and selected LBA sequence.
+        clean_report = self.report.read_text(encoding="utf-8")
+        for field, value in (
+            ("mode2_sectors", 1),
+            ("matching_subheaders", 1),
+            ("matching_subheaders", True),
+        ):
+            with self.subTest(field=field, value=value):
+                edited = json.loads(clean_report)
+                edited[field] = value
+                self.report.write_text(json.dumps(edited), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "sector/header counts|nonnegative integer"):
+                    validate_extraction(self.report, self.payload, source_bin=raw)
+        self.report.write_text(clean_report, encoding="utf-8")
+        tampered = json.loads(clean_report)
+        tampered["submode_counts"] = {"0x64": 1, "0x60": 1}
+        self.report.write_text(json.dumps(tampered), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "submode counts"):
+            validate_extraction(self.report, self.payload, source_bin=raw)
+        self.report.write_text(clean_report, encoding="utf-8")
+
+        # Corrupt the duplicated subheader of the second sector: it must
+        # no longer count as a selected XA audio sector.
+        changed = bytearray(pristine)
+        changed[2352 + 20] ^= 1
+        raw.write_bytes(changed)
+        with self.assertRaisesRegex(ValueError, "selection does not match report sector count"):
+            validate_extraction(self.report, self.payload, source_bin=raw)
+
+        # Corrupt the sector mode so it is skipped during source scanning.
+        changed = bytearray(pristine)
+        changed[15] = 1
+        raw.write_bytes(changed)
+        with self.assertRaisesRegex(ValueError, "selection"):
+            validate_extraction(self.report, self.payload, source_bin=raw)
+
+        # A selected sector with a different XA coding byte cannot be
+        # represented as the validated 4-bit stereo profile.
+        changed = bytearray(pristine)
+        changed[19] = changed[23] = 0x05
+        raw.write_bytes(changed)
+        with self.assertRaisesRegex(ValueError, "unsupported coding"):
+            validate_extraction(self.report, self.payload, source_bin=raw)
+
+        # The report is anchored to exactly the requested range.
+        raw.write_bytes(pristine[:2352])
+        with self.assertRaisesRegex(ValueError, "scan range exceeds"):
+            validate_extraction(self.report, self.payload, source_bin=raw)
+
+    def test_source_mutations_after_extraction_preserve_report_and_payload(self):
+        # A distinct file/channel outside the selected stream may change,
+        # but any mutation of the selected stream must invalidate verification.
+        from tools.extract_cdxa_payload import extract_audio_payloads
+
+        raw = self.report.parent / "original.bin"
+
+        def make_sector(channel, marker):
+            sector = bytearray(2352)
+            sector[:12] = bytes([0]) + bytes([255]) * 10 + bytes([0])
+            sector[15] = 2
+            sector[16:20] = sector[20:24] = bytes((1, channel, 0x64, 0x01))
+            sector[24:2328] = bytes([marker]) * 2304
+            return bytes(sector)
+
+        pristine = make_sector(0, 11) + make_sector(1, 29) + make_sector(0, 47)
+        raw.write_bytes(pristine)
+        extract_audio_payloads(
+            raw, self.payload, file_number=1, channel=0,
+            report_path=self.report,
+        )
+        frozen_report = self.report.read_bytes()
+        frozen_payload = self.payload.read_bytes()
+        self.assertEqual(
+            validate_extraction(self.report, self.payload, source_bin=raw)["audio_sectors"], 2
+        )
+
+        # Editing a different stream must not invalidate this stream's
+        # source verification or change the extraction artefacts.
+        changed = bytearray(pristine)
+        changed[2352 + 24 + 77] ^= 1
+        raw.write_bytes(changed)
+        self.assertEqual(
+            validate_extraction(self.report, self.payload, source_bin=raw)["audio_sectors"], 2
+        )
+
+        # Both selected sectors are independently checked. A one-byte
+        # change at either location is detected despite identical file sizes.
+        for offset in (24 + 95, 2 * 2352 + 24 + 123):
+            with self.subTest(source_offset=offset):
+                changed = bytearray(pristine)
+                changed[offset] ^= 1
+                raw.write_bytes(changed)
+                with self.assertRaisesRegex(ValueError, "source BIN payload mismatch"):
+                    validate_extraction(self.report, self.payload, source_bin=raw)
+                self.assertEqual(self.report.read_bytes(), frozen_report)
+                self.assertEqual(self.payload.read_bytes(), frozen_payload)
+
+        # A selected sector changing channel or file number is no longer
+        # part of the extracted stream, even when its payload is unchanged.
+        for header_offset, replacement in ((17, 1), (16, 2)):
+            with self.subTest(header_offset=header_offset, value=replacement):
+                changed = bytearray(pristine)
+                changed[header_offset] = replacement
+                changed[header_offset + 4] = replacement  # duplicate subheader
+                raw.write_bytes(changed)
+                with self.assertRaisesRegex(ValueError, "source BIN selection (differs|does not match)"):
+                    validate_extraction(self.report, self.payload, source_bin=raw)
+
+        # Conversely, promoting an unrelated sector into the selected
+        # channel must be caught as an unreported eligible audio sector.
+        changed = bytearray(pristine)
+        other_channel_offset = 2352 + 17
+        changed[other_channel_offset] = 0
+        changed[other_channel_offset + 4] = 0
+        raw.write_bytes(changed)
+        with self.assertRaisesRegex(ValueError, "source BIN selection differs"):
+            validate_extraction(self.report, self.payload, source_bin=raw)
+
+        self.assertEqual(self.report.read_bytes(), frozen_report)
+        self.assertEqual(self.payload.read_bytes(), frozen_payload)
+        raw.write_bytes(pristine)
+        self.assertEqual(
+            validate_extraction(self.report, self.payload, source_bin=raw)["audio_sectors"], 2
+        )
+
+    def test_source_bin_needs_full_scan_range(self):
+        raw = self.report.parent / "source.bin"
+        raw.write_bytes(bytes(2352))
+        self.report.write_text(json.dumps(self.data), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "requires scan-range metadata"):
+            validate_extraction(self.report, self.payload, source_bin=raw)
+
+    def test_invalid_offsets_fail(self):
+        self.data["audio_lba_offsets"][1]["payload_offset"] = 2305
+        with self.assertRaisesRegex(ValueError, "mapping"):
+            self.check()
+
+    def test_boolean_and_fractional_offset_metadata_rejected(self):
+        # In Python False == 0 and True == 1: report fields must use
+        # genuine JSON integers, not values that compare equal to them.
+        mutations = (
+            (0, "payload_offset", False),
+            (0, "missing_source_sectors_before", False),
+            (1, "missing_source_sectors_before", True),
+            (1, "payload_offset", 2304.0),
+            (0, "lba", 10.0),
+        )
+        for index, field, replacement in mutations:
+            with self.subTest(index=index, field=field, replacement=replacement):
+                original = self.data["audio_lba_offsets"][index][field]
+                self.data["audio_lba_offsets"][index][field] = replacement
+                try:
+                    with self.assertRaisesRegex(ValueError, "LBA/offset mapping"):
+                        self.check()
+                finally:
+                    self.data["audio_lba_offsets"][index][field] = original
+
+    def test_misreported_gaps_fail(self):
+        self.data["noncontiguous_audio_transitions"] = 0
+        with self.assertRaisesRegex(ValueError, "gaps"):
+            self.check()
+
+    def test_nonascending_lbas_fail(self):
+        self.data["audio_lbas"] = [10, 10]
+        with self.assertRaisesRegex(ValueError, "nonascending"):
+            self.check()
+
+    def test_empty_extraction_rejected(self):
+        self.data.update({
+            "audio_form2_sectors_written": 0,
+            "payload_bytes_written": 0,
+            "coding_info_counts": {},
+            "audio_lbas": [],
+            "audio_lba_offsets": [],
+            "noncontiguous_audio_transitions": 0,
+        })
+        self.payload.write_bytes(b"")
+        with self.assertRaisesRegex(ValueError, "no audio sectors"):
+            self.check()
+
+
+    def write_wav(self, path, frames=4032, rate=37800, channels=2):
+        with wave.open(str(path), "wb") as wav:
+            wav.setnchannels(channels)
+            wav.setsampwidth(2)
+            wav.setframerate(rate)
+            wav.writeframes(bytes(frames * channels * 2))
+
+    def test_matching_wav_is_accepted(self):
+        self.check()
+        wav = self.report.parent / "decoded.wav"
+        self.write_wav(wav)
+        result = validate_extraction(self.report, self.payload, wav)
+        self.assertEqual(result["pcm_frames"], 4032)
+
+    def test_wav_wrong_frame_count_rejected(self):
+        self.check()
+        wav = self.report.parent / "decoded.wav"
+        self.write_wav(wav, frames=2016)
+        with self.assertRaisesRegex(ValueError, "frame count"):
+            validate_extraction(self.report, self.payload, wav)
+
+    def test_wav_wrong_sample_rate_rejected(self):
+        self.check()
+        wav = self.report.parent / "decoded.wav"
+        self.write_wav(wav, rate=44100)
+        with self.assertRaisesRegex(ValueError, "37800"):
+            validate_extraction(self.report, self.payload, wav)
+
+    def test_wav_truncated_data_rejected(self):
+        self.check()
+        wav = self.report.parent / "decoded.wav"
+        self.write_wav(wav)
+        with wav.open("r+b") as stream:
+            stream.truncate(wav.stat().st_size - 20)
+        with self.assertRaisesRegex(ValueError, "truncated"):
+            validate_extraction(self.report, self.payload, wav)
+
+
+if __name__ == "__main__":
+    unittest.main()

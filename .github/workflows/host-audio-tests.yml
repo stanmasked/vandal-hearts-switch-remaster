@@ -1,0 +1,42 @@
+name: Host SPU audio regressions
+
+on:
+  pull_request:
+    paths:
+      - "tools/**"
+      - "tests/**"
+      - "source/**"
+      - "Makefile"
+      - "docs/VAB_STRUCTURE_AUDIT.md"
+      - ".github/workflows/host-audio-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  spu-audio:
+    name: spu-audio
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Python syntax checks
+        run: python3 -m compileall -q tools tests
+      - name: Run VAB, SPU and synthetic audio tests
+        run: |
+          python3 tests/test_inspect_spu_vag.py
+          python3 tests/test_inspect_vab_header.py
+          python3 tests/test_inspect_vab_sizes.py
+          python3 tests/test_decode_spu_adpcm.py
+          python3 tests/test_decode_vab_sample.py
+          python3 tests/test_resolve_vab_note.py
+          python3 tests/test_simulate_spu_voice.py
+          python3 tests/test_render_vab_note.py
+          python3 tests/test_spu_gaussian_interpolation.py
+          python3 tests/test_mix_spu_stereo.py
+          python3 tests/test_inspect_ps1_seq.py
+          python3 tests/test_seq_to_chord_schedule.py
+          python3 tests/test_render_ps1_seq.py
+          python3 tests/test_seq_voice_slots.py
+          python3 tests/test_repeat_ps1_seq.py
+          python3 tests/test_spu_voice_lifetime.py
+          python3 tests/test_schedule_ps1_seq_blocks.py

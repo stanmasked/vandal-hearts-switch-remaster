@@ -53,6 +53,30 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_tex
 	python3 -m unittest discover -s tests -p 'test_map02_trace_c_emitter.py'
 	python3 tests/test_extract_cdxa_payload.py
 	python3 tests/test_decode_cdxa_adpcm.py
+	python3 tests/test_cdxa_pipeline.py
+	python3 tests/test_validate_cdxa_extraction.py
+	python3 tests/test_analyze_cdxa_boundaries.py
+	python3 tests/test_compare_cdxa_wavs.py
+	python3 tests/test_run_cdxa_local_check.py
+	python3 tests/test_analyze_cdxa_wav_quality.py
+	python3 tests/test_inventory_cdxa_streams.py
+	python3 tests/test_inspect_spu_vag.py
+	python3 tests/test_inspect_vab_header.py
+	python3 tests/test_inspect_vab_sizes.py
+	python3 tests/test_decode_spu_adpcm.py
+	python3 tests/test_decode_vab_sample.py
+	python3 tests/test_resolve_vab_note.py
+	python3 tests/test_simulate_spu_voice.py
+	python3 tests/test_render_vab_note.py
+	python3 tests/test_spu_gaussian_interpolation.py
+	python3 tests/test_mix_spu_stereo.py
+	python3 tests/test_inspect_ps1_seq.py
+	python3 tests/test_seq_to_chord_schedule.py
+	python3 tests/test_render_ps1_seq.py
+	python3 tests/test_seq_voice_slots.py
+	python3 tests/test_repeat_ps1_seq.py
+	python3 tests/test_spu_voice_lifetime.py
+	python3 tests/test_schedule_ps1_seq_blocks.py
 
 # Host-only memory and undefined-behavior checks; requires GCC or Clang sanitizers.
 test-sanitize: | $(BUILD)

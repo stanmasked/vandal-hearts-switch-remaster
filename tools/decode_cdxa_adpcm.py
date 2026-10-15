@@ -6,7 +6,9 @@ bytes of XA sound groups and 20 trailing padding bytes. This supports the
 common 4-bit stereo, 37.8 kHz profile only; it is not a general XA decoder.
 """
 import argparse
+import os
 import struct
+import tempfile
 import wave
 from pathlib import Path
 
@@ -48,9 +50,10 @@ def decode_group(frame: bytes, history: list[list[int]]) -> bytes:
                 signed_nibble = nibble if nibble < 8 else nibble - 16
                 sample = signed_nibble * (1 << shift)
                 sample += (K0[filt] * h1 + K1[filt] * h2 + 32) >> 6
-                sample = max(-32768, min(32767, sample))
+                # Match the common XA decoder reference behavior: keep the
+                # predictor history unclipped, and clamp only the emitted PCM.
                 h2, h1 = h1, sample
-                channels[channel].append(sample)
+                channels[channel].append(max(-32768, min(32767, sample)))
             history[channel] = [h1, h2]
 
     pcm = bytearray()
@@ -62,7 +65,11 @@ def decode_payload_file(
     source: Path, destination: Path, sectors: int | None = None,
     extracted_groups: bool = False,
 ) -> dict[str, int]:
-    if source.resolve() == destination.resolve():
+    source_resolved = source.resolve()
+    destination_resolved = destination.resolve()
+    if source_resolved == destination_resolved or (
+        source.exists() and destination.exists() and source.samefile(destination)
+    ):
         raise ValueError("output must not overwrite the input payload")
     size = source.stat().st_size
     if size == 0:
@@ -77,23 +84,38 @@ def decode_payload_file(
     history = [[0, 0], [0, 0]]
     groups = 0
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with source.open("rb") as src, wave.open(str(destination), "wb") as dst:
-        dst.setnchannels(2)
-        dst.setsampwidth(2)
-        dst.setframerate(SAMPLE_RATE)
-        for sector_index in range(count):
-            sector = src.read(sector_size)
-            if len(sector) != sector_size:
-                raise ValueError(f"incomplete payload sector {sector_index}")
-            audio = sector[:AUDIO_BYTES_PER_SECTOR]
-            padding = sector[AUDIO_BYTES_PER_SECTOR:] if not extracted_groups else b""
-            if any(padding):
-                raise ValueError(f"non-zero padding in payload sector {sector_index}")
-            pcm = bytearray()
-            for offset in range(0, AUDIO_BYTES_PER_SECTOR, GROUP_SIZE):
-                pcm.extend(decode_group(audio[offset:offset + GROUP_SIZE], history))
-                groups += 1
-            dst.writeframesraw(pcm)
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix=f".{destination.name}.", suffix=".tmp",
+            dir=destination.parent, delete=False,
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+        with source.open("rb") as src, wave.open(str(temp_path), "wb") as dst:
+            dst.setnchannels(2)
+            dst.setsampwidth(2)
+            dst.setframerate(SAMPLE_RATE)
+            for sector_index in range(count):
+                sector = src.read(sector_size)
+                if len(sector) != sector_size:
+                    raise ValueError(f"incomplete payload sector {sector_index}")
+                audio = sector[:AUDIO_BYTES_PER_SECTOR]
+                padding = sector[AUDIO_BYTES_PER_SECTOR:] if not extracted_groups else b""
+                if any(padding):
+                    raise ValueError(f"non-zero padding in payload sector {sector_index}")
+                pcm = bytearray()
+                for offset in range(0, AUDIO_BYTES_PER_SECTOR, GROUP_SIZE):
+                    pcm.extend(decode_group(audio[offset:offset + GROUP_SIZE], history))
+                    groups += 1
+                dst.writeframesraw(pcm)
+        os.replace(temp_path, destination)
+        temp_path = None
+    finally:
+        if temp_path is not None:
+            try:
+                temp_path.unlink()
+            except FileNotFoundError:
+                pass
     return {"sectors": count, "groups": groups, "frames": groups * 112}
 
 

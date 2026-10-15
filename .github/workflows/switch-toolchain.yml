@@ -17,6 +17,16 @@ permissions:
   contents: read
 
 jobs:
+  host-regression:
+    name: Host C and Python regression suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Run complete host test suite
+        run: make test
+
   toolchain:
     name: Verify devkitPro Switch toolchain
     runs-on: ubuntu-latest
