@@ -186,3 +186,31 @@ that the private preview runs correctly on physical Switch hardware.
 Do not include the `private-assets` directory in Git, support bundles,
 or public screenshots without separately deciding whether to share
 game-derived images.
+
+## Cross-language staging ↔ Switch C-loader contract
+
+An additional **asset-free integration check** verifies that files
+produced by `tools/stage_vh_private_map_bank.py` are correctly decoded by
+the exact `vh_private_map_bank_load_pair` C implementation linked into
+the Switch NRO. It uses `tests/private_map_bank_bridge.c` and
+`tests/test_private_map_bank_bridge.py`.
+
+The Python test synthesizes the complete 32,768-byte raw 4bpp F_TEX01
+page and 123,993-byte LAND_DT table, sets map 11 slot 241 UVWH to
+(240,192,15,15), CLUT selector to 35 (fourth local palette row),
+places indices 1/2 in the low/high 4-bit positions of a packed texture
+byte, and inserts BGR555 red 0x001f and green 0x03e0 in the selected
+palette. It then stages the pair under a **temporary SD root** using
+the production Python staging tool, reads the pair through the
+production C reader, and verifies exact UVWH, CLUT, indices and colors.
+
+Also tests missing both files (return 0 / synthetic fallback), missing
+only one file (return -1 / fail closed), truncated texture and invalid
+CLUT selector (return -1). The host verifier does not run the Switch GPU
+or open a user's image: it is a **byte-for-byte loader compatibility
+test** before the expensive SDL2/NRO build. `make test` and the pinned
+DrawOTag CI workflow run this contract.
+
+This is complementary to, **not a replacement for**, future NeXium
+emulation of the *private* `sdmc:` file paths or original map geometry.
+No proprietary game bytes enter test artifacts.
