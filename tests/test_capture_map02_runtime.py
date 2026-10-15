@@ -1,4 +1,5 @@
 """Host-only tests for the opt-in local map02 runtime capture command."""
+import hashlib
 import json
 import stat
 import tempfile
@@ -9,18 +10,30 @@ from tools.capture_map02_runtime import capture
 from tools.prepare_map02_pcport import PINNED_UPSTREAM_REF
 
 
-def fixture(root: Path, mode="complete", modified=False):
+def fixture(root: Path, mode="complete", modified=False, trace_mode="legacy"):
     trace_dir = root / "prepared"
     trace_dir.mkdir()
     provenance = {
         "upstream_reference": PINNED_UPSTREAM_REF,
-        "trace_mode": "legacy",
+        "trace_mode": trace_mode,
         "allow_modified_source": modified,
         "source_files": {
             name: {"matches_pinned": not modified}
             for name in ("src/core/graphics.c", "src/states/game_setup.c", "platform/pc/Makefile")
         },
     }
+    if trace_mode == "full":
+        payloads = {
+            "game_setup.trace.c": "/* generated loader trace */\n",
+            "graphics.trace.c": "/* generated renderer trace */\n",
+            "map02_trace.mk": "# generated diagnostic Make overlay\n",
+        }
+        provenance["generated_files"] = {
+            name: hashlib.sha256(content.encode("utf-8")).hexdigest()
+            for name, content in payloads.items()
+        }
+        for name, content in payloads.items():
+            (trace_dir / name).write_text(content, encoding="utf-8")
     (trace_dir / "source_provenance.json").write_text(json.dumps(provenance), encoding="utf-8")
     executable = root / "fake-pcport"
     events = [
@@ -118,6 +131,47 @@ class CaptureMap02RuntimeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "three pinned files"):
                 capture(exe, trace_dir, base / "run")
             self.assertFalse((base / "run").exists())
+
+    def test_full_trace_generated_inputs_are_verified_before_game_launch(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            exe, trace_dir = fixture(base, trace_mode="full")
+            first = base / "verified-run"
+            self.assertEqual(capture(exe, trace_dir, first), 0)
+            report = json.loads((first / "capture_report.json").read_text())
+            self.assertEqual(report["source_provenance"]["trace_mode"], "full")
+            self.assertEqual(len(report["source_provenance"]["generated_files"]), 3)
+
+            for name in ("game_setup.trace.c", "graphics.trace.c", "map02_trace.mk"):
+                with self.subTest(filename=name):
+                    path = trace_dir / name
+                    original = path.read_bytes()
+                    path.write_bytes(original + b"altered")
+                    target = base / ("tampered-" + name)
+                    with self.assertRaisesRegex(ValueError, "changed since preparation"):
+                        capture(exe, trace_dir, target)
+                    self.assertFalse(target.exists())
+                    path.write_bytes(original)
+
+    def test_full_trace_missing_or_invalid_fingerprints_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            exe, trace_dir = fixture(base, trace_mode="full")
+            manifest_path = trace_dir / "source_provenance.json"
+            original = json.loads(manifest_path.read_text())
+            cases = [
+                (dict(original, generated_files=None), "must fingerprint"),
+                (dict(original, generated_files={}), "three diagnostic build inputs"),
+                (dict(original, generated_files={**original["generated_files"],
+                       "graphics.trace.c": "zz"}), "invalid generated source SHA-256"),
+            ]
+            for case, error in cases:
+                with self.subTest(error=error):
+                    manifest_path.write_text(json.dumps(case))
+                    with self.assertRaisesRegex(ValueError, error):
+                        capture(exe, trace_dir, base / "should-not-exist")
+                    self.assertFalse((base / "should-not-exist").exists())
+            manifest_path.write_text(json.dumps(original))
 
     def test_process_failure_is_not_mistaken_for_success(self):
         with tempfile.TemporaryDirectory() as folder:
