@@ -141,6 +141,37 @@ class RuntimeTraceTests(unittest.TestCase):
         bad_gfx = evaluate_trace(entries + [{**skip, "gfx": 999}])
         self.assertTrue(any("unexpected GFX 999" in e for e in bad_gfx["errors"]))
 
+    def test_null_gfx_skip_must_record_the_null_gfx_constant(self):
+        entries = observations()
+        skip = {"z": 8, "x": 19, "face": 0, "stage": "skip",
+                "gfx": 0, "frame": 7, "path": "normal",
+                "reason": "null_gfx"}
+        self.assertEqual(evaluate_trace(entries + [skip])["errors"], [])
+        corrupt = dict(skip, gfx=641)
+        self.assertTrue(any("null_gfx skip must have GFX 0" in error
+                            for error in evaluate_trace(entries + [corrupt])["errors"]))
+
+    def test_unhashable_or_nonstr_stage_reports_error_instead_of_crashing(self):
+        entries = observations()
+        for invalid in ([], {}, 1, True, None):
+            with self.subTest(stage=invalid):
+                event = dict(entries[2], stage=invalid)
+                report = evaluate_trace(entries + [event])
+                self.assertTrue(any("invalid stage" in e for e in report["errors"]))
+                self.assertEqual(report["observations"][0]["draw_gfx"], 641)
+
+    def test_invalid_draw_frame_cannot_poison_following_unframed_sample(self):
+        entries = observations()
+        entries[2]["frame"] = False
+        entries.append({"z": 8, "x": 19, "face": 0, "stage": "draw", "gfx": 641})
+        report = evaluate_trace(entries)
+        self.assertTrue(any("frame must be a non-negative integer" in e
+                            for e in report["errors"]))
+        self.assertFalse(any("mixed framed and unframed" in e
+                             for e in report["errors"]))
+        self.assertEqual(report["observations"][0]["draw_observation_count"], 1)
+        self.assertEqual(report["observations"][0]["draw_gfx"], 641)
+
     def test_missing_draw(self):
         report = evaluate_trace(observations()[:-1])
         self.assertTrue(any("missing draw" in error for error in report["errors"]))
