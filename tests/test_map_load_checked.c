@@ -84,6 +84,51 @@ int main(void) {
         }
     }
 
+    /* Large synthetic output views: the adapter allocates temporary storage
+     * but publishes only the actual three decoded bytes. These sizes are
+     * tests, NOT verified capacities of any original game map. */
+    {
+        static const size_t capacities[] = {
+            4096u, 65536u, 262144u,
+            VH_PS1_RAM_SIZE - (VH_MAP_OUTPUT_ADDR - VH_PS1_RAM_BASE)
+        };
+        const size_t max_output = capacities[3];
+        const uint8_t fixture_again[] = {4, 0, 0, 0, 0, 'R', 'P', 'G'};
+        memcpy(compressed, fixture_again, sizeof fixture_again);
+        for (size_t test_index = 0; test_index < 4; ++test_index) {
+            size_t capacity = capacities[test_index];
+            memset(decoded, 0x6d, max_output);
+            written = 999;
+            status = vh_map_load_checked(&mem, sizeof fixture_again,
+                                         capacity, &decode, &written);
+            assert(status == VH_MAP_LOAD_OK);
+            assert(decode == VH_MAP_DECODE_OK && written == 3);
+            assert(memcmp(decoded, "RPG", 3) == 0);
+            for (size_t i = 3; i < max_output; ++i)
+                assert(decoded[i] == 0x6d);
+        }
+        /* Exceed the 2 MiB PS1 RAM address window by exactly one byte. */
+        memset(decoded, 0x6d, max_output);
+        status = vh_map_load_checked(&mem, sizeof fixture_again,
+                                     max_output + 1, &decode, &written);
+        assert(status == VH_MAP_LOAD_PREFLIGHT_FAILED && written == 0);
+        assert(decode == VH_MAP_DECODE_INVALID_ARGUMENT);
+        for (size_t i = 0; i < max_output; ++i)
+            assert(decoded[i] == 0x6d);
+
+        /* Even a late syntax error cannot publish any decoded bytes. */
+        {
+            const uint8_t broken[] = {3, 0, 0, 0, 0x02, 'X', 0x00};
+            memcpy(compressed, broken, sizeof broken);
+            status = vh_map_load_checked(&mem, sizeof broken, max_output,
+                                         &decode, &written);
+            assert(status == VH_MAP_LOAD_DECODE_FAILED);
+            assert(decode == VH_MAP_DECODE_TRUNCATED && written == 0);
+            for (size_t i = 0; i < max_output; ++i)
+                assert(decoded[i] == 0x6d);
+        }
+    }
+
     assert(vh_map_load_checked(&mem, 8, 8, NULL, &written)
            == VH_MAP_LOAD_PREFLIGHT_FAILED);
     assert(vh_map_load_checked(&mem, 8, 8, &decode, NULL)
