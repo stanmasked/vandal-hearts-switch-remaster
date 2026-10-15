@@ -405,3 +405,74 @@ These files are synthetic, **not authentic game data**. The first
 retail textured map fragment, full map geometry and any hardware Switch
 trial remain unverified. Complete details in
 `docs/ORIGINAL_MAP_TEXTURE_BANK.md` (commit `88d6872a`).
+
+## Original map 11 MapTileModel and bounded PRS geometry inspection: accepted host preflight (CI #38824725594)
+
+Following the verified synthetic, owner-only `F_TEX01.DAT/LAND_DT.DAT`
+virtual SD GPU patch, the upstream map geometry path was audited at
+pinned `HalmyLyseas/VandalHearts-PcPort` commit
+`14552fffa0e0b47e02b57592e274fc6e7a649923`:
+
+- `src/states/game_setup.c::LoadMap` selects `CDF_M_MAP02_PRS`
+  for map index 11, stores tiles with stride 28 and 12 active rows
+  (28×12 packed source model prefix = 102144 bytes; usable map
+  region is 24×12), then `ProcessMapFileData` calls the map PRS
+  decompressor.
+- `src/maps/unpack.c::UnpackMapFileData` uses an LSB-first
+  control-bit stream and 1024-byte zeroed ring cache initialized
+  at write offset 990, supporting literal, absolute 10-bit cache,
+  short relative cache and inline literal-run commands. The original
+  implementation has no output capacity argument.
+- `include/field.h::MapTileModel` is 304 bytes:
+  `SVECTOR[22]` (176), `s16 gfx[18]` (36),
+  `u8 faces[18][4]` (72), `u8 shades[18]` (18),
+  `u8 faceCt` (1) and `u8 height` (1).
+  The original `RenderMapTile` in `src/core/graphics.c`
+  joins face vertex indices to model geometry, `gGfxSubTextures`
+  (UVWH), `gGfxClutIds` and `gGfxTPageIds` and then projects
+  and submits textured `POLY_FT4` quads through original DrawOTag.
+
+New **private, read-only metadata inspectors**:
+`tools/decode_vh_map_prs.py` (compressed LE-length wrapper,
+ring-cache decoding with 2MiB input/output hard caps, bounds checks,
+decoded-size/sha256 metadata only) and
+`tools/inspect_vh_map_geometry.py` (decompressed 304-byte tile model
+prefix, face-index validity, original local GFX slot and
+`LAND_DT.DAT` UVWH/CLUT linking; optional `--prs` safely
+decodes in-memory before inspecting a selected tile).
+Test suites `tests/test_decode_vh_map_prs.py` (13 tests)
+and `tests/test_inspect_vh_map_geometry.py` (11 tests)
+exercise all command types, corruption limits, 28×12 synthetic map
+buffer, face bounds, geometry and CLUT associations. They are wired into
+the workflow's preflight and host `make test`. Usage, safe
+boundaries and exact original source structure are documented in
+`docs/ORIGINAL_MAP_GEOMETRY.md`. Private `M_*.PRS` files are
+also excluded by `.gitignore`.
+
+**Confirmed CI**: [GitHub Actions #38824725594](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38824725594),
+source code SHA `f2db4a6ce75140b41f0ad5c625844237284d6768`,
+finished **cross-compile SUCCESS**, **original synthetic raster
+NeXium SUCCESS**, and **virtual-SD private texture preview NeXium
+SUCCESS**. Exactly **80 Python tests OK** in eight suites:
+16 DrawOTag, 15 TIM, 13 map bank, 5 SD stager,
+4 quad fixture, 11 geometry, 13 PRS decoder, 3 Python-to-C
+bridge; C file loader tests also passed. Switch ELF→NRO binary
+structure validation succeeded. The baseline NeXium TIM and
+F_TEX/LAND_DT synthetic samples remained red=(255,0,0) and
+green=(0,255,0), with 5450 changed frame pixels.
+The private SD NeXium preview independently preserved four
+exact colors at their UV corners: red, green, blue and yellow.
+An earlier PRS test-only revision failed due to an incorrect high-bit
+encoding in the absolute 10-bit cache address test vector; fixed
+in `f2db4a6c`, which passed.
+
+**Verification limits:** The decoder and model parser are currently
+confirmed against SYNTHETIC PRS streams and MapTileModel records.
+The user's original `M_MAP02.PRS` is not available in the
+current checked-in sources, so this is **not evidence that a genuine
+map file has been decoded**, that original `RenderMapTile` runs
+inside the Switch NRO or that a full scene/gameplay is rendered.
+The current native map preview remains one source UV patch;
+the next gate is to validate actual owner map bytes and wire
+multi-face projected terrain models into the pinned GPU port
+without redistributing game resources.
