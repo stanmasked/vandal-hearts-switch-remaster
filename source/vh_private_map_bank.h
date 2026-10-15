@@ -21,6 +21,11 @@ typedef struct VhPrivateMapBank {
     uint16_t palette[VH_MAP_PALETTE_BYTES / 2];
     uint8_t uvwh[4];
     uint8_t local_clut_id;
+    /* Preserve ALL source LAND_DT slots for geometry face gfx[] lookups.
+     * The initial selection above stays available for the single patch.
+     * Other local ID selections must be checked before drawing. */
+    uint8_t slot_uvwh[VH_MAP_SLOTS][4];
+    uint8_t slot_clut_ids[VH_MAP_SLOTS];
 } VhPrivateMapBank;
 
 /*  1: validated pair loaded; 0: neither file present (synthetic CI fallback);
