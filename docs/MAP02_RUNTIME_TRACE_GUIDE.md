@@ -33,3 +33,20 @@ python3 -m tools.verify_map02_trace /local/path/map02_trace.json
 ```
 
 Expected PRS post-load GFX: (8,19,0) → 641, (11,11,0) → 643. The DAT alternative is 498 and 550. Any mismatch or mutation warrants source-level investigation. Keep an original-game screenshot for later visual comparison. **No automatic texture rewrite** is authorized by this trace.
+
+## Optional draw metadata (implemented)
+
+The trace checker accepts additional integer keys on `stage: "draw"` entries:
+`u`, `v` (0–255) and `clut`, `tpage` (0–65535). It preserves them in
+`draw_metadata` and reports invalid types or ranges. Omitting these keys
+keeps existing minimal trace logs compatible. These values are **observed GPU
+metadata**, not independently checked against the original resource's palette
+table or texture page. Gather them at primitive submission rather than copying
+the known atlas values into a synthetic log.
+
+Example of the expected **data shape only**, not an actual runtime observation:
+
+```json
+{"z":8,"x":19,"face":0,"stage":"draw","gfx":641,"u":240,"v":192,"clut":35,"tpage":5}
+```
+
