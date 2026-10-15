@@ -20,6 +20,8 @@ The latest SDL2 Switch feasibility run [38694397097](https://github.com/stanmask
 
 The audio step was inconclusive because the headless CI host has no usable ALSA default device; overall workflow success is not proof of audio callback execution or audible playback. See [audio probe results](docs/AUDIO_PROBE_RESULTS.md). All results are emulator-based; physical Switch testing and integration of the upstream game remain outstanding.
 
+The next integration seam is documented in [the upstream GLES2 presenter integration plan](docs/SWITCH_PRESENTER_INTEGRATION_PLAN.md). It describes the exact `PC_GpuPresent()` boundary and required tests; the upstream renderer is not yet integrated.
+
 ## Project status
 
 1. [x] Review upstream documentation and license.
