@@ -57,9 +57,11 @@ When tracing actual render loops, append an integer `frame` (starting at 0) to
 each draw event. Repeated draw events for the same face in **different frames**
 are expected, not duplicate records. The checker retains the first draw
 observation, counts all frame-tagged draw samples, and reports any changes in
-GFX or recorded UV/CLUT/tpage across frames. Two draw entries for the same
-face and same `frame` remain an error. Without `frame`, the older
-single-observation behavior is preserved.
+GFX or recorded UV/CLUT/tpage across frames. In the default/legacy
+validator, two draws of the same face within one frame and path remain a
+duplicate error. Full-trace validation (`--require-full-trace`) allows two
+such draws **only if a fresh nonempty `visit` precedes each separate render
+call**. Without `frame`, older single-observation behavior is preserved.
 
 Example shape (illustrative, not captured from an actual game):
 
@@ -217,7 +219,7 @@ The log records `post_load` for each target face when map 11 loads and
 `draw` immediately before `AddPrim` when a target face survives the
 renderer visibility check. Draw samples have a `frame` number,
 `path` (normal, edge, overhead), GFX, UV, packed GPU CLUT ID and tpage ID.
-The validator recognizes `path` values `normal`, `edge`, and `overhead`, and preserves distinct render-path observations for the same face and frame. It rejects duplicates within the same face/frame/path; a trace may omit `path` for legacy single-path captures, but cannot mix annotated and unannotated observations for the same face.
+The validator recognizes `path` values `normal`, `edge`, and `overhead`, and preserves distinct render-path observations for the same face and frame. In legacy mode it rejects duplicates within the same face/frame/path; a trace may omit `path` for legacy single-path captures, but cannot mix annotated and unannotated observations for the same face.
 For logs containing only JSON observation lines:
 
 ```sh
@@ -227,9 +229,10 @@ python3 -m tools.verify_map02_trace /local/map02-trace.jsonl
 If stdout contains other diagnostics, separate the JSON observation lines
 before validation; do not assume the entire process log is JSONL. Camera
 culling, overhead view, other changing state and repeated draws can affect
-whether events are emitted. A single face observed multiple times in one frame **on the same render path**
-is rejected as a duplicate; the trace keeps observations from distinct
-annotated paths so no alternate rendering pass is silently dropped. GitHub Actions now checks that the patch applies
+whether events are emitted. Repeated observations in one frame on the
+same renderer path require a new preceding nonempty `visit` in strict
+full-trace mode; absent that visit, repeated `draw` or `skip` events are
+reported as duplicates. Distinct annotated render paths remain independent. GitHub Actions now checks that the patch applies
 cleanly to the pinned upstream revision, then **syntax-compiles both instrumented
 C translation units** with the upstream PC game compiler flags and
 `-DVH_TRACE_MAP02`. This is not a full linked PC executable or gameplay run;
@@ -631,7 +634,12 @@ records a `visit` **before** a corresponding `draw` or `skip`
 during each pass. An exact (tile, face, frame, path) match is required:
 a visit in another frame or render path cannot justify a submission.
 The visit must also show `face_count > 0`; a zero-face tile cannot
-justify a subsequent face-0 draw. This is now enforced automatically by
+justify a subsequent face-0 draw. If one tile is visited several times
+under the same game frame counter and path, the validator numbers its
+successive visits and attributes at most one face-0 `draw` or `skip`
+of each type to each nonempty visit. A new zero-face visit invalidates
+the preceding nonempty visit for that context, preventing stale evidence
+from authorizing a later draw. This is now enforced automatically by
 `tools.capture_map02_runtime` when its preparation manifest declares
 `trace_mode: full`.
 
