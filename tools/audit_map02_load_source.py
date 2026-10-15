@@ -18,6 +18,13 @@ EXPECTED_DIMENSIONS = {
 }
 TARGETS = ((8, 19, 0), (11, 11, 0))
 SOURCE_PATH = "src/states/game_setup.c"
+CD_SOURCE_PATH = "src/core/cd.c"
+CD_HEADER_PATH = "include/cd_files.h"
+PINNED_CD_BLOBS = {
+    CD_SOURCE_PATH: "30d43504c8becadaca4c475abce9d40b0bc9dc2b",
+    CD_HEADER_PATH: "cea949e05ad4d914732f1a96a1faed1329a56b6b",
+}
+
 
 
 def audit_loader_source(source: str) -> dict:
@@ -74,12 +81,56 @@ def audit_loader_source(source: str) -> dict:
     }
 
 
+
+def audit_cd_route(cd_source: str, cd_header: str) -> dict:
+    """Verify the map02 PRS index, source sector table and CD loader bindings."""
+    entry = re.findall(r"(?m)^\s*CDF_M_MAP02_PRS\s*=\s*(\d+)\s*,",
+                       cd_header)
+    if entry != ["151"]:
+        raise ValueError(f"unexpected CDF_M_MAP02_PRS enum identifier: {entry}")
+    row = re.findall(
+        r"(?m)^\s*\[CDF_M_MAP02_PRS\]\s*=\s*\{\s*"
+        r"(0x[0-9a-fA-F]+)\s*,\s*(0x[0-9a-fA-F]+)\s*,\s*"
+        r"(gScratch1_801317c0)\s*\},",
+        cd_source,
+    )
+    if len(row) != 1:
+        raise ValueError("expected exactly one PRS mapping to scratch1 in gCdFiles")
+    start, count, destination = row[0]
+    if (int(start, 16), int(count, 16)) != (0x1BCC, 0x0C):
+        raise ValueError(f"unexpected map02 PRS sector table: {start}, {count}")
+    if cd_source.count("CdFileInfo gCdFiles[712]") != 1:
+        raise ValueError("pinned gCdFiles table declaration changed")
+    loader = cd_source.find("void LoadCdFile(s32 cdfIdx, s32 showLoadingScreen) {")
+    if loader < 0:
+        raise ValueError("LoadCdFile entry point changed")
+    loads = (
+        "gCdLoader.cdf = cdfIdx;",
+        "gCdLoader.sectorsToRead = gCdFiles[cdfIdx].sectorCt;",
+        "gCdLoader.sector = gCdFiles[cdfIdx].startingSector;",
+    )
+    if not all(cd_source.find(statement, loader, loader + 1200) >= 0 for statement in loads):
+        raise ValueError("LoadCdFile does not initialize sector read from gCdFiles table")
+    return {
+        "cd_file_enum": 151,
+        "cd_table_start_sector": int(start, 16),
+        "cd_table_sector_count": int(count, 16),
+        "cd_destination": destination,
+        "cd_evidence_scope": "US pinned source CD table only; not verified against any user's disc image",
+    }
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("game_setup_c", type=Path, help="pinned US upstream src/states/game_setup.c")
     parser.add_argument("--allow-modified-source", action="store_true",
                         help="accept altered C content, explicitly tagged as noncanonical")
+    parser.add_argument("--cd-source", type=Path,
+                        help="pinned upstream src/core/cd.c; requires --cd-header")
+    parser.add_argument("--cd-header", type=Path,
+                        help="pinned upstream include/cd_files.h; requires --cd-source")
     args = parser.parse_args()
+    if (args.cd_source is None) != (args.cd_header is None):
+        parser.error("--cd-source and --cd-header must be supplied together")
     try:
         data = args.game_setup_c.read_bytes()
         blob = git_blob_sha1(data)
@@ -87,6 +138,20 @@ def main() -> int:
         if not matches and not args.allow_modified_source:
             raise ValueError("source differs from pinned upstream; use --allow-modified-source")
         report = audit_loader_source(data.decode("utf-8"))
+        if args.cd_source is not None:
+            cd_data = args.cd_source.read_bytes()
+            header_data = args.cd_header.read_bytes()
+            cd_blob = git_blob_sha1(cd_data)
+            header_blob = git_blob_sha1(header_data)
+            cd_ok = cd_blob == PINNED_CD_BLOBS[CD_SOURCE_PATH]
+            header_ok = header_blob == PINNED_CD_BLOBS[CD_HEADER_PATH]
+            if not (cd_ok and header_ok) and not args.allow_modified_source:
+                raise ValueError("CD source/header differ from pinned US upstream")
+            report.update(audit_cd_route(cd_data.decode("utf-8"),
+                                         header_data.decode("utf-8")))
+            report["cd_source_git_blob_sha1"] = cd_blob
+            report["cd_header_git_blob_sha1"] = header_blob
+            report["cd_sources_match_pinned"] = cd_ok and header_ok
     except (OSError, ValueError, UnicodeError) as exc:
         parser.error(str(exc))
     report["git_blob_sha1"] = blob
