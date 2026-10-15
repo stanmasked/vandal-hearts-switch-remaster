@@ -9,6 +9,7 @@ can assess timing before decoding.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -66,6 +67,7 @@ def extract_audio_payloads(
         if report_aliases_source or report_aliases_destination:
             raise ValueError("Report path must differ from source and output paths.")
 
+    payload_digest = hashlib.sha256()
     audio_lbas: list[int] = []
     selected = mode2 = valid_subheaders = 0
     submodes: dict[int, int] = {}
@@ -105,7 +107,9 @@ def extract_audio_payloads(
                     continue
                 if file_number is not None and file_no != file_number:
                     continue
-                out.write(sector[PAYLOAD_START:PAYLOAD_END])
+                audio_groups = sector[PAYLOAD_START:PAYLOAD_END]
+                out.write(audio_groups)
+                payload_digest.update(audio_groups)
                 audio_lbas.append(lba)
                 coding_info[coding] = coding_info.get(coding, 0) + 1
                 selected += 1
@@ -120,6 +124,7 @@ def extract_audio_payloads(
             "matching_subheaders": valid_subheaders,
             "audio_form2_sectors_written": selected,
             "payload_bytes_written": selected * (PAYLOAD_END - PAYLOAD_START),
+            "payload_sha256": payload_digest.hexdigest(),
             "noncontiguous_audio_transitions": gaps,
             "first_audio_lba": audio_lbas[0] if audio_lbas else None,
             "last_audio_lba": audio_lbas[-1] if audio_lbas else None,
