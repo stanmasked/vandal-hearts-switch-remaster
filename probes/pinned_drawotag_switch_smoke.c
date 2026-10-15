@@ -24,7 +24,7 @@ static void tile(TILE *out, short x, short y, short w, short h,
 /* The original OT walker draws newest-inserted first. Insert the four
  * corner tiles first and the full-screen background last, so corners
  * cover the background during real DrawOTag rasterization. */
-static void draw_frame(int frame) {
+static int draw_frame(int frame) {
     DRAWENV draw;
     DISPENV display;
     unsigned int ot[1];
@@ -32,9 +32,23 @@ static void draw_frame(int frame) {
     POLY_F4 polygon;
     POLY_FT4 textured, textured8, textured15, transparent15, semi15;
     POLY_FT4 abr_add, abr_sub, abr_quarter;
-    SPRT sprite, window_sprite, v_window_sprite;
-    DR_MODE mode, window_mode, window_reset, v_window_mode, v_window_reset;
+    SPRT sprite, window_sprite, v_window_sprite, tim_sprite;
+    DR_MODE mode, window_mode, window_reset, v_window_mode, v_window_reset, tim_mode;
     RECT window_rect, reset_rect, v_window_rect, v_reset_rect;
+    TIM_IMAGE tim_image;
+    /* One valid 4bpp TIM byte stream (PS1 little-endian word layout),
+     * NOT extracted game artwork. CLUT is 16x1 at (0,42); packed
+     * image is 2x2 VRAM words at (384,0), 8x2 logical texels.
+     * Exercise the ORIGINAL OpenTIM/ReadTIM parser and LoadImage,
+     * not just a manually constructed RECT+CLUT fixture. */
+    unsigned int tim_words[18] = {
+        0x00000010u, 0x00000008u, 0x0000002cu,
+        0x002a0000u, 0x00010010u,
+        0x001f0000u, 0x000003e0u,
+        0, 0, 0, 0, 0, 0,
+        0x00000014u, 0x00000180u, 0x00020002u,
+        0x21212121u, 0x21212121u
+    };
     /* 4bpp: four texels (1,2,1,2) per packed 16-bit VRAM word. */
     unsigned short texels[2] = {0x2121, 0x2121};
     /* Window redirects U=0/1 to U=8/9 (word x=66): blue/white. */
@@ -74,6 +88,19 @@ static void draw_frame(int frame) {
     LoadImage(&alpha_rect, (unsigned int *)texels_alpha);
     setRECT(&stp_rect, 320, 0, 2, 2);
     LoadImage(&stp_rect, (unsigned int *)texels_stp);
+    OpenTIM(tim_words);
+    if (!ReadTIM(&tim_image) || tim_image.mode != 8 ||
+        !tim_image.crect || !tim_image.prect ||
+        !tim_image.caddr || !tim_image.paddr ||
+        tim_image.crect->x != 0 || tim_image.crect->y != 42 ||
+        tim_image.crect->w != 16 || tim_image.crect->h != 1 ||
+        tim_image.prect->x != 384 || tim_image.prect->y != 0 ||
+        tim_image.prect->w != 2 || tim_image.prect->h != 2) {
+        fprintf(stderr, "Native DrawOTag TIM parser rejected packaged fixture\n");
+        return 0;
+    }
+    LoadImage(tim_image.crect, tim_image.caddr);
+    LoadImage(tim_image.prect, tim_image.paddr);
     ClearOTag(ot, 1);
     /* Original textured SPRT path: sprite has NO tpage field. DrawOTag
      * must read its page from DR_MODE in OT order (mode before sprite).
@@ -151,6 +178,18 @@ static void draw_frame(int frame) {
     setClut(&abr_quarter, 0, 0);
     SetSemiTrans(&abr_quarter, 1);
     AddPrim(&ot[0], &abr_quarter);
+    /* Serialized TIM -> original OpenTIM/ReadTIM -> original LoadImage:
+     * primitive samples pixel indices 1/2 from VRAM page x=384,
+     * looking up the independent CLUT uploaded at VRAM y=42. */
+    SetSprt(&tim_sprite);
+    setXY0(&tim_sprite, 8, 1);
+    setWH(&tim_sprite, 2, 2);
+    setUV0(&tim_sprite, 0, 0);
+    setRGB0(&tim_sprite, 128, 128, 128);
+    setClut(&tim_sprite, 0, 42);
+    AddPrim(&ot[0], &tim_sprite);
+    SetDrawMode(&tim_mode, 0, 0, GetTPage(0, 0, 384, 0), &reset_rect);
+    AddPrim(&ot[0], &tim_mode);
     /* ABR=0: STP-marked red blends 50/50 with background;
      * unmarked green stays opaque within the same semi-trans FT4. */
     SetPolyFT4(&semi15);
@@ -209,6 +248,7 @@ static void draw_frame(int frame) {
     tile(&background, 0, 0, 12, 9, 96, 96, (unsigned char)(frame * 3));
     AddPrim(&ot[0], &background);
     DrawOTag(ot);
+    return 1;
 }
 
 /* Test-only inert providers for optional game data, localized overlays,
@@ -270,7 +310,10 @@ int main(void) {
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) goto done;
         }
-        draw_frame(frame);
+        if (!draw_frame(frame)) {
+            fprintf(stderr, "Native raster probe: TIM/DrawOTag frame %d failed\n", frame);
+            goto done;
+        }
         if (!vh_switch_observer_last_result()) {
             fprintf(stderr, "Native raster probe: DrawOTag frame %d failed\n", frame);
             goto done;
