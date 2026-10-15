@@ -112,3 +112,9 @@ Inspected platform/pc/src/pc_gpu_window.c at upstream commit 14552fffa0e0b47e02b
 Source: https://github.com/HalmyLyseas/VandalHearts-PcPort/blob/14552fffa0e0b47e02b57592e274fc6e7a649923/platform/pc/src/pc_gpu_window.c#L755-L927
 
 Next: implement a host-tested target frame allocation/conversion helper that checks dimensions and memory capacity, then integrate it into a separate Switch-target backend without modifying game logic. Validate regular frames and FMV frames independently.
+
+## Direct completed-frame seam implemented
+
+The original PC port has a final *composited* bottom-up packed RGB24 scratch frame inside `PC_GpuPresent`, after game VRAM conversion, FMV handling, subtitle text, OSD, and option overlays. To avoid losing those layers, `source/switch_completed_frame.c` now exposes `vh_switch_present_completed_rgb24`: accepts a borrowed pixel pointer **and actual accessible byte length**, checks the packed RGB24 dimensions against that length and forwards synchronously to `vh_switch_present_frame`. Unlike `vh_switch_present_managed_bgr555` or `vh_switch_present_managed_movie`, this handoff **must not** convert pixels again. The presenter and context remain target-owned; this function does not swap buffers. `tests/test_switch_completed_frame.c` exercises pointer identity, unchanged upper/lower rows, and invalid-size rejection.
+
+**Important integration detail:** the upstream scratch buffer is private static state in the SDL-oriented PC backend. The new seam is a callable function but is **not yet wired into that original call site**. The upstream interface must explicitly expose a validated buffer length or use a target-specific completed-frame hook; do not guess allocation size from width/height alone. Preserve event pumping, overlay composition ordering, and the target's context/swap ownership independently. This is not proof of real gameplay frames or libnx linkage.
