@@ -169,6 +169,58 @@ class ValidateXaExtractionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not aligned"):
             validate_extraction(self.report, self.payload, source_bin=raw_path)
 
+    def test_source_bin_rejects_header_damage_and_unsupported_coding(self):
+        from tools.extract_cdxa_payload import extract_audio_payloads
+
+        root = self.report.parent
+        raw = root / "source.bin"
+        def xa_sector(marker):
+            sector = bytearray(2352)
+            sector[:12] = bytes([0]) + bytes([255]) * 10 + bytes([0])
+            sector[15] = 2
+            sector[16:20] = sector[20:24] = bytes((1, 0, 0x64, 0x01))
+            sector[24:2328] = bytes([marker]) * 2304
+            return bytes(sector)
+
+        pristine = xa_sector(17) + xa_sector(37)
+        raw.write_bytes(pristine)
+        extract_audio_payloads(
+            raw, self.payload, file_number=1, channel=0,
+            report_path=self.report,
+        )
+        self.assertEqual(
+            validate_extraction(self.report, self.payload, source_bin=raw)["audio_sectors"],
+            2,
+        )
+
+        # Corrupt the duplicated subheader of the second sector: it must
+        # no longer count as a selected XA audio sector.
+        changed = bytearray(pristine)
+        changed[2352 + 20] ^= 1
+        raw.write_bytes(changed)
+        with self.assertRaisesRegex(ValueError, "selection does not match report sector count"):
+            validate_extraction(self.report, self.payload, source_bin=raw)
+
+        # Corrupt the sector mode so it is skipped during source scanning.
+        changed = bytearray(pristine)
+        changed[15] = 1
+        raw.write_bytes(changed)
+        with self.assertRaisesRegex(ValueError, "selection"):
+            validate_extraction(self.report, self.payload, source_bin=raw)
+
+        # A selected sector with a different XA coding byte cannot be
+        # represented as the validated 4-bit stereo profile.
+        changed = bytearray(pristine)
+        changed[19] = changed[23] = 0x05
+        raw.write_bytes(changed)
+        with self.assertRaisesRegex(ValueError, "unsupported coding"):
+            validate_extraction(self.report, self.payload, source_bin=raw)
+
+        # The report is anchored to exactly the requested range.
+        raw.write_bytes(pristine[:2352])
+        with self.assertRaisesRegex(ValueError, "scan range exceeds"):
+            validate_extraction(self.report, self.payload, source_bin=raw)
+
     def test_source_bin_needs_full_scan_range(self):
         raw = self.report.parent / "source.bin"
         raw.write_bytes(bytes(2352))
