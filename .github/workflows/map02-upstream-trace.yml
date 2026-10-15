@@ -38,6 +38,8 @@ jobs:
           sparse-checkout: |
             src/states/game_setup.c
             src/core/graphics.c
+            include/
+            platform/pc/include/
           sparse-checkout-cone-mode: false
 
       - name: Run patch generator regression tests
@@ -53,6 +55,25 @@ jobs:
           git apply --check ../map02-trace.patch
           git apply ../map02-trace.patch
           git diff --check
+          # Syntax-check both modified source units using upstream's game compile profile.
+          (
+            cd platform/pc
+            mkdir -p build/include_stage
+            for header in ../../include/*.h ../../include/*.inc; do
+              ln -sf "$(realpath "$header")" "build/include_stage/$(basename "$header")"
+            done
+            for item in PsyQ types.h inline_gte.h; do
+              ln -sf "$(realpath "include/$item")" "build/include_stage/$item"
+            done
+            gcc -fsyntax-only -m64 -std=gnu89 -fno-builtin-csqrt \
+              -DPERMUTER -DPC_PORT -DPC_FEAT -DVH_REGION_US -DVH_TRACE_MAP02 \
+              '-Dasm(x)=' -Ibuild/include_stage -Iinclude -I../.. \
+              -include pc_forward_decls.h \
+              -Wno-incompatible-pointer-types -Wno-builtin-declaration-mismatch \
+              -Wno-discarded-qualifiers -Wno-pointer-to-int-cast \
+              -Wno-int-to-pointer-cast -Wno-int-conversion \
+              ../../src/states/game_setup.c ../../src/core/graphics.c
+          )
           expected=$(printf 'src/core/graphics.c\nsrc/states/game_setup.c')
           actual=$(git diff --name-only)
           test "$actual" = "$expected"
