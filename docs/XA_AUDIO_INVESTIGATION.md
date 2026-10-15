@@ -459,3 +459,5 @@ This is an optional, more expensive integrity check that leaves stored audio
 artefacts untouched. Both decodes use the **same project decoder**, so this
 does not substitute for comparison against a separate implementation or prove
 the decoder's correctness or audible fidelity.
+
+Reverification now resolves only the fixed companion files `extraction.json`, `audio-groups.bin`, and `decoded.wav` within the directory containing the audit JSON. Recorded paths may refer to their **old location** when the whole directory has been moved, but unexpected filenames and symlinks for these companion files are rejected rather than followed. The source BIN and independently decoded reference WAV remain explicit CLI inputs. This protects against accidental or malicious path redirection in a user-editable audit; it is not a signature or a sandbox against concurrent filesystem mutation.
