@@ -214,3 +214,44 @@ DrawOTag CI workflow run this contract.
 This is complementary to, **not a replacement for**, future NeXium
 emulation of the *private* `sdmc:` file paths or original map geometry.
 No proprietary game bytes enter test artifacts.
+
+## Virtual SD acceptance: original private rendering path in NeXium
+
+The NeXium emulator's host-data root is selected by `NEXIUM_DATA_ROOT`.
+Its filesystem mapping places the Switch's `sdmc:/...` tree under
+`$NEXIUM_DATA_ROOT/sdmc/...` (see upstream
+`nexium-common/src/paths.rs` and
+`nexium-kernel/src/fs_host.rs`).
+A new independent GitHub Actions job,
+`Synthetic SD map 11 preview through original DrawOTag`, builds an
+isolated **synthetic** `sdmc` directory at
+`/tmp/vh-private-nexium/sdmc`, stages the same full-size fake
+F_TEX01/LAND_DT pair with the production Python stager, and launches
+the **regular** NRO without embedding or altering the resources.
+The test uses source slot **241**, UVWH **(240,192,15,15)** and local
+CLUT **35**, painting red/green packed 4bpp stripes into this patch.
+
+Runtime screenshot verification requires three independent signatures:
+1. black pixel outside the patch instead of the old bright corner TILE;
+2. red or green 4bpp texel at the center instead of the old animated gray TILE;
+3. substantial red and green pixel populations inside the authored FT4
+   quad.
+
+This rules out a misleading success in the unchanged synthetic fallback
+scene. In GitHub Actions run
+[#38822375680](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38822375680),
+the emulator **visibly rendered the private patch** with 235,248 red and
+156,156 green pixels and a black exterior; the job still failed after
+the screenshot check because its initial implementation demanded a guest
+`fprintf(stderr)` string from NeXium's host log. NeXium does not relay
+that guest message there. The screenshot is definitive for the original
+private branch because `draw_private_map_preview()` can run only
+after `vh_private_map_bank_load_pair()` returns success.
+The false-negative host-log assertion was removed in
+`a4aec52f`; this revision has a separate acceptance run.
+
+**Scope:** a full synthetic file pair passed from virtual `sdmc` through
+the linked private reader to original `LoadImage` and
+`POLY_FT4/DrawOTag`. Genuine copyrighted texture bytes are not used
+and are not uploaded to CI. The image is still an enlarged single
+texture patch, **not** a real map geometry or gameplay scene.
