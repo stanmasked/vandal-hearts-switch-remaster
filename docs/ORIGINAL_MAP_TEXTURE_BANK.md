@@ -127,3 +127,62 @@ render primitives, camera and lighting. The previous local game-image
 audit identifies map 11, texture slot 241 (global GFX 641) as a
 candidate with local CLUT 35 and texture-page cell 5; these are
 **file/revision-specific source-audit findings**, not a native scene capture.
+
+## Private map-11 SD asset staging and original NRO preview
+
+The Switch NRO now has an **opt-in, fail-closed private asset path**, instead
+of embedding F_TEX or LAND_DT retail bytes in the executable or CI.
+The code is in `source/vh_private_map_bank.[ch]` and
+`probes/pinned_drawotag_switch_smoke.c`. It looks ONLY for:
+
+- `sdmc:/switch/vandal-hearts-remaster/private-assets/F_TEX01.DAT`
+- `sdmc:/switch/vandal-hearts-remaster/private-assets/LAND_DT.DAT`
+
+Both files absent → continue the existing synthetic test scene unchanged.
+Exactly one file present, corrupt lengths or invalid map 11 slot 241
+UV/CLUT → stop the probe with a clear error. Both files valid →
+load the exact **32768-byte** 4bpp texture and map-11 LAND_DT record,
+select source slot **241**, and render its complete authored UVWH patch
+with the original `LoadImage → POLY_FT4 → DrawOTag` path, selecting
+local CLUT ID 35 (or another ID within 32–47 from the actual record).
+The private scene is a **single source-authored texture patch**, not the
+map's geometry, lighting, camera or game loop.
+
+On a computer where the Switch SD card is mounted, the locally run
+staging tool can extract and copy only the required game assets from an
+owner-provided Russian v1.6 2352-byte-sector BIN:
+
+```bash
+python3 tools/stage_vh_private_map_bank.py \
+  --raw-bin /private/game/Vandal_Hearts_RU_v1.6.bin \
+  --texture-lba 4374 --land-lba 4954 \
+  --require-audited-ru-sha \
+  --sd-root /path/to/mounted/switch-sd
+```
+
+Or, if the two exact files have already been extracted:
+
+```bash
+python3 tools/stage_vh_private_map_bank.py \
+  --texture /private/game/DATA/F_TEX01.DAT \
+  --land /private/game/DATA/LAND_DT.DAT \
+  --require-audited-ru-sha \
+  --sd-root /path/to/mounted/switch-sd
+```
+
+The command requires **explicit invocation**; it never moves bytes from
+the owner's machine to GitHub. It writes a local JSON manifest with
+SHA-256 hashes and the selected UVWH/CLUT mapping. It **refuses to
+overwrite existing private files**; remove an obsolete staging directory
+manually before replacing it. The `--require-audited-ru-sha` flag pins
+the resource hashes to the previously audited RU v1.6 data. Other
+revisions can omit it only after independent verification of their file
+layout and map 11 CLUT/UV selection.
+
+The built NRO still requires a separately configured Switch SD card and
+a native runtime with SD access. Successful host tests and asset-free
+NeXium smoke runs **do not** prove that any retail files were loaded or
+that the private preview runs correctly on physical Switch hardware.
+Do not include the `private-assets` directory in Git, support bundles,
+or public screenshots without separately deciding whether to share
+game-derived images.
