@@ -435,5 +435,78 @@ class CdXaPipelineTests(unittest.TestCase):
             self.assertEqual(comparison["frames_compared"], 4032)
 
 
+    def test_two_tap_predictive_filters_across_sector_boundary(self):
+        # Filter 2 (115,-52) and filter 3 (98,-55) use two prior
+        # samples. This independent scalar oracle maintains each channel's
+        # history across all groups, both sectors, and filter changes.
+        coeffs = {2: (115, -52), 3: (98, -55)}
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            disc = root / "disc.bin"
+            payload = root / "xa.bin"
+            report_path = root / "xa.json"
+            decoded = root / "decoded.wav"
+            reference = root / "expected.wav"
+            history = [[0, 0], [0, 0]]
+            expected_frames = []
+            sectors = []
+            for sector_index in range(2):
+                sector = bytearray(xa_audio_sector())
+                for group_index in range(18):
+                    start = 24 + group_index * 128
+                    params = []
+                    for chunk in range(4):
+                        for channel in range(2):
+                            predictor = 2 + ((group_index + sector_index + chunk + channel) % 2)
+                            params.append((predictor << 4) | 12)
+                    sector[start:start + 4] = bytes(params[:4])
+                    sector[start + 4:start + 8] = bytes(params[:4])
+                    sector[start + 8:start + 12] = bytes(params[4:])
+                    sector[start + 12:start + 16] = bytes(params[4:])
+                    for row in range(28):
+                        for chunk in range(4):
+                            low = (row * 5 + chunk + group_index + sector_index) % 16
+                            high = (row * 3 + chunk * 2 + group_index + sector_index) % 16
+                            sector[start + 16 + row * 4 + chunk] = low | (high << 4)
+
+                    channel_samples = [[], []]
+                    for chunk in range(4):
+                        for channel in range(2):
+                            coefficient0, coefficient1 = coeffs[params[chunk * 2 + channel] >> 4]
+                            h1, h2 = history[channel]
+                            for row in range(28):
+                                packed = sector[start + 16 + row * 4 + chunk]
+                                nibble = (packed >> (channel * 4)) & 15
+                                signed = nibble if nibble < 8 else nibble - 16
+                                predicted = (coefficient0 * h1 + coefficient1 * h2 + 32) // 64
+                                value = signed + predicted
+                                channel_samples[channel].append(max(-32768, min(32767, value)))
+                                h2, h1 = h1, value
+                            history[channel] = [h1, h2]
+                    expected_frames.extend(zip(*channel_samples))
+                sectors.append(bytes(sector))
+
+            disc.write_bytes(b"".join(sectors))
+            extract_audio_payloads(disc, payload, report_path=report_path)
+            self.assertEqual(validate_extraction(report_path, payload)["pcm_frames"], 4032)
+            self.assertEqual(
+                decode_payload_file(payload, decoded, extracted_groups=True)["frames"], 4032
+            )
+            with wave.open(str(reference), "wb") as output:
+                output.setnchannels(2)
+                output.setsampwidth(2)
+                output.setframerate(SAMPLE_RATE)
+                output.writeframes(b"".join(
+                    struct.pack("<hh", left, right)
+                    for left, right in expected_frames
+                ))
+            self.assertEqual(len(expected_frames), 4032)
+            self.assertEqual(
+                validate_extraction(report_path, payload, decoded)["pcm_frames"], 4032
+            )
+            comparison = compare_wavs(decoded, reference)
+            self.assertTrue(comparison["exact_match"], comparison)
+
+
 if __name__ == "__main__":
     unittest.main()
