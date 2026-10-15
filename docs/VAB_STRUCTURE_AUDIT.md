@@ -157,3 +157,52 @@ two populated programs with a gap, two independently selected VAGs,
 explicit PCM expectations, a looping sample, invalid selector/rate,
 damaged headers, truncated sources, and refusal to overwrite existing
 outputs. Passing this test is not a hardware or game-music fidelity claim.
+
+
+## SEQ note to VAB tone lookup (diagnostic)
+
+The read-only helper `tools/resolve_vab_note.py` resolves an incoming
+0-based MIDI/SEQ program number and note number against **active** tone
+records of a standalone local VH. A matching VB can be supplied for
+size-bound checking, but no audio sample is decoded or written:
+
+```sh
+python3 tools/resolve_vab_note.py \
+  /local/path/music.vh --vb /local/path/music.vb --program 7 --note 60
+python3 tests/test_resolve_vab_note.py
+```
+
+The lookup models the **selection order** of
+`SeqPickTone()` in VandalHearts-PcPort's `platform/pc/src/libsnd.c`:
+
+1. First tone with an inclusive key-range match in the requested program.
+2. If none, first key-range match across all populated programs, in
+   increasing program/tone order.
+3. Otherwise, the tone whose **minimum key** is closest to the note,
+   not the tone whose range endpoint is closest. Equal distances retain
+   the first candidate.
+
+An empty bank is rejected, and results retain the original sparse program
+number, tone slot, VAG number, VB offsets, raw ADSR parameters and header
+fingerprints. Range boundaries are inclusive. This helper intentionally
+considers only the `nTone` **active** slots validated by the VH inspector;
+the PC-port's fallback source loops through all 16 tone slots. Verify any
+nonempty inactive slots on a real bank before claiming an identical lookup
+for every possible malformed/unusual VAB.
+
+For comparison with the PC-port's approximate software pitch calculation,
+the tool also displays `pitch_ratio_approx` and
+`pitch_step_approx = int(ratio * 4096)`, using signed 8-bit centre/shift
+values and the formula
+`ratio = 2 ** (((note - centre) - shift / 128) / 12)`.
+These numbers are **diagnostic**: they do not implement Sony's exact
+hardware pitch-table quantization or play the note. Runtime ADSR, key-on,
+velocity/gain law, channel/program pan, polyphony, interpolation, reverb,
+loops and SEQ timing remain separate work.
+
+The tests include overlapping tone ranges, requested-program preference,
+sparse program indices, cross-program fallback, lower-bound-only nearest
+selection, tie stability, signed pitch metadata, strict parameter validation,
+truncated VH/VB and unchanged source inputs. A passing result demonstrates
+synthetic lookup consistency only; no original Vandal Hearts music has been
+rendered through this tool.
