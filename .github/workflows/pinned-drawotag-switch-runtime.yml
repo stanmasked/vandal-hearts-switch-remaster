@@ -559,7 +559,10 @@ jobs:
           '
           echo "Private emulator log:"
           tail -n 80 "$LOG" || true
-          grep -q 'Private map 11 F_TEX/LAND_DT loaded; slot 241 CLUT 35 UV=(240,192)' "$LOG"
+          # NeXium does not forward guest fprintf(stderr) to this host log.
+          # The screenshot checker instead requires a unique PRIVATE
+          # black border + source-texture color at frame center, which
+          # rules out the legacy synthetic smoke scene.
           python3 tests/private_sd_nexium_check.py --check-screenshot "$SHOT"
       - name: Upload private synthetic SD screenshot and diagnostic
         if: always()
