@@ -38,6 +38,8 @@ class Map02EpisodeTests(unittest.TestCase):
         self.assertEqual(result["draw_overall_variant"], "PRS")
         self.assertEqual(result["observations"], [])
         self.assertEqual(len(result["map_loads"]), 2)
+        self.assertEqual([ep["event_range"] for ep in result["map_loads"]],
+                         [{"first": 1, "last": 6}, {"first": 7, "last": 12}])
         self.assertEqual([[x["draw_observation_count"] for x in ep["observations"]]
                           for ep in result["map_loads"]], [[1, 1], [1, 1]])
 
@@ -67,6 +69,38 @@ class Map02EpisodeTests(unittest.TestCase):
         result = evaluate_capture_session(iter(events))
         self.assertNotIn("map_loads", result)
         self.assertTrue(any("duplicate observation" in e for e in result["errors"]))
+
+    def test_malformed_coordinate_objects_reach_validator_without_crashing(self):
+        for bad in ([], {}, [8, 19], True, "8", None):
+            with self.subTest(bad=bad):
+                broken = {"z": bad, "x": 19, "face": 0,
+                          "gfx": 641, "stage": "post_load"}
+                result = evaluate_capture_session(iter([broken, *full_events()]),
+                                                  require_full_trace=True)
+                self.assertNotIn("map_loads", result)
+                self.assertTrue(any("z,x,face,gfx must be integers" in error
+                                    for error in result["errors"]))
+
+    def test_bad_coordinates_between_loads_preserve_event_offsets(self):
+        invalid = {"z": {}, "x": 19, "face": 0,
+                   "gfx": 641, "stage": "visit"}
+        events = full_events() + [invalid] + full_events()
+        report = evaluate_capture_session(iter(events), require_full_trace=True)
+        self.assertEqual(report["map_load_count"], 2)
+        self.assertEqual([ep["event_range"] for ep in report["map_loads"]],
+                         [{"first": 1, "last": 7}, {"first": 8, "last": 13}])
+        self.assertTrue(any("map load 1: entry 6:" in error
+                            for error in report["errors"]))
+        self.assertEqual(report["map_loads"][1]["errors"], [])
+
+    def test_non_target_noise_counts_in_episode_event_ranges(self):
+        noise = {"z": 99, "x": 99, "face": 0,
+                 "gfx": 641, "stage": "draw"}
+        events = [noise] + full_events() + [noise] + full_events()
+        report = evaluate_capture_session(iter(events), require_full_trace=True)
+        self.assertEqual([ep["event_range"] for ep in report["map_loads"]],
+                         [{"first": 1, "last": 8}, {"first": 9, "last": 14}])
+        self.assertEqual(report["errors"], [])
 
     def test_legacy_repeated_loads_are_separate(self):
         result = evaluate_capture_session(iter(observations() + observations()))
