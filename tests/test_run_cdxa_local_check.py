@@ -9,6 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.run_cdxa_local_check import run_local_check
+from tools.verify_cdxa_audit import verify_audit
 
 
 def sector(file_number=1, channel=0, marker=0):
@@ -155,6 +156,48 @@ class LocalXaCheckTests(unittest.TestCase):
             saved["reference_provenance"]["status"],
             "user_supplied_not_independently_verified",
         )
+
+    def test_saved_audit_recheck_detects_all_local_file_changes(self):
+        ref = self.reference("recheck-reference.wav")
+        directory = self.root / "audited"
+        run_local_check(
+            self.source, directory, file_number=1, channel=0,
+            start_lba=1, sector_count=3, reference_wav=ref,
+        )
+        audit = directory / "audit-result.json"
+        good = verify_audit(audit, self.source, ref)
+        self.assertEqual(good["status"], "audit_files_verified")
+        self.assertTrue(good["reference_comparison_rechecked"])
+        with self.assertRaisesRegex(ValueError, "reference WAV required"):
+            verify_audit(audit, self.source)
+        for target, expected_error in (
+            (self.source, "source_bin_sha256"),
+            (directory / "audio-groups.bin", "payload_sha256"),
+            (directory / "decoded.wav", "decoded_wav_sha256"),
+            (ref, "saved WAV comparison differs"),
+        ):
+            with self.subTest(file=target.name):
+                pristine = target.read_bytes()
+                edited = bytearray(pristine)
+                edited[-1] ^= 1
+                target.write_bytes(edited)
+                try:
+                    with self.assertRaisesRegex(ValueError, expected_error):
+                        verify_audit(audit, self.source, ref)
+                finally:
+                    target.write_bytes(pristine)
+                self.assertEqual(verify_audit(audit, self.source, ref), good)
+
+    def test_source_only_audit_can_be_rechecked(self):
+        directory = self.root / "source-only-recheck"
+        run_local_check(
+            self.source, directory, file_number=1, channel=0,
+            start_lba=1, sector_count=3,
+        )
+        result = verify_audit(directory / "audit-result.json", self.source)
+        self.assertFalse(result["reference_comparison_rechecked"])
+        with self.assertRaisesRegex(ValueError, "no reference comparison"):
+            verify_audit(directory / "audit-result.json", self.source, self.reference("unused.wav"))
 
     def test_existing_output_is_never_overwritten(self):
         output = self.root / "existing"
