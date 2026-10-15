@@ -25,6 +25,10 @@ The question is **which original mapping is intended and rendered**, not whether
 
 Neither replacing PRS references with DAT references nor assigning synthetic UVs is justified at present.
 
+## Reproducible provenance check
+
+The read-only `tools/compare_map02_variants.py` accepts a **decompressed** `M_MAP02.PRS` stream and corresponding `M_MAP02.DAT`. The `matches_prior_disc_audit` field checks only the two recorded byte differences: synthetic inputs can satisfy this signature. Use `--require-prior-provenance` to also require the archived decompressed PRS SHA-256 fingerprint. This still does not prove which variant the renderer actually selects. No game assets are committed.
+
 ## Next decisive runtime verification
 
 Trace the actual load and drawing of faces `(z=8,x=19,face=0)` and `(z=11,x=11,face=0)`: capture local GFX, global GFX, UV, CLUT, tpage and draw flags after `LoadMap` and on each rendering pass. Compare those records to a gameplay screenshot captured from the original build. Determine whether PRS or DAT data is actually used at runtime before attempting artistic repairs.
