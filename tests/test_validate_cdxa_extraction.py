@@ -293,6 +293,29 @@ class ValidateXaExtractionTests(unittest.TestCase):
                 self.assertEqual(self.report.read_bytes(), frozen_report)
                 self.assertEqual(self.payload.read_bytes(), frozen_payload)
 
+        # A selected sector changing channel or file number is no longer
+        # part of the extracted stream, even when its payload is unchanged.
+        for header_offset, replacement in ((17, 1), (16, 2)):
+            with self.subTest(header_offset=header_offset, value=replacement):
+                changed = bytearray(pristine)
+                changed[header_offset] = replacement
+                changed[header_offset + 4] = replacement  # duplicate subheader
+                raw.write_bytes(changed)
+                with self.assertRaisesRegex(ValueError, "source BIN selection does not match"):
+                    validate_extraction(self.report, self.payload, source_bin=raw)
+
+        # Conversely, promoting an unrelated sector into the selected
+        # channel must be caught as an unreported eligible audio sector.
+        changed = bytearray(pristine)
+        other_channel_offset = 2352 + 17
+        changed[other_channel_offset] = 0
+        changed[other_channel_offset + 4] = 0
+        raw.write_bytes(changed)
+        with self.assertRaisesRegex(ValueError, "source BIN selection differs"):
+            validate_extraction(self.report, self.payload, source_bin=raw)
+
+        self.assertEqual(self.report.read_bytes(), frozen_report)
+        self.assertEqual(self.payload.read_bytes(), frozen_payload)
         raw.write_bytes(pristine)
         self.assertEqual(
             validate_extraction(self.report, self.payload, source_bin=raw)["audio_sectors"], 2
