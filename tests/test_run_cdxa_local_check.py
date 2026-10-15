@@ -61,6 +61,40 @@ class LocalXaCheckTests(unittest.TestCase):
         self.assertTrue(saved["comparison"]["candidate_wav_sha256"])
         self.assertTrue(saved["comparison"]["reference_wav_sha256"])
 
+    def test_reference_provenance_is_preserved_but_not_certified(self):
+        ref = self.reference("independent.wav")
+        result = run_local_check(
+            self.source, self.root / "with-provenance",
+            file_number=1, channel=0, start_lba=1, sector_count=3,
+            reference_wav=ref, reference_decoder="Example Decoder 1.2",
+            reference_command="example-decoder --input disc.bin --output independent.wav",
+        )
+        details = result["reference_provenance"]
+        self.assertEqual(details["decoder"], "Example Decoder 1.2")
+        self.assertIn("example-decoder", details["command"])
+        self.assertEqual(details["status"], "user_supplied_not_independently_verified")
+        self.assertEqual(
+            json.loads((self.root / "with-provenance" / "audit-result.json").read_text())[
+                "reference_provenance"
+            ], details,
+        )
+
+    def test_missing_or_invalid_provenance_does_not_create_outputs(self):
+        output = self.root / "invalid-provenance"
+        with self.assertRaisesRegex(ValueError, "requires --reference-wav"):
+            run_local_check(
+                self.source, output, file_number=1, channel=0,
+                reference_decoder="Example Decoder 1.2",
+            )
+        self.assertFalse(output.exists())
+        ref = self.reference("valid-reference.wav")
+        with self.assertRaisesRegex(ValueError, "nonempty string"):
+            run_local_check(
+                self.source, output, file_number=1, channel=0,
+                reference_wav=ref, reference_decoder="   ",
+            )
+        self.assertFalse(output.exists())
+
     def test_without_reference_reports_verified_decode_only(self):
         output = self.root / "without-reference"
         result = run_local_check(
@@ -88,6 +122,10 @@ class LocalXaCheckTests(unittest.TestCase):
         self.assertEqual(saved["comparison"]["first_different_frame"], 0)
         self.assertTrue(saved["comparison"]["candidate_wav_sha256"])
         self.assertTrue(saved["comparison"]["reference_wav_sha256"])
+        self.assertEqual(
+            saved["reference_provenance"]["status"],
+            "user_supplied_not_independently_verified",
+        )
 
     def test_existing_output_is_never_overwritten(self):
         output = self.root / "existing"
