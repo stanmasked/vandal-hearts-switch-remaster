@@ -53,6 +53,8 @@ static int init_synthetic_spu(void) {
     if (info.frames != 56 || info.loop_start_frame != 0 ||
         info.loop_end_frame != 56) return -1;
     vh_native_spu_reset(&native_spu);
+    if (vh_native_spu_set_interpolation(&native_spu, VH_SPU_GAUSSIAN) != 0)
+        return -1;
     const int slot = vh_native_spu_allocate_slot(&native_spu);
     if (slot < 0) return -1;
     return vh_native_spu_note_on(
