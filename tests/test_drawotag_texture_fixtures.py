@@ -3,6 +3,8 @@
 Checks test-vector packing/palette addressing; does NOT test the upstream rasterizer.
 """
 import unittest
+from pathlib import Path
+import re
 
 WIDTH = 1024
 
@@ -64,6 +66,23 @@ class TextureFixtureTests(unittest.TestCase):
     def test_zero_texel(self):
         self.assertEqual([sample(self.vram, tpage(2, 256), 0, u, 0)
                           for u in range(2)], [0, 0x7FE0])
+
+    def test_fixture_matches_guest_probe(self):
+        guest = (Path(__file__).resolve().parents[1] /
+                 'probes/pinned_drawotag_switch_smoke.c').read_text()
+        expected = {
+            'texels': [0x2121, 0x2121],
+            'texels8': [0x0201, 0x0201],
+            'texels15': [0x03FF, 0x7C1F, 0x03FF, 0x7C1F],
+            'texels_alpha': [0, 0x7FE0, 0, 0x7FE0],
+            'texels_stp': [0x801F, 0x03E0, 0x801F, 0x03E0],
+        }
+        for name, values in expected.items():
+            match = re.search(r'unsigned short\\s+' + name +
+                              r'\\s*\\[\\d+\\]\\s*=\\s*\\{([^}]+)\\}', guest)
+            self.assertIsNotNone(match, name)
+            parsed = [int(n.strip(), 0) for n in match.group(1).split(',')]
+            self.assertEqual(parsed, values, name)
 
     def test_stp_is_per_texel(self):
         values = [sample(self.vram, tpage(2, 320), 0, u, 0)
