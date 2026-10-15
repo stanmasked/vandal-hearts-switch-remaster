@@ -247,3 +247,57 @@ does *not* interpolate or fetch PCM, allocate voices, apply volumes/pan,
 synthesize audio, schedule SEQ events, reproduce reverb, or render a WAV.
 Runtime 44100-Hz scheduling, mixing, and real-bank validation remain
 separate acceptance gates. No original game data is used.
+
+
+## Dry single-note render to WAV
+
+The host-only tool `tools/render_vab_note.py` provides the first **audible
+diagnostic note** from a user-owned local VH/VB pair. It integrates
+`resolve_vab_note.py`, SPU-ADPCM decoding, the 20.12 fixed-point sample
+cursor, and per-output-frame ADSR. It writes a new, non-overwriting
+**44,100-Hz mono 16-bit WAV**:
+
+```sh
+python3 tools/render_vab_note.py \
+  /local/path/music.vh /local/path/music.vb /local/path/one-note.wav \
+  --program 7 --note 60 --hold-frames 22050 --tail-frames 8820
+python3 tests/test_render_vab_note.py
+```
+
+Both `--hold-frames` and `--tail-frames` are explicit **output samples
+at 44,100 Hz**, not MIDI/SEQ ticks. In the example, key-off happens
+exactly after 22,050 output samples (0.5 seconds); up to 8,820 further
+samples are rendered for release (0.2 seconds). Output has exactly
+`hold_frames + tail_frames` samples and is padded with silence if the
+one-shot sample or ADSR ends earlier. The combined duration is limited to
+20 seconds to prevent accidentally creating unbounded loops. An optional
+`--gain` value in `0..1` is a **diagnostic** amplitude factor, not the
+original game velocity/channel/program/tone-volume law.
+
+The sample is selected according to the PC-port's `SeqPickTone`
+priorities and its approximate equal-tempered pitch computation. The
+decoder preserves VAG ADPCM loop markers; a repeat loop is actually stepped
+during note playback. Each output frame reads the current PCM sample,
+advances ADSR and scales that sample, and then advances its pitch cursor.
+This reproduces the **ordering** of the corresponding PC-port update
+functions, but **sample lookup uses nearest neighbour**, not PS1 four-tap
+Gaussian interpolation. Pitch is clamped to `1..0x4000` fixed-point units
+with `0x1000` at unity speed.
+
+The JSON audit report identifies the selected VAG/program/tone, source
+offset/length, input and output hashes, loop markers, frame count,
+active-frame count, effective pitch step and final envelope phase.
+The tool reads VH and VB without modifying them. It refuses to overwrite
+an existing WAV or use the same path as the source data. **Keep generated
+WAVs private and local; do not commit copyrighted original audio.**
+
+Synthetic end-to-end tests verify exact PCM output at 44,100 Hz, key-off
+timing, ADSR release, fractional pitch stepping, repeat loops, one-shot
+silence, invalid ADPCM, truncated VB and output/source overwrite guards.
+
+**Not yet implemented or validated:** Gaussian interpolation and its
+history across loop wraps, original PS1 pitch-register quantization,
+velocity and volume law, stereo pan, voice allocation and mixing, reverb,
+sequencer timing, Switch audio output, and comparison against real
+Vandal Hearts instrument banks. A listening WAV from this utility is
+not a game-music or Switch-port acceptance test.
