@@ -1,4 +1,5 @@
 #include "vh_native_spu.h"
+#include "vh_spu_gaussian.h"
 
 #include <limits.h>
 #include <math.h>
@@ -106,6 +107,13 @@ void vh_native_spu_reset(VhNativeSpu *spu) {
     if (spu) memset(spu, 0, sizeof(*spu));
 }
 
+int vh_native_spu_set_interpolation(VhNativeSpu *spu, unsigned mode) {
+    if (!spu || (mode != VH_SPU_NEAREST && mode != VH_SPU_GAUSSIAN))
+        return -1;
+    spu->interpolation = mode;
+    return 0;
+}
+
 int vh_native_spu_allocate_slot(VhNativeSpu *spu) {
     if (!spu) return -1;
     for (unsigned slot = 0; slot < VH_NATIVE_MUSIC_VOICES; ++slot) {
@@ -173,8 +181,12 @@ void vh_native_spu_render(VhNativeSpu *spu, int16_t *out_stereo, size_t frames) 
                 v->active = 0;
                 continue;
             }
+            const int16_t fetched = spu->interpolation == VH_SPU_GAUSSIAN
+                ? vh_spu_gaussian_sample(v->pcm, v->frames, v->phase,
+                                         v->loop_start, v->loop_end, v->looped)
+                : v->pcm[index];
             const double current =
-                (double)v->pcm[index] * v->adsr.level / 32767.0;
+                (double)fetched * v->adsr.level / 32767.0;
             left += current * v->gain_left;
             right += current * v->gain_right;
             v->phase += v->pitch_step;
@@ -185,6 +197,7 @@ void vh_native_spu_render(VhNativeSpu *spu, int16_t *out_stereo, size_t frames) 
                         (uint64_t)(v->loop_end - v->loop_start) << 12;
                     const uint64_t wraps = (v->phase - end) / length + 1;
                     v->phase -= wraps * length;
+                    v->looped = 1;
                 }
             } else if (v->phase >> 12 >= v->frames) {
                 v->active = 0;
