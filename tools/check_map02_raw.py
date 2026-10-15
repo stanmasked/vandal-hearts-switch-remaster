@@ -32,8 +32,15 @@ def check_raw_records(report):
         if record is None:
             errors.append(f"missing GFX {gfx}")
             continue
-        if record["bytes"] != [0, 0, 0, 0]:
-            errors.append(f"GFX {gfx}: raw texture record not all zero")
+        raw_bytes = record.get("bytes")
+        if (not isinstance(raw_bytes, list) or len(raw_bytes) != TEXTURE_RECORD_SIZE
+                or any(type(value) is not int or not 0 <= value <= 255 for value in raw_bytes)):
+            errors.append(f"GFX {gfx}: invalid raw texture bytes")
+        else:
+            if record.get("raw_hex") != bytes(raw_bytes).hex(" "):
+                errors.append(f"GFX {gfx}: raw_hex does not match bytes")
+            if raw_bytes != [0, 0, 0, 0]:
+                errors.append(f"GFX {gfx}: raw texture record not all zero")
         if record["clut_index"] != 0:
             errors.append(f"GFX {gfx}: CLUT index is not zero")
         if record["runtime_table_index"] != 400 + gfx:
