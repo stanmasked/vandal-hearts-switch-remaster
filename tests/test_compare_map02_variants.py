@@ -47,15 +47,19 @@ class Map02VariantTests(unittest.TestCase):
         ]
         result = classify_runtime_faces(report, prs_capture)
         self.assertTrue(result["all_match_prs"])
+        self.assertEqual(result["overall_classification"], "prs")
+        self.assertTrue(result["recognized_and_consistent"])
         self.assertFalse(result["all_match_dat"])
         dat_capture = [
             {"record_index": 243, "face": 0, "local_gfx": 98, "runtime_gfx": 498},
             {"record_index": 319, "face": 0, "local_gfx": 150, "runtime_gfx": 550},
         ]
         self.assertTrue(classify_runtime_faces(report, dat_capture)["all_match_dat"])
+        self.assertEqual(classify_runtime_faces(report, dat_capture)["overall_classification"], "dat")
         mixed_capture = [prs_capture[0], dat_capture[1]]
         self.assertFalse(classify_runtime_faces(report, mixed_capture)["all_match_prs"])
         self.assertFalse(classify_runtime_faces(report, mixed_capture)["all_match_dat"])
+        self.assertEqual(classify_runtime_faces(report, mixed_capture)["overall_classification"], "mixed_or_ambiguous")
 
     def test_runtime_capture_rejects_invalid_translation_and_missing_faces(self):
         report = compare_map02(bytes(EXPECTED_LENGTH), bytes(EXPECTED_LENGTH))
@@ -65,12 +69,29 @@ class Map02VariantTests(unittest.TestCase):
         ]
         classified = classify_runtime_faces(report, faces)
         self.assertEqual(classified["faces"][0]["classification"], "invalid_translation")
+        self.assertEqual(classified["overall_classification"], "invalid_translation")
+        self.assertFalse(classified["recognized_and_consistent"])
         with self.assertRaisesRegex(ValueError, "exactly both"):
             classify_runtime_faces(report, faces[:1])
         with self.assertRaisesRegex(ValueError, "duplicate"):
             classify_runtime_faces(report, faces + [faces[0]])
         with self.assertRaisesRegex(ValueError, "integer"):
             classify_runtime_faces(report, [{**faces[0], "local_gfx": True}, faces[1]])
+
+    def test_runtime_capture_reports_unrecognized_gfx(self):
+        prs = bytearray(EXPECTED_LENGTH)
+        dat = bytearray(EXPECTED_LENGTH)
+        for record, p, d in ((243, 241, 98), (319, 243, 150)):
+            offset = record * RECORD_SIZE + FACE_GFX_OFFSET
+            prs[offset], dat[offset] = p, d
+        report = compare_map02(bytes(prs), bytes(dat))
+        capture = [
+            {"record_index": 243, "face": 0, "local_gfx": 77, "runtime_gfx": 477},
+            {"record_index": 319, "face": 0, "local_gfx": 243, "runtime_gfx": 643},
+        ]
+        result = classify_runtime_faces(report, capture)
+        self.assertEqual(result["overall_classification"], "unrecognized")
+        self.assertFalse(result["recognized_and_consistent"])
 
     def test_invalid_input_sizes(self):
         with self.assertRaisesRegex(ValueError, "decompressed PRS"):
