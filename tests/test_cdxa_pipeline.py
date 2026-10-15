@@ -223,5 +223,22 @@ class CdXaPipelineTests(unittest.TestCase):
 
 
 
+    def test_extractor_refuses_symlink_alias_of_source(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "synthetic-disc.bin"
+            source.write_bytes(xa_audio_sector())
+            alias = root / "source-alias.bin"
+            try:
+                alias.symlink_to(source)
+            except (OSError, NotImplementedError) as error:
+                self.skipTest(f"symlink creation unavailable: {error}")
+
+            with self.assertRaisesRegex(ValueError, "overwrite the source"):
+                extract_audio_payloads(source, alias)
+            self.assertEqual(source.stat().st_size, SECTOR_SIZE)
+            self.assertEqual(alias.resolve(), source.resolve())
+
+
 if __name__ == "__main__":
     unittest.main()
