@@ -8,6 +8,7 @@ source provenance: it records both provenance and the binary SHA-256.
 import argparse
 import hashlib
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -23,6 +24,18 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def executable_contains_marker(path: Path, marker: str) -> bool:
+    needle = marker.encode("ascii") + b"\0"
+    suffix = b""
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            data = suffix + chunk
+            if needle in data:
+                return True
+            suffix = data[-(len(needle) - 1):]
+    return False
 
 
 def capture(executable: Path, trace_directory: Path, output_directory: Path,
@@ -75,6 +88,13 @@ def capture(executable: Path, trace_directory: Path, output_directory: Path,
         if sha256_file(current_path) != expected_sha256:
             raise ValueError(f"{filename}: generated diagnostic build input changed since preparation")
     binary_sha256_before_launch = sha256_file(executable)
+    if provenance["trace_mode"] == "full":
+        marker = provenance.get("binary_marker")
+        if type(marker) is not str or re.fullmatch(
+                r"VH_MAP02_TRACE_BUILD_ID:[0-9a-f]{64}", marker) is None:
+            raise ValueError("full trace provenance must include a valid binary marker")
+        if not executable_contains_marker(executable, marker):
+            raise ValueError("executable missing expected full-trace build marker; wrong or unlinked binary")
     output_directory = output_directory.resolve()
     if output_directory.exists():
         raise ValueError("output directory already exists; refusing to overwrite")
