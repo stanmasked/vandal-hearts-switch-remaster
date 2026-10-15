@@ -288,6 +288,17 @@ jobs:
                   print(f"Original FT4 CLUT {name}: {observed}")
                   if max(abs(a-b) for a,b in zip(observed, expected)) > 36:
                       raise SystemExit(f"Original 8bpp indexed CLUT quad is incorrect: {name}")
+          # 15bpp direct-colour: tpage 2 bypasses CLUT. Native quad x=2..4,y=4..6.
+          direct15_samples = (
+              ("15bpp yellow", (370, 440), (255, 255, 0)),
+              ("15bpp magenta", (447, 440), (255, 0, 255)),
+          )
+          for frame_image in (im, after):
+              for name, (x, y), expected in direct15_samples:
+                  observed = frame_image.getpixel((x, y))
+                  print(f"Original FT4 direct {name}: {observed}")
+                  if max(abs(a-b) for a,b in zip(observed, expected)) > 36:
+                      raise SystemExit(f"Original 15bpp direct texture is incorrect: {name}")
           # The center pixel is deliberately dynamic: R=12->99, G=12->99,
           # B=frame*3 modulo 256. Verify the intended channel changes,
           # not merely a window animation elsewhere in the screenshot.
