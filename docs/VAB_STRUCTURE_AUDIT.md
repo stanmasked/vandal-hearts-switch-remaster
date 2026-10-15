@@ -8,7 +8,9 @@ sample data.
 
 ```sh
 python3 tools/inspect_vab_header.py /local/path/music.vh
+python3 tools/inspect_vab_header.py /local/path/music.vh --vb /local/path/music.vb
 python3 tests/test_inspect_vab_header.py
+python3 tests/test_inspect_vab_sizes.py
 ```
 
 The first 32 bytes must have the `pBAV` magic. The inspector reports header
@@ -30,9 +32,31 @@ outside `1..vags`. A complete tone table gets `tone_table_sha256` as an
 audit fingerprint.
 
 When the program table or tone table is incomplete, those fields are marked
-incomplete rather than claiming the bank has been validated. The calculated
-`vag_size_table_offset` is **not** verification of the following 512-byte VAG
-size table, its offsets into VB, or any ADPCM samples.
+incomplete rather than claiming the bank has been validated.
+
+## VAG sizes and optional VB boundary check
+
+A complete tone table allows locating the next **512 bytes**: 256 little-endian
+16-bit VAG-size entries. Entries are in **8-byte units**, not bytes. Index 0
+also contributes to the running offset; the playable entries are indices
+`1..vags`. The inspector reports each playable VAG's offset within VB,
+unit count, and byte count, plus `vag_size_table_sha256`,
+`vag_zero_entry_bytes`, and `required_vb_bytes`. This last number includes
+entry 0 and is *not* the amount of data transferred by the game's CD loader.
+
+A valid complete table sets `vag_size_table_complete: true`. Nonzero sizes
+must be multiples of a 16-byte SPU-ADPCM block. Active tones referencing a
+zero-length VAG are rejected. An incomplete size table instead returns
+`vag_size_table_complete: false` without pretending to check VB.
+
+The optional `--vb` argument checks only whether the **supplied** local VB
+has at least `required_vb_bytes`; extra trailing bytes, such as CD-sector
+padding, are allowed and reported. If the VH is incomplete or the VB is too
+short, verification fails. No VB bytes are extracted or decoded. These
+size-based checks do not prove that the supplied VB belongs to the VH; the
+original game may transfer data from an offset or in chunks that a standalone
+ISO-file analysis does not reproduce. Validate against the runtime loader
+before calling any sample mapping faithful.
 
 ## Limitations
 
@@ -40,7 +64,7 @@ size table, its offsets into VB, or any ADPCM samples.
   header, not an arbitrary raw VB body or a memory-modified VAB.
 - No original game BIN, VH, VB, soundbank, or decoded audio is required for
   automated tests or written to the repository.
-- Format consistency is not proof of correct sound, sample looping, pitch,
+- Format/size consistency is not proof of correct sound, sample looping, pitch,
   instrument mapping at runtime, or Switch output.
 - For the eventual full audio validation, compare a user-owned local VAB
   against actual `SsVabOpenHeadSticky`/SEQ runtime behaviour and independently
