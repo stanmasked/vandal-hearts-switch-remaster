@@ -752,3 +752,64 @@ actual SEQ/VAB/SPU work rather than a synthetic tone, Switch NRO linking
 and runtime confirmation, sound quality against the original,
 threaded mixer backpressure/latency profiling and hardware testing.
 Original game resources and generated game audio remain local.
+
+
+## Native SPU-ADPCM decode and first C11 music-voice producer
+
+The original Python host decoder remains the reference for byte-level
+synthetic validation. The new portable native modules are:
+
+- `source/vh_spu_adpcm.h/.c`: headerless 16-byte PS1 SPU-ADPCM
+  decoder producing 28 mono PCM16 frames per block. It handles the
+  five predictor filters, arithmetic-right-shift rounding for
+  negative samples, clipping **before** predictor-history updates,
+  first end-block and end+repeat/loop-start flags. Invalid predictor,
+  shift, flag bits, length or output capacity are rejected before PCM
+  decoding. Caller owns all memory; **no VAB or original game assets
+  are embedded**.
+- `source/vh_native_spu.h/.c`: 20 music-voice slots with key-on/key-off,
+  first-free/round-robin slot allocation, PC-port-style per-output-frame
+  ADSR and pitch stepping, repeat-loop handling and dry stereo summing.
+  Each voice borrows a caller-owned decoded PCM array for its lifetime.
+  **Nearest-sample interpolation** is used for this initial native
+  version; the earlier Python-only four-tap Gaussian model is not yet
+  implemented in C.
+- The `vh_native_spu_pump()` helper generates at most **512 stereo
+  frames** only if the ring has sufficient space; a full FIFO returns
+  zero **without consuming synthesis time**. Producer and callback
+  access still requires synchronization.
+- `probes/sdl2_audio_smoke.c`: exercises the complete native path
+  with a **fabricated 32-byte looping ADPCM sample**. It decodes that
+  sample, keys on one SPU voice, renders 512-frame stereo chunks in
+  the main loop, queues them into `vh_audio_stream.c`, and supplies
+  SDL2 callback reads. It no longer generates a synthetic square
+  wave inside the callback itself. No sequence parser, music bank,
+  game audio or external file access is involved.
+
+Synthetic verification:
+
+```sh
+make test-audio-stream
+python3 tests/test_native_spu_adpcm.py
+# On a Switch devkitPro setup with SDL2 portlibs:
+make sdl2-audio-probe
+```
+
+The C11 host regression `tests/test_vh_native_spu.c` tests the
+ADPCM → voice → stereo FIFO integration, exact short ADSR attack and
+release vectors, looping, fractional pitch, one-shot termination,
+20 voice slots, overflow backpressure and validation. The differential
+test `tests/test_native_spu_adpcm.py` builds the identical decoder
+source as a host shared object and checks byte-for-byte output and loop
+metadata against Python on 110 randomized synthetic ADPCM sequences.
+The audio CI also compiles/runs the native SPU test under UBSan.
+`.github/workflows/switch-native-pcm.yml` now requests **AArch64
+cross-compilation of all three native transport/decoder/synth objects**.
+
+**Not yet in this native implementation:** parsing real VH/VB banks or
+SEQ files, native SEQ event dispatch and controller changes, 4-tap
+Gaussian interpolation, exact original gain law and stereo pan,
+reverb, voice-release comparison on the console, streaming from
+actual game resources or validating audible Switch output. Passing
+synthetic host CI or compiling individual AArch64 objects is not
+proof that the full game music is running on Nintendo Switch.
