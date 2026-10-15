@@ -61,6 +61,21 @@ jobs:
           git -C /tmp/vh-cross-upstream checkout --detach 14552fffa0e0b47e02b57592e274fc6e7a649923
           python3 tools/patch_pc_gpu_present_observer.py /tmp/vh-cross-upstream/platform/pc/src/pc_gpu_window.c /tmp/vh-cross-upstream/platform/pc/src/pc_gpu_window_instrumented.c
           mkdir -p build/upstream-cross
-          "$DEVKITA64/bin/aarch64-none-elf-gcc" -std=c11 -O2 -Wall -Wextra -DVH_SWITCH_COMPLETED_FRAME_OBSERVER -DVH_SWITCH_EXCLUSIVE_PRESENT -I/tmp/vh-cross-upstream/platform/pc/include -I/tmp/vh-cross-upstream/platform/pc/src $(sdl2-config --cflags) -c /tmp/vh-cross-upstream/platform/pc/src/pc_gpu_window_instrumented.c -o build/upstream-cross/pinned_gpu_switch.o
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" -std=c11 -O2 -Wall -Wextra -ffunction-sections -fdata-sections -DVH_SWITCH_COMPLETED_FRAME_OBSERVER -DVH_SWITCH_EXCLUSIVE_PRESENT -I/tmp/vh-cross-upstream/platform/pc/include -I/tmp/vh-cross-upstream/platform/pc/src $(sdl2-config --cflags) -c /tmp/vh-cross-upstream/platform/pc/src/pc_gpu_window_instrumented.c -o build/upstream-cross/pinned_gpu_switch.o
           "$DEVKITA64/bin/aarch64-none-elf-nm" build/upstream-cross/pinned_gpu_switch.o | grep ' PC_GpuPresent'
           echo "Pinned GPU translation unit cross-compilation passed (object only)."
+      - name: Inventory unresolved original GPU platform dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          "$DEVKITPRO/devkitA64/bin/aarch64-none-elf-nm" --undefined-only build/upstream-cross/pinned_gpu_switch.o > build/upstream-cross/undefined-symbols.txt
+          echo "Undefined external symbols in original pinned GPU translation unit:"
+          cat build/upstream-cross/undefined-symbols.txt
+          grep -q 'VH_ObserveCompletedRGB24' build/upstream-cross/undefined-symbols.txt
+      - name: Upload GPU cross-compile evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pinned-upstream-gpu-switch-object-audit
+          path: build/upstream-cross/
+          if-no-files-found: error
