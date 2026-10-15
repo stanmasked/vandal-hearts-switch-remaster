@@ -133,7 +133,7 @@ $(BUILD)/test_map_unit_boundary: tests/test_map_unit_boundary.c source/map_unit_
 $(BUILD)/test_map_unit_phase: tests/test_map_unit_phase.c source/map_unit_phase.h source/map_unit_boundary.h source/map_load_checked.h source/map_buffer_gate.h source/map_decode_checked.h source/ps1_memory_view.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@
 
-$(BUILD)/test_scene_map_order: tests/test_scene_map_order.c source/scene_map_order.h source/map_unit_phase.h source/map_unit_boundary.h source/map_load_checked.h source/map_buffer_gate.h source/map_decode_checked.h source/ps1_memory_view.h | $(BUILD)
+$(BUILD)/test_scene_map_order: tests/test_scene_map_order.c source/scene_map_order.h source/scratch3_resource_write.h source/map_unit_phase.h source/map_unit_boundary.h source/map_load_checked.h source/map_buffer_gate.h source/map_decode_checked.h source/ps1_memory_view.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@
 
 $(BUILD)/test_scratch3_resource_write: tests/test_scratch3_resource_write.c source/scratch3_resource_write.h source/map_unit_phase.h source/map_unit_boundary.h source/map_load_checked.h source/map_buffer_gate.h source/map_decode_checked.h source/ps1_memory_view.h | $(BUILD)
