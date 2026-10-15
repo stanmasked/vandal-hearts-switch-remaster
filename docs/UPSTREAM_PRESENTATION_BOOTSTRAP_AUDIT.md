@@ -127,3 +127,20 @@ The pinned `platform/pc/src/pc_bootstrap.c` and `docs/pc-port/bootstrap.md` show
 5. Only after those decisions, use a source-pinned, data-local build harness to expose compile/link errors. CI must not upload, cache, or package the user's disc image, BIOS/font source, or extracted game assets.
 
 **Status:** this is a source-based risk inventory, not a Switch memory-layout validation or a compiled upstream patch. The current Switch repository still does not contain the full upstream source tree.
+
+
+## 8. Existing `PC_PORT` memory seams — concrete follow-up (2026-10-15)
+
+A targeted review of the pinned upstream source found that the codebase already contains narrow examples of replacing fixed PS1 addresses with ordinary backing storage. These are useful precedents, but they do **not** establish that all fixed-address dependencies have been removed:
+
+- In `src/maps/unpack.c`, `UnpackMapFileData()` uses a static `u8 sPcScratchpad[0x400]` under `PC_PORT`; the non-`PC_PORT` path still assigns `pCache = (u8 *)0x1f800000`. The buffer is a 1 KiB dictionary ring, and its indexing is masked with `0x3ff`. This is a concrete, low-risk pattern to follow for other buffers when their lifetime and aliasing requirements are understood.
+- In `src/core/cd.c`, the PC build maps the sound-work addresses such as `0x80140878`, `0x80141878`, and `0x80144878` through `SOUND_WORK_PTR(addr)` into `sPcSoundWorkRam`, instead of directly returning the numeric address. This is a second precedent for a source-level backing-memory mapping.
+- These examples differ in scope: the map unpacker has a single local scratch ring, while the sound-work table maps multiple offsets into a shared region. They must not be generalized into one global address translation until all consumers, offsets, sizes, and alias relationships are inventoried.
+
+### Updated implementation gate
+
+Before modifying the upstream bootstrap, build an address-use inventory from the pinned source with at least these columns: source file/line, literal or base address, read/write use, required size, lifetime, alias group, existing `PC_PORT` guard, and candidate backing store. Include direct casts, arithmetic based on PS1 addresses, and buffers whose address is stored in tables—not just grep hits for the two base constants.
+
+**Decision:** prefer explicit source-level backing buffers for each verified memory region over attempting to reserve PS1 virtual addresses on Switch. Keep exact-address reservation only as a separately tested fallback if the target demonstrably supports it. The two examples above justify investigating this strategy; they are not yet evidence that the full game can run with relocated RAM.
+
+**Status:** source review only. No upstream source was copied into this repository, no game data was accessed, and no Switch memory mapping or upstream build was performed.
