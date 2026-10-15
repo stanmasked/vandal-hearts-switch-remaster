@@ -137,6 +137,7 @@ class ValidateXaExtractionTests(unittest.TestCase):
         self.data.update({
             "start_lba": 0, "sectors_scanned": 3,
             "mode2_sectors": 3, "matching_subheaders": 3,
+            "submode_counts": {"0x64": 3},
             "first_audio_lba": 0, "last_audio_lba": 2,
             "audio_lbas": [0, 2],
             "audio_lba_offsets": [
@@ -208,6 +209,12 @@ class ValidateXaExtractionTests(unittest.TestCase):
                 self.report.write_text(json.dumps(edited), encoding="utf-8")
                 with self.assertRaisesRegex(ValueError, "sector/header counts|nonnegative integer"):
                     validate_extraction(self.report, self.payload, source_bin=raw)
+        self.report.write_text(clean_report, encoding="utf-8")
+        tampered = json.loads(clean_report)
+        tampered["submode_counts"] = {"0x64": 2, "0x60": 1}
+        self.report.write_text(json.dumps(tampered), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "submode counts"):
+            validate_extraction(self.report, self.payload, source_bin=raw_path)
         self.report.write_text(clean_report, encoding="utf-8")
 
         # Corrupt the duplicated subheader of the second sector: it must
