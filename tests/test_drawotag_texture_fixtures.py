@@ -308,6 +308,51 @@ class TextureFixtureTests(unittest.TestCase):
             self.assertGreaterEqual(x, 2)
             self.assertLessEqual(x + 2, 10)
 
+    def test_serialized_psx_tim_original_load_path(self):
+        """A complete authentic-format 4bpp TIM, no copyrighted pixels."""
+        guest = (Path(__file__).resolve().parents[1] /
+                 'probes/pinned_drawotag_switch_smoke.c').read_text()
+        match = re.search(r'unsigned int\s+tim_words\s*\[18\]\s*=\s*'
+                          r'\{([^}]+)\}', guest)
+        self.assertIsNotNone(match)
+        words = [int(value.strip().rstrip('uU'), 0)
+                 for value in match.group(1).split(',')]
+        self.assertEqual(len(words), 18)
+        self.assertEqual(words[:3], [0x10, 0x8, 44])
+        # CLUT block size includes the 12-byte header plus 32 data bytes.
+        self.assertEqual((words[3], words[4]), (42 << 16, 1 << 16 | 16))
+        clut_words = words[5:13]
+        self.assertEqual(len(clut_words), 8)
+        self.assertEqual(clut_words[:2], [0x001F0000, 0x000003E0])
+        self.assertTrue(all(word == 0 for word in clut_words[2:]))
+        self.assertEqual(words[13:16], [20, 384, 2 << 16 | 2])
+        self.assertEqual(words[16:], [0x21212121, 0x21212121])
+        self.assertEqual(8 + words[2] + words[13], len(words) * 4)
+        for rect in ((0, 42, 16, 1), (384, 0, 2, 2)):
+            x, y, width, height = rect
+            self.assertLessEqual(x + width, 1024)
+            self.assertLessEqual(y + height, 512)
+            self.assertFalse(x < 12 and y < 9)
+        self.assertIn('OpenTIM(tim_words);', guest)
+        self.assertIn('ReadTIM(&tim_image)', guest)
+        self.assertIn('LoadImage(tim_image.crect, tim_image.caddr);', guest)
+        self.assertIn('LoadImage(tim_image.prect, tim_image.paddr);', guest)
+        self.assertIn('setXY0(&tim_sprite, 8, 1);', guest)
+        self.assertIn('setClut(&tim_sprite, 0, 42);', guest)
+        self.assertIn(
+            'SetDrawMode(&tim_mode, 0, 0, GetTPage(0, 0, 384, 0), &reset_rect);',
+            guest
+        )
+        self.assertLess(guest.index('AddPrim(&ot[0], &tim_sprite);'),
+                        guest.index('AddPrim(&ot[0], &tim_mode);'))
+        # A 4bpp word 0x2121 contains the repeating CLUT indices 1,2.
+        palette = [0] * 16
+        for index, word in enumerate(clut_words):
+            palette[index * 2] = word & 0xFFFF
+            palette[index * 2 + 1] = word >> 16
+        self.assertEqual([palette[(0x2121 >> (u * 4)) & 15]
+                          for u in (0, 1)], [0x001F, 0x03E0])
+
     def test_stp_is_per_texel(self):
         values = [sample(self.vram, tpage(2, 320), 0, u, 0)
                   for u in range(2)]
