@@ -32,9 +32,13 @@ def compare_map02(prs: bytes, dat: bytes) -> dict:
     target_faces = []
     for record in TARGET_RECORDS:
         offset = record * RECORD_SIZE + FACE_GFX_OFFSET
+        p, d = prs[offset], dat[offset]
         target_faces.append({
-            "record_index": record, "gfx0_offset": offset,
-            "prs_local_gfx": prs[offset], "dat_local_gfx": dat[offset],
+            "record_index": record, "x": record % 28, "z": record // 28,
+            "face": 0, "gfx0_offset": offset,
+            "prs_local_gfx": p, "dat_local_gfx": d,
+            "prs_runtime_gfx": p + 400 if p else 0,
+            "dat_runtime_gfx": d + 400 if d else 0,
         })
     expected = {(243, FACE_GFX_OFFSET, 241, 98), (319, FACE_GFX_OFFSET, 243, 150)}
     actual = {(v["record_index"], v["record_byte_offset"], v["prs"], v["dat"]) for v in changes}
