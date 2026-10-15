@@ -78,8 +78,10 @@ def plan_session(upstream: Path, session_directory: Path, *, disc_image: Path,
         "set -eu",
         "# Local, user-initiated build + interactive gameplay capture.",
         "# Does not copy the game image or the original executable.",
-        "# Stop if upstream tracked sources or private input files changed.",
+        "# Stop if generated diagnostic inputs or user-owned files changed.",
         "cd " + shlex.quote(str(remaster_root)),
+        shell_words(("python3", "-m", "tools.verify_map02_session",
+                     str(session_directory))),
         shell_words(preflight_command) + " > "
             + shlex.quote(str(session_directory / "preflight_at_build.json")),
         "export VH_KROM_SOURCE=" + shlex.quote(str(krom)),
@@ -103,10 +105,17 @@ def plan_session(upstream: Path, session_directory: Path, *, disc_image: Path,
     script_path = session_directory / "build_capture_verify.sh"
     script_path.write_text(script, encoding="utf-8")
     script_path.chmod(0o700)
-    (session_directory / "preflight.json").write_text(
+    preflight_file = session_directory / "preflight.json"
+    preflight_file.write_text(
         json.dumps(preflight, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    provenance_file = trace_dir / "source_provenance.json"
+    # Bind the session plan to the exact generated diagnostic manifest and
+    # the preflight snapshot, in addition to the shell script checksum.
+    def digest_file(path: Path) -> str:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
     manifest = {
         "kind": "map02_user_executed_session_plan",
         "trace_mode": "full",
@@ -117,6 +126,8 @@ def plan_session(upstream: Path, session_directory: Path, *, disc_image: Path,
         "build_dir": build_dir,
         "user_shell_script": str(script_path),
         "shell_sha256": hashlib.sha256(script.encode("utf-8")).hexdigest(),
+        "preflight_sha256": digest_file(preflight_file),
+        "provenance_sha256": digest_file(provenance_file),
         "preflight_complete": True,
         "build_executed": False,
         "game_executed": False,
