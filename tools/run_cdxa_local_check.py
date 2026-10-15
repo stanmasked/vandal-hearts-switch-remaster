@@ -66,6 +66,8 @@ def run_local_check(
             "pcm_frames": decoded_info["frames"],
             "payload": str(payload), "report": str(report), "wav": str(decoded),
             "source_verified_sectors": validated["audio_sectors"],
+            "source_bin_bytes": source.stat().st_size,
+            "source_bin_sha256": sha256_file(source),
             "payload_sha256": extracted["payload_sha256"],
             "decoded_wav_sha256": sha256_file(decoded),
         }
