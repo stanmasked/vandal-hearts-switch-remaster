@@ -9,6 +9,10 @@ on:
       - "tools/switch_psyq_compat.h"
       - "probes/pinned_drawotag_switch_smoke.c"
       - "source/vh_private_map_bank.*"
+      - "source/vh_private_map_geometry.*"
+      - "tools/stage_vh_private_map_geometry.py"
+      - "tests/test_private_map_geometry.c"
+      - "tests/test_stage_vh_private_map_geometry.py"
       - "tests/test_private_map_bank.c"
       - "tests/private_map_bank_bridge.c"
       - "tests/test_private_map_bank_bridge.py"
@@ -57,6 +61,14 @@ jobs:
         run: python3 tests/test_inspect_vh_map_geometry.py
       - name: Validate bounded original PRS decompressor
         run: python3 tests/test_decode_vh_map_prs.py
+      - name: Validate synthetic owner-only geometry staging
+        run: python3 tests/test_stage_vh_private_map_geometry.py
+      - name: Host-test original MapTileModel C loader
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -O2 \
+            tests/test_private_map_geometry.c source/vh_private_map_geometry.c \
+            -o /tmp/vh-map-geometry-test
+          /tmp/vh-map-geometry-test
       - name: Host-test private SD map bank file validation
         run: |
           gcc -std=c11 -Wall -Wextra -Werror -O2 \
@@ -160,7 +172,7 @@ jobs:
             -I/tmp/vh-cross-upstream/platform/pc/src \
             -include tools/switch_psyq_compat.h \
             probes/pinned_drawotag_switch_smoke.c source/switch_sdl2_observer_backend.c \
-            source/vh_private_map_bank.c \
+            source/vh_private_map_bank.c source/vh_private_map_geometry.c \
             source/switch_rgb24_presenter.c source/frame_conversion.c \
             source/switch_frame_bridge.c source/switch_completed_frame.c \
             source/switch_present_hook.c source/switch_upstream_observer.c \
@@ -575,6 +587,58 @@ jobs:
           # black border + source-texture color at frame center, which
           # rules out the legacy synthetic smoke scene.
           python3 tests/private_sd_nexium_check.py --check-screenshot "$SHOT"
+      - name: Stage synthetic source MapTileModel slab on virtual SD
+        run: |
+          python3 tests/private_sd_nexium_check.py --stage-geometry-sd-root /tmp/vh-private-nexium/sdmc
+          test -s /tmp/vh-private-nexium/sdmc/switch/vandal-hearts-remaster/private-assets/MAP11_MODELS_28X12.BIN
+      - name: Render two independent MapTileModel faces from virtual SD
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p private-sd-evidence
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+          export NEXIUM_DATA_ROOT=/tmp/vh-private-nexium
+          export NRO=nros/pinned-drawotag-switch.nro
+          export SHOT=private-sd-evidence/map11-multiface.png
+          export LOG=private-sd-evidence/geometry-nexium.log
+          timeout --kill-after=5s 65s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
+            set -euo pipefail
+            "$NEXIUM_BIN" "$NRO" >"$LOG" 2>&1 &
+            pid=$!
+            ready=0
+            sleep 10
+            for attempt in $(seq 1 20); do
+              if ! kill -0 "$pid" 2>/dev/null; then
+                echo "NeXium exited before multiface geometry preview" >&2
+                tail -n 80 "$LOG" >&2 || true
+                exit 1
+              fi
+              window="$(xdotool search --onlyvisible --name "NeXium" 2>/dev/null | tail -n 1 || true)"
+              if [ -n "$window" ]; then
+                import -window "$window" "$SHOT"
+                if python3 tests/private_sd_nexium_check.py --check-geometry-screenshot "$SHOT"; then
+                  echo "Two-face private SD MapTileModel DrawOTag preview visible on poll $attempt"
+                  ready=1
+                  break
+                fi
+              fi
+              sleep 2
+            done
+            kill -INT "$pid" 2>/dev/null || true
+            sleep 1
+            kill -KILL "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+            test "$ready" = 1
+          '
+          echo "Two-face geometry emulator log:"
+          tail -n 80 "$LOG" || true
+          # NeXium does not forward guest fprintf(stderr) to this host log.
+          # The screenshot checker instead requires a unique PRIVATE
+          # black border + two independently indexed POLY_FT4 faces, which
+          # rules out the legacy synthetic smoke scene.
+          python3 tests/private_sd_nexium_check.py --check-geometry-screenshot "$SHOT"
       - name: Upload private synthetic SD screenshot and diagnostic
         if: always()
         uses: actions/upload-artifact@v4
