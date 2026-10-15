@@ -280,8 +280,8 @@ decoder preserves VAG ADPCM loop markers; a repeat loop is actually stepped
 during note playback. Each output frame reads the current PCM sample,
 advances ADSR and scales that sample, and then advances its pitch cursor.
 This reproduces the **ordering** of the corresponding PC-port update
-functions, but **sample lookup uses nearest neighbour**, not PS1 four-tap
-Gaussian interpolation. Pitch is clamped to `1..0x4000` fixed-point units
+functions. Four-tap integer Gaussian interpolation is now the default;
+nearest neighbour is retained as an explicit comparison mode. Pitch is clamped to `1..0x4000` fixed-point units
 with `0x1000` at unity speed.
 
 The JSON audit report identifies the selected VAG/program/tone, source
@@ -295,9 +295,42 @@ Synthetic end-to-end tests verify exact PCM output at 44,100 Hz, key-off
 timing, ADSR release, fractional pitch stepping, repeat loops, one-shot
 silence, invalid ADPCM, truncated VB and output/source overwrite guards.
 
-**Not yet implemented or validated:** Gaussian interpolation and its
-history across loop wraps, original PS1 pitch-register quantization,
+**Not yet implemented or validated:** original PS1 pitch-register quantization,
 velocity and volume law, stereo pan, voice allocation and mixing, reverb,
 sequencer timing, Switch audio output, and comparison against real
 Vandal Hearts instrument banks. A listening WAV from this utility is
 not a game-music or Switch-port acceptance test.
+
+
+## Integer Gaussian interpolation in the note renderer
+
+The single-note WAV tool now defaults to `--interpolation gaussian` and
+uses the 512 PS1 SPU Gaussian coefficients from `tools/spu_gaussian_table.py`.
+The four-tap renderer `tools/interpolate_spu_gaussian.py` selects the phase
+index `(phase >> 4) & 0xff`, accesses the previous three and current
+decoded PCM samples, and applies four **separate** Q15 multiply/right-shift
+operations. Adding products before shifting would change the output and
+does not follow the reference `pc_spu.c`.
+
+The initial pre-sample history is zero. After a loop wraps, history reads
+from the last three samples of the looping section rather than from
+the pre-loop attack region. Loop history is checked with synthetic exact
+integer golden vectors, including fractional pitch positions. The
+output is clipped to signed 16-bit PCM before ADSR scaling.
+
+```sh
+python3 tools/render_vab_note.py \
+  /local/path/music.vh /local/path/music.vb /local/path/gaussian-note.wav \
+  --program 7 --note 60 --hold-frames 22050 --tail-frames 8820
+python3 tests/test_spu_gaussian_interpolation.py
+```
+
+Use `--interpolation nearest` for older baseline comparisons or to
+diagnose differences in pitch stepping separately from interpolation.
+It remains available but is no longer the default.
+
+**Verification scope:** these tests validate the integer coefficient
+and loop-history path against known vectors from the PC-port implementation.
+No multi-voice mixing, original PS1 pitch-table rounding, stereo pan/gain,
+reverb, exact Sony hardware timing, or real-game source-bank playback has
+been validated. A WAV from this host diagnostic is not a Switch build.
