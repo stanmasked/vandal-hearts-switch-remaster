@@ -23,6 +23,7 @@ class ValidateXaExtractionTests(unittest.TestCase):
             "payload_bytes_written": 4608,
             "payload_sha256": hashlib.sha256(bytes(4608)).hexdigest(),
             "coding_info_counts": {"0x01": 2},
+            "file_channel_counts": {"1:0": 2},
             "audio_lbas": [10, 12],
             "audio_lba_offsets": [
                 {"lba": 10, "payload_offset": 0, "missing_source_sectors_before": 0},
@@ -66,6 +67,21 @@ class ValidateXaExtractionTests(unittest.TestCase):
     def test_incorrect_coding_count_fails(self):
         self.data["coding_info_counts"] = {"0x01": 1}
         with self.assertRaisesRegex(ValueError, "coding-info sector count"):
+            self.check()
+
+    def test_mixed_file_channels_rejected(self):
+        self.data["file_channel_counts"] = {"1:0": 1, "1:1": 1}
+        with self.assertRaisesRegex(ValueError, "multiple CD-XA"):
+            self.check()
+
+    def test_incorrect_stream_count_rejected(self):
+        self.data["file_channel_counts"] = {"1:0": 1}
+        with self.assertRaisesRegex(ValueError, "file/channel count metadata"):
+            self.check()
+
+    def test_missing_stream_counts_rejected(self):
+        del self.data["file_channel_counts"]
+        with self.assertRaisesRegex(ValueError, "file/channel counts"):
             self.check()
 
     def test_invalid_offsets_fail(self):
