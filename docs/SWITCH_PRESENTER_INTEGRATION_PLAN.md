@@ -113,6 +113,16 @@ A targeted source inspection of `platform/pc/src/pc_bootstrap.c` shows platform 
 - The same bootstrap also contains executable/rodata memory handling and constructor-driven startup. These are not equivalent to simply opening an SDL window on Switch and need to be isolated from the renderer patch.
 - The bootstrap mounts a user-provided disc image before normal game startup. The current prototype uses generated graphics and does not exercise this path.
 
+### Existing PC_PORT compatibility work already found
+
+The initial direct-address spot check found that the upstream port already redirects several known PS1-memory uses under `PC_PORT`:
+
+- `src/core/cd.c` maps the sound work buffers into a host-owned `sPcSoundWorkRam` allocation instead of literal `0x8014...` pointers.
+- `src/core/cd.c` points the movie stream ring buffer at `gScratch3_80180210` under `PC_PORT`.
+- `src/maps/unpack.c` uses a static 1 KB host scratchpad instead of `0x1f800000` under `PC_PORT`.
+
+These are encouraging examples of the intended compatibility pattern, not proof that all absolute-address assumptions have been removed. The remaining audit should distinguish already-guarded core call sites from the bootstrap's fixed reservations and any unguarded references; avoid duplicating a memory abstraction that the upstream port already provides.
+
 ### Consequence
 
 The earlier GLES2 presenter remains a useful, narrowly scoped component, but it is not sufficient to make the existing PC port runnable on Switch. Before the full game target is attempted, the port needs a documented AArch64/libnx strategy for PS1 address assumptions and fault-recovery behavior. Prefer replacing hardcoded PS1 RAM references with an explicit emulated-memory mapping/translation layer where feasible; any compatibility shim must be justified against the actual direct-address call sites and tested with game logic. Do not simply disable the fault handlers or ignore failed memory reservations and then label the result playable.
