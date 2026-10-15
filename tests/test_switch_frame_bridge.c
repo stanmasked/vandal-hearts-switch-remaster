@@ -10,12 +10,16 @@ static int draws;
 static int upload_ok = 1;
 static int draw_ok = 1;
 static const uint8_t *observed_top;
+static const VhRgb24Frame *observed_frame;
+static int observed_viewport_width;
+static int observed_viewport_height;
 
 int vh_switch_rgb24_presenter_upload(VhSwitchRgb24Presenter *p,
                                       const VhRgb24Frame *frame) {
     assert(p && p->initialized);
     ++uploads;
     observed_top = vh_rgb24_top_row(frame, 0);
+    observed_frame = frame;
     return upload_ok;
 }
 
@@ -23,6 +27,8 @@ int vh_switch_rgb24_presenter_draw(VhSwitchRgb24Presenter *p,
                                     int width, int height) {
     assert(p && width > 0 && height > 0);
     ++draws;
+    observed_viewport_width = width;
+    observed_viewport_height = height;
     return draw_ok;
 }
 
@@ -35,6 +41,8 @@ int main(void) {
 
     assert(vh_switch_present_frame(&presenter, &frame, 1280, 720) == 1);
     assert(uploads == 1 && draws == 1 && observed_top == pixels + 9);
+    assert(observed_frame == &frame);
+    assert(observed_viewport_width == 1280 && observed_viewport_height == 720);
 
     upload_ok = 0;
     assert(vh_switch_present_frame(&presenter, &frame, 1280, 720) == 0);
@@ -55,17 +63,22 @@ int main(void) {
     assert(vh_switch_present_frame(&presenter, &frame, 1280, 720) == 1);
     assert(uploads == 4 && draws == 3);
 
+    /* A successful upload/draw after a failed draw remains possible. */
+    assert(vh_switch_present_frame(&presenter, &frame, 640, 480) == 1);
+    assert(uploads == 5 && draws == 4);
+    assert(observed_viewport_width == 640 && observed_viewport_height == 480);
+
     assert(vh_switch_present_frame(NULL, &frame, 1280, 720) == 0);
     assert(vh_switch_present_frame(&presenter, NULL, 1280, 720) == 0);
     assert(vh_switch_present_frame(&presenter, &frame, 0, 720) == 0);
     assert(vh_switch_present_frame(&presenter, &frame, 1280, 0) == 0);
     assert(vh_switch_present_frame(&presenter, &frame, -1, 720) == 0);
     assert(vh_switch_present_frame(&presenter, &frame, 1280, -1) == 0);
-    assert(uploads == 4 && draws == 3);
+    assert(uploads == 5 && draws == 4);
 
     presenter.initialized = 0;
     assert(vh_switch_present_frame(&presenter, &frame, 1280, 720) == 0);
-    assert(uploads == 4 && draws == 3);
+    assert(uploads == 5 && draws == 4);
     puts("Switch frame bridge tests passed.");
     return 0;
 }
