@@ -6,6 +6,14 @@
 
 The upstream PC port is a native C project with a portable hardware-interface layer, but it is designed for desktop Windows/Linux/macOS. See [Upstream Audit](UPSTREAM_AUDIT.md) for findings and [Build Notes](BUILDING.md) for the dependency inventory.
 
+## Current integration gate (2026-10-15)
+
+The SDL2/GLES2 presenter feasibility work is now backed by the successful [runtime run 38693397077](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38693397077) and the post-documentation toolchain checks [38694347836](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38694347836), [38694318016](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38694318016), and [38694310888](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38694310888).
+
+**Source-tree check:** this repository still contains the Switch feasibility prototype and probes, not the upstream PC port's implementation files. In particular, `source/main.c` renders a generated tactical grid and is not the original game's entry point. The upstream renderer/bootstrap audit is based on a pinned, read-only inspection of `HalmyLyseas/VandalHearts-PcPort` at `14552fffa0e0b47e02b57592e274fc6e7a649923`; no upstream code has been imported or modified.
+
+**Next integration gate:** establish a reproducible, pinned upstream-source checkout/build in CI and verify its required user-supplied game data and dependencies before connecting the presenter. Then make the smallest Switch-only presentation change at the audited final-frame boundary, preserving the desktop path. Do not treat the current probe as an integrated port. The upstream bootstrap's memory/executable assumptions, controller mapping, audio, and physical-console behavior remain separate open risks. No copyrighted game data is included in this repository.
+
 ## Phase 1 — Establish a reproducible baseline
 
 - [x] Review upstream README, architecture, build docs, platform glue, and license notices.
