@@ -16,7 +16,12 @@ def check_raw_records(report):
     errors = []
     if report.get("map_number") != 2 and not report.get("single_block"):
         errors.append("expected map block 2")
-    records = {r["gfx"]: r for r in report["records"]}
+    records = {}
+    for record in report["records"]:
+        gfx = record["gfx"]
+        if gfx in records:
+            errors.append(f"duplicate GFX {gfx} in inspection report")
+        records[gfx] = record
     for gfx in (241, 243):
         record = records.get(gfx)
         if record is None:
