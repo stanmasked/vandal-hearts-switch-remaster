@@ -31,20 +31,22 @@ static void draw_frame(int frame) {
     TILE corner[4], background;
     POLY_F4 polygon;
     POLY_FT4 textured, textured8, textured15, transparent15, semi15;
-    SPRT sprite, window_sprite;
-    DR_MODE mode, window_mode, window_reset;
-    RECT window_rect, reset_rect;
+    SPRT sprite, window_sprite, v_window_sprite;
+    DR_MODE mode, window_mode, window_reset, v_window_mode, v_window_reset;
+    RECT window_rect, reset_rect, v_window_rect, v_reset_rect;
     /* 4bpp: four texels (1,2,1,2) per packed 16-bit VRAM word. */
     unsigned short texels[2] = {0x2121, 0x2121};
     /* Window redirects U=0/1 to U=8/9 (word x=66): blue/white. */
     unsigned short texels_window[2] = {0x0043, 0x0043};
-    unsigned short palette[16] = {0, 0x001f, 0x03e0, 0x7c00, 0x7fff};
+    /* V-window selects rows 8/9: blue/white above magenta/yellow. */
+    unsigned short texels_vwindow[2] = {0x0043, 0x0065};
+    unsigned short palette[16] = {0, 0x001f, 0x03e0, 0x7c00, 0x7fff, 0x7c1f, 0x03ff};
     unsigned short texels8[2] = {0x0201, 0x0201};
     unsigned short palette8[256] = {0, 0x7c00, 0x7fff};
     unsigned short texels15[4] = {0x03ff, 0x7c1f, 0x03ff, 0x7c1f};
     unsigned short texels_alpha[4] = {0x0000, 0x7fe0, 0x0000, 0x7fe0};
     unsigned short texels_stp[4] = {0x801f, 0x03e0, 0x801f, 0x03e0};
-    RECT tex_rect, tex_window_rect, clut_rect, tex8_rect, clut8_rect, tex15_rect, alpha_rect, stp_rect;
+    RECT tex_rect, tex_window_rect, tex_vwindow_rect, clut_rect, tex8_rect, clut8_rect, tex15_rect, alpha_rect, stp_rect;
     SetDefDrawEnv(&draw, 0, 0, 12, 9);
     SetDefDispEnv(&display, 0, 0, 12, 9);
     PutDrawEnv(&draw);
@@ -57,6 +59,8 @@ static void draw_frame(int frame) {
     LoadImage(&tex_rect, (unsigned int *)texels);
     setRECT(&tex_window_rect, 66, 0, 1, 2);
     LoadImage(&tex_window_rect, (unsigned int *)texels_window);
+    setRECT(&tex_vwindow_rect, 64, 8, 1, 2);
+    LoadImage(&tex_vwindow_rect, (unsigned int *)texels_vwindow);
     LoadImage(&clut_rect, (unsigned int *)palette);
     setRECT(&tex8_rect, 128, 0, 1, 2);
     setRECT(&clut8_rect, 0, 41, 256, 1);
@@ -100,6 +104,22 @@ static void draw_frame(int frame) {
     setRECT(&window_rect, 8, 0, 248, 256);
     SetDrawMode(&window_mode, 0, 0, GetTPage(0, 0, 64, 0), &window_rect);
     AddPrim(&ot[0], &window_mode);
+    /* Second independent E2h test along V. Newest-first OT processing:
+     * v_window_mode -> v_window_sprite -> v_window_reset -> window_mode.
+     * y'=((y & ~8) | 8) selects the distinct rows 8 and 9 in VRAM. */
+    setRECT(&v_reset_rect, 0, 0, 256, 256);
+    SetDrawMode(&v_window_reset, 0, 0, GetTPage(0, 0, 64, 0), &v_reset_rect);
+    AddPrim(&ot[0], &v_window_reset);
+    SetSprt(&v_window_sprite);
+    setXY0(&v_window_sprite, 2, 0);
+    setWH(&v_window_sprite, 2, 2);
+    setUV0(&v_window_sprite, 0, 0);
+    setRGB0(&v_window_sprite, 128, 128, 128);
+    setClut(&v_window_sprite, 0, 40);
+    AddPrim(&ot[0], &v_window_sprite);
+    setRECT(&v_window_rect, 0, 8, 256, 248);
+    SetDrawMode(&v_window_mode, 0, 0, GetTPage(0, 0, 64, 0), &v_window_rect);
+    AddPrim(&ot[0], &v_window_mode);
     /* ABR=0: STP-marked red blends 50/50 with background;
      * unmarked green stays opaque within the same semi-trans FT4. */
     SetPolyFT4(&semi15);
