@@ -41,6 +41,10 @@ def evaluate_trace(entries, *, require_full_trace=False):
     visit_generation = {}
     latest_visit_nonempty = {}
     latest_visit_gfx = {}
+    # A nonempty full-trace visit represents exactly one face-0 decision.
+    # Each invocation must terminate as draw or skip, never both.
+    pending_visit_outcomes = {}
+    terminal_visit_outcomes = set()
     draw_gfx_by_context = {}
     backface_gfx_by_context = {}
     errors = []
@@ -76,6 +80,8 @@ def evaluate_trace(entries, *, require_full_trace=False):
             visit_generation[context] = visit_generation.get(context, 0) + 1
             latest_visit_nonempty[context] = face_count > 0
             latest_visit_gfx[context] = entry["gfx"] if face_count > 0 else None
+            if require_full_trace and face_count > 0:
+                pending_visit_outcomes[(context, visit_generation[context])] = i
             if face_count > 0:
                 preceding_nonempty_visits.add((pos, frame, path))
                 visit_gfx_by_context.setdefault((pos, frame, path), set()).add(entry["gfx"])
@@ -111,11 +117,31 @@ def evaluate_trace(entries, *, require_full_trace=False):
                     f"full trace backface GFX mismatch with latest visit for {pos}"
                     f" in frame {frame}, path {path}"
                 )
+            if require_full_trace and reason == "null_gfx" and latest_visit_gfx[context] != 0:
+                errors.append(
+                    f"full trace null_gfx GFX mismatch with latest visit for {pos}"
+                    f" in frame {frame}, path {path}"
+                )
+            if require_full_trace and reason == "null_gfx" and path == "edge":
+                errors.append(
+                    f"full trace edge renderer cannot emit null_gfx skip for {pos}"
+                    f" in frame {frame}"
+                )
             key = ((pos, frame, path, reason, visit_generation[context])
                    if require_full_trace else (pos, frame, path, reason))
             if key in seen_skips:
                 errors.append(f"duplicate skip observation for {pos} in frame {frame}, path {path}")
                 continue
+            if require_full_trace:
+                outcome = (context, visit_generation[context])
+                if outcome in terminal_visit_outcomes:
+                    errors.append(
+                        f"full trace multiple terminal outcomes for {pos}"
+                        f" in frame {frame}, path {path}"
+                    )
+                    continue
+                terminal_visit_outcomes.add(outcome)
+                pending_visit_outcomes.pop(outcome, None)
             seen_skips.add(key)
             skip_count[pos] = skip_count.get(pos, 0) + 1
             skip_reasons.setdefault(pos, set()).add(reason)
@@ -169,6 +195,17 @@ def evaluate_trace(entries, *, require_full_trace=False):
             if key in seen_draw_frames:
                 errors.append(f"duplicate draw observation for {pos} in frame {frame}")
                 continue
+            if require_full_trace:
+                context = (pos, frame, entry["path"])
+                outcome = (context, visit_generation[context])
+                if outcome in terminal_visit_outcomes:
+                    errors.append(
+                        f"full trace multiple terminal outcomes for {pos}"
+                        f" in frame {frame}, path {entry['path']}"
+                    )
+                    continue
+                terminal_visit_outcomes.add(outcome)
+                pending_visit_outcomes.pop(outcome, None)
             seen_draw_frames.add(key)
             if tagged_path:
                 draw_gfx_by_context.setdefault((pos, frame, entry["path"]), set()).add(entry["gfx"])
@@ -208,6 +245,16 @@ def evaluate_trace(entries, *, require_full_trace=False):
             draw_metadata[pos] = metadata
         if entry["gfx"] not in TARGETS[pos]:
             errors.append(f"unexpected GFX {entry['gfx']} for {pos} at {stage}")
+    # A full renderer pass with face 0 must terminate, even if a later
+    # invocation of the same tile/path drew successfully.
+    if require_full_trace:
+        for (context, generation), entry_index in pending_visit_outcomes.items():
+            pos, frame, path = context
+            errors.append(
+                f"full trace nonempty visit without draw or skip for {pos}"
+                f" in frame {frame}, path {path}, invocation {generation}"
+                f" (entry {entry_index})"
+            )
     # A visit and its subsequent draw/backface rejection sample the same
     # tile face. In the full trace they must agree within that frame/path.
     context_matches = {pos: {"draw": 0, "backface": 0} for pos in TARGETS}
