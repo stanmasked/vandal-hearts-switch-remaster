@@ -72,8 +72,13 @@ def validate_extraction(report_path: Path, payload_path: Path, wav_path: Path | 
                     raise ValueError("WAV must be uncompressed PCM")
                 if wav.getnframes() != count * PCM_FRAMES_PER_SECTOR:
                     raise ValueError("WAV frame count does not match extracted XA sector count")
-                if len(wav.readframes(wav.getnframes())) != count * PCM_FRAMES_PER_SECTOR * 4:
-                    raise ValueError("WAV PCM content is truncated")
+                frames_remaining = wav.getnframes()
+                while frames_remaining:
+                    frames = min(frames_remaining, 8192)
+                    chunk = wav.readframes(frames)
+                    if len(chunk) != frames * 4:
+                        raise ValueError("WAV PCM content is truncated")
+                    frames_remaining -= frames
         except (EOFError, wave.Error) as error:
             raise ValueError(f"invalid WAV file: {error}") from error
 
