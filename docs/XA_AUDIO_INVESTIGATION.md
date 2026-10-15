@@ -185,3 +185,5 @@ with a known-good decoder before attributing any discontinuity to decoding.
 The analyzer reads but does not alter the WAV, payload, or JSON report.
 
 The boundary report now separates `adjacent_lba_boundaries` from `gapped_lba_boundaries` and counts above-threshold jumps separately for both. A gap in raw sector numbering can reflect normal channel interleaving; do not interpret all gapped transitions as missing audio. Compare adjacent-boundary results independently before diagnosing clicks.
+
+The analyzer also reports `local_neighbor_max_jump` for the two immediate PCM changes flanking each sector seam, and `excess_over_local_neighbors` (the nonnegative difference from the seam jump). A steady PCM ramp may have a large seam jump but zero excess; a sudden step from silence may have high excess. This local comparison is only a heuristic and does not establish a recording defect or faithful PS1 playback.
