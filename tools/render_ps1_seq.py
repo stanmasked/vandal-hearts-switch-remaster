@@ -2,9 +2,9 @@
 """Render a user-owned PS1 SEQ + matching VAB VH/VB to dry diagnostic WAV.
 
 This is an offline integration probe, not a music or game playback engine.
-It uses an ideal rational SEQ timeline mapped to sample frames and a
-20 reusable SEQ slots and up to 2048 note-ons, with approximate\nround-robin stealing, but with bounded SEQ repeat handling,
-reverb, exact hardware pitch, or Nintendo Switch audio output.
+It supports a selectable ideal rational SEQ timeline or the PC port's
+512-frame advance-before-render timing, with 20 reusable music voice slots
+and bounded repeats. No exact OpenAL, hardware SPU or Switch audio.
 
 No source asset or existing output is overwritten. No asset is uploaded.
 """
@@ -23,6 +23,7 @@ from tools.resolve_vab_note import resolve_note
 from tools.spu_voice_lifetime import SpuVoiceSpec
 from tools.render_vab_chord import render_vab_chord
 from tools.repeat_ps1_seq import expand_seq_repeats
+from tools.schedule_ps1_seq_blocks import schedule_seq_audio_blocks
 from tools.seq_to_chord_schedule import seq_to_schedule
 
 
@@ -35,9 +36,14 @@ def render_ps1_seq(
     repeat_count: int = 1,
     max_frames: int | None = None,
     voice_lifetime: str = "fixed",
+    timing_mode: str = "ideal",
 ) -> tuple[bytes, dict[str, object]]:
     original = parse_seq(seq)
-    parsed = expand_seq_repeats(
+    if timing_mode not in ("ideal", "pc_block512"):
+        raise ValueError("timing_mode must be ideal or pc_block512")
+    scheduler = (expand_seq_repeats if timing_mode == "ideal"
+                 else schedule_seq_audio_blocks)
+    parsed = scheduler(
         original, repeat_count=repeat_count, max_frames=max_frames,
     )
     if voice_lifetime not in ("fixed", "adsr"):
@@ -84,15 +90,17 @@ def render_ps1_seq(
     report["seq_events"] = len(parsed["events"])
     report["seq_end_frame"] = parsed["total_frames"]
     report["voice_lifetime_model"] = voice_lifetime
+    report["seq_timing_mode"] = timing_mode
+    report["spu_block_frames"] = parsed.get("spu_block_frames")
     report["repeat_count_requested"] = repeat_count
     report["repeat_cycles_completed"] = parsed["cycles_completed"]
     report["repeat_window_stop"] = parsed["stopped_by_window"]
     report["release_frames"] = release_frames
     report["warning"] = (
-        "Offline PS1 SEQ stereo WAV diagnostic with event-level bounded "
-        "repeat expansion, 20 reused music slots, approximate release "
-        "lifetimes. No hardware-accurate SEQ block scheduling, reverb "
-        "or Switch audio."
+        "Offline SEQ stereo WAV diagnostic with selected ideal/block512 "
+        "timing, bounded repeats and 20 music slots. Block512 mirrors "
+        "the reference PC dispatch order, not full live OpenAL timing, "
+        "hardware SPU fidelity, reverb or Switch output."
     )
     return wav, report
 
@@ -110,6 +118,9 @@ def main() -> int:
                         help="44100 Hz frame limit, mandatory for infinite repeats")
     parser.add_argument("--interpolation", choices=("gaussian", "nearest"),
                         default="gaussian")
+    parser.add_argument("--timing-mode", choices=("ideal", "pc_block512"),
+                        default="ideal",
+                        help="ideal SEQ ticks or PC port pre-render 512-frame dispatch")
     parser.add_argument("--voice-lifetime", choices=("fixed", "adsr"),
                         default="fixed",
                         help="fixed tail (legacy) or actual SPU ADSR/PCM liveness")
@@ -130,6 +141,7 @@ def main() -> int:
             seq_left=args.seq_left, seq_right=args.seq_right,
             repeat_count=args.repeat_count, max_frames=args.max_frames,
             voice_lifetime=args.voice_lifetime,
+            timing_mode=args.timing_mode,
         )
         with args.output.open("xb") as destination:
             destination.write(wav)
