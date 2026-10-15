@@ -91,7 +91,10 @@ jobs:
             -c /tmp/vh-cross-upstream/platform/pc/src/pc_gpu_window_instrumented.c \
             -o build/upstream-cross/pc_gpu_window_switch.o
           "$DEVKITA64/bin/aarch64-none-elf-nm" build/upstream-cross/pc_gpu_window_switch.o \
-            | grep -E ' [T] PC_GpuPresent
+            | grep -E ' [T] PC_GpuPresent$'
+          echo "Pinned upstream GPU present cross-compiled (object only)."
+
+      - name: Upload lifecycle NRO
         uses: actions/upload-artifact@v4
         with:
           name: sdl2-observer-backend-lifecycle-nro
