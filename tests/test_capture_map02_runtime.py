@@ -56,6 +56,8 @@ def fixture(root: Path, mode="complete", modified=False, trace_mode="legacy"):
         events = events[:2]
     if mode == "invalid":
         events[2]["gfx"] = 498
+    if mode == "bad_stage":
+        events[2]["stage"] = []
     if mode == "empty":
         events = []
     lines = ["booting pc-port", *(json.dumps(ev) for ev in events), "normal shutdown"]
@@ -110,7 +112,7 @@ class CaptureMap02RuntimeTests(unittest.TestCase):
                 capture(exe, trace_dir, dest)
 
     def test_incomplete_and_invalid_traces_fail_but_preserve_evidence(self):
-        for mode in ("incomplete", "invalid", "empty"):
+        for mode in ("incomplete", "invalid", "bad_stage", "empty"):
             with self.subTest(mode=mode):
                 with tempfile.TemporaryDirectory() as folder:
                     base = Path(folder)
@@ -120,6 +122,17 @@ class CaptureMap02RuntimeTests(unittest.TestCase):
                     self.assertTrue((dest / "game_stdout.log").exists())
                     report = json.loads((dest / "capture_report.json").read_text())
                     self.assertTrue(report["analysis"]["errors"])
+
+    def test_malformed_stage_in_game_stdout_yields_report_not_exception(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            exe, trace_dir = fixture(base, mode="bad_stage")
+            target = base / "bad-stage-run"
+            self.assertEqual(capture(exe, trace_dir, target), 2)
+            report = json.loads((target / "capture_report.json").read_text())
+            self.assertTrue(any("invalid stage" in e for e in report["analysis"]["errors"]))
+            self.assertEqual(report["trace_events"], 4)
+            self.assertEqual(len((target / "map02_trace.jsonl").read_text().splitlines()), 4)
 
     def test_non_utf8_game_output_is_preserved_byte_for_byte(self):
         with tempfile.TemporaryDirectory() as folder:
