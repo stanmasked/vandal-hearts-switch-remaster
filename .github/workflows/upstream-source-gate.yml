@@ -7,6 +7,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/upstream-source-gate.yml"
+      - "tools/build_upstream_local.sh"
       - "docs/UPSTREAM_SOURCE_GATE.md"
   workflow_dispatch:
 
@@ -49,6 +50,19 @@ jobs:
           grep -q 'VH_PSX_EXE' upstream/platform/pc/CMakeLists.txt
           grep -q 'SLUS_004.47' upstream/docs/building.md
           echo "Pinned upstream revision and native build entry points verified."
+
+      - name: Validate local-build helper without game data
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n tools/build_upstream_local.sh
+          set +e
+          output="$(env -u VH_PSX_EXE -u VH_KROM_SOURCE tools/build_upstream_local.sh 2>&1)"
+          status=$?
+          set -e
+          test "$status" -ne 0
+          grep -q 'VH_PSX_EXE' <<<"$output"
+          echo "Helper syntax passed; missing private input is rejected before configuring or compiling."
 
       - name: Configure upstream native PC build without optional HD libraries
         run: |
