@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 from tools.extract_map02_trace import TraceByteStream
-from tools.verify_map02_trace import evaluate_trace
+from tools.evaluate_map02_session import evaluate_capture_session
 from tools.prepare_map02_pcport import PINNED_BLOB_SHA1, PINNED_UPSTREAM_REF
 
 
@@ -224,7 +224,7 @@ def capture(executable: Path, trace_directory: Path, output_directory: Path,
                                "observations": []}
     else:
         with trace_path.open("r", encoding="utf-8") as trace:
-            summary["analysis"] = evaluate_trace(
+            summary["analysis"] = evaluate_capture_session(
                 (json.loads(line) for line in trace if line.strip()),
                 require_full_trace=provenance["trace_mode"] == "full",
             )
