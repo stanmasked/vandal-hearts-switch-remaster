@@ -11,6 +11,7 @@ typedef struct {
     SDL_GLContext context;
     int check_center_rgb;
     uint8_t expected_rgb;
+    unsigned swaps;
 } WindowState;
 
 static int query_viewport(void *opaque, int *width, int *height) {
@@ -39,8 +40,12 @@ static int swap_buffers(void *opaque) {
                 (unsigned)rgba[0], (unsigned)rgba[1], (unsigned)rgba[2]);
             return 0;
         }
+        printf("RGB24 GPU readback %ux%u center: %u,%u,%u\\n",
+               (unsigned)w, (unsigned)h, (unsigned)rgba[0],
+               (unsigned)rgba[1], (unsigned)rgba[2]);
     }
     SDL_GL_SwapWindow(state->window);
+    ++state->swaps;
     return 1;
 }
 
@@ -93,6 +98,15 @@ int main(void) {
             presenter.frame_width != 4 || presenter.frame_height != 3) goto done;
         puts("RGB24 observer resize: 4x3 presented");
         state.check_center_rgb = 0;
+        /* A short allocation must not upload, draw, or swap anything. */
+        {
+            unsigned swaps_before = state.swaps;
+            VH_ObserveCompletedRGB24(small_frame, sizeof(small_frame) - 1u, 4, 3);
+            if (vh_switch_observer_last_result() || state.swaps != swaps_before ||
+                presenter.frame_width != 4 || presenter.frame_height != 3)
+                goto done;
+            puts("RGB24 observer rejected truncated frame without swap");
+        }
     }
 
     while (running && frame < 3600) {
