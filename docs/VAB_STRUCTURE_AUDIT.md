@@ -75,3 +75,43 @@ Format references: Sony PsyQ `libsnd.h` structures (`VabHdr`, `ProgAtr`,
 
 - https://github.com/sega-dreamcast/ball-breakers-moho/blob/master/libsnd.h
 - https://github.com/HalmyLyseas/VandalHearts-PcPort/blob/master/docs/pc-port/subsystems/spu.md
+
+
+## Experimental raw SPU-ADPCM decoder
+
+The first host-only SPU sample decoder is `tools/decode_spu_adpcm.py`.
+It expects **raw 16-byte ADPCM blocks** only. It does not parse a standalone
+`VAGp` header or extract samples automatically from a VB bank.
+
+```sh
+python3 tools/decode_spu_adpcm.py /local/path/sample.raw /local/path/sample.wav --sample-rate 22050
+python3 tests/test_decode_spu_adpcm.py
+```
+
+The 22050 Hz command above is an **explicit example rate**, not an inferred
+property of raw PS1 sample bytes or proof of Vandal Hearts playback pitch.
+A raw sample does not encode the playback sample clock; actual SPU pitch is
+set by the instrument and sequence playback engine.
+
+The decoder implements five PS1 SPU two-tap predictive filters, low-nibble
+then high-nibble order, arithmetic signed reconstruction, history carried
+between blocks, and clipped signed 16-bit PCM output. It rejects truncated
+blocks, invalid filter values and shifts above 12, or undocumented upper
+loop-flag bits rather than silently changing malformed bytes.
+
+A loop-start flag (0x04) marks the beginning of a repeating region. An
+end+repeat flag (0x03) marks the loop end; when no start marker was given
+the reference port uses frame 0. Loop metadata is printed but **WAV playback
+does not automatically repeat the loop**. As with the PC-port DecodeVag(),
+all supplied blocks are decoded even if an end flag appears before the last
+block; the earliest such end is reported for diagnosis.
+
+Synthetic regression tests exercise all predictors, clipping, history across
+multiple blocks, flag combinations, malformed headers and exact WAV framing.
+An independently written scalar oracle checks PCM arithmetic, but no
+separate executable reference decoder or original PS1 hardware recording
+has been compared yet. This is not evidence that musical notes, pitch,
+loop scheduling, ADSR envelopes, or Nintendo Switch audio output are faithful.
+
+Source implementation used to cross-check the algorithm:
+https://github.com/HalmyLyseas/VandalHearts-PcPort/blob/master/platform/pc/src/libsnd.c
