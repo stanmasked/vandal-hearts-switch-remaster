@@ -116,6 +116,55 @@ class DecodeCdXaAdpcmTests(unittest.TestCase):
             )
             self.assertEqual(production_history, history)
 
+    def test_vgmstream_style_reference_subframes_and_history(self):
+        # Independent algorithmic cross-check of the vgmstream xa_decoder.c
+        # channel-first, subframe-first traversal. Unlike decode_group, this
+        # oracle sign-extends the high four bits of a signed 16-bit word.
+        # https://github.com/vgmstream/vgmstream/blob/master/src/coding/xa_decoder.c
+        gain0 = (0, 60, 115, 98)
+        gain1 = (0, 0, -52, -55)
+        reference_history = [[0, 0], [0, 0]]
+        decoder_history = [[0, 0], [0, 0]]
+        for group_number in range(3):
+            frame = bytearray(GROUP_SIZE)
+            params = bytes(
+                ((group_number * 3 + subframe) % 4) * 16
+                + ((group_number + subframe * 2) % 13)
+                for subframe in range(8)
+            )
+            frame[0:4] = frame[4:8] = params[0:4]
+            frame[8:12] = frame[12:16] = params[4:8]
+            for row in range(28):
+                for column in range(4):
+                    lo = (row * 7 + column + group_number) % 16
+                    hi = (row * 3 + column * 5 + group_number * 2) % 16
+                    frame[16 + 4 * row + column] = lo | (hi << 4)
+
+            expected_channels = [[], []]
+            for channel in (0, 1):
+                h1, h2 = reference_history[channel]
+                for subframe in range(4):
+                    param = frame[4 + 2 * subframe + channel]
+                    filt, shift = param >> 4, param & 15
+                    for row in range(28):
+                        packed = frame[16 + 4 * row + subframe]
+                        nib = (packed >> (channel * 4)) & 15
+                        # C reference: (int16_t)((nib << 12) & 0xf000) >> shift
+                        signed = struct.unpack("<h", (nib << 12).to_bytes(2, "little"))[0]
+                        sample = signed >> shift
+                        sample += (gain0[filt] * h1 + gain1[filt] * h2 + 32) >> 6
+                        h2, h1 = h1, sample
+                        expected_channels[channel].append(max(-32768, min(32767, sample)))
+                reference_history[channel] = [h1, h2]
+
+            expected = b"".join(
+                struct.pack("<hh", left, right)
+                for left, right in zip(*expected_channels)
+            )
+            actual = decode_group(bytes(frame), decoder_history)
+            self.assertEqual(actual, expected)
+            self.assertEqual(decoder_history, reference_history)
+
     def test_rejects_bad_group_length_and_parameter_copy(self):
         with self.assertRaisesRegex(ValueError, "exactly 128"):
             decode_group(bytes(127), [[0, 0], [0, 0]])
