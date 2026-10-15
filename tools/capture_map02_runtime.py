@@ -97,6 +97,14 @@ def capture(executable: Path, trace_directory: Path, output_directory: Path,
             raise ValueError("full trace provenance must include a valid binary marker")
         if not executable_contains_marker(executable, marker):
             raise ValueError("executable missing expected full-trace build marker; wrong or unlinked binary")
+        loader_marker = provenance.get("binary_loader_marker")
+        if type(loader_marker) is not str or re.fullmatch(
+                r"VH_MAP02_TRACE_LOADER_ID:[0-9a-f]{64}", loader_marker) is None:
+            raise ValueError("full trace provenance must include a valid loader build marker")
+        if loader_marker.split(":", 1)[1] != marker.split(":", 1)[1]:
+            raise ValueError("loader and renderer build markers have different identities")
+        if not executable_contains_marker(executable, loader_marker):
+            raise ValueError("executable missing expected loader trace marker; wrong or unlinked loader")
     output_directory = output_directory.resolve()
     if output_directory.exists():
         raise ValueError("output directory already exists; refusing to overwrite")
