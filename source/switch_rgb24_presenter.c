@@ -133,6 +133,11 @@ int vh_switch_rgb24_presenter_draw(VhSwitchRgb24Presenter *presenter,
 
     /* Ignore GL errors left by upstream rendering before this draw checkpoint. */
     while (glGetError() != GL_NO_ERROR) {}
+    /* The frame hook may be called without a preceding window clear. Clear
+     * the full drawable first so letterbox pixels never retain old frames. */
+    glViewport(0, 0, viewport_width, viewport_height);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
     glViewport(destination.x, viewport_height - destination.y - destination.height,
                destination.width, destination.height);
     glUseProgram(presenter->program);
