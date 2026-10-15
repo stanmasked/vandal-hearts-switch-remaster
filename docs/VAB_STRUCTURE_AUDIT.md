@@ -206,3 +206,44 @@ selection, tie stability, signed pitch metadata, strict parameter validation,
 truncated VH/VB and unchanged source inputs. A passing result demonstrates
 synthetic lookup consistency only; no original Vandal Hearts music has been
 rendered through this tool.
+
+
+## SPU ADSR and sample cursor (host-only)
+
+The next isolated component is `tools/simulate_spu_voice.py`, which
+models the envelope and the 20.12 fixed-point playback position from the
+PC-port `platform/pc/src/pc_spu.c`. It has no audio output; all input
+is synthetic metadata. Verify it locally with:
+
+```sh
+python3 tests/test_simulate_spu_voice.py
+make test
+```
+
+`SpuEnvelope(adsr1, adsr2)` reads the two unsigned PsyQ ADSR words
+(attack shift/step and mode, decay shift, sustain level, sustain rate/mode,
+release rate/mode). One `advance()` call represents one 44100-Hz output
+sample tick in the reference software SPU. It maintains the fractional
+rate counter, saturates the level to `0..0x7fff`, and transitions through
+attack/decay/sustain/release. `key_off()` starts release; `advance()`
+returns `False` when the envelope has finished.
+
+`SpuSampleCursor(length, loop_start, loop_end, pitch_step)` tracks a
+20.12 fixed-point PCM position. A pitch of `0x1000` advances exactly
+one source sample per output sample; smaller steps advance fractionally.
+With a valid `[loop_start, loop_end)` range it wraps overshooting phase
+back into the loop while preserving the fractional part. Without a
+valid loop it deactivates after the source end. The pitch-step range
+is clamped to `1..0x4000` as in the reference PC renderer.
+
+Synthetic tests exercise attack/decay/sustain/release transitions,
+bit-field parsing, stalled maximum rates, fractional rate counting,
+exponential release, sustain fade-out, fixed-point pitch stepping,
+loop wraps, end-of-sample deactivation, and malformed parameters.
+
+**Scope warning:** matching the PC-port state machines on synthetic
+vectors is not matching the hardware SPU in all edge cases. This module
+does *not* interpolate or fetch PCM, allocate voices, apply volumes/pan,
+synthesize audio, schedule SEQ events, reproduce reverb, or render a WAV.
+Runtime 44100-Hz scheduling, mixing, and real-bank validation remain
+separate acceptance gates. No original game data is used.
