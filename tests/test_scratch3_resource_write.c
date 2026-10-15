@@ -140,6 +140,60 @@ int main(void) {
         assert(!vh_map_unit_phase_can_read_map(&phase));
     }
 
+    /* Variable offsets/sizes around the conservative unit-data boundary.
+     * The first byte before the boundary can alias map data. The first
+     * byte at/after it cannot invalidate this particular map view. */
+    {
+        const unsigned maps[] = {2, 39};
+        const size_t lengths[] = {1, 2, 4, 16, 64, 256};
+        uint8_t payload[256];
+        for (size_t i = 0; i < sizeof payload; ++i)
+            payload[i] = (uint8_t)(i ^ 0xa5u);
+        for (size_t m = 0; m < sizeof maps / sizeof maps[0]; ++m) {
+            size_t boundary = vh_map_capacity_before_units(maps[m]);
+            for (size_t l = 0; l < sizeof lengths / sizeof lengths[0]; ++l) {
+                size_t count = lengths[l];
+                vh_map_unit_phase_init(&phase, maps[m]);
+                memcpy(input, fixture, sizeof fixture);
+                assert(vh_map_unit_phase_reload(&phase, &memory,
+                            sizeof fixture, 32, &decode, &written)
+                       == VH_MAP_LOAD_OK);
+                assert(vh_scratch3_resource_write(&phase, &memory,
+                            boundary, payload, count)
+                       == VH_SCRATCH3_WRITE_OK);
+                assert(vh_map_unit_phase_can_read_map(&phase));
+                assert(memcmp(output, "MAP", 3) == 0);
+
+                /* Overlaps the final byte of the conservative map range. */
+                assert(vh_scratch3_resource_write(&phase, &memory,
+                            boundary - 1, payload, count)
+                       == VH_SCRATCH3_WRITE_OK);
+                assert(!vh_map_unit_phase_can_read_map(&phase));
+
+                /* A late rejected write must leave output untouched. */
+                memcpy(input, fixture, sizeof fixture);
+                assert(vh_map_unit_phase_reload(&phase, &memory,
+                            sizeof fixture, 32, &decode, &written)
+                       == VH_MAP_LOAD_OK);
+                assert(vh_map_unit_phase_can_read_map(&phase));
+                assert(vh_scratch3_resource_write(&phase, &memory,
+                            span - count + 1, payload, count)
+                       == VH_SCRATCH3_WRITE_OUT_OF_RANGE);
+                assert(vh_map_unit_phase_can_read_map(&phase));
+                assert(memcmp(output, "MAP", 3) == 0);
+            }
+        }
+        /* An exact end-of-RAM write is legal; one additional byte is not. */
+        assert(vh_scratch3_resource_write(&phase, &memory,
+                    span - sizeof payload, payload, sizeof payload)
+               == VH_SCRATCH3_WRITE_OK);
+        assert(vh_map_unit_phase_can_read_map(&phase));
+        assert(vh_scratch3_resource_write(&phase, &memory,
+                    span - sizeof payload + 1, payload, sizeof payload)
+               == VH_SCRATCH3_WRITE_OUT_OF_RANGE);
+        assert(vh_map_unit_phase_can_read_map(&phase));
+    }
+
     free(ram);
     puts("Scratch3 resource write tests passed.");
     return 0;
