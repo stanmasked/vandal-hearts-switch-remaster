@@ -37,3 +37,11 @@ This partial link checks symbol compatibility and native-code composition only. 
 The independent NeXium job waited for a visible red marker (poll 1), verified the 1280×720 window, matched all four colored corner markers exactly (red, green, blue, yellow), observed center RGB (99,99,140) → (99,99,0), and counted 20,636 changed sampled pixels. Screenshots and the NRO are uploaded as GitHub Actions artifacts.
 
 The test depends on **probe-only inert hooks** for localization, HD replacement and debug tracing (plus previously isolated movie/menu state). These are not substitutes for actual gameplay services; real game bootstrap and assets remain absent. The next step is to exercise additional original GPU primitives (such as F4 polygons and texture-backed paths), then integrate native engine frames with the real region/disc bootstrap. Physical Switch hardware testing remains outstanding.
+
+## Native POLY_F4 quad rasterization confirmed (NeXium)
+
+[CI #38806009204](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38806009204) passed target NRO build/link and NeXium runtime for the expanded `probes/pinned_drawotag_switch_smoke.c`. The probe inserts an original `POLY_F4` quad through `SetPolyF4`, `setXYWH`, `setRGB0`, and `AddPrim`. The pinned upstream `DrawOTag` executes the authentic `FillQuad` path in `pc_raster.c`; the resulting native BGR555 VRAM is passed to the pinned `PC_GpuPresent` and shown by the Switch GLES2 backend.
+
+CI checks the center of that polygon at window pixel (600,200) on both screenshot frames. It measured **exact RGB (255,0,255)** both times. The four original TILE corner markers remained correct, the animated background center changed (99,99,99) → (99,99,206), and 16,684 sampled pixels changed. These assertions establish that **both untextured rectangle and quadrilateral primitives** render correctly end-to-end in the Switch-target emulator.
+
+This test is still asset-free: textured `POLY_FT4`/CLUT sampling, actual gameplay ordering tables, authentic game assets, audio and input are not verified. The only extra service implementations are explicitly test-only placeholders; original libgpu, pc_raster and PC_GpuPresent code is linked, not replaced. Physical Switch validation remains outstanding.
