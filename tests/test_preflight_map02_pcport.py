@@ -59,6 +59,78 @@ class PreflightMap02PcportTests(unittest.TestCase):
             self.assertTrue(report["checks"]["retail_executable_md5_matches"])
             self.assertEqual(report["checks"]["upstream_revision"], UPSTREAM_COMMIT)
 
+    def test_tracked_upstream_edits_are_rejected_but_untracked_files_allowed(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            exe, krom, disc = fake_sources(root)
+            subprocess.run(["git", "init", "-q", str(root)],
+                           check=True, capture_output=True)
+            subprocess.run(["git", "-C", str(root), "add",
+                            *REQUIRED_SOURCE_FILES],
+                           check=True, capture_output=True)
+            subprocess.run(["git", "-C", str(root), "-c", "user.email=trace@example.invalid",
+                            "-c", "user.name=Trace Test", "commit", "-qm", "fixture"],
+                           check=True, capture_output=True)
+
+            def controlled_run(args, *, cwd=None):
+                if "rev-parse" in args:
+                    return SimpleNamespace(returncode=0,
+                                           stdout=UPSTREAM_COMMIT + "\n")
+                if "status" in args:
+                    return subprocess.run(args, cwd=cwd, capture_output=True,
+                                          text=True, check=False)
+                return SimpleNamespace(returncode=0, stdout="")
+
+            with patch("tools.preflight_map02_pcport._run",
+                       side_effect=controlled_run), \
+                 patch("tools.preflight_map02_pcport.US_EXE_MD5",
+                       hashlib.md5(exe.read_bytes()).hexdigest()), \
+                 patch("tools.preflight_map02_pcport.KROM_US_SHA256",
+                       hashlib.sha256(krom.read_bytes()).hexdigest()):
+                clean = inspect(root, disc_image=disc, krom_source=krom,
+                                no_hdvideo=True, no_webp=True)
+                self.assertTrue(clean["checks"]["upstream_tracked_tree_clean"])
+                self.assertNotIn("upstream_tracked_tree_dirty", clean["blockers"])
+                # Proprietary/game-derived files may be untracked; they do not
+                # dirty the pinned source integrity check.
+                (root / "private-asset.bin").write_bytes(b"not git tracked")
+                untracked = inspect(root, disc_image=disc, krom_source=krom,
+                                    no_hdvideo=True, no_webp=True)
+                self.assertTrue(untracked["checks"]["upstream_tracked_tree_clean"])
+                edited = root / REQUIRED_SOURCE_FILES[0]
+                edited.write_text("/* modified original */\n")
+                dirty = inspect(root, disc_image=disc, krom_source=krom,
+                                no_hdvideo=True, no_webp=True)
+                self.assertIn("upstream_tracked_tree_dirty", dirty["blockers"])
+                self.assertIn(REQUIRED_SOURCE_FILES[0],
+                              dirty["checks"]["upstream_modified_tracked_paths"])
+                # Restore working tree, then verify staged-only changes are
+                # also detected, not just unstaged file edits.
+                subprocess.run(["git", "-C", str(root), "checkout", "--",
+                                REQUIRED_SOURCE_FILES[0]],
+                               check=True, capture_output=True)
+                edited.write_text("/* modified in git index */\n")
+                subprocess.run(["git", "-C", str(root), "add",
+                                REQUIRED_SOURCE_FILES[0]],
+                               check=True, capture_output=True)
+                staged = inspect(root, disc_image=disc, krom_source=krom,
+                                 no_hdvideo=True, no_webp=True)
+                self.assertIn("upstream_tracked_tree_dirty", staged["blockers"])
+
+    def test_unavailable_git_status_never_passes_source_check(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            exe, krom, disc = fake_sources(root)
+            def broken_status(args, *, cwd=None):
+                if "status" in args:
+                    return SimpleNamespace(returncode=128, stdout="")
+                return fake_run(args, cwd=cwd)
+            with patch("tools.preflight_map02_pcport._run",
+                       side_effect=broken_status):
+                result = inspect(root, disc_image=disc, krom_source=krom)
+            self.assertIn("upstream_tracked_tree_unverified", result["blockers"])
+            self.assertFalse(result["checks"]["upstream_tracked_tree_clean"])
+
     def test_localized_or_changed_executable_must_not_pass_us_data_generator_gate(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
