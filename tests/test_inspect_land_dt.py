@@ -28,6 +28,7 @@ class InspectLandDtTests(unittest.TestCase):
 
             report = inspect_land_dt(path, map_number=2)
             self.assertEqual(report["input_sha256"], hashlib.sha256(data).hexdigest())
+            self.assertEqual(report["block_sha256"], hashlib.sha256(data[2 * BLOCK_SIZE:3 * BLOCK_SIZE]).hexdigest())
             first, second = report["records"]
             self.assertEqual(first["block_offset"], 964)
             self.assertEqual(first["absolute_input_offset"], 2 * BLOCK_SIZE + 964)
@@ -83,6 +84,9 @@ class InspectLandDtTests(unittest.TestCase):
 
             report = compare_land_dt(path, map_numbers=(0, 1, 2), gfx_ids=(241,))
             self.assertEqual(report["input_sha256"], hashlib.sha256(data).hexdigest())
+            for map_idx, entry in enumerate(report["maps"]):
+                start = map_idx * BLOCK_SIZE
+                self.assertEqual(entry["block_sha256"], hashlib.sha256(data[start:start + BLOCK_SIZE]).hexdigest())
             diff = report["differences"][0]
             self.assertTrue(diff["differs_between_maps"])
             self.assertEqual([v["raw_hex"] for v in diff["values"]], ["01 02 03 04", "01 02 03 04", "00 00 00 00"])
