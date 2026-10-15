@@ -129,6 +129,18 @@ class CheckMap02RawTests(unittest.TestCase):
             self.assertTrue(check_block_hash(report, "0" * 64 if report["block_sha256"] != "0" * 64 else "1" * 64))
             self.assertTrue(check_block_hash(report, "not-a-sha256"))
 
+    def test_expected_block_hash_rejects_nonstring_values(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "map02.bin"
+            path.write_bytes(bytes(BLOCK_SIZE))
+            report = inspect_land_dt(path, single_block=True)
+            for invalid in (False, 42, [], {}):
+                with self.subTest(invalid=invalid):
+                    self.assertEqual(
+                        check_block_hash(report, invalid),
+                        ["expected block SHA-256 must be 64 hexadecimal characters"],
+                    )
+
     def test_inconsistent_single_block_metadata(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "map02.bin"
