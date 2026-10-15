@@ -42,6 +42,7 @@ def run_local_check(
     payload = output_dir / "audio-groups.bin"
     report = output_dir / "extraction.json"
     decoded = output_dir / "decoded.wav"
+    audit_path = output_dir / "audit-result.json"
     try:
         extracted = extract_audio_payloads(
             source, payload, start_lba=start_lba, sector_count=sector_count,
@@ -63,11 +64,13 @@ def run_local_check(
             result["comparison"] = comparison
             if not comparison["exact_match"]:
                 result["status"] = "reference_pcm_mismatch"
+                audit_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
                 raise ValueError(
                     "decoded PCM differs from reference WAV; output files kept for diagnosis: "
                     + str(output_dir)
                 )
             result["status"] = "exact_reference_pcm_match"
+        audit_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
         return result
     except Exception:
         # Preserve non-overwritten diagnostics for later inspection. The
