@@ -26,7 +26,7 @@ class ExclusivePresentPatchTests(unittest.TestCase):
         self.assertEqual(patched.count("SDL_GL_SwapWindow(s_window);"), 1)
         self.assertLess(patched.index("VH_ObserveCompletedRGB24(s_rgbaScratch"),
                         patched.index("#else"))
-        self.assertLess(patched.index("#else"), patched.index("glDrawPixels("))
+        self.assertLess(patched.index("#else"), patched.index("glDrawPixels("))\n        self.assertLess(patched.index("SDL_GL_SwapWindow(s_window);"),\n                        patched.index("#endif /* VH_SWITCH_EXCLUSIVE_PRESENT */"))
         self.assertIn("(size_t)w <= ((size_t)s_scratchCap / 3u) / (size_t)h", patched)
         self.assertEqual(patched.split("#else\n", 1)[1].split(
             "#endif /* VH_SWITCH_EXCLUSIVE_PRESENT */", 1)[0],
