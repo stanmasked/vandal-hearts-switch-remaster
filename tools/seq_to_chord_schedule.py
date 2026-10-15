@@ -82,9 +82,14 @@ def seq_to_schedule(report: dict[str, object], *, release_frames: int = 4410
             else:
                 old["_dropped"] = True  # stolen before first output frame
         else:
-            old["tail_frames"] = max(
-                0, frame - old["start_frame"] - old["hold_frames"]
-            )
+            if frame <= old["start_frame"]:
+                # A same-frame note-on/off never reached an output tick.
+                # The earlier one-frame minimum cannot survive a steal.
+                old["_dropped"] = True
+            else:
+                old["tail_frames"] = max(
+                    0, frame - old["start_frame"] - old["hold_frames"]
+                )
         old["_released"] = True
         return slot
 
