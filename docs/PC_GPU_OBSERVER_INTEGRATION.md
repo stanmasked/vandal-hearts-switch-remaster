@@ -28,3 +28,11 @@ Passing CI: https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/
 The resource-free NRO `upstream-rgb24-observer-probe.nro` initializes an SDL2 GLES2 context, constructs the RGB24 presenter, registers `VH_ObserveCompletedRGB24`, generates a synthetic moving RGB24 frame, and presents it through the target-owned viewport and SDL swap callbacks. CI build and NeXium runtime completed successfully: https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38771695459 . The emulator screenshot was 1280×720, and its sampled center region contained 420 distinct colors. **This is an emulator smoke test for synthetic pixels, not original game frames or a physical Switch test.**
 
 A stronger runtime gate was added in commit `817efe02`: capture two screenshots two seconds apart and require a substantial difference in their interior RGB pixels. This second gate must pass before claiming frame animation is runtime-verified. It cannot yet prove the displayed image is the original game; game data and the complete port are not linked into the NRO.
+
+## Verified synthetic RGB channel orientation and motion (NeXium)
+
+Run https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38778923431 passed after adding four corner markers to the bottom-up RGB24 probe. Screen observations in CI were exact: top-left red (255,0,0), top-right green (0,255,0), bottom-left blue (0,0,255), bottom-right yellow (255,255,0); 1280×720 capture and 18,820 changed sampled pixels between two frames. This confirms **synthetic** RGB channel order and vertical orientation on the emulator path.
+
+A further regression check in commit `590d942d` samples the synthetic center pixel across both frames: R=96 and G=93 must remain stable while the blue channel animates. It also checks all four corners on the second screenshot. Results remain pending until the associated workflow completes.
+
+None of these tests verify output of original Vandal Hearts gameplay or textures. Next meaningful stage: bring legally available local upstream game frames into a separate target integration test, while keeping licensed assets outside the repository.
