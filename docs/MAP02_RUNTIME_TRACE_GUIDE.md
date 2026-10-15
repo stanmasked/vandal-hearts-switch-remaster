@@ -276,7 +276,18 @@ exact Git blob SHA-1 identities of `graphics.c`, `game_setup.c` and
 `platform/pc/Makefile` against the pinned upstream revision. Every generated
 directory contains `source_provenance.json` with independent SHA-256
 fingerprints and a `matches_pinned` indicator for each source file.
-Keep that file alongside captured runtime traces.
+Keep that file alongside captured runtime traces. The manifest also
+contains SHA-256 digests for all three generated diagnostic build inputs:
+`game_setup.trace.c`, `graphics.trace.c`, and `map02_trace.mk`.
+The local capture tool verifies these fingerprints **before launching** the
+supplied game executable, preventing an edited or missing generated
+instrumentation source from silently retaining the original provenance.
+Full-trace captures require these fingerprints; legacy manifests created
+before this enhancement remain readable for compatibility.
+
+This verifies the prepared diagnostic inputs, **not that the executable was
+actually built from them**. Keep the instrumented object files, compiler
+settings and binary SHA-256 with any decisive visual-reference comparison.
 
 For a deliberately modified PC-port checkout, append
 `--allow-modified-source` when preparing the diagnostic build and inspect
