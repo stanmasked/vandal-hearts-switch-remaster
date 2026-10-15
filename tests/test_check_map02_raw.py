@@ -129,6 +129,31 @@ class CheckMap02RawTests(unittest.TestCase):
             self.assertTrue(check_block_hash(report, "0" * 64 if report["block_sha256"] != "0" * 64 else "1" * 64))
             self.assertTrue(check_block_hash(report, "not-a-sha256"))
 
+    def test_inconsistent_single_block_metadata(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "map02.bin"
+            path.write_bytes(bytes(BLOCK_SIZE))
+            report = inspect_land_dt(path, single_block=True)
+            report["map_number"] = 2
+            self.assertIn("single-block report must have null map_number",
+                          check_raw_records(report))
+
+    def test_false_single_block_flag_requires_map_two(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "map02.bin"
+            path.write_bytes(bytes(BLOCK_SIZE))
+            report = inspect_land_dt(path, single_block=True)
+            report["single_block"] = False
+            self.assertIn("expected map block 2", check_raw_records(report))
+
+    def test_nonboolean_single_block_flag_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "map02.bin"
+            path.write_bytes(bytes(BLOCK_SIZE))
+            report = inspect_land_dt(path, single_block=True)
+            report["single_block"] = 1
+            self.assertIn("single_block flag must be boolean", check_raw_records(report))
+
     def test_rejects_wrong_map(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "land.bin"
