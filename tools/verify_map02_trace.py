@@ -34,6 +34,7 @@ def evaluate_trace(entries):
             continue
         if (pos, stage) in found:
             errors.append(f"duplicate observation for {pos} at {stage}")
+            continue
         found[(pos, stage)] = entry["gfx"]
         if entry["gfx"] not in TARGETS[pos]:
             errors.append(f"unexpected GFX {entry['gfx']} for {pos} at {stage}")
