@@ -285,22 +285,22 @@ instrumentation source from silently retaining the original provenance.
 Full-trace captures require these fingerprints; legacy manifests created
 before this enhancement remain readable for compatibility.
 
-In full-trace mode the generator additionally embeds a deterministic
-`VH_MAP02_TRACE_BUILD_ID:<sha256>` marker in the renderer translation unit.
-The identifier is calculated from the generated loader, renderer, and
-Makefile-overlay contents **before** inserting the marker. It is recorded
-in `source_provenance.json` as `binary_marker` and then embedded as a
-null-terminated C string. The capture tool requires an exact match in the
-selected executable **before the game launches**. A regular PC-port binary
-without the trace hook, or an older/different full-trace build, is rejected.
-The CI compiles the renderer via real upstream Make rules and verifies that
-the expected marker survives in both its object file and a partially linked
-object.
+In full-trace mode the generator additionally embeds two deterministic
+identifiers: `VH_MAP02_TRACE_BUILD_ID:<sha256>` in the renderer and
+`VH_MAP02_TRACE_LOADER_ID:<sha256>` in the loader. Both share the same
+digest, calculated from the generated loader, renderer and Makefile-overlay
+contents **before** either marker is inserted. They are recorded in
+`source_provenance.json` as `binary_marker` and `binary_loader_marker`
+and embedded as null-terminated C strings. The capture tool checks that
+both exact identifiers occur in the selected executable **before launch**.
+A regular PC-port binary, a build with only one instrumented module, or an
+older/different full-trace build is rejected. CI verifies the two markers
+in separate real Make-built object files and after partial linking.
 
-This checks the presence of a build marker rather than cryptographically
-attesting the entire executable or its runtime behavior. It can be copied,
-removed by an incompatible stripping/linking configuration, or forged; a
-matching marker does not establish that all game objects came from the pinned
+This checks the presence of two build markers rather than cryptographically
+attesting the entire executable or its runtime behavior. They can be copied,
+removed by an incompatible stripping/linking configuration, or forged; matching
+markers do not establish that all game objects came from the pinned
 sources. Keep the instrumented object files, compiler
 settings and binary SHA-256 with any decisive visual-reference comparison.
 
