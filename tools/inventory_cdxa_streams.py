@@ -81,6 +81,9 @@ def inventory_streams(source: Path, *, start_lba: int = 0,
     return {
         "start_lba": start_lba, "sectors_scanned": scanned,
         "audio_sectors": sum(item["audio_sectors"] for item in ordered),
+        "decodable_stream_count": sum(1 for item in ordered if item["decoder_profile_supported"]),
+        "decodable_audio_sectors": sum(item["audio_sectors"] for item in ordered
+                                      if item["decoder_profile_supported"]),
         "streams": ordered,
         "invalid_duplicate_subheaders": skipped_subheaders,
         "unsupported_coding_sectors": unsupported_coding_sectors,
