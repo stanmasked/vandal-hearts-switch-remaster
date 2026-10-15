@@ -203,7 +203,19 @@ python3 -m tools.prepare_map02_pcport   /absolute/path/to/VandalHearts-PcPort   
 
 The destination directory must **not already exist** and must be outside the
 PC-port tree. Paths with spaces or make-special characters are rejected. The
-tool refuses incompatible upstream Makefile/source structure.
+tool refuses incompatible upstream Makefile/source structure and verifies the
+exact Git blob SHA-1 identities of `graphics.c`, `game_setup.c` and
+`platform/pc/Makefile` against the pinned upstream revision. Every generated
+directory contains `source_provenance.json` with independent SHA-256
+fingerprints and a `matches_pinned` indicator for each source file.
+Keep that file alongside captured runtime traces.
+
+For a deliberately modified PC-port checkout, append
+`--allow-modified-source` when preparing the diagnostic build and inspect
+the provenance flags; such a build must not be described as the pinned
+baseline. Only ASCII letters, digits, slashes, underscores, hyphens and
+periods are supported in output directory paths, since Make shell commands
+use those paths without quoting.
 
 Then from the **upstream** `platform/pc` directory:
 
