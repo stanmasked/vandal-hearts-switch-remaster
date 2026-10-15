@@ -14,6 +14,7 @@ from pathlib import Path
 
 from tools.extract_map02_trace import extract_trace_text
 from tools.verify_map02_trace import evaluate_trace
+from tools.prepare_map02_pcport import PINNED_BLOB_SHA1, PINNED_UPSTREAM_REF
 
 
 def sha256_file(path: Path) -> str:
@@ -34,8 +35,10 @@ def capture(executable: Path, trace_directory: Path, output_directory: Path,
     provenance = json.loads(provenance_file.read_text(encoding="utf-8"))
     if provenance.get("trace_mode") not in ("legacy", "full"):
         raise ValueError("unrecognized trace_mode in source provenance")
+    if provenance.get("upstream_reference") != PINNED_UPSTREAM_REF:
+        raise ValueError("source provenance does not name the pinned upstream revision")
     source_files = provenance.get("source_files")
-    if not isinstance(source_files, dict) or len(source_files) != 3:
+    if not isinstance(source_files, dict) or set(source_files) != set(PINNED_BLOB_SHA1):
         raise ValueError("source provenance must list the three pinned files")
     if not allow_modified_source and (
         provenance.get("allow_modified_source")
