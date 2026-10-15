@@ -29,6 +29,18 @@ At the audited upstream revision, the following details were checked directly in
 
 These are source-audit findings, not a compiled patch or runtime result.
 
+## Application exit-path findings
+
+A second pass followed the window/event path into the pinned upstream bootstrap and main loop:
+
+- The game entry point in `src/core/main.c` is an infinite update loop; it has no normal return path.
+- `PC_GpuPumpEvents()` calls `exit(0)` on `SDL_QUIT`. This is the ordinary window-close route, so a registered C `atexit` cleanup can cover that path, provided it is installed only after resources begin to exist and is idempotent.
+- `pc_bootstrap.c` invokes `PC_GpuInit()` from a constructor before the game loop. A new public shutdown function is not currently called by the game loop and no GPU teardown API is declared in `pc_platform.h`.
+- Recommended minimal lifecycle design for the Switch backend: implement an idempotent `PC_GpuShutdown()`; on successful/partial GLES setup register it once with `atexit`; keep the presenter destroy operation ahead of `SDL_GL_DeleteContext()` and `SDL_DestroyWindow()`. Make partial initialisation safe and clear pointers/flags as resources are released. If a later explicit application shutdown path is added, it may call the same function before process exit.
+- Do not blindly call `SDL_Quit()` from this new function: SDL audio/game-controller and other subsystems are shared by the PC platform layer. Limit the initial teardown to presenter/context/window resources unless subsystem ownership is audited separately.
+
+This is a source-based lifecycle recommendation. It has not yet been compiled or exercised in the upstream executable.
+
 ## Integration changes to make when the upstream source is available
 
 1. **Compile-time backend selection.** Introduce a dedicated macro such as `VH_SWITCH_GLES2` in the PC platform layer. Keep the existing Apple Metal/SDL renderer and desktop OpenGL paths unchanged. Do not enable the Switch path by merely removing the desktop GL calls: `glDrawPixels`, `glPixelZoom`, and `glRasterPos2f` are not GLES2 APIs.
