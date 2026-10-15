@@ -215,3 +215,51 @@ validates decoder equivalence **on the test corpus only**; it is
 not a measurement of any user's disc, a formal proof for every possible
 compressed input, or evidence of displayed pixels. No original
 gameplay assets are ever placed in CI.
+
+
+## One-disc sector integrity and PRS/DAT provenance (2026-10-16)
+
+The read-only `tools/audit_map02_disc_prs.py` audit now includes
+**CD-XA Mode2 Form1 EDC verification** for every selected raw 2352-byte
+sector. It compares the little-endian 32-bit EDC at raw offset
+`0x818` against a CRC calculated across
+`[0x10, 0x818)` with polynomial
+`0xD8018001`, seed 0, and no final XOR. A corrupt sector aborts the
+audit before any decompressed GFX conclusions are reported. The tool
+checks EDC, **not** the P/Q ECC parity. Plain 2048-byte ISO images
+lack those physical checksums, so only their payloads can be audited.
+
+A single user-owned PS1 BIN/ISO file can supply **both** map variants;
+there is no longer any need to export the DAT file manually:
+
+```sh
+python3 -m tools.audit_map02_disc_prs   --disc-image /path/to/owned/game.bin   --layout mode2-2352   --dat-from-disc --require-prior-provenance
+```
+
+The source selection is still the US pinned `CDF_M_MAP02_PRS`
+entry: PRS starts at LBA 7116 (12 sectors). The companion DAT is at
+LBA 6999 (117 sectors), nominal logical file length **238336 bytes**.
+Each resource is read from its specific sector range, and DAT is trimmed
+to the ISO file's documented byte size before hashing. On a raw BIN,
+this checks **129 Mode2 Form1 sector EDCs** in total.
+
+`--require-prior-provenance` is intentionally stricter than
+comparing just the two GFX numbers: it requires the archived logical
+compressed PRS SHA-256
+`c370660f7f13e6d6e76f4126a45418bc9c64c747de8309ca946d37b502516387`,
+the archived decompressed SHA-256
+`dd98f466fbf4f1019cf04d9b19dd85861afa61e97d0470ce796a4cb83b989382`,
+and (when DAT is supplied) its archived **238336-byte** SHA-256
+`07666bd80b87de763ef7312ecaeaa0bf747ebfe49db032fa68c9af675d151c31`
+plus the exact two-byte PRS/DAT signature. Failure means the
+input is not proven identical to the archived audit; it is not
+automatically proof of tampering because a different game revision
+or track-origin offset may be involved. For unusual CUE layouts use
+an explicitly calculated `--sector-bias`.
+
+Synthetic tests include corrupted EDC in the PRS and DAT ranges,
+single-image extraction for raw Mode2 and 2048-byte ISO, and rejection
+of synthetic data that matches GFX values but not archived hashes.
+**This new tool has not yet read the actual user's disc image in the
+current working environment**; previous original-disc audit reports
+remain separate historical evidence.
