@@ -68,3 +68,9 @@ CI https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/3878
 Commit `61e321897e4b78fdb3b310f52be1a4a8c6ae28b6` extends the same NRO probe with one injected target swap failure, requiring failed observer status and no successful swap followed by recovery on the very next valid frame. Runtime CI confirmation is pending.
 
 **Original PC renderer boundary:** Pinned `PC_GpuPresent` checks `s_window` and `s_glCtx` (or `s_renderer` on Apple) before compositing and pumps SDL events. Its injected completed-frame observer is an intermediate instrumented desktop translation unit, **not** a standalone headless or libnx graphics backend. A target-side platform initialization and event-loop adaptation are required before original game frames can drive the NRO.
+
+## Injected-swap failure regression under investigation
+
+The first NeXium runtime attempt at https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38783084428 failed screenshot validation twice, including after a retry of only the runtime job. Both builds succeeded, but the expected red upper-left marker was read as RGB (6,6,8). Thus the failure-injection recovery check from commit `61e32189` **is not validated**; no claim of runtime recovery is justified.
+
+The original test injected failure before the animation loop. Commit `236dd094` moves injection to frame 90 of that loop, and emits reason-specific diagnostics for the failed return, missing swap suppression and recovery. Commit `f5cfa6d5` prints NeXium's capture log into the CI job before validating the screenshot. These are investigative changes; their result is pending. Existing green runs before the injection still establish synthetic frame display, resizing, color channel order and truncated-buffer rejection.
