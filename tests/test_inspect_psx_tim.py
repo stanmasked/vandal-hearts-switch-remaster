@@ -110,7 +110,7 @@ class TimInspectorTests(unittest.TestCase):
 
     def test_reject_trailing_bytes(self):
         with self.assertRaisesRegex(ValueError, "unexpected bytes"):
-            parse_tim(indexed_tim() + b"\\x00" * 4)
+            parse_tim(indexed_tim() + bytes(4))
 
     def test_reject_non_word_aligned_section(self):
         blob = bytearray(indexed_tim())
