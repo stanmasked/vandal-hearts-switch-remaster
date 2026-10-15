@@ -36,6 +36,10 @@ int vh_switch_sdl2_observer_backend_init(
     const char *title, int width, int height) {
     VhSwitchPresentHook hook;
     if (!backend || !title || width <= 0 || height <= 0) return 0;
+    /* The caller must zero-initialize the handle on first use. Reinitializing
+     * a live handle would overwrite the GL objects and observer ownership. */
+    if (backend->registered || backend->window || backend->gl_context ||
+        backend->presenter.initialized || backend->owns_sdl) return 0;
     memset(backend, 0, sizeof(*backend));
     /* SDL may already be initialized by the game's existing input layer. */
     if (!(SDL_WasInit(SDL_INIT_VIDEO) & SDL_INIT_VIDEO)) {
