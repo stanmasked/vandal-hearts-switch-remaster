@@ -159,6 +159,9 @@ class TextureFixtureTests(unittest.TestCase):
             'textured15': (2, 0, 192, 0),
             'transparent15': (2, 0, 256, 0),
             'semi15': (2, 0, 320, 0),
+            'abr_add': (2, 1, 320, 0),
+            'abr_sub': (2, 2, 320, 0),
+            'abr_quarter': (2, 3, 320, 0),
         })
         cluts = {
             name: (int(x), int(y))
@@ -266,6 +269,44 @@ class TextureFixtureTests(unittest.TestCase):
                  'AddPrim(&ot[0], &v_window_mode);')
         offsets = [guest.index(item) for item in order]
         self.assertEqual(offsets, sorted(offsets))
+
+    def test_stp_abr_1_2_3_modes_and_source_contract(self):
+        # Reference calculations are in BGR555 (5-bit channels), not
+        # gamma-corrected RGB888. Original BlendG1 saturates add/sub.
+        background_red = 12  # TILE RGB96 quantizes to 12/31
+        foreground_red = 31  # STP-marked red 0x801F
+        expected_red5 = (
+            min(31, background_red + foreground_red),  # ABR=1
+            max(0, background_red - foreground_red),   # ABR=2
+            min(31, background_red + (foreground_red >> 2)),  # ABR=3
+        )
+        self.assertEqual(expected_red5, (31, 0, 19))
+        self.assertEqual([round(n * 255 / 31) for n in expected_red5],
+                         [255, 0, 156])
+        # The source fixture has STP on red, but not on green.
+        red, green = [sample(self.vram, tpage(2, 320), 0, u, 0)
+                      for u in (0, 1)]
+        self.assertEqual((red, green), (0x801F, 0x03E0))
+        self.assertTrue(red & 0x8000)
+        self.assertFalse(green & 0x8000)
+        guest = (Path(__file__).resolve().parents[1] /
+                 'probes/pinned_drawotag_switch_smoke.c').read_text()
+        for name, x, abr in (
+            ('abr_add', 2, 1),
+            ('abr_sub', 4, 2),
+            ('abr_quarter', 6, 3),
+        ):
+            self.assertIn(f'SetPolyFT4(&{name});', guest)
+            self.assertIn(f'setXYWH(&{name}, {x}, 7, 2, 2);', guest)
+            self.assertIn(f'setUVWH(&{name}, 0, 0, 2, 2);', guest)
+            self.assertIn(f'setRGB0(&{name}, 128, 128, 128);', guest)
+            self.assertIn(f'setTPage(&{name}, 2, {abr}, 320, 0);', guest)
+            self.assertIn(f'SetSemiTrans(&{name}, 1);', guest)
+            self.assertIn(f'AddPrim(&ot[0], &{name});', guest)
+        # The original bottom corner TILEs occupy x0..2 and x10..12.
+        for x in (2, 4, 6):
+            self.assertGreaterEqual(x, 2)
+            self.assertLessEqual(x + 2, 10)
 
     def test_stp_is_per_texel(self):
         values = [sample(self.vram, tpage(2, 320), 0, u, 0)
