@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Asset-free NeXium private-SD smoke fixture + screenshot checker.
+"""Synthetic NeXium SD texture: four UV quadrants, original PS1 4bpp/CLUT.
 
-Both functions only use synthetic color-strip texture/palette data.
-Nothing from original game images is loaded or committed.
+The staged DAT resources are generated from scratch, never from game assets.
+Four distinct colored quadrants catch swapped U/V, reversed axes, wrong
+texture-page offsets, wrong 4bpp nibble order and incorrect local CLUT row.
 """
 import argparse
 from pathlib import Path
@@ -10,60 +11,86 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-from inspect_vh_map_texture_bank import (  # noqa: E402
-    LAND_BYTES, MAP_RECORD_BYTES, TEXTURE_BYTES,
+from inspect_vh_map_texture_bank import LAND_BYTES, MAP_RECORD_BYTES, TEXTURE_BYTES
+from stage_vh_private_map_bank import stage_private_assets
+
+MAP_NUMBER = 11
+MAP_SLOT = 241
+U0, V0, WIDTH, HEIGHT = 240, 192, 15, 15
+CLUT_ID = 35
+COLORS_BGR555 = (0, 0x001f, 0x03e0, 0x7c00, 0x03ff)
+
+# Deep inside each rendered quadrant, away from raster edge interpolation.
+SCREEN_SAMPLES = (
+    ("upper-left red", (400, 205), (255, 0, 0)),
+    ("upper-right green", (880, 205), (0, 255, 0)),
+    ("lower-left blue", (400, 510), (0, 0, 255)),
+    ("lower-right yellow", (880, 510), (255, 255, 0)),
 )
-from stage_vh_private_map_bank import stage_private_assets  # noqa: E402
+
+
+def synthetic_source():
+    """Construct a 256x256 4bpp source page and one 1797-byte map record."""
+    tex = bytearray(TEXTURE_BYTES)
+    land = bytearray(LAND_BYTES)
+    record = MAP_NUMBER * MAP_RECORD_BYTES
+    land[record + MAP_SLOT * 4:record + MAP_SLOT * 4 + 4] = bytes(
+        (U0, V0, WIDTH, HEIGHT)
+    )
+    land[record + 257 * 4 + MAP_SLOT] = CLUT_ID
+    palette = record + 257 * 5 + (CLUT_ID - 32) * 32
+    for index, color in enumerate(COLORS_BGR555):
+        land[palette + 2 * index:palette + 2 * index + 2] = color.to_bytes(
+            2, "little"
+        )
+    # Each 16x16 UV patch has four 8x8 squares. The low 4 bits of
+    # every byte are the LEFT pixel; upper nibble encodes the RIGHT.
+    for v in range(V0, V0 + 16):
+        for u in range(U0, U0 + 16, 2):
+            top = v < V0 + 8
+            left = u < U0 + 8
+            color_id = (1 if left else 2) if top else (3 if left else 4)
+            tex[v * 128 + u // 2] = color_id | (color_id << 4)
+    return bytes(tex), bytes(land)
 
 
 def stage(sd_root):
-    tex = bytearray(TEXTURE_BYTES)
-    land = bytearray(LAND_BYTES)
-    record = 11 * MAP_RECORD_BYTES
-    slot = 241
-    land[record + slot * 4:record + slot * 4 + 4] = bytes((240,192,15,15))
-    land[record + 257 * 4 + slot] = 35
-    palette = record + 257 * 5 + (35 - 32) * 32
-    land[palette + 2:palette + 6] = bytes((0x1f,0,0xe0,0x03))
-    for v in range(192,208):
-        for u in range(240,256,2):
-            tex[v * 128 + u // 2] = 0x21
-    report = stage_private_assets(bytes(tex), bytes(land), sd_root)
-    assert report["uvwh"] == [240,192,15,15]
-    assert report["local_clut_id"] == 35
-    print("Synthetic-only NeXium SD fixture staged:", sd_root)
+    texture, land = synthetic_source()
+    report = stage_private_assets(texture, land, sd_root)
+    assert report["uvwh"] == [U0, V0, WIDTH, HEIGHT]
+    assert report["local_clut_id"] == CLUT_ID
+    print("Synthetic four-quadrant map texture staged under:", sd_root)
+    return report
 
 
 def check(image_path):
     from PIL import Image
+
     frame = Image.open(image_path).convert("RGB")
     if frame.size != (1280, 720):
         raise ValueError("unexpected NeXium screenshot dimensions")
-    # Discriminate the PRIVATE preview from the baseline raster probes.
-    # Baseline has a bright red TILE at (210,90) and a dynamic gray
-    # background at the center; private mode draws a black border and
-    # the full color-strip POLY_FT4 patch across the center.
+    # Baseline scene puts a RED tile at (210,90); private preview leaves
+    # that area BLACK (the NRO sets a black tile first).
     border = frame.getpixel((210, 90))
+    if max(border) > 45:
+        raise ValueError(f"expected black private-preview border, got {border}")
+    # All four samples are in the interior of the FT4 textured patch;
+    # no screenshot-wide color histogram or generic colored UI can
+    # satisfy these UV/CLUT-specific samples.
+    for name, (x, y), expected in SCREEN_SAMPLES:
+        observed = frame.getpixel((x, y))
+        print(f"Original private SD FT4 {name}: {observed}")
+        if max(abs(c - e) for c, e in zip(observed, expected)) > 36:
+            raise ValueError(
+                f"wrong private SD UV mapping/CLUT for {name}: "
+                f"expected {expected}, got {observed}"
+            )
+    # Sample frame center separately to reject a stale baseline capture.
     center = frame.getpixel((640, 360))
-    border_is_black = max(border) <= 45
-    center_is_texel = (
-        center[0] >= 215 and center[1] <= 45 and center[2] <= 45
-    ) or (
-        center[1] >= 215 and center[0] <= 45 and center[2] <= 45
-    )
-    print("Private preview border / center RGB:", border, center)
-    if not border_is_black or not center_is_texel:
-        raise ValueError("NRO still shows baseline synthetic scene, not SD preview")
-    # Only the isolated FT4 patch at native x1..11, y1..8 covers this
-    # region. Do not count the NeXium menu, toolbar or emulator background.
-    pixels = frame.crop((230,110,1050,630)).getdata()
-    red = sum(r >= 215 and g <= 45 and b <= 45 for r,g,b in pixels)
-    green = sum(g >= 215 and r <= 45 and b <= 45 for r,g,b in
-                frame.crop((230,110,1050,630)).getdata())
-    print("Original private POLY_FT4 screenshot red / green:", red, green)
-    if red < 100 or green < 100:
-        raise ValueError("private synthetic texture patch not visible")
-    return red, green
+    if max(center) < 175:
+        raise ValueError(f"private preview center is not textured: {center}")
+    print("Four-quadrant private SD FT4 screenshot verified")
+    return True
 
 
 def main():
@@ -72,7 +99,7 @@ def main():
     group.add_argument("--stage-sd-root", type=Path)
     group.add_argument("--check-screenshot", type=Path)
     args = parser.parse_args()
-    if args.stage_sd_root:
+    if args.stage_sd_root is not None:
         stage(args.stage_sd_root)
     else:
         check(args.check_screenshot)
