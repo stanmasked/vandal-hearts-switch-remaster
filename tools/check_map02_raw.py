@@ -16,6 +16,11 @@ def check_raw_records(report):
     errors = []
     if report.get("map_number") != 2 and not report.get("single_block"):
         errors.append("expected map block 2")
+    base = report.get("block_base_offset")
+    single_block = report.get("single_block") is True
+    expected_base = 0 if single_block else 2 * 1797
+    if type(base) is not int or base != expected_base:
+        errors.append(f"LAND_DT block base offset expected {expected_base}")
     records = {}
     for record in report["records"]:
         gfx = record["gfx"]
