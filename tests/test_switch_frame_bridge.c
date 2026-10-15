@@ -51,14 +51,21 @@ int main(void) {
     assert(uploads == 3 && draws == 2);
     frame.stride_bytes = 9u;
 
+    /* A rejected frame must not poison the next valid presentation. */
+    assert(vh_switch_present_frame(&presenter, &frame, 1280, 720) == 1);
+    assert(uploads == 4 && draws == 3);
+
     assert(vh_switch_present_frame(NULL, &frame, 1280, 720) == 0);
     assert(vh_switch_present_frame(&presenter, NULL, 1280, 720) == 0);
     assert(vh_switch_present_frame(&presenter, &frame, 0, 720) == 0);
-    assert(uploads == 3 && draws == 2);
+    assert(vh_switch_present_frame(&presenter, &frame, 1280, 0) == 0);
+    assert(vh_switch_present_frame(&presenter, &frame, -1, 720) == 0);
+    assert(vh_switch_present_frame(&presenter, &frame, 1280, -1) == 0);
+    assert(uploads == 4 && draws == 3);
 
     presenter.initialized = 0;
     assert(vh_switch_present_frame(&presenter, &frame, 1280, 720) == 0);
-    assert(uploads == 3 && draws == 2);
+    assert(uploads == 4 && draws == 3);
     puts("Switch frame bridge tests passed.");
     return 0;
 }
