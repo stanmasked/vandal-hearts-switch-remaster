@@ -103,9 +103,12 @@ def validate_extraction(report_path: Path, payload_path: Path, wav_path: Path | 
         gap = 0 if previous is None else lba - previous - 1
         if gap:
             gaps += 1
-        if not isinstance(entry, dict) or entry.get("lba") != lba or (
-            entry.get("payload_offset") != index * SECTOR_BYTES
-        ) or entry.get("missing_source_sectors_before") != gap:
+        if not isinstance(entry, dict) or any(
+            type(entry.get(field)) is not int
+            for field in ("lba", "payload_offset", "missing_source_sectors_before")
+        ) or entry["lba"] != lba or (
+            entry["payload_offset"] != index * SECTOR_BYTES
+        ) or entry["missing_source_sectors_before"] != gap:
             raise ValueError(f"invalid LBA/offset mapping at index {index}")
         previous = lba
     if integer("noncontiguous_audio_transitions") != gaps:
