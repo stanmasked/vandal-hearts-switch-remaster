@@ -68,6 +68,24 @@ class CheckMap02RawTests(unittest.TestCase):
             self.assertIn("invalid LAND_DT block base offset",
                           check_raw_records(report))
 
+    def test_rejects_wrong_full_stream_block_base(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "land.bin"
+            path.write_bytes(bytes(BLOCK_SIZE * 3))
+            report = inspect_land_dt(path, map_number=2)
+            report["block_base_offset"] = BLOCK_SIZE
+            errors = check_raw_records(report)
+            self.assertIn(f"LAND_DT block base offset expected {2 * BLOCK_SIZE}", errors)
+
+    def test_rejects_nonzero_single_block_base(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "map02.bin"
+            path.write_bytes(bytes(BLOCK_SIZE))
+            report = inspect_land_dt(path, single_block=True)
+            report["block_base_offset"] = BLOCK_SIZE
+            errors = check_raw_records(report)
+            self.assertIn("LAND_DT block base offset expected 0", errors)
+
     def test_rejects_wrong_map(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "land.bin"
