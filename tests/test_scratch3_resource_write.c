@@ -194,6 +194,58 @@ int main(void) {
         assert(vh_map_unit_phase_can_read_map(&phase));
     }
 
+    /* PS1-addressed source must be proven in-bounds before destination
+     * changes. Exercise normal, overlapping and truncated memory views. */
+    {
+        const size_t source_offset = 0x40;
+        const uint32_t source_address = VH_MAP_OUTPUT_ADDR + (uint32_t)source_offset;
+        uint8_t *source = vh_ps1_memory_span(&memory, source_address, 8);
+        assert(source != NULL);
+        vh_map_unit_phase_init(&phase, 2);
+        memcpy(input, fixture, sizeof fixture);
+        assert(vh_map_unit_phase_reload(&phase, &memory, sizeof fixture, 32,
+                                       &decode, &written) == VH_MAP_LOAD_OK);
+        memcpy(source, "SOURCEXY", 8);
+        assert(vh_scratch3_resource_copy_ps1(&phase, &memory,
+                   UINT32_C(0xffffffff), 0, 4)
+               == VH_SCRATCH3_WRITE_OUT_OF_RANGE);
+        assert(vh_map_unit_phase_can_read_map(&phase));
+        assert(memcmp(output, "MAP", 3) == 0);
+
+        assert(vh_scratch3_resource_copy_ps1(&phase, &memory,
+                   source_address, span, 4)
+               == VH_SCRATCH3_WRITE_OUT_OF_RANGE);
+        assert(vh_map_unit_phase_can_read_map(&phase));
+        assert(memcmp(source, "SOURCEXY", 8) == 0);
+
+        /* Copy from scratchpad rather than scratch3. */
+        memcpy(scratch, "PAD!", 4);
+        assert(vh_scratch3_resource_copy_ps1(&phase, &memory,
+                   VH_PS1_SCRATCH_BASE, 0, 4) == VH_SCRATCH3_WRITE_OK);
+        assert(memcmp(output, "PAD!", 4) == 0);
+        assert(!vh_map_unit_phase_can_read_map(&phase));
+
+        /* An overlapping copy in scratch3 is well-defined through memmove. */
+        assert(vh_map_unit_phase_reload(&phase, &memory, sizeof fixture, 32,
+                                       &decode, &written) == VH_MAP_LOAD_OK);
+        memcpy(output, "abcdefgh", 8);
+        assert(vh_scratch3_resource_copy_ps1(&phase, &memory,
+                   VH_MAP_OUTPUT_ADDR, 2, 6) == VH_SCRATCH3_WRITE_OK);
+        assert(memcmp(output, "ababcdef", 8) == 0);
+        assert(!vh_map_unit_phase_can_read_map(&phase));
+
+        /* Truncating modeled backing memory invalidates source span without
+         * granting a new map lease or mutating previously published bytes. */
+        assert(vh_map_unit_phase_reload(&phase, &memory, sizeof fixture, 32,
+                                       &decode, &written) == VH_MAP_LOAD_OK);
+        memory.ram_size = (size_t)(source_address - VH_PS1_RAM_BASE) + 3;
+        assert(vh_scratch3_resource_copy_ps1(&phase, &memory,
+                   source_address, 0, 4) == VH_SCRATCH3_WRITE_OUT_OF_RANGE);
+        assert(vh_map_unit_phase_can_read_map(&phase));
+        assert(memcmp(output, "MAP", 3) == 0);
+        memory.ram_size = VH_PS1_RAM_SIZE;
+    }
+
     free(ram);
     puts("Scratch3 resource write tests passed.");
     return 0;
