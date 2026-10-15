@@ -5,6 +5,8 @@ on:
     paths:
       - 'tools/make_map02_trace_patch.py'
       - 'tools/prepare_map02_pcport.py'
+      - 'tools/extract_map02_trace.py'
+      - 'tests/test_extract_map02_trace.py'
       - 'tools/instrument_map02_loader.py'
       - 'tools/instrument_map02_renderer.py'
       - 'tests/test_prepare_map02_pcport.py'
@@ -16,6 +18,8 @@ on:
     paths:
       - 'tools/make_map02_trace_patch.py'
       - 'tools/prepare_map02_pcport.py'
+      - 'tools/extract_map02_trace.py'
+      - 'tests/test_extract_map02_trace.py'
       - 'tools/instrument_map02_loader.py'
       - 'tools/instrument_map02_renderer.py'
       - 'tests/test_prepare_map02_pcport.py'
@@ -119,6 +123,7 @@ jobs:
           (
             cd remaster
             python3 -m unittest discover -s tests -p 'test_prepare_map02_pcport.py' -v
+            python3 -m unittest discover -s tests -p 'test_extract_map02_trace.py' -v
             python3 -m unittest discover -s tests -p 'test_instrument_map02_renderer.py' -v
             python3 -m unittest discover -s tests -p 'test_map02_renderer_smoke.py' -v
           )
