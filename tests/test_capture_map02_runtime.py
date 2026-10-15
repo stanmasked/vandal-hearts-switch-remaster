@@ -6,12 +6,14 @@ import unittest
 from pathlib import Path
 
 from tools.capture_map02_runtime import capture
+from tools.prepare_map02_pcport import PINNED_UPSTREAM_REF
 
 
 def fixture(root: Path, mode="complete", modified=False):
     trace_dir = root / "prepared"
     trace_dir.mkdir()
     provenance = {
+        "upstream_reference": PINNED_UPSTREAM_REF,
         "trace_mode": "legacy",
         "allow_modified_source": modified,
         "source_files": {
@@ -83,6 +85,24 @@ class CaptureMap02RuntimeTests(unittest.TestCase):
             self.assertEqual(capture(exe, trace_dir, dest, allow_modified_source=True), 0)
             self.assertTrue(json.loads((dest / "capture_report.json").read_text())
                             ["source_provenance"]["allow_modified_source"])
+
+    def test_wrong_revision_or_source_list_is_rejected_before_launch(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            exe, trace_dir = fixture(base)
+            provenance_path = trace_dir / "source_provenance.json"
+            expected = json.loads(provenance_path.read_text())
+            wrong_revision = dict(expected, upstream_reference="wrong-revision")
+            provenance_path.write_text(json.dumps(wrong_revision))
+            with self.assertRaisesRegex(ValueError, "pinned upstream revision"):
+                capture(exe, trace_dir, base / "run")
+            wrong_sources = dict(expected)
+            wrong_sources["source_files"] = dict(expected["source_files"])
+            wrong_sources["source_files"]["unknown.c"] = wrong_sources["source_files"].pop("src/core/graphics.c")
+            provenance_path.write_text(json.dumps(wrong_sources))
+            with self.assertRaisesRegex(ValueError, "three pinned files"):
+                capture(exe, trace_dir, base / "run")
+            self.assertFalse((base / "run").exists())
 
     def test_process_failure_is_not_mistaken_for_success(self):
         with tempfile.TemporaryDirectory() as folder:
