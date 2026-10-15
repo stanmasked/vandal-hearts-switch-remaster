@@ -73,3 +73,13 @@ Mark a task complete only when the linked workflow, log, test output, or device 
 ## Current implementation boundary
 
 The GLES2 presentation resources and operations are now extracted into `source/switch_rgb24_presenter.c` and `.h`. The module assumes an already-current GLES2 context and owns its GL program, vertex buffer, and texture; the SDL probe retains window/context creation, synthetic frame generation, events, and buffer swapping. The probe exercises odd-stride RGB24 upload, corner-channel/orientation markers, repeated frame updates, same-size texture-storage reuse, resize-and-restore, and recovery after invalid frame metadata. These remain isolated feasibility checks; upstream renderer integration and physical Switch validation are still open.
+
+
+## Latest SDL2 runtime evidence (2026-10-15)
+
+- [Workflow run 38693397077](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38693397077) passed both build and NeXium runtime jobs at commit [74b903662b0956b10514f27c8565ed58d6659c6e](https://github.com/stanmasked/vandal-hearts-switch-remaster/commit/74b903662b0956b10514f27c8565ed58d6659c6e).
+- The RGB24 presenter successfully uploaded a 17×9 frame, restored the original 321×240 frame, checked its stored dimensions, and continued through the drawing path.
+- The runtime artifact archive is [sdl2-nexium-runtime-evidence](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38693397077/artifacts/11953615324).
+- SDL2 software rendering, GLES2, controller input, RGB24 upload/repeated updates and resize round-trip passed the workflow's NeXium checks.
+- The audio step remains **inconclusive**: the CI host has no usable ALSA default device. This is not evidence of audible playback.
+- This is still a standalone probe. The upstream PC renderer is not yet wired to the presenter, and physical Switch behavior is not confirmed.
