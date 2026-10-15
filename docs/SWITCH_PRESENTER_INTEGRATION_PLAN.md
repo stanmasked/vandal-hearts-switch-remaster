@@ -221,3 +221,8 @@ A cross-tree search at the pinned upstream revision found a concrete region-spec
 Do not assume that defining `PC_PORT` alone removes every fixed PS1 scratchpad reference for every regional build. The Switch target must either choose a region whose complete source set has been audited, or add and test a region-specific compatibility patch. The audit inventory should record source path/region, preprocessor guard, and whether the literal survives in the selected compilation configuration.
 
 This is a confirmed source-tree difference, not a Switch compile/runtime result. No upstream source has been changed by this repository commit.
+### Follow-up: the Japanese CMake target selects the unguarded file
+
+Inspection of the pinned `platform/pc/CMakeLists.txt` confirms this is not merely an unused alternate source copy: setting `VH_REGION=jp` sets `GAME_ROOT` to the `jp` directory, gathers game sources from that root, and applies `PERMUTER;PC_PORT;PC_FEAT;VH_REGION_JP` to those game translation units. Therefore `jp/src/maps/unpack.c` is in the selected Japanese game-source tree while its direct `0x1f800000` assignment is not protected by a `PC_PORT` conditional.
+
+That makes the Japanese scratchpad use a concrete compatibility defect for a future AArch64/libnx target, unless a Switch-specific source patch or memory mapping is supplied. The narrowest fix to evaluate is to mirror the main tree's 1 KB static host-buffer branch under `PC_PORT`, then validate both region configurations and retain the original literal only in the non-PC_PORT branch. This is a proposed fix, not yet applied or compiled.
