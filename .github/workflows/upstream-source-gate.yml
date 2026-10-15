@@ -57,7 +57,7 @@ jobs:
           set -euo pipefail
           bash -n tools/build_upstream_local.sh
           set +e
-          output="$(env -u VH_PSX_EXE -u VH_KROM_SOURCE tools/build_upstream_local.sh 2>&1)"
+          output="$(env -u VH_PSX_EXE -u VH_KROM_SOURCE bash tools/build_upstream_local.sh 2>&1)"
           status=$?
           set -e
           test "$status" -ne 0
