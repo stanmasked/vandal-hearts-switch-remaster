@@ -125,6 +125,26 @@ class ValidateXaExtractionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "mapping"):
             self.check()
 
+    def test_boolean_and_fractional_offset_metadata_rejected(self):
+        # In Python False == 0 and True == 1: report fields must use
+        # genuine JSON integers, not values that compare equal to them.
+        mutations = (
+            (0, "payload_offset", False),
+            (0, "missing_source_sectors_before", False),
+            (1, "missing_source_sectors_before", True),
+            (1, "payload_offset", 2304.0),
+            (0, "lba", 10.0),
+        )
+        for index, field, replacement in mutations:
+            with self.subTest(index=index, field=field, replacement=replacement):
+                original = self.data["audio_lba_offsets"][index][field]
+                self.data["audio_lba_offsets"][index][field] = replacement
+                try:
+                    with self.assertRaisesRegex(ValueError, "LBA/offset mapping"):
+                        self.check()
+                finally:
+                    self.data["audio_lba_offsets"][index][field] = original
+
     def test_misreported_gaps_fail(self):
         self.data["noncontiguous_audio_transitions"] = 0
         with self.assertRaisesRegex(ValueError, "gaps"):
