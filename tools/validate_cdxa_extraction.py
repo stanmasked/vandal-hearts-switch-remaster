@@ -130,6 +130,7 @@ def validate_extraction(report_path: Path, payload_path: Path, wav_path: Path | 
         selected_index = 0
         mode2_count = 0
         matching_subheaders_count = 0
+        submode_counts: dict[str, int] = {}
         with source_bin.open("rb") as raw, payload_path.open("rb") as payload:
             raw.seek(scan_start * RAW_SECTOR_BYTES)
             for lba in range(scan_start, scan_start + scanned):
@@ -144,6 +145,8 @@ def validate_extraction(report_path: Path, payload_path: Path, wav_path: Path | 
                     continue
                 matching_subheaders_count += 1
                 source_file, source_channel, submode, coding_byte = header
+                submode_key = f"0x{submode:02X}"
+                submode_counts[submode_key] = submode_counts.get(submode_key, 0) + 1
                 if not (submode & 0x04 and submode & 0x20):
                     continue
                 if (source_file, source_channel) != (file_number, channel_number):
@@ -160,6 +163,8 @@ def validate_extraction(report_path: Path, payload_path: Path, wav_path: Path | 
         if (integer("mode2_sectors") != mode2_count
                 or integer("matching_subheaders") != matching_subheaders_count):
             raise ValueError("source BIN sector/header counts do not match extraction report")
+        if report.get("submode_counts") != submode_counts:
+            raise ValueError("source BIN submode counts do not match extraction report")
 
     if wav_path is not None:
         try:
