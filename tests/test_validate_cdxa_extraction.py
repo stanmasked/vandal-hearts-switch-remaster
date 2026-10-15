@@ -193,6 +193,22 @@ class ValidateXaExtractionTests(unittest.TestCase):
             2,
         )
 
+        # The source scan must independently verify diagnostic counts as
+        # well as the stream payload and selected LBA sequence.
+        clean_report = self.report.read_text(encoding="utf-8")
+        for field, value in (
+            ("mode2_sectors", 1),
+            ("matching_subheaders", 1),
+            ("matching_subheaders", True),
+        ):
+            with self.subTest(field=field, value=value):
+                edited = json.loads(clean_report)
+                edited[field] = value
+                self.report.write_text(json.dumps(edited), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "sector/header counts|nonnegative integer"):
+                    validate_extraction(self.report, self.payload, source_bin=raw)
+        self.report.write_text(clean_report, encoding="utf-8")
+
         # Corrupt the duplicated subheader of the second sector: it must
         # no longer count as a selected XA audio sector.
         changed = bytearray(pristine)
