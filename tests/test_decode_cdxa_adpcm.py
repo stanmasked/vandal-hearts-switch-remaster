@@ -47,6 +47,7 @@ class DecodeCdXaAdpcmTests(unittest.TestCase):
         group = bytearray(GROUP_SIZE)
         # Filter 2 can drive the internal predictor outside signed 16-bit range.
         group[:16] = bytes([0x2C]) * 16
+        group[16:] = bytes([0x77]) * (GROUP_SIZE - 16)
         history = [[32767, -32768], [0, 0]]
         pcm = decode_group(bytes(group), history)
         samples = struct.unpack("<" + "h" * (len(pcm) // 2), pcm)
