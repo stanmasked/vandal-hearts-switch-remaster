@@ -37,6 +37,7 @@ on:
       - "tools/patch_pc_gpu_present_exclusive.py"
       - "tests/test_pc_gpu_present_observer_patch.py"
       - "tests/test_pc_gpu_present_exclusive_patch.py"
+      - "tests/check_pc_gpu_present_exclusive_preprocessed.py"
       - ".github/workflows/frame-handoff-contract.yml"
   pull_request:
     paths:
@@ -72,6 +73,7 @@ on:
       - "tools/patch_pc_gpu_present_exclusive.py"
       - "tests/test_pc_gpu_present_observer_patch.py"
       - "tests/test_pc_gpu_present_exclusive_patch.py"
+      - "tests/check_pc_gpu_present_exclusive_preprocessed.py"
       - ".github/workflows/frame-handoff-contract.yml"
   workflow_dispatch:
 
@@ -160,4 +162,6 @@ jobs:
             build-tests/upstream_pc_gpu_window.c build-tests/exclusive_pc_gpu_window.c
           grep -Fq '#if defined(VH_SWITCH_EXCLUSIVE_PRESENT)' build-tests/exclusive_pc_gpu_window.c
           grep -Fq '#endif /* VH_SWITCH_EXCLUSIVE_PRESENT */' build-tests/exclusive_pc_gpu_window.c
+          python3 tests/check_pc_gpu_present_exclusive_preprocessed.py \
+            build-tests/exclusive_pc_gpu_window.c
 
