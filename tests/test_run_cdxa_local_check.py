@@ -188,6 +188,60 @@ class LocalXaCheckTests(unittest.TestCase):
                     target.write_bytes(pristine)
                 self.assertEqual(verify_audit(audit, self.source, ref), good)
 
+    def test_recheck_rejects_tampered_verdict_and_reference_provenance(self):
+        ref = self.reference("verdict-reference.wav")
+        exact_dir = self.root / "exact-verdict"
+        run_local_check(
+            self.source, exact_dir, file_number=1, channel=0,
+            start_lba=1, sector_count=3, reference_wav=ref,
+        )
+        exact_audit = exact_dir / "audit-result.json"
+        original = exact_audit.read_bytes()
+        for key, value, message in (
+            ("status", "reference_pcm_mismatch", "status contradicts"),
+            ("reference_provenance", {}, "provenance status"),
+        ):
+            with self.subTest(key=key):
+                tampered = json.loads(original)
+                tampered[key] = value
+                exact_audit.write_text(json.dumps(tampered), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, message):
+                    verify_audit(exact_audit, self.source, ref)
+        exact_audit.write_bytes(original)
+        self.assertEqual(verify_audit(exact_audit, self.source, ref)["status"],
+                         "audit_files_verified")
+
+        source_dir = self.root / "source-verdict"
+        run_local_check(self.source, source_dir, file_number=1, channel=0,
+                        start_lba=1, sector_count=3)
+        source_audit = source_dir / "audit-result.json"
+        original = source_audit.read_bytes()
+        for key, value, message in (
+            ("status", "exact_reference_pcm_match", "status contradicts"),
+            ("reference_provenance", {"decoder": "unverified"}, "cannot claim"),
+        ):
+            with self.subTest(key=key):
+                tampered = json.loads(original)
+                tampered[key] = value
+                source_audit.write_text(json.dumps(tampered), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, message):
+                    verify_audit(source_audit, self.source)
+        source_audit.write_bytes(original)
+
+        mismatch_dir = self.root / "mismatch-verdict"
+        wrong = self.reference("mismatch-verdict-reference.wav", value=1)
+        with self.assertRaisesRegex(ValueError, "differs from reference"):
+            run_local_check(self.source, mismatch_dir, file_number=1, channel=0,
+                            start_lba=1, sector_count=3, reference_wav=wrong)
+        mismatch_audit = mismatch_dir / "audit-result.json"
+        self.assertEqual(verify_audit(mismatch_audit, self.source, wrong)["status"],
+                         "audit_files_verified")
+        tampered = json.loads(mismatch_audit.read_text())
+        tampered["status"] = "exact_reference_pcm_match"
+        mismatch_audit.write_text(json.dumps(tampered), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "status contradicts"):
+            verify_audit(mismatch_audit, self.source, wrong)
+
     def test_saved_audit_rejects_tampered_lbas_frames_and_stream(self):
         directory = self.root / "metadata-audit"
         run_local_check(
