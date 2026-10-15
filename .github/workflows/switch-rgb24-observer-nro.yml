@@ -92,6 +92,11 @@ jobs:
         with:
           name: upstream-rgb24-observer-nro
           path: nros
+      - name: Download lifecycle backend NRO
+        uses: actions/download-artifact@v4
+        with:
+          name: sdl2-observer-backend-lifecycle-nro
+          path: nros
       - name: Install emulator runtime dependencies
         run: |
           sudo apt-get update
@@ -219,6 +224,78 @@ jobs:
           print("Observer changed sample pixels across frames:", changed)
           if changed < 300:
               raise SystemExit("Observer image appears static between captures")
+          PY
+      - name: Verify lifecycle backend RGB frame in NeXium
+        shell: bash
+        run: |
+          set -euo pipefail
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+          export NRO="nros/sdl2-observer-lifecycle-probe.nro"
+          export SHOT="runtime-evidence/lifecycle.png"
+          export SHOT_AFTER="runtime-evidence/lifecycle-after.png"
+          export LOG="runtime-evidence/lifecycle-nexium.log"
+          timeout --kill-after=5s 65s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
+            set -euo pipefail
+            "$NEXIUM_BIN" "$NRO" >"$LOG" 2>&1 &
+            pid=$!
+            ready=0
+            sleep 10
+            for attempt in $(seq 1 20); do
+              if ! kill -0 "$pid" 2>/dev/null; then
+                tail -n 80 "$LOG" >&2 || true
+                echo "Lifecycle NRO exited before screenshot" >&2
+                exit 1
+              fi
+              window="$(xdotool search --onlyvisible --name "NeXium" 2>/dev/null | tail -n 1 || true)"
+              if [ -n "$window" ]; then
+                import -window "$window" "$SHOT"
+                if python3 -c "import sys; from PIL import Image; p=Image.open(sys.argv[1]).convert(\"RGB\").getpixel((240,90)); sys.exit(0 if p[0]>=220 and p[1]<=35 and p[2]<=35 else 1)" "$SHOT"; then
+                  echo "Lifecycle RGB frame ready on poll $attempt"
+                  ready=1
+                  break
+                fi
+              fi
+              sleep 2
+            done
+            if [ "$ready" -ne 1 ]; then
+              tail -n 80 "$LOG" >&2 || true
+              exit 1
+            fi
+            sleep 2
+            import -window "$window" "$SHOT_AFTER"
+            kill -INT "$pid" 2>/dev/null || true
+            sleep 1
+            kill -KILL "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+          '
+          python3 - "$SHOT" "$SHOT_AFTER" <<'PY'
+          from PIL import Image
+          import sys
+          first = Image.open(sys.argv[1]).convert("RGB")
+          second = Image.open(sys.argv[2]).convert("RGB")
+          if first.size != (1280,720) or second.size != first.size:
+              raise SystemExit("Incorrect lifecycle emulator output dimensions")
+          markers = (
+              ("top-left", (255,0,0), (240,90)),
+              ("top-right", (0,255,0), (1040,90)),
+              ("bottom-left", (0,0,255), (240,630)),
+              ("bottom-right", (255,255,0), (1040,630)),
+          )
+          for name, expected, position in markers:
+              for image in (first, second):
+                  rgb = image.getpixel(position)
+                  if max(abs(a-b) for a,b in zip(rgb,expected)) > 36:
+                      raise SystemExit(f"Lifecycle marker {name}: expected {expected}, got {rgb}")
+          x,y=640,360
+          old,new=first.getpixel((x,y)),second.getpixel((x,y))
+          print("Lifecycle backend center RGB:",old,new)
+          if abs(old[0]-108)>20 or abs(old[1]-92)>20 or abs(new[0]-108)>20 or abs(new[1]-92)>20:
+              raise SystemExit("Lifecycle backend center gradient incorrect")
+          if abs(old[2]-new[2])<=15:
+              raise SystemExit("Lifecycle backend frame did not animate")
+          print("Lifecycle NRO rendered expected moving RGB24 frames")
           PY
       - name: Upload runtime evidence
         if: always()
