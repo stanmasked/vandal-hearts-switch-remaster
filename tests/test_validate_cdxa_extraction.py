@@ -120,6 +120,62 @@ class ValidateXaExtractionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "outside reported scanned range"):
             self.check()
 
+    def test_read_only_source_bin_matches_exact_selected_stream(self):
+        # Construct two selected XA sectors, separated by a different channel.
+        # Source bytes must equal the report's local payload, not just its hash.
+        root = self.report.parent
+        raw_path = root / "source.bin"
+
+        def sector(channel, fill):
+            data = bytearray(2352)
+            data[:12] = bytes([0]) + bytes([255]) * 10 + bytes([0])
+            data[15] = 2
+            data[16:20] = data[20:24] = bytes((1, channel, 0x64, 0x01))
+            data[24:2328] = bytes([fill]) * 2304
+            return bytes(data)
+
+        self.data.update({
+            "start_lba": 0, "sectors_scanned": 3,
+            "first_audio_lba": 0, "last_audio_lba": 2,
+            "audio_lbas": [0, 2],
+            "audio_lba_offsets": [
+                {"lba": 0, "payload_offset": 0, "missing_source_sectors_before": 0},
+                {"lba": 2, "payload_offset": 2304, "missing_source_sectors_before": 1},
+            ],
+        })
+        raw_path.write_bytes(sector(0, 17) + sector(1, 55) + sector(0, 33))
+        payload = bytes([17]) * 2304 + bytes([33]) * 2304
+        self.payload.write_bytes(payload)
+        self.data["payload_sha256"] = hashlib.sha256(payload).hexdigest()
+        self.report.write_text(json.dumps(self.data), encoding="utf-8")
+        original = raw_path.read_bytes()
+        self.assertEqual(
+            validate_extraction(self.report, self.payload, source_bin=raw_path)["audio_sectors"], 2
+        )
+        self.assertEqual(raw_path.read_bytes(), original)
+
+        changed = bytearray(original)
+        changed[24] ^= 1
+        raw_path.write_bytes(changed)
+        with self.assertRaisesRegex(ValueError, "source BIN payload mismatch"):
+            validate_extraction(self.report, self.payload, source_bin=raw_path)
+
+        # Hidden eligible sector in a previously interleaved channel slot.
+        raw_path.write_bytes(sector(0, 17) + sector(0, 55) + sector(0, 33))
+        with self.assertRaisesRegex(ValueError, "selection differs"):
+            validate_extraction(self.report, self.payload, source_bin=raw_path)
+
+        raw_path.write_bytes(original[:-1])
+        with self.assertRaisesRegex(ValueError, "not aligned"):
+            validate_extraction(self.report, self.payload, source_bin=raw_path)
+
+    def test_source_bin_needs_full_scan_range(self):
+        raw = self.report.parent / "source.bin"
+        raw.write_bytes(bytes(2352))
+        self.report.write_text(json.dumps(self.data), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "requires scan-range metadata"):
+            validate_extraction(self.report, self.payload, source_bin=raw)
+
     def test_invalid_offsets_fail(self):
         self.data["audio_lba_offsets"][1]["payload_offset"] = 2305
         with self.assertRaisesRegex(ValueError, "mapping"):
