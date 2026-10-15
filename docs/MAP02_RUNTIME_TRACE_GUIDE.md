@@ -455,6 +455,18 @@ terminal while keeping an unaltered `game_stdout.log`, and waits until
 you close the game. Navigate to **game map number 11**, make both disputed
 faces visible to the renderer, and exit normally.
 
+The capture writes extracted observations to `map02_trace.jsonl`
+**while the game is still running**, flushing each record as it arrives.
+Raw stdout/stderr bytes are saved in parallel to `game_stdout.log`.
+The streaming decoder preserves UTF-8 and JSON lines split across pipe
+reads, and it accepts a valid final record without a trailing newline.
+A malformed trace-looking line causes a reported extraction error while
+retaining the raw log and all already captured valid JSONL records;
+partial evidence is never reported as a complete trace. At session end,
+analysis reads the JSONL file one record at a time rather than materializing
+the entire raw game log in memory. If the process never starts, the empty
+derived JSONL is omitted and a failure report is kept.
+
 The capture directory contains:
 
 - `game_stdout.log` — byte-for-byte combined stdout/stderr, including non-UTF-8 bytes
