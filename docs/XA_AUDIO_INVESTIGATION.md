@@ -246,3 +246,17 @@ including group order, left/right channel mapping and signed nibble handling.
 
 It does **not** replace testing predictive filters, a third-party decoder
 process or original game audio; those remain separate validation gates.
+
+
+### Predictive ADPCM across sector boundaries
+
+The integration test `test_predictive_adpcm_state_survives_sector_boundary`
+builds two adjacent synthetic XA sectors with nonzero 4-bit stereo samples
+and filter 1 (coefficient 60/64). An independent scalar recurrence produces
+a reference WAV while preserving left/right predictor states across all
+sound groups and the **sector boundary**. The test performs extraction,
+report validation, WAV decoding, and exact PCM comparison.
+
+This verifies state continuity for one predictive-filter profile on synthetic
+data. It does not establish exact hardware equivalence for all filter modes,
+resampling, stream timing, or actual Vandal Hearts sound.
