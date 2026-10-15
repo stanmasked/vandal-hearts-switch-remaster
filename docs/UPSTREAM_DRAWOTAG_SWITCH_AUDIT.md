@@ -476,3 +476,58 @@ The current native map preview remains one source UV patch;
 the next gate is to validate actual owner map bytes and wire
 multi-face projected terrain models into the pinned GPU port
 without redistributing game resources.
+
+## Native original-format MapTileModel multi-face private SD integration accepted (CI #38825754507)
+
+The previously accepted private SD bridge showed ONE enlarged authored
+F_TEX01/LAND_DT texture patch. The new milestone attaches bounded,
+owner-only original **map geometry** via
+`source/vh_private_map_geometry.[ch]` and
+`tools/stage_vh_private_map_geometry.py`. Geometry must be
+**unpacked** (28 stored columns × 12 rows × 304-byte
+`MapTileModel` = 102144 bytes), separately staged as
+`sdmc:/switch/vandal-hearts-remaster/private-assets/MAP11_MODELS_28X12.BIN`.
+The C loader rejects truncated/oversized input, any tile with
+`faceCt > 18`, and any face vertex index outside 0..21. Missing
+geometry leaves the prior single-patch screenshot unchanged; a
+malformed present file fails closed. The complete LAND_DT UVWH
+and CLUT selector tables are now retained in the private texture bank,
+so the NRO can render multiple distinct `gfx[]` entries, not merely
+hardcoded slot 241. The display primitive path is original
+pinned `POLY_FT4 → AddPrim → DrawOTag → raster → GLES2`.
+
+**Fully green CI:** [GitHub Actions #38825754507](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38825754507),
+commit `ddf891a0f54cc4be310f0837160615c3df36f5a3`:
+`cross-compile=success`,
+`Run original DrawOTag raster NRO in NeXium=success`,
+`Synthetic SD map 11 preview through original DrawOTag=success`.
+In preflight, **85 Python tests OK** (16 GPU primitives,
+15 TIM, 13 raw bank/CD Mode2, 5 private staging, 4 UV fixture,
+11 geometry, 13 PRS, 5 geometry staging, 3 cross-language C bridge),
+plus passing dedicated C bank reader and C geometry topology tests;
+the switch NRO0 image was verified.
+
+The separate NeXium private job first ran the established single
+source-patch scene, retaining exact red/green/blue/yellow samples.
+It then staged an independent 336-tile synthetic map model file
+and restarted the SAME NRO. Tile (6,3) had two faces with different
+`gfx[]` slots 241, 242 and LAND_DT palette selectors 35, 36.
+Screenshot pixel verification of **two independent original FT4
+polygons** yielded at 1280x720:
+`(400,205)=(255,0,0)` left upper,
+`(880,205)=(255,0,255)` right upper,
+`(400,510)=(0,0,255)` left lower and
+`(880,510)=(0,255,255)` right lower.
+All four were measured twice, with screenshot evidence in the
+`pinned-drawotag-private-sd-synthetic-evidence` run artifact,
+including `map11-synthetic.png` and `map11-multiface.png`.
+Legacy raster checks remained green.
+
+**Do not overclaim:** The polyhedron is source-FORMAT synthetic,
+not a user game's original map data. The preview uses a deliberately
+simplified orthographic screen transform (not original `gte_rtpt`,
+`gte_rtps`, camera, backface culling, distance lighting or
+`RenderMapTile`). Authentic PRS bytes have not been loaded, nor
+has real terrain/gameplay been rendered or tested on Switch hardware.
+Full limitations and safe local usage are in
+`docs/ORIGINAL_MAP_GEOMETRY.md`.
