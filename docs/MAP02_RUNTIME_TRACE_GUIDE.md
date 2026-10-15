@@ -662,3 +662,38 @@ can likewise reject a zero-indexed face as back-facing. The verifier
 accepts those observations; they do not satisfy the requirement to
 record a genuine `draw` for both disputed faces. These consistency
 checks still cannot prove visible pixels.
+
+
+## One-outcome-per-visit renderer auditing
+
+The pinned US PC-port emits a renderer `visit` when it enters a tile
+renderer. For **map 11, face 0**, every nonempty visit must then take exactly
+one of the instrumented outcomes: a textured `draw` handed to
+`AddPrim()`, or a `skip` for `null_gfx` or `backface`.
+
+In `--require-full-trace` mode, the analyzer tracks **individual
+invocations** using the tile position, game frame, renderer path, and
+successive visit number. It detects two particularly misleading cases:
+
+- One visit followed by both `draw` and `skip` (or two different
+  `skip` reasons) — impossible for face 0 in the audited renderer.
+- A nonempty visit with no subsequent `draw` or `skip`, even if a
+  later visit in the same frame/path completes normally.
+
+Strict mode also verifies that a `null_gfx` skip follows a visit
+reporting GFX 0. A `null_gfx` skip in the **edge** renderer is invalid:
+that path has no null-texture rejection branch in pinned
+`src/core/graphics.c`. Zero-face visits are allowed to have no
+outcome because there is no face 0 to process.
+
+The original lightweight (legacy) trace cannot provide this evidence
+because it does not record individual renderer entry events. These
+new checks therefore apply **only** to full-trace sessions. Regression
+tests cover both impossible outcomes and independently verified capture
+reports, without requiring game assets.
+
+A full-trace session with contradictory or unfinished renderer events is
+incomplete even when the top-level GFX values look like consistent
+PRS (641/643) or DAT (498/550). This protects the texture comparison from
+falsely accepting truncated evidence; final pixel visibility remains
+unverified until a genuine gameplay capture is available.
