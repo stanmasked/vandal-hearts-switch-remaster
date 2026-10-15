@@ -11,6 +11,7 @@ from pathlib import Path
 
 TARGETS = {(8, 19, 0): (641, 498), (11, 11, 0): (643, 550)}
 STAGES = {"post_load", "draw"}
+DRAW_PATHS = {"normal", "edge", "overhead"}
 
 
 def evaluate_trace(entries):
@@ -20,6 +21,8 @@ def evaluate_trace(entries):
     draw_metadata = {}
     seen_draw_frames = set()
     draw_frame_mode = {}
+    draw_path_mode = {}
+    draw_paths = {}
     draw_count = {}
     errors = []
     for i, entry in enumerate(entries):
@@ -38,20 +41,29 @@ def evaluate_trace(entries):
             continue
         if stage == "draw":
             framed = "frame" in entry
+            tagged_path = "path" in entry
+            if tagged_path and (type(entry["path"]) is not str or entry["path"] not in DRAW_PATHS):
+                errors.append(f"entry {i}: path must be normal, edge, or overhead")
+                continue
             if pos in draw_frame_mode and draw_frame_mode[pos] != framed:
                 errors.append(f"mixed framed and unframed draw observations for {pos}")
                 continue
+            if pos in draw_path_mode and draw_path_mode[pos] != tagged_path:
+                errors.append(f"mixed annotated and unannotated draw paths for {pos}")
+                continue
             draw_frame_mode[pos] = framed
+            draw_path_mode[pos] = tagged_path
         if stage == "draw" and "frame" in entry:
             frame = entry["frame"]
             if type(frame) is not int or frame < 0:
                 errors.append(f"entry {i}: frame must be a non-negative integer")
                 continue
-            key = (pos, frame)
+            key = (pos, frame, entry.get("path", "unspecified"))
             if key in seen_draw_frames:
                 errors.append(f"duplicate draw observation for {pos} in frame {frame}")
                 continue
             seen_draw_frames.add(key)
+            draw_paths.setdefault(pos, set()).add(entry.get("path", "unspecified"))
             draw_count[pos] = draw_count.get(pos, 0) + 1
             if (pos, stage) in found:
                 if found[(pos, stage)] != entry["gfx"]:
@@ -72,6 +84,7 @@ def evaluate_trace(entries):
             errors.append(f"duplicate observation for {pos} at {stage}")
             continue
         elif stage == "draw":
+            draw_paths.setdefault(pos, set()).add(entry.get("path", "unspecified"))
             draw_count[pos] = draw_count.get(pos, 0) + 1
         found[(pos, stage)] = entry["gfx"]
         if stage == "draw":
@@ -100,6 +113,7 @@ def evaluate_trace(entries):
             "post_load_gfx": after, "draw_gfx": drawn,
             "draw_metadata": draw_metadata.get(pos, {}),
             "draw_observation_count": draw_count.get(pos, 0),
+            "draw_paths": sorted(draw_paths.get(pos, set())),
             "post_load_variant": "PRS" if after == prs else "DAT" if after == dat else None,
             "draw_variant": "PRS" if drawn == prs else "DAT" if drawn == dat else None,
         })
