@@ -160,6 +160,28 @@ operation. Do not push this instrumentation into a distribution build.
 To revert this local experiment after the capture, use
 `git apply -R /local/map02-trace.patch` (after checking for any other edits).
 
+The combined diagnostic patch now emits a `visit` event at entry to each
+terrain renderer for each target tile, **before** iterating over its faces.
+Each event records `frame`, `path`, `face_count` and the first face's
+global `gfx`, or `gfx: 0` if `face_count: 0`. This captures the case where
+the renderer reaches a tile with no faces: formerly neither `draw` nor
+`skip` could describe it. The checker validates `face_count` (0–18)
+and reports `visit_observation_count`, `visit_paths`,
+`observed_face_counts` and a more specific `draw_status`:
+
+- `submitted`: at least one `draw` event
+- `skipped_in_observed_passes`: no draw, at least one `skip`
+- `no_faces_in_observed_passes`: no draw/skip and all visits have zero faces
+- `visited_without_submission`: at least one visit with a nonzero face count, but no recorded draw/skip
+- `no_renderer_observation`: no draw, skip, or visit
+
+A tile outside the current render window produces **no visit event**;
+`no_renderer_observation` must not be interpreted as a missing texture.
+Calls to a renderer may occur more than once with the same game frame counter;
+`visit` counts all such calls and does not treat repetitions as duplicate errors.
+A zero-face visit is not evidence of the original map bytes without a matching
+`post_load` observation and provenance audit.
+
 The new patch also records `skip` observations when a target face reaches
 a terrain rendering function but is rejected before primitive submission:
 `reason: "null_gfx"` when normal/overhead rendering encounters `GFX_NULL`,
