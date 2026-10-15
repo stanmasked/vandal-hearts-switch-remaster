@@ -59,6 +59,7 @@ def _records_for_block(block: bytes, base: int, gfx_ids: tuple[int, ...]) -> lis
             "raw_hex": raw.hex(" "),
             "bytes": list(raw),
             "clut_index_offset": CLUT_INDEX_OFFSET + gfx,
+            "absolute_clut_index_offset": base + CLUT_INDEX_OFFSET + gfx,
             "clut_index": block[CLUT_INDEX_OFFSET + gfx],
         })
     return records
