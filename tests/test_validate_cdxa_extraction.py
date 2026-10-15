@@ -3,6 +3,7 @@ import json
 import sys
 import tempfile
 import unittest
+import wave
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -82,6 +83,44 @@ class ValidateXaExtractionTests(unittest.TestCase):
         self.payload.write_bytes(b"")
         with self.assertRaisesRegex(ValueError, "no audio sectors"):
             self.check()
+
+
+    def write_wav(self, path, frames=4032, rate=37800, channels=2):
+        with wave.open(str(path), "wb") as wav:
+            wav.setnchannels(channels)
+            wav.setsampwidth(2)
+            wav.setframerate(rate)
+            wav.writeframes(bytes(frames * channels * 2))
+
+    def test_matching_wav_is_accepted(self):
+        self.check()
+        wav = self.report.parent / "decoded.wav"
+        self.write_wav(wav)
+        result = validate_extraction(self.report, self.payload, wav)
+        self.assertEqual(result["pcm_frames"], 4032)
+
+    def test_wav_wrong_frame_count_rejected(self):
+        self.check()
+        wav = self.report.parent / "decoded.wav"
+        self.write_wav(wav, frames=2016)
+        with self.assertRaisesRegex(ValueError, "frame count"):
+            validate_extraction(self.report, self.payload, wav)
+
+    def test_wav_wrong_sample_rate_rejected(self):
+        self.check()
+        wav = self.report.parent / "decoded.wav"
+        self.write_wav(wav, rate=44100)
+        with self.assertRaisesRegex(ValueError, "37800"):
+            validate_extraction(self.report, self.payload, wav)
+
+    def test_wav_truncated_data_rejected(self):
+        self.check()
+        wav = self.report.parent / "decoded.wav"
+        self.write_wav(wav)
+        with wav.open("r+b") as stream:
+            stream.truncate(wav.stat().st_size - 20)
+        with self.assertRaisesRegex(ValueError, "truncated"):
+            validate_extraction(self.report, self.payload, wav)
 
 
 if __name__ == "__main__":
