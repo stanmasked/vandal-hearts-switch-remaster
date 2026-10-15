@@ -14,9 +14,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from fractions import Fraction
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.inspect_ps1_seq import MAX_SEQ_BYTES, SAMPLE_RATE, parse_seq
 from tools.mix_spu_stereo import MAX_FRAMES
 
