@@ -176,3 +176,12 @@ A direct read of `src/maps/unpack.c` at upstream revision `14552fffa0e0b47e02b57
 - The source has no output-capacity parameter for `UnpackMapFileData()`. Its existing contract therefore does **not** prove bounds safety for malformed or truncated map data; a Switch-facing loader should validate the input/output allocation contract before calling it, without changing original decompression semantics prematurely.
 
 **Alias classification:** the `PC_PORT` dictionary is one static function-scoped backing array, distinct from `gMapDataPtr`. The pinned function does not itself demonstrate aliasing with the full PS1 scratchpad region; other consumers must be searched before generalizing. No runtime or memory-safety test is claimed for this source review.
+
+
+## 11. `gMapDataPtr` declaration and unresolved ownership (2026-10-15)
+
+At pinned upstream revision `14552fffa0e0b47e02b57592e274fc6e7a649923`, `include/field.h` declares `extern u8 *gMapDataPtr;`. In `src/maps/unpack.c`, `ProcessMapFileData()` passes that pointer directly to `UnpackMapFileData()` as the output destination. A targeted inspection of `src/maps/common.c`, `src/battle/field.c`, `src/events/scene_loaders.c`, and `src/core/cd.c` did not find the symbol; this limited check is **not** a whole-tree proof of absence.
+
+**Open ownership questions:** locate the pointer definition and all assignments; determine its allocation base, capacity, initialization and reset sequence, whether it aliases PS1 RAM or another map buffer, and the maximum decompressed size for every supported map. Confirm whether compressed input length and output capacity are validated by callers. A pointer declaration alone establishes none of these properties.
+
+**Switch integration gate:** do not wrap the existing decompressor with an invented output size or assume the map's dimensions imply byte capacity. First trace ownership and format bounds from actual source and local test fixtures. No original game assets or runtime tests were used in this review.
