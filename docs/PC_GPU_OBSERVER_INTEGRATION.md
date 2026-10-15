@@ -134,3 +134,9 @@ CI https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/3879
 The exclusive target observer patch also now skips `PC_GpuPumpEvents()` (commit `f908147d`). This is an intentional transfer of event pumping to the future outer Switch SDL2 event loop. Default desktop mode retains its original event pump; patcher tests enforce the conditional. Existing desktop window access and presentation remain unchanged outside opt-in exclusive mode.
 
 This host harness proves an original upstream **conversion function**, not the native Switch game loop, original content, or physical console execution.
+
+## Cropped VRAM read verified and observer-contract CI restored
+
+Pinned upstream host run https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38794367702 passed both the original 3×2 BGR555→RGB24 check and the expanded 5×3-source/3×2-region test with nonzero x/y offsets, validating conversion, source VRAM stride, and bottom-up presentation by executing `PC_GpuPresent`. A Python test briefly failed because its expected preprocessor snippet used an escaped newline literal. Commit `dad3b4ec` removes that redundant fragile assertion; the comprehensive event-pump block test remains in place.
+
+The corrected suite passed https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38794539930 (RGB24 frame handoff contract), and the pinned upstream compilation/conversion suite passed https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38794539814. This closes the host-only regression, but **does not yet verify execution of original `PC_GpuPresent` on Nintendo Switch or NeXium**. The next step is target compilation/linking and a platform-side game-loop and event-owner adapter; original game assets and bootstrap remain separate dependencies.
