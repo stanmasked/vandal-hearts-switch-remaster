@@ -18,27 +18,37 @@ void SetupField(void) {
 
 GRAPHICS = """#include "PsyQ/gtemac.h"
 void RenderMapTile(u32 *ot, MapTileModel *tileModel, s32 gridColor) {
-   s32 faceIdx = 0, gfx = 641;
+   s32 faceIdx = 0, gfx = 641, opz = 1;
    POLY_FT4 *poly = 0;
-   if (1) {
-      AddPrim(ot + OT_SIZE - otz, poly);
-   }
+   gfx = tileModel->gfx[faceIdx];
+      if (gfx != GFX_NULL) {
+         gte_stopz(&opz);
+         if (opz > 0) {
+            AddPrim(ot + OT_SIZE - otz, poly);
+         }
+      }
 }
 
 void RenderEdgeMapTile(u32 *ot, MapTileModel *tileModel, s32 gridColor) {
-   s32 faceIdx = 0, gfx = 641;
+   s32 faceIdx = 0, gfx = 641, opz = 1;
    POLY_FT4 *poly = 0;
-   if (1) {
-      AddPrim(ot + OT_SIZE - otz, poly);
-   }
+      gte_stopz(&opz);
+      if (opz > 0) {
+         gfx = tileModel->gfx[faceIdx];
+         AddPrim(ot + OT_SIZE - otz, poly);
+      }
 }
 
 void RenderOverheadMapTile(u32 *ot, MapTileModel *tileModel, s32 brightness) {
-   s32 faceIdx = 0, gfx = 641;
+   s32 faceIdx = 0, gfx = 641, opz = 1;
    POLY_FT4 *poly = 0;
-   if (1) {
-      AddPrim(ot + OT_SIZE - otz, poly);
-   }
+   gfx = tileModel->gfx[faceIdx];
+      if (gfx != GFX_NULL) {
+         gte_stopz(&opz);
+         if (opz > 0) {
+            AddPrim(ot + OT_SIZE - otz, poly);
+         }
+      }
 }
 
 s32 GetBestViewOfTarget(s8 z, s8 x, s32 param_3) {
@@ -66,6 +76,10 @@ class Map02TracePatchTests(unittest.TestCase):
         self.assertIn('poly->tpage', result)
         self.assertIn('gState.frameCounter', result)
         self.assertEqual(result.count("AddPrim(ot + OT_SIZE - otz, poly);"), 3)
+        self.assertEqual(result.count('VH_Map02TraceSkip(tileModel, faceIdx'), 5)
+        self.assertIn('"null_gfx"', result)
+        self.assertIn('"backface"', result)
+
 
     def test_patch_contains_only_two_expected_paths(self):
         diff = create_patch(LOADER, GRAPHICS)
