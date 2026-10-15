@@ -338,6 +338,17 @@ jobs:
                   print(f"Original SPRT via DR_MODE {name}: {observed}")
                   if max(abs(a-b) for a,b in zip(observed, expected)) > 36:
                       raise SystemExit(f"Original SPRT tpage/CLUT mismatch: {name}")
+          # Original GP0(E2h) texture window: U=0/1 are redirected to
+          # U=8/9 by DR_MODE maskX=1/offX=1, then reset for baseline SPRT.
+          for frame_image in (im, after):
+              for name, (x, y), expected in (
+                  ("texture-window blue", (210, 440), (0, 0, 255)),
+                  ("texture-window white", (290, 440), (255, 255, 255)),
+              ):
+                  observed = frame_image.getpixel((x, y))
+                  print(f"Original GP0(E2h) {name}: {observed}")
+                  if max(abs(a-b) for a,b in zip(observed, expected)) > 36:
+                      raise SystemExit(f"Original GP0(E2h) texture window failed: {name}")
           # The center pixel is deliberately dynamic: R=12->99, G=12->99,
           # B=frame*3 modulo 256. Verify the intended channel changes,
           # not merely a window animation elsewhere in the screenshot.
