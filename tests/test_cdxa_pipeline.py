@@ -201,5 +201,32 @@ class CdXaPipelineTests(unittest.TestCase):
             self.assertEqual(source.stat().st_size, SECTOR_SIZE * 2)
 
 
+    def test_extractor_refuses_source_and_report_path_collisions(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "synthetic-disc.bin"
+            source.write_bytes(xa_audio_sector())
+            payload = root / "audio-payload.bin"
+            report = root / "report.json"
+
+            with self.assertRaisesRegex(ValueError, "overwrite the source"):
+                extract_audio_payloads(source, source)
+            self.assertEqual(source.stat().st_size, SECTOR_SIZE)
+
+            with self.assertRaisesRegex(ValueError, "Report path"):
+                extract_audio_payloads(source, payload, report_path=source)
+            self.assertFalse(payload.exists())
+
+            with self.assertRaisesRegex(ValueError, "Report path"):
+                extract_audio_payloads(source, payload, report_path=payload)
+            self.assertFalse(payload.exists())
+
+            report.write_text("keep this report", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Report path"):
+                extract_audio_payloads(source, payload, report_path=report)
+            self.assertEqual(report.read_text(encoding="utf-8"), "keep this report")
+            self.assertFalse(payload.exists())
+
+
 if __name__ == "__main__":
     unittest.main()
