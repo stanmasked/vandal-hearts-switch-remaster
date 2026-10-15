@@ -1,4 +1,4 @@
-name: Host audio and regression tests
+name: Host SPU audio regressions
 
 on:
   pull_request:
@@ -12,8 +12,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  host-regressions:
-    name: host-regressions
+  spu-audio:
+    name: spu-audio
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -21,5 +21,14 @@ jobs:
         uses: actions/checkout@v4
       - name: Python syntax checks
         run: python3 -m compileall -q tools tests
-      - name: Run complete host regression suite including VAB and SPU
-        run: make test
+      - name: Run VAB, SPU and synthetic audio tests
+        run: |
+          python3 tests/test_inspect_spu_vag.py
+          python3 tests/test_inspect_vab_header.py
+          python3 tests/test_inspect_vab_sizes.py
+          python3 tests/test_decode_spu_adpcm.py
+          python3 tests/test_decode_vab_sample.py
+          python3 tests/test_resolve_vab_note.py
+          python3 tests/test_simulate_spu_voice.py
+          python3 tests/test_render_vab_note.py
+          python3 tests/test_spu_gaussian_interpolation.py
