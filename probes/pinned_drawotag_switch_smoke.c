@@ -30,11 +30,13 @@ static void draw_frame(int frame) {
     unsigned int ot[1];
     TILE corner[4], background;
     POLY_F4 polygon;
-    POLY_FT4 textured;
+    POLY_FT4 textured, textured8;
     /* 4bpp: four texels (1,2,1,2) per packed 16-bit VRAM word. */
     unsigned short texels[2] = {0x2121, 0x2121};
     unsigned short palette[16] = {0, 0x001f, 0x03e0};
-    RECT tex_rect, clut_rect;
+    unsigned short texels8[2] = {0x0201, 0x0201};
+    unsigned short palette8[256] = {0, 0x7c00, 0x7fff};
+    RECT tex_rect, clut_rect, tex8_rect, clut8_rect;
     SetDefDrawEnv(&draw, 0, 0, 12, 9);
     SetDefDispEnv(&display, 0, 0, 12, 9);
     PutDrawEnv(&draw);
@@ -46,7 +48,19 @@ static void draw_frame(int frame) {
     setRECT(&clut_rect, 0, 40, 16, 1);
     LoadImage(&tex_rect, (unsigned int *)texels);
     LoadImage(&clut_rect, (unsigned int *)palette);
+    setRECT(&tex8_rect, 128, 0, 1, 2);
+    setRECT(&clut8_rect, 0, 41, 256, 1);
+    LoadImage(&tex8_rect, (unsigned int *)texels8);
+    LoadImage(&clut8_rect, (unsigned int *)palette8);
     ClearOTag(ot, 1);
+    /* 8bpp page with its own 256-colour CLUT, safely off-screen. */
+    SetPolyFT4(&textured8);
+    setXYWH(&textured8, 8, 3, 2, 2);
+    setUVWH(&textured8, 0, 0, 2, 2);
+    setRGB0(&textured8, 128, 128, 128);
+    setTPage(&textured8, 1, 0, 128, 0);
+    setClut(&textured8, 0, 41);
+    AddPrim(&ot[0], &textured8);
     /* Dedicated 4bpp CLUT quad below the F4. White-neutral modulation
      * leaves CLUT red/green easy to distinguish from the background. */
     SetPolyFT4(&textured);
