@@ -65,12 +65,83 @@ static void test_multiple_control_groups(void) {
     assert(n == 9);
 }
 
+
+static void test_command_limits(void) {
+    uint8_t raw[73] = {0x01, 0xff};
+    uint8_t out[75];
+    size_t n = 0;
+    for (size_t i = 0; i < 71; ++i) raw[i + 2] = (uint8_t)(i + 1);
+    memset(out, 0x5a, sizeof out);
+    assert(vh_map_decode_checked(raw, sizeof raw, out, 71, &n)
+           == VH_MAP_DECODE_OK);
+    assert(n == 71 && memcmp(out, raw + 2, 71) == 0);
+    assert(out[71] == 0x5a);
+    assert(vh_map_decode_checked(raw, sizeof raw, out, 70, &n)
+           == VH_MAP_DECODE_OUTPUT_FULL && n == 0);
+
+    /* Maximum absolute copy: (0x7c >> 2) + 3 = 34 bytes. */
+    {
+        const uint8_t absolute[] = {0x01, 0x7c, 0x00};
+        memset(out, 0x5a, sizeof out);
+        assert(vh_map_decode_checked(absolute, sizeof absolute, out, 34, &n)
+               == VH_MAP_DECODE_OK && n == 34);
+        for (size_t i = 0; i < 34; ++i) assert(out[i] == 0);
+        assert(out[34] == 0x5a);
+        assert(vh_map_decode_checked(absolute, sizeof absolute, out, 33, &n)
+               == VH_MAP_DECODE_OUTPUT_FULL && n == 0);
+    }
+    /* Maximum relative copy: ((0xb0 & 0x30) >> 4) + 2 = 5. */
+    {
+        const uint8_t relative[] = {0x01, 0xb0};
+        memset(out, 0x5a, sizeof out);
+        assert(vh_map_decode_checked(relative, sizeof relative, out, 5, &n)
+               == VH_MAP_DECODE_OK && n == 5);
+        for (size_t i = 0; i < 5; ++i) assert(out[i] == 0);
+        assert(out[5] == 0x5a);
+        assert(vh_map_decode_checked(relative, sizeof relative, out, 4, &n)
+               == VH_MAP_DECODE_OUTPUT_FULL && n == 0);
+    }
+    /* A missing final byte of the longest raw run is an input error. */
+    assert(vh_map_decode_checked(raw, sizeof raw - 1, out, sizeof out, &n)
+           == VH_MAP_DECODE_TRUNCATED && n == 0);
+}
+
+static void test_dictionary_wrap(void) {
+    uint8_t code[40], out[40];
+    size_t ip = 0, n = 0;
+    /* Initial dictionary cursor 990 + 32 literals = 1022. */
+    for (unsigned group = 0; group < 4; ++group) {
+        code[ip++] = 0x00;
+        for (unsigned j = 0; j < 8; ++j)
+            code[ip++] = (uint8_t)('a' + group);
+    }
+    /* Literal X -> index 1022, literal Y -> 1023, then wrap to 0.
+     * The relative copy with distance 1 repeats Y over the boundary. */
+    code[ip++] = 0x04;
+    code[ip++] = 'X';
+    code[ip++] = 'Y';
+    code[ip++] = 0x81;
+    assert(ip == sizeof code);
+    memset(out, 0xcc, sizeof out);
+    assert(vh_map_decode_checked(code, ip, out, 36, &n)
+           == VH_MAP_DECODE_OK && n == 36);
+    for (unsigned group = 0; group < 4; ++group)
+        for (unsigned j = 0; j < 8; ++j)
+            assert(out[group * 8 + j] == (uint8_t)('a' + group));
+    assert(out[32] == 'X' && out[33] == 'Y');
+    assert(out[34] == 'Y' && out[35] == 'Y' && out[36] == 0xcc);
+    assert(vh_map_decode_checked(code, ip, out, 35, &n)
+           == VH_MAP_DECODE_OUTPUT_FULL && n == 34);
+}
+
 int main(void) {
     test_literal();
     test_absolute();
     test_relative();
     test_raw_run_and_errors();
     test_multiple_control_groups();
+    test_command_limits();
+    test_dictionary_wrap();
     puts("Checked map decoder tests passed.");
     return 0;
 }
