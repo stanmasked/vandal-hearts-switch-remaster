@@ -33,7 +33,25 @@ int main(void) {
     assert(!vh_map_buffers_prepare(&memory, 8, 64, &buffers));
     input[0] = 0; input[1] = 0; input[2] = 0; input[3] = 0;
     assert(!vh_map_buffers_prepare(&memory, 8, 64, &buffers));
-    input[0] = 4;
+    /* The last legal compressed byte may touch output_base - 1, but must
+     * never overlap the output region itself. This only checks layouts. */
+    {
+        const size_t last_safe = VH_MAP_INPUT_OUTPUT_GAP - 4;
+        assert(VH_MAP_INPUT_OUTPUT_GAP == (size_t)0x4ea50);
+        input[0] = (uint8_t)last_safe;
+        input[1] = (uint8_t)(last_safe >> 8);
+        input[2] = (uint8_t)(last_safe >> 16);
+        input[3] = (uint8_t)(last_safe >> 24);
+        assert(vh_map_buffers_prepare(&memory, VH_MAP_INPUT_OUTPUT_GAP,
+                                      64, &buffers));
+        assert(buffers.compressed_length == last_safe);
+        assert(buffers.compressed + last_safe == buffers.output);
+        ++input[0]; /* Reaches output start: forbidden live alias. */
+        assert(!vh_map_buffers_prepare(&memory, VH_MAP_INPUT_OUTPUT_GAP + 1,
+                                       64, &buffers));
+        assert(buffers.output == NULL && buffers.compressed == NULL);
+    }
+    input[0] = 4; input[1] = 0; input[2] = 0; input[3] = 0;
     memory.ram_size = 0x140000;
     assert(!vh_map_buffers_prepare(&memory, 8, 64, &buffers));
     free(ram);
