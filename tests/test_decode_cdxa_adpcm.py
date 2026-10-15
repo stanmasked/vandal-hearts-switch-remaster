@@ -52,7 +52,15 @@ class DecodeCdXaAdpcmTests(unittest.TestCase):
         pcm = decode_group(bytes(group), history)
         samples = struct.unpack("<" + "h" * (len(pcm) // 2), pcm)
         self.assertEqual(samples[0], 32767)
-        self.assertGreater(history[0][0], 32767)
+        self.assertIn(32767, samples)
+        # Independently compute the final left-channel predictor state without
+        # clipping feedback. The first samples clip in PCM, but history must
+        # retain the unbounded predictor values throughout the group.
+        h1, h2 = 32767, -32768
+        for _ in range(112):
+            sample = 7 + (115 * h1 - 52 * h2 + 32) >> 6
+            h2, h1 = h1, sample
+        self.assertEqual(history[0], [h1, h2])
 
     def test_rejects_bad_group_length_and_parameter_copy(self):
         with self.assertRaisesRegex(ValueError, "exactly 128"):
