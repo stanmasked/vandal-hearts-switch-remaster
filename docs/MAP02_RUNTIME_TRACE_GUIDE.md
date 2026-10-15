@@ -790,8 +790,22 @@ still invokes the **non-strict evidence verifier** on any captured partial
 journal. Only a complete, internally consistent capture passes the final
 `--require-complete` replay.
 
-The generated `session_plan.json` records intended file locations and
-the shell script SHA-256; it says `build_executed: false` because a
-prepared plan is **not** evidence that a real build or game run occurred.
-CI covers this generation using synthetic paths and checks `sh -n` syntax;
-it does not run a proprietary disc or reach the bridge.
+The generated `session_plan.json` records intended paths and SHA-256
+fingerprints of the command script, original preflight snapshot and
+`trace/source_provenance.json`. At the start of the user-executed script,
+`python3 -m tools.verify_map02_session /path/to/new-map02-session`
+checks those hashes, validates the individual generated C and Make-overlay
+digests against the source manifest, confirms the pinned upstream blob
+identities and matching loader/renderer build markers, and refuses an
+existing capture directory. It **aborts before `make`** if the session
+has been changed or already used. You can also run the same command
+manually to inspect a prepared session without accessing original game
+data. The script then reruns the asset/checkout preflight immediately
+before the compilation step.
+
+The plan records `build_executed: false` because a prepared session
+is **not** evidence that a real build or gameplay capture occurred.
+SHA-256 comparison is a consistency check, not a signature or defense
+against coordinated rewriting of a plan and its inputs.
+CI covers generation and tampering tests using synthetic paths and checks
+`sh -n` syntax; it does not run a proprietary disc or reach the bridge.
