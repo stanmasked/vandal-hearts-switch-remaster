@@ -419,7 +419,7 @@ faces visible to the renderer, and exit normally.
 
 The capture directory contains:
 
-- `game_stdout.log` — complete merged stdout and stderr
+- `game_stdout.log` — byte-for-byte combined stdout/stderr, including non-UTF-8 bytes
 - `map02_trace.jsonl` — extracted events, when any exist
 - `capture_report.json` — consistency analysis, binary SHA-256,
   source provenance, and game process exit code
@@ -433,7 +433,10 @@ overwrites an existing capture folder. Modified-source runs require
 
 The provenance manifest is not a signed build attestation and cannot prove
 that the chosen executable was built from it. The executable SHA-256 allows
-later identification of the exact binary tested. The diagnostics do not
+later identification of the exact binary tested. The raw log is written as bytes without UTF-8 replacement; decoding with
+replacement occurs **only** in the JSON event extractor. A synthetic host
+test confirms that invalid UTF-8 bytes survive the capture unchanged.
+The diagnostics do not
 download, upload, or modify any game data and cannot claim pixel-perfect
 correctness from texture indices alone.
 
