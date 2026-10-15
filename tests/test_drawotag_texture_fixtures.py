@@ -400,6 +400,36 @@ class TextureFixtureTests(unittest.TestCase):
         self.assertGreaterEqual(320, 12)
         self.assertGreaterEqual(496, 9)
 
+    def test_private_map_patch_renders_only_after_validated_sd_pair(self):
+        """Source contract for the intentionally non-CI, owner-only branch."""
+        guest = (Path(__file__).resolve().parents[1] /
+                 'probes/pinned_drawotag_switch_smoke.c').read_text()
+        header = (Path(__file__).resolve().parents[1] /
+                  'source/vh_private_map_bank.h').read_text()
+        self.assertIn('VH_PRIVATE_MAP_TEXTURE_PATH', header)
+        self.assertIn('VH_PRIVATE_MAP_LAND_PATH', header)
+        self.assertIn('vh_private_map_bank_load_pair(', guest)
+        self.assertIn('11, 241, &private_map', guest)
+        self.assertIn('if (asset_status < 0)', guest)
+        self.assertIn('if (asset_status == 1)', guest)
+        self.assertIn('private_map_active = 1;', guest)
+        self.assertIn('static int draw_private_map_preview(void)', guest)
+        self.assertIn(
+            'private_map_active ? draw_private_map_preview() : draw_frame(frame)',
+            guest,
+        )
+        self.assertIn('setUVWH(&preview,', guest)
+        self.assertIn('private_map.uvwh[0], private_map.uvwh[1]', guest)
+        self.assertIn('private_map.uvwh[2], private_map.uvwh[3]', guest)
+        self.assertIn('setTPage(&preview, 0, 0, 320, 0);', guest)
+        self.assertIn(
+            'setClut(&preview, 672, 496 + private_map.local_clut_id - 32);',
+            guest,
+        )
+        self.assertIn('LoadImage(&page, (unsigned int *)map_tex_words);', guest)
+        self.assertIn('LoadImage(&palette, (unsigned int *)map_clut_words);', guest)
+        self.assertIn('DrawOTag(ot);', guest)
+
     def test_stp_is_per_texel(self):
         values = [sample(self.vram, tpage(2, 320), 0, u, 0)
                   for u in range(2)]
