@@ -43,7 +43,7 @@ def evaluate_trace(entries):
         if pos not in TARGETS:
             continue
         stage = entry.get("stage")
-        if stage not in STAGES:
+        if type(stage) is not str or stage not in STAGES:
             errors.append(f"entry {i}: invalid stage")
             continue
         if stage == "visit":
@@ -89,12 +89,19 @@ def evaluate_trace(entries):
             skip_reasons.setdefault(pos, set()).add(reason)
             if reason == "backface" and entry["gfx"] not in TARGETS[pos]:
                 errors.append(f"unexpected GFX {entry['gfx']} for {pos} at skip")
+            if reason == "null_gfx" and entry["gfx"] != 0:
+                errors.append(f"null_gfx skip must have GFX 0 for {pos}")
             continue
         if stage == "draw":
             framed = "frame" in entry
             tagged_path = "path" in entry
             if tagged_path and (type(entry["path"]) is not str or entry["path"] not in DRAW_PATHS):
                 errors.append(f"entry {i}: path must be normal, edge, or overhead")
+                continue
+            # Reject invalid frames before mutating per-face framing state.
+            # Otherwise an invalid sample can falsely poison the next valid draw.
+            if framed and (type(entry["frame"]) is not int or entry["frame"] < 0):
+                errors.append(f"entry {i}: frame must be a non-negative integer")
                 continue
             if pos in draw_frame_mode and draw_frame_mode[pos] != framed:
                 errors.append(f"mixed framed and unframed draw observations for {pos}")
@@ -106,9 +113,6 @@ def evaluate_trace(entries):
             draw_path_mode[pos] = tagged_path
         if stage == "draw" and "frame" in entry:
             frame = entry["frame"]
-            if type(frame) is not int or frame < 0:
-                errors.append(f"entry {i}: frame must be a non-negative integer")
-                continue
             key = (pos, frame, entry.get("path", "unspecified"))
             if key in seen_draw_frames:
                 errors.append(f"duplicate draw observation for {pos} in frame {frame}")
