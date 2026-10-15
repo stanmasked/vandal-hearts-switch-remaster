@@ -850,3 +850,34 @@ nonzero unless the verified full capture contains agreeing post-load and
 submitted PRS/DAT observations for both faces. By default, a partially
 captured session still generates useful **explicitly inconclusive** review
 files. Existing outputs cannot be silently overwritten.
+
+
+## Re-entering map 11 during one capture
+
+The capture and offline evidence verifier now split **repeated map-11 loads**
+into distinct episodes when another `post_load` for an already loaded
+target appears **after renderer activity**. Each episode is checked by the
+original strict `visit` / `draw` / `skip` validator independently.
+This permits a player to leave map 11 and return in the same PC-port session
+without treating the second legitimate load as a duplicate of the first.
+
+For multiple loads the report records `map_load_count` and a separate
+`map_loads` collection with independent results for both faces.
+The top-level `observations` list is intentionally **empty**:
+GFX, UV/CLUT/tpage and frame counters from separate visits must not be
+presented as one combined face sample. The bridge Markdown report renders
+one table per map load, including any incomplete episodes.
+
+A **uniform PRS or DAT verdict** is available only when every episode has
+both target post-load observations and both validated face submissions, no
+validation errors, and the same PRS/DAT selection. A PRS-to-DAT change
+between episodes raises an error and the bridge review reports
+`undetermined`. If the second episode is interrupted, incomplete,
+or contradictory, a good first episode cannot conceal the failure.
+
+A repeated loader record **before any renderer evidence** remains an
+ambiguous duplicate, rather than being silently interpreted as a second
+valid load. This is conservative: the instrumentation has no independent
+loader invocation serial number. Tests cover actual compiled C emitters,
+repeat visits with identical or changed face indices, and truncated
+second-episode captures. These tests do not establish visible pixels.
