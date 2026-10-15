@@ -78,6 +78,22 @@ int main(void) {
     VH_ObserveCompletedRGB24(rgb, sizeof(rgb), 2, 2);
     assert(vh_switch_observer_last_result());
     assert(queries == 4 && uploads == 3 && draws == 3 && swaps == 3);
+    /* Full synthetic playback: each completed frame must cause exactly
+     * one viewport query, one upload, one draw and one buffer swap. */
+    {
+        int i;
+        const int before_queries = queries, before_uploads = uploads;
+        const int before_draws = draws, before_swaps = swaps;
+        for (i = 0; i < 120; ++i) {
+            rgb[0] = (uint8_t)i;
+            VH_ObserveCompletedRGB24(rgb, sizeof(rgb), 2, 2);
+            assert(vh_switch_observer_last_result());
+        }
+        assert(queries - before_queries == 120);
+        assert(uploads - before_uploads == 120);
+        assert(draws - before_draws == 120);
+        assert(swaps - before_swaps == 120);
+    }
     vh_switch_observer_unregister();
     assert(!vh_switch_observer_last_result());
     puts("Upstream observer registration tests passed.");
