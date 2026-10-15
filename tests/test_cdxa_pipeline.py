@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from tools.extract_cdxa_payload import SECTOR_SIZE, SYNC, extract_audio_payloads
 from tools.decode_cdxa_adpcm import AUDIO_BYTES_PER_SECTOR, SAMPLE_RATE, decode_payload_file
+from tools.validate_cdxa_extraction import validate_extraction
 
 
 def xa_audio_sector(payload_marker: int = 0) -> bytes:
@@ -266,6 +267,49 @@ class CdXaPipelineTests(unittest.TestCase):
                 extract_audio_payloads(source, payload, report_path=alias)
             self.assertFalse(payload.exists())
             self.assertEqual(source.read_bytes(), original)
+
+
+    def test_interleaved_channels_must_be_isolated_before_decoding(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "interleaved-disc.bin"
+            mixed_payload = root / "mixed.bin"
+            mixed_report = root / "mixed.json"
+            isolated_payload = root / "isolated.bin"
+            isolated_report = root / "isolated.json"
+            wav_path = root / "isolated.wav"
+
+            # Synthetic silent XA sound groups; channels alternate by sector.
+            source.write_bytes(
+                set_xa_file_channel(xa_audio_sector(), 1, 0)
+                + set_xa_file_channel(xa_audio_sector(), 1, 1)
+                + set_xa_file_channel(xa_audio_sector(), 1, 0)
+                + set_xa_file_channel(xa_audio_sector(), 1, 1)
+            )
+
+            mixed = extract_audio_payloads(
+                source, mixed_payload, report_path=mixed_report
+            )
+            self.assertEqual(mixed["file_channel_counts"], {"1:0": 2, "1:1": 2})
+            with self.assertRaisesRegex(ValueError, "multiple CD-XA"):
+                validate_extraction(mixed_report, mixed_payload)
+            self.assertFalse(wav_path.exists())
+
+            isolated = extract_audio_payloads(
+                source, isolated_payload, file_number=1, channel=0,
+                report_path=isolated_report
+            )
+            self.assertEqual(isolated["audio_lbas"], [0, 2])
+            self.assertEqual(isolated["file_channel_counts"], {"1:0": 2})
+            self.assertEqual(validate_extraction(isolated_report, isolated_payload)["pcm_frames"], 4032)
+            decoded = decode_payload_file(isolated_payload, wav_path, extracted_groups=True)
+            self.assertEqual(decoded["frames"], 4032)
+            self.assertEqual(
+                validate_extraction(isolated_report, isolated_payload, wav_path)["pcm_frames"],
+                4032,
+            )
+            with wave.open(str(wav_path), "rb") as wav:
+                self.assertEqual(wav.readframes(4032), bytes(4032 * 4))
 
 
 if __name__ == "__main__":
