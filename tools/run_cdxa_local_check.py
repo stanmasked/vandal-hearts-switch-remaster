@@ -12,6 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.compare_cdxa_wavs import compare_wavs, sha256_file
+from tools.analyze_cdxa_wav_quality import analyze_wav
 from tools.decode_cdxa_adpcm import decode_payload_file
 from tools.extract_cdxa_payload import extract_audio_payloads
 from tools.validate_cdxa_extraction import validate_extraction
@@ -70,6 +71,7 @@ def run_local_check(
             "source_bin_sha256": sha256_file(source),
             "payload_sha256": extracted["payload_sha256"],
             "decoded_wav_sha256": sha256_file(decoded),
+            "pcm_signal_diagnostics": analyze_wav(decoded),
         }
         if reference_wav is not None:
             comparison = compare_wavs(decoded, reference_wav)
