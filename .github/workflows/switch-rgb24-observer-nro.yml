@@ -167,6 +167,22 @@ jobs:
               print(f"Observer marker {name}: expected {expected}, observed {observed}")
               if max(abs(a - b) for a, b in zip(observed, expected)) > 36:
                   raise SystemExit(f"RGB order or frame orientation mismatch: {name}")
+          # The center pixel is deliberately dynamic: R=4*24, G=3*31,
+          # B=frame*3 modulo 256. Verify the intended channel changes,
+          # not merely a window animation elsewhere in the screenshot.
+          first_center = im.getpixel((640, 360))
+          second_center = after.getpixel((640, 360))
+          print("Observer RGB center first/after:", first_center, second_center)
+          for observed in (first_center, second_center):
+              if abs(observed[0] - 96) > 20 or abs(observed[1] - 93) > 20:
+                  raise SystemExit("Center RGB gradient channels are incorrect")
+          if abs(second_center[2] - first_center[2]) <= 15:
+              raise SystemExit("Expected moving blue channel did not update")
+          # The four corner markers must stay fixed across time.
+          for name, expected, (x, y) in markers:
+              observed = after.getpixel((x, y))
+              if max(abs(a - b) for a, b in zip(observed, expected)) > 36:
+                  raise SystemExit(f"Corner marker changed after frame update: {name}")
           previous = im.crop((320, 100, 960, 620)).resize((160, 130))
           following = after.crop((320, 100, 960, 620)).resize((160, 130))
           changed = sum(max(abs(a[k] - b[k]) for k in range(3)) > 15
