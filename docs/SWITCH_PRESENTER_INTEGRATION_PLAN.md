@@ -206,3 +206,18 @@ The pinned PC CMake file creates a staged `inline_gte.h` link to `platform/pc/in
 The generic `include/inline_gte.h` instead contains raw MIPS COP2 instructions (including `lwc2` and `cop2`). Therefore the Switch target must verify the *resolved header path* for the game sources, not merely define `PC_PORT` and `PERMUTER`. Accidentally selecting the generic header would leave architecture-specific assembly in a translation unit even though the high-level compatibility flags were set.
 
 This is a concrete header-resolution requirement derived from the upstream CMake setup and both header variants. It is not yet verified by a complete Switch compile. Add a build-time check (for example, compiler dependency output or a small compile-only assertion in the target configuration) that demonstrates the PC software-GTE replacement is selected.
+
+## Source audit update: regional source trees do not share identical memory guards
+
+A cross-tree search at the pinned upstream revision found a concrete region-specific difference that changes the address audit:
+
+- In the main `src/maps/unpack.c`, the 1 KB dictionary scratchpad is redirected to a static host buffer under `PC_PORT`; the literal `0x1f800000` remains only in the non-`PC_PORT` branch.
+- In `jp/src/maps/unpack.c`, the corresponding function still assigns `pCache = (u8 *)0x1f800000` directly. The Japanese source therefore retains a live dependency on the fixed scratchpad mapping at this call site, unless that source is excluded or patched for the selected target.
+- Both `src/core/graphics.c` and `jp/src/core/graphics.c` have the `PC_PORT` host-buffer alternative, so this difference is not a blanket distinction across all files; it must be checked per call site and per region.
+- Upstream `docs/memory-safety.md` also explicitly describes the US tree as having an extra host-buffer step that the Japanese tree does not have.
+
+### Porting consequence
+
+Do not assume that defining `PC_PORT` alone removes every fixed PS1 scratchpad reference for every regional build. The Switch target must either choose a region whose complete source set has been audited, or add and test a region-specific compatibility patch. The audit inventory should record source path/region, preprocessor guard, and whether the literal survives in the selected compilation configuration.
+
+This is a confirmed source-tree difference, not a Switch compile/runtime result. No upstream source has been changed by this repository commit.
