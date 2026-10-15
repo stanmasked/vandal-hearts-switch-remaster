@@ -61,6 +61,49 @@ class RuntimeTraceTests(unittest.TestCase):
         report = evaluate_trace(observations(draw_a=498))
         self.assertTrue(any("changed between" in error for error in report["errors"]))
 
+    def test_renderer_visit_without_faces_is_distinct_from_camera_not_visiting(self):
+        entries = observations()[:-1]
+        entries.append({"z": 11, "x": 11, "face": 0, "stage": "visit",
+                        "gfx": 0, "frame": 17, "path": "normal", "face_count": 0})
+        result = evaluate_trace(entries)
+        row = result["observations"][1]
+        self.assertEqual(row["draw_status"], "no_faces_in_observed_passes")
+        self.assertEqual(row["visit_observation_count"], 1)
+        self.assertEqual(row["observed_face_counts"], [0])
+        self.assertEqual(row["visit_paths"], ["normal"])
+        self.assertTrue(any("missing draw" in error for error in result["errors"]))
+        absent = evaluate_trace(observations()[:-1])
+        self.assertEqual(absent["observations"][1]["draw_status"], "no_renderer_observation")
+
+    def test_visit_without_submission_and_mixed_face_counts(self):
+        entries = observations()[:-1]
+        entries.extend([
+            {"z": 11, "x": 11, "face": 0, "stage": "visit",
+             "gfx": 0, "frame": 17, "path": "normal", "face_count": 0},
+            {"z": 11, "x": 11, "face": 0, "stage": "visit",
+             "gfx": 643, "frame": 18, "path": "edge", "face_count": 4},
+        ])
+        row = evaluate_trace(entries)["observations"][1]
+        self.assertEqual(row["draw_status"], "visited_without_submission")
+        self.assertEqual(row["observed_face_counts"], [0, 4])
+        self.assertEqual(row["visit_paths"], ["edge", "normal"])
+
+    def test_visit_validation_rejects_bad_shape_and_gfx(self):
+        entries = observations()
+        visit = {"z": 8, "x": 19, "face": 0, "stage": "visit",
+                 "gfx": 641, "frame": 1, "path": "normal", "face_count": 6}
+        self.assertEqual(evaluate_trace(entries + [visit])["errors"], [])
+        for field, bad in (("frame", -1), ("frame", True),
+                           ("path", "unknown"), ("face_count", True),
+                           ("face_count", 19)):
+            with self.subTest(field=field, bad=bad):
+                report = evaluate_trace(entries + [{**visit, field: bad}])
+                self.assertTrue(report["errors"])
+        invalid = evaluate_trace(entries + [{**visit, "gfx": 999}])
+        self.assertTrue(any("unexpected GFX 999" in e for e in invalid["errors"]))
+        zero_face = evaluate_trace(entries + [{**visit, "face_count": 0, "gfx": 641}])
+        self.assertTrue(any("zero-face visit" in e for e in zero_face["errors"]))
+
     def test_backface_skip_explains_missing_submission(self):
         entries = observations()[:-1]
         entries.append({"z": 11, "x": 11, "face": 0, "stage": "skip",
