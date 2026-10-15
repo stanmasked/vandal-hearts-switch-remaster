@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -72,6 +73,7 @@ def extract_audio_payloads(
     destination.parent.mkdir(parents=True, exist_ok=True)
     temp_payload: Path | None = None
     temp_report: Path | None = None
+    previous_payload: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
             prefix=f".{destination.name}.", suffix=".tmp",
@@ -156,13 +158,35 @@ def extract_audio_payloads(
         if report_path is not None and report_path.is_dir():
             raise IsADirectoryError(f"Report destination is a directory: {report_path}")
 
+        # Preserve the previous payload until the report is published.
+        # If publishing the report fails, restore the previous complete payload.
+        # This is best-effort rollback, not an atomic two-file transaction.
+        if temp_report is not None and destination.exists():
+            with tempfile.NamedTemporaryFile(
+                prefix=f".{destination.name}.", suffix=".tmp",
+                dir=destination.parent, delete=False,
+            ) as backup:
+                previous_payload = Path(backup.name)
+                with destination.open("rb") as existing:
+                    shutil.copyfileobj(existing, backup)
+                backup.flush()
+                os.fsync(backup.fileno())
+
         os.replace(temp_payload, destination)
         temp_payload = None
         if temp_report is not None and report_path is not None:
-            os.replace(temp_report, report_path)
-            temp_report = None
+            try:
+                os.replace(temp_report, report_path)
+                temp_report = None
+            except OSError:
+                if previous_payload is not None:
+                    os.replace(previous_payload, destination)
+                    previous_payload = None
+                else:
+                    destination.unlink()
+                raise
     finally:
-        for temporary in (temp_payload, temp_report):
+        for temporary in (temp_payload, temp_report, previous_payload):
             if temporary is not None:
                 try:
                     temporary.unlink()
