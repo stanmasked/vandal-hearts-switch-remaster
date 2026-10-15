@@ -104,8 +104,19 @@ def classify_runtime_faces(report: dict, captured: list[dict]) -> dict:
                 "both" if prs and dat else "prs" if prs else "dat" if dat else "neither"
             ),
         })
+    statuses = [v["classification"] for v in classifications]
+    overall = (
+        "invalid_translation" if "invalid_translation" in statuses else
+        "unrecognized" if "neither" in statuses else
+        "prs" if all(v == "prs" for v in statuses) else
+        "dat" if all(v == "dat" for v in statuses) else
+        "both" if all(v == "both" for v in statuses) else
+        "mixed_or_ambiguous"
+    )
     return {
         "faces": classifications,
+        "overall_classification": overall,
+        "recognized_and_consistent": all(v in ("prs", "dat", "both") for v in statuses),
         "all_match_prs": all(v["classification"] == "prs" for v in classifications),
         "all_match_dat": all(v["classification"] == "dat" for v in classifications),
         "warning": "Post-LoadMap GFX observations only; no draw-call or visual correctness proof.",
