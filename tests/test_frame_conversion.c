@@ -65,6 +65,22 @@ int main(void) {
     assert(!vh_frame_from_rgb24_top_down(single_pixel, 3, 1, 1,
                                          movie_guarded + 1, 2));
     assert(movie_guarded[0] == 0xcc && movie_guarded[4] == 0xdd);
+    /* Overlapping buffers must fail before either buffer changes. */
+    uint16_t shared_vram[16] = {0x001f, 0x03e0, 0x7c00, 0x7fff};
+    uint16_t original_vram[16];
+    memcpy(original_vram, shared_vram, sizeof(shared_vram));
+    assert(!vh_frame_from_bgr555(shared_vram, 16, 4, 4, 0, 0, 2, 2,
+                                  (uint8_t *)shared_vram + 8, 12));
+    assert(memcmp(shared_vram, original_vram, sizeof(shared_vram)) == 0);
+
+    uint8_t shared_movie[24] = {1,2,3,4,5,6,7,8,9,10,11,12};
+    uint8_t original_movie[24];
+    memcpy(original_movie, shared_movie, sizeof(shared_movie));
+    assert(!vh_frame_from_rgb24_top_down(shared_movie, 12, 2, 2,
+                                         shared_movie, sizeof(shared_movie)));
+    assert(!vh_frame_from_rgb24_top_down(shared_movie, 12, 2, 2,
+                                         shared_movie + 6, 12));
+    assert(memcmp(shared_movie, original_movie, sizeof(shared_movie)) == 0);
     puts("Checked frame conversion tests passed.");
     return 0;
 }
