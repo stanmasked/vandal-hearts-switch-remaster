@@ -14,6 +14,18 @@ int main(void) {
         fprintf(stderr, "observer backend init failed: %s\n", SDL_GetError());
         goto finish;
     }
+    /* A duplicate init must fail without discarding the live GL context. */
+    {
+        SDL_Window *const original_window = backend.window;
+        SDL_GLContext const original_context = backend.gl_context;
+        if (vh_switch_sdl2_observer_backend_init(
+                &backend, "unexpected second window", 1280, 720) ||
+            backend.window != original_window ||
+            backend.gl_context != original_context || !backend.registered) {
+            fprintf(stderr, "observer backend duplicate init corrupted active owner\n");
+            goto finish;
+        }
+    }
     for (int i = 0; i < 3600; ++i) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
