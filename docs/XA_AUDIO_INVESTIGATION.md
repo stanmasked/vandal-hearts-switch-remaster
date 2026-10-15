@@ -383,3 +383,13 @@ This records audit context; the script **does not execute or verify** the
 independent reference decoder and cannot certify the claimed origin.
 
 Every successful source-verified local run now includes `payload_sha256` and `decoded_wav_sha256` in `audit-result.json`, even when no reference WAV was provided. These bind an audit to the exact extracted compressed audio bytes and local decoded WAV; when reference comparison is performed, `decoded_wav_sha256` must equal the comparator's `candidate_wav_sha256`. These checksums do not establish decoder accuracy, and the source BIN itself is not hashed by this workflow.
+
+
+The local audit now records `source_bin_bytes` and `source_bin_sha256`,
+computed over the **entire local original BIN** in bounded 1 MiB reads, in
+addition to the compressed audio and decoded WAV hashes. This distinguishes
+two disc images even if their extracted CD-XA stream matches. The extra full
+disc read may take time on large images. Since source verification and hashing
+are separate reads, do not modify the original BIN during a run; the tool
+does not provide atomic snapshots or cryptographic authentication of the
+disc's provenance. Original image bytes remain local and are not uploaded.
