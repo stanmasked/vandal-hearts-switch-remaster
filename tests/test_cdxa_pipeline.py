@@ -240,5 +240,29 @@ class CdXaPipelineTests(unittest.TestCase):
             self.assertEqual(alias.resolve(), source.resolve())
 
 
+    def test_extractor_refuses_hard_link_aliases_of_source(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "synthetic-disc.bin"
+            original = xa_audio_sector()
+            source.write_bytes(original)
+            alias = root / "source-hardlink.bin"
+            try:
+                alias.hardlink_to(source)
+            except (OSError, NotImplementedError) as error:
+                self.skipTest(f"hard-link creation unavailable: {error}")
+
+            with self.assertRaisesRegex(ValueError, "overwrite the source"):
+                extract_audio_payloads(source, alias)
+            self.assertEqual(source.read_bytes(), original)
+            self.assertEqual(alias.read_bytes(), original)
+
+            payload = root / "audio-payload.bin"
+            with self.assertRaisesRegex(ValueError, "Report path"):
+                extract_audio_payloads(source, payload, report_path=alias)
+            self.assertFalse(payload.exists())
+            self.assertEqual(source.read_bytes(), original)
+
+
 if __name__ == "__main__":
     unittest.main()
