@@ -47,12 +47,15 @@ def seq_to_schedule(report: dict[str, object], *, release_frames: int = 4410
     scheduled: list[dict] = []
     steal_round_robin = 0
 
-    def release(channel: int, note: int, frame: int) -> None:
+    def release(channel: int, note: int, frame: int,
+                *, cutoff: bool = False) -> None:
         entry = held.pop((channel, note), None)
         if entry is None:
             return
         entry["hold_frames"] = max(1, frame - entry["start_frame"])
-        entry["tail_frames"] = release_frames
+        # A user-specified infinite-loop render window is a hard stop:
+        # do not render an ADSR release tail past the requested boundary.
+        entry["tail_frames"] = 0 if cutoff else release_frames
         entry["_released"] = True
 
     def end(entry: dict) -> int:
@@ -134,8 +137,13 @@ def seq_to_schedule(report: dict[str, object], *, release_frames: int = 4410
         elif kind == "note_off":
             release(channel, event["note"], frame)
         elif kind == "end_of_track":
+            cutoff = bool(event.get("truncated_by_window", False))
             for ch, note in tuple(held):
-                release(ch, note, frame)
+                release(ch, note, frame, cutoff=cutoff)
+        elif kind == "loop_boundary":
+            # Clean FF 2F loop seam in the reference libsnd.c leaves
+            # held notes and channel state intact.
+            pass
 
     if not scheduled:
         raise ValueError("SEQ contains no note-on events to render")
