@@ -14,6 +14,7 @@ RECORD_COUNT = 616
 EXPECTED_LENGTH = RECORD_SIZE * RECORD_COUNT
 FACE_GFX_OFFSET = 176
 TARGET_RECORDS = (243, 319)
+PRIOR_PRS_DECOMPRESSED_SHA256 = "dd98f466fbf4f1019cf04d9b19dd85861afa61e97d0470ce796a4cb83b989382"
 
 
 def compare_map02(prs: bytes, dat: bytes) -> dict:
@@ -50,6 +51,10 @@ def compare_map02(prs: bytes, dat: bytes) -> dict:
         "differences": changes,
         "target_faces": target_faces,
         "matches_prior_disc_audit": actual == expected,
+        "matches_prior_prs_digest": hashlib.sha256(prs).hexdigest() == PRIOR_PRS_DECOMPRESSED_SHA256,
+        "matches_prior_disc_audit_with_provenance": (
+            actual == expected and hashlib.sha256(prs).hexdigest() == PRIOR_PRS_DECOMPRESSED_SHA256
+        ),
         "warning": "Byte-level reference comparison only; cannot establish runtime selection or visual correctness.",
     }
 
@@ -60,13 +65,16 @@ def main() -> int:
     parser.add_argument("dat", type=Path)
     parser.add_argument("--require-prior-variant", action="store_true",
                         help="exit nonzero if observed differences do not match the documented two bytes")
+    parser.add_argument("--require-prior-provenance", action="store_true",
+                        help="require both documented two-byte changes and original decompressed PRS SHA-256")
     args = parser.parse_args()
     try:
         report = compare_map02(args.decompressed_prs.read_bytes(), args.dat.read_bytes())
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
     print(json.dumps(report, indent=2))
-    return int(args.require_prior_variant and not report["matches_prior_disc_audit"])
+    return int((args.require_prior_variant and not report["matches_prior_disc_audit"]) or
+               (args.require_prior_provenance and not report["matches_prior_disc_audit_with_provenance"]))
 
 
 if __name__ == "__main__":
