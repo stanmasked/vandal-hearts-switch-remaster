@@ -8,8 +8,6 @@ import argparse
 from pathlib import Path
 import sys
 
-from PIL import Image
-
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 from inspect_vh_map_texture_bank import (  # noqa: E402
@@ -37,6 +35,7 @@ def stage(sd_root):
 
 
 def check(image_path):
+    from PIL import Image
     frame = Image.open(image_path).convert("RGB")
     if frame.size != (1280, 720):
         raise ValueError("unexpected NeXium screenshot dimensions")
