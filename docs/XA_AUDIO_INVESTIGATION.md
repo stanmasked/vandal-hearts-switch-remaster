@@ -497,7 +497,14 @@ subheaders and XA audio/Form 2 bits, then reports each file/channel pair's
 sector count, first and last absolute LBA, number of contiguous LBA runs,
 largest intervening LBA gap, coding-byte counts, and end-of-record/end-of-file
 flags. It reports unsupported coding profiles such as values other than 0x01
-without attempting to decode them. Invalid duplicated subheaders are counted,
+without attempting to decode them. Each stream additionally provides
+`decoder_profile_supported` (true only when **all** selected audio sectors
+have coding byte `0x01`) and `expected_pcm_frames` (2016 frames per sector,
+or null for unsupported/mixed profiles). The top-level
+`decodable_stream_count` and `decodable_audio_sectors` count only streams
+whose entire coding profile is supported. These are **format-compatibility**
+indicators, not evidence of valid ADPCM headers, successful decoding, correct
+stream timing, or a verified soundtrack. Invalid duplicated subheaders are counted,
 but not treated as trusted audio sectors.
 
 Use a discovered file/channel pair as the inputs for the narrower
