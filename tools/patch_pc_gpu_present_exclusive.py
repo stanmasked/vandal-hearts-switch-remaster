@@ -9,7 +9,7 @@ import argparse
 from pathlib import Path
 
 START = "    /* Scale the native w*h framebuffer up to fill the current window, preserving"
-END = "    if (s_ptTime) pt2 = presentNowMs();"
+END = "    if (s_ptTime) {\n        pt3 = presentNowMs();"
 SWITCH_CALL = """#if defined(VH_SWITCH_EXCLUSIVE_PRESENT)
     /* Post-composition, borrowed bottom-up RGB24; callback owns the only swap. */
     extern void VH_ObserveCompletedRGB24(const unsigned char *pixels,
