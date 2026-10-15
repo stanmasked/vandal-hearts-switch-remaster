@@ -80,3 +80,9 @@ The original test injected failure before the animation loop. Commit `236dd094` 
 After moving the one-shot injected swap failure to frame 90, NeXium run https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38786267027 **failed** the screenshot check (red marker reported as 6,6,8), while a subsequent run with the same probe code and extra logging, https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38786324953 , **passed**, showing all four correct RGB corner markers and 18,820 changed sample pixels. The contradictory outcomes are consistent with timing or launch sensitivity; do not conclude the earlier regression has been fully fixed by the probe modification alone.
 
 Commit `db39cd18852fb1ba1b5c030406938831b15b3646` changes NeXium evidence capture from a fixed 20-second delay to polling for the actual expected red screen marker, with bounded retries and logged failure diagnostics. This is a readiness check before screenshot capture, not an attempt to hide failures. The corresponding CI run is pending. Further reliability runs are needed before marking swap failure recovery as stable.
+
+## NeXium frame-ready polling confirmed
+
+Run https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38786879747 passed both NRO build and NeXium runtime with the injected swap-error/recovery check at frame 90. The screenshot harness waited for the actual upper-left red marker rather than capturing the emulator after a fixed delay; it reported "Observer RGB frame ready on poll 4". Subsequent screenshots matched the expected top-left (255,0,0), center red/green (96,93) with animated blue 56→148, and 18,820 changed sampled pixels.
+
+This is one successful full run with readiness polling, following inconsistent runs with fixed-delay capture. It confirms that the improved harness can pass; it does not establish long-term reliability. The game itself remains unported to this NRO; the scene is synthetic.
