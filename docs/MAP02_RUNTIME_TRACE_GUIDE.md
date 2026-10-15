@@ -70,3 +70,22 @@ Example shape (illustrative, not captured from an actual game):
 
 Metadata that is absent from a sample cannot be compared. A stable trace
 does not establish whether the pixel colors or geometry are visually correct.
+
+## Automated local loader instrumentation
+
+The repository includes a **read-only-to-input** code generator. Obtain the
+upstream PC-port checkout at the pinned version yourself, then run:
+
+```sh
+python3 -m tools.instrument_map02_loader   /local/pcport/src/states/game_setup.c   /local/pcport/src/states/game_setup.map02trace.c
+```
+
+The output is a *separate source file*, not an automatic working build. To
+use it, replace the original translation unit in a **local diagnostic build**;
+do not compile both files, because they define the same functions. Compile
+with `-DVH_TRACE_MAP02_POST_LOAD` and a functioning stdout/stderr
+collection channel. The injector refuses missing or ambiguous source anchors,
+and never overwrites its output. Logs contain two post-load JSON Lines for
+game map 11. **Draw-side primitive instrumentation is still required**, and
+no original assets are altered. The generator has not been compiled against
+the complete upstream PC port or executed on console hardware.
