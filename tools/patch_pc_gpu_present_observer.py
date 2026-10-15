@@ -29,6 +29,23 @@ TIMING_EXCLUSIVE = """    (void)vramH;
 #endif"""
 PRESENT_TAIL = "    /* Scale the native w*h framebuffer up to fill the current window"
 TARGET_TAIL_PREFIX = "#if !defined(VH_SWITCH_EXCLUSIVE_PRESENT) /* desktop GL draw and swap */\n"
+INIT_ANCHOR = "int PC_GpuInit(int width, int height, const char *title) {"
+INIT_END = "    return 1;\n}\n\n/* Report the actual window size"
+INIT_PREFIX = """#if defined(VH_SWITCH_EXCLUSIVE_PRESENT)
+    /* The platform's SDL2/GLES2 backend owns the actual window/context. */
+    extern int vh_switch_observer_query_viewport(int *width, int *height);
+    int drawable_w = 0, drawable_h = 0;
+    (void)title;
+    if (width <= 0 || height <= 0 ||
+        !vh_switch_observer_query_viewport(&drawable_w, &drawable_h))
+        return 0;
+    s_winW = drawable_w;
+    s_winH = drawable_h;
+    g_vhScale = 1;
+    g_vhFullscreen = 0;
+    return 1;
+#else /* original desktop SDL window initialization */"""
+INIT_SUFFIX = "    return 1;\n#endif /* desktop GPU initialization */\n}\n\n/* Report the actual window size"
 BEGIN = "    /* VH_SWITCH_OBSERVER_BEGIN: post-composition RGB24 boundary */"
 END = "    /* VH_SWITCH_OBSERVER_END */"
 INSERT = """    /* VH_SWITCH_OBSERVER_BEGIN: post-composition RGB24 boundary */
@@ -73,9 +90,13 @@ def patch(source: str) -> str:
         raise ValueError("expected pinned GPU timing anchor")
     if source.count(GL_HEADER) != 1 or source.count(PRESENT_TAIL) != 1:
         raise ValueError("expected pinned desktop OpenGL header and presentation tail")
+    if source.count(INIT_ANCHOR) != 1 or source.count(INIT_END) != 1:
+        raise ValueError("expected exact pinned PC_GpuInit lifecycle anchors")
     if not source.rstrip().endswith("}"):
         raise ValueError("expected final PC_GpuPresent closing brace")
-    result = (source.replace(GL_HEADER, TARGET_GL_HEADER, 1)
+    result = (source.replace(INIT_ANCHOR, INIT_ANCHOR + "\\n" + INIT_PREFIX, 1)
+              .replace(INIT_END, INIT_SUFFIX, 1)
+              .replace(GL_HEADER, TARGET_GL_HEADER, 1)
               .replace(TIMING_ANCHOR, TIMING_EXCLUSIVE, 1)
               .replace(WINDOW_GUARD, TARGET_WINDOW_GUARD, 1)
               .replace(EVENT_PUMP, TARGET_EVENT_PUMP, 1)
