@@ -183,3 +183,5 @@ produce jumps. Conversely, codec artifacts may occur **within** a sector and
 will not appear in this boundary-only report. Listen to the source and compare
 with a known-good decoder before attributing any discontinuity to decoding.
 The analyzer reads but does not alter the WAV, payload, or JSON report.
+
+The boundary report now separates `adjacent_lba_boundaries` from `gapped_lba_boundaries` and counts above-threshold jumps separately for both. A gap in raw sector numbering can reflect normal channel interleaving; do not interpret all gapped transitions as missing audio. Compare adjacent-boundary results independently before diagnosing clicks.
