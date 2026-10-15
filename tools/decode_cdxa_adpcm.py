@@ -63,7 +63,11 @@ def decode_payload_file(
     source: Path, destination: Path, sectors: int | None = None,
     extracted_groups: bool = False,
 ) -> dict[str, int]:
-    if source.resolve() == destination.resolve():
+    source_resolved = source.resolve()
+    destination_resolved = destination.resolve()
+    if source_resolved == destination_resolved or (
+        source.exists() and destination.exists() and source.samefile(destination)
+    ):
         raise ValueError("output must not overwrite the input payload")
     size = source.stat().st_size
     if size == 0:
