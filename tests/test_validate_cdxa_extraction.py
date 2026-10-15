@@ -1,4 +1,5 @@
 """Read-only validation tests for XA extraction report and payload."""
+import hashlib
 import json
 import sys
 import tempfile
@@ -20,6 +21,7 @@ class ValidateXaExtractionTests(unittest.TestCase):
         self.data = {
             "audio_form2_sectors_written": 2,
             "payload_bytes_written": 4608,
+            "payload_sha256": hashlib.sha256(bytes(4608)).hexdigest(),
             "coding_info_counts": {"0x01": 2},
             "audio_lbas": [10, 12],
             "audio_lba_offsets": [
@@ -44,6 +46,16 @@ class ValidateXaExtractionTests(unittest.TestCase):
     def test_payload_size_mismatch_fails(self):
         self.payload.write_bytes(bytes(2304))
         with self.assertRaisesRegex(ValueError, "payload size mismatch"):
+            self.check()
+
+    def test_payload_same_size_but_wrong_contents_fails(self):
+        self.payload.write_bytes(bytes([1]) * 4608)
+        with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
+            self.check()
+
+    def test_missing_digest_fails(self):
+        del self.data["payload_sha256"]
+        with self.assertRaisesRegex(ValueError, "SHA-256 payload digest"):
             self.check()
 
     def test_mixed_profiles_fail(self):
