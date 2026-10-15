@@ -99,6 +99,7 @@ def inspect_land_dt(
     return {
         "input": str(path),
         "input_sha256": hashlib.sha256(data).hexdigest(),
+        "block_sha256": hashlib.sha256(block).hexdigest(),
         "map_number": None if single_block else map_number,
         "single_block": single_block,
         "block_size": BLOCK_SIZE,
@@ -139,7 +140,7 @@ def compare_land_dt(
         base = map_number * BLOCK_SIZE
         block = data[base:base + BLOCK_SIZE]
         records = _records_for_block(block, base, gfx_ids)
-        maps.append({"map_number": map_number, "block_base_offset": base, "records": records})
+        maps.append({"map_number": map_number, "block_base_offset": base, "block_sha256": hashlib.sha256(block).hexdigest(), "records": records})
         for record in records:
             by_gfx[int(record["gfx"])].append({
                 "map_number": map_number,
