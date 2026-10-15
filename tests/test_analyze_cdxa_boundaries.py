@@ -49,6 +49,10 @@ class XaBoundaryTests(unittest.TestCase):
         result = analyze_boundaries(self.report, self.payload, self.wav, threshold=10000)
         self.assertEqual(result["boundaries_checked"], 2)
         self.assertEqual(result["boundaries_at_or_above_threshold"], 1)
+        self.assertEqual(result["gapped_lba_boundaries"], 2)
+        self.assertEqual(result["adjacent_lba_boundaries"], 0)
+        self.assertEqual(result["gapped_lba_boundaries_above_threshold"], 1)
+        self.assertEqual(result["adjacent_lba_boundaries_above_threshold"], 0)
         self.assertEqual(result["largest_boundaries"][0]["boundary_index"], 1)
         self.assertEqual(result["largest_boundaries"][0]["max_jump"], 12000)
         self.assertEqual(result["largest_boundaries"][0]["missing_source_sectors"], 1)
@@ -59,6 +63,24 @@ class XaBoundaryTests(unittest.TestCase):
         self.assertEqual(result["boundaries_at_or_above_threshold"], 0)
         self.assertEqual(len(result["largest_boundaries"]), 1)
         self.assertEqual(result["largest_boundaries"][0]["max_jump"], 0)
+
+    def test_adjacent_lbas_are_separate_from_gapped_transitions(self):
+        report = json.loads(self.report.read_text(encoding="utf-8"))
+        report["audio_lbas"] = [5, 6, 9]
+        report["audio_lba_offsets"] = [
+            {"lba": 5, "payload_offset": 0, "missing_source_sectors_before": 0},
+            {"lba": 6, "payload_offset": 2304, "missing_source_sectors_before": 0},
+            {"lba": 9, "payload_offset": 4608, "missing_source_sectors_before": 2},
+        ]
+        report["noncontiguous_audio_transitions"] = 1
+        self.report.write_text(json.dumps(report), encoding="utf-8")
+        self.write_wav([(0, 0), (9000, 0), (20000, 0)])
+        result = analyze_boundaries(self.report, self.payload, self.wav, threshold=8192)
+        self.assertEqual(result["adjacent_lba_boundaries"], 1)
+        self.assertEqual(result["gapped_lba_boundaries"], 1)
+        self.assertEqual(result["adjacent_lba_boundaries_above_threshold"], 1)
+        self.assertEqual(result["gapped_lba_boundaries_above_threshold"], 1)
+        self.assertEqual(result["boundaries_at_or_above_threshold"], 2)
 
     def test_invalid_options_rejected(self):
         self.write_wav([(0, 0)] * 3)
