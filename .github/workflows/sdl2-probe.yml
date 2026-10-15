@@ -316,6 +316,7 @@ jobs:
           export NRO="nros/rgb24-texture-switch-probe.nro"
           export LOG="runtime-evidence/rgb24-texture-nexium.log"
           export SHOT="runtime-evidence/rgb24-texture.png"
+          export SHOT_AFTER="runtime-evidence/rgb24-texture-after.png"
           timeout --kill-after=5s 60s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
             set -euo pipefail
             "$NEXIUM_BIN" "$NRO" >"$LOG" 2>&1 &
@@ -335,18 +336,22 @@ jobs:
             sleep 2
             timeout --kill-after=2s 10s import -window "$window" "$SHOT"
             test -s "$SHOT"
+            sleep 0.75
+            timeout --kill-after=2s 10s import -window "$window" "$SHOT_AFTER"
+            test -s "$SHOT_AFTER"
             kill -INT "$pid" 2>/dev/null || true
             sleep 2
             kill -KILL "$pid" 2>/dev/null || true
             wait "$pid" 2>/dev/null || true
           '
-          python3 - "$SHOT" "$LOG" <<'PY'
+          python3 - "$SHOT" "$SHOT_AFTER" "$LOG" <<'PY'
           from PIL import Image
           import sys
 
           image = Image.open(sys.argv[1]).convert("RGB")
-          if image.size != (1280, 720):
-              raise SystemExit(f"Unexpected screenshot dimensions: {image.size}")
+          later = Image.open(sys.argv[2]).convert("RGB")
+          if image.size != (1280, 720) or later.size != (1280, 720):
+              raise SystemExit(f"Unexpected screenshot dimensions: {image.size}, {later.size}")
 
           # The 321x240 source is aspect-fitted into 1280x720:
           # destination x=158, y=0, width=963, height=720.
@@ -367,19 +372,25 @@ jobs:
               if matches < 100:
                   raise SystemExit(f"Expected RGB24 viewport marker not found: {name}")
 
+          # The animated 32x32 source patch is scaled 3x into this region.
+          patch_a = image.crop((590, 288, 686, 384))
+          patch_b = later.crop((590, 288, 686, 384))
+          changed = sum(
+              1 for a, b in zip(patch_a.getdata(), patch_b.getdata())
+              if max(abs(a[0]-b[0]), abs(a[1]-b[1]), abs(a[2]-b[2])) > 24
+          )
+          print(f"Animated RGB24 patch changed pixels={changed}")
+          if changed < 1000:
+              raise SystemExit("Repeated per-frame RGB24 uploads did not visibly update the animated patch")
+
           # The four corner markers establish the fitted image's bounds and
           # orientation. Do not infer letterboxing from near-black pixels:
           # emulator/window compositing can alter background RGB values.
-          # The expected fitted rectangle is x=[158,1121), y=[0,720).
-          # Marker ROIs above are intentionally inset from those edges.
-          print("PASS: all four RGB24 corner markers are inside the expected fitted viewport.")
+          print("PASS: RGB24 corner markers and repeated per-frame texture updates are visible.")
 
-          log = open(sys.argv[2], encoding="utf-8", errors="replace").read()
+          log = open(sys.argv[3], encoding="utf-8", errors="replace").read()
           print("NeXium host log (NRO stderr may not be forwarded by the emulator):")
           print(log)
-          # NeXium does not consistently forward guest stderr to the host log.
-          # Runtime success is therefore based on all four rendered channel/orientation markers.
-          print("PASS: odd-stride RGB24 upload produced all four expected channel/orientation markers.")
           PY
 
       - name: Verify SDL2 software renderer and OpenGL ES runtime
