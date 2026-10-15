@@ -363,6 +363,29 @@ jobs:
                   print(f"Original GP0(E2h) {name}: {observed}")
                   if max(abs(a-b) for a,b in zip(observed, expected)) > 36:
                       raise SystemExit(f"Original vertical GP0(E2h) window failed: {name}")
+          # Original BGR555 STP ABR modes: addition, subtraction, +quarter.
+          # Synthetic quads occupy native (2,7), (4,7), (6,7) and
+          # reuse the same red STP / opaque green texel pair.
+          abr_samples = (
+              ("ABR1 additive red", (370, 630), (255, 99), 30),
+              ("ABR2 subtractive red", (520, 630), (0, 99), 30),
+              ("ABR3 quarter red", (680, 630), (156, 99), 30),
+          )
+          for frame_image in (im, after):
+              for name, (x, y), (red, green), tolerance in abr_samples:
+                  observed = frame_image.getpixel((x, y))
+                  print(f"Original FT4 STP {name}: {observed}")
+                  if abs(observed[0] - red) > tolerance or abs(observed[1] - green) > tolerance:
+                      raise SystemExit(f"Original BGR555 STP blend mismatch: {name} = {observed}")
+              for name, (x, y) in (
+                  ("ABR1 opaque green", (447, 630)),
+                  ("ABR2 opaque green", (600, 630)),
+                  ("ABR3 opaque green", (760, 630)),
+              ):
+                  observed = frame_image.getpixel((x, y))
+                  print(f"Original FT4 STP {name}: {observed}")
+                  if max(abs(a-b) for a,b in zip(observed, (0,255,0))) > 36:
+                      raise SystemExit(f"Non-STP texel incorrectly blended in {name}: {observed}")
           # The center pixel is deliberately dynamic: R=12->99, G=12->99,
           # B=frame*3 modulo 256. Verify the intended channel changes,
           # not merely a window animation elsewhere in the screenshot.
