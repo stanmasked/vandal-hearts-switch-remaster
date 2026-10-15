@@ -13,7 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from tools.extract_map02_trace import extract_trace_lines
+from tools.extract_map02_trace import TraceByteStream
 from tools.verify_map02_trace import evaluate_trace
 from tools.prepare_map02_pcport import PINNED_BLOB_SHA1, PINNED_UPSTREAM_REF
 
@@ -110,18 +110,38 @@ def capture(executable: Path, trace_directory: Path, output_directory: Path,
         raise ValueError("output directory already exists; refusing to overwrite")
     output_directory.mkdir(parents=True)
     raw_path = output_directory / "game_stdout.log"
+    trace_path = output_directory / "map02_trace.jsonl"
     command = [str(executable), *game_args]
     interrupted = False
+    decoder = TraceByteStream()
+    trace_events = 0
+    parse_error = None
     try:
-        with raw_path.open("xb") as raw:
-            # Preserve original bytes. Decode only when displaying or parsing trace events.
+        with raw_path.open("xb") as raw, trace_path.open("x", encoding="utf-8") as trace:
+            def preserve_chunk(chunk):
+                nonlocal trace_events, parse_error
+                raw.write(chunk)
+                raw.flush()
+                if parse_error is not None:
+                    return
+                try:
+                    entries = decoder.feed(chunk)
+                except ValueError as exc:
+                    parse_error = str(exc)
+                    return
+                for entry in entries:
+                    trace.write(json.dumps(entry, separators=(",", ":")) + "\n")
+                    trace.flush()
+                    trace_events += 1
+
+            # Keep the raw bytes and the extracted JSONL current while the game runs.
             with subprocess.Popen(command, cwd=executable.parent, stdin=None,
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                   bufsize=0) as proc:
                 echo_output = True
                 try:
                     for chunk in iter(lambda: proc.stdout.read(65536), b""):
-                        raw.write(chunk)
+                        preserve_chunk(chunk)
                         if echo_output:
                             try:
                                 if hasattr(sys.stdout, "buffer"):
@@ -131,12 +151,9 @@ def capture(executable: Path, trace_directory: Path, output_directory: Path,
                                     sys.stdout.write(chunk.decode("utf-8", errors="replace"))
                                     sys.stdout.flush()
                             except BrokenPipeError:
-                                # The user's output pipe closed; raw evidence must survive.
                                 echo_output = False
                     returncode = proc.wait()
                 except KeyboardInterrupt:
-                    # Graceful Ctrl+C: stop the child, drain remaining pipe bytes,
-                    # then write a normal capture_report.json below.
                     interrupted = True
                     if proc.poll() is None:
                         proc.terminate()
@@ -146,8 +163,16 @@ def capture(executable: Path, trace_directory: Path, output_directory: Path,
                         proc.kill()
                         trailing, _ = proc.communicate()
                     if trailing:
-                        raw.write(trailing)
+                        preserve_chunk(trailing)
                     returncode = proc.returncode
+            if parse_error is None:
+                try:
+                    for entry in decoder.finish():
+                        trace.write(json.dumps(entry, separators=(",", ":")) + "\n")
+                        trace.flush()
+                        trace_events += 1
+                except ValueError as exc:
+                    parse_error = str(exc)
     except OSError as exc:
         # The output directory already exists: leave a useful report, not an empty folder.
         failure = {
@@ -173,18 +198,17 @@ def capture(executable: Path, trace_directory: Path, output_directory: Path,
         "source_provenance": provenance,
         "warning": "A matching source manifest does not establish that the binary was compiled from it.",
     }
-    try:
-        with raw_path.open("r", encoding="utf-8", errors="replace") as log:
-            entries = extract_trace_lines(log)
-    except ValueError as exc:
-        summary["trace_events"] = 0
-        summary["analysis"] = {"errors": [str(exc)], "observations": []}
+    summary["trace_events"] = trace_events
+    if parse_error is not None:
+        summary["analysis"] = {"errors": [parse_error], "observations": []}
+    elif trace_events == 0:
+        summary["analysis"] = {"errors": ["no Map02 trace events found in capture"],
+                               "observations": []}
     else:
-        (output_directory / "map02_trace.jsonl").write_text(
-            "".join(json.dumps(entry, separators=(",", ":")) + "\n" for entry in entries),
-            encoding="utf-8")
-        summary["trace_events"] = len(entries)
-        summary["analysis"] = evaluate_trace(entries)
+        with trace_path.open("r", encoding="utf-8") as trace:
+            summary["analysis"] = evaluate_trace(
+                json.loads(line) for line in trace if line.strip()
+            )
     (output_directory / "capture_report.json").write_text(
         json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     errors = summary["analysis"]["errors"]
