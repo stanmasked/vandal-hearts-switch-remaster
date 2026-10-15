@@ -32,6 +32,15 @@ class CheckMap02RawTests(unittest.TestCase):
             self.assertTrue(any("GFX 243" in e for e in
                 check_raw_records(inspect_land_dt(path, single_block=True))))
 
+    def test_duplicate_gfx_in_report_detected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "map02.bin"
+            path.write_bytes(bytes(BLOCK_SIZE))
+            report = inspect_land_dt(path, single_block=True)
+            report["records"].append(dict(report["records"][0]))
+            errors = check_raw_records(report)
+            self.assertIn("duplicate GFX 241 in inspection report", errors)
+
     def test_rejects_wrong_map(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "land.bin"
