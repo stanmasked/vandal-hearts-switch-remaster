@@ -129,6 +129,50 @@ class RuntimeTraceTests(unittest.TestCase):
         self.assertEqual([x["visit_draw_contexts_checked"] for x in report["observations"]],
                          [1, 1])
 
+    def test_strict_full_trace_counts_repeated_calls_in_same_frame_and_path(self):
+        events = self.full_trace_observations()
+        repeated_visit = {"z": 8, "x": 19, "face": 0, "stage": "visit",
+                          "gfx": 641, "frame": 8, "path": "normal", "face_count": 2}
+        repeated_draw = {"z": 8, "x": 19, "face": 0, "stage": "draw",
+                         "gfx": 641, "frame": 8, "path": "normal"}
+        events += [repeated_visit, repeated_draw]
+        strict = evaluate_trace(events, require_full_trace=True)
+        self.assertEqual(strict["errors"], [])
+        self.assertEqual(strict["observations"][0]["draw_observation_count"], 2)
+        # The legacy checker deliberately retains its original duplicate rule.
+        self.assertTrue(any("duplicate draw" in error
+                            for error in evaluate_trace(events)["errors"]))
+        events.pop(-2)  # Without a new visit the extra draw is a true duplicate.
+        duplicate = evaluate_trace(events, require_full_trace=True)
+        self.assertTrue(any("duplicate draw" in error
+                            for error in duplicate["errors"]))
+
+    def test_strict_full_trace_counts_repeated_skips_and_resets_on_zero_faces(self):
+        events = self.full_trace_observations()
+        visit = {"z": 8, "x": 19, "face": 0, "stage": "visit",
+                 "gfx": 0, "frame": 15, "path": "normal", "face_count": 2}
+        skip = {"z": 8, "x": 19, "face": 0, "stage": "skip",
+                "gfx": 0, "frame": 15, "path": "normal", "reason": "null_gfx"}
+        events += [visit, skip, dict(visit), dict(skip)]
+        strict = evaluate_trace(events, require_full_trace=True)
+        self.assertEqual(strict["errors"], [])
+        self.assertEqual(strict["observations"][0]["skip_observation_count"], 2)
+        events.pop(-2)
+        duplicate = evaluate_trace(events, require_full_trace=True)
+        self.assertTrue(any("duplicate skip" in error
+                            for error in duplicate["errors"]))
+
+        # A prior nonempty visit must not authorize a draw after the latest
+        # visit observed a tile with zero faces in that same frame and path.
+        events = self.full_trace_observations()
+        events += [{"z": 8, "x": 19, "face": 0, "stage": "visit",
+                    "gfx": 0, "frame": 8, "path": "normal", "face_count": 0},
+                   {"z": 8, "x": 19, "face": 0, "stage": "draw",
+                    "gfx": 641, "frame": 8, "path": "normal"}]
+        strict = evaluate_trace(events, require_full_trace=True)
+        self.assertTrue(any("draw without preceding nonempty visit" in error
+                            for error in strict["errors"]))
+
     def test_strict_full_trace_rejects_draw_without_prior_visit(self):
         events = self.full_trace_observations()
         events.pop(2)
