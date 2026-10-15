@@ -18,6 +18,7 @@ void PC_GpuPresent(unsigned short *vram, int a) {
 #endif
     PC_GpuPumpEvents();
     if (PC_OverlayIsOpen()) PC_GpuDrawOverlay(w, h);   /* options overlay, on top */
+    /* Scale the native w*h framebuffer up to fill the current window. */
     SDL_GL_SwapWindow(s_window);
 }
 """
