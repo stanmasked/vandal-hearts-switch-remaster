@@ -118,5 +118,23 @@ class DecodeCdXaAdpcmTests(unittest.TestCase):
                 decode_payload_file(source, source)
 
 
+    def test_refuses_hard_link_alias_as_output(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "payload.bin"
+            original = bytes(AUDIO_BYTES_PER_SECTOR)
+            source.write_bytes(original)
+            alias = root / "payload-hardlink.bin"
+            try:
+                alias.hardlink_to(source)
+            except (OSError, NotImplementedError) as error:
+                self.skipTest(f"hard-link creation unavailable: {error}")
+
+            with self.assertRaisesRegex(ValueError, "overwrite the input payload"):
+                decode_payload_file(source, alias, extracted_groups=True)
+            self.assertEqual(source.read_bytes(), original)
+            self.assertEqual(alias.read_bytes(), original)
+
+
 if __name__ == "__main__":
     unittest.main()
