@@ -1,5 +1,6 @@
 """End-to-end tests for extracting CD-XA sectors and decoding their audio payload."""
 import hashlib
+import struct
 import sys
 import tempfile
 import unittest
@@ -11,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.extract_cdxa_payload import SECTOR_SIZE, SYNC, extract_audio_payloads
 from tools.decode_cdxa_adpcm import AUDIO_BYTES_PER_SECTOR, SAMPLE_RATE, decode_payload_file
 from tools.validate_cdxa_extraction import validate_extraction
+from tools.compare_cdxa_wavs import compare_wavs
 
 
 def xa_audio_sector(payload_marker: int = 0) -> bytes:
@@ -310,6 +312,60 @@ class CdXaPipelineTests(unittest.TestCase):
             )
             with wave.open(str(wav_path), "rb") as wav:
                 self.assertEqual(wav.readframes(4032), bytes(4032 * 4))
+
+
+    def test_end_to_end_nonzero_pcm_matches_independent_expected_wav(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            disc = root / "synthetic.bin"
+            compressed = root / "groups.bin"
+            report_path = root / "groups.json"
+            decoded_path = root / "decoded.wav"
+            reference_path = root / "expected.wav"
+
+            # Filter 0, low shift nibble 12: signed ADPCM nibbles map
+            # directly to signed PCM integers. The reference below is made
+            # without running the ADPCM decoder or using its output.
+            raw = bytearray(xa_audio_sector())
+            expected_frames = []
+            for group_index in range(18):
+                group_start = 24 + group_index * 128
+                raw[group_start:group_start + 16] = bytes([0x0C]) * 16
+                for row in range(28):
+                    for chunk in range(4):
+                        left = (row + group_index + chunk) % 16
+                        right = (row * 3 + group_index + chunk) % 16
+                        raw[group_start + 16 + row * 4 + chunk] = left | (right << 4)
+                for chunk in range(4):
+                    for row in range(28):
+                        left = (row + group_index + chunk) % 16
+                        right = (row * 3 + group_index + chunk) % 16
+                        expected_frames.append((
+                            left - 16 if left >= 8 else left,
+                            right - 16 if right >= 8 else right,
+                        ))
+            self.assertEqual(len(expected_frames), 2016)
+            disc.write_bytes(bytes(raw))
+            extracted = extract_audio_payloads(disc, compressed, report_path=report_path)
+            self.assertEqual(extracted["audio_form2_sectors_written"], 1)
+            self.assertEqual(validate_extraction(report_path, compressed)["pcm_frames"], 2016)
+            decoded = decode_payload_file(compressed, decoded_path, extracted_groups=True)
+            self.assertEqual(decoded["frames"], 2016)
+            with wave.open(str(reference_path), "wb") as wav:
+                wav.setnchannels(2)
+                wav.setsampwidth(2)
+                wav.setframerate(SAMPLE_RATE)
+                wav.writeframes(b"".join(struct.pack("<hh", left, right)
+                                         for left, right in expected_frames))
+
+            self.assertEqual(
+                validate_extraction(report_path, compressed, decoded_path)["pcm_frames"],
+                2016,
+            )
+            comparison = compare_wavs(decoded_path, reference_path)
+            self.assertTrue(comparison["exact_match"])
+            self.assertEqual(comparison["different_channel_samples"], 0)
+            self.assertEqual(comparison["frames_compared"], 2016)
 
 
 if __name__ == "__main__":
