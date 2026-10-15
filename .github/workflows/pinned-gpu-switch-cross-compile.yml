@@ -1,0 +1,66 @@
+name: Pinned upstream GPU Switch cross-compile
+
+on:
+  push:
+    branches:
+      - feat/upstream-rgb24-observer-binding
+    paths:
+      - "tools/patch_pc_gpu_present_observer.py"
+      - "tests/test_pc_gpu_present_observer_patch.py"
+      - ".github/workflows/pinned-gpu-switch-cross-compile.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cross-compile:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build official Switch SDL2 source with pinned checksums
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export PATH="$DEVKITPRO/devkitA64/bin:$DEVKITPRO/tools/bin:$DEVKITPRO/portlibs/switch/bin:$PATH"
+          workdir="$(mktemp -d)"
+          cd "$workdir"
+          curl --fail --location --retry 3 --retry-all-errors \
+            https://www.libsdl.org/release/SDL2-2.28.5.tar.gz -o SDL2-2.28.5.tar.gz
+          curl --fail --location --retry 3 --retry-all-errors \
+            https://raw.githubusercontent.com/devkitPro/pacman-packages/master/switch/SDL2/SDL2-2.28.5.patch \
+            -o SDL2-2.28.5.patch
+          echo "332cb37d0be20cb9541739c61f79bae5a477427d79ae85e352089afdaf6666e4  SDL2-2.28.5.tar.gz" | sha256sum --check
+          echo "eb2da665a014dc540ad3dfeb62b3f7c5e15ae090ebdd631fe8b78c1f272c7aa0  SDL2-2.28.5.patch" | sha256sum --check
+          tar -xzf SDL2-2.28.5.tar.gz
+          cd SDL2-2.28.5
+          patch -p1 -i ../SDL2-2.28.5.patch
+          source "$DEVKITPRO/switchvars.sh"
+          ./configure --prefix="$PORTLIBS_PREFIX" --host=aarch64-none-elf \
+            --disable-shared --enable-static --enable-audio --enable-joystick \
+            --disable-power --disable-filesystem --enable-cpuinfo \
+            --enable-pthreads --enable-timers --enable-video
+          make -j2
+          make install
+          export PATH="$DEVKITPRO/portlibs/switch/bin:$PATH"
+          command -v sdl2-config
+          sdl2-config --version
+
+      - name: Cross-compile pinned GPU translation unit with Switch GLES2
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$DEVKITPRO/portlibs/switch/bin:$PATH"
+          git clone --filter=blob:none --no-checkout https://github.com/HalmyLyseas/VandalHearts-PcPort.git /tmp/vh-cross-upstream
+          git -C /tmp/vh-cross-upstream checkout --detach 14552fffa0e0b47e02b57592e274fc6e7a649923
+          python3 tools/patch_pc_gpu_present_observer.py /tmp/vh-cross-upstream/platform/pc/src/pc_gpu_window.c /tmp/vh-cross-upstream/platform/pc/src/pc_gpu_window_instrumented.c
+          mkdir -p build/upstream-cross
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" -std=c11 -O2 -Wall -Wextra -DVH_SWITCH_COMPLETED_FRAME_OBSERVER -DVH_SWITCH_EXCLUSIVE_PRESENT -I/tmp/vh-cross-upstream/platform/pc/include -I/tmp/vh-cross-upstream/platform/pc/src $(sdl2-config --cflags) -c /tmp/vh-cross-upstream/platform/pc/src/pc_gpu_window_instrumented.c -o build/upstream-cross/pinned_gpu_switch.o
+          "$DEVKITA64/bin/aarch64-none-elf-nm" build/upstream-cross/pinned_gpu_switch.o | grep ' PC_GpuPresent'
+          echo "Pinned GPU translation unit cross-compilation passed (object only)."
