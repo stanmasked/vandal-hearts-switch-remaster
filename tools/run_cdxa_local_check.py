@@ -71,6 +71,7 @@ def run_local_check(
             "source_verified_sectors": validated["audio_sectors"],
             "source_bin_bytes": source.stat().st_size,
             "source_bin_sha256": sha256_file(source),
+            "extraction_report_sha256": sha256_file(report),
             "payload_sha256": extracted["payload_sha256"],
             "decoded_wav_sha256": sha256_file(decoded),
             "pcm_signal_diagnostics": analyze_wav(decoded),
