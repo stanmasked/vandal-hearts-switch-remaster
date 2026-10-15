@@ -29,11 +29,19 @@ static void draw_frame(int frame) {
     DISPENV display;
     unsigned int ot[1];
     TILE corner[4], background;
+    POLY_F4 polygon;
     SetDefDrawEnv(&draw, 0, 0, 12, 9);
     SetDefDispEnv(&display, 0, 0, 12, 9);
     PutDrawEnv(&draw);
     PutDispEnv(&display);
     ClearOTag(ot, 1);
+    /* Real untextured polygon from the original DrawOTag->FillQuad path.
+     * The native 12x9 point (5,2) should be magenta. Center (6,4)
+     * remains the animated background, avoiding ambiguous motion tests. */
+    SetPolyF4(&polygon);
+    setXYWH(&polygon, 4, 1, 4, 3);
+    setRGB0(&polygon, 255, 0, 255);
+    AddPrim(&ot[0], &polygon);
     tile(&corner[0], 0, 0, 2, 2, 255, 0, 0);
     tile(&corner[1], 10, 0, 2, 2, 0, 255, 0);
     tile(&corner[2], 0, 7, 2, 2, 0, 0, 255);
