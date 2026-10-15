@@ -2,6 +2,17 @@
 #include <string.h>
 #include <stdint.h>
 
+/* Refuse overlapping ranges without comparing pointers from different objects. */
+static int ranges_overlap(const void *a, size_t a_bytes,
+                          const void *b, size_t b_bytes) {
+    const uintptr_t first = (uintptr_t)a;
+    const uintptr_t second = (uintptr_t)b;
+    if (!a_bytes || !b_bytes)
+        return 0;
+    return first <= second ? (second - first < a_bytes)
+                           : (first - second < b_bytes);
+}
+
 int vh_rgb24_required(int width, int height, size_t *bytes) {
     size_t row;
     if (!bytes || width <= 0 || height <= 0 ||
@@ -25,9 +36,12 @@ int vh_frame_from_bgr555(const uint16_t *src, size_t src_pixels,
         (size_t)src_width > SIZE_MAX / (size_t)src_height ||
         src_pixels < (size_t)src_width * (size_t)src_height ||
         x < 0 || y < 0 || x > src_width || y > src_height ||
-        width > src_width - x || height > src_height - y)
+        width > src_width - x || height > src_height - y ||
+        (size_t)src_width * (size_t)src_height > SIZE_MAX / sizeof(*src) ||
+        ranges_overlap(src, (size_t)src_width * (size_t)src_height * sizeof(*src),
+                       dst, required))
         return 0;
-    /* Source and destination must not overlap. */
+    /* Overlap has been rejected before any output bytes are written. */
     for (row = 0; row < height; ++row) {
         const uint16_t *in = src + (size_t)(y + row) * (size_t)src_width + (size_t)x;
         uint8_t *out = dst + (size_t)(height - 1 - row) * (size_t)width * 3u;
@@ -48,10 +62,11 @@ int vh_frame_from_rgb24_top_down(const uint8_t *src, size_t src_bytes,
     size_t required, stride;
     int row;
     if (!src || !dst || !vh_rgb24_required(width, height, &required) ||
-        src_bytes < required || dst_bytes < required)
+        src_bytes < required || dst_bytes < required ||
+        ranges_overlap(src, required, dst, required))
         return 0;
     stride = (size_t)width * 3u;
-    /* Requires distinct, non-overlapping source and destination allocations. */
+    /* Overlap has been rejected before the bottom-up row flip. */
     for (row = 0; row < height; ++row)
         memcpy(dst + (size_t)(height - 1 - row) * stride,
                src + (size_t)row * stride, stride);
