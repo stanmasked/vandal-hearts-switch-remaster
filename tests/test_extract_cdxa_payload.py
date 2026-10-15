@@ -117,5 +117,23 @@ class ExtractCdXaPayloadTests(unittest.TestCase):
 
 
 
+    def test_report_directory_does_not_replace_existing_payload(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            src, dst = root / "disc.bin", root / "payload.bin"
+            src.write_bytes(sector(marker=0x42))
+            dst.write_bytes(b"previous complete payload")
+            report_directory = root / "report.json"
+            report_directory.mkdir()
+
+            with self.assertRaises(IsADirectoryError):
+                extract_audio_payloads(src, dst, report_path=report_directory)
+
+            self.assertEqual(dst.read_bytes(), b"previous complete payload")
+            self.assertTrue(report_directory.is_dir())
+            self.assertEqual(list(root.glob(".payload.bin.*.tmp")), [])
+            self.assertEqual(list(root.glob(".report.json.*.tmp")), [])
+
+
 if __name__ == "__main__":
     unittest.main()
