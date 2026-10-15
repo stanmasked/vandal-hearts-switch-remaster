@@ -55,6 +55,8 @@ class LocalXaCheckTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "exact_reference_pcm_match")
         self.assertEqual(result["selected_lbas"], [1, 3])
+        self.assertEqual(result["scan_start_lba"], 1)
+        self.assertEqual(result["sectors_scanned"], 3)
         self.assertEqual(result["pcm_frames"], 4032)
         self.assertEqual(result["source_verified_sectors"], 2)
         diagnostics = result["pcm_signal_diagnostics"]
@@ -351,6 +353,8 @@ class LocalXaCheckTests(unittest.TestCase):
         path = directory / "audit-result.json"
         original = path.read_bytes()
         mutations = (
+            ("scan_start_lba", 0, "scanned LBA range"),
+            ("sectors_scanned", 4, "scanned LBA range"),
             ("selected_lbas", [1, 2], "selected LBAs"),
             ("pcm_frames", 1, "PCM frame count"),
             ("file_number", 2, "file/channel selection"),
