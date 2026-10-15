@@ -117,8 +117,9 @@ int main(void) {
 
     /* A rejected frame must not invalidate the last successfully uploaded texture. */
     const VhRgb24Frame invalid_frame = {frame_pixels, 0u, FRAME_WIDTH, FRAME_HEIGHT};
-    if (vh_switch_rgb24_presenter_upload(&presenter, &invalid_frame)) {
-        fprintf(stderr, "RGB24 presenter accepted invalid frame metadata\\n");
+    if (vh_switch_rgb24_presenter_upload(&presenter, &invalid_frame) ||
+        presenter.frame_width != FRAME_WIDTH || presenter.frame_height != FRAME_HEIGHT) {
+        fprintf(stderr, "RGB24 presenter accepted invalid metadata or changed active frame dimensions\\n");
         vh_switch_rgb24_presenter_destroy(&presenter);
         SDL_GL_DeleteContext(context);
         SDL_DestroyWindow(window);
