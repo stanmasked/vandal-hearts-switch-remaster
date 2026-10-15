@@ -7,6 +7,7 @@ on:
     paths:
       - "tools/patch_pc_gpu_present_observer.py"
       - "tests/test_pc_gpu_present_observer_patch.py"
+      - "probes/pinned_pc_gpu_switch_smoke.c"
       - ".github/workflows/pinned-gpu-switch-cross-compile.yml"
   workflow_dispatch:
 
@@ -61,7 +62,7 @@ jobs:
           git -C /tmp/vh-cross-upstream checkout --detach 14552fffa0e0b47e02b57592e274fc6e7a649923
           python3 tools/patch_pc_gpu_present_observer.py /tmp/vh-cross-upstream/platform/pc/src/pc_gpu_window.c /tmp/vh-cross-upstream/platform/pc/src/pc_gpu_window_instrumented.c
           mkdir -p build/upstream-cross
-          "$DEVKITA64/bin/aarch64-none-elf-gcc" -std=c11 -O2 -Wall -Wextra -ffunction-sections -fdata-sections -DVH_SWITCH_COMPLETED_FRAME_OBSERVER -DVH_SWITCH_EXCLUSIVE_PRESENT -I/tmp/vh-cross-upstream/platform/pc/include -I/tmp/vh-cross-upstream/platform/pc/src $(sdl2-config --cflags) -c /tmp/vh-cross-upstream/platform/pc/src/pc_gpu_window_instrumented.c -o build/upstream-cross/pinned_gpu_switch.o
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" -std=c11 -O2 -Wall -Wextra -flto -ffunction-sections -fdata-sections -DVH_SWITCH_COMPLETED_FRAME_OBSERVER -DVH_SWITCH_EXCLUSIVE_PRESENT -I/tmp/vh-cross-upstream/platform/pc/include -I/tmp/vh-cross-upstream/platform/pc/src $(sdl2-config --cflags) -c /tmp/vh-cross-upstream/platform/pc/src/pc_gpu_window_instrumented.c -o build/upstream-cross/pinned_gpu_switch.o
           "$DEVKITA64/bin/aarch64-none-elf-nm" build/upstream-cross/pinned_gpu_switch.o | grep ' PC_GpuPresent'
           echo "Pinned GPU translation unit cross-compilation passed (object only)."
       - name: Inventory unresolved original GPU platform dependencies
@@ -78,6 +79,33 @@ jobs:
             exit 1
           fi
           echo "Legacy glDrawPixels/glPixelZoom/glRasterPos2f dependencies are absent."
+      - name: Link original pinned PC_GpuPresent into resource-free Switch NRO
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$DEVKITPRO/portlibs/switch/bin:$PATH"
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" -O2 -flto -ffunction-sections -fdata-sections -Isource \
+            -I"$DEVKITPRO/libnx/include" \
+            $(sdl2-config --cflags) \
+            -specs="$DEVKITPRO/libnx/switch.specs" -Wl,--gc-sections -pie \
+            probes/pinned_pc_gpu_switch_smoke.c source/switch_sdl2_observer_backend.c \
+            source/switch_rgb24_presenter.c source/frame_conversion.c \
+            source/switch_frame_bridge.c source/switch_completed_frame.c \
+            source/switch_present_hook.c source/switch_upstream_observer.c \
+            build/upstream-cross/pinned_gpu_switch.o \
+            -o build/upstream-cross/pinned-gpu-switch.elf \
+            $(sdl2-config --libs) -lGLESv2 -L"$DEVKITPRO/libnx/lib" -lnx -lm
+          "$DEVKITPRO/tools/bin/nacptool" --create "Pinned VRAM GPU Probe" "Vandal Hearts Switch Remaster" "0.1.0" build/upstream-cross/pinned-gpu-switch.nacp
+          "$DEVKITPRO/tools/bin/elf2nro" build/upstream-cross/pinned-gpu-switch.elf build/upstream-cross/pinned-gpu-switch.nro --nacp=build/upstream-cross/pinned-gpu-switch.nacp
+          python3 tests/check_nro.py build/upstream-cross/pinned-gpu-switch.nro
+      - name: Upload pinned GPU NRO
+        uses: actions/upload-artifact@v4
+        with:
+          name: pinned-upstream-gpu-switch-nro
+          path: build/upstream-cross/pinned-gpu-switch.nro
+          if-no-files-found: error
       - name: Upload GPU cross-compile evidence
         uses: actions/upload-artifact@v4
         with:
