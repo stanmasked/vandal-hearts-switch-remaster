@@ -67,6 +67,15 @@ class RuntimeTraceTests(unittest.TestCase):
         self.assertTrue(any("changed across frames" in e
                             for e in evaluate_trace(entries)["errors"]))
 
+    def test_unknown_gfx_in_later_frame_detected(self):
+        entries = observations()
+        entries[2]["frame"] = 1
+        entries.append({"z": 8, "x": 19, "face": 0, "stage": "draw",
+                        "gfx": 999, "frame": 2})
+        errors = evaluate_trace(entries)["errors"]
+        self.assertTrue(any("changed across frames" in e for e in errors))
+        self.assertTrue(any("unexpected GFX 999" in e for e in errors))
+
     def test_duplicate_frame_rejected(self):
         entries = observations()
         entries[2]["frame"] = 1
