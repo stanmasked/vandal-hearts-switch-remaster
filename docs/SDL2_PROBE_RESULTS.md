@@ -4,18 +4,19 @@
 
 The latest SDL2 feasibility workflow completed successfully on 2026-10-15:
 
-- Workflow run: [38692299319](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38692299319)
+- Workflow run: [38692792951](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38692299319)
 - Branch: `audit/switch-platform-boundaries`
-- Commit tested: `dae0c964c06e663f0862b375b419d69a274260a9`
+- Commit tested: `a5c19cd70db0f4db495230303041546ace576e55`
 - Build job: successful; official SDL2 2.28.5 source was downloaded, checksum-verified, patched for the Switch port, compiled, and installed in the CI toolchain.
 - Runtime job: successful in the NeXium emulator.
-- Runtime evidence: [sdl2-nexium-runtime-evidence artifact](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38692299319/artifacts/11953380319)
+- Runtime evidence: [sdl2-nexium-runtime-evidence artifact](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38692299319/artifacts/11953021442)
 
 ## Confirmed checks
 
 - SDL2 texture and joystick probe: 1280×720 screenshots captured; A toggled the movement-range highlight, B canceled it, and two Right presses moved the cursor from tile (1, 2) to (3, 2).
 - RGB24 texture upload with an odd source stride: all four expected color/orientation markers were detected in the rendered viewport.
 - Repeated per-frame RGB24 upload: two screenshots taken 0.75 seconds apart showed the animated patch changing, confirming visible updates while the NRO loop repeatedly uploads and draws frames.
+- Optimized steady-state uploads: the presenter allocates texture storage with `glTexImage2D` on first upload/resize and uses `glTexSubImage2D` for same-sized subsequent frames. The optimized build and the repeated-update screenshot check both passed.
 - SDL2 software renderer: expected generated hero and enemy markers detected in the screenshot.
 - SDL2 OpenGL ES 2.0: expected generated hero and enemy markers detected in the screenshot.
 - The CI artifact archive includes runtime screenshots and logs.
