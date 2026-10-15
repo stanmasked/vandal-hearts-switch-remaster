@@ -53,3 +53,28 @@ This is a source inspection of `HalmyLyseas/VandalHearts-PcPort` at audited revi
 - Real game renderer connected to the Switch presenter: **not yet done**.
 - Actual game image validated end-to-end: **not yet done**.
 - Full Switch-target build and physical console launch: **not yet confirmed**.
+
+
+## Additional source checks: constructor order, input, and frame handoff
+
+### Constructor-order and bootstrap hazards
+
+A targeted pass through `pc_bootstrap.c` confirmed multiple GCC constructor entry points, including a priority-101 constructor that loads configuration before code reads the `VH_*` settings, plus a separate startup constructor that initializes platform state/windowing before the game's `main()`. The file also contains OS-specific fault handling and section permission changes, including POSIX `mprotect` and Windows `VirtualProtect`.
+
+**Implication:** Switch startup should be an explicit ordered init sequence, not a blind copy of GCC constructor behavior. Build an initialization dependency table (config → platform paths → memory mapping/address compatibility → disc mount → renderer/input/audio → game entry) and test failure cleanup for each stage. Do not assume the desktop fault handlers or writable-string-literal workaround are valid or necessary under Horizon.
+
+### Input and exit behavior
+
+In `pc_gpu_window.c`, `PC_GpuPumpEvents()` drains SDL events, exits immediately on `SDL_QUIT`, and turns a non-repeated Escape keydown into the overlay's quit-confirmation request. The same source comment says SDL keyboard state is refreshed for the game's `PadRead` path from the present/VSync path.
+
+**Implication:** the Switch input adapter must preserve the existing game's polling semantics and distinguish a requested graceful exit from process termination. Map confirm/cancel/menu actions explicitly, avoid treating controller disconnect or transient event loss as quit, and test repeated presses and menu confirmation.
+
+### Frame lifetime and presentation API
+
+The desktop presentation code computes a centered aspect-preserving viewport each frame. On non-Apple desktops it submits the software-GPU buffer through legacy `glPixelZoom` / `glRasterPos2f` / `glDrawPixels`; the macOS branch updates an RGB24 streaming texture and vertically flips the bottom-up scratch frame. This reinforces that the portable seam is the final converted frame, while window/context creation, viewport and swap behavior are platform responsibilities.
+
+**Integration acceptance criteria:** (1) frame pointer and dimensions are validated before upload; (2) the scratch buffer is consumed synchronously or copied before return; (3) top/bottom and RGB channel markers match the desktop reference; (4) resize/letterbox behavior is tested; (5) no SDL/OpenGL desktop symbols leak into the libnx target; (6) presenter resources are released before the graphics context is destroyed.
+
+## Next implementation gate
+
+Before touching the upstream renderer, add a small integration contract header or adapter interface on the Switch side and a host test for it. Only then connect the exact call site that owns the completed frame. Avoid editing `pc_gpu_window.c` until the platform-specific source split and its build-system inclusion rules are known; changing that desktop file prematurely risks breaking the reference build.
