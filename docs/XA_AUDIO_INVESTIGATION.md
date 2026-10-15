@@ -417,3 +417,5 @@ checks pass. A successful result means the current files match the saved,
 independent decoding, or proof of audible fidelity. If original output paths
 are no longer available, files with matching standard names can be read from
 the saved audit's directory.
+
+Saved-audit reverification now also compares the reported `selected_lbas`, `file_number`, `channel`, and `pcm_frames` to the independently validated extraction report and selected-sector count. Changing these audit metadata fields while leaving hashed BIN/payload/WAV files unchanged is rejected. This closes a consistency gap in the earlier audit recheck, but the JSON report is still user-editable and is not digitally signed.
