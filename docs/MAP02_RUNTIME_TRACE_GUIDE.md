@@ -164,7 +164,7 @@ The log records `post_load` for each target face when map 11 loads and
 `draw` immediately before `AddPrim` when a target face survives the
 renderer visibility check. Draw samples have a `frame` number,
 `path` (normal, edge, overhead), GFX, UV, packed GPU CLUT ID and tpage ID.
-The `path` field is informational and ignored by the current validator.
+The validator recognizes `path` values `normal`, `edge`, and `overhead`, and preserves distinct render-path observations for the same face and frame. It rejects duplicates within the same face/frame/path; a trace may omit `path` for legacy single-path captures, but cannot mix annotated and unannotated observations for the same face.
 For logs containing only JSON observation lines:
 
 ```sh
@@ -174,9 +174,9 @@ python3 -m tools.verify_map02_trace /local/map02-trace.jsonl
 If stdout contains other diagnostics, separate the JSON observation lines
 before validation; do not assume the entire process log is JSONL. Camera
 culling, overhead view, other changing state and repeated draws can affect
-whether events are emitted. A single face observed multiple times in one frame
-may be rejected by the present validator and merits inspection instead of
-silently dropping records. GitHub Actions now checks that the patch applies
+whether events are emitted. A single face observed multiple times in one frame **on the same render path**
+is rejected as a duplicate; the trace keeps observations from distinct
+annotated paths so no alternate rendering pass is silently dropped. GitHub Actions now checks that the patch applies
 cleanly to the pinned upstream revision, then **syntax-compiles both instrumented
 C translation units** with the upstream PC game compiler flags and
 `-DVH_TRACE_MAP02`. This is not a full linked PC executable or gameplay run;
