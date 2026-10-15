@@ -53,6 +53,41 @@ def check_disc_image(path: Path) -> tuple[bool, str]:
     return True, "raw disc layout plausible (region and game content unverified)"
 
 
+
+def identify_disc_release(path: Path) -> str:
+    """Reproduce pinned libcd.c boot/card-ID probes without scanning disc data."""
+    data_offset = 24
+    sector_size = 2352
+    header_size = 0x800
+    exe_vram = 0x80010000
+
+    def read_bytes(handle, at: int, count: int) -> bytes:
+        handle.seek(at)
+        return handle.read(count)
+
+    def card_id_offset(lba: int, vram: int) -> int:
+        image_offset = (vram - exe_vram) + header_size
+        return ((lba + image_offset // 2048) * sector_size
+                + data_offset + image_offset % 2048)
+
+    with path.open("rb") as handle:
+        for lba, vram, identifiers in (
+            (23, 0x800f5551, {
+                b"BASLUS-00447VH": "USA",
+                b"BISCPS-45183VH": "Asia",
+            }),
+            (15200, 0x800f76a9, {
+                b"BISLPM-86007VH": "Japan",
+            }),
+        ):
+            if read_bytes(handle, lba * sector_size + data_offset, 8) != b"PS-X EXE":
+                continue
+            ident = read_bytes(handle, card_id_offset(lba, vram), 14)
+            if ident in identifiers:
+                return identifiers[ident]
+    return "unknown"
+
+
 def _run(args, *, cwd=None):
     try:
         return subprocess.run(args, cwd=cwd, capture_output=True, text=True,
@@ -129,6 +164,14 @@ def inspect(upstream: Path, *, game_exe: Path | None = None,
         checks["disc_check_detail"] = detail
         if not ok:
             blockers.append("disc_raw_layout_invalid")
+        else:
+            release = identify_disc_release(disc_image)
+            checks["disc_release"] = release
+            checks["disc_supported_by_us_port"] = release in ("USA", "Asia")
+            if release == "Japan":
+                blockers.append("disc_region_not_supported_by_us_build")
+            elif release == "unknown":
+                blockers.append("disc_release_unrecognized")
 
     for executable in ("make", "cc", "pkg-config"):
         present = shutil.which(executable) is not None
@@ -156,7 +199,8 @@ def inspect(upstream: Path, *, game_exe: Path | None = None,
         "checks": checks,
         "notes": [
             "Read-only: no game resources extracted, copied, or uploaded.",
-            "Passing does not prove a full compile, playable startup, region validity, or visible terrain pixels.",
+            "The disc boot/card ID probes mirror pinned libcd.c; they are not a full disc-integrity or ownership check.",
+            "Passing does not prove a full compile, playable startup, or visible terrain pixels.",
             "KROM/BIOS verifies the exact US 209-glyph charset-2 SHA-256 required by the pinned generator.",
             "The game executable MD5 is the US data-generator requirement, not merely disc runtime region detection.",
             "For optional HD dependencies use --no-webp and --no-hdvideo with corresponding Makefile options.",
