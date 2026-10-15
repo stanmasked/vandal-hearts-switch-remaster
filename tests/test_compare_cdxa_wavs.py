@@ -1,4 +1,5 @@
 """Synthetic tests for decoded-versus-reference WAV comparison."""
+import hashlib
 import os
 import sys
 import tempfile
@@ -34,6 +35,30 @@ class CompareXaWavsTests(unittest.TestCase):
         result = compare_wavs(a, b)
         self.assertTrue(result["exact_match"])
         self.assertEqual(result["different_frames"], 0)
+
+    def test_sha256_fingerprints_identify_both_wav_containers(self):
+        a = self.make_wav("a.wav", [(1, -1), (2, -2)])
+        b = self.make_wav("b.wav", [(1, -1), (2, -2)])
+        result = compare_wavs(a, b)
+        self.assertEqual(result["candidate_wav_sha256"], hashlib.sha256(a.read_bytes()).hexdigest())
+        self.assertEqual(result["reference_wav_sha256"], hashlib.sha256(b.read_bytes()).hexdigest())
+        self.assertTrue(result["exact_match"])
+
+        # Identical PCM can be wrapped in different valid WAV containers;
+        # full-file digests deliberately capture such differences.
+        with b.open("ab") as stream:
+            stream.write(b"EXTRA")
+        changed = compare_wavs(a, b)
+        self.assertTrue(changed["exact_match"])
+        self.assertNotEqual(changed["candidate_wav_sha256"], changed["reference_wav_sha256"])
+
+    def test_sha256_fingerprints_report_different_pcm(self):
+        a = self.make_wav("candidate.wav", [(1, -1), (2, -2)])
+        b = self.make_wav("reference.wav", [(1, -1), (3, -3)])
+        result = compare_wavs(a, b)
+        self.assertFalse(result["exact_match"])
+        self.assertEqual(result["candidate_wav_sha256"], hashlib.sha256(a.read_bytes()).hexdigest())
+        self.assertEqual(result["reference_wav_sha256"], hashlib.sha256(b.read_bytes()).hexdigest())
 
     def test_rejects_identical_path_and_aliases(self):
         original = self.make_wav("original.wav", [(1, -1), (2, -2)])
