@@ -185,3 +185,14 @@ At pinned upstream revision `14552fffa0e0b47e02b57592e274fc6e7a649923`, `include
 **Open ownership questions:** locate the pointer definition and all assignments; determine its allocation base, capacity, initialization and reset sequence, whether it aliases PS1 RAM or another map buffer, and the maximum decompressed size for every supported map. Confirm whether compressed input length and output capacity are validated by callers. A pointer declaration alone establishes none of these properties.
 
 **Switch integration gate:** do not wrap the existing decompressor with an invented output size or assume the map's dimensions imply byte capacity. First trace ownership and format bounds from actual source and local test fixtures. No original game assets or runtime tests were used in this review.
+
+
+## 12. Map output alias discovered in pinned game source (2026-10-15)
+
+The map-output pointer has a concrete assignment: `src/core/main.c:272` sets `gMapDataPtr = gScratch3_80180210`. `include/common.h:139` declares the underlying `extern u8 gScratch3_80180210[]` **without a bound**. Consequently, neither declaration establishes the actual allocation size.
+
+This backing region is shared rather than map-only: `src/core/main.c:66` and `:85` assign `gUnitDataPtr = gScratch3_80180210 + 0x2db80`. `src/states/game_setup.c` also reads texture/portrait data at offsets including `0x8000`, `0x10000`, `0x18000`, and `0x20000`, and builds `gMapRowPointers` from `gMapDataPtr` with multiple `MapTileModel` row strides (including 14, 28, 48, and 64). These uses are not necessarily simultaneous; their lifetimes and overlap must be traced before choosing storage ownership.
+
+The same `game_setup.c` calls `ProcessMapFileData(&gScratch1_801317c0[0])` (near line 2592), so compressed input and decompressed output originate from **different named scratch regions**. `src/core/main.c:67-69` also derives save-data pointers from `gScratch1_801317c0` at offsets `0x5000`, `0x6000`, and `0xa000`. The size, definition, and lifetime of both scratch arrays remain unresolved.
+
+**Next evidence gate:** find actual definitions and capacities of `gScratch3_80180210` and `gScratch1_801317c0`; map every live alias and loading phase; check decompressed byte limits before replacing the shared region. Do not infer capacity from the largest observed offset or a row stride. This is source inspection only, not a runtime bounds proof.
