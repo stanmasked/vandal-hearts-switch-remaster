@@ -26,6 +26,18 @@ int main(void) {
     assert(!vh_texture_sample_nearest_rgba32(texels, 0, 2, 4, 0.0f, 0.0f, &out));
     assert(!vh_texture_sample_nearest_rgba32(texels, 2, 2, 1, 0.0f, 0.0f, &out));
     assert(!vh_texture_sample_nearest_rgba32(texels, 2, 2, 4, 0.0f, 0.0f, NULL));
+    assert(vh_texture_rect_valid(320, 240, 0, 0, 320, 240));
+    assert(vh_texture_rect_valid(320, 240, 319, 239, 1, 1));
+    assert(vh_texture_rect_valid(320, 240, 10, 20, 16, 24));
+    assert(!vh_texture_rect_valid(320, 240, 320, 0, 1, 1));
+    assert(!vh_texture_rect_valid(320, 240, 0, 240, 1, 1));
+    assert(!vh_texture_rect_valid(320, 240, 319, 239, 2, 1));
+    assert(!vh_texture_rect_valid(320, 240, 319, 239, 1, 2));
+    assert(!vh_texture_rect_valid(320, 240, 0, 0, 0, 1));
+    assert(!vh_texture_rect_valid(320, 240, 0, 0, 1, 0));
+    assert(!vh_texture_rect_valid(0, 240, 0, 0, 1, 1));
+    assert(!vh_texture_rect_valid(320, 0, 0, 0, 1, 1));
+    assert(!vh_texture_rect_valid(SIZE_MAX, SIZE_MAX, SIZE_MAX - 1, 0, SIZE_MAX, 1));
     puts("texture sample tests passed");
     return 0;
 }
