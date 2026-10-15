@@ -53,6 +53,11 @@ def verify_bundle(directory: Path) -> dict:
     if not raw_path.exists() and not report.get("launch_error"):
         raise ValueError("missing raw stdout without recorded game launch failure")
 
+    provenance = report.get("source_provenance")
+    if type(provenance) is not dict or provenance.get("trace_mode") not in ("legacy", "full"):
+        raise ValueError("capture report has invalid trace mode provenance")
+    require_full_trace = provenance["trace_mode"] == "full"
+
     analysis = report.get("analysis")
     if type(analysis) is not dict or type(analysis.get("errors")) is not list:
         raise ValueError("capture report has invalid analysis")
@@ -112,7 +117,10 @@ def verify_bundle(directory: Path) -> dict:
                         "observations": []}
     else:
         with trace_path.open("r", encoding="utf-8") as handle:
-            expected = evaluate_trace(json.loads(line) for line in handle if line.strip())
+            expected = evaluate_trace(
+                (json.loads(line) for line in handle if line.strip()),
+                require_full_trace=require_full_trace,
+            )
     if analysis != expected:
         raise ValueError("capture analysis differs from independent replay")
 
