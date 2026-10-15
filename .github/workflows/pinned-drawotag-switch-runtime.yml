@@ -14,6 +14,8 @@ on:
       - "tests/test_private_map_bank_bridge.py"
       - "tests/private_sd_nexium_check.py"
       - "tests/test_private_sd_nexium_fixture.py"
+      - "tools/inspect_vh_map_geometry.py"
+      - "tests/test_inspect_vh_map_geometry.py"
       - "tools/stage_vh_private_map_bank.py"
       - "tests/test_stage_vh_private_map_bank.py"
       - "tests/test_drawotag_texture_fixtures.py"
@@ -49,6 +51,8 @@ jobs:
         run: python3 tests/test_stage_vh_private_map_bank.py
       - name: Validate four-quadrant private SD UV and local CLUT fixture
         run: python3 tests/test_private_sd_nexium_fixture.py
+      - name: Validate unpacked map 11 geometry and GFX slot links
+        run: python3 tests/test_inspect_vh_map_geometry.py
       - name: Host-test private SD map bank file validation
         run: |
           gcc -std=c11 -Wall -Wextra -Werror -O2 \
