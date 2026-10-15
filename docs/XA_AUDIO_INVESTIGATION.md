@@ -68,3 +68,24 @@ The output is an intermediate compressed-data stream containing XA sound groups,
 This strict policy is intentional for the first validation pass: it makes suspicious sectors visible instead of quietly changing their meaning. It differs from some playback decoders, including vgmstream, which warn about shift nibbles above 12 and substitute a fallback shift of 9. If a real local dump contains such values, record their sector/group offsets first; then decide whether a separate permissive compatibility mode is warranted. Do not weaken strict validation globally based only on another decoder's fallback behavior.
 
 Predictor history is currently kept unclipped while the emitted signed 16-bit PCM is clamped. Decoder implementations differ on history clipping and integer rounding, so this is a documented implementation choice rather than proof of bit-exact equivalence with every PlayStation CD-XA decoder. The synthetic tests verify this implementation's recurrence, layout, WAV format, and extraction-to-decoding plumbing; they do not replace comparison against a trusted reference vector or listening to a local game dump.
+
+
+## Safe local extraction-to-WAV validation
+
+The extractor selects XA audio/Form 2 sectors, while the current experimental decoder only supports coding byte `0x01` (4-bit stereo at 37.8 kHz). Before decoding a local disc image, verify that the extraction report contains no other coding-byte values. Keep the BIN, payload, report, and WAV on your own machine; do not commit them.
+
+Example for the documented resource range:
+
+```sh
+python3 tools/extract_cdxa_payload.py /path/to/local-disc-image.bin ./xa-payload.bin \
+  --start-lba 19469 --sector-count 111072 --report ./xa-report.json
+
+# Continue only if every extracted audio sector uses the decoder's supported profile.
+jq -e '(.coding_info_counts | keys) == ["0x01"]' ./xa-report.json
+
+python3 tools/decode_cdxa_adpcm.py ./xa-payload.bin ./xa-restored.wav --extracted-groups
+ffprobe -v error -show_entries stream=codec_name,sample_rate,channels,bits_per_sample,duration \
+  -of default=noprint_wrappers=1 ./xa-restored.wav
+```
+
+The `jq` command exits unsuccessfully if the report contains any coding byte other than `0x01`; do not proceed to decode in that case. Review the report's LBA list and non-contiguous transitions before judging duration or continuity: the current payload stream concatenates selected sectors and does not reconstruct missing-sector timing. Finally listen to the WAV and check channel balance, pitch, clicks, gaps, and duration. A valid WAV header and successful decode are necessary checks, not proof of faithful restoration.
