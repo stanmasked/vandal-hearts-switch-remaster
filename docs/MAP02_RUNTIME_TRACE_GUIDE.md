@@ -765,7 +765,11 @@ the **checkout root**; the disc image and KROM/BIOS input may live elsewhere.
 The session directory must be new and outside the upstream checkout. Nothing
 is compiled or launched by the preparer, and no game data is copied or
 uploaded. If any required resource or dependency fails preflight, no session
-directory is created.
+directory is created. Even when Git `HEAD` matches the pinned revision,
+the preflight rejects **staged or unstaged changes to tracked upstream files**.
+Untracked user-owned input files are ignored by this Git cleanliness test.
+A failed or unavailable Git status check also blocks the session; the preparer
+never assumes that an unverified worktree is pristine.
 
 When ready to build and play locally, run the generated script deliberately:
 
@@ -773,7 +777,10 @@ When ready to build and play locally, run the generated script deliberately:
 sh /path/to/new-map02-session/build_capture_verify.sh
 ```
 
-The script uses a unique `BUILD_DIR` under the user's PC-port checkout,
+The script **reruns** the source-and-assets preflight immediately before
+building and writes its JSON results to `preflight_at_build.json`, so changes
+between preparation and execution abort before `make`.
+It uses a unique `BUILD_DIR` under the user's PC-port checkout,
 sets `VH_KROM_SOURCE` and `VH_DISC_IMAGE` to point to the owned inputs,
 compiles the two full-trace replacements via the overlay, starts the resulting
 US PC-port executable, and saves live game output in the session's
