@@ -55,6 +55,11 @@ class LocalXaCheckTests(unittest.TestCase):
         self.assertEqual(result["selected_lbas"], [1, 3])
         self.assertEqual(result["pcm_frames"], 4032)
         self.assertEqual(result["source_verified_sectors"], 2)
+        diagnostics = result["pcm_signal_diagnostics"]
+        self.assertEqual(diagnostics["frames"], 4032)
+        self.assertEqual(diagnostics["peak_abs_sample"], [0, 0])
+        self.assertEqual(diagnostics["silent_stereo_frame_fraction"], 1.0)
+        self.assertEqual(diagnostics["rms_amplitude"], [0.0, 0.0])
         self.assertEqual(result["source_bin_bytes"], self.source.stat().st_size)
         self.assertEqual(result["source_bin_sha256"], hashlib.sha256(
             self.source.read_bytes()).hexdigest())
