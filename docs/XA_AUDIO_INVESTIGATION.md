@@ -419,3 +419,5 @@ are no longer available, files with matching standard names can be read from
 the saved audit's directory.
 
 Saved-audit reverification now also compares the reported `selected_lbas`, `file_number`, `channel`, and `pcm_frames` to the independently validated extraction report and selected-sector count. Changing these audit metadata fields while leaving hashed BIN/payload/WAV files unchanged is rejected. This closes a consistency gap in the earlier audit recheck, but the JSON report is still user-editable and is not digitally signed.
+
+The saved-audit verifier now independently derives the recorded result status from the current WAV comparison. It rejects `exact_reference_pcm_match` on mismatching samples, `reference_pcm_mismatch` on matching samples, and any reference-result status on a source-only audit. A reference comparison must also retain the explicitly **unverified** provenance marker; an unreferenced audit cannot claim reference provenance. The marker is descriptive, not a signature, and no decoder execution is certified.
