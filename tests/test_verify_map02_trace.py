@@ -49,6 +49,14 @@ class RuntimeTraceTests(unittest.TestCase):
         self.assertEqual(report["observations"][0]["draw_gfx"], 641)
         self.assertFalse(any("changed between" in error for error in report["errors"]))
 
+    def test_mixed_framed_and_unframed_draws_rejected(self):
+        entries = observations()
+        entries.append({"z": 8, "x": 19, "face": 0, "stage": "draw",
+                        "gfx": 641, "frame": 2})
+        report = evaluate_trace(entries)
+        self.assertTrue(any("mixed framed and unframed" in e
+                            for e in report["errors"]))
+
     def test_repeated_draws_across_frames(self):
         entries = observations()
         entries[2]["frame"] = 1
