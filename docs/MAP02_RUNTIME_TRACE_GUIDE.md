@@ -479,3 +479,27 @@ python3 -m unittest discover -s tests -p 'test_capture_map02_runtime.py' -v
 These tests are separate from an actual play session. The assistant's
 environment does not contain the user's game disc or a full playable binary,
 so actual map02 game observations remain pending.
+
+
+## Capture evidence integrity and failure handling
+
+Before starting the game, `tools.capture_map02_runtime` checks that the
+`git_blob_sha1` in each source record agrees with the pinned upstream Git
+blob and the accompanying `matches_pinned` flag. It rejects malformed
+source SHA-256 or Git SHA-1 values, rather than trusting a success boolean.
+The diagnostic Make overlay and two generated C files are SHA-256 checked
+for **both** `legacy` and `full` modes; a modified input is rejected
+before a game process is launched.
+
+The executable's SHA-256 is measured **before launch**, so the report still
+identifies the original binary if its on-disk contents change later. If the
+process fails to start, the capture folder now retains an empty or partial
+`game_stdout.log` and a `capture_report.json` with `launch_error` and
+the executable checksum. A closed terminal output pipe likewise does not
+cancel the underlying raw-byte capture. Host regression tests simulate
+those failures without copyrighted game data.
+
+These are consistency and provenance checks, not a cryptographic signed
+attestation tying every object in a binary to a particular source commit.
+Game-map pixels and choice of PRS or DAT still require a real runtime
+capture and reference comparison.
