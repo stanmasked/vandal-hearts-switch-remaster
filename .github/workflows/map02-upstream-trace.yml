@@ -173,3 +173,25 @@ jobs:
             nm -a build/map02-trace-objects/graphics.full.o | grep VH_Map02TraceSkip
             nm -a build/map02-trace-objects/graphics.full.o | grep VH_Map02TraceDraw
           )
+
+      - name: Compile full-trace objects through real upstream Make rules
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd upstream/platform/pc
+          make -f Makefile -f /tmp/vh-map02-upstream-full-ci/map02_trace.mk \
+            BUILD_DIR=build-map02-full-ci \
+            build-map02-full-ci/src/states/game_setup.o \
+            build-map02-full-ci/src/core/graphics.o
+          test -s build-map02-full-ci/src/states/game_setup.o
+          test -s build-map02-full-ci/src/core/graphics.o
+          nm -a build-map02-full-ci/src/core/graphics.o | grep -F VH_Map02TraceVisit
+          nm -a build-map02-full-ci/src/core/graphics.o | grep -F VH_Map02TraceSkip
+          nm -a build-map02-full-ci/src/core/graphics.o | grep -F VH_Map02TraceDraw
+          strings build-map02-full-ci/src/states/game_setup.o | grep -F post_load
+          # GNU ld can combine these two real Make-built units without
+          # proprietary game data or a complete playable link.
+          ld -r -o build-map02-full-ci/map02-instrumented-units.o \
+            build-map02-full-ci/src/states/game_setup.o \
+            build-map02-full-ci/src/core/graphics.o
+          test -s build-map02-full-ci/map02-instrumented-units.o
