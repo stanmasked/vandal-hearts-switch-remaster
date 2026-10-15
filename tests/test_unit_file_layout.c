@@ -44,8 +44,10 @@ int main(void) {
     write32(data + 8, 12);
     write32(data + 20, 16); /* sheet's internal copy size exceeds table */
     assert(!vh_unit_file_layout(data, sizeof data, &layout));
-    write32(data + 20, 12);
+    write32(data + 20, 8); /* inner copied size need not equal outer span */
     assert(vh_unit_file_layout(data, 32, &layout));
+    assert(layout.sheet_lengths[1] == 12);
+    write32(data + 20, 12);
     assert(layout.strips_offset == 32);
     puts("Unit file layout checks passed.");
     return 0;
