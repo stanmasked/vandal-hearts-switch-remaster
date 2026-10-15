@@ -35,14 +35,21 @@ def analyze_boundaries(
     total = max(0, len(lbas) - 1)
     with wave.open(str(wav_path), "rb") as pcm:
         for index in range(1, len(lbas)):
-            pcm.setpos(index * PCM_FRAMES_PER_SECTOR - 1)
-            frames = pcm.readframes(2)
-            if len(frames) != 8:
+            # Two frames on either side provide a minimal local baseline.
+            # Keep the test symmetrical and independent of unrelated sectors.
+            pcm.setpos(index * PCM_FRAMES_PER_SECTOR - 2)
+            frames = pcm.readframes(4)
+            if len(frames) != 16:
                 raise ValueError(f"incomplete PCM near sector boundary {index}")
-            old_left, old_right, new_left, new_right = struct.unpack("<hhhh", frames)
+            before2_l, before2_r, old_left, old_right, new_left, new_right, after2_l, after2_r = struct.unpack("<hhhhhhhh", frames)
             left_jump = abs(new_left - old_left)
             right_jump = abs(new_right - old_right)
             jump = max(left_jump, right_jump)
+            local_neighbor_jump = max(
+                abs(old_left - before2_l), abs(old_right - before2_r),
+                abs(after2_l - new_left), abs(after2_r - new_right),
+            )
+            excess_over_neighbors = max(0, jump - local_neighbor_jump)
             missing = lbas[index] - lbas[index - 1] - 1
             if missing:
                 gapped += 1
@@ -63,6 +70,8 @@ def analyze_boundaries(
                     "left_jump": left_jump,
                     "right_jump": right_jump,
                     "max_jump": jump,
+                    "local_neighbor_max_jump": local_neighbor_jump,
+                    "excess_over_local_neighbors": excess_over_neighbors,
                 }
                 entry = (jump, index, item)
                 if len(largest) < top:
@@ -82,7 +91,7 @@ def analyze_boundaries(
             item for _, _, item in sorted(largest, key=lambda x: (-x[0], x[1]))
         ],
         "warning": (
-            "PCM jumps do not prove audible defects. Gaps may reflect interleaved "
+            "PCM jumps and local-neighbor contrasts are diagnostics only. Gaps may reflect interleaved "
             "CD-XA sectors, not missing audio frames. This does not reconstruct "
             "original playback timing."
         ),
