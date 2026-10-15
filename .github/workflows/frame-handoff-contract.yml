@@ -131,3 +131,10 @@ jobs:
             source/switch_present_hook.c -o build-tests/test_switch_present_hook
           ./build-tests/test_switch_present_hook
           python3 -m unittest discover -s tests -p test_pc_gpu_present_observer_patch.py -v
+          curl --fail --location --silent --show-error \
+            https://raw.githubusercontent.com/HalmyLyseas/VandalHearts-PcPort/14552fffa0e0b47e02b57592e274fc6e7a649923/platform/pc/src/pc_gpu_window.c \
+            -o build-tests/upstream_pc_gpu_window.c
+          python3 tools/patch_pc_gpu_present_observer.py \
+            build-tests/upstream_pc_gpu_window.c build-tests/instrumented_pc_gpu_window.c
+          grep -Fq 'VH_ObserveCompletedRGB24(s_rgbaScratch' build-tests/instrumented_pc_gpu_window.c
+          grep -Fq 'SDL_GL_SwapWindow(s_window);' build-tests/instrumented_pc_gpu_window.c
