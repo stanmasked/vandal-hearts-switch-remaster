@@ -139,7 +139,7 @@ int vh_switch_rgb24_presenter_draw(VhSwitchRgb24Presenter *presenter,
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     GLenum error = glGetError();
     if (error != GL_NO_ERROR) {
-        fprintf(stderr, "RGB24 presenter draw failed: GL error 0x%04x\\n",
+        fprintf(stderr, "RGB24 presenter draw failed: GL error 0x%04x\n",
                 (unsigned int)error);
         return 0;
     }
