@@ -2,14 +2,18 @@
 
 ## Latest run
 
+The latest confirmation is run [38694397097](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38694397097), commit [8c397a3](https://github.com/stanmasked/vandal-hearts-switch-remaster/commit/8c397a3ebef64da66add5fc84d870eeba63f499e). It additionally verifies that rejected invalid frame metadata leaves the active frame dimensions unchanged. Runtime evidence: [artifact 11954141491](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38694397097/artifacts/11954141491).
+
+
+
 The latest SDL2 feasibility workflow completed successfully on 2026-10-15:
 
-- Workflow run: [38693397077](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38693397077)
+- Workflow run: [38694397097](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38693397077)
 - Branch: `audit/switch-platform-boundaries`
-- Commit tested: [74b903662b0956b10514f27c8565ed58d6659c6e](https://github.com/stanmasked/vandal-hearts-switch-remaster/commit/74b903662b0956b10514f27c8565ed58d6659c6e)
+- Commit tested: [8c397a3ebef64da66add5fc84d870eeba63f499e](https://github.com/stanmasked/vandal-hearts-switch-remaster/commit/74b903662b0956b10514f27c8565ed58d6659c6e)
 - Build job: successful; official SDL2 2.28.5 source was downloaded, checksum-verified, patched for the Switch port, compiled, and installed in the CI toolchain.
 - Runtime job: successful in the NeXium emulator.
-- Runtime evidence: [sdl2-nexium-runtime-evidence artifact](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38693397077/artifacts/11953615324)
+- Runtime evidence: [sdl2-nexium-runtime-evidence artifact](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38693397077/artifacts/11954141491)
 
 ## Confirmed checks
 
@@ -18,6 +22,7 @@ The latest SDL2 feasibility workflow completed successfully on 2026-10-15:
 - Repeated per-frame RGB24 upload: two screenshots taken 0.75 seconds apart showed the animated patch changing, confirming visible updates while the NRO loop repeatedly uploads and draws frames.
 - Optimized steady-state uploads: the presenter allocates texture storage with `glTexImage2D` on first upload/resize and uses `glTexSubImage2D` for same-sized subsequent frames. The optimized build and repeated-update screenshot check passed.
 - Resize round-trip: the probe uploaded a 17×9 frame, restored the original 321×240 frame, checked the presenter dimensions, and continued drawing successfully.
+- Invalid-metadata recovery: the presenter rejected an invalid frame without changing the dimensions of the last valid frame; the updated runtime workflow passed.
 - SDL2 software renderer: expected generated hero and enemy markers detected in the screenshot.
 - SDL2 OpenGL ES 2.0: expected generated hero and enemy markers detected in the screenshot.
 - The runtime artifact includes captured screenshots and logs. Other artifacts include the built software-renderer, GLES, texture-upload, RGB24 and audio probe NROs.
