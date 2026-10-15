@@ -406,6 +406,19 @@ jobs:
                   print(f"Original serialized TIM SPRT {name}: {observed}")
                   if max(abs(a-b) for a,b in zip(observed, expected)) > 36:
                       raise SystemExit(f"Serialized TIM to VRAM/raster mismatch: {name}")
+          # Vandal Hearts map DATs are raw 4bpp F_TEX + 1797-byte LAND_DT
+          # records (not TIM). This synthetic bridge mimics the original
+          # LoadMapTextures VRAM upload: F_TEX at x320,y0; the palette
+          # from LAND_DT at x672,y496; CLUT slot 32; UV16/17,V16.
+          for frame_image in (im, after):
+              for name, (x, y), expected in (
+                  ("F_TEX/LAND_DT red", (835, 630), (255, 0, 0)),
+                  ("F_TEX/LAND_DT green", (910, 630), (0, 255, 0)),
+              ):
+                  observed = frame_image.getpixel((x, y))
+                  print(f"Original map texture bank SPRT {name}: {observed}")
+                  if max(abs(a-b) for a,b in zip(observed, expected)) > 36:
+                      raise SystemExit(f"Original F_TEX/LAND_DT VRAM mapping mismatch: {name}")
           # The center pixel is deliberately dynamic: R=12->99, G=12->99,
           # B=frame*3 modulo 256. Verify the intended channel changes,
           # not merely a window animation elsewhere in the screenshot.
