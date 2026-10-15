@@ -37,6 +37,21 @@ static void fill_bottom_up_rgb24(void) {
     }
 }
 
+static void update_animation_marker(unsigned frame_number) {
+    const uint8_t red = (uint8_t)(frame_number & 0xffu);
+    const uint8_t green = (uint8_t)(255u - red);
+    const uint8_t blue = (uint8_t)((frame_number * 37u) & 0xffu);
+    for (int y = 96; y < 128; ++y) {
+        const int storage_y = FRAME_HEIGHT - 1 - y;
+        for (int x = 144; x < 176; ++x) {
+            uint8_t *p = frame_pixels + (size_t)storage_y * FRAME_STRIDE + (size_t)x * 3u;
+            p[0] = red;
+            p[1] = green;
+            p[2] = blue;
+        }
+    }
+}
+
 int main(void) {
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         fprintf(stderr, "SDL_Init failed: %s\\n", SDL_GetError());
@@ -122,9 +137,18 @@ int main(void) {
 
     int running = 1;
     int result = 0;
+    unsigned frame_number = 0;
     while (running) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) if (event.type == SDL_QUIT) running = 0;
+
+        /* Exercise the real per-frame path: mutate borrowed RGB24 pixels, upload, then draw. */
+        update_animation_marker(frame_number++);
+        if (!vh_switch_rgb24_presenter_upload(&presenter, &frame)) {
+            fprintf(stderr, "RGB24 per-frame upload failed at frame %u\\n", frame_number);
+            result = 11;
+            break;
+        }
         glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
         glClearColor(0.02f, 0.02f, 0.03f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
@@ -135,6 +159,7 @@ int main(void) {
         SDL_GL_SwapWindow(window);
         SDL_Delay(16);
     }
+    fprintf(stderr, "RGB24 repeated upload frames: %u\\n", frame_number);
     vh_switch_rgb24_presenter_destroy(&presenter);
     SDL_GL_DeleteContext(context);
     SDL_DestroyWindow(window);
