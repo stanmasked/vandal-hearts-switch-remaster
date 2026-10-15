@@ -92,9 +92,9 @@ static void VH_Map02TraceSkip(const MapTileModel *tile, int face, int gfx,
    } else {
       return;
    }
-   printf("{\\"z\\":%d,\\"x\\":%d,\\"face\\":0,\\"stage\\":\\"skip\\","
-          "\\"gfx\\":%d,\\"frame\\":%u,\\"path\\":\\"%s\\","
-          "\\"reason\\":\\"%s\\"}\\n",
+   printf("{\"z\":%d,\"x\":%d,\"face\":0,\"stage\":\"skip\","
+          "\"gfx\":%d,\"frame\":%u,\"path\":\"%s\","
+          "\"reason\":\"%s\"}\n",
           z, x, gfx, (unsigned)gState.frameCounter, path, reason);
 }
 #endif
@@ -135,9 +135,9 @@ static void VH_Map02TraceSkip(const MapTileModel *tile, int face, int gfx,
             if body.count(null_anchor) != 1:
                 raise ValueError(f"{name}: expected exactly one GFX_NULL guard")
             null_hook = (
-                "      #if defined(PC_FEAT) && defined(VH_TRACE_MAP02)\\n"
-                f'      if (gfx == GFX_NULL) VH_Map02TraceSkip(tileModel, faceIdx, gfx, "{path}", "null_gfx");\\n'
-                "      #endif\\n"
+                "      #if defined(PC_FEAT) && defined(VH_TRACE_MAP02)\n"
+                f'      if (gfx == GFX_NULL) VH_Map02TraceSkip(tileModel, faceIdx, gfx, "{path}", "null_gfx");\n'
+                "      #endif\n"
             )
             body = body.replace(null_anchor, null_hook + null_anchor, 1)
 
@@ -147,8 +147,8 @@ static void VH_Map02TraceSkip(const MapTileModel *tile, int face, int gfx,
             raise ValueError(f"{name}: expected exactly one GTE depth test")
         edge_gfx = "tileModel->gfx[faceIdx]" if name == "RenderEdgeMapTile" else "gfx"
         stop_hook = (
-            "\\n#if defined(PC_FEAT) && defined(VH_TRACE_MAP02)\\n"
-            f'      if (opz <= 0) VH_Map02TraceSkip(tileModel, faceIdx, {edge_gfx}, "{path}", "backface");\\n'
+            "\n#if defined(PC_FEAT) && defined(VH_TRACE_MAP02)\n"
+            f'      if (opz <= 0) VH_Map02TraceSkip(tileModel, faceIdx, {edge_gfx}, "{path}", "backface");\n'
             "#endif"
         )
         body = body.replace(stop_anchor, stop_anchor + stop_hook, 1)
