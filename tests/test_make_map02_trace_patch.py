@@ -20,6 +20,7 @@ GRAPHICS = """#include "PsyQ/gtemac.h"
 void RenderMapTile(u32 *ot, MapTileModel *tileModel, s32 gridColor) {
    s32 faceIdx = 0, gfx = 641, opz = 1;
    POLY_FT4 *poly = 0;
+   poly = &gGraphicsPtr->quads[gQuadIndex];
    gfx = tileModel->gfx[faceIdx];
       if (gfx != GFX_NULL) {
          gte_stopz(&opz);
@@ -32,6 +33,7 @@ void RenderMapTile(u32 *ot, MapTileModel *tileModel, s32 gridColor) {
 void RenderEdgeMapTile(u32 *ot, MapTileModel *tileModel, s32 gridColor) {
    s32 faceIdx = 0, gfx = 641, opz = 1;
    POLY_FT4 *poly = 0;
+   poly = &gGraphicsPtr->quads[gQuadIndex];
       gte_stopz(&opz);
       if (opz > 0) {
          gfx = tileModel->gfx[faceIdx];
@@ -42,6 +44,7 @@ void RenderEdgeMapTile(u32 *ot, MapTileModel *tileModel, s32 gridColor) {
 void RenderOverheadMapTile(u32 *ot, MapTileModel *tileModel, s32 brightness) {
    s32 faceIdx = 0, gfx = 641, opz = 1;
    POLY_FT4 *poly = 0;
+   poly = &gGraphicsPtr->quads[gQuadIndex];
    gfx = tileModel->gfx[faceIdx];
       if (gfx != GFX_NULL) {
          gte_stopz(&opz);
@@ -70,6 +73,9 @@ class Map02TracePatchTests(unittest.TestCase):
     def test_three_submit_paths_are_instrumented(self):
         result = instrument_graphics(GRAPHICS)
         self.assertEqual(result.count("VH_Map02TraceDraw(tileModel, faceIdx"), 3)
+        self.assertEqual(result.count("VH_Map02TraceVisit(tileModel,"), 3)
+        self.assertIn("face_count", result)
+        self.assertIn("stage", result)
         for path in ("normal", "edge", "overhead"):
             self.assertIn(f'"{path}");', result)
         self.assertIn('poly->clut', result)
