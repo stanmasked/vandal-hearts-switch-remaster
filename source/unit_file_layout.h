@@ -62,4 +62,33 @@ static inline int vh_unit_file_layout(
     return 1;
 }
 
+/* Pinned src/units/load.c:92-93 and :203-212:
+ * m selects one of six local unit IDs and its VRAM sprite strip starts
+ * at strips_offset + m * 0x3000. A file need only contain the strip being
+ * requested, not necessarily all six. No writes occur on rejection.
+ */
+#define VH_UNIT_STRIP_BYTES ((size_t)0x3000)
+#define VH_UNIT_IDS_PER_FILE ((size_t)6)
+
+static inline int vh_unit_file_strip_span(
+    const VhUnitFileLayout *layout, size_t file_available,
+    size_t unit_index, size_t *strip_offset) {
+    size_t remaining, relative;
+    if (layout == NULL || strip_offset == NULL ||
+        unit_index >= VH_UNIT_IDS_PER_FILE ||
+        layout->sheet_count == 0 ||
+        layout->sheet_count > VH_UNIT_SHEETS_MAX ||
+        unit_index >= layout->sheet_count ||
+        layout->strips_offset > file_available)
+        return 0;
+    remaining = file_available - layout->strips_offset;
+    if (unit_index > SIZE_MAX / VH_UNIT_STRIP_BYTES) return 0;
+    relative = unit_index * VH_UNIT_STRIP_BYTES;
+    if (relative > remaining ||
+        VH_UNIT_STRIP_BYTES > remaining - relative)
+        return 0;
+    *strip_offset = layout->strips_offset + relative;
+    return 1;
+}
+
 #endif
