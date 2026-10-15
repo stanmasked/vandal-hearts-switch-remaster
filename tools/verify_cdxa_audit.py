@@ -54,6 +54,18 @@ def verify_audit(audit_file: Path, source_bin: Path,
     verified = validate_extraction(report, payload, wav_path=wav, source_bin=source_bin)
     if verified["audio_sectors"] != audit.get("source_verified_sectors"):
         raise ValueError("selected sector count differs from saved audit")
+    if type(audit.get("pcm_frames")) is not int or audit["pcm_frames"] != verified["pcm_frames"]:
+        raise ValueError("PCM frame count differs from saved audit")
+    extraction = json.loads(report.read_text(encoding="utf-8"))
+    if audit.get("selected_lbas") != extraction.get("audio_lbas"):
+        raise ValueError("selected LBAs differ from saved audit")
+    streams = extraction.get("file_channel_counts")
+    expected_stream = f"{audit.get('file_number')}:{audit.get('channel')}"
+    if (type(audit.get("file_number")) is not int
+            or type(audit.get("channel")) is not int
+            or not isinstance(streams, dict)
+            or streams != {expected_stream: verified["audio_sectors"]}):
+        raise ValueError("file/channel selection differs from saved audit")
     if "comparison" in audit:
         if reference_wav is None:
             raise ValueError("reference WAV required to recheck saved comparison")
