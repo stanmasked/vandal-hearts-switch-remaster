@@ -196,3 +196,12 @@ This backing region is shared rather than map-only: `src/core/main.c:66` and `:8
 The same `game_setup.c` calls `ProcessMapFileData(&gScratch1_801317c0[0])` (near line 2592), so compressed input and decompressed output originate from **different named scratch regions**. `src/core/main.c:67-69` also derives save-data pointers from `gScratch1_801317c0` at offsets `0x5000`, `0x6000`, and `0xa000`. The size, definition, and lifetime of both scratch arrays remain unresolved.
 
 **Next evidence gate:** find actual definitions and capacities of `gScratch3_80180210` and `gScratch1_801317c0`; map every live alias and loading phase; check decompressed byte limits before replacing the shared region. Do not infer capacity from the largest observed offset or a row stride. This is source inspection only, not a runtime bounds proof.
+
+
+## 13. Targeted scratch-buffer definition check (2026-10-15)
+
+A second pass over pinned `src/core/main.c`, `src/core/engine.c`, `src/states/game_setup.c`, and `platform/pc/src/pc_bootstrap.c` found usages but **no storage definitions** of `gScratch1_801317c0` or `gScratch3_80180210` in those four files. `include/common.h` exposes unsized `extern u8` declarations. This is a **negative result limited to these inspected files**, not a repository-wide search.
+
+The known alias offsets remain: scratch3 base (`gMapDataPtr`), scratch3 + `0x2db80` (`gUnitDataPtr`), and scratch1 + `0x5000`/`0x6000`/`0xa000` (save/card pointers). The largest referenced offset is **not** evidence of the backing allocation size. The next search must cover the selected-region global data objects, assembly/linker-generated symbols, and PC compatibility definitions, not only C translation units. Determine whether the two names denote separately allocated arrays, linker-address aliases, or mapped portions of a larger emulated memory range before implementation.
+
+**No source or binary integration performed.** The Switch memory ownership model remains open pending symbol-definition evidence.
