@@ -121,6 +121,24 @@ class InspectLandDtTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "between 0 and 256"):
                 inspect_land_dt(path, single_block=True, gfx_ids=(257,))
 
+    def test_rejects_duplicate_gfx_indices(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "map.bin"
+            path.write_bytes(bytes(BLOCK_SIZE))
+            with self.assertRaisesRegex(ValueError, "unique"):
+                inspect_land_dt(path, single_block=True, gfx_ids=(241, 241))
+            with self.assertRaisesRegex(ValueError, "unique"):
+                compare_land_dt(path, map_numbers=(0, 1), gfx_ids=(241, 241))
+
+    def test_rejects_noninteger_gfx_indices(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "map.bin"
+            path.write_bytes(bytes(BLOCK_SIZE))
+            with self.assertRaisesRegex(ValueError, "integers"):
+                inspect_land_dt(path, single_block=True, gfx_ids=(True, 243))
+            with self.assertRaisesRegex(ValueError, "integers"):
+                inspect_land_dt(path, single_block=True, gfx_ids=("241", 243))
+
     def test_rejects_empty_input(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "empty.bin"
