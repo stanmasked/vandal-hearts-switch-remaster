@@ -301,7 +301,7 @@ class ValidateXaExtractionTests(unittest.TestCase):
                 changed[header_offset] = replacement
                 changed[header_offset + 4] = replacement  # duplicate subheader
                 raw.write_bytes(changed)
-                with self.assertRaisesRegex(ValueError, "source BIN selection does not match"):
+                with self.assertRaisesRegex(ValueError, "source BIN selection (differs|does not match)"):
                     validate_extraction(self.report, self.payload, source_bin=raw)
 
         # Conversely, promoting an unrelated sector into the selected
