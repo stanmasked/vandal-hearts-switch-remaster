@@ -199,7 +199,8 @@ non-copyrighted corpus.
 
 The corpus covers literal tokens, absolute and relative 1 KiB
 dictionary references, long literal runs, randomized literal bytes,
-a mixed token stream, and a complete **187264-byte synthetic map**
+**32 seeded mixed-token streams**, an additional 1 KiB dictionary
+wraparound stress test, and a complete **187264-byte synthetic map**
 whose two target face bytes are 241 and 243. The test deliberately
 rejects a fake C decoder that returns no output. The original
 upstream Git blob SHA-1 is checked before compilation.
