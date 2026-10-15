@@ -323,3 +323,26 @@ Logs made by the alternative combined patch can include `visit` and
 evidence but **does not substitute for successful `draw` events** when
 requiring complete rendering evidence. Do not commit raw game logs without
 checking them for personal paths or copyrighted contents.
+
+## Generated C-to-JSONL integration check (synthetic)
+
+The host-only `tests/test_map02_trace_c_emitter.py` checks the whole logging
+contract without loading proprietary game data. It takes the diagnostic
+`printf` implementations generated for `LoadMap` and the renderer,
+compiles them with GCC in an isolated **synthetic tile-model harness**, and
+checks the resulting stdout with `tools.extract_map02_trace` and
+`tools.verify_map02_trace`. The test covers consistent PRS and DAT
+identifiers, `visit`/`skip`/`draw` ordering, packed CLUT/tpage fields,
+and a zero-face tile that is visited but cannot emit a draw.
+
+Run locally:
+
+```sh
+python3 -m unittest discover -s tests -p 'test_map02_trace_c_emitter.py' -v
+```
+
+The pinned-upstream patch CI also runs this test. Its success confirms that
+the C trace format is compatible with both Python tools. **It does not
+prove that the full PC port boots with the patch, that a real map uses either
+variant, or that submitted polygons are visible in a framebuffer.**
+
