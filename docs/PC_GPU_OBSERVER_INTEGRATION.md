@@ -86,3 +86,11 @@ Commit `db39cd18852fb1ba1b5c030406938831b15b3646` changes NeXium evidence captur
 Run https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38786879747 passed both NRO build and NeXium runtime with the injected swap-error/recovery check at frame 90. The screenshot harness waited for the actual upper-left red marker rather than capturing the emulator after a fixed delay; it reported "Observer RGB frame ready on poll 4". Subsequent screenshots matched the expected top-left (255,0,0), center red/green (96,93) with animated blue 56→148, and 18,820 changed sampled pixels.
 
 This is one successful full run with readiness polling, following inconsistent runs with fixed-delay capture. It confirms that the improved harness can pass; it does not establish long-term reliability. The game itself remains unported to this NRO; the scene is synthetic.
+
+## Reusable SDL2/GLES2 backend lifecycle module
+
+The standalone `source/switch_sdl2_observer_backend.{h,c}` now owns SDL2 window, GLES2 context, RGB24 presenter, and observer registration lifetime as a single intermediate platform module. It only initializes the SDL video subsystem when it was not already active, and unregisters the observer before deleting its GL objects. `probes/sdl2_observer_backend_lifecycle.c` drives it with resource-free bottom-up RGB24 frames.
+
+Build proof: https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38787816642 passed both builds including `sdl2-observer-lifecycle-probe.nro`. This proves an NRO could be built, **not** that its newly extracted lifecycle code rendered pixels.
+
+Commit `61776dc2f96aaa8fbcc7e9b15afedadb56b49839` extends NeXium CI with a dedicated lifecycle NRO runtime screenshot and motion test, checking four RGB corner markers and animated blue channel. This separate run is pending. The screenshot test externally stops the emulator; it does not prove graceful guest shutdown or actual Vandal Hearts game-loop execution. The existing `PC_GpuPresent` still depends on desktop SDL state and remains a separate integration blocker.
