@@ -54,6 +54,38 @@ int main(void) {
     assert(vh_map_unit_phase_can_read_map(&phase));
     vh_map_unit_phase_stage_units(&phase);
     assert(!vh_map_unit_phase_can_read_map(&phase));
+    /* Scene 39/61/88: a special early map reload may be followed by the
+     * general map reload in one scene-setup pass. Model both commits. */
+    {
+        const unsigned special_scenes[] = {39, 61, 88};
+        for (size_t i = 0; i < sizeof special_scenes / sizeof special_scenes[0]; ++i) {
+            vh_map_unit_phase_init(&phase, special_scenes[i]);
+            vh_map_unit_phase_stage_units(&phase);
+            memcpy(map, "UNIT", 4);
+            assert(!vh_map_unit_phase_can_read_map(&phase));
+            assert(vh_map_unit_phase_reload(&phase, &memory,
+                       sizeof map_fixture, 32, &decode, &written)
+                   == VH_MAP_LOAD_OK);
+            assert(vh_map_unit_phase_can_read_map(&phase));
+            assert(vh_map_unit_phase_reload(&phase, &memory,
+                       sizeof map_fixture, 32, &decode, &written)
+                   == VH_MAP_LOAD_OK);
+            assert(written == 3 && memcmp(map, "MAP", 3) == 0);
+        }
+    }
+
+    /* A path omitting a final map reload cannot consume a stale view after
+     * staging into scratch3. Actual STATE_16 behavior still needs tracing. */
+    vh_map_unit_phase_init(&phase, 16);
+    vh_map_unit_phase_stage_units(&phase);
+    memcpy(map, "UNIT", 4);
+    assert(!vh_map_unit_phase_can_read_map(&phase));
+    /* Existing stale bytes must never be interpreted as a decoded map. */
+    assert(memcmp(map, "UNIT", 4) == 0);
+    assert(vh_map_unit_phase_reload(&phase, &memory,
+               sizeof map_fixture, 32, &decode, &written) == VH_MAP_LOAD_OK);
+    assert(vh_map_unit_phase_can_read_map(&phase));
+
     free(ram);
     puts("Map/unit shared scratch phase tests passed.");
     return 0;
