@@ -39,6 +39,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_tex
 	python3 -m unittest discover -s tests -p 'test_check_map02_raw.py'
 	python3 -m unittest discover -s tests -p 'test_compare_map02_variants.py'
 	python3 -m unittest discover -s tests -p 'test_verify_map02_trace.py'
+	python3 -m unittest discover -s tests -p 'test_audit_map02_load_source.py'
 	python3 -m unittest discover -s tests -p 'test_instrument_map02_loader.py'
 	python3 -m unittest discover -s tests -p 'test_instrument_map02_renderer.py'
 	python3 -m unittest discover -s tests -p 'test_map02_renderer_smoke.py'
