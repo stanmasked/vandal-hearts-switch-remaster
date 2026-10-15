@@ -49,3 +49,55 @@ Trace the actual load and drawing of faces `(z=8,x=19,face=0)` and `(z=11,x=11,f
 Upstream source baseline inspected in prior audit: `HalmyLyseas/VandalHearts-PcPort` at `14552fffa0e0b47e02b57592e274fc6e7a649923`.
 
 This is a provenance and decision document, not a runtime trace or an assertion that the artwork is visually correct.
+
+
+## Machine-checked source selection (2026-10-16)
+
+The pinned US PC-port source at commit
+`14552fffa0e0b47e02b57592e274fc6e7a649923`
+has an **explicit** `LoadMap` branch for `gState.mapNum == 11`:
+
+```c
+case 11:
+   gMapDataSizeX = 28;
+   gMapDataSizeZ = 12;
+   gMapSizeX = 24;
+   gMapSizeZ = 12;
+   gMapMinX = 0;
+   gMapMinZ = 0;
+   gMapMaxX = 23;
+   gMapMaxZ = 11;
+   LoadCdFile(CDF_M_MAP02_PRS, 1);
+   break;
+```
+
+This is **positive static evidence that the normal map-11 load path
+requests PRS rather than DAT**. The active 24×12 region includes both
+disputed target positions, (z=8,x=19) and (z=11,x=11). The loader's
+28-column in-memory stride is a different dimension from the 24-column
+active playable area.
+
+`tools/audit_map02_load_source.py` independently checks the actual
+branch, exact source Git blob ID, map bounds, row-pointer setup,
+`ProcessMapFileData` call, global GFX offset, and order of these
+operations. It intentionally fails on changed resource selection,
+unexpected dimensions or altered source unless `--allow-modified-source`
+is requested. The latter marks the report as noncanonical.
+
+To reproduce against a local **unmodified** pinned PC-port checkout,
+from the remaster project root:
+
+```sh
+python3 -m tools.audit_map02_load_source   /path/to/VandalHearts-PcPort/src/states/game_setup.c   > map02_source_selection.json
+```
+
+The upstream checkout is also audited in
+`.github/workflows/map02-upstream-trace.yml`. No disc data is
+needed for this source-level finding.
+
+**Limits:** requesting `CDF_M_MAP02_PRS` in C does not prove which
+actual disc bytes were supplied, whether another runtime routine
+overwrote the target tile indices, or whether a submitted textured
+quad was visible. Source evidence supports PRS as the intended *load
+path*, not as the final validated pixels. The two differing DAT records
+are retained as comparison evidence and are not rewritten.
