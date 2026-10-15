@@ -197,3 +197,12 @@ A follow-up check of the pinned upstream tree shows that preserving only the reg
 The Switch target should inherit this PC-port compatibility profile deliberately: define `PC_PORT` and `PERMUTER` for the game-source target, preserve the prelude for register-binding hints, and make the PC-port software-GTE header resolve before the generic MIPS-only header. These choices must be scoped to the game-source target so that unrelated tools/probes are not changed.
 
 This is stronger than simply disabling one problematic assembler statement. It is based on the upstream CMake/header contracts; the complete Switch game-source compile has not yet been run, so the profile still needs validation with the actual target toolchain.
+
+
+## Source audit update: verify GTE header selection, not just the macro definitions
+
+The pinned PC CMake file creates a staged `inline_gte.h` link to `platform/pc/include/inline_gte.h` and puts the PC include directory and stage directory on the game object target's include path. The PC replacement header maps the game-facing GTE operations to ordinary `PC_GTE_*` software functions.
+
+The generic `include/inline_gte.h` instead contains raw MIPS COP2 instructions (including `lwc2` and `cop2`). Therefore the Switch target must verify the *resolved header path* for the game sources, not merely define `PC_PORT` and `PERMUTER`. Accidentally selecting the generic header would leave architecture-specific assembly in a translation unit even though the high-level compatibility flags were set.
+
+This is a concrete header-resolution requirement derived from the upstream CMake setup and both header variants. It is not yet verified by a complete Switch compile. Add a build-time check (for example, compiler dependency output or a small compile-only assertion in the target configuration) that demonstrates the PC software-GTE replacement is selected.
