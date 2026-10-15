@@ -17,6 +17,7 @@ def evaluate_trace(entries):
     if not isinstance(entries, list):
         raise ValueError("trace must be a JSON list")
     found = {}
+    draw_metadata = {}
     errors = []
     for i, entry in enumerate(entries):
         if not isinstance(entry, dict):
@@ -36,6 +37,16 @@ def evaluate_trace(entries):
             errors.append(f"duplicate observation for {pos} at {stage}")
             continue
         found[(pos, stage)] = entry["gfx"]
+        if stage == "draw":
+            metadata = {}
+            for field, limit in (("u", 255), ("v", 255), ("clut", 65535), ("tpage", 65535)):
+                if field in entry:
+                    value = entry[field]
+                    if type(value) is not int or not 0 <= value <= limit:
+                        errors.append(f"entry {i}: {field} must be an integer from 0 to {limit}")
+                    else:
+                        metadata[field] = value
+            draw_metadata[pos] = metadata
         if entry["gfx"] not in TARGETS[pos]:
             errors.append(f"unexpected GFX {entry['gfx']} for {pos} at {stage}")
     rows = []
@@ -50,13 +61,14 @@ def evaluate_trace(entries):
             "z": pos[0], "x": pos[1], "face": pos[2],
             "prs_gfx": prs, "dat_gfx": dat,
             "post_load_gfx": after, "draw_gfx": drawn,
+            "draw_metadata": draw_metadata.get(pos, {}),
             "post_load_variant": "PRS" if after == prs else "DAT" if after == dat else None,
             "draw_variant": "PRS" if drawn == prs else "DAT" if drawn == dat else None,
         })
         if after is not None and drawn is not None and after != drawn:
             errors.append(f"GFX changed between loading and drawing for {pos}")
     return {"observations": rows, "errors": errors,
-            "warning": "GFX identity alone cannot prove visually correct texture or tpage/CLUT state."}
+            "warning": "Observed draw metadata is not an independent validation of correct UV, CLUT, tpage, or visible pixels."}
 
 
 
