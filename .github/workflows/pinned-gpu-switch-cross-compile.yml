@@ -73,6 +73,11 @@ jobs:
           echo "Undefined external symbols in original pinned GPU translation unit:"
           cat build/upstream-cross/undefined-symbols.txt
           grep -q 'VH_ObserveCompletedRGB24' build/upstream-cross/undefined-symbols.txt
+          if grep -Eq 'glDrawPixels|glPixelZoom|glRasterPos2f' build/upstream-cross/undefined-symbols.txt; then
+            echo "Legacy desktop-only GL symbol leaked into Switch GPU object" >&2
+            exit 1
+          fi
+          echo "Legacy glDrawPixels/glPixelZoom/glRasterPos2f dependencies are absent."
       - name: Upload GPU cross-compile evidence
         uses: actions/upload-artifact@v4
         with:
