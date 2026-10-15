@@ -12,6 +12,8 @@ on:
       - 'tests/test_prepare_map02_pcport.py'
       - 'tests/test_instrument_map02_renderer.py'
       - 'tests/test_map02_renderer_smoke.py'
+      - 'tools/capture_map02_runtime.py'
+      - 'tests/test_capture_map02_runtime.py'
       - 'tests/test_make_map02_trace_patch.py'
       - 'tests/test_map02_trace_c_emitter.py'
       - '.github/workflows/map02-upstream-trace.yml'
@@ -26,6 +28,8 @@ on:
       - 'tests/test_prepare_map02_pcport.py'
       - 'tests/test_instrument_map02_renderer.py'
       - 'tests/test_map02_renderer_smoke.py'
+      - 'tools/capture_map02_runtime.py'
+      - 'tests/test_capture_map02_runtime.py'
       - 'tests/test_make_map02_trace_patch.py'
       - 'tests/test_map02_trace_c_emitter.py'
       - '.github/workflows/map02-upstream-trace.yml'
@@ -130,6 +134,7 @@ jobs:
             cd remaster
             python3 -m unittest discover -s tests -p 'test_prepare_map02_pcport.py' -v
             python3 -m unittest discover -s tests -p 'test_extract_map02_trace.py' -v
+            python3 -m unittest discover -s tests -p 'test_capture_map02_runtime.py' -v
             python3 -m unittest discover -s tests -p 'test_instrument_map02_renderer.py' -v
             python3 -m unittest discover -s tests -p 'test_map02_renderer_smoke.py' -v
           )
