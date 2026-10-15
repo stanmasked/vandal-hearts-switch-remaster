@@ -154,6 +154,26 @@ class TextureFixtureTests(unittest.TestCase):
         self.assertEqual(cluts['textured8'], (0, 41))
         self.assertRegex(guest, r'SetSemiTrans\(&semi15,\s*1\)')
 
+    def test_sprite_draw_mode_precedes_primitive_in_ot_walk(self):
+        guest = (Path(__file__).resolve().parents[1] /
+                 'probes/pinned_drawotag_switch_smoke.c').read_text()
+        self.assertRegex(guest, r'SetSprt\(&sprite\)')
+        self.assertRegex(guest, r'setXY0\(&sprite,\s*0,\s*3\)')
+        self.assertRegex(guest, r'setWH\(&sprite,\s*2,\s*2\)')
+        self.assertRegex(guest, r'setUV0\(&sprite,\s*0,\s*0\)')
+        self.assertRegex(guest, r'setClut\(&sprite,\s*0,\s*40\)')
+        self.assertRegex(
+            guest,
+            r'SetDrawMode\(&mode,\s*0,\s*0,\s*'
+            r'GetTPage\(0,\s*0,\s*64,\s*0\),\s*NULL\)'
+        )
+        sprite_link = guest.index('AddPrim(&ot[0], &sprite);')
+        mode_link = guest.index('AddPrim(&ot[0], &mode);')
+        self.assertLess(sprite_link, mode_link,
+                        'OT is head-inserted; mode must execute before SPRT')
+        self.assertEqual([sample(self.vram, tpage(0, 64), clut(0, 40), u, 0)
+                          for u in range(2)], [0x001F, 0x03E0])
+
     def test_stp_is_per_texel(self):
         values = [sample(self.vram, tpage(2, 320), 0, u, 0)
                   for u in range(2)]
