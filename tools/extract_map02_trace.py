@@ -15,21 +15,58 @@ from tools.verify_map02_trace import evaluate_trace
 TRACE_FIELDS = frozenset(("z", "x", "face", "stage"))
 
 
+def parse_trace_line(raw_line: str, lineno: int):
+    """Parse one game-output line; return a matching observation or None."""
+    line = raw_line.strip()
+    if not line.startswith("{"):
+        return None
+    try:
+        obj = json.loads(line)
+    except json.JSONDecodeError as exc:
+        if all('"' + key + '"' in line for key in TRACE_FIELDS):
+            raise ValueError(f"malformed Map02 trace object at line {lineno}: {exc.msg}") from exc
+        return None
+    if isinstance(obj, dict) and TRACE_FIELDS.issubset(obj):
+        return obj
+    return None
+
+
+class TraceByteStream:
+    """Decode pipe chunks into complete Map02 lines, retaining split UTF-8."""
+    def __init__(self):
+        self._pending = b""
+        self.line_number = 0
+
+    def feed(self, chunk: bytes) -> list:
+        if not chunk:
+            return []
+        pieces = (self._pending + chunk).split(b"\n")
+        self._pending = pieces.pop()
+        events = []
+        for piece in pieces:
+            self.line_number += 1
+            entry = parse_trace_line(piece.decode("utf-8", errors="replace"), self.line_number)
+            if entry is not None:
+                events.append(entry)
+        return events
+
+    def finish(self) -> list:
+        if not self._pending:
+            return []
+        piece = self._pending
+        self._pending = b""
+        self.line_number += 1
+        entry = parse_trace_line(piece.decode("utf-8", errors="replace"), self.line_number)
+        return [entry] if entry is not None else []
+
+
 def extract_trace_lines(lines) -> list:
     """Extract from a line iterator without materializing the entire raw log."""
     entries = []
     for lineno, raw_line in enumerate(lines, 1):
-        line = raw_line.strip()
-        if not line.startswith("{"):
-            continue
-        try:
-            obj = json.loads(line)
-        except json.JSONDecodeError as exc:
-            if all('"' + key + '"' in line for key in TRACE_FIELDS):
-                raise ValueError(f"malformed Map02 trace object at line {lineno}: {exc.msg}") from exc
-            continue
-        if isinstance(obj, dict) and TRACE_FIELDS.issubset(obj):
-            entries.append(obj)
+        entry = parse_trace_line(raw_line, lineno)
+        if entry is not None:
+            entries.append(entry)
     if not entries:
         raise ValueError("no Map02 trace events found in capture")
     return entries
