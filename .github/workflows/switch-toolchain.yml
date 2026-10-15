@@ -109,6 +109,59 @@ jobs:
           "$DEVKITA64/bin/aarch64-none-elf-nm" \
             build/aarch64-upstream/present_tail.o \
             | grep -F VH_ObserveCompletedRGB24
+          # Relocatable link of the source-derived upstream tail with the
+          # actual libnx-target observer implementation. A bare compilation
+          # cannot detect a mismatched callback ABI or missing definition.
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" \
+            -nostdlib -r \
+            build/aarch64-upstream/present_tail.o \
+            build/aarch64-frame/switch_upstream_observer.o \
+            -o build/aarch64-upstream/linked_present_observer.o
+          "$DEVKITA64/bin/aarch64-none-elf-nm" \
+            build/aarch64-upstream/linked_present_observer.o \
+            > build/aarch64-upstream/linked_symbols.txt
+          grep -Eq ' [T] VH_ObserveCompletedRGB24
+
+      - name: Build and validate NRO
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          make verify-nro
+
+      - name: Upload NRO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vandal-hearts-switch-prototype
+          path: build/*.nro
+          if-no-files-found: error
+ \
+            build/aarch64-upstream/linked_symbols.txt
+          if grep -Eq ' [U] VH_ObserveCompletedRGB24
+
+      - name: Build and validate NRO
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          make verify-nro
+
+      - name: Upload NRO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vandal-hearts-switch-prototype
+          path: build/*.nro
+          if-no-files-found: error
+ \
+            build/aarch64-upstream/linked_symbols.txt; then
+            echo "Upstream callback remains undefined after linking" >&2
+            exit 1
+          fi
+
 
       - name: Build and validate NRO
         shell: bash
