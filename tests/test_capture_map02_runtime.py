@@ -35,8 +35,9 @@ def fixture(root: Path, mode="complete", modified=False, trace_mode="legacy"):
         "map02_trace.mk": "# generated diagnostic Make overlay\n",
     }
     if trace_mode == "full":
-        provenance["binary_marker"] = ("VH_MAP02_TRACE_BUILD_ID:" +
-                                       hashlib.sha256(b"synthetic map02 fixture").hexdigest())
+        digest = hashlib.sha256(b"synthetic map02 fixture").hexdigest()
+        provenance["binary_marker"] = "VH_MAP02_TRACE_BUILD_ID:" + digest
+        provenance["binary_loader_marker"] = "VH_MAP02_TRACE_LOADER_ID:" + digest
     provenance["generated_files"] = {
         name: hashlib.sha256(content.encode("utf-8")).hexdigest()
         for name, content in payloads.items()
@@ -71,9 +72,11 @@ def fixture(root: Path, mode="complete", modified=False, trace_mode="legacy"):
         if compiler is None:
             raise unittest.SkipTest("C compiler required for full-trace executable test")
         marker = provenance["binary_marker"]
+        loader_marker = provenance["binary_loader_marker"]
         c_lines = [
             "#include <stdio.h>",
             f'__attribute__((used)) const char vh_map02_trace_build_marker[] = "{marker}";',
+            f'__attribute__((used)) const char vh_map02_trace_loader_marker[] = "{loader_marker}";',
             "int main(void) {",
             *[f"puts({json.dumps(line)});" for line in lines],
             "return 0;",
@@ -253,6 +256,38 @@ class CaptureMap02RuntimeTests(unittest.TestCase):
                         capture(exe, trace_dir, base / "should-not-exist")
                     self.assertFalse((base / "should-not-exist").exists())
             manifest_path.write_text(json.dumps(original))
+
+    def test_full_trace_loader_marker_is_required_and_identity_matched(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            exe, trace_dir = fixture(base, trace_mode="full")
+            path = trace_dir / "source_provenance.json"
+            original = json.loads(path.read_text())
+            output = base / "wrong-loader"
+            for marker, error in [
+                (None, "valid loader build marker"),
+                ("not-a-loader-id", "valid loader build marker"),
+                ("VH_MAP02_TRACE_LOADER_ID:" + "f" * 64, "different identities"),
+            ]:
+                with self.subTest(marker=marker):
+                    bad = dict(original)
+                    if marker is None:
+                        bad.pop("binary_loader_marker")
+                    else:
+                        bad["binary_loader_marker"] = marker
+                    path.write_text(json.dumps(bad))
+                    with self.assertRaisesRegex(ValueError, error):
+                        capture(exe, trace_dir, output)
+                    self.assertFalse(output.exists())
+            path.write_text(json.dumps(original))
+            raw = exe.read_bytes()
+            missing = base / "missing-loader"
+            missing.write_bytes(raw.replace(
+                original["binary_loader_marker"].encode("ascii"),
+                b"X" * len(original["binary_loader_marker"])))
+            with self.assertRaisesRegex(ValueError, "wrong or unlinked loader"):
+                capture(missing, trace_dir, output)
+            self.assertFalse(output.exists())
 
     def test_full_trace_marker_scanner_handles_binary_chunk_boundary(self):
         with tempfile.TemporaryDirectory() as folder:
