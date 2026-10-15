@@ -91,6 +91,55 @@ int main(void) {
     assert(memcmp(output, "ABABCDEF", 8) == 0);
     assert(!vh_map_unit_phase_can_read_map(&phase));
 
+    /* Multi-resource staging in the real shared scratch3 view:
+     * portraits -> texture data -> units -> map restoration.
+     * No map consumer may read from this lease between conflicting writes.
+     * This is deliberately synthetic; original loaders are not linked. */
+    {
+        const uint8_t portrait[] = {'P', 'O', 'R', 'T'};
+        const uint8_t texture[] = {'T', 'E', 'X', '0'};
+        const uint8_t unit[] = {'U', 'N', 'I', 'T'};
+        const uint8_t broken[] = {3, 0, 0, 0, 0x02, 'X', 0x00};
+        const uint8_t *resources[] = {portrait, texture, unit};
+
+        vh_map_unit_phase_init(&phase, 2);
+        memcpy(input, fixture, sizeof fixture);
+        assert(vh_map_unit_phase_reload(&phase, &memory, sizeof fixture, 32,
+                                       &decode, &written) == VH_MAP_LOAD_OK);
+        assert(vh_map_unit_phase_can_read_map(&phase));
+        for (size_t i = 0; i < sizeof resources / sizeof resources[0]; ++i) {
+            assert(vh_scratch3_resource_write(&phase, &memory, 0,
+                              resources[i], 4) == VH_SCRATCH3_WRITE_OK);
+            assert(!vh_map_unit_phase_can_read_map(&phase));
+            assert(memcmp(output, resources[i], 4) == 0);
+            /* Rejected writes cannot silently restore the map lease. */
+            assert(vh_scratch3_resource_write(&phase, &memory,
+                                 span, resources[i], 4)
+                   == VH_SCRATCH3_WRITE_OUT_OF_RANGE);
+            assert(!vh_map_unit_phase_can_read_map(&phase));
+            assert(memcmp(output, resources[i], 4) == 0);
+        }
+        memcpy(input, broken, sizeof broken);
+        written = 999;
+        assert(vh_map_unit_phase_reload(&phase, &memory, sizeof broken, 32,
+                                       &decode, &written)
+               == VH_MAP_LOAD_DECODE_FAILED);
+        assert(decode == VH_MAP_DECODE_TRUNCATED && written == 0);
+        assert(!vh_map_unit_phase_can_read_map(&phase));
+        assert(memcmp(output, unit, 4) == 0);
+
+        memcpy(input, fixture, sizeof fixture);
+        assert(vh_map_unit_phase_reload(&phase, &memory, sizeof fixture, 32,
+                                       &decode, &written) == VH_MAP_LOAD_OK);
+        assert(vh_map_unit_phase_can_read_map(&phase));
+        assert(written == 3 && memcmp(output, "MAP", 3) == 0);
+
+        /* A subsequent texture write re-invalidates a restored map. */
+        assert(vh_scratch3_resource_write(&phase, &memory, 0,
+                           texture, sizeof texture) == VH_SCRATCH3_WRITE_OK);
+        assert(!vh_map_unit_phase_can_read_map(&phase));
+    }
+
     free(ram);
     puts("Scratch3 resource write tests passed.");
     return 0;
