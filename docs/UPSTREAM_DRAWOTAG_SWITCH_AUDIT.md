@@ -83,3 +83,9 @@ Commits `ea9adcc1` and `fcb10fa9` add a new asset-free direct-colour FT4 probe f
 NeXium checks that STP red uses the ABR=0 approximately 50/50 red/green blended channels (expected RGB approximately 173,49,variable-blue on the animated background), while green without STP remains opaque despite primitive-level semi-trans mode. These approximate channel checks intentionally allow BGR555 quantization and presentation rounding.
 
 **Unverified until a new CI run passes**: the preceding validated NeXium run #38806009204 still establishes only TILE/F4. Passing this candidate would establish ABR0 per-texel STP in the asset-free probe, not other ABR blend modes or gameplay effects.
+
+## STP fixture preflight and source-drift gate
+
+Commits `7c385b60` and `10b16033` add two reference-suite regressions: a sixth texture-fixture test confirms that 0x801f has STP bit 15 while adjacent 0x03e0 is unmarked and nonzero; a seventh test parses the C probe's fixture word initializers to ensure the Python reference vectors for 4bpp, 8bpp, direct 15bpp, zero-transparency and STP have not drifted from the guest source. These additions remain wired to `make test` and the pinned Switch workflow preflight.
+
+**Validation status:** code committed; successful execution of the expanded seven-test suite and newly instrumented NRO is not claimed here. A fresh workflow success with screenshots is required for actual native STP/raster evidence.
