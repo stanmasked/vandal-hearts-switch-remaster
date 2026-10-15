@@ -16,9 +16,9 @@ higher-resolution rendering and presentation improvements.
 
 ## Latest SDL2 validation
 
-The latest SDL2 Switch feasibility run [38692792951](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38692299319) passed its build and NeXium runtime jobs. Checks covered SDL2 texture/input interaction, RGB24 odd-stride texture upload, visible repeated per-frame RGB24 updates using reusable texture storage, software rendering, and OpenGL ES 2.0 output. The [runtime evidence artifact](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38692299319/artifacts/11953021442) contains screenshots and logs. See [SDL2 probe results](docs/SDL2_PROBE_RESULTS.md) for scope and limitations.
+The latest SDL2 Switch feasibility run [38693397077](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38693397077) passed both build and NeXium runtime jobs at commit [74b903662b0956b10514f27c8565ed58d6659c6e](https://github.com/stanmasked/vandal-hearts-switch-remaster/commit/74b903662b0956b10514f27c8565ed58d6659c6e). Checks covered SDL2 texture/input interaction, RGB24 odd-stride texture upload, visible repeated per-frame updates using reusable texture storage, a 17×9 → 321×240 resize round-trip, software rendering, and OpenGL ES 2.0 output. The [runtime evidence artifact](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38693397077/artifacts/11953615324) contains screenshots and logs. See [SDL2 probe results](docs/SDL2_PROBE_RESULTS.md) for scope and limitations.
 
-The same workflow's audio check was inconclusive because the headless CI host has no usable ALSA default device; its overall success must not be read as proof of audio callback execution or audible playback. See [audio probe results](docs/AUDIO_PROBE_RESULTS.md). All results are emulator-based; physical Switch testing and integration of the upstream game remain outstanding.
+The audio step was inconclusive because the headless CI host has no usable ALSA default device; overall workflow success is not proof of audio callback execution or audible playback. See [audio probe results](docs/AUDIO_PROBE_RESULTS.md). All results are emulator-based; physical Switch testing and integration of the upstream game remain outstanding.
 
 ## Project status
 
