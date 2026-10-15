@@ -16,8 +16,9 @@ def inspect_vab_header(path: Path) -> dict[str, int | str]:
         header = f.read(HEADER_SIZE)
     if len(header) < HEADER_SIZE or header[:4] != b"pBAV":
         raise ValueError("not a complete little-endian VAB VH header (pBAV)")
-    version, vab_id, declared_size, reserved = struct.unpack_from("<IIII", header, 4)
-    programs, tones, vags, master_volume, master_pan, bank_attr, attr2 = struct.unpack_from("<HHHBBBB", header, 20)
+    version, vab_id, declared_size = struct.unpack_from("<III", header, 4)
+    reserved, programs, tones, vags = struct.unpack_from("<HHHH", header, 16)
+    master_volume, master_pan, bank_attr, attr2 = struct.unpack_from("<BBBB", header, 24)
     if programs > 128 or vags > 256:
         raise ValueError("VAB program or VAG count exceeds format limits")
     if declared_size and declared_size < HEADER_SIZE:
