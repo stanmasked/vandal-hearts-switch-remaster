@@ -6,6 +6,7 @@ Stage is 'post_load' or 'draw'. gfx is the *global* index (after +400).
 This is an observational consistency checker, not a proof of visual correctness.
 """
 import argparse
+from collections.abc import Iterable
 import json
 from pathlib import Path
 
@@ -16,8 +17,8 @@ SKIP_REASONS = {"null_gfx", "backface"}
 
 
 def evaluate_trace(entries):
-    if not isinstance(entries, list):
-        raise ValueError("trace must be a JSON list")
+    if isinstance(entries, (str, bytes, dict)) or not isinstance(entries, Iterable):
+        raise ValueError("trace must be an iterable of observation objects")
     found = {}
     draw_metadata = {}
     seen_draw_frames = set()
