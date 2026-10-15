@@ -54,6 +54,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer
 	python3 tests/test_mix_spu_stereo.py
 	python3 tests/test_inspect_ps1_seq.py
 	python3 tests/test_seq_to_chord_schedule.py
+	python3 tests/test_render_ps1_seq.py
 
 # Host-only memory and undefined-behavior checks; requires GCC or Clang sanitizers.
 test-sanitize: | $(BUILD)
