@@ -152,3 +152,15 @@ The bootstrap still unconditionally defines the fixed-address ranges and its non
 2. Inspect `PC_BootstrapRegion` initialization ordering and isolate the minimum setup needed for CD/data loading, memory globals, audio, and GPU without desktop-only recovery hooks.
 3. Add compile-time platform guards and host tests only after the call-site inventory is complete; avoid a broad edit to decompiled gameplay files when an existing `PC_PORT` seam already solves the issue.
 
+## Bootstrap ordering: do not inherit desktop constructors blindly
+
+The audited bootstrap has three distinct startup pieces, not one indivisible initializer:
+
+- `PC_ReservePsxRam()` is normally a constructor and attempts fixed-address reservations on non-Apple hosts.
+- `PC_LoadIniConfig()` is registered with constructor priority 101 in a single-region build; it discovers the executable directory using OS-specific APIs such as `/proc/self/exe` on Linux.
+- `PC_Bootstrap()` runs the later `PC_BootstrapRegion(NULL)` path, which handles desktop diagnostics, mounts the disc image, and initializes the SDL GPU window. Unified desktop builds instead call prefixed phases explicitly from `pc_region_main.c`.
+
+For a Switch target, the safer design is to make startup order explicit in a platform entry point rather than relying on constructor ordering or carrying desktop path-discovery behavior over unchanged. The target entry point should choose the deployment/data path using Switch-supported filesystem conventions, initialize the required game subsystems in a known order, and unwind partial initialization on failure. Keep disc validation and data-loading behavior where possible, but replace only the platform-specific path/window/error presentation seams.
+
+This is still an integration design: no changes have yet been made to the upstream bootstrap, and the current project repository does not contain the complete upstream game source tree as a build target.
+
