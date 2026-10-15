@@ -24,6 +24,14 @@ class RuntimeTraceTests(unittest.TestCase):
         self.assertEqual(report["errors"], [])
         self.assertEqual([x["draw_variant"] for x in report["observations"]], ["PRS", "PRS"])
 
+    def test_evaluator_accepts_one_pass_event_iterators(self):
+        source = observations()
+        self.assertEqual(evaluate_trace(iter(source)), evaluate_trace(source))
+        with self.assertRaisesRegex(ValueError, "iterable"):
+            evaluate_trace("not an observation iterator")
+        with self.assertRaisesRegex(ValueError, "iterable"):
+            evaluate_trace({"unexpected": "object"})
+
     def test_dat_variant(self):
         report = evaluate_trace(observations(a=498, b=550))
         self.assertEqual(report["errors"], [])
