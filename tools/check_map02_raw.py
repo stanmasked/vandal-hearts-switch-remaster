@@ -75,6 +75,8 @@ def check_block_hash(report, expected_hash):
     """Verify the selected block against a previously recorded SHA-256 digest."""
     if expected_hash is None:
         return []
+    if not isinstance(expected_hash, str):
+        return ["expected block SHA-256 must be 64 hexadecimal characters"]
     expected = expected_hash.lower()
     if len(expected) != 64 or any(c not in "0123456789abcdef" for c in expected):
         return ["expected block SHA-256 must be 64 hexadecimal characters"]
