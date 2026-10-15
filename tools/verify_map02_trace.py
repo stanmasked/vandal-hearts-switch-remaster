@@ -16,7 +16,7 @@ DRAW_PATHS = {"normal", "edge", "overhead"}
 SKIP_REASONS = {"null_gfx", "backface"}
 
 
-def evaluate_trace(entries):
+def evaluate_trace(entries, *, require_full_trace=False):
     if isinstance(entries, (str, bytes, dict)) or not isinstance(entries, Iterable):
         raise ValueError("trace must be a JSON list or iterable of observation objects")
     found = {}
@@ -35,6 +35,7 @@ def evaluate_trace(entries):
     # Full-trace C hooks record each renderer entry before face submission.
     # Correlate by (face, frame, rendering path), not by frame alone.
     visit_gfx_by_context = {}
+    preceding_nonempty_visits = set()
     draw_gfx_by_context = {}
     backface_gfx_by_context = {}
     errors = []
@@ -67,12 +68,13 @@ def evaluate_trace(entries):
                 continue
             visit_count[pos] = visit_count.get(pos, 0) + 1
             if face_count > 0:
+                preceding_nonempty_visits.add((pos, frame, path))
                 visit_gfx_by_context.setdefault((pos, frame, path), set()).add(entry["gfx"])
             visit_paths.setdefault(pos, set()).add(path)
             observed_face_counts.setdefault(pos, set()).add(face_count)
             if face_count == 0 and entry["gfx"] != 0:
                 errors.append(f"entry {i}: zero-face visit must have GFX 0")
-            if face_count > 0 and entry["gfx"] not in TARGETS[pos]:
+            if face_count > 0 and entry["gfx"] not in (*TARGETS[pos], 0):
                 errors.append(f"unexpected GFX {entry['gfx']} for {pos} at visit")
             continue
         if stage == "skip":
@@ -88,6 +90,12 @@ def evaluate_trace(entries):
             if type(reason) is not str or reason not in SKIP_REASONS:
                 errors.append(f"entry {i}: invalid skip reason")
                 continue
+            if require_full_trace and (pos, frame, path) not in preceding_nonempty_visits:
+                errors.append(
+                    f"full trace skip without preceding nonempty visit for {pos}"
+                    f" in frame {frame}, path {path}"
+                )
+                continue
             key = (pos, frame, path, reason)
             if key in seen_skips:
                 errors.append(f"duplicate skip observation for {pos} in frame {frame}, path {path}")
@@ -97,7 +105,7 @@ def evaluate_trace(entries):
             skip_reasons.setdefault(pos, set()).add(reason)
             if reason == "backface":
                 backface_gfx_by_context.setdefault((pos, frame, path), set()).add(entry["gfx"])
-                if entry["gfx"] not in TARGETS[pos]:
+                if entry["gfx"] not in (*TARGETS[pos], 0):
                     errors.append(f"unexpected GFX {entry['gfx']} for {pos} at skip")
             if reason == "null_gfx" and entry["gfx"] != 0:
                 errors.append(f"null_gfx skip must have GFX 0 for {pos}")
@@ -113,6 +121,16 @@ def evaluate_trace(entries):
             if framed and (type(entry["frame"]) is not int or entry["frame"] < 0):
                 errors.append(f"entry {i}: frame must be a non-negative integer")
                 continue
+            if require_full_trace:
+                if not framed or not tagged_path:
+                    errors.append(f"entry {i}: full trace draw requires frame and path")
+                    continue
+                if (pos, entry["frame"], entry["path"]) not in preceding_nonempty_visits:
+                    errors.append(
+                        f"full trace draw without preceding nonempty visit for {pos}"
+                        f" in frame {entry['frame']}, path {entry['path']}"
+                    )
+                    continue
             if pos in draw_frame_mode and draw_frame_mode[pos] != framed:
                 errors.append(f"mixed framed and unframed draw observations for {pos}")
                 continue
