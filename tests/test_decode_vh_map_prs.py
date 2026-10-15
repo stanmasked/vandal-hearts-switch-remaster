@@ -19,7 +19,7 @@ def wrap(stream, padding=b""):
 class MapPrsDecoderTests(unittest.TestCase):
     def test_literal_bits_followed_by_absolute_cache_copy(self):
         # Bits 0..6: 7 literals. Bit 7: absolute 10-bit cache offset 990.
-        stream = b"\x80ABCDEFG" + bytes((0, 990 & 255))
+        stream = b"\x80ABCDEFG" + bytes(((990 >> 8) & 3, 990 & 255))
         self.assertEqual(decode_prs_stream(stream), b"ABCDEFGABC")
 
     def test_short_relative_cache_copy(self):
