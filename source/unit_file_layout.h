@@ -9,7 +9,8 @@
  * The original loader uses pSheets[6], counts [2]+[3], a size table of
  * 32-bit little-endian lengths at offset 4, then concatenated sheets.
  * For each sheet, the first word is the size copied to unit accumulation.
- * This parser verifies table bounds, sheet bounds and alignment before
+ * It may be smaller than the outer table span. This parser verifies
+ * table bounds, inner-copy bounds, sheet bounds and alignment before
  * providing offsets to future loader integration.
  */
 #include <stddef.h>
@@ -45,9 +46,12 @@ static inline int vh_unit_file_layout(
             length > available - offset)
             return 0;
         /* Original loader copies the word count specified at sheet start;
-         * require agreement with outer size table before exposing a span. */
-        if ((size_t)vh_unit_layout_read_u32(bytes + offset) != length)
-            return 0;
+         * require a bounded, aligned inner copy size before exposing a span. */
+        {
+            size_t inner_length = vh_unit_layout_read_u32(bytes + offset);
+            if (inner_length < 4 || (inner_length & 3u) != 0 ||
+                inner_length > length) return 0;
+        }
         parsed.sheet_offsets[i] = offset;
         parsed.sheet_lengths[i] = length;
         offset += length;
