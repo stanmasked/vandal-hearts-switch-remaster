@@ -205,3 +205,38 @@ Commits `86049524`, `a1baf326`, `08547269`, and `89c724c8` add a bounded Python 
 **CI confirmed:** [GitHub Actions run #38817971876](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38817971876), source revision `89c724c847792b715480e0934046dd0943f3f585`, completed with **cross-compile = success** and **Run original DrawOTag raster NRO in NeXium = success**. Its host log reports **14 DrawOTag texture fixtures OK, 15 bounded TIM inspector tests OK, 13 raw map texture/LAND_DT/Mode2 extractor tests OK** (42 tests). The Switch NRO executable passed NRO0 segment verification and the emulator's previous original parser-to-SPRT synthetic TIM assertions remained valid: red `(255,0,0)` and green `(0,255,0)` on both screenshots, 6,248 changed sampled pixels.
 
 **Still not achieved:** actual `F_TEX01.DAT`/ `LAND_DT.DAT` bytes are **not present in this GitHub branch nor in the accessible raw source files in this session**. The prior private disc audit identified RU v1.6-specific LBAs 4374 (F_TEX01) and 4954 (LAND_DT), but no runtime draw of authentic Vandal Hearts map textures has yet been performed in NeXium. The next gate is to inspect/verify the user's local extracted data and connect its bytes to original `LoadImage`/terrain polygon UV, CLUT and TPage paths without publishing copyrighted files.
+
+## Original raw F_TEX/LAND_DT native LoadImage-to-SPRT accepted (CI #38818976526)
+
+The prior map-bank milestone verified **offline format parsing** and a TIM
+upload, not a native raster draw of raw `F_TEX` bytes. A new synthetic
+integration probe in `probes/pinned_drawotag_switch_smoke.c` (commit
+`c612af3343fe22f7fe3cc73d96103b0407a25b58`) now uploads the same
+**32768-byte raw 4bpp texture page** and **512-byte BGR555 CLUT block**
+used by the original `LoadMapTextures` logic, at `RECT(320,0,64,256)`
+and `RECT(672,496,16,16)`, respectively. Source-defined 1797-byte
+LAND_DT record slot 0 has UVWH (16,16,15,15) and CLUT ID 32. A real pinned
+`SPRT` samples from tpage x320 using `DR_MODE`. The 4bpp page is loaded
+*before* the original small 15bpp STP fixture to preserve earlier tests.
+The new DrawOTag source-contract regression (commit `b602652c`)
+guards the upload addresses, byte offsets, CLUT and ordering-table links.
+The NeXium capture assertions (commit `a877d4aa`) measure pixel colors
+on both frames.
+
+**Verified:** [GitHub Actions run #38818976526](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38818976526)
+at code commit `a877d4aa642315e2f928970940ea5005bda70893`
+completed with **cross-compile: success** and **Run original DrawOTag
+raster NRO in NeXium: success**. The host preflight logged **15 DrawOTag,
+15 TIM, 13 map-bank tests (43 passed)**. Both 1280×720 screenshots show
+native raw map-texture red **(255,0,0)** at (835,630) and green
+**(0,255,0)** at (910,630). Earlier independent original TIM CLUT red/green,
+ABR0–3, SPRT and horizontal/vertical GP0(E2h) assertions also succeeded.
+5,447 sampled pixels changed with the animated background.
+
+**Limit:** The GPU executed *synthetic* F_TEX and LAND_DT layout bytes,
+not any of the user's actual game data. It does not establish correctness
+of user-owned `F_TEX01.DAT`, map 11 geometry, authored UV/GFX tables,
+lighting, gameplay or physical Switch hardware. Next practical gate:
+user-side read-only extraction/validation of authentic assets and a
+private, reproducible way for the NRO to consume them, without embedding
+copyrighted assets in the public source or GitHub Actions.
