@@ -75,3 +75,32 @@ Therefore a Switch build cannot be enabled by changing only the C source. The CM
 ## Current blocker
 
 The current repository contains the Switch presenter and isolated probes, not the full upstream PC source tree. The integration seam is source-audited but not yet wired in. Do not report this as a working Vandal Hearts port until the integrated upstream build and runtime gates above pass.
+
+## Switch dependency matrix: current probes vs. upstream game
+
+A comparison of this repository's actual Makefile/workflows against the pinned upstream CMake configuration separates dependencies already demonstrated in a Switch-target probe from dependencies still unproven for the game.
+
+| Area | Current Switch research repository | Upstream PC port at audited revision | Integration decision / status |
+|---|---|---|---|
+| Toolchain / packaging | `devkitPro/devkita64`, `aarch64-none-elf-gcc`, `libnx`, `elf2nro`, `nacptool`; the base prototype links `-lnx` | Desktop-oriented CMake targets; no Switch target in the audited PC CMake file | The existing NRO pipeline is real and CI-validated, but it currently builds the research prototype, not upstream game objects. |
+| SDL2 | Workflow builds SDL2 2.28.5 from source with the devkitPro Switch patch; both archive and patch are SHA-256 checked. Uses `sdl2-config` from `$DEVKITPRO/portlibs/switch/bin`. | `find_package(SDL2 REQUIRED)`; PC window/input code uses SDL2 | A usable Switch SDL2 build and probe path are demonstrated. Upstream source still needs a target-specific CMake/toolchain path. |
+| Graphics API | GLES2 probes link `-lGLESv2`; a separate RGB24 texture presenter is built into an NRO and checked in NeXium | Non-Apple path requires and links desktop `OpenGL::GL`; final presentation uses `glDrawPixels`, `glPixelZoom`, and `glRasterPos2f` | Use a Switch-only GLES2 presenter branch; do not globally replace desktop OpenGL or try to compile the legacy draw calls as GLES2. |
+| Audio | SDL2 is configured with `--enable-audio`; an SDL audio probe exists. OpenAL has a separate probe/workflow. | OpenAL is required by the PC CMake configuration | SDL audio configuration is not proof that the upstream game's audio code can use SDL instead of OpenAL. Audit OpenAL Soft's Switch availability/API compatibility and select a deliberate backend before enabling the game target. |
+| Threads | SDL2 is configured with `--enable-pthreads`; toolchain host tests and sanitizer tests run separately | The software rasterizer links `Threads::Threads` | SDL2's pthread support does not automatically prove the upstream worker-thread code builds or behaves correctly. Check the actual thread API usage and target libraries in the port branch. |
+| Window/context lifecycle | GLES2 context-creation and texture probes run in NeXium | Upstream window init has no explicit GL attribute selection or `SDL_GL_MakeCurrent` in the audited file; no ordinary GPU teardown path exists | Add ES 2.0 attributes before window creation, explicitly establish the current context, and make partial init/cleanup idempotent. |
+| Assets / filesystem | Current prototype uses generated graphics and no original game assets | Original game bootstrap and data paths are outside the presenter | Disc-image extraction, file access, memory/layout assumptions and licensing are separate gates; none is solved by the presenter. |
+
+### Build sequence recommended by this matrix
+
+1. Preserve the existing desktop build unchanged and add a clearly named Switch target/platform option rather than altering global dependency rules.
+2. Compile a minimal target object containing the upstream frame-preparation code plus the already-tested GLES2 presenter, with a tiny adapter seam. This is a compile test, not yet a playable game.
+3. Introduce the upstream target's SDL2/toolchain settings and remove only the Switch target's desktop OpenGL dependency. Keep Windows/Linux links intact.
+4. Resolve OpenAL and threading independently. A build should fail clearly if a required backend is absent; do not silently stub gameplay audio or thread behavior.
+5. Only after the target compiles, add the upstream bootstrap and data-loading path, then run deterministic-frame comparison and emulator smoke tests.
+
+### Confirmed evidence and limits
+
+- The current `sdl2-probe.yml` workflow builds patched SDL2 2.28.5 with audio, joystick, pthread, timer and video options enabled; it builds software-renderer, GLES2 and RGB24-texture NRO probes. This demonstrates these isolated components can be built for the Switch toolchain.
+- Toolchain readiness run [38750101998](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38750101998) completed successfully, including host rule tests, sanitizer-enabled host tests, NRO build/validation and artifact upload.
+- Neither that workflow nor the SDL2 probe workflow builds the upstream PC-port CMake target. They do not yet verify upstream OpenAL linkage, its threaded rasterizer, its full bootstrap, or the original game running.
+
