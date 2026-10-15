@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+"""Check the reported map-02 placeholder bytes against a local LAND_DT dump.
+
+Read-only. No original game data is stored or distributed.
+Passing this check supports only the raw-byte observation, NOT the intended
+appearance of a rendered face or the correctness of map-block attribution.
+"""
+import argparse
+import json
+from pathlib import Path
+
+from tools.inspect_land_dt import inspect_land_dt
+
+
+def check_raw_records(report):
+    errors = []
+    if report.get("map_number") != 2 and not report.get("single_block"):
+        errors.append("expected map block 2")
+    records = {r["gfx"]: r for r in report["records"]}
+    for gfx in (241, 243):
+        record = records.get(gfx)
+        if record is None:
+            errors.append(f"missing GFX {gfx}")
+            continue
+        if record["bytes"] != [0, 0, 0, 0]:
+            errors.append(f"GFX {gfx}: raw texture record not all zero")
+        if record["clut_index"] != 0:
+            errors.append(f"GFX {gfx}: CLUT index is not zero")
+        if record["runtime_table_index"] != 400 + gfx:
+            errors.append(f"GFX {gfx}: unexpected runtime table index")
+    return errors
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("input", type=Path)
+    parser.add_argument("--block", action="store_true",
+                        help="input is independently extracted map-02 block (1797 bytes)")
+    args = parser.parse_args()
+    # Absolute import works when invoked from the repository root with -m.
+    report = inspect_land_dt(args.input, map_number=2, single_block=args.block)
+    errors = check_raw_records(report)
+    print(json.dumps({
+        "source_sha256": report["input_sha256"],
+        "map_number": report["map_number"],
+        "single_block": report["single_block"],
+        "errors": errors,
+        "interpretation": "raw metadata only; no visual conclusion",
+    }, indent=2))
+    return int(bool(errors))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
