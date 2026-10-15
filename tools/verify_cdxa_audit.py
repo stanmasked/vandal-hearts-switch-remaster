@@ -13,6 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.compare_cdxa_wavs import compare_wavs, sha256_file
+from tools.analyze_cdxa_wav_quality import analyze_wav
 from tools.validate_cdxa_extraction import validate_extraction
 
 
@@ -56,6 +57,10 @@ def verify_audit(audit_file: Path, source_bin: Path,
         raise ValueError("selected sector count differs from saved audit")
     if type(audit.get("pcm_frames")) is not int or audit["pcm_frames"] != verified["pcm_frames"]:
         raise ValueError("PCM frame count differs from saved audit")
+    # Recalculate all saved signal statistics, not just file fingerprints.
+    # A valid unchanged WAV must not make a tampered diagnostic credible.
+    if audit.get("pcm_signal_diagnostics") != analyze_wav(wav):
+        raise ValueError("saved PCM signal diagnostics differ from decoded WAV")
     extraction = json.loads(report.read_text(encoding="utf-8"))
     if audit.get("selected_lbas") != extraction.get("audio_lbas"):
         raise ValueError("selected LBAs differ from saved audit")
