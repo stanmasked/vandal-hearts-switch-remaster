@@ -1,0 +1,57 @@
+name: Pinned upstream DrawOTag Switch cross-compile
+
+on:
+  push:
+    branches:
+      - feat/upstream-rgb24-observer-binding
+    paths:
+      - ".github/workflows/pinned-drawotag-switch-cross-compile.yml"
+      - "docs/UPSTREAM_DRAWOTAG_SWITCH_AUDIT.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drawotag-object:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch pinned upstream and compile original libgpu.c
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/HalmyLyseas/VandalHearts-PcPort.git /tmp/vh-raster-upstream
+          git -C /tmp/vh-raster-upstream checkout --detach 14552fffa0e0b47e02b57592e274fc6e7a649923
+          mkdir -p build/drawotag
+          "$DEVKITA64/bin/aarch64-none-elf-gcc" -std=c11 -O2 -Wall -Wextra \
+            -ffunction-sections -fdata-sections \
+            -I/tmp/vh-raster-upstream/platform/pc/include \
+            -I/tmp/vh-raster-upstream/platform/pc/src \
+            -I/tmp/vh-raster-upstream/include \
+            -I"$DEVKITPRO/libnx/include" \
+            -c /tmp/vh-raster-upstream/platform/pc/src/libgpu.c \
+            -o build/drawotag/libgpu_switch.o
+          "$DEVKITA64/bin/aarch64-none-elf-nm" --defined-only build/drawotag/libgpu_switch.o \
+            > build/drawotag/defined-symbols.txt
+          "$DEVKITA64/bin/aarch64-none-elf-nm" --undefined-only build/drawotag/libgpu_switch.o \
+            > build/drawotag/undefined-symbols.txt
+          grep -Eq ' [T] DrawOTag$' build/drawotag/defined-symbols.txt
+          grep -Eq ' [U] PC_GpuPresent$' build/drawotag/undefined-symbols.txt
+          grep -Eq ' [U] PC_GpuVram$' build/drawotag/undefined-symbols.txt
+          echo "Original DrawOTag cross-compiled and still calls upstream PC_GpuPresent."
+          echo "Unresolved GPU/raster dependencies:"
+          cat build/drawotag/undefined-symbols.txt
+      - name: Upload original DrawOTag dependency audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: original-drawotag-switch-object-audit
+          path: build/drawotag/
+          if-no-files-found: ignore
