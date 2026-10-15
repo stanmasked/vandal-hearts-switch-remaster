@@ -49,6 +49,10 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual(primary["contiguous_runs"], 3)
         self.assertEqual(primary["max_gap_sectors"], 2)
         self.assertEqual(primary["coding_counts"], {"0x00": 1, "0x01": 3})
+        self.assertFalse(primary["decoder_profile_supported"])
+        self.assertIsNone(primary["expected_pcm_frames"])
+        self.assertTrue(found["streams"][1]["decoder_profile_supported"])
+        self.assertEqual(found["streams"][1]["expected_pcm_frames"], 2016)
         self.assertEqual(primary["end_of_record_sectors"], 1)
         self.assertEqual(primary["end_of_file_sectors"], 1)
         self.assertEqual(inventory_streams(self.source, start_lba=2, sector_count=2)[
@@ -86,6 +90,8 @@ class InventoryTests(unittest.TestCase):
                     sector_count=count, file_number=key[0],
                     channel=key[1], report_path=report_path,
                 )
+                self.assertTrue(item["decoder_profile_supported"])
+                self.assertEqual(item["expected_pcm_frames"], len(expected_lbas[key]) * 2016)
                 self.assertEqual(report["audio_lbas"], expected_lbas[key])
                 self.assertEqual(report["audio_form2_sectors_written"],
                                  item["audio_sectors"])
@@ -115,6 +121,8 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual(found["unsupported_coding_sectors"], 1)
         self.assertEqual(found["streams"][0]["coding_counts"],
                          {"0x00": 1, "0x01": 1})
+        self.assertFalse(found["streams"][0]["decoder_profile_supported"])
+        self.assertIsNone(found["streams"][0]["expected_pcm_frames"])
         payload = self.root / "mixed.bin"
         report = self.root / "mixed.json"
         extract_audio_payloads(self.source, payload, file_number=2,
