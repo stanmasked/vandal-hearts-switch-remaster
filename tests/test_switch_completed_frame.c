@@ -44,6 +44,13 @@ int main(void) {
     /* No copy or mutation of the composited source frame. */
     assert(completed[6] == 10 && completed[11] == 15);
 
+    /* A later composited frame reuses the borrowed storage without stale pixels. */
+    completed[6] = 77;
+    assert(vh_switch_present_completed_rgb24(&presenter, completed,
+        sizeof(completed), 2, 2, 1280, 720));
+    assert(uploads == 2 && draws == 2);
+    assert(seen_pixels == completed && seen_top[0] == 77);
+
     assert(!vh_switch_present_completed_rgb24(&presenter, completed,
         sizeof(completed) - 1, 2, 2, 1280, 720));
     assert(!vh_switch_present_completed_rgb24(&presenter, NULL,
@@ -52,10 +59,13 @@ int main(void) {
         sizeof(completed), 0, 2, 1280, 720));
     assert(!vh_switch_present_completed_rgb24(&presenter, completed,
         sizeof(completed), 2, 2, 0, 720));
+    /* Extremely large dimensions cannot bypass the known allocation bound. */
+    assert(!vh_switch_present_completed_rgb24(&presenter, completed,
+        sizeof(completed), INT32_MAX, INT32_MAX, 1280, 720));
     presenter.initialized = 0;
     assert(!vh_switch_present_completed_rgb24(&presenter, completed,
         sizeof(completed), 2, 2, 1280, 720));
-    assert(uploads == 1 && draws == 1);
+    assert(uploads == 2 && draws == 2);
     puts("Completed RGB24 frame handoff tests passed.");
     return 0;
 }
