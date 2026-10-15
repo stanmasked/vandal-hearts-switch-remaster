@@ -136,3 +136,14 @@ PCM frame count and concatenated-WAV duration. This check does not inspect
 ADPCM sample quality or guarantee correct playback timing. It does not alter
 source, report, or payload files.
 \nThe optional `--wav` validator checks stereo 16-bit PCM at 37,800 Hz, the exact expected frame count, and truncated PCM data in bounded-size chunks. It does not prove the samples sound correct.\n
+
+### Bind the extraction report to its payload
+
+New extraction reports contain `payload_sha256`, calculated while writing
+selected 2304-byte sound groups. The read-only validator independently hashes
+the payload and rejects a mismatch, including a different file with the same
+size. Reports produced before this field was introduced need to be regenerated
+from the local raw BIN; the validator intentionally fails closed when the hash
+is missing. The SHA-256 check protects against accidental file/report mix-ups,
+but it does not establish that ADPCM was decoded correctly or that LBA timing
+was reconstructed.
