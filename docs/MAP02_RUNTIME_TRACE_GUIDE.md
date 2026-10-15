@@ -20,13 +20,13 @@ if (gState.mapNum == 11) {
 #endif
 ```
 
-Do **not** execute this in a production build without verifying the logging backend. The snippet uses JSON Lines (one object per line). Convert those two lines into a JSON array for `tools/verify_map02_trace.py`, or adapt the logger to append to an array. Ensure the map number is 11 (the game's map identifier), even though the resource basename is `M_MAP02`.
+Do **not** execute this in a production build without verifying the logging backend. The snippet uses JSON Lines (one object per line). The checker now accepts both **JSON Lines** (as emitted by this snippet) and a JSON array directly. Retain both post-load and draw events in the same log. Ensure the map number is 11 (the game's map identifier), even though the resource basename is `M_MAP02`.
 
 ## Draw-side observations
 
 At the actual face-rendering callsite, capture matching objects using `stage: "draw"` and the *actual* global GFX just before primitive submission. Verify where face index and `z,x` are available rather than inferring them from framebuffer pixels. Also log primitive UV, CLUT, tpage, transparency flags, and frame number separately; the current validator consumes only GFX identity and does not prove visible rendering or palette correctness. A draw entry means the draw path was reached, **not** that a textured pixel was ultimately displayed.
 
-After recording both stages for both faces, convert into a JSON array and invoke:
+After recording both stages for both faces, save the JSON Lines output (or a JSON array) and invoke:
 
 ```sh
 python3 -m tools.verify_map02_trace /local/path/map02_trace.json
