@@ -42,3 +42,9 @@ None of these tests verify output of original Vandal Hearts gameplay or textures
 NeXium runtime run https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38779397266 passed. The center pixel moved from RGB (96,93,138) to (96,93,245), while all four fixed corner markers retained their exact colors and screenshot orientation; the sampled viewport registered 18,820 changed pixels. This verifies RGB channel motion and orientation for synthetic frames on the SDL2/GLES2 observer path.
 
 The observer NRO probe now also presents 320×240 and 4×3 synthetic RGB24 frames before its 9×7 animated sequence. This drives GLES2 texture allocation and resizing via the existing observer path, and aborts the probe if either upload/draw/swap call fails. The new run is not yet verified. Original Vandal Hearts game frames remain out of scope of this resource-free probe.
+
+## Verified multi-resolution path and tightened state assertions
+
+The synthetic observer NRO run https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38779862674 completed successfully after submitting frames sized 320×240, 4×3, then 9×7 in NeXium. All RGB corner markers remained correct, animated center channels passed and 18,820 sampled pixels changed. The prior probe only checked return success and final screen rendering, not presenter's stored dimensions after the intermediate submissions.
+
+Commit `802a423fa05fb3dbc14270a29d262f22091126af` adds explicit checks of `VhSwitchRgb24Presenter.frame_width/frame_height` after each synthetic resize. This checks the successful presenter upload path's size bookkeeping; it does **not** read back actual GPU texture storage. The new CI run must pass before the stronger assertion is considered verified.
