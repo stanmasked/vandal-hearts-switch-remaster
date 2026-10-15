@@ -54,6 +54,9 @@ class LocalXaCheckTests(unittest.TestCase):
         self.assertEqual(result["selected_lbas"], [1, 3])
         self.assertEqual(result["pcm_frames"], 4032)
         self.assertEqual(result["source_verified_sectors"], 2)
+        self.assertEqual(result["source_bin_bytes"], self.source.stat().st_size)
+        self.assertEqual(result["source_bin_sha256"], hashlib.sha256(
+            self.source.read_bytes()).hexdigest())
         self.assertTrue(result["comparison"]["exact_match"])
         self.assertTrue((output / "decoded.wav").is_file())
         self.assertTrue((output / "extraction.json").is_file())
@@ -101,6 +104,23 @@ class LocalXaCheckTests(unittest.TestCase):
                 reference_wav=ref, reference_decoder="   ",
             )
         self.assertFalse(output.exists())
+
+    def test_source_bin_fingerprint_changes_with_unselected_sector(self):
+        first = run_local_check(
+            self.source, self.root / "fingerprint-first",
+            file_number=1, channel=0, start_lba=1, sector_count=3,
+        )
+        raw = bytearray(self.source.read_bytes())
+        # Change the first sector, which is outside the selected scan range.
+        raw[24] ^= 1
+        self.source.write_bytes(raw)
+        second = run_local_check(
+            self.source, self.root / "fingerprint-second",
+            file_number=1, channel=0, start_lba=1, sector_count=3,
+        )
+        self.assertNotEqual(first["source_bin_sha256"], second["source_bin_sha256"])
+        self.assertEqual(first["payload_sha256"], second["payload_sha256"])
+        self.assertEqual(first["decoded_wav_sha256"], second["decoded_wav_sha256"])
 
     def test_without_reference_reports_verified_decode_only(self):
         output = self.root / "without-reference"
