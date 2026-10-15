@@ -23,7 +23,7 @@ The OpenAL Soft generated-tone probe is separate from the SDL2 audio test. Recen
 
 ## Latest SDL2 audio runtime check
 
-The latest combined SDL2 runtime workflow, [38693397077](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38693397077), completed successfully overall, but the audio step was **inconclusive**. The log reports ALSA `cannot find card '0'` and `Unknown PCM default`; the CI host has no usable default audio device. The status classifier did not confirm an observed SDL audio callback. The workflow accepts this known missing-device case as inconclusive rather than failing the graphics/input run.
+The latest combined SDL2 runtime workflow, [38694397097](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38693397077), completed successfully overall, but the audio step was **inconclusive**. The log reports ALSA `cannot find card '0'` and `Unknown PCM default`; the CI host has no usable default audio device. The status classifier did not confirm an observed SDL audio callback. The workflow accepts this known missing-device case as inconclusive rather than failing the graphics/input run.
 
 This run confirms neither callback execution nor audible output. Do not interpret the overall workflow's green status as an audio pass.
 
