@@ -115,3 +115,45 @@ loop scheduling, ADSR envelopes, or Nintendo Switch audio output are faithful.
 
 Source implementation used to cross-check the algorithm:
 https://github.com/HalmyLyseas/VandalHearts-PcPort/blob/master/platform/pc/src/libsnd.c
+
+
+## Decode one VAG directly from local VH/VB
+
+The integration utility `tools/decode_vab_sample.py` reuses the full
+VH structure inspector, optional VB length verifier, and strict SPU-ADPCM
+decoder. It does **not** require a manually extracted intermediate ADPCM
+file:
+
+```sh
+python3 tools/decode_vab_sample.py \
+  /local/path/music.vh /local/path/music.vb \
+  /local/path/diagnostic-vag1.wav --vag 1 --sample-rate 22050
+```
+
+The `--vag` selector is one-based, consistent with VAB tone references.
+The tool calculates the size-table-based offset (including entry zero),
+checks the full VH tables and supplied VB bounds, reads only the selected
+sample bytes, and produces mono 16-bit WAV. The resulting JSON output
+includes VH/tone/size-table fingerprints, selected compressed-sample SHA-256,
+PCM SHA-256, VAG offset and size, referenced programs/tones, and loop markers.
+
+**Important:** 22050 Hz is an example *diagnostic* rate, not the original
+Vandal Hearts instrument pitch. Raw ADPCM does not encode the SEQ/SPU pitch
+registers; the correct playback rate, ADSR, key regions, looping, mixing,
+and reverb require subsequent runtime integration. This tool decodes each
+provided ADPCM block once, even if the first end flag occurs early.
+
+A new WAV output path is required; existing files and source aliases are
+rejected, and no original VH/VB or copyright asset is uploaded or committed.
+Validation is based on a consistent on-disk VH/VB pair, not proof that two
+independently supplied files belong together. Do not publish the generated WAV.
+
+```sh
+python3 tests/test_decode_vab_sample.py
+```
+
+The synthetic integration fixture includes a nonzero VAG-zero prefix,
+two populated programs with a gap, two independently selected VAGs,
+explicit PCM expectations, a looping sample, invalid selector/rate,
+damaged headers, truncated sources, and refusal to overwrite existing
+outputs. Passing this test is not a hardware or game-music fidelity claim.
