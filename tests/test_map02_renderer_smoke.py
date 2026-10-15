@@ -92,10 +92,10 @@ class RendererSmokeTests(unittest.TestCase):
         """Real compiled C draw emissions + synthetic post-load facts (no disc)."""
         draw_stdout = self._run_compiled_renderer(C_FIXTURE)
         post_load = (
-            '{"z":8,"x":19,"face":0,"stage":"post_load","gfx":641}\\n'
-            '{"z":11,"x":11,"face":0,"stage":"post_load","gfx":643}\\n'
+            '{"z":8,"x":19,"face":0,"stage":"post_load","gfx":641}\n'
+            '{"z":11,"x":11,"face":0,"stage":"post_load","gfx":643}\n'
         )
-        noisy_capture = "PC boot output\\n" + post_load + "GPU initialized\\n" + draw_stdout
+        noisy_capture = "PC boot output\n" + post_load + "GPU initialized\n" + draw_stdout
         observations = extract_trace_text(noisy_capture)
         report = evaluate_trace(observations)
         self.assertEqual(report["errors"], [])
@@ -112,8 +112,8 @@ class RendererSmokeTests(unittest.TestCase):
         self.assertNotEqual(modified, C_FIXTURE)
         draw_stdout = self._run_compiled_renderer(modified)
         header = (
-            '{"z":8,"x":19,"face":0,"stage":"post_load","gfx":641}\\n'
-            '{"z":11,"x":11,"face":0,"stage":"post_load","gfx":643}\\n'
+            '{"z":8,"x":19,"face":0,"stage":"post_load","gfx":641}\n'
+            '{"z":11,"x":11,"face":0,"stage":"post_load","gfx":643}\n'
         )
         report = evaluate_trace(extract_trace_text(header + draw_stdout))
         self.assertTrue(any("changed between loading and drawing" in error
