@@ -225,7 +225,8 @@ def capture(executable: Path, trace_directory: Path, output_directory: Path,
     else:
         with trace_path.open("r", encoding="utf-8") as trace:
             summary["analysis"] = evaluate_trace(
-                json.loads(line) for line in trace if line.strip()
+                (json.loads(line) for line in trace if line.strip()),
+                require_full_trace=provenance["trace_mode"] == "full",
             )
     summary.update(evidence_fingerprints(output_directory))
     (output_directory / "capture_report.json").write_text(
