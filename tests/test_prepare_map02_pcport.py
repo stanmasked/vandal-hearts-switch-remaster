@@ -1,4 +1,5 @@
 """Build-overlay tests using a tiny upstream-shaped checkout (no game data)."""
+import hashlib
 import json
 import subprocess
 import tempfile
@@ -62,7 +63,7 @@ class PrepareTests(unittest.TestCase):
                              {"game_setup.trace.c", "graphics.trace.c", "map02_trace.mk"})
             for name, expected_digest in provenance["generated_files"].items():
                 self.assertEqual(expected_digest,
-                                 __import__("hashlib").sha256((out / name).read_bytes()).hexdigest())
+                                 hashlib.sha256((out / name).read_bytes()).hexdigest())
             self.assertFalse(all(item["matches_pinned"] for item in provenance["source_files"].values()))
             overlay = result.read_text()
             self.assertIn("-DVH_TRACE_MAP02_DRAW", overlay)
