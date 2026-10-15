@@ -65,6 +65,14 @@ int main(void) {
                 pixels[at] = (uint8_t)(x * 24);
                 pixels[at + 1] = (uint8_t)(y * 31);
                 pixels[at + 2] = (uint8_t)(frame * 3);
+                /* Four fixed RGB markers in bottom-up buffer coordinates. */
+                if ((x < 2 || x >= 7) && (y < 2 || y >= 5)) {
+                    int top = y >= 5;
+                    int right = x >= 7;
+                    pixels[at] = (uint8_t)((top && !right) || (!top && right) ? 255 : 0);
+                    pixels[at + 1] = (uint8_t)(right ? 255 : 0);
+                    pixels[at + 2] = (uint8_t)((!top && !right) ? 255 : 0);
+                }
             }
         VH_ObserveCompletedRGB24(pixels, sizeof(pixels), 9, 7);
         if (!vh_switch_observer_last_result()) {
