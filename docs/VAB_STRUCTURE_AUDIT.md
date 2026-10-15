@@ -418,3 +418,72 @@ includes unrelated Map02 tests and was observed failing on a
 `test_capture_map02_runtime` binary provenance marker validation;
 that unrelated regression needs its own investigation before claiming
 the repository-wide suite is green.
+
+
+## PlayStation SEQ parser and first direct SEQ-to-stereo diagnostic
+
+The host-only `tools/inspect_ps1_seq.py` parses a local PlayStation
+`pQES` sequence (maximum 256 KiB), **not a Standard MIDI File**.
+The header occupies 15 bytes: 4-byte `pQES` signature, 4-byte version,
+big-endian 16-bit PPQN, 3-byte big-endian initial tempo in
+microseconds per quarter note, and 2 rhythm bytes. It reads one sequence
+of delta-timed MIDI-like channel events, preserving channel running
+status. The PS1 tempo event has raw bytes `FF 51 tt tt tt` with
+**no SMF-style length byte**; `FF 2F` ends the track.
+
+Parsing is strictly bounded by the local file size. It rejects
+truncated/overlong four-byte VLQs, malformed channel payloads, missing
+end-of-track and unsupported meta/system events. Audio-frame positions
+at 44,100 Hz use exact rational tempo integration across delta times,
+then floor at each event, so repeated rounding does not accumulate.
+Results include each event's absolute tick and frame, SEQ SHA-256,
+bytes consumed and trailing-padding count. Default PPQN/tempo of 480
+and 500000 are used only if those header fields are zero.
+
+```sh
+python3 tools/inspect_ps1_seq.py /local/path/music.seq
+python3 tests/test_inspect_ps1_seq.py
+```
+
+The second utility, `tools/seq_to_chord_schedule.py`, creates the
+same JSON `{"voices": [...]}` format accepted by our existing
+`tools/render_vab_chord.py`. At each note-on, it snapshots channel
+program, CC07/CC0B volume, CC0A pan, note and velocity. Note-off,
+velocity-zero note-on, retrigger, CC78/CC7B all-notes-off and end-of-track
+close the note. The note's timeline is in **44,100-Hz audio frames**, not
+MIDI ticks. Same-frame note-on/off is quantized to a one-frame hold.
+A diagnostic release tail defaults to 4410 frames (0.1 seconds).
+
+```sh
+python3 tools/seq_to_chord_schedule.py \
+  /local/path/music.seq /local/path/voices.json --release-frames 4410
+python3 tools/render_vab_chord.py \
+  /local/path/music.vh /local/path/music.vb \
+  /local/path/voices.json /local/path/dry-seq.wav
+```
+
+The convenience utility `tools/render_ps1_seq.py` combines the
+above steps **without writing intermediate JSON**:
+
+```sh
+python3 tools/render_ps1_seq.py \
+  /local/path/music.seq /local/path/music.vh /local/path/music.vb \
+  /local/path/diagnostic-seq.wav --release-frames 4410
+python3 tests/test_seq_to_chord_schedule.py
+python3 tests/test_render_ps1_seq.py
+```
+
+Keep all original SEQ/VH/VB assets and generated WAVs local. These tools
+never overwrite any input or existing output, and no copyrighted assets
+are committed. The test suite uses only small fabricated SEQ/VAB/VAG
+fixtures and checks the full read-only path to stereo WAV.
+
+**Acceptance boundaries:** this is an **offline diagnostic** rather than
+a music player. A schedule supports a maximum of **32 note-ons in
+total**, not the game's 32 *simultaneous* SPU voices. There is no
+voice stealing/reallocation, automatic sequence repeats, full per-frame
+controller changes, sustain pedal simulation, pitch bend, block-accurate
+PC-port sequencer advancement, reverb or original PlayStation hardware
+pitch rounding. Sequencer-to-SPU audio is not wired into the Nintendo
+Switch NRO. A real-bank listening comparison and a real Switch run
+are still required before claiming music-port fidelity.
