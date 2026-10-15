@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from tools.inspect_land_dt import BLOCK_SIZE, CLUT_INDEX_OFFSET, inspect_land_dt
-from tools.check_map02_raw import check_raw_records
+from tools.check_map02_raw import check_block_hash, check_raw_records
 
 
 class CheckMap02RawTests(unittest.TestCase):
@@ -112,6 +112,22 @@ class CheckMap02RawTests(unittest.TestCase):
             report["records"][0]["clut_index"] = False
             self.assertIn("GFX 241: CLUT index must be integer zero",
                           check_raw_records(report))
+
+    def test_expected_block_hash_matches_extracted_block(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "map02.bin"
+            path.write_bytes(bytes(BLOCK_SIZE))
+            report = inspect_land_dt(path, single_block=True)
+            self.assertEqual(check_block_hash(report, report["block_sha256"]), [])
+            self.assertEqual(check_block_hash(report, report["block_sha256"].upper()), [])
+
+    def test_expected_block_hash_rejects_mismatch(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "map02.bin"
+            path.write_bytes(bytes(BLOCK_SIZE))
+            report = inspect_land_dt(path, single_block=True)
+            self.assertTrue(check_block_hash(report, "0" * 64 if report["block_sha256"] != "0" * 64 else "1" * 64))
+            self.assertTrue(check_block_hash(report, "not-a-sha256"))
 
     def test_rejects_wrong_map(self):
         with tempfile.TemporaryDirectory() as folder:
