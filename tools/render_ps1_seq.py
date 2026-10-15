@@ -3,7 +3,7 @@
 
 This is an offline integration probe, not a music or game playback engine.
 It uses an ideal rational SEQ timeline mapped to sample frames and a
-32-note *total* cap, without voice stealing, SEQ repeat handling,
+20 reusable SEQ slots and up to 2048 note-ons, with approximate\nround-robin stealing, but without SEQ repeat handling,
 reverb, exact hardware pitch, or Nintendo Switch audio output.
 
 No source asset or existing output is overwritten. No asset is uploaded.
@@ -46,8 +46,9 @@ def render_ps1_seq(
     report["release_frames"] = release_frames
     report["warning"] = (
         "Synthetic-validated offline PS1 SEQ to stereo WAV diagnostic; "
-        "does NOT implement real SEQ playback block scheduling, voice "
-        "stealing, song repeats, full SPU reverb, or Switch audio."
+        "20 reusable voice slots and round-robin stealing are modeled "
+        "with approximate release lifetimes. No real audio-block SEQ "
+        "scheduler, song repeats, SPU reverb or Switch audio."
     )
     return wav, report
 
