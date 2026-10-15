@@ -112,17 +112,6 @@ int main(void) {
                 goto done;
             puts("RGB24 observer rejected truncated frame without swap");
         }
-        {
-            unsigned swaps_before = state.swaps;
-            state.fail_next_swap = 1;
-            VH_ObserveCompletedRGB24(small_frame, sizeof(small_frame), 4, 3);
-            if (vh_switch_observer_last_result() || state.swaps != swaps_before ||
-                state.fail_next_swap) goto done;
-            VH_ObserveCompletedRGB24(small_frame, sizeof(small_frame), 4, 3);
-            if (!vh_switch_observer_last_result() || state.swaps != swaps_before + 1u)
-                goto done;
-            puts("RGB24 observer recovered after injected swap failure");
-        }
     }
 
     while (running && frame < 3600) {
@@ -146,6 +135,25 @@ int main(void) {
                     pixels[at + 2] = (uint8_t)((!top && !right) ? 255 : 0);
                 }
             }
+        if (frame == 90) {
+            unsigned before = state.swaps;
+            state.fail_next_swap = 1;
+            VH_ObserveCompletedRGB24(pixels, sizeof(pixels), 9, 7);
+            if (vh_switch_observer_last_result() != 0 ||
+                state.swaps != before || state.fail_next_swap != 0) {
+                fprintf(stderr, "Injected swap failure contract failed: result=%d swaps=%u before=%u pending=%d\n",
+                        vh_switch_observer_last_result(), state.swaps, before, state.fail_next_swap);
+                goto done;
+            }
+            fprintf(stderr, "Injected swap failure rejected as expected\n");
+            VH_ObserveCompletedRGB24(pixels, sizeof(pixels), 9, 7);
+            if (!vh_switch_observer_last_result() || state.swaps != before + 1u) {
+                fprintf(stderr, "Swap recovery failed: result=%d swaps=%u before=%u\n",
+                        vh_switch_observer_last_result(), state.swaps, before);
+                goto done;
+            }
+            fprintf(stderr, "Swap recovered on subsequent present\n");
+        }
         VH_ObserveCompletedRGB24(pixels, sizeof(pixels), 9, 7);
         if (!vh_switch_observer_last_result() ||
             presenter.frame_width != 9 || presenter.frame_height != 7) {
