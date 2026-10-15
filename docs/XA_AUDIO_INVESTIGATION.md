@@ -274,3 +274,15 @@ generated reference WAV run end to end.
 This test adds coverage for the two-coefficient recurrence but does not
 substitute for comparing with a separately executed reference decoder or
 listening to legally obtained local game audio.
+
+
+### Verify absolute sector range in extraction reports
+
+The report validator also checks an extractor's optional complete source-range
+metadata: `start_lba`, `sectors_scanned`, `first_audio_lba`, and
+`last_audio_lba`. If any of these keys is present, all four must be present;
+the selected LBAs must fit entirely inside the scanned range, and the
+endpoints must agree with `audio_lbas`. Older synthetic reports without
+any source-range fields remain accepted, but partial or contradictory metadata
+is rejected. This is a **consistency** check, not a verification against the
+original disc image.
