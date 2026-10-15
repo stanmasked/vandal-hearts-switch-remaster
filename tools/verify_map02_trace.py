@@ -19,6 +19,7 @@ def evaluate_trace(entries):
     found = {}
     draw_metadata = {}
     seen_draw_frames = set()
+    draw_frame_mode = {}
     draw_count = {}
     errors = []
     for i, entry in enumerate(entries):
@@ -35,6 +36,12 @@ def evaluate_trace(entries):
         if stage not in STAGES:
             errors.append(f"entry {i}: invalid stage")
             continue
+        if stage == "draw":
+            framed = "frame" in entry
+            if pos in draw_frame_mode and draw_frame_mode[pos] != framed:
+                errors.append(f"mixed framed and unframed draw observations for {pos}")
+                continue
+            draw_frame_mode[pos] = framed
         if stage == "draw" and "frame" in entry:
             frame = entry["frame"]
             if type(frame) is not int or frame < 0:
