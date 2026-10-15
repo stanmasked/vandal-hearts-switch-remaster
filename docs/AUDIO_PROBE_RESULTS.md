@@ -21,6 +21,12 @@ A second attempt changed pacman's external downloader to `curl` with a pacman-st
 
 The OpenAL Soft generated-tone probe is separate from the SDL2 audio test. Recent attempts [38609239427](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38609239427), [38609257257](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38609257257), and [38609709753](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38609709753) failed while retrieving devkitPro package database files with HTTP 403 responses. The build/runtime stage was not reached, so these runs do not establish whether OpenAL Soft works on Switch.
 
+## Latest SDL2 audio runtime check
+
+The latest combined SDL2 runtime workflow, [38691365198](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38691365198), completed successfully overall, but the audio step was **inconclusive**. The log reports ALSA `cannot find card '0'` and `Unknown PCM default`; the CI host has no usable default audio device. The captured status screenshot did not meet the green-pixel threshold required to classify the SDL callback as observed. The workflow accepts this known missing-device case as inconclusive rather than failing the entire graphics/input run.
+
+This run confirms neither callback execution nor audible output. Do not interpret the overall workflow's green status as an audio pass.
+
 ## Current conclusion
 
 - Graphics and input probes have passed their documented NeXium checks; see the [SDL2 feasibility workflow](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/workflows/sdl2-probe.yml).
