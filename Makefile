@@ -29,7 +29,7 @@ LDLIBS   := -L$(DEVKITPRO)/libnx/lib -lnx
 .PHONY: all clean test test-sanitize verify-nro sdl2-probe sdl2-gl-probe sdl2-texture-probe rgb24-texture-probe sdl2-audio-probe openal-probe
 all: $(BUILD)/$(TARGET).nro
 
-test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_rgb24_frame $(BUILD)/test_switch_presenter_layout $(BUILD)/test_ps1_memory_view $(BUILD)/test_map_buffer_gate $(BUILD)/test_map_decode_checked $(BUILD)/test_map_load_checked $(BUILD)/test_map_decode_reference $(BUILD)/test_map_unit_boundary $(BUILD)/test_map_unit_phase $(BUILD)/test_scene_map_order $(BUILD)/test_scratch3_resource_write $(BUILD)/test_cd_scratch3_gate $(BUILD)/test_unit_file_layout $(BUILD)/test_unit_accumulate
+test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_rgb24_frame $(BUILD)/test_switch_presenter_layout $(BUILD)/test_ps1_memory_view $(BUILD)/test_map_buffer_gate $(BUILD)/test_map_decode_checked $(BUILD)/test_map_load_checked $(BUILD)/test_map_decode_reference $(BUILD)/test_map_unit_boundary $(BUILD)/test_map_unit_phase $(BUILD)/test_scene_map_order $(BUILD)/test_scratch3_resource_write $(BUILD)/test_cd_scratch3_gate $(BUILD)/test_unit_file_layout $(BUILD)/test_unit_accumulate $(BUILD)/test_unit_accumulate_multi
 	./$(BUILD)/test_game_rules
 	./$(BUILD)/test_software_renderer
 	./$(BUILD)/test_rgb24_frame
@@ -46,6 +46,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_rgb
 	./$(BUILD)/test_cd_scratch3_gate
 	./$(BUILD)/test_unit_file_layout
 	./$(BUILD)/test_unit_accumulate
+	./$(BUILD)/test_unit_accumulate_multi
 	python3 tests/test_restore_ps1_str.py
 	python3 tests/test_inspect_cdxa.py
 	python3 tests/test_extract_cdxa_payload.py
@@ -68,6 +69,7 @@ test-sanitize: | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_cd_scratch3_gate.c -o $(BUILD)/test_cd_scratch3_gate_sanitize
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_unit_file_layout.c -o $(BUILD)/test_unit_file_layout_sanitize
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_unit_accumulate.c -o $(BUILD)/test_unit_accumulate_sanitize
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_unit_accumulate_multi.c -o $(BUILD)/test_unit_accumulate_multi_sanitize
 	./$(BUILD)/test_game_rules_sanitize
 	./$(BUILD)/test_software_renderer_sanitize
 	./$(BUILD)/test_rgb24_frame_sanitize
@@ -84,6 +86,7 @@ test-sanitize: | $(BUILD)
 	./$(BUILD)/test_cd_scratch3_gate_sanitize
 	./$(BUILD)/test_unit_file_layout_sanitize
 	./$(BUILD)/test_unit_accumulate_sanitize
+	./$(BUILD)/test_unit_accumulate_multi_sanitize
 
 verify-nro: $(BUILD)/$(TARGET).nro
 	python3 tests/check_nro.py $<
@@ -155,6 +158,9 @@ $(BUILD)/test_unit_file_layout: tests/test_unit_file_layout.c source/unit_file_l
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@
 
 $(BUILD)/test_unit_accumulate: tests/test_unit_accumulate.c source/unit_accumulate.h source/unit_file_layout.h source/map_unit_boundary.h source/ps1_memory_view.h | $(BUILD)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@
+
+$(BUILD)/test_unit_accumulate_multi: tests/test_unit_accumulate_multi.c source/unit_accumulate.h source/unit_file_layout.h source/map_unit_boundary.h source/ps1_memory_view.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@
 
 $(BUILD)/$(TARGET).elf: $(SOURCES)/main.c $(SOURCES)/game_rules.h $(SOURCES)/game_state.h $(SOURCES)/platform_input.h $(SOURCES)/software_renderer.h $(SOURCES)/game_renderer.h | $(BUILD)
