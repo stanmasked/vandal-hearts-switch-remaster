@@ -164,3 +164,15 @@ This is the first concrete inventory slice from the pinned upstream revision `14
 This table is a starting slice, not a completed memory map. The next pass must search all game and platform translation units for (a) casts from integer constants to pointers, (b) arithmetic from RAM base macros, (c) pointer values embedded in tables, and (d) assembly or generated code that assumes the original address layout. For each hit, record the required byte range, read/write behavior, object lifetime, and whether the PC branch already supplies a replacement.
 
 The implementation remains blocked until the table covers the complete selected-region source set and tests demonstrate that any proposed backing regions preserve overlap and pointer arithmetic. No Switch runtime address assumptions are made in this document.
+
+
+## 10. Map decompressor scratchpad access — pinned-source verification (2026-10-15)
+
+A direct read of `src/maps/unpack.c` at upstream revision `14552fffa0e0b47e02b57592e274fc6e7a649923` confirms these implementation details:
+
+- `UnpackMapFileData(u8 *input, u8 *output, s32 len)` selects `static u8 sPcScratchpad[0x400]` under `PC_PORT`; the non-PC branch casts `0x1f800000` to a byte pointer.
+- The function clears indices `0..989` and starts `cacheOfs` at `990`; writes and back-references wrap with `& 0x3ff`. The entire 1024-byte array is addressable, even though only 990 bytes are explicitly cleared at entry.
+- `ProcessMapFileData()` reads a four-byte little-endian compressed length and passes `&input[4]` plus the global `gMapDataPtr` as output. Thus the scratch ring is local to decompression, but the output storage is a separate global whose allocation, capacity and lifetime still require auditing.
+- The source has no output-capacity parameter for `UnpackMapFileData()`. Its existing contract therefore does **not** prove bounds safety for malformed or truncated map data; a Switch-facing loader should validate the input/output allocation contract before calling it, without changing original decompression semantics prematurely.
+
+**Alias classification:** the `PC_PORT` dictionary is one static function-scoped backing array, distinct from `gMapDataPtr`. The pinned function does not itself demonstrate aliasing with the full PS1 scratchpad region; other consumers must be searched before generalizing. No runtime or memory-safety test is claimed for this source review.
