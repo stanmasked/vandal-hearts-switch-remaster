@@ -9,7 +9,7 @@ import argparse
 import json
 from pathlib import Path
 
-from tools.inspect_land_dt import inspect_land_dt
+from tools.inspect_land_dt import CLUT_INDEX_OFFSET, TEXTURE_RECORD_SIZE, inspect_land_dt
 
 
 def check_raw_records(report):
@@ -33,6 +33,21 @@ def check_raw_records(report):
             errors.append(f"GFX {gfx}: CLUT index is not zero")
         if record["runtime_table_index"] != 400 + gfx:
             errors.append(f"GFX {gfx}: unexpected runtime table index")
+        base = report.get("block_base_offset")
+        if type(base) is not int or base < 0:
+            errors.append("invalid LAND_DT block base offset")
+        else:
+            expected_record_offset = gfx * TEXTURE_RECORD_SIZE
+            expected_clut_offset = CLUT_INDEX_OFFSET + gfx
+            for field, expected in (
+                ("block_offset", expected_record_offset),
+                ("absolute_input_offset", base + expected_record_offset),
+                ("clut_index_offset", expected_clut_offset),
+                ("absolute_clut_index_offset", base + expected_clut_offset),
+            ):
+                if type(record.get(field)) is not int or record[field] != expected:
+                    errors.append(f"GFX {gfx}: {field} expected {expected}")
+
     return errors
 
 
