@@ -90,7 +90,7 @@ static void VH_Map02TraceDraw(const MapTileModel *tile, int face, int gfx,
     )
     for name, next_name, path in names:
         begin_marker = f"void {name}("
-        next_marker = f"\nvoid {next_name}("
+        next_marker = ("\ns32 " if next_name == "GetBestViewOfTarget" else "\nvoid ") + f"{next_name}("
         start = source.find(begin_marker)
         end = source.find(next_marker, start)
         if start < 0 or end < 0:
