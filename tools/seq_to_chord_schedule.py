@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Convert a local Sony PS1 SEQ into the bounded dry stereo-chord voice format.
 
-This conversion models PC-port channel program/volume/pan state at NOTE ON,
-NOTE OFF, retriggers and all-sounds-off. It is not a faithful runtime
-sequencer: no real-time voice stealing, reverb, CC dynamics on held voices,
-repeat playback or block-quantized audio scheduling.
+This conversion models 20 SEQ voice slots, reallocation and round-robin
+stealing, with channel program/volume/pan snapshots. It is not a faithful
+runtime sequencer: ADSR liveness is approximated, with no reverb,
+repeats, or block-quantized audio scheduling.
 
 Input SEQ and output JSON remain local; the output is never overwritten.
 """
@@ -17,39 +17,81 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.inspect_ps1_seq import MAX_SEQ_BYTES, parse_seq
-from tools.mix_spu_stereo import MAX_FRAMES, MAX_VOICES
+from tools.mix_spu_stereo import MAX_FRAMES
+
+
+# The reference PC port reserves slots 0..19 for SEQ (20..23 for SFX).
+SEQ_VOICE_COUNT = 20
+MAX_SEQ_NOTES = 2048  # bounded offline memory, not a simultaneous voice cap
 
 
 def seq_to_schedule(report: dict[str, object], *, release_frames: int = 4410
                     ) -> dict[str, object]:
-    """Return {"voices": [...]} accepted by render_vab_chord.py.
+    """Build a time-bounded note schedule with 20 reusable SEQ voice slots.
 
-    Each event's frame is a floor of its exact tempo-integrated position.
-    In this simplified offline converter, same-frame NoteOn/NoteOff
-    becomes a one-output-frame hold (instead of a zero-length voice).
+    The source port takes the lowest free slot, otherwise steals the next
+    slot round-robin. Note-off only releases its currently owned voice.
+    ADSR release occupation is approximated by the diagnostic tail length:
+    this is NOT hardware-accurate voice liveness or SEQ block timing.
     """
     if type(release_frames) is not int or not 0 <= release_frames <= 44100:
         raise ValueError("release_frames must be an integer in 0..44100")
     if report.get("format") != "PS1 SEQ":
         raise ValueError("requires a validated PS1 SEQ report")
-    states = [
-        {"program": 0, "volume": 127, "pan": 64}
-        for _ in range(16)
-    ]
-    playing: dict[tuple[int, int], dict[str, int]] = {}
-    scheduled: list[dict[str, int]] = []
+    states = [{"program": 0, "volume": 127, "pan": 64}
+              for _ in range(16)]
+    # Each slot holds the current scheduled note, including its release tail.
+    # Held notes have _released=False and remain busy until note-off.
+    slots: list[dict | None] = [None] * SEQ_VOICE_COUNT
+    held: dict[tuple[int, int], dict] = {}
+    scheduled: list[dict] = []
+    steal_round_robin = 0
 
     def release(channel: int, note: int, frame: int) -> None:
-        candidate = playing.pop((channel, note), None)
-        if candidate is None:
+        entry = held.pop((channel, note), None)
+        if entry is None:
             return
-        candidate["hold_frames"] = max(1, frame - candidate["start_frame"])
-        candidate["tail_frames"] = release_frames
+        entry["hold_frames"] = max(1, frame - entry["start_frame"])
+        entry["tail_frames"] = release_frames
+        entry["_released"] = True
+
+    def end(entry: dict) -> int:
+        if not entry["_released"]:
+            return MAX_FRAMES + 1
+        return (entry["start_frame"] + entry["hold_frames"]
+                + entry["tail_frames"])
+
+    def allocate(frame: int) -> int:
+        nonlocal steal_round_robin
+        for slot, old in enumerate(slots):
+            if old is None or end(old) <= frame:
+                return slot
+        # All 20 SEQ voices are still busy (held or releasing). The source
+        # code's RR index advances ONLY when every voice is busy.
+        slot = steal_round_robin
+        steal_round_robin = (steal_round_robin + 1) % SEQ_VOICE_COUNT
+        old = slots[slot]
+        if not old["_released"]:
+            key = old["_channel"], old["note"]
+            if held.get(key) is old:
+                del held[key]  # stale later note-off must not stop new owner
+            elapsed = frame - old["start_frame"]
+            if elapsed > 0:
+                old["hold_frames"] = elapsed
+                old["tail_frames"] = 0
+            else:
+                old["_dropped"] = True  # stolen before first output frame
+        else:
+            old["tail_frames"] = max(
+                0, frame - old["start_frame"] - old["hold_frames"]
+            )
+        old["_released"] = True
+        return slot
 
     for event in report["events"]:
         kind = event["type"]
         frame = event["frame"]
-        if type(frame) is not int or frame < 0 or frame > MAX_FRAMES:
+        if type(frame) is not int or not 0 <= frame <= MAX_FRAMES:
             raise ValueError("SEQ event exceeds 20-second schedule safety limit")
         channel = event.get("channel", 0)
         if kind == "program_change":
@@ -61,45 +103,53 @@ def seq_to_schedule(report: dict[str, object], *, release_frames: int = 4410
             elif control == 0x0A:
                 states[channel]["pan"] = value
             elif control in (0x78, 0x7B):
-                for (ch, note) in tuple(playing):
+                for ch, note in tuple(held):
                     if ch == channel:
                         release(ch, note, frame)
         elif kind == "note_on":
             note = event["note"]
-            release(channel, note, frame)  # retrigger clears prior ownership
-            if len(scheduled) >= MAX_VOICES:
-                raise ValueError("SEQ exceeds 32-note offline schedule limit")
+            release(channel, note, frame)  # retrigger: release prior owner
+            if len(scheduled) >= MAX_SEQ_NOTES:
+                raise ValueError("SEQ exceeds 2048-note offline safety limit")
+            slot = allocate(frame)
             state = states[channel]
-            sample = {
+            entry = {
                 "program": state["program"], "note": note,
                 "velocity": event["velocity"],
                 "channel_volume": state["volume"],
                 "channel_pan": state["pan"],
                 "start_frame": frame, "hold_frames": 1,
                 "tail_frames": release_frames,
+                "voice_slot": slot,
+                "_channel": channel, "_released": False,
             }
-            scheduled.append(sample)
-            playing[(channel, note)] = sample
+            scheduled.append(entry)
+            slots[slot] = entry
+            held[(channel, note)] = entry
         elif kind == "note_off":
             release(channel, event["note"], frame)
         elif kind == "end_of_track":
-            for ch, note in tuple(playing):
+            for ch, note in tuple(held):
                 release(ch, note, frame)
-        # Tempo events already affected each absolute frame position.
-        # Ignored channel events have no key-on/voice parameter effect.
 
     if not scheduled:
         raise ValueError("SEQ contains no note-on events to render")
-    if playing:
+    if held:
         raise ValueError("SEQ must terminate with end-of-track")
-    for idx, voice in enumerate(scheduled):
-        final = (voice["start_frame"] + voice["hold_frames"]
-                 + voice["tail_frames"])
+    voices = []
+    for idx, entry in enumerate(scheduled):
+        if entry.get("_dropped"):
+            continue
+        final = end(entry)
         if final > MAX_FRAMES:
             raise ValueError(
                 f"note {idx}: requested release exceeds 20-second render limit"
             )
-    return {"voices": scheduled}
+        voices.append({k: v for k, v in entry.items()
+                       if not k.startswith("_")})
+    if not voices:
+        raise ValueError("all same-frame notes were stolen before playback")
+    return {"voices": voices}
 
 
 def main() -> int:
