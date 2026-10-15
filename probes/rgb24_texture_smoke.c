@@ -6,6 +6,7 @@
 #include "../source/rgb24_frame.h"
 #include "../source/switch_presenter_layout.h"
 #include "../source/switch_rgb24_presenter.h"
+#include "../source/switch_upstream_observer.h"
 
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 720
@@ -50,6 +51,20 @@ static void update_animation_marker(unsigned frame_number) {
             p[2] = blue;
         }
     }
+}
+
+static int probe_viewport(void *context, int *width, int *height) {
+    SDL_Window *window = (SDL_Window *)context;
+    if (!window || !width || !height) return 0;
+    SDL_GL_GetDrawableSize(window, width, height);
+    return *width > 0 && *height > 0;
+}
+
+static int probe_swap(void *context) {
+    SDL_Window *window = (SDL_Window *)context;
+    if (!window) return 0;
+    SDL_GL_SwapWindow(window);
+    return 1;
 }
 
 int main(void) {
@@ -159,6 +174,16 @@ int main(void) {
     }
     fprintf(stderr, "RGB24 rejected-upload recovery: PASS\\n");
 
+    /* Use the same observer API intended for upstream PC_GpuPresent, with
+     * exactly one owner of draw and SDL buffer swap per frame. */
+    VhSwitchPresentHook hook = {&presenter, probe_viewport, probe_swap, window};
+    if (!vh_switch_observer_register(&hook)) {
+        vh_switch_rgb24_presenter_destroy(&presenter);
+        SDL_GL_DeleteContext(context);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 13;
+    }
     int running = 1;
     int result = 0;
     unsigned frame_number = 0;
@@ -168,22 +193,19 @@ int main(void) {
 
         /* Exercise the real per-frame path: mutate borrowed RGB24 pixels, upload, then draw. */
         update_animation_marker(frame_number++);
-        if (!vh_switch_rgb24_presenter_upload(&presenter, &frame)) {
-            fprintf(stderr, "RGB24 per-frame upload failed at frame %u\\n", frame_number);
-            result = 11;
-            break;
-        }
         glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
         glClearColor(0.02f, 0.02f, 0.03f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
-        if (!vh_switch_rgb24_presenter_draw(&presenter, WINDOW_WIDTH, WINDOW_HEIGHT)) {
-            result = 8;
+        VH_ObserveCompletedRGB24(frame_pixels, sizeof(frame_pixels), FRAME_WIDTH, FRAME_HEIGHT);
+        if (!vh_switch_observer_last_result()) {
+            fprintf(stderr, "RGB24 observer presentation failed at frame %u\\n", frame_number);
+            result = 11;
             break;
         }
-        SDL_GL_SwapWindow(window);
         SDL_Delay(16);
     }
     fprintf(stderr, "RGB24 repeated upload frames: %u\\n", frame_number);
+    vh_switch_observer_unregister();
     vh_switch_rgb24_presenter_destroy(&presenter);
     SDL_GL_DeleteContext(context);
     SDL_DestroyWindow(window);
