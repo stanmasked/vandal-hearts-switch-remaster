@@ -49,6 +49,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer
 	python3 tests/test_decode_vab_sample.py
 	python3 tests/test_resolve_vab_note.py
 	python3 tests/test_simulate_spu_voice.py
+	python3 tests/test_render_vab_note.py
 
 # Host-only memory and undefined-behavior checks; requires GCC or Clang sanitizers.
 test-sanitize: | $(BUILD)
