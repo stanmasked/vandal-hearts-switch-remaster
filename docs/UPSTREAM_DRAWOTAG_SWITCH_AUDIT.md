@@ -57,3 +57,9 @@ The emulator workflow now asserts four alternating red/green sample locations on
 Commits `d91ad19e` and `40c6198c` add a second indexed-texture quad beside the existing 4bpp candidate. The asset-free probe uploads two 8bpp packed VRAM words (indices 1,2) at (128,0) through the original `LoadImage`, plus a 256-entry CLUT at (0,41): index 1 is BGR555 blue (0x7c00), index 2 is white (0x7fff). `SetPolyFT4`, `setTPage(...,1,...)`, `setClut` and `DrawOTag` exercise the native 8bpp `SampleTexture` path. The NeXium workflow adds two colour probes (blue/white) on both screenshots; existing TILE, F4, 4bpp and dynamic background assertions stay enabled.
 
 **Status: committed, not yet CI-confirmed.** Neither the 4bpp nor the 8bpp additions should be reported as successful NeXium runs until fresh run logs and screenshots establish that result. Separate future gates: direct 15bpp textures, texture window, STP/semi-transparency, real game VRAM uploads and engine frames.
+
+## Direct-colour 15bpp POLY_FT4 candidate (pending CI)
+
+Commits `ea280273` and `3a67680b` extend the same isolated NeXium NRO probe with a 15bpp direct-colour `POLY_FT4`. The original `LoadImage` uploads a 2x2 BGR555 texture at VRAM (192,0), with alternating yellow (0x03ff) and magenta (0x7c1f). The probe supplies `GetTPage(2,0,192,0)`, which selects the native direct-colour `SampleTexture` path, bypassing CLUT. Independent screenshot probes check both texels on both captured frames and retain the prior TILE, F4, 4bpp and 8bpp assertions.
+
+**Acceptance status: committed but unverified on NeXium.** The legacy #38806009204 run predates all indexed/direct-colour additions and proves only TILE/F4. Current workflow runs after these commits must be checked before promoting the three FT4 modes to passing. No copyrighted game assets are introduced.
