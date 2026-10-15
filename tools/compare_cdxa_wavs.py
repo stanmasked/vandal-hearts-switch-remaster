@@ -3,12 +3,22 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import struct
 import wave
 from pathlib import Path
 
 CHUNK_FRAMES = 4096
+
+
+def sha256_file(path: Path) -> str:
+    """Hash the entire WAV container (headers and all), using bounded memory."""
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def compare_wavs(candidate: Path, reference: Path) -> dict[str, object]:
@@ -52,6 +62,8 @@ def compare_wavs(candidate: Path, reference: Path) -> dict[str, object]:
                     max_abs_difference = max(max_abs_difference, dl, dr)
                     absolute_sum += dl + dr
             return {
+                "candidate_wav_sha256": sha256_file(candidate),
+                "reference_wav_sha256": sha256_file(reference),
                 "exact_match": different_frames == 0,
                 "frames_compared": frames,
                 "different_frames": different_frames,
