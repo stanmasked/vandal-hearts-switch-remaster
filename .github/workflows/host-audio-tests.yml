@@ -37,3 +37,4 @@ jobs:
           python3 tests/test_seq_to_chord_schedule.py
           python3 tests/test_render_ps1_seq.py
           python3 tests/test_seq_voice_slots.py
+          python3 tests/test_repeat_ps1_seq.py
