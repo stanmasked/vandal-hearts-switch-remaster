@@ -100,6 +100,26 @@ int main(void) {
     fprintf(stderr, "RGB24 upload: %dx%d stride=%d unpack_alignment=1 gl_error=0x0000\\n",
             FRAME_WIDTH, FRAME_HEIGHT, FRAME_STRIDE);
 
+    /* A rejected frame must not invalidate the last successfully uploaded texture. */
+    const VhRgb24Frame invalid_frame = {frame_pixels, 0u, FRAME_WIDTH, FRAME_HEIGHT};
+    if (vh_switch_rgb24_presenter_upload(&presenter, &invalid_frame)) {
+        fprintf(stderr, "RGB24 presenter accepted invalid frame metadata\\n");
+        vh_switch_rgb24_presenter_destroy(&presenter);
+        SDL_GL_DeleteContext(context);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 9;
+    }
+    if (!vh_switch_rgb24_presenter_draw(&presenter, WINDOW_WIDTH, WINDOW_HEIGHT)) {
+        fprintf(stderr, "RGB24 presenter lost valid frame after rejected upload\\n");
+        vh_switch_rgb24_presenter_destroy(&presenter);
+        SDL_GL_DeleteContext(context);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 10;
+    }
+    fprintf(stderr, "RGB24 rejected-upload recovery: PASS\\n");
+
     int running = 1;
     int result = 0;
     while (running) {
