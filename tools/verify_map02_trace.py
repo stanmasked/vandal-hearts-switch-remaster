@@ -18,6 +18,8 @@ def evaluate_trace(entries):
         raise ValueError("trace must be a JSON list")
     found = {}
     draw_metadata = {}
+    seen_draw_frames = set()
+    draw_count = {}
     errors = []
     for i, entry in enumerate(entries):
         if not isinstance(entry, dict):
@@ -33,9 +35,26 @@ def evaluate_trace(entries):
         if stage not in STAGES:
             errors.append(f"entry {i}: invalid stage")
             continue
-        if (pos, stage) in found:
+        if stage == "draw" and "frame" in entry:
+            frame = entry["frame"]
+            if type(frame) is not int or frame < 0:
+                errors.append(f"entry {i}: frame must be a non-negative integer")
+                continue
+            key = (pos, frame)
+            if key in seen_draw_frames:
+                errors.append(f"duplicate draw observation for {pos} in frame {frame}")
+                continue
+            seen_draw_frames.add(key)
+            draw_count[pos] = draw_count.get(pos, 0) + 1
+            if (pos, stage) in found:
+                if found[(pos, stage)] != entry["gfx"]:
+                    errors.append(f"GFX changed across frames for {pos}")
+                continue
+        elif (pos, stage) in found:
             errors.append(f"duplicate observation for {pos} at {stage}")
             continue
+        elif stage == "draw":
+            draw_count[pos] = draw_count.get(pos, 0) + 1
         found[(pos, stage)] = entry["gfx"]
         if stage == "draw":
             metadata = {}
@@ -62,6 +81,7 @@ def evaluate_trace(entries):
             "prs_gfx": prs, "dat_gfx": dat,
             "post_load_gfx": after, "draw_gfx": drawn,
             "draw_metadata": draw_metadata.get(pos, {}),
+            "draw_observation_count": draw_count.get(pos, 0),
             "post_load_variant": "PRS" if after == prs else "DAT" if after == dat else None,
             "draw_variant": "PRS" if drawn == prs else "DAT" if drawn == dat else None,
         })
