@@ -117,7 +117,7 @@ class Map02EpisodeTests(unittest.TestCase):
                                           (full_events(498, 550), 1)):
                 with self.subTest(second_gfx=second[0]["gfx"]):
                     path.write_text(
-                        "".join(json.dumps(event) + "\\n"
+                        "".join(json.dumps(event) + "\n"
                                 for event in full_events() + second),
                         encoding="utf-8",
                     )
