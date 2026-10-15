@@ -51,7 +51,7 @@ class RuntimeTraceTests(unittest.TestCase):
 
     def test_json_lines_loader_output(self):
         entries = observations()
-        payload = "\\n".join(json.dumps(entry) for entry in entries) + "\\n"
+        payload = "\n".join(json.dumps(entry) for entry in entries) + "\n"
         self.assertEqual(parse_trace_text(payload), entries)
         self.assertEqual(evaluate_trace(parse_trace_text(payload))["errors"], [])
 
@@ -59,9 +59,9 @@ class RuntimeTraceTests(unittest.TestCase):
         entries = observations()
         self.assertEqual(parse_trace_text(json.dumps(entries)), entries)
         with self.assertRaisesRegex(ValueError, "line 2"):
-            parse_trace_text(json.dumps(entries[0]) + "\\ninvalid\\n")
+            parse_trace_text(json.dumps(entries[0]) + "\ninvalid\n")
         with self.assertRaisesRegex(ValueError, "no observations"):
-            parse_trace_text("\\n  \\n")
+            parse_trace_text("\n  \n")
 
     def test_invalid_json_shapes(self):
         with self.assertRaisesRegex(ValueError, "JSON list"):
