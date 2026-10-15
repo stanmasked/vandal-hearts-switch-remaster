@@ -184,3 +184,33 @@ independent sector extraction. It would **not** prove that the running
 game never modifies tiles, that the hardware draws them, or that the
 visible artwork matches the source. The command is read-only and
 synthetic end-to-end tests require no copyrighted assets.
+
+
+## Native upstream decompressor differential test
+
+An additional offline verification step compiles the **actual**
+`UnpackMapFileData` function extracted from the pinned
+`src/maps/unpack.c` into a temporary host executable with
+`PC_PORT` enabled. The tool
+`tools/verify_map02_unpack_equivalence.py` compares every byte of
+the original C decoder's output with the Python
+`tools.audit_map02_disc_prs.unpack_prs` output over a deterministic,
+non-copyrighted corpus.
+
+The corpus covers literal tokens, absolute and relative 1 KiB
+dictionary references, long literal runs, randomized literal bytes,
+a mixed token stream, and a complete **187264-byte synthetic map**
+whose two target face bytes are 241 and 243. The test deliberately
+rejects a fake C decoder that returns no output. The original
+upstream Git blob SHA-1 is checked before compilation.
+
+```sh
+python3 -m tools.verify_map02_unpack_equivalence   /local/VandalHearts-PcPort/src/maps/unpack.c   > /tmp/map02-prs-decoder-comparison.json
+```
+
+The GitHub Actions upstream audit performs the same byte-for-byte
+check against the pinned public PC-port checkout. A passing result
+validates decoder equivalence **on the test corpus only**; it is
+not a measurement of any user's disc, a formal proof for every possible
+compressed input, or evidence of displayed pixels. No original
+gameplay assets are ever placed in CI.
