@@ -196,3 +196,20 @@ $(BUILD)/$(OBSERVER_TARGET).nacp: | $(BUILD)
 
 $(BUILD)/$(OBSERVER_TARGET).nro: $(BUILD)/$(OBSERVER_TARGET).elf $(BUILD)/$(OBSERVER_TARGET).nacp
 	$(ELF2NRO) $< $@ --nacp=$(BUILD)/$(OBSERVER_TARGET).nacp
+
+# Reusable SDL2/GLES2 observer backend lifecycle probe.
+BACKEND_LIFECYCLE_TARGET := sdl2-observer-lifecycle-probe
+.PHONY: observer-backend-lifecycle-probe
+observer-backend-lifecycle-probe: $(BUILD)/$(BACKEND_LIFECYCLE_TARGET).nro
+	python3 tests/check_nro.py $<
+
+$(BUILD)/$(BACKEND_LIFECYCLE_TARGET).elf: probes/sdl2_observer_backend_lifecycle.c source/switch_sdl2_observer_backend.c source/switch_sdl2_observer_backend.h $(OBSERVER_MODULES) | $(BUILD)
+	$(CC) $(CFLAGS) -Isource $(LDFLAGS) $(shell $(SDL2_CONFIG) --cflags) \
+		probes/sdl2_observer_backend_lifecycle.c source/switch_sdl2_observer_backend.c $(OBSERVER_MODULES) -o $@ \
+		$(shell $(SDL2_CONFIG) --libs) -lGLESv2 $(LDLIBS) -lm
+
+$(BUILD)/$(BACKEND_LIFECYCLE_TARGET).nacp: | $(BUILD)
+	$(NACPTOOL) --create "VH Observer Lifecycle Probe" "$(APP_AUTHOR)" "$(APP_VERSION)" $@
+
+$(BUILD)/$(BACKEND_LIFECYCLE_TARGET).nro: $(BUILD)/$(BACKEND_LIFECYCLE_TARGET).elf $(BUILD)/$(BACKEND_LIFECYCLE_TARGET).nacp
+	$(ELF2NRO) $< $@ --nacp=$(BUILD)/$(BACKEND_LIFECYCLE_TARGET).nacp
