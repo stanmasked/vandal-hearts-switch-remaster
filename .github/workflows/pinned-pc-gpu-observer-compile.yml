@@ -1,0 +1,56 @@
+name: Pinned PC GPU observer compile
+
+on:
+  push:
+    branches:
+      - feat/upstream-rgb24-observer-binding
+    paths:
+      - "tools/patch_pc_gpu_present_observer.py"
+      - "source/switch_upstream_observer.*"
+      - "source/switch_present_hook.*"
+      - "source/switch_completed_frame.*"
+      - "source/switch_frame_bridge.*"
+      - ".github/workflows/pinned-pc-gpu-observer-compile.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile-observer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install desktop compiler dependencies
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev libgl-dev libgles2-mesa-dev
+      - name: Fetch and patch pinned upstream source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none --no-checkout https://github.com/HalmyLyseas/VandalHearts-PcPort.git /tmp/vh-upstream
+          git -C /tmp/vh-upstream checkout --detach 14552fffa0e0b47e02b57592e274fc6e7a649923
+          python3 tools/patch_pc_gpu_present_observer.py \
+            /tmp/vh-upstream/platform/pc/src/pc_gpu_window.c \
+            /tmp/vh-upstream/platform/pc/src/pc_gpu_window_instrumented.c
+      - name: Compile both sides of observer contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build-tests/observer
+          cc -std=c11 -Wall -Wextra -Werror \
+            -DVH_SWITCH_COMPLETED_FRAME_OBSERVER \
+            -I/tmp/vh-upstream/platform/pc/include \
+            -I/tmp/vh-upstream/platform/pc/src \
+            $(pkg-config --cflags sdl2) \
+            -c /tmp/vh-upstream/platform/pc/src/pc_gpu_window_instrumented.c \
+            -o build-tests/observer/pinned_gpu.o
+          for name in frame_conversion switch_frame_bridge switch_completed_frame switch_present_hook switch_upstream_observer; do
+            cc -std=c11 -Wall -Wextra -Werror -Isource \
+              -c "source/$name.c" -o "build-tests/observer/$name.o"
+          done
+          cc -r build-tests/observer/*.o -o build-tests/observer/combined.o
+          nm build-tests/observer/combined.o | grep -E ' [T] VH_ObserveCompletedRGB24$'
+          if nm --undefined-only build-tests/observer/combined.o | grep -q 'VH_ObserveCompletedRGB24'; then
+            echo 'Observer symbol unresolved after partial link' >&2
+            exit 1
+          fi
