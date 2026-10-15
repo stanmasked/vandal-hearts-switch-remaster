@@ -102,8 +102,12 @@ class SeqScheduleTests(unittest.TestCase):
     def test_voice_cap_and_release_bounds(self):
         events = bytes([0, 0x90, 60, 100, 0, 0x80, 60, 0]) * 33
         parsed = parse_seq(hdr() + events + bytes([0, 0xFF, 0x2F]))
-        with self.assertRaisesRegex(ValueError, "32-note"):
-            seq_to_schedule(parsed)
+        # 33 note-ons are valid; allocation is based on concurrent slots,
+        # not the number of note-on messages in a complete song.
+        new_schedule = seq_to_schedule(parsed, release_frames=0)
+        self.assertEqual(len(new_schedule["voices"]), 33)
+        self.assertTrue(all(0 <= n["voice_slot"] < 20
+                            for n in new_schedule["voices"]))
         with self.assertRaisesRegex(ValueError, "release_frames"):
             seq_to_schedule(parsed, release_frames=True)
         with self.assertRaisesRegex(ValueError, "release_frames"):
