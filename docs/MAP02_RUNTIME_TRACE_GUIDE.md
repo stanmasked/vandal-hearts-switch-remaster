@@ -242,6 +242,33 @@ From the remaster repository root:
 python3 -m tools.prepare_map02_pcport   /absolute/path/to/VandalHearts-PcPort   /tmp/vh-map02-trace-01
 ```
 
+For the **full diagnostic trace**, use `--full-trace` and a new output
+directory. Unlike the default legacy mode, this connects the combined
+instrumentation to the noninvasive build overlay without applying a patch
+to the upstream checkout:
+
+```sh
+python3 -m tools.prepare_map02_pcport \
+  /absolute/path/to/VandalHearts-PcPort \
+  /tmp/vh-map02-full-trace --full-trace
+cd /absolute/path/to/VandalHearts-PcPort/platform/pc
+make -f Makefile -f /tmp/vh-map02-full-trace/map02_trace.mk \
+  link BUILD_DIR=build-map02-full-trace
+```
+
+The full mode compiles both generated translation units with
+`-DVH_TRACE_MAP02`. It records `post_load` plus every observed
+`visit`, `skip` and `draw` event, including frame, path and packed GPU
+metadata. The original default mode remains available for backwards
+compatibility, uses `VH_TRACE_MAP02_POST_LOAD` and
+`VH_TRACE_MAP02_DRAW`, and emits at most one draw per face per process.
+`source_provenance.json` includes `trace_mode` (`full` or `legacy`).
+
+GitHub Actions verifies that the full mode's generated make commands select
+the trace sources, and compiles both full-mode object files against the
+pinned upstream PC-port headers. This does **not** mean that the complete
+game executable or original-resource runtime trace has been produced.
+
 The destination directory must **not already exist** and must be outside the
 PC-port tree. Paths with spaces or make-special characters are rejected. The
 tool refuses incompatible upstream Makefile/source structure and verifies the
@@ -281,7 +308,9 @@ Navigate to game map 11 using your own US disc data, arrange for both target
 faces to be rendered, and capture stdout. Filter diagnostic JSON lines from
 ordinary game logging before passing them to
 `python3 -m tools.verify_map02_trace /local/path/map02_trace.jsonl`.
-The draw instrumentation emits at most one observation per face per process.
+In default legacy mode, draw instrumentation emits at most one observation
+per face per process. With `--full-trace`, events repeat across rendering
+passes/frames, and all observations must be retained.
 **A successful dry-run of make and a synthetic C smoke test do not prove that
 the full game has compiled or that a real draw event was captured.**
 
