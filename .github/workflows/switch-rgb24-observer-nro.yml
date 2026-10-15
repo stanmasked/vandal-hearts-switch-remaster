@@ -8,8 +8,6 @@ on:
       - "probes/upstream_rgb24_observer_smoke.c"
       - "probes/sdl2_observer_backend_lifecycle.c"
       - "source/switch_sdl2_observer_backend.*"
-      - "tools/patch_pc_gpu_present_observer.py"
-      - "tests/test_pc_gpu_present_observer_patch.py"
       - "source/switch_upstream_observer.*"
       - "source/switch_present_hook.*"
       - "source/switch_completed_frame.*"
@@ -68,31 +66,6 @@ jobs:
           export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$DEVKITPRO/portlibs/switch/bin:$PATH"
           make upstream-observer-probe
           make observer-backend-lifecycle-probe
-
-      - name: Cross-compile pinned upstream PC_GpuPresent for Switch GLES2
-        shell: bash
-        run: |
-          set -euxo pipefail
-          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
-          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
-          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$DEVKITPRO/portlibs/switch/bin:$PATH"
-          git clone --filter=blob:none --no-checkout \
-            https://github.com/HalmyLyseas/VandalHearts-PcPort.git /tmp/vh-cross-upstream
-          git -C /tmp/vh-cross-upstream checkout --detach 14552fffa0e0b47e02b57592e274fc6e7a649923
-          python3 tools/patch_pc_gpu_present_observer.py \
-            /tmp/vh-cross-upstream/platform/pc/src/pc_gpu_window.c \
-            /tmp/vh-cross-upstream/platform/pc/src/pc_gpu_window_instrumented.c
-          mkdir -p build/upstream-cross
-          "$DEVKITA64/bin/aarch64-none-elf-gcc" -std=c11 -O2 -Wall -Wextra \
-            -DVH_SWITCH_COMPLETED_FRAME_OBSERVER -DVH_SWITCH_EXCLUSIVE_PRESENT \
-            -I/tmp/vh-cross-upstream/platform/pc/include \
-            -I/tmp/vh-cross-upstream/platform/pc/src \
-            $(sdl2-config --cflags) \
-            -c /tmp/vh-cross-upstream/platform/pc/src/pc_gpu_window_instrumented.c \
-            -o build/upstream-cross/pc_gpu_window_switch.o
-          "$DEVKITA64/bin/aarch64-none-elf-nm" build/upstream-cross/pc_gpu_window_switch.o \
-            | grep -E ' [T] PC_GpuPresent$'
-          echo "Pinned upstream GPU present cross-compiled (object only)."
 
       - name: Upload lifecycle NRO
         uses: actions/upload-artifact@v4
