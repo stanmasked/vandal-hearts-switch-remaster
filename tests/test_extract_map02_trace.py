@@ -38,6 +38,15 @@ class ExtractMap02TraceTests(unittest.TestCase):
         self.assertEqual(captured, entries())
         self.assertEqual(reader.line_number, len(payload.splitlines()))
 
+    def test_streaming_sink_keeps_valid_prefix_before_malformed_same_chunk(self):
+        saved = []
+        reader = TraceByteStream()
+        valid = json.dumps(entries()[0]).encode("utf-8")
+        broken = b'{"z":8,"x":19,"face":0,"stage":"draw","gfx":\n'
+        with self.assertRaisesRegex(ValueError, "line 2"):
+            reader.feed(valid + b"\n" + broken, on_event=saved.append)
+        self.assertEqual(saved, [entries()[0]])
+
     def test_final_event_without_newline_and_malformed_trace_line_numbers(self):
         event = json.dumps(entries()[0]).encode("utf-8")
         reader = TraceByteStream()
