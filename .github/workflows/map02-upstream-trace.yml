@@ -27,6 +27,8 @@ on:
       - 'tests/test_evaluate_map02_session.py'
       - 'tools/audit_map02_load_source.py'
       - 'tools/audit_map02_disc_prs.py'
+      - 'tools/map02_texture_pixel_proof.py'
+      - 'tests/test_map02_texture_pixel_proof.py'
       - 'tools/verify_map02_unpack_equivalence.py'
       - 'tests/test_verify_map02_unpack_equivalence.py'
       - 'tests/test_audit_map02_disc_prs.py'
@@ -62,6 +64,8 @@ on:
       - 'tests/test_evaluate_map02_session.py'
       - 'tools/audit_map02_load_source.py'
       - 'tools/audit_map02_disc_prs.py'
+      - 'tools/map02_texture_pixel_proof.py'
+      - 'tests/test_map02_texture_pixel_proof.py'
       - 'tools/verify_map02_unpack_equivalence.py'
       - 'tests/test_verify_map02_unpack_equivalence.py'
       - 'tests/test_audit_map02_disc_prs.py'
@@ -213,6 +217,7 @@ jobs:
             python3 -m unittest discover -s tests -p 'test_evaluate_map02_session.py' -v
             python3 -m unittest discover -s tests -p 'test_audit_map02_load_source.py' -v
             python3 -m unittest discover -s tests -p 'test_audit_map02_disc_prs.py' -v
+            python3 -m unittest discover -s tests -p 'test_map02_texture_pixel_proof.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_unpack_equivalence.py' -v
             python3 -m unittest discover -s tests -p 'test_instrument_map02_renderer.py' -v
             python3 -m unittest discover -s tests -p 'test_map02_renderer_smoke.py' -v
