@@ -71,6 +71,8 @@ def inspect_land_dt(
     gfx_ids: tuple[int, ...] = TARGET_GFX,
 ) -> dict[str, object]:
     _validate_gfx(gfx_ids)
+    if type(map_number) is not int:
+        raise ValueError("Map number must be an integer.")
     data = path.read_bytes()
     if not data:
         raise ValueError("Input file is empty.")
@@ -118,6 +120,8 @@ def compare_land_dt(
     _validate_gfx(gfx_ids)
     if len(map_numbers) < 2:
         raise ValueError("Compare mode requires at least two map numbers.")
+    if any(type(number) is not int for number in map_numbers):
+        raise ValueError("Map numbers must be integers.")
     if len(set(map_numbers)) != len(map_numbers):
         raise ValueError("Map numbers in compare mode must be unique.")
     if any(number < 0 for number in map_numbers):
