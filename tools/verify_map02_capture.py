@@ -11,7 +11,7 @@ from pathlib import Path
 
 from tools.capture_map02_runtime import sha256_file
 from tools.extract_map02_trace import TraceByteStream
-from tools.verify_map02_trace import evaluate_trace
+from tools.evaluate_map02_session import evaluate_capture_session
 
 EVIDENCE_FILES = (
     ("raw_log", "game_stdout.log"),
@@ -117,7 +117,7 @@ def verify_bundle(directory: Path) -> dict:
                         "observations": []}
     else:
         with trace_path.open("r", encoding="utf-8") as handle:
-            expected = evaluate_trace(
+            expected = evaluate_capture_session(
                 (json.loads(line) for line in handle if line.strip()),
                 require_full_trace=require_full_trace,
             )
