@@ -12,6 +12,8 @@
 int vh_switch_observer_register(const VhSwitchPresentHook *hook);
 void vh_switch_observer_unregister(void);
 int vh_switch_observer_last_result(void);
+/* Get active target drawable dimensions; fails when unregistered or invalid. */
+int vh_switch_observer_query_viewport(int *width, int *height);
 
 /* Exact symbol expected by the opt-in upstream PC_GpuPresent patch. */
 void VH_ObserveCompletedRGB24(const unsigned char *pixels,
