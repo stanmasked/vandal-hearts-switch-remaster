@@ -9,6 +9,8 @@ on:
       - "tools/switch_psyq_compat.h"
       - "probes/pinned_drawotag_switch_smoke.c"
       - "tests/test_drawotag_texture_fixtures.py"
+      - "tests/test_inspect_psx_tim.py"
+      - "tools/inspect_psx_tim.py"
       - "tests/test_pc_gpu_present_observer_patch.py"
       - "probes/pinned_pc_gpu_switch_smoke.c"
       - "source/switch_upstream_observer.*"
@@ -29,6 +31,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate original GPU texture test vectors
         run: python3 tests/test_drawotag_texture_fixtures.py
+      - name: Preflight bounded original-format TIM data
+        run: python3 tests/test_inspect_psx_tim.py
       - name: Build official Switch SDL2 source with pinned checksums
         shell: bash
         run: |
