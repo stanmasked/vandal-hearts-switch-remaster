@@ -10,6 +10,7 @@
 #include "pc_gpu_internal.h"
 #include "pc_platform.h"
 #include "switch_sdl2_observer_backend.h"
+#include "vh_private_map_bank.h"
 
 extern int PC_GpuInit(int width, int height, const char *title);
 extern void PC_GpuGetWindowSize(int *width, int *height, int *scale);
@@ -31,6 +32,8 @@ static void tile(TILE *out, short x, short y, short w, short h,
  * These are synthetic values, NOT bytes copied from a retail disc. */
 static unsigned short map_tex_words[64 * 256];
 static unsigned short map_clut_words[16 * 16];
+static VhPrivateMapBank private_map;
+static int private_map_active;
 static const unsigned char map_land_record[1797] = {
     [0] = 16, [1] = 16, [2] = 15, [3] = 15,
     [257 * 4] = 32,              /* Slot 0 -> first local CLUT row */
@@ -87,13 +90,15 @@ static int draw_frame(int frame) {
      * 512 palette bytes from LAND_DT at record offset 1285. The test
      * page's only coloured texels are at U16/17,V16/17 to avoid the
      * existing 15bpp STP test at VRAM x320,y0. */
-    map_tex_words[16 * 64 + 4] = 0x2121;
-    map_tex_words[17 * 64 + 4] = 0x2121;
-    memcpy(map_clut_words, map_land_record + 257 * 5, sizeof(map_clut_words));
-    if (map_land_record[257 * 4] != 32 ||
-        map_land_record[0] != 16 || map_land_record[1] != 16) {
-        fprintf(stderr, "Native map bank: invalid synthetic LAND_DT record\n");
-        return 0;
+    if (!private_map_active) {
+        map_tex_words[16 * 64 + 4] = 0x2121;
+        map_tex_words[17 * 64 + 4] = 0x2121;
+        memcpy(map_clut_words, map_land_record + 257 * 5, sizeof(map_clut_words));
+        if (map_land_record[257 * 4] != 32 ||
+            map_land_record[0] != 16 || map_land_record[1] != 16) {
+            fprintf(stderr, "Native map bank: invalid synthetic LAND_DT record\n");
+            return 0;
+        }
     }
     LoadImage(&map_tex_rect, (unsigned int *)map_tex_words);
     LoadImage(&map_clut_rect, (unsigned int *)map_clut_words);
@@ -227,9 +232,14 @@ static int draw_frame(int frame) {
     SetSprt(&map_sprite);
     setXY0(&map_sprite, 8, 7);
     setWH(&map_sprite, 2, 2);
-    setUV0(&map_sprite, map_land_record[0], map_land_record[1]);
+    if (private_map_active) {
+        setUV0(&map_sprite, private_map.uvwh[0], private_map.uvwh[1]);
+        setClut(&map_sprite, 672, 496 + private_map.local_clut_id - 32);
+    } else {
+        setUV0(&map_sprite, map_land_record[0], map_land_record[1]);
+        setClut(&map_sprite, 672, 496);
+    }
     setRGB0(&map_sprite, 128, 128, 128);
-    setClut(&map_sprite, 672, 496);
     AddPrim(&ot[0], &map_sprite);
     SetDrawMode(&map_mode, 0, 0, GetTPage(0, 0, 320, 0), &reset_rect);
     AddPrim(&ot[0], &map_mode);
@@ -347,6 +357,30 @@ int main(void) {
         goto done;
     }
     g_vhInternalScale = 1;
+    /* Optional private Switch SD files: both absent => previous asset-free
+     * CI path; any partial/invalid pair => abort without silent fallback.
+     * Actual retail files are NEVER embedded in this source or NRO. */
+    {
+        int asset_status = vh_private_map_bank_load_pair(
+            VH_PRIVATE_MAP_TEXTURE_PATH, VH_PRIVATE_MAP_LAND_PATH,
+            11, 241, &private_map);
+        if (asset_status < 0) {
+            fprintf(stderr,
+                    "Private map 11 files invalid or incomplete; refusing to draw\n");
+            goto done;
+        }
+        if (asset_status == 1) {
+            memcpy(map_tex_words, private_map.texture, sizeof(map_tex_words));
+            memcpy(map_clut_words, private_map.palette, sizeof(map_clut_words));
+            private_map_active = 1;
+            fprintf(stderr,
+                    "Private map 11 F_TEX/LAND_DT loaded; slot 241 CLUT %u "
+                    "UV=(%u,%u)\n",
+                    (unsigned)private_map.local_clut_id,
+                    (unsigned)private_map.uvwh[0],
+                    (unsigned)private_map.uvwh[1]);
+        }
+    }
     ResetGraph(0);
     for (int frame = 0; frame < 3600; ++frame) {
         SDL_Event event;
