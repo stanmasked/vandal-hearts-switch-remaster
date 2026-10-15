@@ -70,6 +70,11 @@ def verify_audit(audit_file: Path, source_bin: Path,
     if audit.get("pcm_signal_diagnostics") != analyze_wav(wav):
         raise ValueError("saved PCM signal diagnostics differ from decoded WAV")
     extraction = json.loads(report.read_text(encoding="utf-8"))
+    if (type(audit.get("scan_start_lba")) is not int
+            or audit["scan_start_lba"] != extraction.get("start_lba")
+            or type(audit.get("sectors_scanned")) is not int
+            or audit["sectors_scanned"] != extraction.get("sectors_scanned")):
+        raise ValueError("scanned LBA range differs from saved audit")
     if audit.get("selected_lbas") != extraction.get("audio_lbas"):
         raise ValueError("selected LBAs differ from saved audit")
     streams = extraction.get("file_channel_counts")
