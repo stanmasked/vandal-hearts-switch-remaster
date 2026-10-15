@@ -174,6 +174,10 @@ def capture(executable: Path, trace_directory: Path, output_directory: Path,
                 except ValueError as exc:
                     parse_error = str(exc)
     except OSError as exc:
+        # If no process started and no event was produced, keep only the raw
+        # log and failure report (do not imply a successful JSONL capture).
+        if trace_path.exists() and trace_path.stat().st_size == 0:
+            trace_path.unlink()
         # The output directory already exists: leave a useful report, not an empty folder.
         failure = {
             "binary_sha256": binary_sha256_before_launch,
