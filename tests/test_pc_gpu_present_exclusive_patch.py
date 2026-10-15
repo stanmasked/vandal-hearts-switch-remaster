@@ -1,5 +1,6 @@
 import importlib.util
 import pathlib
+import subprocess
 import unittest
 
 SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "tools" / "patch_pc_gpu_present_exclusive.py"
@@ -40,6 +41,28 @@ class ExclusivePresentPatchTests(unittest.TestCase):
             "#endif /* VH_SWITCH_EXCLUSIVE_PRESENT */", 1)[0]
         expected = self.original[self.original.index(module.START):self.original.index(module.END)]
         self.assertEqual(preserved, expected)
+
+    def test_preprocessed_backend_selection(self):
+        # Check emitted C after conditional compilation, not only source text.
+        patched = module.patch(self.original)
+        cases = (
+            (["-DVH_SWITCH_EXCLUSIVE_PRESENT"], True, False),
+            ([], False, False),
+            (["-D__APPLE__"], False, True),
+            (["-DVH_SWITCH_EXCLUSIVE_PRESENT", "-D__APPLE__"], True, True),
+        )
+        for flags, switch, apple in cases:
+            with self.subTest(flags=flags):
+                result = subprocess.run(
+                    ["cc", "-E", "-P", "-x", "c", *flags, "-"],
+                    input=patched, text=True, capture_output=True, check=True,
+                ).stdout
+                self.assertEqual("VH_ObserveCompletedRGB24(" in result, switch)
+                self.assertEqual("glDrawPixels(" in result, not switch)
+                self.assertEqual("SDL_GL_SwapWindow(" in result,
+                                 not switch and not apple)
+                self.assertEqual("SDL_RenderPresent(" in result,
+                                 not switch and apple)
 
     def test_fails_closed_on_unexpected_source(self):
         with self.assertRaisesRegex(ValueError, "already instrumented"):
