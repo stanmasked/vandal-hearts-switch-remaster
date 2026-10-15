@@ -8,6 +8,8 @@ on:
       - "tools/patch_pc_gpu_present_observer.py"
       - "tests/test_pc_gpu_present_observer_patch.py"
       - "probes/pinned_pc_gpu_switch_smoke.c"
+      - "source/switch_upstream_observer.*"
+      - "source/switch_sdl2_observer_backend.*"
       - ".github/workflows/pinned-gpu-switch-cross-compile.yml"
   workflow_dispatch:
 
