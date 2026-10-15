@@ -1,4 +1,5 @@
 """End-to-end tests for the one-command local CD-XA verification workflow."""
+import hashlib
 import json
 import sys
 import tempfile
@@ -58,6 +59,12 @@ class LocalXaCheckTests(unittest.TestCase):
         self.assertTrue((output / "extraction.json").is_file())
         saved = json.loads((output / "audit-result.json").read_text(encoding="utf-8"))
         self.assertEqual(saved, result)
+        self.assertEqual(saved["payload_sha256"], hashlib.sha256(
+            (output / "audio-groups.bin").read_bytes()).hexdigest())
+        self.assertEqual(saved["decoded_wav_sha256"], hashlib.sha256(
+            (output / "decoded.wav").read_bytes()).hexdigest())
+        self.assertEqual(saved["decoded_wav_sha256"],
+                         saved["comparison"]["candidate_wav_sha256"])
         self.assertTrue(saved["comparison"]["candidate_wav_sha256"])
         self.assertTrue(saved["comparison"]["reference_wav_sha256"])
 
@@ -103,6 +110,8 @@ class LocalXaCheckTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "decoded_and_source_verified")
         self.assertNotIn("comparison", result)
+        self.assertEqual(result["decoded_wav_sha256"], hashlib.sha256((output / "decoded.wav").read_bytes()).hexdigest())
+        self.assertEqual(result["payload_sha256"], hashlib.sha256((output / "audio-groups.bin").read_bytes()).hexdigest())
         saved = json.loads((output / "audit-result.json").read_text(encoding="utf-8"))
         self.assertEqual(saved, result)
 
