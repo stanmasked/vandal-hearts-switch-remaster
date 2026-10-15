@@ -28,22 +28,27 @@ def verify_audit(audit_file: Path, source_bin: Path,
     for key in ("report", "payload", "wav"):
         if not isinstance(audit.get(key), str) or not audit[key]:
             raise ValueError(f"audit missing path: {key}")
-    report = Path(audit["report"])
-    payload = Path(audit["payload"])
-    wav = Path(audit["wav"])
-    # Existing local-run paths are often relative to the original working
-    # directory; allow a moved audit directory when files sit next to it.
-    for key, path in (("report", report), ("payload", payload), ("wav", wav)):
-        if not path.is_file():
-            alternate = audit_file.parent / path.name
-            if not alternate.is_file():
-                raise ValueError(f"audit {key} file is unavailable: {path}")
-            if key == "report":
-                report = alternate
-            elif key == "payload":
-                payload = alternate
-            else:
-                wav = alternate
+    # The runner creates all three artefacts alongside audit-result.json.
+    # Audit JSON is user-editable, so do not follow arbitrary paths or links
+    # embedded in it. Standard basenames also support a moved audit folder.
+    directory = audit_file.resolve().parent
+    expected_names = {
+        "report": "extraction.json",
+        "payload": "audio-groups.bin",
+        "wav": "decoded.wav",
+    }
+    local_files = {}
+    for key, name in expected_names.items():
+        recorded = Path(audit[key])
+        if recorded.name != name:
+            raise ValueError(f"audit {key} path has unexpected filename")
+        target = directory / name
+        if target.is_symlink() or not target.is_file() or target.resolve().parent != directory:
+            raise ValueError(f"audit {key} must be a regular file in audit directory")
+        local_files[key] = target
+    report = local_files["report"]
+    payload = local_files["payload"]
+    wav = local_files["wav"]
 
     if type(audit.get("source_bin_bytes")) is not int or source_bin.stat().st_size != audit["source_bin_bytes"]:
         raise ValueError("source BIN byte count differs from saved audit")
