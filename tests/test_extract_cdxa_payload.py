@@ -71,6 +71,22 @@ class ExtractCdXaPayloadTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "overwrite"):
                 extract_audio_payloads(src, src)
 
+    def test_start_lba_and_sector_count_report_absolute_disc_positions(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            src, dst = root / "disc.bin", root / "payload.bin"
+            src.write_bytes(
+                sector(marker=0x10) + sector(marker=0x20) +
+                sector(marker=0x30) + sector(marker=0x40)
+            )
+            report = extract_audio_payloads(src, dst, start_lba=1, sector_count=2)
+            self.assertEqual(report["start_lba"], 1)
+            self.assertEqual(report["sectors_scanned"], 2)
+            self.assertEqual(report["audio_lbas"], [1, 2])
+            self.assertEqual(report["first_audio_lba"], 1)
+            self.assertEqual(report["last_audio_lba"], 2)
+            self.assertEqual(dst.read_bytes(), bytes([0x20]) * 2304 + bytes([0x30]) * 2304)
+
     def test_rejects_empty_and_unaligned_input(self):
         with tempfile.TemporaryDirectory() as temp:
             src = Path(temp) / "disc.bin"
