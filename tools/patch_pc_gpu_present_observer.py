@@ -14,6 +14,14 @@ EVENT_PUMP = "    PC_GpuPumpEvents();"
 TARGET_EVENT_PUMP = """#if !defined(VH_SWITCH_EXCLUSIVE_PRESENT)
     PC_GpuPumpEvents();
 #endif /* external Switch event loop owns SDL pumping */"""
+GL_HEADER = "#include <SDL2/SDL_opengl.h>"
+TARGET_GL_HEADER = """#if defined(VH_SWITCH_EXCLUSIVE_PRESENT)
+#include <SDL2/SDL_opengles2.h>
+#else
+#include <SDL2/SDL_opengl.h>
+#endif"""
+PRESENT_TAIL = "    /* Scale the native w*h framebuffer up to fill the current window"
+TARGET_TAIL_PREFIX = "#if !defined(VH_SWITCH_EXCLUSIVE_PRESENT) /* desktop GL draw and swap */\n"
 BEGIN = "    /* VH_SWITCH_OBSERVER_BEGIN: post-composition RGB24 boundary */"
 END = "    /* VH_SWITCH_OBSERVER_END */"
 INSERT = """    /* VH_SWITCH_OBSERVER_BEGIN: post-composition RGB24 boundary */
@@ -54,9 +62,19 @@ def patch(source: str) -> str:
         raise ValueError("expected precisely one desktop window guard")
     if source.count(EVENT_PUMP) != 1:
         raise ValueError("expected precisely one desktop SDL event pump")
-    return (source.replace(WINDOW_GUARD, TARGET_WINDOW_GUARD, 1)
-            .replace(EVENT_PUMP, TARGET_EVENT_PUMP, 1)
-            .replace(ANCHOR, ANCHOR + "\n\n" + INSERT, 1))
+    if source.count(GL_HEADER) != 1 or source.count(PRESENT_TAIL) != 1:
+        raise ValueError("expected pinned desktop OpenGL header and presentation tail")
+    if not source.rstrip().endswith("}"):
+        raise ValueError("expected final PC_GpuPresent closing brace")
+    result = (source.replace(GL_HEADER, TARGET_GL_HEADER, 1)
+              .replace(WINDOW_GUARD, TARGET_WINDOW_GUARD, 1)
+              .replace(EVENT_PUMP, TARGET_EVENT_PUMP, 1)
+              .replace(ANCHOR, ANCHOR + "\\n\\n" + INSERT, 1))
+    result = result.replace(PRESENT_TAIL, TARGET_TAIL_PREFIX + PRESENT_TAIL, 1)
+    last = result.rfind("\\n}")
+    if last < 0:
+        raise ValueError("final PC_GpuPresent brace missing")
+    return result[:last] + "\\n#endif /* desktop presentation tail */" + result[last:]
 
 
 def main() -> None:
