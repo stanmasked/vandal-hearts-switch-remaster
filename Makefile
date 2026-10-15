@@ -48,6 +48,7 @@ test: $(BUILD)/private_map_bank_bridge  $(BUILD)/test_game_rules $(BUILD)/test_s
 	python3 tests/test_stage_vh_private_map_bank.py
 	python3 tests/test_private_sd_nexium_fixture.py
 	python3 tests/test_inspect_vh_map_geometry.py
+	python3 tests/test_decode_vh_map_prs.py
 	python3 tests/test_private_map_bank_bridge.py $(BUILD)/private_map_bank_bridge
 
 # Host-only memory and undefined-behavior checks; requires GCC or Clang sanitizers.
