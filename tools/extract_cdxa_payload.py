@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import tempfile
 from pathlib import Path
 
 SECTOR_SIZE = 2352
@@ -68,65 +70,99 @@ def extract_audio_payloads(
     submodes: dict[int, int] = {}
     coding_info: dict[int, int] = {}
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with source.open("rb") as src, destination.open("wb") as out:
-        src.seek(start_lba * SECTOR_SIZE)
-        for lba in range(start_lba, start_lba + count):
-            sector = src.read(SECTOR_SIZE)
-            if len(sector) != SECTOR_SIZE:
-                raise ValueError(f"Unexpected end of file at LBA {lba}.")
-            if sector[:12] != SYNC:
-                continue
-            if sector[MODE_OFFSET] != 2:
-                continue
-            mode2 += 1
-            first = sector[SUBHEADER_OFFSET:SUBHEADER_OFFSET + 4]
-            second = sector[SUBHEADER_OFFSET + 4:SUBHEADER_OFFSET + 8]
-            if first != second:
-                continue
-            valid_subheaders += 1
-            file_no, channel_no, submode, coding = first
-            submodes[submode] = submodes.get(submode, 0) + 1
-            if not (submode & 0x04) or not (submode & 0x20):
-                continue
-            if channel is not None and channel_no != channel:
-                continue
-            if file_number is not None and file_no != file_number:
-                continue
-            out.write(sector[PAYLOAD_START:PAYLOAD_END])
-            audio_lbas.append(lba)
-            coding_info[coding] = coding_info.get(coding, 0) + 1
-            selected += 1
+    temp_payload: Path | None = None
+    temp_report: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix=f".{destination.name}.", suffix=".tmp",
+            dir=destination.parent, delete=False,
+        ) as staged_payload:
+            temp_payload = Path(staged_payload.name)
 
-    gaps = sum(1 for a, b in zip(audio_lbas, audio_lbas[1:]) if b != a + 1)
-    report: dict[str, object] = {
-        "source": str(source),
-        "output": str(destination),
-        "start_lba": start_lba,
-        "sectors_scanned": count,
-        "mode2_sectors": mode2,
-        "matching_subheaders": valid_subheaders,
-        "audio_form2_sectors_written": selected,
-        "payload_bytes_written": selected * (PAYLOAD_END - PAYLOAD_START),
-        "noncontiguous_audio_transitions": gaps,
-        "first_audio_lba": audio_lbas[0] if audio_lbas else None,
-        "last_audio_lba": audio_lbas[-1] if audio_lbas else None,
-        "audio_lbas": audio_lbas,
-        "audio_lba_offsets": [
-            {
-                "lba": lba,
-                "payload_offset": index * (PAYLOAD_END - PAYLOAD_START),
-                "missing_source_sectors_before": (
-                    0 if index == 0 else max(0, lba - audio_lbas[index - 1] - 1)
-                ),
-            }
-            for index, lba in enumerate(audio_lbas)
-        ],
-        "submode_counts": {f"0x{k:02X}": v for k, v in sorted(submodes.items())},
-        "coding_info_counts": {f"0x{k:02X}": v for k, v in sorted(coding_info.items())},
-        "warning": "Payload extraction only; not decoded PCM. Removing non-audio sectors may lose timing/gap information.",
-    }
-    if report_path is not None:
-        report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        with source.open("rb") as src, temp_payload.open("wb") as out:
+            src.seek(start_lba * SECTOR_SIZE)
+            for lba in range(start_lba, start_lba + count):
+                sector = src.read(SECTOR_SIZE)
+                if len(sector) != SECTOR_SIZE:
+                    raise ValueError(f"Unexpected end of file at LBA {lba}.")
+                if sector[:12] != SYNC:
+                    continue
+                if sector[MODE_OFFSET] != 2:
+                    continue
+                mode2 += 1
+                first = sector[SUBHEADER_OFFSET:SUBHEADER_OFFSET + 4]
+                second = sector[SUBHEADER_OFFSET + 4:SUBHEADER_OFFSET + 8]
+                if first != second:
+                    continue
+                valid_subheaders += 1
+                file_no, channel_no, submode, coding = first
+                submodes[submode] = submodes.get(submode, 0) + 1
+                if not (submode & 0x04) or not (submode & 0x20):
+                    continue
+                if channel is not None and channel_no != channel:
+                    continue
+                if file_number is not None and file_no != file_number:
+                    continue
+                out.write(sector[PAYLOAD_START:PAYLOAD_END])
+                audio_lbas.append(lba)
+                coding_info[coding] = coding_info.get(coding, 0) + 1
+                selected += 1
+
+        gaps = sum(1 for a, b in zip(audio_lbas, audio_lbas[1:]) if b != a + 1)
+        report: dict[str, object] = {
+            "source": str(source),
+            "output": str(destination),
+            "start_lba": start_lba,
+            "sectors_scanned": count,
+            "mode2_sectors": mode2,
+            "matching_subheaders": valid_subheaders,
+            "audio_form2_sectors_written": selected,
+            "payload_bytes_written": selected * (PAYLOAD_END - PAYLOAD_START),
+            "noncontiguous_audio_transitions": gaps,
+            "first_audio_lba": audio_lbas[0] if audio_lbas else None,
+            "last_audio_lba": audio_lbas[-1] if audio_lbas else None,
+            "audio_lbas": audio_lbas,
+            "audio_lba_offsets": [
+                {
+                    "lba": lba,
+                    "payload_offset": index * (PAYLOAD_END - PAYLOAD_START),
+                    "missing_source_sectors_before": (
+                        0 if index == 0 else max(0, lba - audio_lbas[index - 1] - 1)
+                    ),
+                }
+                for index, lba in enumerate(audio_lbas)
+            ],
+            "submode_counts": {f"0x{k:02X}": v for k, v in sorted(submodes.items())},
+            "coding_info_counts": {f"0x{k:02X}": v for k, v in sorted(coding_info.items())},
+            "warning": "Payload extraction only; not decoded PCM. Removing non-audio sectors may lose timing/gap information.",
+        }
+
+        # Stage the optional report before publishing either output. This keeps
+        # extraction/read/report-write failures from exposing a partial payload.
+        if report_path is not None:
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", newline="\\n",
+                prefix=f".{report_path.name}.", suffix=".tmp",
+                dir=report_path.parent, delete=False,
+            ) as staged_report:
+                temp_report = Path(staged_report.name)
+                staged_report.write(json.dumps(report, indent=2) + "\\n")
+                staged_report.flush()
+                os.fsync(staged_report.fileno())
+
+        os.replace(temp_payload, destination)
+        temp_payload = None
+        if temp_report is not None and report_path is not None:
+            os.replace(temp_report, report_path)
+            temp_report = None
+    finally:
+        for temporary in (temp_payload, temp_report):
+            if temporary is not None:
+                try:
+                    temporary.unlink()
+                except FileNotFoundError:
+                    pass
     return report
 
 
