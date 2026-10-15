@@ -41,8 +41,8 @@ def check_raw_records(report):
                 errors.append(f"GFX {gfx}: raw_hex does not match bytes")
             if raw_bytes != [0, 0, 0, 0]:
                 errors.append(f"GFX {gfx}: raw texture record not all zero")
-        if record["clut_index"] != 0:
-            errors.append(f"GFX {gfx}: CLUT index is not zero")
+        if type(record.get("clut_index")) is not int or record["clut_index"] != 0:
+            errors.append(f"GFX {gfx}: CLUT index must be integer zero")
         if record["runtime_table_index"] != 400 + gfx:
             errors.append(f"GFX {gfx}: unexpected runtime table index")
         base = report.get("block_base_offset")
