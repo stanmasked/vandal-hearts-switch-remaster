@@ -104,3 +104,23 @@ A comparison of this repository's actual Makefile/workflows against the pinned u
 - Toolchain readiness run [38750101998](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38750101998) completed successfully, including host rule tests, sanitizer-enabled host tests, NRO build/validation and artifact upload.
 - Neither that workflow nor the SDL2 probe workflow builds the upstream PC-port CMake target. They do not yet verify upstream OpenAL linkage, its threaded rasterizer, its full bootstrap, or the original game running.
 
+## Additional blocker: PC bootstrap is not a renderer-only port
+
+A targeted source inspection of `platform/pc/src/pc_bootstrap.c` shows platform assumptions outside the presenter that need a separate compatibility design before the full PC-port executable can be built or launched on Switch:
+
+- The non-Apple POSIX path attempts fixed-address `mmap(..., MAP_FIXED_NOREPLACE, ...)` reservations for PS1 RAM at `0x80000000` and scratchpad at `0x1f800000`. The code logs a warning and continues if either reservation fails, while noting that hardcoded pointers may then crash. These mappings must not be assumed available or harmless on Switch.
+- The bootstrap has POSIX signal setup (`SIGUSR1`, `sigaction` for `SIGSEGV`/`SIGBUS`, `sigaltstack`) and write-fault/NULL-read recovery paths. The fault-context inspection explicitly uses x86 `ucontext_t` registers under `__i386__`/`__x86_64__`; those recovery mechanisms cannot be carried over as-is to AArch64/libnx.
+- The same bootstrap also contains executable/rodata memory handling and constructor-driven startup. These are not equivalent to simply opening an SDL window on Switch and need to be isolated from the renderer patch.
+- The bootstrap mounts a user-provided disc image before normal game startup. The current prototype uses generated graphics and does not exercise this path.
+
+### Consequence
+
+The earlier GLES2 presenter remains a useful, narrowly scoped component, but it is not sufficient to make the existing PC port runnable on Switch. Before the full game target is attempted, the port needs a documented AArch64/libnx strategy for PS1 address assumptions and fault-recovery behavior. Prefer replacing hardcoded PS1 RAM references with an explicit emulated-memory mapping/translation layer where feasible; any compatibility shim must be justified against the actual direct-address call sites and tested with game logic. Do not simply disable the fault handlers or ignore failed memory reservations and then label the result playable.
+
+### Next source-level audit gate
+
+- [ ] Inventory direct pointers to PS1 RAM/scratchpad and all call sites depending on them.
+- [ ] Identify which rodata mutation and fault-recovery workarounds remain required under the AArch64 port build, rather than assuming the x86/Linux path applies.
+- [ ] Propose a small platform abstraction and host-testable mapping contract before changing the bootstrap.
+- [ ] Keep this bootstrap work independent from the completed standalone presenter tests.
+
