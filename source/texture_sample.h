@@ -27,4 +27,15 @@ static inline int vh_texture_sample_nearest_rgba32(
     return 1;
 }
 
+/* Validate an integer crop rectangle without overflow-prone x + width math. */
+static inline int vh_texture_rect_valid(
+    size_t texture_width, size_t texture_height,
+    size_t x, size_t y, size_t width, size_t height) {
+    if (texture_width == 0 || texture_height == 0 ||
+        width == 0 || height == 0 || x >= texture_width || y >= texture_height) {
+        return 0;
+    }
+    return width <= texture_width - x && height <= texture_height - y;
+}
+
 #endif
