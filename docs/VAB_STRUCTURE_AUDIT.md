@@ -301,12 +301,20 @@ python3 tools/audit_pcport_vab_aliases.py /local/music.vh --vb /local/music.vb -
 python3 tests/test_audit_pcport_vab_aliases.py
 ```
 
-The JSON `schema: 1` report gives a `gap_alias_tones` count,
-`inactive_slot_tones` count and each potentially selectable record's
-program, tone, source packed-program, VAG and key range. It includes
-hashes, not the local file path or audio payload. `--strict` exits 4
-when aliases need manual PC-port compatibility review; it is not a
-claim that every such alias is audible in actual SEQ playback. Invalid
+The JSON `schema: 1` report gives `gap_alias_tones`,
+`inactive_slot_tones`, and `zero_volume_alias_tones` counts. Each
+potentially selectable record includes the alias program's **own**
+`program_volume` and `program_pan`, as well as the attributes of its
+packed-block `source_program`. A `zero_program_volume` flag indicates
+that the PC-port's successive integer gain stages yield silence when
+that alias program is selected, even if its source has an audible
+sample. A program's left/right pan and volume must never be inherited
+from the source program solely because the sample is shared.
+
+The report includes input hashes, not the local file path or audio
+payload. `--strict` exits 4 when aliases need manual PC-port
+compatibility review; it does not claim every alias is selected by an
+actual SEQ or that a zero-volume alias is a corrupt bank. Invalid
 VH, incomplete tables, or a mismatch between the declared number of
 programs and populated blocks are rejected rather than guessed.
 
@@ -315,7 +323,15 @@ with three explicit cases: a nonzero inactive tone slot and two empty
 programs inheriting later packed blocks. This establishes the reference selection behaviour for these cases.
 Separate native C tests now confirm valid hidden slots and aliases,
 and that malformed hidden VAG references or key ranges reject the
-entire bank without modifying its previously published metadata. The original Vandal Hearts soundbank
+entire bank without modifying its previously published metadata. A dedicated native regression now also checks that VAB program 1 can
+borrow the same VAG3 as program 7 while using distinct `ProgAtr`
+volume/pan settings. It checks exact squared gain values, hard-left
+versus hard-right **rendered dry PCM**, centered aliases, zero-volume
+aliases, and source-program independence. This validates synthesized
+stereo output on the host, **not** physical Switch speakers or the
+original game's soundtrack.
+
+The original Vandal Hearts soundbank
 remains local and is never copied to GitHub.
 
 ## SPU ADSR and sample cursor (host-only)
