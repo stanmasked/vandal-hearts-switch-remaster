@@ -58,12 +58,19 @@ int main(void) {
                        spu.voice[slot].adsr.phase==VH_ADSR_RELEASE ||
                        spu.voice[slot].adsr.phase==VH_ADSR_OFF);
         }
-        vh_native_spu_reset(&spu);
-        /* A scene reset clears the old reverb history and its cursor.
-         * Tail preservation requires a separate, explicitly owned path.
+        /* Preserve only reverb history across the scene transition.
+         * No voice structures or borrowed bank PCM pointers are copied.
          */
+        VhSpuReverb old_reverb;
+        if (transition) old_reverb=spu.reverb;
+        vh_native_spu_reset(&spu);
         assert(spu.reverb.cursor==0);
         assert(spu.frames_rendered==0u);
+        if (transition) {
+            spu.reverb=old_reverb;
+            assert(memcmp(&spu.reverb,&old_reverb,sizeof old_reverb)==0);
+        }
+        assert(vh_native_spu_set_reverb(&spu,1,0.5f)==0);
         /* Reset must sever all borrowed pointers to previous bank PCM. */
         for (unsigned slot=0;slot<VH_NATIVE_MUSIC_VOICES;slot++) {
             assert(spu.voice[slot].pcm==NULL);
