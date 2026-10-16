@@ -104,3 +104,15 @@ python3 tools/assess_switch_audio_first_run.py switch-audio-real-run-219 \
 ## 7. Этап №220 — контроль противоречивости
 
 Перед отдельным человеческим решением проверьте `consistency_findings` из [руководства №220](SWITCH_AUDIO_STAGE220_CONSISTENCY_GATES.md). Ненулевые исходные ошибки, отсутствующий `EXIT` вопреки заявленному штатному выходу, неподтверждённый источник старого CSV и расхождение SHA-256 требуют ручного расследования. Даже `FILE_BOUND_OPERATOR_HASHES_MATCH` означает только согласованность заявленных хешей с проверенным файлом, **не** физическое доказательство сохранности SD.
+
+## 8. Этап №221 — итоговый отчёт и план повторных испытаний
+
+После ручной карточки и сверки согласованности №220 получите [матрицу H01–H07](SWITCH_AUDIO_STAGE221_ACCEPTANCE_MATRIX.md) и отсортированный список повторных испытаний:
+
+```sh
+python3 tools/report_switch_audio_acceptance_matrix.py switch-audio-real-run-219 \
+  --observations /path/outside-bundle/operator-v2.json --format markdown \
+  > /path/outside-bundle/hardware-review-221.md
+```
+
+H01–H05 оцениваются по исходным CSV и заявлениям испытателя, H06 и H07 не засчитываются автоматически. `MANUAL_CONFIRMATION_REQUIRED` — не физический `PASS`; решение оформляет испытатель после независимой проверки.
