@@ -12,7 +12,7 @@ static int y_of(int xy) { return (short)((unsigned)xy >> 16); }
 int main(void) {
     SVECTOR rot = {-512, 0, 0, 0}; /* 45-degree pitch from map plane */
     SVECTOR model[4] = {
-        {-32,0,-16,0}, {0,0,-16,0}, {-32,0,24,0}, {0,0,24,0},
+        {-32,0,-16,0}, {0,0,-16,0}, {0,0,24,0}, {-32,0,24,0},
     };
     MATRIX mat;
     VECTOR zoom = {0,0,96,0};
@@ -37,9 +37,9 @@ int main(void) {
     assert(x_of(xy[1])>=5 && x_of(xy[1])<=7);
     assert(y_of(xy[0])>=1 && y_of(xy[0])<=3);
     assert(y_of(xy[2])>=5 && y_of(xy[2])<=8);
-    assert(x_of(xy[2])>x_of(xy[0])); /* perspective foreshortening */
-    assert(y_of(xy[0])<y_of(xy[2]));
-    assert(y_of(xy[1])<y_of(xy[3]));
+    assert(x_of(xy[3])>x_of(xy[0])); /* perspective foreshortening */
+    assert(y_of(xy[0])<y_of(xy[3]));
+    assert(y_of(xy[1])<y_of(xy[2]));
     /* Repeating the same exact camera/matrix must be stable. */
     {
         int again[4], p2, flags2;
