@@ -38,6 +38,16 @@ int main(int argc,char **argv) {
     }
     fclose(fp);
     for(unsigned i=0;i<4;i++) {
+        if (i==1) {
+            /* Retrospectively invalidate the already submitted frame-0
+             * GP0(E1) word. The immutable frame-0 snapshot must retain
+             * its original value despite this later RAM mutation. */
+            uint32_t first=(uint32_t)ram[heads[0]] |
+                ((uint32_t)ram[heads[0]+1]<<8) |
+                ((uint32_t)ram[heads[0]+2]<<16);
+            if(first>=RAM_BYTES-8) {free(ram);return 2;}
+            ram[first+4]^=1;
+        }
         if (i==1 || i==3) {
             /* Emulate in-game memory mutation *after* an earlier
              * pre-submit snapshot. The command remains a legal FT4. */
