@@ -3,6 +3,7 @@
 The CLI does not transmit or serialize any original music source bytes.
 """
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -11,7 +12,8 @@ import unittest
 from tools.generate_ps1_music_sd_fixture import make_synthetic_files
 
 ROOT = Path(__file__).resolve().parents[1]
-PROGRAM = ROOT / "build" / "vh_local_music_transition_probe"
+PROGRAM = Path(os.environ.get("VH_LOCAL_MUSIC_TRANSITION_PROBE",
+                              str(ROOT / "build" / "vh_local_music_transition_probe")))
 TONE_OFFSET = 32 + 128 * 16
 
 
