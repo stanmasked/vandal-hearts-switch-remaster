@@ -138,7 +138,7 @@ static int apply_case(const Test *t) {
     printf("V51HD name=%s depth=%d tpage=%d clut=%d u=%d v=%d "
            "maskx=%d masky=%d offx=%d offy=%d tx=%d ty=%d "
            "word=%u index=%d palx=%d paly=%d palette=%u "
-           "raw=%u before=%u after=%u semi=%d abr=%d dither=%d x=%d y=%d\\n",
+           "raw=%u before=%u after=%u semi=%d abr=%d dither=%d x=%d y=%d\n",
            t->name,t->depth,tpage,clut,t->u,t->v,
            t->twmx,t->twmy,t->twox,t->twoy,tx,ty,
            (unsigned)word,index,index<0?-1:cx+index,index<0?-1:cy,
@@ -148,7 +148,7 @@ static int apply_case(const Test *t) {
     printf("V51THREAD name=%s depth=%d tpage=%d clut=%d u=%d v=%d "
            "maskx=%d masky=%d offx=%d offy=%d tx=%d ty=%d "
            "word=%u index=%d palx=%d paly=%d palette=%u "
-           "raw=%u before=%u after=%u semi=%d abr=%d dither=%d x=%d y=%d\\n",
+           "raw=%u before=%u after=%u semi=%d abr=%d dither=%d x=%d y=%d\n",
            t->name,t->depth,tpage,clut,t->u,t->v,
            t->twmx,t->twmy,t->twox,t->twoy,tx,ty,
            (unsigned)word,index,index<0?-1:cx+index,index<0?-1:cy,
