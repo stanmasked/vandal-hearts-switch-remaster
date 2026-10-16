@@ -1172,3 +1172,27 @@ marking another event. No PCM capture, copyrighted sample material,
 button-event history or files are stored. The portable test checks
 shared A/B window classification, counter separation, ring expiry,
 corruption, and no-mutation on overflow.
+
+
+### A/B hold-release annotation gate
+
+The old rising-edge-only logic could register B as a normal-sounding
+control while A remained held from a previous perceived defect.
+The new console input gate checks current A/B held states instead.
+A mark or an A+B chord disarms the gate. The next mark is accepted
+only after a later controller poll where both A and B are released.
+A chord is rejected as ambiguous, and the final listening page
+displays its rejection count. On startup, the gate also waits for
+an initially neutral A/B poll before accepting the first mark.
+
+Gate counters are checked against actual manual A/B mark totals and
+the number of successfully returned PCM pages; any mismatch prevents
+a FULL integrity verdict. Rapid tap/release cycles between audout
+controller polls can still be missed. These are subjective human
+annotations, not proof of audio defects or causation.
+
+A portable regression reproduces A held while B is newly pressed,
+simultaneous A+B chords, later release/re-arm, damaged counters,
+invalid input bits and saturated counters. The change affects only
+diagnostic controller handling, with no effect on sound rendering,
+audout submission, music asset loading or SD storage.

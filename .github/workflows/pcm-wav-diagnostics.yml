@@ -47,6 +47,8 @@ on:
       - 'source/vh_audio_output_recovery.c'
       - 'source/vh_audio_output_recovery.h'
       - 'source/vh_audio_listening_marks.h'
+      - 'source/vh_audio_mark_buttons.h'
+      - 'tests/test_vh_audio_mark_buttons.c'
       - 'source/vh_audio_input_poll.h'
       - 'source/vh_audio_report_pages.h'
       - 'tests/test_vh_audio_report_pages.c'
@@ -97,6 +99,8 @@ on:
       - 'source/vh_audio_output_recovery.c'
       - 'source/vh_audio_output_recovery.h'
       - 'source/vh_audio_listening_marks.h'
+      - 'source/vh_audio_mark_buttons.h'
+      - 'tests/test_vh_audio_mark_buttons.c'
       - 'source/vh_audio_input_poll.h'
       - 'source/vh_audio_report_pages.h'
       - 'tests/test_vh_audio_report_pages.c'
@@ -422,6 +426,14 @@ jobs:
             tests/test_vh_audio_report_pages.c \
             -o /tmp/test_vh_audio_report_pages_ubsan
           /tmp/test_vh_audio_report_pages_ubsan
+      - name: Verify held-button annotation gate under UBSan
+        run: |
+          set -euo pipefail
+          cc -std=c11 -Wall -Wextra -Werror -O2 -g -Isource \
+            -fsanitize=undefined -fno-sanitize-recover=all \
+            tests/test_vh_audio_mark_buttons.c \
+            -o /tmp/test_vh_audio_mark_buttons_ubsan
+          /tmp/test_vh_audio_mark_buttons_ubsan
       - name: Verify Switch input polling intervals under UBSan
         run: |
           set -euo pipefail

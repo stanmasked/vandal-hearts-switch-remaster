@@ -13,6 +13,7 @@
 #include "vh_audio_resample.h"
 #include "vh_audio_output_recovery.h"
 #include "vh_audio_listening_marks.h"
+#include "vh_audio_mark_buttons.h"
 #include "vh_audio_input_poll.h"
 #include "vh_audio_report_pages.h"
 #include "vh_native_seq.h"
@@ -189,6 +190,7 @@ typedef struct {
     const VhAudioPcmSeams *seams;
     const VhAudioListeningMarks *marks;
     const VhAudioInputPoll *poll;
+    const VhAudioMarkButtons *buttons;
     uint64_t tick_frequency;
     unsigned played, switched, user_files;
     int result, seam_evidence, listen_evidence, poll_evidence;
@@ -299,11 +301,14 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
         printf("Long polls >1x/>4x: %llu/%llu\n",
                (unsigned long long)poll->gaps_over_page,
                (unsigned long long)poll->gaps_over_4pages);
+        printf("A/B chord attempts ignored=%llu\n",
+               (unsigned long long)r->buttons->rejected_chords);
         printf("A polls=%llu; mark/poll audit=%s/%s\n",
                (unsigned long long)poll->samples,
                r->listen_evidence ? "INVALID" : "VALID",
                r->poll_evidence ? "INVALID" : "VALID");
-        printf("B = operator says normal; not random sampling.\n");
+        printf("Release both A/B before the next annotation.\n");
+        printf("B control is not unbiased sampling.\n");
         printf("Short taps missed; zero A != no glitches.\n");
     }
     printf("\nLEFT/RIGHT change page; PLUS exit.\n");
@@ -331,7 +336,7 @@ int main(int argc, char **argv) {
         printf("Fixture changes every %u returned PCM pages; SD music unchanged\n",
                SYNTHETIC_SCENE_BLOCKS);
     printf("A = perceived audio defect; B = sounds normal (control).\n");
-    printf("Press separately; simultaneous A+B edges are ignored.\n");
+    printf("Release BOTH A/B between marks; held chords ignored.\n");
     printf("These are manual tags, never automatic glitch detection.\n");
     consoleUpdate(NULL);
     padConfigureInput(1,HidNpadStyleSet_NpadStandard);
@@ -342,6 +347,7 @@ int main(int argc, char **argv) {
     VhAudioOutputRecovery recovery={0};
     VhAudioPcmSeams seam_stats={0};
     VhAudioListeningMarks listening_marks={0};
+    VhAudioMarkButtons mark_buttons={0};
     VhAudioInputPoll input_poll={0};
     const VhAudioOutputOps ops={
         &output,native_submit,native_stop,native_close,native_open,native_start
@@ -448,14 +454,19 @@ int main(int argc, char **argv) {
             result=14;
             break;
         }
-        const uint64_t pressed=padGetButtonsDown(&pad);
-        const int pressed_a=(pressed&HidNpadButton_A)!=0;
-        const int pressed_b=(pressed&HidNpadButton_B)!=0;
-        /* Opposing annotations in one poll are ambiguous. Ignore
-         * both rather than assert two contradictory observations. */
-        if (pressed_a!=pressed_b &&
-            (pressed_a ? vh_audio_listening_mark(&listening_marks) :
-                         vh_audio_listening_control(&listening_marks))) {
+        /* Current HELD state prevents a B "normal" mark when A is
+         * still down. Only a neutral sample can rearm the gate. */
+        const uint64_t held=padGetButtons(&pad);
+        const unsigned ab=(held&HidNpadButton_A ? VH_AUDIO_MARK_A : 0u) |
+                          (held&HidNpadButton_B ? VH_AUDIO_MARK_B : 0u);
+        unsigned tag=0u;
+        if (vh_audio_mark_buttons_sample(&mark_buttons,ab,&tag)) {
+            result=15;
+            break;
+        }
+        if (tag && (tag==VH_AUDIO_MARK_A
+              ? vh_audio_listening_mark(&listening_marks)
+              : vh_audio_listening_control(&listening_marks))) {
             result=13;
             break;
         }
@@ -529,7 +540,10 @@ int main(int argc, char **argv) {
     const int listen_evidence=vh_audio_listening_verify(
         &listening_marks,played_blocks);
     const int poll_evidence=vh_audio_input_poll_verify(
-        &input_poll,played_blocks);
+        &input_poll,played_blocks) ||
+        vh_audio_mark_buttons_verify(
+            &mark_buttons,played_blocks,listening_marks.manual_marks,
+            listening_marks.control_marks);
     if ((run_evidence<0 || seam_evidence || listen_evidence ||
          poll_evidence) && result==0) result=10;
     const unsigned verdict=vh_audio_report_evidence(
@@ -537,6 +551,7 @@ int main(int argc, char **argv) {
     const VhAudioProbeReport report={
         .output=&output,.recovery=&recovery,.seams=&seam_stats,
         .marks=&listening_marks,.poll=&input_poll,
+        .buttons=&mark_buttons,
         .tick_frequency=tick_frequency,
         .played=played_blocks,.switched=completed_switches,
         .user_files=(unsigned)user_files,.result=result,
