@@ -175,6 +175,28 @@ int main(void) {
         assert(wrong.page_pointer==dst && wrong.page_frames==32u);
         assert(wrong.page_hash==original_hash);
     }
+    /* Repeated foreign released pointers never grant ownership of the
+     * caller's page. Exhausting two restarts must stop the session and
+     * return failure, leaving the entire prepared page untouched.
+     */
+    Mock never_returned={.opened=1,.playing=1};
+    VhAudioOutputOps no_return_ops=callbacks(&never_returned);
+    VhAudioOutputRecovery no_return_stats={0};
+    begin_page(&never_returned,0u);
+    never_returned.mismatched_returns_left=
+        VH_AUDIO_OUTPUT_RESTART_LIMIT+1u;
+    const uint64_t guarded_hash=hash_page(dst,32u);
+    assert(vh_audio_output_submit_recover(&no_return_ops,&no_return_stats,
+                                          dst,32u)==-1);
+    assert(no_return_stats.pages_submitted==0u);
+    assert(no_return_stats.frames_submitted==0u);
+    assert(no_return_stats.submit_failures==
+           VH_AUDIO_OUTPUT_RESTART_LIMIT+1u);
+    assert(no_return_stats.restart_attempts==
+           VH_AUDIO_OUTPUT_RESTART_LIMIT);
+    assert(never_returned.accepted==0u);
+    assert(never_returned.submissions==VH_AUDIO_OUTPUT_RESTART_LIMIT+1u);
+    assert(hash_page(dst,32u)==guarded_hash);
     for(unsigned i=0;i<128u;i++)
         sample[i]=(int16_t)((int)i*113-7000);
     vh_native_spu_reset(&spu);
