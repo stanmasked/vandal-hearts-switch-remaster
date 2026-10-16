@@ -7,6 +7,7 @@
 
 #include "vh_audio_resample.h"
 #include "vh_audio_output_recovery.h"
+#include "vh_audio_buffer_lease.h"
 #include "vh_game_music_banks.h"
 #include "vh_music_scene.h"
 
@@ -96,6 +97,7 @@ static int start_audout_checked(void) {
 typedef struct {
     int *opened, *playing;
     AudioOutBuffer *buffer;
+    VhAudioBufferLease lease; /* only freed when this session closes */
 } VhSwitchOutput;
 
 static int output_submit(void *opaque, const int16_t *stereo,
@@ -106,9 +108,18 @@ static int output_submit(void *opaque, const int16_t *stereo,
         !frames || frames > VH_AUDIO_RESAMPLE_MAX_FRAMES ||
         frames * 2u * sizeof(int16_t) > s->buffer->buffer_size)
         return -1;
+    /* libnx audoutPlayBuffer waits for ANY released buffer. Reusing
+     * our single 0x1000-aligned PCM page before its exact descriptor
+     * is released could overwrite samples still playing on hardware.
+     * An ambiguous/error result retains the lease until audoutExit.
+     */
+    if (vh_audio_buffer_lease_begin(&s->lease,s->buffer)) return -1;
+    s->buffer->next = NULL;
+    s->buffer->data_offset = 0;
     s->buffer->data_size = frames * 2u * sizeof(int16_t);
     AudioOutBuffer *released = NULL;
-    return R_SUCCEEDED(audoutPlayBuffer(s->buffer,&released)) ? 0 : -1;
+    if (R_FAILED(audoutPlayBuffer(s->buffer,&released))) return -1;
+    return vh_audio_buffer_lease_release(&s->lease,released);
 }
 
 static int output_stop(void *opaque) {
@@ -121,14 +132,23 @@ static int output_stop(void *opaque) {
 
 static void output_close(void *opaque) {
     VhSwitchOutput *s = opaque;
-    if (!*s->opened) return;
-    audoutExit();
-    *s->opened = 0;
+    if (*s->opened) {
+        audoutExit();
+        *s->opened = 0;
+    }
+    /* A stopped service can still own queued audio. Never clear the
+     * lease after stop alone; audoutExit discards the old session.
+     */
+    vh_audio_buffer_lease_session_closed(&s->lease);
+    s->buffer->next = NULL;
+    s->buffer->data_size = 0;
+    s->buffer->data_offset = 0;
 }
 
 static int output_open(void *opaque) {
     VhSwitchOutput *s = opaque;
-    if (*s->opened || R_FAILED(audoutInitialize())) return -1;
+    if (*s->opened || s->lease.in_flight ||
+        R_FAILED(audoutInitialize())) return -1;
     *s->opened = 1;
     return audoutGetSampleRate()==VH_NATIVE_AUDOUT_RATE &&
            audoutGetChannelCount()==2u &&
@@ -146,6 +166,18 @@ static void audio_worker(void *unused) {
     (void)unused;
     int state = -1;
     int opened = 0, playing = 0;
+    /* Available also on startup failure paths that jump to cleanup. */
+    AudioOutBuffer desc = {0};
+    desc.buffer = pcm_48000_page;
+    desc.buffer_size = sizeof(pcm_48000_page);
+    VhSwitchOutput recovery_backend = {
+        .opened=&opened, .playing=&playing, .buffer=&desc
+    };
+    const VhAudioOutputOps recovery_ops = {
+        &recovery_backend, output_submit, output_stop, output_close,
+        output_open, output_start
+    };
+    VhAudioOutputRecovery recovery_stats = {0};
     VhGameMusicBanks *loaded_banks = NULL;
     const int pack_status = vh_game_music_banks_load(
         &loaded_banks, VH_GAME_MUSIC_SD_ROOT);
@@ -186,15 +218,8 @@ static void audio_worker(void *unused) {
      * applet is actually focused. Keeping the service stopped during
      * HOME/sleep avoids stale queued data on resume.
      */
-    AudioOutBuffer desc = {0};
-    desc.buffer = pcm_48000_page;
-    desc.buffer_size = sizeof(pcm_48000_page);
-    VhSwitchOutput recovery_backend = {&opened, &playing, &desc};
-    const VhAudioOutputOps recovery_ops = {
-        &recovery_backend, output_submit, output_stop, output_close,
-        output_open, output_start
-    };
-    VhAudioOutputRecovery recovery_stats = {0};
+    /* Descriptor and session lease were initialized before startup
+     * so all early error exits can close output safely as well. */
 
     unsigned accepted = VH_GAME_MUSIC_SILENT;
     unsigned handled_resume =
@@ -289,10 +314,14 @@ static void audio_worker(void *unused) {
     }
     if (state == -1) state = 0; /* clean stop requested by main thread */
 cleanup:
-    if (playing) (void)stop_audout_checked();
-    if (opened) audoutExit();
-    /* All queued buffers are done; discard every borrowed bank/PCM
-     * voice pointer before finally freeing the two local asset sets.
+    /* A stopped audout service may retain queued buffers. Close the
+     * old session BEFORE overwriting or releasing the shared PCM page.
+     */
+    (void)output_stop(&recovery_backend);
+    output_close(&recovery_backend);
+    memset(pcm_48000_page,0,sizeof(pcm_48000_page));
+    /* All queued buffers have been invalidated with the session;
+     * discard every borrowed bank/PCM voice pointer before freeing.
      */
     /* audout is stopped/exited before detaching borrowed bank memory.
      * This also cancels a fade or a queued second-bank cue; no SEQ,
