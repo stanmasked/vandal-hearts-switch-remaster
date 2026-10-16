@@ -120,6 +120,9 @@ jobs:
              tests/test_vh_audio_resample.c source/vh_audio_resample.c \
              -o build/test_vh_audio_resample_ubsan
           ./build/test_vh_audio_resample_ubsan
+      - name: Cross-version Switch NRO audio CSV comparisons and coverage gates
+        run: |
+          python3 tests/test_compare_switch_audio_sessions.py
       - name: Offline Switch PCM journal analysis and hostile CSV validation
         run: |
           python3 tests/test_analyze_switch_audio_log.py
