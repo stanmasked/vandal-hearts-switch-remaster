@@ -127,8 +127,7 @@ static const VhAudioDiagJournalEntry *journal_row(
     }
     const uint32_t start=(j->head+VH_AUDIO_DIAG_JOURNAL_CAPACITY-
                           j->count)%VH_AUDIO_DIAG_JOURNAL_CAPACITY;
-    const uint32_t offset=wrapped ? i : i;
-    const uint32_t slot=(start+offset)%VH_AUDIO_DIAG_JOURNAL_CAPACITY;
+    const uint32_t slot=(start+i)%VH_AUDIO_DIAG_JOURNAL_CAPACITY;
     const VhAudioDiagJournalEntry *entry=&j->entries[slot];
     *event=wrapped && i==1u ? VH_AUDIO_DIAG_EVENT_GAP : entry->event;
     return entry;
