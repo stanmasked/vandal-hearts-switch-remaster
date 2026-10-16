@@ -273,7 +273,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m remaster.tools.instrument_map02_camera upstream \
+          PYTHONPATH=remaster python3 -m tools.instrument_map02_camera upstream \
             --output-dir /tmp/vh-map02-camera-source > /tmp/vh-map02-camera-source-report.json
           python3 - <<'PY'
           import json
