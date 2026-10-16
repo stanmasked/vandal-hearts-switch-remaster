@@ -22,7 +22,7 @@ from tools.verify_map02_putpixel_scope import (
     PIXEL_LOG, SCHEMA as PIXEL_SCHEMA, verify_pixel_ot,
 )
 from tools.verify_map02_blendg1_witness import (
-    SCHEMA, MANIFEST, LOG, MAX_EVENTS,
+    SCHEMA, MANIFEST, LOG, complete_events,
 )
 
 STAGED_LOG = "blendg1-native-events.pending.jsonl"
@@ -61,15 +61,6 @@ def _prepare_private_file(destination, raw):
         raise
 
 
-def _valid_jsonl(raw, description):
-    if not raw.endswith(b"\n"):
-        raise ValueError(description + ": missing final newline")
-    lines = raw.splitlines()
-    if not 1 <= len(lines) < MAX_EVENTS or any(not l.strip() for l in lines):
-        raise ValueError(description + ": empty, truncated or over event limit")
-    return [parse_json(l, description) for l in lines]
-
-
 def publish_blendg1_witness(source_dir, native_dir, *, compiler="gcc"):
     source_dir = _private_directory(source_dir)
     native_dir = _private_directory(native_dir)
@@ -82,8 +73,8 @@ def publish_blendg1_witness(source_dir, native_dir, *, compiler="gcc"):
     pixel_raw = private_file(native_dir, PIXEL_LOG, max_bytes=MAX_BYTES)
     staged_raw = private_file(native_dir, STAGED_LOG, max_bytes=MAX_BYTES)
     sha_check(pixel_raw, meta["putpixel_events_sha256"], "upstream PutPixel")
-    pixels = _valid_jsonl(pixel_raw, "upstream PutPixel")
-    witnesses = _valid_jsonl(staged_raw, "private BlendG1")
+    pixels = complete_events(pixel_raw, "upstream PutPixel")
+    witnesses = complete_events(staged_raw, "private BlendG1")
     compare_blendg1_witnesses(pixels, witnesses)
 
     # Source/GTE/DrawOTag/VRAM verification is NOT optional for real publish.
