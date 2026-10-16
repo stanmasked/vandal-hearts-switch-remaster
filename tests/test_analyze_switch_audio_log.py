@@ -113,6 +113,51 @@ class AudioJournalTests(unittest.TestCase):
         self.assertEqual(r["assessment"], "REVIEW")
         self.assertIn("Not every confirmed", " ".join(r["warnings"]))
 
+    def test_early_evicted_faults_keep_counts_but_not_fake_timing(self):
+        # Stage 208 exporter reserves START + oldest GAP + 126 latest
+        # rows, preserving lifetime deltas without inventing the dates
+        # of the incidents evicted by the ring.
+        records = [snapshot(0, "START")]
+        records.append(snapshot(900000, "GAP", pcm_fail=17,
+                                home_fail=5, lease_fail=3,
+                                output_pages=60000, first_pcm_count=22,
+                                last_pcm_us=15000, worst_pcm_us=140000))
+        for i in range(2, 128):
+            records.append(snapshot(900000 + i * 5000,
+                                    "EXIT" if i == 127 else "PERIODIC",
+                                    status=0 if i == 127 else 1,
+                                    pcm_fail=17, home_fail=5, lease_fail=3,
+                                    output_pages=60000 + i * 100,
+                                    first_pcm_count=22, last_pcm_us=15000,
+                                    worst_pcm_us=140000))
+        r = self.report(records)
+        self.assertEqual(r["rows"], 128)
+        self.assertEqual(r["historical_gaps"], 1)
+        self.assertEqual(r["assessment"], "INVESTIGATE")
+        self.assertEqual(r["unlocalized_faults"],
+                         {"pcm_fail": 17, "home_fail": 5, "lease_fail": 3})
+        self.assertEqual(r["observed_counter_increments"]["pcm_fail"], 17)
+        self.assertEqual(r["observed_counter_increments"]["home_fail"], 5)
+        self.assertEqual(r["observed_counter_increments"]["lease_fail"], 3)
+        self.assertEqual(r["fault_clusters_60s"], [])
+        self.assertEqual(r["repeated_fault_clusters_60s"], 0)
+        self.assertEqual(r["ack_latency_us"]["recorded_samples"], 0)
+        self.assertEqual(r["ack_latency_us"]["missing_individual_samples"], 22)
+        self.assertEqual(r["time_rollbacks"], 0)
+        self.assertTrue(any("GAP" in w for w in r["warnings"]))
+
+    def test_gap_does_not_create_false_long_stall(self):
+        r = self.report([
+            snapshot(0, "START", status=1, output_pages=250),
+            snapshot(1000000, "GAP", status=1, output_pages=250,
+                     pcm_fail=5),
+            snapshot(1000100, "EXIT", status=0, output_pages=251,
+                     pcm_fail=5),
+        ])
+        self.assertEqual(r["possible_output_stalls"], [])
+        self.assertEqual(r["unlocalized_faults"]["pcm_fail"], 5)
+        self.assertEqual(r["assessment"], "INVESTIGATE")
+
     def test_clock_rollback_is_separate_from_counter_rollback(self):
         r = self.report([
             snapshot(50000, "PERIODIC", pcm_fail=10, output_pages=100),
