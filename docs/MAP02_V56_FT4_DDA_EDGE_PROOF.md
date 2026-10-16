@@ -80,9 +80,17 @@ The new verifier rejects actual altered original-C sample colors,
 source/clip metadata, transparent color decisions, full
 framebuffer hashes and cross-worker disagreements.
 
-The compiled source and full execution artifacts are
-available from the successful GitHub Actions run when
-confirmed. This file does not claim success before CI.
+**Confirmed GCC + Clang SUCCESS** on the complete source-and-document
+commit: https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38939162824
+
+All 274 Python tests per compiler passed (248 inherited and 26 new v56).
+The real original GPU executable passed all 9 cases with 1, 2 and 4
+workers in both compilers, including negative mutation refusals.
+The two compiler-specific CI artifacts contain original C binaries,
+sampled framebuffer logs, object checksums and independent JSON proof.
+Full-image expected colors are computed by Python, then verified via
+FNV64 fingerprints; the direct/deferred original-C 2x comparison checks
+each of the 9,216 pixel halfwords byte-for-byte.
 
 ## Limitations
 
