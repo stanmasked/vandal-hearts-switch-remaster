@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import struct
 import subprocess
 import sys
 import tempfile
@@ -14,6 +15,16 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 import analyze_switch_audio_log as audio  # noqa: E402
 import verify_switch_audio_bundle as bundle  # noqa: E402
+
+
+def synthetic_structural_nro() -> bytes:
+    """Test fixture with NRO0 layout; NOT executable Nintendo Switch code."""
+    content = bytearray(0x100)
+    content[0x10:0x14] = b"NRO0"
+    struct.pack_into("<I", content, 0x18, 0x100)
+    for field, start in ((0x20, 0x80), (0x28, 0xA0), (0x30, 0xC0)):
+        struct.pack_into("<II", content, field, start, 0x20)
+    return bytes(content)
 
 
 def write_session(path: Path, pages: int = 1200) -> None:
@@ -38,7 +49,7 @@ class EvidenceBundleTests(unittest.TestCase):
         self.root = Path(self.work.name)
         (self.root / "nro").mkdir()
         (self.root / "nro" / "vandal-hearts-prototype.nro").write_bytes(
-            b"SYNTHETIC NRO placeholder, not a Switch executable"
+            synthetic_structural_nro()
         )
         self.nro = "nro/vandal-hearts-prototype.nro"
         self.sessions = [
@@ -56,12 +67,59 @@ class EvidenceBundleTests(unittest.TestCase):
     def test_valid_manifest_still_requires_manual_hardware_review(self):
         result = self.create()
         self.assertEqual(result["integrity"], "VERIFIED")
+        self.assertEqual(result["nro_structure"], "VALID_STRUCTURAL_HEADER_ONLY")
+        self.assertEqual(result["build_provenance"], "SELF_REPORTED_UNVERIFIED")
         self.assertEqual(result["telemetry_readiness"], "ENOUGH_DATA_FOR_MANUAL_REVIEW")
         self.assertEqual(result["hardware_status"], "HARDWARE NOT TESTED")
         self.assertEqual(result["session_count"], 2)
         self.assertEqual(bundle.inspect(self.root), result)
         self.assertEqual([s["observed_pcm_pages"] for s in result["sessions"]],
                          [1200, 1300])
+
+    def test_rejects_non_nro_bytes_even_on_initial_create(self):
+        (self.root / self.nro).write_bytes(b"fake extension only")
+        with self.assertRaisesRegex(bundle.BundleError, "NRO is too small"):
+            self.create()
+        self.assertFalse((self.root / bundle.MANIFEST_NAME).exists())
+
+    def test_rejects_nro_magic_and_invalid_sections(self):
+        path = self.root / self.nro
+        good = bytearray(path.read_bytes())
+        damaged = bytearray(good)
+        damaged[0x10:0x14] = b"FAKE"
+        path.write_bytes(damaged)
+        with self.assertRaisesRegex(bundle.BundleError, "NRO0 magic"):
+            self.create()
+        damaged = bytearray(good)
+        struct.pack_into("<II", damaged, 0x28, 0xF8, 0x20)
+        path.write_bytes(damaged)
+        with self.assertRaisesRegex(bundle.BundleError, "rodata segment"):
+            self.create()
+        damaged = bytearray(good)
+        struct.pack_into("<I", damaged, 0x18, 0x200)
+        path.write_bytes(damaged)
+        with self.assertRaisesRegex(bundle.BundleError, "declared NRO"):
+            self.create()
+        path.write_bytes(good)
+        self.create()
+        # A dishonest edited manifest/hash must not turn a malformed NRO into valid evidence.
+        damaged = bytearray(good)
+        damaged[0x10:0x14] = b"FAKE"
+        path.write_bytes(damaged)
+        manifest_file = self.root / bundle.MANIFEST_NAME
+        manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+        size, digest = bundle.digest_file(path)
+        manifest["nro"].update(size=size, sha256=digest)
+        manifest_file.write_text(json.dumps(manifest), encoding="utf-8")
+        with self.assertRaisesRegex(bundle.BundleError, "NRO0 magic"):
+            bundle.inspect(self.root)
+
+    def test_only_header_structure_not_executability(self):
+        self.create()
+        report = bundle.inspect(self.root)
+        self.assertEqual(report["nro_structure"], "VALID_STRUCTURAL_HEADER_ONLY")
+        self.assertEqual(report["hardware_status"], "HARDWARE NOT TESTED")
+        self.assertEqual(report["build_provenance"], "SELF_REPORTED_UNVERIFIED")
 
     def test_byte_identical_csv_copies_are_not_two_independent_sessions(self):
         (self.root / self.sessions[1]).write_bytes(
