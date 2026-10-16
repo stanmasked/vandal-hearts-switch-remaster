@@ -145,6 +145,37 @@ def _ft4_draw_delta(before_vram, after_vram, source_event,
     return changed, material_changed, clip is not None, geometry_excluded is True
 
 
+def _ft4_palette_state(before_vram, native_event):
+    """Return (all transparent, STP-capable, ABR mode) for a 4-bpp CLUT.
+
+    PC raster's native pass uses SampleTexture and skips 0000h texels. Every
+    possible 4-bpp index selects one of exactly sixteen BGR555 CLUT words.
+    If all sixteen are literally zero, no sampled texel can write pixels,
+    regardless of DDA interpolation, UV window, or sampled index. Black with
+    bit15 set (0x8000) is NOT zero and must not trigger this proof.
+    STP and ABR are evidence of *possible* blending, never proof that a
+    zero-delta primitive was blended away.
+    """
+    page = native_event["ft4"]["tpage"]
+    mode = (page >> 7) & 3
+    abr = (page >> 5) & 3
+    if mode != 0:  # source-keyed MAP02 currently audits 4-bpp only
+        return False, False, abr
+    clut = native_event["ft4"]["clut"]
+    row = (clut >> 6) & 511
+    x = (clut & 63) * 16
+    base = (row * 1024 + x) * 2
+    colors = [
+        before_vram[base + i*2] | (before_vram[base + i*2 + 1] << 8)
+        for i in range(16)
+    ]
+    all_transparent = all(c == 0 for c in colors)
+    stp_possible = (native_event["semi"] == 1 and
+                    any((c & 0x8000) != 0 for c in colors))
+    return all_transparent, stp_possible, abr
+
+
+
 def _native_after_vram(native_dir, native_events, before):
     """Retrieve paired post-draw snapshot only after native capture verified."""
     next_step = before["step"] + 1
@@ -242,7 +273,8 @@ def verify_join(source_dir, native_dir, *, compiler="gcc"):
     reference = private_file(source_dir, "gpu-vram-le.bin", expected=VRAM_BYTES)
     material_words_checked = 0
     matched_draw_changed = matched_material_changed = no_pixel_delta = clip_checked = 0
-    proved_no_coverage = no_delta_unknown = 0
+    proved_no_coverage = no_delta_unknown = all_zero_clut = 0
+    stp_blend_possible_unknown = 0
     for face_index, match_index in enumerate(selected):
         native = gpu_draw_events[match_index]
         snapshot = private_file(native_dir, native["snapshot"], expected=VRAM_BYTES)
@@ -257,9 +289,15 @@ def verify_join(source_dir, native_dir, *, compiler="gcc"):
         n, m, checked, excluded = _ft4_draw_delta(
             snapshot, post, source_events[face_index], native.get("draw_env"),
             native["ft4"]["xy"])
+        transparent, stp_possible, _ = _ft4_palette_state(snapshot, native)
+        if transparent and n:
+            raise ValueError("native FT4 changed VRAM with entirely zero 4-bpp CLUT")
         clip_checked += checked
         proved_no_coverage += excluded
-        no_delta_unknown += n == 0 and not excluded
+        all_zero_clut += transparent and not excluded
+        no_delta_unknown += n == 0 and not excluded and not transparent
+        stp_blend_possible_unknown += (n == 0 and not excluded and
+                                       not transparent and stp_possible)
         matched_draw_changed += n
         matched_material_changed += m
         no_pixel_delta += n == 0
@@ -282,6 +320,9 @@ def verify_join(source_dir, native_dir, *, compiler="gcc"):
         "matched_ft4_draws_with_drawenv_clip_checked": clip_checked,
         "matched_ft4_draws_proven_no_coverage": proved_no_coverage,
         "matched_ft4_draws_zero_delta_cause_unknown": no_delta_unknown,
+        "matched_ft4_draws_zero_delta_full_4bpp_clut_transparent": all_zero_clut,
+        "matched_ft4_draws_zero_delta_unknown_with_stp_blend_possible":
+            stp_blend_possible_unknown,
         "native_ft4_pixels_bit_exact_to_ps1": False,
         "screen_corners_uv_page_clut_window_exact": True,
         "source_gte_verified_by_compiled_reference": True,
@@ -340,7 +381,8 @@ def verify_timeline_join(source_dir, native_dir, *, compiler="gcc"):
 
     compared = 0
     matched_draw_changed = matched_material_changed = no_pixel_delta = clip_checked = 0
-    proved_no_coverage = no_delta_unknown = 0
+    proved_no_coverage = no_delta_unknown = all_zero_clut = 0
+    stp_blend_possible_unknown = 0
     for source_index, native_index in enumerate(selected):
         reference = private_file(
             source_dir, f"gpu-vram-{source_index:03d}.bin", expected=VRAM_BYTES)
@@ -359,9 +401,16 @@ def verify_timeline_join(source_dir, native_dir, *, compiler="gcc"):
             before, post, source_events[source_index],
             native_ft4[native_index].get("draw_env"),
             native_ft4[native_index]["ft4"]["xy"])
+        transparent, stp_possible, _ = _ft4_palette_state(
+            before, native_ft4[native_index])
+        if transparent and n:
+            raise ValueError("native FT4 changed VRAM with entirely zero 4-bpp CLUT")
         clip_checked += checked
         proved_no_coverage += excluded
-        no_delta_unknown += n == 0 and not excluded
+        all_zero_clut += transparent and not excluded
+        no_delta_unknown += n == 0 and not excluded and not transparent
+        stp_blend_possible_unknown += (n == 0 and not excluded and
+                                       not transparent and stp_possible)
         matched_draw_changed += n
         matched_material_changed += m
         no_pixel_delta += n == 0
@@ -383,6 +432,9 @@ def verify_timeline_join(source_dir, native_dir, *, compiler="gcc"):
         "matched_ft4_draws_with_drawenv_clip_checked": clip_checked,
         "matched_ft4_draws_proven_no_coverage": proved_no_coverage,
         "matched_ft4_draws_zero_delta_cause_unknown": no_delta_unknown,
+        "matched_ft4_draws_zero_delta_full_4bpp_clut_transparent": all_zero_clut,
+        "matched_ft4_draws_zero_delta_unknown_with_stp_blend_possible":
+            stp_blend_possible_unknown,
         "native_ft4_pixels_bit_exact_to_ps1": False,
         "screen_corners_uv_page_clut_window_exact": True,
         "pc_gte_source_timeline_verified": True,
