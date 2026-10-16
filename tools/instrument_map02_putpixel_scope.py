@@ -53,6 +53,8 @@ def one(text, old, new, description):
 
 
 def scope_raster(original):
+    if FLAG in original:
+        raise ValueError("scope observer already installed")
     # First use the exact previously tested source-pinned observer, with
     # identical direct WritePixel. Only its optional capture metadata changes.
     src = instrument_raster_pixel(original)
