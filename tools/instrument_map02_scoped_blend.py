@@ -80,7 +80,7 @@ def instrument(source):
     new_signature = WRITE_SIGNATURE.replace(
         "int textured) {", "int textured, int nativeTarget) {")
     patched = source.replace(WRITE_SIGNATURE,
-                             DECLARATIONS + new_signature + "\\n#ifndef " + MACRO + "\\n    (void)nativeTarget;\\n#endif", 1)
+                             DECLARATIONS + new_signature + "\n#ifndef " + MACRO + "\n    (void)nativeTarget;\n#endif", 1)
     patched = patched.replace(
         HIRES, HIRES.replace("textured);", "textured, 0);"), 1)
     patched = patched.replace(BLEND_CALL, BLEND_REPLACEMENT, 1)
