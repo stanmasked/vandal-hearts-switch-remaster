@@ -7,7 +7,6 @@
  * This is a standalone test-only program. It does NOT represent gameplay,
  * does not use or redistribute any retail game data, and never injects HD.
  */
-#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
