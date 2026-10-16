@@ -175,3 +175,49 @@ instrumented translation units, private witness serialization into the
 SHA-bound manifest/JSONL format, and authenticated MAP02 gameplay
 capture. Synthetic tests do not establish genuine frame provenance
 beyond their test input, and no claim of physical PS1 accuracy follows.
+
+## Private in-memory JSONL bridge
+
+The bounded sink now retains the **native primitive type** decoded by the
+original `DrawOTag` walker, in addition to the frame, non-bucket ordinal,
+and local PutPixel step. Primitive types outside 0..255 cause a sticky
+capture failure; type and ordinal are independently checked again by the
+Python witness comparator.
+
+Two formatter functions are available **only after a complete, successful
+frame capture**:
+
+```c
+int vh_map02_scope_format_putpixel(unsigned index, char *dst,
+                                   unsigned capacity);
+int vh_map02_scope_format_blendg1(unsigned index, char *dst,
+                                  unsigned capacity);
+```
+
+Both return the number of bytes written, excluding the terminating NUL,
+or zero if capture is incomplete/invalid, the index is out of range, a
+buffer is too small, or a requested BlendG1 event does not exist.
+The result is a newline-delimited JSON record in caller-owned memory.
+No file is created, no private colors or coordinates are uploaded, and
+the serializer does not construct BlendG1 observations from PutPixel:
+the three BlendG1 words are populated exclusively by the actual-call
+callback. A private harness must handle file permissions, durable
+storage, input hashes, and comparison against verified VRAM snapshots.
+
+The new `tests/test_map02_scoped_blend_jsonl_bridge.py` compiles a
+synthetic C producer, decodes its JSONL with Python, and passes the
+records into `compare_blendg1_witnesses`. It checks an accurate
+BlendG1 event, legacy semi-transparent path without BlendG1, and
+opaque copy, including rejection of forged primitive type and missing
+BlendG1 fields.
+
+The state machine also now ignores callbacks outside the selected
+frame, including before opt-in and after a sealed frame; an explicitly
+aborted selected capture remains permanently invalid until reset.
+This prevents incidental writes at coordinate (0,0) from corrupting
+a capture when no frame was selected.
+
+**Remaining:** explicitly scoped, private persistence and SHA-256
+binding to independently captured native DrawOTag/VRAM evidence; complete
+instrumented PC-port build; genuine MAP02 frame comparison; PS1 hardware
+verification. None is claimed by synthetic host tests.
