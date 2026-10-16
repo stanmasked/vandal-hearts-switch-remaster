@@ -307,4 +307,4 @@ jobs:
           /tmp/test_vh_native_bank_switch | tee /tmp/vab-seams-first.txt
           /tmp/test_vh_native_bank_switch > /tmp/vab-seams-repeat.txt
           cmp /tmp/vab-seams-first.txt /tmp/vab-seams-repeat.txt
-          grep -Fq 'VAB seam adjacent-sample deltas (PCM16):'
+          grep -Fq 'VAB seam adjacent-sample deltas (PCM16):' /tmp/vab-seams-first.txt
