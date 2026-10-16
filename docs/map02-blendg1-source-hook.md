@@ -45,3 +45,21 @@ Next: add a private shim that records the original PutPixel front, the
 actual BlendG1 fg and bg, output result, DrawOTag frame/ordinal, and step.
 Update the verifier schema only when each field is independently
 observed and can be authenticated against a native VRAM snapshot.
+
+## Witness schema amendment
+
+The strict `map02_blendg1_witness.py` comparator now requires three
+**additional, independently captured** 16-bit words in each
+`native_blendg1` JSONL record:
+
+- `blend_fg`: actual entry `fg`, equal to PutPixel `front | 0x8000`
+- `blend_bg`: actual entry `bg`, equal to PutPixel `before`
+- `blend_result`: actual `BlendG1` return, equal to PutPixel `after`
+
+The original `front`, `before`, and `after` are still required for
+the source/VRAM join. A witness that only copies these older fields is
+rejected. Matching values alone do **not** authenticate independent
+provenance; the future private harness must capture the BlendG1 fields
+at the call site and bind frame/ordinal/step without inferring them.
+These checks assert call argument agreement, not the accuracy of the
+BlendG1 blend equation or PS1 hardware output.
