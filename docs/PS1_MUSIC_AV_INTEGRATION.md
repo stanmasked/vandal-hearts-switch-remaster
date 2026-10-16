@@ -387,3 +387,32 @@ All classifications are measurements of the runtime resolver's
 actual decisions. They are not a claim that these program mappings
 match the original game's intended orchestration; that still requires
 comparison using privately supplied original assets.
+
+### Delayed pQES events and tempo snapshots
+
+The private-bank audit now records five per-scene **1-based** 512-frame
+block indices: `first_note_block`, `last_note_block`,
+`first_note_off_block`, `first_cross_program_block`, and
+`first_out_of_range_block`. **Zero** means no corresponding event
+during the chosen window. These are coarse audio-block timestamps,
+not individual MIDI ticks or exact sample offsets, and contain
+neither original event bytes nor note names.
+
+A generated delayed SEQ schedules a note at tick 0, retriggers the
+same pitch with a cross-program fallback at tick 45, and selects a
+nearest-range note with an explicit voice release at tick 135.
+With the default 480 PPQN and 500,000 µs/quarter, these occur in
+**blocks 1, 5 and 13** respectively. The regression samples windows
+of 4, 8, 12 and 16 blocks to catch prematurely or belatedly
+dispatched notes as well as resets of the 44.1-to-48-kHz clock.
+A companion fixture injects a native `FF 51` tempo change at
+tick 0 to 250,000 µs/quarter. Because the SEQ worker snapshots
+tempo when advancing each 512-frame block, the increased rate
+takes effect **on the next block**; the delayed events are then
+expected in **blocks 3 and 7**, not blocks 5 and 13.
+
+These tests verify the sequencing implementation against independently
+constructed synthetic timing expectations, not against timing
+captured from the original PlayStation executable. `note_offs`
+counts voices released by the sequencer, including a same-pitch
+retrigger, rather than every encoded Note Off command.
