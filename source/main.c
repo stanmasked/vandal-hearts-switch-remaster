@@ -10,6 +10,7 @@
 #include "ps1_indexed_texture.h"
 #include "ps1_abr_blend.h"
 #include "map02_terrain_lighting.h"
+#include "map02_face_direction.h"
 
 #define FB_WIDTH 1280
 #define FB_HEIGHT 720
@@ -39,6 +40,7 @@ static u8 g_ft4_probe_cluts[2][32];
 static u32 g_ft4_probe_pixels[2][16 * 16];
 static u32 g_ft4_shaded_pixels[2][16 * 16];
 static u8 g_ft4_probe_classes[2][16 * 16];
+static u8 g_ft4_probe_side_indices[2];
 static int g_ft4_probe_ready = 0;
 
 static void fill_rect(u32 *pixels, u32 stride, int x, int y,
@@ -151,6 +153,23 @@ static void init_ft4_probe_texture(void) {
             return;
         }
     }
+    /* Two synthetic MapTileModel records: +Y top and +X side face.
+     * Geometry is generated at startup, not loaded from the PS1 disc. */
+    for (int texture = 0; texture < 2; ++texture) {
+        u8 tile[304] = {0};
+        tile[212] = 0; tile[213] = 1; tile[214] = 2; tile[215] = 3;
+        tile[302] = 1;
+        if (texture == 0) {
+            tile[8 + 4] = 100;  /* vertex1=(0,0,100) */
+            tile[16] = 100;     /* vertex2=(100,0,0), +Y normal */
+        } else {
+            tile[8 + 2] = 100;  /* vertex1=(0,100,0) */
+            tile[16 + 4] = 100; /* vertex2=(0,0,100), +X normal */
+        }
+        if (!vh_map02_face_direction(tile, sizeof(tile), 0,
+                                     &g_ft4_probe_side_indices[texture], NULL))
+            return;
+    }
     g_ft4_probe_ready = 1;
 }
 
@@ -177,9 +196,9 @@ static void draw_ft4_probe(VhCanvas *canvas, u32 *pixels, u32 stride,
     VhFt4Vertex quad[4];
     const unsigned mode = (frame_tick / 120u) & 3u;
     const int simulated_otz = 150 + (int)((frame_tick / 4u) % 257u);
-    const VhMap02LightRgb side_colors[2] = {
-        {128, 128, 128}, {160, 120, 100}
-    };
+    VhMap02LightRgb directional_colors[26] = {{0, 0, 0}};
+    directional_colors[0] = (VhMap02LightRgb){128, 128, 128};
+    directional_colors[2] = (VhMap02LightRgb){160, 120, 100};
     /* This effect quad uses GPU code 0x2e (ABE), unlike normal MAP02
      * terrain which uses 0x2c and should remain opaque even with STP. */
     const u8 effect_gpu_code = 0x2eu;
@@ -201,8 +220,10 @@ static void draw_ft4_probe(VhCanvas *canvas, u32 *pixels, u32 stride,
      * a synthetic depth cycles through the upstream otz fade curve.
      * No original GTE light table, projection or MAP02 asset is loaded. */
     for (int texture = 0; texture < 2; ++texture) {
-        const VhMap02LightRgb light =
-            vh_map02_face_light(side_colors[texture], simulated_otz);
+        VhMap02LightRgb light;
+        if (!vh_map02_select_side_light(
+                directional_colors, 26, g_ft4_probe_side_indices[texture],
+                simulated_otz, &light)) return;
         if (!vh_map02_tint_crop_rgba32(
                 g_ft4_probe_pixels[texture], 16,
                 g_ft4_shaded_pixels[texture], 16, 16, 16,
