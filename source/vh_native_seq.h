@@ -57,6 +57,22 @@ typedef struct {
     void *context;
 } VhNativeSeq;
 
+/* Inspect a single SEQ pass without advancing SPU or allocating voices.
+ * Resolver errors are counted as missing notes; malformed SEQ fails.
+ * Use on the loading thread, not while an audio callback is running.
+ */
+typedef struct {
+    uint32_t events, note_events, resolved_notes, missing_notes;
+    uint32_t program_changes, tempo_changes;
+    unsigned first_missing_program, first_missing_note;
+    unsigned first_missing_channel;
+    int has_missing;
+} VhSeqAudit;
+
+int vh_native_seq_audit(const uint8_t *bytes, size_t length,
+                        VhSeqResolve resolve, void *context,
+                        VhSeqAudit *report);
+
 /* Validate all events through first FF 2F (up to 256 KiB), then reset
  * playback. repeat_count 1..64 = finite, 0 = loop until caller stops.
  * Invalid inputs return -1 before mutating *seq or *spu.
