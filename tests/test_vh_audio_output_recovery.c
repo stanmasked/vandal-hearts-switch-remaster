@@ -13,6 +13,8 @@ typedef struct {
     unsigned opened, playing, failures_left, submissions, accepted;
     unsigned opens, closes, stops, starts, attempts_this_page;
     int fail_stop, fail_open, fail_start;
+    unsigned mismatched_returns_left, null_returns_left;
+    int owned_descriptor, foreign_descriptor;
     const int16_t *page_pointer;
     size_t page_frames;
     uint64_t page_hash, checksum;
@@ -44,6 +46,20 @@ static int submit(void *ctx,const int16_t *pcm,size_t frames) {
         --m->failures_left;
         return -1;
     }
+    /* Simulate a successful libnx return with a wrong (or missing)
+     * descriptor. Never permit page reuse until the matching buffer
+     * is released, even though the underlying API reported success.
+     */
+    const void *returned=&m->owned_descriptor;
+    if (m->mismatched_returns_left) {
+        --m->mismatched_returns_left;
+        returned=&m->foreign_descriptor;
+    } else if (m->null_returns_left) {
+        --m->null_returns_left;
+        returned=NULL;
+    }
+    if (!vh_audio_output_page_returned(&m->owned_descriptor,returned))
+        return -1;
     ++m->accepted;
     m->checksum=(m->checksum ^ hash)*UINT64_C(1099511628211);
     return 0;
@@ -127,6 +143,36 @@ int main(void) {
     assert(vh_audio_output_submit_recover(
                &ops,&stats,dst,VH_AUDIO_RESAMPLE_MAX_FRAMES+1u)==-1);
     assert(device.submissions==0u && stats.pages_submitted==0u);
+    /* Identity contract used by both native libnx probes: a service
+     * success with NULL or a foreign descriptor is NOT page release. */
+    int owned_page=1, foreign_page=2;
+    assert(vh_audio_output_page_returned(&owned_page,&owned_page));
+    assert(!vh_audio_output_page_returned(&owned_page,&foreign_page));
+    assert(!vh_audio_output_page_returned(&owned_page,NULL));
+    assert(!vh_audio_output_page_returned(NULL,NULL));
+    for (unsigned form=0;form<2u;form++) {
+        Mock wrong={.opened=1,.playing=1};
+        VhAudioOutputOps wrong_ops=callbacks(&wrong);
+        VhAudioOutputRecovery wrong_stats={0};
+        for (unsigned i=0;i<64u;i++) dst[i]=(int16_t)i;
+        const uint64_t original_hash=hash_page(dst,32u);
+        begin_page(&wrong,0u);
+        if (form==0u) wrong.mismatched_returns_left=1u;
+        else wrong.null_returns_left=1u;
+        assert(vh_audio_output_submit_recover(
+                   &wrong_ops,&wrong_stats,dst,32u)==0);
+        assert(wrong_stats.pages_submitted==1u);
+        assert(wrong_stats.frames_submitted==32u);
+        assert(wrong_stats.submit_failures==1u);
+        assert(wrong_stats.restart_attempts==1u);
+        assert(wrong_stats.recoveries==1u);
+        assert(wrong.submissions==2u && wrong.accepted==1u);
+        assert(wrong.opens==1u && wrong.closes==1u &&
+               wrong.stops==1u && wrong.starts==1u);
+        assert(hash_page(dst,32u)==original_hash);
+        assert(wrong.page_pointer==dst && wrong.page_frames==32u);
+        assert(wrong.page_hash==original_hash);
+    }
     for(unsigned i=0;i<128u;i++)
         sample[i]=(int16_t)((int)i*113-7000);
     vh_native_spu_reset(&spu);
