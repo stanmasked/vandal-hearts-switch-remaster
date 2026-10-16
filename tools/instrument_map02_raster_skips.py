@@ -59,7 +59,7 @@ static void VH_Map02SkipAt(int x, int y, int reason) {
 SPAN_ANCHOR = "static void dda_span(const DdaCtx *cx, int y, int x_start, int x_bound, DdaUV uv) {"
 DDA_DRAW_ANCHOR = '''            if (draw) {                                      /* 0000h = transparent (skip, still step) */
                 UnpackColor(texel, &tr, &tg, &tb);'''
-DDA_END_ANCHOR = '''                          cx->abr, cx->semiTrans && (texel & 0x8000), 1);
+DDA_END_ANCHOR = '''                         cx->abr, cx->semiTrans && (texel & 0x8000), 1);
             }
         } else {'''
 LEGACY_ANCHOR = '''                if (texel == 0) continue; /* real hw: 0000h texel = transparent */'''
@@ -91,7 +91,7 @@ def instrument_raster_skips(scoped_raster):
     # (ordinary indexed/direct or optional HD replacement) is BGR555=0.
     # Native target=0 explicitly excludes deferred supersampling.
     src = one(src, DDA_END_ANCHOR,
-              '''                          cx->abr, cx->semiTrans && (texel & 0x8000), 1);
+              '''                         cx->abr, cx->semiTrans && (texel & 0x8000), 1);
             }
 #if defined(VH_MAP02_RASTER_SKIP_TRACE)
             else if (cx->rc->target == 0)
