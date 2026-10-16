@@ -34,3 +34,27 @@ coordinate can be reconstructed from these aggregates.
    equivalence or authentic game capture.
 
 Synthetic regressions live at `tests/test_map02_observed_blends.py`.
+
+## Optional bounded BlendG1 witness (experimental)
+
+The standalone `tools/verify_map02_blendg1_witness.py` checks a private
+`gpu-blendg1-witness.json` manifest (schema
+`vh.map02.native-blendg1-witness.v1`) in the source bundle. It binds
+`pixel_ot_manifest_sha256`, `putpixel_events_sha256`, and
+`blendg1_events_sha256` to the existing source manifest, private PutPixel
+log and new private `blendg1-native-events.jsonl`, respectively.
+
+One `native_blendg1` JSONL record is required for each semi-transparent
+PutPixel call, in the same order; opaque copies must have no BlendG1 record.
+Required witness fields are `stage`, `putpixel_step`, `frame`,
+`primitive_ordinal`, `x`, `y`, `accurate`, `abr`, `before`,
+`front`, and `after`. The instrumented original-PC entry/exit observer
+must emit these values directly; constructing them from the PutPixel log
+does **not** count as an independent witness. The verifier fails closed
+when the opt-in trace is absent or does not match.
+
+This strictly validates **event correspondence**, not the mathematics of
+BlendG1. The source PC binary/instrumentation is not changed by this
+stage. No genuine BlendG1 capture has yet been supplied, and no MAP02
+gameplay frame or PlayStation hardware has been authenticated.
+Synthetic comparator tests: `tests/test_map02_blendg1_witness.py`.
