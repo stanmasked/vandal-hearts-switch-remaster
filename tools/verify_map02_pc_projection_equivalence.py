@@ -151,7 +151,7 @@ static int check(const VhMap02ProjectCamera *cam,
 }
 int main(void) {
     uint32_t state=UINT32_C(0x19871016);
-    unsigned cases=0,i,j;
+    unsigned cases=0,boundary_cases=0,i,j;
     VhMap02ProjectCamera c;
     VhMap02ProjectVertex v[4];
     memset(&c,0,sizeof c);
@@ -170,6 +170,30 @@ int main(void) {
     v[2]=(VhMap02ProjectVertex){-32768,-32768,0};
     v[3]=(VhMap02ProjectVertex){32767,32767,32767};
     if (!check(&c,v,cases++)) return 2;
+    /* Differential boundary coverage: UNR divide and screen XY saturation.
+     * These synthetic cameras are compared against compiled pinned PC libgte. */
+    {
+        const short focal[] = {1,256,32767};
+        const short z_values[] = {0,1,127,128,129,16383,16384,16385,32767};
+        const int screen[] = {-1025,-1024,-1023,1022,1023,1024};
+        unsigned hidx,zidx,sidx;
+        for (hidx=0;hidx<3;++hidx)
+            for (zidx=0;zidx<9;++zidx)
+                for (sidx=0;sidx<6;++sidx) {
+                    short z=z_values[zidx];
+                    memset(&c,0,sizeof c);
+                    c.rt[0][0]=4096; c.rt[1][1]=4096; c.rt[2][2]=4096;
+                    c.h=focal[hidx]; c.zsf4=256;
+                    c.ofx=screen[sidx]*65536;
+                    c.ofy=screen[sidx]*65536;
+                    v[0]=(VhMap02ProjectVertex){0,0,z};
+                    v[1]=(VhMap02ProjectVertex){100,0,z};
+                    v[2]=(VhMap02ProjectVertex){100,100,z};
+                    v[3]=(VhMap02ProjectVertex){0,100,z};
+                    if (!check(&c,v,cases++)) return 4;
+                    ++boundary_cases;
+                }
+    }
     for (i=0; i<4096; ++i) {
         memset(&c,0,sizeof c);
         c.rt[0][0]=4096; c.rt[1][1]=4096; c.rt[2][2]=4096;
@@ -196,8 +220,8 @@ int main(void) {
         }
         if (!check(&c,v,cases++)) return 3;
     }
-    printf("{\"cases\":%u,\"compiled_pc_rtpt_nclip_rtps_avsz4_matches\":true,"
-           "\"ps1_hardware_gte_verified\":false}\n",cases);
+    printf("{\"cases\":%u,\"boundary_cases\":%u,\"compiled_pc_rtpt_nclip_rtps_avsz4_matches\":true,"
+           "\"ps1_hardware_gte_verified\":false}\n",cases,boundary_cases);
     return 0;
 }
 """
@@ -220,7 +244,7 @@ def compare(source: str, header: str, compiler: str = "gcc") -> dict:
         if run.returncode:
             raise ValueError(f"PC projection mismatch: {run.stderr[-2500:]}")
         report = json.loads(run.stdout)
-    if (report["cases"] != 4099 or
+    if (report["cases"] != 4261 or report["boundary_cases"] != 162 or
         not report["compiled_pc_rtpt_nclip_rtps_avsz4_matches"] or
         report["ps1_hardware_gte_verified"]):
         raise ValueError("PC projection comparison contract changed")
