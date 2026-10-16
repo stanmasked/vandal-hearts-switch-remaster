@@ -87,3 +87,43 @@ def boundary_report(faces):
         "nonmanifold_edges": sum(len(owners) > 2 for owners in incidence.values()),
         "edge_count": len(incidence),
     }
+
+
+def face_cross_xyz(vertices):
+    """First-triangle cross product using exact integer differences."""
+    if len(vertices) != 4 or any(len(p) != 3 for p in vertices):
+        raise ValueError("expected four XYZ vertices")
+    a = [vertices[1][i] - vertices[0][i] for i in range(3)]
+    b = [vertices[2][i] - vertices[0][i] for i in range(3)]
+    return [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+
+
+def placement_invariants(face):
+    """Audit translation without introducing floating-point projection.
+
+    Cross products must be identical before and after translation, even
+    when the face has zero area. Vertex order, GPU corner mapping and
+    local UVs must remain attached to their source vertices.
+    """
+    original = face["source_face"]["face_corners"]
+    offset = face["grid_offset_xyz"]
+    placed = face["world_xyz_hypothesis"]
+    if len(original) != 4 or len(placed) != 4 or len(offset) != 3:
+        raise ValueError("invalid placed face")
+    local = [corner["model_xyz"] for corner in original]
+    return {
+        "translation_exact": all(
+            placed[i] == [local[i][axis] + offset[axis] for axis in range(3)]
+            for i in range(4)
+        ),
+        "cross_preserved": face_cross_xyz(local) == face_cross_xyz(placed),
+        "local_cross_xyz": face_cross_xyz(local),
+        "placed_cross_xyz": face_cross_xyz(placed),
+        "vertex_indices": [corner["model_vertex_index"] for corner in original],
+        "gpu_corners": [corner["gpu_corner"] for corner in original],
+        "uv_corners": [corner["uv"] for corner in original],
+    }
