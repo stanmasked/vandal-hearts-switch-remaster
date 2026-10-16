@@ -708,6 +708,60 @@ class NativeLocalMusicTransitionTests(unittest.TestCase):
                 self.assertEqual(
                     {f.name: f.read_bytes() for f in folder.iterdir()}, original)
 
+    def test_switch_from_nonretiring_release_to_note_off_only_bank_keeps_wet_tail(self):
+        # Release shift 31 never reaches ADSR Off in the software model.
+        # B contains no positive-velocity notes at all, so its nonzero
+        # PCM (if any) must come from A's retained STUDIO_C history.
+        # The two B->A switches must not inherit A's held PCM pointer.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            a, b = root / "held-wet-release", root / "silent-seq"
+            original_a = synth_dir(a, wet=True, adsr2_release=0x001F)
+            original_b = synth_dir(b, no_note_on=True)
+            command = [str(PROGRAM), str(a), str(b), "4", "32"]
+            first = subprocess.run(command, capture_output=True, text=True)
+            repeat = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(first.stdout, repeat.stdout)
+            report = json.loads(first.stdout)
+            metrics = report["measurements"]
+            self.assertEqual([m["bank"] for m in metrics], ["A", "B", "A", "B"])
+            for i, m in enumerate(metrics):
+                self.assertEqual(m["scene"], i)
+                self.assertEqual(m["adsr_release_slot_retirements"], 0)
+                self.assertEqual(m["unresolved_notes"], 0)
+                self.assertEqual(m["prior_bank_voices_cleared"], i > 0)
+                self.assertEqual(m["reverb_history_preserved_on_switch"], i > 0)
+                self.assertEqual(m["prior_bank_active_voices"],
+                                 1 if i % 2 else 0)
+                self.assertEqual(m["prior_bank_release_voices"],
+                                 1 if i % 2 else 0)
+                self.assertEqual(m["prior_bank_pcm_references"],
+                                 1 if i % 2 else 0)
+                if i % 2 == 0:
+                    self.assertEqual(m["note_requests"], 1)
+                    self.assertEqual(m["resolved_notes"], 1)
+                    self.assertEqual(m["note_offs"], 1)
+                    self.assertEqual(m["first_note_off_block"], 22)
+                    self.assertTrue(m["reverb_send_seen"])
+                    self.assertEqual(m["peak_releasing_voices_before_render"], 1)
+                else:
+                    self.assertEqual(m["note_requests"], 0)
+                    self.assertEqual(m["resolved_notes"], 0)
+                    self.assertEqual(m["note_offs"], 0)
+                    self.assertEqual(m["peak_active_voices"], 0)
+                    self.assertFalse(m["reverb_send_seen"])
+                    self.assertGreater(m["nonzero_samples"], 0)
+            n = 4 * 32 * 512
+            self.assertEqual(report["input_frames"], n)
+            self.assertEqual(report["output_frames"],
+                             (n - 1) * 48000 // 44100 + 1)
+            self.assertNotIn(str(root), first.stdout)
+            self.assertNotIn(str(root), first.stderr)
+            for folder, old in ((a, original_a), (b, original_b)):
+                self.assertEqual(
+                    {f.name: f.read_bytes() for f in folder.iterdir()}, old)
+
     def test_repeated_release_waves_retire_or_steal_slots(self):
         # Long synthetic high-polyphony stress: start 20 voices, then
         # issue 4 waves of 3 Note Offs followed by 3 replacements.
