@@ -17,7 +17,7 @@ PROGRAM = Path(os.environ.get("VH_LOCAL_MUSIC_TRANSITION_PROBE",
 TONE_OFFSET = 32 + 128 * 16
 
 
-def synth_dir(directory, wet=False, bank_b=False):
+def synth_dir(directory, wet=False, bank_b=False, fallback_program=False):
     directory.mkdir()
     files = make_synthetic_files()
     vh = bytearray(files["music.vh"])
@@ -29,6 +29,15 @@ def synth_dir(directory, wet=False, bank_b=False):
         vb[34:48] = b"\xDD" * 14
     files["music.vh"] = bytes(vh)
     files["music.vb"] = bytes(vb)
+    if fallback_program:
+        # Synthetic SEQ now requests program 9 while the only VAB tone
+        # remains in program 7. Native global-tone fallback must be used.
+        seq = bytearray(files["music.seq"])
+        program_event = seq.index(0xC0)
+        self_program = program_event + 1
+        assert seq[self_program] == 7
+        seq[self_program] = 9
+        files["music.seq"] = bytes(seq)
     for name, data in files.items():
         (directory / name).write_bytes(data)
     return files
@@ -40,7 +49,7 @@ class NativeLocalMusicTransitionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             a, b = Path(tmp) / "bank-a", Path(tmp) / "bank-b"
             originals_a = synth_dir(a, wet=True)
-            originals_b = synth_dir(b, bank_b=True)
+            originals_b = synth_dir(b, bank_b=True, fallback_program=True)
             cmd = [str(PROGRAM), str(a), str(b), "4", "16"]
             first = subprocess.run(cmd, capture_output=True, text=True)
             self.assertEqual(first.returncode, 0, first.stderr)
@@ -68,6 +77,19 @@ class NativeLocalMusicTransitionTests(unittest.TestCase):
                              [True, False, True, False])
             self.assertTrue(all(x["resolved_notes"] > 0 for x in readings))
             self.assertTrue(all(x["events"] >= x["resolved_notes"] for x in readings))
+            self.assertTrue(all(x["note_requests"] == x["resolved_notes"] +
+                                 x["unresolved_notes"] for x in readings))
+            self.assertEqual([x["unresolved_notes"] for x in readings],
+                             [0, 0, 0, 0])
+            self.assertEqual([x["fallback_notes"] for x in readings],
+                             [0, readings[1]["resolved_notes"], 0,
+                              readings[3]["resolved_notes"]])
+            self.assertEqual([x["direct_match_notes"] for x in readings],
+                             [readings[0]["resolved_notes"], 0,
+                              readings[2]["resolved_notes"], 0])
+            self.assertEqual([x["reverb_send_notes"] for x in readings],
+                             [readings[0]["resolved_notes"], 0,
+                              readings[2]["resolved_notes"], 0])
             self.assertEqual(sum(x["output_frames"] for x in readings),
                              result["output_frames"])
             self.assertTrue(all(x["input_frames"] == 8192 for x in readings))
