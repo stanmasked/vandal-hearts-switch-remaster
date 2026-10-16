@@ -136,3 +136,23 @@ jobs:
           /tmp/export_native_seq_pcm_wav_asan /tmp/native-seq-spu-48k-asan.wav
           cmp /tmp/native-seq-spu-48k.wav /tmp/native-seq-spu-48k-asan.wav
           python3 tools/inspect_native_pcm_capture.py /tmp/native-seq-spu-48k-asan.wav
+          python3 tools/analyze_pcm_wav.py /tmp/native-seq-spu-48k-asan.wav \
+            --expected-rate 48000 --fail-on-silence
+          python3 tools/analyze_pcm_discontinuities.py /tmp/native-seq-spu-48k-asan.wav
+      - name: ASan and UBSan on variable-block resampling
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -fno-sanitize-recover=all \
+            tests/test_vh_resample_partition.c source/vh_audio_resample.c \
+            -o /tmp/test_vh_resample_partition_asan
+          /tmp/test_vh_resample_partition_asan
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -fno-sanitize-recover=all \
+            tests/test_vh_resample_long_clock.c source/vh_audio_resample.c \
+            -o /tmp/test_vh_resample_long_clock_asan
+          /tmp/test_vh_resample_long_clock_asan
