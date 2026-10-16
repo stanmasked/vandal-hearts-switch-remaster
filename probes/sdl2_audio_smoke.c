@@ -4,18 +4,21 @@
 
 #include "vh_audio_stream.h"
 #include "vh_native_spu.h"
+#include "vh_native_seq.h"
 #include "vh_spu_adpcm.h"
 
 #define WIDTH 1280
 #define HEIGHT 720
 
-/* Native Switch SDL2 streaming probe, using only synthetic square-wave
- * stereo frames. NOT a VAB/SEQ/SPU integration or proof of audible output.
+/* Native Switch SDL2 streaming probe, using only a synthetic PS1 SEQ
+ * and fabricated VAG blocks. NOT a real VAB/game sound or proof of audible output.
  * The PCM producer runs on the main thread; callback consumes buffered
  * PCM or fills underruns with silence. Device locking protects the ring.
  */
 static VhAudioStream pcm_stream;
 static VhNativeSpu native_spu;
+static VhNativeSeq native_seq;
+static int seq_failed = 0;
 static int16_t decoded_vag[VH_SPU_ADPCM_BLOCK_FRAMES * 2u];
 static SDL_atomic_t callback_count = {0};
 
@@ -44,7 +47,40 @@ static const uint8_t synthetic_vag[32] = {
     0xee, 0xee, 0xee, 0xee, 0xee, 0xee, 0xee, 0xee,
 };
 
-static int init_synthetic_spu(void) {
+/* Valid PS1 pQES single-track synthetic phrase: program 7, one note
+ * for 240 ticks (0.25s at PPQN 480), then an EOT after another 240.
+ * Infinite looping rekeys the note at each clean FF 2F boundary.
+ */
+static const uint8_t synthetic_seq[] = {
+    'p','Q','E','S',0,0,0,0, 0x01,0xe0,0x07,0xa1,0x20,0,0,
+    0,0xc0,7, 0,0xb0,7,127, 0,0xb0,10,64,
+    0,0x90,60,110, 0x81,0x70,0x80,60,0,
+    0x81,0x70,0xff,0x2f,
+};
+
+static int synthetic_note_provider(void *context,
+                                   unsigned program, unsigned note,
+                                   unsigned velocity, unsigned volume,
+                                   unsigned pan, VhSeqTone *tone) {
+    (void)context;
+    if (program != 7 || note != 60) return -1;
+    const float level = ((float)velocity / 127.f) *
+                        ((float)volume / 127.f);
+    const float lp = pan < 64 ? 1.f : (float)(127u-pan)/63.f;
+    const float rp = pan >= 64 ? 1.f : (float)pan/63.f;
+    tone->pcm = decoded_vag;
+    tone->frames = 56;
+    tone->loop_start = 0;
+    tone->loop_end = 56;
+    tone->pitch_step = 0x1000;
+    tone->adsr1 = 0x000f;
+    tone->adsr2 = 0;
+    tone->gain_left = level * lp * 0.6f;
+    tone->gain_right = level * rp * 0.3f;
+    return 0;
+}
+
+static int init_synthetic_seq(void) {
     VhSpuAdpcmInfo info;
     if (vh_spu_adpcm_decode(
         synthetic_vag, sizeof(synthetic_vag), decoded_vag,
@@ -55,12 +91,10 @@ static int init_synthetic_spu(void) {
     vh_native_spu_reset(&native_spu);
     if (vh_native_spu_set_interpolation(&native_spu, VH_SPU_GAUSSIAN) != 0)
         return -1;
-    const int slot = vh_native_spu_allocate_slot(&native_spu);
-    if (slot < 0) return -1;
-    return vh_native_spu_note_on(
-        &native_spu, (unsigned)slot, decoded_vag, info.frames,
-        info.loop_start_frame, info.loop_end_frame, 0x1000,
-        0x000f, 0, 0.6f, 0.3f);
+    return vh_native_seq_init(
+        &native_seq, synthetic_seq, sizeof(synthetic_seq),
+        &native_spu, synthetic_note_provider, NULL,
+        0 /* repeat until probe closes */);
 }
 
 static void pump_synthetic_audio(SDL_AudioDeviceID device) {
@@ -73,6 +107,13 @@ static void pump_synthetic_audio(SDL_AudioDeviceID device) {
         const size_t queued = vh_audio_stream_queued(&pcm_stream);
         SDL_UnlockAudioDevice(device);
         if (queued >= 2048u) break;
+        /* Match PC-port ordering: advance SEQ BEFORE rendering the
+         * corresponding 512-frame PCM block.
+         */
+        if (vh_native_seq_advance_block(&native_seq) < 0) {
+            seq_failed = 1;
+            return;
+        }
         vh_native_spu_render(&native_spu, block, VH_AUDIO_BLOCK_FRAMES);
         SDL_LockAudioDevice(device);
         (void)vh_audio_stream_write(&pcm_stream, block, VH_AUDIO_BLOCK_FRAMES);
@@ -108,8 +149,8 @@ int main(int argc, char **argv) {
 
     show_status(renderer, 220, 110, 20); /* orange until callback observed */
     vh_audio_stream_reset(&pcm_stream);
-    if (init_synthetic_spu() != 0) {
-        fprintf(stderr, "Synthetic VAG decode/SPU init failed\n");
+    if (init_synthetic_seq() != 0) {
+        fprintf(stderr, "Synthetic SEQ/VAG/SPU initialization failed\n");
         SDL_DestroyRenderer(renderer);
         SDL_DestroyWindow(window);
         SDL_Quit();
@@ -147,7 +188,7 @@ int main(int argc, char **argv) {
         SDL_Quit();
         return 5;
     }
-    fprintf(stderr, "Native SPU-ADPCM PCM ring opened: %d Hz, %u channels, %u callback frames\n",
+    fprintf(stderr, "Synthetic SEQ -> SPU -> SDL2 opened: %d Hz, %u channels, %u callback frames\n",
             obtained.freq, (unsigned)obtained.channels, (unsigned)obtained.samples);
 
     pump_synthetic_audio(device);
@@ -184,5 +225,5 @@ int main(int argc, char **argv) {
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
-    return callbacks > 0 ? 0 : 4;
+    return seq_failed ? 7 : (callbacks > 0 ? 0 : 4);
 }
