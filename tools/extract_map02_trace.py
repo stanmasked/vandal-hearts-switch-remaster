@@ -13,6 +13,9 @@ from pathlib import Path
 from tools.verify_map02_trace import evaluate_trace
 
 TRACE_FIELDS = frozenset(("z", "x", "face", "stage"))
+# A map-face observation is only a few hundred bytes. Bound console buffering
+# while leaving the raw evidence log byte-for-byte intact.
+MAX_RAW_LINE_BYTES = 1024 * 1024
 
 
 def parse_trace_line(raw_line: str, lineno: int):
@@ -32,28 +35,69 @@ def parse_trace_line(raw_line: str, lineno: int):
 
 
 class TraceByteStream:
-    """Decode pipe chunks into complete Map02 lines, retaining split UTF-8."""
+    """Decode chunks with bounded memory, retaining split UTF-8 and line numbers.
+
+    Oversized non-JSON console noise is discarded, but any oversized line
+    starting with a JSON object is treated as a malformed potential trace.
+    This fail-closed behavior prevents silently losing a Map02 observation.
+    """
+
     def __init__(self):
         self._pending = b""
+        self._skipping_noise = False
         self.line_number = 0
 
     def feed(self, chunk: bytes, on_event=None) -> list:
-        if not chunk:
-            return []
-        pieces = (self._pending + chunk).split(b"\n")
-        self._pending = pieces.pop()
         events = []
-        for piece in pieces:
-            self.line_number += 1
-            entry = parse_trace_line(piece.decode("utf-8", errors="replace"), self.line_number)
-            if entry is not None:
-                if on_event is None:
-                    events.append(entry)
+        while chunk:
+            piece, newline, remaining = chunk.partition(b"\n")
+            if self._skipping_noise:
+                if not newline:
+                    break
+                self._skipping_noise = False
+                self.line_number += 1
+                chunk = remaining
+                continue
+
+            if len(self._pending) + len(piece) > MAX_RAW_LINE_BYTES:
+                prefix_length = MAX_RAW_LINE_BYTES - len(self._pending)
+                prefix = self._pending + piece[:prefix_length]
+                if prefix.lstrip().startswith(b"{"):
+                    raise ValueError(
+                        f"malformed Map02 trace object at line {self.line_number + 1}: "
+                        f"oversized JSON-looking line exceeds {MAX_RAW_LINE_BYTES} bytes"
+                    )
+                self._pending = b""
+                if newline:
+                    self.line_number += 1
+                    chunk = remaining
                 else:
-                    on_event(entry)
+                    self._skipping_noise = True
+                    break
+                continue
+
+            self._pending += piece
+            if newline:
+                self.line_number += 1
+                entry = parse_trace_line(
+                    self._pending.decode("utf-8", errors="replace"), self.line_number
+                )
+                self._pending = b""
+                if entry is not None:
+                    if on_event is None:
+                        events.append(entry)
+                    else:
+                        on_event(entry)
+                chunk = remaining
+            else:
+                break
         return events
 
     def finish(self) -> list:
+        if self._skipping_noise:
+            self._skipping_noise = False
+            self.line_number += 1
+            return []
         if not self._pending:
             return []
         piece = self._pending
