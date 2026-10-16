@@ -18,6 +18,9 @@ typedef struct VhPreviewFace {
     int16_t vertex[4][3];
     int16_t local_gfx;
     uint8_t shade_index;
+    /* Preserve original face vertex IDs: UpdateMapTileLighting selects
+     * alternative triples for repeated IDs, not just equal positions. */
+    uint8_t vertex_index[4];
 } VhPreviewFace;
 
 typedef struct VhPreviewGeometry {
