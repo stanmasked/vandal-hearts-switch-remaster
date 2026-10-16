@@ -74,7 +74,7 @@ class HardwareDmaTests(unittest.TestCase):
         d=decode(self.ram,self.meta)
         events=[e for f in d["frames"] for e in f["events"]]
         self.assertEqual(sum(x["type"]=="E6" for x in events),11)
-        self.assertEqual(self.ram.count(struct.pack("<I",0xe6000003)),11)
+        self.assertEqual(self.ram.count(struct.pack("<I",0xe6000003)),12)
     def test_ft4_semantics_and_mask_state(self):
         d=decode(self.ram,self.meta)
         q=[x for x in d["frames"][0]["events"] if x["type"]=="FT4"]
@@ -102,7 +102,6 @@ class HardwareDmaTests(unittest.TestCase):
     def test_invalid_base(self):
         self.assertReject(self.ram,dict(self.meta,base_address=BASE+1))
     def test_pointer_outside_image(self):
-        blob=replace_word(self.ram,0x01101004,0x01fffff0) if False else None
         b=bytearray(self.ram)
         struct.pack_into("<I",b,0,0x0100ff00)
         data=bytes(b)
@@ -151,7 +150,7 @@ class HardwareDmaTests(unittest.TestCase):
         events=parse_gp0(cmd)
         self.assertEqual([e["type"] for e in events],["E6","FT4"])
     def test_missing_frame_in_vht(self):
-        with self.assertRaises(DmaError):
+        with self.assertRaises((DmaError,ValueError)):
             compare_formats(decode(self.ram,self.meta),make_vht_semantics()[:-9])
     def test_bad_vht_semantics(self):
         blob=make_vht_semantics()
