@@ -68,12 +68,14 @@ on:
       - 'tools/audit_map02_projection_source.py'
       - 'tools/instrument_map02_camera.py'
       - 'tools/instrument_map02_gpu_native_events.py'
+      - 'tools/verify_map02_native_gpu_capture.py'
       - 'tools/verify_map02_camera_capture.py'
       - 'tools/verify_map02_frame_bundle.py'
       - 'tools/verify_map02_vram_timeline.py'
       - 'tools/verify_map02_gpu_write_ledger.py'
       - 'tests/test_map02_camera_provenance.py'
       - 'tests/test_instrument_map02_gpu_native_events.py'
+      - 'tests/test_verify_map02_native_gpu_capture.py'
       - 'tests/test_verify_map02_frame_bundle.py'
       - 'tests/test_verify_map02_vram_timeline.py'
       - 'tests/test_verify_map02_gpu_write_ledger.py'
@@ -161,12 +163,14 @@ on:
       - 'tools/audit_map02_projection_source.py'
       - 'tools/instrument_map02_camera.py'
       - 'tools/instrument_map02_gpu_native_events.py'
+      - 'tools/verify_map02_native_gpu_capture.py'
       - 'tools/verify_map02_camera_capture.py'
       - 'tools/verify_map02_frame_bundle.py'
       - 'tools/verify_map02_vram_timeline.py'
       - 'tools/verify_map02_gpu_write_ledger.py'
       - 'tests/test_map02_camera_provenance.py'
       - 'tests/test_instrument_map02_gpu_native_events.py'
+      - 'tests/test_verify_map02_native_gpu_capture.py'
       - 'tests/test_verify_map02_frame_bundle.py'
       - 'tests/test_verify_map02_vram_timeline.py'
       - 'tests/test_verify_map02_gpu_write_ledger.py'
@@ -372,6 +376,7 @@ jobs:
           (
             cd remaster
             python3 -m unittest discover -s tests -p 'test_instrument_map02_gpu_native_events.py' -v
+            python3 -m unittest discover -s tests -p 'test_verify_map02_native_gpu_capture.py' -v
           )
           PYTHONPATH=remaster python3 -m tools.instrument_map02_gpu_native_events \
             upstream/platform/pc/src/libgpu.c \
