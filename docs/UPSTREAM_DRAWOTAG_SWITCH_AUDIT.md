@@ -770,3 +770,63 @@ light rotation `gLightRotation`, base `gLightColor`,
 No authentic `M_MAP02.PRS` bytes or physical Switch hardware
 were used. This is a genuine pinned GTE/software-renderer
 integration milestone, NOT yet full game-map parity.
+
+## Source-equivalent UpdateMapTileLighting GTE OP0 → 26 normals accepted (CI #38866183785)
+
+**Verified** [GitHub Actions #38866183785](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38866183785),
+source revision `1fa9072230d9df056a2d4093a5730dff8257c537`.
+All three jobs finished SUCCESS: cross-compile,
+NeXium pinned original DrawOTag raster and the six isolated
+owner-format synthetic virtual-SD map-mode captures.
+
+The preexisting 26-normal `SetupLightNormals/UpdateLight`
+native bridge previously required the `shades[]` values
+to already be stored in the source `MapTileModel`. Now
+`source/vh_private_map_normals.[ch]` reproduces the pinned
+`src/core/graphics.c::UpdateMapTileLighting` computation:
+source face original vertex IDs with all four degenerate
+fallback cases, two 3D edge vectors, actual pinned GTE
+`gte_OuterProduct0`/OP0, `VectorNormalS`, a
+26-way signed fixed-point dot scan and the original
+six-criterion tie-breaker (strict greater-than on ties).
+Original vertex indices are now kept in
+`VhPreviewFace` by the private 304-byte geometry loader.
+Invalid index/count data leave face shades unchanged.
+
+The optional, owner-only one-byte
+`LIGHT_RECOMPUTE_SHADES.BIN` (binary value 1)
+is explicitly separate from the existing
+`LIGHT_TEST_INTENSITY.BIN` (0..128). The old mode
+retains original stored shade IDs; only the new mode
+derives them from actual map vertex geometry. No
+commercial resource bytes were added to the NRO or CI.
+
+The host passed **92 Python tests**, plus the new
+`tests/test_private_map_normals.c` pinned GTE face
+normal regressions for four cardinal orientations,
+repeated vertex IDs, null/invalid inputs and
+transactional error behavior. The Switch NRO built and
+passed NRO0 structural checks.
+
+The sixth NeXium screenshot deliberately supplies
+**incorrect original shade selectors** (left +X, right
+-X) for two opposite tilted synthetic terrain faces,
+so the earlier fixed-shade pipeline cannot produce
+the expected output. The new source GTE pipeline
+produced observed 1280×720 screenshot colors
+**(260,210)=(189,0,0)** on the left and
+**(850,280)=(57,0,57)** on the right. The screenshot
+checker verified the left/right contrast twice.
+The preceding five modes (UV/CLUT, two visible faces,
+NCLIP backface, OTZ occlusion, distance attenuation
+and manually chosen NCCS illumination) remained green.
+
+**Limits:** This certifies the selected source-format
+tile's shade derivation, not the entire original
+`UpdateMapLighting` loop over 336 models, original
+dynamic battle light parameters, the complete original
+`RenderMapTile`, authentic map PRS content or
+physical Nintendo Switch hardware. Source algorithms
+are verified using the pinned PC-port software GTE,
+not a retail PlayStation hardware capture. Details:
+`docs/ORIGINAL_MAP_GEOMETRY.md`.
