@@ -76,8 +76,8 @@ static uint32_t vh66_le32(const unsigned char *data) {
 int vh68_pcsx_gp0_mmio_observe(uint32_t word) {
     if (vh66_open()) return -1;
     if (fprintf(vh66_file,
-            "{\\"kind\\":\\"GP0_MMIO\\",\\"tick\\":%llu,"
-            "\\"frame\\":%u,\\"word\\":%u}\\n",
+            "{\"kind\":\"GP0_MMIO\",\"tick\":%llu,"
+            "\"frame\":%u,\"word\":%u}\n",
             (unsigned long long)vh66_tick++,vh66_frame,
             (unsigned int)word)<0)
         return vh66_fail();
