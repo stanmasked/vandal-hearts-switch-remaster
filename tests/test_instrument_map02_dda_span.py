@@ -1,7 +1,7 @@
 import unittest
 from tools.instrument_map02_putpixel_scope import scope_raster
 from tools.instrument_map02_raster_skips import instrument_raster_skips
-from tools.instrument_map02_dda_span import instrument_span, FLAG
+from tools.instrument_map02_dda_span import instrument_span, FLAG, prepare_span
 from test_instrument_map02_raster_skips import FAKE
 
 class SpanInstrumentationTests(unittest.TestCase):
@@ -14,6 +14,21 @@ class SpanInstrumentationTests(unittest.TestCase):
         self.assertIn("#error \"DDA span trace requires", src)
         self.assertIn("vh_map02_span_count >= VH_MAP02_SPAN_CAP", src)
         self.assertIn(FLAG, src)
+
+    def test_pinned_generator_rejects_wrong_sources_and_overwrite(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            gpu, raster, dest = root/"gpu.c", root/"raster.c", root/"overlay"
+            gpu.write_text("not pinned")
+            raster.write_text(FAKE)
+            with self.assertRaisesRegex(ValueError, "pinned original"):
+                prepare_span(gpu, raster, dest)
+            self.assertFalse(dest.exists())
+            dest.mkdir()
+            with self.assertRaisesRegex(ValueError, "refusing overwrite"):
+                prepare_span(gpu, raster, dest)
 
     def test_refuse_double_install(self):
         src = instrument_span(instrument_raster_skips(scope_raster(FAKE)))
