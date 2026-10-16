@@ -29,6 +29,7 @@ on:
       - 'Makefile'
       - 'tests/test_vh_reverb_bank_tail.c'
       - 'tests/test_vh_audio_output_recovery.c'
+      - 'tests/test_vh_audio_listening_marks.c'
       - 'tests/test_vh_audio_pause_fifo.c'
       - 'tests/test_vh_audio_pause_wrap.c'
       - 'tests/test_vh_native_audio_soak.c'
@@ -45,6 +46,7 @@ on:
       - 'source/vh_native_spu.h'
       - 'source/vh_audio_output_recovery.c'
       - 'source/vh_audio_output_recovery.h'
+      - 'source/vh_audio_listening_marks.h'
       - 'source/vh_audio_resample.c'
       - '.github/workflows/pcm-wav-diagnostics.yml'
   pull_request:
@@ -73,6 +75,7 @@ on:
       - 'Makefile'
       - 'tests/test_vh_reverb_bank_tail.c'
       - 'tests/test_vh_audio_output_recovery.c'
+      - 'tests/test_vh_audio_listening_marks.c'
       - 'tests/test_vh_audio_pause_fifo.c'
       - 'tests/test_vh_audio_pause_wrap.c'
       - 'tests/test_vh_native_audio_soak.c'
@@ -89,6 +92,7 @@ on:
       - 'source/vh_native_spu.h'
       - 'source/vh_audio_output_recovery.c'
       - 'source/vh_audio_output_recovery.h'
+      - 'source/vh_audio_listening_marks.h'
       - 'source/vh_audio_resample.c'
       - '.github/workflows/pcm-wav-diagnostics.yml'
   workflow_dispatch:
@@ -402,3 +406,19 @@ jobs:
             source/vh_spu_reverb.c source/vh_spu_gaussian.c \
             source/vh_audio_stream.c -lm -o /tmp/test_vh_audio_output_recovery
           /tmp/test_vh_audio_output_recovery
+      - name: Verify listener-mark baseline and wrap under UBSan
+        run: |
+          set -euo pipefail
+          cc -std=c11 -Wall -Wextra -Werror -O0 -Isource \
+            tests/test_vh_audio_listening_marks.c \
+            -o /tmp/vh_listening_marks_debug
+          /tmp/vh_listening_marks_debug > /tmp/vh_listening_marks_o0.txt
+          cc -std=c11 -Wall -Wextra -Werror -O2 -g -Isource \
+            -fsanitize=undefined -fno-sanitize-recover=all \
+            tests/test_vh_audio_listening_marks.c \
+            -o /tmp/vh_listening_marks_ubsan
+          /tmp/vh_listening_marks_ubsan > /tmp/vh_listening_marks_sanitized.txt
+          cmp /tmp/vh_listening_marks_o0.txt \
+              /tmp/vh_listening_marks_sanitized.txt
+          grep -Fq 'manual listening marks: ring wrap, wait/switch/retry audit PASS' \
+            /tmp/vh_listening_marks_sanitized.txt
