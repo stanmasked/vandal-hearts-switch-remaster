@@ -98,6 +98,56 @@ static void test_bad_geometry_does_not_modify_outputs(void) {
     assert(normal.x == 99 && normal.y == 88 && normal.z == 77);
 }
 
+static void test_pc_port_q12_normalization_and_boundary_decisions(void) {
+    int32_t q[3] = {0, 0, 0};
+    uint8_t index = 255;
+    VhMap02Cross diagonal = {1, 1, 1};
+    assert(vh_map02_normal_q12(diagonal, q));
+    assert(q[0] == 2364 && q[1] == 2364 && q[2] == 2364);
+    diagonal = (VhMap02Cross){-1, 0, 1};
+    assert(vh_map02_normal_q12(diagonal, q));
+    assert(q[0] == -2896 && q[1] == 0 && q[2] == 2896);
+    diagonal = (VhMap02Cross){-8192, 0, 0};
+    assert(vh_map02_normal_q12(diagonal, q));
+    assert(q[0] == -4096 && q[1] == 0 && q[2] == 0);
+    {
+        int32_t direction[3];
+        vh_map02_direction_q12(vh_map02_directions[15], direction);
+        assert(direction[0] == 2364 && direction[1] == 2364 &&
+               direction[2] == 2364);
+    }
+
+    /* Each known example previously selected an incorrect diagonal
+     * with the unnormalized-cross*2365 shortcut. Expected indices are
+     * independently computed from the pinned PC-port's sqrt/trunc
+     * VectorNormalS and six-check tie-break semantics. */
+    struct {
+        VhMap02Cross normal;
+        unsigned expected_index;
+    } cases[] = {
+        {{ 200,  276, -107}, 10},
+        {{ 116, -159, -357}, 21},
+        {{-209, -156,   82}, 20},
+        {{ -95,   65,   36}, 12},
+        {{-396, -182, -130}, 20},
+        {{-126, -305, -256}, 21},
+        {{-203,  103, -255},  9},
+        {{ 354,  247,  135}, 10},
+        {{ 273,  109,  -91},  2},
+        {{ 113,  234,   78}, 10}
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        assert(vh_map02_best_q12_direction(cases[i].normal, &index));
+        assert(index == cases[i].expected_index);
+    }
+    index = 77;
+    assert(!vh_map02_best_q12_direction((VhMap02Cross){0, 0, 0}, &index));
+    assert(!vh_map02_best_q12_direction(
+        (VhMap02Cross){INT64_MAX, INT64_MAX, INT64_MAX}, &index));
+    assert(index == 77);
+    assert(!vh_map02_normal_q12((VhMap02Cross){1, 0, 0}, NULL));
+}
+
 static void test_large_signed_vertices_do_not_overflow_cross(void) {
     uint8_t tile[304], result = 255;
     VhMap02Cross normal;
@@ -114,6 +164,7 @@ int main(void) {
     test_exact_original_26_axes_classify_independently();
     test_face_indices_and_repeated_vertex_source_branches();
     test_bad_geometry_does_not_modify_outputs();
+    test_pc_port_q12_normalization_and_boundary_decisions();
     test_large_signed_vertices_do_not_overflow_cross();
     puts("MAP02 26-direction face classification tests passed");
     return 0;
