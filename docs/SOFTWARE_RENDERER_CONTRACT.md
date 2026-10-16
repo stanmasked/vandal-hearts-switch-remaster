@@ -1121,3 +1121,41 @@ alone cannot prove PS1 hardware ABR correctness, and no
 full-frame pixel raster equivalence is claimed. CI builds the
 **pinned public raster source** with and without the opt-in
 macro and uses exclusively synthetic event fixtures.
+
+
+## Synchronized native DrawOTag primitive ↔ real PutPixel call scope
+
+`tools/instrument_map02_putpixel_scope.py` now composes **both** the
+previous opt-in native GPU before/after VRAM recorder and a native
+`PutPixel` observer in a **single generated PC build**. The exact
+original pinned `libgpu.c` and `pc_raster.c` Git blobs are checked.
+A frame-local `primitive_ordinal` increments on each actual
+non-bucket `DrawOTag` packet (including unrelated sprites,
+tiles, and state changes); native `WritePixel` samples at one
+explicit private VRAM coordinate inherit the live frame/ordinal/type
+and record the true input and before/after BGR555 values. The scope
+is cleared immediately after each packet's native rendering.
+Deferred high-resolution workers and the uninstrumented binary
+remain untouched.
+
+`tools/verify_map02_putpixel_scope.py` checks these new private
+events against the independently verified source-keyed FT4/GTE/
+texture/VRAM/OT order and native before/after full-VRAM snapshots.
+It **fails closed** for wrong frame, primitive type or ordinal,
+non-monotonic call sequence, unaccounted word change on source
+FT4, contradictory first/last observed pixel, or intermediate
+unexpected modification within one primitive. It counts true
+`WritePixel` invocations with unchanged BGR555 data, which were
+previously invisible to snapshots, and attributes only directly
+verified calls to MAP02 source-keyed FT4s. Only aggregates/hashes
+are emitted. See `docs/MAP02_PUTPIXEL_DRAWOTAG_CORRELATION.md`
+for local assembly and privacy requirements.
+
+This is **not** proof that every pixel attempt was logged. The
+two recorders are bounded (64 native snapshot records, 64 sampled
+pixel calls); hitting the cap causes the correlation to refuse
+completeness. Missing calls alone do not establish alpha-zero,
+triangle coverage, drawing-area clipping, or GPU mask rejection.
+Even perfectly matched private self-consistent files do not
+authenticate real gameplay, physical PS1 STP/ABR/mask parity or
+actual running Switch scene.
