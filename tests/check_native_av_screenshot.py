@@ -93,6 +93,8 @@ def inspect_images(first: Image.Image, second: Image.Image) -> dict:
     elif near(switch_pixel, AUDIO_FAIL) or (
             tr >= 145 and tr > tg + 40 and tr > tb + 40):
         synthetic_switches = "error"
+    elif near(switch_pixel, (83, 100, 119), tolerance=30):
+        synthetic_switches = "not_applicable"
     else:
         synthetic_switches = "not_observed"
 
@@ -141,6 +143,9 @@ def main():
     parser.add_argument("--require-synthetic-scene-switches",
                         action="store_true",
                         help="require two completed synthetic SEQ transitions")
+    parser.add_argument("--require-no-synthetic-switches",
+                        action="store_true",
+                        help="require neutral scene indicator for user-owned music")
     args = parser.parse_args()
     try:
         with Image.open(args.before) as first, Image.open(args.after) as second:
@@ -163,6 +168,10 @@ def main():
         if (args.require_synthetic_scene_switches
                 and report["synthetic_scene_switches"] != "confirmed"):
             raise ValueError("synthetic scene-switch marker not confirmed: "
+                             + report["synthetic_scene_switches"])
+        if (args.require_no_synthetic_switches
+                and report["synthetic_scene_switches"] != "not_applicable"):
+            raise ValueError("unexpected synthetic scene-switch indicator: "
                              + report["synthetic_scene_switches"])
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
