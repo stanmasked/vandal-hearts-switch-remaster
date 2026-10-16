@@ -4,6 +4,32 @@
 #include <stdlib.h>
 #include <string.h>
 
+typedef struct {
+    VhNativeVab *bank;
+    uint32_t fallback_notes;
+} BankAuditContext;
+
+/* The existing PC-like resolver uses requested-program range first,
+ * then falls back across VH. Diagnostic calls are made once at load.
+ * No need to parse pQES twice or allocate voices to detect them.
+ */
+static int audit_resolve(void *context, unsigned program, unsigned note,
+                         unsigned velocity, unsigned volume, unsigned pan,
+                         VhSeqTone *out) {
+    BankAuditContext *audit = context;
+    const int status = vh_native_vab_resolve(
+        audit->bank, program, note, velocity, volume, pan, out);
+    if (status == 0) {
+        const VhVabTone *tone =
+            &audit->bank->tones[audit->bank->selected_program]
+                               [audit->bank->selected_tone];
+        if (audit->bank->selected_program != program ||
+            note < tone->low || note > tone->high)
+            ++audit->fallback_notes;
+    }
+    return status;
+}
+
 static void dispose(VhGameMusicBanks *pack) {
     if (!pack) return;
     vh_audio_assets_close(&pack->selected);
@@ -56,6 +82,28 @@ int vh_game_music_banks_load(VhGameMusicBanks **out, const char *root) {
         dispose(pending);
         return VH_AUDIO_ASSET_ERROR;
     }
+    BankAuditContext field_audit={.bank=&pending->field.bank};
+    BankAuditContext selected_audit={.bank=&pending->selected.bank};
+    const int ok_field=vh_native_seq_audit(
+        pending->field.seq,pending->field.seq_size,audit_resolve,
+        &field_audit,&pending->field_audit);
+    const int ok_selected=vh_native_seq_audit(
+        pending->selected.seq,pending->selected.seq_size,audit_resolve,
+        &selected_audit,&pending->selected_audit);
+    /* A song containing actual note-on events but with no playable
+     * instruments is not a valid user music set for this scene.
+     * Partial fallback remains allowed, but is reported distinctly.
+     */
+    if (ok_field || ok_selected ||
+        (pending->field_audit.note_events &&
+         !pending->field_audit.resolved_notes) ||
+        (pending->selected_audit.note_events &&
+         !pending->selected_audit.resolved_notes)) {
+        dispose(pending);
+        return VH_AUDIO_ASSET_ERROR;
+    }
+    pending->field_fallback_notes=field_audit.fallback_notes;
+    pending->selected_fallback_notes=selected_audit.fallback_notes;
     *out=pending;
     return VH_AUDIO_ASSET_OK;
 }
