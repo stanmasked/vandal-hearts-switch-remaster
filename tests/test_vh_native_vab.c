@@ -320,6 +320,98 @@ static void test_shadow_tones_and_aliases(void) {
     assert(!memcmp(&bank,&blank,sizeof bank));
 }
 
+/* Full SEQ -> sparse VAB -> voice gains -> rendered SPU -> PCM FIFO.
+ * Notes are deliberately spaced so the previous one-shot VAG has ended
+ * before the next instrument starts, isolating stereo routing.
+ */
+static void test_seq_shadow_program_changes_stereo_pcm(void) {
+    fixture();
+    /* The two programs share VAG3 and its reverb flag, but NOT ProgAtr. */
+    vh[32u+1u*16u+1u]=95;
+    vh[32u+1u*16u+4u]=0;
+    vh[32u+7u*16u+1u]=127;
+    vh[32u+7u*16u+4u]=127;
+    vh[32u+8u*16u+1u]=63;
+    vh[32u+8u*16u+4u]=64;
+    memset(&bank,0,sizeof bank);
+    assert(vh_native_vab_load(&bank,vh,sizeof vh,vb,96,arena,224)==0);
+    vh_native_spu_reset(&spu);
+    vh_audio_stream_reset(&fifo);
+
+    static const uint8_t song[] = {
+        'p','Q','E','S',0,0,0,0, 1,0xe0,7,0xa1,0x20,0,0,
+        0,0xc0,1,             /* ch0 -> empty program1 (VAG3), left */
+        0,0xb0,7,90,          /* volume channel0 */
+        0,0xb0,10,64,         /* centered channel pan */
+        0,0x90,90,100,        /* alias VAG3 note-on */
+        0x78,0x80,90,0,       /* release after 120 ticks */
+        0x78,0xb0,10,127,     /* new hard-right channel pan */
+        0,0xc0,7,             /* p7 shares the VAG3 but is hard-right */
+        0,0x90,90,100,
+        0x78,0x80,90,0,
+        0x78,0xb0,10,64,      /* restore center pan */
+        0,0xc0,8,             /* empty program8 -> VAG4 */
+        0,0x90,45,100,
+        0x78,0x80,45,0,
+        0x78,0xff,0x2f
+    };
+    VhSeqAudit audit={0};
+    assert(vh_native_seq_audit(song,sizeof song,vh_native_vab_resolve,
+                               &bank,&audit)==0);
+    assert(audit.note_events==3 && audit.resolved_notes==3);
+    assert(audit.missing_notes==0 && audit.program_changes==3);
+    assert(vh_native_seq_init(&seq,song,sizeof song,&spu,
+                              vh_native_vab_resolve,&bank,1)==0);
+    const unsigned expected_programs[] = {1,7,8};
+    const unsigned expected_vags[] = {3,3,4};
+    const unsigned expected_notes[] = {90,90,45};
+    unsigned observed=0;
+    unsigned pumps=0;
+    while(seq.playing && pumps++ < 100u) {
+        const uint64_t before=seq.note_ons;
+        assert(vh_native_seq_pump(&seq,&fifo)==512);
+        assert(vh_audio_stream_read(&fifo,output,512)==512);
+        if(seq.note_ons==before) continue;
+        assert(seq.note_ons==before+1u);
+        assert(observed<3u);
+        const unsigned expected=expected_programs[observed];
+        const unsigned vag=expected_vags[observed];
+        assert(bank.selected_program==expected);
+        assert(bank.selected_vag==vag);
+        assert(seq.programs[0]==expected);
+        const int slot=seq.note_slot[0][expected_notes[observed]];
+        assert(slot>=0 && slot<(int)VH_NATIVE_MUSIC_VOICES);
+        assert(spu.voice[slot].pcm==bank.samples[vag].pcm);
+        if(observed<2u) assert(spu.voice[slot].reverb_send==1);
+        else assert(spu.voice[slot].reverb_send==0);
+        /* Current voice gains remain observable even if its short
+         * sample has already ended within this 512-frame block. */
+        const float left=spu.voice[slot].gain_left;
+        const float right=spu.voice[slot].gain_right;
+        if(observed==0u) assert(left>0.f && right==0.f);
+        else if(observed==1u) assert(left==0.f && right>0.f);
+        else assert(left>0.f && fabsf(left-right)<0.000001f);
+
+        unsigned audible_left=0,audible_right=0;
+        for(unsigned i=0;i<512u;++i) {
+            if(output[2u*i]) ++audible_left;
+            if(output[2u*i+1u]) ++audible_right;
+        }
+        if(observed==0u)
+            assert(audible_left>0 && audible_right==0);
+        else if(observed==1u)
+            assert(audible_left==0 && audible_right>0);
+        else
+            assert(audible_left>0 && audible_right>0);
+        ++observed;
+    }
+    assert(observed==3u && !seq.playing);
+    assert(seq.cycles_completed==1u && seq.note_ons==3u);
+    assert(seq.note_offs==3u && seq.last_error==0);
+    assert(seq.pans[0]==64u && seq.volumes[0]==90u);
+    assert(vh_audio_stream_queued(&fifo)==0u);
+}
+
 static void test_strict_invalid_banks_and_no_publish(void) {
     fixture();
     memset(&bank,0x5a,sizeof bank);
@@ -391,6 +483,7 @@ int main(void) {
     test_shadow_program_gain_pan_and_pcm();
     test_strict_invalid_banks_and_no_publish();
     test_actual_native_seq_to_vab_to_spu_pcm();
+    test_seq_shadow_program_changes_stereo_pcm();
     puts("native sparse VH/VB -> SEQ -> SPU stereo PCM: PASS");
     return 0;
 }
