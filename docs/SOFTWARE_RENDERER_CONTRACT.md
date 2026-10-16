@@ -299,17 +299,28 @@ used to look up a caller-supplied `gSideLightColor`-equivalent
 table, as implemented in
 `source/map02_terrain_lighting.h`.
 
-**Precision boundary:** for directional comparisons, this new
-portable path uses fixed pre-normalized Q12 candidate vectors
-(4096, 2896, 2365 for one, two, or three nonzero components).
-This is a deterministic approximation. It does **not** call the
-original GTE `VectorNormalS` or `gte_OuterProduct0`, so
-some near-tie face orientations or unusual integer ranges can
-select a different direction than the original PlayStation.
-The source tie-breaker's Q12 equality terms are also approximated
-by signed component comparisons. Those limitations must be
-resolved by comparison against a pinned native/GTE reference
-before claiming bit-exact terrain lighting.
+**Improved precision boundary:** the portable path now computes
+mathematically truncated, normalized Q12 components for both the
+cross product and all 26 candidate directions: **4096, 2896, 2364**
+for one, two or three nonzero axes. An unsigned 128-bit integer
+comparison calculates each quotient without floating-point rounding.
+The original six-check tie-break now compares the actual normalized
+Q12 values rather than only their signs.
+
+This directly corrects a previous mistake: three-axis directions
+used 2365, and comparing unnormalized cross products caused wrong
+classification near diagonal boundaries. Ten previously incorrect
+synthetic normals are pinned as regression fixtures in the C tests.
+
+This is a *PC-port numerical reference*, not certified PS1 GTE
+emulation. The pinned `platform/pc/src/libgte.c` version of
+`VectorNormalS` uses floating-point sqrt and truncates to 16-bit,
+whereas the portable version computes the exact mathematical Q12
+quotient with integer arithmetic. The original `gte_OuterProduct0`
+also loads one edge through signed 16-bit IR values before computing
+its MAC outputs. Our portable full-width cross product does not yet
+model every such overflow/rounding case; extreme or boundary-sensitive
+geometry can still differ from PC-port or hardware behavior.
 
 The synthetic native Switch probe now generates two local face
 records, **+Y top** and **+X side**, calls the normal classifier
@@ -337,7 +348,15 @@ fallback branches, dot-product search and tie selection.
 the source and C array to verify that these changes are rejected.
 The pinned-source audit is part of MAP02 GitHub Actions.
 
-The next fidelity milestone is an independent native reference
-for GTE normal rounding and the real 26-entry light-color
-table, followed by camera projection and visible in-game
-comparison.
+The new `--pc-libgte` option in
+`tools/audit_map02_direction_source.py` verifies the exact pinned
+`VectorNormalS` sqrt/truncation statements, the signed-16-bit
+`PC_GTE_LoadOPV2` inputs, the `PC_GTE_OP0` cross-product equations,
+and the new 4096/2896/2364 Q12 classifier. GitHub Actions
+checks both pinned upstream Git blobs and enforces this contract,
+without importing any copyrighted game data.
+
+The next fidelity milestone is an independently executed
+PC-port/GTE cross-product and rounding comparison on varied map
+geometry, followed by the real 26-entry light-color table,
+camera projection and captured gameplay comparison.
