@@ -7,13 +7,17 @@
 #include "vh_native_spu.h"
 #include "vh_native_seq.h"
 #include "vh_native_vab.h"
+#include "vh_audio_assets.h"
 #include "vh_spu_adpcm.h"
 
 #define WIDTH 1280
 #define HEIGHT 720
+/* Copy only user-owned extracted assets to this directory on the SD card. */
+#define VH_LOCAL_AUDIO_DIR "sdmc:/switch/vandal-hearts-remake/audio"
 
-/* Native Switch SDL2 streaming probe, using only a synthetic PS1 SEQ
- * and fabricated VH/VB bank. NOT real game sound or proof of audible output.
+/* Native Switch SDL2 streaming probe: tries a local read-only SEQ/VH/VB
+ * set, otherwise fabricated fixtures if all files are absent.
+ * NOT proof of audible output or correctness against original hardware.
  * The PCM producer runs on the main thread; callback consumes buffered
  * PCM or fills underruns with silence. Device locking protects the ring.
  */
@@ -22,6 +26,8 @@ static VhNativeSpu native_spu;
 static VhNativeSeq native_seq;
 static int seq_failed = 0;
 static VhNativeVab native_bank;
+static VhAudioAssets local_assets;
+static int using_local_assets = 0;
 static int16_t decoded_vag[VH_SPU_ADPCM_BLOCK_FRAMES * 2u];
 static uint8_t synthetic_vh[32u + 128u * 16u + 512u + 512u];
 static uint8_t synthetic_vb[16u + 32u];
@@ -105,7 +111,48 @@ static int init_synthetic_seq(void) {
         0 /* repeat until probe closes */);
 }
 
-static void pump_synthetic_audio(SDL_AudioDeviceID device) {
+/* Never silently replace an invalid user-supplied bank with synthetic
+ * audio. Fallback is allowed only when ALL three files are absent.
+ * All file reads and SPU-ADPCM decoding finish before audio begins.
+ */
+static int init_audio_sources(void) {
+    const int result = vh_audio_assets_load(
+        &local_assets, VH_LOCAL_AUDIO_DIR);
+    if (result == VH_AUDIO_ASSET_ERROR) {
+        fprintf(stderr,
+            "Audio assets incomplete, corrupt or too large; refusing playback\\n");
+        return -1;
+    }
+    if (result == VH_AUDIO_ASSET_OK) {
+        vh_native_spu_reset(&native_spu);
+        if (vh_native_spu_set_interpolation(
+                &native_spu, VH_SPU_GAUSSIAN) != 0 ||
+            vh_native_seq_init(
+                &native_seq, local_assets.seq, local_assets.seq_size,
+                &native_spu, vh_native_vab_resolve, &local_assets.bank,
+                0 /* repeat until the probe closes */) != 0) {
+            vh_audio_assets_close(&local_assets);
+            return -1;
+        }
+        using_local_assets = 1;
+        fprintf(stderr,
+            "Loaded local user-owned SEQ/VH/VB into memory (read-only)\\n");
+        return 0;
+    }
+    using_local_assets = 0;
+    fprintf(stderr, "Local audio set absent; using synthetic SEQ/VH/VB\\n");
+    return init_synthetic_seq();
+}
+
+static void close_audio_sources(void) {
+    /* Call only after SDL_CloseAudioDevice: borrowed VAG PCM data may
+     * still be referenced by queued SPU voices until audio stops.
+     */
+    vh_audio_assets_close(&local_assets);
+    using_local_assets = 0;
+}
+
+static void pump_native_audio(SDL_AudioDeviceID device) {
     int16_t block[VH_AUDIO_BLOCK_FRAMES * VH_AUDIO_CHANNELS];
     /* Audio rendering is on the producer thread OUTSIDE the device lock:
      * only enqueueing and queue-length inspection need SDL synchronization.
@@ -157,8 +204,8 @@ int main(int argc, char **argv) {
 
     show_status(renderer, 220, 110, 20); /* orange until callback observed */
     vh_audio_stream_reset(&pcm_stream);
-    if (init_synthetic_seq() != 0) {
-        fprintf(stderr, "Synthetic SEQ/VH/VB/SPU initialization failed\n");
+    if (init_audio_sources() != 0) {
+        fprintf(stderr, "SEQ/VH/VB/SPU initialization failed\n");
         SDL_DestroyRenderer(renderer);
         SDL_DestroyWindow(window);
         SDL_Quit();
@@ -176,6 +223,7 @@ int main(int argc, char **argv) {
     const SDL_AudioDeviceID device = SDL_OpenAudioDevice(
         NULL, 0, &wanted, &obtained, 0 /* reject format/rate changes */);
     if (device == 0) {
+        close_audio_sources();
         fprintf(stderr, "SDL_OpenAudioDevice failed: %s\n", SDL_GetError());
         show_status(renderer, 210, 35, 45);
         SDL_Delay(12000);
@@ -189,6 +237,7 @@ int main(int argc, char **argv) {
         || obtained.format != AUDIO_S16SYS) {
         fprintf(stderr, "Unexpected SDL audio format (needs 44.1k/S16/stereo)\n");
         SDL_CloseAudioDevice(device);
+        close_audio_sources();
         show_status(renderer, 210, 35, 45);
         SDL_Delay(12000);
         SDL_DestroyRenderer(renderer);
@@ -196,13 +245,14 @@ int main(int argc, char **argv) {
         SDL_Quit();
         return 5;
     }
-    fprintf(stderr, "Synthetic SEQ + VH/VB -> SPU -> SDL2 opened: %d Hz, %u channels, %u callback frames\n",
+    fprintf(stderr, "SEQ + VH/VB -> SPU -> SDL2 (%s): %d Hz, %u channels, %u callback frames\n",
+            using_local_assets ? "local files" : "synthetic",
             obtained.freq, (unsigned)obtained.channels, (unsigned)obtained.samples);
 
-    pump_synthetic_audio(device);
+    pump_native_audio(device);
     SDL_PauseAudioDevice(device, 0);
     for (int i = 0; i < 400; ++i) {
-        pump_synthetic_audio(device);
+        pump_native_audio(device);
         SDL_Delay(5);
     }
 
@@ -218,7 +268,7 @@ int main(int argc, char **argv) {
 
     /* Keep pumping so callbacks don't underrun while status is visible. */
     for (int i = 0; i < 2400; ++i) {
-        pump_synthetic_audio(device);
+        pump_native_audio(device);
         SDL_Delay(5);
     }
     SDL_PauseAudioDevice(device, 1);
@@ -230,6 +280,7 @@ int main(int argc, char **argv) {
     SDL_UnlockAudioDevice(device);
 
     SDL_CloseAudioDevice(device);
+    close_audio_sources();
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
