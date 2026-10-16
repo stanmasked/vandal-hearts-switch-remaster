@@ -7,6 +7,7 @@ pixel-skip branches. Only three strictly evidenced reasons are recorded:
 1: DDA textured texel BGR555 == 0 (native only)
 2: target X belongs to an un-clipped DDA span but is horizontally clipped
 3: legacy barycentric textured texel BGR555 == 0 (native only)
+4: DDA row Y outside vertical drawing-area clip with selected X in the row span
 
 No conjectures about unobserved pixels, vertical clipping, per-pixel
 hardware mask rejections or triangle coverage. Disabled build is inert.
@@ -98,6 +99,27 @@ def instrument_raster_skips(scoped_raster):
                 VH_Map02SkipAt(current_x, y, 1);
 #endif
         } else {''', "actual DDA zero-color texel branch")
+    # Record exact Y rejection only if selected X is in the *current*
+    # half-open DDA edge span. Record immediately before the original
+    # vertical clip conditions; do not alter their execution.
+    vertical = """
+#if defined(VH_MAP02_RASTER_SKIP_TRACE)
+            if (cx->rc->target == 0 && y == vh_pixel_sample_y &&
+                (y < cx->clipT || y > cx->clipB) &&
+                vh_pixel_sample_x >= dda_unfp(left_x) &&
+                vh_pixel_sample_x < dda_unfp(right_x))
+                VH_Map02SkipAt(vh_pixel_sample_x, y, 4);
+#endif
+"""
+    src = one(src,
+              "            y--; left_x -= lstep; right_x -= rstep;\n",
+              "            y--; left_x -= lstep; right_x -= rstep;\n" + vertical,
+              "descending DDA vertical rejection at current row")
+    src = one(src,
+              "        do {\n            if (y > cx->clipB) break;\n",
+              "        do {\n" + vertical +
+              "            if (y > cx->clipB) break;\n",
+              "ascending DDA vertical rejection at current row")
     src = one(src, LEGACY_ANCHOR,
               '''                if (texel == 0) {
 #if defined(VH_MAP02_RASTER_SKIP_TRACE)
@@ -136,6 +158,7 @@ def prepare(original_gpu, original_raster, output_dir):
             "1": "dda_sampled_zero_bgr555",
             "2": "dda_span_horizontal_clip",
             "3": "legacy_barycentric_sampled_zero_bgr555",
+            "4": "dda_span_vertical_clip",
         },
         "max_raster_skip_records": 64,
         "max_putpixel_records": 64,
