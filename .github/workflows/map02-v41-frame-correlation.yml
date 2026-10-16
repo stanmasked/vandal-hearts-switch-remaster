@@ -50,6 +50,39 @@ jobs:
           "$RUNNER_TEMP/v39-token-test"
           python3 -m unittest discover -s remaster/tests -p "test_instrument_map02_v40.py" -v
           python3 -m unittest discover -s remaster/tests -p "test_map02_v41.py" -v
+          # Explicitly synthetic log: verify the real command-line validator
+          # produces JSON and detects a cross-frame misattribution.
+          cat > "$RUNNER_TEMP/map02-v41-SYNTHETIC.log" <<'LOG'
+          [v39-terrain-ot] f=9 token=101 gfx=641 route=1 tpage=5 clut=31786
+          [v39-terrain-dda] f=9 token=101 gfx=641 route=1 x=64 y=64 u=8 v=0 raw=32767 draw=1 semi=0 abr=0
+          [v40-terrain-hires] f=9 token=101 gfx=641 route=1 x=128 y=128 u=8 v=0 raw=32767 draw=1 semi=0 abr=0 scale=4
+          LOG
+          mkdir -p pcport/platform/pc/build-v41/proof
+          python3 -m remaster.tools.verify_map02_v41 \
+            "$RUNNER_TEMP/map02-v41-SYNTHETIC.log" \
+            --output pcport/platform/pc/build-v41/proof/SYNTHETIC_CORRELATION.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("pcport/platform/pc/build-v41/proof/SYNTHETIC_CORRELATION.json")
+          d = json.loads(p.read_text())
+          assert d["status"] == "provenance_correlated"
+          assert d["paired_primitive_count"] == 1
+          assert not d["gameplay_execution_proven"]
+          assert not d["pixel_equivalence_proven"]
+          print("Synthetic-only CLI trace parsing verified; NOT real gameplay proof.")
+          PY
+          sed 's/\[v40-terrain-hires\] f=9/\[v40-terrain-hires\] f=10/' \
+            "$RUNNER_TEMP/map02-v41-SYNTHETIC.log" \
+            > "$RUNNER_TEMP/map02-v41-SYNTHETIC-invalid.log"
+          set +e
+          python3 -m remaster.tools.verify_map02_v41 \
+            "$RUNNER_TEMP/map02-v41-SYNTHETIC-invalid.log" \
+            --output "$RUNNER_TEMP/map02-v41-INVALID-REPORT.json"
+          result=$?
+          set -e
+          test "$result" -eq 1
+          echo "PASS: cross-frame stale token correctly rejected."
       - name: Apply v39 and v40 observers plus v41 immutable frame identity
         shell: bash
         run: |
