@@ -67,7 +67,7 @@ int main(void) {
             /* Choose two perpendicular tangents where
              * tangent0 x tangent1 aligns with target lattice vector.
              * For lattice vector n, tangent0=(n_other,-n_axis,0)
-             * on the selected axes, tangent1=n x tangent0.
+             * on the selected axes, tangent1=tangent0 x n.
              */
             int n[3]={dirs[direction][0],dirs[direction][1],dirs[direction][2]};
             int t0[3]={0},t1[3];
@@ -77,9 +77,9 @@ int main(void) {
                 t0[other]=n[third];
                 t0[third]=-n[other];
             }
-            t1[0]=n[1]*t0[2]-n[2]*t0[1];
-            t1[1]=n[2]*t0[0]-n[0]*t0[2];
-            t1[2]=n[0]*t0[1]-n[1]*t0[0];
+            t1[0]=t0[1]*n[2]-t0[2]*n[1];
+            t1[1]=t0[2]*n[0]-t0[0]*n[2];
+            t1[2]=t0[0]*n[1]-t0[1]*n[0];
             for(cross_sign=0;cross_sign<3;++cross_sign) {
                 p[1][cross_sign]=(short)(t1[cross_sign]*16);
                 p[2][cross_sign]=(short)((t1[cross_sign]+t0[cross_sign])*16);
