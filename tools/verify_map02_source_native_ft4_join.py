@@ -76,7 +76,36 @@ def _material_bytes_equal(source, before, event):
 
 
 
-def _ft4_draw_delta(before_vram, after_vram, source_event, draw_env=None):
+def _ft4_provably_outside_drawenv(draw_env, ft4_xy):
+    """Conservative necessary coverage test for pinned PC native FT4 raster.
+
+    DDA triangle spans cannot leave the vertex X/Y extrema by more than
+    a few integer rounding steps. An eight-pixel guard on every side
+    intentionally errs towards *unknown*, avoiding false cull claims at
+    scan-conversion boundaries. This is not a pixel-level rasterizer.
+    Native geometry is GPU corner order and DRAWENV.ofs shifts vertices,
+    never the clip itself. Return None if the legacy trace lacks DRAWENV.
+    """
+    if draw_env is None:
+        return None
+    if type(draw_env) is not list or len(draw_env) != 6:
+        raise ValueError("invalid native FT4 DRAWENV clip snapshot")
+    if type(ft4_xy) is not list or len(ft4_xy) != 8:
+        raise ValueError("invalid native FT4 GPU vertex coordinates")
+    clip_x, clip_y, width, height, ofs_x, ofs_y = draw_env
+    if width == 0 or height == 0:
+        return True
+    xs = [ft4_xy[i] + ofs_x for i in range(0, 8, 2)]
+    ys = [ft4_xy[i] + ofs_y for i in range(1, 8, 2)]
+    slack = 8
+    return (max(xs) + slack < clip_x or
+            min(xs) - slack >= clip_x + width or
+            max(ys) + slack < clip_y or
+            min(ys) - slack >= clip_y + height)
+
+
+def _ft4_draw_delta(before_vram, after_vram, source_event,
+                    draw_env=None, ft4_xy=None):
     """Count FT4 VRAM changes and, when captured, enforce PC raster clip.
 
     Both the native DDA and fallback use the half-open absolute drawing area
@@ -96,6 +125,7 @@ def _ft4_draw_delta(before_vram, after_vram, source_event, draw_env=None):
             raise ValueError("invalid native FT4 DRAWENV clip snapshot")
         x, y, width, height, _, _ = draw_env
         clip = (x, y, x + width, y + height)
+    geometry_excluded = _ft4_provably_outside_drawenv(draw_env, ft4_xy)
     changed = material_changed = 0
     for word in range(VRAM_BYTES // 2):
         off = word * 2
@@ -109,7 +139,10 @@ def _ft4_draw_delta(before_vram, after_vram, source_event, draw_env=None):
             if not (clip[0] <= cx < clip[2] and clip[1] <= cy < clip[3]):
                 raise ValueError(
                     "native FT4 changed VRAM outside captured DRAWENV drawing area")
-    return changed, material_changed, clip is not None
+    if changed and geometry_excluded:
+        raise ValueError(
+            "native FT4 changed VRAM despite geometry entirely outside captured DRAWENV")
+    return changed, material_changed, clip is not None, geometry_excluded is True
 
 
 def _native_after_vram(native_dir, native_events, before):
@@ -209,6 +242,7 @@ def verify_join(source_dir, native_dir, *, compiler="gcc"):
     reference = private_file(source_dir, "gpu-vram-le.bin", expected=VRAM_BYTES)
     material_words_checked = 0
     matched_draw_changed = matched_material_changed = no_pixel_delta = clip_checked = 0
+    proved_no_coverage = no_delta_unknown = 0
     for face_index, match_index in enumerate(selected):
         native = gpu_draw_events[match_index]
         snapshot = private_file(native_dir, native["snapshot"], expected=VRAM_BYTES)
@@ -220,9 +254,12 @@ def verify_join(source_dir, native_dir, *, compiler="gcc"):
                 "from native VRAM immediately before primitive")
         material_words_checked += word_count
         post = _native_after_vram(native_dir, native_events, native)
-        n, m, checked = _ft4_draw_delta(
-            snapshot, post, source_events[face_index], native.get("draw_env"))
+        n, m, checked, excluded = _ft4_draw_delta(
+            snapshot, post, source_events[face_index], native.get("draw_env"),
+            native["ft4"]["xy"])
         clip_checked += checked
+        proved_no_coverage += excluded
+        no_delta_unknown += n == 0 and not excluded
         matched_draw_changed += n
         matched_material_changed += m
         no_pixel_delta += n == 0
@@ -243,6 +280,8 @@ def verify_join(source_dir, native_dir, *, compiler="gcc"):
         "matched_ft4_draw_changed_texture_or_clut_words": matched_material_changed,
         "matched_ft4_draws_without_vram_change": no_pixel_delta,
         "matched_ft4_draws_with_drawenv_clip_checked": clip_checked,
+        "matched_ft4_draws_proven_no_coverage": proved_no_coverage,
+        "matched_ft4_draws_zero_delta_cause_unknown": no_delta_unknown,
         "native_ft4_pixels_bit_exact_to_ps1": False,
         "screen_corners_uv_page_clut_window_exact": True,
         "source_gte_verified_by_compiled_reference": True,
@@ -301,6 +340,7 @@ def verify_timeline_join(source_dir, native_dir, *, compiler="gcc"):
 
     compared = 0
     matched_draw_changed = matched_material_changed = no_pixel_delta = clip_checked = 0
+    proved_no_coverage = no_delta_unknown = 0
     for source_index, native_index in enumerate(selected):
         reference = private_file(
             source_dir, f"gpu-vram-{source_index:03d}.bin", expected=VRAM_BYTES)
@@ -315,10 +355,13 @@ def verify_timeline_join(source_dir, native_dir, *, compiler="gcc"):
                 "from native VRAM immediately before primitive")
         compared += count
         post = _native_after_vram(native_dir, native_events, native_ft4[native_index])
-        n, m, checked = _ft4_draw_delta(
+        n, m, checked, excluded = _ft4_draw_delta(
             before, post, source_events[source_index],
-            native_ft4[native_index].get("draw_env"))
+            native_ft4[native_index].get("draw_env"),
+            native_ft4[native_index]["ft4"]["xy"])
         clip_checked += checked
+        proved_no_coverage += excluded
+        no_delta_unknown += n == 0 and not excluded
         matched_draw_changed += n
         matched_material_changed += m
         no_pixel_delta += n == 0
@@ -338,6 +381,8 @@ def verify_timeline_join(source_dir, native_dir, *, compiler="gcc"):
         "matched_ft4_draw_changed_texture_or_clut_words": matched_material_changed,
         "matched_ft4_draws_without_vram_change": no_pixel_delta,
         "matched_ft4_draws_with_drawenv_clip_checked": clip_checked,
+        "matched_ft4_draws_proven_no_coverage": proved_no_coverage,
+        "matched_ft4_draws_zero_delta_cause_unknown": no_delta_unknown,
         "native_ft4_pixels_bit_exact_to_ps1": False,
         "screen_corners_uv_page_clut_window_exact": True,
         "pc_gte_source_timeline_verified": True,
