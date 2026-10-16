@@ -58,9 +58,15 @@ class ScopeGenerationTests(unittest.TestCase):
         from tools.instrument_map02_gpu_native_events import instrument
         # Artificially complete the other native recorder's source anchors.
         # The raw native generator is itself independently regression tested.
-        with self.assertRaisesRegex(ValueError, "pinned source anchor"):
-            scope_gpu(instrument(GPU))
-        with self.assertRaisesRegex(ValueError, "pinned source anchor"):
+        combined=scope_gpu(instrument(GPU))
+        self.assertIn('VH_CaptureEvent("before","draw"',combined)
+        self.assertIn('VH_CaptureEvent("after","draw"',combined)
+        self.assertIn("VH_Map02PixelScopeSet",combined)
+        self.assertIn("VH_Map02PixelScopeClear",combined)
+        self.assertIn("vh_sample_primitive_ordinal++",combined)
+        with self.assertRaisesRegex(ValueError, "already injected"):
+            scope_gpu(combined)
+        with self.assertRaisesRegex(ValueError, "end native primitive scope"):
             scope_gpu(GPU)
 
     def test_wrong_sha_and_preexisting_destination_refused(self):
