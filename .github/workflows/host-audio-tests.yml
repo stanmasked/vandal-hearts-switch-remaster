@@ -120,6 +120,24 @@ jobs:
              tests/test_vh_audio_resample.c source/vh_audio_resample.c \
              -o build/test_vh_audio_resample_ubsan
           ./build/test_vh_audio_resample_ubsan
+      - name: Audout exact released-buffer ownership and stale queue
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+             tests/test_vh_audio_buffer_lease.c \
+             source/vh_audio_buffer_lease.c source/vh_audio_output_recovery.c \
+             -o build/test_vh_audio_buffer_lease
+          ./build/test_vh_audio_buffer_lease
+      - name: Audout page ownership under ASan and UBSan
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+             -fsanitize=address,undefined -fno-omit-frame-pointer \
+             tests/test_vh_audio_buffer_lease.c \
+             source/vh_audio_buffer_lease.c source/vh_audio_output_recovery.c \
+             -o build/test_vh_audio_buffer_lease_asan
+          ./build/test_vh_audio_buffer_lease_asan
       - name: Audout restart and exact PCM replay across SEQ scene changes
         run: |
           cc -std=c11 -Wall -Wextra -Werror -O2 -Isource \
