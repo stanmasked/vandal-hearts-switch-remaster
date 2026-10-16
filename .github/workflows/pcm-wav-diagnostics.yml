@@ -306,6 +306,7 @@ jobs:
           /tmp/test_vh_pcm_scene_source_switch
       - name: Check two decoded VAB banks across SEQ SPU scene transition
         run: |
+          set -euo pipefail
           cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
             -fno-sanitize-recover=all \
@@ -318,6 +319,8 @@ jobs:
           /tmp/test_vh_native_bank_switch > /tmp/vab-seams-repeat.txt
           cmp /tmp/vab-seams-first.txt /tmp/vab-seams-repeat.txt
           grep -Fq 'VAB seam adjacent-sample deltas (PCM16):' /tmp/vab-seams-first.txt
+          grep -Fq 'VAB extended transition soak: 16 scenes, 256 blocks, 15 switches,' /tmp/vab-seams-first.txt
+          grep -Fq 'VAB all scene seams (PCM16):' /tmp/vab-seams-first.txt
       - name: Verify voice-only SPU reset preserves reverb tail under sanitizers
         run: |
           cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
