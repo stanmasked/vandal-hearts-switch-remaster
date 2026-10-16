@@ -76,7 +76,8 @@ class Map02DirectionalSourceTests(unittest.TestCase):
                   "\nreturn (int)len;\n}\n" + NATIVE_END)
         self.assertIn("return (int)len;", extract_vectornormal(source))
         with self.assertRaisesRegex(ValueError, "function order changed"):
-            extract_vectornormal(NATIVE_END + "\n" + source)
+            extract_vectornormal(NATIVE_END + "\n" +
+                                 source.replace(NATIVE_END, ""))
         with self.assertRaisesRegex(ValueError, "C source changed"):
             extract_vectornormal(
                 source.replace("v1->vz = (short)", "v1->vz = (int)"))
