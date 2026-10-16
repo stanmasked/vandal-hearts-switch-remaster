@@ -126,6 +126,13 @@ jobs:
       - name: Offline Switch PCM journal analysis and hostile CSV validation
         run: |
           python3 tests/test_analyze_switch_audio_log.py
+      - name: Four C exported NRO-style sessions recover from interrupted SD temp
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+             tests/switch_audio_export_session.c \
+             source/vh_audio_diag_export.c source/vh_audio_diag_journal.c \
+             -o build/switch_audio_export_session
+          python3 tests/test_switch_audio_export_restart_e2e.py
       - name: SD export staging and 6 filesystem error paths
         run: |
           cc -std=c11 -Wall -Wextra -Werror -O2 -Isource \
