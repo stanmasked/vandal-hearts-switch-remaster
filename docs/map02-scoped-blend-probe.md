@@ -78,3 +78,49 @@ No such context shim has been installed in this stage; neither the
 generator nor its test fabricates `frame`, `primitive_ordinal`, or
 `putpixel_step`. This prevents the synthetic C regression from being
 mistaken for authenticated original gameplay capture.
+
+## Bounded private in-memory sink (experimental)
+
+`tools/map02_scoped_blend_sink.h` and
+`tools/map02_scoped_blend_sink.c` now implement the three observer
+callbacks and a strict one-frame, coordinate-scoped state machine.
+The private test harness must call:
+
+```c
+vh_map02_scope_reset();
+vh_map02_scope_begin_frame(frame, target_x, target_y);
+/* once per non-bucket DrawOTag primitive, in order starting at zero: */
+vh_map02_scope_begin_primitive(ordinal);
+/* native rasterization invokes begin / optional BlendG1 / end */
+vh_map02_scope_end_primitive();
+vh_map02_scope_end_frame();
+```
+
+All context setters return nonzero on success. The capture accepts
+at most **63 completed pixel events**, tracks `step` from zero, and
+rejects missing/repeated `BlendG1`, wrong bit 15, disagreement between
+observed inputs/results, noncontiguous primitive ordinals, invalid ABR
+or mode flags, unfinished pixel calls and capacity overflow. A failure
+is sticky; `vh_map02_scope_copy` refuses to export any events until
+the frame is successfully closed. No file or network I/O is performed.
+Call `vh_map02_scope_reset` to erase the buffer before another capture.
+
+**These context methods are NOT yet inserted into the upstream DrawOTag
+walker.** The values provided by a private harness remain untrusted
+until a separately instrumented original-PC path proves they came from
+the active walker. The sink must run on the synchronous native-raster
+thread; it is not designed for concurrent callbacks. An unobserved
+HD worker cannot be used as a proxy for native writes.
+
+Host tests `tests/test_map02_scoped_blend_sink.py` and
+`tests/test_map02_scoped_blend_integration.py` exercise the synthetic
+C state machine and generated code together. The CI workflow now also
+checks source-anchor compatibility against a pinned public upstream
+commit `14552fffa0e0b47e02b57592e274fc6e7a649923`, without
+committing or publishing upstream game assets. This step only generates
+the patched source; it does not build or run the actual PC game.
+
+No captured frame has been authenticated. The standalone SHA-bound
+BlendG1 JSONL verifier still requires a separate private harness
+to serialize successfully closed observations, with independently
+validated provenance.
