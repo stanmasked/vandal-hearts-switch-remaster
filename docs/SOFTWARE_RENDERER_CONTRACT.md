@@ -423,3 +423,51 @@ model: it retains the separately tested full-width PC mathematical
 normal reference until integration can be validated on actual maps.
 The PS1 model is therefore only an independently testable input
 boundary, not a hardware-exact emulator.
+
+
+## MAP02 source-local OP0 geometry inventory (read-only)
+
+`tools/audit_map02_op0_geometry.py` now provides a **local, resource-provenance
+aware** face-by-face diagnostic for a user-owned `M_MAP02.PRS` or its
+187264-byte decoded map. It uses the source-verified **616 x 304-byte**
+tile layout (28-column backing storage, 24x12 active region), checks every
+active tile's `faceCt <= 18` and valid 0..21 face vertex indices, and
+uses the original `UpdateMapTileLighting` repeated-index branch order.
+The C scanner compares three results **per face**:
+
+1. Mathematical full-width 64-bit vertex-edge cross from the old
+   diagnostic, retaining the historical reference classification;
+2. Compiled-PC-compatible OP0 MAC model (32-bit first edge, signed-16
+   second edge, wrapped 32-bit MAC readback);
+3. PS1 input-register-boundary approximation (signed-16 first and second
+   edges, low-32 MAC result).
+
+All three are classified against the *same* previously audited 26-way
+PC-port Q12 table. Counters distinguish edge-component truncations, MAC
+mismatches, zero normals and classification mismatches. The report also
+shows the two drawbridge faces `(z=8,x=19,face=0)` and
+`(z=11,x=11,face=0)`, but never prints vertices or pixel data.
+
+Run it from a checkout of the repository:
+
+```sh
+python3 -m tools.audit_map02_op0_geometry --prs '/owned/DATA/M_MAP02.PRS' --require-prior-provenance
+# Or supply the privately decompressed source instead:
+python3 -m tools.audit_map02_op0_geometry --decoded '/private/M_MAP02.decoded' --require-prior-provenance
+```
+
+The provenance gate accepts only the previously recorded decompressed
+PRS SHA-256; a localized or otherwise different map must be studied
+without that flag and reported as `matches_prior_prs_sha256=false`.
+The scanner is compiled locally with GCC, accepts map bytes only through
+standard input and returns aggregate JSON with source hashes. No original
+asset is committed or written to disk. CI tests a **synthetic map only**,
+including signed-16 OP0 divergence, degenerate/repeated faces,
+rejected malformed records and strict provenance failure.
+
+**Important scope limit:** Until a privately owned real-map buffer is
+actually passed through this tool with matching provenance, CI demonstrates
+correct interpretation of *synthetic* vertices only; it does NOT establish
+whether MAP02's actual faces diverge. This is neither a PS1 hardware GTE
+implementation nor proof of screen projection, draw order, runtime lighting
+or rendered pixels. Existing Switch shading/runtime paths are untouched.
