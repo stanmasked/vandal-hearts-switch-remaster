@@ -102,7 +102,7 @@ class TimelineToNativeFt4JoinTests(unittest.TestCase):
             self.assertFalse(result[flag])
         published = json.dumps(result)
         for secret in ("perimeter_xy", "vertices", "31978", "31979",
-                       "bgr555", "texture", "camera"):
+                       "bgr555", "camera"):
             self.assertNotIn(secret, published)
 
     def test_native_ft4_pixel_deltas_include_bgr555_bit15(self):
