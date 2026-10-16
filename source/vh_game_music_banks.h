@@ -1,0 +1,34 @@
+#ifndef VH_GAME_MUSIC_BANKS_H
+#define VH_GAME_MUSIC_BANKS_H
+
+#include "vh_audio_assets.h"
+#include "vh_game_music_mailbox.h"
+#include "vh_music_scene.h"
+
+/* Read-only, preloaded two-scene music pack from caller-owned SD data.
+ * No original game resources are bundled. Load once on the audio owner
+ * thread before starting audout. Each scene has its own bank/PCM arena.
+ *
+ * Directory hierarchy (exact names, no path data taken from SEQ/VH):
+ *   root/field/music.seq, music.vh, music.vb
+ *   root/selected/music.seq, music.vh, music.vb
+ *
+ * Both absent: VH_AUDIO_ASSET_MISSING (optional synthetic fallback).
+ * A single present scene, partial triplet, malformed data or budget
+ * violation: VH_AUDIO_ASSET_ERROR; no partial pack is published.
+ */
+#define VH_GAME_MUSIC_MAX_TOTAL_VB_BYTES (12u * 1024u * 1024u)
+typedef struct {
+    VhAudioAssets field, selected;
+} VhGameMusicBanks;
+
+/* On success allocates *out and transfers ownership to caller.
+ * On missing/error leaves *out unchanged. Caller passes *out==NULL.
+ * Must keep *out until all scene voices and audout are fully stopped.
+ */
+int vh_game_music_banks_load(VhGameMusicBanks **out, const char *root);
+int vh_game_music_banks_cue(VhGameMusicBanks *pack, unsigned scene_id,
+                            VhMusicCue *cue);
+void vh_game_music_banks_close(VhGameMusicBanks **pack);
+
+#endif
