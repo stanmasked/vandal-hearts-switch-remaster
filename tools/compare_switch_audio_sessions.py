@@ -58,6 +58,7 @@ def group(paths: list[Path]) -> dict:
         "lease_fail", "pcm_recover", "home_recover", "pcm_restart",
         "home_reopen", "first_pcm_count")}
     latencies = []
+    missing_individual_latency = 0
     problems = []
     for path in paths:
         rows = audio.load_csv(path)
@@ -66,6 +67,7 @@ def group(paths: list[Path]) -> dict:
         for name in totals:
             totals[name] += inc[name]
         latencies.extend(_latencies(rows))
+        missing_individual_latency += report["ack_latency_us"]["missing_individual_samples"]
         quality_issues = []
         if len(rows) < 2:
             quality_issues.append("only one retained snapshot")
@@ -106,6 +108,7 @@ def group(paths: list[Path]) -> dict:
         "quality_problems": problems,
         "latency": {
             "sample_count": len(latencies),
+            "missing_individual_samples": missing_individual_latency,
             "median_us": _percentile(latencies, .5),
             "p95_us": _percentile(latencies, .95),
             "max_observed_us": max(latencies) if latencies else None,
@@ -138,6 +141,8 @@ def compare(baseline: dict, candidate: dict) -> dict:
         warnings.append("HOME frequency differs by more than 3x per completed PCM page.")
     if baseline["latency"]["sample_count"] < MIN_LATENCY_SAMPLES_PER_GROUP or candidate["latency"]["sample_count"] < MIN_LATENCY_SAMPLES_PER_GROUP:
         warnings.append("Insufficient individual completed-buffer latency samples for p95 comparison.")
+    if baseline["latency"]["missing_individual_samples"] or candidate["latency"]["missing_individual_samples"]:
+        warnings.append("Some confirmed buffers have no individual latency sample; p95 can be biased.")
     failures = []
     for name in ("pcm_fail", "lease_fail", "home_fail"):
         if name == "home_fail":
@@ -226,8 +231,8 @@ def format_text(report: dict) -> str:
     lines = [
         "VANDAL HEARTS SWITCH AUDIO — NRO COHORT COMPARISON",
         f"Verdict: {report['verdict']} (heuristic; not a physical playback certification)",
-        f"Baseline sessions: {report['baseline']['count']}  "
-        f"Candidate sessions: {report['candidate']['count']}",
+        f"Baseline: {report['versions']['baseline']} ({report['baseline']['count']} sessions)",
+        f"Candidate: {report['versions']['candidate']} ({report['candidate']['count']} sessions)",
         f"PCM pages observed: {report['baseline']['counters']['output_pages']} -> "
         f"{report['candidate']['counters']['output_pages']}",
     ]
@@ -260,11 +265,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--candidate", type=Path, nargs="+", required=True,
                         help="newer NRO session CSVs (at least two recommended)")
     parser.add_argument("--format", choices=("text", "json"), default="text")
+    parser.add_argument("--baseline-version", default="unspecified",
+                        help="optional local NRO version/commit label")
+    parser.add_argument("--candidate-version", default="unspecified",
+                        help="optional local NRO version/commit label")
     args = parser.parse_args(argv)
-    if set(args.baseline).intersection(args.candidate):
+    old_paths = [p.resolve() for p in args.baseline]
+    new_paths = [p.resolve() for p in args.candidate]
+    if set(old_paths).intersection(new_paths):
         parser.error("same CSV must not be used in both groups")
+    if len(set(old_paths)) != len(old_paths) or len(set(new_paths)) != len(new_paths):
+        parser.error("duplicate CSV within one cohort is not a separate session")
     try:
         result = compare(group(args.baseline), group(args.candidate))
+        result["versions"] = {
+            "baseline": args.baseline_version,
+            "candidate": args.candidate_version,
+        }
     except audio.LogFormatError as exc:
         print(f"CSV validation failed: {exc}", file=sys.stderr)
         return 2
