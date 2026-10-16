@@ -19,6 +19,9 @@ on:
       - "source/vh_spu_gaussian.h"
       - "source/vh_native_seq.c"
       - "source/vh_native_seq.h"
+      - "source/vh_music_scene.c"
+      - "source/vh_music_scene.h"
+      - "tests/test_vh_music_scene.c"
       - "source/vh_native_vab.c"
       - "source/vh_native_vab.h"
       - "source/vh_audio_assets.c"
@@ -64,6 +67,9 @@ jobs:
             -c source/vh_native_seq.c -o build/vh_native_seq_switch.o
           "$DEVKITPRO/devkitA64/bin/aarch64-none-elf-gcc" \
             -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+            -c source/vh_music_scene.c -o build/vh_music_scene_switch.o
+          "$DEVKITPRO/devkitA64/bin/aarch64-none-elf-gcc" \
+            -std=c11 -Wall -Wextra -Werror -O2 -Isource \
             -c source/vh_native_vab.c -o build/vh_native_vab_switch.o
           "$DEVKITPRO/devkitA64/bin/aarch64-none-elf-gcc" \
             -std=c11 -Wall -Wextra -Werror -O2 -Isource \
@@ -79,6 +85,7 @@ jobs:
           test -s build/vh_spu_reverb_switch.o
           test -s build/vh_spu_gaussian_switch.o
           test -s build/vh_native_seq_switch.o
+          test -s build/vh_music_scene_switch.o
           test -s build/vh_native_vab_switch.o
           test -s build/vh_audio_assets_switch.o
       - name: Upload cross-compiled transport object
@@ -92,6 +99,7 @@ jobs:
             build/vh_spu_reverb_switch.o
             build/vh_spu_gaussian_switch.o
             build/vh_native_seq_switch.o
+            build/vh_music_scene_switch.o
             build/vh_native_vab_switch.o
             build/vh_audio_assets_switch.o
           if-no-files-found: error
