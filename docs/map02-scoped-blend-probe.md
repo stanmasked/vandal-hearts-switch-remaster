@@ -221,3 +221,58 @@ a capture when no frame was selected.
 binding to independently captured native DrawOTag/VRAM evidence; complete
 instrumented PC-port build; genuine MAP02 frame comparison; PS1 hardware
 verification. None is claimed by synthetic host tests.
+
+## Private, SHA-bound witness publication (experimental)
+
+A separate opt-in publisher now exists:
+`tools/publish_map02_blendg1_witness.py`. It does **not** collect
+BlendG1 calls; the private original-PC harness must first write the
+bounded, directly observed `blendg1-native-events.pending.jsonl` into
+the native capture directory. The pre-existing
+`putpixel-native-events.jsonl` and `gpu-putpixel-ot.json` must already
+be present and bound to verified native DrawOTag/VRAM evidence.
+
+```sh
+python3 -m tools.publish_map02_blendg1_witness \
+  /private/map02/source-bundle \
+  /private/map02/native-capture
+python3 -m tools.verify_map02_blendg1_witness \
+  /private/map02/source-bundle \
+  /private/map02/native-capture
+```
+
+Both directories must already exist with private permissions (0700)
+and must not be symlinks. Source files must be regular, non-symlinked,
+bounded in size, valid JSONL with final newlines, and
+`putpixel_events_sha256` must match the upstream manifest. Publication
+calls the **full** upstream `verify_pixel_ot` (including source-keyed
+DrawOTag/VRAM checks) and the strict
+`compare_blendg1_witnesses` comparator; there is no option to skip
+this verification in the CLI. Input files are read again after the
+upstream verifier to reject changes during verification.
+
+After validation, both finished files are written to private 0600
+temporary files, synced, read back byte-for-byte and installed using
+exclusive hard links. The completed `blendg1-native-events.jsonl`
+is published in the native capture directory first; the
+`gpu-blendg1-witness.json` completion manifest is published **last**
+in the source bundle. Both must be absent before publication; there
+is no overwrite operation. A failed publication attempts to remove
+newly created outputs and temporary files, leaving no trusted
+completion marker. A process crash may leave an orphaned log without a
+manifest; it is **not** validated evidence and must be investigated
+privately before a new attempt. The publisher never prints raw pixel
+words, event coordinates, screenshots, game assets, or log contents.
+
+The manifest uses schema `vh.map02.native-blendg1-witness.v1`,
+containing SHA-256 for the original PutPixel manifest, the original
+PutPixel log and the independently staged BlendG1 log. The standalone
+`verify_map02_blendg1_witness.py` must subsequently verify the
+published witness again. A valid synthetic fixture or SHA-bound
+original-PC observation still does **not** establish that MAP02
+gameplay actually occurred or that the result matches PS1 hardware.
+
+Synthetic no-clobber, missing-witness, tampering, rollback and private
+directory tests:
+`tests/test_publish_map02_blendg1_witness.py` (CI workflow
+`.github/workflows/map02-scoped-blend.yml`).
