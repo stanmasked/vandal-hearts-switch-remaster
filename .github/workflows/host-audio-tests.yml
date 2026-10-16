@@ -151,6 +151,31 @@ jobs:
         run: python3 tests/test_native_vab_python_reference.py
       - name: Differential-check native STUDIO_C against PC-port integer oracle
         run: python3 tests/test_native_spu_reverb_reference.py
+      - name: STUDIO_C optimized vs baseline FIR checksum and throughput
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+             -DVH_REV_FIR_REFERENCE=1 tests/bench_vh_spu_reverb.c \
+             source/vh_spu_reverb.c -lm -o build/bench_vh_reverb_reference
+          cc -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+             tests/bench_vh_spu_reverb.c source/vh_spu_reverb.c \
+             -lm -o build/bench_vh_reverb_optimized
+          build/bench_vh_reverb_reference | tee build/reverb_reference.txt
+          build/bench_vh_reverb_optimized | tee build/reverb_optimized.txt
+          grep '^CHECKSUM ' build/reverb_reference.txt > build/reference.checksum
+          grep '^CHECKSUM ' build/reverb_optimized.txt > build/optimized.checksum
+          diff -u build/reference.checksum build/optimized.checksum
+          python3 - <<'PY'
+          from pathlib import Path
+          def number(path, key):
+              for line in Path(path).read_text().splitlines():
+                  if line.startswith(key+" "):
+                      return float(line.split()[1])
+              raise AssertionError(key)
+          baseline = number("build/reverb_reference.txt", "ELAPSED_NS")
+          optimized = number("build/reverb_optimized.txt", "ELAPSED_NS")
+          print("Host diagnostic speedup (not a Switch measurement):",
+                f"{baseline/optimized:.2f}x")
+          PY
       - name: Run VAB, SPU and synthetic audio tests
         run: |
           python3 tests/test_inspect_spu_vag.py
