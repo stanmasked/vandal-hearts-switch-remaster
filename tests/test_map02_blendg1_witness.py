@@ -6,7 +6,7 @@ from tools.map02_blendg1_witness import compare_blendg1_witnesses
 
 def pixel(step, mode, abr, semi=1):
     return dict(stage="native_putpixel", step=step, frame=7,
-                primitive_ordinal=3, x=20, y=40,
+                primitive_ordinal=3, primitive_type=4, x=20, y=40,
                 accurate=mode, abr=abr, semi=semi,
                 before=0x001f, front=0x7c00,
                 after=0x03e0 if semi else 0x7c00)
@@ -14,7 +14,7 @@ def pixel(step, mode, abr, semi=1):
 
 def witness(p):
     return dict(stage="native_blendg1", putpixel_step=p["step"],\n                blend_fg=p["front"] | 0x8000, blend_bg=p["before"],\n                blend_result=p["after"],
-                **{k: p[k] for k in ("frame", "primitive_ordinal", "x",
+                **{k: p[k] for k in ("frame", "primitive_ordinal", "primitive_type", "x",
                                    "y", "accurate", "abr", "before",
                                    "front", "after")})
 
@@ -41,7 +41,7 @@ class BlendG1WitnessTests(unittest.TestCase):
 
     def test_refuses_modified_fields_and_malformed_integers(self):
         p = pixel(0, 1, 2)
-        for key, value in (("abr", 1), ("after", 0), ("accurate", 0),
+        for key, value in (("abr", 1), ("primitive_type", 8), ("after", 0), ("accurate", 0),
                            ("x", 21), ("frame", 8), ("after", True),
                            ("putpixel_step", 64)):
             w = witness(p)
