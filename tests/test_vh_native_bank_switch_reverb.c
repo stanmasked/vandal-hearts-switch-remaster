@@ -25,6 +25,8 @@ static int16_t raw_wet[512u*2u], raw_dry[512u*2u];
 static int16_t pcm_wet[640u*2u], pcm_dry[640u*2u];
 static uint32_t seam_wet[SCENES-1u], seam_dry[SCENES-1u];
 static uint32_t seam_wet_contribution[SCENES-1u];
+static uint32_t source_seam_wet[SCENES-1u], source_seam_dry[SCENES-1u];
+static uint32_t output_fraction[SCENES-1u];
 static const uint8_t song[]={
     'p','Q','E','S',0,0,0,0,1,0xe0,7,0xa1,0x20,0,0,
     0,0xc0,7,0,0x90,60,110,0x81,0x70,0x80,60,0,
@@ -79,6 +81,7 @@ int main(void) {
     vh_audio_resample_reset(&resample_dry);
 
     int16_t last_wet[2]={0,0},last_dry[2]={0,0};
+    int16_t last_raw_wet[2]={0,0},last_raw_dry[2]={0,0};
     uint64_t differing_samples=0;
     uint64_t output_frames=0;
     int have_last=0;
@@ -125,6 +128,23 @@ int main(void) {
             }
             vh_native_spu_render(&wet,raw_wet,512u);
             vh_native_spu_render(&dry,raw_dry,512u);
+            if (!block && scene_index && have_last) {
+                uint32_t raw_w=0,raw_d=0;
+                for(unsigned ch=0;ch<2u;ch++) {
+                    raw_w=max2(raw_w,magnitude(
+                        (int)raw_wet[ch]-(int)last_raw_wet[ch]));
+                    raw_d=max2(raw_d,magnitude(
+                        (int)raw_dry[ch]-(int)last_raw_dry[ch]));
+                }
+                source_seam_wet[scene_index-1u]=raw_w;
+                source_seam_dry[scene_index-1u]=raw_d;
+                output_fraction[scene_index-1u]=(uint32_t)(
+                    resample_wet.next_output_tick % VH_NATIVE_AUDOUT_RATE);
+            }
+            last_raw_wet[0]=raw_wet[2u*511u];
+            last_raw_wet[1]=raw_wet[2u*511u+1u];
+            last_raw_dry[0]=raw_dry[2u*511u];
+            last_raw_dry[1]=raw_dry[2u*511u+1u];
             const size_t n=vh_audio_resample_process(
                 &resample_wet,raw_wet,512u,pcm_wet,640u);
             const size_t n_dry=vh_audio_resample_process(
@@ -170,6 +190,9 @@ int main(void) {
     print_seams("VAB differential wet seams PCM16",seam_wet);
     print_seams("VAB differential wet-only adjacent changes PCM16",
                 seam_wet_contribution);
+    print_seams("VAB SPU dry scene seams 44100Hz PCM16",source_seam_dry);
+    print_seams("VAB SPU wet scene seams 44100Hz PCM16",source_seam_wet);
+    print_seams("VAB resampler boundary fractions 48000Hz",output_fraction);
     printf("VAB differential EON wet/dry: %llu differing samples, %u switches PASS\n",
            (unsigned long long)differing_samples,SCENES-1u);
     return 0;
