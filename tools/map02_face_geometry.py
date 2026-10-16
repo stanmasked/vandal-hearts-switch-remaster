@@ -50,17 +50,21 @@ def tile_record(decoded: bytes, z: int, x: int) -> bytes:
     return decoded[start:start + RECORD_SIZE]
 
 
-def decode_face_0(decoded: bytes, z: int, x: int, uvwh: tuple[int, int, int, int]) -> dict:
-    """Extract face 0, local vertices, topology and exact FT4 corner UVs."""
+def decode_face(decoded: bytes, z: int, x: int, face_index: int,
+                uvwh: tuple[int, int, int, int]) -> dict:
+    """Extract a chosen face with original table offsets and FT4 UV mapping."""
     record = tile_record(decoded, z, x)
     face_count = record[FACE_COUNT_OFFSET]
     if face_count < 1 or face_count > FACE_COUNT_MAX:
         raise ValueError(f"z={z},x={x}: faceCt={face_count}, expected 1..18")
-    indices = tuple(record[FACE_TABLE_OFFSET:FACE_TABLE_OFFSET + 4])
+    if type(face_index) is not int or not 0 <= face_index < face_count:
+        raise ValueError(f"z={z},x={x}: face index outside 0..{face_count - 1}")
+    indices = tuple(record[FACE_TABLE_OFFSET + face_index * 4:
+                           FACE_TABLE_OFFSET + (face_index + 1) * 4])
     if any(vertex >= VERTEX_COUNT for vertex in indices):
-        raise ValueError(f"z={z},x={x}: face-0 vertex index outside 0..21")
+        raise ValueError(f"z={z},x={x}: face vertex index outside 0..21")
     if len(set(indices)) < 3:
-        raise ValueError(f"z={z},x={x}: degenerate face-0 vertex indices")
+        raise ValueError(f"z={z},x={x}: degenerate face vertex indices")
     coords = [
         list(struct.unpack_from("<hhh", record, index * VERTEX_BYTES))
         for index in indices
@@ -90,11 +94,11 @@ def decode_face_0(decoded: bytes, z: int, x: int, uvwh: tuple[int, int, int, int
         for i in range(4)
     ]
     return {
-        "z": z, "x": x, "face": 0,
+        "z": z, "x": x, "face": face_index,
         "record_index": z * STRIDE + x,
-        "local_gfx": struct.unpack_from("<h", record, GFX_OFFSET)[0],
+        "local_gfx": struct.unpack_from("<h", record, GFX_OFFSET + face_index * 2)[0],
         "face_count": face_count,
-        "face_shade": record[SHADE_TABLE_OFFSET],
+        "face_shade": record[SHADE_TABLE_OFFSET + face_index],
         "tile_height": record[HEIGHT_OFFSET],
         "face_vertex_indices": list(indices),
         "face_corners": corners,
@@ -106,6 +110,12 @@ def decode_face_0(decoded: bytes, z: int, x: int, uvwh: tuple[int, int, int, int
         "uv_assignment": "setUVWH: uv0=(u,v),uv1=(u+w,v),uv2=(u,v+h),uv3=(u+w,v+h)",
         "geometry_scope": "source-local vertices and UV; no camera or pixels rendered",
     }
+
+
+def decode_face_0(decoded: bytes, z: int, x: int,
+                  uvwh: tuple[int, int, int, int]) -> dict:
+    """Backward-compatible first-face decoder."""
+    return decode_face(decoded, z, x, 0, uvwh)
 
 
 def compare_face_geometry(prs: bytes, dat: bytes, z: int, x: int,
