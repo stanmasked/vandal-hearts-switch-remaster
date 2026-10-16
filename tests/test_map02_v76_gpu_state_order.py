@@ -116,7 +116,7 @@ class V76OrderedGPUStates(unittest.TestCase):
     def test_ordered_e2_e6_e1_resets_are_not_noops(self):
         states=[x for x in GP0_SEQUENCE if x in (
             0xe2000401,0xe6000001,0xe6000002,0xe1000020)]
-        self.assertEqual(states,(0xe2000401,0xe6000001,0xe6000002,0xe1000020))
+        self.assertEqual(states,[0xe2000401,0xe6000001,0xe6000002,0xe1000020])
     def test_11_independent_expected_regions(self):
         self.assertEqual(len(REGIONS),11)
         self.assertEqual(tuple(x for _,x,_ in REGIONS),
