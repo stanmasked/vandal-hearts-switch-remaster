@@ -43,7 +43,7 @@ def parse(line):
     if d["scene"] not in (0,1) or d["workers"] not in (1,2,4) or d["primitive_count"]!=72:
         raise BadOT("invalid original OT scene/worker/primitive count")
     if any(d[x]!=value for x,value in (("pixels",10240),("clut4",31978),
-         ("clut8",31914),("sprite_tpage",422),("sprite_mask",1),("sprite_offset",1))):
+         ("clut8",31914),("sprite_tpage",166),("sprite_mask",1),("sprite_offset",1))):
         raise BadOT("invalid original GP0 texture/state/CLUT metadata")
     if any(not 0<=d[k]<65536 for k in ("native","hires","direct")):
         raise BadOT("invalid BGR555 framebuffer halfword")
