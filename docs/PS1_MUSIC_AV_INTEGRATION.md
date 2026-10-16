@@ -769,3 +769,58 @@ real console scheduling latency.
 The measurement does not change music timing, STUDIO_C reverb, source
 bank ownership, audio format, or the rule that a previous page must
 be returned before the audio thread can overwrite it.
+
+### Comparing audout waits on SEQ scene boundaries
+
+The combined native graphics/music Switch probe now records **two
+separate classes of logical PCM pages**:
+
+- `ordinary`: each PCM page that does not immediately follow an
+  explicit switch of the generated SEQ fixture;
+- `first_after_switch`: **only** the very first rendered and
+  submitted PCM page after a successful synthetic SEQ switch.
+
+For each class, `VhAudioSceneWaits` tracks logical pages, the sum
+and peak of blocking `audoutPlayBuffer` service ticks, pages with
+at least one raw service call longer than the page's nominal 48-kHz
+duration, pages with one or more retry submissions, and terminally
+failed pages. A page with recovery attempts contributes to the
+logical-page count **once**; the sum of raw submission waits includes
+all service attempts for that page, not stop/reopen overhead. Terminal
+failures are included as observed failed pages, never accepted pages.
+No source music, filenames, samples, or note events are serialized.
+
+The fixture switches SEQ every 64 completed PCM pages, only after
+the prior blocking audout call returns its exact descriptor. The
+audio-owner thread snapshots `VhAudioSubmitTiming` just before the
+page submission and after bounded recovery, tags the first new-scene
+page, and atomically publishes **two comparable peak-wait gauges**
+to the graphics thread. The upper blue bar is the ordinary-page
+peak; the lower pale-blue bar is the scene-boundary peak and remains
+empty until the first generated switch. Both cap their display at
+four nominal 512-frame durations. User-supplied SD music is **never
+automatically switched**; the scene-boundary bar is fixture-only,
+not evidence about switching the user's original resources.
+
+The portable helper validates that exactly one call per accepted
+logical page returned successfully, no more than two restart attempts
+were observed, and all timing snapshots and counter additions are
+monotonic and overflow-safe. Invalid observations do not change its
+counters and cause the caller's diagnostic pipeline to stop rather
+than publish misleading statistics.
+
+The synthetic host regression compares **43 ordinary pages with five
+first-after-switch pages** across six musical scenes (48 pages
+total). It explicitly injects a failed submission at the first
+page of one new scene and a foreign returned descriptor at another,
+verifies correct recovery on both boundaries, and checks that
+per-category blocking totals reconcile exactly to the raw audout
+timer while the stream's accepted PCM hash, reverb history and
+44.1→48-kHz frame clock remain unchanged.
+
+**Not a dropout detector:** comparison of blocking waits may reveal
+scheduling changes near a switch, but cannot by itself establish
+underflows, glitches, latency to actual sound output, or audio
+fidelity on hardware. The NeXium runner does not capture speaker
+audio. Measurement of these timings on a physical Switch remains
+a separate acceptance step.
