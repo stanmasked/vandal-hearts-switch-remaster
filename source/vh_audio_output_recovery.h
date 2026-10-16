@@ -27,6 +27,30 @@ typedef struct {
     unsigned resume_failures, resume_restarts, resume_recoveries;
 } VhAudioOutputRecovery;
 
+/* Raw backend submission wait, measured on the owning audio thread.
+ * Calls include retries: a blocking audoutPlayBuffer may legitimately
+ * wait for its page duration. Slow calls are diagnostics, not dropouts.
+ * No clock, SEQ, SPU, or PCM state is touched by this accumulator.
+ */
+typedef struct {
+    uint64_t calls, total_ticks, max_ticks;
+    uint64_t waits_longer_than_page, failed_submissions;
+} VhAudioSubmitTiming;
+
+/* Reject invalid frame sizes, a zero frequency and counter overflow
+ * without mutating stats. A successful record counts exactly one
+ * backend invocation (including rejected/wrong-descriptor returns).
+ */
+int vh_audio_output_record_submit_timing(
+    VhAudioSubmitTiming *timing, uint64_t elapsed_ticks,
+    uint64_t tick_frequency, size_t frames, int accepted);
+
+/* Saturating conversion for readable logs, never used for scheduling.
+ * Returns UINT64_MAX on arithmetic overflow, 0 for invalid frequency.
+ */
+uint64_t vh_audio_output_ticks_to_us(uint64_t ticks,
+                                     uint64_t tick_frequency);
+
 /* A single reusable audout PCM page is safe to overwrite only when
  * libnx reports that the identical AudioOutBuffer descriptor was released.
  * Call after a successful audoutPlayBuffer; another pointer (or NULL)
