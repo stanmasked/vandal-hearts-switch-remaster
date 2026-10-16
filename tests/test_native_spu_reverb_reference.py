@@ -179,12 +179,14 @@ class NativeStudioCReferenceTests(unittest.TestCase):
         source = (ROOT / "source/vh_spu_reverb.c").read_text()
         def read_array(name: str) -> list[int]:
             match = re.search(
-                r"static const int16_t\s+" + name +
+                r"static const (?:int16_t|uint16_t)\s+" + name +
                 r"\[[^]]+\]\s*=\s*\{([^}]*)\};", source, re.S)
             self.assertIsNotNone(match)
             return [int(x) for x in re.findall(r"-?\d+", match.group(1))]
         self.assertEqual(read_array("studio_c"), [s16(n) for n in REG])
         self.assertEqual(read_array("fir"), FIR)
+        self.assertEqual(read_array("reg_addr"),
+                         [(value * 4) % WORK for value in REG])
         self.assertEqual(ctypes.sizeof(NativeReverb),
                          2*(WORK+4*TAPS)+16)
 
