@@ -20,7 +20,7 @@ typedef struct { int unused; } DdaPart;
 typedef struct { int unused; } DdaUV;
 static int vh_pixel_sample_active = 1;
 static int vh_sample_scope_active = 1;
-static int vh_pixel_sample_y = 12;
+static int vh_pixel_sample_y = 9;
 static const char *vh_pixel_sample_dir;
 static unsigned vh_sample_scope_frame = 3, vh_sample_scope_ordinal = 9;
 static void VH_PixelSampleInit(void) {}
@@ -33,7 +33,7 @@ int main(int argc, char **argv) {
     if (argc != 2) return 2;
     vh_pixel_sample_dir = argv[1];
 #if defined(VH_MAP02_DDA_REJECTED_EDGES_TRACE)
-    VH_Map02RejectedEdges(&cx, 12, 10, 20, 7);
+    VH_Map02RejectedEdges(&cx, 9, 10, 20, 7);
 #endif
     return 0;
 }
@@ -64,6 +64,7 @@ class CandidateC11Tests(unittest.TestCase):
                 if enabled:
                     self.assertTrue(journal.exists())
                     self.assertIn('"reason":7', journal.read_text())
+                    self.assertIn('"y":9', journal.read_text())
                 else:
                     self.assertFalse(journal.exists())
             bad = subprocess.run(
