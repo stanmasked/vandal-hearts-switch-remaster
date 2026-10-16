@@ -1028,3 +1028,34 @@ timestamps, authenticate input sources, prove a complete GPU
 frame, support fluctuating framewide texture bytes, or validate
 physical PS1 raster output or live Nintendo Switch gameplay.
 Regression tests use synthetic, self-contained input data only.
+
+
+## Source AddPrim OTZ/LIFO → observed native DrawOTag ordering gate
+
+`tools/verify_map02_source_native_ot_order.py` is a second offline,
+privacy-preserving gate applied **after** the source-keyed
+`verify_map02_source_native_ft4_join.py` accepts an exact geometry,
+UV/tpage/CLUT/window and pre-draw VRAM correspondence. For every
+verified submitted terrain face, the tool computes original PC-port
+`ClearOTag/AddPrim/DrawOTag` traversal precedence:
+`OT_SIZE - max(5, AVSZ4 OTZ)` buckets ascend; within each bucket,
+`AddPrim` head insertion reverses caller submission order (LIFO).
+The expected source-face subsequence must match the observed
+corresponding FT4 subsequence in the captured GPU walk.
+
+The input requires explicit, SHA-bound assertions that source events
+were indeed captured in **AddPrim-call order** and belong with the
+native events to **one ClearOTag/DrawOTag chain**. This tool cannot
+authenticate those assertions. It tolerates unrelated intervening
+GPU primitives and FT4s, but does not prove their relative order or
+entire-frame GPU submission completeness. Screen AABB overlap counts
+are **candidates only**, not pixel-level overdraw proofs. The result
+contains aggregate counts and SHA values without source geometry,
+camera positions or pixels. See `docs/MAP02_SOURCE_NATIVE_OT_ORDER.md`
+for the private format and limits.
+
+Asset-free regressions test same-depth LIFO, mixed bucket precedence,
+interleaved native packets, tampered manifests, false frame labels,
+ambiguous FT4 matching, and claimed ordering metadata. No retail
+MAP02 gameplay, complete original GPU command stream, physical PS1
+raster parity, or Switch running scene is established by these tests.
