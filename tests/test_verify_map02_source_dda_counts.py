@@ -190,7 +190,7 @@ class SourceDdaCountsJoinTests(unittest.TestCase):
         last.update(step=2, before=temporary_color, front=final_color,
                     after=final_color)
         rows.append(last)
-        payload = b"".join((json.dumps(x, sort_keys=True)+"\\n").encode()
+        payload = b"".join((json.dumps(x, sort_keys=True)+"\n").encode()
                            for x in rows)
         pixel_file.write_bytes(payload)
         manifest = self.src/"gpu-putpixel-ot.json"
