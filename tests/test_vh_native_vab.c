@@ -124,6 +124,9 @@ static void test_strict_invalid_banks_and_no_publish(void) {
     vh[0]='X';
     assert(vh_native_vab_load(&bank,vh,sizeof vh,vb,96,arena,224)==-1);
     vh[0]='p';
+    vh[12]=1; /* declared VAB size below 32-byte header */
+    assert(vh_native_vab_load(&bank,vh,sizeof vh,vb,96,arena,224)==-1);
+    vh[12]=0;
     const size_t ton=2080;
     vh[ton+6]=110; vh[ton+7]=70;
     assert(vh_native_vab_load(&bank,vh,sizeof vh,vb,96,arena,224)==-1);
