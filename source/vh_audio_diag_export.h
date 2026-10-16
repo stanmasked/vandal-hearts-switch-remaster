@@ -17,6 +17,8 @@ typedef struct {
     /* exists: 1 present, 0 missing, -1 failed/unknown. */
     int (*exists)(void *, const char *path);
     FILE *(*open)(void *, const char *path);
+    /* Re-open the CLOSED temporary file to verify its actual bytes. */
+    FILE *(*open_read)(void *, const char *path);
     int (*write)(void *, const VhAudioDiagJournal *, FILE *);
     int (*flush)(void *, FILE *);
     int (*close)(void *, FILE *);
@@ -34,13 +36,17 @@ typedef enum {
     VH_AUDIO_EXPORT_FLUSH=-6,
     VH_AUDIO_EXPORT_CLOSE=-7,
     VH_AUDIO_EXPORT_RENAME=-8,
-    VH_AUDIO_EXPORT_STAT=-9
+    VH_AUDIO_EXPORT_STAT=-9,
+    VH_AUDIO_EXPORT_READ=-10,
+    VH_AUDIO_EXPORT_VERIFY=-11
 } VhAudioDiagExportResult;
 
 /* Caller must join the native audio worker first. directory must
  * already exist; no mkdir, hidden device access, or original assets.
  * On success, dest receives the committed CSV pathname. On error,
  * dest is empty and old committed CSVs remain untouched.
+ * Staged bytes are read back and compared to the canonical CSV
+ * before rename. This is NOT a power-loss durability guarantee.
  * ops=NULL uses portable stdio/stat/rename; a complete custom ops
  * implementation can inject storage failures in host regression tests.
  */
