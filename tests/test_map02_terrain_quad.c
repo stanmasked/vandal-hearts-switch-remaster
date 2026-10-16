@@ -233,7 +233,7 @@ static void test_two_source_faces_keep_material_uv_and_shared_projection(void) {
         {0,0,512},{100,0,640},{100,100,640},
         {0,100,512},{200,0,640},{200,100,640}
     };
-    VhMap02ProjectFace expected[2]={{0}};
+    VhMap02ProjectFace expected[2]={0};
     VhMap02TerrainQuad *prepared[2]={&left,&right};
     setup_tile();
     tile[302]=2;
