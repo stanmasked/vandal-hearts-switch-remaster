@@ -920,3 +920,45 @@ page and a two-page user-owned-bank accounting scenario. The
 standalone NRO is compiled via the `Switch libnx audout music NRO`
 workflow on the active feature branch and its binary artifact
 contains no original game music.
+
+### Four normalized audout wait bands for on-device screenshots
+
+A single peak wait is not enough to distinguish an isolated backend
+stall from repeated delays during a Switch music scene change.
+`VhAudioPageWaitBucket` therefore keeps a fixed-size four-bin
+histogram, independently for steady-state and first-after-switch
+PCM pages. The bands compare **the sum of blocking audout service
+waits for each logical page** with the duration of that page's
+*actual* 48-kHz frame count:
+
+| Wait band | Meaning |
+| --- | --- |
+| `<=1x` | Blocking backend wait did not exceed this PCM page duration |
+| `<=2x` | More than 1x, at most 2x page duration |
+| `<=4x` | More than 2x, at most 4x page duration |
+| `>4x` | More than four page durations |
+
+The four bins are mutually exclusive. Their sum must equal the
+corresponding logical page count, **including a terminally failed
+page** if one was observed. Recovery retries still contribute only
+one page, with the service waits of all attempts added; stop/reopen
+time is excluded. The PCM page duration is calculated from the
+resampler's actual output count rather than assuming a fixed 557
+frames per block. Fixed-size counters use no heap allocation,
+retain no per-page timestamps, and do not reveal music resources.
+
+The standalone audout NRO now prints both histogram rows directly
+above the result code and **Plus-to-exit** prompt. The final
+`FULL PCM PAGE ACCOUNTING` verdict is also contingent on histogram
+sums matching their page counts. A synthetic host test generates
+exactly one observation in each of the four latency bands and
+rejects artificially incremented or decremented histogram bins,
+while the existing 48-page A/B bank-switch regression checks the
+same invariants under injected retries.
+
+The bands are **not glitch flags**: `audoutPlayBuffer` may normally
+block while playback completes, and a long page wait does not imply
+a sample underrun, an audible gap, or PS1 parity. The purpose is
+to make the distribution and its relation to cue switching readable
+on a photo of the physical Switch results screen, without exporting
+copyrighted music or any audio recordings.
