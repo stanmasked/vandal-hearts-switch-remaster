@@ -155,3 +155,46 @@ def order_faces_by_external_otz(faces, otz_by_cell):
             key=lambda pair: (otz_by_cell[pair[1][0]], pair[0])
         )
     ]
+
+
+def bind_gte_face_samples(faces, samples):
+    """Bind externally captured per-face GTE samples to source provenance.
+
+    A sample key is (z, x, record_index, face_index), NOT merely (z,x).
+    Currently place_faces decodes face 0 only. All samples require an
+    explicitly captured OTZ; optional projected corners are deliberately
+    out of scope until their original GTE convention is verified.
+    Input ordering is preserved; this function does not sort draw calls.
+    """
+    expected = []
+    for face in faces:
+        z, x = face["z"], face["x"]
+        index = face["record_index"]
+        source = face["source_face"]
+        face_id = source["face"]
+        if (type(z) is not int or type(x) is not int or
+                type(index) is not int or type(face_id) is not int or
+                index != source["record_index"] or
+                source["z"] != z or source["x"] != x):
+            raise ValueError("source face provenance mismatch")
+        expected.append((z, x, index, face_id))
+    if len(set(expected)) != len(expected):
+        raise ValueError("duplicate source face provenance")
+    if not isinstance(samples, dict) or set(samples) != set(expected):
+        raise ValueError("GTE samples must match source face provenance exactly")
+    bound = []
+    for face, key in zip(faces, expected):
+        sample = samples[key]
+        if not isinstance(sample, dict) or set(sample) != {"otz"}:
+            raise ValueError("GTE sample must contain only captured otz")
+        otz = sample["otz"]
+        if type(otz) is not int or not 0 <= otz <= 65535:
+            raise ValueError("captured OTZ must be an unsigned 16-bit integer")
+        bound.append({
+            "source_key": list(key),
+            "otz": otz,
+            "record_index": face["record_index"],
+            "local_gfx": face["source_face"]["local_gfx"],
+            "face_shade": face["source_face"]["face_shade"],
+        })
+    return bound
