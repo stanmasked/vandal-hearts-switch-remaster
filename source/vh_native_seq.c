@@ -81,6 +81,68 @@ static int read_event(SeqReader *r, SeqEvent *e) {
     return 0;
 }
 
+int vh_native_seq_audit(const uint8_t *bytes, size_t length,
+                        VhSeqResolve resolve, void *context,
+                        VhSeqAudit *report) {
+    if (!bytes || !resolve || !report || length < 15u ||
+        length > VH_SEQ_MAX_BYTES || memcmp(bytes, "pQES", 4u))
+        return -1;
+    VhSeqAudit staged = {0};
+    uint8_t program[VH_SEQ_CHANNELS] = {0};
+    uint8_t volume[VH_SEQ_CHANNELS], pan[VH_SEQ_CHANNELS];
+    for (unsigned ch=0; ch<VH_SEQ_CHANNELS; ++ch) {
+        volume[ch]=127u;
+        pan[ch]=64u;
+    }
+    SeqReader reader = {bytes, length, 15u, 0u};
+    for (unsigned i=0; i<VH_SEQ_MAX_EVENTS; ++i) {
+        uint32_t delta=0;
+        SeqEvent e;
+        if (read_vlq(&reader,&delta) || read_event(&reader,&e))
+            return -1;
+        (void)delta;
+        ++staged.events;
+        if (e.kind==6u) {
+            *report=staged; /* only publish after valid EOT */
+            return 0;
+        }
+        switch (e.kind) {
+        case 1: {
+            ++staged.note_events;
+            VhSeqTone tone={0};
+            if (!resolve(context,program[e.channel],e.a,e.b,
+                         volume[e.channel],pan[e.channel],&tone) &&
+                tone.pcm && tone.frames) {
+                ++staged.resolved_notes;
+            } else {
+                ++staged.missing_notes;
+                if (!staged.has_missing) {
+                    staged.first_missing_channel=e.channel;
+                    staged.first_missing_program=program[e.channel];
+                    staged.first_missing_note=e.a;
+                    staged.has_missing=1;
+                }
+            }
+            break;
+        }
+        case 3:
+            if (e.a==7u || e.a==11u) volume[e.channel]=(uint8_t)e.b;
+            else if (e.a==10u) pan[e.channel]=(uint8_t)e.b;
+            break;
+        case 4:
+            program[e.channel]=(uint8_t)e.a;
+            ++staged.program_changes;
+            break;
+        case 5:
+            ++staged.tempo_changes;
+            break;
+        default:
+            break;
+        }
+    }
+    return -1;
+}
+
 static void stop_note(VhNativeSeq *s, unsigned channel, unsigned note) {
     int slot = s->note_slot[channel][note];
     if (slot < 0 || slot >= (int)VH_NATIVE_MUSIC_VOICES) return;
