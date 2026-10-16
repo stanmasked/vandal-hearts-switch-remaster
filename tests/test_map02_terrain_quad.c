@@ -221,11 +221,69 @@ static void test_fail_closed_without_output_mutation(void) {
     assert(n==987);
 }
 
+static void test_two_source_faces_keep_material_uv_and_shared_projection(void) {
+    VhMap02ProjectCamera cam=camera();
+    VhMap02TerrainQuad left={0},right={0};
+    VhMap02ProjectVertex corners[2][4] = {
+        {{0,0,512},{100,0,640},{100,100,640},{0,100,512}},
+        {{100,0,640},{200,0,640},{200,100,640},{100,100,640}}
+    };
+    const unsigned vertex_order[2][4]={{0,1,2,3},{1,4,5,2}};
+    const VhMap02ProjectVertex all[6] = {
+        {0,0,512},{100,0,640},{100,100,640},
+        {0,100,512},{200,0,640},{200,100,640}
+    };
+    VhMap02ProjectFace expected[2]={{0}};
+    VhMap02TerrainQuad *prepared[2]={&left,&right};
+    setup_tile();
+    tile[302]=2;
+    put16(tile,176u,241);
+    put16(tile,178u,497);
+    tile[284]=7; tile[285]=19;
+    for(unsigned i=0;i<6u;++i)
+        vertex(i,all[i].x,all[i].y,all[i].z);
+    for(unsigned f=0;f<2u;++f) {
+        for(unsigned i=0;i<4u;++i)
+            tile[212u+4u*f+i]=(uint8_t)vertex_order[f][i];
+        assert(vh_map02_project_face(&cam,corners[f],1024,&expected[f]));
+    }
+    assert(vh_map02_prepare_terrain_quad(
+        tile,sizeof tile,0,&cam,1024,0,0,15,15,&left));
+    assert(vh_map02_prepare_terrain_quad(
+        tile,sizeof tile,1,&cam,1024,16,32,15,15,&right));
+    assert(left.drawable && right.drawable);
+    assert(left.face==0 && right.face==1);
+    assert(left.material==241 && right.material==497);
+    assert(left.shade==7 && right.shade==19);
+    assert(left.u==0 && left.v==0 && right.u==16 && right.v==32);
+    assert(left.projection.otz != right.projection.otz);
+    for(unsigned f=0;f<2u;++f) {
+        const VhMap02TerrainQuad *q=prepared[f];
+        assert(q->projection.otz==expected[f].otz);
+        assert(q->projection.nclip_mac0==expected[f].nclip_mac0);
+        assert(q->projection.ot_slot==expected[f].ot_slot);
+        for(unsigned k=0;k<4u;++k) {
+            assert(q->gpu_ft4[k].x==(float)expected[f].gpu[k].x);
+            assert(q->gpu_ft4[k].y==(float)expected[f].gpu[k].y);
+        }
+    }
+    assert(left.gpu_ft4[1].x==right.gpu_ft4[0].x);
+    assert(left.gpu_ft4[1].y==right.gpu_ft4[0].y);
+    assert(left.gpu_ft4[3].x==right.gpu_ft4[2].x);
+    assert(left.gpu_ft4[3].y==right.gpu_ft4[2].y);
+    /* Face 1 rejected when source faceCt is reduced; no stale result. */
+    tile[302]=1;
+    assert(!vh_map02_prepare_terrain_quad(
+        tile,sizeof tile,1,&cam,1024,16,32,15,15,&right));
+    assert(right.face==1 && right.material==497);
+}
+
 int main(void) {
     test_exact_quad_projection_uv_and_raw_clut_pixels();
     test_backface_and_invalid_ot_skip_pixel_writes();
     test_null_gfx_skips_unusable_vertices_like_original();
     test_fail_closed_without_output_mutation();
+    test_two_source_faces_keep_material_uv_and_shared_projection();
     puts("MAP02 decoded tile -> GTE -> indexed CLUT4 -> FT4 RGBA32 tests passed");
     return 0;
 }
