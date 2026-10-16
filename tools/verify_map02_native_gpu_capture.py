@@ -39,7 +39,8 @@ def sha(raw):
 def validate_meta(event, step, target_frame):
     fields(event, ("stage","step","frame","phase","operation","snapshot",
                    "rect","dest","rgb","primitive_type","semi","window",
-                   "draw_mode","upload","ft4"), f"event {step}")
+                   "draw_mode","upload","ft4"), f"event {step}",
+           optional=("draw_env",))
     if event["stage"] != "native_vram":
         raise ValueError("not a native PC GPU VRAM event")
     if number(event["step"],"event step",0,MAX_RECORDS-1) != step:
@@ -64,6 +65,16 @@ def validate_meta(event, step, target_frame):
             raise ValueError(f"{name}: wrong field shape")
         for value in data:
             number(value,name,lo,hi)
+    # The optional DRAWENV snapshot is written by the opt-in native probe.
+    # Older captures stay readable but cannot prove drawing-area clipping.
+    # clip is [x,y,width,height], with 16-bit signed offsets [ofsX,ofsY].
+    if "draw_env" in event:
+        draw_env=event["draw_env"]
+        if type(draw_env) is not list or len(draw_env)!=6:
+            raise ValueError("DRAWENV: expected six integers")
+        for i,value in enumerate(draw_env):
+            number(value, "DRAWENV", -32768 if i in (0,1,4,5) else 0,
+                   65535 if i in (2,3) else 32767)
     rect=event["rect"]
     if op=="draw":
         if rect is not None or event["upload"]:
@@ -111,8 +122,8 @@ def verify_capture(directory: Path, *, target_frame: int):
         validate_meta(before,i,target_frame)
         validate_meta(after,i+1,target_frame)
         for key in ("frame","operation","rect","dest","rgb","primitive_type",
-                    "semi","ft4"):
-            if before[key]!=after[key]:
+                    "semi","ft4","draw_env"):
+            if before.get(key)!=after.get(key):
                 raise ValueError(f"GPU event {i}: before/after metadata diverges ({key})")
         a=private_file(directory,before["snapshot"],expected=VRAM_BYTES)
         b=private_file(directory,after["snapshot"],expected=VRAM_BYTES)
