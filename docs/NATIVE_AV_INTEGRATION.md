@@ -52,3 +52,25 @@ or unavailable-device state and does not prevent video diagnostics.
 
 Only a verified hardware run with actual output recording could establish
 audible playback. A passing framebuffer smoke test is not a playable port.
+
+## First observed NeXium execution (2026-10-16)
+
+The completed [Native libnx graphics and audio integration probe CI run
+#38863445674](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38863445674)
+cross-compiled the NRO, ran host PCM tests and UBSan, and captured two
+NeXium framebuffer images. Its image checker independently confirmed:
+
+- The generated tactical grid and hero marker were displayed.
+- The main software framebuffer advanced between frames: **1,664 pixels**
+  changed in the expected heartbeat region.
+- The status rectangle was recognized as `initialized`, meaning the
+  libnx audout service and worker reported no synchronous startup error.
+- Neither audible audio nor original-game behavior has been verified.
+
+The emulator shows an upper-left performance overlay and maps the
+720-pixel guest framebuffer into a roughly 694-pixel-tall host viewport.
+The audio status rectangle was moved rightward to avoid the overlay;
+the screenshot checker also compensates for vertical viewport scaling.
+Two earlier failures exposed false screenshot assumptions rather than a
+cross-compiler error. This successful run records the observed evidence
+without assuming measured sound or complete PS1 game compatibility.
