@@ -13,6 +13,8 @@ on:
       - 'tests/test_seq_to_chord_schedule.py'
       - 'tools/render_ps1_seq.py'
       - 'tests/export_native_seq_pcm_wav.c'
+      - 'tests/test_native_pcm_capture.py'
+      - 'tools/inspect_native_pcm_capture.py'
       - 'source/vh_native_seq.c'
       - 'source/vh_native_spu.c'
       - 'source/vh_audio_resample.c'
@@ -27,6 +29,8 @@ on:
       - 'tests/test_seq_to_chord_schedule.py'
       - 'tools/render_ps1_seq.py'
       - 'tests/export_native_seq_pcm_wav.c'
+      - 'tests/test_native_pcm_capture.py'
+      - 'tools/inspect_native_pcm_capture.py'
       - 'source/vh_native_seq.c'
       - 'source/vh_native_spu.c'
       - 'source/vh_audio_resample.c'
@@ -47,6 +51,7 @@ jobs:
         run: |
           python3 -m unittest discover -s tests -p 'test_analyze_pcm*.py' -v
           python3 tests/test_seq_pcm_measurements.py
+          python3 tests/test_native_pcm_capture.py
       - name: Measure actual native C SEQ to SPU to 48k WAV
         run: |
           cc -std=c11 -Wall -Wextra -Werror -O2 -Isource \
@@ -63,5 +68,7 @@ jobs:
           /tmp/export_native_seq_pcm_wav /tmp/native-seq-spu-48k-repeat.wav
           cmp /tmp/native-seq-spu-48k.wav /tmp/native-seq-spu-48k-repeat.wav
           sha256sum /tmp/native-seq-spu-48k.wav
+          python3 tools/inspect_native_pcm_capture.py /tmp/native-seq-spu-48k.wav
+          python3 tools/inspect_native_pcm_capture.py /tmp/native-seq-spu-48k-repeat.wav
           python3 tools/analyze_pcm_wav.py /tmp/native-seq-spu-48k-repeat.wav \
             --expected-rate 48000 --fail-on-silence
