@@ -12,6 +12,7 @@ from tools.map02_multicell_probe import (
     bind_gte_face_samples, place_selected_faces, audit_multicell_gte_batch, bind_external_screen_corners,
     audit_multicell_screen_batch, audit_projected_shared_vertices,
     audit_projected_shared_edges, audit_horizontal_edge_contacts,
+    audit_elevated_projected_edges,
 )
 
 
@@ -541,6 +542,39 @@ class MultiCellTests(unittest.TestCase):
         report = audit_horizontal_edge_contacts(faces)
         self.assertEqual(report["coincident_count"], 1)
         self.assertEqual(report["height_separated_count"], 0)
+
+
+    def test_elevated_projected_edge_audit_distinguishes_true_contact(self):
+        keys = [(2, 3, 0), (2, 4, 0)]
+        uv = {key: (0, 0, 15, 15) for key in keys}
+        data = fixture()
+        left = (2 * STRIDE + 3) * RECORD_SIZE
+        right = (2 * STRIDE + 4) * RECORD_SIZE
+        for index in (1, 2):
+            struct.pack_into("<h", data, left + index * 8 + 2, 16)
+        for index in (0, 3):
+            struct.pack_into("<h", data, right + index * 8 + 2, 16)
+        faces = place_selected_faces(data, keys, uv, step_x=64, step_z=64)
+        screen = {
+            (2, 3, 59, 0): [(0, 0), (8, 0), (8, 8), (0, 8)],
+            (2, 4, 60, 0): [(8, 0), (16, 0), (16, 8), (8, 8)],
+        }
+        matched = audit_elevated_projected_edges(faces, screen)
+        self.assertEqual((matched["exact_shared_3d_edges"],
+                          matched["projected_matches"],
+                          matched["height_separated_xz_contacts"]), (1, 1, 0))
+        screen[(2, 4, 60, 0)][3] = (9, 8)
+        mismatch = audit_elevated_projected_edges(faces, screen)
+        self.assertEqual(mismatch["projected_mismatches"], 1)
+        self.assertEqual(len(mismatch["mismatched_exact_edges"]), 1)
+        for index in (0, 3):
+            struct.pack_into("<h", data, right + index * 8 + 2, 32)
+        separated_faces = place_selected_faces(data, keys, uv,
+                                               step_x=64, step_z=64)
+        separated = audit_elevated_projected_edges(separated_faces, screen)
+        self.assertEqual(separated["exact_shared_3d_edges"], 0)
+        self.assertEqual(separated["projected_mismatches"], 0)
+        self.assertEqual(separated["height_separated_xz_contacts"], 1)
 
 
 if __name__ == "__main__":
