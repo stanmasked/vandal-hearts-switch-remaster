@@ -1224,3 +1224,31 @@ The regression runs through both host Make targets and independently
 under CI UndefinedBehaviorSanitizer. Neither these tests nor a clean
 FULL PCM-accounting verdict prove there are no audible glitches on a
 physical Nintendo Switch.
+
+
+### Independent 4096-page A/B lookback oracle (portable CI)
+
+To make the 32-returned-page lookback more resistant to silent ring
+off-by-one regressions, a new host-only oracle compares the production
+accumulator against an independent chronological array of **4096**
+synthetic page observations. The oracle never reads the production
+ring to calculate expected events: it scans up to the previous 31
+pages plus the current page directly from the historical fixture.
+
+For every returned page, the test compares all four event classes
+(synthetic scene change, audout wait greater than 2x/4x nominal page
+duration and retry) across three groups: manual perceived-defect A,
+manual normal-sounding B, and every-returned-page background.
+It also verifies both A/B maximum inter-page PCM16 jumps, and checks
+the production 31-page and 32-page lookback results separately on
+**every** one of the 4096 pages.
+
+The deterministic fixture includes deliberately adjacent events on
+pages 31, 32 and 33, many further full-ring wraps, isolated cue
+boundaries, varied long waits, backend retries and distinct A/B marks.
+The same test is built under both Make test targets and in CI with
+-O0 and -O2+UndefinedBehaviorSanitizer, with output comparison.
+No copyrighted audio, PCM sample buffers or input timing logs are
+used. This test only validates counting and window boundaries;
+it is not a physical hardware listening test or evidence that
+audible glitches are absent.

@@ -30,6 +30,7 @@ on:
       - 'tests/test_vh_reverb_bank_tail.c'
       - 'tests/test_vh_audio_output_recovery.c'
       - 'tests/test_vh_audio_listening_marks.c'
+      - 'tests/test_vh_audio_listening_oracle.c'
       - 'tests/test_vh_audio_pause_fifo.c'
       - 'tests/test_vh_audio_pause_wrap.c'
       - 'tests/test_vh_native_audio_soak.c'
@@ -84,6 +85,7 @@ on:
       - 'tests/test_vh_reverb_bank_tail.c'
       - 'tests/test_vh_audio_output_recovery.c'
       - 'tests/test_vh_audio_listening_marks.c'
+      - 'tests/test_vh_audio_listening_oracle.c'
       - 'tests/test_vh_audio_pause_fifo.c'
       - 'tests/test_vh_audio_pause_wrap.c'
       - 'tests/test_vh_native_audio_soak.c'
@@ -454,6 +456,22 @@ jobs:
             tests/test_vh_audio_input_poll.c \
             -o /tmp/test_vh_audio_input_poll_ubsan
           /tmp/test_vh_audio_input_poll_ubsan
+      - name: Verify independent 4096-page A/B lookback oracle under UBSan
+        run: |
+          set -euo pipefail
+          cc -std=c11 -Wall -Wextra -Werror -O0 -Isource \
+            tests/test_vh_audio_listening_oracle.c \
+            -o /tmp/vh_listening_oracle_debug
+          /tmp/vh_listening_oracle_debug > /tmp/vh_listening_oracle_o0.txt
+          cc -std=c11 -Wall -Wextra -Werror -O2 -g -Isource \
+            -fsanitize=undefined -fno-sanitize-recover=all \
+            tests/test_vh_audio_listening_oracle.c \
+            -o /tmp/vh_listening_oracle_ubsan
+          /tmp/vh_listening_oracle_ubsan > /tmp/vh_listening_oracle_ubsan.txt
+          cmp /tmp/vh_listening_oracle_o0.txt \
+              /tmp/vh_listening_oracle_ubsan.txt
+          grep -Fq 'audout A/B 4096-page independent lookback oracle: PASS' \
+              /tmp/vh_listening_oracle_ubsan.txt
       - name: Verify listener-mark baseline and wrap under UBSan
         run: |
           set -euo pipefail

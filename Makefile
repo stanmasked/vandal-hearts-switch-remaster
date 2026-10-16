@@ -29,7 +29,7 @@ LDLIBS   := -L$(DEVKITPRO)/libnx/lib -lnx
 .PHONY: all clean test test-audio-stream test-local-music-transition test-sanitize verify-nro sdl2-probe sdl2-gl-probe sdl2-texture-probe sdl2-audio-probe audout-audio-probe openal-probe
 all: $(BUILD)/$(TARGET).nro
 
-test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(BUILD)/test_vh_native_seq $(BUILD)/test_vh_native_vab $(BUILD)/test_vh_audio_assets $(BUILD)/test_vh_audio_resample $(BUILD)/test_vh_spu_reverb $(BUILD)/test_vh_native_audio_soak $(BUILD)/test_vh_audio_output_recovery $(BUILD)/test_vh_audio_pcm_seams $(BUILD)/test_vh_audio_listening_marks $(BUILD)/test_vh_audio_input_poll $(BUILD)/test_vh_audio_mark_buttons $(BUILD)/test_vh_audio_listener_input $(BUILD)/test_vh_audio_report_pages
+test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(BUILD)/test_vh_native_seq $(BUILD)/test_vh_native_vab $(BUILD)/test_vh_audio_assets $(BUILD)/test_vh_audio_resample $(BUILD)/test_vh_spu_reverb $(BUILD)/test_vh_native_audio_soak $(BUILD)/test_vh_audio_output_recovery $(BUILD)/test_vh_audio_pcm_seams $(BUILD)/test_vh_audio_listening_marks $(BUILD)/test_vh_audio_listening_oracle $(BUILD)/test_vh_audio_input_poll $(BUILD)/test_vh_audio_mark_buttons $(BUILD)/test_vh_audio_listener_input $(BUILD)/test_vh_audio_report_pages
 	./$(BUILD)/test_game_rules
 	./$(BUILD)/test_software_renderer
 	./$(BUILD)/test_vh_audio_stream
@@ -43,6 +43,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_vh_
 	./$(BUILD)/test_vh_audio_output_recovery
 	./$(BUILD)/test_vh_audio_pcm_seams
 	./$(BUILD)/test_vh_audio_listening_marks
+	./$(BUILD)/test_vh_audio_listening_oracle
 	./$(BUILD)/test_vh_audio_input_poll
 	./$(BUILD)/test_vh_audio_mark_buttons
 	./$(BUILD)/test_vh_audio_listener_input
@@ -79,7 +80,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_vh_
 	python3 tests/test_native_vab_python_reference.py
 	python3 tests/test_native_spu_reverb_reference.py
 
-test-audio-stream: $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(BUILD)/test_vh_native_seq $(BUILD)/test_vh_native_vab $(BUILD)/test_vh_audio_assets $(BUILD)/test_vh_audio_resample $(BUILD)/test_vh_spu_reverb $(BUILD)/test_vh_native_audio_soak $(BUILD)/test_vh_audio_output_recovery $(BUILD)/test_vh_audio_pcm_seams $(BUILD)/test_vh_audio_listening_marks $(BUILD)/test_vh_audio_input_poll $(BUILD)/test_vh_audio_mark_buttons $(BUILD)/test_vh_audio_listener_input $(BUILD)/test_vh_audio_report_pages $(BUILD)/vh_local_music_transition_probe
+test-audio-stream: $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(BUILD)/test_vh_native_seq $(BUILD)/test_vh_native_vab $(BUILD)/test_vh_audio_assets $(BUILD)/test_vh_audio_resample $(BUILD)/test_vh_spu_reverb $(BUILD)/test_vh_native_audio_soak $(BUILD)/test_vh_audio_output_recovery $(BUILD)/test_vh_audio_pcm_seams $(BUILD)/test_vh_audio_listening_marks $(BUILD)/test_vh_audio_listening_oracle $(BUILD)/test_vh_audio_input_poll $(BUILD)/test_vh_audio_mark_buttons $(BUILD)/test_vh_audio_listener_input $(BUILD)/test_vh_audio_report_pages $(BUILD)/vh_local_music_transition_probe
 	./$(BUILD)/test_vh_audio_stream
 	./$(BUILD)/test_vh_native_spu
 	./$(BUILD)/test_vh_native_seq
@@ -91,6 +92,7 @@ test-audio-stream: $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(B
 	./$(BUILD)/test_vh_audio_output_recovery
 	./$(BUILD)/test_vh_audio_pcm_seams
 	./$(BUILD)/test_vh_audio_listening_marks
+	./$(BUILD)/test_vh_audio_listening_oracle
 	./$(BUILD)/test_vh_audio_input_poll
 	./$(BUILD)/test_vh_audio_mark_buttons
 	./$(BUILD)/test_vh_audio_listener_input
@@ -160,6 +162,9 @@ $(BUILD)/test_vh_audio_mark_buttons: tests/test_vh_audio_mark_buttons.c source/v
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Isource $< -o $@
 
 $(BUILD)/test_vh_audio_input_poll: tests/test_vh_audio_input_poll.c source/vh_audio_input_poll.h | $(BUILD)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Isource $< -o $@
+
+$(BUILD)/test_vh_audio_listening_oracle: tests/test_vh_audio_listening_oracle.c source/vh_audio_listening_marks.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Isource $< -o $@
 
 $(BUILD)/test_vh_audio_listening_marks: tests/test_vh_audio_listening_marks.c source/vh_audio_listening_marks.h | $(BUILD)
