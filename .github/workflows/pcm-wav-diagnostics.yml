@@ -16,6 +16,8 @@ on:
       - 'tests/test_native_pcm_capture.py'
       - 'tests/test_vh_resample_partition.c'
       - 'tools/inspect_native_pcm_capture.py'
+      - 'tools/analyze_pcm_discontinuities.py'
+      - 'tests/test_analyze_pcm_discontinuities.py'
       - 'source/vh_native_seq.c'
       - 'source/vh_native_spu.c'
       - 'source/vh_audio_resample.c'
@@ -33,6 +35,8 @@ on:
       - 'tests/test_native_pcm_capture.py'
       - 'tests/test_vh_resample_partition.c'
       - 'tools/inspect_native_pcm_capture.py'
+      - 'tools/analyze_pcm_discontinuities.py'
+      - 'tests/test_analyze_pcm_discontinuities.py'
       - 'source/vh_native_seq.c'
       - 'source/vh_native_spu.c'
       - 'source/vh_audio_resample.c'
@@ -54,6 +58,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_analyze_pcm*.py' -v
           python3 tests/test_seq_pcm_measurements.py
           python3 tests/test_native_pcm_capture.py
+          python3 tests/test_analyze_pcm_discontinuities.py
       - name: Measure actual native C SEQ to SPU to 48k WAV
         run: |
           cc -std=c11 -Wall -Wextra -Werror -O2 -Isource \
@@ -72,6 +77,7 @@ jobs:
           sha256sum /tmp/native-seq-spu-48k.wav
           python3 tools/inspect_native_pcm_capture.py /tmp/native-seq-spu-48k.wav
           python3 tools/inspect_native_pcm_capture.py /tmp/native-seq-spu-48k-repeat.wav
+          python3 tools/analyze_pcm_discontinuities.py /tmp/native-seq-spu-48k.wav
           python3 tools/analyze_pcm_wav.py /tmp/native-seq-spu-48k-repeat.wav \
             --expected-rate 48000 --fail-on-silence
       - name: Verify resampler PCM invariant to source block partitioning
