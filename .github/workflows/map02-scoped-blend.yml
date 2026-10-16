@@ -4,6 +4,9 @@ on:
   push:
     paths:
       - 'tools/instrument_map02_scoped_blend.py'
+      - 'tools/map02_scoped_blend_sink.c'
+      - 'tools/map02_scoped_blend_sink.h'
+      - 'tests/test_map02_scoped_blend_sink.py'
       - 'tests/test_instrument_map02_scoped_blend.py'
       - '.github/workflows/map02-scoped-blend.yml'
   pull_request:
@@ -23,4 +26,4 @@ jobs:
         with:
           python-version: '3.11'
       - name: Check synthetic source transformation and C probes
-        run: python3 -m unittest -v tests.test_instrument_map02_scoped_blend
+        run: python3 -m unittest -v tests.test_instrument_map02_scoped_blend tests.test_map02_scoped_blend_sink
