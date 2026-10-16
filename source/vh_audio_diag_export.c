@@ -15,6 +15,10 @@ static FILE *disk_open(void *unused, const char *path) {
     (void)unused;
     return fopen(path,"wb");
 }
+static FILE *disk_open_read(void *unused,const char *path) {
+    (void)unused;
+    return fopen(path,"rb");
+}
 static int disk_write(void *unused,const VhAudioDiagJournal *j,FILE *f) {
     (void)unused;
     return vh_audio_diag_journal_write_csv(j,f);
@@ -36,11 +40,12 @@ static int disk_remove(void *unused,const char *path) {
     return remove(path);
 }
 static const VhAudioDiagExportOps disk_ops={
-    NULL,disk_exists,disk_open,disk_write,disk_flush,disk_close,
+    NULL,disk_exists,disk_open,disk_open_read,disk_write,disk_flush,disk_close,
     disk_rename,disk_remove
 };
 static int ready(const VhAudioDiagExportOps *o) {
-    return o && o->exists && o->open && o->write && o->flush &&
+    return o && o->exists && o->open && o->open_read &&
+           o->write && o->flush &&
            o->close && o->rename && o->remove;
 }
 static int build_path(char *target,size_t capacity,const char *dir,
@@ -94,6 +99,22 @@ VhAudioDiagExportResult vh_audio_diag_export(
         result=VH_AUDIO_EXPORT_FLUSH;
     if(ops->close(ops->context,f)!=0 && result==VH_AUDIO_EXPORT_OK)
         result=VH_AUDIO_EXPORT_CLOSE;
+    if(result==VH_AUDIO_EXPORT_OK) {
+        /* READ-BACK CHECK: a successful write/flush/close can still
+         * produce truncated or corrupted data on a faulty SD card.
+         * Reopen in rb mode and require a byte-for-byte canonical CSV
+         * match including an exact EOF. Never publish a damaged .tmp.
+         */
+        FILE *readback=ops->open_read(ops->context,temp);
+        if(!readback) result=VH_AUDIO_EXPORT_READ;
+        else {
+            if(vh_audio_diag_journal_verify_csv(j,readback)!=(int)j->count)
+                result=VH_AUDIO_EXPORT_VERIFY;
+            if(ops->close(ops->context,readback)!=0 &&
+               result==VH_AUDIO_EXPORT_OK)
+                result=VH_AUDIO_EXPORT_CLOSE;
+        }
+    }
     if(result==VH_AUDIO_EXPORT_OK) {
         /* A second absence check prevents accidental overwrite if
          * another process created the target during export. This
