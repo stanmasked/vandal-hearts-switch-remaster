@@ -16,6 +16,7 @@
 #include "vh_private_map_geometry.h"
 #include "vh_private_map_shading.h"
 #include "vh_private_map_light.h"
+#include "vh_private_map_normals.h"
 
 extern int PC_GpuInit(int width, int height, const char *title);
 extern void PC_GpuGetWindowSize(int *width, int *height, int *scale);
@@ -42,6 +43,8 @@ static int private_map_active;
 static VhPreviewGeometry private_geometry;
 static int private_geometry_active;
 static unsigned char private_light_intensity=128;
+static int private_recompute_shades;
+static int private_recomputed_shades;
 static const unsigned char map_land_record[1797] = {
     [0] = 16, [1] = 16, [2] = 15, [3] = 15,
     [257 * 4] = 32,              /* Slot 0 -> first local CLUT row */
@@ -349,6 +352,14 @@ static int draw_private_map_preview(void) {
          * NOT copied from the game's battle camera state. */
         InitGeom();
         vh_map_init_side_normals(light_normals);
+        if (private_recompute_shades && !private_recomputed_shades) {
+            if (vh_map_recompute_shade_indices(
+                    &private_geometry, light_normals) != 1) {
+                fprintf(stderr,"Invalid source face geometry for lighting\\n");
+                return 0;
+            }
+            private_recomputed_shades=1;
+        }
         vh_map_update_light(face_lights, light_normals,
                             &light_rotation, &light_base,
                             private_light_intensity, 11);
@@ -537,6 +548,17 @@ int main(void) {
                     if (light_status < 0) {
                         fprintf(stderr, "Private light intensity file invalid\\n");
                         goto done;
+                    }
+                    {
+                        unsigned char requested_mode=0;
+                        int normal_status=vh_map_read_demo_intensity(
+                            VH_MAP_RECOMPUTE_SHADES_PATH, &requested_mode);
+                        if (normal_status < 0 ||
+                            (normal_status == 1 && requested_mode != 1)) {
+                            fprintf(stderr,"Private recompute-shades option invalid\\n");
+                            goto done;
+                        }
+                        private_recompute_shades=(normal_status == 1);
                     }
                 }
             }
