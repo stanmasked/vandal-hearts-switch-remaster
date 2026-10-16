@@ -7,7 +7,8 @@ import unittest
 from pathlib import Path
 
 from tools.extract_map02_trace import (MAX_RAW_LINE_BYTES, TraceByteStream,
-                                       extract_trace_lines, extract_trace_text)
+                                       extract_trace_bytes, extract_trace_lines,
+                                       extract_trace_text)
 
 
 def entries():
@@ -104,6 +105,38 @@ class ExtractMap02TraceTests(unittest.TestCase):
         reader = TraceByteStream()
         with self.assertRaisesRegex(ValueError, "line 1: oversized JSON-looking line"):
             reader.feed(b'{"debug":"' + b"x" * (MAX_RAW_LINE_BYTES + 1))
+
+    def test_binary_extractor_skips_oversized_console_and_retains_complete_trace(self):
+        event = json.dumps(entries()[0]).encode("utf-8") + b"\n"
+        raw = b"GPU:" + b"x" * (MAX_RAW_LINE_BYTES + 100) + b"\n" + event
+        chunks = (raw[i:i + 8191] for i in range(0, len(raw), 8191))
+        self.assertEqual(extract_trace_bytes(chunks), [entries()[0]])
+
+    def test_standalone_cli_accepts_reentered_map11_full_trace(self):
+        load = entries()
+        load[2].update({"frame": 8, "path": "normal"})
+        load[3].update({"frame": 8, "path": "normal"})
+        events = [
+            load[0], load[1],
+            {"z": 8, "x": 19, "face": 0, "stage": "visit",
+             "gfx": 641, "frame": 8, "path": "normal", "face_count": 2},
+            load[2],
+            {"z": 11, "x": 11, "face": 0, "stage": "visit",
+             "gfx": 643, "frame": 8, "path": "normal", "face_count": 2},
+            load[3],
+        ]
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "noisy-game.log"
+            payload = b"GPU:" + b"x" * (MAX_RAW_LINE_BYTES + 30) + b"\n"
+            payload += b"".join(json.dumps(event).encode("utf-8") + b"\n"
+                                for event in events + events)
+            path.write_bytes(payload)
+            command = [sys.executable, "-m", "tools.extract_map02_trace", str(path),
+                       "--require-full-trace", "--require-complete"]
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual([json.loads(line) for line in result.stdout.splitlines()],
+                             events + events)
 
     def test_ignores_other_json_structures(self):
         ev = entries()[0]
