@@ -105,6 +105,37 @@ class TimelineToNativeFt4JoinTests(unittest.TestCase):
                        "bgr555", "texture", "camera"):
             self.assertNotIn(secret, published)
 
+    def test_native_ft4_pixel_deltas_include_bgr555_bit15(self):
+        baseline = self.verify()
+        self.assertEqual(baseline["matched_ft4_draw_changed_vram_words"], 0)
+        self.assertEqual(
+            baseline["matched_ft4_draw_changed_texture_or_clut_words"], 0)
+        self.assertEqual(baseline["matched_ft4_draws_without_vram_change"], 2)
+        self.assertFalse(baseline["native_ft4_pixels_bit_exact_to_ps1"])
+
+        # First FT4 writes one unrelated render-target pixel and updates its
+        # own CLUT word. Neither write may be invented into the source capture.
+        after = bytearray(self.native_snapshots[1])
+        timeline_fixture.fixture.word(after, 0, 0, 0x801f)  # bit 15 survives
+        timeline_fixture.fixture.word(after, 690, 499, 0x001f)
+        self.native_snapshots[1] = bytes(after)
+        self.write_native()
+        report = self.verify()
+        self.assertEqual(report["matched_ft4_draw_changed_vram_words"], 2)
+        self.assertEqual(
+            report["matched_ft4_draw_changed_texture_or_clut_words"], 1)
+        self.assertEqual(report["matched_ft4_draws_without_vram_change"], 1)
+
+        # Changing only bit15 of BGR555 still counts as a VRAM write.
+        after = bytearray(self.native_snapshots[1])
+        timeline_fixture.fixture.word(after, 690, 499, 0x83e0)
+        self.native_snapshots[1] = bytes(after)
+        self.write_native()
+        report = self.verify()
+        self.assertEqual(report["matched_ft4_draw_changed_vram_words"], 2)
+        self.assertEqual(
+            report["matched_ft4_draw_changed_texture_or_clut_words"], 1)
+
     def test_changed_current_face_clut_detected_at_native_draw(self):
         damaged = bytearray(self.native_snapshots[0])
         timeline_fixture.fixture.word(damaged, 690, 499, 0x7c00)
