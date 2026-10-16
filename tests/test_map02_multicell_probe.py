@@ -9,7 +9,7 @@ from tools.map02_face_geometry import (
 from tools.map02_multicell_probe import (
     place_faces, shared_vertices, shared_edges, boundary_report,
     face_cross_xyz, placement_invariants, order_faces_by_external_otz,
-    bind_gte_face_samples,
+    bind_gte_face_samples, place_selected_faces,
 )
 
 
@@ -212,6 +212,46 @@ class MultiCellTests(unittest.TestCase):
         faces[0]["record_index"] += 1
         with self.assertRaisesRegex(ValueError, "provenance mismatch"):
             bind_gte_face_samples(faces, {valid: {"otz": 12}})
+
+
+    def test_two_faces_same_cell_keep_distinct_gfx_shade_and_gte(self):
+        data = fixture()
+        off = (2 * STRIDE + 3) * RECORD_SIZE
+        data[off + FACE_COUNT_OFFSET] = 2
+        data[off + FACE_TABLE_OFFSET + 4:off + FACE_TABLE_OFFSET + 8] = bytes((3, 2, 1, 0))
+        struct.pack_into("<h", data, off + GFX_OFFSET + 2, 497)
+        data[off + 284] = 7
+        data[off + 285] = 19
+        keys = [(2, 3, 0), (2, 3, 1)]
+        faces = place_selected_faces(data, keys, {
+            keys[0]: (0, 0, 15, 15), keys[1]: (16, 32, 15, 15)
+        }, step_x=64, step_z=64)
+        self.assertEqual([f["source_face"]["face"] for f in faces], [0, 1])
+        self.assertEqual([f["source_face"]["local_gfx"] for f in faces], [241, 497])
+        self.assertEqual([f["source_face"]["face_shade"] for f in faces], [7, 19])
+        self.assertEqual(faces[1]["source_face"]["face_vertex_indices"], [3, 2, 1, 0])
+        self.assertEqual(faces[1]["source_face"]["face_corners"][0]["uv"], [16, 32])
+        bound = bind_gte_face_samples(faces, {
+            (2, 3, 59, 0): {"otz": 12}, (2, 3, 59, 1): {"otz": 29}
+        })
+        self.assertEqual([b["otz"] for b in bound], [12, 29])
+        self.assertEqual([b["source_key"][-1] for b in bound], [0, 1])
+        for face in faces:
+            self.assertTrue(placement_invariants(face)["cross_preserved"])
+
+    def test_selected_faces_reject_duplicate_or_out_of_count(self):
+        data = fixture()
+        key = (2, 3, 0)
+        with self.assertRaisesRegex(ValueError, "duplicate source"):
+            place_selected_faces(data, [key, key], {key: (0, 0, 15, 15)},
+                                 step_x=64, step_z=64)
+        bad = (2, 3, 1)
+        with self.assertRaisesRegex(ValueError, "face index outside"):
+            place_selected_faces(data, [bad], {bad: (0, 0, 15, 15)},
+                                 step_x=64, step_z=64)
+        with self.assertRaisesRegex(ValueError, "grid steps"):
+            place_selected_faces(data, [key], {key: (0, 0, 15, 15)},
+                                 step_x=0, step_z=64)
 
 
 if __name__ == "__main__":
