@@ -43,6 +43,7 @@ def oracle_source(stops):
 			ClosePlugins();SysClose();menu_finish();plat_finish();return 2;
 		}
 		unsigned int total_samples=0,frame_count=0;
+		unsigned int observed_register_mismatches=0;
 		/* Four separate ExecuteBlock() calls in this SAME emulator
 		 * process. No SysReset, game reload or renderer replacement
 		 * between the captures. NOT a hardware VBlank assertion. */
@@ -98,9 +99,11 @@ def oracle_source(stops):
 			const unsigned int ids[3]={0xe1,0xe2,0xe6};
 			for(unsigned int i=0;i<3;i++) {
 				if(state.ulControl[ids[i]]!=expect_reg[phase][i]) {
-					SysPrintf("VH77_GPU_STATE_REFUSED phase=%u reg=%u\n",
+					/* Retain a proof of register differences, but first
+					 * expose their consequence in a later VRAM sample. */
+					observed_register_mismatches++;
+					SysPrintf("VH77_GPU_STATE_OBSERVED_MISMATCH phase=%u reg=%u\\n",
 					  phase,ids[i]);
-					ClosePlugins();SysClose();menu_finish();plat_finish();return 6;
 				}
 			}
 			SysPrintf("VH77_PHASE_PASS phase=%u checked=595 guard=499\n",phase);
@@ -110,6 +113,10 @@ def oracle_source(stops):
 		if(frame_count!=4 || total_samples!=2380) {
 			SysPrintf("VH77_AGGREGATE_REFUSED\n");
 			ClosePlugins();SysClose();menu_finish();plat_finish();return 7;
+		}
+		if(observed_register_mismatches!=0) {
+			SysPrintf("VH77_GPU_STATE_REFUSED count=%u\\n",observed_register_mismatches);
+			ClosePlugins();SysClose();menu_finish();plat_finish();return 6;
 		}
 		SysPrintf("VH77_MULTIPHASE_PASS phases=4 samples=2380 gpu_fifo_reset_kept_state=1 gpu_full_reset_cleared_state=1\n");
 		ClosePlugins();SysClose();menu_finish();plat_finish();return 0;
