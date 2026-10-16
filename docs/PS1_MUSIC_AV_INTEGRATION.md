@@ -12,10 +12,17 @@ and `music.vb`. The complete file set is validated and decoded before
 the sound worker starts. No copyrighted music is embedded in the binary
 or GitHub. The files are neither uploaded nor modified.
 
-If all three files are missing, the NRO uses a generated SEQ/VAB/VAG
-fixture, allowing CI to run without any proprietary material. A partial
-or malformed set fails closed: the audio status is red, rather than
-silently playing the fixture as if the owned tracks had loaded.
+The NRO checks whether libnx has already mounted `sdmc` and mounts it
+itself only if necessary, without unmounting another subsystem's existing
+mount. It unmounts its own mount after stopping the audio worker and releasing
+all borrowed sample pointers. If the SD device cannot be mounted, it
+**does not** treat inaccessible files as absent: audio is disabled and
+the separate source indicator turns amber.
+
+Only if SD access succeeds **and all three files are absent** does the NRO
+use a generated SEQ/VAB/VAG fixture for asset-free CI. A partial or
+malformed set fails closed, with red source and audio indicators;
+it cannot silently substitute the fixture in place of owned data.
 
 The main thread handles the gamepad, simple tactical demonstration and
 framebuffer. A separate libnx thread generates 512 frames of 44.1kHz
@@ -29,9 +36,14 @@ thread is joined and the audio service is stopped.
 
 The upper-right green status means audout startup returned successfully
 and no synchronous worker error has been recorded; red indicates failure
-or device unavailability. A small marker just below status is green for
-the user-owned audio set and gray for the generated fixture. Neither
-indicator confirms that music was audible to a listener.
+or device unavailability. Its separate source marker below it has
+**four meanings**: green = user-owned SEQ/VH/VB accepted, gray =
+mounted SD with no files (generated fixture), red = incomplete/invalid
+file set, amber = SD could not be mounted. The screenshot validator
+reports the actual observed marker and CI specifically requires the
+gray synthetic source: inability to mount SD is not a passing audio
+fixture test. No status indicator establishes that music is audible
+or proves the original source files are authentic.
 
 The animated blue heartbeat and tactical-grid marker support an
 independent emulator screenshot check of ongoing framebuffer updates.
