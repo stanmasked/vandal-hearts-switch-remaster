@@ -21,6 +21,7 @@ def source_fixture():
 #include <assert.h>
 #include "map02_scoped_blend_sink.h"
 typedef struct P_TAG { unsigned tag; } P_TAG;
+#define PC_GPU_PRIM_TYPE(p) ((unsigned)((p)->tag))
 static unsigned s_drawFrame = 0;
 static P_TAG slots[5];
 static int invalid_walk;
@@ -73,8 +74,8 @@ int main(void) {
     } else {
     assert(!vh_map02_scope_failed());
     assert(vh_map02_scope_count() == 2);
-    assert(vh_map02_scope_copy(0, &event) && event.ordinal == 0);
-    assert(vh_map02_scope_copy(1, &event) && event.ordinal == 1);
+    assert(vh_map02_scope_copy(0, &event) && event.ordinal == 0 && event.primitive_type == 3);
+    assert(vh_map02_scope_copy(1, &event) && event.ordinal == 1 && event.primitive_type == 0);
     }
 #else
     assert(visits == (invalid_walk ? 1u : 2u));
@@ -87,7 +88,8 @@ class DrawOTagScopeTests(unittest.TestCase):
     def test_patch_anchors_and_guards(self):
         patched = instrument(source_fixture())
         self.assertIn("vh_map02_scope_begin_frame(", patched)
-        self.assertIn("vh_map02_scope_begin_primitive(vh_scope_ordinal)", patched)
+        self.assertIn("vh_map02_scope_begin_primitive(", patched)
+        self.assertIn("(unsigned)PC_GPU_PRIM_TYPE((P_TAG *)cur)", patched)
         self.assertIn("vh_map02_scope_end_primitive()", patched)
         self.assertIn("vh_map02_scope_end_frame()", patched)
         self.assertEqual(patched.count("if (vh_scope_active) vh_map02_scope_abort();"), 2)
