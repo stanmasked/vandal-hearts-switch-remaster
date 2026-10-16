@@ -20,6 +20,12 @@
 #define VH_GAME_MUSIC_MAX_TOTAL_VB_BYTES (12u * 1024u * 1024u)
 typedef struct {
     VhAudioAssets field, selected;
+    /* Audited during preload, before any audio service opens. Full
+     * fallback is legal but indicates that SEQ requested an absent
+     * program/range; can affect timbre relative to the original.
+     */
+    VhSeqAudit field_audit, selected_audit;
+    uint32_t field_fallback_notes, selected_fallback_notes;
 } VhGameMusicBanks;
 
 /* On success allocates *out and transfers ownership to caller.
