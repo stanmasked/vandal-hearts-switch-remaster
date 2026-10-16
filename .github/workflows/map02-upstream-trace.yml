@@ -618,7 +618,7 @@ jobs:
           assert m["original_pc_source_pinned"]
           assert m["native_capture_same_binary"]
           assert m["max_raster_skip_records"] == 64
-          assert len(m["reason_codes"]) == 3
+          assert len(m["reason_codes"]) == 4
           assert m["native_only"] and not m["real_gameplay_captured"]
           print("Real PC raster rejection hooks generated without changing original source.")
           PY
