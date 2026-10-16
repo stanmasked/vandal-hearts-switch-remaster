@@ -31,7 +31,9 @@ typedef struct {
     uint64_t output_frames, input_frames, notes, events;
     unsigned bank_index, blocks, sent_to_reverb;
     uint64_t note_requests, unresolved_notes, fallback_notes;
-    uint64_t reverb_send_notes;
+    uint64_t reverb_send_notes, zero_gain_notes;
+    uint64_t nonzero_samples, clipped_samples;
+    uint32_t peak_pcm16;
     uint32_t spu_seam, audout_seam, resampler_fraction;
 } SceneMetric;
 static SceneMetric scene_metrics[MAX_SCENES];
@@ -42,6 +44,7 @@ static SceneMetric scene_metrics[MAX_SCENES];
 typedef struct {
     VhNativeVab *bank;
     uint64_t requests, resolved, unresolved, fallback, reverb_sends;
+    uint64_t zero_gain;
 } ResolverAudit;
 static ResolverAudit resolver_audit;
 
@@ -65,6 +68,8 @@ static int resolve_with_audit(void *context, unsigned program, unsigned note,
         ++audit->fallback;
     if (tone->reverb_send)
         ++audit->reverb_sends;
+    if (tone->gain_left==0.f && tone->gain_right==0.f)
+        ++audit->zero_gain;
     return 0;
 }
 
@@ -157,6 +162,18 @@ int main(int argc,char **argv) {
                     absolute_delta(output[0],last_output[0]),
                     absolute_delta(output[1],last_output[1]));
             }
+            /* Full scene-output statistics, after resampling. Successfully
+             * resolved SEQ notes can still be silent due to zero gain.
+             * Wet tails may also continue into a scene with zero notes.
+             */
+            for (size_t sample=0;sample<frames*2u;sample++) {
+                const int16_t value=output[sample];
+                const uint32_t absolute=absolute_delta((int)value,0);
+                metric->peak_pcm16=max2(metric->peak_pcm16,absolute);
+                metric->nonzero_samples+=(value!=0);
+                metric->clipped_samples+=(value==INT16_MIN ||
+                                          value==INT16_MAX);
+            }
             last_source[0]=source[2u*(VH_AUDIO_BLOCK_FRAMES-1u)];
             last_source[1]=source[2u*(VH_AUDIO_BLOCK_FRAMES-1u)+1u];
             last_output[0]=output[2u*(frames-1u)];
@@ -172,11 +189,19 @@ int main(int argc,char **argv) {
         metric->unresolved_notes=resolver_audit.unresolved;
         metric->fallback_notes=resolver_audit.fallback;
         metric->reverb_send_notes=resolver_audit.reverb_sends;
+        metric->zero_gain_notes=resolver_audit.zero_gain;
+        if (metric->nonzero_samples>metric->output_frames*2u ||
+            metric->clipped_samples>metric->output_frames*2u ||
+            (metric->peak_pcm16==0u)!=(metric->nonzero_samples==0u)) {
+            fprintf(stderr,"PCM scene amplitude accounting failed\n");
+            goto error;
+        }
         if(resolver_audit.resolved!=metric->notes ||
            resolver_audit.requests!=resolver_audit.resolved+
                                      resolver_audit.unresolved ||
            resolver_audit.fallback>resolver_audit.resolved ||
-           resolver_audit.reverb_sends>resolver_audit.resolved) {
+           resolver_audit.reverb_sends>resolver_audit.resolved ||
+           resolver_audit.zero_gain>resolver_audit.resolved) {
             fprintf(stderr,"SEQ note-resolution accounting failed\n");
             goto error;
         }
@@ -217,7 +242,12 @@ int main(int argc,char **argv) {
                "\"fallback_notes\":%" PRIu64 ","
                "\"direct_match_notes\":%" PRIu64 ","
                "\"reverb_send_notes\":%" PRIu64 ","
+               "\"zero_gain_notes\":%" PRIu64 ","
                "\"reverb_send_seen\":%s,"
+               "\"peak_pcm16\":%u,"
+               "\"nonzero_samples\":%" PRIu64 ","
+               "\"clipped_samples\":%" PRIu64 ","
+               "\"silent_pcm\":%s,"
                "\"spu_boundary_delta_pcm16\":%u,"
                "\"audout_boundary_delta_pcm16\":%u,"
                "\"resampler_boundary_fraction\":%u,"
@@ -226,7 +256,10 @@ int main(int argc,char **argv) {
                i?",":"",i,m->bank_index?'B':'A',
                m->events,m->notes,m->note_requests,m->unresolved_notes,
                m->fallback_notes,m->notes-m->fallback_notes,
-               m->reverb_send_notes,m->sent_to_reverb?"true":"false",
+               m->reverb_send_notes,m->zero_gain_notes,
+               m->sent_to_reverb?"true":"false",
+               m->peak_pcm16,m->nonzero_samples,m->clipped_samples,
+               m->nonzero_samples?"false":"true",
                m->spu_seam,m->audout_seam,m->resampler_fraction,
                m->input_frames,m->output_frames);
     }
