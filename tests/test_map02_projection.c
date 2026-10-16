@@ -164,6 +164,48 @@ static void test_projection_and_face_lighting_direction(void) {
     assert(!projected.visible && projected.nclip_mac0 < 0);
 }
 
+static void test_neighbor_normals_and_projection_in_one_batch(void) {
+    VhMap02ProjectCamera c = camera();
+    const VhMap02ProjectVertex vertices[6] = {
+        {0,0,512}, {100,0,640}, {100,100,640}, {0,100,512},
+        {200,0,640}, {200,100,640}
+    };
+    const unsigned face_indices[2][4] = {
+        {0,1,2,3}, {1,4,5,2}
+    };
+    uint8_t tile[VH_MAP02_TILE_BYTES] = {0};
+    uint8_t shade[2] = {255,255};
+    VhMap02Cross normals[2];
+    VhMap02ProjectFace projected[2] = {{0},{0}};
+    tile[302] = 2;
+    for (unsigned i = 0; i < 6; ++i) {
+        const int16_t xyz[3] = {vertices[i].x,vertices[i].y,vertices[i].z};
+        for (unsigned axis = 0; axis < 3; ++axis) {
+            const unsigned at = i*8u + axis*2u;
+            tile[at] = (uint8_t)((uint16_t)xyz[axis] & 255u);
+            tile[at+1] = (uint8_t)((uint16_t)xyz[axis] >> 8);
+        }
+    }
+    for (unsigned f = 0; f < 2; ++f) {
+        VhMap02ProjectVertex corners[4];
+        for (unsigned i = 0; i < 4; ++i) {
+            tile[212u + f*4u + i] = (uint8_t)face_indices[f][i];
+            corners[i] = vertices[face_indices[f][i]];
+        }
+        assert(vh_map02_face_direction(tile,sizeof tile,f,&shade[f],&normals[f]));
+        assert(vh_map02_project_face(&c,corners,1024,&projected[f]));
+        assert(projected[f].visible && projected[f].ot_in_bounds);
+    }
+    assert(normals[0].x != normals[1].x);
+    assert(normals[0].z == normals[1].z);
+    assert(shade[0] != shade[1]);
+    assert(projected[0].otz != projected[1].otz);
+    assert(projected[0].gpu[1].x == projected[1].gpu[0].x);
+    assert(projected[0].gpu[1].y == projected[1].gpu[0].y);
+    assert(projected[0].gpu[3].x == projected[1].gpu[2].x);
+    assert(projected[0].gpu[3].y == projected[1].gpu[2].y);
+}
+
 int main(void) {
     test_screen_quad_and_ordering();
     test_backface_and_zero_area();
@@ -172,6 +214,7 @@ int main(void) {
     test_adjacent_faces_share_projected_edge();
     test_sloped_neighbors_share_gte_screen_endpoints();
     test_projection_and_face_lighting_direction();
+    test_neighbor_normals_and_projection_in_one_batch();
     puts("MAP02 portable projection, NCLIP, AVSZ4 and OT slot tests passed");
     return 0;
 }
