@@ -75,6 +75,45 @@ def _material_bytes_equal(source, before, event):
     return True, len(addresses)
 
 
+
+def _ft4_draw_delta(before_vram, after_vram, source_event):
+    """Describe native FT4 VRAM writes, without guessing rasterized coverage.
+
+    Texture pages and CLUT can overlap the draw target in PS1 VRAM. Writes to
+    material addresses are therefore *reported*, not automatically rejected.
+    Sampling both before and after resolves any changed index->CLUT mapping.
+    """
+    if len(before_vram) != VRAM_BYTES or len(after_vram) != VRAM_BYTES:
+        raise ValueError("native FT4 before/after VRAM size mismatch")
+    pre_texture, pre_palette = referenced_words(source_event, before_vram)
+    post_texture, post_palette = referenced_words(source_event, after_vram)
+    material_words = pre_texture | post_texture | pre_palette | post_palette
+    material_changed = sum(
+        before_vram[2*word:2*word+2] != after_vram[2*word:2*word+2]
+        for word in material_words
+    )
+    # Compare whole BGR555 words, including bit 15, not lossy RGB previews.
+    changed = sum(
+        before_vram[i:i+2] != after_vram[i:i+2]
+        for i in range(0, VRAM_BYTES, 2)
+    )
+    return changed, material_changed
+
+
+def _native_after_vram(native_dir, native_events, before):
+    """Retrieve paired post-draw snapshot only after native capture verified."""
+    next_step = before["step"] + 1
+    if next_step >= len(native_events):
+        raise ValueError("missing paired FT4 post-draw VRAM snapshot")
+    after = native_events[next_step]
+    if (after["phase"] != "after" or
+            after["operation"] != "draw" or
+            after["step"] != next_step):
+        raise ValueError("invalid FT4 after-draw snapshot association")
+    return private_file(native_dir, after["snapshot"], expected=VRAM_BYTES)
+
+
+
 def _verified_native_draw_packets(native_events):
     """Return only FT4 draws with internally stable per-primitive GPU state."""
     gpu_draw_events = []
@@ -157,6 +196,7 @@ def verify_join(source_dir, native_dir, *, compiler="gcc"):
 
     reference = private_file(source_dir, "gpu-vram-le.bin", expected=VRAM_BYTES)
     material_words_checked = 0
+    matched_draw_changed = matched_material_changed = no_pixel_delta = 0
     for face_index, match_index in enumerate(selected):
         native = gpu_draw_events[match_index]
         snapshot = private_file(native_dir, native["snapshot"], expected=VRAM_BYTES)
@@ -167,6 +207,11 @@ def verify_join(source_dir, native_dir, *, compiler="gcc"):
                 f"source face event {face_index}: texture or CLUT words differ "
                 "from native VRAM immediately before primitive")
         material_words_checked += word_count
+        post = _native_after_vram(native_dir, native_events, native)
+        n, m = _ft4_draw_delta(snapshot, post, source_events[face_index])
+        matched_draw_changed += n
+        matched_material_changed += m
+        no_pixel_delta += n == 0
 
     # The draw walk is not in source submission order; no attempt to sort
     # by source index, material, depth, position or replay guessed OT order.
@@ -180,6 +225,10 @@ def verify_join(source_dir, native_dir, *, compiler="gcc"):
         "native_gpu_ft4_packets": len(gpu_draw_events),
         "uniquely_matched_source_faces": len(selected),
         "material_vram_words_compared": material_words_checked,
+        "matched_ft4_draw_changed_vram_words": matched_draw_changed,
+        "matched_ft4_draw_changed_texture_or_clut_words": matched_material_changed,
+        "matched_ft4_draws_without_vram_change": no_pixel_delta,
+        "native_ft4_pixels_bit_exact_to_ps1": False,
         "screen_corners_uv_page_clut_window_exact": True,
         "source_gte_verified_by_compiled_reference": True,
         "native_before_after_capture_verified": True,
@@ -236,6 +285,7 @@ def verify_timeline_join(source_dir, native_dir, *, compiler="gcc"):
     selected = _unique_ft4_matches(source_events, native_ft4)
 
     compared = 0
+    matched_draw_changed = matched_material_changed = no_pixel_delta = 0
     for source_index, native_index in enumerate(selected):
         reference = private_file(
             source_dir, f"gpu-vram-{source_index:03d}.bin", expected=VRAM_BYTES)
@@ -249,6 +299,11 @@ def verify_timeline_join(source_dir, native_dir, *, compiler="gcc"):
                 f"source submission {source_index}: texture or CLUT words differ "
                 "from native VRAM immediately before primitive")
         compared += count
+        post = _native_after_vram(native_dir, native_events, native_ft4[native_index])
+        n, m = _ft4_draw_delta(before, post, source_events[source_index])
+        matched_draw_changed += n
+        matched_material_changed += m
+        no_pixel_delta += n == 0
 
     return {
         "timeline_join_manifest_sha256": sha(raw_manifest),
@@ -261,6 +316,10 @@ def verify_timeline_join(source_dir, native_dir, *, compiler="gcc"):
         "uniquely_matched_source_faces": len(selected),
         "per_submission_vram_snapshots_compared": len(selected),
         "material_vram_words_compared": compared,
+        "matched_ft4_draw_changed_vram_words": matched_draw_changed,
+        "matched_ft4_draw_changed_texture_or_clut_words": matched_material_changed,
+        "matched_ft4_draws_without_vram_change": no_pixel_delta,
+        "native_ft4_pixels_bit_exact_to_ps1": False,
         "screen_corners_uv_page_clut_window_exact": True,
         "pc_gte_source_timeline_verified": True,
         "native_gpu_capture_verified": True,
