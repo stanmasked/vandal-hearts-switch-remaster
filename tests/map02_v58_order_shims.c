@@ -34,11 +34,11 @@ void TrcPrim(int type, const void *p) {
     if (!v58_current_case) return;
     if(type==PC_GPU_PRIM_DR_MASK){
         const DR_MASK *m=(const DR_MASK *)p;
-        printf("V58OT name=%s index=%d type=mask command=%u\\n",
+        printf("V58OT name=%s index=%d type=mask command=%u\n",
                v58_current_case,v58_position++,(unsigned)m->command);
     }else if(type==PC_GPU_PRIM_POLY_FT4){
         const POLY_FT4 *q=(const POLY_FT4 *)p;
-        printf("V58OT name=%s index=%d type=quad uv=%u semi=%d abr=%d\\n",
+        printf("V58OT name=%s index=%d type=quad uv=%u semi=%d abr=%d\n",
                v58_current_case,v58_position++,(unsigned)q->u0,
                PC_GPU_IS_SEMI((const P_TAG *)p)?1:0,(q->tpage>>5)&3);
     }
