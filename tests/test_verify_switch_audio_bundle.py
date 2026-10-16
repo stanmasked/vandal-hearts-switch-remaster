@@ -76,6 +76,19 @@ class EvidenceBundleTests(unittest.TestCase):
         self.assertEqual([s["observed_pcm_pages"] for s in result["sessions"]],
                          [1200, 1300])
 
+    def test_structural_nro_gate_matches_existing_check_nro_cli(self):
+        check = [sys.executable, str(ROOT / "tests" / "check_nro.py"),
+                 str(self.root / self.nro)]
+        good = subprocess.run(check, check=False, capture_output=True, text=True)
+        self.assertEqual(good.returncode, 0, good.stdout + good.stderr)
+        data = bytearray((self.root / self.nro).read_bytes())
+        struct.pack_into("<II", data, 0x30, 0xF8, 0x20)
+        (self.root / self.nro).write_bytes(data)
+        bad = subprocess.run(check, check=False, capture_output=True, text=True)
+        self.assertEqual(bad.returncode, 1, bad.stdout + bad.stderr)
+        with self.assertRaisesRegex(bundle.BundleError, "data segment"):
+            bundle.create(self.root, self.nro, [], "a" * 40, "")
+
     def test_rejects_non_nro_bytes_even_on_initial_create(self):
         (self.root / self.nro).write_bytes(b"fake extension only")
         with self.assertRaisesRegex(bundle.BundleError, "NRO is too small"):
