@@ -33,7 +33,7 @@ static long CALLBACK fake_chain(uint32_t *ram,uint32_t address,
 }
 int main(void) {
     uint32_t words[2]={0xe6000001u,0x12345678u};
-    uint32_t addr=0,last_addr=0; int32_t last=0;
+    uint32_t addr=0; int32_t last=0;
     GPU_writeData=fake_word;
     GPU_writeDataMem=fake_mem;
     GPU_writeStatus=fake_status;
