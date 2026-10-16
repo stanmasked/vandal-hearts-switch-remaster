@@ -136,6 +136,48 @@ class TimelineToNativeFt4JoinTests(unittest.TestCase):
         self.assertEqual(
             report["matched_ft4_draw_changed_texture_or_clut_words"], 1)
 
+    def test_zero_draw_delta_has_separate_proven_clipping_and_unknown_causes(self):
+        # Two source-matched native FT4s initially have no pixel delta.
+        # With old captures we cannot attribute either zero to clipping.
+        report = self.verify()
+        self.assertEqual(report["matched_ft4_draws_without_vram_change"], 2)
+        self.assertEqual(report["matched_ft4_draws_proven_no_coverage"], 0)
+        self.assertEqual(report["matched_ft4_draws_zero_delta_cause_unknown"], 2)
+
+        # Draw area is legal but geometry shifted thousands of pixels away:
+        # the first packet cannot possibly write a pixel in this clip.
+        for event in self.native_events[:2]:
+            event["draw_env"] = [0, 0, 1024, 512, 1500, 1500]
+        for event in self.native_events[2:]:
+            event["draw_env"] = [0, 0, 1024, 512, 0, 0]
+        self.write_native()
+        report = self.verify()
+        self.assertEqual(report["matched_ft4_draws_proven_no_coverage"], 1)
+        self.assertEqual(report["matched_ft4_draws_zero_delta_cause_unknown"], 1)
+        self.assertEqual(report["matched_ft4_draws_without_vram_change"], 2)
+
+        # Write inside DRAWENV but far away from all shifted FT4 corners
+        # contradicts the PC rasterizer even though the clip alone permits it.
+        altered = bytearray(self.native_snapshots[1])
+        timeline_fixture.fixture.word(altered, 0, 0, 0x801f)
+        self.native_snapshots[1] = bytes(altered)
+        self.write_native()
+        with self.assertRaisesRegex(ValueError, "geometry entirely outside"):
+            self.verify()
+
+    def test_zero_area_drawenv_proves_no_writes_without_guessing_alpha(self):
+        for event in self.native_events[:2]:
+            event["draw_env"] = [20, 20, 0, 128, 0, 0]
+        self.write_native()
+        self.assertEqual(
+            self.verify()["matched_ft4_draws_proven_no_coverage"], 1)
+        changed = bytearray(self.native_snapshots[1])
+        timeline_fixture.fixture.word(changed, 20, 20, 0x7fff)
+        self.native_snapshots[1] = bytes(changed)
+        self.write_native()
+        with self.assertRaisesRegex(ValueError, "outside captured DRAWENV"):
+            self.verify()
+
     def test_captured_ft4_drawenv_clip_proves_write_bounds(self):
         # Old captures remain valid, but cannot claim coverage proof.
         self.assertEqual(
