@@ -254,6 +254,14 @@ def assess(root: Path, record: dict) -> dict:
             findings.append({"session": None, "code": "H05_UNKNOWN_CSV",
                              "severity": "INCONCLUSIVE",
                              "detail": "H05 path is not a verified source CSV."})
+        elif len(record["sessions"]) < 2 or prior_path != record["sessions"][0]["csv"]:
+            retention = "H05_SEQUENCE_NOT_ESTABLISHED"
+            record_incomplete = True
+            issues.append("H05 must identify the earlier recorded CSV before a later run.")
+            findings.append({"session": None, "code": "H05_ORDER_UNCONFIRMED",
+                             "severity": "INCONCLUSIVE",
+                             "detail": "H05 source must be the first operator-listed CSV; "
+                                       "actual chronology still requires manual evidence."})
         elif before != indexed[prior_path]["sha256"]:
             retention = "PRIOR_CSV_HASH_CONTRADICTION"
             problem_seen = True
