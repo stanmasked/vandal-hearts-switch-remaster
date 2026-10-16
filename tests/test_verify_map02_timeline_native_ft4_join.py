@@ -13,7 +13,8 @@ import unittest
 
 import test_verify_map02_vram_timeline as timeline_fixture
 from tools.verify_map02_source_native_ft4_join import (
-    _ft4_provably_outside_drawenv, _source_signature, verify_timeline_join,
+    _ft4_palette_state, _ft4_provably_outside_drawenv,
+    _source_signature, verify_timeline_join,
 )
 
 
@@ -181,6 +182,26 @@ class TimelineToNativeFt4JoinTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "entirely zero 4-bpp CLUT"):
             self.verify()
 
+    def test_full_clut_requires_all_sixteen_zero_and_stp_abr_is_only_possible(self):
+        raw = bytearray(1024 * 512 * 2)
+        clut = 31978
+        base = (((clut >> 6) & 511) * 1024 + (clut & 63) * 16) * 2
+        event = {"ft4": {"tpage": 5, "clut": clut}, "semi": 0}
+        self.assertEqual(_ft4_palette_state(raw, event), (True, False, 0))
+        # One nonzero CLUT entry suffices to invalidate full transparency.
+        raw[base + 2] = 0x00
+        raw[base + 3] = 0x80
+        self.assertEqual(_ft4_palette_state(raw, event), (False, False, 0))
+        event["semi"] = 1
+        for abr in range(4):
+            event["ft4"]["tpage"] = 5 | (abr << 5)
+            self.assertEqual(_ft4_palette_state(raw, event),
+                             (False, True, abr))
+        # 8-bpp mode cannot reuse the limited 16-entry CLUT proof.
+        event["ft4"]["tpage"] = 5 | (1 << 7)
+        self.assertEqual(_ft4_palette_state(raw, event),
+                         (False, False, 0))
+
     def test_bgr555_bit15_is_not_transparency_and_stp_does_not_explain_zero(self):
         # Existing source face zero delta has an STP red CLUT entry, but no
         # automatic classification as blend-cancelled is permissible.
@@ -190,6 +211,10 @@ class TimelineToNativeFt4JoinTests(unittest.TestCase):
         report = self.verify()
         self.assertEqual(
             report["matched_ft4_draws_zero_delta_unknown_with_stp_blend_possible"], 1)
+        self.assertEqual(report["matched_ft4_zero_delta_stp_candidate_abr0"], 1)
+        self.assertEqual(sum(
+            report[f"matched_ft4_zero_delta_stp_candidate_abr{i}"]
+            for i in range(4)), 1)
         self.assertEqual(report["matched_ft4_draws_zero_delta_cause_unknown"], 2)
         self.assertEqual(
             report["matched_ft4_draws_zero_delta_full_4bpp_clut_transparent"], 0)
@@ -212,6 +237,10 @@ class TimelineToNativeFt4JoinTests(unittest.TestCase):
             report["matched_ft4_draws_zero_delta_full_4bpp_clut_transparent"], 0)
         self.assertEqual(
             report["matched_ft4_draws_zero_delta_unknown_with_stp_blend_possible"], 1)
+        self.assertEqual(report["matched_ft4_zero_delta_stp_candidate_abr0"], 1)
+        self.assertEqual(sum(
+            report[f"matched_ft4_zero_delta_stp_candidate_abr{i}"]
+            for i in range(4)), 1)
 
     def test_zero_draw_delta_has_separate_proven_clipping_and_unknown_causes(self):
         # Two source-matched native FT4s initially have no pixel delta.
