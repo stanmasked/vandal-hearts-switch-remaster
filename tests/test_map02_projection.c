@@ -387,6 +387,30 @@ static void test_unr_threshold_sweep(void) {
     }
 }
 
+static void test_screen_xy_clamp_boundaries(void) {
+    VhMap02ProjectCamera c = camera();
+    VhMap02ProjectSxy xy = {0};
+    uint16_t sz = 0;
+    uint32_t flags = 0;
+    const int32_t screen_offsets[] = {-1025,-1024,-1023,1022,1023,1024};
+    const VhMap02ProjectVertex origin = {0,0,512};
+    for (unsigned i = 0; i < sizeof screen_offsets/sizeof screen_offsets[0]; ++i) {
+        int32_t coordinate = screen_offsets[i];
+        c.ofx = coordinate * 65536;
+        c.ofy = coordinate * 65536;
+        flags = 0;
+        assert(vh_map02_project_vertex(&c,origin,&xy,&sz,&flags));
+        assert(sz == 512);
+        assert(xy.x == (coordinate < -1024 ? -1024 :
+                        coordinate > 1023 ? 1023 : coordinate));
+        assert(xy.y == xy.x);
+        assert(((flags & (1u << 14)) != 0u) ==
+               (coordinate < -1024 || coordinate > 1023));
+        assert(((flags & (1u << 13)) != 0u) ==
+               (coordinate < -1024 || coordinate > 1023));
+    }
+}
+
 int main(void) {
     test_screen_quad_and_ordering();
     test_backface_and_zero_area();
@@ -403,6 +427,7 @@ int main(void) {
     test_projection_ot_boundaries_and_saturation();
     test_unr_perspective_division_threshold();
     test_unr_threshold_sweep();
+    test_screen_xy_clamp_boundaries();
     puts("MAP02 portable projection, NCLIP, AVSZ4 and OT slot tests passed");
     return 0;
 }
