@@ -254,25 +254,25 @@ before selecting a perceptual artifact fix.
 Build and exercise the host utility with generated, copyright-free
 fixtures:
 
-\`\`\`sh
+```sh
 make test-local-music-transition
-\`\`\`
+```
 
 For locally owned SEQ/VH/VB resources, place each complete three-file
 set in a separate **private directory**, using exactly these names:
-\`music.seq\`, \`music.vh\`, and \`music.vb\`. Then run, locally:
+`music.seq`, `music.vh`, and `music.vb`. Then run, locally:
 
-\`\`\`sh
+```sh
 make build/vh_local_music_transition_probe
 ./build/vh_local_music_transition_probe \
   /private/music/bank_A /private/music/bank_B 16 16 \
   > /private/music/transition-audit.json
-\`\`\`
+```
 
 The optional final arguments are the **number of scenes** (2–32;
 default 4) and **512-frame blocks per scene** (1–4096; default 16).
 The engine reads both banks with the same strict all-or-nothing
-\`vh_audio_assets_load\` logic used by the Switch probe, validates each
+`vh_audio_assets_load` logic used by the Switch probe, validates each
 SEQ, alternates A/B on the audio owner, clears borrowed voices at each
 transition, and preserves the STUDIO_C work buffer and resampler clock.
 
