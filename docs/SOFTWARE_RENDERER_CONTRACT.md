@@ -962,3 +962,37 @@ command stream or continuous memory-write monitor. It does not
 yet model `DrawOTag` raster writes, GPU state changes, hidden
 intervening modifications or PS1 hardware behavior, and it does
 not validate an actual MAP02 scene on Switch.
+
+
+## Opt-in native PC GPU command-order and before/after VRAM capture
+
+`tools/instrument_map02_gpu_native_events.py` generates a **separate,
+read-only source copy** from the exact pinned public
+`platform/pc/src/libgpu.c`. Compiling that copy with
+`-DVH_MAP02_GPU_CAPTURE` introduces bounded snapshot hooks at the
+actual `LoadImage/MoveImage/ClearImage` transfer executions and
+around **each primitive processed by the native DrawOTag walker**,
+including polygon, sprite, tile, and GPU draw-mode packets.
+A capture requires both explicit private-directory and frame
+environment variables; otherwise it performs no runtime output.
+Non-instrumented compilation excludes the recorder symbol entirely.
+
+`tools/verify_map02_native_gpu_capture.py` validates local
+`before/after` event pairing, frame boundaries, each fixed-name
+1-MiB native VRAM snapshot, FT4 metadata, and optional bounded
+LoadImage payloads. It emits **SHA-256 and aggregate count only**,
+including the number of VRAM words changed by native DrawOTag
+versus transfer operations. Missing snapshots, invalid JSON,
+wrong indices, symlinked files and incomplete pairs fail closed.
+See `docs/MAP02_NATIVE_GPU_CAPTURE.md` for exact local setup
+and privacy guidance.
+
+CI source-checks and compiles the *actual pinned PC libgpu* with
+and without the optional capture macro, and runs synthetic trace
+integrity/mutation tests. CI does **not** execute retail gameplay
+or supply an actual captured GPU frame. The recorder does **not**
+capture each individual `PutPixel` call, cannot exclude
+intervening write/revert events, and does not by itself join
+polygons to source MAP02 face identities. Physical PS1 GPU
+correctness, accurate screenshots and a live Switch gameplay
+scene remain unverified.
