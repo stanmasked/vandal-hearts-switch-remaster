@@ -67,11 +67,13 @@ on:
       - 'tests/test_verify_map02_pc_vram4_equivalence.py'
       - 'tools/audit_map02_projection_source.py'
       - 'tools/instrument_map02_camera.py'
+      - 'tools/instrument_map02_gpu_native_events.py'
       - 'tools/verify_map02_camera_capture.py'
       - 'tools/verify_map02_frame_bundle.py'
       - 'tools/verify_map02_vram_timeline.py'
       - 'tools/verify_map02_gpu_write_ledger.py'
       - 'tests/test_map02_camera_provenance.py'
+      - 'tests/test_instrument_map02_gpu_native_events.py'
       - 'tests/test_verify_map02_frame_bundle.py'
       - 'tests/test_verify_map02_vram_timeline.py'
       - 'tests/test_verify_map02_gpu_write_ledger.py'
@@ -158,11 +160,13 @@ on:
       - 'tests/test_verify_map02_pc_vram4_equivalence.py'
       - 'tools/audit_map02_projection_source.py'
       - 'tools/instrument_map02_camera.py'
+      - 'tools/instrument_map02_gpu_native_events.py'
       - 'tools/verify_map02_camera_capture.py'
       - 'tools/verify_map02_frame_bundle.py'
       - 'tools/verify_map02_vram_timeline.py'
       - 'tools/verify_map02_gpu_write_ledger.py'
       - 'tests/test_map02_camera_provenance.py'
+      - 'tests/test_instrument_map02_gpu_native_events.py'
       - 'tests/test_verify_map02_frame_bundle.py'
       - 'tests/test_verify_map02_vram_timeline.py'
       - 'tests/test_verify_map02_gpu_write_ledger.py'
@@ -359,6 +363,54 @@ jobs:
             fi
           )
           test -z "$(cd upstream && git status --porcelain -- src/core/graphics.c platform/pc/src/libgte.c)"
+
+      - name: Compile opt-in original PC GPU event probe, baseline and mutation tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd remaster
+            python3 -m unittest discover -s tests -p 'test_instrument_map02_gpu_native_events.py' -v
+          )
+          PYTHONPATH=remaster python3 -m tools.instrument_map02_gpu_native_events \
+            upstream/platform/pc/src/libgpu.c \
+            --output /tmp/vh-map02-gpu-native/libgpu.capture.c \
+            > /tmp/vh-map02-gpu-native.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path("/tmp/vh-map02-gpu-native.json").read_text())
+          assert report["source_pinned"]
+          assert report["max_snapshot_records"] == 64
+          assert report["transfer_hooks"] == ["LoadImage", "MoveImage", "ClearImage"]
+          assert report["original_gameplay_captured"] is False
+          print("Opt-in PC GPU probe generated, no original game data captured.")
+          PY
+          (
+            cd upstream/platform/pc
+            common_flags=(
+              -m64 -std=gnu89 -fno-builtin-csqrt
+              -DPERMUTER -DPC_PORT -DPC_FEAT -DVH_REGION_US
+              '-Dasm(x)=' -Ibuild/include_stage -Iinclude -I../..
+              -include pc_forward_decls.h
+              -Wno-incompatible-pointer-types -Wno-builtin-declaration-mismatch
+              -Wno-discarded-qualifiers -Wno-pointer-to-int-cast
+              -Wno-int-to-pointer-cast -Wno-int-conversion
+            )
+            mkdir -p build/map02-gpu-native-probe
+            gcc "${common_flags[@]}" -DVH_MAP02_GPU_CAPTURE \
+              -c /tmp/vh-map02-gpu-native/libgpu.capture.c \
+              -o build/map02-gpu-native-probe/capture.o
+            gcc "${common_flags[@]}" \
+              -c /tmp/vh-map02-gpu-native/libgpu.capture.c \
+              -o build/map02-gpu-native-probe/baseline.o
+            nm -a build/map02-gpu-native-probe/capture.o | grep VH_CaptureEvent
+            if nm -a build/map02-gpu-native-probe/baseline.o | grep -q VH_CaptureEvent; then
+              echo "Unexpected native GPU recorder symbol in baseline libgpu" >&2
+              exit 1
+            fi
+          )
+          test -z "$(cd upstream && git status --porcelain -- platform/pc/src/libgpu.c)"
 
       - name: Verify pinned make-overlay diagnostic object compilation
         shell: bash
