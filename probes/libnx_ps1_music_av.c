@@ -36,6 +36,8 @@ static atomic_bool audio_stop;
 static atomic_int audio_fault;
 static int audio_active;
 static int using_user_files;
+static int sdmc_mounted_here;
+static int asset_source_status;  /* +1 user; 0 fixture; -1 bad set; -2 SD missing */
 
 /* Permanent storage: no malloc/free or file reads in the audout worker. */
 static VhAudioAssets user_assets;
@@ -191,6 +193,7 @@ static void paint(VhCanvas *canvas, const VhGameState *state,
     const uint32_t cursor = RGBA8_MAXALPHA(255, 219, 102);
     const uint32_t sound_ok = RGBA8_MAXALPHA(60, 211, 138);
     const uint32_t sound_fail = RGBA8_MAXALPHA(250, 108, 90);
+    const uint32_t source_missing = RGBA8_MAXALPHA(255, 219, 102);
 
     vh_canvas_fill_rect(canvas, 0, 0, WIDTH, HEIGHT, bg);
     for (int y = 0; y < GRID_ROWS; ++y) {
@@ -218,10 +221,14 @@ static void paint(VhCanvas *canvas, const VhGameState *state,
     /* Keep status clear of NeXium's top-left performance overlay. */
     vh_canvas_fill_rect(canvas, 1000, 150, 130, 52,
                         healthy ? sound_ok : sound_fail);
-    /* Small source marker: bright = local user files; muted = fixture.
-     * This is source selection evidence, NOT a sampled-audio recording. */
-    vh_canvas_fill_rect(canvas, 1000, 219, 130, 18,
-                        using_user_files ? sound_ok : grid);
+    /* Independent source marker: green = user data; gray = fixture;
+     * red = invalid/partial SEQ/VH/VB; amber = SD device unavailable.
+     * A green audio SERVICE status alone never proves this is user music. */
+    const uint32_t source_color =
+        asset_source_status == 1 ? sound_ok :
+        asset_source_status == 0 ? grid :
+        asset_source_status == -1 ? sound_fail : source_missing;
+    vh_canvas_fill_rect(canvas, 1000, 219, 130, 18, source_color);
     /* Animated heartbeat proves video continues while audout worker runs. */
     vh_canvas_fill_rect(canvas, 70, 610, 800, 14, grid);
     vh_canvas_fill_rect(canvas, 70, 610, 20 + (int)(frame % 780u), 14, hero);
@@ -242,10 +249,20 @@ int main(void) {
         return 2;
     }
 
-    /* Validate + decode the complete selected SEQ/VH/VB set before starting
-     * the audio worker. Invalid partial sets fail closed, rather than
-     * substituting fixture music. Missing all files uses a synthetic bank. */
-    const int music_ready = prepare_music(&using_user_files) == 0;
+    /* Mount SD explicitly if the libnx runtime has not done so.
+     * Never claim that all music files are missing when the filesystem
+     * itself could not be opened. Mount ownership determines cleanup. */
+    const int sdmc_previously_mounted =
+        fsdevGetDeviceFileSystem("sdmc") != NULL;
+    int sdmc_ready = sdmc_previously_mounted;
+    if (!sdmc_ready && R_SUCCEEDED(fsdevMountSdmc())) {
+        sdmc_mounted_here = 1;
+        sdmc_ready = 1;
+    }
+    const int music_ready = sdmc_ready && prepare_music(&using_user_files) == 0;
+    asset_source_status = !sdmc_ready ? -2 :
+                          !music_ready ? -1 :
+                          using_user_files ? 1 : 0;
     audio_active = music_ready ? start_native_audio() : 0;
     VhGameState state = {1, 2, 1, 2, 6, 3, 0};
     uint32_t tick = 0;
@@ -275,6 +292,7 @@ int main(void) {
     stop_native_audio();
     /* The worker is fully joined before bank PCM can be released. */
     vh_audio_assets_close(&user_assets);
+    if (sdmc_mounted_here) (void)fsdevUnmountDevice("sdmc");
     framebufferClose(&framebuffer);
     return 0;
 }
