@@ -40,11 +40,13 @@ on:
       - 'source/map02_projection.h'
       - 'source/map02_terrain_quad.h'
       - 'source/map02_terrain_ot_scene.h'
+      - 'source/map02_external_gte_ft4.h'
       - 'tests/test_map02_face_direction.c'
       - 'tests/test_map02_op0_reference.c'
       - 'tests/test_map02_projection.c'
       - 'tests/test_map02_terrain_quad.c'
       - 'tests/test_map02_terrain_ot_scene.c'
+      - 'tests/test_map02_external_gte_ft4.c'
       - 'tests/test_audit_map02_ot_source.py'
       - 'tools/audit_map02_ot_source.py'
       - 'tests/test_map02_terrain_lighting.c'
@@ -117,11 +119,13 @@ on:
       - 'source/map02_projection.h'
       - 'source/map02_terrain_quad.h'
       - 'source/map02_terrain_ot_scene.h'
+      - 'source/map02_external_gte_ft4.h'
       - 'tests/test_map02_face_direction.c'
       - 'tests/test_map02_op0_reference.c'
       - 'tests/test_map02_projection.c'
       - 'tests/test_map02_terrain_quad.c'
       - 'tests/test_map02_terrain_ot_scene.c'
+      - 'tests/test_map02_external_gte_ft4.c'
       - 'tests/test_audit_map02_ot_source.py'
       - 'tools/audit_map02_ot_source.py'
       - 'tests/test_map02_terrain_lighting.c'
@@ -369,6 +373,8 @@ jobs:
             /tmp/vh-map02-tile-to-pixels
             gcc -std=c11 -Wall -Wextra -Werror -O2 tests/test_map02_terrain_ot_scene.c -o /tmp/vh-map02-ot-scene -lm
             /tmp/vh-map02-ot-scene
+            gcc -std=c11 -Wall -Wextra -Werror -O2 tests/test_map02_external_gte_ft4.c -o /tmp/vh-map02-external-gte-ft4 -lm
+            /tmp/vh-map02-external-gte-ft4
             python3 -m unittest discover -s tests -p 'test_audit_map02_ot_source.py' -v
             python3 -m unittest discover -s tests -p 'test_audit_map02_projection_source.py' -v
             python3 -m unittest discover -s tests -p 'test_map02_camera_provenance.py' -v

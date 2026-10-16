@@ -689,3 +689,66 @@ geometry, indexed pixels and palettes in these tests are invented.
 Consequently a passing synthetic scene is **not proof** that the
 authentic MAP02 renders on Switch. The real asset/UV/CLUT/camera
 provenance stages remain independent blockers.
+
+
+## Source-keyed external GTE screen/depth → terrain FT4 integration
+
+`source/map02_external_gte_ft4.h` bridges **externally supplied,
+independently established** GTE measurements into the existing
+`VhMap02TerrainQuad` and source-authentic ordering-table compositor.
+This deliberately bypasses the synthetic camera projection used by the
+previous diagnostic. It **does not** reconstruct the real camera or
+execute any GTE projection command.
+
+The adapter accepts an owned, decoded MAP02 buffer of exactly
+187264 bytes (616 × 304), plus one source-keyed observation per
+accepted, externally observed terrain draw. Each observation must
+explicitly include the source key `(z,x,record_index,face_index)`,
+the matching face's signed GFX index and shade, **all four original
+vertex indices and 12 local 16-bit coordinates**, four observed
+screen XY pairs in **perimeter order**, raw GTE AVSZ4 OTZ, and a
+caller-confirmed UVWH rectangle.
+
+- The source key is anchored to the original 28-record physical stride
+  (`record_index = z*28+x`), with active cells limited to 24×12
+  and face indices limited to `faceCt` (maximum 18).
+- Every vertex index, XYZ component, GFX and shade must match the
+  exact corresponding decoded source record. Equal material numbers
+  never excuse a mismatched source face.
+- Each XY coordinate must lie inside the GTE saturated screen range
+  -1024 through 1023. Raw OTZ must be an unsigned 16-bit value;
+  `max(5,OTZ)` must address a bucket in the caller's OT.
+- GPU corners are derived from **perimeter**
+  `[face0,face1,face2,face3]` to **POLY_FT4**
+  `[face0,face1,face3,face2]`, preserving the already
+  verified `setUVWH` mapping.
+- `vh_map02_prepare_external_batch` rejects duplicate
+  `(record_index,face_index)` and validates **all** observations
+  before writing any prepared output records. It leaves submission
+  order unchanged for the caller to pass through
+  `vh_map02_ot_scene_add`.
+- A successful result sets `projection.visible=1` **only because
+  the caller supplied an accepted submitted-face observation**.
+  `projection.nclip_mac0`, SZ and RTPT flags are **not known**
+  and remain zero. Never interpret them as genuine captured results.
+
+The C integration test `tests/test_map02_external_gte_ft4.c` constructs
+two imaginary 304-byte map cells in a complete synthetic 187264-byte
+decoded buffer, with two distinct faces deliberately sharing the
+same GFX. It associates three separate observations, checks source
+key/vertex/GFX/shade binding, prepares FT4 primitives without computing
+a camera, composites at two depths and tests the final pixel in
+the original GPU ordering-table traversal and same-bucket LIFO
+order. Mutation tests reject swapped face indices, mismatched
+vertices, altered materials/shades, incorrect map strides, out-of-
+range XY/OTZ, invalid UV, truncated decoded maps, duplicate
+source face keys, and late invalid batch records without modifying
+previous outputs. CI runs this under strict host and sanitizer builds.
+
+**Evidence boundary:** the test source records, external observations,
+texture pixels and palettes are **invented fixtures**. The adapter
+cannot establish that caller-provided coordinates, UVWH, CLUT or OTZ
+were genuinely captured in retail gameplay. No original game assets
+are published; no live Switch gameplay renderer is connected here.
+It performs a strict *consistency check plus diagnostic rendering*,
+not a screenshot comparison or PS1 GPU hardware validation.
