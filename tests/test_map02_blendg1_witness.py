@@ -13,7 +13,7 @@ def pixel(step, mode, abr, semi=1):
 
 
 def witness(p):
-    return dict(stage="native_blendg1", putpixel_step=p["step"],
+    return dict(stage="native_blendg1", putpixel_step=p["step"],\n                blend_fg=p["front"] | 0x8000, blend_bg=p["before"],\n                blend_result=p["after"],
                 **{k: p[k] for k in ("frame", "primitive_ordinal", "x",
                                    "y", "accurate", "abr", "before",
                                    "front", "after")})
@@ -74,6 +74,19 @@ class BlendG1WitnessTests(unittest.TestCase):
         self.assertEqual(result["legacy_semi_putpixel_calls_without_blendg1"], 1)
         with self.assertRaises(ValueError):
             compare_blendg1_witnesses(rows, [witness(rows[0]), witness(rows[1])])
+
+    def test_independent_blend_inputs_and_output_required(self):
+        p = pixel(0, 1, 0)
+        for field, value in (("blend_fg", p["front"]),
+                             ("blend_bg", p["before"] ^ 1),
+                             ("blend_result", p["after"] ^ 1)):
+            w = witness(p)
+            w[field] = value
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                compare_blendg1_witnesses([p], [w])
+            del w[field]
+            with self.subTest(missing=field), self.assertRaises(ValueError):
+                compare_blendg1_witnesses([p], [w])
 
     def test_no_semi_requires_no_blendg1(self):
         p = pixel(0, 0, 2, semi=0)
