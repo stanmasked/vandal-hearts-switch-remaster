@@ -61,6 +61,13 @@ uint64_t vh_audio_output_ticks_to_us(uint64_t ticks,
 typedef struct {
     uint64_t pages, total_ticks, peak_page_ticks;
     uint64_t slow_pages, retried_pages, failed_pages;
+    /* Mutually exclusive, normalized to each page's actual 48-kHz
+     * duration. Sum of bins must equal pages, including failed pages.
+     * Retried pages classify the sum of their raw service waits;
+     * stop/reopen overhead is intentionally excluded.
+     */
+    uint64_t wait_le_page, wait_le_2pages;
+    uint64_t wait_le_4pages, wait_gt_4pages;
 } VhAudioPageWaitBucket;
 typedef struct {
     VhAudioPageWaitBucket ordinary, first_after_switch;
