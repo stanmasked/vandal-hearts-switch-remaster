@@ -34,6 +34,9 @@ typedef struct {
     uint64_t note_requests, unresolved_notes, fallback_notes;
     uint64_t cross_program_fallback_notes, out_of_range_fallback_notes;
     uint64_t reverb_send_notes, zero_gain_notes;
+    unsigned first_note_block, last_note_block;
+    unsigned first_note_off_block, first_cross_program_block;
+    unsigned first_out_of_range_block;
     uint64_t nonzero_samples, clipped_samples;
     int64_t channel_sum[2];
     uint64_t channel_squared_sum[2];
@@ -144,10 +147,26 @@ int main(int argc,char **argv) {
         metric->blocks=blocks;
         const uint64_t start_output=frame_total;
         for(unsigned b=0;b<blocks;b++) {
+            const uint64_t previous_notes=seq.note_ons;
+            const uint64_t previous_offs=seq.note_offs;
+            const uint64_t previous_cross=resolver_audit.cross_program;
+            const uint64_t previous_outside=resolver_audit.out_of_range;
             if (vh_native_seq_advance_block(&seq)<0) {
                 fprintf(stderr,"SEQ playback error\n");
                 goto error;
             }
+            if (seq.note_ons>previous_notes) {
+                if (!metric->first_note_block) metric->first_note_block=b+1u;
+                metric->last_note_block=b+1u;
+            }
+            if (seq.note_offs>previous_offs && !metric->first_note_off_block)
+                metric->first_note_off_block=b+1u;
+            if (resolver_audit.cross_program>previous_cross &&
+                !metric->first_cross_program_block)
+                metric->first_cross_program_block=b+1u;
+            if (resolver_audit.out_of_range>previous_outside &&
+                !metric->first_out_of_range_block)
+                metric->first_out_of_range_block=b+1u;
             for (unsigned v=0;v<VH_NATIVE_MUSIC_VOICES;v++)
                 if (spu.voice[v].active && spu.voice[v].reverb_send)
                     metric->sent_to_reverb=1u;
@@ -212,6 +231,21 @@ int main(int argc,char **argv) {
             fprintf(stderr,"PCM scene amplitude accounting failed\n");
             goto error;
         }
+        if ((metric->notes==0u)!=(metric->first_note_block==0u) ||
+            (metric->notes==0u)!=(metric->last_note_block==0u) ||
+            (metric->note_offs==0u)!=(metric->first_note_off_block==0u) ||
+            (metric->cross_program_fallback_notes==0u)!=
+                (metric->first_cross_program_block==0u) ||
+            (metric->out_of_range_fallback_notes==0u)!=
+                (metric->first_out_of_range_block==0u) ||
+            metric->first_note_block>blocks ||
+            metric->last_note_block>blocks ||
+            metric->first_note_off_block>blocks ||
+            metric->first_cross_program_block>blocks ||
+            metric->first_out_of_range_block>blocks) {
+            fprintf(stderr,"SEQ block-timing accounting failed\n");
+            goto error;
+        }
         if(resolver_audit.resolved!=metric->notes ||
            resolver_audit.requests!=resolver_audit.resolved+
                                      resolver_audit.unresolved ||
@@ -273,6 +307,11 @@ int main(int argc,char **argv) {
                "\"direct_match_notes\":%" PRIu64 ","
                "\"reverb_send_notes\":%" PRIu64 ","
                "\"zero_gain_notes\":%" PRIu64 ","
+               "\"first_note_block\":%u,"
+               "\"last_note_block\":%u,"
+               "\"first_note_off_block\":%u,"
+               "\"first_cross_program_block\":%u,"
+               "\"first_out_of_range_block\":%u,"
                "\"reverb_send_seen\":%s,"
                "\"peak_pcm16\":%u,"
                "\"nonzero_samples\":%" PRIu64 ","
@@ -293,6 +332,9 @@ int main(int argc,char **argv) {
                m->cross_program_fallback_notes,
                m->out_of_range_fallback_notes,m->notes-m->fallback_notes,
                m->reverb_send_notes,m->zero_gain_notes,
+               m->first_note_block,m->last_note_block,
+               m->first_note_off_block,m->first_cross_program_block,
+               m->first_out_of_range_block,
                m->sent_to_reverb?"true":"false",
                m->peak_pcm16,m->nonzero_samples,m->clipped_samples,
                (double)m->channel_sum[0]/(double)m->output_frames,
