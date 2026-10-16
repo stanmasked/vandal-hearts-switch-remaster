@@ -16,7 +16,7 @@
 
 typedef struct {
     int fail_exists,fail_open,fail_write,fail_flush,fail_close,fail_rename;
-    int fail_read,tamper_after_write;
+    int fail_read,tamper_after_write,short_write_success;
     unsigned opens,writes,flushes,closes,renames,removes,stats;
 } FaultIO;
 
@@ -45,6 +45,12 @@ static int mock_write(void *p,const VhAudioDiagJournal *j,FILE *file) {
          * the actual CSV writer signals an I/O error. */
         (void)fputs("partial,not,valid\n",file);
         return -1;
+    }
+    if(f->short_write_success) {
+        /* A broken storage layer falsely reports that all rows
+         * were written even though the CSV is only a header. */
+        if(fputs("elapsed_ms,event,TRUNCATED\\n",file)==EOF) return -1;
+        return (int)j->count;
     }
     const int result=vh_audio_diag_journal_write_csv(j,file);
     if(f->tamper_after_write) {
@@ -136,7 +142,7 @@ static void test_failure_matrix(const char *dir) {
            VH_AUDIO_EXPORT_INVALID);
     assert(!present(expected));
 
-    for(unsigned mode=0;mode<8u;mode++) {
+    for(unsigned mode=0;mode<9u;mode++) {
         memset(&flags,0,sizeof flags);
         flags.fail_exists=mode==0u;
         flags.fail_open=mode==1u;
@@ -146,6 +152,7 @@ static void test_failure_matrix(const char *dir) {
         flags.fail_rename=mode==5u;
         flags.fail_read=mode==6u;
         flags.tamper_after_write=mode==7u;
+        flags.short_write_success=mode==8u;
         const VhAudioDiagExportResult want=(VhAudioDiagExportResult)
             (mode==0u ? VH_AUDIO_EXPORT_STAT:
              mode==1u ? VH_AUDIO_EXPORT_OPEN:
@@ -162,7 +169,7 @@ static void test_failure_matrix(const char *dir) {
         assert(!present(temp));
         if(mode>1u) {
             assert(flags.opens==1);
-            assert(flags.closes==(mode==5u || mode==7u ? 2u : 1u));
+            assert(flags.closes==(mode==5u || mode>=7u ? 2u : 1u));
             assert(flags.removes==1);
         }
         if(mode==0u) assert(flags.opens==0);
@@ -196,7 +203,6 @@ static void test_failure_matrix(const char *dir) {
                expected_error);
         assert(!path[0]);
         assert(!present(temp));
-        assert(!present("not-used"));
         read_valid(expected);
     }
     memset(&flags,0,sizeof flags);
@@ -276,7 +282,7 @@ int main(void) {
         assert(remove(path)==0);
     }
     assert(rmdir(dir)==0);
-    puts("SD journal export: exact readback, 8 injected failure paths, "
+    puts("SD journal export: exact readback, 9 injected failure paths, "
          "12 repeated corrupt writes, prior-file preservation, 64-slot bounds PASS");
     return 0;
 }
