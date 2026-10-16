@@ -43,6 +43,33 @@ static void test_input_events_are_music_events(void) {
     vh_game_music_mailbox_stop(&box);
     assert(!vh_game_music_mailbox_running(&box));
 }
+static void test_suspend_resume_preserves_latest_scene(void) {
+    VhGameMusicMailbox box;
+    vh_game_music_mailbox_init(&box,VH_GAME_MUSIC_FIELD);
+    assert(vh_game_music_mailbox_focused(&box));
+    assert(vh_game_music_mailbox_running(&box));
+    vh_game_music_mailbox_set_focus(&box,0);
+    assert(!vh_game_music_mailbox_focused(&box));
+    /* Main input events continue to overwrite the desired cue, while
+     * the audio producer should not render/advance sample clocks.
+     */
+    vh_game_music_mailbox_post(&box,VH_GAME_MUSIC_HERO_SELECTED);
+    vh_game_music_mailbox_post(&box,VH_GAME_MUSIC_FIELD);
+    vh_game_music_mailbox_post(&box,VH_GAME_MUSIC_HERO_SELECTED);
+    assert(vh_game_music_mailbox_read(&box)==VH_GAME_MUSIC_HERO_SELECTED);
+    assert(!vh_game_music_mailbox_focused(&box));
+    vh_game_music_mailbox_set_focus(&box,2);
+    assert(vh_game_music_mailbox_focused(&box));
+    assert(vh_game_music_mailbox_read(&box)==VH_GAME_MUSIC_HERO_SELECTED);
+    vh_game_music_mailbox_set_focus(&box,-4);
+    assert(vh_game_music_mailbox_focused(&box));
+    vh_game_music_mailbox_set_focus(&box,0);
+    vh_game_music_mailbox_stop(&box);
+    assert(!vh_game_music_mailbox_running(&box));
+    assert(!vh_game_music_mailbox_focused(&box));
+    assert(!vh_game_music_mailbox_focused(NULL));
+}
+
 static void test_last_request_wins_without_waiting(void) {
     VhGameMusicMailbox box;
     vh_game_music_mailbox_init(&box, VH_GAME_MUSIC_FIELD);
@@ -75,8 +102,10 @@ static int stress_writer(void *arg) {
             ? VH_GAME_MUSIC_FIELD : VH_GAME_MUSIC_HERO_SELECTED;
         vh_game_music_mailbox_post(test->mailbox, scene);
     }
+    vh_game_music_mailbox_set_focus(test->mailbox,0);
     vh_game_music_mailbox_post(
         test->mailbox, VH_GAME_MUSIC_HERO_SELECTED);
+    vh_game_music_mailbox_set_focus(test->mailbox,1);
     atomic_store_explicit(&test->finished, 1, memory_order_release);
     return 0;
 }
@@ -88,12 +117,15 @@ static int stress_reader(void *arg) {
             vh_game_music_mailbox_read(test->mailbox);
         assert(observed==VH_GAME_MUSIC_FIELD ||
                observed==VH_GAME_MUSIC_HERO_SELECTED);
+        const int focused=vh_game_music_mailbox_focused(test->mailbox);
+        assert(focused==0 || focused==1);
         atomic_fetch_add_explicit(&test->observations,1,
                                   memory_order_relaxed);
     } while (!atomic_load_explicit(&test->finished,
                                   memory_order_acquire));
     assert(vh_game_music_mailbox_read(test->mailbox) ==
            VH_GAME_MUSIC_HERO_SELECTED);
+    assert(vh_game_music_mailbox_focused(test->mailbox));
     return 0;
 }
 
@@ -118,6 +150,7 @@ static void test_concurrent_last_request_wins(void) {
 int main(void) {
     test_input_events_are_music_events();
     test_last_request_wins_without_waiting();
+    test_suspend_resume_preserves_latest_scene();
     test_concurrent_last_request_wins();
     puts("tactical input to nonblocking music scene mailbox: PASS");
     return 0;
