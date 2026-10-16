@@ -1,0 +1,143 @@
+/* 100000-snapshot host stress for bounded on-console audio CSV journal.
+ * Synthetic data only: never reads copyrighted files or PCM audio.
+ */
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "vh_audio_diag_journal.h"
+
+static VhAudioDiagJournal log_state;
+
+static void test_event_selection(void) {
+    VhAudioDiagnostics s={.status=1};
+    vh_audio_diag_journal_reset(&log_state);
+    assert(vh_audio_diag_journal_sample(NULL,0,&s)==-1);
+    assert(vh_audio_diag_journal_sample(&log_state,0,NULL)==-1);
+    assert(vh_audio_diag_journal_sample(&log_state,0,&s)==1);
+    assert(log_state.entries[0].event==VH_AUDIO_DIAG_EVENT_START);
+    assert(vh_audio_diag_journal_sample(&log_state,4999,&s)==0);
+    assert(vh_audio_diag_journal_sample(&log_state,5000,&s)==1);
+    assert(log_state.entries[1].event==VH_AUDIO_DIAG_EVENT_PERIODIC);
+    s.resume_events=1u;
+    assert(vh_audio_diag_journal_sample(&log_state,5001,&s)==1);
+    assert(log_state.entries[2].event==VH_AUDIO_DIAG_EVENT_RESUME);
+    s.confirmed_resumes=1u;
+    assert(vh_audio_diag_journal_sample(&log_state,5002,&s)==1);
+    assert(log_state.entries[3].event==VH_AUDIO_DIAG_EVENT_RESUME);
+    s.submit_failures=1u;
+    assert(vh_audio_diag_journal_sample(&log_state,5003,&s)==1);
+    assert(log_state.entries[4].event==VH_AUDIO_DIAG_EVENT_ERROR);
+    s.status=2;
+    assert(vh_audio_diag_journal_sample(&log_state,5004,&s)==1);
+    assert(log_state.entries[5].event==VH_AUDIO_DIAG_EVENT_STATE);
+    s.status=-8;
+    assert(vh_audio_diag_journal_sample(&log_state,5005,&s)==1);
+    assert(log_state.entries[6].event==VH_AUDIO_DIAG_EVENT_ERROR);
+    assert(vh_audio_diag_journal_sample(&log_state,4,&s)==1);
+    assert(log_state.entries[7].event==VH_AUDIO_DIAG_EVENT_CLOCK);
+    assert(vh_audio_diag_journal_finish(&log_state,5,&s)==1);
+    assert(log_state.entries[8].event==VH_AUDIO_DIAG_EVENT_EXIT);
+    assert(log_state.count==9u && log_state.total==9u);
+}
+
+static void test_long_session_rollover_and_csv(void) {
+    vh_audio_diag_journal_reset(&log_state);
+    VhAudioDiagnostics s={.status=1};
+    enum { ITERATIONS=100000 };
+    for(unsigned i=0;i<ITERATIONS;i++) {
+        /* One snapshot attempt every 20 ms for 33 simulated minutes.
+         * Periodic sampling is throttled, but intermittent device
+         * recovery events are recorded immediately. */
+        s.pages_submitted=i;
+        s.frames_submitted=(uint64_t)i*557u;
+        if(i && i%1024u==0u) {
+            ++s.resume_events;
+            ++s.confirmed_resumes;
+            s.last_confirmed_us=12000u+i;
+            if(s.last_confirmed_us>s.worst_confirmed_us)
+                s.worst_confirmed_us=s.last_confirmed_us;
+        }
+        if(i && i%997u==0u) {
+            ++s.submit_failures;
+            ++s.restart_attempts;
+            ++s.recoveries;
+        }
+        int rc=vh_audio_diag_journal_sample(
+            &log_state,(uint64_t)i*20u,&s);
+        assert(rc==0 || rc==1);
+    }
+    assert(log_state.count==VH_AUDIO_DIAG_JOURNAL_CAPACITY);
+    assert(log_state.total>VH_AUDIO_DIAG_JOURNAL_CAPACITY);
+    const uint64_t earliest=log_state.entries[log_state.head].elapsed_ms;
+    const uint32_t last=(log_state.head+VH_AUDIO_DIAG_JOURNAL_CAPACITY-1u)
+                         %VH_AUDIO_DIAG_JOURNAL_CAPACITY;
+    assert(earliest<log_state.entries[last].elapsed_ms);
+    assert(log_state.entries[last].snapshot.pages_submitted<=ITERATIONS-1u);
+    const uint64_t total_before=log_state.total;
+    assert(vh_audio_diag_journal_finish(
+        &log_state,(uint64_t)ITERATIONS*20u,&s)==1);
+    assert(log_state.total==total_before+1u);
+    assert(log_state.count==VH_AUDIO_DIAG_JOURNAL_CAPACITY);
+    const uint32_t after=(log_state.head+VH_AUDIO_DIAG_JOURNAL_CAPACITY-1u)
+                         %VH_AUDIO_DIAG_JOURNAL_CAPACITY;
+    assert(log_state.entries[after].event==VH_AUDIO_DIAG_EVENT_EXIT);
+
+    FILE *f=tmpfile();
+    assert(f);
+    assert(vh_audio_diag_journal_write_csv(NULL,f)==-1);
+    assert(vh_audio_diag_journal_write_csv(&log_state,NULL)==-1);
+    assert(vh_audio_diag_journal_write_csv(&log_state,f)==
+           VH_AUDIO_DIAG_JOURNAL_CAPACITY);
+    rewind(f);
+    char line[1024];
+    assert(fgets(line,sizeof line,f));
+    assert(!strncmp(line,"elapsed_ms,event,status,home_resumes,",
+                    strlen("elapsed_ms,event,status,home_resumes,")));
+    uint64_t previous=0;
+    unsigned rows=0,found_exit=0;
+    while(fgets(line,sizeof line,f)) {
+        unsigned long long ms=0;
+        char event[16]={0};
+        const int count=sscanf(line,"%llu,%15[^,],",&ms,event);
+        assert(count==2);
+        if(rows)assert((uint64_t)ms>=previous);
+        previous=(uint64_t)ms;
+        if(!strcmp(event,"EXIT"))++found_exit;
+        ++rows;
+    }
+    assert(rows==VH_AUDIO_DIAG_JOURNAL_CAPACITY);
+    assert(found_exit==1u);
+    assert(previous==(uint64_t)ITERATIONS*20u);
+    fclose(f);
+}
+
+static void test_invalid_journal_and_counter_saturation(void) {
+    vh_audio_diag_journal_reset(&log_state);
+    VhAudioDiagnostics s={.status=1};
+    assert(vh_audio_diag_journal_sample(&log_state,0,&s)==1);
+    log_state.total=UINT64_MAX;
+    assert(vh_audio_diag_journal_sample(&log_state,6000,&s)==1);
+    assert(log_state.total==UINT64_MAX);
+    log_state.count=VH_AUDIO_DIAG_JOURNAL_CAPACITY+1u;
+    assert(vh_audio_diag_journal_sample(&log_state,7000,&s)==-1);
+    assert(vh_audio_diag_journal_finish(&log_state,7000,&s)==-1);
+    FILE *f=tmpfile();
+    assert(f);
+    assert(vh_audio_diag_journal_write_csv(&log_state,f)==-1);
+    fclose(f);
+    vh_audio_diag_journal_reset(&log_state);
+    assert(log_state.count==0 && log_state.total==0 &&
+           log_state.head==0);
+}
+
+int main(void) {
+    test_event_selection();
+    test_long_session_rollover_and_csv();
+    test_invalid_journal_and_counter_saturation();
+    puts("33-minute audio journal: bounded 128 rows, chronological "
+         "CSV and 100000 snapshot attempts PASS");
+    return 0;
+}
