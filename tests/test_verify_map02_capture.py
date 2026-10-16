@@ -1,5 +1,7 @@
 """Offline verification of Map02 capture evidence, no proprietary game bytes."""
+import contextlib
 import hashlib
+import io
 import json
 import stat
 import subprocess
@@ -9,6 +11,7 @@ import unittest
 from pathlib import Path
 
 from tools.capture_map02_runtime import capture
+from tools.extract_map02_trace import MAX_RAW_LINE_BYTES
 from tools.verify_map02_capture import verify_bundle
 from test_capture_map02_runtime import fixture
 
@@ -142,6 +145,52 @@ class VerifyMap02CaptureTests(unittest.TestCase):
             outcome = verify_bundle(bundle)
             self.assertEqual(outcome["trace_events"], 1)
             self.assertFalse(outcome["complete_capture"])
+
+    def test_large_unrelated_console_noise_is_preserved_but_not_buffered_as_trace(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            exe, prepared = fixture(root)
+            source = exe.read_text(encoding="utf-8")
+            source = source.replace(
+                "import sys\n",
+                "import sys\n"
+                "sys.stdout.write('GPU:' + 'x' * (1048576 + 500) + '\\n')\n",
+                1,
+            )
+            exe.write_text(source, encoding="utf-8")
+            bundle = root / "bundle"
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(capture(exe, prepared, bundle), 0)
+            evidence = verify_bundle(bundle)
+            self.assertTrue(evidence["complete_capture"])
+            self.assertEqual(evidence["trace_events"], 4)
+            self.assertGreater((bundle / "game_stdout.log").stat().st_size,
+                               MAX_RAW_LINE_BYTES)
+            self.assertEqual(len((bundle / "map02_trace.jsonl").read_text().splitlines()), 4)
+
+    def test_oversized_json_line_is_an_explicit_replayable_capture_error(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            exe, prepared = fixture(root)
+            source = exe.read_text(encoding="utf-8")
+            source = source.replace(
+                "raise SystemExit(",
+                "sys.stdout.write('{\"z\":8,\"x\":19,\"face\":0,\"stage\":\"draw\",\"gfx\":'"
+                " + 'x' * (1048576 + 500) + '\\n')\n"
+                "raise SystemExit(", 1,
+            )
+            exe.write_text(source, encoding="utf-8")
+            bundle = root / "bundle"
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(capture(exe, prepared, bundle), 2)
+            evidence = verify_bundle(bundle)
+            self.assertFalse(evidence["complete_capture"])
+            self.assertEqual(evidence["trace_events"], 4)
+            report = json.loads((bundle / "capture_report.json").read_text())
+            self.assertTrue(any("oversized JSON-looking line" in error
+                                for error in report["analysis"]["errors"]))
+            self.assertGreater((bundle / "game_stdout.log").stat().st_size,
+                               MAX_RAW_LINE_BYTES)
 
     def test_failed_process_launch_retains_verifiable_failure_evidence(self):
         with tempfile.TemporaryDirectory() as folder:
