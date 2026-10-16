@@ -1564,7 +1564,16 @@ jobs:
           ]:
               a=struct.pack("<I",before)
               assert a in raw,(label,before)
-              changed=raw.replace(a,struct.pack("<I",after),1)
+              if label=="e6-reserved":
+                  # Third occurrence is an actual standalone E6 command;
+                  # first two occurrences are polygon gouraud COLOR payload.
+                  positions=[i for i in range(0,len(raw),4) if raw[i:i+4]==a]
+                  assert len(positions)>=3
+                  mutable=bytearray(raw)
+                  struct.pack_into("<I",mutable,positions[2],after)
+                  changed=bytes(mutable)
+              else:
+                  changed=raw.replace(a,struct.pack("<I",after),1)
               bad=Path("proof/SYNTHETIC_V62_BAD_"+label+".bin")
               bad_m=Path("proof/SYNTHETIC_V62_BAD_"+label+".json")
               bad.write_bytes(changed)
