@@ -83,10 +83,20 @@ def prepare_span(original_gpu, original_raster, output_dir):
         instrument_raster_skips(scope_raster(raster_raw.decode("utf-8")))))
     # Keep validation ahead of publication and never overwrite overlay files.
     output_dir.mkdir(parents=True)
-    with (output_dir / "libgpu.span.c").open("x", encoding="utf-8") as stream:
-        stream.write(gpu)
-    with (output_dir / "pc_raster.span.c").open("x", encoding="utf-8") as stream:
-        stream.write(raster)
+    created = []
+    try:
+        for name, source in (("libgpu.span.c", gpu), ("pc_raster.span.c", raster)):
+            destination = output_dir / name
+            with destination.open("x", encoding="utf-8") as stream:
+                created.append(destination)
+                stream.write(source)
+    except BaseException:
+        # An interrupted second write must never leave a seemingly valid
+        # one-file overlay. Remove only files exclusively created by us.
+        for destination in reversed(created):
+            destination.unlink(missing_ok=True)
+        output_dir.rmdir()
+        raise
     return {"pinned_original_gpu": True, "native_only": True,
             "entered_spans_only": True,
             "vertical_rejected_row_coverage_proven": False,
