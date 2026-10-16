@@ -18,13 +18,15 @@ TONE_OFFSET = 32 + 128 * 16
 
 
 def synth_dir(directory, wet=False, bank_b=False, fallback_program=False,
-              out_of_range_note=False):
+              out_of_range_note=False, mute_master=False):
     directory.mkdir()
     files = make_synthetic_files()
     vh = bytearray(files["music.vh"])
     vb = bytearray(files["music.vb"])
     if wet:
         vh[TONE_OFFSET + 1] = 4  # Valid VAB reverb-send mode.
+    if mute_master:
+        vh[24] = 0  # Every note resolves, but both output gains are zero.
     if bank_b:
         vb[18:32] = b"\x44" * 14
         vb[34:48] = b"\xDD" * 14
@@ -98,6 +100,12 @@ class NativeLocalMusicTransitionTests(unittest.TestCase):
             self.assertEqual([x["reverb_send_notes"] for x in readings],
                              [readings[0]["resolved_notes"], 0,
                               readings[2]["resolved_notes"], 0])
+            self.assertTrue(all(x["zero_gain_notes"] == 0 for x in readings))
+            self.assertTrue(all(not x["silent_pcm"] for x in readings))
+            self.assertTrue(all(x["nonzero_samples"] > 0 for x in readings))
+            self.assertTrue(all(0 < x["peak_pcm16"] <= 32768 for x in readings))
+            self.assertTrue(all(x["clipped_samples"] <=
+                                x["output_frames"] * 2 for x in readings))
             self.assertEqual(sum(x["output_frames"] for x in readings),
                              result["output_frames"])
             self.assertTrue(all(x["input_frames"] == 8192 for x in readings))
@@ -127,6 +135,35 @@ class NativeLocalMusicTransitionTests(unittest.TestCase):
             self.assertEqual(later["direct_match_notes"],
                              later["resolved_notes"])
             self.assertNotIn(str(tmp), result.stdout)
+
+    def test_resolved_notes_can_produce_silent_pcm_with_zero_gain(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b = Path(tmp) / "mute", Path(tmp) / "audible"
+            originals_a = synth_dir(a, mute_master=True)
+            originals_b = synth_dir(b)
+            cmd = [str(PROGRAM), str(a), str(b), "2", "16"]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = json.loads(result.stdout)
+            muted, audible = report["measurements"]
+            self.assertGreater(muted["resolved_notes"], 0)
+            self.assertEqual(muted["zero_gain_notes"], muted["resolved_notes"])
+            self.assertEqual(muted["unresolved_notes"], 0)
+            self.assertTrue(muted["silent_pcm"])
+            self.assertEqual(muted["peak_pcm16"], 0)
+            self.assertEqual(muted["nonzero_samples"], 0)
+            self.assertEqual(muted["clipped_samples"], 0)
+            self.assertGreater(audible["resolved_notes"], 0)
+            self.assertEqual(audible["zero_gain_notes"], 0)
+            self.assertFalse(audible["silent_pcm"])
+            self.assertGreater(audible["nonzero_samples"], 0)
+            self.assertGreater(audible["peak_pcm16"], 0)
+            self.assertLessEqual(audible["peak_pcm16"], 32768)
+            self.assertEqual(audible["clipped_samples"], 0)
+            self.assertNotIn(str(tmp), result.stdout)
+            for folder, expected in ((a, originals_a), (b, originals_b)):
+                self.assertEqual(
+                    {p.name: p.read_bytes() for p in folder.iterdir()}, expected)
 
     def test_missing_bank_file_fails_without_partial_json_or_path(self):
         with tempfile.TemporaryDirectory() as tmp:
