@@ -199,8 +199,8 @@ static void test_shadow_tones_and_aliases(void) {
     vh[shadow+4]=117;
     vh[shadow+6]=115;
     vh[shadow+7]=120;
-    w16(shadow+20,0);
-    w16(shadow+22,2);
+    w16(vh,shadow+20,0);
+    w16(vh,shadow+22,2);
     memset(&bank,0,sizeof bank);
     assert(vh_native_vab_load(&bank,vh,sizeof vh,vb,96,arena,224)==0);
     assert(bank.program_tones[0]==2);
@@ -221,15 +221,15 @@ static void test_shadow_tones_and_aliases(void) {
 
     /* A malformed hidden record must not bypass VAG validation or
      * replace the published bank. */
-    const VhNativeVab snapshot=bank;
-    w16(shadow+22,5); /* bank contains only VAGs 1..4 */
+    blank=bank;
+    w16(vh,shadow+22,5); /* bank contains only VAGs 1..4 */
     assert(vh_native_vab_load(&bank,vh,sizeof vh,vb,96,arena,224)==-1);
-    assert(!memcmp(&bank,&snapshot,sizeof bank));
-    w16(shadow+22,2);
+    assert(!memcmp(&bank,&blank,sizeof bank));
+    w16(vh,shadow+22,2);
     vh[shadow+6]=121;
     vh[shadow+7]=120;
     assert(vh_native_vab_load(&bank,vh,sizeof vh,vb,96,arena,224)==-1);
-    assert(!memcmp(&bank,&snapshot,sizeof bank));
+    assert(!memcmp(&bank,&blank,sizeof bank));
 }
 
 static void test_strict_invalid_banks_and_no_publish(void) {
