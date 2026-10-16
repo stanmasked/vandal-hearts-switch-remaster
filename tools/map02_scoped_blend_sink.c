@@ -77,7 +77,7 @@ int vh_map02_scope_copy(unsigned index, VHMap02BlendEvent *out) {
 void vh_map02_probe_begin(int x, int y, unsigned short before,
                           unsigned short front, int abr, int semi,
                           int textured, int accurate) {
-    if (failed) return;
+    if (failed || !in_frame) return;
     if (x != target_x || y != target_y) {
         if (in_pixel) failure(); /* no nested interleaving is permitted */
         return;
@@ -108,7 +108,7 @@ void vh_map02_probe_begin(int x, int y, unsigned short before,
 void vh_map02_probe_blendg1(int x, int y, unsigned short fg,
                              unsigned short bg, unsigned short result,
                              int abr, int textured) {
-    if (failed) return;
+    if (failed || !in_frame) return;
     if (x != target_x || y != target_y) {
         if (in_pixel) failure();
         return;
@@ -128,7 +128,7 @@ void vh_map02_probe_blendg1(int x, int y, unsigned short fg,
 }
 
 void vh_map02_probe_end(int x, int y, unsigned short after) {
-    if (failed) return;
+    if (failed || !in_frame) return;
     if (x != target_x || y != target_y) {
         if (in_pixel) failure();
         return;
