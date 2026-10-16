@@ -56,12 +56,14 @@ class NativeRasterSkipAuditTests(unittest.TestCase):
         self.assertEqual(result["observed_dda_zero_bgr555_texel_events"],1)
         self.assertEqual(result["observed_dda_horizontal_span_clip_events"],1)
         self.assertEqual(result["observed_legacy_zero_bgr555_texel_events"],1)
+        self.assertEqual(result["observed_dda_vertical_span_clip_events"],0)
+        self.assertFalse(result["vertical_clip_selected_span_exclusion_observed"])
         self.assertEqual(result["source_keyed_ft4_primitives_with_direct_skip_observation"],2)
         self.assertTrue(result["verified_original_source_to_native_gpu_join"])
         self.assertTrue(result["native_drawotag_frame_and_ordinal_checked"])
         for key in ("all_executed_raster_skip_branches_captured",
                     "unlogged_pixel_cause_inferred",
-                    "vertical_clip_per_pixel_confirmed",
+                    "vertical_clip_exact_polygon_coverage_proven",
                     "triangle_coverage_and_mask_test_verified",
                     "ps1_hardware_stp_abr_mask_equivalence",
                     "original_gameplay_authenticated","raw_game_data_emitted"):
@@ -69,6 +71,15 @@ class NativeRasterSkipAuditTests(unittest.TestCase):
         report=json.dumps(result)
         for private in ('"x"','"y"','"primitive_ordinal"',"31978","perimeter_xy"):
             self.assertNotIn(private,report)
+
+    def test_vertical_dda_span_rejection_direct_observation(self):
+        self.rows.append(self.row(3,2,4))
+        self.save()
+        r=verify_skips(self.source,self.native)
+        self.assertEqual(r["observed_dda_vertical_span_clip_events"],1)
+        self.assertEqual(r["source_keyed_dda_vertical_clip_events"],1)
+        self.assertTrue(r["vertical_clip_selected_span_exclusion_observed"])
+        self.assertFalse(r["vertical_clip_exact_polygon_coverage_proven"])
 
     def test_one_draw_may_skip_without_any_putpixel_sample(self):
         # A zero-texel branch is real evidence even if no PutPixel occurred
