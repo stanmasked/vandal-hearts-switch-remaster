@@ -13,6 +13,10 @@ void vh_switch_game_audio_post(unsigned desired_scene);
  * from the main thread. Does not wait for the audio worker.
  */
 void vh_switch_game_audio_set_focus(int in_focus);
+/* Explicit libnx OnResume: restart audout even if an automatic system
+ * suspension prevented the worker from observing focus loss first.
+ */
+void vh_switch_game_audio_on_resume(int in_focus);
 void vh_switch_game_audio_stop(void);
 /* 0 starting/stopped, 1 playing, 2 paused, negative means audio failed.
  * Main gameplay can continue silently if the device is unavailable.
