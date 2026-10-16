@@ -177,6 +177,7 @@ static void load_synthetic_map_via_real_unpack(void) {
                     (unsigned long)compressed_bytes);
         }
     }
+    fprintf(stderr, "[v45] REFERENCE_DECODED_FNV64=%016llx\n", v43_hash(s_fixture, n));
     fprintf(stderr, "[v44] UNPACK_OK bytes=%lu compressed=%lu tiles=336 width=28 height=12\n",
             (unsigned long)n, (unsigned long)(p-compressed-4));
     free(compressed);
