@@ -8,12 +8,12 @@ on:
       - 'tools/analyze_pcm_wav.py'
       - 'tests/test_analyze_pcm_wav.py'
       - 'tests/test_analyze_pcm_cli.py'
-      - 'tests/test_analyze_pcm_cli.py'
       - '.github/workflows/pcm-wav-diagnostics.yml'
   pull_request:
     paths:
       - 'tools/analyze_pcm_wav.py'
       - 'tests/test_analyze_pcm_wav.py'
+      - 'tests/test_analyze_pcm_cli.py'
       - '.github/workflows/pcm-wav-diagnostics.yml'
   workflow_dispatch:
 
