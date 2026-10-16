@@ -6,13 +6,15 @@
 #include <string.h>
 
 #include "vh_audio_resample.h"
+#include "vh_game_music_banks.h"
 #include "vh_music_scene.h"
 
-/* All large SPU/FIR work buffers are static. They are never allocated
- * on libnx's limited thread stacks or accessed from the game loop.
- * Standalone audio NRO still supports loading user-owned SEQ/VH/VB;
- * the tactical prototype deliberately uses synthetic cue fixtures.
+/* All large SPU/FIR work buffers are static. The worker preloads
+ * two local SD banks (field/selected) before audout starts, falling
+ * back to synthetic cues ONLY when both complete sets are absent.
+ * No game files, disk reads or VAG decoding occur in the PCM loop.
  */
+#define VH_GAME_MUSIC_SD_ROOT "sdmc:/switch/vandal-hearts-remake/audio"
 static Thread audio_thread;
 static int thread_started;
 static VhGameMusicMailbox mailbox;
@@ -90,6 +92,16 @@ static void audio_worker(void *unused) {
     (void)unused;
     int state = -1;
     int opened = 0, playing = 0;
+    VhGameMusicBanks *loaded_banks = NULL;
+    const int pack_status = vh_game_music_banks_load(
+        &loaded_banks, VH_GAME_MUSIC_SD_ROOT);
+    if (pack_status == VH_AUDIO_ASSET_ERROR) {
+        /* A corrupt/incomplete user pack MUST NOT silently play
+         * synthetic music. Keep the tactical grid running silently.
+         */
+        state = -10;
+        goto cleanup;
+    }
     for (unsigned i=0;i<128u;i++)
         synth_samples[i] = (int16_t)((int)(i * 127u % 18000u) - 9000);
     vh_native_spu_reset(&spu);
@@ -165,10 +177,22 @@ static void audio_worker(void *unused) {
          */
         const unsigned desired = vh_game_music_mailbox_read(&mailbox);
         if (desired != accepted) {
-            const VhMusicCue *cue = desired == VH_GAME_MUSIC_FIELD
-                ? &field_cue
-                : desired == VH_GAME_MUSIC_HERO_SELECTED
-                    ? &selected_cue : NULL;
+            VhMusicCue bank_cue = {0};
+            const VhMusicCue *cue = NULL;
+            if (desired == VH_GAME_MUSIC_FIELD ||
+                desired == VH_GAME_MUSIC_HERO_SELECTED) {
+                if (pack_status == VH_AUDIO_ASSET_OK) {
+                    if (vh_game_music_banks_cue(
+                            loaded_banks, desired, &bank_cue)) {
+                        state = -5;
+                        break;
+                    }
+                    cue = &bank_cue;
+                } else {
+                    cue = desired == VH_GAME_MUSIC_FIELD
+                        ? &field_cue : &selected_cue;
+                }
+            }
             const int change = vh_music_scene_request(
                 &director, cue, accepted ? 8u : 0u);
             if (change == 0) accepted = desired;
@@ -196,6 +220,12 @@ static void audio_worker(void *unused) {
 cleanup:
     if (playing) (void)stop_audout_checked();
     if (opened) audoutExit();
+    /* All queued buffers are done; discard every borrowed bank/PCM
+     * voice pointer before finally freeing the two local asset sets.
+     */
+    vh_native_spu_reset(&spu);
+    vh_music_scene_init(&director, &spu);
+    vh_game_music_banks_close(&loaded_banks);
     atomic_store_explicit(&audio_status, state, memory_order_release);
 }
 
