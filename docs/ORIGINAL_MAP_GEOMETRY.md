@@ -218,3 +218,63 @@ original PS1 camera/GTE. No game-authored model vertices, actual
 were tested. The next gate is user-side validation of an
 authentic extracted PRS and then reusing native original map
 projection/render logic without publishing copyrighted data.
+
+## Original pinned GTE perspective in the multi-face Switch probe (integration candidate)
+
+The synthetic two-face native map preview has been upgraded from the
+previous *arbitrary orthographic math* to the **actual software PS1 GTE
+implementation from the pinned PC-port**:
+`platform/pc/src/libgte.c` at upstream SHA
+`14552fffa0e0b47e02b57592e274fc6e7a649923`.
+The Switch workflow cross-compiles and links that original GTE
+translation unit alongside its original `libgpu.c` and `pc_raster.c`.
+The NRO now calls `InitGeom`, `SetGeomOffset`,
+`SetGeomScreen`, `RotMatrix`, `TransMatrix`,
+`SetRotMatrix`, `SetTransMatrix` and
+`RotTransPers4`. The last function performs RTPT for the first
+three source vertices, RTPS for the fourth and AVSZ4 depth
+averaging, then supplies four signed packed screen coordinates.
+
+The camera in this isolated 12×9 preview is a **chosen test camera**,
+NOT recovered map 11 gameplay camera state: source-space pitch
+`SVECTOR(-512,0,0)` in 4096-angle units, translation (0,0,96),
+`H=14` and pixel offset (6,4). The first face, whose source
+vertices form a rectangle, projects to a trapezoid rather than a
+parallel-sided quad; a representative host GTE result is TL=(0,1),
+TR=(6,1), near edge x shifting from 0 to 2 at the bottom, and
+positive depth index (OTZ~24). This fixture intentionally tests
+perspective division and matrix calculations in addition to texture
+sampling.
+
+**Important primitive ordering:** exact upstream
+`src/core/graphics.c::RenderMapTile` calls
+`gte_stsxy3(&poly->x0,&poly->x1,&poly->x3)`, then
+`gte_stsxy(&poly->x2)`. Thus source `faces[][2]` maps to
+FT4 packet corner **3** and source `faces[][3]` maps to
+packet corner **2**. The NRO reproduces this order exactly. Synthetic
+source-format face vertex lists use [top-left, top-right, bottom-right,
+bottom-left] for the same reason. The prior hand-authored orthographic
+probe was limited to demonstration and should not be used as a
+reference for vertex packet order.
+
+An asset-free, independent host C test
+`tests/test_pinned_map_gte_camera.c` is linked against precisely
+the same pinned `libgte.c`; it checks valid four-point perspective,
+depth and repeated projection determinism. The private NeXium
+screenshot checker samples red, blue, magenta and cyan in the newly
+projected two-face scene, plus a red pixel on the **left extension**
+that could not have been covered by the old orthographic geometry.
+These tests are separate from the established synthetic single-UV-patch
+GPU assertions.
+
+**Acceptance status:** source integration and source-aligned test
+vectors are in the branch. This section is a candidate until a
+completed CI run demonstrates a passing NRO build, GTE host test and
+full two-face private virtual-SD screenshot.
+
+The existing original `RenderMapTile` itself is **not** compiled
+into this test NRO: it still requires map state, lighting, camera
+objects, graphics arena, backface calculations and ordering-table
+depth setup. Similarly, the demonstration camera is not the game's
+authentic GTE register state. No PS1 disc bytes or retail terrain
+meshes are embedded in the build.
