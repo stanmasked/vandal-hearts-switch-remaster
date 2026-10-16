@@ -39,6 +39,7 @@ static int load_prepared_vab(VhNativeVab *prepared, const uint8_t *vh, size_t vh
     prepared->seq_left = prepared->seq_right = 127u;
     unsigned packed_blocks = 0;
     unsigned active_tones = 0;
+    unsigned highest_program = 0;
     for (unsigned p = 0; p < VH_VAB_PROGRAMS; ++p) {
         const uint8_t *record = vh + 32u + p * 16u;
         const unsigned count = record[0];
@@ -50,6 +51,7 @@ static int load_prepared_vab(VhNativeVab *prepared, const uint8_t *vh, size_t vh
         prepared->program_pan[p] = record[4];
         ++packed_blocks;
         active_tones += count;
+        highest_program = p;
     }
     if (!active_tones) return -1;
     const size_t tone_base = 32u + VH_VAB_PROGRAMS * 16u;
@@ -60,18 +62,30 @@ static int load_prepared_vab(VhNativeVab *prepared, const uint8_t *vh, size_t vh
 
     unsigned packed_index = 0;
     uint8_t referenced[VH_VAB_SAMPLES] = {0};
-    for (unsigned p = 0; p < VH_VAB_PROGRAMS; ++p) {
+    /* Mirror SsVabOpenHeadSticky's packed-block indexing:
+     * - Every program through the last populated program has 16
+     *   selectable slots, even when nTone is less than 16.
+     * - Empty programs inherit the next populated block because
+     *   block[p] is assigned BEFORE the populated-block counter moves.
+     *
+     * Unlike the reference, never publish a selectable record whose
+     * VAG, key range or sample bytes cannot be validated. A nonzero
+     * orphan slot is still potentially audible and must be checked.
+     */
+    for (unsigned p = 0; p <= highest_program; ++p) {
         const unsigned count = prepared->program_tones[p];
-        if (!count) continue;
-        for (unsigned t = 0; t < count; ++t) {
+        for (unsigned t = 0; t < VH_VAB_TONES_PER_PROGRAM; ++t) {
             const uint8_t *record = vh + tone_base
                                   + (size_t)packed_index * 512u
                                   + (size_t)t * 32u;
+            const int active = t < count;
+            const int16_t vag = (int16_t)le16(record + 22);
+            if (!active && vag <= 0) continue;
             const unsigned low = record[6], high = record[7];
             const int16_t parent = (int16_t)le16(record + 20);
-            const int16_t vag = (int16_t)le16(record + 22);
             if (low > 127u || high > 127u || low > high ||
-                parent != (int16_t)p || vag < 1 || vag > (int)num_vags ||
+                (active && parent != (int16_t)p) ||
+                vag < 1 || vag > (int)num_vags ||
                 record[2] > 127u || record[3] > 127u) return -1;
             VhVabTone *dst = &prepared->tones[p][t];
             dst->present = 1;
@@ -87,7 +101,7 @@ static int load_prepared_vab(VhNativeVab *prepared, const uint8_t *vh, size_t vh
             dst->vag = (uint16_t)vag;
             referenced[(unsigned)vag] = 1;
         }
-        ++packed_index;
+        if (count) ++packed_index;
     }
 
     const uint8_t *sizes = vh + size_table_offset;
