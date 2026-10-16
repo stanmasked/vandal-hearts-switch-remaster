@@ -54,7 +54,7 @@ class Map02FaceSourceTests(unittest.TestCase):
         field, graphics, gpu = synthetic_c_sources()
         with self.assertRaisesRegex(ValueError, "setUVWH"):
             verify_source_contract(
-                field, graphics, gpu,
+                field, graphics,
                 gpu.replace("(p)->u3 = (_u0) + (_w)",
                             "(p)->u3 = (_u0)"),
             )
