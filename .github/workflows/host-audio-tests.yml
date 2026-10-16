@@ -120,6 +120,9 @@ jobs:
              tests/test_vh_audio_resample.c source/vh_audio_resample.c \
              -o build/test_vh_audio_resample_ubsan
           ./build/test_vh_audio_resample_ubsan
+      - name: Offline Switch PCM journal analysis and hostile CSV validation
+        run: |
+          python3 tests/test_analyze_switch_audio_log.py
       - name: Long-session audio CSV ring journal and fault events
         run: |
           cc -std=c11 -Wall -Wextra -Werror -O2 -Isource \
