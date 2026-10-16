@@ -105,6 +105,25 @@ int main(void) {
         }
         printf("Original pinned GTE overlap: near OTZ=%d far OTZ=%d\n",ni,nf);
     }
+    {
+        SVECTOR distant[4] = {
+            {-256,-476,348,0}, {0,-476,348,0},
+            {0,-476,668,0}, {-256,-476,668,0},
+        };
+        int pixel[4],distance,p,flags,i;
+        distance=RotTransPers4(
+            &distant[0],&distant[1],&distant[2],&distant[3],
+            &pixel[0],&pixel[1],&pixel[2],&pixel[3],
+            &p,&flags);
+        assert(distance>150 && distance<256);
+        for(i=0;i<4;++i) {
+            int dx=x_of(pixel[i])-x_of(xy[i]);
+            int dy=y_of(pixel[i])-y_of(xy[i]);
+            assert(dx>=-2 && dx<=2);
+            assert(dy>=-2 && dy<=2);
+        }
+        printf("Original GTE distance shading gate: OTZ=%d\n",distance);
+    }
     puts("PASS: pinned PS1 GTE perspective, signed NCLIP culling and AVSZ4 depth");
     return 0;
 }
