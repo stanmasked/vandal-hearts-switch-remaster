@@ -174,8 +174,14 @@ static void draw_ft4_probe(VhCanvas *canvas, u32 *pixels, u32 stride,
     };
     VhFt4Vertex quad[4];
     const unsigned mode = (frame_tick / 120u) & 3u;
+    /* This effect quad uses GPU code 0x2e (ABE), unlike normal MAP02
+     * terrain which uses 0x2c and should remain opaque even with STP. */
+    const u8 effect_gpu_code = 0x2eu;
+    const u16 effect_tpage = (u16)(mode << 5);
     VhPs1AbrState abr = {
-        (u8)mode, 1, vh_switch_unpack_ps1_rgb, vh_switch_pack_ps1_rgb, NULL
+        (u8)vh_ps1_tpage_abr(effect_tpage),
+        (u8)vh_ps1_ft4_primitive_semi(effect_gpu_code),
+        vh_switch_unpack_ps1_rgb, vh_switch_pack_ps1_rgb, NULL
     };
     char mode_label[] = "ABR MODE 0";
     mode_label[9] = (char)('0' + mode);
