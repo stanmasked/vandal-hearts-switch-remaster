@@ -92,7 +92,7 @@ class MusicBankAuditCliTests(unittest.TestCase):
             self.assertEqual(report["selected"]["fallback"], 1)
             self.assertEqual(
                 report["selected"]["first_fallback"],
-                {"program": 9, "note": 67, "selected_program": 7,
+                {"program": 9, "note": 67, "selected_program": 0,
                  "selected_tone": 0, "selected_vag": 1})
             strict = run("--strict", path)
             self.assertEqual(strict.returncode, 4)
@@ -166,7 +166,7 @@ class MusicBankAuditCliTests(unittest.TestCase):
             self.assertEqual(selected["fallback"], 1)
             self.assertEqual(selected["missing"], 0)
             self.assertEqual(selected["first_fallback"], {
-                "program": 9, "note": 67, "selected_program": 7,
+                "program": 9, "note": 67, "selected_program": 0,
                 "selected_tone": 0, "selected_vag": 1,
             })
             strict = run("--strict", path)
@@ -202,7 +202,7 @@ class MusicBankAuditCliTests(unittest.TestCase):
             self.assertEqual(selected["program_changes"], 3)
             self.assertEqual(selected["fallback"], 1)
             self.assertEqual(selected["first_fallback"], {
-                "program": 9, "note": 67, "selected_program": 7,
+                "program": 9, "note": 67, "selected_program": 0,
                 "selected_tone": 0, "selected_vag": 1,
             })
             strict = run("--strict", path)
@@ -253,11 +253,11 @@ class MusicBankAuditCliTests(unittest.TestCase):
                 self.assertEqual(data["program_changes"], 3)
                 self.assertIsNone(data["first_missing"])
             self.assertEqual(report["field"]["first_fallback"], {
-                "program": 9, "note": 60, "selected_program": 7,
+                "program": 9, "note": 60, "selected_program": 0,
                 "selected_tone": 0, "selected_vag": 1,
             })
             self.assertEqual(report["selected"]["first_fallback"], {
-                "program": 10, "note": 69, "selected_program": 7,
+                "program": 10, "note": 69, "selected_program": 0,
                 "selected_tone": 0, "selected_vag": 1,
             })
             strict = run("--strict", path)
@@ -288,8 +288,8 @@ class MusicBankAuditCliTests(unittest.TestCase):
                         self.assertEqual(result.stdout, "")
                         self.assertNotIn(path, result.stderr)
 
-    def test_same_program_out_of_range_is_a_strict_fallback(self):
-        """A valid nearest note can be a fallback without changing program."""
+    def test_sparse_program_out_of_range_uses_first_shadow_alias(self):
+        """Out-of-range p7 notes select shadow p0 while strict still fails."""
         with tempfile.TemporaryDirectory() as path:
             folder = Path(path)
             fixtures(folder)
@@ -313,7 +313,7 @@ class MusicBankAuditCliTests(unittest.TestCase):
                     self.assertEqual(selected["fallback"], fallback)
                     self.assertEqual(report["field"]["fallback"], 0)
                     expected = ({
-                        "program": 7, "note": note, "selected_program": 7,
+                        "program": 7, "note": note, "selected_program": 0,
                         "selected_tone": 0, "selected_vag": 1,
                     } if fallback else None)
                     self.assertEqual(selected["first_fallback"], expected)
