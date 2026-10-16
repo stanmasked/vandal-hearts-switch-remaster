@@ -77,6 +77,7 @@ on:
       - 'tools/verify_map02_native_gpu_capture.py'
       - 'tools/verify_map02_source_native_ft4_join.py'
       - 'tools/verify_map02_source_native_ot_order.py'
+      - 'tools/verify_map02_native_overdraw.py'
       - 'tools/verify_map02_camera_capture.py'
       - 'tools/verify_map02_frame_bundle.py'
       - 'tools/verify_map02_vram_timeline.py'
@@ -86,6 +87,7 @@ on:
       - 'tests/test_verify_map02_native_gpu_capture.py'
       - 'tests/test_verify_map02_source_native_ft4_join.py'
       - 'tests/test_verify_map02_source_native_ot_order.py'
+      - 'tests/test_verify_map02_native_overdraw.py'
       - 'tests/test_verify_map02_frame_bundle.py'
       - 'tests/test_verify_map02_vram_timeline.py'
       - 'tests/test_verify_map02_gpu_write_ledger.py'
@@ -182,6 +184,7 @@ on:
       - 'tools/verify_map02_native_gpu_capture.py'
       - 'tools/verify_map02_source_native_ft4_join.py'
       - 'tools/verify_map02_source_native_ot_order.py'
+      - 'tools/verify_map02_native_overdraw.py'
       - 'tools/verify_map02_camera_capture.py'
       - 'tools/verify_map02_frame_bundle.py'
       - 'tools/verify_map02_vram_timeline.py'
@@ -191,6 +194,7 @@ on:
       - 'tests/test_verify_map02_native_gpu_capture.py'
       - 'tests/test_verify_map02_source_native_ft4_join.py'
       - 'tests/test_verify_map02_source_native_ot_order.py'
+      - 'tests/test_verify_map02_native_overdraw.py'
       - 'tests/test_verify_map02_frame_bundle.py'
       - 'tests/test_verify_map02_vram_timeline.py'
       - 'tests/test_verify_map02_gpu_write_ledger.py'
@@ -399,6 +403,7 @@ jobs:
             python3 -m unittest discover -s tests -p 'test_verify_map02_native_gpu_capture.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_source_native_ft4_join.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_source_native_ot_order.py' -v
+            python3 -m unittest discover -s tests -p 'test_verify_map02_native_overdraw.py' -v
           )
           PYTHONPATH=remaster python3 -m tools.instrument_map02_gpu_native_events \
             upstream/platform/pc/src/libgpu.c \
