@@ -32,7 +32,10 @@ def complete_events(raw, label):
     lines = raw.split(b"\n")[:-1]
     if not 1 <= len(lines) < MAX_EVENTS or any(not line.strip() for line in lines):
         raise ValueError(label + ": missing, empty, or over event limit")
-    return [parse_json(line, label) for line in lines]
+    events = [parse_json(line, label) for line in lines]
+    if any(type(event) is not dict for event in events):
+        raise ValueError(label + ": JSONL events must be objects")
+    return events
 
 
 def verify_blendg1_witness(source_dir, native_dir, *, compiler="gcc"):
