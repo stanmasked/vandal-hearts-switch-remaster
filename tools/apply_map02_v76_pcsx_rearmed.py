@@ -42,15 +42,15 @@ def oracle_source(loop:int):
 			SysPrintf("VH76_FREEZE_REFUSED\n");
 			ClosePlugins();SysClose();menu_finish();plat_finish();return 4;
 		}
-		const uint16_t colors[10]={VH76_EXPECTED_COLORS};
-		const unsigned int starts[10]={VH76_X_COORDS};
-		unsigned int failures[11]={0},total_bad=0,checked=0;
+		const uint16_t colors[11]={VH76_EXPECTED_COLORS};
+		const unsigned int starts[11]={VH76_X_COORDS};
+		unsigned int failures[12]={0},total_bad=0,checked=0;
 		for(unsigned int y=127;y<=133;y++) {
-			for(unsigned int x=39;x<=188;x++) {
-				unsigned int region=10;
+			for(unsigned int x=39;x<=204;x++) {
+				unsigned int region=11;
 				uint16_t wanted=0;
 				if(y>=128 && y<132) {
-					for(unsigned int i=0;i<10;i++) {
+					for(unsigned int i=0;i<11;i++) {
 						if(x>=starts[i] && x<starts[i]+4) {
 							region=i;
 							wanted=colors[i];
@@ -65,14 +65,14 @@ def oracle_source(loop:int):
 				checked++;
 			}
 		}
-		if(checked!=1050 || total_bad) {
-			SysPrintf("VH76_VRAM_REFUSED checked=%u mismatches=%u order_rg=%u order_gr=%u clutA=%u clutB=%u e2set=%u e2reset=%u e6mask=%u e6reset=%u e1abr0=%u e1abr1=%u guard=%u\n",
+		if(checked!=1162 || total_bad) {
+			SysPrintf("VH76_VRAM_REFUSED checked=%u mismatches=%u order_rg=%u order_gr=%u clutA=%u clutB=%u e2set=%u e2reset=%u e6mask=%u e6reset=%u e1abr0=%u e1abr1=%u e1reset=%u guard=%u\n",
 			 checked,total_bad,failures[0],failures[1],failures[2],failures[3],
 			 failures[4],failures[5],failures[6],failures[7],failures[8],
-			 failures[9],failures[10]);
+			 failures[9],failures[10],failures[11]);
 			ClosePlugins();SysClose();menu_finish();plat_finish();return 5;
 		}
-		SysPrintf("VH76_VRAM_PASS checked=1050 regions=10 region_pixels=160 guard=890\n");
+		SysPrintf("VH76_VRAM_PASS checked=1162 regions=11 region_pixels=176 guard=986\n");
 		ClosePlugins();SysClose();menu_finish();plat_finish();return 0;
 	}
 #endif
