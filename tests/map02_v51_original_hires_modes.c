@@ -83,6 +83,8 @@ static int apply_case(const Test *t) {
     RenderCtx rc;
     unsigned short after, hd_direct, hd_threaded;
     unsigned long long hash_direct, hash_threaded;
+    unsigned short direct_pixels[32*32];
+    int px,py;
     const unsigned short *hires;
     size_t hires_bytes=0;
     unsigned filler;
@@ -127,6 +129,9 @@ static int apply_case(const Test *t) {
     FillQuad(&rc,a,b,c,d,128,128,128,1,tpage,clut,t->semi,t->abr);
     hd_direct=hires[pixel_offset];
     hash_direct=hash_hires_quad(hires);
+    for (py=0;py<32;py++)
+        for (px=0;px<32;px++)
+            direct_pixels[py*32+px]=hires[(size_t)(80*SCALE+py)*(1024*SCALE)+80*SCALE+px];
 
     /* Run the SAME case via the ACTUAL deferred threaded path. Force the
      * production >=64-primitive threshold with distant synthetic rects,
@@ -142,6 +147,18 @@ static int apply_case(const Test *t) {
     HiresRasterizeThreaded(0,240);
     hd_threaded=hires[pixel_offset];
     hash_threaded=hash_hires_quad(hires);
+    for (py=0;py<32;py++) {
+        for (px=0;px<32;px++) {
+            unsigned short observed=hires[(size_t)(80*SCALE+py)*(1024*SCALE)+80*SCALE+px];
+            if (direct_pixels[py*32+px]!=observed) {
+                fprintf(stderr,
+                  "V51 FAIL exact HD framebuffer mismatch case=%s x=%d y=%d direct=%u threaded=%u\n",
+                  t->name,px,py,
+                  (unsigned)direct_pixels[py*32+px],(unsigned)observed);
+                return 0;
+            }
+        }
+    }
     if (hash_direct!=hash_threaded) {
         fprintf(stderr,"V51 FAIL full 32x32 HD region mismatch case=%s direct=%016llx threaded=%016llx\n",
                 t->name,hash_direct,hash_threaded);
