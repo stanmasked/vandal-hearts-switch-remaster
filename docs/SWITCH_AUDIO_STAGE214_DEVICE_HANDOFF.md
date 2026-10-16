@@ -152,3 +152,43 @@ python3 tools/verify_switch_audio_build_provenance.py \
 Для новых комплектов фиксируйте SHA-256 и идентификаторы сборки сразу при получении артефакта. Порог аппаратной приёмки по-прежнему требует настоящих CSV со Switch, независимых прогонов, проверки слухом и ручной [карточки сессии](SWITCH_AUDIO_STAGE212_SESSION_TEMPLATE.md).
 
 Host-only регрессии: [`tests/test_verify_switch_audio_build_provenance.py`](../tests/test_verify_switch_audio_build_provenance.py), подключены к `make test` и `make test-audio-stream`. Тесты используют только синтетические ZIP и NRO-заголовки, **не** реальную консоль и не игровые ресурсы.
+
+
+## 8. Этап №217 — онлайн-проверка актуального HEAD перед передачей NRO
+
+Для **передачи последней сборки на физическую Switch** дополнительно используйте [`tools/verify_switch_audio_live_preflight.py`](../tools/verify_switch_audio_live_preflight.py). В отличие от архивной офлайн-сверки этапа №216, новый режим **сам** читает GitHub REST по HTTPS с проверкой TLS, не принимает подготовленные оператором JSON как источник истины и сверяет NRO с **текущим HEAD** ветки непосредственно перед передачей устройства на тест. Никакие персональные токены или игровые ресурсы не нужны для публичного репозитория в пределах GitHub API rate limit.
+
+Сначала создайте комплект №213/214 **с реальными параметрами конкретной сборки**:
+
+```sh
+python3 tools/verify_switch_audio_bundle.py create switch-audio-preflight-217 \
+  --git-sha FULL_40_DIGIT_SHA_OF_THE_NRO_BUILD \
+  --ci-run-url https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/RUN_ID \
+  --nro nro/vandal-hearts-prototype.nro
+```
+
+Из **того же** завершённого успешного workflow `Switch toolchain readiness` скачайте архив артефакта `vandal-hearts-switch-prototype`, сохраните ZIP без изменений и запишите числовые `RUN_ID` и `ARTIFACT_ID` со страницы GitHub:
+
+```sh
+python3 tools/verify_switch_audio_live_preflight.py switch-audio-preflight-217 \
+  --artifact-zip /path/to/original-artifact.zip \
+  --run-id RUN_ID \
+  --artifact-id ARTIFACT_ID \
+  > /path/to/live-preflight-217.json
+```
+
+Номер `ARTIFACT_ID` можно получить через `gh api repos/stanmasked/vandal-hearts-switch-remaster/actions/runs/RUN_ID/artifacts`. Не используйте номер другого архива или номер run вместо artifact ID.
+
+Инструмент проверяет:
+
+- HTTPS-ответы GitHub для run, artifact и `refs/heads/test/cdxa-extract-decode-pipeline`, только по жёстко фиксированным путям API;
+- точное совпадение полного Git SHA из манифеста, `head_sha` успешного run, `head_sha` артефакта и **текущего HEAD ветки**;
+- имя/путь workflow, репозиторий, ветку, номер и URL запуска, имя артефакта и срок его доступности;
+- ограничение возраста запуска: по умолчанию **30 дней**; иной явный лимит — `--max-run-age-days N` (1–365);
+- SHA-256 оригинального ZIP из GitHub и побайтный SHA-256 NRO внутри архива по сравнению с файлом, заранее зафиксированным в манифесте.
+
+При успехе возвращаются `result: MATCHED_CURRENT_HEAD_AT_CHECK_TIME`, `build_provenance: GITHUB_HTTPS_METADATA_AND_BYTE_MATCH_NOT_SIGNED`, `checked_at_utc` и `head_sha_at_check_time`, код завершения `0`. При старом коммите (ветка ушла вперёд), слишком давнем запуске, подменённом файле/архиве, несоответствии ID или недоступности GitHub API — `result: FAILED`, код `2` и **никакого разрешения на передачу новой сборки как текущей**. Старую намеренно зафиксированную сборку можно исследовать отдельно по историческому протоколу №216, но нельзя выдавать её за нынешний HEAD.
+
+**Ограничение:** даже настоящий HTTPS-ответ GitHub не является подписанной аттестацией воспроизводимой сборки. Текущий HEAD может измениться *после* запроса: повторите preflight непосредственно перед копированием NRO на SD, сохраните дату и JSON результата. Никаких физических HOME/сна, прослушивания и стойкости SD онлайн-сверка не подтверждает: `hardware_status` остаётся `HARDWARE NOT TESTED`.
+
+Регрессии [`tests/test_verify_switch_audio_live_preflight.py`](../tests/test_verify_switch_audio_live_preflight.py) выполняются **без сети**, на имитированных ответах GitHub: актуальный HEAD, уход ветки вперёд, старый/истёкший артефакт, подмена ZIP/NRO, будущие метки времени, небезопасные URL и некорректные идентификаторы. Подключены в `make test` / `make test-audio-stream`.
