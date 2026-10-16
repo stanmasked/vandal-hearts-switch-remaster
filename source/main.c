@@ -1,5 +1,9 @@
 #include <switch.h>
 #include <string.h>
+#include <stdio.h>
+#include <sys/stat.h>
+
+#include "vh_audio_diag_journal.h"
 
 #include "game_rules.h"
 #include "game_state.h"
@@ -28,6 +32,10 @@
 #define COLOR_CURSOR   RGBA8_MAXALPHA(255, 219, 102)
 #define COLOR_WHITE    RGBA8_MAXALPHA(224, 234, 246)
 #define COLOR_MUTED    RGBA8_MAXALPHA(105, 126, 151)
+
+/* Game thread owns the bounded 128-row log. No file operations are
+ * performed until AFTER the audout worker has stopped and joined. */
+static VhAudioDiagJournal hardware_audio_log;
 
 static void fill_rect(u32 *pixels, u32 stride, int x, int y,
                       int width, int height, u32 color) {
@@ -92,7 +100,8 @@ static void draw_frame(u32 *pixels, u32 stride, int cursor_x, int cursor_y,
                        int hero_x, int hero_y, int enemy_x, int enemy_y,
                        int hero_selected, u32 frame_tick,
                        int audio_status, unsigned bank_warnings,
-                       const VhAudioDiagText *diagnostics) {
+                       const VhAudioDiagText *diagnostics,
+                       int log_active, unsigned log_rows) {
     fill_rect(pixels, stride, 0, 0, FB_WIDTH, FB_HEIGHT, COLOR_BG);
 
     /* Compact bitmap labels keep the prototype self-contained and asset-free. */
@@ -179,7 +188,13 @@ static void draw_frame(u32 *pixels, u32 stride, int cursor_x, int cursor_y,
             draw_text(pixels,stride,978,144+(int)i*25,
                       diagnostics->line[i],
                       i==0 ? COLOR_CURSOR:COLOR_WHITE,1);
-        draw_text(pixels,stride,978,433,"MINUS CLOSE",COLOR_MUTED,1);
+        draw_text(pixels,stride,978,414,
+                  log_active ? "Y STOP LOG" : "Y START LOG",
+                  log_active ? COLOR_CURSOR : COLOR_MUTED,1);
+        char rows[32];
+        snprintf(rows,sizeof rows,"LOG ROWS %u",log_rows);
+        draw_text(pixels,stride,978,436,rows,COLOR_MUTED,1);
+        draw_text(pixels,stride,978,456,"MINUS CLOSE",COLOR_MUTED,1);
     }
 
     /* Small status indicator changes color while the unit is selected. */
@@ -243,6 +258,9 @@ int main(int argc, char **argv) {
     }
     u32 frame_tick = 0;
     int audio_diagnostics_visible = 0;
+    int log_active = 0, log_has_samples = 0;
+    const uint64_t session_start_tick=armGetSystemTick();
+    vh_audio_diag_journal_reset(&hardware_audio_log);
 
     while (appletMainLoop()) {
         /* Some libnx launch modes suspend main before issuing focus
@@ -255,6 +273,25 @@ int main(int argc, char **argv) {
         const u64 buttons_down = padGetButtonsDown(&pad);
         if (buttons_down & HidNpadButton_Minus)
             audio_diagnostics_visible = !audio_diagnostics_visible;
+        const uint64_t elapsed_ms=armTicksToNs(
+            armGetSystemTick()-session_start_tick)/UINT64_C(1000000);
+        if (audio_diagnostics_visible && (buttons_down & HidNpadButton_Y)) {
+            /* Recording is opt-in. Toggling Y pauses/resumes the same
+             * bounded session log, never files a write on this path. */
+            log_active=!log_active;
+            if (log_active && !log_has_samples)
+                vh_audio_diag_journal_reset(&hardware_audio_log);
+            log_has_samples=1;
+        }
+        if (log_active) {
+            VhAudioDiagnostics sample={0};
+            if (audio_started)
+                vh_switch_game_audio_diagnostics(&sample);
+            else
+                sample.status=-1;
+            (void)vh_audio_diag_journal_sample(
+                &hardware_audio_log,elapsed_ms,&sample);
+        }
 
         unsigned int actions = 0;
         if (buttons_down & HidNpadButton_Left)  actions |= VH_INPUT_LEFT;
@@ -292,7 +329,7 @@ int main(int argc, char **argv) {
                        state.hero_selected, frame_tick++,
                        audio_started ? vh_switch_game_audio_status() : -1,
                        audio_started ? vh_switch_game_audio_bank_warnings() : 0u,
-                       overlay);
+                       overlay,log_active,hardware_audio_log.count);
         }
         framebufferEnd(&fb);
     }
@@ -305,6 +342,34 @@ int main(int argc, char **argv) {
         vh_switch_game_audio_stop();
         if (resume_message_enabled)
             (void)appletSetRestartMessageEnabled(false);
+    }
+    if (log_has_samples) {
+        /* CSV export ONLY after the output worker is joined.
+         * Never write files in the audout callback/render hot path.
+         * Explicit Y opt-in; at most 128 bounded numeric samples.
+         * The fixed path contains NO PCM, SEQ, VH or VB resources.
+         */
+        VhAudioDiagnostics final_sample={0};
+        if (audio_started)
+            vh_switch_game_audio_diagnostics(&final_sample);
+        else
+            final_sample.status=-1;
+        const uint64_t elapsed_ms=armTicksToNs(
+            armGetSystemTick()-session_start_tick)/UINT64_C(1000000);
+        (void)vh_audio_diag_journal_finish(
+            &hardware_audio_log,elapsed_ms,&final_sample);
+        (void)mkdir("sdmc:/switch",0777);
+        (void)mkdir("sdmc:/switch/vandal-hearts-remake",0777);
+        const char *path=
+            "sdmc:/switch/vandal-hearts-remake/audio-diagnostics.csv";
+        FILE *export=fopen(path,"w");
+        if (export) {
+            const int written=vh_audio_diag_journal_write_csv(
+                &hardware_audio_log,export);
+            const int closed=fclose(export);
+            if (written<0 || closed!=0)
+                (void)remove(path); /* never leave incomplete CSV */
+        }
     }
     framebufferClose(&fb);
     return 0;
