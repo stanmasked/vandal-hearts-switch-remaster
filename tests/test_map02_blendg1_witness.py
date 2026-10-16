@@ -53,6 +53,21 @@ class BlendG1WitnessTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             compare_blendg1_witnesses([p], [bad])
 
+    def test_rejects_untrusted_putpixel_stream(self):
+        p = pixel(0, 0, 0)
+        bad_inputs = [
+            [None],
+            [dict(p, stage="native_blendg1")],
+            [dict(p, step=True)],
+            [dict(p, semi=True)],
+            [p, p],
+            [dict(p, step=2), dict(p, step=1)],
+            [dict(pixel(0, 0, 0, semi=0), after=0)],
+        ]
+        for rows in bad_inputs:
+            with self.subTest(rows=rows), self.assertRaises(ValueError):
+                compare_blendg1_witnesses(rows, [witness(p)])
+
     def test_no_semi_requires_no_blend(self):
         p = pixel(0, 0, 2, semi=0)
         with self.assertRaises(ValueError):
