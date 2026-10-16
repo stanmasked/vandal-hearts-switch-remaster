@@ -296,10 +296,24 @@ the intended instrument was selected.
 The local report also distinguishes notes that resolved with zero
 left/right gain (`zero_gain_notes`) from scenes that actually rendered
 silent output (`silent_pcm`, `nonzero_samples`, `peak_pcm16`,
-`clipped_samples`). These are **post-resampler 48-kHz** measurements.
+`clipped_samples`). In addition, per-channel `mean_pcm16_left/right`
+measures the sample-average (DC offset) and
+`rms_pcm16_left/right` measures the root-mean-square level. These are
+**post-resampler 48-kHz** measurements in PCM16 sample units, not dBFS.
+The measurements use all samples in each scene's specified 512-frame
+audit blocks. RMS and means do not identify the original musical
+instrument or guarantee that the physical Switch output is audible.
 A zero-gain scene may still have nonzero PCM because the prior scene's
 STUDIO_C reverb tail survives the transition. This identifies silence
 within the limited audit window, **not** across an entire song.
+
+The synthetic CI checks that malformed SEQ/VH/VB files are rejected
+before playback. It covers 13 malformed resource variants in either
+A or B (26 rejection scenarios), including damaged headers, missing
+end-of-track, invalid tone/key ranges and invalid ADPCM headers.
+Every rejection must produce no partial JSON, must not include the
+private input path in stderr, and must leave the other bank unchanged.
+Those tests do **not** imply all possible corrupt input is covered.
 
 No PCM frames, original bytes, track names, file paths, or bank
 contents are serialized. The program opens files
