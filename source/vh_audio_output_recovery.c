@@ -44,6 +44,55 @@ int vh_audio_output_record_submit_timing(
     return 0;
 }
 
+int vh_audio_output_record_scene_page(
+    VhAudioSceneWaits *groups,
+    const VhAudioSubmitTiming *before, const VhAudioSubmitTiming *after,
+    uint64_t tick_frequency, size_t frames, int first_after_switch,
+    int delivered) {
+    if (!groups || !before || !after || !frames ||
+        frames>VH_AUDIO_RESAMPLE_MAX_FRAMES || !tick_frequency ||
+        tick_frequency>UINT64_MAX/frames ||
+        after->calls<=before->calls ||
+        after->total_ticks<before->total_ticks ||
+        after->waits_longer_than_page<before->waits_longer_than_page ||
+        after->failed_submissions<before->failed_submissions)
+        return -1;
+
+    const uint64_t attempts=after->calls-before->calls;
+    const uint64_t failures=
+        after->failed_submissions-before->failed_submissions;
+    const uint64_t slow_calls=
+        after->waits_longer_than_page-before->waits_longer_than_page;
+    const uint64_t ticks=after->total_ticks-before->total_ticks;
+    /* On a delivered page the recovery helper accepts exactly one
+     * backend invocation. On terminal failure every observed raw
+     * invocation must be a failure. Stop/open itself is not timed.
+     */
+    if (attempts>VH_AUDIO_OUTPUT_RESTART_LIMIT+1u ||
+        failures>attempts || slow_calls>attempts ||
+        attempts-failures!=(delivered ? 1u : 0u))
+        return -1;
+
+    VhAudioPageWaitBucket *bucket=first_after_switch
+        ? &groups->first_after_switch : &groups->ordinary;
+    const uint64_t was_slow=(slow_calls!=0);
+    const uint64_t retried=(attempts>1u);
+    const uint64_t failed=(!delivered);
+    if (bucket->pages==UINT64_MAX ||
+        bucket->total_ticks>UINT64_MAX-ticks ||
+        bucket->slow_pages>UINT64_MAX-was_slow ||
+        bucket->retried_pages>UINT64_MAX-retried ||
+        bucket->failed_pages>UINT64_MAX-failed)
+        return -1;
+    ++bucket->pages;
+    bucket->total_ticks+=ticks;
+    if (ticks>bucket->peak_page_ticks) bucket->peak_page_ticks=ticks;
+    bucket->slow_pages+=was_slow;
+    bucket->retried_pages+=retried;
+    bucket->failed_pages+=failed;
+    return 0;
+}
+
 int vh_audio_output_page_returned(const void *submitted,
                                   const void *released) {
     return submitted != NULL && released == submitted;
