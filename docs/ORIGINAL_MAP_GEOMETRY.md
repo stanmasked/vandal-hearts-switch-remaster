@@ -558,8 +558,38 @@ responses, and rejects malformed private opt-in files.
 `tests/test_stage_vh_private_map_geometry.py` also
 checks the exact light stage and face shade indices.
 
-**Acceptance requires a green full CI and NeXium screenshot.**
+**Acceptance: PASS** — [GitHub Actions #38863911984](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38863911984),
+source code revision `0c005f382a69099e1e954ca6461394edd3533432`,
+completed **all THREE CI jobs SUCCESS**: Switch NRO build,
+baseline original DrawOTag raster NeXium, and five independent
+virtual-SD map scenarios in NeXium. The host preflight
+passed **91 Python tests**, all separate C tests and
+the pinned 26-normal GTE NCCS test. The native NRO0
+structure and ROM-free test artifacts are verified.
+
+The pinned `UpdateLight` C test measured at intensity 32:
+**-X=(128,32,32)** and **+X=(32,32,32)**;
+intensity 128 returned neutral (128,128,128) for all 26
+normals, preserving earlier screenshots.
+The fifth emulator scenario staged the test-only intensity
+byte `32`, with shade 4 on the left visible face and
+shade 2 on the right. At actual 1280×720 NeXium
+pixel coordinates, the values were:
+
+| Face/sample | Full-bright RGB | Actual GTE+FT4 lit RGB |
+| --- | --- | --- |
+| left top red | (255,0,0) | **(255,0,0)** |
+| left bottom blue | (0,0,255) | **(0,0,57)** |
+| right top magenta | (255,0,255) | **(57,0,57)** |
+| right bottom cyan | (0,255,255) | **(0,57,57)** |
+
+The screenshot was checked twice: during polling and again
+after capture. The GTE software emulator returns color
+components 128 and 32 before GPU modulation; the final
+native raster output contains the values shown above.
+No commercial map or texture bytes were committed.
+
 This restores source light normal and NCCS computations in
-a test-controlled camera/light configuration; it does not
-recover the actual game scene's dynamic light rotation,
+a **test-controlled camera/light configuration**; it does
+not recover the actual game scene's dynamic light rotation,
 gLightColor, grid overrides, or full RenderMapTile.
