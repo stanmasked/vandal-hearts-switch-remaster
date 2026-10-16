@@ -236,6 +236,14 @@ jobs:
         run: python3 tests/test_native_spu_gaussian.py
       - name: Differential-check native VH/VB resolver against Python
         run: python3 tests/test_native_vab_python_reference.py
+      - name: Execute pinned upstream SeqPickTone against native VAB
+        run: |
+          mkdir -p build
+          curl --fail --location --show-error --silent --retry 3 \
+            --max-time 45 \
+            https://raw.githubusercontent.com/HalmyLyseas/VandalHearts-PcPort/17427153fd3560fcb9adf3a8f484d9ff7fc530e9/platform/pc/src/libsnd.c \
+            -o build/upstream-libsnd.c
+          python3 tests/test_native_vab_upstream_reference.py build/upstream-libsnd.c
       - name: Differential-check native STUDIO_C against PC-port integer oracle
         run: python3 tests/test_native_spu_reverb_reference.py
       - name: STUDIO_C optimized vs baseline FIR checksum and throughput
