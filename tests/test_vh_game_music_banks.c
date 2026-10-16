@@ -90,6 +90,152 @@ static void cleanup_scene(const char *scene) {
     remove_file(scene,"music.vb");
 }
 
+
+/* Exercise transactional preloading while an older, healthy two-bank
+ * music set is still playing. A bad update must leave the old scene
+ * valid; a repaired update is staged before the producer detaches,
+ * then the outgoing PCM arenas can be released safely.
+ */
+static void test_repeated_reload_after_corrupt_local_banks(void) {
+    enum { RELOAD_CYCLES = 48 };
+    VhGameMusicBanks *live=NULL;
+    assert(vh_game_music_banks_load(&live,root)==VH_AUDIO_ASSET_OK);
+    assert(live!=NULL);
+    vh_native_spu_reset(&spu);
+    vh_music_scene_init(&director,&spu);
+    VhMusicCue start={0};
+    assert(vh_game_music_banks_cue(live,VH_GAME_MUSIC_FIELD,&start)==0);
+    assert(vh_music_scene_request(&director,&start,0)==0);
+    assert(vh_music_scene_render(&director,output)==0);
+    unsigned replaced=0, failed=0;
+    for(unsigned cycle=0;cycle<RELOAD_CYCLES;++cycle) {
+        const uint32_t original=vh_music_scene_active_id(&director);
+        assert(original==VH_GAME_MUSIC_FIELD ||
+               original==VH_GAME_MUSIC_HERO_SELECTED);
+        const VhGameMusicBanks *prior=live;
+        const uint8_t *old_seq=director.seq.bytes;
+        const void *old_context=director.seq.context;
+        assert(old_seq && old_context);
+        assert(director.active.context==old_context);
+
+        /* Six failure classes: corrupt VH, absent SEQ, truncated VB,
+         * invalid SEQ, absent VH and invalid referenced VAG. */
+        switch(cycle%6u) {
+        case 0:
+            fixture(1);
+            vh[0]='X';
+            file("selected","music.vh",vh,sizeof vh);
+            break;
+        case 1:
+            remove_file("field","music.seq");
+            break;
+        case 2:
+            fixture(1);
+            file("selected","music.vb",vb,8u);
+            break;
+        case 3: {
+            const uint8_t truncated[]={'p','Q','E','S',0,0,0,0,
+                1,0xe0,7,0xa1,0x20,0,0,0,0x90,67};
+            file("field","music.seq",truncated,sizeof truncated);
+            break;
+        }
+        case 4:
+            remove_file("selected","music.vh");
+            break;
+        default:
+            fixture(0);
+            write16(32u+128u*16u+22u,9u); /* only VAG1 declared */
+            file("field","music.vh",vh,sizeof vh);
+            break;
+        }
+        VhGameMusicBanks *candidate=NULL;
+        assert(vh_game_music_banks_load(&candidate,root)==
+               VH_AUDIO_ASSET_ERROR);
+        assert(candidate==NULL);
+        ++failed;
+        /* Failed disk reload cannot invalidate any of the previously
+         * decoded PCM or alter the current SEQ/scene owner. */
+        assert(live==prior);
+        assert(director.seq.bytes==old_seq);
+        assert(director.seq.context==old_context);
+        assert(vh_music_scene_render(&director,output)==0);
+        assert(director.active.id==original && !director.last_error);
+
+        /* Repair both triplets, stage a complete replacement while the
+         * previous one remains attached, and confirm distinct arenas. */
+        files("field",0);
+        files("selected",1);
+        assert(vh_game_music_banks_load(&candidate,root)==
+               VH_AUDIO_ASSET_OK);
+        assert(candidate!=NULL && candidate!=live);
+        assert(candidate->field.seq!=live->field.seq);
+        assert(candidate->selected.seq!=live->selected.seq);
+        assert(candidate->field.bank.samples[1].pcm !=
+               live->field.bank.samples[1].pcm);
+        assert(candidate->selected.bank.samples[1].pcm !=
+               live->selected.bank.samples[1].pcm);
+        assert(candidate->field_audit.resolved_notes==1u &&
+               candidate->selected_audit.resolved_notes==1u);
+        assert(candidate->field_fallback_notes==0u &&
+               candidate->selected_fallback_notes==0u);
+        /* A second load through the occupied publication slot is
+         * rejected without changing the live pack. */
+        assert(vh_game_music_banks_load(&live,root)==
+               VH_AUDIO_ASSET_ERROR);
+        assert(live==prior);
+
+        const unsigned next=original==VH_GAME_MUSIC_FIELD
+            ? VH_GAME_MUSIC_HERO_SELECTED : VH_GAME_MUSIC_FIELD;
+        if(cycle%4u) {
+            VhMusicCue outgoing_next={0};
+            assert(vh_game_music_banks_cue(live,next,&outgoing_next)==0);
+            assert(vh_music_scene_request(&director,&outgoing_next,2u)==0);
+            if(cycle%4u>=2u) {
+                assert(vh_music_scene_render(&director,output)==0);
+                assert(vh_music_scene_render(&director,output)==0);
+                assert(director.stage==VH_MUSIC_SWITCH_PENDING);
+            }
+            if(cycle%4u==3u) {
+                assert(vh_music_scene_render(&director,output)==0);
+                assert(director.stage==VH_MUSIC_FADE_IN);
+            }
+        }
+        /* The producer must detach before freeing even a bank which
+         * is only referenced by the pending cue during a fade. */
+        assert(vh_music_scene_detach(&director)==0);
+        assert(director.seq.bytes==NULL &&
+               director.active.context==NULL &&
+               director.pending.context==NULL);
+        for(unsigned voice=0;voice<VH_NATIVE_MUSIC_VOICES;++voice)
+            assert(spu.voice[voice].pcm==NULL);
+        vh_game_music_banks_close(&live);
+        assert(live==NULL);
+        live=candidate;
+        candidate=NULL;
+
+        VhMusicCue restarted={0};
+        assert(vh_game_music_banks_cue(live,next,&restarted)==0);
+        assert(vh_music_scene_request(&director,&restarted,0u)==0);
+        assert(vh_music_scene_render(&director,output)==0);
+        assert(vh_music_scene_active_id(&director)==next);
+        assert(director.seq.note_ons==1u && !director.last_error);
+        const int16_t *expected=next==VH_GAME_MUSIC_FIELD
+            ? live->field.bank.samples[1].pcm
+            : live->selected.bank.samples[1].pcm;
+        assert(spu.voice[0].pcm==expected);
+        ++replaced;
+    }
+    assert(failed==RELOAD_CYCLES && replaced==RELOAD_CYCLES);
+    assert(vh_music_scene_detach(&director)==0);
+    vh_game_music_banks_close(&live);
+    assert(live==NULL);
+    for(unsigned i=0;i<1024u;++i)output[i]=123;
+    assert(vh_music_scene_render(&director,output)==0);
+    for(unsigned i=0;i<1024u;++i)assert(output[i]==0);
+    printf("two-bank reload recovery: %u failed updates, %u safe replacements PASS\\n",
+           failed,replaced);
+}
+
 int main(void) {
     assert(mkdtemp(root)!=NULL);
     assert(snprintf(path,sizeof path,"%s/field",root)>0);
@@ -267,6 +413,7 @@ int main(void) {
     assert(pack->field_fallback_notes==0u);
     vh_game_music_banks_close(&pack);
     file("selected","music.seq",music_selected,sizeof music_selected);
+    test_repeated_reload_after_corrupt_local_banks();
     cleanup_scene("field");
     cleanup_scene("selected");
     assert(snprintf(path,sizeof path,"%s/field",root)>0);
