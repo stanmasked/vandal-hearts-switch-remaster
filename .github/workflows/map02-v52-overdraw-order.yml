@@ -640,17 +640,20 @@ jobs:
           assert r["status"]=="verified",r
           assert r["workers_checked"]==[1,2,4]
           assert r["scene_count"]==5
-          assert r["full_hd_pixels_checked_per_run"]==5120
+          assert r["full_hd_pixels_checked_per_run"]==51200
           for thread,report in r["individual_reports"].items():
               assert report["status"]=="verified_synthetic_layered_GPU", report
               assert report["actual_gpu_layer_submissions"]==25
+              assert report["whole_hires_pixels_per_scene"]==10240
+              assert report["cross_band_probes_per_scene"]==7
+              assert report["worker_band_boundaries_checked"]==[60,120,180]
               assert report["order_sensitive_pair_different"]
               assert report["transparent_layer_count"]>=3
               assert all(v>0 for v in report["stp_abr_cases"].values())
               assert not report["HD_replacement_approved"]
               assert set(report["source_formats"])=={"indexed4","indexed8","direct15"}
           print("PASS: original GPU multi-layer composite order matches independent BGR555 oracle.")
-          print("PASS: all five full 32x32 HD output surfaces agree for 1, 2 and 4 threads.")
+          print("PASS: all five complete 32x320 HD surfaces and worker band-edge pixels agree for 1, 2 and 4 threads.")
           PY
           python3 - <<'PY'
           import subprocess
