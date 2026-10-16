@@ -98,6 +98,19 @@ static int analyze_face(
         (VhMap02Cross){pc.x,pc.y,pc.z}, &ip)) return 0;
     if (vs && !vh_map02_best_q12_direction(
         (VhMap02Cross){ps1.x,ps1.y,ps1.z}, &is)) return 0;
+    /* Cross-check this independent vertex/branch decoder against the
+     * already regression-tested source MAP02 face implementation.
+     * If repeated-corner precedence or record offsets drift, fail closed. */
+    {
+        uint8_t legacy_index = 255;
+        VhMap02Cross legacy_normal = {0,0,0};
+        unsigned legacy_ok = !!vh_map02_face_direction(
+            tile, VH_MAP02_TILE_BYTES, face, &legacy_index, &legacy_normal);
+        if (legacy_ok != vw ||
+            (vw && (legacy_index != iw || legacy_normal.x != wide.x ||
+                    legacy_normal.y != wide.y || legacy_normal.z != wide.z)))
+            return 0;
+    }
     ++s->faces;
     s->degenerate_wide += !vw;
     s->zero_pc += !vp;
