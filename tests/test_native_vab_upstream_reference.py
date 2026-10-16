@@ -34,7 +34,7 @@ TONE_LOCATIONS = ((0, 0, 1, 2080),
                   (0, 1, 2, 2080 + 32),
                   (7, 0, 3, 2080 + 512),
                   (10, 0, 4, 2080 + 1024))
-REQUESTED_PROGRAMS = (0, 7, 10, 99, 127)
+REQUESTED_PROGRAMS = (0, 1, 6, 7, 8, 9, 10, 99, 127)
 
 
 def extract_function(source: str) -> str:
@@ -136,10 +136,25 @@ def run(source_path: Path) -> int:
         oracle_so = root / "upstream.so"
         native_so = root / "native.so"
         build_oracle(source_path, oracle_so)
+        diagnostics_c = root / "selected_tone.c"
+        diagnostics_c.write_text(
+            '#include "vh_native_vab.h"\n'
+            'unsigned native_selected_program(const void *ptr) {\n'
+            '  return ((const VhNativeVab *)ptr)->selected_program;\n'
+            '}\n'
+            'unsigned native_selected_tone(const void *ptr) {\n'
+            '  return ((const VhNativeVab *)ptr)->selected_tone;\n'
+            '}\n'
+            'unsigned native_selected_vag(const void *ptr) {\n'
+            '  return ((const VhNativeVab *)ptr)->selected_vag;\n'
+            '}\n',
+            encoding="utf-8",
+        )
         subprocess.run(
             ["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-O2",
              "-fPIC", "-shared", "-Isource", "source/vh_native_vab.c",
-             "source/vh_spu_adpcm.c", "-lm", "-o", str(native_so)],
+             "source/vh_spu_adpcm.c", str(diagnostics_c),
+             "-lm", "-o", str(native_so)],
             cwd=ROOT, check=True, capture_output=True, text=True,
         )
         oracle = ctypes.CDLL(str(oracle_so))
@@ -168,6 +183,13 @@ def run(source_path: Path) -> int:
             ctypes.c_uint, ctypes.c_uint, ctypes.POINTER(SeqTone),
         ]
         resolve.restype = ctypes.c_int
+        selected = []
+        for symbol in ("native_selected_program", "native_selected_tone",
+                       "native_selected_vag"):
+            getter = getattr(native, symbol)
+            getter.argtypes = [ctypes.c_void_p]
+            getter.restype = ctypes.c_uint
+            selected.append(getter)
 
         vh_base, vb = make_sparse_bank()
         sample_vb = (ctypes.c_uint8 * len(vb)).from_buffer_copy(vb)
@@ -177,12 +199,26 @@ def run(source_path: Path) -> int:
             vags = (ctypes.c_uint8 * (128 * 16))()
             lows = (ctypes.c_uint8 * (128 * 16))()
             highs = (ctypes.c_uint8 * (128 * 16))()
+            active = {}
             for (program, slot, vag, offset), (low, high) in zip(
                     TONE_LOCATIONS, ranges):
                 vh[offset + 6] = low
                 vh[offset + 7] = high
-                i = program * 16 + slot
-                vags[i], lows[i], highs[i] = vag, low, high
+                active[(program, slot)] = (vag, low, high)
+            # Mirror the original SsVabOpenHeadSticky block[p] view:
+            # an empty program before p10 inherits its next populated
+            # program's whole 16-tone packed block.
+            populated = (0, 7, 10)
+            aliases = {}
+            for program in range(11):
+                source_program = next(p for p in populated if p >= program)
+                for slot in range(16):
+                    candidate = active.get((source_program, slot))
+                    if candidate is None:
+                        continue
+                    aliases[(program, slot)] = candidate[0]
+                    i = program * 16 + slot
+                    vags[i], lows[i], highs[i] = candidate
             source_vh = (ctypes.c_uint8 * len(vh)).from_buffer_copy(vh)
             # These are opaque native structs; space is deliberately ample.
             bank = (ctypes.c_longdouble * 16384)()
@@ -205,10 +241,7 @@ def run(source_path: Path) -> int:
                         raise AssertionError(
                             f"{label} program={program} note={note}: upstream returned no tone"
                         )
-                    mapping = {
-                        (p, t): vag for p, t, vag, _ in TONE_LOCATIONS
-                    }
-                    chosen_vag = mapping.get((chosen_program.value, slot))
+                    chosen_vag = aliases.get((chosen_program.value, slot))
                     if chosen_vag is None:
                         raise AssertionError(
                             f"{label} program={program} note={note}: "
@@ -227,11 +260,14 @@ def run(source_path: Path) -> int:
                     actual_addr = ctypes.cast(
                         tone.pcm, ctypes.c_void_p
                     ).value
-                    if native_rc or actual_addr != expected_addr:
+                    observed = tuple(getter(bank) for getter in selected)
+                    expected = (chosen_program.value, slot, chosen_vag)
+                    if (native_rc or observed != expected or
+                            actual_addr != expected_addr):
                         raise AssertionError(
                             f"{label} program={program} note={note}: "
-                            f"upstream chose {chosen_program.value}/{slot}/"
-                            f"VAG{chosen_vag}; native returned rc={native_rc}, "
+                            f"upstream chose {expected}; "
+                            f"native chose {observed}, rc={native_rc}, "
                             f"PCM address={actual_addr}, expected={expected_addr}"
                         )
                     count += 1
