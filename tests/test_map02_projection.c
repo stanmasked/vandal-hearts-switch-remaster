@@ -206,6 +206,27 @@ static void test_neighbor_normals_and_projection_in_one_batch(void) {
     assert(projected[0].gpu[3].y == projected[1].gpu[2].y);
 }
 
+static void test_neighbor_projection_under_camera_translation(void) {
+    VhMap02ProjectCamera c = camera();
+    const VhMap02ProjectVertex a[4] = {
+        {0,0,512},{100,0,640},{100,100,640},{0,100,512}
+    };
+    const VhMap02ProjectVertex b[4] = {
+        {100,0,640},{200,0,640},{200,100,640},{100,100,640}
+    };
+    VhMap02ProjectFace p, q;
+    for (unsigned step = 0; step < 8; ++step) {
+        c.tr[0] = (int32_t)step * 12 - 36;
+        c.tr[1] = (int32_t)step * 7 - 20;
+        c.tr[2] = (int32_t)step * 16;
+        assert(vh_map02_project_face(&c,a,1024,&p));
+        assert(vh_map02_project_face(&c,b,1024,&q));
+        assert(p.visible && q.visible && p.ot_in_bounds && q.ot_in_bounds);
+        assert(p.gpu[1].x == q.gpu[0].x && p.gpu[1].y == q.gpu[0].y);
+        assert(p.gpu[3].x == q.gpu[2].x && p.gpu[3].y == q.gpu[2].y);
+    }
+}
+
 int main(void) {
     test_screen_quad_and_ordering();
     test_backface_and_zero_area();
@@ -215,6 +236,7 @@ int main(void) {
     test_sloped_neighbors_share_gte_screen_endpoints();
     test_projection_and_face_lighting_direction();
     test_neighbor_normals_and_projection_in_one_batch();
+    test_neighbor_projection_under_camera_translation();
     puts("MAP02 portable projection, NCLIP, AVSZ4 and OT slot tests passed");
     return 0;
 }
