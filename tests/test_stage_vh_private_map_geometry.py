@@ -24,15 +24,19 @@ class StagedModelTests(unittest.TestCase):
     def setUp(self):
         self.models = synthetic_geometry_models()
 
-    def test_fixture_contains_two_authored_distinct_faces(self):
+    def test_fixture_has_one_backface_and_two_front_faces(self):
         self.assertEqual(len(self.models), MAP_11_BYTES)
         faces = parse_tile(self.models,6,3)["faces"]
-        self.assertEqual(len(faces),2)
-        self.assertEqual([f["local_gfx_slot"] for f in faces],[241,242])
-        self.assertEqual(faces[0]["vertex_xyz"][0],[-32,0,-16])
-        self.assertEqual(faces[1]["vertex_xyz"][2],[32,0,24])
-        self.assertEqual(faces[1]["vertex_xyz"][3],[0,0,24])
-        self.assertEqual(validate_map11_models(self.models)["active_faces"],2)
+        self.assertEqual(len(faces),3)
+        self.assertEqual([f["local_gfx_slot"] for f in faces],[242,241,242])
+        # Source front triangle 0,1,3 becomes reversed 1,0,2.
+        self.assertEqual(faces[0]["vertex_indices"],[1,0,2,3])
+        self.assertEqual(faces[1]["vertex_indices"],[0,1,3,2])
+        self.assertEqual(faces[0]["vertex_xyz"][0],[0,0,-16])
+        self.assertEqual(faces[1]["vertex_xyz"][0],[-32,0,-16])
+        self.assertEqual(faces[2]["vertex_xyz"][2],[32,0,24])
+        self.assertEqual(faces[2]["vertex_xyz"][3],[0,0,24])
+        self.assertEqual(validate_map11_models(self.models)["active_faces"],3)
         self.assertEqual(validate_map11_models(self.models)["populated_tiles"],1)
 
     def test_stage_readback_and_no_overwrite(self):
