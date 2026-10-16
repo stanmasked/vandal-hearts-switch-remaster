@@ -1,0 +1,1598 @@
+name: Map02 v62 original GPU regression and bounded GP0 packet family framing
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v62-gp0-boundaries.yml'
+      - 'tools/decode_map02_v62_gp0.py'
+      - 'tools/make_map02_v62_gp0_fixtures.py'
+      - 'tests/test_map02_v62_gp0.py'
+      - 'docs/MAP02_V62_GP0_PACKET_BOUNDARIES.md'
+      - '.github/workflows/map02-v61-private-capture.yml'
+      - 'tools/audit_map02_v61_private_capture.py'
+      - 'tests/test_map02_v61_private_capture.py'
+      - 'tools/verify_map02_v60_ps1_dma.py'
+      - 'docs/MAP02_V61_PRIVATE_CAPTURE_PREFLIGHT.md'
+      - '.github/workflows/map02-v60-ps1-dma.yml'
+      - 'tools/verify_map02_v60_ps1_dma.py'
+      - 'tools/make_map02_v60_synthetic_dma.py'
+      - 'tests/test_map02_v60_ps1_dma.py'
+      - 'docs/MAP02_V60_PS1_DMA_PROVENANCE_GATE.md'
+      - '.github/workflows/map02-v59-trace-e6.yml'
+      - 'tools/instrument_map02_v59_trace.py'
+      - 'tools/verify_map02_v59_trace.py'
+      - 'tests/map02_v59_trace_roundtrip.c'
+      - 'tests/map02_v59_real_trace_shims.c'
+      - 'tests/test_map02_v59_trace.py'
+      - 'docs/MAP02_V59_VHT1_GPU_MASK_ROUNDTRIP.md'
+      - '.github/workflows/map02-v58-ordered-e6.yml'
+      - 'tools/apply_map02_gp0_ot_v58.py'
+      - 'tools/verify_map02_gp0_ot_v58.py'
+      - 'tests/map02_v58_ordered_mask.c'
+      - 'tests/map02_v58_order_shims.c'
+      - 'tests/test_map02_gp0_ot_v58.py'
+      - 'docs/MAP02_V58_ORDERED_GP0_E6_PROOF.md'
+      - '.github/workflows/map02-v57-gpu-mask.yml'
+      - 'tools/apply_map02_gpu_mask_v57.py'
+      - 'tools/verify_map02_gpu_mask_v57.py'
+      - 'tests/map02_v57_gpu_mask.c'
+      - 'tests/test_map02_gpu_mask_v57.py'
+      - 'docs/MAP02_V57_GP0_E6_MASK_PROOF.md'
+      - '.github/workflows/map02-v56-triangle-edges.yml'
+      - 'tests/map02_v56_triangle_seams.c'
+      - 'tools/verify_map02_triangle_seams_v56.py'
+      - 'tests/test_map02_triangle_seams_v56.py'
+      - 'tests/map02_v55_spatial_ot.c'
+      - 'tools/verify_map02_spatial_ot_v55.py'
+      - 'tests/test_map02_spatial_ot_v55.py'
+      - 'tests/map02_v54_large_ot.c'
+      - 'tests/map02_v54_ot_trace_shims.c'
+      - 'tools/verify_map02_large_ot_v54.py'
+      - 'tests/test_map02_large_ot_v54.py'
+      - 'tests/map02_v53_actual_ot_mixed.c'
+      - 'tools/verify_map02_actual_ot_v53.py'
+      - 'tests/test_map02_actual_ot_v53.py'
+      - 'tests/map02_v52_overdraw_gpu.c'
+      - 'tools/verify_map02_overdraw_v52.py'
+      - 'tests/test_map02_overdraw_v52.py'
+      - 'tests/map02_v51_original_hires_modes.c'
+      - 'tools/verify_map02_hires_modes_v51.py'
+      - 'tests/test_map02_hires_modes_v51.py'
+      - 'tests/map02_v50_original_dda_modes.c'
+      - 'tools/verify_map02_gpu_modes_v50.py'
+      - 'tests/test_map02_gpu_modes_v50.py'
+      - 'tools/instrument_map02_v49.py'
+      - 'tools/verify_map02_vram_v49.py'
+      - 'tests/test_map02_vram_v49.py'
+      - 'tests/map02_v49_vram_runtime.c'
+      - 'tools/instrument_map02_v48.py'
+      - 'tools/verify_map02_pixels_v48.py'
+      - 'tests/map02_v48_pixel_runtime.c'
+      - 'tests/test_map02_pixels_v48.py'
+      - 'tools/instrument_map02_v47.py'
+      - 'tools/verify_map02_faces_v47.py'
+      - 'tests/map02_v47_same_gfx_runtime.c'
+      - 'tests/test_map02_faces_v47.py'
+      - 'tools/verify_map02_face_evidence_v46.py'
+      - 'tests/test_map02_face_evidence_v46.py'
+      - 'tests/map02_v46_stable_face_runtime.c'
+      - 'tools/preflight_map02_prs_v45.py'
+      - 'tests/test_map02_prs_v45.py'
+      - 'tests/map02_v45_prs_fixture_runtime.c'
+      - 'tests/map02_v45_unpack_tokens_native.c'
+      - 'tests/map02_v44_prs_v24_runtime.c'
+      - 'tests/fixtures/vh_map02_hd_lookup_v24.h'
+      - 'tests/map02_v43_real_producer.c'
+      - 'tests/map02_v42_gpu_runtime.c'
+      - 'tests/map02_v42_test_shims.c'
+      - 'tools/instrument_map02_v41.py'
+      - 'tools/instrument_map02_v40.py'
+      - 'tools/instrument_map02_v39.py'
+      - 'tools/verify_map02_v41.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  extended-gp0-boundary-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - name: Checkout diagnostics
+        uses: actions/checkout@v4
+        with:
+          path: remaster
+          persist-credentials: false
+      - name: Checkout exact public PC-port source
+        uses: actions/checkout@v4
+        with:
+          repository: HalmyLyseas/VandalHearts-PcPort
+          ref: 14552fffa0e0b47e02b57592e274fc6e7a649923
+          path: pcport
+          persist-credentials: false
+      - name: Apply read-only origin + frame observers to disposable checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m remaster.tools.make_map02_trace_patch pcport --output "$RUNNER_TEMP/map02-v42.patch"
+          (
+            cd pcport
+            git apply --check "$RUNNER_TEMP/map02-v42.patch"
+            git apply "$RUNNER_TEMP/map02-v42.patch"
+          )
+          python3 -m remaster.tools.instrument_map02_v39 pcport \
+            --header remaster/tools/vh_map02_v39_tokens.h --apply
+          python3 -m remaster.tools.instrument_map02_v40 pcport --apply
+          python3 -m remaster.tools.instrument_map02_v41 pcport --apply
+          python3 -m remaster.tools.instrument_map02_v47 pcport --apply
+          python3 -m remaster.tools.instrument_map02_v48 pcport --apply
+          python3 -m remaster.tools.instrument_map02_v49 pcport --apply
+          # Apply the bounded v57 GP0(E6) change to the disposable pinned copy ONLY.
+          python3 -m remaster.tools.apply_map02_gpu_mask_v57 pcport --check
+          python3 -m remaster.tools.apply_map02_gpu_mask_v57 pcport --apply
+          python3 -m remaster.tools.apply_map02_gp0_ot_v58 pcport --check
+          python3 -m remaster.tools.apply_map02_gp0_ot_v58 pcport --apply
+          python3 -m remaster.tools.instrument_map02_v59_trace pcport --check
+          python3 -m remaster.tools.instrument_map02_v59_trace pcport --apply
+          (
+            cd pcport
+            git diff --check
+            git rev-parse HEAD | grep -x 14552fffa0e0b47e02b57592e274fc6e7a649923
+          )
+      - name: Run preflight unit and adversarial bounds tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_prs_v45.py' -v
+      - name: Run face provenance join adversarial cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_face_evidence_v46.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_faces_v47.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_pixels_v48.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_vram_v49.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_gpu_modes_v50.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_hires_modes_v51.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_overdraw_v52.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_actual_ot_v53.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_large_ot_v54.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_spatial_ot_v55.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_triangle_seams_v56.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_gpu_mask_v57.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_gp0_ot_v58.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v59_trace.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v60_ps1_dma.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v61_private_capture.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v62_gp0.py' -v
+      - name: Compile original PRS unpacker, game terrain producer, GTE and GPU
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          mkdir -p proof
+          opts=(-std=gnu89 -O2 -g -fno-omit-frame-pointer
+                -ffunction-sections -fdata-sections
+                -DPC_PORT -DPC_FEAT -DVH_MAP02_V39_TRACE
+                -Ipcport/platform/pc/include -Ipcport/platform/pc/src)
+          "$CC" "${opts[@]}" -c pcport/platform/pc/src/libgpu.c -o proof/libgpu.o
+          "$CC" "${opts[@]}" -c pcport/platform/pc/src/pc_raster.c -o proof/pc_raster.o
+          "$CC" "${opts[@]}" -c remaster/tests/map02_v42_test_shims.c -o proof/test_shims.o
+          # The pinned game source still contains GNU89 forward-declaration
+          # ambiguities diagnosed by Clang. Match v39-v41 object-build gate.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("pcport/src/core/graphics.c")
+          s = p.read_text()
+          anchor = '#include "PsyQ/gtemac.h"'
+          assert s.count(anchor) == 1
+          extra = ('\nvoid UpdateMapTileLighting(MapTileModel *tileModel);'
+                   '\nvoid RenderMapTile(u32 *ot, MapTileModel *tileModel, s32 gridColor);'
+                   '\nvoid RenderEdgeMapTile(u32 *ot, MapTileModel *tileModel, s32 gridColor);'
+                   '\nvoid RenderOverheadMapTile(u32 *ot, MapTileModel *tileModel, s32 brightness);')
+          p.write_text(s.replace(anchor, anchor + extra, 1))
+          PY
+          common=(-std=gnu89 -O2 -g -fno-omit-frame-pointer
+                  -ffunction-sections -fdata-sections
+                  -DPERMUTER -DPC_PORT -DPC_FEAT -DVH_REGION_US
+                  -DVH_TRACE_MAP02 -DVH_MAP02_V39_TRACE
+                  '-Dasm(x)='
+                  -Ipcport/platform/pc/include -Ipcport/platform/pc/src -Ipcport/include
+                  -Iremaster/tests/fixtures
+                  -Ipcport
+                  -include pc_forward_decls.h
+                  -Wno-incompatible-pointer-types -Wno-int-conversion
+                  -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast)
+          "$CC" "${common[@]}" -c pcport/src/core/graphics.c -o proof/graphics.o
+          "$CC" "${opts[@]}" -c pcport/platform/pc/src/libgte.c -o proof/libgte.o
+          "$CC" "${common[@]}" -c pcport/src/maps/unpack.c -o proof/unpack.o
+          "$CC" "${common[@]}" -c remaster/tests/map02_v49_vram_runtime.c -o proof/driver.o
+          "$CC" -Wl,--gc-sections -o proof/map02_gpu_runtime \
+            proof/driver.o proof/unpack.o proof/graphics.o proof/libgte.o proof/libgpu.o proof/pc_raster.o proof/test_shims.o \
+            -lm -lpthread
+          nm -a proof/map02_gpu_runtime | grep -q PC_Map02V39MarkSubmitted
+          nm -a proof/map02_gpu_runtime | grep -q RenderMapTile
+          nm -a proof/map02_gpu_runtime | grep -q PC_GTE_RTPT
+          nm -a proof/map02_gpu_runtime | grep -q ProcessMapFileData
+          nm -a proof/map02_gpu_runtime | grep -q UnpackMapFileData
+          strings proof/map02_gpu_runtime | grep -F '[v40-terrain-hires] f=%u'
+          sha256sum proof/*.o proof/map02_gpu_runtime > proof/SHA256SUMS
+      - name: Compare real C unpacker against bounded Python across token classes
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=gnu89 -O2 -ffunction-sections -fdata-sections \
+            -c remaster/tests/map02_v45_unpack_tokens_native.c -o proof/native_tokens.o
+          "$CC" -Wl,--gc-sections proof/native_tokens.o proof/unpack.o \
+            -o proof/native_token_differential
+          ./proof/native_token_differential > proof/NATIVE_TOKEN_DIFFERENTIAL.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          from remaster.tools.preflight_map02_prs_v45 import unpack_bounded
+          fixtures = {
+              "literal": (b"\x00ABCDEFGH", 8),
+              "absolute": (b"\x01\x00\x00", 3),
+              "relative": (b"\x01\x80", 2),
+              "literal_run": (b"\x01\xc0abcdefgh", 8),
+              "relative_overlap": (b"\x02A\x81", 3),
+              "absolute_overlap": (bytes((2, ord("X"), 3, 222)), 4),
+          }
+          result = Path("proof/NATIVE_TOKEN_DIFFERENTIAL.txt").read_text()
+          rows = [line.split() for line in result.splitlines()
+                  if line.startswith("NATIVE_TOKEN ")]
+          assert len(rows) == len(fixtures), (rows, result)
+          assert len({row[1] for row in rows}) == len(fixtures)
+          for _, name, length, native_hash in rows:
+              payload, expected = fixtures[name]
+              data = unpack_bounded(payload, expected)
+              h = 1469598103934665603
+              for byte in data:
+                  h = ((h ^ byte) * 1099511628211) & 0xffffffffffffffff
+              assert int(length) == expected, name
+              assert native_hash == f"{h:016x}", (name, native_hash, f"{h:016x}")
+          print("PASS: bounded Python and original PC-port decoder match on all six token fixtures.")
+          PY
+      - name: Execute genuine PRS unpacker and validate generated synthetic data
+        shell: bash
+        run: |
+          set -euo pipefail
+          VH_V45_SYNTHETIC_PRS_OUTPUT=proof/SYNTHETIC_M_MAP02.PRS ./proof/map02_gpu_runtime > proof/real-producer-SYNTHETIC-graphics.jsonl 2> proof/real-producer-SYNTHETIC-stderr.log || { tail -n 120 proof/real-producer-SYNTHETIC-stderr.log; exit 1; }
+          VH_RASTER_THREADS=1 ./proof/map02_gpu_runtime \
+            2> proof/real-producer-SYNTHETIC-single-worker-stderr.log
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          a = Path("proof/real-producer-SYNTHETIC-stderr.log").read_text()
+          b = Path("proof/real-producer-SYNTHETIC-single-worker-stderr.log").read_text()
+          rx = re.compile(r"\[v44\] FRAMEBUFFER_HASH native=([0-9a-f]+) hires=([0-9a-f]+)")
+          assert "[raster] hi-res worker threads: 2" in a, "did not enable two-thread rasterizer"
+          assert "[raster] hi-res worker threads: 1" in b, "did not enable single-thread control"
+          ma, mb = rx.findall(a), rx.findall(b)
+          assert len(ma) == len(mb) == 1, (ma, mb)
+          assert ma[0] == mb[0], f"framebuffer mismatch between 2 and 1 threads: {ma}, {mb}"
+          assert "[v45] PASS real UnpackMapFileData" in a and "[v45] PASS real UnpackMapFileData" in b
+          assert "[v44] UNPACK_OK " in a and "[v44] UNPACK_OK " in b
+          print("PASS: original GPU VRAM and hi-res buffers hash-identically with 1 vs 2 threads.")
+          print("framebuffer native={}, hires={}".format(*ma[0]))
+          PY
+          grep -F '[v45] PASS real UnpackMapFileData' proof/real-producer-SYNTHETIC-stderr.log
+          grep -F '[v45] REFERENCE_DECODED_FNV64=' proof/real-producer-SYNTHETIC-stderr.log
+          grep -F '[v44] UNPACK_OK ' proof/real-producer-SYNTHETIC-stderr.log
+          python3 -m remaster.tools.verify_map02_v41 \
+            proof/real-producer-SYNTHETIC-stderr.log \
+            --output proof/real-producer-SYNTHETIC-correlated.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r = json.loads(Path("proof/real-producer-SYNTHETIC-correlated.json").read_text())
+          assert r["status"] == "provenance_correlated", r
+          assert r["paired_primitive_count"] == 3, r
+          assert r["ot_primitive_count"] == 3, r
+          assert r["frames_with_events"] == 2, r
+          assert r["native_sample_count"] > 0, r
+          assert r["hires_sample_count"] > 0, r
+          assert r["errors"] == [], r
+          assert not r["gameplay_execution_proven"], r
+          assert not r["pixel_equivalence_proven"], r
+          lines = Path("proof/real-producer-SYNTHETIC-stderr.log").read_text().splitlines()
+          for name in ("v39-terrain-ot", "v39-terrain-dda", "v40-terrain-hires"):
+              assert any(f"[{name}]" in x for x in lines), name
+          # An untagged matching-UV sprite and a wrong-map FT4 still draw
+          # but must not gain a terrain provenance event.
+          assert not any("[v39-terrain-ot] f=3 " in x for x in lines), lines
+          assert {p["gfx"] for p in r["examples_of_paired_frame_tokens"]} == {641, 643}, r
+          print("PASS: original PRS unpacker, v24 lookup, RenderMapTile, GTE/GPU all executed.")
+          print("PASS: UV-identical untagged sprites and wrong-map terrain remain untagged.")
+          print("NOTE: original unpacker is exercised on a SYNTHETIC M_MAP02 layout, not retail PRS.")
+          PY
+          printf 'compiler=%s\npublic_upstream=14552fffa0e0b47e02b57592e274fc6e7a649923\nreal_objects=unpack,graphics,libgte,libgpu,pc_raster\nmap_prs_payload=SYNTHETIC fixture 28x12 MapTileModel\ntexture_pixels=SYNTHETIC 4bpp and CLUT\ntexture_metadata=user-owned v24 120-slot reference\nface_identity=immutable coordinates (8,19,0) and (11,11,0)\nretail_map=NOT TESTED\nuserdata=none\nfull_game_linked=no\nfull_game_played=no\n' \
+            '${{ matrix.cc }}' > proof/BUILD_INFO.txt
+      - name: Differential-test bounded preflight against real decoder output
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m remaster.tools.preflight_map02_prs_v45 \
+            proof/SYNTHETIC_M_MAP02.PRS --synthetic-fixture \
+            --output proof/SYNTHETIC_PRSPREFLIGHT_v45.json
+          python3 - <<'PY'
+          import json, re
+          from pathlib import Path
+          from remaster.tools.preflight_map02_prs_v45 import read_prs, unpack_bounded
+          report = json.loads(Path("proof/SYNTHETIC_PRSPREFLIGHT_v45.json").read_text())
+          assert report["status"] == "structurally_valid_unverified_source", report
+          assert report["input_provenance"] == "caller_declared_synthetic"
+          assert not report["retail_map_authenticity_proven"]
+          assert not report["runtime_tpage_clut_uv_proven"]
+          assert not report["HD_replacement_approved"]
+          assert report["lookup_v24_rows"] == 120
+          assert report["lookup_v24_canonical_masters"] == 96
+          assert report["map_grid"]["total_tiles"] == 336
+          assert report["decoded_bytes"] == 102144
+          assert report["v24_matched_faces"] == 3, report
+          assert report["v24_unmatched_faces"] == 0, report
+          assert set(report["v24_matched_local_slot_counts"]) == {"241", "243"}
+          stream, _, _ = read_prs(Path("proof/SYNTHETIC_M_MAP02.PRS"))
+          decoded = unpack_bounded(stream)
+          h = 1469598103934665603
+          for b in decoded:
+              h ^= b
+              h = h * 1099511628211 & 0xffffffffffffffff
+          logged = Path("proof/real-producer-SYNTHETIC-stderr.log").read_text()
+          match = re.findall(r"\[v45\] REFERENCE_DECODED_FNV64=([0-9a-f]{16})", logged)
+          assert len(match) == 1 and match[0] == f"{h:016x}", (match, hex(h))
+          print("PASS: independent bounded Python decoded bytes match native C decompressor bit-for-bit.")
+          PY
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          base = Path("proof/SYNTHETIC_M_MAP02.PRS").read_bytes()
+          for name, payload in {
+              "truncated": base[:-1],
+              "nonzero_tail": base+b"\x80",
+              "bomb_header": b"\xff\xff\xff\x7f"+base[4:],
+          }.items():
+              p = Path("proof")/f"SYNTHETIC_CORRUPT_{name}.prs"
+              p.write_bytes(payload)
+              r = subprocess.run(["python3", "-m", "remaster.tools.preflight_map02_prs_v45",
+                                  str(p)], capture_output=True, text=True, check=False)
+              assert r.returncode == 1 and "[v45-preflight] REFUSED:" in r.stderr, (name, r.returncode, r.stderr)
+              p.unlink()
+          print("PASS: truncated, padded nonzero, excessive length files refused by public CLI.")
+          PY
+      - name: Verify ALL submitted map11 face OT tokens including duplicate GFX
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m remaster.tools.verify_map02_faces_v47 \
+            proof/SYNTHETIC_M_MAP02.PRS \
+            proof/real-producer-SYNTHETIC-stderr.log \
+            --synthetic-fixture \
+            --output proof/SYNTHETIC_ALL_FACE_TOKENS_v47.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("proof/SYNTHETIC_ALL_FACE_TOKENS_v47.json")
+          r=json.loads(p.read_text())
+          assert r["status"] == "matched_sampled_faces", r
+          assert r["tagged_ot_count"] == r["face_marker_count"] == 3, r
+          assert r["matched_face_count"] == r["both_pass_sampled_count"] == 3, r
+          assert r["distinct_face_coordinates_count"] == 3, r
+          assert r["duplicate_gfx_face_pairs"] == 1, r
+          assert {(x["frame"],x["z"],x["x"],x["gfx"],x["local_slot"])
+                  for x in r["rows"]} == {
+                      (1,8,19,641,241),(1,8,20,641,241),(2,11,11,643,243)
+                  }, r
+          assert not r["retail_map_authenticity_proven"]
+          assert not r["genuine_gameplay_proven"]
+          assert not r["HD_replacement_approved"]
+          print("PASS: all three actual submitted faces uniquely joined to PRS by minted OT token.")
+          print("PASS: same frame, same GFX 641, identical palette/UV, two DIFFERENT map tiles!")
+          print("NOTE: original game GPU code executed on deliberately synthetic models.")
+          PY
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          import json
+          base=Path("proof/real-producer-SYNTHETIC-stderr.log").read_text()
+          assert "[v47-terrain-face-ot]" in base
+          assert " x=20 " in base
+          cases = {
+              "wrong_uv": (" u=240 v=192", " u=239 v=192"),
+              "wrong_cell": (" z=8 x=20 face=0", " z=8 x=21 face=0"),
+              "wrong_frame": ("[v47-terrain-face-ot] f=1", "[v47-terrain-face-ot] f=3"),
+          }
+          for name,(old,new) in cases.items():
+              assert old in base, name
+              path=Path("proof")/f"SYNTHETIC_INVALID_v47_{name}.log"
+              path.write_text(base.replace(old,new,1))
+              result=subprocess.run([
+                  "python3","-m","remaster.tools.verify_map02_faces_v47",
+                  "proof/SYNTHETIC_M_MAP02.PRS",str(path),"--synthetic-fixture"
+              ],capture_output=True,text=True)
+              assert result.returncode == 1, (name,result.returncode,result.stderr,result.stdout)
+              if result.stdout:
+                  report=json.loads(result.stdout)
+                  assert report["status"]=="refused", report
+              path.unlink()
+          print("PASS: real native logs tampered at UV/tile/frame all fail closed.")
+          PY
+      - name: Independently verify original PutPixel before/after STP and BGR555
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m remaster.tools.verify_map02_pixels_v48 \
+            proof/SYNTHETIC_M_MAP02.PRS \
+            proof/real-producer-SYNTHETIC-stderr.log \
+            --synthetic-fixture \
+            --output proof/SYNTHETIC_REAL_GPU_PIXEL_PROOF_v48.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("proof/SYNTHETIC_REAL_GPU_PIXEL_PROOF_v48.json")
+          r=json.loads(p.read_text())
+          assert r["status"] == "pixel_decisions_correlated", r
+          assert r["matched_source_face_count"] == 3, r
+          assert r["per_token_pixel_observed_count"] == 3, r
+          assert r["native_pixel_observations"] > 0, r
+          assert r["hires_pixel_observations"] > 0, r
+          assert r["pixel_decisions"].get("opaque",0) > 0, r
+          assert not r["HD_replacement_approved"]
+          assert not r["pixel_perfect_visual_fidelity_proven"]
+          print("PASS: actual original PutPixel before/after independent BGR555/STP audit.")
+          print("NOTE: this synthetic scene contains opaque texture pixels only.")
+          PY
+          python3 - <<'PY'
+          from pathlib import Path
+          import json, subprocess
+          original=Path("proof/real-producer-SYNTHETIC-stderr.log").read_text()
+          assert "[v48-terrain-pixel]" in original, "no original GPU pixel decisions captured"
+          import re
+          def refuse(name, field):
+              # Change the EXACT first original GPU pixel record rather than
+              # presuming game lighting emitted a fixed raw/output value.
+              pat=re.compile(r"(\[v48-terrain-pixel\][^\n]*\b"+field+r"=)(\d+)")
+              match=pat.search(original)
+              assert match is not None, (name,field)
+              current=int(match.group(2))
+              # A 1-bit texel change may quantize to the SAME front BGR555.
+              # Zero raw against the original draw=1 to force a true contradiction.
+              corrupt=0 if field=="raw" else current ^ 1
+              altered=Path("proof")/f"SYNTHETIC_CORRUPTED_PIXEL_{name}.log"
+              altered.write_text(original[:match.start(2)]+str(corrupt)+original[match.end(2):])
+              result=subprocess.run([
+                  "python3","-m","remaster.tools.verify_map02_pixels_v48",
+                  "proof/SYNTHETIC_M_MAP02.PRS",str(altered),"--synthetic-fixture"
+              ],capture_output=True,text=True)
+              assert result.returncode == 1,(name,result.returncode,result.stderr,result.stdout)
+              if result.stdout:
+                  parsed=json.loads(result.stdout)
+                  assert parsed["status"]=="refused",parsed
+              altered.unlink()
+          refuse("output","after")
+          refuse("source","raw")
+          print("PASS: tampering actual GPU output or texel sample is detected.")
+          PY
+      - name: Verify true source VRAM words, index/CLUT and texture windows
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m remaster.tools.verify_map02_vram_v49 \
+            proof/SYNTHETIC_M_MAP02.PRS \
+            proof/real-producer-SYNTHETIC-stderr.log \
+            --synthetic-fixture --output proof/SYNTHETIC_VRAM_CLUT_PROOF_v49.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("proof/SYNTHETIC_VRAM_CLUT_PROOF_v49.json")
+          r=json.loads(p.read_text())
+          assert r["status"]=="vram_clut_source_correlated",r
+          assert r["independently_recomputed_source_matches"]>0,r
+          assert r["source_type_counts"].get("indexed4",0)>0,r
+          assert r["native_source_samples"]>0 and r["hires_source_samples"]>0,r
+          assert not r["HD_replacement_approved"]
+          assert not r["original_texture_bytes_authenticated"]
+          print("PASS: original GPU source words and CLUT palette independently decoded in Python.")
+          PY
+          python3 - <<'PY'
+          import json,re,subprocess
+          from pathlib import Path
+          source=Path("proof/real-producer-SYNTHETIC-stderr.log").read_text()
+          def refusal(which,field,mutator):
+              rx=re.compile(r"(\[v49-terrain-vram\][^\n]*\b"+field+r"=)(-?\d+)")
+              match=rx.search(source)
+              assert match,(which,field)
+              bad=Path("proof")/("SYNTHETIC_INVALID_VRAM_"+which+".log")
+              before=int(match.group(2))
+              bad.write_text(source[:match.start(2)]+str(mutator(before))+source[match.end(2):])
+              p=subprocess.run([
+                "python3","-m","remaster.tools.verify_map02_vram_v49",
+                "proof/SYNTHETIC_M_MAP02.PRS",str(bad),"--synthetic-fixture"
+              ],capture_output=True,text=True)
+              assert p.returncode==1,(which,p.returncode,p.stdout,p.stderr)
+              if p.stdout:
+                  r=json.loads(p.stdout)
+                  assert r["status"]=="refused",r
+              bad.unlink()
+          refusal("palette","palette",lambda old: old ^ 1)
+          refusal("texword","word",lambda old: old ^ 1)
+          refusal("clut-address","palx",lambda old: old+1)
+          print("PASS: altered palette, packed source word and CLUT address all rejected.")
+          PY
+      - name: Execute actual original native GPU FillQuad/DDA for 18 non-retail texture and STP scenarios
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=gnu89 -O2 -g -ffunction-sections -fdata-sections \
+            -DPC_PORT -DPC_FEAT -DVH_MAP02_V39_TRACE \
+            -Ipcport/platform/pc/include -Ipcport/platform/pc/src \
+            -c remaster/tests/map02_v50_original_dda_modes.c -o proof/dda_modes_v50.o
+          "$CC" -Wl,--gc-sections \
+            proof/dda_modes_v50.o proof/libgpu.o proof/pc_raster.o proof/test_shims.o \
+            -lm -lpthread -o proof/v50_real_native_gpu_modes
+          ./proof/v50_real_native_gpu_modes \
+            > proof/SYNTHETIC_NATIVE_ORIGINAL_DDA_MODES_v50.txt \
+            2> proof/SYNTHETIC_NATIVE_DDA_MODES_v50.stderr
+          grep -F 'V50 ACTUAL_ORIGINAL_DDA_CASES=18 SYNTHETIC_ONLY' \
+            proof/SYNTHETIC_NATIVE_DDA_MODES_v50.stderr
+          python3 -m remaster.tools.verify_map02_gpu_modes_v50 \
+            proof/SYNTHETIC_NATIVE_ORIGINAL_DDA_MODES_v50.txt \
+            --output proof/SYNTHETIC_NATIVE_ORIGINAL_DDA_PROOF_v50.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          path=Path("proof/SYNTHETIC_NATIVE_ORIGINAL_DDA_PROOF_v50.json")
+          r=json.loads(path.read_text())
+          assert r["status"]=="original_dda_modes_verified",r
+          assert r["executed_original_dda_cases"]==18,r
+          assert r["texture_formats"]["indexed4"]>0
+          assert r["texture_formats"]["indexed8"]>0
+          assert r["texture_formats"]["direct15"]>0
+          assert r["transparent_skips"]>=2,r
+          assert all(v>=1 for v in r["stp_abr_modes"].values()),r
+          assert not r["HD_replacement_approved"] and not r["genuine_gameplay_proven"]
+          print("PASS original executed GPU FillQuad/DDA covers 4/8/15bpp, transparent skips, STP, all ABR modes and GP0 texture window.")
+          PY
+          python3 - <<'PY'
+          import subprocess
+          from pathlib import Path
+          original=Path("proof/SYNTHETIC_NATIVE_ORIGINAL_DDA_MODES_v50.txt").read_text()
+          scenarios={
+            "after":("after=31","after=30"),
+            "palette":("palette=31","palette=0"),
+            "word":("word=4369","word=0"),
+            "window":("maskx=1 masky=1 offx=0 offy=0","maskx=1 masky=1 offx=1 offy=0"),
+          }
+          for name,(src,dst) in scenarios.items():
+              assert src in original,(name,src)
+              bad=Path("proof")/f"SYNTHETIC_CORRUPT_v50_{name}.log"
+              bad.write_text(original.replace(src,dst,1))
+              result=subprocess.run([
+                  "python3","-m","remaster.tools.verify_map02_gpu_modes_v50",
+                  str(bad)
+              ],capture_output=True,text=True)
+              assert result.returncode==1,(name,result.returncode,result.stderr,result.stdout)
+              bad.unlink()
+          print("PASS independent verifier rejects tampered actual native framebuffer and texture-source output.")
+          PY
+          sha256sum proof/v50_real_native_gpu_modes proof/dda_modes_v50.o \
+            >> proof/SHA256SUMS
+      - name: Execute original 18 GPU modes in direct 2x and deferred two-worker hi-res DDA
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=gnu89 -O2 -g -ffunction-sections -fdata-sections \
+            -DPC_PORT -DPC_FEAT -DVH_MAP02_V39_TRACE \
+            -Ipcport/platform/pc/include -Ipcport/platform/pc/src \
+            -c remaster/tests/map02_v51_original_hires_modes.c -o proof/hires_modes_v51.o
+          "$CC" -Wl,--gc-sections \
+            proof/hires_modes_v51.o proof/libgpu.o proof/pc_raster.o proof/test_shims.o \
+            -lm -lpthread -o proof/v51_real_native_hires_gpu_modes
+          ./proof/v51_real_native_hires_gpu_modes \
+            > proof/SYNTHETIC_NATIVE_HIRES_DEFERRED_DDA_v51.txt \
+            2> proof/SYNTHETIC_HIRES_DDA_v51.stderr
+          grep -F 'V51 ACTUAL_ORIGINAL_HIRES_DIRECT_AND_THREADED_CASES=18 SYNTHETIC_ONLY' \
+            proof/SYNTHETIC_HIRES_DDA_v51.stderr
+          grep -F '[raster] hi-res worker threads: 2' \
+            proof/SYNTHETIC_HIRES_DDA_v51.stderr
+          python3 -m remaster.tools.verify_map02_hires_modes_v51 \
+            proof/SYNTHETIC_NATIVE_HIRES_DEFERRED_DDA_v51.txt \
+            --output proof/SYNTHETIC_ORIGINAL_HIRES_DDA_PROOF_v51.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("proof/SYNTHETIC_ORIGINAL_HIRES_DDA_PROOF_v51.json").read_text())
+          assert r["status"]=="original_hires_modes_verified",r
+          assert r["actual_modes_per_pass"]==18 and r["total_original_GPU_mode_executions"]==54,r
+          assert r["true_hires_scale"]==2,r
+          assert r["direct_hires_vs_deferred_equal_count"]==18,r
+          assert r["full_32x32_hd_region_equal_count"]==18,r
+          assert r["full_region_pixels_compared_per_mode"]==1024,r
+          assert "indexed4_dither" in r["native_vs_hires_different_cases"],r
+          assert not r["HD_replacement_approved"] and not r["genuine_gameplay_proven"],r
+          print("PASS: 18 original GPU modes have independently verified native, direct-HD and deferred-HD pixels.")
+          print("PASS: 18/18 2x direct GPU DDA pixels match original deferred two-worker DDA.")
+          PY
+          python3 - <<'PY'
+          import subprocess
+          from pathlib import Path
+          source=Path("proof/SYNTHETIC_NATIVE_HIRES_DEFERRED_DDA_v51.txt").read_text()
+          lines=source.splitlines()
+          cases={
+              "direct_pixel":("V51HD name=indexed4_opaque"," after=31"," after=30"),
+              "worker_pixel":("V51THREAD name=indexed4_opaque"," after=31"," after=30"),
+              "worker_clut":("V51THREAD name=indexed4_opaque"," clut=31978"," clut=31979"),
+          }
+          for name,(prefix,old,new) in cases.items():
+              matches=[i for i,line in enumerate(lines) if line.startswith(prefix)]
+              assert len(matches)==1,name
+              i=matches[0]
+              assert old in lines[i],(name,lines[i])
+              modified=lines.copy()
+              modified[i]=modified[i].replace(old,new,1)
+              broken=Path("proof")/("SYNTHETIC_V51_CORRUPT_"+name+".txt")
+              broken.write_text("\n".join(modified)+"\n")
+              r=subprocess.run([
+                  "python3","-m","remaster.tools.verify_map02_hires_modes_v51",str(broken)
+              ],capture_output=True,text=True)
+              assert r.returncode==1,(name,r.returncode,r.stderr,r.stdout)
+              broken.unlink()
+          hash_rows=[i for i,line in enumerate(lines) if line.startswith("V51HASH name=indexed4_abr1 ")]
+          assert len(hash_rows)==1
+          damaged=lines.copy()
+          damaged[hash_rows[0]]=damaged[hash_rows[0]].replace("threaded=","threaded=0",1)
+          badhash=Path("proof/SYNTHETIC_V51_CORRUPT_hd_region.txt")
+          badhash.write_text("\n".join(damaged)+"\n")
+          check=subprocess.run([
+              "python3","-m","remaster.tools.verify_map02_hires_modes_v51",str(badhash)
+          ],capture_output=True,text=True)
+          assert check.returncode==1,(check.returncode,check.stderr,check.stdout)
+          badhash.unlink()
+          omitted=[line for line in lines if not line.startswith("V51THREAD name=direct15_stp ")]
+          p=Path("proof/SYNTHETIC_V51_CORRUPT_missing_mode.txt")
+          p.write_text("\n".join(omitted)+"\n")
+          r=subprocess.run([
+              "python3","-m","remaster.tools.verify_map02_hires_modes_v51",str(p)
+          ],capture_output=True,text=True)
+          assert r.returncode==1,(r.returncode,r.stderr,r.stdout)
+          p.unlink()
+          print("PASS: independent oracle refuses real HD-pixel, CLUT and missing deferred mode tampering.")
+          PY
+          sha256sum proof/v51_real_native_hires_gpu_modes proof/hires_modes_v51.o \
+            >> proof/SHA256SUMS
+      - name: Execute real original overlapping FT4 layers under 1, 2 and 4 raster threads
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=gnu89 -O2 -g -ffunction-sections -fdata-sections \
+            -DPC_PORT -DPC_FEAT -DVH_MAP02_V39_TRACE \
+            -Ipcport/platform/pc/include -Ipcport/platform/pc/src \
+            -c remaster/tests/map02_v52_overdraw_gpu.c -o proof/overdraw_v52.o
+          "$CC" -Wl,--gc-sections \
+            proof/overdraw_v52.o proof/libgpu.o proof/pc_raster.o proof/test_shims.o \
+            -lm -lpthread -o proof/v52_original_overdraw_gpu
+          for threads in 1 2 4; do
+            VH_RASTER_THREADS="$threads" ./proof/v52_original_overdraw_gpu \
+              > "proof/SYNTHETIC_V52_OVERDRAW_$threads.log" \
+              2> "proof/SYNTHETIC_V52_OVERDRAW_$threads.stderr"
+            grep -F "V52 ORIGINAL_DDA_LAYERED_SCENES=5 THREADS=$threads SYNTHETIC_ONLY" \
+              "proof/SYNTHETIC_V52_OVERDRAW_$threads.stderr"
+            grep -F "[raster] hi-res worker threads: $threads" \
+              "proof/SYNTHETIC_V52_OVERDRAW_$threads.stderr"
+          done
+          python3 -m remaster.tools.verify_map02_overdraw_v52 \
+            proof/SYNTHETIC_V52_OVERDRAW_1.log \
+            proof/SYNTHETIC_V52_OVERDRAW_2.log \
+            proof/SYNTHETIC_V52_OVERDRAW_4.log \
+            --output proof/SYNTHETIC_V52_LAYER_ORDER_PROOF.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("proof/SYNTHETIC_V52_LAYER_ORDER_PROOF.json").read_text())
+          assert r["status"]=="verified",r
+          assert r["workers_checked"]==[1,2,4]
+          assert r["scene_count"]==5
+          assert r["full_hd_pixels_checked_per_run"]==51200
+          for thread,report in r["individual_reports"].items():
+              assert report["status"]=="verified_synthetic_layered_GPU", report
+              assert report["actual_gpu_layer_submissions"]==25
+              assert report["whole_hires_pixels_per_scene"]==10240
+              assert report["cross_band_probes_per_scene"]==7
+              assert report["worker_band_boundaries_checked"]==[60,120,180]
+              assert report["order_sensitive_pair_different"]
+              assert report["transparent_layer_count"]>=3
+              assert all(v>0 for v in report["stp_abr_cases"].values())
+              assert not report["HD_replacement_approved"]
+              assert set(report["source_formats"])=={"indexed4","indexed8","direct15"}
+          print("PASS: original GPU multi-layer composite order matches independent BGR555 oracle.")
+          print("PASS: all five complete 32x320 HD surfaces and worker band-edge pixels agree for 1, 2 and 4 threads.")
+          PY
+          python3 - <<'PY'
+          import subprocess
+          from pathlib import Path
+          source=Path("proof/SYNTHETIC_V52_OVERDRAW_4.log").read_text()
+          base=source.splitlines()
+          changes={
+            "wrong_pixel":("V52RESULT scene=abr_chain", "native"),
+            "wrong_source":("V52L scene=window_interleave seq=0", "word"),
+            "wrong_order":("V52L scene=mixed_stp seq=1", "source"),
+            "wrong_hash":("V52RESULT scene=dither_overdraw", "directhash"),
+          }
+          import re
+          for key,(prefix,field) in changes.items():
+              hits=[i for i,line in enumerate(base) if line.startswith(prefix)]
+              assert len(hits)==1,(key,hits)
+              i=hits[0]
+              rx=re.compile(r"(?<= )"+field+r"=([0-9a-f]+)")
+              m=rx.search(base[i])
+              assert m,(key,base[i])
+              old=m.group(1)
+              value="0000000000000001" if field=="directhash" else str(int(old)+1)
+              changed=base.copy()
+              changed[i]=base[i][:m.start(1)]+value+base[i][m.end(1):]
+              bad=Path("proof")/("SYNTHETIC_V52_BAD_"+key+".txt")
+              bad.write_text("\n".join(changed)+"\n")
+              test=subprocess.run(["python3","-m","remaster.tools.verify_map02_overdraw_v52",
+                                   "proof/SYNTHETIC_V52_OVERDRAW_1.log",
+                                   "proof/SYNTHETIC_V52_OVERDRAW_2.log",str(bad)],
+                                   capture_output=True,text=True)
+              assert test.returncode==1,(key,test.returncode,test.stdout[:200],test.stderr[:200])
+              bad.unlink()
+          print("PASS: tampered native pixel, source VRAM, layer order and HD hash rejected.")
+          PY
+          sha256sum proof/v52_original_overdraw_gpu proof/overdraw_v52.o >> proof/SHA256SUMS
+      - name: Execute original ClearOTag AddPrim DrawOTag FT4 SPRT F4 TILE and state transitions
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=gnu89 -O2 -g -ffunction-sections -fdata-sections \
+            -DPC_PORT -DPC_FEAT -DVH_MAP02_V39_TRACE \
+            -Ipcport/platform/pc/include -Ipcport/platform/pc/src \
+            -c remaster/tests/map02_v53_actual_ot_mixed.c -o proof/original_mixed_ot_v53.o
+          "$CC" -Wl,--gc-sections \
+            proof/original_mixed_ot_v53.o proof/libgpu.o proof/pc_raster.o proof/test_shims.o \
+            -lm -lpthread -o proof/v53_original_drawotag_mixed
+          for workers in 1 2 4; do
+            VH_RASTER_THREADS="$workers" ./proof/v53_original_drawotag_mixed \
+              > "proof/SYNTHETIC_V53_ACTUAL_OT_$workers.log" \
+              2> "proof/SYNTHETIC_V53_ACTUAL_OT_$workers.stderr"
+            grep -F "V53 ORIGINAL_DRAWOTAG_MIXED_SCENES=2 WORKERS=$workers SYNTHETIC_ONLY" \
+              "proof/SYNTHETIC_V53_ACTUAL_OT_$workers.stderr"
+            grep -F "[raster] hi-res worker threads: $workers" \
+              "proof/SYNTHETIC_V53_ACTUAL_OT_$workers.stderr"
+          done
+          python3 -m remaster.tools.verify_map02_actual_ot_v53 \
+            proof/SYNTHETIC_V53_ACTUAL_OT_1.log \
+            proof/SYNTHETIC_V53_ACTUAL_OT_2.log \
+            proof/SYNTHETIC_V53_ACTUAL_OT_4.log \
+            --output proof/SYNTHETIC_V53_ACTUAL_OT_PROOF.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("proof/SYNTHETIC_V53_ACTUAL_OT_PROOF.json").read_text())
+          assert d["status"]=="verified",d
+          assert d["threads_checked"]==[1,2,4]
+          for v in d["reports"].values():
+              assert v["status"]=="mixed_real_ot_verified",v
+              assert v["scene_count"]==2
+              assert v["ordered_packet_count_per_scene"]==72
+              assert v["prim_types"]==["DR_MODE","TILE","POLY_FT4","SPRT","POLY_F4"]
+              assert not v["HD_replacement_approved"] and not v["genuine_gameplay_proven"]
+          assert d["whole_H_D_pixel_comparisons_per_compiler"]==61440
+          print("PASS: genuine AddPrim/ClearOTag/DrawOTag mixed primitive and GP0 mode-state compositing.")
+          print("PASS: exact 32x320 hi-res pixel parity under 1,2,4 workers, with independent layered BGR555 oracle.")
+          PY
+          python3 - <<'PY'
+          import re,subprocess
+          from pathlib import Path
+          base=Path("proof/SYNTHETIC_V53_ACTUAL_OT_4.log").read_text()
+          for field in ("native","hires","clut8","sprite_mask","othash"):
+              pattern=re.compile(r"(?<= )"+field+r"=([0-9a-f]+)")
+              m=pattern.search(base)
+              assert m,field
+              old=m.group(1)
+              new="0000000000000001" if field=="othash" else str(int(old)+1)
+              file=Path("proof/SYNTHETIC_V53_CORRUPT_"+field+".log")
+              file.write_text(base[:m.start(1)]+new+base[m.end(1):])
+              r=subprocess.run([
+                  "python3","-m","remaster.tools.verify_map02_actual_ot_v53",
+                  "proof/SYNTHETIC_V53_ACTUAL_OT_1.log",
+                  "proof/SYNTHETIC_V53_ACTUAL_OT_2.log",str(file)
+              ],capture_output=True,text=True)
+              assert r.returncode==1,(field,r.returncode,r.stdout[:150],r.stderr[:150])
+              file.unlink()
+          print("PASS: corrupt actual native/HD OT output, GP0 palette/window and region hashes refused.")
+          PY
+          sha256sum proof/v53_original_drawotag_mixed proof/original_mixed_ot_v53.o >> proof/SHA256SUMS
+      - name: Verify actual 256-packet DrawOTag bucket walk with traced original TrcPrim
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=gnu89 -O2 -g -ffunction-sections -fdata-sections \
+            -DPC_PORT -DPC_FEAT -DVH_MAP02_V39_TRACE \
+            -Ipcport/platform/pc/include -Ipcport/platform/pc/src \
+            -c remaster/tests/map02_v54_large_ot.c -o proof/large_ot_v54.o
+          "$CC" -std=gnu89 -O2 -g -ffunction-sections -fdata-sections \
+            -DPC_PORT -DPC_FEAT \
+            -Ipcport/platform/pc/include -Ipcport/platform/pc/src \
+            -c remaster/tests/map02_v54_ot_trace_shims.c -o proof/ot_trace_shims_v54.o
+          "$CC" -Wl,--gc-sections \
+            proof/large_ot_v54.o proof/libgpu.o proof/pc_raster.o proof/ot_trace_shims_v54.o \
+            -lm -lpthread -o proof/v54_real_large_ot
+          for workers in 1 2 4; do
+            if ! VH_RASTER_THREADS="$workers" ./proof/v54_real_large_ot \
+              > "proof/SYNTHETIC_V54_LARGE_OT_$workers.log" \
+              2> "proof/SYNTHETIC_V54_LARGE_OT_$workers.stderr"; then
+              echo "V54 ORIGINAL GPU executable refused: worker=$workers"
+              cat "proof/SYNTHETIC_V54_LARGE_OT_$workers.stderr"
+              tail -n 14 "proof/SYNTHETIC_V54_LARGE_OT_$workers.log"
+              exit 1
+            fi
+            grep -F "V54 ORIGINAL_DRAWOTAG_LARGE_SCENES=2 PACKETS=256 WORKERS=$workers SYNTHETIC_ONLY" \
+              "proof/SYNTHETIC_V54_LARGE_OT_$workers.stderr"
+            grep -F "[raster] hi-res worker threads: $workers" \
+              "proof/SYNTHETIC_V54_LARGE_OT_$workers.stderr"
+          done
+          if ! python3 -m remaster.tools.verify_map02_large_ot_v54 \
+            proof/SYNTHETIC_V54_LARGE_OT_1.log \
+            proof/SYNTHETIC_V54_LARGE_OT_2.log \
+            proof/SYNTHETIC_V54_LARGE_OT_4.log \
+            --output proof/SYNTHETIC_V54_LARGE_OT_PROOF.json; then
+            echo "V54 actual OT oracle refused:"
+            python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("proof/SYNTHETIC_V54_LARGE_OT_PROOF.json").read_text())
+          print("status:",d["status"])
+          for key,r in d["reports"].items():
+              print("worker",key,"status",r["status"],"errors",r["errors"][:8],"scenes",r["scenes"])
+          PY
+            head -n 12 proof/SYNTHETIC_V54_LARGE_OT_1.log
+            tail -n 12 proof/SYNTHETIC_V54_LARGE_OT_1.log
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("proof/SYNTHETIC_V54_LARGE_OT_PROOF.json").read_text())
+          assert r["status"]=="verified",r
+          assert r["workers_checked"]==[1,2,4]
+          assert r["packets_walked_per_compiler"]==1536,r
+          assert r["full_HD_halfwords_compared_per_compiler"]==61440,r
+          for worker,sub in r["reports"].items():
+              assert sub["status"]=="original_256_ot_verified",sub
+              assert sub["packet_count_per_frame"]==256
+              assert sub["overlapping_semantic_packets_per_frame"]==192
+              for scene in sub["scenes"].values():
+                  assert scene["packets_seen"]==256
+                  assert scene["depth_bucket_counts"]=={"0":48,"1":48,"2":48,"3":48,"7":64}
+                  assert not sub["HD_replacement_approved"]
+          print("PASS: actual DrawOTag token traversal: 1536 packets in 2 scenes x 1/2/4 workers.")
+          print("PASS: independently verified 24 STP/ABR bursts across 4 OT buckets and original 2x GPU.")
+          PY
+          python3 - <<'PY'
+          import subprocess
+          from pathlib import Path
+          src=Path("proof/SYNTHETIC_V54_LARGE_OT_4.log").read_text()
+          modifications={
+            "bucket":("V54WALK frame=0 seq=48 ", " bucket=1", " bucket=2"),
+            "order":("V54WALK frame=0 seq=48 ", " slot=0", " slot=1"),
+            "type":("V54WALK frame=0 seq=50 ", " type=2", " type=4"),
+            "pixel":("V54SUMMARY scene=0 ", " native=", " native=0 UNUSED"),
+            "hash":("V54SUMMARY scene=0 ", " directhash=", " directhash=0000000000000001 UNUSED"),
+          }
+          import re
+          for kind,(prefix,old,new) in modifications.items():
+              lines=src.splitlines()
+              hits=[i for i,x in enumerate(lines) if x.startswith(prefix)]
+              assert len(hits)==1,(kind,hits)
+              i=hits[0]
+              if kind in ("pixel","hash"):
+                  field="native" if kind=="pixel" else "directhash"
+                  rx=re.compile(r"(?<= )"+field+r"=([0-9a-f]+)")
+                  match=rx.search(lines[i])
+                  assert match,(kind,lines[i])
+                  value="0" if kind=="pixel" else "0000000000000001"
+                  lines[i]=lines[i][:match.start(1)]+value+lines[i][match.end(1):]
+              else:
+                  assert old in lines[i],(kind,lines[i])
+                  lines[i]=lines[i].replace(old,new,1)
+              altered=Path("proof")/("SYNTHETIC_V54_BAD_"+kind+".log")
+              altered.write_text("\n".join(lines)+"\n")
+              cmd=["python3","-m","remaster.tools.verify_map02_large_ot_v54",
+                   "proof/SYNTHETIC_V54_LARGE_OT_1.log",
+                   "proof/SYNTHETIC_V54_LARGE_OT_2.log",str(altered)]
+              test=subprocess.run(cmd,capture_output=True,text=True)
+              assert test.returncode==1,(kind,test.returncode,test.stdout[:150],test.stderr[:150])
+              altered.unlink()
+          print("PASS: corrupted real original OT depth, packet order/type and pixels/region hashes all rejected.")
+          PY
+          sha256sum proof/v54_real_large_ot proof/large_ot_v54.o proof/ot_trace_shims_v54.o \
+            >> proof/SHA256SUMS
+      - name: Verify real DrawOTag 256 packets across 4 spatial HD screen regions
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=gnu89 -O2 -g -ffunction-sections -fdata-sections \
+            -DPC_PORT -DPC_FEAT -DVH_MAP02_V39_TRACE \
+            -Ipcport/platform/pc/include -Ipcport/platform/pc/src \
+            -c remaster/tests/map02_v55_spatial_ot.c -o proof/spatial_ot_v55.o
+          "$CC" -Wl,--gc-sections \
+            proof/spatial_ot_v55.o proof/libgpu.o proof/pc_raster.o proof/ot_trace_shims_v54.o \
+            -lm -lpthread -o proof/v55_real_spatial_ot
+          for workers in 1 2 4; do
+            if ! VH_RASTER_THREADS="$workers" ./proof/v55_real_spatial_ot \
+              > "proof/SYNTHETIC_V55_SPATIAL_OT_$workers.log" \
+              2> "proof/SYNTHETIC_V55_SPATIAL_OT_$workers.stderr"; then
+              echo "Original DrawOTag v55 failed for $workers threads:"
+              tail -n 30 "proof/SYNTHETIC_V55_SPATIAL_OT_$workers.stderr"
+              tail -n 20 "proof/SYNTHETIC_V55_SPATIAL_OT_$workers.log"
+              exit 1
+            fi
+            grep -F "V55 ORIGINAL_DRAWOTAG_SPATIAL_SCENES=2 PACKETS=256 REGIONS=4 WORKERS=$workers SYNTHETIC_ONLY" \
+              "proof/SYNTHETIC_V55_SPATIAL_OT_$workers.stderr"
+            grep -F "[raster] hi-res worker threads: $workers" \
+              "proof/SYNTHETIC_V55_SPATIAL_OT_$workers.stderr"
+          done
+          if ! python3 -m remaster.tools.verify_map02_spatial_ot_v55 \
+            proof/SYNTHETIC_V55_SPATIAL_OT_1.log \
+            proof/SYNTHETIC_V55_SPATIAL_OT_2.log \
+            proof/SYNTHETIC_V55_SPATIAL_OT_4.log \
+            --output proof/SYNTHETIC_V55_SPATIAL_OT_PROOF.json; then
+              python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("proof/SYNTHETIC_V55_SPATIAL_OT_PROOF.json").read_text())
+          for worker,r in d["reports"].items():
+              print("v55 worker",worker,"errors",r["errors"][:12])
+          PY
+              exit 1
+          fi
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("proof/SYNTHETIC_V55_SPATIAL_OT_PROOF.json").read_text())
+          assert d["status"]=="verified",d
+          assert d["workers_checked"]==[1,2,4]
+          assert d["real_OT_walk_events"]==1536
+          assert d["complete_original_GPU_pixels_compared_per_compiler"]==345600
+          for worker,report in d["reports"].items():
+              assert report["status"]=="spatial_original_ot_verified",report
+              assert report["scene_count"]==2 and report["regions_per_scene"]==4
+              assert report["sprites_per_scene"]==24
+              assert report["textured_quads_per_scene"]==48
+              for scene in report["scenes"].values():
+                  assert scene["gap_count"]==5
+                  assert scene["packets_observed"]==256
+                  assert scene["sprites_distinct_from_terrain_FT4"]
+                  assert len(scene["regions"])==4
+              assert not report["HD_replacement_approved"]
+              assert not report["retail_map_authenticity_proven"]
+          print("PASS: true 256-token DrawOTag in four spatial regions, strict FT4 versus sprite types.")
+          print("PASS: 5 untouched screen-gap probes per scene; four separate HD regions cross worker band edges.")
+          print("PASS: 345600 BGR555 HD halfword comparisons across 1,2,4 workers per compiler.")
+          PY
+          python3 - <<'PY'
+          import subprocess,re
+          from pathlib import Path
+          source=Path("proof/SYNTHETIC_V55_SPATIAL_OT_4.log").read_text()
+          cases=[
+            ("walk","V54WALK frame=0 seq=48 ","bucket",lambda x:x+1),
+            ("sprite","V54WALK frame=0 seq=4 ","type",lambda x:x+1),
+            ("region","V55REGION scene=0 workers=4 region=2 ","native",lambda x:x^1),
+            ("gap","V55GAP scene=1 workers=4 slot=2 ","hires",lambda x:1),
+            ("hash","V55SUMMARY scene=0 workers=4 ","directhash",lambda x:"0000000000000001"),
+          ]
+          for label,prefix,key,fn in cases:
+              lines=source.splitlines()
+              matched=[i for i,line in enumerate(lines) if line.startswith(prefix)]
+              assert len(matched)==1,(label,matched)
+              i=matched[0]
+              m=re.search(r"(?<= )"+key+r"=([0-9a-f]+)",lines[i])
+              assert m,(label,lines[i])
+              old=m.group(1)
+              new=fn(int(old)) if key!="directhash" else fn(old)
+              altered=lines.copy()
+              altered[i]=lines[i][:m.start(1)]+str(new)+lines[i][m.end(1):]
+              path=Path("proof")/("SYNTHETIC_V55_CORRUPT_"+label+".log")
+              path.write_text("\n".join(altered)+"\n")
+              r=subprocess.run([
+                  "python3","-m","remaster.tools.verify_map02_spatial_ot_v55",
+                  "proof/SYNTHETIC_V55_SPATIAL_OT_1.log",
+                  "proof/SYNTHETIC_V55_SPATIAL_OT_2.log",str(path)
+              ],capture_output=True,text=True)
+              assert r.returncode==1,(label,r.returncode,r.stdout[:150],r.stderr[:150])
+              path.unlink()
+          print("PASS: tampered actual OT bucket, sprite type, region color, gap and full-surface hash all refused.")
+          PY
+          sha256sum proof/v55_real_spatial_ot proof/spatial_ot_v55.o >> proof/SHA256SUMS
+      - name: Execute nine original FT4 triangle-seam clipping and STP GPU cases
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=gnu89 -O2 -g -ffunction-sections -fdata-sections \
+            -DPC_PORT -DPC_FEAT -DVH_MAP02_V39_TRACE \
+            -Ipcport/platform/pc/include -Ipcport/platform/pc/src \
+            -c remaster/tests/map02_v56_triangle_seams.c -o proof/triangle_seams_v56.o
+          "$CC" -Wl,--gc-sections \
+            proof/triangle_seams_v56.o proof/libgpu.o proof/pc_raster.o proof/test_shims.o \
+            -lm -lpthread -o proof/v56_original_ft4_edges
+          for workers in 1 2 4; do
+            if ! VH_RASTER_THREADS="$workers" ./proof/v56_original_ft4_edges \
+              > "proof/SYNTHETIC_V56_FT4_EDGES_$workers.log" \
+              2> "proof/SYNTHETIC_V56_FT4_EDGES_$workers.stderr"; then
+                echo "V56 original GPU error for threads=$workers:"
+                tail -n 30 "proof/SYNTHETIC_V56_FT4_EDGES_$workers.stderr"
+                tail -n 25 "proof/SYNTHETIC_V56_FT4_EDGES_$workers.log"
+                exit 1
+            fi
+            grep -F "V56 ORIGINAL_DDA_TRIANGLE_SEAMS=9 THREADS=$workers SYNTHETIC_ONLY DEST_MASK_UNSUPPORTED" \
+              "proof/SYNTHETIC_V56_FT4_EDGES_$workers.stderr"
+            grep -F "[raster] hi-res worker threads: $workers" \
+              "proof/SYNTHETIC_V56_FT4_EDGES_$workers.stderr"
+          done
+          if ! python3 -m remaster.tools.verify_map02_triangle_seams_v56 \
+            proof/SYNTHETIC_V56_FT4_EDGES_1.log \
+            proof/SYNTHETIC_V56_FT4_EDGES_2.log \
+            proof/SYNTHETIC_V56_FT4_EDGES_4.log \
+            --output proof/SYNTHETIC_V56_FT4_COVERAGE_PROOF.json; then
+              python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("proof/SYNTHETIC_V56_FT4_COVERAGE_PROOF.json").read_text())
+          for worker,p in d["reports"].items():
+              print("worker",worker,"errors",p["errors"][:8])
+          PY
+              echo "First original GPU samples:"; head -n 12 proof/SYNTHETIC_V56_FT4_EDGES_1.log
+              exit 1
+          fi
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("proof/SYNTHETIC_V56_FT4_COVERAGE_PROOF.json").read_text())
+          assert d["status"]=="verified",d
+          assert d["threads_checked"]==[1,2,4]
+          assert d["real_original_DDA_scenarios"]==27
+          assert d["independent_native_halfword_comparisons"]==8*48*48*3
+          assert d["independent_hi_res_halfword_comparisons"]==8*96*96*3
+          assert d["direct_vs_deferred_hi_res_halfword_comparisons"]==9*96*96*3
+          assert d["destination_mask_still_unimplemented"] and not d["HD_replacement_approved"]
+          for report in d["reports"].values():
+              assert report["independent_full_image_cases"]==8
+              assert report["skew_reference_only_cases"]==1
+              assert report["mask_destination_test_implemented_in_original_PC_port"] is False
+          print("PASS: all 8 rectangular original FT4 shared diagonals and clipped edges match independent full-image BGR555 oracle.")
+          print("PASS: skewed FT4 actual deferred 2x matches direct original DDA; FULL independent skew coverage NOT claimed.")
+          print("PASS: destination bit15 overwrite observed; PS1 destination-mask test is NOT implemented or approved.")
+          PY
+          python3 - <<'PY'
+          import subprocess,re
+          from pathlib import Path
+          base=Path("proof/SYNTHETIC_V56_FT4_EDGES_4.log").read_text().splitlines()
+          cases=[
+             ("diagonal","V56CASE name=stp_abr0 ","hires_probe"),
+             ("clip","V56CASE name=clipped_edges ","clipx"),
+             ("zero","V56CASE name=transparent_zero ","nativehash"),
+             ("mask","V56CASE name=destination_bit15 ","nativehash"),
+             ("skew","V56CASE name=skewed_quad ","directhash"),
+          ]
+          for label,prefix,field in cases:
+              matches=[i for i,line in enumerate(base) if line.startswith(prefix)]
+              assert len(matches)==1,(label,matches)
+              i=matches[0]
+              hit=re.search(r"(?<= )"+field+r"=([0-9a-f]+)",base[i])
+              assert hit,(label,base[i])
+              new="0000000000000001" if field.endswith("hash") else str(int(hit.group(1))+1)
+              broken=base.copy()
+              broken[i]=base[i][:hit.start(1)]+new+base[i][hit.end(1):]
+              dest=Path("proof")/("SYNTHETIC_V56_CORRUPT_"+label+".log")
+              dest.write_text("\n".join(broken)+"\n")
+              cmd=["python3","-m","remaster.tools.verify_map02_triangle_seams_v56",
+                   "proof/SYNTHETIC_V56_FT4_EDGES_1.log",
+                   "proof/SYNTHETIC_V56_FT4_EDGES_2.log",str(dest)]
+              result=subprocess.run(cmd,capture_output=True,text=True)
+              assert result.returncode==1,(label,result.returncode,result.stderr[:170])
+              dest.unlink()
+          print("PASS: altered original seam sample, draw clip, zero-texel/mask BGR555 and skew frame hashes refused.")
+          PY
+          sha256sum proof/v56_original_ft4_edges proof/triangle_seams_v56.o >> proof/SHA256SUMS
+      - name: Execute actual original GPU with GP0(E6) mask controls in native and deferred 2x
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=gnu89 -O2 -g -ffunction-sections -fdata-sections \
+            -DPC_PORT -DPC_FEAT -DVH_MAP02_V39_TRACE \
+            -Ipcport/platform/pc/include -Ipcport/platform/pc/src \
+            -c remaster/tests/map02_v57_gpu_mask.c -o proof/mask_gpu_v57.o
+          "$CC" -Wl,--gc-sections proof/mask_gpu_v57.o \
+            proof/libgpu.o proof/pc_raster.o proof/test_shims.o \
+            -lm -lpthread -o proof/v57_original_gpu_mask
+          nm proof/v57_original_gpu_mask | grep -q PC_GpuGp0MaskE6
+          for workers in 1 2 4; do
+            if ! VH_RASTER_THREADS="$workers" ./proof/v57_original_gpu_mask \
+                > "proof/SYNTHETIC_V57_GPU_MASK_$workers.log" \
+                2> "proof/SYNTHETIC_V57_GPU_MASK_$workers.stderr"; then
+              echo "Original GPU mask test failed with $workers worker(s)"
+              tail -n 30 "proof/SYNTHETIC_V57_GPU_MASK_$workers.stderr"
+              tail -n 20 "proof/SYNTHETIC_V57_GPU_MASK_$workers.log"
+              exit 1
+            fi
+            grep -F "V57 EXECUTED_GP0_E6_SYNTHETIC=15 THREADS=$workers" \
+              "proof/SYNTHETIC_V57_GPU_MASK_$workers.stderr"
+            grep -F "[raster] hi-res worker threads: $workers" \
+              "proof/SYNTHETIC_V57_GPU_MASK_$workers.stderr"
+          done
+          python3 -m remaster.tools.verify_map02_gpu_mask_v57 \
+            proof/SYNTHETIC_V57_GPU_MASK_1.log \
+            proof/SYNTHETIC_V57_GPU_MASK_2.log \
+            proof/SYNTHETIC_V57_GPU_MASK_4.log \
+            --output proof/SYNTHETIC_V57_GPU_MASK_PROOF.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path("proof/SYNTHETIC_V57_GPU_MASK_PROOF.json").read_text())
+          assert report["status"]=="verified",report["errors"]
+          assert report["threads_checked"]==[1,2,4]
+          assert report["real_original_gpu_scenarios"]==45
+          assert report["independent_native_halfword_comparisons"]==15*2304*3
+          assert report["independent_hd_halfword_comparisons"]==15*9216*3
+          assert report["direct_deferred_halfword_comparisons"]==15*9216*3
+          assert not report["HD_replacement_approved"]
+          assert not report["GP0_E6_retail_command_integration_proven"]
+          print("PASS original DrawOTag+GPU DDA mask E6=0/1/2/3 under GCC/Clang and 1/2/4 real HD workers.")
+          print("PASS 15 x 3 independent full-image native+HD BGR555 expectations and exact direct/deferred pixels.")
+          PY
+          python3 - <<'PY'
+          import re,subprocess
+          from pathlib import Path
+          base=Path("proof/SYNTHETIC_V57_GPU_MASK_4.log").read_text().splitlines()
+          cases=[
+              ("maskcheck","masked_preserved","maskcheck", "0"),
+              ("maskset","force_opaque","maskset","0"),
+              ("stp","stp_abr0","texel","31"),
+              ("clip","mask_clip","clipx","70"),
+              ("write","force_opaque","native_probe","0"),
+              ("fullhd","mask_transition","hihash","0000000000000000"),
+          ]
+          for label,name,field,corrupt in cases:
+              matches=[i for i,line in enumerate(base) if line.startswith("V57CASE name="+name+" ")]
+              assert len(matches)==1,(label,matches)
+              index=matches[0]
+              match=re.search(r"(?<= )"+field+r"=([0-9a-f]+)",base[index])
+              assert match,(label,base[index])
+              broken=base.copy()
+              broken[index]=base[index][:match.start(1)]+corrupt+base[index][match.end(1):]
+              dest=Path("proof")/("CORRUPT_V57_"+label+".log")
+              dest.write_text("\n".join(broken)+"\n")
+              cmd=["python3","-m","remaster.tools.verify_map02_gpu_mask_v57",
+                   "proof/SYNTHETIC_V57_GPU_MASK_1.log",
+                   "proof/SYNTHETIC_V57_GPU_MASK_2.log",str(dest)]
+              p=subprocess.run(cmd,capture_output=True,text=True)
+              assert p.returncode==1,(label,p.returncode,p.stderr[:200])
+              dest.unlink()
+          print("PASS adversarial original GPU mask-state / source / clip / BGR555 / full-frame mutations rejected.")
+          PY
+          sha256sum proof/v57_original_gpu_mask proof/mask_gpu_v57.o >> proof/SHA256SUMS
+      - name: Execute actual DrawOTag ordering with interleaved GP0(E6) commands and full-frame oracle
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=gnu89 -O2 -g -ffunction-sections -fdata-sections \
+            -DPC_PORT -DPC_FEAT -DVH_MAP02_V39_TRACE \
+            -Ipcport/platform/pc/include -Ipcport/platform/pc/src \
+            -c remaster/tests/map02_v58_ordered_mask.c -o proof/ordered_mask_v58.o
+          "$CC" -std=gnu89 -O2 -g -ffunction-sections -fdata-sections \
+            -DPC_PORT -DPC_FEAT -DVH_MAP02_V39_TRACE \
+            -Ipcport/platform/pc/include -Ipcport/platform/pc/src \
+            -c remaster/tests/map02_v58_order_shims.c -o proof/order_shims_v58.o
+          # Ensure actual production trace serializer also recognizes synthetic
+          # E6 OT primitives; do not link a stub in place of this compile gate.
+          "$CC" -std=gnu89 -O2 -g -DPC_PORT -DPC_FEAT \
+            -Ipcport/platform/pc/include -Ipcport/platform/pc/src \
+            -c pcport/platform/pc/src/pc_gpu_trace.c -o proof/pc_gpu_trace_v58.o
+          "$CC" -Wl,--gc-sections \
+            proof/ordered_mask_v58.o proof/order_shims_v58.o \
+            proof/libgpu.o proof/pc_raster.o \
+            -lm -lpthread -o proof/v58_original_ordered_mask
+          nm proof/v58_original_ordered_mask | grep -q PC_SetDrawMaskPacket
+          for workers in 1 2 4; do
+            if ! VH_RASTER_THREADS="$workers" ./proof/v58_original_ordered_mask \
+              > "proof/SYNTHETIC_V58_MASK_OT_$workers.log" \
+              2> "proof/SYNTHETIC_V58_MASK_OT_$workers.stderr"; then
+              echo "Actual original GPU ordered mask failed for $workers workers"
+              tail -n 40 "proof/SYNTHETIC_V58_MASK_OT_$workers.stderr"
+              tail -n 25 "proof/SYNTHETIC_V58_MASK_OT_$workers.log"
+              exit 1
+            fi
+            grep -F "V58 REAL_OT_MASK_INTERLEAVE=9 THREADS=$workers" \
+              "proof/SYNTHETIC_V58_MASK_OT_$workers.stderr"
+            grep -F "[raster] hi-res worker threads: $workers" \
+              "proof/SYNTHETIC_V58_MASK_OT_$workers.stderr"
+          done
+          python3 -m remaster.tools.verify_map02_gp0_ot_v58 \
+            proof/SYNTHETIC_V58_MASK_OT_1.log \
+            proof/SYNTHETIC_V58_MASK_OT_2.log \
+            proof/SYNTHETIC_V58_MASK_OT_4.log \
+            --output proof/SYNTHETIC_V58_MASK_ORDER_PROOF.json
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          report=json.loads(Path("proof/SYNTHETIC_V58_MASK_ORDER_PROOF.json").read_text())
+          assert report["status"]=="verified",report["errors"]
+          assert report["threads_checked"]==[1,2,4]
+          assert report["real_executed_gpu_scenarios"]==27
+          assert report["independent_native_halfwords"]==9*48*48*3
+          assert report["independent_hd_halfwords"]==9*96*96*3
+          assert report["direct_deferred_halfwords"]==9*96*96*3
+          assert not report["retail_gp0_dma_packet_decoding_proven"]
+          assert not report["HD_replacement_approved"]
+          print("PASS real ordered OT mask/FT4 walk, all 9 x 1/2/4 workers.")
+          PY
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          data=Path("proof/SYNTHETIC_V58_MASK_OT_4.log").read_text().splitlines()
+          mutations=[
+            ("state","V58OT name=mark_skip index=0 type=mask command=3858759681","command=3858759681","command=3858759680"),
+            ("geometry","V58OT name=reopen index=1 type=quad","uv=20","uv=21"),
+            ("fullhd","V58CASE name=abr0 ","hihash=","hihash=0000000000000000"),
+            ("clip","V58CASE name=clip_mask ","clipx=75","clipx=70"),
+          ]
+          for label,prefix,old,new in mutations:
+              candidates=[i for i,line in enumerate(data) if line.startswith(prefix)]
+              assert len(candidates)==1,(label,candidates)
+              i=candidates[0]
+              broken=data.copy()
+              if label=="fullhd":
+                  import re
+                  broken[i]=re.sub(r"hihash=[0-9a-f]{16}",new,broken[i],count=1)
+              else:
+                  assert old in broken[i],(label,broken[i])
+                  broken[i]=broken[i].replace(old,new,1)
+              p=Path("proof")/("CORRUPT_V58_"+label+".log")
+              p.write_text("\n".join(broken)+"\n")
+              cp=subprocess.run(["python3","-m","remaster.tools.verify_map02_gp0_ot_v58",
+                 "proof/SYNTHETIC_V58_MASK_OT_1.log",
+                 "proof/SYNTHETIC_V58_MASK_OT_2.log",str(p)],
+                 capture_output=True,text=True)
+              assert cp.returncode==1,(label,cp.returncode,cp.stdout[-100:])
+              p.unlink()
+          print("PASS real OT mutation rejection for E6 state, quad source, full-frame pixel and clip.")
+          PY
+          sha256sum proof/v58_original_ordered_mask proof/ordered_mask_v58.o \
+            proof/order_shims_v58.o proof/pc_gpu_trace_v58.o >> proof/SHA256SUMS
+      - name: Run authentic original GPU VHT1 mask E6 record and replay in fresh processes
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=gnu89 -O2 -g -ffunction-sections -fdata-sections \
+            -DPC_PORT -DPC_FEAT -DVH_MAP02_V39_TRACE \
+            -Ipcport/platform/pc/include -Ipcport/platform/pc/src \
+            -c remaster/tests/map02_v59_trace_roundtrip.c -o proof/trace_driver_v59.o
+          "$CC" -std=gnu89 -O2 -g -ffunction-sections -fdata-sections \
+            -DPC_PORT -DPC_FEAT -DVH_MAP02_V39_TRACE \
+            -Ipcport/platform/pc/include -Ipcport/platform/pc/src \
+            -c remaster/tests/map02_v59_real_trace_shims.c -o proof/trace_shims_v59.o
+          "$CC" -std=gnu89 -O2 -g -ffunction-sections -fdata-sections \
+            -DPC_PORT -DPC_FEAT -DVH_MAP02_V39_TRACE \
+            -Ipcport/platform/pc/include -Ipcport/platform/pc/src \
+            -c pcport/platform/pc/src/pc_gpu_trace.c -o proof/real_pc_gpu_trace_v59.o
+          "$CC" -Wl,--gc-sections \
+            proof/trace_driver_v59.o proof/trace_shims_v59.o \
+            proof/real_pc_gpu_trace_v59.o proof/libgpu.o proof/pc_raster.o \
+            -lm -lpthread -o proof/v59_original_vht1_roundtrip
+          nm proof/v59_original_vht1_roundtrip | grep -q PC_GpuReplayTrace
+          nm proof/v59_original_vht1_roundtrip | grep -q TrcPrim
+          nm proof/v59_original_vht1_roundtrip | grep -q PC_SetDrawMaskPacket
+          trace=proof/SYNTHETIC_V59_E6_OT_TRACE.vht
+          VH_INTERNAL_SCALE=2 VH_RASTER_THREADS=1 VH_GPU_RECORD="$trace" \
+            VH_GPU_RECORD_FRAMES=4 ./proof/v59_original_vht1_roundtrip record "$trace" \
+            > proof/SYNTHETIC_V59_RECORD.log \
+            2> proof/SYNTHETIC_V59_RECORD.stderr
+          grep -F 'V59 RECORDED_VHT1_FRAMES=4 SYNTHETIC_ONLY' \
+            proof/SYNTHETIC_V59_RECORD.stderr
+          grep -F '[trace] recording complete (4 frames)' \
+            proof/SYNTHETIC_V59_RECORD.stderr
+          for workers in 1 2 4; do
+            VH_INTERNAL_SCALE=2 VH_RASTER_THREADS="$workers" \
+              VH_MAP02_V59_TRACE_FRAMES=1 VH_GPU_REPLAY_HASH_HIRES=1 \
+              ./proof/v59_original_vht1_roundtrip replay "$trace" \
+              > "proof/SYNTHETIC_V59_REPLAY_$workers.log" \
+              2> "proof/SYNTHETIC_V59_REPLAY_$workers.stderr"
+            grep -F 'REPLAY frames=4 combined=' \
+              "proof/SYNTHETIC_V59_REPLAY_$workers.log"
+            grep -F "[raster] hi-res worker threads: $workers" \
+              "proof/SYNTHETIC_V59_REPLAY_$workers.stderr"
+          done
+          python3 -m remaster.tools.verify_map02_v59_trace \
+            "$trace" proof/SYNTHETIC_V59_RECORD.log \
+            proof/SYNTHETIC_V59_REPLAY_1.log \
+            proof/SYNTHETIC_V59_REPLAY_2.log \
+            proof/SYNTHETIC_V59_REPLAY_4.log \
+            --output proof/SYNTHETIC_V59_VHT1_E6_ROUNDTRIP_PROOF.json
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          p=json.loads(Path("proof/SYNTHETIC_V59_VHT1_E6_ROUNDTRIP_PROOF.json").read_text())
+          assert p["status"]=="original_vht1_e6_roundtrip_verified",p
+          assert p["frames"]==4 and p["gpu_mask_packets"]==11
+          assert p["original_trace_record_replay_frames"]==12
+          assert p["independent_full_frame_native_hash_equalities"]==12
+          assert p["independent_full_frame_hd_hash_equalities"]==12
+          assert not p["HD_replacement_approved"]
+          assert not p["genuine_retail_gpu_packets_proven"]
+          print("PASS: original TrcWrite/TrcPrim writes VHT1, original PC_GpuReplayTrace consumes VHT1")
+          print("PASS: all 4 frames have matching whole-VRAM and whole-2x native/HD FNV byte signatures with 1/2/4 threads")
+          PY
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess,struct
+          trace=Path("proof/SYNTHETIC_V59_E6_OT_TRACE.vht")
+          data=trace.read_bytes()
+          pattern=struct.pack("<I",0xe6000001)
+          assert data.count(pattern)>=1
+          corrupted=data.replace(pattern,struct.pack("<I",0xe6000000),1)
+          bad=Path("proof/SYNTHETIC_V59_CORRUPTED_MASK.vht")
+          bad.write_bytes(corrupted)
+          cmd=["python3","-m","remaster.tools.verify_map02_v59_trace",str(bad),
+               "proof/SYNTHETIC_V59_RECORD.log",
+               "proof/SYNTHETIC_V59_REPLAY_1.log",
+               "proof/SYNTHETIC_V59_REPLAY_2.log",
+               "proof/SYNTHETIC_V59_REPLAY_4.log"]
+          result=subprocess.run(cmd,text=True,capture_output=True)
+          assert result.returncode==1,(result.returncode,result.stdout[-300:])
+          bad.unlink()
+          replay=Path("proof/SYNTHETIC_V59_REPLAY_4.log").read_text()
+          import re
+          changed=re.sub(r"hihash=[a-f0-9]{16}","hihash=0000000000000000",replay,count=1)
+          assert changed!=replay
+          tampered=Path("proof/SYNTHETIC_V59_CORRUPTED_HD.log")
+          tampered.write_text(changed)
+          cmd=["python3","-m","remaster.tools.verify_map02_v59_trace",str(trace),
+               "proof/SYNTHETIC_V59_RECORD.log",
+               "proof/SYNTHETIC_V59_REPLAY_1.log",
+               "proof/SYNTHETIC_V59_REPLAY_2.log",str(tampered)]
+          result=subprocess.run(cmd,text=True,capture_output=True)
+          assert result.returncode==1,(result.returncode,result.stdout[-300:])
+          tampered.unlink()
+          print("PASS: mutated genuine recorded E6 command and original replay HD framebuffer proof rejected.")
+          PY
+          sha256sum proof/v59_original_vht1_roundtrip proof/trace_driver_v59.o \
+            proof/trace_shims_v59.o proof/real_pc_gpu_trace_v59.o \
+            proof/SYNTHETIC_V59_E6_OT_TRACE.vht >> proof/SHA256SUMS
+      - name: Distinguish actual PS1 DMA2 GP0 linked-list words from original PC-port VHT1
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m remaster.tools.make_map02_v60_synthetic_dma \
+            --ram proof/SYNTHETIC_V60_PS1_DMA_RAM.bin \
+            --manifest proof/SYNTHETIC_V60_PS1_DMA_MANIFEST.json
+          python3 -m remaster.tools.verify_map02_v60_ps1_dma \
+            --ram proof/SYNTHETIC_V60_PS1_DMA_RAM.bin \
+            --manifest proof/SYNTHETIC_V60_PS1_DMA_MANIFEST.json \
+            --vht1 proof/SYNTHETIC_V59_E6_OT_TRACE.vht \
+            --output proof/SYNTHETIC_V60_DMA_SEMANTIC_PROOF.json
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          report=json.loads(Path("proof/SYNTHETIC_V60_DMA_SEMANTIC_PROOF.json").read_text())
+          assert report["status"]=="synthetic_cross_format_semantic_order_verified",report
+          assert report["frames"]==4 and report["dma_nodes"]==19,report
+          assert report["gp0_e6_words"]==11 and report["gp0_ft4_commands"]==11,report
+          assert report["source_class"]=="synthetic",report
+          assert not report["retail_gp0_provenance_verified"]
+          assert not report["retail_MAP02_verified"]
+          assert not report["HD_replacement_approved"]
+          print("PASS: 19 hardware-format DMA2 nodes, real GP0 E6+FT4 lengths, 4 synthetic frames")
+          print("PASS: all 11 real GP0(E6) state transitions align semantically with separate original VHT1 format")
+          print("CLOSED GATE: original retail DMA provenance and HD replacement are NOT proven")
+          PY
+          python3 - <<'PY'
+          import subprocess,struct
+          from pathlib import Path
+          good=Path("proof/SYNTHETIC_V60_PS1_DMA_RAM.bin").read_bytes()
+          bad=Path("proof/SYNTHETIC_V60_CORRUPT_E6.bin")
+          needle=struct.pack("<I",0xe6000001)
+          assert needle in good
+          bad.write_bytes(good.replace(needle,struct.pack("<I",0xe6000000),1))
+          cmd=["python3","-m","remaster.tools.verify_map02_v60_ps1_dma",
+               "--ram",str(bad),
+               "--manifest","proof/SYNTHETIC_V60_PS1_DMA_MANIFEST.json",
+               "--vht1","proof/SYNTHETIC_V59_E6_OT_TRACE.vht"]
+          result=subprocess.run(cmd,capture_output=True,text=True)
+          assert result.returncode==1,(result.returncode,result.stdout[-300:])
+          bad.unlink()
+          # A custom PC-port VHT1 trace must be refused if masquerading as
+          # hardware DMA RAM even when the manifest checksum is changed.
+          import json,hashlib
+          source=Path("proof/SYNTHETIC_V59_E6_OT_TRACE.vht").read_bytes()
+          disguised=Path("proof/SYNTHETIC_V60_VHT1_AS_DMA.bin")
+          disguised.write_bytes(source+b"\x00"*((-len(source))%4))
+          metadata=json.loads(Path("proof/SYNTHETIC_V60_PS1_DMA_MANIFEST.json").read_text())
+          metadata["sha256"]=hashlib.sha256(disguised.read_bytes()).hexdigest()
+          malicious=Path("proof/SYNTHETIC_V60_VHT1_AS_DMA.json")
+          malicious.write_text(json.dumps(metadata))
+          cmd=["python3","-m","remaster.tools.verify_map02_v60_ps1_dma",
+               "--ram",str(disguised),"--manifest",str(malicious)]
+          result=subprocess.run(cmd,capture_output=True,text=True)
+          assert result.returncode==1,(result.returncode,result.stdout[-300:])
+          disguised.unlink();malicious.unlink()
+          print("PASS: altered hardware DMA mask and VHT1-as-PS1 masquerade rejected")
+          PY
+          sha256sum proof/SYNTHETIC_V60_PS1_DMA_RAM.bin \
+            proof/SYNTHETIC_V60_PS1_DMA_MANIFEST.json >> proof/SHA256SUMS
+      - name: Verify private local-only preflight and source-claim quarantine
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          meta={
+              "schema":"map02-v61-local-capture-context-v1",
+              "method":"emulator-debugger",
+              "scope":"MAP02",
+              "frame_indices":[0,1,2,3],
+              "reset_status":"no-reset-observed"
+          }
+          Path("proof/SYNTHETIC_V61_CONTEXT.json").write_text(json.dumps(meta))
+          PY
+          python3 -m remaster.tools.audit_map02_v61_private_capture \
+            --ram proof/SYNTHETIC_V60_PS1_DMA_RAM.bin \
+            --manifest proof/SYNTHETIC_V60_PS1_DMA_MANIFEST.json \
+            --context proof/SYNTHETIC_V61_CONTEXT.json \
+            --compare-ram proof/SYNTHETIC_V60_PS1_DMA_RAM.bin \
+            --compare-manifest proof/SYNTHETIC_V60_PS1_DMA_MANIFEST.json \
+            --output proof/SYNTHETIC_V61_SANITIZED_LOCAL_SUMMARY.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          summary=json.loads(Path("proof/SYNTHETIC_V61_SANITIZED_LOCAL_SUMMARY.json").read_text())
+          assert summary["status"]=="synthetic_private_preflight_only",summary
+          assert summary["frames"]==4 and summary["dma_nodes"]==19
+          assert summary["gp0_e6_commands"]==11
+          assert summary["gp0_ft4_commands"]==11
+          assert summary["comparison_performed"]
+          assert summary["comparison_identical_RAM_bytes"]
+          assert not summary["independent_capture_proven"]
+          assert not summary["retail_gp0_provenance_verified"]
+          assert not summary["original_retail_MAP02_verified"]
+          assert not summary["HD_replacement_approved"]
+          assert not summary["raw_gpu_payload_exported"]
+          data=json.dumps(summary)
+          for forbidden in ("e6000001","0xe6000001","entry_points","base_address","frame_indices",
+                            "emulator-debugger","FT4 x0","ft4_uv","256,0"):
+              assert forbidden not in data,forbidden
+          print("PASS private local-only capture preflight, no frame pixels, GPS/GP0 words or source paths exported")
+          print("PASS self-claimed MAP02 context and duplicated capture DO NOT promote retail authenticity")
+          PY
+          python3 - <<'PY'
+          import json,subprocess
+          from pathlib import Path
+          manifest=Path("proof/SYNTHETIC_V60_PS1_DMA_MANIFEST.json")
+          original=json.loads(manifest.read_text())
+          forged=Path("proof/SYNTHETIC_V61_FALSE_RETAIL_SOURCE.json")
+          forged.write_text(json.dumps(dict(original,source_class="retail-proven")))
+          cmd=["python3","-m","remaster.tools.audit_map02_v61_private_capture",
+               "--ram","proof/SYNTHETIC_V60_PS1_DMA_RAM.bin","--manifest",str(forged)]
+          res=subprocess.run(cmd,capture_output=True,text=True)
+          assert res.returncode==1,(res.returncode,res.stdout[-300:])
+          refusal=json.loads(res.stdout)
+          assert refusal["status"]=="refused"
+          assert not refusal["retail_gp0_provenance_verified"]
+          assert not refusal["HD_replacement_approved"]
+          assert "retail-proven" not in res.stdout
+          forged.unlink()
+          print("PASS forged retail provenance refused; sanitized failure contains no raw source claims")
+          PY
+          sha256sum proof/SYNTHETIC_V61_SANITIZED_LOCAL_SUMMARY.json \
+            >> proof/SHA256SUMS
+      - name: Prove extended hardware GP0 packet lengths and hidden-E6 payloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m remaster.tools.make_map02_v62_gp0_fixtures \
+            --ram proof/SYNTHETIC_V62_EXTENDED_GP0_RAM.bin \
+            --manifest proof/SYNTHETIC_V62_EXTENDED_GP0_MANIFEST.json
+          python3 -m remaster.tools.verify_map02_v60_ps1_dma \
+            --ram proof/SYNTHETIC_V62_EXTENDED_GP0_RAM.bin \
+            --manifest proof/SYNTHETIC_V62_EXTENDED_GP0_MANIFEST.json \
+            --output proof/SYNTHETIC_V62_BOUNDARY_PROOF.json
+          python3 - <<'PY'
+          import json,struct
+          from collections import Counter
+          from pathlib import Path
+          from remaster.tools.verify_map02_v60_ps1_dma import decode
+          p=json.loads(Path("proof/SYNTHETIC_V62_BOUNDARY_PROOF.json").read_text())
+          m=json.loads(Path("proof/SYNTHETIC_V62_EXTENDED_GP0_MANIFEST.json").read_text())
+          raw=Path("proof/SYNTHETIC_V62_EXTENDED_GP0_RAM.bin").read_bytes()
+          audit=decode(raw,m)
+          counts=Counter(e["type"] for f in audit["frames"] for e in f["events"])
+          assert p["status"]=="raw_ps1_dma_structure_only",p
+          assert p["frames"]==4 and p["gp0_e6_words"]==3,p
+          assert p["gp0_ft4_commands"]==0,p
+          assert p["dma_nodes"]==27,p
+          assert counts["E6"]==3,counts
+          assert counts["POLYGON"]==2,counts
+          assert counts["LINE"]==2 and counts["POLYLINE"]==2,counts
+          assert counts["RECT"]==8 and counts["TRANSFER"]==3,counts
+          assert raw.count(struct.pack("<I",0xe6000001))>3
+          assert [f["mask_state_at_end"] for f in audit["frames"]]==[
+              (1,0),(1,0),(0,1),(0,0)]
+          assert not p["retail_gp0_provenance_verified"]
+          assert not p["retail_MAP02_verified"]
+          assert not p["HD_replacement_approved"]
+          print("PASS GP0 polygon/line/polyline/rectangle/VRAM transfer boundaries")
+          print("PASS deceptive E6 values inside polygon, vertex, color, UV and VRAM words not decoded as mask commands")
+          print("PASS state continuity across actual hardware-format DMA2 list boundaries; retail provenance closed")
+          PY
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,struct,subprocess
+          raw=Path("proof/SYNTHETIC_V62_EXTENDED_GP0_RAM.bin").read_bytes()
+          metadata=json.loads(Path("proof/SYNTHETIC_V62_EXTENDED_GP0_MANIFEST.json").read_text())
+          for label,before,after in [
+              ("e6-reserved",0xe6000001,0xe6000007),
+              ("upload-size",0x00020003,0x01f401f4),
+          ]:
+              a=struct.pack("<I",before)
+              assert a in raw,(label,before)
+              if label=="e6-reserved":
+                  # Third occurrence is an actual standalone E6 command;
+                  # first two occurrences are polygon gouraud COLOR payload.
+                  positions=[i for i in range(0,len(raw),4) if raw[i:i+4]==a]
+                  assert len(positions)>=3
+                  mutable=bytearray(raw)
+                  struct.pack_into("<I",mutable,positions[2],after)
+                  changed=bytes(mutable)
+              else:
+                  changed=raw.replace(a,struct.pack("<I",after),1)
+              bad=Path("proof/SYNTHETIC_V62_BAD_"+label+".bin")
+              bad_m=Path("proof/SYNTHETIC_V62_BAD_"+label+".json")
+              bad.write_bytes(changed)
+              bad_m.write_text(json.dumps(dict(metadata,sha256=hashlib.sha256(changed).hexdigest())))
+              result=subprocess.run(
+                  ["python3","-m","remaster.tools.verify_map02_v60_ps1_dma",
+                   "--ram",str(bad),"--manifest",str(bad_m)],
+                  capture_output=True,text=True)
+              assert result.returncode==1,(label,result.returncode,result.stdout[-250:])
+              bad.unlink();bad_m.unlink()
+          print("PASS checksum-correct malformed GP0(E6) reserved bits and oversized VRAM transfer refused")
+          PY
+          sha256sum proof/SYNTHETIC_V62_EXTENDED_GP0_RAM.bin \
+            proof/SYNTHETIC_V62_EXTENDED_GP0_MANIFEST.json \
+            proof/SYNTHETIC_V62_BOUNDARY_PROOF.json >> proof/SHA256SUMS
+      - name: Upload runtime logs and binary hash proofs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-v62-${{ matrix.cc }}-extended-gp0-synthetic
+          path: proof/
+          if-no-files-found: warn
