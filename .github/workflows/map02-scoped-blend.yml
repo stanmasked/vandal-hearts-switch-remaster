@@ -6,6 +6,9 @@ on:
       - 'tools/instrument_map02_scoped_blend.py'
       - 'tools/map02_scoped_blend_sink.c'
       - 'tools/map02_scoped_blend_sink.h'
+      - 'tools/map02_scoped_blend_stage.c'
+      - 'tools/map02_scoped_blend_stage.h'
+      - 'tests/test_map02_scoped_blend_stage.py'
       - 'tools/map02_blendg1_witness.py'
       - 'tools/publish_map02_blendg1_witness.py'
       - 'tests/test_publish_map02_blendg1_witness.py'
@@ -24,6 +27,9 @@ on:
       - 'tools/instrument_map02_scoped_blend.py'
       - 'tools/map02_scoped_blend_sink.c'
       - 'tools/map02_scoped_blend_sink.h'
+      - 'tools/map02_scoped_blend_stage.c'
+      - 'tools/map02_scoped_blend_stage.h'
+      - 'tests/test_map02_scoped_blend_stage.py'
       - 'tools/map02_blendg1_witness.py'
       - 'tools/publish_map02_blendg1_witness.py'
       - 'tests/test_publish_map02_blendg1_witness.py'
@@ -58,7 +64,8 @@ jobs:
             tests.test_map02_blendg1_witness \
             tests.test_map02_scoped_blend_jsonl_bridge \
             tests.test_publish_map02_blendg1_witness \
-            tests.test_map02_blendg1_complete_events
+            tests.test_map02_blendg1_complete_events \
+            tests.test_map02_scoped_blend_stage
       - name: Checkout pinned public original PC raster source
         uses: actions/checkout@v4
         with:
