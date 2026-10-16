@@ -416,3 +416,37 @@ constructed synthetic timing expectations, not against timing
 captured from the original PlayStation executable. `note_offs`
 counts voices released by the sequencer, including a same-pitch
 retrigger, rather than every encoded Note Off command.
+
+### Multiple FF51 changes and SEQ end-of-track loops
+
+The local audit reports additional per-scene metrics:
+
+- `cycles_completed`, `first_cycle_block` and `last_cycle_block`
+  are based on the sequencer's processed FF2F end-of-track boundaries.
+- `observed_tempo_changes`, `first_tempo_change_block` and
+  `last_tempo_change_block` compare the tempo **before and after**
+  each 512-frame block. Multiple FF51 events inside one block may be
+  counted as a single observable change (or no change when they cancel).
+  These are not raw MIDI event counts.
+- `final_tempo_us_per_quarter` is the tempo stored by the sequencer
+  at the end of the measured scene, before the next bank switch.
+
+A synthetic loop sequence starts at 500,000 µs/quarter, switches to
+250,000 at tick 0, then to 750,000 at tick 30, and completes its
+cycle at tick 90. In the 512-frame pre-render dispatch model,
+end-of-track boundaries occur at **blocks 10, 19 and 28**. Tempo
+changes are observed at **blocks 1, 2, 10, 12, 19, 21, 28 and 30**.
+These are independent, test-constructed timing expectations; they
+are not timing measurements from the original PlayStation game.
+
+The 32-scene stress regression alternates this multi-tempo, repeating
+bank with a separate bank that starts at its own 500,000-µs tempo.
+Every A scene completes three cycles in 32 blocks; every B scene
+starts a fresh sequencer with no inherited tempo or program state,
+while the SPU's STUDIO_C wet history and the external resampler clock
+remain continuous. It also checks all 524,288 input frames and the
+exact count of 48-kHz output frames.
+
+All fixtures are synthesized in CI and do not contain original
+Vandal Hearts music. Hardware audibility and PS1 waveform fidelity
+are not established by these tests.
