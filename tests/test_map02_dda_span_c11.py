@@ -54,7 +54,7 @@ int main(int argc, char **argv) {
 
 class NativeSpanCompileTests(unittest.TestCase):
     def test_c11_enabled_and_disabled_probe(self):
-        cc = shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+        cc = shutil.which(os.environ.get("CC", "")) or shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
         if not cc:
             self.skipTest("No native C compiler")
         generated = instrument_span(C_TEMPLATE.replace("REPLACE_SPAN", SPAN_ANCHOR))
@@ -87,7 +87,7 @@ class NativeSpanCompileTests(unittest.TestCase):
                     self.assertFalse(log.exists())
 
     def test_incomplete_flags_fail_closed(self):
-        cc = shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+        cc = shutil.which(os.environ.get("CC", "")) or shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
         if not cc:
             self.skipTest("No native C compiler")
         generated = instrument_span(C_TEMPLATE.replace("REPLACE_SPAN", SPAN_ANCHOR))
