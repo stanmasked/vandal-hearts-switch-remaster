@@ -15,6 +15,8 @@ on:
       - 'source/platform_input.h'
       - 'source/software_renderer.h'
       - 'tests/test_vh_native_audio_soak.c'
+      - 'tools/generate_ps1_music_sd_fixture.py'
+      - 'tests/test_generate_ps1_music_sd_fixture.py'
       - 'tests/check_native_av_screenshot.py'
       - 'tests/test_check_native_av_screenshot.py'
       - 'tests/check_nro.py'
@@ -25,6 +27,8 @@ on:
       - 'probes/libnx_ps1_music_av.c'
       - 'source/vh_*'
       - 'tests/test_vh_native_audio_soak.c'
+      - 'tools/generate_ps1_music_sd_fixture.py'
+      - 'tests/test_generate_ps1_music_sd_fixture.py'
       - 'Makefile'
 
 permissions:
@@ -46,6 +50,7 @@ jobs:
         run: |
           set -euxo pipefail
           make test-audio-stream
+          python3 -m unittest discover -s tests -p 'test_generate_ps1_music_sd_fixture.py' -v
           gcc -std=c11 -O1 -g -Wall -Wextra -Werror -Isource \
             -fsanitize=undefined -fno-sanitize-recover=all \
             tests/test_vh_native_audio_soak.c source/vh_native_seq.c \
@@ -74,10 +79,14 @@ jobs:
 
 
   emulator:
-    name: Check native AV video heartbeat in NeXium (audio not audited)
+    name: NeXium guest SD case ${{ matrix.sd_case }} (audio not recorded)
     runs-on: ubuntu-26.04
     needs: native-av
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        sd_case: [empty, full, partial]
     steps:
       - uses: actions/checkout@v4
       - name: Download combined libnx AV NRO
@@ -85,6 +94,17 @@ jobs:
         with:
           name: native-libnx-ps1-music-av-probe
           path: nros
+      - name: Prepare isolated synthetic SD fixture (no game assets)
+        shell: bash
+        env:
+          SD_CASE: ${{ matrix.sd_case }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime-evidence
+          sd_root="$RUNNER_TEMP/vh-neXium-$SD_CASE"
+          mkdir -p "$sd_root"
+          python3 -m tools.generate_ps1_music_sd_fixture "$sd_root" --mode "$SD_CASE" > runtime-evidence/sd-fixture-manifest.json
+          echo "NEXIUM_DATA_ROOT=$sd_root" >> "$GITHUB_ENV"
 
       - name: Install headless display and Vulkan
         shell: bash
@@ -147,12 +167,28 @@ jobs:
             test -s "$SHOT2"
           '
           python3 -m unittest discover -s tests -p 'test_check_native_av_screenshot.py' -v
-          python3 tests/check_native_av_screenshot.py "$SHOT1" "$SHOT2" --require-synthetic-source
+          case "${{ matrix.sd_case }}" in
+            empty)
+              source="synthetic"
+              audout="initialized"
+              ;;
+            full)
+              source="user_files"
+              audout="initialized"
+              ;;
+            partial)
+              source="invalid_or_partial"
+              audout="unavailable_or_error"
+              ;;
+            *) exit 2 ;;
+          esac
+          python3 tests/check_native_av_screenshot.py "$SHOT1" "$SHOT2" \
+            --require-audio-source "$source" --require-audout-status "$audout"
 
       - name: Upload AV runtime evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: native-ps1-music-av-nexium-evidence
+          name: native-ps1-music-av-nexium-${{ matrix.sd_case }}-evidence
           path: runtime-evidence/
           if-no-files-found: warn
