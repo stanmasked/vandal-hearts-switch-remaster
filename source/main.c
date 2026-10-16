@@ -153,12 +153,25 @@ static void draw_frame(u32 *pixels, u32 stride, int cursor_x, int cursor_y,
     draw_text(pixels, stride, 1000, 633,
               audio_status < 0 ? "AUDIO ERROR" :
               audio_status == 0 ? "AUDIO START" :
+              audio_status == 2 ? "AUDIO PAUSED" :
               hero_selected ? "MUSIC FOCUS" : "MUSIC FIELD",
               audio_status < 0 ? COLOR_ENEMY : COLOR_MUTED, 1);
 
     /* Small status indicator changes color while the unit is selected. */
     fill_rect(pixels, stride, FB_WIDTH - 116, 42, 44, 44,
               hero_selected ? COLOR_CURSOR : COLOR_HERO);
+}
+
+/* Only ap pname/message processing (main thread) reads libnx focus.
+ * Callback publishes an atomic status; it never invokes audout or
+ * interacts with SPU state from this thread.
+ */
+static void on_music_applet_event(AppletHookType event, void *context) {
+    (void)context;
+    if (event == AppletHookType_OnFocusState ||
+        event == AppletHookType_OnResume)
+        vh_switch_game_audio_set_focus(
+            appletGetFocusState() == AppletFocusState_InFocus);
 }
 
 int main(int argc, char **argv) {
@@ -187,9 +200,21 @@ int main(int argc, char **argv) {
      */
     const int audio_started = vh_switch_game_audio_start(
         vh_game_music_for_state(&state)) == 0;
+    AppletHookCookie focus_hook = {0};
+    if (audio_started) {
+        vh_switch_game_audio_set_focus(
+            appletGetFocusState() == AppletFocusState_InFocus);
+        appletHook(&focus_hook, on_music_applet_event, NULL);
+    }
     u32 frame_tick = 0;
 
     while (appletMainLoop()) {
+        /* Some libnx launch modes suspend main before issuing focus
+         * callbacks. This refresh handles the first frame after resume.
+         */
+        if (audio_started)
+            vh_switch_game_audio_set_focus(
+                appletGetFocusState() == AppletFocusState_InFocus);
         padUpdate(&pad);
         const u64 buttons_down = padGetButtonsDown(&pad);
 
@@ -224,7 +249,10 @@ int main(int argc, char **argv) {
     /* Wait for the audio producer only once during shutdown, never
      * during a gameplay/framebuffer frame.
      */
-    if (audio_started) vh_switch_game_audio_stop();
+    if (audio_started) {
+        appletUnhook(&focus_hook);
+        vh_switch_game_audio_stop();
+    }
     framebufferClose(&fb);
     return 0;
 }
