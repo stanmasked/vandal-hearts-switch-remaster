@@ -24,6 +24,17 @@ LOG = "blendg1-native-events.jsonl"
 MAX_EVENTS = 64
 
 
+
+def complete_events(raw, label):
+    """Reject truncated/noncanonical JSONL even when the hash is valid."""
+    if not raw.endswith(b"\\n") or b"\\r" in raw:
+        raise ValueError(label + ": incomplete or noncanonical line ending")
+    lines = raw.split(b"\\n")[:-1]
+    if not 1 <= len(lines) < MAX_EVENTS or any(not line.strip() for line in lines):
+        raise ValueError(label + ": missing, empty, or over event limit")
+    return [parse_json(line, label) for line in lines]
+
+
 def verify_blendg1_witness(source_dir, native_dir, *, compiler="gcc"):
     source_dir = Path(source_dir).absolute()
     native_dir = Path(native_dir).absolute()
@@ -45,14 +56,8 @@ def verify_blendg1_witness(source_dir, native_dir, *, compiler="gcc"):
 
     # Must fully authenticate the upstream PC DrawOTag/VRAM evidence first.
     verified = verify_pixel_ot(source_dir, native_dir, compiler=compiler)
-    pixel_lines = pixel_raw.splitlines()
-    blend_lines = blend_raw.splitlines()
-    if (not pixel_lines or len(pixel_lines) >= MAX_EVENTS or
-            len(blend_lines) >= MAX_EVENTS or
-            any(not line.strip() for line in pixel_lines + blend_lines)):
-        raise ValueError("empty, truncated or malformed witness stream")
-    pixels = [parse_json(line, "verified scoped PutPixel") for line in pixel_lines]
-    witnesses = [parse_json(line, "BlendG1 witness") for line in blend_lines]
+    pixels = complete_events(pixel_raw, "verified scoped PutPixel")
+    witnesses = complete_events(blend_raw, "BlendG1 witness")
     report = compare_blendg1_witnesses(pixels, witnesses)
     return {
         **report,
