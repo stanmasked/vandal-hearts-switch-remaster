@@ -486,6 +486,93 @@ static void test_seq_concurrent_shadow_and_source_channels(void) {
     assert(seq.cycles_completed==1u && seq.last_error==0);
 }
 
+/* SEQ timing seam: tempo at tick15 takes effect for the NEXT 512-frame
+ * budget, while CC7, CC10 and program changes are used immediately for
+ * note-ons at the same tick. PCM shows left -> right -> centered sound.
+ */
+static void test_seq_tempo_and_controls_across_pcm_blocks(void) {
+    fixture();
+    vh[32u+1u*16u+1u]=95;   /* ghost program #1 */
+    vh[32u+1u*16u+4u]=0;    /* left */
+    vh[32u+7u*16u+1u]=127;
+    vh[32u+7u*16u+4u]=127;  /* right */
+    vh[32u+8u*16u+1u]=63;   /* ghost program #8 */
+    vh[32u+8u*16u+4u]=64;   /* center */
+    memset(&bank,0,sizeof bank);
+    assert(vh_native_vab_load(&bank,vh,sizeof vh,vb,96,arena,224)==0);
+    vh_native_spu_reset(&spu);
+    vh_audio_stream_reset(&fifo);
+
+    static const uint8_t song[] = {
+        'p','Q','E','S',0,0,0,0,1,0xe0,7,0xa1,0x20,0,0,
+        0,0xc0,1,          /* channel 0: ghost program 1 */
+        0,0xb0,7,90,
+        0,0xb0,10,64,
+        0,0x90,90,100,      /* tick 0: left VAG3 */
+        15,0xff,0x51,3,0xd0,0x90, /* tick15: 250000 us/quarter */
+        0,0xb0,7,40,
+        0,0xb0,10,127,
+        0,0xc0,7,
+        0,0x90,92,100,      /* tick15: right VAG3 */
+        30,0xb0,7,100,
+        0,0xb0,10,64,
+        0,0xc0,8,
+        0,0x90,45,100,      /* tick45: center VAG4 */
+        120,0x80,90,0,
+        0,0x80,92,0,
+        0,0x80,45,0,
+        120,0xff,0x2f
+    };
+    VhSeqAudit audit={0};
+    assert(vh_native_seq_audit(song,sizeof song,vh_native_vab_resolve,
+                               &bank,&audit)==0);
+    assert(audit.note_events==3u && audit.resolved_notes==3u);
+    assert(audit.missing_notes==0u && audit.program_changes==3u);
+    assert(audit.tempo_changes==1u);
+    assert(vh_native_seq_init(&seq,song,sizeof song,&spu,
+                              vh_native_vab_resolve,&bank,1)==0);
+
+    const unsigned note_ons[]={1u,2u,2u,3u};
+    const unsigned program[]={1u,7u,7u,8u};
+    const unsigned volumes[]={90u,40u,40u,100u};
+    const unsigned pans[]={64u,127u,127u,64u};
+    const unsigned tempo[]={500000u,250000u,250000u,250000u};
+    const unsigned vag[]={3u,3u,3u,4u};
+    for (unsigned block=0;block<4u;++block) {
+        assert(vh_native_seq_pump(&seq,&fifo)==512);
+        assert(vh_audio_stream_read(&fifo,output,512)==512);
+        assert(seq.blocks_advanced==block+1u);
+        assert(seq.note_ons==note_ons[block]);
+        assert(seq.note_offs==0u && seq.playing);
+        assert(seq.programs[0]==program[block]);
+        assert(seq.volumes[0]==volumes[block]);
+        assert(seq.pans[0]==pans[block]);
+        assert(seq.tempo==tempo[block]);
+        assert(bank.selected_program==program[block]);
+        assert(bank.selected_vag==vag[block]);
+        unsigned audible_l=0,audible_r=0;
+        for (unsigned i=0;i<512u;++i) {
+            if (output[2u*i]) ++audible_l;
+            if (output[2u*i+1u]) ++audible_r;
+        }
+        if (block==0u) assert(audible_l>0u && audible_r==0u);
+        if (block==1u) assert(audible_l==0u && audible_r>0u);
+        if (block==2u) assert(audible_l==0u && audible_r==0u);
+        if (block==3u) assert(audible_l>0u && audible_r>0u);
+    }
+    /* Tempo changed at tick15 *inside* block2. The new faster
+     * tick rate advances only the later block budgets. */
+    assert(seq.tick_budget>20.0 && seq.tick_budget<22.0);
+    unsigned blocks=4u;
+    while(seq.playing && blocks++<80u) {
+        assert(vh_native_seq_pump(&seq,&fifo)==512);
+        assert(vh_audio_stream_read(&fifo,output,512)==512);
+    }
+    assert(!seq.playing && seq.cycles_completed==1u);
+    assert(seq.note_ons==3u && seq.note_offs==3u);
+    assert(seq.last_error==0 && vh_audio_stream_queued(&fifo)==0u);
+}
+
 static void test_strict_invalid_banks_and_no_publish(void) {
     fixture();
     memset(&bank,0x5a,sizeof bank);
@@ -559,6 +646,7 @@ int main(void) {
     test_actual_native_seq_to_vab_to_spu_pcm();
     test_seq_shadow_program_changes_stereo_pcm();
     test_seq_concurrent_shadow_and_source_channels();
+    test_seq_tempo_and_controls_across_pcm_blocks();
     puts("native sparse VH/VB -> SEQ -> SPU stereo PCM: PASS");
     return 0;
 }
