@@ -196,7 +196,7 @@ int main(void) {
     assert(deferred==0u || deferred<1400u);
     assert(accepted==2u && director.active.id==2u);
     assert(director.stage==VH_MUSIC_PLAYING);
-    printf("preloaded two-bank soak: 1400 blocks, %llu frames, %u switches, %u deferred PASS\\n",
+    printf("preloaded two-bank soak: 1400 blocks, %llu frames, %u switches, %u deferred PASS\n",
            (unsigned long long)output_frames,director.switches,deferred);
 
     /* Explicitly stop audio and all borrowed pointers before freeing. */
