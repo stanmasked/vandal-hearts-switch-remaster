@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import re
+import struct
 import sys
 from pathlib import Path, PurePosixPath
 
@@ -55,6 +56,32 @@ def digest_file(path: Path) -> tuple[int, str]:
     return path.stat().st_size, h.hexdigest()
 
 
+def validate_nro_structure(path: Path) -> dict:
+    """Share the basic NRO0 structural gate used by tests/check_nro.py.
+
+    This detects a mislabeled/truncated upload, not a runnable Switch binary.
+    Only the fixed-size header is loaded into RAM; asset data may follow NRO.
+    """
+    size = path.stat().st_size
+    with path.open("rb") as file:
+        header = file.read(0x80)
+    if len(header) < 0x80:
+        raise BundleError("NRO is too small for a complete header")
+    if header[0x10:0x14] != b"NRO0":
+        raise BundleError("NRO0 magic missing at 0x10")
+    declared = struct.unpack_from("<I", header, 0x18)[0]
+    if declared < 0x80 or declared > size:
+        raise BundleError("invalid declared NRO binary size")
+    segments = {}
+    for key, offset_field in (("text", 0x20), ("rodata", 0x28), ("data", 0x30)):
+        start, length = struct.unpack_from("<II", header, offset_field)
+        if not length or start >= declared or start + length > declared:
+            raise BundleError(f"invalid NRO {key} segment range")
+        segments[key] = {"offset": start, "size": length}
+    return {"declared_binary_size": declared, "file_size": size,
+            "segments": segments, "gate": "STRUCTURAL_ONLY"}
+
+
 def record(root: Path, name: str, kind: str) -> dict:
     path = safe_member(root, name, ".nro" if kind == "nro" else ".csv")
     size, digest = digest_file(path)
@@ -62,6 +89,8 @@ def record(root: Path, name: str, kind: str) -> dict:
     if kind == "csv":
         # Explicitly verify the format using the existing strict analyzer.
         audio.load_csv(path)
+    else:
+        validate_nro_structure(path)
     return result
 
 
@@ -115,6 +144,8 @@ def verified_entry(root: Path, item: dict, kind: str) -> Path:
     actual_size, actual_hash = digest_file(path)
     if actual_size != item["size"] or actual_hash != item["sha256"]:
         raise BundleError(f"size or SHA-256 mismatch: {item['path']}")
+    if kind == "nro":
+        validate_nro_structure(path)
     return path
 
 
@@ -155,6 +186,8 @@ def inspect(root: Path) -> dict:
                   not s["counter_rollbacks"] for s in observed))
     return {
         "integrity": "VERIFIED",
+        "nro_structure": "VALID_STRUCTURAL_HEADER_ONLY",
+        "build_provenance": "SELF_REPORTED_UNVERIFIED",
         "telemetry_readiness": "ENOUGH_DATA_FOR_MANUAL_REVIEW" if enough else "INCOMPLETE",
         "hardware_status": HARDWARE_STATUS,
         "git_sha": manifest["git_sha"],
