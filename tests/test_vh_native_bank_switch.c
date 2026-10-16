@@ -46,6 +46,9 @@ int main(void) {
     assert(memcmp(pcm[0],pcm[1],56u*sizeof(int16_t))!=0);
     vh_audio_resample_reset(&resampler);
     uint64_t output_frames=0, checksum[2]={0,0};
+    uint32_t seam_deltas[3]={0,0,0};
+    int16_t last_left=0,last_right=0;
+    int have_last=0;
     for (unsigned transition=0;transition<4u;transition++) {
         const unsigned scene=transition%2u;
         /* Old bank sample pointers are no longer live after the reset. */
@@ -100,6 +103,17 @@ int main(void) {
                 &resampler,source,512u,out,640u);
             assert(n>=555u && n<=559u);
             output_frames+=n;
+            if (block==0u && transition>0u && have_last) {
+                const int dl=(int)out[0]-(int)last_left;
+                const int dr=(int)out[1]-(int)last_right;
+                seam_deltas[transition-1u]=(uint32_t)(dl<0?-dl:dl);
+                const unsigned right=(unsigned)(dr<0?-dr:dr);
+                if(right>seam_deltas[transition-1u])
+                    seam_deltas[transition-1u]=right;
+            }
+            last_left=out[2u*(n-1u)];
+            last_right=out[2u*(n-1u)+1u];
+            have_last=1;
             for(size_t i=0;i<n*2u;i++)
                 checksum[scene]=checksum[scene]*UINT64_C(1099511628211)
                                 +(uint16_t)out[i]+1u;
@@ -116,6 +130,8 @@ int main(void) {
     assert(output_frames+2u>=expected && output_frames<=expected+1u);
     assert(resampler.next_output_tick==output_frames*44100u);
     assert(checksum[0]!=checksum[1]);
+    printf("VAB seam adjacent-sample deltas (PCM16): %u %u %u\\n",
+           seam_deltas[0],seam_deltas[1],seam_deltas[2]);
     puts("two synthetic VAB banks: safe SEQ SPU switch, continuous PCM clock PASS");
     return 0;
 }
