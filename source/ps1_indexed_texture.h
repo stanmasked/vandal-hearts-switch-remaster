@@ -25,6 +25,20 @@ typedef struct {
     size_t pixels_decoded;
 } VhPs1Clut4Stats;
 
+/* Classification of raw 16-bit CLUT words; STP is not an alpha value.
+ * word == 0: fully transparent. Other non-STP colors: opaque.
+ * word bit15 set: optionally semi-translucent on textured semi primitives. */
+typedef enum {
+    VH_PS1_TEXEL_TRANSPARENT = 0,
+    VH_PS1_TEXEL_OPAQUE = 1,
+    VH_PS1_TEXEL_STP = 2
+} VhPs1TexelClass;
+
+static inline uint8_t vh_ps1_classify_clut_word(uint16_t word) {
+    if (word == 0) return VH_PS1_TEXEL_TRANSPARENT;
+    return (word & 0x8000u) ? VH_PS1_TEXEL_STP : VH_PS1_TEXEL_OPAQUE;
+}
+
 static inline uint8_t vh_ps1_5_to_8(unsigned channel) {
     return (uint8_t)((channel << 3) | (channel >> 2));
 }
@@ -76,12 +90,16 @@ static inline int vh_ps1_clut4_read_raw(
  * With map02 atlas, width=height=256, atlas stride=128, and UVWH
  * (u,v,15,15) corresponds to a crop of exactly 16x16 output pixels.
  */
-static inline int vh_ps1_decode_clut4_crop(
+/* Extended decoder emits one class per decoded texel in an optional,
+ * independently strided output. All bounds are prevalidated so an invalid
+ * call never modifies colors, texel flags, or statistics. */
+static inline int vh_ps1_decode_clut4_crop_classified(
     const uint8_t *atlas, size_t atlas_bytes,
     size_t width_texels, size_t height_texels, size_t row_stride_bytes,
     const uint8_t *clut_le, size_t clut_bytes,
     size_t left, size_t top, size_t crop_width, size_t crop_height,
     uint32_t *rgba, size_t output_stride_pixels,
+    uint8_t *classes, size_t class_stride_bytes,
     VhPs1RgbPackFn pack, void *context, VhPs1Clut4Stats *stats) {
     size_t x, y;
     VhPs1Clut4Stats local = {0, 0, 0};
@@ -97,7 +115,9 @@ static inline int vh_ps1_decode_clut4_crop(
         crop_width > width_texels - left ||
         crop_height > height_texels - top ||
         output_stride_pixels < crop_width ||
-        output_stride_pixels > SIZE_MAX / crop_height) {
+        output_stride_pixels > SIZE_MAX / crop_height ||
+        (classes && (class_stride_bytes < crop_width ||
+                     class_stride_bytes > SIZE_MAX / crop_height))) {
         return 0;
     }
     for (y = 0; y < crop_height; ++y) {
@@ -111,6 +131,9 @@ static inline int vh_ps1_decode_clut4_crop(
             uint8_t red, green, blue;
             vh_ps1_bgr555_rgb888(word, &red, &green, &blue);
             rgba[y * output_stride_pixels + x] = pack(red, green, blue, context);
+            if (classes) {
+                classes[y * class_stride_bytes + x] = vh_ps1_classify_clut_word(word);
+            }
             local.transparent_zero_pixels += word == 0;
             local.stp_flag_pixels += !!(word & 0x8000u);
             ++local.pixels_decoded;
@@ -118,6 +141,21 @@ static inline int vh_ps1_decode_clut4_crop(
     }
     if (stats) *stats = local;
     return 1;
+}
+
+/* Source-compatible API: callers that only need RGBA32 and aggregate
+ * counts retain the original behavior and output format. */
+static inline int vh_ps1_decode_clut4_crop(
+    const uint8_t *atlas, size_t atlas_bytes,
+    size_t width_texels, size_t height_texels, size_t row_stride_bytes,
+    const uint8_t *clut_le, size_t clut_bytes,
+    size_t left, size_t top, size_t crop_width, size_t crop_height,
+    uint32_t *rgba, size_t output_stride_pixels,
+    VhPs1RgbPackFn pack, void *context, VhPs1Clut4Stats *stats) {
+    return vh_ps1_decode_clut4_crop_classified(
+        atlas, atlas_bytes, width_texels, height_texels, row_stride_bytes,
+        clut_le, clut_bytes, left, top, crop_width, crop_height,
+        rgba, output_stride_pixels, NULL, 0, pack, context, stats);
 }
 
 #endif
