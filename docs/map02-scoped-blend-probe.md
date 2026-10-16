@@ -63,3 +63,18 @@ begin/end only). GitHub Actions workflow:
 `.github/workflows/map02-scoped-blend.yml`.
 
 This synthetic test is not a genuine source-port build or game rendering.
+
+## Upstream DrawOTag context confirmed
+
+In original `platform/pc/src/libgpu.c`, `DrawOTag` increments
+`s_drawFrame` at the start of each frame. Its OT walker resolves tokens
+and skips bucket nodes before handling real primitives. A private shim
+must therefore count **non-bucket primitive entries**, not raw OT walk
+steps, when supplying `primitive_ordinal`. It must explicitly bind
+the active frame and ordinal to the native raster call before opening
+the scoped PutPixel witness, and clear that context afterward.
+
+No such context shim has been installed in this stage; neither the
+generator nor its test fabricates `frame`, `primitive_ordinal`, or
+`putpixel_step`. This prevents the synthetic C regression from being
+mistaken for authenticated original gameplay capture.
