@@ -445,3 +445,45 @@ bucket ordering correctly handle intentional overlapping
 source-format faces in the native Switch NRO under NeXium.
 It is not evidence of game-authored lighting, real
 `M_MAP02.PRS` or a hardware Nintendo Switch test.
+
+## Source-exact distance attenuation after GTE AVSZ4 (pending native screenshot)
+
+Original `src/core/graphics.c::RenderMapTile` shades each
+textured face using **two distinct inputs**: the per-side
+`gSideLightColor[tileModel->shades[faceIdx]]` RGB
+and the GTE-calculated `OTZ`. The distance component is:
+
+```text
+shading = clamp(OTZ - 150, 0, 256)
+output_component = side_light_component
+                 - ((side_light_component * shading) >> 8)
+```
+
+The camera may produce OTZ below 150 (no distance fading),
+between 150 and 406 (progressive fading), or 406 and
+above (fully dark). `source/vh_private_map_shading.h` contains
+only this *source-exact arithmetic*. It accepts a caller-supplied
+side-light component and does NOT claim to reconstruct the
+source game's dynamic 26-entry `gSideLightColor` table.
+
+The native probe now uses `vh_map_distance_component(128, otz)`
+for the synthetic terrain faces, after its original pinned
+GTE `AVSZ4`. The neutral **128/128/128** side-light input
+is chosen strictly for the synthetic fixture; it is not
+the real game lighting state. The existing near-face checks
+(OTZ 24 and 49) remain unchanged, because they are below
+the source's 150 threshold.
+
+`tests/test_private_map_shading.c` independently verifies
+84 combinations of RGB input and OTZ, including the exact
+thresholds and saturation. A further isolated NeXium
+virtual-SD scene generates a source-format polygon at a
+distant camera-scaled position (`8*near + (0,-476,476)`),
+so its original GTE OTZ rises above 150 but its projected
+footprint nearly coincides with the prior test area. This
+native scene must show visibly attenuated magenta/cyan
+rather than full-intensity primaries.
+
+**Acceptance pending the native CI screenshot.** Original
+side normals, `UpdateLight`, grid-color overrides and real
+game-authored camera values remain out of scope.
