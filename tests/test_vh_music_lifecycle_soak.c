@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "vh_audio_output_recovery.h"
+#include "vh_audio_output_ramp.h"
 #include "vh_audio_resample.h"
 #include "vh_game_music_mailbox.h"
 #include "vh_music_scene.h"
@@ -67,6 +68,7 @@ typedef struct {
     VhAudioResample resampler;
     VhGameMusicMailbox mailbox;
     VhAudioOutputRecovery recovery;
+    VhAudioOutputRamp ramp;
     FakeAudout backend;
     unsigned handled_serial, accepted_scene;
     uint64_t output_frames;
@@ -175,6 +177,11 @@ static void audio_turn(MusicOwner *o,unsigned injected_faults) {
         &o->resampler,o->input,VH_AUDIO_BLOCK_FRAMES,
         o->output,VH_AUDIO_RESAMPLE_MAX_FRAMES);
     assert(o->output_count>=555u && o->output_count<=559u);
+    assert(!vh_audio_output_ramp_apply(
+        &o->ramp,o->output,o->output_count));
+    assert(o->ramp.position==VH_AUDIO_OUTPUT_RAMP_FRAMES);
+    /* Apply once to the newly produced page. A failed output
+     * submission retries these exact bytes, not another fade. */
     o->backend.page_attempts=0;
     o->backend.submit_fails_left=injected_faults;
     VhAudioOutputOps ops=ops_for(&o->backend);
@@ -243,6 +250,8 @@ static void stress(void) {
                     &ops,&o->recovery,force_reopen)==0);
                 assert(o->backend.opened && o->backend.playing);
                 assert_frozen(o,i);
+                vh_audio_output_ramp_arm(&o->ramp);
+                assert(o->ramp.position==0u);
             }
         }
         const unsigned faults=block%37u==7u ? 2u :
@@ -265,6 +274,7 @@ static void stress(void) {
         assert(owner[0].resampler.next_output_tick==
                owner[1].resampler.next_output_tick);
         assert(owner[0].output_count==owner[1].output_count);
+        assert(owner[0].ramp.position==owner[1].ramp.position);
         assert(!memcmp(owner[0].output,owner[1].output,
                        owner[0].output_count*2u*sizeof(int16_t)));
         assert(owner[0].backend.accepted_digest==
