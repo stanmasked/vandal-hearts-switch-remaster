@@ -273,3 +273,11 @@ jobs:
           /tmp/test_vh_native_vab_sanitized > /tmp/vab-sanitized.txt
           diff -u /tmp/vab-o0.txt /tmp/vab-o2.txt
           diff -u /tmp/vab-o2.txt /tmp/vab-sanitized.txt
+      - name: Recheck VAB selection determinism across repeated executions
+        run: |
+          /tmp/test_vh_native_vab_pcm_gate > /tmp/vab-repeat-1.txt
+          /tmp/test_vh_native_vab_pcm_gate > /tmp/vab-repeat-2.txt
+          /tmp/test_vh_native_vab_pcm_gate > /tmp/vab-repeat-3.txt
+          cmp /tmp/vab-repeat-1.txt /tmp/vab-repeat-2.txt
+          cmp /tmp/vab-repeat-1.txt /tmp/vab-repeat-3.txt
+          cmp /tmp/vab-o2.txt /tmp/vab-repeat-1.txt
