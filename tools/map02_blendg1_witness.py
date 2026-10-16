@@ -33,6 +33,13 @@ def compare_blendg1_witnesses(putpixel_rows, witness_rows):
         if step <= last_step:
             raise ValueError("PutPixel steps duplicated or out of order")
         last_step = step
+        for key, upper in (("frame", 2**32 - 1),
+                           ("primitive_ordinal", 2**32 - 1),
+                           ("x", 1023), ("y", 511),
+                           ("accurate", 1), ("abr", 3),
+                           ("before", 65535), ("front", 65535),
+                           ("after", 65535)):
+            _uint(p, key, upper)
         if _uint(p, "semi", 1) == 0:
             if _uint(p, "front", 65535) != _uint(p, "after", 65535):
                 raise ValueError("opaque PutPixel differs from front copy")
