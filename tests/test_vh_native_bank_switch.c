@@ -46,9 +46,10 @@ int main(void) {
     assert(memcmp(pcm[0],pcm[1],56u*sizeof(int16_t))!=0);
     vh_audio_resample_reset(&resampler);
     uint64_t output_frames=0, checksum[2]={0,0};
-    for (unsigned scene=0;scene<2u;scene++) {
+    for (unsigned transition=0;transition<4u;transition++) {
+        const unsigned scene=transition%2u;
         /* Old bank sample pointers are no longer live after the reset. */
-        if(scene) {
+        if(transition) {
             vh_native_seq_stop(&seq);
             assert(!seq.playing);
             /* Old voices cannot retain pointers into the previous PCM bank. */
@@ -96,9 +97,9 @@ int main(void) {
         assert(bank[scene].selected_vag==1u);
     }
     /* Bank A and B must each trigger notes; no lost sequencer state. */
-    assert(output_frames>17000u);
-    assert(resampler.input_frames==32u*512u);
-    const uint64_t expected=((uint64_t)32u*512u-1u)*160u/147u+1u;
+    assert(output_frames>34000u);
+    assert(resampler.input_frames==64u*512u);
+    const uint64_t expected=((uint64_t)64u*512u-1u)*160u/147u+1u;
     assert(output_frames+2u>=expected && output_frames<=expected+1u);
     assert(resampler.next_output_tick==output_frames*44100u);
     assert(checksum[0]!=checksum[1]);
