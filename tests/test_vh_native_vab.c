@@ -50,6 +50,7 @@ static void fixture(void) {
     tone(0,0,0,40,60,60,0,1);
     tone(0,1,0,40,70,70,128,2);
     tone(1,0,7,80,100,254,128,3);
+    vh[2080u + 512u + 1u] = 4; /* music program 7: VagAtr.mode EON */
     tone(2,0,10,40,50,55,0,4);
     const size_t sizes = 2080u + 3u*512u;
     w16(vh, sizes + 0, 2); /* slot zero participates in VB offset */
@@ -97,6 +98,7 @@ static void test_metadata_selection_and_audio(void) {
     assert(bank.selected_program==0 && bank.selected_vag==1);
     assert(vh_native_vab_resolve(&bank,99,90,127,127,64,&out)==0);
     assert(bank.selected_program==7 && bank.selected_vag==3);
+    assert(out.reverb_send == 1);
     assert(vh_native_vab_resolve(&bank,0,75,127,127,64,&out)==0);
     assert(bank.selected_program==7 && bank.selected_vag==3);
     assert(vh_native_vab_resolve(&bank,99,15,127,127,64,&out)==0);
@@ -167,6 +169,7 @@ static void test_actual_native_seq_to_vab_to_spu_pcm(void) {
     assert(vh_native_seq_pump(&seq,&fifo)==512);
     assert(bank.selected_program==7 && bank.selected_vag==3);
     assert(seq.note_ons==1 && seq.playing);
+    assert(spu.voice[0].reverb_send);
     assert(vh_audio_stream_read(&fifo,output,512)==512);
     unsigned audible=0;
     for(unsigned i=0;i<512;i++) {
