@@ -83,16 +83,23 @@ def synthetic_geometry_models():
             int(vy).to_bytes(2, "little", signed=True) +
             int(vz).to_bytes(2, "little", signed=True) + bytes(2)
         )
-    # Source RenderMapTile maps face vertices 0/1/2/3 to
-    # FT4 packet 0/1/3/2. Source vertex 2 is bottom-right.
-    for n, (gfx, ids) in enumerate(((241, (0,1,3,2)), (242, (4,5,7,6)))):
+    # FIRST a reversed backface over the left rectangle (slot 242
+    # would tint it magenta/cyan if it slipped through NCLIP). Insert
+    # it before the two visible faces so, without culling, head-linked
+    # GPU primitives would draw it LAST and corrupt the red/blue probe.
+    # RenderMapTile source vertex 2 maps to FT4 packet corner 3.
+    for n, (gfx, ids) in enumerate((
+        (242, (1,0,2,3)),       # backfacing, MUST be rejected
+        (241, (0,1,3,2)),       # visible left red/blue
+        (242, (4,5,7,6)),       # visible right magenta/cyan
+    )):
         gfx_at = tile_base + VERTICES_BYTES + n * 2
         models[gfx_at:gfx_at + 2] = gfx.to_bytes(2, "little")
         faces_at = tile_base + VERTICES_BYTES + GFX_BYTES + n * 4
         models[faces_at:faces_at + 4] = bytes(ids)
         models[tile_base + VERTICES_BYTES + GFX_BYTES +
                FACE_BYTES + n] = n + 1
-    models[tile_base + TILE_BYTES - 2] = 2
+    models[tile_base + TILE_BYTES - 2] = 3
     models[tile_base + TILE_BYTES - 1] = 4
     return bytes(models)
 
@@ -100,9 +107,9 @@ def synthetic_geometry_models():
 def stage_geometry(sd_root):
     from stage_vh_private_map_geometry import stage_map11_geometry
     metadata = stage_map11_geometry(synthetic_geometry_models(), sd_root)
-    assert metadata["active_faces"] == 2
+    assert metadata["active_faces"] == 3
     assert metadata["populated_tiles"] == 1
-    print("Staged TWO independent MapTileModel FT4 source faces")
+    print("Staged two FRONT faces and one REVERSED NCLIP regression face")
     return metadata
 
 def stage(sd_root):
