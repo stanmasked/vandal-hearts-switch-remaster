@@ -865,3 +865,85 @@ and velocity-dependent gain/pan law, reverb, runtime voice ownership,
 and hardware-based auditory acceptance. The synthetic SDL2 probe is
 not playback of original Vandal Hearts music. Cross-compiling
 C objects is not a confirmed NRO playback test.
+
+
+## Native pQES SEQ scheduler and 512-frame Switch audio probe
+
+The first C11 implementation of Sony's single-track **pQES SEQ**
+scheduler has been added as `source/vh_native_seq.h/.c`.
+This is a native event reader and 512-output-frame clock that drives
+the existing `VhNativeSpu` interface. It is **not** a Standard MIDI
+File player or a new interpretation of raw VAB bank samples.
+
+For now it uses an explicit `VhSeqResolve` callback supplied by
+the caller to map `(program, note, velocity, channel volume, pan)`
+to caller-owned decoded PCM, ADSR, pitch, looping and stereo gains.
+The callback interface intentionally separates the SEQ scheduler from
+the future native VH/VB bank importer. No proprietary asset bytes are
+embedded or committed.
+
+**Supported SEQ events:** Note On, Note Off (including velocity-zero
+Note On), CC07/CC0B volume, CC0A pan, CC78/CC7B all-sounds-off,
+Program Change, ignored polyphonic/channel pressure and pitch bend
+(the latter is not yet applied), PS1 meta `FF 51 tt tt tt` tempo
+**without MIDI meta-length**, and `FF 2F` end-of-track. Running
+status and 1–4-byte variable-length deltas are parsed with hard
+bounds; event data must use MIDI seven-bit values. Unexpected status,
+truncated events, unrecognized meta events, missing end-of-track,
+oversized files (over 256 KiB) or zero-duration infinite loops
+cause initialization to fail before the source bytes or SPU state
+are changed.
+
+**Timing:** `vh_native_seq_advance_block()` adds one 512-frame
+tick budget using tempo at the start of the audio block and processes
+all events whose deltas fit that budget before the associated PCM
+render, matching the software PC port's service ordering. A tempo
+event changes later audio blocks. A clean `FF 2F` loop seam
+clears the remaining tick budget and resets running status while
+keeping channel settings and held note ownership. Finite playback
+supports 1–64 repeats; repeat count 0 means infinite until a
+caller-initiated stop. Every block limits the number of processed
+events to 20,000, preventing unbounded zero-delta event dispatch.
+
+**Voice ownership:** first-free allocation and round-robin stealing
+are delegated to the same 20-slot `VhNativeSpu`. On replacement,
+the prior note's channel back-reference is cleared. Thus a delayed
+Note Off cannot release a new occupant of its old slot. After
+Note Off, the SPU voice may continue its ADSR release and will be
+reused only when the SPU marks it inactive or all voices are occupied.
+
+**SDL2 probe:** the Switch probe uses a fabricated `pQES` sequence
+(program 7, CC07/CC0A, repeated 240-tick note-on/off) and a
+fabricated looping PS1 ADPCM sample. The native resolver maps its
+single synthetic instrument to already decoded PCM and dry gains.
+The main thread invokes SEQ advance **before** `vh_native_spu_render`
+for each 512-frame chunk, then writes into the synchronized SDL2
+FIFO. The audio callback only reads PCM, zero-filling underruns.
+This is a *synthetic native event-to-audio integration test*, not a
+real soundtrack or evidence of audible console output.
+
+Host tests:
+```sh
+make test-audio-stream
+# Test native 512-frame event dispatch and stateful voice allocation:
+./build/test_vh_native_seq
+# devkitPro + Switch SDL2 portlibs required for an NRO:
+make sdl2-audio-probe
+```
+
+`tests/test_vh_native_seq.c` covers malformed sequences and input
+immutability, SEQ header values, Note On/Off, controller/program
+snapshots, MIDI running status, tempo events, finite loop seams,
+20-slot stealing with stale note-off, 512-frame ring backpressure
+(no clock or SPU advancement when full), and synthetic PCM output.
+Both optimized strict C11 builds and UBSan are specified in the
+`Host SPU audio regressions` CI workflow. The AArch64 cross-compile
+workflow now includes `vh_native_seq.c`.
+
+**Limitations:** a real native VAB tone/sample resolver has not yet
+been implemented. The synthetic resolver does not implement the
+full original PsyQ gain law. There is no native game SEQ data
+acquisition, live multi-track playback, pitch bend, reverb, exact
+OpenAL latency simulation or real Nintendo Switch listening test.
+Compilation or CI acceptance alone would not establish a working
+game-music port.
