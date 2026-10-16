@@ -996,3 +996,35 @@ intervening write/revert events, and does not by itself join
 polygons to source MAP02 face identities. Physical PS1 GPU
 correctness, accurate screenshots and a live Switch gameplay
 scene remain unverified.
+
+
+## Strict two-clock MAP02 source face to native PC GPU FT4 join
+
+`tools/verify_map02_source_native_ft4_join.py` now performs an
+**opt-in, private, SHA-bound join** between an independently verified
+decoded MAP02/GTE/CLUT evidence bundle and the separately verified
+original PC GPU `DrawOTag` native VRAM/packet capture. A manifest
+must explicitly identify the **game source frame** and the
+**GPU DrawOTag frame**; the two counters are not assumed to be equal
+or synchronized. Refer to `docs/MAP02_SOURCE_NATIVE_FT4_JOIN.md`
+for the full local-file format and invocation.
+
+Each source-keyed `(record_index, face_index)` normal terrain
+face must match **exactly one** actual-format `POLY_FT4`
+packet by all four GPU-order (0,1,3,2) screen corners, all four
+UV corners, `tpage`, `CLUT` and GP0(E2) texture window.
+Repeated or missing candidates, or one packet compatible with
+multiple distinct source records, fail closed. The verifier
+also checks every 16-bit VRAM word actually addressed by that
+face's 4bpp texture and index-selected CLUT entries against
+the captured *pre-draw* VRAM; unrelated render-target writes
+are deliberately ignored. A capture that exhausted its bounded
+64-record limit is rejected as potentially incomplete.
+
+This join establishes **internal agreement between caller-supplied
+records only**, not their historical provenance or a cryptographic
+binding to original gameplay. It does not reconstruct GTE-to-GPU
+timestamps, authenticate input sources, prove a complete GPU
+frame, support fluctuating framewide texture bytes, or validate
+physical PS1 raster output or live Nintendo Switch gameplay.
+Regression tests use synthetic, self-contained input data only.
