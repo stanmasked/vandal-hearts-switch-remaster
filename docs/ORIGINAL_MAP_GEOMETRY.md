@@ -593,3 +593,69 @@ This restores source light normal and NCCS computations in
 a **test-controlled camera/light configuration**; it does
 not recover the actual game scene's dynamic light rotation,
 gLightColor, grid overrides, or full RenderMapTile.
+
+## Automatic source-face normal assignment with pinned GTE OP0 (candidate)
+
+In addition to `SetupLightNormals` and `UpdateLight`, the pinned
+original `src/core/graphics.c::UpdateMapTileLighting` examines
+EVERY active face in each `MapTileModel` and overwrites
+`shades[face]` with one of the 26 normal indices.
+
+The source algorithm first selects three of each face's **original
+vertex IDs**. It has four special fallback branches for repeated
+source vertex indices; preserving only the corresponding Cartesian
+positions is not sufficient. The source then computes two 3D
+difference vectors, calls its original
+`gte_OuterProduct0` (actual pinned GTE OP0), normalizes the
+result with `VectorNormalS` into Q12 and selects the
+normal maximizing this signed integer dot product:
+
+```text
+dot = side_normal[j].x * face_normal.x
+    + side_normal[j].y * face_normal.y
+    + side_normal[j].z * face_normal.z
+```
+
+On an exact dot tie, the original source counts matching
+nonzero signs and matching integer components on all three
+axes, and switches to the later candidate **only if**
+its six-rule score is strictly higher. There is no
+floating-point dot calculation or epsilon-based tie.
+The original default winner is index zero.
+
+This functionality is implemented in
+`source/vh_private_map_normals.[ch]` and is exercised
+against the **exact pinned** `libgte.c` and
+`inline_gte.h` in `tests/test_private_map_normals.c`.
+The private 304-byte tile loader now also retains each
+face's quartet of source vertex IDs. The new function is
+transactional: invalid face indices or counts leave the
+input `VhPreviewGeometry` unchanged.
+
+### Owner-only opt-in for map-preview geometry
+
+The existing NRO still defaults to **original stored shade IDs**
+and to the previously validated 26-side test-light behavior.
+To request recalculated indices, stage the exact one-byte
+file `LIGHT_RECOMPUTE_SHADES.BIN` containing binary 1 at
+`sdmc:/switch/vandal-hearts-remaster/private-assets/`.
+A missing file leaves the model unchanged; any other value,
+extra bytes or truncated file is rejected. The one-byte
+`LIGHT_TEST_INTENSITY.BIN` still controls synthetic light
+intensity separately and is NOT original gameplay state.
+
+The sixth isolated NeXium fixture uses two tilted quads,
+with opposite X components in their computed 3D normals.
+Its source `shades[]` are deliberately mislabelled
+(+X on the left, -X on the right), so simply trusting
+those bytes would invert the test's left/right light
+contrast. The GTE OP0 path must instead recompute
+the normal indices from geometry, then pass them through
+the already-verified GTE NCCS, distance shading and FT4
+GPU primitives.
+
+**Status:** The original source-face GTE OP0/normal-index
+host test and new Switch NRO compilation have already passed
+in an intermediate CI run. Final screenshot acceptance for
+the sixth NeXium mode has not yet been recorded here.
+No owner commercial map bytes were required.
