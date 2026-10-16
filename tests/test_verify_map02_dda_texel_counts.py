@@ -58,7 +58,7 @@ class NativeDdaCountAuditTests(unittest.TestCase):
         self.assertTrue(report["all_sampling_decisions_in_original_dda"])
         self.assertFalse(report["primitive_pixel_write_count_inferred"])
         self.assertFalse(report["original_gameplay_authenticated"])
-        for forbidden in ('"x"', '"y"', '"clut"', "31978", "bgr555":", '"uv"'):
+        for forbidden in ('"x"', '"y"', '"clut"', "31978", 'bgr555":', '"uv"'):
             self.assertNotIn(forbidden, json.dumps(report))
 
     def test_zero_samples_are_valid_for_fully_clipped_ft4(self):
