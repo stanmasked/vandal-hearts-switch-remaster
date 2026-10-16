@@ -1932,7 +1932,7 @@ jobs:
           m=Path("proof/SYNTHETIC_V66_MANIFEST.json")
           data=json.loads(m.read_text())
           data["source_class"]="user-supplied-unverified"
-          m.write_text(json.dumps(data,sort_keys=True)+"\\n")
+          m.write_text(json.dumps(data,sort_keys=True)+"\n")
           PY
           mapfile -t heads < <(python3 - <<'PY'
           import json
@@ -1976,7 +1976,7 @@ jobs:
           changed=copy.deepcopy(original)
           i=next(i for i,x in enumerate(changed) if x["kind"]=="GP0_DMA2")
           changed[i]["words"][0]^=1
-          p.write_text("".join(json.dumps(x)+"\\n" for x in changed))
+          p.write_text("".join(json.dumps(x)+"\n" for x in changed))
           cmd=["python3","-m","remaster.tools.ingest_map02_v65_gpu_probe",
                "--ram","proof/SYNTHETIC_V66_RAM.bin",
                "--manifest","proof/SYNTHETIC_V66_MANIFEST.json",
