@@ -43,6 +43,11 @@ int main(void) {
     assert(groups.first_after_switch.pages==2u);
     assert(groups.first_after_switch.retried_pages==1u);
     assert(groups.ordinary.wait_le_page==2u);
+    assert(seams.first_wait_band==0u);
+    for (unsigned band=0;band<VH_AUDIO_WAIT_BANDS;band++) {
+        assert(groups.ordinary.failed_in_band[band]==0u);
+        assert(groups.first_after_switch.failed_in_band[band]==0u);
+    }
     assert(groups.ordinary.wait_gt_4pages==1u);
     assert(groups.first_after_switch.wait_le_4pages==1u);
     assert(groups.first_after_switch.wait_le_2pages==1u);
@@ -57,6 +62,16 @@ int main(void) {
 
     VhAudioPcmSeams tampered=seams;
     tampered.ordinary.count[3]++;
+    assert(vh_audio_output_verify_pcm_seams(&tampered,&groups,5u)==-1);
+    /* Compensating corruption: category total stays 2 and no seam
+     * bin exceeds its *page* bin. The old totals-only checker would
+     * incorrectly accept this shifted distribution. */
+    tampered=seams;
+    tampered.ordinary.count[0]++;
+    tampered.ordinary.count[3]--;
+    assert(vh_audio_output_verify_pcm_seams(&tampered,&groups,5u)==-1);
+    tampered=seams;
+    tampered.first_wait_band=3u;
     assert(vh_audio_output_verify_pcm_seams(&tampered,&groups,5u)==-1);
     tampered=seams;
     tampered.first_after_switch.peak_abs_step[0]=1u;
@@ -90,6 +105,58 @@ int main(void) {
     assert(vh_audio_output_record_pcm_seam(
         &fresh,pcm[0],frames,1,&empty,&first,hz)==-1);
     assert(fresh.delivered_pages==0u);
+
+    /* Independent trace: initial delivered page has a >4x wait,
+     * second delivered page <=1x, third page fails <=1x. Failed
+     * pages belong in the wait histogram but create NO PCM seam. */
+    VhAudioSceneWaits with_failure={0};
+    VhAudioPcmSeams delivered={0};
+    VhAudioSubmitTiming clock={0};
+    const VhAudioSubmitTiming before_first=clock;
+    assert(vh_audio_output_record_submit_timing(
+        &clock,4000u,hz,frames,1)==0);
+    assert(vh_audio_output_record_scene_page(
+        &with_failure,&before_first,&clock,hz,frames,0,1)==0);
+    assert(vh_audio_output_record_pcm_seam(
+        &delivered,pcm[0],frames,0,&before_first,&clock,hz)==0);
+    assert(delivered.first_wait_band==3u);
+    assert(vh_audio_output_verify_pcm_seams(
+        &delivered,&with_failure,1u)==0);
+    const VhAudioSubmitTiming before_second=clock;
+    assert(vh_audio_output_record_submit_timing(
+        &clock,200u,hz,frames,1)==0);
+    assert(vh_audio_output_record_scene_page(
+        &with_failure,&before_second,&clock,hz,frames,0,1)==0);
+    assert(vh_audio_output_record_pcm_seam(
+        &delivered,pcm[1],frames,0,&before_second,&clock,hz)==0);
+    const VhAudioSubmitTiming before_failed=clock;
+    assert(vh_audio_output_record_submit_timing(
+        &clock,200u,hz,frames,0)==0);
+    assert(vh_audio_output_record_scene_page(
+        &with_failure,&before_failed,&clock,hz,frames,0,0)==0);
+    assert(with_failure.ordinary.pages==3u);
+    assert(with_failure.ordinary.failed_pages==1u);
+    assert(with_failure.ordinary.failed_in_band[0]==1u);
+    assert(with_failure.ordinary.wait_le_page==2u);
+    assert(with_failure.ordinary.wait_gt_4pages==1u);
+    assert(delivered.ordinary.count[0]==1u);
+    assert(delivered.ordinary.count[3]==0u);
+    assert(vh_audio_output_verify_pcm_seams(
+        &delivered,&with_failure,2u)==0);
+    VhAudioSceneWaits moved_failure=with_failure;
+    moved_failure.ordinary.failed_in_band[0]=0u;
+    moved_failure.ordinary.failed_in_band[3]=1u;
+    assert(vh_audio_output_verify_pcm_seams(
+        &delivered,&moved_failure,2u)==-1);
+    moved_failure=with_failure;
+    moved_failure.ordinary.failed_in_band[0]=2u;
+    assert(vh_audio_output_verify_pcm_seams(
+        &delivered,&moved_failure,2u)==-1);
+    VhAudioPcmSeams misclassified=delivered;
+    misclassified.first_wait_band=0u;
+    assert(vh_audio_output_verify_pcm_seams(
+        &misclassified,&with_failure,2u)==-1);
+
     puts("audout / PCM seam correlation: generated five-page trace PASS");
     return 0;
 }

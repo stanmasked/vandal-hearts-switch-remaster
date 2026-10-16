@@ -58,6 +58,8 @@ uint64_t vh_audio_output_ticks_to_us(uint64_t ticks,
  * call longer than that page's 48-kHz duration. Retry time is included
  * in total_ticks but reopening time is not. This is observation only.
  */
+/* One common classification for audout waits and PCM seams. */
+#define VH_AUDIO_WAIT_BANDS 4u
 typedef struct {
     uint64_t pages, total_ticks, peak_page_ticks;
     uint64_t slow_pages, retried_pages, failed_pages;
@@ -68,6 +70,11 @@ typedef struct {
      */
     uint64_t wait_le_page, wait_le_2pages;
     uint64_t wait_le_4pages, wait_gt_4pages;
+    /* Failed pages are included in the four wait histogram bins
+     * but have no returned PCM and therefore no inter-page seam.
+     * Track their exact bins so the seam audit can subtract them.
+     */
+    uint64_t failed_in_band[VH_AUDIO_WAIT_BANDS];
 } VhAudioPageWaitBucket;
 typedef struct {
     VhAudioPageWaitBucket ordinary, first_after_switch;
@@ -89,7 +96,7 @@ int vh_audio_output_record_scene_page(
  * A PCM seam is NOT proof of an audible click or service underrun.
  * The last L/R samples are held in memory only, never exported.
  */
-#define VH_PCM_SEAM_BANDS 4u
+#define VH_PCM_SEAM_BANDS VH_AUDIO_WAIT_BANDS
 typedef struct {
     uint64_t count[VH_PCM_SEAM_BANDS];
     uint32_t peak_abs_step[VH_PCM_SEAM_BANDS];
@@ -102,6 +109,10 @@ typedef struct {
     /* Last successfully returned page; no PCM sample material here. */
     uint32_t last_abs_step;
     unsigned last_wait_band;
+    /* First delivered PCM page has no predecessor; remember its
+     * actual wait bin rather than always assuming the <=1x band.
+     */
+    unsigned first_wait_band;
 } VhAudioPcmSeams;
 
 /* Only call after the exact PCM descriptor was returned. The first
@@ -113,8 +124,11 @@ int vh_audio_output_record_pcm_seam(
     int first_after_switch, const VhAudioSubmitTiming *before,
     const VhAudioSubmitTiming *after, uint64_t tick_frequency);
 
-/* Returns 0 only if the completed-page total and the cross-tabulated
- * seam counts agree with the ordinary/boundary audout histograms. */
+/* Returns 0 only if EVERY per-category wait bin has exactly the
+ * delivered-page count minus failed pages in that same wait bin,
+ * minus the single first page in its actual wait bin. This prevents
+ * compensating count corruption that totals-only checks can miss.
+ */
 int vh_audio_output_verify_pcm_seams(
     const VhAudioPcmSeams *stats, const VhAudioSceneWaits *waits,
     uint64_t completed_pages);

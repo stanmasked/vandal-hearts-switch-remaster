@@ -672,6 +672,7 @@ int main(void) {
     aborted.ordinary.total_ticks=100u;
     aborted.ordinary.peak_page_ticks=100u;
     aborted.ordinary.wait_le_page=1u;
+    aborted.ordinary.failed_in_band[0]=1u;
     VhAudioOutputRecovery aborted_recovery={.submit_failures=1u};
     VhAudioSubmitTiming aborted_timing={
         .calls=1u,.total_ticks=100u,.max_ticks=100u,

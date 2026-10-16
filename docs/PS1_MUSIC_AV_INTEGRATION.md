@@ -1079,3 +1079,29 @@ numbers nor an absence of A marks establishes glitch-free output.
 No playback path, copyrighted bytes, controller history, or SD
 storage is changed. The portable regression checks boundary cases,
 overflow, invalid counters and non-monotone tick samples.
+
+
+### Exact per-band audit including terminal audio failures
+
+The inter-page PCM seam audit now rejects *compensating bin corruption*:
+the total seam count may be correct and each seam count can still stay
+below the raw audout wait-bin count while a seam is assigned to the
+wrong duration range. The verifier now requires exact agreement in
+each ordinary/first-after-switch wait band, not just aggregate totals.
+
+The per-page audout recorder also keeps a separate four-bin
+histogram of **terminally failed logical pages**. Such attempts are
+already present in the service-wait histogram but must never produce
+a returned-PCM seam. The verifier subtracts the failed pages from
+their respective bins and, if any successful page exists, subtracts
+the single first returned page from its **recorded actual wait band**
+(it has no preceding sample). This also supports a first-page
+wait longer than 4x the nominal PCM page duration. Invalid failed-bin
+distributions, mismatched category/bin counts, tampered first-page
+classification, and nonzero peaks in empty seam bins all fail closed.
+
+A portable generated host regression covers both a five-page
+steady/scene-switch trace with a recovered submission and a distinct
+two-delivered/one-failed trace starting in the >4x band. No music
+content, audio samples or timing traces are written to SD. This
+is evidence-accounting hardening, not evidence of audible glitches.
