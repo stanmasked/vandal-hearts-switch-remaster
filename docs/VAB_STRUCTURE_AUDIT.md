@@ -461,6 +461,36 @@ reloads both banks and resumes the next scene without retaining old
 voice pointers. This verifies lifetime cleanup in host tests; it
 does not establish real hardware concurrency or playback fidelity.
 
+## Repeated two-bank preload recovery (48-cycle host gate)
+
+`tests/test_vh_game_music_banks.c` also performs **48 consecutive
+failed-update/recovery cycles** against synthetic on-disk
+`field` and `selected` triplets. Each cycle deliberately introduces
+one of six failures: invalid VH signature, missing SEQ, truncated VB,
+malformed SEQ, missing VH, or a referenced out-of-range VAG index.
+A failed preload must return an error without publishing a half-bank
+or modifying the previously playing scene, resolver, SEQ bytes, or
+decoded PCM pointers.
+
+After restoring both triplets, the fixture stages a new complete pack
+*while the old pack is still active*. It confirms the two packs own
+distinct PCM arenas, tests rejection of a second load through a
+nonempty publication pointer, then forces teardown from different
+states (PLAYING, FADE_OUT, SWITCH_PENDING, FADE_IN). After detaching,
+it releases the old memory and starts a new cue from the replacement
+pack. The last cleanup renders silence after all arenas are freed.
+
+This gate runs in regular host CI and UBSan. A dedicated GitHub Actions
+step additionally compiles it with **AddressSanitizer + UBSan and leak
+detection** (`ASAN_OPTIONS=detect_leaks=1:halt_on_error=1`) to catch
+use-after-free, out-of-bounds access and memory leaks through repeated
+reloads. The code intentionally does **not** hot-reload files on the
+audio callback or silently replace an active music pack on errors.
+
+These checks cover serialized host-side lifetime management only, not
+cross-thread teardown while audio is actively running on real Switch
+hardware. The old bank must stay allocated until a controlled detach.
+
 ## SPU ADSR and sample cursor (host-only)
 
 The next isolated component is `tools/simulate_spu_voice.py`, which
