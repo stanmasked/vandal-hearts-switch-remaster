@@ -110,17 +110,19 @@ static const uint8_t song[]={
     0,0xc0,7,0,0x90,60,110,0x81,0x70,0x80,60,0,
     0x81,0x70,0xff,0x2f
 };
-static int16_t sample[128], src[512u*2u], dst[640u*2u];
+static int16_t sample[128], alternate_sample[128];
+static int16_t src[512u*2u], dst[640u*2u];
+static VhSpuReverb history_before_switch;
 static VhNativeSpu spu;
 static VhNativeSeq seq;
 static VhAudioResample resampler;
 static int resolve(void *ctx,unsigned program,unsigned note,
                    unsigned velocity,unsigned volume,unsigned pan,
                    VhSeqTone *out) {
-    (void)ctx;(void)velocity;(void)volume;(void)pan;
+    (void)velocity;(void)volume;(void)pan;
     if (!out || program!=7u || note!=60u) return -1;
     memset(out,0,sizeof *out);
-    out->pcm=sample;
+    out->pcm=ctx ? (const int16_t *)ctx : sample;
     out->frames=128u;
     out->loop_start=0;
     out->loop_end=128;
@@ -280,6 +282,98 @@ int main(void) {
     assert(spu.frames_rendered==old_clock);
     assert(resampler.input_frames==old_input);
     assert(seq.note_ons==old_notes);
+    /* Combine bank switching and blocking audout page ownership.
+     * Unlike the previous single-bank test, this one changes the
+     * borrowed voice sample arena between 6 eight-block scenes.
+     * No switch or PCM overwrite occurs before the mock reports
+     * release of the exact previous page, including after failures.
+     */
+    for (unsigned i=0;i<128u;i++)
+        alternate_sample[i]=(int16_t)(6000-(int)i*127);
+    vh_native_spu_reset(&spu);
+    assert(vh_native_spu_set_reverb(&spu,1,.5f)==0);
+    vh_audio_resample_reset(&resampler);
+    assert(vh_native_seq_init(&seq,song,sizeof song,&spu,resolve,
+                              sample,0)==0);
+    Mock switching={.opened=1,.playing=1,
+                    .checksum=UINT64_C(1469598103934665603)};
+    VhAudioOutputOps switch_ops=callbacks(&switching);
+    VhAudioOutputRecovery switch_stats={0};
+    uint64_t check_hash=UINT64_C(1469598103934665603);
+    uint64_t frame_count=0;
+    unsigned switch_count=0, extra_submits=0, recovered_pages=0;
+    for (unsigned block=0;block<48u;block++) {
+        if (block && block%8u==0u) {
+            /* Submissions are synchronous: all previous page memory
+             * must already have returned to the caller.
+             */
+            assert(switching.accepted==block);
+            assert(switch_stats.pages_submitted==block);
+            assert(switching.page_pointer==dst);
+            assert(switching.attempts_this_page>=1u);
+            const uint64_t old_input=resampler.input_frames;
+            const uint64_t old_tick=resampler.next_output_tick;
+            memcpy(&history_before_switch,&spu.reverb,
+                   sizeof(history_before_switch));
+            const int16_t *new_source=(block/8u)%2u
+                ? alternate_sample : sample;
+            assert(vh_native_seq_switch_scene(&seq,song,sizeof song,&spu,
+                       resolve,(void *)new_source,0)==0);
+            assert(!memcmp(&spu.reverb,&history_before_switch,
+                           sizeof(history_before_switch)));
+            assert(resampler.input_frames==old_input);
+            assert(resampler.next_output_tick==old_tick);
+            assert(seq.context==new_source);
+            assert(spu.frames_rendered==0u);
+            for (unsigned slot=0;slot<VH_NATIVE_MUSIC_VOICES;slot++) {
+                assert(!spu.voice[slot].active);
+                assert(spu.voice[slot].pcm==NULL);
+            }
+            ++switch_count;
+        }
+        assert(vh_native_seq_advance_block(&seq)>=0);
+        vh_native_spu_render(&spu,src,512u);
+        const size_t frames=vh_audio_resample_process(
+            &resampler,src,512u,dst,640u);
+        assert(frames>=555u && frames<=559u);
+        const uint64_t hash=hash_page(dst,frames);
+        check_hash=(check_hash^hash)*UINT64_C(1099511628211);
+        frame_count+=frames;
+        const uint64_t old_input=resampler.input_frames;
+        const uint64_t old_tick=resampler.next_output_tick;
+        const uint64_t old_voice_time=spu.frames_rendered;
+        const uint64_t old_notes=seq.note_ons;
+        begin_page(&switching,block%19u==7u ? 1u : 0u);
+        switching.mismatched_returns_left=(block%13u==5u);
+        switching.null_returns_left=(block%17u==11u);
+        const unsigned failures=switching.failures_left+
+            switching.mismatched_returns_left+switching.null_returns_left;
+        extra_submits+=failures;
+        recovered_pages+=(failures!=0u);
+        assert(vh_audio_output_submit_recover(&switch_ops,&switch_stats,
+                                              dst,frames)==0);
+        assert(switching.accepted==block+1u);
+        assert(switch_stats.pages_submitted==block+1u);
+        assert(switching.attempts_this_page==failures+1u);
+        assert(hash_page(dst,frames)==hash);
+        assert(resampler.input_frames==old_input);
+        assert(resampler.next_output_tick==old_tick);
+        assert(spu.frames_rendered==old_voice_time);
+        assert(seq.note_ons==old_notes);
+    }
+    assert(switch_count==5u);
+    assert(switching.accepted==48u);
+    assert(switching.submissions==48u+extra_submits);
+    assert(switching.checksum==check_hash);
+    assert(switch_stats.frames_submitted==frame_count);
+    assert(switch_stats.pages_submitted==48u);
+    assert(switch_stats.submit_failures==extra_submits);
+    assert(switch_stats.restart_attempts==extra_submits);
+    assert(switch_stats.recoveries==recovered_pages);
+    assert(extra_submits>0u && recovered_pages>0u);
+    assert(resampler.input_frames==48u*512u);
+    assert(frame_count==((48u*512u-1u)*48000u)/44100u+1u);
+    assert(resampler.next_output_tick==frame_count*44100u);
     printf("audout recovery: %u accepted pages, %u restarts, clock stable PASS\n",
            device.accepted,stats.restart_attempts);
     return 0;
