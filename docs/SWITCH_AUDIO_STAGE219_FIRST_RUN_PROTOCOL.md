@@ -93,7 +93,7 @@ python3 tools/assess_switch_audio_first_run.py switch-audio-real-run-219 \
 
 Нормальный код `0` означает **только успешное составление отчёта**. Во всех случаях `hardware_status: HARDWARE NOT TESTED` — это статус **независимой машинной проверки**, не отрицание того, что оператор мог фактически провести тест. Инструмент **не может подтвердить личность оператора, наличие Switch, независимость физических сеансов и подлинность человеческих наблюдений**. Финальное решение оформляется отдельно человеком.
 
-15 host-only регрессий [`tests/test_assess_switch_audio_first_run.py`](../tests/test_assess_switch_audio_first_run.py) используют **синтетические** CSV и NRO-заголовки, не игровые ресурсы или физическую Switch. Включены в `make test` и `make test-audio-stream`.
+16 host-only регрессий [`tests/test_assess_switch_audio_first_run.py`](../tests/test_assess_switch_audio_first_run.py) используют **синтетические** CSV и NRO-заголовки, не игровые ресурсы или физическую Switch. Включены в `make test` и `make test-audio-stream`.
 
 ## 6. Критерий завершения этапа №219
 
