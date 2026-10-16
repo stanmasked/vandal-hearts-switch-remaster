@@ -1,0 +1,70 @@
+name: Switch native music audio NRO
+
+on:
+  push:
+    branches:
+      - test/cdxa-extract-decode-pipeline
+    paths:
+      - "source/vh_*"
+      - "probes/sdl2_audio_smoke.c"
+      - "tests/test_vh_audio_assets.c"
+      - "Makefile"
+      - ".github/workflows/switch-audio-nro.yml"
+  pull_request:
+    paths:
+      - "source/vh_*"
+      - "probes/sdl2_audio_smoke.c"
+      - "Makefile"
+      - ".github/workflows/switch-audio-nro.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audio-nro:
+    name: Build and validate Switch SDL2 music audio NRO
+    runs-on: ubuntu-latest
+    container: devkitpro/devkita64:latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout working branch
+        uses: actions/checkout@v4
+
+      - name: Install Nintendo Switch SDL2 development libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          conf="${DEVKITPRO:-/opt/devkitpro}/pacman/etc/pacman.conf"
+          if [ -f "$conf" ] && ! grep -q '^XferCommand[[:space:]]*=' "$conf"; then
+            sed -i '/^\[options\]/a XferCommand = /usr/bin/curl --user-agent "pacman/6.1.0 (Linux x86_64) libalpm/14.0.0" -L -C - -f -o %o %u' "$conf"
+          fi
+          for attempt in 1 2 3 4; do
+            if dkp-pacman -Sy --noconfirm switch-sdl2; then break; fi
+            if [ "$attempt" -eq 4 ]; then exit 1; fi
+            sleep $((attempt * 5))
+          done
+          test -x "${DEVKITPRO:-/opt/devkitpro}/portlibs/switch/bin/sdl2-config"
+
+      - name: Compile and inspect music NRO
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$DEVKITPRO/portlibs/switch/bin:$PATH"
+          make sdl2-audio-probe
+          test -s build/sdl2-audio-switch-probe.nro
+
+      - name: Run synthetic native music tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          make test-audio-stream
+
+      - name: Upload synthetic/local-resource audio NRO
+        uses: actions/upload-artifact@v4
+        with:
+          name: switch-music-audio-nro
+          path: build/sdl2-audio-switch-probe.nro
+          if-no-files-found: error
