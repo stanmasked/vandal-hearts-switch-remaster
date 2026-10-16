@@ -505,3 +505,61 @@ light directions or intensities.
 
 Original side normals, `UpdateLight`, grid-color overrides
 and real game-authored camera values remain out of scope.
+
+## Original 26-direction UpdateLight bridge — implementation candidate
+
+The pinned upstream `src/core/graphics.c::SetupLightNormals`
+provides **26 signed direction vectors**, including the six
+cardinal normals plus 20 diagonal directions (four in the
+horizontal plane, eight toward +Y and eight toward -Y).
+Each is normalized to PS1 Q12 fixed point with the genuine
+pinned `VectorNormalS`. `UpdateLight` rotates a Q12
+`(4096,0,0)` vector using `gLightRotation`, negates the
+result into the first row of the GTE light matrix, runs the
+original `gte_NormalColorCol` = load normal + load RGB
++ **NCCS** + store RGB for all 26 normals, and then calculates:
+
+```text
+color[channel] = (gLightColor[channel] *
+    (intensity + (nccs[channel] * (128 - intensity) >> 7))) >> 7
+```
+
+For map 32 only, nine mirrored normal pairs are copied after
+the color calculation; **map 11 does not activate that special
+case**. No raw game texture data are needed for these calculations.
+
+New native source files `source/vh_private_map_light.[ch]`
+implement that normal sequence and arithmetic using the
+**same pinned `platform/pc/src/libgte.c`** already linked
+for perspective, backface and OTZ. The demo's explicit
+`gLightColor=(128,128,128)`, rotation=(0,0,0)
+and intensity=32 are **synthetic test settings**, NOT yet
+recovered from an original battle. At intensity=128 the
+table evaluates to neutral 128 for every color and every
+normal, retaining all previous raster screenshot checks.
+
+A one-byte owner-only opt-in
+`sdmc:/switch/vandal-hearts-remaster/private-assets/LIGHT_TEST_INTENSITY.BIN`
+selects intensity in the range 0..128; missing means neutral
+128, partial/oversized or out-of-range means an error without
+falling back. The new isolated virtual SD scene stages the
+existing 3-face synthetic MapTileModel, selects **shade ID 4
+(-X)** on the visible left face and **shade ID 2 (+X)** on
+the right face, and writes intensity 32. With a zero-angle
+synthetic light, the original GTE NCCS makes the -X
+surface's red channel stronger than the +X surface.
+Per-face color is then combined with the already-verified
+source distance attenuation and submitted through FT4/OT.
+
+The host regression `tests/test_private_map_light.c` links
+the exact pinned libgte, checks selected original Q12 normals,
+verifies the neutral 128 baseline and unequal directional
+responses, and rejects malformed private opt-in files.
+`tests/test_stage_vh_private_map_geometry.py` also
+checks the exact light stage and face shade indices.
+
+**Acceptance requires a green full CI and NeXium screenshot.**
+This restores source light normal and NCCS computations in
+a test-controlled camera/light configuration; it does not
+recover the actual game scene's dynamic light rotation,
+gLightColor, grid overrides, or full RenderMapTile.
