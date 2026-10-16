@@ -124,6 +124,44 @@ class ReportMap02BridgeTests(unittest.TestCase):
                 self.assertIn("Map load 2 — JSONL events 7–12", markdown)
                 self.assertIn("Visible pixels confirmed:** no", markdown)
 
+    def test_complementary_partial_map_loads_never_form_a_false_prs_verdict(self):
+        compiler = shutil.which("cc") or shutil.which("gcc")
+        if compiler is None:
+            self.skipTest("C compiler required")
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            executable, trace_dir = fixture(root, trace_mode="full")
+            source = root / "fake-pcport.c"
+            original = source.read_text(encoding="utf-8")
+            first = [full_events()[0], full_events()[2], full_events()[3]]
+            second = [full_events()[1], full_events()[4], full_events()[5]]
+            emitted = "\n".join(f"puts({json.dumps(json.dumps(event))});"
+                                 for event in first + second)
+            # Keep the binary provenance strings created by the fixture, but
+            # replace the stream with two intentionally incomplete load passes.
+            source.write_text(original.split("int main(void) {", 1)[0]
+                              + "int main(void) {\n" + emitted
+                              + "\nreturn 0;\n}\n", encoding="utf-8")
+            subprocess.run([compiler, "-std=c11", str(source), "-o", str(executable)],
+                           capture_output=True, text=True, check=True)
+            directory = root / "capture"
+            self.assertEqual(capture(executable, trace_dir, directory), 2)
+            report = review_capture(directory)
+            self.assertEqual(report["trace_events"], 6)
+            self.assertEqual(report["map_load_count"], 2)
+            self.assertEqual(report["runtime_variant"], "undetermined")
+            self.assertFalse(report["capture_complete"])
+            self.assertEqual(report["faces"], [])
+            self.assertTrue(any("map load 1: missing" in error
+                                for error in report["errors"]))
+            self.assertTrue(any("map load 2: missing" in error
+                                for error in report["errors"]))
+            self.assertEqual([x["event_range"] for x in report["map_loads"]],
+                             [{"first": 1, "last": 3}, {"first": 4, "last": 6}])
+            markdown = markdown_review(report)
+            self.assertIn("Map load 1 — JSONL events 1–3", markdown)
+            self.assertIn("Map load 2 — JSONL events 4–6", markdown)
+
     def test_unfinished_second_map_load_prevents_prs_verdict(self):
         compiler = shutil.which("cc") or shutil.which("gcc")
         if compiler is None:
