@@ -133,7 +133,7 @@ $(BUILD)/test_vh_audio_stream: tests/test_vh_audio_stream.c source/vh_audio_stre
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Isource tests/test_vh_audio_stream.c source/vh_audio_stream.c -o $@
 
 $(BUILD)/test_vh_game_music_mailbox: tests/test_vh_game_music_mailbox.c source/vh_game_music_mailbox.c source/vh_game_music_mailbox.h source/game_state.h source/platform_input.h | $(BUILD)
-	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Isource tests/test_vh_game_music_mailbox.c source/vh_game_music_mailbox.c -o $@
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Isource tests/test_vh_game_music_mailbox.c source/vh_game_music_mailbox.c -pthread -o $@
 
 $(BUILD)/test_vh_music_scene_soak: tests/test_vh_music_scene_soak.c source/vh_music_scene.c source/vh_music_scene.h source/vh_native_seq.c source/vh_native_seq.h source/vh_native_spu.c source/vh_native_spu.h source/vh_spu_reverb.c source/vh_spu_reverb.h source/vh_spu_gaussian.c source/vh_spu_gaussian.h source/vh_audio_resample.c source/vh_audio_resample.h source/vh_audio_stream.c source/vh_audio_stream.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Isource tests/test_vh_music_scene_soak.c source/vh_music_scene.c source/vh_native_seq.c source/vh_native_spu.c source/vh_spu_reverb.c source/vh_spu_gaussian.c source/vh_audio_resample.c source/vh_audio_stream.c -lm -o $@
