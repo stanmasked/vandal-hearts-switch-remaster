@@ -151,7 +151,7 @@ class MusicBankAuditCliTests(unittest.TestCase):
                 0, 0x90, 60, 100, # ch0 -> exact
                 0, 0x91, 67, 100, # ch1 -> fallback
                 0, 0x91, 67, 0,   # ch1 -> note_off
-                0, 0xFF, 0x2F,
+                0x81, 0x70, 0xFF, 0x2F, # nonzero song duration
             ))
             (folder / "selected" / "music.seq").write_bytes(
                 seq(7, 60)[:15] + events
@@ -165,6 +165,42 @@ class MusicBankAuditCliTests(unittest.TestCase):
             self.assertEqual(selected["program_changes"], 2)
             self.assertEqual(selected["fallback"], 1)
             self.assertEqual(selected["missing"], 0)
+            self.assertEqual(selected["first_fallback"], {
+                "program": 9, "note": 67, "selected_program": 7,
+                "selected_tone": 0, "selected_vag": 1,
+            })
+            strict = run("--strict", path)
+            self.assertEqual(strict.returncode, 4, strict.stderr)
+            self.assertEqual(json.loads(strict.stdout), report)
+
+    def test_program_changes_and_running_status_within_one_song(self):
+        """Count notes at the effective program, including running status."""
+        with tempfile.TemporaryDirectory() as path:
+            folder = Path(path)
+            fixtures(folder)
+            events = bytes((
+                0, 0xC0, 7,         # program 7 -> direct
+                0, 0x90, 60, 100,   # note 60
+                0, 64, 100,         # running-status note_on 64
+                0, 0xC0, 9,         # same channel -> fallback
+                0, 0x90, 67, 100,   # fallback note
+                0, 67, 0,           # running-status velocity-zero note_off
+                0, 0xC0, 7,         # restore direct program
+                0, 0x90, 72, 100,   # direct note
+                0x81, 0x70, 0xFF, 0x2F,  # positive duration
+            ))
+            (folder / "selected" / "music.seq").write_bytes(
+                seq(7, 60)[:15] + events
+            )
+            normal = run(path)
+            self.assertEqual(normal.returncode, 0, normal.stderr)
+            report = json.loads(normal.stdout)
+            selected = report["selected"]
+            self.assertEqual(selected["note_on"], 4)
+            self.assertEqual(selected["resolved"], 4)
+            self.assertEqual(selected["missing"], 0)
+            self.assertEqual(selected["program_changes"], 3)
+            self.assertEqual(selected["fallback"], 1)
             self.assertEqual(selected["first_fallback"], {
                 "program": 9, "note": 67, "selected_program": 7,
                 "selected_tone": 0, "selected_vag": 1,
