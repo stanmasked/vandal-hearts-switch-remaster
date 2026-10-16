@@ -640,6 +640,64 @@ class NativeLocalMusicTransitionTests(unittest.TestCase):
                             {f.name: f.read_bytes() for f in directory.iterdir()},
                             old_files)
 
+    def test_release_slot_retirement_counters_reset_across_16_scenes(self):
+        # Alternate a bank that waits for natural ADSR retirement with a
+        # bank that steals the Release slots before rendering. This
+        # forces 15 transitions through two high-polyphony SEQ sources
+        # and proves per-scene counters cannot carry over.
+        scenes, blocks = 16, 40
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            a, b = root / "wait-for-release", root / "steal-on-release"
+            original_a = synth_dir(a, release_waves="after_release", wet=True)
+            original_b = synth_dir(b, release_waves="immediate", bank_b=True)
+            command = [str(PROGRAM), str(a), str(b),
+                       str(scenes), str(blocks)]
+            first = subprocess.run(command, capture_output=True, text=True)
+            second = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(first.stdout, second.stdout)
+            report = json.loads(first.stdout)
+            stages = report["measurements"]
+            self.assertEqual([m["bank"] for m in stages],
+                             ["A", "B"] * (scenes // 2))
+            for i, cue in enumerate(stages):
+                self.assertEqual(cue["scene"], i)
+                self.assertEqual(cue["input_frames"], blocks * 512)
+                self.assertEqual(cue["note_requests"], 32)
+                self.assertEqual(cue["resolved_notes"], 32)
+                self.assertEqual(cue["note_offs"], 12)
+                self.assertEqual(cue["fallback_notes"], 0)
+                self.assertEqual(cue["unresolved_notes"], 0)
+                self.assertEqual(cue["peak_active_voices"], 20)
+                self.assertGreater(cue["nonzero_samples"], 0)
+                self.assertGreater(cue["peak_pcm16"], 0)
+                if i % 2 == 0:
+                    self.assertEqual(cue["saturated_note_requests"], 0)
+                    self.assertEqual(cue["notes_while_release_active"], 0)
+                    self.assertEqual(cue["adsr_release_slot_retirements"], 12)
+                    self.assertEqual(cue["first_release_retirement_block"], 5)
+                    self.assertEqual(cue["last_release_retirement_block"], 29)
+                    self.assertTrue(cue["reverb_send_seen"])
+                else:
+                    self.assertEqual(cue["saturated_note_requests"], 12)
+                    self.assertEqual(cue["notes_while_release_active"], 12)
+                    self.assertEqual(cue["saturated_with_release_requests"], 12)
+                    self.assertEqual(cue["adsr_release_slot_retirements"], 0)
+                    self.assertEqual(cue["first_release_retirement_block"], 0)
+                    self.assertEqual(cue["first_saturated_note_block"], 5)
+                    self.assertFalse(cue["reverb_send_seen"])
+            input_frames = scenes * blocks * 512
+            self.assertEqual(report["input_frames"], input_frames)
+            self.assertEqual(report["output_frames"],
+                             (input_frames - 1) * 48000 // 44100 + 1)
+            self.assertEqual(sum(x["output_frames"] for x in stages),
+                             report["output_frames"])
+            self.assertNotIn(str(root), first.stdout)
+            for directory, before in ((a, original_a), (b, original_b)):
+                self.assertEqual(
+                    {f.name: f.read_bytes() for f in directory.iterdir()}, before)
+
     def test_releasing_voices_are_occupied_until_adsr_finishes(self):
         # Both sequences start 20 held notes, then NoteOff 3 of them
         # at tick45 (block5). The immediate cue keys on three new
