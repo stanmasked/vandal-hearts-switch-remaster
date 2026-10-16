@@ -59,6 +59,16 @@ int vh_music_scene_request(VhMusicScene *scene, const VhMusicCue *cue,
 int vh_music_scene_render(VhMusicScene *scene,
                           int16_t stereo[VH_AUDIO_BLOCK_FRAMES * 2u]);
 
+/* Explicit audio-owner teardown: detach every borrowed cue/SEQ and
+ * decoded PCM voice, even while a fade or pending switch is underway.
+ * Stop/drain the output backend and serialize with render() before
+ * invoking this. After return, caller may release its SEQ/VAB/PCM
+ * storage; it must not call render() concurrently with an unload.
+ * Preserves SPU interpolation/reverb configuration, scene block tally.
+ * Idempotent; returns -1 if scene/SPU is uninitialized.
+ */
+int vh_music_scene_detach(VhMusicScene *scene);
+
 uint32_t vh_music_scene_active_id(const VhMusicScene *scene);
 
 #endif
