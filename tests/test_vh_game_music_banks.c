@@ -11,6 +11,7 @@
 #include <unistd.h>
 
 #include "vh_game_music_banks.h"
+#include "vh_audio_resample.h"
 
 #define VH_BYTES (32u+128u*16u+512u+512u)
 #define SEQ_HDR 'p','Q','E','S',0,0,0,0,1,0xe0,7,0xa1,0x20,0,0
@@ -28,6 +29,8 @@ static uint8_t vh[VH_BYTES], vb[48];
 static VhNativeSpu spu;
 static VhMusicScene director;
 static int16_t output[512*2];
+static int16_t output_48k[VH_AUDIO_RESAMPLE_MAX_FRAMES*2u];
+static VhAudioResample converter;
 
 static void write16(size_t at,unsigned value) {
     vh[at]=(uint8_t)value;
@@ -150,6 +153,51 @@ int main(void) {
     for(unsigned i=0;i<6u;i++)
         assert(vh_music_scene_render(&director,output)==0);
     assert(director.stage==VH_MUSIC_PLAYING && director.switches==2);
+
+    /* Long-running preloaded-bank integration: 1400 consecutive
+     * render/resample blocks. Scene changes come from the latest
+     * gameplay state, and pending fades are allowed to finish.
+     * Both PCM arenas remain allocated across all transitions.
+     */
+    vh_audio_resample_reset(&converter);
+    unsigned accepted=2, deferred=0;
+    uint64_t output_frames=0;
+    const uint32_t start_switches=director.switches;
+    for(unsigned block=0;block<1400u;block++) {
+        const unsigned desired=block<1080u
+            ? ((block/37u)&1u ? 1u : 2u) : 2u;
+        if(desired!=accepted) {
+            const int changed=vh_music_scene_request(
+                &director,desired==1u?&a:&b,4u);
+            assert(changed==0 || changed==-2);
+            if(!changed) accepted=desired;
+            else ++deferred;
+        }
+        assert(vh_music_scene_render(&director,output)==0);
+        const size_t count=vh_audio_resample_process(
+            &converter,output,512,output_48k,
+            VH_AUDIO_RESAMPLE_MAX_FRAMES);
+        assert(count>=555u && count<=559u);
+        output_frames+=count;
+        assert(converter.input_frames==(uint64_t)(block+1u)*512u);
+        assert(!director.last_error);
+        for(unsigned voice=0;voice<VH_NATIVE_MUSIC_VOICES;voice++) {
+            if (!spu.voice[voice].active) continue;
+            assert(spu.voice[voice].pcm==
+                   pack->field.bank.samples[1].pcm ||
+                   spu.voice[voice].pcm==
+                   pack->selected.bank.samples[1].pcm);
+        }
+    }
+    const uint64_t expected=((uint64_t)1400u*512u-1u)*160u/147u+1u;
+    assert(output_frames>=expected-2u &&
+           output_frames<=expected+2u);
+    assert(director.switches>start_switches+12u);
+    assert(deferred==0u || deferred<1400u);
+    assert(accepted==2u && director.active.id==2u);
+    assert(director.stage==VH_MUSIC_PLAYING);
+    printf("preloaded two-bank soak: 1400 blocks, %llu frames, %u switches, %u deferred PASS\\n",
+           (unsigned long long)output_frames,director.switches,deferred);
 
     /* Explicitly stop audio and all borrowed pointers before freeing. */
     assert(vh_music_scene_request(&director,NULL,0)==0);
