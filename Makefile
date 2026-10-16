@@ -9,6 +9,7 @@ SDL2_GL_TARGET := sdl2-gl-switch-probe
 SDL2_TEXTURE_TARGET := sdl2-texture-switch-probe
 
 SDL2_AUDIO_TARGET := sdl2-audio-switch-probe
+AUDOUT_AUDIO_TARGET := audout-audio-switch-probe
 OPENAL_TARGET := openal-switch-probe
 SDL2_CONFIG ?= $(DEVKITPRO)/portlibs/switch/bin/sdl2-config
 BUILD      := build
@@ -25,10 +26,10 @@ CFLAGS   := -g -Wall -Wextra -O2 -fPIE -ffunction-sections -fdata-sections -I$(D
 LDFLAGS  := -specs=$(DEVKITPRO)/libnx/switch.specs -Wl,--gc-sections -pie
 LDLIBS   := -L$(DEVKITPRO)/libnx/lib -lnx
 
-.PHONY: all clean test test-audio-stream test-sanitize verify-nro sdl2-probe sdl2-gl-probe sdl2-texture-probe sdl2-audio-probe openal-probe
+.PHONY: all clean test test-audio-stream test-sanitize verify-nro sdl2-probe sdl2-gl-probe sdl2-texture-probe sdl2-audio-probe audout-audio-probe openal-probe
 all: $(BUILD)/$(TARGET).nro
 
-test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(BUILD)/test_vh_native_seq $(BUILD)/test_vh_native_vab $(BUILD)/test_vh_audio_assets
+test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(BUILD)/test_vh_native_seq $(BUILD)/test_vh_native_vab $(BUILD)/test_vh_audio_assets $(BUILD)/test_vh_audio_resample
 	./$(BUILD)/test_game_rules
 	./$(BUILD)/test_software_renderer
 	./$(BUILD)/test_vh_audio_stream
@@ -36,6 +37,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_vh_
 	./$(BUILD)/test_vh_native_seq
 	./$(BUILD)/test_vh_native_vab
 	./$(BUILD)/test_vh_audio_assets
+	./$(BUILD)/test_vh_audio_resample
 	python3 tests/test_restore_ps1_str.py
 	python3 tests/test_inspect_cdxa.py
 	python3 tests/test_extract_cdxa_payload.py
@@ -67,7 +69,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_vh_
 	python3 tests/test_native_spu_adpcm.py
 	python3 tests/test_native_vab_python_reference.py
 
-test-audio-stream: $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(BUILD)/test_vh_native_seq $(BUILD)/test_vh_native_vab $(BUILD)/test_vh_audio_assets
+test-audio-stream: $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(BUILD)/test_vh_native_seq $(BUILD)/test_vh_native_vab $(BUILD)/test_vh_audio_assets $(BUILD)/test_vh_audio_resample
 	./$(BUILD)/test_vh_audio_stream
 	./$(BUILD)/test_vh_native_spu
 	./$(BUILD)/test_vh_native_seq
@@ -102,6 +104,9 @@ openal-probe: $(BUILD)/$(OPENAL_TARGET).nro
 sdl2-audio-probe: $(BUILD)/$(SDL2_AUDIO_TARGET).nro
 	python3 tests/check_nro.py $<
 
+audout-audio-probe: $(BUILD)/$(AUDOUT_AUDIO_TARGET).nro
+	python3 tests/check_nro.py $<
+
 $(BUILD):
 	mkdir -p $@
 
@@ -119,6 +124,9 @@ $(BUILD)/test_vh_native_spu: tests/test_vh_native_spu.c source/vh_native_spu.c s
 
 $(BUILD)/test_vh_native_vab: tests/test_vh_native_vab.c source/vh_native_vab.c source/vh_native_vab.h source/vh_native_seq.c source/vh_native_seq.h source/vh_native_spu.c source/vh_native_spu.h source/vh_spu_adpcm.c source/vh_spu_adpcm.h source/vh_spu_gaussian.c source/vh_spu_gaussian.h source/vh_audio_stream.c source/vh_audio_stream.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Isource tests/test_vh_native_vab.c source/vh_native_vab.c source/vh_native_seq.c source/vh_native_spu.c source/vh_spu_adpcm.c source/vh_spu_gaussian.c source/vh_audio_stream.c -lm -o $@
+
+$(BUILD)/test_vh_audio_resample: tests/test_vh_audio_resample.c source/vh_audio_resample.c source/vh_audio_resample.h source/vh_audio_stream.h | $(BUILD)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Isource tests/test_vh_audio_resample.c source/vh_audio_resample.c -o $@
 
 $(BUILD)/test_vh_audio_assets: tests/test_vh_audio_assets.c source/vh_audio_assets.c source/vh_audio_assets.h source/vh_native_vab.c source/vh_native_vab.h source/vh_native_seq.c source/vh_native_seq.h source/vh_native_spu.c source/vh_native_spu.h source/vh_spu_adpcm.c source/vh_spu_adpcm.h source/vh_spu_gaussian.c source/vh_spu_gaussian.h source/vh_audio_stream.c source/vh_audio_stream.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Isource tests/test_vh_audio_assets.c source/vh_audio_assets.c source/vh_native_vab.c source/vh_native_seq.c source/vh_native_spu.c source/vh_spu_adpcm.c source/vh_spu_gaussian.c source/vh_audio_stream.c -lm -o $@
@@ -171,6 +179,15 @@ $(BUILD)/$(SDL2_AUDIO_TARGET).nacp: | $(BUILD)
 
 $(BUILD)/$(SDL2_AUDIO_TARGET).nro: $(BUILD)/$(SDL2_AUDIO_TARGET).elf $(BUILD)/$(SDL2_AUDIO_TARGET).nacp
 	$(ELF2NRO) $< $@ --nacp=$(BUILD)/$(SDL2_AUDIO_TARGET).nacp
+
+$(BUILD)/$(AUDOUT_AUDIO_TARGET).elf: probes/audout_audio_smoke.c source/vh_audio_resample.c source/vh_audio_resample.h source/vh_audio_assets.c source/vh_audio_assets.h source/vh_native_vab.c source/vh_native_vab.h source/vh_native_seq.c source/vh_native_seq.h source/vh_native_spu.c source/vh_native_spu.h source/vh_spu_adpcm.c source/vh_spu_adpcm.h source/vh_spu_gaussian.c source/vh_spu_gaussian.h source/vh_audio_stream.c source/vh_audio_stream.h | $(BUILD)
+	$(CC) $(CFLAGS) -Isource $(LDFLAGS) probes/audout_audio_smoke.c source/vh_audio_resample.c source/vh_audio_assets.c source/vh_native_vab.c source/vh_native_seq.c source/vh_native_spu.c source/vh_spu_adpcm.c source/vh_spu_gaussian.c source/vh_audio_stream.c -o $@ $(LDLIBS) -lm
+
+$(BUILD)/$(AUDOUT_AUDIO_TARGET).nacp: | $(BUILD)
+	$(NACPTOOL) --create "Vandal Hearts Native Audout Audio" "$(APP_AUTHOR)" "$(APP_VERSION)" $@
+
+$(BUILD)/$(AUDOUT_AUDIO_TARGET).nro: $(BUILD)/$(AUDOUT_AUDIO_TARGET).elf $(BUILD)/$(AUDOUT_AUDIO_TARGET).nacp
+	$(ELF2NRO) $< $@ --nacp=$(BUILD)/$(AUDOUT_AUDIO_TARGET).nacp
 
 $(BUILD)/$(OPENAL_TARGET).elf: probes/openal_smoke.c | $(BUILD)
 	$(CC) $(CFLAGS) $(LDFLAGS) $(shell $(SDL2_CONFIG) --cflags) $< -o $@ -lopenal $(shell $(SDL2_CONFIG) --libs) $(LDLIBS) -lm
