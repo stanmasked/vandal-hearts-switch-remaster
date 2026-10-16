@@ -694,3 +694,36 @@ original 336-tile `UpdateMapLighting` game loop, actual
 game light state and owner-supplied `M_MAP02.PRS` are
 still outside this milestone. No proprietary game bytes
 were included in CI or the artifact.
+
+## Complete 26-direction source-normal and zero-area regression (CI #38916329736)
+
+The original pinned `UpdateMapTileLighting` C regression is
+extended beyond four cardinal face examples. For **every** one
+of the 26 signed direction tuples defined by upstream
+`SetupLightNormals`, an independent geometric fixture builds
+two tangent vectors whose GTE OP0 cross product points along
+that source direction. The test calls the actual
+`vh_map_recompute_shade_indices` code, linked against the
+pinned original PC-port `libgte.c`, and requires the returned
+shade index to equal its corresponding source index for
+all 26 vectors. This catches direction order, cross-product
+orientation, Q12 normalization and dot-product classification
+regressions. It also verifies that a repeated-ID,
+zero-area source face selects the earliest zero-dot winner
+(index 0), rather than an invented normal.
+
+The first test-vector revision accidentally reversed a
+tangent cross product. That **test-only orientation error**
+failed CI #38915971935 and was corrected in
+[commit `04b7f453`](https://github.com/stanmasked/vandal-hearts-switch-remaster/commit/04b7f4537abcb2c078075235c3b89705110f79af).
+
+**Accepted:** [GitHub Actions #38916329736](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38916329736)
+completed **all three jobs SUCCESS**: full Switch NRO
+cross-compile, original GPU smoke NeXium, and six private
+virtual-SD map scenes in NeXium. The strengthened host
+GTE normal test passed, with previous perspective, OTZ
+occlusion, NCLIP, distance attenuation, NCCS lighting and
+automatic face lighting unchanged. All resources were
+synthetic. This is additional regression coverage of the
+existing original-geometry/GTE integration, not evidence
+of authentic retail `M_MAP02.PRS` or gameplay rendering.
