@@ -49,6 +49,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_tex
 	python3 -m unittest discover -s tests -p 'test_audit_map02_archive.py'
 	python3 -m unittest discover -s tests -p 'test_map02_texture_pixel_proof.py'
 	python3 -m unittest discover -s tests -p 'test_map02_face_geometry.py'
+	python3 -m unittest discover -s tests -p 'test_map02_multicell_probe.py'
 	python3 -m unittest discover -s tests -p 'test_audit_map02_face_source.py'
 	python3 -m unittest discover -s tests -p 'test_audit_map02_direction_source.py'
 	python3 -m unittest discover -s tests -p 'test_verify_map02_unpack_equivalence.py'
