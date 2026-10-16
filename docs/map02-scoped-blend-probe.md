@@ -124,3 +124,54 @@ No captured frame has been authenticated. The standalone SHA-bound
 BlendG1 JSONL verifier still requires a separate private harness
 to serialize successfully closed observations, with independently
 validated provenance.
+
+## Direct DrawOTag frame/ordinal binding (opt-in)
+
+`tools/instrument_map02_drawotag_scope.py` now creates a separate modified
+copy of original `platform/pc/src/libgpu.c`. Use it **together** with
+`tools/instrument_map02_scoped_blend.py` on copies from the same pinned
+upstream revision. Both are disabled unless the
+`VH_MAP02_SCOPED_BLEND_PROBE` C macro is explicitly enabled.
+
+```sh
+python3 -m tools.instrument_map02_drawotag_scope \
+  /private/upstream/platform/pc/src/libgpu.c \
+  /private/build/libgpu.map02-scoped.c
+```
+
+The diagnostic library must link
+`tools/map02_scoped_blend_sink.c` with the generated rasterizer and GPU
+walker. Select **one** target frame and private native-VRAM coordinate
+using all three decimal environment variables:
+
+```text
+VH_MAP02_PROBE_FRAME=123
+VH_MAP02_PROBE_X=100
+VH_MAP02_PROBE_Y=100
+```
+
+Frame must be 1..4294967295, X 0..1023, Y 0..511. Missing all
+variables disables capture. Partial, malformed, overflowing and
+out-of-range configurations invalidate the sink and cannot publish
+events. All decimal strings are parsed strictly, with no sign or suffix.
+
+The patch reads actual `s_drawFrame` immediately after increment in
+`DrawOTag`; a primitive ordinal starts at zero and increases for
+**each non-bucket item in the original OT walker**, including GPU
+draw-mode commands. The observer opens the primitive before its switch
+dispatch and closes it after. Invalid token resolution or OT cycle
+limits abort the capture; a completed target frame is sealed **before**
+deferred HD workers begin. No raw pixel data are emitted.
+
+`tests/test_instrument_map02_drawotag_scope.py` uses a synthetic
+bucket/primitive chain to check frame binding, non-bucket ordinal
+tracking, invalid-token failure, strict opt-in configuration and
+macro-on/off C compilation. Pinned upstream source-anchor
+compatibility is included in
+`.github/workflows/map02-scoped-blend.yml`.
+
+**Not yet done:** a build of the complete original PC port with both
+instrumented translation units, private witness serialization into the
+SHA-bound manifest/JSONL format, and authenticated MAP02 gameplay
+capture. Synthetic tests do not establish genuine frame provenance
+beyond their test input, and no claim of physical PS1 accuracy follows.
