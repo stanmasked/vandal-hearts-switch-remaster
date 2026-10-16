@@ -95,7 +95,11 @@ def prepare_span(original_gpu, original_raster, output_dir):
         # one-file overlay. Remove only files exclusively created by us.
         for destination in reversed(created):
             destination.unlink(missing_ok=True)
-        output_dir.rmdir()
+        try:
+            output_dir.rmdir()
+        except OSError:
+            # Preserve the write failure; never delete unknown files.
+            pass
         raise
     return {"pinned_original_gpu": True, "native_only": True,
             "entered_spans_only": True,
