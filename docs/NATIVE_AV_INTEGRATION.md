@@ -37,3 +37,18 @@ portability remain unverified. The existing SDL2 package CI blocker
 is separate: the devkitPro pacman database synchronization returned HTTP 403.
 devkitPro recommends preconfigured Docker images over installing
 packages with pacman in CI. No attempt is made to hide that blocker.
+
+## Emulator smoke test
+
+The Native AV workflow includes a separate NeXium stage that launches the
+compiled NRO and captures two video frames. The image validator requires
+the expected synthetic hero tile, a green/red audout status rectangle,
+and a changing heartbeat bar while the emulator is running.
+
+A green status means the audio service and worker started without a recorded
+synchronous error; it **does not** verify audible samples, correct timings
+or uninterrupted PCM transport. Red is an explicitly visible audio failure
+or unavailable-device state and does not prevent video diagnostics.
+
+Only a verified hardware run with actual output recording could establish
+audible playback. A passing framebuffer smoke test is not a playable port.
