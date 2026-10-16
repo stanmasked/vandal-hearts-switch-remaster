@@ -224,3 +224,15 @@ jobs:
             source/vh_audio_resample.c source/vh_audio_stream.c \
             -lm -o /tmp/test_vh_native_audio_soak_asan
           /tmp/test_vh_native_audio_soak_asan
+      - name: Compare optimized and sanitized full SEQ SPU soak
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+            tests/test_vh_native_audio_soak.c \
+            source/vh_native_seq.c source/vh_native_spu.c \
+            source/vh_spu_reverb.c source/vh_spu_gaussian.c \
+            source/vh_audio_resample.c source/vh_audio_stream.c \
+            -lm -o /tmp/test_vh_native_audio_soak_optimized
+          /tmp/test_vh_native_audio_soak_optimized > /tmp/soak-optimized.txt
+          /tmp/test_vh_native_audio_soak_asan > /tmp/soak-sanitized.txt
+          diff -u /tmp/soak-optimized.txt /tmp/soak-sanitized.txt
+          cat /tmp/soak-optimized.txt
