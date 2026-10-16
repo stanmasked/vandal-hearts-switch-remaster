@@ -572,6 +572,43 @@ This is a host-simulated audout service contract and devkitPro
 compile gate. Real Switch HOME/sleep transitions, queued hardware
 pages, and audible glitch behavior still require physical testing.
 
+## Repeated HOME/sleep, scene crossfades, reverb and shutdown soak
+
+A portable `tests/test_vh_music_lifecycle_soak.c` regression now
+runs **512 consecutive 512-frame PCM blocks** with a paired clean
+reference and fault-injected output device. Every eight blocks it
+pauses both simulated audio owners (63 pauses), repeatedly changes
+the pending gameplay scene in their mailboxes, and resumes either
+through an explicit HOME/sleep resume serial or a focus-only return.
+The faulty backend sometimes rejects an initial start or one/two PCM
+submissions; the bounded recovery helper must restore the device
+without generating an extra SEQ, SPU, or resampler block.
+
+During every simulated pause the test snapshots and checks the **entire
+SPU state**, including all voice positions and STUDIO_C reverb memory,
+as well as the scene's fade/SEQ state and both 44.1→48-kHz resampler
+counters. After each successful render it checks the left/right PCM
+frames byte-for-byte against the clean reference, including reverb
+samples, note events, active cue, fade position and PCM clock.
+Queued scene requests are last-wins; neither a resume serial nor
+an output-service restart is permitted to clear ongoing reverb or
+silently reset the scene.
+
+For exit, the simulated audio consumer is stopped and closed first,
+the scene is detached, all voice PCM pointers and reverb work memory
+are verified cleared, and the fixture's heap-owned PCM sample memory
+is freed. A later silent render must not access this released storage.
+The test runs under normal host CI and **ASan + UBSan with leak
+detection**, and it is included in both `make test` and
+`make test-audio-stream`.
+
+This exercises deterministic **host-side audio-owner sequencing**, not
+an actual libnx applet suspend, asynchronous hardware buffer drain,
+the physical HOME/sleep buttons, or speakers. The remaining acceptance
+gate is to run the built NRO on a Switch and test the real device's
+audio queue across actual HOME/sleep and shutdown transitions.
+No original game audio files are stored in this test or repository.
+
 ## SPU ADSR and sample cursor (host-only)
 
 The next isolated component is `tools/simulate_spu_voice.py`, which
