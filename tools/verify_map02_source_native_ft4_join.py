@@ -275,6 +275,7 @@ def verify_join(source_dir, native_dir, *, compiler="gcc"):
     matched_draw_changed = matched_material_changed = no_pixel_delta = clip_checked = 0
     proved_no_coverage = no_delta_unknown = all_zero_clut = 0
     stp_blend_possible_unknown = 0
+    stp_candidate_abr = [0, 0, 0, 0]
     for face_index, match_index in enumerate(selected):
         native = gpu_draw_events[match_index]
         snapshot = private_file(native_dir, native["snapshot"], expected=VRAM_BYTES)
@@ -289,15 +290,18 @@ def verify_join(source_dir, native_dir, *, compiler="gcc"):
         n, m, checked, excluded = _ft4_draw_delta(
             snapshot, post, source_events[face_index], native.get("draw_env"),
             native["ft4"]["xy"])
-        transparent, stp_possible, _ = _ft4_palette_state(snapshot, native)
+        transparent, stp_possible, abr_mode = _ft4_palette_state(snapshot, native)
         if transparent and n:
             raise ValueError("native FT4 changed VRAM with entirely zero 4-bpp CLUT")
         clip_checked += checked
         proved_no_coverage += excluded
         all_zero_clut += transparent and not excluded
         no_delta_unknown += n == 0 and not excluded and not transparent
-        stp_blend_possible_unknown += (n == 0 and not excluded and
-                                       not transparent and stp_possible)
+        stp_candidate = (n == 0 and not excluded and
+                         not transparent and stp_possible)
+        stp_blend_possible_unknown += stp_candidate
+        if stp_candidate:
+            stp_candidate_abr[abr_mode] += 1
         matched_draw_changed += n
         matched_material_changed += m
         no_pixel_delta += n == 0
@@ -323,6 +327,10 @@ def verify_join(source_dir, native_dir, *, compiler="gcc"):
         "matched_ft4_draws_zero_delta_full_4bpp_clut_transparent": all_zero_clut,
         "matched_ft4_draws_zero_delta_unknown_with_stp_blend_possible":
             stp_blend_possible_unknown,
+        "matched_ft4_zero_delta_stp_candidate_abr0": stp_candidate_abr[0],
+        "matched_ft4_zero_delta_stp_candidate_abr1": stp_candidate_abr[1],
+        "matched_ft4_zero_delta_stp_candidate_abr2": stp_candidate_abr[2],
+        "matched_ft4_zero_delta_stp_candidate_abr3": stp_candidate_abr[3],
         "native_ft4_pixels_bit_exact_to_ps1": False,
         "screen_corners_uv_page_clut_window_exact": True,
         "source_gte_verified_by_compiled_reference": True,
@@ -383,6 +391,7 @@ def verify_timeline_join(source_dir, native_dir, *, compiler="gcc"):
     matched_draw_changed = matched_material_changed = no_pixel_delta = clip_checked = 0
     proved_no_coverage = no_delta_unknown = all_zero_clut = 0
     stp_blend_possible_unknown = 0
+    stp_candidate_abr = [0, 0, 0, 0]
     for source_index, native_index in enumerate(selected):
         reference = private_file(
             source_dir, f"gpu-vram-{source_index:03d}.bin", expected=VRAM_BYTES)
@@ -401,7 +410,7 @@ def verify_timeline_join(source_dir, native_dir, *, compiler="gcc"):
             before, post, source_events[source_index],
             native_ft4[native_index].get("draw_env"),
             native_ft4[native_index]["ft4"]["xy"])
-        transparent, stp_possible, _ = _ft4_palette_state(
+        transparent, stp_possible, abr_mode = _ft4_palette_state(
             before, native_ft4[native_index])
         if transparent and n:
             raise ValueError("native FT4 changed VRAM with entirely zero 4-bpp CLUT")
@@ -409,8 +418,11 @@ def verify_timeline_join(source_dir, native_dir, *, compiler="gcc"):
         proved_no_coverage += excluded
         all_zero_clut += transparent and not excluded
         no_delta_unknown += n == 0 and not excluded and not transparent
-        stp_blend_possible_unknown += (n == 0 and not excluded and
-                                       not transparent and stp_possible)
+        stp_candidate = (n == 0 and not excluded and
+                         not transparent and stp_possible)
+        stp_blend_possible_unknown += stp_candidate
+        if stp_candidate:
+            stp_candidate_abr[abr_mode] += 1
         matched_draw_changed += n
         matched_material_changed += m
         no_pixel_delta += n == 0
@@ -435,6 +447,10 @@ def verify_timeline_join(source_dir, native_dir, *, compiler="gcc"):
         "matched_ft4_draws_zero_delta_full_4bpp_clut_transparent": all_zero_clut,
         "matched_ft4_draws_zero_delta_unknown_with_stp_blend_possible":
             stp_blend_possible_unknown,
+        "matched_ft4_zero_delta_stp_candidate_abr0": stp_candidate_abr[0],
+        "matched_ft4_zero_delta_stp_candidate_abr1": stp_candidate_abr[1],
+        "matched_ft4_zero_delta_stp_candidate_abr2": stp_candidate_abr[2],
+        "matched_ft4_zero_delta_stp_candidate_abr3": stp_candidate_abr[3],
         "native_ft4_pixels_bit_exact_to_ps1": False,
         "screen_corners_uv_page_clut_window_exact": True,
         "pc_gte_source_timeline_verified": True,
