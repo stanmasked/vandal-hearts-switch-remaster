@@ -1119,3 +1119,54 @@ diagnostic 0.5 rather than a verified game-script setting. They do not
 validate performance, queue underruns or the audible waveform on a
 physical Nintendo Switch, nor guarantee bit-identical Sony hardware
 reverb. The synthetic tests do not contain game sound files.
+
+
+## STUDIO_C hot-loop optimization and reference benchmark (#174)
+
+`source/vh_spu_reverb.c` now uses a **bit-preserving fast path**
+for the most frequently invoked SPU effects operations:
+
+1. The symmetrical 39-position STUDIO_C FIR contains 20 nonzero
+   even-position coefficients and a nonzero center at index 19.
+   The optimized filter evaluates just those 21 products.
+2. The circular 39-sample FIR tap index uses a conditional wrap,
+   rather than a remainder operation for each tap.
+3. All 32 SPU reverb register work-buffer addresses are reduced
+   modulo `0x37F0` at compile time. The actual 16-bit STUDIO_C
+   register words remain unchanged, and the working-buffer read/write
+   index is wrapped using a single conditional adjustment.
+
+The original unoptimized FIR and register addressing are still
+compiled for **host comparisons only** using
+`-DVH_REV_FIR_REFERENCE=1`. Production/NRO builds always use the
+optimized path. Neither path changes the original Q15 truncation
+of each filter stage nor the work-buffer write order.
+
+Validation:
+
+- `tests/test_native_spu_reverb_reference.py` compares the optimized
+  C output sample by sample with an independent Python transcription
+  of the PC software STUDIO_C reference, including the 32 cached
+  register addresses, full circular-buffer wrap and silent tail.
+- `tests/bench_vh_spu_reverb.c` executes **240,000 synthetic stereo
+  frames** under both the unoptimized reference and optimized
+  compilation modes, and CI **requires identical FNV checksums of
+  the entire output AND internal reverb memory**. The test logs
+  measured throughput but intentionally does not gate on speed.
+- Host CI `#38864921403` passed with the checksum
+  `fe43b6dd28995793` for both versions. In that GitHub-hosted
+  Linux run, the reference took `59,915,334 ns` and the optimized
+  version `27,793,761 ns`, or approximately **2.16×** throughput.
+  These are individual **host diagnostic** measurements and will
+  vary with CPU allocation and compiler; they are not Nintendo
+  Switch performance measurements.
+
+The existing `2048`-block SEQ→STUDIO_C→48 kHz resampler soak
+continues to protect end-to-end clock, repeated-note and PCM
+stability.
+
+Before considering this optimized effect hardware-verified, inspect
+`DSP compute avg`, `peak` and `over budget` from the standalone
+`libnx audout` NRO on an actual Switch and compare audibly with the
+user's legally obtained PlayStation recordings. The diagnostic
+probe remains separate from the main tactical scene renderer.
