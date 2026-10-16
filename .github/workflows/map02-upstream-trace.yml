@@ -33,6 +33,8 @@ on:
       - 'tools/map02_face_geometry.py'
       - 'source/ft4_textured_quad.h'
       - 'source/ps1_indexed_texture.h'
+      - 'source/ps1_abr_blend.h'
+      - 'tests/test_ps1_abr_blend.c'
       - 'tests/test_ps1_indexed_texture.c'
       - 'tests/test_ft4_textured_quad.c'
       - 'tests/test_map02_face_geometry.py'
@@ -80,6 +82,8 @@ on:
       - 'tools/map02_face_geometry.py'
       - 'source/ft4_textured_quad.h'
       - 'source/ps1_indexed_texture.h'
+      - 'source/ps1_abr_blend.h'
+      - 'tests/test_ps1_abr_blend.c'
       - 'tests/test_ps1_indexed_texture.c'
       - 'tests/test_ft4_textured_quad.c'
       - 'tests/test_map02_face_geometry.py'
@@ -244,6 +248,8 @@ jobs:
             /tmp/vh-map02-ft4-test
             gcc -std=c11 -Wall -Wextra -Werror -O2 tests/test_ps1_indexed_texture.c -o /tmp/vh-map02-ps1-clut-test
             /tmp/vh-map02-ps1-clut-test
+            gcc -std=c11 -Wall -Wextra -Werror -O2 tests/test_ps1_abr_blend.c -o /tmp/vh-map02-ps1-abr-test
+            /tmp/vh-map02-ps1-abr-test
             python3 -m unittest discover -s tests -p 'test_audit_map02_face_source.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_unpack_equivalence.py' -v
             python3 -m unittest discover -s tests -p 'test_instrument_map02_renderer.py' -v
