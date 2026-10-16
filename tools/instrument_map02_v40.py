@@ -65,12 +65,12 @@ def modify_raster(src: str) -> str:
         raise ValueError("v40 already installed in deferred rasterizer")
     if "VH_Map02V39Active" not in src:
         raise ValueError("apply v39 observer first")
-    for anchor in (
-        "hp->rc = *rch;",
-        "RenderCtx rc = hp->rc;",
-        "HiresRasterizeBand(s_hpool.band[id].clipY, s_hpool.band[id].clipH);",
+    for anchor, expected in (
+        ("hp->rc = *rch;", 2),  # both quad and rect snapshot their own context
+        ("RenderCtx rc = hp->rc;", 1),
+        ("HiresRasterizeBand(s_hpool.band[id].clipY, s_hpool.band[id].clipH);", 1),
     ):
-        if src.count(anchor) != 1:
+        if src.count(anchor) != expected:
             raise ValueError(f"hires immutable snapshot contract changed: {anchor}")
     anchor = "            if (draw) {                                      /* 0000h = transparent (skip, still step) */"
     new = (
