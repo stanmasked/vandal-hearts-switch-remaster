@@ -27,8 +27,46 @@ typedef struct {
     uint64_t marks_near_wait_over_2x;
     uint64_t marks_near_wait_over_4x;
     uint64_t marks_near_retry;
+    /* For EVERY returned page, ask if its last 32 pages overlap the
+     * same events as a human-marked window. These windows overlap and
+     * are NOT statistically independent observations. */
+    uint64_t windows_near_switch;
+    uint64_t windows_near_wait_over_2x;
+    uint64_t windows_near_wait_over_4x;
+    uint64_t windows_near_retry;
     uint32_t peak_seam_near_mark;
 } VhAudioListeningMarks;
+
+typedef struct {
+    unsigned scene_boundary, over_2x, over_4x, retry;
+    uint32_t peak_step;
+} VhListenWindow;
+
+/* Scan at most limit already-returned pages. This is a read-only
+ * helper shared by button marks and baseline controls. Rejects bad
+ * ring data without changing the requested result. */
+static inline int vh_audio_listening_window(
+    const VhAudioListeningMarks *m, unsigned limit, VhListenWindow *out) {
+    if (!m || !out || limit>VH_LISTEN_RECENT_PAGES) return -1;
+    const unsigned n=(unsigned)(m->returned_pages<limit
+        ? m->returned_pages : limit);
+    VhListenWindow w={0};
+    for (unsigned i=0;i<n;i++) {
+        const unsigned index=(unsigned)(
+            (m->returned_pages-1u-i)%VH_LISTEN_RECENT_PAGES);
+        const VhListenPage *p=&m->recent[index];
+        if (p->wait_band>3u || p->scene_boundary>1u ||
+            p->retry>1u || p->seam_step>65535u)
+            return -1;
+        w.scene_boundary|=(unsigned)p->scene_boundary;
+        w.over_2x|=(unsigned)(p->wait_band>=2u);
+        w.over_4x|=(unsigned)(p->wait_band==3u);
+        w.retry|=(unsigned)p->retry;
+        if (p->seam_step>w.peak_step) w.peak_step=p->seam_step;
+    }
+    *out=w;
+    return 0;
+}
 
 /* Each returned logical page is inserted exactly once after success.
  * Invalid observations must not mutate state. Caller separately
@@ -40,6 +78,20 @@ static inline int vh_audio_listening_observe(
     if (!m || wait_band>3u || scene_boundary>1u ||
         retry>1u || seam_step>65535u ||
         m->returned_pages==UINT64_MAX) return -1;
+    /* A control window contains this page + up to 31 preceding pages.
+     * Scan before overwriting the oldest slot at ring wrap. */
+    VhListenWindow w;
+    if (vh_audio_listening_window(
+            m,VH_LISTEN_RECENT_PAGES-1u,&w)) return -1;
+    const unsigned sw=w.scene_boundary|scene_boundary;
+    const unsigned slow2=w.over_2x|(unsigned)(wait_band>=2u);
+    const unsigned slow4=w.over_4x|(unsigned)(wait_band==3u);
+    const unsigned retried=w.retry|retry;
+    if ((sw && m->windows_near_switch==UINT64_MAX) ||
+        (slow2 && m->windows_near_wait_over_2x==UINT64_MAX) ||
+        (slow4 && m->windows_near_wait_over_4x==UINT64_MAX) ||
+        (retried && m->windows_near_retry==UINT64_MAX))
+        return -1;
     const unsigned slot=(unsigned)(
         m->returned_pages%VH_LISTEN_RECENT_PAGES);
     VhListenPage *p=&m->recent[slot];
@@ -48,6 +100,10 @@ static inline int vh_audio_listening_observe(
     p->retry=(uint8_t)retry;
     p->seam_step=seam_step;
     ++m->returned_pages;
+    m->windows_near_switch+=sw;
+    m->windows_near_wait_over_2x+=slow2;
+    m->windows_near_wait_over_4x+=slow4;
+    m->windows_near_retry+=retried;
     return 0;
 }
 
@@ -58,34 +114,20 @@ static inline int vh_audio_listening_observe(
 static inline int vh_audio_listening_mark(VhAudioListeningMarks *m) {
     if (!m || !m->returned_pages || m->manual_marks==UINT64_MAX)
         return -1;
-    const unsigned n=(unsigned)(
-        m->returned_pages<VH_LISTEN_RECENT_PAGES
-        ? m->returned_pages : VH_LISTEN_RECENT_PAGES);
-    unsigned near_switch=0u, near_2x=0u, near_4x=0u, near_retry=0u;
-    uint32_t local_peak=0u;
-    for (unsigned i=0;i<n;i++) {
-        const unsigned slot=(unsigned)(
-            (m->returned_pages-1u-i)%VH_LISTEN_RECENT_PAGES);
-        const VhListenPage *p=&m->recent[slot];
-        if (p->wait_band>3u || p->scene_boundary>1u ||
-            p->retry>1u || p->seam_step>65535u) return -1;
-        near_switch|=p->scene_boundary;
-        near_2x|=(unsigned)(p->wait_band>=2u);
-        near_4x|=(unsigned)(p->wait_band==3u);
-        near_retry|=p->retry;
-        if (p->seam_step>local_peak) local_peak=p->seam_step;
-    }
-    if ((near_switch && m->marks_near_switch==UINT64_MAX) ||
-        (near_2x && m->marks_near_wait_over_2x==UINT64_MAX) ||
-        (near_4x && m->marks_near_wait_over_4x==UINT64_MAX) ||
-        (near_retry && m->marks_near_retry==UINT64_MAX)) return -1;
+    VhListenWindow w;
+    if (vh_audio_listening_window(
+            m,VH_LISTEN_RECENT_PAGES,&w)) return -1;
+    if ((w.scene_boundary && m->marks_near_switch==UINT64_MAX) ||
+        (w.over_2x && m->marks_near_wait_over_2x==UINT64_MAX) ||
+        (w.over_4x && m->marks_near_wait_over_4x==UINT64_MAX) ||
+        (w.retry && m->marks_near_retry==UINT64_MAX)) return -1;
     ++m->manual_marks;
-    m->marks_near_switch+=near_switch;
-    m->marks_near_wait_over_2x+=near_2x;
-    m->marks_near_wait_over_4x+=near_4x;
-    m->marks_near_retry+=near_retry;
-    if (local_peak>m->peak_seam_near_mark)
-        m->peak_seam_near_mark=local_peak;
+    m->marks_near_switch+=w.scene_boundary;
+    m->marks_near_wait_over_2x+=w.over_2x;
+    m->marks_near_wait_over_4x+=w.over_4x;
+    m->marks_near_retry+=w.retry;
+    if (w.peak_step>m->peak_seam_near_mark)
+        m->peak_seam_near_mark=w.peak_step;
     return 0;
 }
 
@@ -97,6 +139,10 @@ static inline int vh_audio_listening_verify(
         m->marks_near_wait_over_2x>m->manual_marks ||
         m->marks_near_wait_over_4x>m->marks_near_wait_over_2x ||
         m->marks_near_retry>m->manual_marks ||
+        m->windows_near_switch>m->returned_pages ||
+        m->windows_near_wait_over_2x>m->returned_pages ||
+        m->windows_near_wait_over_4x>m->windows_near_wait_over_2x ||
+        m->windows_near_retry>m->returned_pages ||
         m->peak_seam_near_mark>65535u ||
         (!m->manual_marks && m->peak_seam_near_mark) ||
         (!m->returned_pages && m->manual_marks)) return -1;

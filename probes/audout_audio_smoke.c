@@ -445,14 +445,20 @@ int main(int argc, char **argv) {
     printf("PCM seam audit: %s (%llu pages returned)\n",
            seam_evidence==0 ? "VALID" : "INVALID",
            (unsigned long long)seam_stats.delivered_pages);
-    printf("Manual A marks=%llu; last-32-page co-occurrence:\n",
-           (unsigned long long)listening_marks.manual_marks);
-    printf("Near switch=%llu wait>2x=%llu wait>4x=%llu retry=%llu\n",
+    printf("A marks=%llu / all windows=%llu (32-page lookback)\n",
+           (unsigned long long)listening_marks.manual_marks,
+           (unsigned long long)listening_marks.returned_pages);
+    printf("Switch overlap A/all=%llu/%llu; >2x=%llu/%llu\n",
            (unsigned long long)listening_marks.marks_near_switch,
+           (unsigned long long)listening_marks.windows_near_switch,
            (unsigned long long)listening_marks.marks_near_wait_over_2x,
+           (unsigned long long)listening_marks.windows_near_wait_over_2x);
+    printf(">4x overlap A/all=%llu/%llu; retry=%llu/%llu\n",
            (unsigned long long)listening_marks.marks_near_wait_over_4x,
-           (unsigned long long)listening_marks.marks_near_retry);
-    printf("Peak PCM16 seam near mark=%u; audit=%s\n",
+           (unsigned long long)listening_marks.windows_near_wait_over_4x,
+           (unsigned long long)listening_marks.marks_near_retry,
+           (unsigned long long)listening_marks.windows_near_retry);
+    printf("Peak PCM16 seam near A=%u; mark audit=%s\n",
            listening_marks.peak_seam_near_mark,
            listen_evidence==0 ? "VALID" : "INVALID");
     printf("Audio probe ended, result=%d\n",result);

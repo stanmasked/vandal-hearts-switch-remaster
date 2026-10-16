@@ -1024,3 +1024,32 @@ aggregation, window expiry/wraparound, invalid observations, and
 corrupted counts. Until physical Switch listening happens, A-marker
 counts must be treated as **unobserved**, not zero-perceived-issues
 hardware evidence.
+
+
+### All-page control windows for manual A-button marks
+
+A 32-page look-back can contain a synthetic cue switch or long backend
+wait even when nobody hears a defect: one event appears in up to 32
+overlapping windows. The probe now compares the operator's A-button
+observations with **every returned page**, treated as an eligible
+look-back window with the same exact classification logic.
+
+The final console report pairs counts for marked windows (A) and
+all-page windows (all), for synthetic cue switches, service waits over
+two or four PCM-page durations and backend retries. The respective
+denominators are the number of manual marks and the number of returned
+PCM pages. A zero-mark run has no defined manual-mark proportion and
+does not imply glitch-free playback.
+
+The portable accumulator computes each all-page window from the newest
+page and at most 31 earlier returned pages; a manual mark uses the most
+recent 32 returned pages. The first 31 observations use proportionally
+shorter windows for both groups. All windows can overlap, so ratios
+are descriptive only, NOT statistically independent trials or
+evidence of causation. No timing/scheduling, sound recording, file
+access or gameplay is changed.
+
+The host regression explicitly verifies that one isolated synthetic
+cue/wait/retry is present in exactly 32 adjacent all-page windows,
+disappears immediately after ring wrap, distinguishes >2x from >4x
+waits and rejects corrupted baseline counters.
