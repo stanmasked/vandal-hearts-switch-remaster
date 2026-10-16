@@ -30,7 +30,8 @@ class StagedModelTests(unittest.TestCase):
         self.assertEqual(len(faces),2)
         self.assertEqual([f["local_gfx_slot"] for f in faces],[241,242])
         self.assertEqual(faces[0]["vertex_xyz"][0],[-32,0,-16])
-        self.assertEqual(faces[1]["vertex_xyz"][3],[32,0,24])
+        self.assertEqual(faces[1]["vertex_xyz"][2],[32,0,24])
+        self.assertEqual(faces[1]["vertex_xyz"][3],[0,0,24])
         self.assertEqual(validate_map11_models(self.models)["active_faces"],2)
         self.assertEqual(validate_map11_models(self.models)["populated_tiles"],1)
 
