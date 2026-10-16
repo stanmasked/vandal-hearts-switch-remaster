@@ -83,7 +83,9 @@ def synthetic_geometry_models():
             int(vy).to_bytes(2, "little", signed=True) +
             int(vz).to_bytes(2, "little", signed=True) + bytes(2)
         )
-    for n, (gfx, ids) in enumerate(((241, (0,1,2,3)), (242, (4,5,6,7)))):
+    # Source RenderMapTile maps face vertices 0/1/2/3 to
+    # FT4 packet 0/1/3/2. Source vertex 2 is bottom-right.
+    for n, (gfx, ids) in enumerate(((241, (0,1,3,2)), (242, (4,5,7,6)))):
         gfx_at = tile_base + VERTICES_BYTES + n * 2
         models[gfx_at:gfx_at + 2] = gfx.to_bytes(2, "little")
         faces_at = tile_base + VERTICES_BYTES + GFX_BYTES + n * 4
