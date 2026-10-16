@@ -88,6 +88,18 @@ class NativeSpanCompileTests(unittest.TestCase):
                     self.assertEqual(rows[0]["frame"], 3)
                     self.assertEqual(rows[0]["clip_t"], 10)
                     self.assertEqual(rows[0]["clip_b"], 15)
+                    # Mutate bytes emitted by the compiled C producer, not
+                    # hand-constructed fixtures; the strict consumer must fail.
+                    for mutated in (
+                        raw.replace(b'"x_bound":20', b'"x_bound":9'),
+                        raw.replace(b'"frame":3', b'"frame":true'),
+                        raw.rstrip(b"\\n"),
+                        raw.replace(b'"step":0', b'"step":1'),
+                        raw + raw,
+                    ):
+                        with self.subTest(mutated=mutated[:100]):
+                            with self.assertRaises(ValueError):
+                                parse_native_spans(mutated)
                 else:
                     self.assertFalse(log.exists())
 
