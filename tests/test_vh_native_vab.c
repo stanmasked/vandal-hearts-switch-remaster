@@ -569,7 +569,13 @@ static void test_seq_tempo_and_controls_across_pcm_blocks(void) {
         assert(vh_audio_stream_read(&fifo,output,512)==512);
     }
     assert(!seq.playing && seq.cycles_completed==1u);
-    assert(seq.note_ons==3u && seq.note_offs==3u);
+    /* One-shot VAG3 voices end inside earlier 512-frame blocks and
+     * their slot is reused. Stale MIDI note-offs must not release
+     * the newer VAG4 owner or count as active-voice key-offs. */
+    assert(seq.note_ons==3u && seq.note_offs==1u);
+    assert(seq.note_slot[0][90]==-1 &&
+           seq.note_slot[0][92]==-1 &&
+           seq.note_slot[0][45]==-1);
     assert(seq.last_error==0 && vh_audio_stream_queued(&fifo)==0u);
 }
 
