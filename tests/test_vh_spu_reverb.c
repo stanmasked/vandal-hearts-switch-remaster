@@ -1,6 +1,7 @@
 /* Deterministic STUDIO_C reverb network regression (synthetic PCM only). */
 #include <assert.h>
 #include <math.h>
+#include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
