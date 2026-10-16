@@ -120,3 +120,19 @@ jobs:
           python3 tools/inspect_native_pcm_capture.py /tmp/native-seq-spu-48k-ubsan.wav
           python3 tools/analyze_pcm_wav.py /tmp/native-seq-spu-48k-ubsan.wav \
             --expected-rate 48000 --fail-on-silence
+      - name: Detect native PCM memory faults with AddressSanitizer
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -fno-sanitize-recover=all \
+            tests/export_native_seq_pcm_wav.c \
+            source/vh_native_seq.c source/vh_native_spu.c \
+            source/vh_spu_reverb.c source/vh_spu_gaussian.c \
+            source/vh_audio_resample.c source/vh_audio_stream.c \
+            -lm -o /tmp/export_native_seq_pcm_wav_asan
+          /tmp/export_native_seq_pcm_wav_asan /tmp/native-seq-spu-48k-asan.wav
+          cmp /tmp/native-seq-spu-48k.wav /tmp/native-seq-spu-48k-asan.wav
+          python3 tools/inspect_native_pcm_capture.py /tmp/native-seq-spu-48k-asan.wav
