@@ -328,3 +328,30 @@ against our independently generated synthetic test banks and checks
 malformed/missing resources, determinism, clock continuity, and
 ASan/UBSan. The report does **not** certify physical Switch audibility,
 original PS1 waveform matching, or perfect support for every track.
+
+### Extended synthetic transition soak (host regression)
+
+The offline analyzer now asserts the exact expected cumulative
+48-kHz frame count for every valid 44.1-kHz source sequence:
+`floor((input_frames - 1) * 48000 / 44100) + 1`. This is checked
+in addition to the rolling resampler tick and SPU-frame counters,
+so output duplication or omission cannot be hidden by simply
+summing the reported per-scene counts.
+
+`test_maximum_scene_count_long_pcm_soak` switches between A and B
+for **32 scenes × 32 blocks** (524,288 input frames), verifies
+continuous output clocks, deterministic per-scene measurements,
+note-resolution accounting and absence of local asset mutation.
+This uses generated banks only; it is not a PlayStation audio
+waveform-parity test.
+
+`test_wet_tail_survives_transition_into_zero_gain_bank` first
+renders an EON-enabled sounding bank and then switches to a
+zero-gain bank. It proves that the muted scene can still output
+the previously accumulated STUDIO_C wet tail, while its own note
+requests have zero dry gain and make no new reverb sends. This is
+important when diagnosing a silent cue: zero-gain notes and
+nonzero output are not contradictory.
+
+Both tests are included in the normal host audit and the ASan/UBSan
+PCM diagnostics workflow. The original music is never copied to CI.
