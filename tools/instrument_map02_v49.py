@@ -46,12 +46,14 @@ BLOCK='''            /* Independent pre-PutPixel source VRAM evidence.  Never al
                         if (v49_index >= 0)
                             v49_palette = s_vram[v49_cy][v49_cx + v49_index];
                         fprintf(stderr,
-                          "[v49-terrain-vram] f=%u token=%u gfx=%u route=%u target=%d x=%d y=%d u=%d v=%d tpage=%d clut=%d maskx=%d masky=%d offx=%d offy=%d word=%u index=%d palette=%u raw=%u\\n",
+                          "[v49-terrain-vram] f=%u token=%u gfx=%u route=%u target=%d x=%d y=%d u=%d v=%d tpage=%d clut=%d maskx=%d masky=%d offx=%d offy=%d tx=%d ty=%d palx=%d paly=%d word=%u index=%d palette=%u raw=%u\\n",
                           cx->rc->v41Frame, v49_tok, v49_gfx, v49_route,
                           cx->rc->target, current_x, y, su, sv,
                           cx->tpage, cx->clut,
                           cx->rc->twMaskX, cx->rc->twMaskY,
                           cx->rc->twOffX, cx->rc->twOffY,
+                          v49_tx, v49_ty, v49_index < 0 ? -1 : v49_cx + v49_index,
+                          v49_index < 0 ? -1 : v49_cy,
                           (unsigned)v49_word, v49_index,
                           (unsigned)v49_palette, (unsigned)texel);
                     }
