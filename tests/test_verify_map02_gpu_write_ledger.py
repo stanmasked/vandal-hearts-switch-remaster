@@ -75,6 +75,30 @@ class GpuWriteLedgerTests(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             export_verified_ledger(self.root, output)
 
+    def test_private_export_refuses_git_worktree_and_symlinked_parent(self):
+        repository=self.root / "sample-git-repository"
+        private=repository / "captures"
+        private.mkdir(parents=True)
+        (repository / ".git").mkdir()
+        output=private / "sensitive-transfers.bin"
+        with self.assertRaisesRegex(ValueError, "outside a Git worktree"):
+            export_verified_ledger(self.root,output)
+        self.assertFalse(output.exists())
+
+        # A worktree may use a .git FILE rather than a directory.
+        (repository / ".git").rmdir()
+        (repository / ".git").write_text(
+            "gitdir: /tmp/fake-worktree-meta",encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "outside a Git worktree"):
+            export_verified_ledger(self.root,output)
+        self.assertFalse(output.exists())
+
+        link=self.root / "aliased-private-path"
+        link.symlink_to(private, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "outside a Git worktree"):
+            export_verified_ledger(self.root,link / "sensitive-transfers.bin")
+        self.assertFalse(output.exists())
+
     def test_private_packet_export_rejects_unexplained_write(self):
         self.events = self.events[:1]
         self.write()
