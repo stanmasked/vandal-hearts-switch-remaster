@@ -21,7 +21,7 @@ def synth_dir(directory, wet=False, bank_b=False, fallback_program=False,
               out_of_range_note=False, mute_master=False,
               no_note_on=False, program_change_retrigger=False,
               delayed_program_change=False, accelerated_tempo=False,
-              multiple_tempo_loop=False):
+              multiple_tempo_loop=False, polyphony_notes=0):
     directory.mkdir()
     files = make_synthetic_files()
     vh = bytearray(files["music.vh"])
@@ -53,6 +53,21 @@ def synth_dir(directory, wet=False, bank_b=False, fallback_program=False,
             0, 0x80, 110, 0,
             0, 0xFF, 0x2F,
         ])
+    if polyphony_notes:
+        if polyphony_notes not in (20, 23):
+            raise ValueError("polyphony fixture needs exactly 20 or 23 voices")
+        # All notes are simultaneous and distinct (key 40..62) in a
+        # single SEQ block, retaining their looped VAB samples.
+        # When the 21st note arrives, the 20-voice allocator must
+        # round-robin steal. Later Note Offs for keys 40 and 41 are
+        # stale and must not release the stolen voice owners.
+        melody = bytearray([0, 0xC0, 7])
+        for key in range(40, 40 + polyphony_notes):
+            melody.extend((0, 0x90, key, 110))
+        if polyphony_notes == 23:
+            melody.extend((0, 0x80, 40, 0, 0, 0x80, 41, 0))
+        melody.extend((0x81, 0x70, 0xFF, 0x2F))
+        files["music.seq"] = files["music.seq"][:15] + bytes(melody)
     if multiple_tempo_loop:
         # Two native FF51 events (250000 and 750000 us/quarter) inside
         # each cycle. EOT is 90 ticks after entry. The production SEQ
@@ -466,6 +481,55 @@ class NativeLocalMusicTransitionTests(unittest.TestCase):
             for folder, original in ((a, original_a), (b, original_b)):
                 self.assertEqual(
                     {p.name: p.read_bytes() for p in folder.iterdir()}, original)
+
+    def test_twenty_voice_capacity_and_saturated_allocator_reuse(self):
+        # Capacity without stealing (20), then three excess notes (23).
+        # All note-ons occur at tick zero in the same SEQ audio block,
+        # so end-of-block active counts alone would miss the pressure.
+        # The second bank is a plain independent cue.
+        for voices, expected_saturated in ((20, 0), (23, 3)):
+            with self.subTest(voices=voices):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    a, b = root / "polyphonic", root / "ordinary"
+                    originals_a = synth_dir(a, polyphony_notes=voices)
+                    originals_b = synth_dir(b, bank_b=True)
+                    cmd = [str(PROGRAM), str(a), str(b), "4", "4"]
+                    first = subprocess.run(cmd, capture_output=True, text=True)
+                    again = subprocess.run(cmd, capture_output=True, text=True)
+                    self.assertEqual(first.returncode, 0, first.stderr)
+                    self.assertEqual(first.stdout, again.stdout)
+                    metrics = json.loads(first.stdout)["measurements"]
+                    for high in (metrics[0], metrics[2]):
+                        self.assertEqual(high["note_requests"], voices)
+                        self.assertEqual(high["resolved_notes"], voices)
+                        self.assertEqual(high["unresolved_notes"], 0)
+                        self.assertEqual(high["fallback_notes"], 0)
+                        self.assertEqual(high["peak_active_voices"], 20)
+                        self.assertEqual(high["saturated_note_requests"],
+                                         expected_saturated)
+                        self.assertEqual(
+                            high["first_saturated_note_block"],
+                            1 if expected_saturated else 0)
+                        self.assertEqual(high["first_note_block"], 1)
+                        self.assertEqual(high["last_note_block"], 1)
+                        self.assertEqual(high["note_offs"], 0)
+                        self.assertGreater(high["nonzero_samples"], 0)
+                    for low in (metrics[1], metrics[3]):
+                        self.assertEqual(low["note_requests"], 1)
+                        self.assertEqual(low["saturated_note_requests"], 0)
+                        self.assertEqual(low["first_saturated_note_block"], 0)
+                        self.assertEqual(low["peak_active_voices"], 1)
+                    result = json.loads(first.stdout)
+                    total_input = 4 * 4 * 512
+                    self.assertEqual(result["input_frames"], total_input)
+                    self.assertEqual(result["output_frames"],
+                                     (total_input - 1) * 48000 // 44100 + 1)
+                    self.assertNotIn(str(root), first.stdout)
+                    for folder, before in ((a, originals_a), (b, originals_b)):
+                        self.assertEqual(
+                            {p.name: p.read_bytes() for p in folder.iterdir()},
+                            before)
 
     def test_resolved_notes_can_produce_silent_pcm_with_zero_gain(self):
         with tempfile.TemporaryDirectory() as tmp:
