@@ -334,6 +334,37 @@ original game's soundtrack.
 The original Vandal Hearts soundbank
 remains local and is never copied to GitHub.
 
+## Continuous SEQ-to-VAB-to-SPU stereo regression
+
+The host native test `tests/test_vh_native_vab.c` now verifies
+**real PCM samples**, not only selected metadata or dry note gains,
+when sparse-program aliases are used inside a synthetic SEQ.
+
+The first fixture uses one MIDI channel with program changes
+`1 -> 7 -> 8`. The first two programs select the *same* VAG3
+but supply independent `ProgAtr` levels and hard-left/hard-right
+pan; the third selects VAG4 and is centered. Controller 7 and
+controller 10 events are decoded by the actual native SEQ parser,
+the source is resolved through the VAB loader, and the actual SPU
+renders through the bounded 512-frame audio FIFO. The test checks
+the three distinct PCM channel patterns, reverb-send metadata,
+program/VAG selection, note-on/off counts, finite playback and
+zero FIFO backlog after reads.
+
+A second fixture simultaneously plays MIDI channel 0 (alias program 1)
+and channel 1 (populated source program 7) on the **same note and
+sample** with different CC 7 volumes. It asserts independent voice
+allocation, both stereo channels containing PCM, and channel 0
+note-off not releasing channel 1's voice. This guards against
+cross-channel owner-map corruption and accidental gain/pan sharing.
+
+The two tests run in the existing `Host SPU audio regressions`,
+including the existing UBSan compilation of the test executable;
+there are no private game assets or source data in the fixtures.
+They do **not** establish actual Vandal Hearts soundtrack fidelity,
+PS1 hardware sample-perfect output, or physical Nintendo Switch
+speaker playback.
+
 ## SPU ADSR and sample cursor (host-only)
 
 The next isolated component is `tools/simulate_spu_voice.py`, which
