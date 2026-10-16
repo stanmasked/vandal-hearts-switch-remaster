@@ -89,6 +89,7 @@ on:
       - 'tools/instrument_map02_vertical_dda.py'
       - 'tools/verify_map02_raster_skips.py'
       - 'tools/verify_map02_dda_texel_counts.py'
+      - 'tools/verify_map02_source_dda_counts.py'
       - 'tools/verify_map02_putpixel_scope.py'
       - 'tools/verify_map02_camera_capture.py'
       - 'tools/verify_map02_frame_bundle.py'
@@ -111,6 +112,7 @@ on:
       - 'tests/test_verify_map02_vertical_dda.py'
       - 'tests/test_verify_map02_raster_skips.py'
       - 'tests/test_verify_map02_dda_texel_counts.py'
+      - 'tests/test_verify_map02_source_dda_counts.py'
       - 'tests/test_verify_map02_putpixel_scope.py'
       - 'tests/test_verify_map02_frame_bundle.py'
       - 'tests/test_verify_map02_vram_timeline.py'
@@ -222,6 +224,7 @@ on:
       - 'tools/instrument_map02_vertical_dda.py'
       - 'tools/verify_map02_raster_skips.py'
       - 'tools/verify_map02_dda_texel_counts.py'
+      - 'tools/verify_map02_source_dda_counts.py'
       - 'tools/verify_map02_putpixel_scope.py'
       - 'tools/verify_map02_camera_capture.py'
       - 'tools/verify_map02_frame_bundle.py'
@@ -244,6 +247,7 @@ on:
       - 'tests/test_verify_map02_vertical_dda.py'
       - 'tests/test_verify_map02_raster_skips.py'
       - 'tests/test_verify_map02_dda_texel_counts.py'
+      - 'tests/test_verify_map02_source_dda_counts.py'
       - 'tests/test_verify_map02_putpixel_scope.py'
       - 'tests/test_verify_map02_frame_bundle.py'
       - 'tests/test_verify_map02_vram_timeline.py'
@@ -677,6 +681,7 @@ jobs:
             cd remaster
             python3 -m unittest discover -s tests -p 'test_instrument_map02_dda_texel_counts.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_dda_texel_counts.py' -v
+            python3 -m unittest discover -s tests -p 'test_verify_map02_source_dda_counts.py' -v
           )
           PYTHONPATH=remaster python3 -m tools.instrument_map02_dda_texel_counts \
             upstream/platform/pc/src/libgpu.c \
