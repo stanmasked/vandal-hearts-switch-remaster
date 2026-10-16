@@ -230,8 +230,15 @@ def verify_archive(archive: Path, expected_sha256: str) -> dict:
                     "archive_sha256": archive_digest["sha256"],
                     "archive_bytes": archive_digest["size"],
                     "member_count": len(members),
+                    "member_inventory": sorted(index["members"], key=lambda x: x["name"]),
                     "git_sha_self_reported": index["git_sha"],
                     "handoff_review": report["result"],
+                    "scenario_statuses": {
+                        row["id"]: row["status"] for row in report["acceptance_matrix"]
+                    },
+                    "retest_scenarios": [
+                        row["scenario"] for row in report["retests"]
+                    ],
                     "session_claims": report["repeated_session_claims"],
                     "manual_signoff": "REQUIRED_NOT_AUTOMATED",
                     "limitations": (
