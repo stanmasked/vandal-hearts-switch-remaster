@@ -34,6 +34,12 @@ def cases():
     versions=[]
     tick=100
     for i,head in enumerate(heads):
+        if i==1:
+            # Modify the already submitted *first frame* GPU register.
+            # A single final snapshot must now fail to reconstruct frame 0.
+            old_head=heads[0]
+            first=struct.unpack_from("<I",mutable,old_head)[0]&0xffffff
+            mutable[first+4]^=1
         if i in (1,3):
             pointer=struct.unpack_from("<I",mutable,head)[0]&0xffffff
             mutable[pointer+8]^=1
@@ -48,7 +54,7 @@ def cases():
                              "frame":i,"head":head,"words":words})
         tick+=1
     raw=("\n".join(json.dumps(x,sort_keys=True) for x in observations)+"\n").encode()
-    return versions,manifest_for_frames(versions,"user-supplied-unverified"),raw,observations
+    return versions,manifest_for_frames(versions,"user-supplied-unverified",heads),raw,observations
 
 class VersionedRamTests(unittest.TestCase):
     @classmethod
@@ -116,7 +122,7 @@ class VersionedRamTests(unittest.TestCase):
     def test_swapped_snapshot_order_even_rehashed_refused(self):
         snapshots=list(self.versions)
         snapshots[0],snapshots[3]=snapshots[3],snapshots[0]
-        updated=manifest_for_frames(snapshots,"user-supplied-unverified")
+        updated=manifest_for_frames(snapshots,"user-supplied-unverified",self.manifest["entry_points"])
         self.reject(versions=snapshots,meta=updated)
 
     def test_single_corrupt_byte_hash_refused(self):
@@ -133,7 +139,7 @@ class VersionedRamTests(unittest.TestCase):
         b[ptr+8]^=1
         snapshots[0]=bytes(b)
         self.reject(versions=snapshots,
-                    meta=manifest_for_frames(snapshots,"user-supplied-unverified"))
+                    meta=manifest_for_frames(snapshots,"user-supplied-unverified",self.manifest["entry_points"]))
 
     def test_modified_probe_word_refused(self):
         records=copy.deepcopy(self.records)
@@ -214,7 +220,7 @@ class VersionedRamTests(unittest.TestCase):
         self.reject(probe=self.as_log(self.records[:1]))
 
     def test_mutable_capture_manifest_is_not_authentication(self):
-        meta=manifest_for_frames(self.versions,"synthetic")
+        meta=manifest_for_frames(self.versions,"synthetic",self.manifest["entry_points"])
         self.assertEqual(meta["schema"],SCHEMA)
         self.assertEqual(meta["ram_size"],RAM_BYTES)
         self.assertEqual(meta["base_address"],0)
@@ -254,7 +260,7 @@ class VersionedRamTests(unittest.TestCase):
             meta=root/"manifest.json"
             output=root/"report.json"
             with patch.object(sys,"argv",["v67","--snapshot-dir",str(snaps),
-                            "--frames","4","--make-manifest",str(meta)]),redirect_stdout(StringIO()):
+                            "--frames","4","--probe",str(log),"--make-manifest",str(meta)]),redirect_stdout(StringIO()):
                 self.assertEqual(main(),0)
             with patch.object(sys,"argv",["v67","--snapshot-dir",str(snaps),
                             "--manifest",str(meta),"--probe",str(log),
