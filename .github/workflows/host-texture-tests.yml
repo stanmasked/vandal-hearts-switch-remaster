@@ -6,6 +6,8 @@ on:
       - "source/texture_sample.h"
       - "source/ps1_indexed_texture.h"
       - "source/ps1_abr_blend.h"
+      - "source/map02_terrain_lighting.h"
+      - "tests/test_map02_terrain_lighting.c"
       - "tests/test_ps1_abr_blend.c"
       - "source/ft4_textured_quad.h"
       - "tests/test_ps1_indexed_texture.c"
@@ -18,6 +20,8 @@ on:
       - "source/texture_sample.h"
       - "source/ps1_indexed_texture.h"
       - "source/ps1_abr_blend.h"
+      - "source/map02_terrain_lighting.h"
+      - "tests/test_map02_terrain_lighting.c"
       - "tests/test_ps1_abr_blend.c"
       - "source/ft4_textured_quad.h"
       - "tests/test_ps1_indexed_texture.c"
@@ -34,7 +38,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
       - name: Run texture sampling unit test
-        run: make build/test_texture_sample build/test_ft4_textured_quad build/test_ps1_indexed_texture build/test_ps1_abr_blend && ./build/test_texture_sample && ./build/test_ft4_textured_quad && ./build/test_ps1_indexed_texture && ./build/test_ps1_abr_blend
+        run: make build/test_texture_sample build/test_ft4_textured_quad build/test_ps1_indexed_texture build/test_ps1_abr_blend build/test_map02_terrain_lighting && ./build/test_texture_sample && ./build/test_ft4_textured_quad && ./build/test_ps1_indexed_texture && ./build/test_ps1_abr_blend && ./build/test_map02_terrain_lighting
       - name: Run texture sampling sanitizers
         run: |
           gcc -std=c11 -Wall -Wextra -Werror -O1 -g \
@@ -53,3 +57,7 @@ jobs:
             -fsanitize=address,undefined -fno-omit-frame-pointer \
             tests/test_ps1_abr_blend.c -o build/test_ps1_abr_blend_sanitize
           ./build/test_ps1_abr_blend_sanitize
+          gcc -std=c11 -Wall -Wextra -Werror -O1 -g \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            tests/test_map02_terrain_lighting.c -o build/test_map02_terrain_lighting_sanitize
+          ./build/test_map02_terrain_lighting_sanitize
