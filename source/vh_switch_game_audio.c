@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "vh_audio_resample.h"
+#include "vh_audio_output_recovery.h"
 #include "vh_game_music_banks.h"
 #include "vh_music_scene.h"
 
@@ -89,6 +90,58 @@ static int start_audout_checked(void) {
            state == AudioOutState_Started ? 0 : -1;
 }
 
+/* Owned exclusively by the audout worker. Recreate a lost output
+ * session without advancing music clocks or regenerating a PCM block.
+ */
+typedef struct {
+    int *opened, *playing;
+    AudioOutBuffer *buffer;
+} VhSwitchOutput;
+
+static int output_submit(void *opaque, const int16_t *stereo,
+                         size_t frames) {
+    VhSwitchOutput *s = opaque;
+    if (!*s->opened || !*s->playing ||
+        stereo != pcm_48000_page ||
+        !frames || frames > VH_AUDIO_RESAMPLE_MAX_FRAMES ||
+        frames * 2u * sizeof(int16_t) > s->buffer->buffer_size)
+        return -1;
+    s->buffer->data_size = frames * 2u * sizeof(int16_t);
+    AudioOutBuffer *released = NULL;
+    return R_SUCCEEDED(audoutPlayBuffer(s->buffer,&released)) ? 0 : -1;
+}
+
+static int output_stop(void *opaque) {
+    VhSwitchOutput *s = opaque;
+    if (!*s->playing) return 0;
+    if (stop_audout_checked()) return -1;
+    *s->playing = 0;
+    return 0;
+}
+
+static void output_close(void *opaque) {
+    VhSwitchOutput *s = opaque;
+    if (!*s->opened) return;
+    audoutExit();
+    *s->opened = 0;
+}
+
+static int output_open(void *opaque) {
+    VhSwitchOutput *s = opaque;
+    if (*s->opened || R_FAILED(audoutInitialize())) return -1;
+    *s->opened = 1;
+    return audoutGetSampleRate()==VH_NATIVE_AUDOUT_RATE &&
+           audoutGetChannelCount()==2u &&
+           audoutGetPcmFormat()==PcmFormat_Int16 ? 0 : -1;
+}
+
+static int output_start(void *opaque) {
+    VhSwitchOutput *s = opaque;
+    if (!*s->opened || start_audout_checked()) return -1;
+    *s->playing = 1;
+    return 0;
+}
+
 static void audio_worker(void *unused) {
     (void)unused;
     int state = -1;
@@ -136,6 +189,12 @@ static void audio_worker(void *unused) {
     AudioOutBuffer desc = {0};
     desc.buffer = pcm_48000_page;
     desc.buffer_size = sizeof(pcm_48000_page);
+    VhSwitchOutput recovery_backend = {&opened, &playing, &desc};
+    const VhAudioOutputOps recovery_ops = {
+        &recovery_backend, output_submit, output_stop, output_close,
+        output_open, output_start
+    };
+    VhAudioOutputRecovery recovery_stats = {0};
 
     unsigned accepted = VH_GAME_MUSIC_SILENT;
     unsigned handled_resume =
@@ -219,9 +278,13 @@ static void audio_worker(void *unused) {
             state = -7;
             break;
         }
-        desc.data_size = count * 2u * sizeof(int16_t);
-        AudioOutBuffer *released = NULL;
-        if (R_FAILED(audoutPlayBuffer(&desc, &released))) {
+        /* If audout rejects the page, reinitialize the device and
+         * retry exactly these samples. Never re-run scene/render or
+         * resampler for the same page (that would skip musical time).
+         * Bounded retries fail closed through the normal teardown. */
+        if (vh_audio_output_submit_recover(&recovery_ops,
+                                           &recovery_stats,
+                                           pcm_48000_page, count)) {
             state = -8;
             break;
         }
