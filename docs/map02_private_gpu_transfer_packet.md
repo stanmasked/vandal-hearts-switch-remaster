@@ -29,7 +29,10 @@ PYTHONPATH=. python3 -m tools.export_map02_verified_vram_ledger \
 
 The exporter checks the complete existing GPU write-ledger audit first;
 it refuses unaccounted VRAM changes, invalid source/texture/GTE observations,
-mismatched hashes and overwritten output files. Output permissions on POSIX
+mismatched hashes and overwritten output files. It also refuses output
+**inside any Git worktree**, including worktrees using a `.git` pointer file
+and output directories reached through symlinks. Always export to a separate
+private directory outside the repository. Output permissions on POSIX
 systems default to owner-only (0600). The console report contains counts
 and the packet hash only. This packet is not a signed attestation.
 
