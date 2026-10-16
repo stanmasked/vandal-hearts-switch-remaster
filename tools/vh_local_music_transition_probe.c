@@ -35,7 +35,9 @@ typedef struct {
     uint64_t cross_program_fallback_notes, out_of_range_fallback_notes;
     uint64_t reverb_send_notes, zero_gain_notes;
     uint64_t saturated_note_requests;
-    unsigned peak_active_voices, first_saturated_note_block;
+    uint64_t notes_while_release_active, saturated_with_release_requests;
+    unsigned peak_active_voices, peak_releasing_voices;
+    unsigned first_saturated_note_block, first_release_overlap_block;
     unsigned first_note_block, last_note_block;
     unsigned first_note_off_block, first_cross_program_block;
     unsigned first_out_of_range_block;
@@ -58,7 +60,8 @@ typedef struct {
     VhNativeSpu *spu;
     uint64_t requests, resolved, unresolved, fallback, reverb_sends;
     uint64_t saturated_requests;
-    unsigned peak_voices;
+    uint64_t release_overlap_requests, saturated_release_requests;
+    unsigned peak_voices, peak_releasing;
     uint64_t cross_program, out_of_range;
     uint64_t zero_gain;
 } ResolverAudit;
@@ -73,11 +76,16 @@ static int resolve_with_audit(void *context, unsigned program, unsigned note,
      * All 20 active slots signal allocation pressure, not necessarily
      * a physically audible dropped note. Count only resolved requests.
      */
-    unsigned active_voices=0u;
-    for(unsigned voice=0;voice<VH_NATIVE_MUSIC_VOICES;voice++)
-        active_voices+=(audit->spu->voice[voice].active!=0);
+    unsigned active_voices=0u, releasing_voices=0u;
+    for(unsigned voice=0;voice<VH_NATIVE_MUSIC_VOICES;voice++) {
+        const VhNativeVoice *v=&audit->spu->voice[voice];
+        active_voices+=(v->active!=0);
+        releasing_voices+=(v->active && v->adsr.phase==VH_ADSR_RELEASE);
+    }
     if (active_voices>audit->peak_voices)
         audit->peak_voices=active_voices;
+    if (releasing_voices>audit->peak_releasing)
+        audit->peak_releasing=releasing_voices;
     const int rc=vh_native_vab_resolve(audit->bank,program,note,velocity,
                                        volume,pan,tone);
     if (rc) {
@@ -87,6 +95,11 @@ static int resolve_with_audit(void *context, unsigned program, unsigned note,
     ++audit->resolved;
     if (active_voices==VH_NATIVE_MUSIC_VOICES)
         ++audit->saturated_requests;
+    if (releasing_voices) {
+        ++audit->release_overlap_requests;
+        if (active_voices==VH_NATIVE_MUSIC_VOICES)
+            ++audit->saturated_release_requests;
+    }
     const VhVabTone *selected=
         &audit->bank->tones[audit->bank->selected_program]
                             [audit->bank->selected_tone];
@@ -174,6 +187,7 @@ int main(int argc,char **argv) {
             const uint64_t previous_cross=resolver_audit.cross_program;
             const uint64_t previous_outside=resolver_audit.out_of_range;
             const uint64_t previous_saturated=resolver_audit.saturated_requests;
+            const uint64_t previous_release=resolver_audit.release_overlap_requests;
             if (vh_native_seq_advance_block(&seq)<0) {
                 fprintf(stderr,"SEQ playback error\n");
                 goto error;
@@ -203,6 +217,9 @@ int main(int argc,char **argv) {
             if (resolver_audit.saturated_requests>previous_saturated &&
                 !metric->first_saturated_note_block)
                 metric->first_saturated_note_block=b+1u;
+            if (resolver_audit.release_overlap_requests>previous_release &&
+                !metric->first_release_overlap_block)
+                metric->first_release_overlap_block=b+1u;
             /* Post-dispatch measurement complements the pre-allocator
              * snapshots inside the resolver (which can see a burst
              * of multiple note-ons in a single 512-frame block).
@@ -273,6 +290,9 @@ int main(int argc,char **argv) {
         metric->reverb_send_notes=resolver_audit.reverb_sends;
         metric->zero_gain_notes=resolver_audit.zero_gain;
         metric->saturated_note_requests=resolver_audit.saturated_requests;
+        metric->notes_while_release_active=resolver_audit.release_overlap_requests;
+        metric->saturated_with_release_requests=resolver_audit.saturated_release_requests;
+        metric->peak_releasing_voices=resolver_audit.peak_releasing;
         if (resolver_audit.peak_voices>metric->peak_active_voices)
             metric->peak_active_voices=resolver_audit.peak_voices;
         if (metric->nonzero_samples>metric->output_frames*2u ||
@@ -295,6 +315,15 @@ int main(int argc,char **argv) {
             metric->first_out_of_range_block>blocks ||
             metric->first_saturated_note_block>blocks ||
             metric->peak_active_voices>VH_NATIVE_MUSIC_VOICES ||
+            metric->peak_releasing_voices>metric->peak_active_voices ||
+            metric->notes_while_release_active>metric->notes ||
+            metric->saturated_with_release_requests>
+                metric->saturated_note_requests ||
+            metric->saturated_with_release_requests>
+                metric->notes_while_release_active ||
+            (metric->notes_while_release_active==0u)!=
+                (metric->first_release_overlap_block==0u) ||
+            metric->first_release_overlap_block>blocks ||
             (metric->saturated_note_requests==0u)!=
                 (metric->first_saturated_note_block==0u) ||
             metric->saturated_note_requests>metric->notes ||
@@ -374,8 +403,12 @@ int main(int argc,char **argv) {
                "\"reverb_send_notes\":%" PRIu64 ","
                "\"zero_gain_notes\":%" PRIu64 ","
                "\"saturated_note_requests\":%" PRIu64 ","
+               "\"notes_while_release_active\":%" PRIu64 ","
+               "\"saturated_with_release_requests\":%" PRIu64 ","
                "\"peak_active_voices\":%u,"
+               "\"peak_releasing_voices\":%u,"
                "\"first_saturated_note_block\":%u,"
+               "\"first_release_overlap_block\":%u,"
                "\"first_note_block\":%u,"
                "\"last_note_block\":%u,"
                "\"first_note_off_block\":%u,"
@@ -408,8 +441,11 @@ int main(int argc,char **argv) {
                m->cross_program_fallback_notes,
                m->out_of_range_fallback_notes,m->notes-m->fallback_notes,
                m->reverb_send_notes,m->zero_gain_notes,
-               m->saturated_note_requests,m->peak_active_voices,
-               m->first_saturated_note_block,
+               m->saturated_note_requests,
+               m->notes_while_release_active,
+               m->saturated_with_release_requests,
+               m->peak_active_voices,m->peak_releasing_voices,
+               m->first_saturated_note_block,m->first_release_overlap_block,
                m->first_note_block,m->last_note_block,
                m->first_note_off_block,m->first_cross_program_block,
                m->first_out_of_range_block,
