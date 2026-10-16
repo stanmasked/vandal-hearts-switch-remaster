@@ -410,7 +410,7 @@ def check_derived_shades(image_path):
     # The left face's -X-facing normal must be brighter than the
     # right face's +X-facing normal, with both ABOVE pure background.
     left=frame.getpixel((260,210))
-    right=frame.getpixel((850,210))
+    right=frame.getpixel((850,280))
     print("Derived GTE OP0 normals left red / right magenta",left,right)
     if not (100<=left[0]<=245 and left[1]<=15 and left[2]<=15):
         raise ValueError(f"left auto-shaded face missing or wrong: {left}")
