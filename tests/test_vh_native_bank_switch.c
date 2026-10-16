@@ -58,6 +58,11 @@ int main(void) {
                        spu.voice[slot].adsr.phase==VH_ADSR_OFF);
         }
         vh_native_spu_reset(&spu);
+        /* Reset must sever all borrowed pointers to previous bank PCM. */
+        for (unsigned slot=0;slot<VH_NATIVE_MUSIC_VOICES;slot++) {
+            assert(spu.voice[slot].pcm==NULL);
+            assert(!spu.voice[slot].active);
+        }
         assert(vh_native_seq_init(&seq,song,sizeof song,&spu,
                                   vh_native_vab_resolve,&bank[scene],0)==0);
         for (unsigned block=0;block<16u;block++) {
