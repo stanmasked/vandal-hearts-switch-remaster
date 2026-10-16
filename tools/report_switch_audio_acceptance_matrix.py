@@ -109,15 +109,12 @@ def build_matrix(root: Path, observations: dict, *,
             h01_data)
 
     home_total = coverage["H02_home_operator_total"]
-    home_errors = any(
-        row["resume"]["home_failures"] or
-        row["resume"]["recoveries"] < 0
-        for row in per_session)
+    home_errors = any(row["resume"]["home_failures"] for row in per_session)
     home_history = any(row["fault_counter_baseline"].get("home_fail", 0)
                        for row in session_rows)
-    if home_errors or home_history:
+    if home_errors or home_history or operator_fails:
         add("H02", INVESTIGATE,
-            "HOME/resume error counter is present; isolate the affected physical cycle.",
+            "Resume counter or operator-reported sound/exit problem needs cycle-level investigation.",
             {"operator_home_returns": home_total})
     elif home_total < 10 or "UNEXPLAINED_HOME_COUNTER" in codes or \
             any(row["operator_physical_switch"] != "YES" for row in session_rows):
@@ -130,9 +127,9 @@ def build_matrix(root: Path, observations: dict, *,
             {"operator_home_returns": home_total})
 
     sleep_total = coverage["H03_sleep_operator_total"]
-    if operator_fails:
+    if operator_fails or home_errors or home_history:
         add("H03", INVESTIGATE,
-            "A session contains a reported audio/launch/exit defect; identify whether sleep caused it.",
+            "Audio/exit or resume fault observed; isolate whether sleep or HOME caused it.",
             {"operator_sleep_cycles": sleep_total, "csv_sleep_cycles": "NOT_OBSERVABLE"})
     elif sleep_total < 5 or any(
             row["operator_physical_switch"] != "YES" for row in session_rows):
