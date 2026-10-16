@@ -182,7 +182,10 @@ static int native_submit(void *opaque,const int16_t *pcm,size_t frames) {
         !frames || frames>VH_AUDIO_RESAMPLE_MAX_FRAMES) return -1;
     dev->page.data_size=frames*2u*sizeof(int16_t);
     AudioOutBuffer *released=NULL;
-    return R_SUCCEEDED(audoutPlayBuffer(&dev->page,&released)) ? 0 : -1;
+    /* A successful service call is not permission to overwrite the
+     * single DMA page unless that exact descriptor was released. */
+    if (R_FAILED(audoutPlayBuffer(&dev->page,&released))) return -1;
+    return vh_audio_output_page_returned(&dev->page,released) ? 0 : -1;
 }
 static const VhAudioOutputOps output_ops={
     &native_output,native_submit,native_stop,
