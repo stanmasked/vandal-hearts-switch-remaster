@@ -277,7 +277,7 @@ int main(void) {
     int i;
 
     if (setenv("VH_MAP02_V49_TRACE", "1", 1) != 0 ||
-    if (setenv("VH_MAP02_V48_TRACE", "1", 1) != 0 ||
+        setenv("VH_MAP02_V48_TRACE", "1", 1) != 0 ||
         setenv("VH_MAP02_V39_TRACE", "1", 1) != 0 ||
         setenv("VH_ACCURATE", "1", 1) != 0) return 2;
     if (!getenv("VH_RASTER_THREADS") &&
