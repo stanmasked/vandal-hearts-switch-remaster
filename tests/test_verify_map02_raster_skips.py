@@ -110,7 +110,7 @@ class NativeRasterSkipAuditTests(unittest.TestCase):
         self.assertEqual(r["source_keyed_dda_horizontal_clip_events"],0)
 
     def test_invalid_reason_coordinates_and_cap_rejected(self):
-        for field,value in (("reason",4),("x",1024),("y",-1),
+        for field,value in (("reason",8),("x",1024),("y",-1),
                             ("primitive_ordinal",4),("step",True)):
             with self.subTest(field=field):
                 before=self.rows[0][field]
