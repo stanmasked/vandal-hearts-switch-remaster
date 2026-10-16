@@ -7,6 +7,7 @@ on:
       - 'tools/preflight_map02_prs_v45.py'
       - 'tests/test_map02_prs_v45.py'
       - 'tests/map02_v45_prs_fixture_runtime.c'
+      - 'tests/map02_v45_unpack_tokens_native.c'
       - 'tests/map02_v44_prs_v24_runtime.c'
       - 'tests/fixtures/vh_map02_hd_lookup_v24.h'
       - 'tests/map02_v43_real_producer.c'
@@ -119,6 +120,43 @@ jobs:
           nm -a proof/map02_gpu_runtime | grep -q UnpackMapFileData
           strings proof/map02_gpu_runtime | grep -F '[v40-terrain-hires] f=%u'
           sha256sum proof/*.o proof/map02_gpu_runtime > proof/SHA256SUMS
+      - name: Compare real C unpacker against bounded Python across token classes
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=gnu89 -O2 -ffunction-sections -fdata-sections \
+            -c remaster/tests/map02_v45_unpack_tokens_native.c -o proof/native_tokens.o
+          "$CC" -Wl,--gc-sections proof/native_tokens.o proof/unpack.o \
+            -o proof/native_token_differential
+          ./proof/native_token_differential > proof/NATIVE_TOKEN_DIFFERENTIAL.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          from remaster.tools.preflight_map02_prs_v45 import unpack_bounded
+          fixtures = {
+              "literal": (b"\x00ABCDEFGH", 8),
+              "absolute": (b"\x01\x00\x00", 3),
+              "relative": (b"\x01\x80", 2),
+              "literal_run": (b"\x01\xc0abcdefgh", 8),
+              "relative_overlap": (b"\x02A\x81", 3),
+              "absolute_overlap": (bytes((2, ord("X"), 3, 222)), 4),
+          }
+          result = Path("proof/NATIVE_TOKEN_DIFFERENTIAL.txt").read_text()
+          rows = [line.split() for line in result.splitlines()
+                  if line.startswith("NATIVE_TOKEN ")]
+          assert len(rows) == len(fixtures), (rows, result)
+          assert len({row[1] for row in rows}) == len(fixtures)
+          for _, name, length, native_hash in rows:
+              payload, expected = fixtures[name]
+              data = unpack_bounded(payload, expected)
+              h = 1469598103934665603
+              for byte in data:
+                  h = ((h ^ byte) * 1099511628211) & 0xffffffffffffffff
+              assert int(length) == expected, name
+              assert native_hash == f"{h:016x}", (name, native_hash, f"{h:016x}")
+          print("PASS: bounded Python and original PC-port decoder match on all six token fixtures.")
+          PY
       - name: Execute genuine PRS unpacker and validate generated synthetic data
         shell: bash
         run: |
