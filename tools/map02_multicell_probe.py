@@ -357,3 +357,45 @@ def audit_projected_shared_vertices(faces, screen_samples):
         "mismatched": mismatched,
         "evidence_scope": "external per-face XY comparison, not GTE or GPU rendering",
     }
+
+
+def audit_projected_shared_edges(faces, screen_samples):
+    """Compare both endpoints of complete shared 3D perimeter edges.
+
+    Orientation is ignored for source matching but respected when associating
+    each XYZ endpoint with its independently supplied screen XY. A shared
+    corner alone never creates an edge. No claim about actual GPU cracks.
+    """
+    projected = bind_external_screen_corners(faces, screen_samples)
+    edge_owners = {}
+    for face, sample in zip(faces, projected):
+        xyz = [tuple(p) for p in face["world_xyz_hypothesis"]]
+        xy = [tuple(p) for p in sample["perimeter_xy"]]
+        for i in range(4):
+            j = (i + 1) % 4
+            if xyz[i] == xyz[j]:
+                continue
+            edge = tuple(sorted((xyz[i], xyz[j])))
+            screen_by_xyz = {xyz[i]: xy[i], xyz[j]: xy[j]}
+            edge_owners.setdefault(edge, []).append({
+                "source_key": sample["source_key"],
+                "screen_endpoints": [list(screen_by_xyz[p]) for p in edge],
+            })
+    matching, mismatching = [], []
+    for edge, occurrences in sorted(edge_owners.items()):
+        if len({tuple(item["source_key"]) for item in occurrences}) < 2:
+            continue
+        entry = {"edge_xyz": [list(p) for p in edge], "occurrences": occurrences}
+        if len({tuple(tuple(p) for p in item["screen_endpoints"])
+                for item in occurrences}) == 1:
+            matching.append(entry)
+        else:
+            mismatching.append(entry)
+    return {
+        "shared_world_edges": len(matching) + len(mismatching),
+        "screen_matches": len(matching),
+        "screen_mismatches": len(mismatching),
+        "matched": matching,
+        "mismatched": mismatching,
+        "evidence_scope": "external screen endpoints; no GTE execution or GPU seam proof",
+    }
