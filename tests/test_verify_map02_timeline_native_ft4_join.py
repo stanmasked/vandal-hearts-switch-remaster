@@ -200,8 +200,13 @@ class TimelineToNativeFt4JoinTests(unittest.TestCase):
         # Old captures remain valid, but cannot claim coverage proof.
         self.assertEqual(
             self.verify()["matched_ft4_draws_with_drawenv_clip_checked"], 0)
+        # Align the first FT4's minimum vertex with the clip origin:
+        # the subsequent in-clip pixel mutation is geometrically possible.
+        xy = self.native_events[0]["ft4"]["xy"]
+        ofs_x = -min(xy[::2])
+        ofs_y = -min(xy[1::2])
         for i, event in enumerate(self.native_events):
-            event["draw_env"] = ([0, 0, 4, 4, 300, -200]
+            event["draw_env"] = ([0, 0, 4, 4, ofs_x, ofs_y]
                                   if i < 2 else
                                   [0, 0, 1024, 512, 0, 0])
         self.write_native()
