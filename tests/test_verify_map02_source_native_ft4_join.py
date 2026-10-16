@@ -100,6 +100,30 @@ class SourceToNativeFt4JoinTests(unittest.TestCase):
         for secret in ("perimeter_xy","vertices","xy","240,","31978","801f"):
             self.assertNotIn(secret,result)
 
+    def test_single_frame_distinguishes_proven_clip_from_unknown_zero_delta(self):
+        legacy = verify_join(self.source, self.native)
+        self.assertEqual(legacy["matched_ft4_draws_proven_no_coverage"], 0)
+        self.assertEqual(legacy["matched_ft4_draws_zero_delta_cause_unknown"], 2)
+        # Native FT4 pairs occur at steps 2/3 and 4/5, with different
+        # DRAWENV clip state. No execution-order/source-order guess.
+        for entry in self.entries:
+            entry["draw_env"] = ([0, 0, 1024, 512, 1500, 1500]
+                                  if entry["step"] == 2 else
+                                  [0, 0, 1024, 512, 0, 0])
+        self.save()
+        report = verify_join(self.source, self.native)
+        self.assertEqual(report["matched_ft4_draws_proven_no_coverage"], 1)
+        self.assertEqual(report["matched_ft4_draws_zero_delta_cause_unknown"], 1)
+
+        # This write stays inside the GPU drawing area, but the FT4
+        # vertices are far outside it after the captured draw offset.
+        changed = bytearray(self.bytes_before)
+        fixture.word(changed, 0, 0, 0x801f)
+        self.override_snapshots[3] = bytes(changed)
+        self.save()
+        with self.assertRaisesRegex(ValueError, "geometry entirely outside"):
+            verify_join(self.source, self.native)
+
     def test_single_frame_native_ft4_post_draw_pixel_delta(self):
         report = verify_join(self.source, self.native)
         self.assertEqual(report["matched_ft4_draw_changed_vram_words"], 0)
