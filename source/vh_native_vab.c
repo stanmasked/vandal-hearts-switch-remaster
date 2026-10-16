@@ -43,12 +43,15 @@ static int load_prepared_vab(VhNativeVab *prepared, const uint8_t *vh, size_t vh
     for (unsigned p = 0; p < VH_VAB_PROGRAMS; ++p) {
         const uint8_t *record = vh + 32u + p * 16u;
         const unsigned count = record[0];
-        if (count > VH_VAB_TONES_PER_PROGRAM) return -1;
-        if (!count) continue;
-        if (record[1] > 127u || record[4] > 127u) return -1;
+        if (count > VH_VAB_TONES_PER_PROGRAM ||
+            record[1] > 127u || record[4] > 127u) return -1;
+        /* PC-port SsVabOpenHeadSticky copies ProgAtr mvol/mpan even
+         * for nTone==0. Empty programs can alias a following packed
+         * block but retain their OWN gain and pan attributes. */
         prepared->program_tones[p] = (uint8_t)count;
         prepared->program_volume[p] = record[1];
         prepared->program_pan[p] = record[4];
+        if (!count) continue;
         ++packed_blocks;
         active_tones += count;
         highest_program = p;
