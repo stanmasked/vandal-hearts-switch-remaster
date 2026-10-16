@@ -15,6 +15,7 @@ on:
       - 'tests/export_native_seq_pcm_wav.c'
       - 'tests/test_native_pcm_capture.py'
       - 'tests/test_vh_resample_partition.c'
+      - 'tests/test_vh_resample_long_clock.c'
       - 'tools/inspect_native_pcm_capture.py'
       - 'tools/analyze_pcm_discontinuities.py'
       - 'tests/test_analyze_pcm_discontinuities.py'
@@ -34,6 +35,7 @@ on:
       - 'tests/export_native_seq_pcm_wav.c'
       - 'tests/test_native_pcm_capture.py'
       - 'tests/test_vh_resample_partition.c'
+      - 'tests/test_vh_resample_long_clock.c'
       - 'tools/inspect_native_pcm_capture.py'
       - 'tools/analyze_pcm_discontinuities.py'
       - 'tests/test_analyze_pcm_discontinuities.py'
@@ -86,3 +88,9 @@ jobs:
             tests/test_vh_resample_partition.c source/vh_audio_resample.c \
             -o /tmp/test_vh_resample_partition
           /tmp/test_vh_resample_partition
+      - name: Verify long-run PCM resampler clock stability
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+            tests/test_vh_resample_long_clock.c source/vh_audio_resample.c \
+            -o /tmp/test_vh_resample_long_clock
+          /tmp/test_vh_resample_long_clock
