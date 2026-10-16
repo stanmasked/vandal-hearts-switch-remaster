@@ -26,6 +26,18 @@ static atomic_int audio_status;
 static atomic_uint bank_warning_notes;
 static atomic_uint resume_latency_samples;
 static atomic_ullong resume_latency_worst_us;
+static atomic_ullong resume_latency_last_us;
+static atomic_ullong published_pages;
+static atomic_ullong published_frames;
+static atomic_uint published_resume_events;
+static atomic_uint published_submit_failures;
+static atomic_uint published_restart_attempts;
+static atomic_uint published_recoveries;
+static atomic_uint published_resume_failures;
+static atomic_uint published_resume_restarts;
+static atomic_uint published_resume_recoveries;
+static atomic_uint published_lease_mismatches;
+static atomic_uint published_abandoned_sessions;
 static VhNativeSpu spu;
 static VhMusicScene director;
 static VhAudioResample rate_converter;
@@ -191,6 +203,35 @@ static int output_tail_submit_bounded(VhSwitchOutput *s, size_t frames) {
     return vh_audio_buffer_lease_release(&s->lease,released);
 }
 
+/* Called by the single audio owner; the render thread only takes
+ * atomic snapshots. These metrics must NEVER block audout or expose
+ * raw PCM/music pointers to the game or renderer threads. */
+static void publish_audio_diagnostics(const VhAudioOutputRecovery *r,
+                                      const VhAudioBufferLease *lease) {
+    atomic_store_explicit(&published_pages,r->pages_submitted,
+                          memory_order_release);
+    atomic_store_explicit(&published_frames,r->frames_submitted,
+                          memory_order_release);
+    atomic_store_explicit(&published_submit_failures,r->submit_failures,
+                          memory_order_release);
+    atomic_store_explicit(&published_restart_attempts,r->restart_attempts,
+                          memory_order_release);
+    atomic_store_explicit(&published_recoveries,r->recoveries,
+                          memory_order_release);
+    atomic_store_explicit(&published_resume_failures,r->resume_failures,
+                          memory_order_release);
+    atomic_store_explicit(&published_resume_restarts,r->resume_restarts,
+                          memory_order_release);
+    atomic_store_explicit(&published_resume_recoveries,r->resume_recoveries,
+                          memory_order_release);
+    atomic_store_explicit(&published_lease_mismatches,
+                          lease->mismatched_releases,
+                          memory_order_release);
+    atomic_store_explicit(&published_abandoned_sessions,
+                          lease->abandoned_sessions,
+                          memory_order_release);
+}
+
 static void audio_worker(void *unused) {
     (void)unused;
     int state = -1;
@@ -270,6 +311,8 @@ static void audio_worker(void *unused) {
              * this flag until applet focus returns; no music clocks
              * may advance during the suspended interval. */
             pending_resume_reopen = 1;
+            atomic_fetch_add_explicit(&published_resume_events,1u,
+                                      memory_order_relaxed);
             if (output_stop(&recovery_backend)) {
                 state = -9;
                 break;
@@ -301,6 +344,8 @@ static void audio_worker(void *unused) {
              * not a second pass through this envelope. */
             vh_audio_output_ramp_arm(&output_ramp);
             resume_begin_tick=start_tick;
+            publish_audio_diagnostics(&recovery_stats,
+                                      &recovery_backend.lease);
             atomic_store_explicit(&audio_status, 1, memory_order_release);
         }
         /* The game thread only publishes the newest desired state.
@@ -356,6 +401,8 @@ static void audio_worker(void *unused) {
         /* Submission returned ownership of THIS exact 48-kHz page.
          * Store the terminal sample for optional normal-exit taper;
          * never inspect or overwrite it while the device owns it. */
+        publish_audio_diagnostics(&recovery_stats,
+                                  &recovery_backend.lease);
         last_pcm_left=pcm_48000_page[2u*count-2u];
         last_pcm_right=pcm_48000_page[2u*count-1u];
         have_last_pcm=1;
@@ -369,6 +416,9 @@ static void audio_worker(void *unused) {
                                   memory_order_release);
             atomic_store_explicit(&resume_latency_worst_us,
                 resume_stats.max_ns/UINT64_C(1000),
+                memory_order_release);
+            atomic_store_explicit(&resume_latency_last_us,
+                resume_stats.last_ns/UINT64_C(1000),
                 memory_order_release);
             resume_begin_tick=0;
         }
@@ -409,6 +459,8 @@ cleanup:
         vh_native_spu_reset(&spu);
     vh_music_scene_init(&director, &spu);
     vh_game_music_banks_close(&loaded_banks);
+    publish_audio_diagnostics(&recovery_stats,
+                              &recovery_backend.lease);
     atomic_store_explicit(&audio_status, state, memory_order_release);
 }
 
@@ -423,6 +475,19 @@ int vh_switch_game_audio_start(unsigned initial_scene) {
                           memory_order_release);
     atomic_store_explicit(&resume_latency_worst_us, 0u,
                           memory_order_release);
+    atomic_store_explicit(&resume_latency_last_us, 0u,
+                          memory_order_release);
+    atomic_store_explicit(&published_pages, 0u, memory_order_release);
+    atomic_store_explicit(&published_frames, 0u, memory_order_release);
+    atomic_store_explicit(&published_resume_events,0u,memory_order_release);
+    atomic_store_explicit(&published_submit_failures,0u,memory_order_release);
+    atomic_store_explicit(&published_restart_attempts,0u,memory_order_release);
+    atomic_store_explicit(&published_recoveries,0u,memory_order_release);
+    atomic_store_explicit(&published_resume_failures,0u,memory_order_release);
+    atomic_store_explicit(&published_resume_restarts,0u,memory_order_release);
+    atomic_store_explicit(&published_resume_recoveries,0u,memory_order_release);
+    atomic_store_explicit(&published_lease_mismatches,0u,memory_order_release);
+    atomic_store_explicit(&published_abandoned_sessions,0u,memory_order_release);
     Result rc = threadCreate(&audio_thread, audio_worker, NULL,
                              NULL, 0x10000u, 0x2Cu, -2);
     if (R_FAILED(rc)) return -1;
@@ -483,4 +548,37 @@ unsigned vh_switch_game_audio_resume_latency_samples(void) {
 uint64_t vh_switch_game_audio_resume_worst_confirmed_us(void) {
     return (uint64_t)atomic_load_explicit(&resume_latency_worst_us,
                                          memory_order_acquire);
+}
+
+void vh_switch_game_audio_diagnostics(VhAudioDiagnostics *out) {
+    if (!out) return;
+    out->status=vh_switch_game_audio_status();
+    out->bank_warnings=vh_switch_game_audio_bank_warnings();
+    out->resume_events=atomic_load_explicit(&published_resume_events,
+                                             memory_order_acquire);
+    out->confirmed_resumes=vh_switch_game_audio_resume_latency_samples();
+    out->last_confirmed_us=(uint64_t)atomic_load_explicit(
+        &resume_latency_last_us,memory_order_acquire);
+    out->worst_confirmed_us=
+        vh_switch_game_audio_resume_worst_confirmed_us();
+    out->pages_submitted=(uint64_t)atomic_load_explicit(
+        &published_pages,memory_order_acquire);
+    out->frames_submitted=(uint64_t)atomic_load_explicit(
+        &published_frames,memory_order_acquire);
+    out->submit_failures=atomic_load_explicit(
+        &published_submit_failures,memory_order_acquire);
+    out->restart_attempts=atomic_load_explicit(
+        &published_restart_attempts,memory_order_acquire);
+    out->recoveries=atomic_load_explicit(
+        &published_recoveries,memory_order_acquire);
+    out->resume_failures=atomic_load_explicit(
+        &published_resume_failures,memory_order_acquire);
+    out->resume_restarts=atomic_load_explicit(
+        &published_resume_restarts,memory_order_acquire);
+    out->resume_recoveries=atomic_load_explicit(
+        &published_resume_recoveries,memory_order_acquire);
+    out->lease_mismatches=atomic_load_explicit(
+        &published_lease_mismatches,memory_order_acquire);
+    out->abandoned_sessions=atomic_load_explicit(
+        &published_abandoned_sessions,memory_order_acquire);
 }
