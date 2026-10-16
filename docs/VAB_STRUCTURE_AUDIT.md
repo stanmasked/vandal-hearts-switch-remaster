@@ -365,6 +365,35 @@ They do **not** establish actual Vandal Hearts soundtrack fidelity,
 PS1 hardware sample-perfect output, or physical Nintendo Switch
 speaker playback.
 
+## SEQ tempo and live-control transitions at PCM block seams
+
+Two additional host-native regressions exercise `FF 51` tempo changes
+and MIDI CC7/CC10 at tick boundaries that straddle 512-frame SPU
+render blocks. In `tests/test_vh_native_vab.c`, one synthetic SEQ
+plays left (program 1, VAG3) at tick 0, right (program 7, VAG3)
+at tick 15, and center (program 8, VAG4) at tick 45. Tempo
+changes from 500000 to 250000 microseconds/quarter at tick 15.
+The scene checks **exact note-on dispatch blocks 1, 2, and 4**,
+independent controller levels, actual stereo PCM samples, and
+ownership-safe note-offs when earlier one-shot voices have ended.
+
+In `tests/test_vh_native_seq.c`, a separate synthesized **looping**
+voice survives the same tempo and controller changes. Two more
+long-held voices enter without interrupting it: hard-left remains
+hard-left after CC10 moves to hard-right for the second note, then a
+third centered note enters. The test checks that the pre-existing
+voice's gains remain unchanged, stereo PCM remains nonzero between
+events, and adjacent output blocks have no interruption of the held
+left-channel sample. A deliberately full PCM ring is also checked:
+`vh_native_seq_pump` must return no progress and retain its tempo,
+channel controls, frame clock and note count until capacity returns.
+
+These tests exercise the actual C SEQ scheduler, SPU mixer and PCM
+FIFO, including the UBSan host target. They are **synthetic host
+regressions**, not sample-perfect PS1 hardware verification, a
+comparison to an original soundtrack recording, or an on-console
+Nintendo Switch listening test.
+
 ## SPU ADSR and sample cursor (host-only)
 
 The next isolated component is `tools/simulate_spu_voice.py`, which
