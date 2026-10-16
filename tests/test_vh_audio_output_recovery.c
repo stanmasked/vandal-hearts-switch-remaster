@@ -133,18 +133,29 @@ int main(void) {
     assert(vh_native_spu_set_reverb(&spu,1,.5f)==0);
     vh_audio_resample_reset(&resampler);
     assert(vh_native_seq_init(&seq,song,sizeof song,&spu,resolve,NULL,0)==0);
+    /* Independent expected 48-kHz stream fingerprint: backend restarts
+     * must not duplicate, drop or reorder any accepted PCM page.
+     */
+    uint64_t expected_checksum=UINT64_C(1469598103934665603);
+    uint64_t expected_frames=0;
+    unsigned expected_failures=0,expected_recovered_pages=0;
     for (unsigned block=0;block<64u;block++) {
         assert(vh_native_seq_advance_block(&seq)>=0);
         vh_native_spu_render(&spu,src,512u);
         const size_t frames=vh_audio_resample_process(
             &resampler,src,512u,dst,640u);
         assert(frames>=555u && frames<=559u);
+        expected_checksum=(expected_checksum ^ hash_page(dst,frames)) *
+                          UINT64_C(1099511628211);
+        expected_frames+=frames;
         const uint64_t old_spu=spu.frames_rendered;
         const uint64_t old_in=resampler.input_frames;
         const uint64_t old_tick=resampler.next_output_tick;
         const uint64_t old_notes=seq.note_ons;
         const unsigned failures=(block%17u==5u)?2u:
                                 (block%11u==3u)?1u:0u;
+        expected_failures+=failures;
+        if(failures) ++expected_recovered_pages;
         begin_page(&device,failures);
         assert(vh_audio_output_submit_recover(
             &ops,&stats,dst,frames)==0);
@@ -157,8 +168,15 @@ int main(void) {
         assert(old_in==(uint64_t)(block+1u)*512u);
     }
     assert(device.accepted==64u);
+    assert(device.checksum==expected_checksum);
+    assert(stats.frames_submitted==expected_frames);
     assert(stats.frames_submitted==resampler.next_output_tick/44100u);
-    assert(stats.recoveries>0u && stats.submit_failures>0u);
+    assert(stats.pages_submitted==64u);
+    assert(stats.recoveries==expected_recovered_pages);
+    assert(stats.submit_failures==expected_failures);
+    assert(stats.restart_attempts==expected_failures);
+    assert(device.submissions==64u+expected_failures);
+    assert(expected_recovered_pages>0u && expected_failures>0u);
 
     /* Three failed submissions exceed the two permitted restarts.
      * An external caller can later submit the same prepared page again,
