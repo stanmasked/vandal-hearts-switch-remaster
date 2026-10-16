@@ -105,3 +105,67 @@ STUDIO_C effects, output-device behavior after suspend/resume,
 and observed CPU/underrun statistics on a physical Switch.
 CI cross-builds and NRO header verification do not prove
 these behaviors.
+
+
+## Applet focus, HOME/sleep and resume recovery (stage 177)
+
+The main tactical NRO now has a cooperative **audio pause/resume gate**
+rather than continuing to advance native music while the applet loses
+focus. This uses libnx `appletHook()`, with
+`AppletHookType_OnFocusState` and `AppletHookType_OnResume` callbacks
+executing on the main applet message-processing thread.
+
+The callback **only publishes C11 atomics** through the extended
+`VhGameMusicMailbox`. In particular, a focus change is never allowed
+to call an audout service, decode a VAG, lock a PCM buffer or wait for
+the worker from the input/framebuffer loop. A direct
+`appletGetFocusState()` refresh after `appletMainLoop()` also
+covers the first interactive frame after libnx resumes normal
+execution in applet modes where no separate focus notification
+was processed beforehand.
+
+The dedicated audio thread now handles the lifecycle:
+
+- **Out of focus:** after any already submitted blocking buffer
+  finishes, stop `audout` once and enter a bounded 16-ms idle sleep;
+  do not render any new 512-frame SEQ blocks or advance SPU reverb,
+  decoded sample playback or 44.1→48-kHz resampling.
+- **Return to focus:** start the audout output session on the audio
+  thread, then continue using the **same** SEQ/SPU/ADSR/reverb state
+  and resampler clock; do not start the track over.
+- **Explicit OnResume:** increment an atomic resume serial. This
+  forces an `audoutStopAudioOut()` / `audoutStartAudioOut()`
+  cycle even if default system-wide applet suspension prevented
+  the worker from observing the preceding loss of focus.
+- **Latest-wins scene selection:** scene changes requested while
+  suspended remain pending in the mailbox and are applied after
+  playback resumes. Transition requests still respect the
+  pre-existing eight-block fade ownership protocol.
+- **Shutdown:** `appletUnhook()` occurs before the audio thread is
+  asked to stop; the only thread join is after leaving the
+  framebuffer loop.
+
+The diagnostic on-screen text can now show `AUDIO PAUSED`,
+`AUDIO ERROR`, or the active tactical music mode. An
+unrecoverable `audout` service error leaves the visual prototype
+usable while the audio worker reports a negative status.
+
+Host regressions include: focus toggles concurrent with scene
+requests; an explicit `OnResume` generation that is **not**
+incremented by normal frame-by-frame focus sampling; a
+3000-iteration focus-loss period; and assertions that no
+SEQ/SPU/STUDIO_C/48-kHz counters advance until the game becomes
+focused again. The follow-up test verifies the last pending scene,
+fade completion and repeated resume without track restart.
+See `tests/test_vh_game_music_mailbox.c` and
+`tests/test_vh_music_focus_resume.c` under strict C11 and UBSan.
+
+**Important limits:** host tests simulate focus policy and clocks,
+not actual HOME-menu/standby behavior of the Switch audio service.
+Applet focus notifications vary by launch mode, and a single
+already-submitted 48-kHz audio buffer can finish when focus is lost.
+No physical device test has yet confirmed recovery from suspend,
+correct audible transitions, or absence of crackling on resume.
+The main tactical prototype still plays two **synthetic** cues.
+Loading separate user-owned music banks for gameplay scenes is
+not part of this change.
