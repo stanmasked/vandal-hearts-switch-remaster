@@ -333,3 +333,8 @@ python3 tests/test_switch_audio_long_cohort.py
 Сверка [`assess_switch_audio_first_run.py`](../tools/assess_switch_audio_first_run.py) читает уже подтверждённый манифест NRO/CSV и **отдельный** [незаполненный JSON-шаблон оператора](SWITCH_AUDIO_STAGE219_OPERATOR_TEMPLATE.json), проверяет, что никто не заменил исходные CSV, что имена журналов принадлежат комплекту, и что запись испытателя относится к тому же NRO/Git SHA. Подозрительные ошибки аудио/HOME и изменения старого CSV выделяются в `INVESTIGATE`. Недостаточные наблюдения — `INCONCLUSIVE`. Даже лучший программный вывод `READY_FOR_INDEPENDENT_MANUAL_REVIEW` **не означает аппаратный `PASS`**: личность оператора, физическое устройство, слышимый звук и независимость записей не заверяются программой.
 
 16 host-only регрессий в [`tests/test_assess_switch_audio_first_run.py`](../tests/test_assess_switch_audio_first_run.py) включены в `make test` и `make test-audio-stream`. Физические испытания по-прежнему **не проводились**, поэтому программный статус `HARDWARE NOT TESTED` сохраняется.
+
+
+## Этап №220 — валидация противоречивых аппаратных показаний
+
+Добавлено [руководство №220](SWITCH_AUDIO_STAGE220_CONSISTENCY_GATES.md) и обновлён [инструмент сравнения ручных записей с CSV](../tools/assess_switch_audio_first_run.py). Новая карточка `vh-switch-audio-first-run-operator/v2` требует привязки H05 к конкретному ранее сохранённому CSV. Программа также обнаруживает ненулевые начальные счётчики ранее случившихся PCM/HOME-сбоев, сообщения `ERROR`, противоречивый `EXIT` и недостаточную историю наблюдений. Старые карточки v1 совместимы на чтение, но неподтверждённые хеши не считаются доказательством H05. Статус физической Switch остаётся `HARDWARE NOT TESTED`.
