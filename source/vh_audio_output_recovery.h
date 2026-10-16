@@ -81,15 +81,17 @@ int vh_audio_output_record_scene_page(
  *  1: full run reached expected_pages with all counters consistent
  *  0: internally consistent, but interrupted/failed/incomplete run
  * -1: contradictory or overflowing counters (never claim proof)
- * Only accepted first-after-switch pages count as completed switches;
- * user-supplied SD music must never have automatic fixture switches.
+ * Only accepted first-after-switch pages count as completed switches.
+ * Pass fixture_switch_period_pages=0 for user-owned SD music, which
+ * must never be automatically switched. Other values set the precise
+ * frequency for generated-fixture scenes.
  */
 int vh_audio_output_verify_run(
     const VhAudioSceneWaits *groups,
     const VhAudioOutputRecovery *recovery,
     const VhAudioSubmitTiming *timing,
     uint64_t completed_pages, uint64_t completed_fixture_switches,
-    uint64_t expected_pages, int using_user_files,
+    uint64_t expected_pages, uint64_t fixture_switch_period_pages,
     int finished_without_error);
 
 /* A single reusable audout PCM page is safe to overwrite only when
