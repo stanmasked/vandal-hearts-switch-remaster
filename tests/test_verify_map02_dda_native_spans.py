@@ -50,6 +50,16 @@ class SpanJournalTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_native_spans(serialize(BASE).replace(b"\\n", b"\\r\\n"))
 
+    def test_reject_entered_row_outside_vertical_clip(self):
+        for row in (dict(BASE, y=9), dict(BASE, y=16)):
+            with self.assertRaisesRegex(ValueError, "geometry"):
+                parse_native_spans(serialize(row))
+
+    def test_reject_duplicate_entered_primitive_row(self):
+        rows = (dict(BASE, step=0), dict(BASE, step=1))
+        with self.assertRaisesRegex(ValueError, "duplicate entered"):
+            parse_native_spans(serialize(*rows))
+
     def test_reject_backward_primitive(self):
         with self.assertRaises(ValueError):
             parse_native_spans(serialize(dict(BASE, step=0, primitive_ordinal=10),
