@@ -137,7 +137,7 @@ def verify_skips(source_dir, native_dir, *, compiler="gcc"):
         "native_drawotag_frame_and_ordinal_checked": True,
         "all_executed_raster_skip_branches_captured": False,
         "unlogged_pixel_cause_inferred": False,
-        "vertical_clip_per_pixel_confirmed": True,
+        "vertical_clip_selected_span_exclusion_observed": counts[4] > 0,
         "vertical_clip_exact_polygon_coverage_proven": False,
         "vertical_clip_scanline_branches_observed_only": True,
         "vertical_scanline_horizontal_coverage_proven": False,
