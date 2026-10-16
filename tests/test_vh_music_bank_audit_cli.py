@@ -98,6 +98,45 @@ class MusicBankAuditCliTests(unittest.TestCase):
             self.assertEqual(strict.returncode, 4)
             self.assertEqual(json.loads(strict.stdout), report)
 
+    def test_report_is_deterministic_and_does_not_expose_local_paths(self):
+        with tempfile.TemporaryDirectory(prefix="music audit private ") as path:
+            folder = Path(path)
+            fixtures(folder, selected_program=9)
+            first = run(path)
+            second = run(path)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertEqual(first.stdout, second.stdout)
+            self.assertEqual(first.stderr, second.stderr)
+            report = json.loads(first.stdout)
+            self.assertEqual(report["selected"]["fallback"], 1)
+            self.assertNotIn(path, first.stdout)
+            self.assertNotIn(path, first.stderr)
+            self.assertNotIn("pBAV", first.stdout)
+            self.assertEqual(run("--strict", path).returncode, 4)
+
+    def test_bad_sequence_is_rejected_without_partial_json(self):
+        with tempfile.TemporaryDirectory() as path:
+            folder = Path(path)
+            fixtures(folder)
+            seq_file = folder / "selected" / "music.seq"
+            seq_file.write_bytes(b"pQES" + b"\\x00" * 11)
+            result = run(path)
+            self.assertEqual(result.returncode, 3, result.stderr)
+            self.assertEqual(result.stdout, "")
+            self.assertNotIn(path, result.stderr)
+
+    def test_truncated_vb_is_rejected_without_partial_json(self):
+        with tempfile.TemporaryDirectory() as path:
+            folder = Path(path)
+            fixtures(folder)
+            vb = folder / "field" / "music.vb"
+            vb.write_bytes(vb.read_bytes()[:16])
+            result = run("--strict", path)
+            self.assertEqual(result.returncode, 3, result.stderr)
+            self.assertEqual(result.stdout, "")
+            self.assertNotIn(path, result.stderr)
+
     def test_missing_partial_corrupt_and_help(self):
         with tempfile.TemporaryDirectory() as path:
             folder = Path(path)
