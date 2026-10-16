@@ -241,7 +241,7 @@ static void stress(const char *csv_prefix) {
                 MusicOwner *o=&owner[i];
                 vh_game_music_mailbox_set_focus(&o->mailbox,0);
                 assert(do_stop(&o->backend)==0);
-                journal_sample(o,(uint64_t)block*12u-1u,2);
+                journal_sample(o,(uint64_t)block*12u,2);
                 memcpy(&paused_spu[i],&o->spu,sizeof o->spu);
                 memcpy(&paused_scene[i],&o->scene,sizeof o->scene);
                 memcpy(&paused_resampler[i],&o->resampler,
@@ -289,7 +289,7 @@ static void stress(const char *csv_prefix) {
                     o->telemetry.worst_confirmed_us)
                     o->telemetry.worst_confirmed_us=
                         o->telemetry.last_confirmed_us;
-                journal_sample(o,(uint64_t)block*12u,1);
+                journal_sample(o,(uint64_t)block*12u+1u,1);
                 vh_audio_output_ramp_arm(&o->ramp);
                 assert(o->ramp.position==0u);
             }
