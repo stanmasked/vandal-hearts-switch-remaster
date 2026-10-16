@@ -8,6 +8,7 @@
 #include "vh_audio_resample.h"
 #include "vh_audio_output_recovery.h"
 #include "vh_audio_buffer_lease.h"
+#include "vh_audio_output_ramp.h"
 #include "vh_game_music_banks.h"
 #include "vh_music_scene.h"
 
@@ -178,6 +179,7 @@ static void audio_worker(void *unused) {
         output_open, output_start
     };
     VhAudioOutputRecovery recovery_stats = {0};
+    VhAudioOutputRamp output_ramp = {VH_AUDIO_OUTPUT_RAMP_FRAMES};
     VhGameMusicBanks *loaded_banks = NULL;
     const int pack_status = vh_game_music_banks_load(
         &loaded_banks, VH_GAME_MUSIC_SD_ROOT);
@@ -261,6 +263,10 @@ static void audio_worker(void *unused) {
                 break;
             }
             pending_resume_reopen = 0;
+            /* Only the next freshly rendered PCM frames fade in.
+             * A PlayBuffer retry resubmits the already modified page,
+             * not a second pass through this envelope. */
+            vh_audio_output_ramp_arm(&output_ramp);
             atomic_store_explicit(&audio_status, 1, memory_order_release);
         }
         /* The game thread only publishes the newest desired state.
@@ -297,7 +303,9 @@ static void audio_worker(void *unused) {
         const size_t count = vh_audio_resample_process(
             &rate_converter, pcm_44100, VH_AUDIO_BLOCK_FRAMES,
             pcm_48000_page, VH_AUDIO_RESAMPLE_MAX_FRAMES);
-        if (!count || count * 2u * sizeof(int16_t) > desc.buffer_size) {
+        if (!count || count * 2u * sizeof(int16_t) > desc.buffer_size ||
+            vh_audio_output_ramp_apply(&output_ramp,
+                                       pcm_48000_page,count)) {
             state = -7;
             break;
         }
