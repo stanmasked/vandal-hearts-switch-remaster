@@ -892,3 +892,39 @@ run by MAP02 CI. A successful report proves **self-consistency of
 supplied files**, not genuine retail gameplay or PS1 hardware pixels;
 GPU VRAM stability between submissions is not established by a
 single snapshot, and the existing native Switch scene is unchanged.
+
+
+## Source-keyed per-submission VRAM snapshots (offline timeline)
+
+`tools/verify_map02_vram_timeline.py` extends the verified private
+single-frame evidence gate to a **time-ordered sequence** of 1–32
+original-GPU-polygon submissions. One independently SHA-256 checked,
+full-size (1048576-byte) local VRAM snapshot is required **per event**.
+Every event also has a consecutive submission index and an explicit
+one-to-one VRAM snapshot index, as well as the same decoded source
+face/GTE/UV/CLUT evidence already required by
+`verify_map02_frame_bundle.py`.
+
+Each event's own private snapshot is used for its entire indexed4
+texture-window/CLUT sampling, PC-GTE reference check and recorded
+BGR555 probes. The verifier also compares adjacent VRAM snapshots
+word by word, reporting (aggregated only) all modified 16-bit words
+and whether words **actually addressed by the next face's indexed4
+texture and CLUT** changed. It distinguishes unrelated VRAM writes
+from texture/palette mutations relevant to that face. Hashes and
+counts are the only public results; source positions, pixel colors,
+camera and raw user game data remain private.
+
+The exact local file names, JSON schema and command are documented in
+`docs/MAP02_VRAM_SUBMISSION_TIMELINE.md`. A dedicated eight-test
+synthetic regression checks changed CLUT, changed texture source
+word, unrelated VRAM writes, unchanged snapshots, SHA tampering,
+symlinks, mixed frames, swapped event order and incorrect game
+geometry/GTE/probes.
+
+A snapshot timeline **does not establish uninterrupted GPU-write
+monitoring**. An unobserved change followed by restoration is invisible
+between adjacent captures, and the reported labels and hashes do not
+prove original gameplay or the actual timing of a VRAM write. No
+retail frame capture, physical PS1 GPU behavior or live Switch renderer
+integration is claimed by these tests.
