@@ -8,7 +8,7 @@ BASE = {"stage":"native_dda_span","step":0,"frame":3,
         "clip_t":10,"clip_b":15}
 
 def serialize(*rows):
-    return b"".join((json.dumps(row, sort_keys=True)+"\\n").encode() for row in rows)
+    return b"".join((json.dumps(row, sort_keys=True)+"\n").encode() for row in rows)
 
 class SpanJournalTests(unittest.TestCase):
     def test_one_entered_span(self):
@@ -32,7 +32,7 @@ class SpanJournalTests(unittest.TestCase):
             with self.assertRaises(ValueError): parse_native_spans(serialize(row))
 
     def test_reject_missing_newline_and_saturation(self):
-        with self.assertRaises(ValueError): parse_native_spans(serialize(BASE).rstrip(b"\\n"))
+        with self.assertRaises(ValueError): parse_native_spans(serialize(BASE).rstrip(b"\n"))
         with self.assertRaises(ValueError):
             parse_native_spans(serialize(*(dict(BASE, step=i) for i in range(64))))
 
