@@ -186,6 +186,32 @@ class NativeLocalMusicTransitionTests(unittest.TestCase):
                 self.assertEqual(
                     {p.name: p.read_bytes() for p in folder.iterdir()}, expected)
 
+    def test_wet_tail_survives_transition_into_zero_gain_bank(self):
+        # When the A voice fed STUDIO_C, muting every B voice must not
+        # erase A's already accumulated reverberation. The B resolver
+        # can still report note-ons even though its dry gains are zero.
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b = Path(tmp) / "wet-source", Path(tmp) / "muted-target"
+            files_a = synth_dir(a, wet=True)
+            files_b = synth_dir(b, mute_master=True)
+            command = [str(PROGRAM), str(a), str(b), "2", "32"]
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            early, later = json.loads(result.stdout)["measurements"]
+            self.assertGreater(early["reverb_send_notes"], 0)
+            self.assertGreater(early["nonzero_samples"], 0)
+            self.assertEqual(later["resolved_notes"], later["zero_gain_notes"])
+            self.assertGreater(later["resolved_notes"], 0)
+            self.assertEqual(later["reverb_send_notes"], 0)
+            self.assertEqual(later["unresolved_notes"], 0)
+            self.assertGreater(later["nonzero_samples"], 0)
+            self.assertGreater(later["peak_pcm16"], 0)
+            self.assertFalse(later["silent_pcm"])
+            self.assertNotIn(str(tmp), result.stdout)
+            for folder, expected in ((a, files_a), (b, files_b)):
+                self.assertEqual(
+                    {p.name: p.read_bytes() for p in folder.iterdir()}, expected)
+
     def test_no_note_on_is_not_counted_as_missing_or_muted_instrument(self):
         with tempfile.TemporaryDirectory() as tmp:
             a, b = Path(tmp) / "note-off-only", Path(tmp) / "notes"
