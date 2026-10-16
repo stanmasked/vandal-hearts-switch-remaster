@@ -101,11 +101,11 @@ def patch_gpu(src):
         caller+"\n/* Tag precisely the token most recently emitted by AddPrim, not UV/CLUT. */",
         "v47 producer binding API")
     target=(
-        '                    VH_Map02V39Active = 1;\n'
+        '                    rch.v40Route = v39Tag.route;\n'
         '                    fprintf(stderr,'
     )
     enhanced=(
-        '                    VH_Map02V39Active = 1;\n'
+        '                    rch.v40Route = v39Tag.route;\n'
         '                    if (s_v47Faces[nextTok].valid) {\n'
         '                        const VhMap02V47Face *faceInfo = &s_v47Faces[nextTok];\n'
         '                        fprintf(stderr,\n'
