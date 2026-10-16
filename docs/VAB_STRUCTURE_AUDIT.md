@@ -1071,3 +1071,51 @@ on physical hardware are separate acceptance criteria. A faithful
 PS1 reverb engine, runtime pitch refinement, integration into
 gameplay scenes and validated release of original music are not
 established by this loader.
+
+
+## STUDIO_C parity and continuous native audio soak (#173)
+
+The STUDIO_C integer implementation is now subject to an **independent
+Python differential oracle**, `tests/test_native_spu_reverb_reference.py`.
+The test reconstructs the reference PC port's 32 signed STUDIO_C register
+values, 39 FIR taps, C-style signed integer division and clipping,
+feedback, comb and all-pass order, and per-sample 44.1/22.05-kHz
+resampling. It does **not** derive its expected output from the native
+C implementation. Every sample is compared exactly to the dynamically
+compiled `source/vh_spu_reverb.c` shared library across a 48,000-frame
+synthetic stereo sequence. The sequence includes controlled input,
+pseudo-random pulses, a silent tail, a wet-depth transition, and a
+complete wrap of the `0x37F0`-sample reverb buffer. Internal cursor,
+phase and work-buffer samples are also compared periodically.
+
+Confirmed passing:
+[Host SPU audio regressions #38862949041](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38862949041).
+
+The integrated native pipeline also has a **long-duration synthetic soak**:
+`tests/test_vh_native_audio_soak.c`. It loops a safe manufactured
+pQES sequence through 20-slot SEQ scheduling, Gaussian interpolation,
+ADSR, STUDIO_C reverb and the stateful 44.1-to-48-kHz stereo resampler.
+It checks running counts, output rate, duration drift, reverb cursor
+wrap, note ownership, and absence of scheduler errors. The run uses
+**2,048 consecutive blocks**, equivalent to 1,048,576 source frames
+(about 23.78 s at 44.1 kHz).
+
+Confirmed passing:
+[Host SPU audio regressions #38863125898](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38863125898).
+The synthetic-soak log reports `1,141,307` output stereo frames,
+`46` sequence repeat boundaries, and the reproducible stream checksum
+`a9dcb6d59bc9efc6`. The host CI still validates the C11 unit
+tests and sanitizer regressions for the existing audio components.
+
+To rerun on a Linux host with GCC and Python:
+```sh
+python3 tests/test_native_spu_reverb_reference.py
+make test-audio-stream
+```
+
+**Scope:** these comparisons validate the selected PC software-port
+algorithm; the reverb depth in the standalone Switch probes is a
+diagnostic 0.5 rather than a verified game-script setting. They do not
+validate performance, queue underruns or the audible waveform on a
+physical Nintendo Switch, nor guarantee bit-identical Sony hardware
+reverb. The synthetic tests do not contain game sound files.
