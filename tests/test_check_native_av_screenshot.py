@@ -70,6 +70,34 @@ class NativeAVScreenshotTests(unittest.TestCase):
             self.assertNotEqual(denied.returncode, 0)
             self.assertIn("scene-switch marker not confirmed", denied.stderr)
 
+    def test_user_bank_never_reports_synthetic_switching(self):
+        first, second = make_frames(
+            source=AUDIO_OK, synthetic_switches=(83, 100, 119))
+        report = inspect_images(first, second)
+        self.assertEqual(report["audio_source"], "user_files")
+        self.assertEqual(report["synthetic_scene_switches"], "not_applicable")
+        with tempfile.TemporaryDirectory() as folder:
+            first_path = Path(folder) / "before.png"
+            second_path = Path(folder) / "after.png"
+            cmd = [sys.executable, "tests/check_native_av_screenshot.py",
+                   str(first_path), str(second_path),
+                   "--require-audio-source", "user_files",
+                   "--require-no-synthetic-switches"]
+            first.save(first_path)
+            second.save(second_path)
+            passed = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertEqual(passed.returncode, 0, passed.stderr)
+            # A mistaken green synthetic-switch marker for user-owned
+            # music must fail even when audout and the source are green.
+            first.putpixel((1050, 322), AUDIO_OK)
+            second.putpixel((1050, 322), AUDIO_OK)
+            first.save(first_path)
+            second.save(second_path)
+            denied = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertNotEqual(denied.returncode, 0)
+            self.assertIn("unexpected synthetic scene-switch indicator",
+                          denied.stderr)
+
     def test_user_source_is_separate_from_audout_initialization(self):
         first, second = make_frames(source=AUDIO_OK)
         report = inspect_images(first, second)
