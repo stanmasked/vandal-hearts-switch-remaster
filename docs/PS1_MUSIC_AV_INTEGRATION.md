@@ -81,3 +81,28 @@ hardware sample timing, fidelity to the original game, or successful
 loading of an actual user-owned `music.seq/music.vh/music.vb` set.
 CI includes no proprietary audio files and exercises the synthetic
 fixture only. A separate on-device recording is required for those claims.
+
+## Synthetic guest-SD end-to-end cases
+
+The integration workflow now uses a dedicated `NEXIUM_DATA_ROOT` for each
+emulator run, matching NeXium's upstream `sdmc/` filesystem mapping.
+The generator `tools/generate_ps1_music_sd_fixture.py` creates a tiny
+**original-free** `pQES` sequence and `pBAV` bank in that isolated root.
+Neither this generated sample nor any proprietary SEQ/VH/VB is committed
+or included with the finished NRO artifact.
+
+The three independent runtime cases are:
+
+- `empty`: mounted SD with all three music files absent -> local
+  built-in fixture chosen; green audout, gray source marker
+- `full`: all three generated format-valid files -> SD file loader
+  selected; green audout and green source marker (not original music)
+- `partial`: only generated `music.seq` -> fail closed; red audout
+  and red source marker, never silently substituted with fixture playback
+
+Each case records two NeXium images, reports independently detected source
+and audout status, and requires an animated framebuffer heartbeat.
+The test asserts no observed content proves the identity of original
+music or actual audible sound on a Nintendo Switch.
+Host tests also ensure this CI fixture generator does not overwrite
+existing audio files and rejects symlinked output directories.
