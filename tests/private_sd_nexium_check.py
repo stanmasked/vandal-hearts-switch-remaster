@@ -113,7 +113,7 @@ def synthetic_depth_geometry_models():
     OTZ-indexed buckets must instead draw FAR then NEAR.
     The far rectangle is scaled by 2 in camera space, using the
     inverse of the pinned -45-degree pitch plus translation (0,0,96):
-    world far = 2*near + (0,68,68). Its screen footprint nearly
+    world far = 2*near + (0,-68,68). Its screen footprint nearly
     coincides with near, but its OTZ is about twice as large.
     """
     from inspect_vh_map_geometry import (
@@ -125,7 +125,7 @@ def synthetic_depth_geometry_models():
     near = (
         (-32,0,-16), (0,0,-16), (0,0,24), (-32,0,24),
     )
-    far = tuple((2*x,2*y+68,2*z+68) for x,y,z in near)
+    far = tuple((2*x,2*y-68,2*z+68) for x,y,z in near)
     points = far + near
     for i, xyz in enumerate(points):
         for k, value in enumerate(xyz):
