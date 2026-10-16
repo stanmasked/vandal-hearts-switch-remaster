@@ -7,6 +7,8 @@ on:
     paths:
       - 'tools/analyze_pcm_wav.py'
       - 'tests/test_analyze_pcm_wav.py'
+      - 'tests/test_analyze_pcm_cli.py'
+      - 'tests/test_analyze_pcm_cli.py'
       - '.github/workflows/pcm-wav-diagnostics.yml'
   pull_request:
     paths:
@@ -26,4 +28,4 @@ jobs:
         with:
           python-version: '3.12'
       - name: Validate WAV diagnostics
-        run: python3 -m unittest discover -s tests -p 'test_analyze_pcm_wav.py' -v
+        run: python3 -m unittest discover -s tests -p 'test_analyze_pcm*.py' -v
