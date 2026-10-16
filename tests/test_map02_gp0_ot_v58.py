@@ -26,10 +26,16 @@ def fixture(workers):
 
 def change(name,field,value,kind="V58CASE"):
     rows=fixture(2)
-    matches=[i for i,s in enumerate(rows) if s.startswith(kind+" name="+name+" ")]
-    assert matches,(name,kind)
+    matches=[i for i,s in enumerate(rows)
+             if s.startswith(kind+" name="+name+" ") and
+             any(part.startswith(field+"=") for part in s.split())]
+    assert matches,(name,kind,field)
+    # Test the STP-enabled third quad rather than an earlier opaque pass.
+    if field=="semi":
+        matches=[i for i in matches if "semi=1" in rows[i]]
+        assert matches,(name,field)
     i=matches[0]
-    old=next(segment for segment in rows[i].split() if segment.startswith(field+"="))
+    old=next(part for part in rows[i].split() if part.startswith(field+"="))
     rows[i]=rows[i].replace(old,f"{field}={value}",1)
     return rows
 
