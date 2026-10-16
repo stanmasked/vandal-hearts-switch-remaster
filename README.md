@@ -75,8 +75,14 @@ Do not describe Switch support as working until it has been built and tested.
 
 ## Tactical prototype music (nonblocking libnx audout)
 
-The **main framebuffer prototype NRO** now contains a synthetic
-native music worker as well as the existing tactical grid.
+The **main framebuffer prototype NRO** now contains a native
+music worker as well as the existing tactical grid. It preloads
+two optional, user-supplied SEQ/VH/VB banks from
+`sdmc:/switch/vandal-hearts-remake/audio/field/` and
+`sdmc:/switch/vandal-hearts-remake/audio/selected/` before
+starting audio. When both complete sets are absent it uses
+synthetic fixtures; a partial or corrupt user pack fails closed,
+leaving gameplay usable without music.
 Real hero-selection state changes are sent to that worker through
 a C11 atomic latest-request-wins mailbox: cursor navigation uses
 field music; selecting the hero fades into a second synthetic cue;
@@ -92,7 +98,9 @@ builds and uploads the main `vandal-hearts-prototype.nro` as
 `vandal-hearts-tactical-with-native-music`.
 See [integration and testing details](docs/TACTICAL_AUDIO_INTEGRATION.md).
 
-All embedded melodies and sample data are **synthetic**. This
+All **embedded** melodies and sample data are synthetic.
+User-provided music banks are loaded locally from the SD card;
+none are distributed in the NRO or GitHub. This
 prototype is still not a playable recreation of the original
 Vandal Hearts campaign, and the scene-music mapping does not
 yet cover victory, defeat or mission transitions because those
