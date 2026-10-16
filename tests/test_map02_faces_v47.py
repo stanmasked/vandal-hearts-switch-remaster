@@ -124,6 +124,20 @@ class V47EvidenceTests(unittest.TestCase):
         with self.assertRaises(InvalidEvidence):
             self.probe(s)
 
+    def test_second_face_within_one_tile_has_separate_identity(self):
+        # One real model can contain multiple source faces with identical GFX.
+        b=bytearray(self.data)
+        off=(8*WIDTH+20)*STRIDE
+        b[off+302]=2
+        struct.pack_into("<h",b,off+178,641)
+        b[off+216:off+220]=bytes((0,1,2,3))
+        extra=render(1,103,8,20,641,31978,192)
+        extra[0]=extra[0].replace("face=0","face=1")
+        r=self.probe(log()+extra,data=bytes(b))
+        self.assertEqual(r["status"],"matched_sampled_faces")
+        self.assertEqual(r["matched_face_count"],4)
+        self.assertIn((8,20,1),{(x["z"],x["x"],x["face"]) for x in r["rows"]})
+
 class Anchors(unittest.TestCase):
     def test_refuse_uninstrumented_source(self):
         with self.assertRaises(ValueError):
