@@ -78,7 +78,7 @@ class StagedModelTests(unittest.TestCase):
         self.assertEqual(near["vertex_indices"],[4,5,6,7])
         for f,n in zip(far["vertex_xyz"],near["vertex_xyz"]):
             self.assertEqual(f[0],2*n[0])
-            self.assertEqual(f[1],2*n[1]+68)
+            self.assertEqual(f[1],2*n[1]-68)
             self.assertEqual(f[2],2*n[2]+68)
         self.assertEqual(validate_map11_models(data)["active_faces"],2)
 
