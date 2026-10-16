@@ -28,7 +28,9 @@ extern int vh_map02_scope_begin_primitive(unsigned ordinal,
                                              unsigned primitive_type);
 extern int vh_map02_scope_end_primitive(void);
 extern int vh_map02_scope_end_frame(void);
+#ifdef VH_MAP02_POSIX_STAGE
 extern int vh_map02_stage_private_blendg1(const char *private_directory);
+#endif
 
 /* Decimal-only environment configuration: no default target, no capture.
  * Every value is checked in full, with explicit upper bounds.
@@ -113,12 +115,16 @@ CYCLE_NEW = r"""        if (++walkSteps > 1000000UL) {
 END_NEW = r"""#ifdef VH_MAP02_SCOPED_BLEND_PROBE
     /* Close before deferred hi-res workers run. Their pixels are excluded. */
     if (vh_scope_active) {
-        const char *private_dir = getenv("VH_MAP02_PROBE_OUTPUT_DIR");
         if (!vh_map02_scope_end_frame())
             vh_map02_scope_abort();
-        else if (private_dir &&
-                 (!*private_dir || !vh_map02_stage_private_blendg1(private_dir)))
-            vh_map02_scope_abort();
+#ifdef VH_MAP02_POSIX_STAGE
+        else {
+            const char *private_dir = getenv("VH_MAP02_PROBE_OUTPUT_DIR");
+            if (private_dir &&
+                (!*private_dir || !vh_map02_stage_private_blendg1(private_dir)))
+                vh_map02_scope_abort();
+        }
+#endif
     }
 #endif
     TrcFrameEnd();"""
