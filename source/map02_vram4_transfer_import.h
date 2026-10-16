@@ -128,16 +128,21 @@ static inline int vh_map02_vram_ledger_import_packet(
 }
 
 /* Staging from an externally verified private packet into the existing
- * complete GPU replay gate. Neither output scene nor imported count is
- * modified if the packet, VRAM timeline, or transfer replay fails. */
+ * complete GPU replay gate. The caller-owned decoded event array is a
+ * COMMITTED output: it must not change when packet validation, VRAM replay
+ * or scene construction fails. At most 512 temporary event descriptors
+ * (bounded by the transfer packet format) live on this call's stack.
+ * Inputs remain frozen until this function returns. */
 static inline int vh_map02_vram4_timeline_build_from_packet(
     const VhMap02Vram4TimelineInput *input,
     VhMap02Vram4FrameWorkspace *workspace,
     const uint8_t *packet, size_t packet_bytes,
     VhMap02VramTransfer *events, size_t event_capacity,
     uint8_t *scratch_vram, size_t scratch_bytes) {
+    VhMap02VramTransfer staged[VH_MAP02_VRAM_LEDGER_MAX_EVENTS];
     size_t events_count = 0u;
     size_t event_bytes;
+    size_t i;
     /* Decoder outputs are caller-writable. Guard ALL output and evidence
      * spans before importing even the first event: otherwise a valid
      * packet could overwrite its own camera, VRAM or OT inputs. */
@@ -160,12 +165,17 @@ static inline int vh_map02_vram4_timeline_build_from_packet(
         vh_map02_vram_ledger_ranges_overlap(
             packet, packet_bytes, scratch_vram, scratch_bytes))
         return 0;
+    /* Decode into private descriptors first. Even if a later snapshot
+     * mismatch is discovered, the public events[] array stays untouched. */
     if (!vh_map02_vram_ledger_import_packet(
             packet,packet_bytes,input->frame,input->count,
-            events,event_capacity,&events_count))
+            staged,event_capacity,&events_count) ||
+        !vh_map02_vram4_timeline_build_with_ledger(
+            input,workspace,staged,events_count,scratch_vram,scratch_bytes))
         return 0;
-    return vh_map02_vram4_timeline_build_with_ledger(
-        input,workspace,events,events_count,scratch_vram,scratch_bytes);
+    for (i = 0u; i < events_count; ++i)
+        events[i] = staged[i];
+    return 1;
 }
 
 #endif
