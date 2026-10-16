@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -201,9 +202,10 @@ def main():
     if journal is not None:
         try:
             args.private_journal_out.parent.mkdir(parents=True,exist_ok=True)
-            # The journal does not contain payload words, but includes
-            # private DMA head addresses; never publish it as a CI artifact.
-            args.private_journal_out.write_text(json.dumps(journal,sort_keys=True,indent=2)+"\n")
+            # Opt-in private DMA heads: never overwrite and create mode 0600.
+            fd=os.open(args.private_journal_out,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+            with os.fdopen(fd,"w",encoding="utf-8") as out:
+                out.write(json.dumps(journal,sort_keys=True,indent=2)+"\n")
         except OSError:
             print("Unable to write private event journal",file=sys.stderr)
             return 2
