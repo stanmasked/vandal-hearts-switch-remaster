@@ -186,6 +186,36 @@ int main(void) {
     assert(vh_audio_output_submit_recover(&ops,&stats,dst,557u)==-1);
     assert(stats.pages_submitted==accepted);
     assert(spu.frames_rendered==old_clock);
+    /* An unsuccessful stop/open/start cannot claim page delivery. */
+    for(unsigned stage=0;stage<3u;stage++) {
+        Mock broken={.opened=1,.playing=1};
+        VhAudioOutputOps bad=callbacks(&broken);
+        VhAudioOutputRecovery counts={0};
+        begin_page(&broken,1u);
+        broken.fail_stop=stage==0u;
+        broken.fail_open=stage==1u;
+        broken.fail_start=stage==2u;
+        assert(vh_audio_output_submit_recover(
+            &bad,&counts,dst,557u)==-1);
+        assert(counts.pages_submitted==0u);
+        assert(counts.frames_submitted==0u);
+        assert(broken.submissions==1u);
+        assert(spu.frames_rendered==old_clock);
+        assert(resampler.input_frames==old_input);
+    }
+    /* HOME/sleep resume must not generate a new PCM page. */
+    Mock paused={.opened=1,.playing=0};
+    VhAudioOutputOps pause_ops=callbacks(&paused);
+    VhAudioOutputRecovery pause_stats={0};
+    const uint64_t old_notes=seq.note_ons;
+    assert(vh_audio_output_resume_recover(&pause_ops,&pause_stats,1)==0);
+    assert(paused.opened && paused.playing);
+    assert(paused.opens==1u && paused.starts==1u);
+    assert(pause_stats.pages_submitted==0u);
+    assert(pause_stats.resume_recoveries==1u);
+    assert(spu.frames_rendered==old_clock);
+    assert(resampler.input_frames==old_input);
+    assert(seq.note_ons==old_notes);
     printf("audout recovery: %u accepted pages, %u restarts, clock stable PASS\n",
            device.accepted,stats.restart_attempts);
     return 0;
