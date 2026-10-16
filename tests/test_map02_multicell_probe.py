@@ -6,7 +6,9 @@ from tools.map02_face_geometry import (
     RECORD_COUNT, RECORD_SIZE, STRIDE, FACE_TABLE_OFFSET,
     FACE_COUNT_OFFSET, GFX_OFFSET,
 )
-from tools.map02_multicell_probe import place_faces, shared_vertices
+from tools.map02_multicell_probe import (
+    place_faces, shared_vertices, shared_edges, boundary_report,
+)
 
 
 def fixture():
@@ -71,6 +73,45 @@ class MultiCellTests(unittest.TestCase):
         data[off + FACE_TABLE_OFFSET:off + FACE_TABLE_OFFSET + 4] = bytes((0, 1, 1, 1))
         with self.assertRaisesRegex(ValueError, "degenerate"):
             place_faces(data, self.cells, self.uv, step_x=64, step_z=64)
+
+
+    def test_exact_shared_edge_and_boundary_incidence(self):
+        faces = place_faces(self.data, self.cells, self.uv,
+                            step_x=64, step_z=64)
+        self.assertEqual(shared_edges(faces[0], faces[1]),
+                         [[[256, 0, 128], [256, 0, 192]]])
+        self.assertEqual(shared_edges(faces[0], faces[2]),
+                         [[[192, 0, 192], [256, 0, 192]]])
+        self.assertEqual(shared_edges(faces[1], faces[2]), [])
+        self.assertEqual(boundary_report(faces), {
+            "outer_edges": 8, "paired_edges": 2,
+            "nonmanifold_edges": 0, "edge_count": 10,
+        })
+
+    def test_height_mismatch_is_not_a_shared_3d_edge(self):
+        data = fixture()
+        off = (2 * STRIDE + 4) * RECORD_SIZE
+        for i in range(4):
+            struct.pack_into("<h", data, off + i * 8 + 2, 16)
+        faces = place_faces(data, self.cells[:2], self.uv,
+                            step_x=64, step_z=64)
+        self.assertEqual(shared_edges(*faces), [])
+        self.assertEqual(shared_vertices(*faces), [])
+        self.assertEqual(boundary_report(faces)["outer_edges"], 8)
+
+    def test_reverse_winding_preserves_shared_edge(self):
+        data = fixture()
+        off = (2 * STRIDE + 4) * RECORD_SIZE
+        data[off + FACE_TABLE_OFFSET:off + FACE_TABLE_OFFSET + 4] = bytes((3, 2, 1, 0))
+        faces = place_faces(data, self.cells[:2], self.uv,
+                            step_x=64, step_z=64)
+        self.assertEqual(shared_edges(*faces),
+                         [[[256, 0, 128], [256, 0, 192]]])
+
+    def test_three_overlapping_copies_are_nonmanifold(self):
+        one = place_faces(self.data, self.cells[:1], self.uv,
+                          step_x=64, step_z=64)[0]
+        self.assertEqual(boundary_report([one, one, one])["nonmanifold_edges"], 4)
 
 
 if __name__ == "__main__":
