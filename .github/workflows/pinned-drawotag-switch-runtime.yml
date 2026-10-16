@@ -11,6 +11,8 @@ on:
       - "source/vh_private_map_bank.*"
       - "source/vh_private_map_geometry.*"
       - "source/vh_private_map_shading.h"
+      - "source/vh_private_map_light.*"
+      - "tests/test_private_map_light.c"
       - "tests/test_private_map_shading.c"
       - "tools/stage_vh_private_map_geometry.py"
       - "tests/test_private_map_geometry.c"
@@ -156,6 +158,14 @@ jobs:
             /tmp/vh-cross-upstream/platform/pc/src/libgte.c \
             -Wl,--gc-sections -lm -o /tmp/vh-gte-test
           /tmp/vh-gte-test
+      - name: Host-check original 26-normal GTE NCCS UpdateLight
+        run: |
+          gcc -std=c11 -Wall -Wextra -O2 \
+            -I/tmp/vh-cross-upstream/platform/pc/include \
+            tests/test_private_map_light.c source/vh_private_map_light.c \
+            /tmp/vh-cross-upstream/platform/pc/src/libgte.c -lm \
+            -o /tmp/vh-26-side-light-test
+          /tmp/vh-26-side-light-test
       - name: Compile original DrawOTag and native software rasterizer
         shell: bash
         run: |
@@ -190,7 +200,7 @@ jobs:
             -I/tmp/vh-cross-upstream/platform/pc/src \
             -include tools/switch_psyq_compat.h \
             probes/pinned_drawotag_switch_smoke.c source/switch_sdl2_observer_backend.c \
-            source/vh_private_map_bank.c source/vh_private_map_geometry.c \
+            source/vh_private_map_bank.c source/vh_private_map_geometry.c source/vh_private_map_light.c \
             source/switch_rgb24_presenter.c source/frame_conversion.c \
             source/switch_frame_bridge.c source/switch_completed_frame.c \
             source/switch_present_hook.c source/switch_upstream_observer.c \
@@ -765,6 +775,61 @@ jobs:
           # black border + two overlapping original GTE POLY_FT4 faces, which
           # rules out the legacy synthetic smoke scene.
           python3 tests/private_sd_nexium_check.py --check-distance-screenshot "$SHOT"
+      - name: Stage independent NCCS 26-normal synthetic map light
+        run: |
+          python3 tests/private_sd_nexium_check.py --stage-side-light-sd-root /tmp/vh-side-light-nexium/sdmc
+          test -s /tmp/vh-side-light-nexium/sdmc/switch/vandal-hearts-remaster/private-assets/F_TEX01.DAT
+          test -s /tmp/vh-side-light-nexium/sdmc/switch/vandal-hearts-remaster/private-assets/LAND_DT.DAT
+          test -s /tmp/vh-side-light-nexium/sdmc/switch/vandal-hearts-remaster/private-assets/MAP11_MODELS_28X12.BIN
+          test "$(wc -c </tmp/vh-side-light-nexium/sdmc/switch/vandal-hearts-remaster/private-assets/LIGHT_TEST_INTENSITY.BIN)" -eq 1
+      - name: Verify pinned 26-normal GTE NCCS per-face side lighting
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p private-sd-evidence
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+          export NEXIUM_DATA_ROOT=/tmp/vh-side-light-nexium
+          export NRO=nros/pinned-drawotag-switch.nro
+          export SHOT=private-sd-evidence/map11-side-light.png
+          export LOG=private-sd-evidence/side-light-nexium.log
+          timeout --kill-after=5s 65s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
+            set -euo pipefail
+            "$NEXIUM_BIN" "$NRO" >"$LOG" 2>&1 &
+            pid=$!
+            ready=0
+            sleep 10
+            for attempt in $(seq 1 20); do
+              if ! kill -0 "$pid" 2>/dev/null; then
+                echo "NeXium exited before far/near OTZ overlap preview" >&2
+                tail -n 80 "$LOG" >&2 || true
+                exit 1
+              fi
+              window="$(xdotool search --onlyvisible --name "NeXium" 2>/dev/null | tail -n 1 || true)"
+              if [ -n "$window" ]; then
+                import -window "$window" "$SHOT"
+                if python3 tests/private_sd_nexium_check.py --check-side-light-screenshot "$SHOT"; then
+                  echo "Original GTE NCCS per-face side light visible on poll $attempt"
+                  ready=1
+                  break
+                fi
+              fi
+              sleep 2
+            done
+            kill -INT "$pid" 2>/dev/null || true
+            sleep 1
+            kill -KILL "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+            test "$ready" = 1
+          '
+          echo "GTE 26-normal lighting emulator log:"
+          tail -n 80 "$LOG" || true
+          # NeXium does not forward guest fprintf(stderr) to this host log.
+          # The screenshot checker instead requires a unique PRIVATE
+          # black border + two overlapping original GTE POLY_FT4 faces, which
+          # rules out the legacy synthetic smoke scene.
+          python3 tests/private_sd_nexium_check.py --check-side-light-screenshot "$SHOT"
       - name: Upload private synthetic SD screenshot and diagnostic
         if: always()
         uses: actions/upload-artifact@v4
