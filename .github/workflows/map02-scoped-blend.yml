@@ -1,0 +1,26 @@
+name: MAP02 scoped blend observer
+
+on:
+  push:
+    paths:
+      - 'tools/instrument_map02_scoped_blend.py'
+      - 'tests/test_instrument_map02_scoped_blend.py'
+      - '.github/workflows/map02-scoped-blend.yml'
+  pull_request:
+    paths:
+      - 'tools/instrument_map02_scoped_blend.py'
+      - 'tests/test_instrument_map02_scoped_blend.py'
+      - '.github/workflows/map02-scoped-blend.yml'
+
+jobs:
+  scoped-blend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check synthetic source transformation and C probes
+        run: python3 -m unittest -v tests.test_instrument_map02_scoped_blend
