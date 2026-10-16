@@ -190,19 +190,19 @@ static inline int vh_map02_vram4_timeline_verify_ledger(
             input->ot_size * sizeof *workspace->bucket_heads) ||
         vh_map02_vram_ledger_ranges_overlap(
             scratch_vram, scratch_bytes, workspace->nodes,
-            workspace->face_capacity * sizeof *workspace->nodes) ||
+            input->count * sizeof *workspace->nodes) ||
         vh_map02_vram_ledger_ranges_overlap(
             scratch_vram, scratch_bytes, workspace->prepared,
-            workspace->face_capacity * sizeof *workspace->prepared) ||
+            input->count * sizeof *workspace->prepared) ||
         vh_map02_vram_ledger_ranges_overlap(
             scratch_vram, scratch_bytes, workspace->atlases,
-            workspace->atlas_capacity_bytes) ||
+            input->count * VH_MAP02_VRAM4_ATLAS_BYTES) ||
         vh_map02_vram_ledger_ranges_overlap(
             scratch_vram, scratch_bytes, workspace->palettes,
-            workspace->palette_capacity_bytes) ||
+            input->count * VH_MAP02_VRAM4_CLUT_BYTES) ||
         vh_map02_vram_ledger_ranges_overlap(
             scratch_vram, scratch_bytes, workspace->stats,
-            workspace->face_capacity * sizeof *workspace->stats))
+            input->count * sizeof *workspace->stats))
         return 0;
     for (i = 0u; i < input->count; ++i)
         if (vh_map02_vram_ledger_ranges_overlap(
