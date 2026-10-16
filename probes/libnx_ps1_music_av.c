@@ -193,6 +193,7 @@ static void audio_worker(void *unused) {
     (void)unused;
     unsigned rendered_blocks=0, fixture_b=0;
     while (!atomic_load(&audio_stop)) {
+        unsigned switched_this_block=0;
         /* For generated fixtures only, exercise the real transactional
          * SEQ scene-switch API on the owning audio thread. The previous
          * audout page has already returned before reaching this point.
@@ -209,7 +210,7 @@ static void audio_worker(void *unused) {
                 break;
             }
             fixture_b^=1u;
-            atomic_fetch_add(&synthetic_scene_switches,1u);
+            switched_this_block=1u;
         }
         if (vh_native_seq_advance_block(&seq) < 0) {
             atomic_store(&audio_fault, 1);
@@ -237,6 +238,8 @@ static void audio_worker(void *unused) {
             break;
         }
         atomic_fetch_add(&audout_buffers_completed, 1u);
+        if (switched_this_block)
+            atomic_fetch_add(&synthetic_scene_switches,1u);
         ++rendered_blocks;
     }
 }
