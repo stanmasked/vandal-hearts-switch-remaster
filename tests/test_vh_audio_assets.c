@@ -172,6 +172,29 @@ static void test_size_limits_and_path_guard(void) {
     assert(vh_audio_assets_load(&assets, dir_template) ==
            VH_AUDIO_ASSET_ERROR);
     save(VH_AUDIO_ASSET_SEQ_FILENAME, seq, sizeof seq);
+    /* Sparse oversized VH and VB inputs must also be rejected before
+     * any decoding or allocation of the potentially huge PCM arena.
+     */
+    assert(snprintf(path, sizeof path, "%s/%s", dir_template,
+                    VH_AUDIO_ASSET_VH_FILENAME) > 0);
+    f = fopen(path, "wb");
+    assert(f);
+    assert(fseek(f, (long)VH_AUDIO_ASSET_MAX_VH_BYTES, SEEK_SET) == 0);
+    assert(fputc(0, f) != EOF);
+    assert(fclose(f) == 0);
+    assert(vh_audio_assets_load(&assets, dir_template) ==
+           VH_AUDIO_ASSET_ERROR);
+    save(VH_AUDIO_ASSET_VH_FILENAME, vh, sizeof vh);
+    assert(snprintf(path, sizeof path, "%s/%s", dir_template,
+                    VH_AUDIO_ASSET_VB_FILENAME) > 0);
+    f = fopen(path, "wb");
+    assert(f);
+    assert(fseek(f, (long)VH_AUDIO_ASSET_MAX_VB_BYTES, SEEK_SET) == 0);
+    assert(fputc(0, f) != EOF);
+    assert(fclose(f) == 0);
+    assert(vh_audio_assets_load(&assets, dir_template) ==
+           VH_AUDIO_ASSET_ERROR);
+    save(VH_AUDIO_ASSET_VB_FILENAME, vb, sizeof vb);
     char too_long[VH_AUDIO_ASSET_MAX_PATH + 100u];
     memset(too_long, 'x', sizeof too_long - 1u);
     too_long[sizeof too_long - 1u] = '\0';
