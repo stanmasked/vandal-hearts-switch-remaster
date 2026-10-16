@@ -9,6 +9,7 @@ from tools.map02_face_geometry import (
 from tools.map02_multicell_probe import (
     place_faces, shared_vertices, shared_edges, boundary_report,
     face_cross_xyz, placement_invariants, order_faces_by_external_otz,
+    bind_gte_face_samples,
 )
 
 
@@ -177,6 +178,40 @@ class MultiCellTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "duplicate cell"):
             order_faces_by_external_otz(
                 [faces[0], faces[0]], {(2, 3): 10})
+
+
+    def test_sample_binding_preserves_source_face_provenance(self):
+        faces = place_faces(self.data, self.cells[:2], self.uv,
+                            step_x=64, step_z=64)
+        keys = [(2, 3, 59, 0), (2, 4, 60, 0)]
+        bound = bind_gte_face_samples(faces, {
+            keys[0]: {"otz": 65535}, keys[1]: {"otz": 0}
+        })
+        self.assertEqual([b["source_key"] for b in bound],
+                         [[2, 3, 59, 0], [2, 4, 60, 0]])
+        self.assertEqual([b["otz"] for b in bound], [65535, 0])
+        self.assertEqual([b["local_gfx"] for b in bound], [241, 241])
+
+    def test_sample_binding_rejects_wrong_record_or_face(self):
+        faces = place_faces(self.data, self.cells[:1], self.uv,
+                            step_x=64, step_z=64)
+        valid = (2, 3, 59, 0)
+        for key in ((2, 3, 60, 0), (2, 3, 59, 1)):
+            with self.subTest(key=key):
+                with self.assertRaisesRegex(ValueError, "match source"):
+                    bind_gte_face_samples(faces, {key: {"otz": 12}})
+        for sample in ({"otz": True}, {"otz": -1},
+                       {"otz": 65536}, {"otz": 2.5}):
+            with self.subTest(sample=sample):
+                with self.assertRaisesRegex(ValueError, "unsigned 16-bit"):
+                    bind_gte_face_samples(faces, {valid: sample})
+        with self.assertRaisesRegex(ValueError, "only captured"):
+            bind_gte_face_samples(faces, {valid: {"otz": 12, "xy": []}})
+        with self.assertRaisesRegex(ValueError, "duplicate source"):
+            bind_gte_face_samples([faces[0], faces[0]], {valid: {"otz": 12}})
+        faces[0]["record_index"] += 1
+        with self.assertRaisesRegex(ValueError, "provenance mismatch"):
+            bind_gte_face_samples(faces, {valid: {"otz": 12}})
 
 
 if __name__ == "__main__":
