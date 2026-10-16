@@ -84,6 +84,8 @@ on:
       - 'tools/instrument_map02_native_putpixel.py'
       - 'tools/verify_map02_native_putpixel.py'
       - 'tools/instrument_map02_putpixel_scope.py'
+      - 'tools/instrument_map02_raster_skips.py'
+      - 'tools/verify_map02_raster_skips.py'
       - 'tools/verify_map02_putpixel_scope.py'
       - 'tools/verify_map02_camera_capture.py'
       - 'tools/verify_map02_frame_bundle.py'
@@ -99,6 +101,8 @@ on:
       - 'tests/test_instrument_map02_native_putpixel.py'
       - 'tests/test_verify_map02_native_putpixel.py'
       - 'tests/test_instrument_map02_putpixel_scope.py'
+      - 'tests/test_instrument_map02_raster_skips.py'
+      - 'tests/test_verify_map02_raster_skips.py'
       - 'tests/test_verify_map02_putpixel_scope.py'
       - 'tests/test_verify_map02_frame_bundle.py'
       - 'tests/test_verify_map02_vram_timeline.py'
@@ -205,6 +209,8 @@ on:
       - 'tools/instrument_map02_native_putpixel.py'
       - 'tools/verify_map02_native_putpixel.py'
       - 'tools/instrument_map02_putpixel_scope.py'
+      - 'tools/instrument_map02_raster_skips.py'
+      - 'tools/verify_map02_raster_skips.py'
       - 'tools/verify_map02_putpixel_scope.py'
       - 'tools/verify_map02_camera_capture.py'
       - 'tools/verify_map02_frame_bundle.py'
@@ -220,6 +226,8 @@ on:
       - 'tests/test_instrument_map02_native_putpixel.py'
       - 'tests/test_verify_map02_native_putpixel.py'
       - 'tests/test_instrument_map02_putpixel_scope.py'
+      - 'tests/test_instrument_map02_raster_skips.py'
+      - 'tests/test_verify_map02_raster_skips.py'
       - 'tests/test_verify_map02_putpixel_scope.py'
       - 'tests/test_verify_map02_frame_bundle.py'
       - 'tests/test_verify_map02_vram_timeline.py'
@@ -578,6 +586,67 @@ jobs:
             nm build/map02-scoped-gpu/combined.capture.o | grep VH_CaptureEvent
             if nm -a build/map02-scoped-gpu/combined.baseline.o | grep -Eq 'VH_Map02PixelScope|VH_PixelSampleRecord|VH_CaptureEvent'; then
               echo "Opt-in GPU scope leaked into the ordinary non-instrumented build" >&2
+              exit 1
+            fi
+          )
+          test -z "$(cd upstream && git status --porcelain -- platform/pc/src/libgpu.c platform/pc/src/pc_raster.c)"
+
+      - name: Compile source-pinned real DDA zero-texel and horizontal-clipping decisions
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd remaster
+            python3 -m unittest discover -s tests -p 'test_instrument_map02_raster_skips.py' -v
+            python3 -m unittest discover -s tests -p 'test_verify_map02_raster_skips.py' -v
+          )
+          PYTHONPATH=remaster python3 -m tools.instrument_map02_raster_skips \
+            upstream/platform/pc/src/libgpu.c \
+            upstream/platform/pc/src/pc_raster.c \
+            --output-dir /tmp/vh-map02-native-skips \
+            > /tmp/vh-map02-native-skips.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path("/tmp/vh-map02-native-skips.json").read_text())
+          assert m["original_pc_source_pinned"]
+          assert m["native_capture_same_binary"]
+          assert m["max_raster_skip_records"] == 64
+          assert len(m["reason_codes"]) == 3
+          assert m["native_only"] and not m["real_gameplay_captured"]
+          print("Real PC raster rejection hooks generated without changing original source.")
+          PY
+          (
+            cd upstream/platform/pc
+            flags=(
+              -m64 -std=gnu89 -fno-builtin-csqrt
+              -DPERMUTER -DPC_PORT -DPC_FEAT -DVH_REGION_US
+              '-Dasm(x)=' -Ibuild/include_stage -Iinclude -I../.. -Isrc
+              -include pc_forward_decls.h
+              -Wno-incompatible-pointer-types -Wno-builtin-declaration-mismatch
+              -Wno-discarded-qualifiers -Wno-pointer-to-int-cast
+              -Wno-int-to-pointer-cast -Wno-int-conversion
+            )
+            mkdir -p build/map02-native-raster-skips
+            for mode in probe baseline; do
+              extra=()
+              if [[ "$mode" == probe ]]; then
+                extra=(-DVH_MAP02_GPU_CAPTURE -DVH_MAP02_PUTPIXEL_SCOPE -DVH_MAP02_RASTER_SKIP_TRACE)
+              fi
+              gcc "${flags[@]}" "${extra[@]}" \
+                -c /tmp/vh-map02-native-skips/libgpu.skip.c \
+                -o "build/map02-native-raster-skips/libgpu.${mode}.o"
+              gcc "${flags[@]}" "${extra[@]}" \
+                -c /tmp/vh-map02-native-skips/pc_raster.skip.c \
+                -o "build/map02-native-raster-skips/pc_raster.${mode}.o"
+              ld -r "build/map02-native-raster-skips/libgpu.${mode}.o" \
+                "build/map02-native-raster-skips/pc_raster.${mode}.o" \
+                -o "build/map02-native-raster-skips/combined.${mode}.o"
+            done
+            nm -a build/map02-native-raster-skips/combined.probe.o | grep VH_Map02SkipAt
+            nm -a build/map02-native-raster-skips/combined.probe.o | grep VH_Map02PixelScopeSet
+            if nm -a build/map02-native-raster-skips/combined.baseline.o | grep -Eq 'VH_Map02SkipAt|VH_Map02PixelScope|VH_PixelSampleRecord|VH_CaptureEvent'; then
+              echo "Native raster skip probe leaked into baseline object" >&2
               exit 1
             fi
           )

@@ -1159,3 +1159,40 @@ triangle coverage, drawing-area clipping, or GPU mask rejection.
 Even perfectly matched private self-consistent files do not
 authenticate real gameplay, physical PS1 STP/ABR/mask parity or
 actual running Switch scene.
+
+
+## Exact native raster skip-branch evidence, not inferred missing pixels
+
+`tools/instrument_map02_raster_skips.py` extends the synchronized,
+opt-in pinned public PC source `DrawOTag` / `PutPixel` observer
+with precisely three **executed native raster branch** probes at one
+explicitly selected private VRAM coordinate: original DDA textured
+sample BGR555=0, original half-open DDA span pixel removed by
+horizontal drawing-area clipping, and legacy barycentric textured
+sample BGR555=0. Actual native frame, every non-bucket primitive
+ordinal/type, and the selected coordinate are recorded in a
+64-record bounded local JSONL. Original raster decisions and
+normal GPU output are not modified; the observer is compiled away
+without `-DVH_MAP02_RASTER_SKIP_TRACE`. Existing native VRAM
+before/after snapshots come from the **same binary/session**.
+
+`tools/verify_map02_raster_skips.py` checks private hashes,
+event sequence, exact native DrawOTag frame/ordinal/type and a
+single selected coordinate. It repeats the complete source-keyed
+MAP02 geometry/GTE/texture/CLUT/VRAM/FT4/OTZ-LIFO/overdraw
+validation before attributing any observed branch to a source
+terrain FT4. It also rejects impossible zero-texture claims from
+nontextured packets and full 64-record (potentially truncated)
+skip logs. Because a genuine skipped pixel can produce no PutPixel
+call, a standalone PutPixel call log is **not** required. Reports
+contain only aggregate per-reason counts and SHA-256 digests.
+See `docs/MAP02_NATIVE_RASTER_SKIP_REASONS.md`.
+
+A color-zero result does NOT establish a zero texture **index**:
+an indexed CLUT entry may itself contain BGR555 zero. The
+horizontal span probe establishes only selected-X exclusion
+from that row's clipped half-open interval, not vertical clip
+or exact FT4 coverage. No additional unobserved pixel cause
+or GP0(E6) mask rejection is inferred. CI executes synthetic
+fixture tests and source-pinned PC object compilation, not
+original gameplay or a physical PlayStation GPU comparison.
