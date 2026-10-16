@@ -499,8 +499,11 @@ int main(void) {
         const uint64_t old_tick=resampler.next_output_tick;
         const uint64_t old_voice_time=spu.frames_rendered;
         const uint64_t old_notes=seq.note_ons;
-        begin_page(&switching,block%19u==7u ? 1u : 0u);
-        switching.mismatched_returns_left=(block%13u==5u);
+        /* Force recovery on the first page of new scenes 3 and 5,
+         * not just ordinary pages between bank changes.
+         */
+        begin_page(&switching,(block%19u==7u || block==16u) ? 1u : 0u);
+        switching.mismatched_returns_left=(block%13u==5u || block==32u);
         switching.null_returns_left=(block%17u==11u);
         const unsigned failures=switching.failures_left+
             switching.mismatched_returns_left+switching.null_returns_left;
@@ -533,6 +536,8 @@ int main(void) {
     assert(measured_pages.ordinary.pages==43u);
     assert(measured_pages.first_after_switch.failed_pages==0u);
     assert(measured_pages.ordinary.failed_pages==0u);
+    assert(measured_pages.first_after_switch.retried_pages==2u);
+    assert(measured_pages.ordinary.retried_pages==recovered_pages-2u);
     assert(measured_pages.first_after_switch.total_ticks+
            measured_pages.ordinary.total_ticks==switching.timing.total_ticks);
     assert(measured_pages.first_after_switch.retried_pages+
