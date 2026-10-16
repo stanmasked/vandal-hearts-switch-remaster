@@ -45,7 +45,10 @@ The standalone `tools/verify_map02_blendg1_witness.py` checks a private
 log and new private `blendg1-native-events.jsonl`, respectively.
 
 One `native_blendg1` JSONL record is required for each semi-transparent
-PutPixel call, in the same order; opaque copies must have no BlendG1 record.
+PutPixel call **in accurate raster mode** (`accurate=1`), in the same order.
+Legacy semi-transparent PutPixel (`accurate=0`) uses a separate 8-bit blend
+path inside `WritePixel` and must NOT have a BlendG1 witness. Opaque copies
+must also have no BlendG1 record.
 Required witness fields are `stage`, `putpixel_step`, `frame`,
 `primitive_ordinal`, `x`, `y`, `accurate`, `abr`, `before`,
 `front`, and `after`. The instrumented original-PC entry/exit observer
@@ -58,3 +61,13 @@ BlendG1. The source PC binary/instrumentation is not changed by this
 stage. No genuine BlendG1 capture has yet been supplied, and no MAP02
 gameplay frame or PlayStation hardware has been authenticated.
 Synthetic comparator tests: `tests/test_map02_blendg1_witness.py`.
+
+## Source-path correction
+
+Direct inspection of upstream `platform/pc/src/pc_raster.c` shows that
+`WritePixel` calls `BlendG1` only when `semiTrans` and
+`AccurateEnabled()` are true. Legacy semi-transparency uses 8-bit channels.
+`PutPixel` also targets both native VRAM and scaled `s_hires`, so source
+instrumentation must scope observation to native VRAM and avoid racing with
+multithreaded hires rasterization. The witness verifier assumes its upstream
+PutPixel capture has already been independently scoped and authenticated.
