@@ -898,3 +898,31 @@ as live capture and offline replay. This is conservative: the instrumentation ha
 loader invocation serial number. Tests cover actual compiled C emitters,
 repeat visits with identical or changed face indices, and truncated
 second-episode captures. These tests do not establish visible pixels.
+
+
+## Bounded console output parsing
+
+Live capture, offline integrity replay, and the standalone
+`tools.extract_map02_trace` command parse raw game output incrementally.
+The byte-stream parser now limits its **unfinished line buffer to 1 MiB**
+(`MAX_RAW_LINE_BYTES = 1048576`). Long unrelated diagnostics
+that do not begin with a JSON object are skipped until their next newline
+without growing the buffer; subsequent `post_load`, `visit`,
+`draw` and `skip` records retain their ordering and original
+console line numbers.
+
+An oversized **JSON-looking** line is deliberately treated as a malformed
+potential Map02 observation, rather than silently discarded. The capture
+continues preserving all bytes in `game_stdout.log` and all complete
+events before the error in `map02_trace.jsonl`, but records an
+analysis error and cannot produce a PRS/DAT verdict. The offline verifier
+independently reproduces the same error from the raw log, even when an
+oversized line straddles many stdout reads. This is a conservative
+fail-closed choice: a huge unrelated JSON object may prevent a complete
+trace, but **genuine face observations will not silently disappear**.
+
+The standalone extractor uses the same bounded binary reader and accepts
+multiple map-11 loads under `--require-full-trace` or
+`--require-complete`. Its legacy line-iterator helpers remain
+available for already-in-memory text. Regression tests use synthetic
+multi-megabyte noise and do not require copyrighted game resources.
