@@ -11,6 +11,7 @@
 #include "vh_audio_output_recovery.h"
 #include "vh_audio_output_ramp.h"
 #include "vh_audio_output_edges.h"
+#include "vh_audio_diag_journal.h"
 #include "vh_audio_resample.h"
 #include "vh_game_music_mailbox.h"
 #include "vh_music_scene.h"
@@ -69,6 +70,8 @@ typedef struct {
     VhAudioResample resampler;
     VhGameMusicMailbox mailbox;
     VhAudioOutputRecovery recovery;
+    VhAudioDiagJournal journal;
+    VhAudioDiagnostics telemetry;
     VhAudioOutputRamp ramp;
     FakeAudout backend;
     unsigned handled_serial, accepted_scene;
@@ -190,19 +193,42 @@ static void audio_turn(MusicOwner *o,unsigned injected_faults) {
         &ops,&o->recovery,o->output,o->output_count)==0);
     o->output_frames+=o->output_count;
 }
+/* Publish the SAME numeric counters that the native audio owner
+ * exposes to the on-console HUD. This host fixture deliberately
+ * synthesizes completion time, not physical libnx/hardware latency.
+ * Snapshots are collected by the game-side journal after PCM or
+ * applet state transitions, never during the PCM submission callback.
+ */
+static void journal_sample(MusicOwner *o,uint64_t elapsed_ms,int status) {
+    VhAudioDiagnostics *d=&o->telemetry;
+    const VhAudioOutputRecovery *r=&o->recovery;
+    d->status=status;
+    d->pages_submitted=r->pages_submitted;
+    d->frames_submitted=r->frames_submitted;
+    d->submit_failures=r->submit_failures;
+    d->restart_attempts=r->restart_attempts;
+    d->recoveries=r->recoveries;
+    d->resume_failures=r->resume_failures;
+    d->resume_restarts=r->resume_restarts;
+    d->resume_recoveries=r->resume_recoveries;
+    assert(vh_audio_diag_journal_sample(&o->journal,elapsed_ms,d)>=0);
+}
+
 static void assert_frozen(const MusicOwner *o,unsigned which) {
     assert(!memcmp(&o->spu,&paused_spu[which],sizeof o->spu));
     assert(!memcmp(&o->scene,&paused_scene[which],sizeof o->scene));
     assert(!memcmp(&o->resampler,&paused_resampler[which],
                    sizeof o->resampler));
 }
-static void stress(void) {
+static void stress(const char *csv_prefix) {
     owned_sample=malloc(128u*sizeof *owned_sample);
     assert(owned_sample);
     for(unsigned i=0;i<128u;i++)
         owned_sample[i]=(int16_t)((int)i*137-8000);
     init_owner(&owner[0]);
     init_owner(&owner[1]);
+    journal_sample(&owner[0],0u,1);
+    journal_sample(&owner[1],0u,1);
     unsigned sleep_events=0, resume_start_faults=0, submit_faults=0;
     unsigned fade_blocks_seen=0, wet_reverb_seen=0;
     for(unsigned block=0;block<BLOCKS;block++) {
@@ -215,6 +241,7 @@ static void stress(void) {
                 MusicOwner *o=&owner[i];
                 vh_game_music_mailbox_set_focus(&o->mailbox,0);
                 assert(do_stop(&o->backend)==0);
+                journal_sample(o,(uint64_t)block*12u-1u,2);
                 memcpy(&paused_spu[i],&o->spu,sizeof o->spu);
                 memcpy(&paused_scene[i],&o->scene,sizeof o->scene);
                 memcpy(&paused_resampler[i],&o->resampler,
@@ -241,7 +268,10 @@ static void stress(void) {
                 const unsigned serial=vh_game_music_mailbox_resume_serial(
                     &o->mailbox);
                 const int force_reopen=serial!=o->handled_serial;
-                if(force_reopen) o->handled_serial=serial;
+                if(force_reopen) {
+                    o->handled_serial=serial;
+                    ++o->telemetry.resume_events;
+                }
                 if(i==1u && sleep_events%5u==0u) {
                     ++resume_start_faults;
                     o->backend.start_fails_left=1u;
@@ -251,6 +281,15 @@ static void stress(void) {
                     &ops,&o->recovery,force_reopen)==0);
                 assert(o->backend.opened && o->backend.playing);
                 assert_frozen(o,i);
+                /* One fake completed-buffer acknowledgement per
+                 * successful start; no real console clock is read. */
+                ++o->telemetry.confirmed_resumes;
+                o->telemetry.last_confirmed_us=12000u;
+                if (o->telemetry.last_confirmed_us>
+                    o->telemetry.worst_confirmed_us)
+                    o->telemetry.worst_confirmed_us=
+                        o->telemetry.last_confirmed_us;
+                journal_sample(o,(uint64_t)block*12u,1);
                 vh_audio_output_ramp_arm(&o->ramp);
                 assert(o->ramp.position==0u);
             }
@@ -260,6 +299,8 @@ static void stress(void) {
         if(faults) submit_faults+=faults;
         audio_turn(&owner[0],0);
         audio_turn(&owner[1],faults);
+        journal_sample(&owner[0],(uint64_t)(block+1u)*12u,1);
+        journal_sample(&owner[1],(uint64_t)(block+1u)*12u,1);
         assert(owner[0].accepted_scene==owner[1].accepted_scene);
         assert(owner[0].scene.active.id==owner[1].scene.active.id);
         assert(owner[0].scene.stage==owner[1].scene.stage);
@@ -334,6 +375,24 @@ static void stress(void) {
         assert(o->scene.blocks_rendered==final_rendered[i]);
     }
     assert(!memcmp(stop_tail[0],stop_tail[1],sizeof stop_tail[0]));
+    /* Every captured row must come from actual host audio-owner
+     * counters; no handcrafted CSV fixtures in this integration test.
+     * A 512-page soak cannot satisfy the 1000-page comparison gate:
+     * cross-version tooling MUST return INCONCLUSIVE. */
+    for(unsigned i=0;i<2u;i++) {
+        MusicOwner *o=&owner[i];
+        assert(o->journal.count>0u);
+        assert(o->journal.count<=VH_AUDIO_DIAG_JOURNAL_CAPACITY);
+        assert(o->journal.total>=o->journal.count);
+        assert(o->telemetry.pages_submitted==BLOCKS);
+        assert(o->telemetry.frames_submitted==owner[0].output_frames);
+        assert(o->telemetry.resume_events==sleep_events/2u);
+        assert(o->telemetry.confirmed_resumes==sleep_events);
+        assert(o->telemetry.resume_restarts==o->recovery.resume_restarts);
+        assert(o->telemetry.resume_failures==o->recovery.resume_failures);
+    }
+    assert(owner[0].telemetry.submit_failures==0u);
+    assert(owner[1].telemetry.submit_failures==submit_faults);
     for(unsigned i=0;i<2u;i++) {
         MusicOwner *o=&owner[i];
         vh_game_music_mailbox_stop(&o->mailbox);
@@ -353,6 +412,27 @@ static void stress(void) {
         for(size_t j=0;j<VH_REV_SAMPLES;j++)
             assert(o->spu.reverb.work[j]==0);
     }
+    /* Optional host-only CSV export, strictly AFTER both audio
+     * devices are closed and music contexts detached. Unchanged
+     * default invocation writes no files. */
+    for(unsigned i=0;i<2u;i++) {
+        MusicOwner *o=&owner[i];
+        o->telemetry.status=0;
+        assert(vh_audio_diag_journal_finish(
+            &o->journal,(uint64_t)BLOCKS*12u+1u,
+            &o->telemetry)==1);
+        if(csv_prefix) {
+            char path[512];
+            const int n=snprintf(path,sizeof path,"%s-%s.csv",csv_prefix,
+                                 i==0 ? "clean":"fault");
+            assert(n>0 && (size_t)n<sizeof path);
+            FILE *file=fopen(path,"wb");
+            assert(file);
+            assert(vh_audio_diag_journal_write_csv(&o->journal,file)==
+                   (int)o->journal.count);
+            assert(fclose(file)==0);
+        }
+    }
     free(owned_sample);
     owned_sample=NULL;
     for(unsigned i=0;i<2u;i++) {
@@ -366,7 +446,16 @@ static void stress(void) {
            "%u pauses, %u resume start faults, %u PCM retries PASS\n",
            BLOCKS,sleep_events,resume_start_faults,submit_faults);
 }
-int main(void) {
-    stress();
+int main(int argc,char **argv) {
+    /* Optional out-of-game reference artifacts for the Python
+     * analyzer and cohort comparator. Never activated on Switch. */
+    if(argc==1) stress(NULL);
+    else if(argc==3 && strcmp(argv[1],"--csv-prefix")==0)
+        stress(argv[2]);
+    else {
+        fputs("usage: test_vh_music_lifecycle_soak "
+              "[--csv-prefix path-prefix]\\n",stderr);
+        return 2;
+    }
     return 0;
 }
