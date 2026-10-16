@@ -172,7 +172,7 @@ $(BUILD)/test_map02_source_projection_batch: tests/test_map02_source_projection_
 $(BUILD)/test_map02_captured_projection_batch: tests/test_map02_captured_projection_batch.c source/map02_captured_projection_batch.h source/map02_source_projection_batch.h source/map02_terrain_quad.h source/map02_projection.h source/ft4_textured_quad.h source/ps1_indexed_texture.h source/software_renderer.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@ -lm
 
-$(BUILD)/test_map02_captured_vram4_bridge: tests/test_map02_captured_vram4_bridge.c source/map02_captured_vram4_bridge.h source/map02_captured_projection_batch.h source/map02_source_projection_batch.h source/map02_vram4_frame.h source/map02_external_gte_ft4.h source/map02_vram4_page.h source/map02_terrain_ot_scene.h source/map02_terrain_quad.h source/map02_projection.h source/ft4_textured_quad.h source/ps1_indexed_texture.h source/software_renderer.h | $(BUILD)
+$(BUILD)/test_map02_captured_vram4_bridge: tests/test_map02_captured_vram4_bridge.c source/map02_captured_vram4_bridge.h source/map02_vram4_timeline_frame.h source/map02_captured_projection_batch.h source/map02_source_projection_batch.h source/map02_vram4_frame.h source/map02_external_gte_ft4.h source/map02_vram4_page.h source/map02_terrain_ot_scene.h source/map02_terrain_quad.h source/map02_projection.h source/ft4_textured_quad.h source/ps1_indexed_texture.h source/software_renderer.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@ -lm
 
 $(BUILD)/test_map02_terrain_ot_scene: tests/test_map02_terrain_ot_scene.c source/map02_terrain_ot_scene.h source/map02_terrain_quad.h source/map02_projection.h source/ft4_textured_quad.h source/ps1_indexed_texture.h source/software_renderer.h | $(BUILD)
