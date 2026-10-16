@@ -42,7 +42,8 @@ int main(void) {
     }
     put16(src,base+176,241);
     put16(src,base+178,242);
-    for (i=0;i<8;++i) src[base+212+i]=(uint8_t)i;
+    { const uint8_t source_order[8] = {0,1,3,2,4,5,7,6};
+      for (i=0;i<8;++i) src[base+212+i]=source_order[i]; }
     src[base+284]=1;
     src[base+285]=2;
     src[base+302]=2;
@@ -54,7 +55,8 @@ int main(void) {
     assert(out->faces[0].local_gfx==241 && out->faces[1].local_gfx==242);
     assert(out->faces[0].vertex[0][0]==-32);
     assert(out->faces[0].vertex[0][2]==-16);
-    assert(out->faces[1].vertex[3][0]==32);
+    assert(out->faces[1].vertex[2][0]==32);
+    assert(out->faces[1].vertex[3][0]==0);
     assert(out->faces[1].vertex[3][2]==24);
     assert(out->faces[0].shade_index==1);
     assert(out->faces[1].shade_index==2);
