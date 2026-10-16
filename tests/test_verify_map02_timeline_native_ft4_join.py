@@ -136,6 +136,55 @@ class TimelineToNativeFt4JoinTests(unittest.TestCase):
         self.assertEqual(
             report["matched_ft4_draw_changed_texture_or_clut_words"], 1)
 
+    def test_captured_ft4_drawenv_clip_proves_write_bounds(self):
+        # Old captures remain valid, but cannot claim coverage proof.
+        self.assertEqual(
+            self.verify()["matched_ft4_draws_with_drawenv_clip_checked"], 0)
+        for i, event in enumerate(self.native_events):
+            event["draw_env"] = ([0, 0, 4, 4, 300, -200]
+                                  if i < 2 else
+                                  [0, 0, 1024, 512, 0, 0])
+        self.write_native()
+        report = self.verify()
+        self.assertEqual(report["matched_ft4_draws_with_drawenv_clip_checked"], 2)
+
+        # Actual changes inside the captured draw clip pass, independently
+        # of the shifted FT4 vertex coordinates.
+        after = bytearray(self.native_snapshots[1])
+        timeline_fixture.fixture.word(after, 2, 2, 0x801f)
+        self.native_snapshots[1] = bytes(after)
+        self.write_native()
+        report = self.verify()
+        self.assertEqual(report["matched_ft4_draw_changed_vram_words"], 1)
+
+        # Same event and valid SHA mapping, but a second pixel outside the
+        # recorded draw clip is an impossible native PC FT4 delta.
+        after = bytearray(self.native_snapshots[1])
+        timeline_fixture.fixture.word(after, 5, 2, 0x7c00)
+        self.native_snapshots[1] = bytes(after)
+        self.write_native()
+        with self.assertRaisesRegex(ValueError, "outside captured DRAWENV"):
+            self.verify()
+
+    def test_optional_ft4_drawenv_invalid_or_pair_drift_rejected(self):
+        self.native_events[0]["draw_env"] = [0, 0, 20, 20, 0, 0]
+        self.write_native()
+        with self.assertRaisesRegex(ValueError, "before/after metadata diverges"):
+            self.verify()
+        self.native_events[1]["draw_env"] = [0, 0, 20, 20, 0, 0]
+        self.native_events[0]["draw_env"] = [0, 0, -1, 20, 0, 0]
+        self.native_events[1]["draw_env"] = [0, 0, -1, 20, 0, 0]
+        self.write_native()
+        with self.assertRaisesRegex(ValueError, "DRAWENV"):
+            self.verify()
+        for event in self.native_events[:2]:
+            event["draw_env"] = [0, 0, 0, 0, 0, 0]
+        self.write_native()
+        # A zero drawing-area is legal metadata, and does not itself make
+        # an otherwise unchanged FT4 write pixels.
+        self.assertEqual(
+            self.verify()["matched_ft4_draws_with_drawenv_clip_checked"], 1)
+
     def test_changed_current_face_clut_detected_at_native_draw(self):
         damaged = bytearray(self.native_snapshots[0])
         timeline_fixture.fixture.word(damaged, 690, 499, 0x7c00)
