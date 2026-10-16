@@ -28,11 +28,12 @@ LDLIBS   := -L$(DEVKITPRO)/libnx/lib -lnx
 .PHONY: all clean test test-sanitize verify-nro sdl2-probe sdl2-gl-probe sdl2-texture-probe sdl2-audio-probe openal-probe
 all: $(BUILD)/$(TARGET).nro
 
-test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_texture_sample $(BUILD)/test_ft4_textured_quad
+test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_texture_sample $(BUILD)/test_ft4_textured_quad $(BUILD)/test_ps1_indexed_texture
 	./$(BUILD)/test_game_rules
 	./$(BUILD)/test_software_renderer
 	./$(BUILD)/test_texture_sample
 	./$(BUILD)/test_ft4_textured_quad
+	./$(BUILD)/test_ps1_indexed_texture
 	python3 tests/test_restore_ps1_str.py
 	python3 tests/test_inspect_cdxa.py
 	python3 tests/test_inspect_land_dt.py
@@ -68,10 +69,12 @@ test-sanitize: | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_software_renderer.c -o $(BUILD)/test_software_renderer_sanitize
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_texture_sample.c -o $(BUILD)/test_texture_sample_sanitize
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_ft4_textured_quad.c -o $(BUILD)/test_ft4_textured_quad_sanitize
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_ps1_indexed_texture.c -o $(BUILD)/test_ps1_indexed_texture_sanitize
 	./$(BUILD)/test_game_rules_sanitize
 	./$(BUILD)/test_software_renderer_sanitize
 	./$(BUILD)/test_texture_sample_sanitize
 	./$(BUILD)/test_ft4_textured_quad_sanitize
+	./$(BUILD)/test_ps1_indexed_texture_sanitize
 
 verify-nro: $(BUILD)/$(TARGET).nro
 	python3 tests/check_nro.py $<
@@ -106,7 +109,10 @@ $(BUILD)/test_texture_sample: tests/test_texture_sample.c source/texture_sample.
 $(BUILD)/test_ft4_textured_quad: tests/test_ft4_textured_quad.c source/ft4_textured_quad.h source/software_renderer.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@
 
-$(BUILD)/$(TARGET).elf: $(SOURCES)/main.c $(SOURCES)/game_rules.h $(SOURCES)/game_state.h $(SOURCES)/platform_input.h $(SOURCES)/software_renderer.h $(SOURCES)/game_renderer.h $(SOURCES)/ft4_textured_quad.h | $(BUILD)
+$(BUILD)/test_ps1_indexed_texture: tests/test_ps1_indexed_texture.c source/ps1_indexed_texture.h source/ft4_textured_quad.h source/software_renderer.h | $(BUILD)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@
+
+$(BUILD)/$(TARGET).elf: $(SOURCES)/main.c $(SOURCES)/game_rules.h $(SOURCES)/game_state.h $(SOURCES)/platform_input.h $(SOURCES)/software_renderer.h $(SOURCES)/game_renderer.h $(SOURCES)/ft4_textured_quad.h $(SOURCES)/ps1_indexed_texture.h | $(BUILD)
 	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@ $(LDLIBS)
 
 $(BUILD)/$(TARGET).nacp: | $(BUILD)
