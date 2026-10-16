@@ -481,3 +481,45 @@ resampler clock remains exact.
 This host-only diagnostic does not change voice allocation policy.
 Direct comparison with the game's original SEQ/VH/VB and hardware
 sound capture remains outstanding.
+
+### ADSR Release occupancy versus truly reusable SPU slots
+
+An active music voice whose ADSR phase has moved to
+`VH_ADSR_RELEASE` is **not** yet a free voice slot. It remains
+occupied until the SPU rendering step advances the envelope to zero
+and marks the voice inactive. A new SEQ note-on at that moment may
+therefore encounter the 20-slot capacity even when an earlier
+`Note Off` was already dispatched.
+
+The read-only resolver audit now distinguishes:
+
+- `notes_while_release_active`: resolved note requests for which
+  **at least one** active voice is in ADSR Release before allocation;
+- `saturated_with_release_requests`: the subset of those note
+  requests for which all 20 slots were still occupied;
+- `peak_releasing_voices`: the largest number of active Release
+  voices observed immediately before a resolved/unresolved note
+  request (not a continuous frame-by-frame maximum);
+- `first_release_overlap_block`: the first 1-based 512-frame
+  block containing such a resolved request, or zero if none.
+
+A regression starts 20 synthetic notes at tick zero, releases
+three at tick 45 (block 5), and then requests three distinct notes.
+When the new requests are also at tick 45, all three Release
+voices are still active: there are **3** saturated requests and
+**3** requests overlapping the Release state. When the three new
+notes are instead delayed to tick 90 (block 9), the earlier voices
+have finished ADSR Release during intervening SPU renders: the
+requests find free slots and both measurements are **0**.
+
+The regression also confirms that stale Note Offs for previously
+released notes do not stop the new slot owners, that a transition
+to the next VAB bank resets this scene's allocation-pressure
+counters, and that the external 44.1→48-kHz output clock remains
+continuous.
+
+**Scope:** These metrics sample the resolver/allocator boundary,
+not the PlayStation hardware's cycle-accurate envelope scheduler.
+A saturated request signals allocator pressure, not proof of a
+particular stolen voice or audible dropout. No production voice
+allocation or release behavior has been modified.
