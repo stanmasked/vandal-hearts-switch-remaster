@@ -83,7 +83,7 @@ class RepeatableHardwareReportTests(unittest.TestCase):
         for bad in ("", "ABC" * 21, "a" * 65, None):
             with self.subTest(value=bad), self.assertRaisesRegex(
                     replay.ReplayError, "expected receipt SHA-256"):
-                self.replay(bad if bad is not None else "")
+                replay.read_receipt(self.receipt, bad)
 
     def test_duplicate_receipt_keys_rejected_even_with_updated_anchor(self):
         self.receipt.write_text('{"schema":"x","schema":"y"}')
