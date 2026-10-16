@@ -57,6 +57,16 @@ jobs:
           gpu = "pcport/platform/pc/src/libgpu.c"
           raster = "pcport/platform/pc/src/pc_raster.c"
 
+          # The original matching-decomp C relies on implicit GNU89 declarations.
+          # Clang diagnoses later void definitions as incompatible. Introduce
+          # prototypes only into ephemeral checkout for portable object testing.
+          inject("pcport/src/core/graphics.c", '#include "PsyQ/gtemac.h"',
+              '#include "PsyQ/gtemac.h"\n'
+              'void UpdateMapTileLighting(MapTileModel *tileModel);\n'
+              'void RenderMapTile(u32 *ot, MapTileModel *tileModel, s32 gridColor);\n'
+              'void RenderEdgeMapTile(u32 *ot, MapTileModel *tileModel, s32 gridColor);\n'
+              'void RenderOverheadMapTile(u32 *ot, MapTileModel *tileModel, s32 brightness);')
+
           inject(gpu, "#define VRAM_H 512",
               "#define VRAM_H 512\n"
               "/* Opt-in read-only diagnostic state, NOT an HD override. */\n"
