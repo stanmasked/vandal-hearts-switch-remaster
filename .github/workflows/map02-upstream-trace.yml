@@ -585,6 +585,14 @@ jobs:
               assert vertical.count(anchor) == span.count(anchor) == 1
           assert span.count("VH_Map02SpanObserve(cx, y, x_start, x_bound);") == 1
           PY
+          PYTHONPATH=remaster python3 - <<'PY'
+          from pathlib import Path
+          from tools.instrument_map02_dda_rejected_edges import instrument_rejected_edges
+          original = Path("/tmp/vh-map02-native-span-overlay/pc_raster.span.c")
+          candidate = original.with_name("pc_raster.candidate.c")
+          candidate.write_text(instrument_rejected_edges(original.read_text(encoding="utf-8")),
+                               encoding="utf-8")
+          PY
           (
             cd upstream/platform/pc
             flags=(
@@ -623,7 +631,22 @@ jobs:
               ld -r "build/map02-vertical-dda/gpu.${mode}.o" \
                 "build/map02-vertical-dda/span.${mode}.o" \
                 -o "build/map02-vertical-dda/span-linked.${mode}.o"
+              candidate_extra=()
+              if [[ "$mode" == diagnostic ]]; then
+                candidate_extra=(-DVH_MAP02_DDA_REJECTED_EDGES_TRACE)
+              fi
+              gcc "${flags[@]}" "${extra[@]}" "${span_extra[@]}" "${candidate_extra[@]}" \
+                -c /tmp/vh-map02-native-span-overlay/pc_raster.candidate.c \
+                -o "build/map02-vertical-dda/candidate.${mode}.o"
+              ld -r "build/map02-vertical-dda/gpu.${mode}.o" \
+                "build/map02-vertical-dda/candidate.${mode}.o" \
+                -o "build/map02-vertical-dda/candidate-linked.${mode}.o"
             done
+            nm -a build/map02-vertical-dda/candidate-linked.diagnostic.o | grep VH_Map02RejectedEdges
+            if nm -a build/map02-vertical-dda/candidate-linked.baseline.o | grep -q VH_Map02RejectedEdges; then
+              echo "Candidate observer leaked into baseline" >&2
+              exit 1
+            fi
             nm -a build/map02-vertical-dda/span-linked.diagnostic.o | grep VH_Map02SpanObserve
             if nm -a build/map02-vertical-dda/span-linked.baseline.o | grep -Eq "VH_Map02SpanObserve|VH_Map02SkipAt|VH_Map02PixelScope|VH_PixelSampleRecord"; then
               echo "Span observer leaked into baseline" >&2
