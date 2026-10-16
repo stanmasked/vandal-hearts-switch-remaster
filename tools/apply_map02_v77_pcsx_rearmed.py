@@ -102,7 +102,7 @@ def oracle_source(stops):
 					/* Retain a proof of register differences, but first
 					 * expose their consequence in a later VRAM sample. */
 					observed_register_mismatches++;
-					SysPrintf("VH77_GPU_STATE_OBSERVED_MISMATCH phase=%u reg=%u\\n",
+					SysPrintf("VH77_GPU_STATE_OBSERVED_MISMATCH phase=%u reg=%u\n",
 					  phase,ids[i]);
 				}
 			}
@@ -115,7 +115,7 @@ def oracle_source(stops):
 			ClosePlugins();SysClose();menu_finish();plat_finish();return 7;
 		}
 		if(observed_register_mismatches!=0) {
-			SysPrintf("VH77_GPU_STATE_REFUSED count=%u\\n",observed_register_mismatches);
+			SysPrintf("VH77_GPU_STATE_REFUSED count=%u\n",observed_register_mismatches);
 			ClosePlugins();SysClose();menu_finish();plat_finish();return 6;
 		}
 		SysPrintf("VH77_MULTIPHASE_PASS phases=4 samples=2380 gpu_fifo_reset_kept_state=1 gpu_full_reset_cleared_state=1\n");
