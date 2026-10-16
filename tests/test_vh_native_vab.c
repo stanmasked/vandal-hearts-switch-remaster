@@ -202,6 +202,83 @@ static void test_tone_range_boundaries_and_nearest_ties(void) {
 /* The reference loader maps empty programs to the following packed
  * block and keeps nonzero inactive slots in its 16-tone selection table.
  */
+/* PC-port tone aliases own their ProgAtr gain/pan even when their
+ * sample and tone metadata are borrowed from the next packed block.
+ * Check exact squared gains and observable dry PCM channel routing.
+ */
+static void test_shadow_program_gain_pan_and_pcm(void) {
+    fixture();
+    vh[32u+1u*16u+1u]=95;   /* empty program #1: volume 95 */
+    vh[32u+1u*16u+4u]=0;    /* alias #1: hard left */
+    vh[32u+7u*16u+1u]=127; /* populated source: full volume */
+    vh[32u+7u*16u+4u]=127; /* source: hard right */
+    vh[32u+8u*16u+1u]=63;  /* alias #8 has independent volume */
+    vh[32u+8u*16u+4u]=64;  /* alias #8: centered */
+    vh[32u+10u*16u+4u]=127;/* source #10: hard right */
+    memset(&bank,0,sizeof bank);
+    assert(vh_native_vab_load(&bank,vh,sizeof vh,vb,96,arena,224)==0);
+    assert(bank.program_tones[1]==0 && bank.program_tones[8]==0);
+    assert(bank.program_volume[1]==95 && bank.program_pan[1]==0);
+    assert(bank.program_volume[7]==127 && bank.program_pan[7]==127);
+    assert(bank.program_volume[8]==63 && bank.program_pan[8]==64);
+
+    VhSeqTone alias={0}, source={0};
+    assert(vh_native_vab_resolve(&bank,1,90,100,90,64,&alias)==0);
+    assert(bank.selected_program==1 && bank.selected_vag==3);
+    /* (100*90/127)=70, (70*95/127)=52, (52*117/127)=47 */
+    const float alias_left=47.f/127.f;
+    assert(fabsf(alias.gain_left-alias_left*alias_left*1.012f)<0.000001f);
+    assert(alias.gain_right==0.f);
+    assert(vh_native_vab_resolve(&bank,7,90,100,90,64,&source)==0);
+    assert(bank.selected_program==7 && bank.selected_vag==3);
+    assert(alias.pcm==source.pcm && alias.frames==source.frames);
+    /* (70*127/127)=70, (70*117/127)=64 */
+    const float source_right=64.f/127.f;
+    assert(source.gain_left==0.f);
+    assert(fabsf(source.gain_right-source_right*source_right*1.012f)<0.000001f);
+    assert(source.gain_right>alias.gain_left);
+
+    VhSeqTone center={0}, hard_right={0};
+    assert(vh_native_vab_resolve(&bank,8,45,100,90,64,&center)==0);
+    assert(bank.selected_program==8 && bank.selected_vag==4);
+    /* 70*63/127=34; 34*117/127=31, with centered pans */
+    const float center_gain=31.f/127.f;
+    assert(fabsf(center.gain_left-center_gain*center_gain*1.012f)<0.000001f);
+    assert(fabsf(center.gain_right-center.gain_left)<0.000001f);
+    assert(vh_native_vab_resolve(&bank,10,45,100,90,64,&hard_right)==0);
+    assert(bank.selected_program==10 && bank.selected_vag==4);
+    assert(center.pcm==hard_right.pcm);
+    assert(hard_right.gain_left==0.f && hard_right.gain_right>0.f);
+
+    /* Empty programs with default zero mvol still choose a VAG but
+     * correctly produce silence. Do not inherit source-program volume. */
+    VhSeqTone muted={0};
+    assert(vh_native_vab_resolve(&bank,2,90,100,90,64,&muted)==0);
+    assert(bank.selected_program==2 && bank.selected_vag==3);
+    assert(muted.gain_left==0.f && muted.gain_right==0.f);
+
+    /* End-to-end: the SPU should route identical VAG3 PCM to opposite
+     * stereo channels depending solely on the selected program's pan. */
+    for (unsigned k=0; k<2u; ++k) {
+        const VhSeqTone *tone_to_play=k ? &source : &alias;
+        vh_native_spu_reset(&spu);
+        assert(vh_native_spu_note_on(
+            &spu,0,tone_to_play->pcm,tone_to_play->frames,
+            tone_to_play->loop_start,tone_to_play->loop_end,
+            tone_to_play->pitch_step,tone_to_play->adsr1,
+            tone_to_play->adsr2,tone_to_play->gain_left,
+            tone_to_play->gain_right)==0);
+        vh_native_spu_render(&spu,output,16);
+        unsigned left=0,right=0;
+        for(unsigned i=0;i<16u;++i) {
+            if(output[i*2u]) ++left;
+            if(output[i*2u+1u]) ++right;
+        }
+        if(!k) assert(left>0 && right==0);
+        else assert(left==0 && right>0);
+    }
+}
+
 static void test_shadow_tones_and_aliases(void) {
     fixture();
     const size_t shadow=2080u+2u*32u;
@@ -311,6 +388,7 @@ int main(void) {
     test_metadata_selection_and_audio();
     test_tone_range_boundaries_and_nearest_ties();
     test_shadow_tones_and_aliases();
+    test_shadow_program_gain_pan_and_pcm();
     test_strict_invalid_banks_and_no_publish();
     test_actual_native_seq_to_vab_to_spu_pcm();
     puts("native sparse VH/VB -> SEQ -> SPU stereo PCM: PASS");
