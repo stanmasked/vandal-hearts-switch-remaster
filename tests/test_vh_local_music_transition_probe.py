@@ -22,7 +22,7 @@ def synth_dir(directory, wet=False, bank_b=False, fallback_program=False,
               no_note_on=False, program_change_retrigger=False,
               delayed_program_change=False, accelerated_tempo=False,
               multiple_tempo_loop=False, polyphony_notes=0,
-              release_overlap=None):
+              release_overlap=None, release_waves=None):
     directory.mkdir()
     files = make_synthetic_files()
     vh = bytearray(files["music.vh"])
@@ -68,6 +68,29 @@ def synth_dir(directory, wet=False, bank_b=False, fallback_program=False,
         if polyphony_notes == 23:
             melody.extend((0, 0x80, 40, 0, 0, 0x80, 41, 0))
         melody.extend((0x81, 0x70, 0xFF, 0x2F))
+        files["music.seq"] = files["music.seq"][:15] + bytes(melody)
+    if release_waves is not None:
+        if release_waves not in ("immediate", "after_release"):
+            raise ValueError("unsupported release-wave fixture")
+        # Four waves, each releasing three *distinct* held voices.
+        # Immediate replacement steals 3 Release slots per wave;
+        # delayed replacement allows the SPU renderer to retire them
+        # to inactive/free slots before the next Note On arrives.
+        melody = bytearray((0, 0xC0, 7))
+        for key in range(40, 60):
+            melody.extend((0, 0x90, key, 110))
+        for wave in range(4):
+            first_key = 40 + wave * 3
+            melody.extend((45, 0x80, first_key, 0))
+            for key in range(first_key + 1, first_key + 3):
+                melody.extend((0, 0x80, key, 0))
+            delta = 0 if release_waves == "immediate" else 45
+            for key in range(60 + wave * 3, 63 + wave * 3):
+                melody.extend((delta, 0x90, key, 110))
+                delta = 0
+        # 600 ticks, enough to prevent EOT from stopping any new voice
+        # during the 40-block observation window.
+        melody.extend((0x84, 0x58, 0xFF, 0x2F))
         files["music.seq"] = files["music.seq"][:15] + bytes(melody)
     if release_overlap is not None:
         if release_overlap not in ("immediate", "after_release"):
@@ -551,6 +574,71 @@ class NativeLocalMusicTransitionTests(unittest.TestCase):
                         self.assertEqual(
                             {p.name: p.read_bytes() for p in folder.iterdir()},
                             before)
+
+    def test_repeated_release_waves_retire_or_steal_slots(self):
+        # Long synthetic high-polyphony stress: start 20 voices, then
+        # issue 4 waves of 3 Note Offs followed by 3 replacements.
+        # Distinguish voices *actually* becoming inactive in SPU render
+        # from release-phase voices overwritten before rendering.
+        for kind in ("immediate", "after_release"):
+            with self.subTest(kind=kind):
+                with tempfile.TemporaryDirectory() as temp:
+                    root = Path(temp)
+                    a, b = root / "release-waves", root / "independent-bank"
+                    original_a = synth_dir(a, release_waves=kind, wet=True)
+                    original_b = synth_dir(b, bank_b=True)
+                    cmd = [str(PROGRAM), str(a), str(b), "4", "40"]
+                    first = subprocess.run(cmd, capture_output=True, text=True)
+                    repeat = subprocess.run(cmd, capture_output=True, text=True)
+                    self.assertEqual(first.returncode, 0, first.stderr)
+                    self.assertEqual(first.stdout, repeat.stdout)
+                    report = json.loads(first.stdout)
+                    stages = report["measurements"]
+                    self.assertEqual([m["bank"] for m in stages],
+                                     ["A", "B", "A", "B"])
+                    for scene in (stages[0], stages[2]):
+                        self.assertEqual(scene["note_requests"], 32)
+                        self.assertEqual(scene["resolved_notes"], 32)
+                        self.assertEqual(scene["note_offs"], 12)
+                        self.assertEqual(scene["unresolved_notes"], 0)
+                        self.assertEqual(scene["fallback_notes"], 0)
+                        self.assertEqual(scene["cycles_completed"], 0)
+                        self.assertEqual(scene["peak_active_voices"], 20)
+                        self.assertEqual(scene["first_note_block"], 1)
+                        self.assertGreater(scene["nonzero_samples"], 0)
+                        if kind == "immediate":
+                            self.assertEqual(scene["last_note_block"], 17)
+                            self.assertEqual(scene["saturated_note_requests"], 12)
+                            self.assertEqual(scene["notes_while_release_active"], 12)
+                            self.assertEqual(scene["saturated_with_release_requests"], 12)
+                            self.assertEqual(scene["first_saturated_note_block"], 5)
+                            self.assertEqual(scene["first_release_overlap_block"], 5)
+                            self.assertEqual(scene["adsr_release_slot_retirements"], 0)
+                            self.assertEqual(scene["first_release_retirement_block"], 0)
+                            self.assertEqual(scene["peak_releasing_voices_before_render"], 0)
+                        else:
+                            self.assertEqual(scene["last_note_block"], 33)
+                            self.assertEqual(scene["saturated_note_requests"], 0)
+                            self.assertEqual(scene["notes_while_release_active"], 0)
+                            self.assertEqual(scene["saturated_with_release_requests"], 0)
+                            self.assertEqual(scene["adsr_release_slot_retirements"], 12)
+                            self.assertEqual(scene["first_release_retirement_block"], 5)
+                            self.assertEqual(scene["last_release_retirement_block"], 29)
+                            self.assertEqual(scene["peak_releasing_voices_before_render"], 3)
+                    for scene in (stages[1], stages[3]):
+                        self.assertEqual(scene["note_requests"], 1)
+                        self.assertEqual(scene["saturated_note_requests"], 0)
+                        self.assertEqual(scene["notes_while_release_active"], 0)
+                        self.assertEqual(scene["peak_active_voices"], 1)
+                    input_frames = 4 * 40 * 512
+                    self.assertEqual(report["input_frames"], input_frames)
+                    self.assertEqual(report["output_frames"],
+                                     (input_frames - 1) * 48000 // 44100 + 1)
+                    self.assertNotIn(str(root), first.stdout)
+                    for directory, old_files in ((a, original_a), (b, original_b)):
+                        self.assertEqual(
+                            {f.name: f.read_bytes() for f in directory.iterdir()},
+                            old_files)
 
     def test_releasing_voices_are_occupied_until_adsr_finishes(self):
         # Both sequences start 20 held notes, then NoteOff 3 of them
