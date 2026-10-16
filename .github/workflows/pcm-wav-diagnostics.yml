@@ -14,6 +14,7 @@ on:
       - 'tools/render_ps1_seq.py'
       - 'tests/export_native_seq_pcm_wav.c'
       - 'tests/test_native_pcm_capture.py'
+      - 'tests/test_vh_resample_partition.c'
       - 'tools/inspect_native_pcm_capture.py'
       - 'source/vh_native_seq.c'
       - 'source/vh_native_spu.c'
@@ -30,6 +31,7 @@ on:
       - 'tools/render_ps1_seq.py'
       - 'tests/export_native_seq_pcm_wav.c'
       - 'tests/test_native_pcm_capture.py'
+      - 'tests/test_vh_resample_partition.c'
       - 'tools/inspect_native_pcm_capture.py'
       - 'source/vh_native_seq.c'
       - 'source/vh_native_spu.c'
@@ -72,3 +74,9 @@ jobs:
           python3 tools/inspect_native_pcm_capture.py /tmp/native-seq-spu-48k-repeat.wav
           python3 tools/analyze_pcm_wav.py /tmp/native-seq-spu-48k-repeat.wav \
             --expected-rate 48000 --fail-on-silence
+      - name: Verify resampler PCM invariant to source block partitioning
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+            tests/test_vh_resample_partition.c source/vh_audio_resample.c \
+            -o /tmp/test_vh_resample_partition
+          /tmp/test_vh_resample_partition
