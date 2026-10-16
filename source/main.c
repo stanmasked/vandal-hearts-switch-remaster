@@ -8,6 +8,7 @@
 #include "software_renderer.h"
 #include "ft4_textured_quad.h"
 #include "ps1_indexed_texture.h"
+#include "ps1_abr_blend.h"
 
 #define FB_WIDTH 1280
 #define FB_HEIGHT 720
@@ -153,14 +154,18 @@ static void init_ft4_probe_texture(void) {
 
 /* Explicit visual debugging of STP: magenta means "semi flag detected".
  * This is NOT a PlayStation ABR blend mode and cannot be mistaken for one. */
-static u32 vh_switch_highlight_stp(u32 destination, u32 source, void *unused) {
-    (void)destination;
-    (void)source;
+static void vh_switch_unpack_ps1_rgb(
+    u32 pixel, u8 *red, u8 *green, u8 *blue, void *unused) {
     (void)unused;
-    return RGBA8_MAXALPHA(255, 0, 255);
+    *red = (u8)pixel;
+    *green = (u8)(pixel >> 8);
+    *blue = (u8)(pixel >> 16);
 }
 
-static void draw_ft4_probe(VhCanvas *canvas, u32 *pixels, u32 stride) {
+/* Cycles the PS1 ABR modes independently of the tactical prototype.
+ * This is a synthetic 5-bit reference demonstration, not original art. */
+static void draw_ft4_probe(VhCanvas *canvas, u32 *pixels, u32 stride,
+                           u32 frame_tick) {
     const VhFt4Point normal[4] = {
         {978, 164}, {1106, 164}, {1106, 292}, {978, 292}
     };
@@ -168,8 +173,14 @@ static void draw_ft4_probe(VhCanvas *canvas, u32 *pixels, u32 stride) {
         {1106, 352}, {978, 352}, {978, 480}, {1106, 480}
     };
     VhFt4Vertex quad[4];
+    const unsigned mode = (frame_tick / 120u) & 3u;
+    VhPs1AbrState abr = {
+        (u8)mode, 1, vh_switch_unpack_ps1_rgb, vh_switch_pack_ps1_rgb, NULL
+    };
+    char mode_label[] = "ABR MODE 0";
+    mode_label[9] = (char)('0' + mode);
     draw_text(pixels, stride, 975, 137, "CLUT4 CUTOUT", COLOR_MUTED, 1);
-    draw_text(pixels, stride, 975, 323, "STP DEBUG", COLOR_MUTED, 1);
+    draw_text(pixels, stride, 975, 323, mode_label, COLOR_MUTED, 1);
     if (!g_ft4_probe_ready) {
         draw_text(pixels, stride, 975, 500, "CLUT ERROR", COLOR_ENEMY, 1);
         return;
@@ -180,10 +191,11 @@ static void draw_ft4_probe(VhCanvas *canvas, u32 *pixels, u32 stride) {
             g_ft4_probe_classes[0], 16, NULL, NULL);
     }
     vh_canvas_draw_rect_outline(canvas, 978, 164, 128, 128, COLOR_GRID);
+    fill_rect(pixels, stride, 978, 352, 128, 128, COLOR_TILE_ALT);
     if (vh_ft4_from_face_perimeter(mirror, 0, 0, 15, 15, quad)) {
         (void)vh_canvas_draw_ft4_classified_rgba32(
             canvas, g_ft4_probe_pixels[1], 16, 16, 16, quad,
-            g_ft4_probe_classes[1], 16, vh_switch_highlight_stp, NULL);
+            g_ft4_probe_classes[1], 16, vh_ps1_abr_stp_blend, &abr);
     }
     vh_canvas_draw_rect_outline(canvas, 978, 352, 128, 128, COLOR_GRID);
 }
@@ -238,7 +250,7 @@ static void draw_frame(u32 *pixels, u32 stride, int cursor_x, int cursor_y,
         }
     }
 
-    draw_ft4_probe(&canvas, pixels, stride);
+    draw_ft4_probe(&canvas, pixels, stride, frame_tick);
 
     fill_rect(pixels, stride, 72, 590, FB_WIDTH - 144, 2, COLOR_GRID);
     fill_rect(pixels, stride, 72, 615, 42, 42, COLOR_HERO);
