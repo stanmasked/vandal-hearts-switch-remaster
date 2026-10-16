@@ -160,11 +160,11 @@ jobs:
           /tmp/vh-gte-test
       - name: Host-check original 26-normal GTE NCCS UpdateLight
         run: |
-          gcc -std=c11 -Wall -Wextra -O2 \
+          gcc -std=c11 -Wall -Wextra -O2 -ffunction-sections -fdata-sections \
             -I/tmp/vh-cross-upstream/platform/pc/include \
             tests/test_private_map_light.c source/vh_private_map_light.c \
-            /tmp/vh-cross-upstream/platform/pc/src/libgte.c -lm \
-            -o /tmp/vh-26-side-light-test
+            /tmp/vh-cross-upstream/platform/pc/src/libgte.c \
+            -Wl,--gc-sections -lm -o /tmp/vh-26-side-light-test
           /tmp/vh-26-side-light-test
       - name: Compile original DrawOTag and native software rasterizer
         shell: bash
