@@ -23,7 +23,7 @@ TOTAL=256
 SCENES=(0,1)
 WORKERS=(1,2,4)
 FLOAT_RE=re.compile(r"^V54(WALK|TRACE|SUMMARY) (.*)$")
-KEY_RE=re.compile(r"([a-z0-9_]+)=([0-9a-f]+)")
+KEY_RE=re.compile(r"([a-z0-9_]+)=(-?[0-9a-f]+)")
 WALK_FIELDS={"frame","seq","burst","slot","bucket","filler","type"}
 TRACE_FIELDS={"frame","count","registered"}
 SUMMARY_FIELDS={"scene","workers","bursts","buckets","packets","native",
