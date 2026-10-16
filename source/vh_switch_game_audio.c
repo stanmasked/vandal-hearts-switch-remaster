@@ -68,6 +68,24 @@ static const VhMusicCue selected_cue = {
     0, synthetic_tone, NULL
 };
 
+/* On some applet focus transitions the output session may already
+ * have been stopped or restarted by the system. Treat an already
+ * correct service state as success; other libnx failures are fatal.
+ */
+static int stop_audout_checked(void) {
+    if (R_SUCCEEDED(audoutStopAudioOut())) return 0;
+    AudioOutState state;
+    return R_SUCCEEDED(audoutGetAudioOutState(&state)) &&
+           state == AudioOutState_Stopped ? 0 : -1;
+}
+
+static int start_audout_checked(void) {
+    if (R_SUCCEEDED(audoutStartAudioOut())) return 0;
+    AudioOutState state;
+    return R_SUCCEEDED(audoutGetAudioOutState(&state)) &&
+           state == AudioOutState_Started ? 0 : -1;
+}
+
 static void audio_worker(void *unused) {
     (void)unused;
     int state = -1;
@@ -111,7 +129,7 @@ static void audio_worker(void *unused) {
              * SEQ, SPU, reverb and resampler playback positions.
              */
             if (playing) {
-                if (R_FAILED(audoutStopAudioOut())) {
+                if (stop_audout_checked()) {
                     state = -9;
                     break;
                 }
@@ -120,7 +138,7 @@ static void audio_worker(void *unused) {
         }
         if (!vh_game_music_mailbox_focused(&mailbox)) {
             if (playing) {
-                if (R_FAILED(audoutStopAudioOut())) {
+                if (stop_audout_checked()) {
                     state = -9;
                     break;
                 }
@@ -134,7 +152,7 @@ static void audio_worker(void *unused) {
             continue;
         }
         if (!playing) {
-            if (R_FAILED(audoutStartAudioOut())) {
+            if (start_audout_checked()) {
                 state = -4;
                 break;
             }
@@ -176,7 +194,7 @@ static void audio_worker(void *unused) {
     }
     if (state == -1) state = 0; /* clean stop requested by main thread */
 cleanup:
-    if (playing) audoutStopAudioOut();
+    if (playing) (void)stop_audout_checked();
     if (opened) audoutExit();
     atomic_store_explicit(&audio_status, state, memory_order_release);
 }
