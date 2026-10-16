@@ -33,6 +33,12 @@ int main(int argc, char **argv) {
     if (argc != 2) return 2;
     vh_pixel_sample_dir = argv[1];
 #if defined(VH_MAP02_DDA_REJECTED_EDGES_TRACE)
+    vh_pixel_sample_y = 9;
+    VH_Map02RejectedEdges(&cx, 9, 10, 20, 4);
+    vh_pixel_sample_y = 16;
+    VH_Map02RejectedEdges(&cx, 16, 10, 20, 5);
+    VH_Map02RejectedEdges(&cx, 16, 10, 20, 6);
+    vh_pixel_sample_y = 9;
     VH_Map02RejectedEdges(&cx, 9, 10, 20, 7);
 #endif
     return 0;
@@ -63,8 +69,10 @@ class CandidateC11Tests(unittest.TestCase):
                 journal = root / "dda-rejected-edge-candidates.jsonl"
                 if enabled:
                     self.assertTrue(journal.exists())
-                    self.assertIn('"reason":7', journal.read_text())
-                    self.assertIn('"y":9', journal.read_text())
+                    records = [__import__("json").loads(line) for line in journal.read_text().splitlines()]
+                    self.assertEqual([row["reason"] for row in records], [4, 5, 6, 7])
+                    self.assertEqual([row["y"] for row in records], [9, 16, 16, 9])
+                    self.assertEqual([row["step"] for row in records], [0, 1, 2, 3])
                 else:
                     self.assertFalse(journal.exists())
             bad = subprocess.run(
