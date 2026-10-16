@@ -300,3 +300,59 @@ objects, graphics arena, backface calculations and ordering-table
 depth setup. Similarly, the demonstration camera is not the game's
 authentic GTE register state. No PS1 disc bytes or retail terrain
 meshes are embedded in the build.
+
+## Signed GTE NCLIP and AVSZ4 depth-sorted map preview (new integration gate)
+
+The latest private Switch NRO preview further approaches the original
+`src/core/graphics.c::RenderMapTile` primitive pipeline.
+The NRO **no longer calls `RotTransPers4` alone and accepts every
+triangle winding**. Instead, the exact pinned `inline_gte.h`
+wrapper calls its original GTE software implementation in this order:
+
+```c
+gte_ldv3(&v[0], &v[1], &v[2]);
+gte_rtpt();
+gte_nclip();
+gte_stopz(&opz);
+if (opz <= 0) continue; /* PS1 front-face test */
+gte_stsxy3(&poly->x0, &poly->x1, &poly->x3);
+gte_ldv0(&v[3]);
+gte_rtps();
+gte_stsxy(&poly->x2);
+gte_avsz4();
+gte_stotz(&otz);
+```
+
+The 256-bucket **private test** ordering table is a reduced-capacity
+version of the game's own OT mechanism: `ClearOTag(ot,256)`
+and `AddPrim(&ot[256-otz],poly)` after bounding OTZ to 5..255.
+Since buckets are walked in ascending order, the distant polygons
+are submitted first and nearby polygons overlay them. The black
+background is inserted at bucket 0. The original game uses a larger
+table and additional face shading/camera logic; do not interpret the
+256-bucket probe as its full OT.
+
+The synthetic 28×12 model slab now contains **three authored face
+records**, of which only two are front-facing: a deliberately reversed
+face in the same projected left region uses the alternate slot/CLUT
+and would recolor the red/blue surface if it were submitted by a
+renderer that neglected NCLIP. It precedes the two forward-facing
+faces in source order. A verified frame must retain left red/blue,
+right magenta/cyan and the distinctive perspective-only red pixel.
+The original file format and palette upload remain unchanged.
+The owner-supplied private geometry loader accepts genuine model
+slabs with up to 18 faces per tile; it does not fabricate additional
+faces for user-provided files.
+
+`tests/test_pinned_map_gte_camera.c` now directly executes
+`gte_nclip`/signed `gte_stopz` on both vertex windings using
+the very same pinned libgte, and separately cross-checks
+`gte_avsz4`/depth. Python staging checks explicitly require the
+reversed first face, two forward faces and the exact host→NRO GTE
+opcode order and OT bucket index. These checks are asset-free,
+with no proprietary game map data in the test fixtures.
+
+**Acceptance is pending a completed three-job NeXium CI run**.
+This incremental milestone does not yet include the source game's
+side-light table, distance shading or actual battle camera state;
+nor does it compile the entire original `RenderMapTile` function.
