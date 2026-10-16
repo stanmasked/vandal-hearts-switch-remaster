@@ -113,6 +113,13 @@ class NativeLocalMusicTransitionTests(unittest.TestCase):
             self.assertTrue(all(0 < x["peak_pcm16"] <= 32768 for x in readings))
             self.assertTrue(all(x["clipped_samples"] <=
                                 x["output_frames"] * 2 for x in readings))
+            for item in readings:
+                for side in ("left", "right"):
+                    mean = item[f"mean_pcm16_{side}"]
+                    rms = item[f"rms_pcm16_{side}"]
+                    self.assertGreater(rms, 0)
+                    self.assertLessEqual(abs(mean), rms + 0.002)
+                    self.assertLessEqual(rms, item["peak_pcm16"] + 0.002)
             self.assertEqual(sum(x["output_frames"] for x in readings),
                              result["output_frames"])
             self.assertTrue(all(x["input_frames"] == 8192 for x in readings))
@@ -160,6 +167,9 @@ class NativeLocalMusicTransitionTests(unittest.TestCase):
             self.assertEqual(muted["peak_pcm16"], 0)
             self.assertEqual(muted["nonzero_samples"], 0)
             self.assertEqual(muted["clipped_samples"], 0)
+            for side in ("left", "right"):
+                self.assertEqual(muted[f"mean_pcm16_{side}"], 0)
+                self.assertEqual(muted[f"rms_pcm16_{side}"], 0)
             self.assertGreater(audible["resolved_notes"], 0)
             self.assertEqual(audible["zero_gain_notes"], 0)
             self.assertFalse(audible["silent_pcm"])
@@ -167,6 +177,10 @@ class NativeLocalMusicTransitionTests(unittest.TestCase):
             self.assertGreater(audible["peak_pcm16"], 0)
             self.assertLessEqual(audible["peak_pcm16"], 32768)
             self.assertEqual(audible["clipped_samples"], 0)
+            for side in ("left", "right"):
+                self.assertGreater(audible[f"rms_pcm16_{side}"], 0)
+                self.assertLessEqual(abs(audible[f"mean_pcm16_{side}"]),
+                                     audible[f"rms_pcm16_{side}"] + 0.002)
             self.assertNotIn(str(tmp), result.stdout)
             for folder, expected in ((a, originals_a), (b, originals_b)):
                 self.assertEqual(
@@ -189,6 +203,9 @@ class NativeLocalMusicTransitionTests(unittest.TestCase):
             self.assertEqual(silent["zero_gain_notes"], 0)
             self.assertTrue(silent["silent_pcm"])
             self.assertEqual(silent["nonzero_samples"], 0)
+            for side in ("left", "right"):
+                self.assertEqual(silent[f"mean_pcm16_{side}"], 0)
+                self.assertEqual(silent[f"rms_pcm16_{side}"], 0)
             self.assertGreater(sounding["note_requests"], 0)
             self.assertGreater(sounding["resolved_notes"], 0)
             self.assertFalse(sounding["silent_pcm"])
