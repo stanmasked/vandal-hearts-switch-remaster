@@ -30,9 +30,44 @@ static int16_t output[VH_AUDIO_RESAMPLE_MAX_FRAMES*2u];
 typedef struct {
     uint64_t output_frames, input_frames, notes, events;
     unsigned bank_index, blocks, sent_to_reverb;
+    uint64_t note_requests, unresolved_notes, fallback_notes;
+    uint64_t reverb_send_notes;
     uint32_t spu_seam, audout_seam, resampler_fraction;
 } SceneMetric;
 static SceneMetric scene_metrics[MAX_SCENES];
+
+/* Local audit counters around the unchanged production bank resolver.
+ * A fallback is any note not matched within its requested program range.
+ */
+typedef struct {
+    VhNativeVab *bank;
+    uint64_t requests, resolved, unresolved, fallback, reverb_sends;
+} ResolverAudit;
+static ResolverAudit resolver_audit;
+
+static int resolve_with_audit(void *context, unsigned program, unsigned note,
+                              unsigned velocity, unsigned volume, unsigned pan,
+                              VhSeqTone *tone) {
+    ResolverAudit *audit=(ResolverAudit *)context;
+    ++audit->requests;
+    const int rc=vh_native_vab_resolve(audit->bank,program,note,velocity,
+                                       volume,pan,tone);
+    if (rc) {
+        ++audit->unresolved;
+        return rc;
+    }
+    ++audit->resolved;
+    const VhVabTone *selected=
+        &audit->bank->tones[audit->bank->selected_program]
+                            [audit->bank->selected_tone];
+    if (audit->bank->selected_program!=program ||
+        note<selected->low || note>selected->high)
+        ++audit->fallback;
+    if (tone->reverb_send)
+        ++audit->reverb_sends;
+    return 0;
+}
+
 
 static int parse_range(const char *value, unsigned lower,
                        unsigned upper, unsigned *result) {
@@ -79,12 +114,14 @@ int main(int argc,char **argv) {
     for (unsigned i=0;i<scenes;i++) {
         const unsigned bank_id=i%2u;
         VhAudioAssets *asset=&banks[bank_id];
+        memset(&resolver_audit,0,sizeof(resolver_audit));
+        resolver_audit.bank=&asset->bank;
         if ((!i && vh_native_seq_init(
                 &seq,asset->seq,asset->seq_size,&spu,
-                vh_native_vab_resolve,&asset->bank,0)) ||
+                resolve_with_audit,&resolver_audit,0)) ||
             (i && vh_native_seq_switch_scene(
                 &seq,asset->seq,asset->seq_size,&spu,
-                vh_native_vab_resolve,&asset->bank,0))) {
+                resolve_with_audit,&resolver_audit,0))) {
             fprintf(stderr,"Native SEQ scene initialization failed\n");
             goto error;
         }
@@ -131,6 +168,18 @@ int main(int argc,char **argv) {
         metric->output_frames=frame_total-start_output;
         metric->notes=seq.note_ons;
         metric->events=seq.dispatched_events;
+        metric->note_requests=resolver_audit.requests;
+        metric->unresolved_notes=resolver_audit.unresolved;
+        metric->fallback_notes=resolver_audit.fallback;
+        metric->reverb_send_notes=resolver_audit.reverb_sends;
+        if(resolver_audit.resolved!=metric->notes ||
+           resolver_audit.requests!=resolver_audit.resolved+
+                                     resolver_audit.unresolved ||
+           resolver_audit.fallback>resolver_audit.resolved ||
+           resolver_audit.reverb_sends>resolver_audit.resolved) {
+            fprintf(stderr,"SEQ note-resolution accounting failed\n");
+            goto error;
+        }
         if(spu.frames_rendered!=metric->input_frames) {
             fprintf(stderr,"SPU frame accounting failed\n");
             goto error;
@@ -163,6 +212,11 @@ int main(int argc,char **argv) {
         const SceneMetric *m=&scene_metrics[i];
         printf("%s{\"scene\":%u,\"bank\":\"%c\","
                "\"events\":%" PRIu64 ",\"resolved_notes\":%" PRIu64 ","
+               "\"note_requests\":%" PRIu64 ","
+               "\"unresolved_notes\":%" PRIu64 ","
+               "\"fallback_notes\":%" PRIu64 ","
+               "\"direct_match_notes\":%" PRIu64 ","
+               "\"reverb_send_notes\":%" PRIu64 ","
                "\"reverb_send_seen\":%s,"
                "\"spu_boundary_delta_pcm16\":%u,"
                "\"audout_boundary_delta_pcm16\":%u,"
@@ -170,7 +224,9 @@ int main(int argc,char **argv) {
                "\"input_frames\":%" PRIu64 ","
                "\"output_frames\":%" PRIu64 "}",
                i?",":"",i,m->bank_index?'B':'A',
-               m->events,m->notes,m->sent_to_reverb?"true":"false",
+               m->events,m->notes,m->note_requests,m->unresolved_notes,
+               m->fallback_notes,m->notes-m->fallback_notes,
+               m->reverb_send_notes,m->sent_to_reverb?"true":"false",
                m->spu_seam,m->audout_seam,m->resampler_fraction,
                m->input_frames,m->output_frames);
     }
