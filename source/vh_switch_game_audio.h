@@ -9,8 +9,12 @@
  */
 int vh_switch_game_audio_start(unsigned initial_scene);
 void vh_switch_game_audio_post(unsigned desired_scene);
+/* Forward libnx AppletHookType_OnFocusState/OnResume transitions
+ * from the main thread. Does not wait for the audio worker.
+ */
+void vh_switch_game_audio_set_focus(int in_focus);
 void vh_switch_game_audio_stop(void);
-/* 0 starting/not started, 1 running, negative means audio failed.
+/* 0 starting/stopped, 1 playing, 2 paused, negative means audio failed.
  * Main gameplay can continue silently if the device is unavailable.
  */
 int vh_switch_game_audio_status(void);
