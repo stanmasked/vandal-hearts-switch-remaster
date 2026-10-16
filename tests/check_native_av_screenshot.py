@@ -80,6 +80,22 @@ def inspect_images(first: Image.Image, second: Image.Image) -> dict:
     else:
         raise ValueError(f"audio pipeline status marker absent: {progress_pixel}")
 
+    # Fourth indicator: synthetic cue transition progress. It proves only
+    # that the guest audio worker executed transactional SEQ switches.
+    # Test fixtures from older revisions may have no indicator at all.
+    switch_pixel = first.getpixel((1050, 322))
+    tr, tg, tb = switch_pixel
+    if near(switch_pixel, AUDIO_OK) or (tg >= 155 and tg > tr + 70
+                                        and tg > tb + 40):
+        synthetic_switches = "confirmed"
+    elif tr > 180 and tg > 150 and tb < 160 and tr > tb + 70:
+        synthetic_switches = "pending"
+    elif near(switch_pixel, AUDIO_FAIL) or (
+            tr >= 145 and tr > tg + 40 and tr > tb + 40):
+        synthetic_switches = "error"
+    else:
+        synthetic_switches = "not_observed"
+
     # Sample only the heartbeat; animated bar is separate from the cursor,
     # so its change demonstrates video-loop progress without emulated input.
     # Native framebuffer y=610 maps to about y=588 in a 1280x694
@@ -98,6 +114,7 @@ def inspect_images(first: Image.Image, second: Image.Image) -> dict:
         "audout_status": status,
         "audio_source": source,
         "audio_pipeline_progress": pipeline,
+        "synthetic_scene_switches": synthetic_switches,
         "user_music_identity_verified": False,
         "audible_audio_verified": False,
         "actual_gameplay_verified": False,
@@ -121,6 +138,9 @@ def main():
                         choices=("buffers_returned", "inactive_or_error",
                                  "not_yet_confirmed"),
                         help="require worker DSP + audout returned-buffer evidence")
+    parser.add_argument("--require-synthetic-scene-switches",
+                        action="store_true",
+                        help="require two completed synthetic SEQ transitions")
     args = parser.parse_args()
     try:
         with Image.open(args.before) as first, Image.open(args.after) as second:
@@ -140,6 +160,10 @@ def main():
             raise ValueError("expected audio pipeline "
                              + args.require_audio_pipeline + ", got "
                              + report["audio_pipeline_progress"])
+        if (args.require_synthetic_scene_switches
+                and report["synthetic_scene_switches"] != "confirmed"):
+            raise ValueError("synthetic scene-switch marker not confirmed: "
+                             + report["synthetic_scene_switches"])
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
     print(json.dumps(report, indent=2))
