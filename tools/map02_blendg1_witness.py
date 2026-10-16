@@ -23,7 +23,20 @@ def compare_blendg1_witnesses(putpixel_rows, witness_rows):
     """
     if not isinstance(putpixel_rows, list) or not isinstance(witness_rows, list):
         raise ValueError("witness streams must be lists")
-    requested = [p for p in putpixel_rows if p.get("semi") == 1]
+    # The verifier normally authenticates these upstream, but keep this
+    # standalone comparator fail-closed for synthetic tests and direct callers.
+    last_step = -1
+    for p in putpixel_rows:
+        if not isinstance(p, dict) or p.get("stage") != "native_putpixel":
+            raise ValueError("invalid PutPixel witness")
+        step = _uint(p, "step", 63)
+        if step <= last_step:
+            raise ValueError("PutPixel steps duplicated or out of order")
+        last_step = step
+        if _uint(p, "semi", 1) == 0:
+            if _uint(p, "front", 65535) != _uint(p, "after", 65535):
+                raise ValueError("opaque PutPixel differs from front copy")
+    requested = [p for p in putpixel_rows if p["semi"] == 1]
     if not requested:
         raise ValueError("no directly witnessed semi-transparent BlendG1 call")
     if len(requested) != len(witness_rows):
