@@ -399,3 +399,43 @@ def audit_projected_shared_edges(faces, screen_samples):
         "mismatched": mismatching,
         "evidence_scope": "external screen endpoints; no GTE execution or GPU seam proof",
     }
+
+
+def audit_horizontal_edge_contacts(faces):
+    """Classify matching XZ edges as coincident or vertically separated.
+
+    This is an *additional diagnostic* to full-XYZ shared_edges; it does not
+    assert physical connectivity, visual cracks or original game tile spacing.
+    A horizontal edge key is its two XZ endpoint pairs, independent of winding.
+    """
+    edges = {}
+    for face in faces:
+        verts = [tuple(v) for v in face["world_xyz_hypothesis"]]
+        key = (face["z"], face["x"], face["record_index"],
+               face["source_face"]["face"])
+        for i in range(4):
+            a, b = verts[i], verts[(i + 1) % 4]
+            xz = tuple(sorted(((a[0], a[2]), (b[0], b[2]))))
+            if xz[0] == xz[1]:
+                continue
+            heights = (a[1], b[1]) if (a[0], a[2]) <= (b[0], b[2]) else (b[1], a[1])
+            edges.setdefault(xz, []).append((key, heights))
+    coincident, separated = [], []
+    for xz, records in sorted(edges.items()):
+        for i, (first_key, first_height) in enumerate(records):
+            for second_key, second_height in records[i + 1:]:
+                if first_key == second_key:
+                    continue
+                entry = {
+                    "edge_xz": [list(p) for p in xz],
+                    "source_keys": [list(first_key), list(second_key)],
+                    "endpoint_heights": [list(first_height), list(second_height)],
+                }
+                (coincident if first_height == second_height else separated).append(entry)
+    return {
+        "coincident_edges": coincident,
+        "height_separated_edges": separated,
+        "coincident_count": len(coincident),
+        "height_separated_count": len(separated),
+        "evidence_scope": "XZ edge alignment only; no GTE or GPU seam claim",
+    }
