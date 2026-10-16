@@ -33,3 +33,23 @@ executed-`dda_part` span recorder remains to be developed and validated.
 Run: `python3 -m unittest discover -s tests -p 'test_map02_dda_span_join.py' -v`.
 The 11 new regression tests use fabricated data; no retail or Switch
 playback has been established.
+
+## Optional actual entered-span observation (experimental)
+
+`tools.instrument_map02_dda_span.instrument_span` composes on top of the
+source-pinned native raster-skip observer. At an *executed* `dda_span`
+entry only, it records the actual arguments `x_start/x_bound` and
+drawing-area clip bounds into a bounded private JSONL journal when
+`VH_MAP02_DDA_SPAN_TRACE` and all four dependent flags are enabled.
+
+This is a source-transformation helper, **not yet wired into the upstream
+PC compile pipeline or Switch build**. The observed source must first
+be produced by the pinned source and existing observers. It does not
+log rows that were vertically rejected before `dda_span`; consequently,
+the current strict vertical-rejection join requires separately sourced
+row spans and does not automatically consume this new journal.
+
+Outstanding gates: native C compile of the generated source, actual
+instrumented execution, exact event/ordinal/row validation and secure
+private journal provenance. No retail MAP02 or physical PS1 equivalence
+is claimed.
