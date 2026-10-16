@@ -356,7 +356,31 @@ and the new 4096/2896/2364 Q12 classifier. GitHub Actions
 checks both pinned upstream Git blobs and enforces this contract,
 without importing any copyrighted game data.
 
+### Executed PC-port Q12 differential evidence
+
+`tools/verify_map02_pc_normal_equivalence.py` extracts and compiles
+the **actual** `VectorNormalS` function from the pinned public
+`platform/pc/src/libgte.c`. On a synthetic deterministic corpus
+of **2119 normals** (original axes, known formerly misclassified
+boundaries, signed extremes and seeded random triples), the native
+PC function and portable Switch integer reference returned matching
+normalized Q12 components **and** identical 26-way lighting indices.
+This check links libm for the original PC sqrt; the Switch runtime
+continues using integer-only Q12 normalization.
+
+The GitHub Actions source checker pins the original libgte Git blob,
+compiles this reference under host GCC, and asserts the exact count
+and successful comparisons. Failed or modified numerical source
+anchors are covered by fail-closed Python regression tests.
+
+**This result establishes numerical parity on the executed corpus
+against the PC-port helper**. It does not prove behavior on every
+possible normal, does not reproduce PS1 MIPS BIOS `VectorNormalS`
+rounding, and does not simulate the GTE OP0 signed-IR truncation
+for out-of-range edges. It is intentionally separate from real
+MAP02 assets and captured hardware output.
+
 The next fidelity milestone is an independently executed
-PC-port/GTE cross-product and rounding comparison on varied map
+GTE cross-product and signed-IR edge comparison on varied map
 geometry, followed by the real 26-entry light-color table,
 camera projection and captured gameplay comparison.
