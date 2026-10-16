@@ -824,3 +824,50 @@ establish when or where it was captured, that source assets are
 original, that the attached tpage/clut parameters correspond to the
 same actual drawing frame, or that the CPU-affine rasterizer matches
 hardware PS1 output. No proprietary VRAM snapshot is checked in.
+
+
+## Multi-face single-frame GTE + VRAM4 preparation (explicit synchronization contract)
+
+`source/map02_vram4_frame.h` now connects three previously separate
+portable MAP02 components: source-keyed observed GTE FT4 geometry,
+actual-format 4bpp VRAM page/CLUT extraction, and original PC GPU
+ordering-table bucket traversal. Up to **32 caller-supplied visible
+terrain faces** are prepared in one frame without heap allocation.
+
+Every face carries **independent** observed tpage, CLUT, texture-window
+mask/offset, four screen perimeter corners, original 12 local vertex
+coordinates, source material/shade, UVWH, raw OTZ, and its original
+`(z,x,record_index,face_index)` identity. Multiple faces can share
+the same GFX while using different GPU registers and palettes. The
+frame builder materializes a separate 32768-byte 4bpp atlas and 32-byte
+CLUT for each face and queues its FT4 in original
+`ClearOTag` / `AddPrim` traversal order (including equal-depth LIFO).
+Resources remain caller-owned and immutable for the entire frame.
+
+Crucially, the API requires `frame == vram_snapshot_frame` and also
+requires **both** the observation and GPU-register frame labels of
+every face to equal that identifier. All faces, unique source keys,
+source-record vertex geometry, raw-depth bounds, 4-bit GPU register
+modes and working buffer capacities are checked **before any caller
+output changes**. A single malformed late observation or frame mismatch
+leaves the output scene, texture pages and statistics untouched.
+
+`tests/test_map02_vram4_frame.c` builds three entirely imaginary
+terrain submissions: two faces of the *same* map cell with identical
+GFX, but separate 4bpp page/CLUT state and equal OT depth, and a
+farther third face with a third page/CLUT. It verifies the independently
+selected palettes, STP callback count, FT4 pixel output, original OT
+LIFO and rejected mixed-frame/bad-source/bad-register/undersized-storage
+inputs without modifying output buffers. The strict host, sanitizer
+and pinned MAP02 upstream workflows execute this regression.
+
+**This enforces an input consistency contract, not proof of original
+gameplay.** Numeric frame labels can be forged; a real atomic capture
+still needs a trusted acquisition process and SHA-provenance of decoded
+map, source trace and VRAM. Further, **one full VRAM snapshot is only
+valid if the game does not alter the relevant texture/CLUT data between
+polygon submissions.** If VRAM changes within a frame, the snapshot
+must be associated with the appropriate submission event instead of
+applying one frozen image to all faces. This diagnostic does not
+implement GPU commands, character/sprite layers, true PS1 raster
+accuracy, HD asset replacement or live NRO rendering.
