@@ -12,6 +12,7 @@
 #include "vh_audio_assets.h"
 #include "vh_audio_resample.h"
 #include "vh_native_seq.h"
+#include "vh_music_scene.h"
 #include "vh_native_spu.h"
 
 #define LOCAL_AUDIO_DIR "sdmc:/switch/vandal-hearts-remake/audio"
@@ -19,7 +20,7 @@
 
 static VhAudioAssets user_assets;
 static VhNativeVab synthetic_bank;
-static VhNativeSeq seq;
+static VhMusicScene music_scene;
 static VhNativeSpu synth;
 static VhAudioResample resampler;
 
@@ -41,6 +42,27 @@ static const uint8_t fixture_seq[] = {
     0,0x90,60,110, 0x81,0x70,0x80,60,0,
     0x81,0x70,0xff,0x2f,
 };
+/* Demonstration-only second scene with a different note from the
+ * same synthetic bank. User-owned files remain on their original cue.
+ */
+static const uint8_t fixture_seq_b[] = {
+    'p','Q','E','S',0,0,0,0, 0x01,0xe0,0x07,0xa1,0x20,0,0,
+    0,0xc0,7, 0,0xb0,7,127, 0,0xb0,10,64,
+    0,0x90,64,110, 0x81,0x70,0x80,64,0,
+    0x81,0x70,0xff,0x2f,
+};
+
+static int set_synthetic_scene(unsigned scene_id, unsigned fade_blocks) {
+    const int alternate = scene_id == 2u;
+    const VhMusicCue cue = {
+        scene_id,
+        alternate ? fixture_seq_b : fixture_seq,
+        alternate ? sizeof(fixture_seq_b) : sizeof(fixture_seq),
+        0, vh_native_vab_resolve, &synthetic_bank
+    };
+    return vh_music_scene_request(&music_scene, &cue, fade_blocks);
+}
+
 static const uint8_t fixture_vag[32] = {
     0x02,0x04,0x22,0x22,0x22,0x22,0x22,0x22,
     0x22,0x22,0x22,0x22,0x22,0x22,0x22,0x22,
@@ -77,9 +99,7 @@ static int prepare_synthetic(void) {
         &synthetic_bank, fixture_vh, sizeof(fixture_vh),
         fixture_vb, sizeof(fixture_vb), fixture_pcm, 56))
         return -1;
-    return vh_native_seq_init(&seq, fixture_seq, sizeof(fixture_seq),
-                              &synth, vh_native_vab_resolve,
-                              &synthetic_bank, 0);
+    return set_synthetic_scene(1u, 0);
 }
 
 static int prepare_music(int *using_user_files) {
@@ -88,13 +108,17 @@ static int prepare_music(int *using_user_files) {
         vh_native_spu_set_reverb(&synth, 1, 0.5f))
         return -1;
     vh_audio_resample_reset(&resampler);
+    vh_music_scene_init(&music_scene, &synth);
     const int result = vh_audio_assets_load(&user_assets, LOCAL_AUDIO_DIR);
     if (result == VH_AUDIO_ASSET_ERROR) return -1;
     *using_user_files = result == VH_AUDIO_ASSET_OK;
-    if (*using_user_files)
-        return vh_native_seq_init(
-            &seq, user_assets.seq, user_assets.seq_size, &synth,
-            vh_native_vab_resolve, &user_assets.bank, 0);
+    if (*using_user_files) {
+        const VhMusicCue cue = {
+            100u, user_assets.seq, user_assets.seq_size,
+            0, vh_native_vab_resolve, &user_assets.bank
+        };
+        return vh_music_scene_request(&music_scene, &cue, 0);
+    }
     return prepare_synthetic();
 }
 
@@ -161,12 +185,24 @@ int main(int argc, char **argv) {
     unsigned played_blocks = 0;
     int result = 0;
     while (appletMainLoop() && played_blocks < MAX_PROBE_BLOCKS) {
+        /* Scene commands are evaluated before generating each block.
+         * No file I/O or VAG decoding occurs during a transition.
+         */
+        if (!user_files && played_blocks == 384u &&
+            set_synthetic_scene(2u, 8u) != 0) {
+            result = 9;
+            break;
+        }
+        if (!user_files && played_blocks == 768u &&
+            set_synthetic_scene(1u, 8u) != 0) {
+            result = 9;
+            break;
+        }
         const uint64_t tick_begin = armGetSystemTick();
-        if (vh_native_seq_advance_block(&seq) < 0) {
+        if (vh_music_scene_render(&music_scene, in_44100) < 0) {
             result = 5;
             break;
         }
-        vh_native_spu_render(&synth, in_44100, VH_AUDIO_BLOCK_FRAMES);
         const size_t count = vh_audio_resample_process(
             &resampler, in_44100, VH_AUDIO_BLOCK_FRAMES,
             out_48000, VH_AUDIO_RESAMPLE_MAX_FRAMES);
@@ -187,8 +223,10 @@ int main(int argc, char **argv) {
         }
         ++played_blocks;
         if (played_blocks % 128u == 0u) {
-            printf("Blocks=%u notes=%llu cycles=%u\n", played_blocks,
-                   (unsigned long long)seq.note_ons,seq.cycles_completed);
+            printf("Blocks=%u scene=%u notes=%llu cycles=%u\n",
+                   played_blocks, vh_music_scene_active_id(&music_scene),
+                   (unsigned long long)music_scene.seq.note_ons,
+                   music_scene.seq.cycles_completed);
             if (tick_frequency) {
                 const unsigned long long max_us =
                     (unsigned long long)(compute_ticks_max*1000000u /
