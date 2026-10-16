@@ -28,6 +28,10 @@ on:
       - 'tools/audit_map02_load_source.py'
       - 'tools/audit_map02_disc_prs.py'
       - 'tools/map02_texture_pixel_proof.py'
+      - 'tools/map02_face_geometry.py'
+      - 'tests/test_map02_face_geometry.py'
+      - 'tools/audit_map02_face_source.py'
+      - 'tests/test_audit_map02_face_source.py'
       - 'tests/test_map02_texture_pixel_proof.py'
       - 'tools/verify_map02_unpack_equivalence.py'
       - 'tests/test_verify_map02_unpack_equivalence.py'
@@ -65,6 +69,10 @@ on:
       - 'tools/audit_map02_load_source.py'
       - 'tools/audit_map02_disc_prs.py'
       - 'tools/map02_texture_pixel_proof.py'
+      - 'tools/map02_face_geometry.py'
+      - 'tests/test_map02_face_geometry.py'
+      - 'tools/audit_map02_face_source.py'
+      - 'tests/test_audit_map02_face_source.py'
       - 'tests/test_map02_texture_pixel_proof.py'
       - 'tools/verify_map02_unpack_equivalence.py'
       - 'tests/test_verify_map02_unpack_equivalence.py'
@@ -218,10 +226,14 @@ jobs:
             python3 -m unittest discover -s tests -p 'test_audit_map02_load_source.py' -v
             python3 -m unittest discover -s tests -p 'test_audit_map02_disc_prs.py' -v
             python3 -m unittest discover -s tests -p 'test_map02_texture_pixel_proof.py' -v
+            python3 -m unittest discover -s tests -p 'test_map02_face_geometry.py' -v
+            python3 -m unittest discover -s tests -p 'test_audit_map02_face_source.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_unpack_equivalence.py' -v
             python3 -m unittest discover -s tests -p 'test_instrument_map02_renderer.py' -v
             python3 -m unittest discover -s tests -p 'test_map02_renderer_smoke.py' -v
           )
+          PYTHONPATH=remaster python3 -m tools.audit_map02_face_source upstream > /tmp/vh-map02-face-gpu-contract.json
+          python3 -c 'import json; x=json.load(open("/tmp/vh-map02-face-gpu-contract.json")); assert x["matches_pinned_source"] and x["field_and_gpu_layout_verified"] and len(x["renderer_paths"]) == 3; print("Pinned map model and all 3 POLY_FT4 UV bindings verified.")'
           PYTHONPATH=remaster python3 -m tools.verify_map02_unpack_equivalence upstream/src/maps/unpack.c > /tmp/vh-map02-unpack-equivalence.json
           python3 -c 'import json; x=json.load(open("/tmp/vh-map02-unpack-equivalence.json")); assert x["matches_pinned_source"] and x["test_count"] == 40 and all(y["matches_upstream"] for y in x["cases"]); print("Pinned upstream C PRS decoder matches Python byte for byte on 40 synthetic cases.")'
           PYTHONPATH=remaster python3 -m tools.audit_map02_load_source upstream/src/states/game_setup.c --cd-source upstream/src/core/cd.c --cd-header upstream/include/cd_files.h > /tmp/vh-map02-source-audit.json
