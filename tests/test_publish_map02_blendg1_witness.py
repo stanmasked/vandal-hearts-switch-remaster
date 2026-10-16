@@ -87,6 +87,19 @@ class PrivateWitnessPublishTests(unittest.TestCase):
         self.assertFalse((self.native / LOG).exists())
         self.mock_verify.assert_not_called()
 
+    def test_rejects_noncanonical_staged_line_endings(self):
+        staged = self.native / STAGED_LOG
+        original = staged.read_bytes()
+        for damaged in (original.rstrip(b"\n"),
+                        original.replace(b"\n", b"\r\n"),
+                        original + b"\n"):
+            staged.write_bytes(damaged)
+            with self.subTest(damaged=damaged[-12:]), self.assertRaises(ValueError):
+                publish_blendg1_witness(self.source, self.native)
+            self.assertFalse((self.source / MANIFEST).exists())
+            self.assertFalse((self.native / LOG).exists())
+        self.mock_verify.assert_not_called()
+
     def test_rejects_stale_pixel_digest_before_publication(self):
         (self.native / PIXEL_LOG).write_bytes(_line(dict(self.pixel, abr=3)))
         with self.assertRaises(ValueError):
