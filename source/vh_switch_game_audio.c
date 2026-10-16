@@ -98,8 +98,26 @@ static void audio_worker(void *unused) {
     desc.buffer_size = sizeof(pcm_48000_page);
 
     unsigned accepted = VH_GAME_MUSIC_SILENT;
+    unsigned handled_resume =
+        vh_game_music_mailbox_resume_serial(&mailbox);
     atomic_store_explicit(&audio_status, 0, memory_order_release);
     while (vh_game_music_mailbox_running(&mailbox)) {
+        const unsigned newest_resume =
+            vh_game_music_mailbox_resume_serial(&mailbox);
+        if (newest_resume != handled_resume) {
+            handled_resume = newest_resume;
+            /* HOME/sleep can suspend this thread before it sees focus
+             * loss. Reopen audout explicitly on resume while keeping
+             * SEQ, SPU, reverb and resampler playback positions.
+             */
+            if (playing) {
+                if (R_FAILED(audoutStopAudioOut())) {
+                    state = -9;
+                    break;
+                }
+                playing = 0;
+            }
+        }
         if (!vh_game_music_mailbox_focused(&mailbox)) {
             if (playing) {
                 if (R_FAILED(audoutStopAudioOut())) {
@@ -188,6 +206,11 @@ void vh_switch_game_audio_post(unsigned desired_scene) {
 void vh_switch_game_audio_set_focus(int in_focus) {
     if (thread_started)
         vh_game_music_mailbox_set_focus(&mailbox, in_focus);
+}
+
+void vh_switch_game_audio_on_resume(int in_focus) {
+    if (thread_started)
+        vh_game_music_mailbox_on_resume(&mailbox, in_focus);
 }
 
 int vh_switch_game_audio_status(void) {
