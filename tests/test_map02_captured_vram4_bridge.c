@@ -729,6 +729,39 @@ static void test_three_boundary_ledger_packet_import(void) {
     assert(imported[2].red==255 && imported[2].before_submission==2u);
 }
 
+
+static void test_direct_ledger_rejects_noncanonical_unused_fields(void) {
+    VhMap02VramTransfer ev=clut_clear_event();
+    assert(vh_map02_vram_ledger_event_valid(&ev,0u,42u,3u));
+    ev.dest_x=1; /* clear has no MoveImage destination */
+    assert(!vh_map02_vram_ledger_event_valid(&ev,0u,42u,3u));
+    ev=clut_clear_event();
+    ev.dest_y=-1;
+    assert(!vh_map02_vram_ledger_event_valid(&ev,0u,42u,3u));
+
+    ev=(VhMap02VramTransfer){0};
+    ev.frame=42u;ev.before_submission=1u;
+    ev.operation=VH_MAP02_VRAM_OP_LOAD;
+    ev.x=1;ev.y=499;ev.w=1;ev.h=1;
+    ev.load_le=later_green_load;ev.load_bytes=2u;
+    assert(vh_map02_vram_ledger_event_valid(&ev,0u,42u,3u));
+    ev.green=248; /* LOAD payload is not a CLEAR color */
+    assert(!vh_map02_vram_ledger_event_valid(&ev,0u,42u,3u));
+    ev.green=0;ev.dest_x=1;
+    assert(!vh_map02_vram_ledger_event_valid(&ev,0u,42u,3u));
+
+    ev=(VhMap02VramTransfer){0};
+    ev.frame=42u;ev.before_submission=2u;
+    ev.operation=VH_MAP02_VRAM_OP_MOVE;
+    ev.x=2;ev.y=499;ev.w=1;ev.h=1;
+    ev.dest_x=1;ev.dest_y=499;
+    assert(vh_map02_vram_ledger_event_valid(&ev,0u,42u,3u));
+    ev.blue=255; /* MOVE has no ClearImage RGB */
+    assert(!vh_map02_vram_ledger_event_valid(&ev,0u,42u,3u));
+    ev.blue=0;ev.load_le=later_green_load;ev.load_bytes=2u;
+    assert(!vh_map02_vram_ledger_event_valid(&ev,0u,42u,3u));
+}
+
 int main(void) {
     test_verified_capture_flows_to_vram4_and_ot();
     test_mutations_do_not_change_staged_output();
@@ -742,6 +775,7 @@ int main(void) {
     test_three_face_ledger_uses_both_submission_boundaries();
     test_late_snapshot_mismatch_prevents_any_render_output();
     test_three_boundary_ledger_packet_import();
+    test_direct_ledger_rejects_noncanonical_unused_fields();
     puts("MAP02 captured GTE -> source FT4 -> VRAM4 -> OT pixel tests passed");
     return 0;
 }
