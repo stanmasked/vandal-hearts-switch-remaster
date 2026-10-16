@@ -168,10 +168,12 @@ static void draw_frame(u32 *pixels, u32 stride, int cursor_x, int cursor_y,
  */
 static void on_music_applet_event(AppletHookType event, void *context) {
     (void)context;
-    if (event == AppletHookType_OnFocusState ||
-        event == AppletHookType_OnResume)
-        vh_switch_game_audio_set_focus(
-            appletGetFocusState() == AppletFocusState_InFocus);
+    const int in_focus =
+        appletGetFocusState() == AppletFocusState_InFocus;
+    if (event == AppletHookType_OnResume)
+        vh_switch_game_audio_on_resume(in_focus);
+    else if (event == AppletHookType_OnFocusState)
+        vh_switch_game_audio_set_focus(in_focus);
 }
 
 int main(int argc, char **argv) {
