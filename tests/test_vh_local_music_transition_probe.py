@@ -641,6 +641,68 @@ class NativeLocalMusicTransitionTests(unittest.TestCase):
                             {f.name: f.read_bytes() for f in directory.iterdir()},
                             original)
 
+    def test_bank_switch_clears_borrowed_slow_release_pcm_without_wiping_reverb(self):
+        # 16 scenes / 15 boundaries: A sends STUDIO_C and has a slow
+        # exponential ADSR2 release still active at block 32. B has
+        # zero dry gain and the default fast release, so its rendered
+        # PCM can only reflect the previous wet history.
+        scenes, blocks = 16, 32
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            a, b = root / "wet-slow-release", root / "muted-fast-release"
+            original_a = synth_dir(a, wet=True, adsr2_release=0x002A)
+            original_b = synth_dir(b, mute_master=True)
+            cmd = [str(PROGRAM), str(a), str(b), str(scenes), str(blocks)]
+            first = subprocess.run(cmd, capture_output=True, text=True)
+            repeat = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(first.stdout, repeat.stdout)
+            report = json.loads(first.stdout)
+            measures = report["measurements"]
+            self.assertEqual(len(measures), scenes)
+            self.assertEqual([m["bank"] for m in measures],
+                             ["A", "B"] * (scenes // 2))
+            for index, cue in enumerate(measures):
+                self.assertEqual(cue["scene"], index)
+                self.assertEqual(cue["resolved_notes"], 1)
+                self.assertEqual(cue["note_offs"], 1)
+                self.assertEqual(cue["first_note_off_block"], 22)
+                self.assertEqual(cue["unresolved_notes"], 0)
+                self.assertEqual(cue["fallback_notes"], 0)
+                self.assertEqual(cue["input_frames"], blocks * 512)
+                self.assertEqual(cue["adsr_release_slot_retirements"],
+                                 0 if index % 2 == 0 else 1)
+                self.assertEqual(cue["prior_bank_active_voices"],
+                                 1 if index % 2 else 0)
+                self.assertEqual(cue["prior_bank_release_voices"],
+                                 1 if index % 2 else 0)
+                self.assertEqual(cue["prior_bank_pcm_references"],
+                                 1 if index % 2 else 0)
+                self.assertEqual(cue["prior_bank_voices_cleared"], index != 0)
+                self.assertEqual(cue["reverb_history_preserved_on_switch"],
+                                 index != 0)
+                if index % 2 == 0:
+                    self.assertEqual(cue["zero_gain_notes"], 0)
+                    self.assertTrue(cue["reverb_send_seen"])
+                    self.assertGreater(cue["nonzero_samples"], 0)
+                    self.assertEqual(cue["first_release_retirement_block"], 0)
+                else:
+                    self.assertEqual(cue["zero_gain_notes"], 1)
+                    self.assertFalse(cue["reverb_send_seen"])
+                    self.assertGreater(cue["nonzero_samples"], 0)
+                    self.assertEqual(cue["first_release_retirement_block"], 22)
+            total = scenes * blocks * 512
+            self.assertEqual(report["input_frames"], total)
+            self.assertEqual(report["output_frames"],
+                             (total - 1) * 48000 // 44100 + 1)
+            self.assertEqual(sum(x["output_frames"] for x in measures),
+                             report["output_frames"])
+            self.assertNotIn(str(root), first.stdout)
+            self.assertNotIn(str(root), first.stderr)
+            for folder, original in ((a, original_a), (b, original_b)):
+                self.assertEqual(
+                    {f.name: f.read_bytes() for f in folder.iterdir()}, original)
+
     def test_repeated_release_waves_retire_or_steal_slots(self):
         # Long synthetic high-polyphony stress: start 20 voices, then
         # issue 4 waves of 3 Note Offs followed by 3 replacements.
