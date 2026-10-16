@@ -58,7 +58,7 @@ jobs:
       - name: Compile actual GPU implementation and test-only isolated service shims
         shell: bash
         env:
-          CC: \${{ matrix.cc }}
+          CC: ${{ matrix.cc }}
         run: |
           set -euo pipefail
           mkdir -p proof
@@ -66,10 +66,10 @@ jobs:
                 -ffunction-sections -fdata-sections
                 -DPC_PORT -DPC_FEAT -DVH_MAP02_V39_TRACE
                 -Ipcport/platform/pc/include -Ipcport/platform/pc/src)
-          "$CC" "\${opts[@]}" -c pcport/platform/pc/src/libgpu.c -o proof/libgpu.o
-          "$CC" "\${opts[@]}" -c pcport/platform/pc/src/pc_raster.c -o proof/pc_raster.o
-          "$CC" "\${opts[@]}" -c remaster/tests/map02_v42_test_shims.c -o proof/test_shims.o
-          "$CC" "\${opts[@]}" -c remaster/tests/map02_v42_gpu_runtime.c -o proof/driver.o
+          "$CC" "${opts[@]}" -c pcport/platform/pc/src/libgpu.c -o proof/libgpu.o
+          "$CC" "${opts[@]}" -c pcport/platform/pc/src/pc_raster.c -o proof/pc_raster.o
+          "$CC" "${opts[@]}" -c remaster/tests/map02_v42_test_shims.c -o proof/test_shims.o
+          "$CC" "${opts[@]}" -c remaster/tests/map02_v42_gpu_runtime.c -o proof/driver.o
           "$CC" -Wl,--gc-sections -o proof/map02_gpu_runtime \
             proof/driver.o proof/libgpu.o proof/pc_raster.o proof/test_shims.o \
             -lm -lpthread
@@ -110,11 +110,11 @@ jobs:
           print("NOTE: synthetic GPU harness is NOT a playable Vandal Hearts game.")
           PY
           printf 'compiler=%s\npublic_upstream=14552fffa0e0b47e02b57592e274fc6e7a649923\nreal_gpu_objects=libgpu,pc_raster\nterrain_geometry=synthetic\ntexture=synthetic\nuserdata=none\nfull_game_linked=no\nfull_game_played=no\n' \
-            '\${{ matrix.cc }}' > proof/BUILD_INFO.txt
+            '${{ matrix.cc }}' > proof/BUILD_INFO.txt
       - name: Upload runtime logs and binary hash proofs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: map02-v42-\${{ matrix.cc }}-real-gpu-synthetic
+          name: map02-v42-${{ matrix.cc }}-real-gpu-synthetic
           path: proof/
           if-no-files-found: warn
