@@ -271,3 +271,62 @@ the 26 directional entries, implement camera projection and ordering,
 then compare the generated screen pixels with captured PlayStation
 output. The verified **face-color arithmetic alone** does not complete
 the lighting or game renderer.
+
+
+## MAP02 26-direction face-normal classifier
+
+The pinned US PC-port (`src/core/graphics.c` in
+`14552fffa0e0b47e02b57592e274fc6e7a649923`) has two
+related routines:
+
+- `SetupLightNormals` creates 26 axis, diagonal and
+  three-axis signed direction vectors, then normalizes them through
+  `VectorNormalS`.
+- `UpdateMapTileLighting` reads three vertices from a face,
+  applies source-specific fallback indices for repeated corners,
+  computes their cross product, then selects the candidate normal
+  with the greatest dot product. Equal dot products use a six-term
+  sign/equality tie-breaker before the chosen index is stored in
+  `tileModel->shades[faceIdx]`.
+
+The new portable `source/map02_face_direction.h` decodes the
+raw **304-byte** little-endian `MapTileModel` face topology,
+including the 22 8-byte vertices, 18 sets of face indices, and
+`faceCt`. It reproduces the four repeated-vertex fallback branches,
+calculates a **64-bit signed** cross product, and selects from the
+original 26 direction signs. The selected lighting index is then
+used to look up a caller-supplied `gSideLightColor`-equivalent
+table, as implemented in
+`source/map02_terrain_lighting.h`.
+
+**Precision boundary:** for directional comparisons, this new
+portable path uses fixed pre-normalized Q12 candidate vectors
+(4096, 2896, 2365 for one, two, or three nonzero components).
+This is a deterministic approximation. It does **not** call the
+original GTE `VectorNormalS` or `gte_OuterProduct0`, so
+some near-tie face orientations or unusual integer ranges can
+select a different direction than the original PlayStation.
+The source tie-breaker's Q12 equality terms are also approximated
+by signed component comparisons. Those limitations must be
+resolved by comparison against a pinned native/GTE reference
+before claiming bit-exact terrain lighting.
+
+The synthetic native Switch probe now generates two local face
+records, **+Y top** and **+X side**, calls the normal classifier
+at startup and passes its indices to the side-light table. It
+then runs distance attenuation, texture modulation, FT4 and
+the earlier ABR demo. No copyrighted map models or artwork are
+included in the NRO.
+
+`tests/test_map02_face_direction.c` covers all **26** original
+direction vectors as independently constructed synthetic faces,
+the four degenerate-corner fallback cases, empty/out-of-bounds
+face indices, collinear triangles, 16-bit signed vertex extremes
+and unchanged caller outputs on invalid data. The host workflow
+runs these with AddressSanitizer and UBSan, while the Switch
+workflow compiles them and validates the NRO.
+
+The next fidelity milestone is an independent native reference
+for the GTE normal rounding and the real 26-entry light-color
+table, followed by camera projection and visible in-game
+comparison.
