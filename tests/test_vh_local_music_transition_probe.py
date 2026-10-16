@@ -19,7 +19,7 @@ TONE_OFFSET = 32 + 128 * 16
 
 def synth_dir(directory, wet=False, bank_b=False, fallback_program=False,
               out_of_range_note=False, mute_master=False,
-              no_note_on=False):
+              no_note_on=False, program_change_retrigger=False):
     directory.mkdir()
     files = make_synthetic_files()
     vh = bytearray(files["music.vh"])
@@ -33,6 +33,24 @@ def synth_dir(directory, wet=False, bank_b=False, fallback_program=False,
         vb[34:48] = b"\xDD" * 14
     files["music.vh"] = bytes(vh)
     files["music.vb"] = bytes(vb)
+    if program_change_retrigger:
+        # Four due note-ons, two for the same pitch (voice retrigger).
+        # Program 9 must fall back to program 7; key 110 is outside
+        # the only tone's 40..100 range, exercising nearest-key fallback.
+        # Delay EOT beyond the first 16 blocks to leave voices active.
+        files["music.seq"] = files["music.seq"][:15] + bytes([
+            0, 0xC0, 7,
+            0, 0x90, 60, 100,
+            0, 0x90, 60, 100,
+            0, 0xC0, 9,
+            0, 0x90, 61, 110,
+            0, 0xC0, 7,
+            0, 0x90, 110, 110,
+            0x81, 0x70, 0x80, 60, 0,
+            0, 0x80, 61, 0,
+            0, 0x80, 110, 0,
+            0, 0xFF, 0x2F,
+        ])
     if fallback_program or out_of_range_note or no_note_on:
         seq = bytearray(files["music.seq"])
         if fallback_program:
@@ -101,6 +119,13 @@ class NativeLocalMusicTransitionTests(unittest.TestCase):
             self.assertEqual([x["fallback_notes"] for x in readings],
                              [0, readings[1]["resolved_notes"], 0,
                               readings[3]["resolved_notes"]])
+            self.assertTrue(all(x["cross_program_fallback_notes"] ==
+                                x["fallback_notes"] if i % 2 else
+                                x["cross_program_fallback_notes"] == 0
+                                for i, x in enumerate(readings)))
+            self.assertTrue(all(x["out_of_range_fallback_notes"] == 0
+                                for x in readings))
+            self.assertTrue(all(x["note_offs"] >= 0 for x in readings))
             self.assertEqual([x["direct_match_notes"] for x in readings],
                              [readings[0]["resolved_notes"], 0,
                               readings[2]["resolved_notes"], 0])
@@ -143,12 +168,54 @@ class NativeLocalMusicTransitionTests(unittest.TestCase):
             early, later = report["measurements"]
             self.assertGreater(early["resolved_notes"], 0)
             self.assertEqual(early["fallback_notes"], early["resolved_notes"])
+            self.assertEqual(early["cross_program_fallback_notes"], 0)
+            self.assertEqual(early["out_of_range_fallback_notes"],
+                             early["resolved_notes"])
             self.assertEqual(early["direct_match_notes"], 0)
             self.assertEqual(early["unresolved_notes"], 0)
             self.assertEqual(later["fallback_notes"], 0)
             self.assertEqual(later["direct_match_notes"],
                              later["resolved_notes"])
             self.assertNotIn(str(tmp), result.stdout)
+
+    def test_program_changes_and_retrigger_route_notes_correctly(self):
+        # A switches 7 -> 9 -> 7 within a single SEQ block and
+        # retriggers pitch 60 without an explicit Note Off. B remains
+        # an independent plain sequence to test the next bank transition.
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b = Path(tmp) / "program-events", Path(tmp) / "plain"
+            original_a = synth_dir(a, program_change_retrigger=True)
+            original_b = synth_dir(b, bank_b=True)
+            cmd = [str(PROGRAM), str(a), str(b), "4", "16"]
+            first = subprocess.run(cmd, capture_output=True, text=True)
+            second = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(first.stdout, second.stdout)
+            data = json.loads(first.stdout)
+            a0, b0, a1, b1 = data["measurements"]
+            for active in (a0, a1):
+                self.assertEqual(active["note_requests"], 4)
+                self.assertEqual(active["resolved_notes"], 4)
+                self.assertEqual(active["unresolved_notes"], 0)
+                self.assertEqual(active["note_offs"], 1)
+                self.assertEqual(active["direct_match_notes"], 2)
+                self.assertEqual(active["cross_program_fallback_notes"], 1)
+                self.assertEqual(active["out_of_range_fallback_notes"], 1)
+                self.assertEqual(active["fallback_notes"], 2)
+                self.assertGreater(active["nonzero_samples"], 0)
+                self.assertEqual(active["zero_gain_notes"], 0)
+            for plain in (b0, b1):
+                self.assertGreater(plain["note_requests"], 0)
+                self.assertEqual(plain["fallback_notes"], 0)
+                self.assertEqual(plain["cross_program_fallback_notes"], 0)
+                self.assertEqual(plain["out_of_range_fallback_notes"], 0)
+            self.assertEqual(data["input_frames"], 4 * 16 * 512)
+            self.assertEqual(data["output_frames"],
+                             (4 * 16 * 512 - 1) * 48000 // 44100 + 1)
+            self.assertNotIn(str(tmp), first.stdout)
+            for folder, before in ((a, original_a), (b, original_b)):
+                self.assertEqual(
+                    {p.name: p.read_bytes() for p in folder.iterdir()}, before)
 
     def test_resolved_notes_can_produce_silent_pcm_with_zero_gain(self):
         with tempfile.TemporaryDirectory() as tmp:
