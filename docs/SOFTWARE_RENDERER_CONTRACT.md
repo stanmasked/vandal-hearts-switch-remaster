@@ -326,7 +326,18 @@ and unchanged caller outputs on invalid data. The host workflow
 runs these with AddressSanitizer and UBSan, while the Switch
 workflow compiles them and validates the NRO.
 
+A new fail-closed source check,
+`tools/audit_map02_direction_source.py`, parses the **actual pinned**
+`SetupLightNormals` and `UpdateMapTileLighting` functions and compares
+all 78 source component assignments against the 26 vectors compiled
+into the portable Switch header. It also checks the original GTE
+normalization calls, cross-product arguments, repeated-vertex
+fallback branches, dot-product search and tie selection.
+`tests/test_audit_map02_direction_source.py` deliberately mutates
+the source and C array to verify that these changes are rejected.
+The pinned-source audit is part of MAP02 GitHub Actions.
+
 The next fidelity milestone is an independent native reference
-for the GTE normal rounding and the real 26-entry light-color
+for GTE normal rounding and the real 26-entry light-color
 table, followed by camera projection and visible in-game
 comparison.
