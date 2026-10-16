@@ -161,7 +161,7 @@ static int format_private(unsigned index, char *dst, unsigned capacity, int blen
         (blend && !event.has_blend)) return 0;
     if (blend) {
         size = snprintf(formatted, sizeof formatted,
-          "{\"stage\":\"native_blendg1\",\"putpixel_step\":%u,\"frame\":%u,\"primitive_ordinal\":%u,\"primitive_type\":%u,\"x\":%d,\"y\":%d,\"accurate\":%d,\"abr\":%d,\"before\":%u,\"front\":%u,\"after\":%u,\"blend_fg\":%u,\"blend_bg\":%u,\"blend_result\":%u}\\n",
+          "{\"stage\":\"native_blendg1\",\"putpixel_step\":%u,\"frame\":%u,\"primitive_ordinal\":%u,\"primitive_type\":%u,\"x\":%d,\"y\":%d,\"accurate\":%d,\"abr\":%d,\"before\":%u,\"front\":%u,\"after\":%u,\"blend_fg\":%u,\"blend_bg\":%u,\"blend_result\":%u}\n",
           event.step, event.frame, event.ordinal, event.primitive_type,
           event.x, event.y, event.accurate, event.abr,
           (unsigned)event.before, (unsigned)event.front, (unsigned)event.after,
@@ -169,7 +169,7 @@ static int format_private(unsigned index, char *dst, unsigned capacity, int blen
           (unsigned)event.blend_result);
     } else {
         size = snprintf(formatted, sizeof formatted,
-          "{\"stage\":\"native_putpixel\",\"step\":%u,\"frame\":%u,\"primitive_ordinal\":%u,\"primitive_type\":%u,\"x\":%d,\"y\":%d,\"before\":%u,\"front\":%u,\"after\":%u,\"abr\":%d,\"semi\":%d,\"textured\":%d,\"accurate\":%d}\\n",
+          "{\"stage\":\"native_putpixel\",\"step\":%u,\"frame\":%u,\"primitive_ordinal\":%u,\"primitive_type\":%u,\"x\":%d,\"y\":%d,\"before\":%u,\"front\":%u,\"after\":%u,\"abr\":%d,\"semi\":%d,\"textured\":%d,\"accurate\":%d}\n",
           event.step, event.frame, event.ordinal, event.primitive_type,
           event.x, event.y, (unsigned)event.before, (unsigned)event.front,
           (unsigned)event.after, event.abr, event.semi, event.textured,
