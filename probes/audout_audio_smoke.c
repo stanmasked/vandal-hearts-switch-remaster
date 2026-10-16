@@ -84,7 +84,8 @@ static int prepare_synthetic(void) {
 
 static int prepare_music(int *using_user_files) {
     vh_native_spu_reset(&synth);
-    if (vh_native_spu_set_interpolation(&synth, VH_SPU_GAUSSIAN))
+    if (vh_native_spu_set_interpolation(&synth, VH_SPU_GAUSSIAN) ||
+        vh_native_spu_set_reverb(&synth, 1, 0.5f))
         return -1;
     vh_audio_resample_reset(&resampler);
     const int result = vh_audio_assets_load(&user_assets, LOCAL_AUDIO_DIR);
