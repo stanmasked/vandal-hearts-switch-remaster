@@ -120,7 +120,7 @@ static int init_audio_sources(void) {
         &local_assets, VH_LOCAL_AUDIO_DIR);
     if (result == VH_AUDIO_ASSET_ERROR) {
         fprintf(stderr,
-            "Audio assets incomplete, corrupt or too large; refusing playback\\n");
+            "Audio assets incomplete, corrupt or too large; refusing playback\n");
         return -1;
     }
     if (result == VH_AUDIO_ASSET_OK) {
@@ -136,11 +136,11 @@ static int init_audio_sources(void) {
         }
         using_local_assets = 1;
         fprintf(stderr,
-            "Loaded local user-owned SEQ/VH/VB into memory (read-only)\\n");
+            "Loaded local user-owned SEQ/VH/VB into memory (read-only)\n");
         return 0;
     }
     using_local_assets = 0;
-    fprintf(stderr, "Local audio set absent; using synthetic SEQ/VH/VB\\n");
+    fprintf(stderr, "Local audio set absent; using synthetic SEQ/VH/VB\n");
     return init_synthetic_seq();
 }
 
