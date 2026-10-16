@@ -87,7 +87,8 @@ jobs:
           import subprocess
           expected = {
               "src/core/graphics.c", "src/states/game_setup.c",
-              "platform/pc/src/libgpu.c", "platform/pc/src/pc_raster.c"
+              "platform/pc/src/libgpu.c", "platform/pc/src/pc_raster.c",
+              "platform/pc/src/pc_gpu_internal.h"
           }
           found = set(subprocess.check_output(
               ["git", "diff", "--name-only"], text=True).splitlines())
