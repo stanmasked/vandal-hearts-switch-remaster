@@ -73,6 +73,25 @@ inventory, documentation, build-system research, and reproducible test notes.
 Do not describe Switch support as working until it has been built and tested.
 
 
+## Local Switch SEQ/VH/VB audio diagnostic
+
+The separate SDL2 Switch audio probe can now read a **user-supplied**
+PlayStation music set from the SD card. It looks for all three files
+`music.seq`, `music.vh`, `music.vb` under
+`sdmc:/switch/vandal-hearts-remake/audio/`. It validates the inputs,
+predecodes referenced VAG samples into caller-owned PCM memory, then
+routes SEQ events through the native 20-voice SPU/ADSR/Gaussian pipeline
+to the SDL2 stereo audio FIFO.
+
+The NRO **does not include original game music**. With no local files,
+the probe falls back to synthetic fixtures; a partial or invalid set
+fails closed without silently playing synthetic music instead.
+
+See [local audio deployment, resource caps and verification
+limits](docs/SWITCH_LOCAL_AUDIO_TEST.md). These changes are on the
+working branch and **do not yet demonstrate successful linking or
+audible playback of real music on physical Switch hardware**.
+
 ## Experimental CD-XA audio investigation
 
 The repository also contains an experimental 4-bit stereo CD-XA decoder at
