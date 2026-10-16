@@ -100,6 +100,24 @@ class SourceToNativeFt4JoinTests(unittest.TestCase):
         for secret in ("perimeter_xy","vertices","xy","240,","31978","801f"):
             self.assertNotIn(secret,result)
 
+    def test_single_frame_native_ft4_post_draw_pixel_delta(self):
+        report = verify_join(self.source, self.native)
+        self.assertEqual(report["matched_ft4_draw_changed_vram_words"], 0)
+        self.assertEqual(report["matched_ft4_draws_without_vram_change"], 2)
+        self.assertFalse(report["native_ft4_pixels_bit_exact_to_ps1"])
+
+        # Per-source draw at step 4 has a separate post-draw snapshot at 5.
+        # A framebuffer write outside the texture crop is not a mismatch.
+        after = bytearray(self.bytes_before)
+        fixture.word(after, 0, 0, 0x8001)
+        self.override_snapshots[5] = bytes(after)
+        self.save()
+        report = verify_join(self.source, self.native)
+        self.assertEqual(report["matched_ft4_draw_changed_vram_words"], 1)
+        self.assertEqual(
+            report["matched_ft4_draw_changed_texture_or_clut_words"], 0)
+        self.assertEqual(report["matched_ft4_draws_without_vram_change"], 1)
+
     def test_uv_corner_page_clut_and_window_mismatch_rejected(self):
         edits=[
             ("uv",0,241),("xy",0,21),("tpage",None,6),
