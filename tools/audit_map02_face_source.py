@@ -32,6 +32,24 @@ FIELD_LAYOUT = (
     "} MapTileModel;"
 )
 
+# Additional source-only contract for MAP02 side-lighting.
+# The overhead renderer has a separate brightness path.
+DISTANCE_LIGHT_ANCHORS = (
+    "shading = otz - 150;",
+    "if (shading < 0) {",
+    "} else if (shading > 256) {",
+    "r2 = gSideLightColor[tileModel->shades[faceIdx]].r;",
+    "g2 = gSideLightColor[tileModel->shades[faceIdx]].g;",
+    "b2 = gSideLightColor[tileModel->shades[faceIdx]].b;",
+    "r2 *= shading;",
+    "g2 *= shading;",
+    "b2 *= shading;",
+    "poly->r0 = r1 - (r2 >> 8);",
+    "poly->g0 = g1 - (g2 >> 8);",
+    "poly->b0 = b1 - (b2 >> 8);",
+)
+OVERHEAD_LIGHT_ANCHOR = "setRGB0(poly, brightness, brightness, brightness);"
+
 UV_MACRO = (
     "#define setUVWH(p, _u0, _v0, _w, _h) \\\n"
     "    ((p)->u0 = (_u0), (p)->v0 = (_v0), \\\n"
@@ -78,9 +96,15 @@ def verify_source_contract(field: str, graphics: str, gpu: str) -> dict:
         if name != "RenderOverheadMapTile":
             if "setUVWH(poly, texX, texY, texW, texH);" not in body:
                 raise ValueError(f"{name} no longer samples GFX UVWH normally")
-        elif ("setUVWH(poly, gGfxSubTextures[gfx][0], gGfxSubTextures[gfx][1],"
-              not in body):
-            raise ValueError("overhead GFX UVWH mapping changed")
+            for statement in DISTANCE_LIGHT_ANCHORS:
+                if statement not in body:
+                    raise ValueError(f"{name} terrain depth lighting changed: {statement}")
+        else:
+            if ("setUVWH(poly, gGfxSubTextures[gfx][0], gGfxSubTextures[gfx][1],"
+                    not in body):
+                raise ValueError("overhead GFX UVWH mapping changed")
+            if OVERHEAD_LIGHT_ANCHOR not in body:
+                raise ValueError("overhead terrain brightness binding changed")
         paths.append(name)
     return {
         "source_layout": {
@@ -100,6 +124,8 @@ def verify_source_contract(field: str, graphics: str, gpu: str) -> dict:
         "field_and_gpu_layout_verified": True,
         "terrain_polygon_code": "GPU_CODE_POLY_FT4 (0x2c)",
         "terrain_abe_enabled": False,
+        "normal_edge_lighting": "side-light RGB * (1 - clamp(otz - 150, 0, 256) / 256)",
+        "overhead_lighting": "setRGB0(brightness, brightness, brightness)",
         "terrain_abe_scope": "normal, edge and overhead terrain branches in pinned C",
         "scope": "pinned C source interpretation, not runtime projection or visible pixels",
     }
