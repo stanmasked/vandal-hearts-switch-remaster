@@ -1,0 +1,151 @@
+name: Map02 v38 native diagnostic objects
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v38-native-objects.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-objects:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - name: Checkout remaster diagnostics
+        uses: actions/checkout@v4
+        with:
+          path: remaster
+          persist-credentials: false
+      - name: Checkout exact pinned upstream sources
+        uses: actions/checkout@v4
+        with:
+          repository: HalmyLyseas/VandalHearts-PcPort
+          ref: 14552fffa0e0b47e02b57592e274fc6e7a649923
+          path: pcport
+          persist-credentials: false
+      - name: Generate known map-02 loader and terrain tracing patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m remaster.tools.make_map02_trace_patch pcport --output "$RUNNER_TEMP/v38-upstream.patch"
+          cd pcport
+          git apply --check "$RUNNER_TEMP/v38-upstream.patch"
+          git apply "$RUNNER_TEMP/v38-upstream.patch"
+          git diff --check
+          test "$(git diff --name-only | wc -l)" -eq 2
+
+      - name: Add read-only native FT4 and raster sampling diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def inject(path, anchor, replacement):
+              p = Path(path)
+              src = p.read_text(encoding="utf-8")
+              if src.count(anchor) != 1:
+                  raise SystemExit(f"source anchor mismatch {path}: {src.count(anchor)}")
+              p.write_text(src.replace(anchor, replacement, 1), encoding="utf-8")
+
+          gpu = "pcport/platform/pc/src/libgpu.c"
+          raster = "pcport/platform/pc/src/pc_raster.c"
+
+          # The original matching-decomp C relies on implicit GNU89 declarations.
+          # Clang diagnoses later void definitions as incompatible. Introduce
+          # prototypes only into ephemeral checkout for portable object testing.
+          inject("pcport/src/core/graphics.c", '#include "PsyQ/gtemac.h"',
+              '#include "PsyQ/gtemac.h"\n'
+              'void UpdateMapTileLighting(MapTileModel *tileModel);\n'
+              'void RenderMapTile(u32 *ot, MapTileModel *tileModel, s32 gridColor);\n'
+              'void RenderEdgeMapTile(u32 *ot, MapTileModel *tileModel, s32 gridColor);\n'
+              'void RenderOverheadMapTile(u32 *ot, MapTileModel *tileModel, s32 brightness);')
+
+          inject("pcport/src/states/game_setup.c", '#include "PsyQ/libsn.h"',
+              '#include "PsyQ/libsn.h"\n'
+              'void UpdateTileElevation(u8 tileZ, u8 tileX);')
+
+          inject(gpu, "#define VRAM_H 512",
+              "#define VRAM_H 512\n"
+              "/* Opt-in read-only diagnostic state, NOT an HD override. */\n"
+              "volatile unsigned VH_Map02V38Active = 0;\n"
+              "volatile unsigned VH_Map02V38Tpage = 0;\n"
+              "volatile unsigned VH_Map02V38Clut = 0;")
+
+          anchor = ("                FillQuad(&rcn, a, b, c, d, q->r0, q->g0, q->b0, 1, "
+                    "q->tpage, q->clut, semi, (q->tpage >> 5) & 3);")
+          inject(gpu, anchor,
+                 "                /* All FT4, not terrain-classified; trace only. */\n"
+                 "                VH_Map02V38Active = getenv(\"VH_MAP02_V38_TRACE\") != NULL;\n"
+                 "                VH_Map02V38Tpage = q->tpage;\n"
+                 "                VH_Map02V38Clut = q->clut;\n"
+                 + anchor + "\n"
+                 "                VH_Map02V38Active = 0;")
+
+          inject(raster, "#define HD_SC 16",
+              "#define HD_SC 16\n"
+              "extern volatile unsigned VH_Map02V38Active;\n"
+              "extern volatile unsigned VH_Map02V38Tpage;\n"
+              "extern volatile unsigned VH_Map02V38Clut;")
+          anchor = "            if (draw) {                                      /* 0000h = transparent (skip, still step) */"
+          inject(raster, anchor,
+              "            /* Native DDA observation; original pixel path unchanged. */\n"
+              "            if (VH_Map02V38Active && !cx->rc->target && !cx->hdPx &&\n"
+              "                (current_x & 31) == 0 && (y & 31) == 0)\n"
+              "                fprintf(stderr, \"[v38-ft4] tpage=%u clut=%u x=%d y=%d u=%d v=%d raw=%u draw=%d semi=%d abr=%d\\n\",\n"
+              "                        VH_Map02V38Tpage, VH_Map02V38Clut, current_x, y,\n"
+              "                        su, sv, (unsigned)texel, draw, cx->semiTrans, cx->abr);\n"
+              + anchor)
+          print("Pinned native objects instrumented without changing pixel writes.")
+          PY
+
+      - name: Compile real modified source objects and inspect hooks
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          cd pcport/platform/pc
+          mkdir -p build-v38/include_stage build-v38/proof
+          for header in ../../include/*.h ../../include/*.inc; do
+            test -f "$header" && ln -sf "$(realpath "$header")" "build-v38/include_stage/$(basename "$header")"
+          done
+          for item in PsyQ types.h inline_gte.h; do
+            ln -sfn "$(realpath "include/$item")" "build-v38/include_stage/$item"
+          done
+          game_flags=(
+            -m64 -std=gnu89 -fno-builtin-csqrt
+            -DPERMUTER -DPC_PORT -DPC_FEAT -DVH_REGION_US
+            '-Dasm(x)=' -Ibuild-v38/include_stage -Iinclude -I../..
+            -include pc_forward_decls.h
+            -Wno-incompatible-pointer-types -Wno-builtin-declaration-mismatch
+            -Wno-discarded-qualifiers -Wno-pointer-to-int-cast
+            -Wno-int-to-pointer-cast -Wno-int-conversion
+          )
+          "$CC" "${game_flags[@]}" -DVH_TRACE_MAP02 -c ../../src/core/graphics.c -o build-v38/proof/graphics.o
+          "$CC" "${game_flags[@]}" -DVH_TRACE_MAP02 -c ../../src/states/game_setup.c -o build-v38/proof/game_setup.o
+          "$CC" -m64 -std=gnu89 -DPC_PORT -DPC_FEAT -Iinclude -c src/libgpu.c -o build-v38/proof/libgpu.o
+          "$CC" -m64 -std=gnu89 -DPC_PORT -DPC_FEAT -Iinclude -c src/pc_raster.c -o build-v38/proof/pc_raster.o
+          nm build-v38/proof/graphics.o | grep VH_Map02TraceDraw
+          nm build-v38/proof/libgpu.o | grep VH_Map02V38Active
+          nm build-v38/proof/pc_raster.o | grep VH_Map02V38Active
+          for obj in build-v38/proof/*.o; do
+            nm "$obj" > "$obj.nm"
+            sha256sum "$obj" >> build-v38/proof/SHA256SUMS
+          done
+          printf 'compiler=%s\nupstream=14552fffa0e0b47e02b57592e274fc6e7a649923\nmode=trace-only\nlinked=no\nran_game=no\n' "$CC" > build-v38/proof/BUILD_INFO.txt
+          echo "PASS: four real upstream C objects compiled with trace-only changes."
+
+      - name: Upload compilation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-v38-${{ matrix.cc }}-proof
+          path: pcport/platform/pc/build-v38/proof/
+          if-no-files-found: warn
