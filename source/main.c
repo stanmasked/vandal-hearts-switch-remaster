@@ -91,7 +91,8 @@ static void draw_text(u32 *pixels, u32 stride, int x, int y,
 static void draw_frame(u32 *pixels, u32 stride, int cursor_x, int cursor_y,
                        int hero_x, int hero_y, int enemy_x, int enemy_y,
                        int hero_selected, u32 frame_tick,
-                       int audio_status, unsigned bank_warnings) {
+                       int audio_status, unsigned bank_warnings,
+                       const VhAudioDiagText *diagnostics) {
     fill_rect(pixels, stride, 0, 0, FB_WIDTH, FB_HEIGHT, COLOR_BG);
 
     /* Compact bitmap labels keep the prototype self-contained and asset-free. */
@@ -145,6 +146,7 @@ static void draw_frame(u32 *pixels, u32 stride, int cursor_x, int cursor_y,
     fill_rect(pixels, stride, 192, 615, 42, 42, COLOR_CURSOR);
     draw_text(pixels, stride, 252, 622, "HERO ENEMY CURSOR", COLOR_WHITE, 1);
     draw_text(pixels, stride, 72, 674, "D-PAD MOVE  A SELECT  B CANCEL  PLUS EXIT", COLOR_MUTED, 1);
+    draw_text(pixels, stride, 930, 674, "MINUS AUDIO", COLOR_MUTED, 1);
 
     /* Diagnostic heartbeat bar: changing length proves the framebuffer is being redrawn. */
     fill_rect(pixels, stride, 1000, 600, 96, 8, COLOR_GRID);
@@ -165,6 +167,19 @@ static void draw_frame(u32 *pixels, u32 stride, int cursor_x, int cursor_y,
          */
         draw_text(pixels, stride, 1000, 650, "VAB FALLBACK",
                   COLOR_CURSOR, 1);
+    }
+
+    if (diagnostics) {
+        /* Read-only audio test panel, away from the tactical grid.
+         * This renders from atomic snapshots only: no audout, bank
+         * pointer, mutex, filesystem or music state is accessed. */
+        fill_rect(pixels,stride,962,124,292,340,COLOR_PANEL);
+        fill_rect(pixels,stride,962,124,292,3,COLOR_CURSOR);
+        for (unsigned i=0;i<VH_AUDIO_DIAG_LINES;i++)
+            draw_text(pixels,stride,978,144+(int)i*25,
+                      diagnostics->line[i],
+                      i==0 ? COLOR_CURSOR:COLOR_WHITE,1);
+        draw_text(pixels,stride,978,433,"MINUS CLOSE",COLOR_MUTED,1);
     }
 
     /* Small status indicator changes color while the unit is selected. */
@@ -227,6 +242,7 @@ int main(int argc, char **argv) {
         appletHook(&focus_hook, on_music_applet_event, NULL);
     }
     u32 frame_tick = 0;
+    int audio_diagnostics_visible = 0;
 
     while (appletMainLoop()) {
         /* Some libnx launch modes suspend main before issuing focus
@@ -237,6 +253,8 @@ int main(int argc, char **argv) {
                 appletGetFocusState() == AppletFocusState_InFocus);
         padUpdate(&pad);
         const u64 buttons_down = padGetButtonsDown(&pad);
+        if (buttons_down & HidNpadButton_Minus)
+            audio_diagnostics_visible = !audio_diagnostics_visible;
 
         unsigned int actions = 0;
         if (buttons_down & HidNpadButton_Left)  actions |= VH_INPUT_LEFT;
@@ -258,11 +276,23 @@ int main(int argc, char **argv) {
         u32 *pixels = (u32 *)framebufferBegin(&fb, &stride_bytes);
         if (pixels) {
             const u32 stride_pixels = stride_bytes / sizeof(u32);
+            VhAudioDiagnostics audio_snapshot={0};
+            VhAudioDiagText audio_lines={0};
+            const VhAudioDiagText *overlay=NULL;
+            if (audio_diagnostics_visible) {
+                if (audio_started)
+                    vh_switch_game_audio_diagnostics(&audio_snapshot);
+                else
+                    audio_snapshot.status=-1;
+                if (!vh_audio_diag_format(&audio_snapshot,&audio_lines))
+                    overlay=&audio_lines;
+            }
             draw_frame(pixels, stride_pixels, state.cursor_x, state.cursor_y,
                        state.hero_x, state.hero_y, state.enemy_x, state.enemy_y,
                        state.hero_selected, frame_tick++,
                        audio_started ? vh_switch_game_audio_status() : -1,
-                       audio_started ? vh_switch_game_audio_bank_warnings() : 0u);
+                       audio_started ? vh_switch_game_audio_bank_warnings() : 0u,
+                       overlay);
         }
         framebufferEnd(&fb);
     }
