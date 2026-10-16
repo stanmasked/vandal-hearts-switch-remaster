@@ -69,8 +69,10 @@ on:
       - 'tools/instrument_map02_camera.py'
       - 'tools/verify_map02_camera_capture.py'
       - 'tools/verify_map02_frame_bundle.py'
+      - 'tools/verify_map02_vram_timeline.py'
       - 'tests/test_map02_camera_provenance.py'
       - 'tests/test_verify_map02_frame_bundle.py'
+      - 'tests/test_verify_map02_vram_timeline.py'
       - 'tests/test_audit_map02_projection_source.py'
       - 'tools/audit_map02_op0_geometry.py'
       - 'tools/map02_op0_geometry_scan.c'
@@ -156,8 +158,10 @@ on:
       - 'tools/instrument_map02_camera.py'
       - 'tools/verify_map02_camera_capture.py'
       - 'tools/verify_map02_frame_bundle.py'
+      - 'tools/verify_map02_vram_timeline.py'
       - 'tests/test_map02_camera_provenance.py'
       - 'tests/test_verify_map02_frame_bundle.py'
+      - 'tests/test_verify_map02_vram_timeline.py'
       - 'tests/test_audit_map02_projection_source.py'
       - 'tools/audit_map02_op0_geometry.py'
       - 'tools/map02_op0_geometry_scan.c'
@@ -401,6 +405,7 @@ jobs:
             python3 -m unittest discover -s tests -p 'test_audit_map02_projection_source.py' -v
             python3 -m unittest discover -s tests -p 'test_map02_camera_provenance.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_frame_bundle.py' -v
+            python3 -m unittest discover -s tests -p 'test_verify_map02_vram_timeline.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_pc_op0_equivalence.py' -v
             python3 -m unittest discover -s tests -p 'test_audit_map02_op0_geometry.py' -v
             python3 -m unittest discover -s tests -p 'test_audit_map02_face_source.py' -v
