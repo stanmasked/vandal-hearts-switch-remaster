@@ -18,8 +18,10 @@ class SpanWorkflowGateTests(unittest.TestCase):
 
     def test_trigger_includes_observer_and_test(self):
         text = WORKFLOW.read_text(encoding="utf-8")
-        self.assertGreaterEqual(text.count("'tools/instrument_map02_dda_span.py'"), 2)
-        self.assertGreaterEqual(text.count("'tests/test_instrument_map02_dda_span.py'"), 2)
+        self.assertIn("  push:\n    branches:\n      - 'work/map02-dda-coverage-independent-audit'", text)
+        pr_paths = text.split("  pull_request:\n    paths:", 1)[1].split("\njobs:", 1)[0]
+        self.assertIn("'tools/instrument_map02_dda_span.py'", pr_paths)
+        self.assertIn("'tests/test_instrument_map02_dda_span.py'", pr_paths)
 
 if __name__ == "__main__":
     unittest.main()
