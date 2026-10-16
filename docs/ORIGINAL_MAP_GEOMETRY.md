@@ -352,7 +352,30 @@ reversed first face, two forward faces and the exact host→NRO GTE
 opcode order and OT bucket index. These checks are asset-free,
 with no proprietary game map data in the test fixtures.
 
-**Acceptance is pending a completed three-job NeXium CI run**.
-This incremental milestone does not yet include the source game's
-side-light table, distance shading or actual battle camera state;
+**Acceptance: PASS** — [GitHub Actions #38828663571](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38828663571) completed
+**all three jobs with success** (Switch NRO cross-compile, original
+synthetic GPU raster smoke in NeXium, and private virtual-SD map preview
+in NeXium). The C host projection test measured **GTE NCLIP=+30** for
+the front-facing sample, **NCLIP=−30** for its reversed twin, and
+**AVSZ4 OTZ=24**. All 86 Python tests passed, including the new
+source-sequence assertion; the C MapTileModel and file-bank tests also
+passed. NRO0 image size/segments were checked.
+
+The private NeXium run first verified the unmodified standalone
+four-quadrant texture preview. It then loaded a **three-face** model
+slab from virtual SD. The first source face was deliberately reversed
+and would paint over the red/blue left quad if NCLIP were missing; the
+other two were front-facing, with distinct texture slots/palettes.
+The screenshot confirms that **only the forward pair rendered**:
+(260,210)=(255,0,0), (850,210)=(255,0,255),
+(400,400)=(0,0,255), (850,400)=(0,255,255), and the extra
+GTE-only perspective edge at (300,125)=(255,0,0).
+This is reproducible using the screenshot and source-model fixtures
+published in the CI evidence artifact. The test verifies practical
+backface behavior and non-regression of the reduced OT depth path,
+although an overlapping near/far geometry fixture is still needed
+to independently establish depth occlusion ordering.
+
+This milestone does not yet include the source game's side-light
+table, distance shading or actual battle camera state;
 nor does it compile the entire original `RenderMapTile` function.
