@@ -94,6 +94,14 @@ class ComparisonTests(unittest.TestCase):
         cmd=self.run_cli(old,new)
         self.assertEqual(cmd.returncode,0,cmd.stderr)
         self.assertEqual(json.loads(cmd.stdout)["verdict"],"NO_REGRESSION_FLAG")
+        tool=ROOT / "tools" / "compare_switch_audio_sessions.py"
+        versioned=subprocess.run([
+            sys.executable,str(tool),"--baseline",*[str(p) for p in old],
+            "--candidate",*[str(p) for p in new],
+            "--baseline-version","old-sha","--candidate-version","new-sha",
+            "--format","json"],text=True,capture_output=True,check=True)
+        self.assertEqual(json.loads(versioned.stdout)["versions"],
+                         {"baseline":"old-sha","candidate":"new-sha"})
 
     def test_candidate_pcm_fault_growth_flags_nonzero_exit(self):
         old,new=self.cohorts(candidate=[
@@ -207,7 +215,11 @@ class ComparisonTests(unittest.TestCase):
         bad=self.run_cli(old,new)
         self.assertEqual(bad.returncode,2)
         self.assertIn("CSV validation failed",bad.stderr)
-        ok=self.run_cli(old,[new[1],new[1]],as_json=False)
+        duplicate=self.run_cli(old,[new[1],new[1]])
+        self.assertEqual(duplicate.returncode,2)
+        self.assertIn("duplicate CSV within",duplicate.stderr)
+        fresh=self.add(make_rows(),"new")
+        ok=self.run_cli(old,[new[1],fresh],as_json=False)
         self.assertEqual(ok.returncode,0)
         self.assertIn("NRO COHORT COMPARISON",ok.stdout)
 
