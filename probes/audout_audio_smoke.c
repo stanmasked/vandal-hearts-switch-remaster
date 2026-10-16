@@ -196,8 +196,8 @@ int main(int argc, char **argv) {
     if (!user_files)
         printf("Fixture changes every %u returned PCM pages; SD music unchanged\n",
                SYNTHETIC_SCENE_BLOCKS);
-    printf("Press A during playback if you hear an audio defect.\\n");
-    printf("A is a manual annotation, not automatic glitch detection.\\n");
+    printf("Press A during playback if you hear an audio defect.\n");
+    printf("A is a manual annotation, not automatic glitch detection.\n");
     consoleUpdate(NULL);
     padConfigureInput(1,HidNpadStyleSet_NpadStandard);
     PadState pad;
