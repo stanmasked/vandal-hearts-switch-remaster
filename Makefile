@@ -64,7 +64,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_vh_
 	python3 tests/test_spu_voice_lifetime.py
 	python3 tests/test_schedule_ps1_seq_blocks.py
 	python3 tests/test_native_spu_adpcm.py
-	python3 tests/test_native_spu_gaussian.py
+	python3 tests/test_native_vab_python_reference.py
 
 test-audio-stream: $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(BUILD)/test_vh_native_seq $(BUILD)/test_vh_native_vab
 	./$(BUILD)/test_vh_audio_stream
