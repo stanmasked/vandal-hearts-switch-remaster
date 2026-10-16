@@ -65,6 +65,7 @@ int vh_private_map_geometry_load(const char *path, unsigned tile_x,
             for (corner = 0; corner < 4; ++corner) {
                 unsigned index = tile[212u + face * 4u + corner];
                 const uint8_t *pos = tile + index * 8u;
+                dst->vertex_index[corner] = (uint8_t)index;
                 dst->vertex[corner][0] = signed16(pos);
                 dst->vertex[corner][1] = signed16(pos + 2u);
                 dst->vertex[corner][2] = signed16(pos + 4u);
