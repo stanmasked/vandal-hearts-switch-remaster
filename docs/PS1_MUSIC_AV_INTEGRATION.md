@@ -722,3 +722,50 @@ These are host-level lifecycle and CI compilation checks. They do
 or libnx behavior on an actual Nintendo Switch. The separate SDL2
 feasibility workflow may also be blocked by devkitPro package-network
 availability, independently of these audio invariants.
+
+### Measuring real audout submission waits on Nintendo Switch
+
+Both libnx probes now measure the **blocking time of each individual
+`audoutPlayBuffer` invocation**, using `armGetSystemTick` before and
+after the actual service call. This is deliberately separate from the
+existing SEQ/SPU/resampler compute-time measurement. The new portable
+`VhAudioSubmitTiming` accumulator provides:
+
+- `calls`: all attempted audout submissions, **including** failed
+  calls and additional recovery attempts; not the number of distinct
+  musical PCM pages;
+- `total_ticks` and `max_ticks`: cumulative and maximum measured
+  blocking ticks in the audio service;
+- `waits_longer_than_page`: submissions whose blocking time exceeded
+  the expected duration of **their own 48-kHz PCM frame count**;
+- `failed_submissions`: failed service calls or nonmatching/NULL
+  returned page descriptors that cannot safely authorize reuse.
+
+The standalone audout console probe prints average and peak wait
+times in microseconds and the long-wait/failure counts every 128
+accepted blocks and again at exit. The combined graphics/audio
+probe keeps statistics on its **audio-owner thread**, atomically
+publishes three small counters, and displays a **neutral blue**
+peak-wait bar capped visually at four nominal 512-frame durations.
+This gauge is not a green/red audible-quality verdict.
+
+**Interpretation:** `audoutPlayBuffer` is blocking, and waiting for
+a page to complete may be normal. A wait longer than one nominal page
+duration is only a *diagnostic observation*: it neither proves
+a dropped buffer nor establishes that a speaker glitch was audible.
+The service-call timer also excludes the time spent in stop/reopen
+between recovery attempts; all separate attempts are still counted.
+Values are collected on hardware, not predicted from host CI.
+
+The shared helper rejects zero frame counts, oversized pages, zero
+tick frequency, arithmetic and counter overflow without altering its
+accumulated state. The host test uses a deterministic **19.2-MHz
+synthetic tick source** to verify expected page-duration thresholds,
+saturating microsecond conversion, and correct accounting during
+foreign/NULL page returns, bounded restarts, and an entire 48-page,
+six-scene bank-switch sequence. This host test does not measure
+real console scheduling latency.
+
+The measurement does not change music timing, STUDIO_C reverb, source
+bank ownership, audio format, or the rule that a previous page must
+be returned before the audio thread can overwrite it.
