@@ -6,6 +6,9 @@ on:
       - 'tools/instrument_map02_scoped_blend.py'
       - 'tools/map02_scoped_blend_sink.c'
       - 'tools/map02_scoped_blend_sink.h'
+      - 'tools/map02_blendg1_witness.py'
+      - 'tests/test_map02_blendg1_witness.py'
+      - 'tests/test_map02_scoped_blend_jsonl_bridge.py'
       - 'tools/instrument_map02_drawotag_scope.py'
       - 'tests/test_instrument_map02_drawotag_scope.py'
       - 'tests/test_instrument_map02_scoped_blend.py'
@@ -17,6 +20,9 @@ on:
       - 'tools/instrument_map02_scoped_blend.py'
       - 'tools/map02_scoped_blend_sink.c'
       - 'tools/map02_scoped_blend_sink.h'
+      - 'tools/map02_blendg1_witness.py'
+      - 'tests/test_map02_blendg1_witness.py'
+      - 'tests/test_map02_scoped_blend_jsonl_bridge.py'
       - 'tools/instrument_map02_drawotag_scope.py'
       - 'tests/test_instrument_map02_drawotag_scope.py'
       - 'tests/test_instrument_map02_scoped_blend.py'
@@ -40,7 +46,9 @@ jobs:
             tests.test_instrument_map02_scoped_blend \
             tests.test_map02_scoped_blend_sink \
             tests.test_map02_scoped_blend_integration \
-            tests.test_instrument_map02_drawotag_scope
+            tests.test_instrument_map02_drawotag_scope \
+            tests.test_map02_blendg1_witness \
+            tests.test_map02_scoped_blend_jsonl_bridge
       - name: Checkout pinned public original PC raster source
         uses: actions/checkout@v4
         with:
