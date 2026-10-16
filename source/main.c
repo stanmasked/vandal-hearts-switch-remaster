@@ -91,7 +91,7 @@ static void draw_text(u32 *pixels, u32 stride, int x, int y,
 static void draw_frame(u32 *pixels, u32 stride, int cursor_x, int cursor_y,
                        int hero_x, int hero_y, int enemy_x, int enemy_y,
                        int hero_selected, u32 frame_tick,
-                       int audio_status) {
+                       int audio_status, unsigned bank_warnings) {
     fill_rect(pixels, stride, 0, 0, FB_WIDTH, FB_HEIGHT, COLOR_BG);
 
     /* Compact bitmap labels keep the prototype self-contained and asset-free. */
@@ -156,6 +156,16 @@ static void draw_frame(u32 *pixels, u32 stride, int cursor_x, int cursor_y,
               audio_status == 2 ? "AUDIO PAUSED" :
               hero_selected ? "MUSIC FOCUS" : "MUSIC FIELD",
               audio_status < 0 ? COLOR_ENEMY : COLOR_MUTED, 1);
+
+    if (audio_status == 1 && bank_warnings) {
+        /* A valid user VH may resolve an instrument via a fallback
+         * program/range. Warn instead of pretending the timbre matches
+         * original PlayStation playback; count can be examined in
+         * loader diagnostics and is never a game-thread bank pointer.
+         */
+        draw_text(pixels, stride, 1000, 650, "VAB FALLBACK",
+                  COLOR_CURSOR, 1);
+    }
 
     /* Small status indicator changes color while the unit is selected. */
     fill_rect(pixels, stride, FB_WIDTH - 116, 42, 44, 44,
@@ -251,7 +261,8 @@ int main(int argc, char **argv) {
             draw_frame(pixels, stride_pixels, state.cursor_x, state.cursor_y,
                        state.hero_x, state.hero_y, state.enemy_x, state.enemy_y,
                        state.hero_selected, frame_tick++,
-                       audio_started ? vh_switch_game_audio_status() : -1);
+                       audio_started ? vh_switch_game_audio_status() : -1,
+                       audio_started ? vh_switch_game_audio_bank_warnings() : 0u);
         }
         framebufferEnd(&fb);
     }
