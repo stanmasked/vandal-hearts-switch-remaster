@@ -5,6 +5,10 @@ from tools.audit_map02_direction_source import (
     ASSIGN, DIRECTIONS, FACE_ANCHORS, verify_directions,
     verify_pc_normal_math,
 )
+from tools.verify_map02_pc_normal_equivalence import (
+    START as NATIVE_START, END as NATIVE_END,
+    REQUIRED as NATIVE_REQUIRED, extract_vectornormal
+)
 
 
 def synthetic_sources():
@@ -67,6 +71,18 @@ def synthetic_portable_q12_header():
 
 
 class Map02DirectionalSourceTests(unittest.TestCase):
+    def test_native_vectornormal_extraction_fails_closed(self):
+        source = (NATIVE_START + "\n" + "\n".join(NATIVE_REQUIRED) +
+                  "\nreturn (int)len;\n}\n" + NATIVE_END)
+        self.assertIn("return (int)len;", extract_vectornormal(source))
+        with self.assertRaisesRegex(ValueError, "function order changed"):
+            extract_vectornormal(NATIVE_END + "\n" + source)
+        with self.assertRaisesRegex(ValueError, "C source changed"):
+            extract_vectornormal(
+                source.replace("v1->vz = (short)", "v1->vz = (int)"))
+        with self.assertRaisesRegex(ValueError, "boundaries changed"):
+            extract_vectornormal(source.replace(NATIVE_END, "/* no boundary */"))
+
     def test_pc_vectornormal_and_portable_q12_contract(self):
         report = verify_pc_normal_math(
             synthetic_pc_normal_source(), synthetic_portable_q12_header())
