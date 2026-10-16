@@ -843,6 +843,67 @@ static void test_import_packet_rejects_alias_to_decoded_output(void) {
     assert(count==1u && decoded_events[0].green==248);
 }
 
+/* Import must not write events into a live scene, source, texture, or
+ * snapshot. The guards are exercised through the real build_from_packet()
+ * API, not only via the low-level binary decoder. */
+static void test_packet_bridge_rejects_aliases_before_import(void) {
+    VhMap02Vram4TimelineEntry entries[2];
+    VhMap02Vram4TimelineInput input;
+    VhMap02Vram4FrameWorkspace w=workspace();
+    VhMap02VramTransfer clean_events[2];
+    uint8_t packet[84u], saved[84u];
+    packet_fixture(packet);
+    timeline_fixture(entries);
+    clear_timeline_workspace();
+    input=timeline_input(entries);
+    assert(sizeof nodes >= sizeof packet);
+
+    /* The imported event array would overwrite the pending OT nodes. */
+    assert(!vh_map02_vram4_timeline_build_from_packet(
+        &input,&w,packet,sizeof packet,
+        (VhMap02VramTransfer *)(void *)nodes,1u,
+        ledger_replay,sizeof ledger_replay));
+    assert_timeline_workspace_unmodified();
+
+    /* The prepared face cache must be guarded before import as well. */
+    assert(!vh_map02_vram4_timeline_build_from_packet(
+        &input,&w,packet,sizeof packet,
+        (VhMap02VramTransfer *)(void *)prepared,1u,
+        ledger_replay,sizeof ledger_replay));
+    assert_timeline_workspace_unmodified();
+
+    /* The packet itself cannot alias a renderer output surface. */
+    memcpy(nodes,packet,sizeof packet);
+    memcpy(saved,nodes,sizeof saved);
+    assert(!vh_map02_vram4_timeline_build_from_packet(
+        &input,&w,(const uint8_t *)(const void *)nodes,sizeof packet,
+        clean_events,2u,ledger_replay,sizeof ledger_replay));
+    assert(memcmp(nodes,saved,sizeof saved)==0);
+    clear_timeline_workspace();
+    assert_timeline_workspace_unmodified();
+
+    /* Packet bytes may also not double as the replay scratch buffer. */
+    memcpy(ledger_replay,packet,sizeof packet);
+    assert(!vh_map02_vram4_timeline_build_from_packet(
+        &input,&w,ledger_replay,sizeof packet,
+        clean_events,2u,ledger_replay,sizeof ledger_replay));
+    assert(memcmp(ledger_replay,packet,sizeof packet)==0);
+    assert_timeline_workspace_unmodified();
+
+    /* Reject unbounded decoder output capacity before inspecting/writing it. */
+    assert(!vh_map02_vram4_timeline_build_from_packet(
+        &input,&w,packet,sizeof packet,
+        clean_events,VH_MAP02_VRAM_LEDGER_MAX_EVENTS+1u,
+        ledger_replay,sizeof ledger_replay));
+    assert_timeline_workspace_unmodified();
+
+    /* Independent, isolated memory must still work normally. */
+    assert(vh_map02_vram4_timeline_build_from_packet(
+        &input,&w,packet,sizeof packet,
+        clean_events,2u,ledger_replay,sizeof ledger_replay));
+    assert(w.scene.count==2u);
+}
+
 int main(void) {
     test_verified_capture_flows_to_vram4_and_ot();
     test_mutations_do_not_change_staged_output();
@@ -859,6 +920,7 @@ int main(void) {
     test_direct_ledger_rejects_noncanonical_unused_fields();
     test_vram_replay_rejects_aliasing_before_mutation();
     test_import_packet_rejects_alias_to_decoded_output();
+    test_packet_bridge_rejects_aliases_before_import();
     puts("MAP02 captured GTE -> source FT4 -> VRAM4 -> OT pixel tests passed");
     return 0;
 }
