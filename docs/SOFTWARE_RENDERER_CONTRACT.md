@@ -804,6 +804,19 @@ GP0 window mask/offset on both UV axes, unusual index positions,
 storage guards and unsupported texture modes. Tests run in
 `make test`, `make test-sanitize` and the MAP02 pinned-source CI.
 
+To avoid accidentally matching a convenient approximation,
+`tools/verify_map02_pc_vram4_equivalence.py` extracts the **original
+public PC-port** `TPageOrigin` and `SampleTexture` functions from the
+exact pinned `platform/pc/src/pc_raster.c` Git blob
+`ba8a05d161ad778c0b75e452ff0a11ed163c65cd`, compiles
+them with GCC, and checks the **actual BGR555 raw sampled halfword**
+against the new atlas/CLUT output for **524288 synthetic pixel samples**
+(8 varied tpage/CLUT/window register scenarios × 256²).
+The MAP02 upstream workflow checks the original source Git blob and
+runs this native differential as well as mutated-source rejection tests.
+This proves tested agreement with the **PC implementation**, not
+the PlayStation's hardware GPU.
+
 **Evidence limitation:** these VRAM contents, camera observations,
 UVWH metadata and polygon geometry are **synthetic fixtures**.
 The adapter can consume a real owned VRAM snapshot, but does not
