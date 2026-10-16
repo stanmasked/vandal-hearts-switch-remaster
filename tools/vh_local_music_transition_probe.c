@@ -29,9 +29,10 @@ static int16_t source[VH_AUDIO_BLOCK_FRAMES*2u];
 static int16_t output[VH_AUDIO_RESAMPLE_MAX_FRAMES*2u];
 
 typedef struct {
-    uint64_t output_frames, input_frames, notes, events;
+    uint64_t output_frames, input_frames, notes, note_offs, events;
     unsigned bank_index, blocks, sent_to_reverb;
     uint64_t note_requests, unresolved_notes, fallback_notes;
+    uint64_t cross_program_fallback_notes, out_of_range_fallback_notes;
     uint64_t reverb_send_notes, zero_gain_notes;
     uint64_t nonzero_samples, clipped_samples;
     int64_t channel_sum[2];
@@ -47,6 +48,7 @@ static SceneMetric scene_metrics[MAX_SCENES];
 typedef struct {
     VhNativeVab *bank;
     uint64_t requests, resolved, unresolved, fallback, reverb_sends;
+    uint64_t cross_program, out_of_range;
     uint64_t zero_gain;
 } ResolverAudit;
 static ResolverAudit resolver_audit;
@@ -66,9 +68,13 @@ static int resolve_with_audit(void *context, unsigned program, unsigned note,
     const VhVabTone *selected=
         &audit->bank->tones[audit->bank->selected_program]
                             [audit->bank->selected_tone];
-    if (audit->bank->selected_program!=program ||
-        note<selected->low || note>selected->high)
+    if (audit->bank->selected_program!=program) {
         ++audit->fallback;
+        ++audit->cross_program;
+    } else if (note<selected->low || note>selected->high) {
+        ++audit->fallback;
+        ++audit->out_of_range;
+    }
     if (tone->reverb_send)
         ++audit->reverb_sends;
     if (tone->gain_left==0.f && tone->gain_right==0.f)
@@ -191,10 +197,13 @@ int main(int argc,char **argv) {
         metric->input_frames=(uint64_t)blocks*VH_AUDIO_BLOCK_FRAMES;
         metric->output_frames=frame_total-start_output;
         metric->notes=seq.note_ons;
+        metric->note_offs=seq.note_offs;
         metric->events=seq.dispatched_events;
         metric->note_requests=resolver_audit.requests;
         metric->unresolved_notes=resolver_audit.unresolved;
         metric->fallback_notes=resolver_audit.fallback;
+        metric->cross_program_fallback_notes=resolver_audit.cross_program;
+        metric->out_of_range_fallback_notes=resolver_audit.out_of_range;
         metric->reverb_send_notes=resolver_audit.reverb_sends;
         metric->zero_gain_notes=resolver_audit.zero_gain;
         if (metric->nonzero_samples>metric->output_frames*2u ||
@@ -207,6 +216,8 @@ int main(int argc,char **argv) {
            resolver_audit.requests!=resolver_audit.resolved+
                                      resolver_audit.unresolved ||
            resolver_audit.fallback>resolver_audit.resolved ||
+           resolver_audit.fallback!=resolver_audit.cross_program+
+                                   resolver_audit.out_of_range ||
            resolver_audit.reverb_sends>resolver_audit.resolved ||
            resolver_audit.zero_gain>resolver_audit.resolved) {
             fprintf(stderr,"SEQ note-resolution accounting failed\n");
@@ -253,9 +264,12 @@ int main(int argc,char **argv) {
         const SceneMetric *m=&scene_metrics[i];
         printf("%s{\"scene\":%u,\"bank\":\"%c\","
                "\"events\":%" PRIu64 ",\"resolved_notes\":%" PRIu64 ","
+               "\"note_offs\":%" PRIu64 ","
                "\"note_requests\":%" PRIu64 ","
                "\"unresolved_notes\":%" PRIu64 ","
                "\"fallback_notes\":%" PRIu64 ","
+               "\"cross_program_fallback_notes\":%" PRIu64 ","
+               "\"out_of_range_fallback_notes\":%" PRIu64 ","
                "\"direct_match_notes\":%" PRIu64 ","
                "\"reverb_send_notes\":%" PRIu64 ","
                "\"zero_gain_notes\":%" PRIu64 ","
@@ -274,8 +288,10 @@ int main(int argc,char **argv) {
                "\"input_frames\":%" PRIu64 ","
                "\"output_frames\":%" PRIu64 "}",
                i?",":"",i,m->bank_index?'B':'A',
-               m->events,m->notes,m->note_requests,m->unresolved_notes,
-               m->fallback_notes,m->notes-m->fallback_notes,
+               m->events,m->notes,m->note_offs,m->note_requests,
+               m->unresolved_notes,m->fallback_notes,
+               m->cross_program_fallback_notes,
+               m->out_of_range_fallback_notes,m->notes-m->fallback_notes,
                m->reverb_send_notes,m->zero_gain_notes,
                m->sent_to_reverb?"true":"false",
                m->peak_pcm16,m->nonzero_samples,m->clipped_samples,
