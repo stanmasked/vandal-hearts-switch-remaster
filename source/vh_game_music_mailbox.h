@@ -19,11 +19,17 @@ enum {
 typedef struct {
     atomic_uint desired_scene;
     atomic_int running;
+    atomic_int focused; /* 1=in focus; 0=suspended/background */
 } VhGameMusicMailbox;
 
 void vh_game_music_mailbox_init(VhGameMusicMailbox *box, unsigned scene);
 void vh_game_music_mailbox_post(VhGameMusicMailbox *box, unsigned scene);
 unsigned vh_game_music_mailbox_read(const VhGameMusicMailbox *box);
+/* Scene requests persist while paused: latest desired scene is applied
+ * on the first audio block after resume, without changing SEQ time.
+ */
+void vh_game_music_mailbox_set_focus(VhGameMusicMailbox *box, int focused);
+int vh_game_music_mailbox_focused(const VhGameMusicMailbox *box);
 void vh_game_music_mailbox_stop(VhGameMusicMailbox *box);
 int vh_game_music_mailbox_running(const VhGameMusicMailbox *box);
 
