@@ -22,5 +22,10 @@ void vh_switch_game_audio_stop(void);
  * Main gameplay can continue silently if the device is unavailable.
  */
 int vh_switch_game_audio_status(void);
+/* Number of first-pass notes played with a VH fallback or not
+ * resolved at preload. Read atomically on the game thread; nonzero
+ * means potential timbre mismatch, not an audio-device failure.
+ */
+unsigned vh_switch_game_audio_bank_warnings(void);
 
 #endif
