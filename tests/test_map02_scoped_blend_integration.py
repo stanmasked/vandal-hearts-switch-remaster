@@ -21,7 +21,7 @@ int main(void) {
     RenderCtx native = {0, 1}, hires = {1, 2};
     vh_map02_scope_reset();
     assert(vh_map02_scope_begin_frame(31, 1, 1));
-    assert(vh_map02_scope_begin_primitive(0));
+    assert(vh_map02_scope_begin_primitive(0, 4));
     PutPixel(&native, 1, 1, 0x001f, 2, 1, 1);
     PutPixel(&hires, 1, 1, 0x001f, 2, 1, 1);
     accurate_mode = 0;
@@ -31,7 +31,7 @@ int main(void) {
     assert(vh_map02_scope_end_frame());
     assert(vh_map02_scope_count() == 3);
     assert(vh_map02_scope_copy(0, &event));
-    assert(event.frame == 31 && event.ordinal == 0 && event.step == 0);
+    assert(event.frame == 31 && event.ordinal == 0 && event.step == 0 && event.primitive_type == 4);
     assert(event.accurate && event.has_blend);
     assert(event.blend_fg == 0x801f);
     assert(event.blend_bg == event.before);
