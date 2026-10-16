@@ -30,6 +30,27 @@ class SpanInstrumentationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "refusing overwrite"):
                 prepare_span(gpu, raster, dest)
 
+    def test_offline_cli_refuses_unpinned_inputs(self):
+        import os
+        import subprocess
+        import sys
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            gpu, raster, dest = root/"gpu.c", root/"raster.c", root/"out"
+            gpu.write_text("not original", encoding="utf-8")
+            raster.write_text("not original", encoding="utf-8")
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
+            run = subprocess.run(
+                [sys.executable, "-m", "tools.instrument_map02_dda_span",
+                 str(gpu), str(raster), "--output-dir", str(dest)],
+                cwd=str(root), env=env, capture_output=True, text=True)
+            self.assertNotEqual(run.returncode, 0)
+            self.assertIn("pinned original PC GPU", run.stderr)
+            self.assertFalse(dest.exists())
+
     def test_refuse_double_install(self):
         src = instrument_span(instrument_raster_skips(scope_raster(FAKE)))
         with self.assertRaisesRegex(ValueError, "already installed"):
