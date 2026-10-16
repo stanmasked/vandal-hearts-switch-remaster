@@ -17,6 +17,7 @@ on:
       - 'tests/test_vh_resample_partition.c'
       - 'tests/test_vh_resample_long_clock.c'
       - 'tests/test_vh_resample_capacity_guard.c'
+      - 'tests/test_vh_resample_retry.c'
       - 'tools/inspect_native_pcm_capture.py'
       - 'tools/analyze_pcm_discontinuities.py'
       - 'tests/test_analyze_pcm_discontinuities.py'
@@ -38,6 +39,7 @@ on:
       - 'tests/test_vh_resample_partition.c'
       - 'tests/test_vh_resample_long_clock.c'
       - 'tests/test_vh_resample_capacity_guard.c'
+      - 'tests/test_vh_resample_retry.c'
       - 'tools/inspect_native_pcm_capture.py'
       - 'tools/analyze_pcm_discontinuities.py'
       - 'tests/test_analyze_pcm_discontinuities.py'
@@ -169,3 +171,11 @@ jobs:
             tests/test_vh_resample_capacity_guard.c source/vh_audio_resample.c \
             -o /tmp/test_vh_resample_capacity_guard
           /tmp/test_vh_resample_capacity_guard
+      - name: Check repeated failed-capacity retry preserves PCM
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -fno-sanitize-recover=all \
+            tests/test_vh_resample_retry.c source/vh_audio_resample.c \
+            -o /tmp/test_vh_resample_retry
+          /tmp/test_vh_resample_retry
