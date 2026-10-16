@@ -73,6 +73,32 @@ inventory, documentation, build-system research, and reproducible test notes.
 Do not describe Switch support as working until it has been built and tested.
 
 
+## Tactical prototype music (nonblocking libnx audout)
+
+The **main framebuffer prototype NRO** now contains a synthetic
+native music worker as well as the existing tactical grid.
+Real hero-selection state changes are sent to that worker through
+a C11 atomic latest-request-wins mailbox: cursor navigation uses
+field music; selecting the hero fades into a second synthetic cue;
+cancelling selection or finishing a valid move fades back.
+A separate thread owns SEQ, SPU, Gaussian, STUDIO_C, the
+44.1 kHz → 48 kHz resampler and blocking libnx `audout`
+playback. The main input/framebuffer loop does **not** wait
+for the audio device. Unavailable audio does not stop gameplay.
+
+The dedicated
+[Switch tactical prototype with integrated audio workflow](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/workflows/switch-tactical-music-nro.yml)
+builds and uploads the main `vandal-hearts-prototype.nro` as
+`vandal-hearts-tactical-with-native-music`.
+See [integration and testing details](docs/TACTICAL_AUDIO_INTEGRATION.md).
+
+All embedded melodies and sample data are **synthetic**. This
+prototype is still not a playable recreation of the original
+Vandal Hearts campaign, and the scene-music mapping does not
+yet cover victory, defeat or mission transitions because those
+gameplay states have not been implemented. CI build success
+does not prove audio output or responsive controls on real hardware.
+
 ## Local Switch SEQ/VH/VB audio diagnostic
 
 The separate SDL2 Switch audio probe can now read a **user-supplied**
