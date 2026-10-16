@@ -658,3 +658,52 @@ an actual user `M_MAP02.PRS`, invoke the complete
 original `RenderMapTile` from Switch NRO, or prove
 physical Nintendo Switch hardware. All original game
 resources remain private and outside the repository.
+
+## Source-exact GTE distance shading beyond OTZ 150 — NeXium PASS (CI #38830050760)
+
+**Verified:** [GitHub Actions #38830050760](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38830050760)
+for code SHA `0f6c043113d9123af76af9fb2079b4afdab1cde8`
+completed all three jobs with **SUCCESS**. The cross-compile
+produced a valid NRO0 executable. The original synthetic DrawOTag
+raster NeXium test and private virtual-SD model rendering both passed.
+
+The actual source `src/core/graphics.c::RenderMapTile` attenuates
+each `gSideLightColor` component by
+`shade=clamp(otz-150,0,256)` and
+`component-=((component*shade)>>8)`. This source-exact
+distance formula was isolated in
+`source/vh_private_map_shading.h` and linked directly into
+the native Switch NRO. The current fixture supplies the
+**neutral test-only side-light color (128,128,128)**, not
+game-authored light parameters. Host tests
+`tests/test_private_map_shading.c` verified the exact
+formula across **84 combinations**, including threshold
+and saturation. The original pinned GTE host test showed
+the distant model has **OTZ=197**, with near-coincident
+camera-space footprint and the previously verified near
+depth models still unchanged.
+
+The private NeXium test now captures four independently
+staged virtual-SD modes using the **same original NRO**:
+one texture patch (4-color UV/CLUT), three-face backface
+NCLIP, adversarial near/far overlap OTZ sorting, and a
+distant GTE face beyond the source's darkening threshold.
+The distant screenshot measured **magenta=(206,0,206)**
+and **cyan=(0,206,206)**, instead of their full-intensity
+255 values. Both were rechecked in the final screenshot,
+not just inferred from test math. All prior screenshot
+regressions passed. The workflow reported **90 Python
+tests** and the separate C file/geometry/GTE/shading
+checks passed. Evidence: CI artifacts
+`pinned-drawotag-private-sd-synthetic-evidence`
+(including `map11-distance-fade.png`) and
+`pinned-original-drawotag-switch-nro`.
+
+**Not yet shown:** `gSideLightColor[26]` values from the
+game's changing light rotation and intensity
+(`UpdateLight` in pinned `src/core/graphics.c`),
+game-authored camera state or authentic
+`M_MAP02.PRS` terrain. The independent test does not
+claim to reproduce the complete `RenderMapTile` or
+actual PS1 hardware. The source project and game bytes
+remain separate from public test/release artifacts.
