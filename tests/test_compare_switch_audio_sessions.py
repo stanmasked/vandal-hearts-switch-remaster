@@ -188,6 +188,33 @@ class ComparisonTests(unittest.TestCase):
         self.assertTrue(r["candidate"]["quality_problems"])
         self.assertEqual(r["candidate"]["truncated_windows"],1)
 
+    def test_ring_rollover_keeps_lifetime_faults_but_comparison_inconclusive(self):
+        older = [make_rows(), make_rows()]
+        newer = []
+        for _ in range(2):
+            rows = make_rows(count=21, pages_per_step=200)
+            rows[1]["event"] = "GAP"
+            for row in rows[1:]:
+                # Early bursts were evicted and are only represented
+                # by cumulative counts at the GAP boundary.
+                row["pcm_fail"] = 16
+                row["home_fail"] = 4
+            newer.append(rows)
+        old, new = self.cohorts(baseline=older, candidate=newer)
+        r = self.compare_paths(old,new)
+        self.assertEqual(r["candidate"]["historical_gaps"], 2)
+        self.assertEqual(r["candidate"]["counters"]["pcm_fail"], 32)
+        self.assertEqual(r["candidate"]["counters"]["home_fail"], 8)
+        self.assertEqual(r["verdict"], "INCONCLUSIVE")
+        self.assertFalse(r["metrics"]["pcm_fail"]["comparable"])
+        self.assertFalse(r["metrics"]["pcm_fail"]["regression_flag"])
+        self.assertTrue(any("GAP" in w for w in r["warnings"]))
+        self.assertTrue(all(any("historical GAP" in x for x in item["reasons"])
+                            for item in r["candidate"]["quality_problems"]))
+        result = self.run_cli(old,new)
+        self.assertEqual(result.returncode,0)
+        self.assertEqual(json.loads(result.stdout)["verdict"],"INCONCLUSIVE")
+
     def test_old_baseline_does_not_count_faults(self):
         old,new=self.cohorts(
             baseline=[make_rows(baseline_pcm_fail=U32_SMALL),
