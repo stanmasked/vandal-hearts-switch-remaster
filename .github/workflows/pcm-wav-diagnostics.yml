@@ -20,6 +20,7 @@ on:
       - 'tests/test_vh_resample_retry.c'
       - 'tests/test_vh_resample_resume.c'
       - 'tests/test_vh_pcm_scene_source_switch.c'
+      - 'tests/test_vh_native_bank_switch.c'
       - 'tests/test_vh_audio_pause_fifo.c'
       - 'tests/test_vh_audio_pause_wrap.c'
       - 'tests/test_vh_native_audio_soak.c'
@@ -50,6 +51,7 @@ on:
       - 'tests/test_vh_resample_retry.c'
       - 'tests/test_vh_resample_resume.c'
       - 'tests/test_vh_pcm_scene_source_switch.c'
+      - 'tests/test_vh_native_bank_switch.c'
       - 'tests/test_vh_audio_pause_fifo.c'
       - 'tests/test_vh_audio_pause_wrap.c'
       - 'tests/test_vh_native_audio_soak.c'
@@ -290,3 +292,14 @@ jobs:
             tests/test_vh_pcm_scene_source_switch.c source/vh_audio_resample.c \
             -o /tmp/test_vh_pcm_scene_source_switch
           /tmp/test_vh_pcm_scene_source_switch
+      - name: Check two decoded VAB banks across SEQ SPU scene transition
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -fno-sanitize-recover=all \
+            tests/test_vh_native_bank_switch.c source/vh_native_vab.c \
+            source/vh_native_seq.c source/vh_native_spu.c \
+            source/vh_spu_reverb.c source/vh_spu_gaussian.c \
+            source/vh_spu_adpcm.c source/vh_audio_resample.c \
+            source/vh_audio_stream.c -lm -o /tmp/test_vh_native_bank_switch
+          /tmp/test_vh_native_bank_switch
