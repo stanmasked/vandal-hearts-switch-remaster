@@ -1170,3 +1170,67 @@ Before considering this optimized effect hardware-verified, inspect
 `libnx audout` NRO on an actual Switch and compare audibly with the
 user's legally obtained PlayStation recordings. The diagnostic
 probe remains separate from the main tactical scene renderer.
+
+
+## Gameplay music scene request and fade staging (#175)
+
+`source/vh_music_scene.h/.c` introduces the first portable
+**scene-to-music API** shared by native Switch and host builds.
+A `VhMusicCue` supplies a stable nonzero scene ID, an already
+validated in-memory SEQ, repeat count, resolver callback and borrowed
+bank context. This component does **not** read files, allocate PCM,
+or run in the SDL callback.
+
+`vh_music_scene_request(scene,cue,fade_blocks)` validates new SEQ
+bytes before changing the active music; `cue == NULL` requests
+silence. Duplicate active IDs do not trigger restarts. Fades are
+bounded to 4096 × 512-frame blocks. Requests while fading report
+`-2`, rather than jumping to a new gain and risking discontinuity.
+A zero fade performs an intentional immediate change.
+
+`vh_music_scene_render()` handles exactly 512 interleaved stereo
+samples each time, maintaining original PC software SEQ ordering:
+dispatch events before SPU synthesis. Fade gains progress once per
+output sample, in signed Q15, and reach precisely zero. After the old
+song has been attenuated to silence, the next render call resets its
+voice/SEQ/reverb state, preserves the selected Gaussian interpolation
+and STUDIO_C depth, initializes the new cue, and fades it in.
+The caller must retain the old SEQ and PCM arena until that transition
+has completed. All commands and rendering must be serialized by the
+host game engine; the controller is not a lock-free audio mailbox.
+If an asset becomes malformed while pending, rendering fails to
+**zero PCM**, including subsequent calls.
+
+The existing standalone `libnx audout` diagnostic probe now uses
+this controller. With **synthetic** audio only, block 384 requests
+scene 2 and block 768 requests scene 1, each with eight outgoing
+and eight incoming fade blocks. With user-supplied music, the
+diagnostic switching is disabled and the selected user cue loops.
+
+Automated regression:
+
+- `tests/test_vh_music_scene.c` tests malformed cues, exact
+  512-frame PCM gain ramps against an independent no-fade SPU
+  render, stop-to-silence, duplicate scene ID, one- and two-block
+  fades, no premature old-PCM release, reset/preservation of reverb,
+  and late corruption of pending SEQ. Built in strict C11 and UBSan.
+- `tests/test_vh_music_scene_soak.c` follows the full synthetic
+  **1200-block** audout scenario through SEQ, Gaussian, ADSR,
+  STUDIO_C, and the stateful 44.1→48 kHz resampler. All
+  668,734 output frames are accounted for; exact transition boundaries
+  and two scheduled fades are asserted. Test checksum:
+  `b3827cb28280e9e1`.
+- The new scene director is compiled into the devkitA64 NRO as well
+  as the standalone AArch64 object cross-compile workflow.
+
+Verified GitHub results:
+[Host SPU regressions #38866256618](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38866256618),
+[AArch64 #38866256629](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38866256629),
+and [native libnx music NRO #38866232079](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38866232079)
+with the `native-audout-music-nro` artifact.
+
+**Current boundary:** scene transitions are demonstrated in the
+synthetic *standalone audio NRO*, not connected to original game
+scene triggers in `source/main.c`. No original music assets ship
+with the build, and audible timing/artifact checks require
+a real Switch.
