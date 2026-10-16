@@ -154,6 +154,118 @@ static void test_running_tempo_and_repeat_seam(void) {
     assert(seq.note_offs==2);
 }
 
+/* Sustain three independent voices through FF51 and CC7/CC10 changes.
+ * The existing voice keeps its original per-note gains, while each new
+ * note uses the most recent controls. FIFO backpressure must not cause
+ * a tempo jump or interrupt the already-playing voice.
+ */
+static int resolve_pan_sensitive(void *ctx, unsigned program, unsigned note,
+                                 unsigned velocity, unsigned volume,
+                                 unsigned pan, VhSeqTone *out) {
+    if (resolve(ctx,program,note,velocity,volume,pan,out)) return -1;
+    const float base=(float)velocity/127.f*(float)volume/127.f;
+    const float left=pan<64u ? 1.f:(127.f-(float)pan)/63.f;
+    const float right=pan<64u ? (float)pan/63.f:1.f;
+    out->gain_left=base*left;
+    out->gain_right=base*right;
+    return 0;
+}
+
+static void test_sustained_voices_across_tempo_pan_and_backpressure(void) {
+    static const uint8_t song[] = {
+        HEADER,
+        0,0xc0,7, 0,0xb0,7,100, 0,0xb0,10,0,
+        0,0x90,60,127,      /* tick 0: sustained hard-left voice */
+        15,0xff,0x51,3,0xd0,0x90, /* tempo doubles at tick15 */
+        0,0xb0,7,40, 0,0xb0,10,127,
+        0,0x90,61,127,      /* tick 15: independent hard-right voice */
+        30,0xb0,7,80, 0,0xb0,10,64,
+        0,0x90,62,127,      /* tick 45: new centered voice */
+        0x81,0x70,0xff,0x2f
+    };
+    setup();
+    assert(vh_native_seq_init(&seq,song,sizeof song,&spu,
+                              resolve_pan_sensitive,&log_state,1)==0);
+
+    assert(vh_native_seq_pump(&seq,&ring)==512);
+    assert(vh_audio_stream_read(&ring,pcm,512)==512);
+    assert(seq.note_ons==1u && seq.tempo==500000u);
+    const int slot0=seq.note_slot[0][60];
+    assert(slot0>=0);
+    assert(spu.voice[slot0].gain_left>0.f);
+    assert(spu.voice[slot0].gain_right==0.f);
+    assert(vh_native_spu_voice_active(&spu,(unsigned)slot0));
+    const int left_before=pcm[(512u-1u)*2u];
+    assert(left_before>0);
+    for(unsigned i=0;i<512u;++i) assert(pcm[2u*i+1u]==0);
+
+    /* Simulate a full callback ring. A blocked pump must not dispatch
+     * CC/tempo events or synthesize any output samples. */
+    int16_t zeros[VH_AUDIO_RING_FRAMES*2u]={0};
+    assert(vh_audio_stream_write(&ring,zeros,VH_AUDIO_RING_FRAMES)
+           ==VH_AUDIO_RING_FRAMES);
+    assert(vh_native_seq_pump(&seq,&ring)==0);
+    assert(seq.blocks_advanced==1u && seq.note_ons==1u);
+    assert(seq.tempo==500000u && seq.volumes[0]==100u &&
+           seq.pans[0]==0u && spu.frames_rendered==512u);
+    vh_audio_stream_reset(&ring);
+
+    /* Second block includes tempo and pan changes, plus note 61.
+     * Voice 60 must remain hard left at exactly its prior gain. */
+    const float held_left=spu.voice[slot0].gain_left;
+    assert(vh_native_seq_pump(&seq,&ring)==512);
+    assert(vh_audio_stream_read(&ring,pcm,512)==512);
+    assert(seq.blocks_advanced==2u && seq.note_ons==2u);
+    assert(seq.tempo==250000u && seq.volumes[0]==40u &&
+           seq.pans[0]==127u);
+    const int slot1=seq.note_slot[0][61];
+    assert(slot1>=0 && slot1!=slot0);
+    assert(spu.voice[slot0].gain_left==held_left);
+    assert(spu.voice[slot0].gain_right==0.f);
+    assert(vh_native_spu_voice_active(&spu,(unsigned)slot0));
+    assert(spu.voice[slot1].gain_left==0.f &&
+           spu.voice[slot1].gain_right>0.f);
+    const int boundary_delta=pcm[0]-left_before;
+    assert(boundary_delta>=-1 && boundary_delta<=1);
+    unsigned l=0,r=0;
+    for(unsigned i=0;i<512u;++i) {
+        if(pcm[2u*i]) ++l;
+        if(pcm[2u*i+1u]) ++r;
+    }
+    assert(l>0u && r>0u);
+
+    /* At the new tick rate, the 30-tick delay to note 62 spans a
+     * complete quiet-in-events block; held sound must not disappear. */
+    assert(vh_native_seq_pump(&seq,&ring)==512);
+    assert(vh_audio_stream_read(&ring,pcm,512)==512);
+    assert(seq.note_ons==2u);
+    assert(vh_native_spu_voice_active(&spu,(unsigned)slot0));
+    assert(vh_native_spu_voice_active(&spu,(unsigned)slot1));
+    l=r=0;
+    for(unsigned i=0;i<512u;++i) {
+        if(pcm[2u*i]) ++l;
+        if(pcm[2u*i+1u]) ++r;
+    }
+    assert(l>0u && r>0u);
+
+    assert(vh_native_seq_pump(&seq,&ring)==512);
+    assert(vh_audio_stream_read(&ring,pcm,512)==512);
+    assert(seq.blocks_advanced==4u && seq.note_ons==3u);
+    assert(seq.tempo==250000u && seq.volumes[0]==80u &&
+           seq.pans[0]==64u);
+    assert(log_state.calls==3u && log_state.note==62u);
+    assert(log_state.volume==80u && log_state.pan==64u);
+    const int slot2=seq.note_slot[0][62];
+    assert(slot2>=0 && slot2!=slot0 && slot2!=slot1);
+    assert(spu.voice[slot2].gain_left>0.f);
+    assert(spu.voice[slot2].gain_right>0.f);
+    assert(spu.voice[slot0].gain_left==held_left &&
+           spu.voice[slot0].gain_right==0.f);
+    vh_native_seq_stop(&seq);
+    assert(!seq.playing && seq.note_offs==3u);
+    assert(seq.last_error==0);
+}
+
 static void test_voice_stealing_stale_note_off(void) {
     setup();
     assert(vh_native_seq_init(&seq,steal_song,sizeof steal_song,
@@ -224,6 +336,7 @@ int main(void) {
     test_validation_and_source_immutability();
     test_512_block_controls_and_ring_pressure();
     test_running_tempo_and_repeat_seam();
+    test_sustained_voices_across_tempo_pan_and_backpressure();
     test_voice_stealing_stale_note_off();
     test_512_pcm_event_to_spu_fifo();
     test_preflight_instrument_coverage();
