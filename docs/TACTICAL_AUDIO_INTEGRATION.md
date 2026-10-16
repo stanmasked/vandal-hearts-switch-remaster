@@ -222,9 +222,12 @@ main game frame loop or inside the stream render loop.
   loaded user pack. The tactical framebuffer remains operational.
 - Individual compressed VB files are bounded by the existing 8 MiB
   file limit, with an additional **12 MiB combined** compressed-VB
-  budget for the pair. Its conservative worst-case decoded PCM
-  staging can approach 42 MiB (plus the original VB/SEQ/VH
-  bytes and runtime structures). Insufficient memory fails cleanly.
+  budget for the pair. The second scene is loaded via
+  `vh_audio_assets_load_bounded()`: its size is rejected **before**
+  allocating the second VB buffer or the second decoded PCM arena.
+  The conservative worst-case decoded PCM allocation can approach
+  42 MiB for both combined (plus original VB/SEQ/VH bytes and
+  runtime structures). Insufficient memory fails cleanly.
 
 The scene mapping is unchanged: ordinary tactical cursor navigation
 requests `field`, while choosing the hero requests `selected`.
