@@ -3,6 +3,7 @@
 
 #include <math.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* The VH header and program/tone tables are little-endian. The 16-tone
@@ -18,10 +19,10 @@ static void pan_factors(unsigned pan, float *left, float *right) {
     *right = pan < 64u ? (float)pan / 63.f : 1.f;
 }
 
-int vh_native_vab_load(VhNativeVab *bank, const uint8_t *vh, size_t vh_size,
+static int load_prepared_vab(VhNativeVab *prepared, const uint8_t *vh, size_t vh_size,
                        const uint8_t *vb, size_t vb_size,
                        int16_t *pcm_arena, size_t pcm_capacity) {
-    if (!bank || !vh || !vb || !pcm_arena || vh_size < 32u + 128u * 16u ||
+    if (!prepared || !vh || !vb || !pcm_arena || vh_size < 32u + 128u * 16u ||
         memcmp(vh, "pBAV", 4u)) return -1;
     const uint32_t declared_size =
         (uint32_t)vh[12] | ((uint32_t)vh[13] << 8) |
@@ -32,11 +33,10 @@ int vh_native_vab_load(VhNativeVab *bank, const uint8_t *vh, size_t vh_size,
         num_programs > VH_VAB_PROGRAMS || num_vags > 255u ||
         vh[24] > 127u) return -1;
 
-    VhNativeVab prepared;
-    memset(&prepared, 0, sizeof(prepared));
-    prepared.master_volume = vh[24];
-    prepared.vag_count = (uint16_t)num_vags;
-    prepared.seq_left = prepared.seq_right = 127u;
+    memset(prepared, 0, sizeof(*prepared));
+    prepared->master_volume = vh[24];
+    prepared->vag_count = (uint16_t)num_vags;
+    prepared->seq_left = prepared->seq_right = 127u;
     unsigned packed_blocks = 0;
     unsigned active_tones = 0;
     for (unsigned p = 0; p < VH_VAB_PROGRAMS; ++p) {
@@ -45,9 +45,9 @@ int vh_native_vab_load(VhNativeVab *bank, const uint8_t *vh, size_t vh_size,
         if (count > VH_VAB_TONES_PER_PROGRAM) return -1;
         if (!count) continue;
         if (record[1] > 127u || record[4] > 127u) return -1;
-        prepared.program_tones[p] = (uint8_t)count;
-        prepared.program_volume[p] = record[1];
-        prepared.program_pan[p] = record[4];
+        prepared->program_tones[p] = (uint8_t)count;
+        prepared->program_volume[p] = record[1];
+        prepared->program_pan[p] = record[4];
         ++packed_blocks;
         active_tones += count;
     }
@@ -61,7 +61,7 @@ int vh_native_vab_load(VhNativeVab *bank, const uint8_t *vh, size_t vh_size,
     unsigned packed_index = 0;
     uint8_t referenced[VH_VAB_SAMPLES] = {0};
     for (unsigned p = 0; p < VH_VAB_PROGRAMS; ++p) {
-        const unsigned count = prepared.program_tones[p];
+        const unsigned count = prepared->program_tones[p];
         if (!count) continue;
         for (unsigned t = 0; t < count; ++t) {
             const uint8_t *record = vh + tone_base
@@ -73,7 +73,7 @@ int vh_native_vab_load(VhNativeVab *bank, const uint8_t *vh, size_t vh_size,
             if (low > 127u || high > 127u || low > high ||
                 parent != (int16_t)p || vag < 1 || vag > (int)num_vags ||
                 record[2] > 127u || record[3] > 127u) return -1;
-            VhVabTone *dst = &prepared.tones[p][t];
+            VhVabTone *dst = &prepared->tones[p][t];
             dst->present = 1;
             dst->low = (uint8_t)low;
             dst->high = (uint8_t)high;
@@ -99,7 +99,7 @@ int vh_native_vab_load(VhNativeVab *bank, const uint8_t *vh, size_t vh_size,
             return -1;
         if (i > 0 && referenced[i]) {
             if (!sample_bytes) return -1;
-            VhVabSample *dst = &prepared.samples[i];
+            VhVabSample *dst = &prepared->samples[i];
             dst->vb_offset = vb_offset;
             dst->adpcm_bytes = sample_bytes;
             const size_t count =
@@ -122,7 +122,7 @@ int vh_native_vab_load(VhNativeVab *bank, const uint8_t *vh, size_t vh_size,
     size_t cursor = 0;
     for (unsigned i = 1; i <= num_vags; ++i) {
         if (!referenced[i]) continue;
-        VhVabSample *sample = &prepared.samples[i];
+        VhVabSample *sample = &prepared->samples[i];
         VhSpuAdpcmInfo meta;
         if (vh_spu_adpcm_decode(
                 vb + sample->vb_offset, sample->adpcm_bytes,
@@ -133,10 +133,26 @@ int vh_native_vab_load(VhNativeVab *bank, const uint8_t *vh, size_t vh_size,
         sample->loop_end = meta.loop_end_frame;
         cursor += meta.frames;
     }
-    prepared.required_pcm_frames = required_frames;
-    prepared.active = 1;
-    *bank = prepared;
+    prepared->required_pcm_frames = required_frames;
+    prepared->active = 1;
     return 0;
+}
+
+/* Stage parsed bank metadata on the heap: the tone matrix is large
+ * enough to put avoidable pressure on Switch thread stacks. Only a fully
+ * validated and decoded bank may replace the caller's metadata.
+ */
+int vh_native_vab_load(VhNativeVab *bank, const uint8_t *vh, size_t vh_size,
+                       const uint8_t *vb, size_t vb_size,
+                       int16_t *pcm_arena, size_t pcm_capacity) {
+    if (!bank) return -1;
+    VhNativeVab *staged = (VhNativeVab *)malloc(sizeof(*staged));
+    if (!staged) return -1;
+    const int result = load_prepared_vab(staged, vh, vh_size, vb, vb_size,
+                                         pcm_arena, pcm_capacity);
+    if (result == 0) *bank = *staged;
+    free(staged);
+    return result;
 }
 
 int vh_native_vab_resolve(void *context, unsigned program, unsigned note,
