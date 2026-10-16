@@ -9,6 +9,7 @@
 #include "ft4_textured_quad.h"
 #include "ps1_indexed_texture.h"
 #include "ps1_abr_blend.h"
+#include "map02_terrain_lighting.h"
 
 #define FB_WIDTH 1280
 #define FB_HEIGHT 720
@@ -36,6 +37,7 @@
 static u8 g_ft4_probe_atlas[256 * 128];
 static u8 g_ft4_probe_cluts[2][32];
 static u32 g_ft4_probe_pixels[2][16 * 16];
+static u32 g_ft4_shaded_pixels[2][16 * 16];
 static u8 g_ft4_probe_classes[2][16 * 16];
 static int g_ft4_probe_ready = 0;
 
@@ -174,6 +176,10 @@ static void draw_ft4_probe(VhCanvas *canvas, u32 *pixels, u32 stride,
     };
     VhFt4Vertex quad[4];
     const unsigned mode = (frame_tick / 120u) & 3u;
+    const int simulated_otz = 150 + (int)((frame_tick / 4u) % 257u);
+    const VhMap02LightRgb side_colors[2] = {
+        {128, 128, 128}, {160, 120, 100}
+    };
     /* This effect quad uses GPU code 0x2e (ABE), unlike normal MAP02
      * terrain which uses 0x2c and should remain opaque even with STP. */
     const u8 effect_gpu_code = 0x2eu;
@@ -185,22 +191,34 @@ static void draw_ft4_probe(VhCanvas *canvas, u32 *pixels, u32 stride,
     };
     char mode_label[] = "ABR MODE 0";
     mode_label[9] = (char)('0' + mode);
-    draw_text(pixels, stride, 975, 137, "CLUT4 CUTOUT", COLOR_MUTED, 1);
+    draw_text(pixels, stride, 975, 137, "MAP02 LIGHT", COLOR_MUTED, 1);
     draw_text(pixels, stride, 975, 323, mode_label, COLOR_MUTED, 1);
     if (!g_ft4_probe_ready) {
         draw_text(pixels, stride, 975, 500, "CLUT ERROR", COLOR_ENEMY, 1);
         return;
     }
+    /* Source-local shading demo: caller supplies face side color, while
+     * a synthetic depth cycles through the upstream otz fade curve.
+     * No original GTE light table, projection or MAP02 asset is loaded. */
+    for (int texture = 0; texture < 2; ++texture) {
+        const VhMap02LightRgb light =
+            vh_map02_face_light(side_colors[texture], simulated_otz);
+        if (!vh_map02_tint_crop_rgba32(
+                g_ft4_probe_pixels[texture], 16,
+                g_ft4_shaded_pixels[texture], 16, 16, 16,
+                light, vh_switch_unpack_ps1_rgb,
+                vh_switch_pack_ps1_rgb, NULL)) return;
+    }
     if (vh_ft4_from_face_perimeter(normal, 0, 0, 15, 15, quad)) {
         (void)vh_canvas_draw_ft4_classified_rgba32(
-            canvas, g_ft4_probe_pixels[0], 16, 16, 16, quad,
+            canvas, g_ft4_shaded_pixels[0], 16, 16, 16, quad,
             g_ft4_probe_classes[0], 16, NULL, NULL);
     }
     vh_canvas_draw_rect_outline(canvas, 978, 164, 128, 128, COLOR_GRID);
     fill_rect(pixels, stride, 978, 352, 128, 128, COLOR_TILE_ALT);
     if (vh_ft4_from_face_perimeter(mirror, 0, 0, 15, 15, quad)) {
         (void)vh_canvas_draw_ft4_classified_rgba32(
-            canvas, g_ft4_probe_pixels[1], 16, 16, 16, quad,
+            canvas, g_ft4_shaded_pixels[1], 16, 16, 16, quad,
             g_ft4_probe_classes[1], 16, vh_ps1_abr_stp_blend, &abr);
     }
     vh_canvas_draw_rect_outline(canvas, 978, 352, 128, 128, COLOR_GRID);
