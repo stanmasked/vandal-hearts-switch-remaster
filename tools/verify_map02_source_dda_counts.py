@@ -225,6 +225,14 @@ def verify_source_dda_counts(source_dir, native_dir, *, compiler="gcc"):
         "source_ft4_all_zero_clut_consistent_with_dda": full_zero_clut_dda_consistent,
         "source_ft4_stp_crop_candidates_by_abr": possible_stp_abr,
         "optional_scoped_putpixel_evidence_verified": pixel_report is not None,
+        "observed_semi_putpixel_by_accuracy_and_abr":
+            pixel_report["observed_semi_putpixel_by_accuracy_and_abr"]
+            if pixel_report else None,
+        "observed_opaque_putpixel_by_accuracy":
+            pixel_report["observed_opaque_putpixel_by_accuracy"]
+            if pixel_report else None,
+        "blendg1_equation_verified": False,
+        "ps1_hardware_abr_equivalence_verified": False,
         "observed_coordinate_scoped_putpixel_calls":
             pixel_report["observed_native_putpixel_calls"] if pixel_report else 0,
         "observed_putpixel_calls_on_source_ft4":
