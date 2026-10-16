@@ -594,3 +594,67 @@ transform, backface/depth/light `RenderMapTile` pass, a real
 execution. No commercial game bytes were redistributed.
 See `docs/ORIGINAL_MAP_GEOMETRY.md` for exact camera constants
 and source-limit notes.
+
+## Pinned GTE NCLIP and source OTZ submission for private MapTileModel (CI #38828663571)
+
+**Green integration milestone:** [GitHub Actions run #38828663571](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38828663571)
+using source SHA `2e1d3ec8e831888ae02b5aaf1caa90935abe5a7f`.
+All THREE jobs completed **success**: `cross-compile`,
+`Run original DrawOTag raster NRO in NeXium` and
+`Synthetic SD map 11 preview through original DrawOTag`.
+
+The prior private native-map path projected each synthetic model's
+quad with the pinned PC GTE `RotTransPers4`, but drew every winding
+through a **single OT bucket**. This revision replaces the private
+per-face path with the sequence from original
+`src/core/graphics.c::RenderMapTile`:
+`gte_ldv3 → gte_rtpt → gte_nclip → gte_stopz`;
+reject faces with signed `opz <= 0`;
+`gte_stsxy3` to FT4 packet vertices 0/1/3;
+`gte_ldv0(v3) → gte_rtps → gte_stsxy` to FT4 vertex 2;
+`gte_avsz4 → gte_stotz` for depth.
+The private probe now uses a **256-bucket ordering table** instead
+of only one bucket: `ClearOTag(ot,256)`, black background in
+bucket 0 and `AddPrim(&ot[256-otz],poly)` after bounding the
+depth index. The original game OT is larger; the 256-bucket
+version is a controlled test of ordering-table integration.
+
+**Signed GTE host test:** The exact pinned
+`platform/pc/src/libgte.c` independently produced
+`NCLIP front=30, reverse=-30, AVSZ4=24` with synthetic model
+vertices. The new Python source-contract test asserts exact
+GTE opcode order, signed culling check and depth-bucket
+submission. The preflight passed **86 Python tests**
+(16 graphics, 15 TIM, 13 raw map bank, 5 staging, 4 UV
+quadrants, 11 geometry, 13 bounded PRS, 6 geometry
+staging/source-opcode checks, 3 Python/C roundtrips).
+Separate native C file-loader and model-topology host tests also
+passed; the NRO0 image and section bounds validated.
+
+**GPU screenshot test:** Virtual-SD synthetic map tile (6,3) now
+contains **three source-format faces**: a deliberately reversed
+backface first (with the alternative CLUT intended to contaminate
+the left face if rendered), followed by two front faces using
+local GFX slots 241/242 and CLUT rows 35/36. The regular
+single-UV-patch scene still passed first. The three-face
+geometry then rendered precisely the *two visible* surfaces,
+with NeXium RGB matches:
+red (260,210)=(255,0,0),
+magenta (850,210)=(255,0,255),
+blue (400,400)=(0,0,255),
+cyan (850,400)=(0,255,255), and extra
+perspective-only red edge (300,125)=(255,0,0).
+The standard TIM/FT4/ABR/window raster job remained successful.
+The reproducible NRO and screenshot evidence are available in
+that CI run's artifacts.
+
+**Scope:** This certifies the genuine pinned PC-port's GTE
+backface computation, integration with bounded map model input
+and an original-style depth-bucket path using synthetic
+resources. It does NOT yet separately test overlapping
+near/far polygons for occlusion correctness, restore
+game-authored light/shade tables or camera controls, decode
+an actual user `M_MAP02.PRS`, invoke the complete
+original `RenderMapTile` from Switch NRO, or prove
+physical Nintendo Switch hardware. All original game
+resources remain private and outside the repository.
