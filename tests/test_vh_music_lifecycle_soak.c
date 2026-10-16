@@ -19,6 +19,8 @@
 #define SEQ_HDR 'p','Q','E','S',0,0,0,0,1,0xe0,7,0xa1,0x20,0,0
 #define BLOCKS 512u
 #define SLEEP_INTERVAL 8u
+#define LONG_BLOCKS 2048u
+#define LONG_SLEEP_INTERVAL 192u
 static const uint8_t field_seq[]={
     SEQ_HDR,0,0xc0,7,0,0x90,60,110,0x81,0x70,0x80,60,0,
     0x81,0x70,0xff,0x2f
@@ -220,7 +222,8 @@ static void assert_frozen(const MusicOwner *o,unsigned which) {
     assert(!memcmp(&o->resampler,&paused_resampler[which],
                    sizeof o->resampler));
 }
-static void stress(const char *csv_prefix) {
+static void stress(const char *csv_prefix, unsigned blocks,
+                   unsigned sleep_interval, int long_mode) {
     owned_sample=malloc(128u*sizeof *owned_sample);
     assert(owned_sample);
     for(unsigned i=0;i<128u;i++)
@@ -231,8 +234,8 @@ static void stress(const char *csv_prefix) {
     journal_sample(&owner[1],0u,1);
     unsigned sleep_events=0, resume_start_faults=0, submit_faults=0;
     unsigned fade_blocks_seen=0, wet_reverb_seen=0;
-    for(unsigned block=0;block<BLOCKS;block++) {
-        if(block && block%SLEEP_INTERVAL==0u) {
+    for(unsigned block=0;block<blocks;block++) {
+        if(block && block%sleep_interval==0u) {
             ++sleep_events;
             const int home_serial=(sleep_events%2u)==0u;
             const unsigned requested=(sleep_events%3u)==0u
@@ -302,8 +305,13 @@ static void stress(const char *csv_prefix) {
                 assert(o->ramp.position==0u);
             }
         }
-        const unsigned faults=block%37u==7u ? 2u :
-                              block%13u==3u ? 1u : 0u;
+        /* Long-run faults are deliberately sparse. With only 128
+         * retained journal rows, dense errors could evict the 1000+
+         * PCM pages required for a meaningful cohort comparison.
+         * The original 512-block gate retains its adversarial rate. */
+        const unsigned faults=long_mode
+            ? (block%397u==71u ? (block%2u ? 1u : 2u) : 0u)
+            : (block%37u==7u ? 2u : block%13u==3u ? 1u : 0u);
         if(faults) submit_faults+=faults;
         audio_turn(&owner[0],0);
         audio_turn(&owner[1],faults);
@@ -346,16 +354,16 @@ static void stress(const char *csv_prefix) {
     assert(fade_blocks_seen>0u && wet_reverb_seen>0u);
     assert(owner[0].scene.switches>4u);
     assert(owner[0].scene.switches==owner[1].scene.switches);
-    assert(sleep_events==(BLOCKS-1u)/SLEEP_INTERVAL);
+    assert(sleep_events==(blocks-1u)/sleep_interval);
     assert(resume_start_faults>0 && submit_faults>0);
     assert(owner[1].recovery.submit_failures==submit_faults);
     assert(owner[1].recovery.resume_failures==resume_start_faults);
     assert(owner[0].recovery.submit_failures==0);
-    assert(owner[0].backend.accepted_pages==BLOCKS &&
-           owner[1].backend.accepted_pages==BLOCKS);
+    assert(owner[0].backend.accepted_pages==blocks &&
+           owner[1].backend.accepted_pages==blocks);
     assert(owner[0].output_frames==owner[1].output_frames);
     const uint64_t finished_clock=owner[0].resampler.input_frames;
-    assert(finished_clock==(uint64_t)BLOCKS*512u);
+    assert(finished_clock==(uint64_t)blocks*512u);
     /* Cooperative exit: a 96-frame PCM fade to digital zero uses
      * only the most recently confirmed output sample. Unlike a new
      * SEQ block, this must not touch SPU voices, the reverb buffer,
@@ -383,16 +391,16 @@ static void stress(const char *csv_prefix) {
         assert(o->scene.blocks_rendered==final_rendered[i]);
     }
     assert(!memcmp(stop_tail[0],stop_tail[1],sizeof stop_tail[0]));
-    /* Every captured row must come from actual host audio-owner
-     * counters; no handcrafted CSV fixtures in this integration test.
-     * A 512-page soak cannot satisfy the 1000-page comparison gate:
-     * cross-version tooling MUST return INCONCLUSIVE. */
+    /* All captured rows come from actual host audio-owner counters,
+     * not handcrafted CSV fixtures. The default 512-page profile is
+     * intentionally INCONCLUSIVE; the sparse 2048-page profile must
+     * retain enough exposure for comparative diagnostics. */
     for(unsigned i=0;i<2u;i++) {
         MusicOwner *o=&owner[i];
         assert(o->journal.count>0u);
         assert(o->journal.count<=VH_AUDIO_DIAG_JOURNAL_CAPACITY);
         assert(o->journal.total>=o->journal.count);
-        assert(o->telemetry.pages_submitted==BLOCKS);
+        assert(o->telemetry.pages_submitted==blocks);
         assert(o->telemetry.frames_submitted==owner[0].output_frames);
         assert(o->telemetry.resume_events==sleep_events/2u);
         assert(o->telemetry.confirmed_resumes==sleep_events);
@@ -427,7 +435,7 @@ static void stress(const char *csv_prefix) {
         MusicOwner *o=&owner[i];
         o->telemetry.status=0;
         assert(vh_audio_diag_journal_finish(
-            &o->journal,(uint64_t)BLOCKS*12u+1u,
+            &o->journal,(uint64_t)blocks*12u+1u,
             &o->telemetry)==1);
         if(csv_prefix) {
             char path[512];
@@ -452,17 +460,19 @@ static void stress(const char *csv_prefix) {
     }
     printf("HOME/sleep + scene + reverb soak: %u blocks, "
            "%u pauses, %u resume start faults, %u PCM retries PASS\n",
-           BLOCKS,sleep_events,resume_start_faults,submit_faults);
+           blocks,sleep_events,resume_start_faults,submit_faults);
 }
 int main(int argc,char **argv) {
     /* Optional out-of-game reference artifacts for the Python
      * analyzer and cohort comparator. Never activated on Switch. */
-    if(argc==1) stress(NULL);
+    if(argc==1) stress(NULL,BLOCKS,SLEEP_INTERVAL,0);
     else if(argc==3 && strcmp(argv[1],"--csv-prefix")==0)
-        stress(argv[2]);
+        stress(argv[2],BLOCKS,SLEEP_INTERVAL,0);
+    else if(argc==3 && strcmp(argv[1],"--long-csv-prefix")==0)
+        stress(argv[2],LONG_BLOCKS,LONG_SLEEP_INTERVAL,1);
     else {
         fputs("usage: test_vh_music_lifecycle_soak "
-              "[--csv-prefix path-prefix]\\n",stderr);
+              "[--csv-prefix path-prefix | --long-csv-prefix path-prefix]\\n",stderr);
         return 2;
     }
     return 0;
