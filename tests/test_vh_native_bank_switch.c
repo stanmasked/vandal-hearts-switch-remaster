@@ -48,7 +48,13 @@ int main(void) {
     uint64_t output_frames=0, checksum[2]={0,0};
     for (unsigned scene=0;scene<2u;scene++) {
         /* Old bank sample pointers are no longer live after the reset. */
-        if(scene) vh_native_seq_stop(&seq);
+        if(scene) {
+            vh_native_seq_stop(&seq);
+            assert(!seq.playing);
+            /* Old voices cannot retain pointers into the previous PCM bank. */
+            for (unsigned slot=0;slot<VH_NATIVE_MUSIC_VOICES;slot++)
+                assert(!spu.voice[slot].active || spu.voice[slot].released);
+        }
         vh_native_spu_reset(&spu);
         assert(vh_native_seq_init(&seq,song,sizeof song,&spu,
                                   vh_native_vab_resolve,&bank[scene],0)==0);
