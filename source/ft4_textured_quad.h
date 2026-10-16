@@ -28,6 +28,12 @@ typedef struct {
     float v;
 } VhFt4Vertex;
 
+/* For STP texels on a textured semi-transparent primitive, callers supply
+ * the render target's pixel-format-aware blend policy. This rasterizer does
+ * not guess PS1 abr mode, RGBA32 byte order, or alpha semantics. */
+typedef uint32_t (*VhFt4StpBlendFn)(
+    uint32_t destination, uint32_t source, void *context);
+
 /*
  * Original US PC-port maps face vertices [0,1,2,3] to POLY_FT4
  * [x0,x1,x3,x2], while setUVWH maps [uv0,uv1,uv3,uv2] respectively.
@@ -95,22 +101,29 @@ static inline int vh_ft4_inputs_valid(
 }
 
 /*
- * Affine triangle rasterization of POLY_FT4 triangles (0,1,2) & (1,3,2).
- * Pixel-center sampling and nearest texel. Winding can be CW or CCW.
- * Returns pixels written (overlapping shared-edge pixels counted twice).
+ * Affine FT4 (0,1,2) & (1,3,2), with optional PS1 class mask.
+ * Class values: 0 = transparent black; 1 = opaque; 2 = STP flagged.
+ * Zero class skips framebuffer writes. STP is copied as opaque unless
+ * an explicit caller-owned blend callback is supplied; that callback can
+ * implement the selected polygon's ABR policy in its native pixel format.
+ * No perspective correction, hardware GPU raster rules or dithering.
  *
- * The target canvas and texture must not alias. No alpha/zero/STP treatment:
- * colors are copied as caller-provided RGBA32 words.
+ * Mask and color texture MUST be distinct from the framebuffer and have
+ * the same logical dimensions. Return value counts written pixels.
  */
-static inline size_t vh_canvas_draw_ft4_rgba32(
+static inline size_t vh_canvas_draw_ft4_classified_rgba32(
     VhCanvas *canvas, const uint32_t *texture,
     size_t tex_width, size_t tex_height, size_t tex_stride,
-    const VhFt4Vertex corners[4]) {
+    const VhFt4Vertex corners[4],
+    const uint8_t *classes, size_t class_stride,
+    VhFt4StpBlendFn stp_blend, void *blend_context) {
     static const int triangles[2][3] = {{0, 1, 2}, {1, 3, 2}};
     size_t written = 0;
     int tri;
     if (!vh_ft4_inputs_valid(canvas, texture, tex_width, tex_height,
-                             tex_stride, corners)) return 0;
+                             tex_stride, corners) ||
+        (classes && (class_stride < tex_width ||
+                     class_stride > SIZE_MAX / tex_height))) return 0;
 
     for (tri = 0; tri < 2; ++tri) {
         const VhFt4Vertex *a = &corners[triangles[tri][0]];
@@ -156,13 +169,33 @@ static inline size_t vh_canvas_draw_ft4_rgba32(
                 if (v > (double)(tex_height - 1)) v = (double)(tex_height - 1);
                 tx = (size_t)(u + 0.5);
                 ty = (size_t)(v + 0.5);
-                canvas->pixels[(size_t)y * canvas->stride_pixels + (size_t)x] =
-                    texture[ty * tex_stride + tx];
+                if (classes && classes[ty * class_stride + tx] == 0) continue;
+                {
+                    uint32_t *dest = &canvas->pixels[
+                        (size_t)y * canvas->stride_pixels + (size_t)x];
+                    const uint32_t source = texture[ty * tex_stride + tx];
+                    if (classes && classes[ty * class_stride + tx] == 2 && stp_blend) {
+                        *dest = stp_blend(*dest, source, blend_context);
+                    } else {
+                        *dest = source;
+                    }
+                }
                 ++written;
             }
         }
     }
     return written;
+}
+
+/* Backward-compatible opaque FT4 path: never interprets RGBA32 alpha
+ * or applies an STP rule without classification information. */
+static inline size_t vh_canvas_draw_ft4_rgba32(
+    VhCanvas *canvas, const uint32_t *texture,
+    size_t tex_width, size_t tex_height, size_t tex_stride,
+    const VhFt4Vertex corners[4]) {
+    return vh_canvas_draw_ft4_classified_rgba32(
+        canvas, texture, tex_width, tex_height, tex_stride,
+        corners, NULL, 0, NULL, NULL);
 }
 
 #endif
