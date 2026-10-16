@@ -33,7 +33,7 @@ E1_ABR1=0xe1000020
 E2_MAP_TO_U12=0xe2000401
 E6_FORCE_MASK=0xe6000001
 
-def tile(x,color=0x600000ff):
+def tile(x,color=0x60ff0000):
     return (color,xy(x,Y),xy(4,4))
 
 def sprite(x):
@@ -50,10 +50,10 @@ def phase_commands():
     # Changes deliberately AFTER the background draws: test state
     # remains in the GPU across the first readback and future CPU blocks.
     a.extend((E1_ABR1,E2_MAP_TO_U12,E6_FORCE_MASK))
-    b=(*sprite(X[0]),*tile(X[1]))
-    c=(*sprite(X[2]),*tile(X[3]))
+    b=(*sprite(X[0]),*tile(X[1],0x600000ff))
+    c=(*sprite(X[2]),*tile(X[3],0x600000ff))
     # GP1(00) clears E1 E2 E6; only area bounds are restored here.
-    d=(0xe3000000,0xe407ffff,*sprite(X[4]),*tile(X[5]))
+    d=(0xe3000000,0xe407ffff,*sprite(X[4]),*tile(X[5],0x600000ff))
     return tuple(map(tuple,(a,b,c,d)))
 
 PHASE_GP0=phase_commands()
