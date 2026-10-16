@@ -7,7 +7,7 @@ No GTE camera, projection, OTZ, lighting, clipping or pixels are emulated here.
 """
 from __future__ import annotations
 
-from tools.map02_face_geometry import decode_face_0
+from tools.map02_face_geometry import decode_face_0, decode_face
 
 
 def place_faces(decoded: bytes, cells, uvwh, *, step_x: int, step_z: int):
@@ -198,3 +198,32 @@ def bind_gte_face_samples(faces, samples):
             "face_shade": face["source_face"]["face_shade"],
         })
     return bound
+
+
+def place_selected_faces(decoded: bytes, selections, uvwh_by_face, *,
+                         step_x: int, step_z: int):
+    """Place multiple face slots per cell, preserving each source identity.
+
+    selections: (z,x,face_index) entries. Duplicate face keys are invalid;
+    repeated cells with distinct faces are supported.
+    """
+    if type(step_x) is not int or type(step_z) is not int or not step_x or not step_z:
+        raise ValueError("nonzero integer grid steps required")
+    result, seen = [], set()
+    for z, x, face_index in selections:
+        key = (z, x, face_index)
+        if key in seen:
+            raise ValueError("duplicate source face selection")
+        seen.add(key)
+        source = decode_face(decoded, z, x, face_index, uvwh_by_face[key])
+        offset = [x * step_x, 0, z * step_z]
+        result.append({
+            "z": z, "x": x, "record_index": source["record_index"],
+            "grid_offset_xyz": offset,
+            "world_xyz_hypothesis": [
+                [corner["model_xyz"][axis] + offset[axis] for axis in range(3)]
+                for corner in source["face_corners"]
+            ],
+            "source_face": source,
+        })
+    return result
