@@ -19,6 +19,7 @@ on:
       - 'tests/test_vh_resample_capacity_guard.c'
       - 'tests/test_vh_resample_retry.c'
       - 'tests/test_vh_resample_resume.c'
+      - 'tests/test_vh_pcm_scene_source_switch.c'
       - 'tests/test_vh_audio_pause_fifo.c'
       - 'tests/test_vh_audio_pause_wrap.c'
       - 'tests/test_vh_native_audio_soak.c'
@@ -48,6 +49,7 @@ on:
       - 'tests/test_vh_resample_capacity_guard.c'
       - 'tests/test_vh_resample_retry.c'
       - 'tests/test_vh_resample_resume.c'
+      - 'tests/test_vh_pcm_scene_source_switch.c'
       - 'tests/test_vh_audio_pause_fifo.c'
       - 'tests/test_vh_audio_pause_wrap.c'
       - 'tests/test_vh_native_audio_soak.c'
@@ -281,3 +283,10 @@ jobs:
           cmp /tmp/vab-repeat-1.txt /tmp/vab-repeat-2.txt
           cmp /tmp/vab-repeat-1.txt /tmp/vab-repeat-3.txt
           cmp /tmp/vab-o2.txt /tmp/vab-repeat-1.txt
+      - name: Verify synthetic scene-source PCM clock continuity
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=undefined -fno-sanitize-recover=all \
+            tests/test_vh_pcm_scene_source_switch.c source/vh_audio_resample.c \
+            -o /tmp/test_vh_pcm_scene_source_switch
+          /tmp/test_vh_pcm_scene_source_switch
