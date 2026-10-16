@@ -137,6 +137,18 @@ The dedicated audio thread now handles the lifecycle:
   forces an `audoutStopAudioOut()` / `audoutStartAudioOut()`
   cycle even if default system-wide applet suspension prevented
   the worker from observing the preceding loss of focus.
+  `appletSetRestartMessageEnabled(true)` is requested **only** for
+  `AppletType_Application`, then disabled on normal exit. Unsupported
+  applet/launch modes keep their native focus handling policy.
+- **No OnResume delivered:** a rising background→foreground focus
+  edge in `vh_switch_game_audio_set_focus()` also publishes a resume
+  serial. Ordinary per-frame in-focus polling never increments it,
+  preventing continuous restart of the audio service.
+- **Output-service state reconciliation:** if a start/stop operation
+  returns an error but `audoutGetAudioOutState()` confirms the
+  target state is already reached, audio continues safely. Other
+  audout failures terminate the audio worker with a negative status
+  rather than looping on a potentially invalid service.
 - **Latest-wins scene selection:** scene changes requested while
   suspended remain pending in the mailbox and are applied after
   playback resumes. Transition requests still respect the
