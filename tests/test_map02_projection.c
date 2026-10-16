@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "../source/map02_projection.h"
+#include "../source/map02_face_direction.h"
 
 static VhMap02ProjectCamera camera(void) {
     VhMap02ProjectCamera c = {0};
@@ -127,6 +128,42 @@ static void test_sloped_neighbors_share_gte_screen_endpoints(void) {
     assert(a.ot_in_bounds && b.ot_in_bounds);
 }
 
+static void test_projection_and_face_lighting_direction(void) {
+    VhMap02ProjectCamera c = camera();
+    VhMap02ProjectFace projected = {0};
+    VhMap02ProjectVertex vertices[4] = {
+        {0,0,512}, {100,0,512}, {100,100,512}, {0,100,512}
+    };
+    uint8_t tile[VH_MAP02_TILE_BYTES] = {0};
+    uint8_t direction = 255;
+    VhMap02Cross cross = {0};
+    tile[302] = 1;
+    for (unsigned i = 0; i < 4; ++i) {
+        const int16_t xyz[3] = {vertices[i].x, vertices[i].y, vertices[i].z};
+        tile[212+i] = (uint8_t)i;
+        for (unsigned axis = 0; axis < 3; ++axis) {
+            unsigned at = i*8u + axis*2u;
+            tile[at] = (uint8_t)((uint16_t)xyz[axis] & 255u);
+            tile[at+1] = (uint8_t)(((uint16_t)xyz[axis] >> 8) & 255u);
+        }
+    }
+    assert(vh_map02_face_direction(tile, sizeof tile, 0, &direction, &cross));
+    assert(cross.x == 0 && cross.y == 0 && cross.z == 10000);
+    assert(direction < VH_MAP02_LIGHT_DIRECTION_COUNT);
+    assert(vh_map02_project_face(&c, vertices, 1024, &projected));
+    assert(projected.visible && projected.otz == 128);
+    /* Reversing face winding changes direction and NCLIP consistently. */
+    tile[213] = 3; tile[215] = 1;
+    VhMap02ProjectVertex reversed[4] = {
+        vertices[0], vertices[3], vertices[2], vertices[1]
+    };
+    uint8_t opposite = 255;
+    assert(vh_map02_face_direction(tile, sizeof tile, 0, &opposite, &cross));
+    assert(cross.z == -10000 && opposite != direction);
+    assert(vh_map02_project_face(&c, reversed, 1024, &projected));
+    assert(!projected.visible && projected.nclip_mac0 < 0);
+}
+
 int main(void) {
     test_screen_quad_and_ordering();
     test_backface_and_zero_area();
@@ -134,6 +171,7 @@ int main(void) {
     test_invalid_input_never_overwrites_output();
     test_adjacent_faces_share_projected_edge();
     test_sloped_neighbors_share_gte_screen_endpoints();
+    test_projection_and_face_lighting_direction();
     puts("MAP02 portable projection, NCLIP, AVSZ4 and OT slot tests passed");
     return 0;
 }
