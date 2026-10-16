@@ -21,6 +21,7 @@ from tools.audit_map02_disc_prs import (
     read_sectors, unpack_prs,
 )
 from tools.compare_map02_variants import EXPECTED_LENGTH, FACE_GFX_OFFSET, RECORD_SIZE
+from tools.map02_face_geometry import compare_face_geometry
 
 ATLAS_LBA, ATLAS_SECTORS, ATLAS_LENGTH = 4374, 16, 32768
 LAND_LBA, LAND_SECTORS, LAND_LENGTH = 4954, 61, 123993
@@ -175,14 +176,36 @@ def build_evidence(image: Path, layout: str, bias: int = 0) -> tuple[dict, bytes
     if len(record) != LAND_BLOCK_SIZE:
         raise ValueError("LAND_DT record 11 not present")
     slots = []
+    geometry = []
     for z, x, prs_slot, dat_slot in TARGETS:
         index = z * 28 + x
         if decoded[index * RECORD_SIZE + FACE_GFX_OFFSET] != prs_slot:
             raise ValueError(f"PRS target GFX mismatch at z={z}, x={x}")
         if dat[index * RECORD_SIZE + FACE_GFX_OFFSET] != dat_slot:
             raise ValueError(f"DAT target GFX mismatch at z={z}, x={x}")
-        slots.extend((sample_slot(atlas, record, prs_slot),
-                      sample_slot(atlas, record, dat_slot)))
+        p_sample = sample_slot(atlas, record, prs_slot)
+        d_sample = sample_slot(atlas, record, dat_slot)
+        slots.extend((p_sample, d_sample))
+        try:
+            face = compare_face_geometry(
+                decoded, dat, z, x,
+                tuple(p_sample["uvwh"]), tuple(d_sample["uvwh"])
+            )
+            face["model_geometry_verified"] = (
+                face["shape_and_other_tile_data_identical"]
+                and face["model_vertex_positions_identical"]
+                and face["prs_face"]["first_triangle_nonzero_area"]
+                and face["dat_face"]["first_triangle_nonzero_area"]
+                and face["prs_face"]["local_gfx"] == prs_slot
+                and face["dat_face"]["local_gfx"] == dat_slot
+            )
+        except ValueError as error:
+            # Synthetic fixtures with texture indices but no actual faces are
+            # intentionally noncanonical; never label such geometry as verified.
+            face = {"z": z, "x": x, "face": 0,
+                    "model_geometry_verified": False,
+                    "error": str(error)}
+        geometry.append(face)
     verification = {
         "compressed_prs_sha256": cd_report["matches_prior_logical_compressed_sha256"],
         "decompressed_prs_sha256": cd_report["matches_prior_decompressed_sha256"],
@@ -191,6 +214,9 @@ def build_evidence(image: Path, layout: str, bias: int = 0) -> tuple[dict, bytes
         "atlas_sha256": sha(atlas) == EXPECTED_ATLAS_SHA256,
         "land_dt_sha256": sha(land) == EXPECTED_LAND_SHA256,
         "all_four_pixel_sha256": all(sample["matches_archived_pixels"] for sample in slots),
+        "both_target_face_geometries": all(
+            face["model_geometry_verified"] for face in geometry
+        ),
     }
     w, h, framebuffer, panels = make_contact_sheet(slots)
     png = encode_png(w, h, framebuffer)
@@ -210,6 +236,7 @@ def build_evidence(image: Path, layout: str, bias: int = 0) -> tuple[dict, bytes
              if k not in ("raw_color_words", "palette_indices")}
             for sample in slots
         ],
+        "face_geometry": geometry,
         "png_panels": panels,
         "png_width": w,
         "png_height": h,
@@ -217,6 +244,7 @@ def build_evidence(image: Path, layout: str, bias: int = 0) -> tuple[dict, bytes
             "Flat source UV/CLUT samples, not captured gameplay or polygon projection",
             "RGB preview ignores PS1 STP blending, transparency, dithering and camera angle",
             "PS1 raw 16-bit BGR555/STP fingerprints are retained in the metadata",
+            "Geometry lists model-local points and FT4 UV corners; no camera projection or backface test",
         ],
     }
     return metadata, png
