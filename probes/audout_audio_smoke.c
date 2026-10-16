@@ -151,9 +151,17 @@ int main(int argc, char **argv) {
         consoleExit(NULL);
         return 8;
     }
+    /* System ticks measure SEQ + DSP + 48k conversion, excluding
+     * audoutPlayBuffer wait and console updates. */
+    const uint64_t tick_frequency = armGetSystemTickFreq();
+    const uint64_t block_budget_ticks =
+        tick_frequency * VH_AUDIO_BLOCK_FRAMES / VH_AUDIO_SAMPLE_RATE;
+    uint64_t compute_ticks_total = 0, compute_ticks_max = 0;
+    unsigned compute_over_budget = 0;
     unsigned played_blocks = 0;
     int result = 0;
     while (appletMainLoop() && played_blocks < MAX_PROBE_BLOCKS) {
+        const uint64_t tick_begin = armGetSystemTick();
         if (vh_native_seq_advance_block(&seq) < 0) {
             result = 5;
             break;
@@ -166,6 +174,10 @@ int main(int argc, char **argv) {
             result = 6;
             break;
         }
+        const uint64_t elapsed_ticks = armGetSystemTick() - tick_begin;
+        compute_ticks_total += elapsed_ticks;
+        if (elapsed_ticks > compute_ticks_max) compute_ticks_max = elapsed_ticks;
+        if (elapsed_ticks > block_budget_ticks) ++compute_over_budget;
         desc.data_size = count * 2u * sizeof(int16_t);
         AudioOutBuffer *released = NULL;
         rc = audoutPlayBuffer(&desc, &released);
@@ -175,8 +187,18 @@ int main(int argc, char **argv) {
         }
         ++played_blocks;
         if (played_blocks % 128u == 0u) {
-            printf("Blocks=%u  notes=%llu  cycles=%u\n",played_blocks,
+            printf("Blocks=%u notes=%llu cycles=%u\n", played_blocks,
                    (unsigned long long)seq.note_ons,seq.cycles_completed);
+            if (tick_frequency) {
+                const unsigned long long max_us =
+                    (unsigned long long)(compute_ticks_max*1000000u /
+                                         tick_frequency);
+                const unsigned long long avg_us =
+                    (unsigned long long)(compute_ticks_total*1000000u /
+                                         (tick_frequency * played_blocks));
+                printf("DSP compute avg=%llu us peak=%llu us, over budget=%u\n",
+                       avg_us, max_us, compute_over_budget);
+            }
             consoleUpdate(NULL);
         }
     }
