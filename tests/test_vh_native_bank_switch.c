@@ -61,18 +61,22 @@ int main(void) {
                        spu.voice[slot].adsr.phase==VH_ADSR_RELEASE ||
                        spu.voice[slot].adsr.phase==VH_ADSR_OFF);
         }
-        /* Preserve only reverb history across the scene transition.
-         * No voice structures or borrowed bank PCM pointers are copied.
+        /* Keep the wet-tail delay history, but sever all borrowed voice PCM.
+         * The production helper avoids copying a large reverb workspace.
          */
-        VhSpuReverb old_reverb;
-        if (transition) old_reverb=spu.reverb;
-        vh_native_spu_reset(&spu);
-        assert(spu.reverb.cursor==0);
-        assert(spu.frames_rendered==0u);
         if (transition) {
-            spu.reverb=old_reverb;
-            assert(memcmp(&spu.reverb,&old_reverb,sizeof old_reverb)==0);
+            const int old_cursor=spu.reverb.cursor;
+            const int old_phase=spu.reverb.phase;
+            const int16_t old_work=spu.reverb.work[0];
+            vh_native_spu_clear_voices_keep_reverb(&spu);
+            assert(spu.reverb.cursor==old_cursor);
+            assert(spu.reverb.phase==old_phase);
+            assert(spu.reverb.work[0]==old_work);
+        } else {
+            vh_native_spu_reset(&spu);
+            assert(spu.reverb.cursor==0);
         }
+        assert(spu.frames_rendered==0u);
         assert(vh_native_spu_set_reverb(&spu,1,0.5f)==0);
         /* Reset must sever all borrowed pointers to previous bank PCM. */
         for (unsigned slot=0;slot<VH_NATIVE_MUSIC_VOICES;slot++) {
