@@ -276,3 +276,9 @@ Synthetic no-clobber, missing-witness, tampering, rollback and private
 directory tests:
 `tests/test_publish_map02_blendg1_witness.py` (CI workflow
 `.github/workflows/map02-scoped-blend.yml`).
+
+Both the publisher and the final witness verifier use the **same**
+strict framing rules: UTF-8 JSON objects, exactly one final LF per
+nonempty JSONL row, no CRLF or blank rows, and fewer than 64 events per
+stream. The staged log is checked before any final file is created.
+A completed marker does not exempt a log from independent revalidation.
