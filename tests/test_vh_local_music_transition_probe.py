@@ -410,6 +410,63 @@ class NativeLocalMusicTransitionTests(unittest.TestCase):
                 self.assertEqual(
                     {p.name: p.read_bytes() for p in folder.iterdir()}, saved)
 
+    def test_multi_tempo_loop_state_resets_for_32_alternating_scenes(self):
+        # Each A scene completes three EOT cycles and retains its own
+        # two-tempo timeline. Every B scene starts with its independent
+        # initial tempo despite STUDIO_C tails surviving both switches.
+        scenes, blocks = 32, 32
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            a, b = root / "two-tempos", root / "fallback-b"
+            original_a = synth_dir(a, multiple_tempo_loop=True, wet=True)
+            original_b = synth_dir(b, bank_b=True, fallback_program=True)
+            cmd = [str(PROGRAM), str(a), str(b), str(scenes), str(blocks)]
+            run = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            report = json.loads(run.stdout)
+            measures = report["measurements"]
+            self.assertEqual(len(measures), scenes)
+            self.assertEqual([m["bank"] for m in measures],
+                             ["A", "B"] * (scenes // 2))
+            for i, measure in enumerate(measures):
+                self.assertEqual(measure["scene"], i)
+                self.assertEqual(measure["unresolved_notes"], 0)
+                self.assertGreater(measure["nonzero_samples"], 0)
+                self.assertEqual(measure["input_frames"], blocks * 512)
+                if i % 2 == 0:
+                    self.assertEqual(measure["note_requests"], 11)
+                    self.assertEqual(measure["cycles_completed"], 3)
+                    self.assertEqual(measure["first_cycle_block"], 10)
+                    self.assertEqual(measure["last_cycle_block"], 28)
+                    self.assertEqual(measure["observed_tempo_changes"], 8)
+                    self.assertEqual(measure["first_tempo_change_block"], 1)
+                    self.assertEqual(measure["last_tempo_change_block"], 30)
+                    self.assertEqual(measure["final_tempo_us_per_quarter"],
+                                     750000)
+                    self.assertEqual(measure["fallback_notes"], 0)
+                    self.assertTrue(measure["reverb_send_seen"])
+                else:
+                    self.assertEqual(measure["note_requests"], 1)
+                    self.assertEqual(measure["cycles_completed"], 0)
+                    self.assertEqual(measure["observed_tempo_changes"], 0)
+                    self.assertEqual(measure["final_tempo_us_per_quarter"],
+                                     500000)
+                    self.assertEqual(measure["cross_program_fallback_notes"],
+                                     measure["resolved_notes"])
+                    self.assertEqual(measure["out_of_range_fallback_notes"],
+                                     0)
+                    self.assertFalse(measure["reverb_send_seen"])
+            total = scenes * blocks * 512
+            self.assertEqual(report["input_frames"], total)
+            self.assertEqual(report["output_frames"],
+                             (total - 1) * 48000 // 44100 + 1)
+            self.assertEqual(sum(x["output_frames"] for x in measures),
+                             report["output_frames"])
+            self.assertNotIn(str(tmp), run.stdout)
+            for folder, original in ((a, original_a), (b, original_b)):
+                self.assertEqual(
+                    {p.name: p.read_bytes() for p in folder.iterdir()}, original)
+
     def test_resolved_notes_can_produce_silent_pcm_with_zero_gain(self):
         with tempfile.TemporaryDirectory() as tmp:
             a, b = Path(tmp) / "mute", Path(tmp) / "audible"
