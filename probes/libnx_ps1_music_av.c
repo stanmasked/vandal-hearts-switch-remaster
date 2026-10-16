@@ -34,6 +34,8 @@ static int16_t audio_page[AUDIO_PAGE_BYTES / sizeof(int16_t)]
 static Thread sound_thread;
 static atomic_bool audio_stop;
 static atomic_int audio_fault;
+static atomic_uint pcm_blocks_generated;
+static atomic_uint audout_buffers_completed;
 static int audio_active;
 static int using_user_files;
 static int sdmc_mounted_here;
@@ -132,12 +134,17 @@ static void audio_worker(void *unused) {
             atomic_store(&audio_fault, 2);
             break;
         }
+        /* A processed PCM block is NOT yet a successfully returned audout
+         * buffer. Report the two independently to avoid false playback
+         * claims when an output service is stalled. */
+        atomic_fetch_add(&pcm_blocks_generated, 1u);
         desc.data_size = count * 2u * sizeof(int16_t);
         AudioOutBuffer *released = NULL;
         if (R_FAILED(audoutPlayBuffer(&desc, &released))) {
             atomic_store(&audio_fault, 3);
             break;
         }
+        atomic_fetch_add(&audout_buffers_completed, 1u);
     }
 }
 
@@ -157,6 +164,8 @@ static int start_native_audio(void) {
     }
     atomic_store(&audio_stop, false);
     atomic_store(&audio_fault, 0);
+    atomic_store(&pcm_blocks_generated, 0u);
+    atomic_store(&audout_buffers_completed, 0u);
     result = threadCreate(&sound_thread, audio_worker, NULL, NULL,
                           16 * 1024, 0x2c, -2);
     if (R_FAILED(result)) {
@@ -229,6 +238,17 @@ static void paint(VhCanvas *canvas, const VhGameState *state,
         asset_source_status == 0 ? grid :
         asset_source_status == -1 ? sound_fail : source_missing;
     vh_canvas_fill_rect(canvas, 1000, 219, 130, 18, source_color);
+    /* Distinct audout liveness marker: green means at least 16 actual
+     * SEQ/SPU/resampler blocks produced AND audoutPlayBuffer returned;
+     * amber means initialized but no such progress yet. This proves
+     * software/service advancement, NOT audible output from speakers. */
+    const unsigned pcm_blocks = atomic_load(&pcm_blocks_generated);
+    const unsigned returned_buffers = atomic_load(&audout_buffers_completed);
+    const uint32_t pipeline_color =
+        !healthy ? sound_fail :
+        (pcm_blocks >= 16u && returned_buffers >= 16u)
+        ? sound_ok : source_missing;
+    vh_canvas_fill_rect(canvas, 1000, 270, 130, 24, pipeline_color);
     /* Animated heartbeat proves video continues while audout worker runs. */
     vh_canvas_fill_rect(canvas, 70, 610, 800, 14, grid);
     vh_canvas_fill_rect(canvas, 70, 610, 20 + (int)(frame % 780u), 14, hero);
