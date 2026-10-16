@@ -117,7 +117,7 @@ class ReplayTests(unittest.TestCase):
             ("screen",[161,120,210,120,160,170,210,170]),
             ("otz",127),
             ("nclip",2499),
-            ("camera",CAM[:9]+[1]+CAM[10:]),
+            ("camera",CAM[:9]+[100]+CAM[10:]),
             ("vertices",[0,0,512, 90,0,512, 100,100,512, 0,100,512]),
         ):
             with self.subTest(field=field):
