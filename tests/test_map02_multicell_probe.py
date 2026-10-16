@@ -8,6 +8,7 @@ from tools.map02_face_geometry import (
 )
 from tools.map02_multicell_probe import (
     place_faces, shared_vertices, shared_edges, boundary_report,
+    face_cross_xyz, placement_invariants,
 )
 
 
@@ -112,6 +113,43 @@ class MultiCellTests(unittest.TestCase):
         one = place_faces(self.data, self.cells[:1], self.uv,
                           step_x=64, step_z=64)[0]
         self.assertEqual(boundary_report([one, one, one])["nonmanifold_edges"], 4)
+
+
+    def test_translation_preserves_face_cross_uv_and_vertex_order(self):
+        faces = place_faces(self.data, self.cells, self.uv,
+                            step_x=64, step_z=64)
+        for face in faces:
+            with self.subTest(cell=(face["z"], face["x"])):
+                audit = placement_invariants(face)
+                self.assertTrue(audit["translation_exact"])
+                self.assertTrue(audit["cross_preserved"])
+                self.assertEqual(audit["local_cross_xyz"], [0, -4096, 0])
+                self.assertEqual(audit["placed_cross_xyz"], [0, -4096, 0])
+                self.assertEqual(audit["vertex_indices"], [0, 1, 2, 3])
+                self.assertEqual(audit["gpu_corners"],
+                                 ["uv0_poly0", "uv1_poly1",
+                                  "uv3_poly3", "uv2_poly2"])
+                self.assertEqual(audit["uv_corners"],
+                                 [[0, 0], [15, 0], [15, 15], [0, 15]])
+
+    def test_negative_steps_preserve_cross_and_uv(self):
+        face = place_faces(self.data, self.cells[:1], self.uv,
+                           step_x=-64, step_z=-128)[0]
+        audit = placement_invariants(face)
+        self.assertTrue(audit["translation_exact"])
+        self.assertTrue(audit["cross_preserved"])
+
+    def test_mutated_world_coordinate_is_detected(self):
+        face = place_faces(self.data, self.cells[:1], self.uv,
+                           step_x=64, step_z=64)[0]
+        face["world_xyz_hypothesis"][2][1] += 1
+        audit = placement_invariants(face)
+        self.assertFalse(audit["translation_exact"])
+        self.assertFalse(audit["cross_preserved"])
+
+    def test_cross_product_rejects_invalid_shape(self):
+        with self.assertRaisesRegex(ValueError, "four XYZ"):
+            face_cross_xyz([[0, 0, 0]])
 
 
 if __name__ == "__main__":
