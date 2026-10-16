@@ -171,6 +171,19 @@ class FirstRunOperatorEvidenceTests(unittest.TestCase):
         self.assertEqual(report["scenario_coverage"]["H05_prior_csv_operator_hashes"],
                          "PRIOR_CSV_NOT_IN_BUNDLE")
 
+    def test_h05_cannot_use_newest_csv_as_prior_record(self):
+        newer = self.files[1]
+        digest = bundle.digest_file(self.root / newer)[1]
+        self.record["prior_csv_path"] = newer
+        self.record["prior_csv_sha256_before"] = digest
+        self.record["prior_csv_sha256_after"] = digest
+        review = self.review()
+        self.assertEqual(review["result"], "INCONCLUSIVE")
+        self.assertEqual(review["scenario_coverage"]["H05_prior_csv_operator_hashes"],
+                         "H05_SEQUENCE_NOT_ESTABLISHED")
+        self.assertIn("H05_ORDER_UNCONFIRMED",
+                      {x["code"] for x in review["consistency_findings"]})
+
     def test_h05_pair_matching_each_other_but_not_file_requires_investigation(self):
         self.record["prior_csv_sha256_before"] = "e" * 64
         self.record["prior_csv_sha256_after"] = "e" * 64
