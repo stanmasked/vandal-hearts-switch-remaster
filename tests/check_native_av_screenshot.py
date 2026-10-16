@@ -44,6 +44,23 @@ def inspect_images(first: Image.Image, second: Image.Image) -> dict:
     if status == "unknown":
         raise ValueError(f"audio-service status marker absent: {audio_sample}")
 
+    # Dedicated SEQ/VH/VB source marker, outside the NeXium OSD.
+    # The recorded fixture frame in CI previously sampled (83,100,119)
+    # here; unlike audout status this says WHERE the content came from.
+    source_pixel = first.getpixel((1050, 218))
+    sr, sg, sb = source_pixel
+    if near(source_pixel, AUDIO_OK) or (sg > sr + 70 and sg > sb + 40):
+        source = "user_files"
+    elif near(source_pixel, AUDIO_FAIL) or (sr >= 145 and sr > sg + 40
+                                            and sr > sb + 40):
+        source = "invalid_or_partial"
+    elif sr > 180 and sg > 150 and sb < 160 and sr > sb + 70:
+        source = "sd_unavailable"
+    elif near(source_pixel, (83, 100, 119), tolerance=30):
+        source = "synthetic"
+    else:
+        raise ValueError(f"audio-source status marker absent: {source_pixel}")
+
     # Sample only the heartbeat; animated bar is separate from the cursor,
     # so its change demonstrates video-loop progress without emulated input.
     # Native framebuffer y=610 maps to about y=588 in a 1280x694
@@ -60,6 +77,8 @@ def inspect_images(first: Image.Image, second: Image.Image) -> dict:
         "grid_hero_marker": "observed",
         "heartbeat_changed_pixels": changed,
         "audout_status": status,
+        "audio_source": source,
+        "user_music_identity_verified": False,
         "audible_audio_verified": False,
         "actual_gameplay_verified": False,
     }
@@ -69,10 +88,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("before", type=Path)
     parser.add_argument("after", type=Path)
+    parser.add_argument("--require-synthetic-source", action="store_true",
+                        help="CI must see correctly mounted SD with all three files absent")
     args = parser.parse_args()
     try:
         with Image.open(args.before) as first, Image.open(args.after) as second:
             report = inspect_images(first, second)
+        if args.require_synthetic_source and report["audio_source"] != "synthetic":
+            raise ValueError("expected an empty mounted SD fixture, got "
+                             + report["audio_source"])
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
     print(json.dumps(report, indent=2))
