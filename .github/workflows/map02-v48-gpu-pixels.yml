@@ -379,7 +379,9 @@ jobs:
               match=pat.search(original)
               assert match is not None, (name,field)
               current=int(match.group(2))
-              corrupt=current ^ 1
+              # A 1-bit texel change may quantize to the SAME front BGR555.
+              # Zero raw against the original draw=1 to force a true contradiction.
+              corrupt=0 if field=="raw" else current ^ 1
               altered=Path("proof")/f"SYNTHETIC_CORRUPTED_PIXEL_{name}.log"
               altered.write_text(original[:match.start(2)]+str(corrupt)+original[match.end(2):])
               result=subprocess.run([
