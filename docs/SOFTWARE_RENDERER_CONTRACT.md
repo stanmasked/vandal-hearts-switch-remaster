@@ -1090,3 +1090,34 @@ nominal XY. Consecutive equal snapshots cannot rule out an intervening
 write-and-restore. This tool does not establish original gameplay
 authenticity, complete DrawOTag capture, physical PS1 raster parity
 or a live Nintendo Switch game screenshot.
+
+
+## Optional native PC PutPixel single-word execution evidence
+
+`tools/instrument_map02_native_putpixel.py` now produces a
+**separate SHA1-pinned public PC-port `pc_raster.c` copy** with an
+optional, 64-event observer around the **existing** native
+`WritePixel(&s_vram[y][x], ...)` invocation. Only an explicitly
+selected private VRAM coordinate is logged, and only if all three
+`VH_MAP02_PUTPIXEL_DIR/X/Y` environment variables and the
+`-DVH_MAP02_PUTPIXEL_SAMPLE` compilation flag are provided.
+Noninstrumented object compilation must contain no observer symbol.
+
+`tools/verify_map02_native_putpixel.py` checks the locally
+acquired sequence for exact one-coordinate records, BGR555
+bounds, ABR/semi/accurate flags and the original **opaque-copy
+invariant** (`semiTrans=0 => after==front`). It counts actual
+same-color `PutPixel` invocations that would be **invisible
+to before/after VRAM snapshot differences**, as well as blend
+requests, observable color/bit15 changes and possible between-call
+gaps. The public report is limited to SHA-256 and aggregates.
+See `docs/MAP02_NATIVE_PUTPIXEL_SAMPLE.md` for setup and privacy.
+
+The sampled pixel is NOT yet bound to an authenticated MAP02
+source face, AddPrim identity or native DrawOTag frame. No emitted
+event cannot prove a transparent texel, mask-test rejection or
+lack of triangle coverage. A PC semi-transparent blend request
+alone cannot prove PS1 hardware ABR correctness, and no
+full-frame pixel raster equivalence is claimed. CI builds the
+**pinned public raster source** with and without the opt-in
+macro and uses exclusively synthetic event fixtures.
