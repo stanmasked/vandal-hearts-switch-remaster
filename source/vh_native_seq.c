@@ -217,7 +217,7 @@ int vh_native_seq_switch_scene(VhNativeSeq *seq,
                                const uint8_t *bytes, size_t length,
                                VhNativeSpu *spu, VhSeqResolve resolve,
                                void *context, unsigned repeat_count) {
-    if (!seq || !spu) return -1;
+    if (!seq || !spu || (seq->spu && seq->spu != spu)) return -1;
 
     /* Initialization validates the complete first SEQ pass without
      * changing SPU or current playback. Never clear voices for bad music.
