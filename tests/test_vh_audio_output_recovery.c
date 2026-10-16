@@ -230,8 +230,11 @@ static void test_replay_prepared_page_preserves_music_clock(void) {
             assert(counters[i].pages_submitted==block+1u);
             assert(resampler[i].input_frames==(uint64_t)(block+1u)*512u);
             assert(music[i].blocks_rendered==block+1u);
-            assert(spu[i].frames_rendered==(uint64_t)(block+1u)*512u);
+            /* A scene transition intentionally resets the SPU voice
+             * clock; compare it to the failure-free reference instead
+             * of assuming it grows across scene replacements. */
         }
+        assert(spu[0].frames_rendered==spu[1].frames_rendered);
         assert(music[0].active.id==music[1].active.id);
         assert(music[0].stage==music[1].stage);
         assert(music[0].seq.note_ons==music[1].seq.note_ons);
