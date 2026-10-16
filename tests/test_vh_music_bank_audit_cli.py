@@ -288,6 +288,40 @@ class MusicBankAuditCliTests(unittest.TestCase):
                         self.assertEqual(result.stdout, "")
                         self.assertNotIn(path, result.stderr)
 
+    def test_same_program_out_of_range_is_a_strict_fallback(self):
+        """A valid nearest note can be a fallback without changing program."""
+        with tempfile.TemporaryDirectory() as path:
+            folder = Path(path)
+            fixtures(folder)
+            vh = folder / "selected" / "music.vh"
+            data = bytearray(vh.read_bytes())
+            tone = 32 + 128 * 16
+            data[tone + 6] = 60
+            data[tone + 7] = 65
+            vh.write_bytes(data)
+            seq_file = folder / "selected" / "music.seq"
+            for note, fallback in ((59, 1), (60, 0), (65, 0), (66, 1)):
+                with self.subTest(note=note):
+                    seq_file.write_bytes(seq(7, note))
+                    normal = run(path)
+                    self.assertEqual(normal.returncode, 0, normal.stderr)
+                    report = json.loads(normal.stdout)
+                    selected = report["selected"]
+                    self.assertEqual(selected["note_on"], 1)
+                    self.assertEqual(selected["resolved"], 1)
+                    self.assertEqual(selected["missing"], 0)
+                    self.assertEqual(selected["fallback"], fallback)
+                    self.assertEqual(report["field"]["fallback"], 0)
+                    expected = ({
+                        "program": 7, "note": note, "selected_program": 7,
+                        "selected_tone": 0, "selected_vag": 1,
+                    } if fallback else None)
+                    self.assertEqual(selected["first_fallback"], expected)
+                    strict = run("--strict", path)
+                    self.assertEqual(strict.returncode, 4 if fallback else 0,
+                                     strict.stderr)
+                    self.assertEqual(json.loads(strict.stdout), report)
+
     def test_missing_partial_corrupt_and_help(self):
         with tempfile.TemporaryDirectory() as path:
             folder = Path(path)
