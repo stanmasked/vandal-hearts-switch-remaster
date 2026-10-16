@@ -51,40 +51,48 @@ int main(void) {
     int have_last=0;
     for (unsigned transition=0;transition<4u;transition++) {
         const unsigned scene=transition%2u;
-        /* Old bank sample pointers are no longer live after the reset. */
-        if(transition) {
-            vh_native_seq_stop(&seq);
-            assert(!seq.playing);
-            /* Old voices cannot retain pointers into the previous PCM bank. */
-            for (unsigned slot=0;slot<VH_NATIVE_MUSIC_VOICES;slot++)
-                assert(!spu.voice[slot].active ||
-                       spu.voice[slot].adsr.phase==VH_ADSR_RELEASE ||
-                       spu.voice[slot].adsr.phase==VH_ADSR_OFF);
-        }
-        /* Keep the wet-tail delay history, but sever all borrowed voice PCM.
-         * The production helper avoids copying a large reverb workspace.
-         */
-        if (transition) {
+        if (!transition) {
+            vh_native_spu_reset(&spu);
+            assert(vh_native_spu_set_reverb(&spu,1,0.5f)==0);
+            assert(vh_native_seq_init(&seq,song,sizeof song,&spu,
+                                      vh_native_vab_resolve,&bank[scene],0)==0);
+        } else {
+            /* Reject bad new music atomically: the old scene must still
+             * own its voices and its reverb history.
+             */
+            static const uint8_t invalid_seq[]={'p','Q','E','S'};
+            const uint64_t old_frames=spu.frames_rendered;
+            const uint64_t old_notes=seq.note_ons;
+            const uint8_t *old_bytes=seq.bytes;
+            const int16_t *old_pcm=spu.voice[0].pcm;
             const int old_cursor=spu.reverb.cursor;
             const int old_phase=spu.reverb.phase;
             const int16_t old_work=spu.reverb.work[0];
-            vh_native_spu_clear_voices_keep_reverb(&spu);
+            assert(vh_native_seq_switch_scene(
+                &seq,invalid_seq,sizeof invalid_seq,&spu,
+                vh_native_vab_resolve,&bank[scene],0)==-1);
+            assert(seq.bytes==old_bytes && seq.note_ons==old_notes);
+            assert(spu.frames_rendered==old_frames);
+            assert(spu.voice[0].pcm==old_pcm);
+            assert(spu.reverb.cursor==old_cursor);
+
+            /* Successful switch releases all old voices but preserves
+             * STUDIO_C's delay/FIR history and its wet configuration.
+             */
+            assert(vh_native_seq_switch_scene(
+                &seq,song,sizeof song,&spu,
+                vh_native_vab_resolve,&bank[scene],0)==0);
+            assert(seq.bytes==song && seq.note_ons==0u);
             assert(spu.reverb.cursor==old_cursor);
             assert(spu.reverb.phase==old_phase);
             assert(spu.reverb.work[0]==old_work);
-        } else {
-            vh_native_spu_reset(&spu);
-            assert(spu.reverb.cursor==0);
+            assert(spu.reverb_enabled && spu.reverb_depth==0.5f);
+            assert(spu.frames_rendered==0u);
+            for (unsigned slot=0;slot<VH_NATIVE_MUSIC_VOICES;slot++) {
+                assert(spu.voice[slot].pcm==NULL);
+                assert(!spu.voice[slot].active);
+            }
         }
-        assert(spu.frames_rendered==0u);
-        assert(vh_native_spu_set_reverb(&spu,1,0.5f)==0);
-        /* Reset must sever all borrowed pointers to previous bank PCM. */
-        for (unsigned slot=0;slot<VH_NATIVE_MUSIC_VOICES;slot++) {
-            assert(spu.voice[slot].pcm==NULL);
-            assert(!spu.voice[slot].active);
-        }
-        assert(vh_native_seq_init(&seq,song,sizeof song,&spu,
-                                  vh_native_vab_resolve,&bank[scene],0)==0);
         for (unsigned block=0;block<16u;block++) {
             assert(vh_native_seq_advance_block(&seq)>=0);
             if (block==0u) {
