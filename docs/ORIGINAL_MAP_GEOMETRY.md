@@ -379,3 +379,46 @@ to independently establish depth occlusion ordering.
 This milestone does not yet include the source game's side-light
 table, distance shading or actual battle camera state;
 nor does it compile the entire original `RenderMapTile` function.
+
+## Adversarial overlapping-face OTZ occlusion acceptance (in progress)
+
+The existing NCLIP smoke test already proves that a reversed
+source face never contaminates the front-facing pair. It does **not**
+prove near/far ordering, because those faces lie alongside one
+another. A separate, synthetic, virtual-SD scenario now checks
+occlusion explicitly without changing the old scene.
+
+Two front-facing source `MapTileModel` quads occupy approximately
+the **same screen-space silhouette** using the original pinned
+`RotMatrix` and GTE perspective. Their world coordinates are
+related by the inverse of the test camera's pitch/translation:
+
+```text
+near = [(-32,0,-16), (0,0,-16), (0,0,24), (-32,0,24)]
+far_i = (2*near_i.x, 2*near_i.y - 68, 2*near_i.z + 68)
+```
+
+The `-68` sign is essential for the pinned **negative 45° X
+rotation**: the far polygon scales camera-space distance by
+approximately two, while preserving the projected footprint.
+The synthetic geometry intentionally lists **far first** with
+GFX slot 242 / CLUT 36 (magenta/cyan), then **near second**
+with GFX slot 241 / CLUT 35 (red/blue). If all faces are
+inserted head-first into ONE OT bucket, the far face is drawn
+last and incorrectly covers the near face. Using original GTE
+`AVSZ4`-derived OTZ bucket indices must instead draw
+far first and near second, regardless of insertion order.
+
+`tests/test_pinned_map_gte_camera.c` validates actual pinned GTE
+near/far depth separation and near-coincident screen positions.
+`tests/test_stage_vh_private_map_geometry.py` guards the exact
+source-format two-face geometry and private SD staging. The third
+NeXium virtual-SD run uses an **isolated second SD root** and
+checks the red upper / blue lower near-face pixels plus the
+absence of extraneous right-hand geometry. This is a distinct
+regression gate from the existing four-color UV scene and the
+three-face NCLIP scene. All fixtures are synthetic.
+
+**Acceptance pending:** a completed CI with successful NRO and
+NeXium depth-occlusion screenshot. Genuine game camera constants,
+retail `M_MAP02.PRS`, and lighting remain out of scope.
