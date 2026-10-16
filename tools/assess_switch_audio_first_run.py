@@ -17,8 +17,9 @@ import analyze_switch_audio_log as audio
 import report_switch_audio_hardware as telemetry
 import verify_switch_audio_bundle as bundle
 
-SCHEMA = "vh-switch-audio-first-run-operator/v1"
-REPORT_SCHEMA = "vh-switch-audio-first-run-review/v1"
+SCHEMA_V1 = "vh-switch-audio-first-run-operator/v1"
+SCHEMA = "vh-switch-audio-first-run-operator/v2"
+REPORT_SCHEMA = "vh-switch-audio-first-run-review/v2"
 MAX_INPUT_BYTES = 64 * 1024
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 MODES = {"APPLICATION", "APPLET", "UNKNOWN"}
@@ -31,8 +32,10 @@ SESSION_KEYS = {
     "music_audible", "audio_artifacts", "home_returns", "sleep_resumes",
     "continuous_minutes", "normal_exit", "notes",
 }
-RECORD_KEYS = {"schema", "build_git_sha", "nro_sha256", "sessions",
-               "prior_csv_sha256_before", "prior_csv_sha256_after"}
+LEGACY_RECORD_KEYS = {"schema", "build_git_sha", "nro_sha256", "sessions",
+                      "prior_csv_sha256_before", "prior_csv_sha256_after"}
+RECORD_KEYS = LEGACY_RECORD_KEYS | {"prior_csv_path"}
+BASELINE_FAULTS = ("pcm_fail", "home_fail", "lease_fail")
 
 
 class OperatorError(ValueError):
@@ -54,9 +57,19 @@ def read_observations(path: Path) -> dict:
                            object_pairs_hook=bundle.unique_pairs)
     except (UnicodeError, json.JSONDecodeError) as exc:
         raise OperatorError(f"invalid operator JSON: {exc}") from exc
-    require(isinstance(value, dict) and set(value) == RECORD_KEYS,
+    require(isinstance(value, dict), "operator JSON must be an object")
+    schema = value.get("schema")
+    require(isinstance(schema, str) and schema in (SCHEMA_V1, SCHEMA),
+            "unsupported operator record schema")
+    expected_keys = RECORD_KEYS if schema == SCHEMA else LEGACY_RECORD_KEYS
+    require(set(value) == expected_keys,
             "operator JSON schema fields missing or unknown")
-    require(value["schema"] == SCHEMA, "unsupported operator record schema")
+    if schema == SCHEMA:
+        prior_path = value["prior_csv_path"]
+        require(prior_path is None or (isinstance(prior_path, str) and
+                0 < len(prior_path) <= 256 and
+                prior_path.endswith(".csv") and "\\" not in prior_path),
+                "invalid H05 prior_csv_path")
     require(isinstance(value["build_git_sha"], str) and
             bool(re.fullmatch(r"[0-9a-f]{40}", value["build_git_sha"])),
             "invalid build SHA")
@@ -117,6 +130,7 @@ def assess(root: Path, record: dict) -> dict:
     require(set(s["csv"] for s in record["sessions"]) == set(indexed),
             "operator CSV coverage must match complete immutable bundle")
     issues = []
+    findings = []
     if checked["evidence_warnings"]:
         issues.append("Duplicate CSV bytes: independent sessions not demonstrated.")
     accepted = []
@@ -127,9 +141,22 @@ def assess(root: Path, record: dict) -> dict:
     for item in record["sessions"]:
         observed = indexed[item["csv"]]
         pcm, home = observed["pcm"], observed["resume"]
-        # Retained CSV window is not a complete physical history. Never
-        # assert equality between operator HOME count and journal increments.
+        # The first retained CSV row is a baseline, not an observed increment.
+        # A historical fault can therefore be visible even when all deltas
+        # in the last 128 rows are zero.
+        csv_rows = audio.load_csv(bundle.safe_member(root, item["csv"], ".csv"))
+        first = csv_rows[0]
+        baseline_faults = {key: int(first[key]) for key in BASELINE_FAULTS
+                           if int(first[key]) > 0}
+        negative_status = any(int(row["status"]) < 0 for row in csv_rows)
+        error_events = sum(row["event"] == "ERROR" for row in csv_rows)
+        # The ring may have evicted earlier HOME events; do not assert that
+        # manual HOME count must equal observed counter increments.
         warnings = []
+        def finding(code: str, severity: str, detail: str) -> None:
+            findings.append({"session": item["id"], "code": code,
+                             "severity": severity, "detail": detail})
+            warnings.append(detail)
         if (item["physical_switch"] != "YES" or
                 item["music_audible"] == "UNKNOWN" or
                 item["audio_artifacts"] == "UNKNOWN" or
@@ -140,21 +167,43 @@ def assess(root: Path, record: dict) -> dict:
                 item["sleep_resumes"] is None or
                 item["continuous_minutes"] is None):
             record_incomplete = True
-            warnings.append("Physical observations missing or not independently confirmed.")
+            finding("MISSING_OPERATOR_MEASUREMENTS", "INCONCLUSIVE",
+                    "Physical observations missing or not independently confirmed.")
         if (item["physical_switch"] == "NO" or
                 item["music_audible"] == "NO" or
                 item["audio_artifacts"] == "HEARD" or
                 item["normal_exit"] == "NO"):
             problem_seen = True
-            warnings.append("Operator reported a hardware/audio fault.")
+            finding("OPERATOR_REPORTED_FAULT", "INVESTIGATE",
+                    "Operator reported a hardware/audio fault.")
         if pcm["submit_failures"] or pcm["lease_failures"] or home["home_failures"] or \
                 pcm["status_error_entries"] or pcm["possible_stalls"]:
             problem_seen = True
-            warnings.append("CSV contains observed PCM/HOME fault or potential stall.")
+            finding("OBSERVED_PCM_HOME_FAULT", "INVESTIGATE",
+                    "CSV contains observed PCM/HOME fault or potential stall.")
         if pcm["observed_pages"] < 1000 or not observed["end_exit"] or \
                 observed["recording"]["counter_rollbacks"]:
             record_incomplete = True
-            warnings.append("CSV does not satisfy H01 retained-window requirements.")
+            finding("INCOMPLETE_CSV_WINDOW", "INCONCLUSIVE",
+                    "CSV does not satisfy H01 retained-window requirements.")
+        if item["normal_exit"] == "YES" and not observed["end_exit"]:
+            problem_seen = True
+            finding("CONTRADICTORY_EXIT", "INVESTIGATE",
+                    "Operator claimed a normal exit, but the CSV does not end with EXIT.")
+        if baseline_faults or negative_status or error_events:
+            problem_seen = True
+            finding("HISTORICAL_OR_RETAINED_ERROR", "INVESTIGATE",
+                    "Nonzero fault baseline, negative status, or ERROR event in the retained CSV.")
+        if item["music_audible"] == "YES" and pcm["observed_pages"] == 0:
+            record_incomplete = True
+            finding("AUDIBLE_WITHOUT_RETAINED_PCM_PROGRESS", "INCONCLUSIVE",
+                    "Operator reported audible music but retained CSV shows no PCM progress; "
+                    "the ring may have lost relevant history.")
+        if item["home_returns"] == 0 and home["observed_home_resumes"] > 0:
+            record_incomplete = True
+            finding("UNEXPLAINED_HOME_COUNTER", "INCONCLUSIVE",
+                    "CSV HOME increments with zero HOME returns recorded by operator; "
+                    "resume callbacks and HOME actions are not one-to-one.")
         if item["home_returns"] is not None:
             home_total += item["home_returns"]
         if item["sleep_resumes"] is not None:
@@ -174,17 +223,46 @@ def assess(root: Path, record: dict) -> dict:
             "csv_observed_pcm_pages": pcm["observed_pages"],
             "csv_exit_present": observed["end_exit"],
             "telemetry_triage": observed["triage"],
+            "fault_counter_baseline": baseline_faults,
+            "negative_status_seen": negative_status,
+            "error_events_seen": error_events,
             "review_notes": warnings,
         })
     retention = "NOT_RECORDED"
+    prior_path = record.get("prior_csv_path")
     if record["prior_csv_sha256_before"] is not None:
-        retention = ("OPERATOR_HASHES_MATCH" if
-                     record["prior_csv_sha256_before"] ==
-                     record["prior_csv_sha256_after"] else
-                     "OPERATOR_HASHES_DIFFER")
-        if retention == "OPERATOR_HASHES_DIFFER":
+        before = record["prior_csv_sha256_before"]
+        after = record["prior_csv_sha256_after"]
+        if before != after:
+            retention = "OPERATOR_HASHES_DIFFER"
             problem_seen = True
             issues.append("Prior SD CSV before/after hashes differ; investigate corruption.")
+            findings.append({"session": None, "code": "H05_HASH_CHANGED",
+                             "severity": "INVESTIGATE",
+                             "detail": "Operator-reported old CSV SHA-256 changed."})
+        elif record["schema"] == SCHEMA_V1 or prior_path is None:
+            retention = "UNBOUND_LEGACY_OPERATOR_HASHES"
+            record_incomplete = True
+            issues.append("Matching H05 hashes have no specific verified CSV identity.")
+            findings.append({"session": None, "code": "H05_UNBOUND",
+                             "severity": "INCONCLUSIVE",
+                             "detail": "H05 source path not bound to a verified CSV; v1 is not enough."})
+        elif prior_path not in indexed:
+            retention = "PRIOR_CSV_NOT_IN_BUNDLE"
+            record_incomplete = True
+            issues.append("H05 prior CSV path not in verified evidence bundle.")
+            findings.append({"session": None, "code": "H05_UNKNOWN_CSV",
+                             "severity": "INCONCLUSIVE",
+                             "detail": "H05 path is not a verified source CSV."})
+        elif before != indexed[prior_path]["sha256"]:
+            retention = "PRIOR_CSV_HASH_CONTRADICTION"
+            problem_seen = True
+            issues.append("H05 hashes disagree with the selected verified CSV bytes.")
+            findings.append({"session": None, "code": "H05_VERIFIED_BYTES_MISMATCH",
+                             "severity": "INVESTIGATE",
+                             "detail": "H05 recorded hashes differ from the verified source CSV."})
+        else:
+            retention = "FILE_BOUND_OPERATOR_HASHES_MATCH"
     h01 = len(accepted) >= 2 and checked["telemetry_readiness"] == \
         "ENOUGH_DATA_FOR_MANUAL_REVIEW"
     h02 = home_total >= 10 and not record_incomplete
@@ -192,7 +270,7 @@ def assess(root: Path, record: dict) -> dict:
     h04 = max_minutes >= 30 and not record_incomplete
     if not h01 or not h02 or not h03 or not h04:
         record_incomplete = True
-    if retention != "OPERATOR_HASHES_MATCH":
+    if retention != "FILE_BOUND_OPERATOR_HASHES_MATCH":
         record_incomplete = True
     if analysis["report_triage"] == "INVESTIGATE":
         problem_seen = True
@@ -219,14 +297,20 @@ def assess(root: Path, record: dict) -> dict:
             "H04_longest_operator_minutes": max_minutes,
             "H04_minimum_30_claimed": h04,
             "H05_prior_csv_operator_hashes": retention,
+            "H05_prior_csv_verified_path": prior_path if record["schema"] == SCHEMA else None,
+            "H05_independent_SD_readback": "NOT_ATTESTED",
             "H06_safe_export_failure": "NOT_ASSESSED",
             "H07_between_build_comparison": "NOT_ASSESSED",
         },
         "flags": issues,
+        "consistency_findings": findings,
+        "operator_record_schema": record["schema"],
         "limitations": (
             "Operator JSON and physical session independence are not authenticated. "
             "Retained 128-row CSV counters cannot prove all HOME/sleep cycles, "
             "audible quality, old SD CSV survival, or sustained playback duration. "
+            "Even file-bound matching H05 hashes are user-reported and do not "
+            "prove independent post-restart SD readback. "
             "A READY report is NOT console PASS and needs a signed operator decision."
         ),
     }
