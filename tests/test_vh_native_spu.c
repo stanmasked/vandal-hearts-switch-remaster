@@ -62,6 +62,95 @@ static void test_envelope_release_and_free_slot(void) {
     assert(vh_native_spu_allocate_slot(&synth) == 0);
 }
 
+/* A 100-frame constant sample loops indefinitely. ADSR must be the
+ * only reason the slot becomes free; no sample-end retirement is allowed.
+ */
+#define RELEASE_TRACE_FRAMES 9000u
+static int16_t release_trace_one[RELEASE_TRACE_FRAMES];
+static int16_t release_trace_blocks[RELEASE_TRACE_FRAMES];
+
+static void start_release_voice(uint16_t adsr2) {
+    vh_native_spu_reset(&synth);
+    for (unsigned i=0;i<100u;i++) samples[i]=10000;
+    assert(vh_native_spu_note_on(&synth,0,samples,100u,0,100,
+                                 4096u,15u,adsr2,1.f,0.f)==0);
+    vh_native_spu_render(&synth,out,4u);
+    assert(vh_native_spu_voice_active(&synth,0));
+    assert(synth.voice[0].adsr.level==0x7fff);
+    vh_native_spu_note_off(&synth,0);
+    assert(synth.voice[0].adsr.phase==VH_ADSR_RELEASE);
+}
+
+static void test_release_rates_and_chunk_independence(void) {
+    /* Exact expected *software* release lengths from the documented
+     * PC-port-style Q15 ADSR rate stepping, not physical PS1 captures.
+     * 0x001f is the all-ones "no level step" case; it must not be
+     * mistaken for a naturally retired or available voice.
+     */
+    struct ReleaseCase {
+        uint16_t adsr2;
+        unsigned expected_frames;
+    };
+    static const struct ReleaseCase cases[] = {
+        {0x0000u,2u}, {0x0005u,64u}, {0x000au,2048u},
+        {0x0020u,16u}, {0x0025u,496u}, {0x002au,8842u},
+        {0x001fu,0u}
+    };
+    for (size_t c=0;c<sizeof(cases)/sizeof(cases[0]);c++) {
+        const unsigned expected=cases[c].expected_frames;
+        start_release_voice(cases[c].adsr2);
+        unsigned retired_at=0u, previous_level=0x7fffu;
+        for(unsigned i=0;i<RELEASE_TRACE_FRAMES;i++) {
+            vh_native_spu_render(&synth,out,1u);
+            release_trace_one[i]=out[0];
+            assert(out[1]==0);
+            assert(synth.voice[0].adsr.level<= (int)previous_level);
+            previous_level=(unsigned)synth.voice[0].adsr.level;
+            if (!vh_native_spu_voice_active(&synth,0) && !retired_at)
+                retired_at=i+1u;
+        }
+        assert(retired_at==expected);
+        if (expected) {
+            assert(synth.voice[0].adsr.phase==VH_ADSR_OFF);
+            assert(synth.voice[0].adsr.level==0);
+            assert(vh_native_spu_allocate_slot(&synth)==0);
+            assert(release_trace_one[expected-1u]==0);
+        } else {
+            assert(synth.voice[0].adsr.phase==VH_ADSR_RELEASE);
+            assert(synth.voice[0].adsr.level==0x7fff);
+            assert(vh_native_spu_allocate_slot(&synth)==1);
+            assert(release_trace_one[RELEASE_TRACE_FRAMES-1u]>0);
+        }
+
+        /* The same frame stream rendered in irregular 127-frame chunks
+         * must match every PCM16 sample, and have identical ADSR state.
+         */
+        start_release_voice(cases[c].adsr2);
+        for(unsigned start=0;start<RELEASE_TRACE_FRAMES;) {
+            unsigned frames=RELEASE_TRACE_FRAMES-start;
+            if (frames>127u) frames=127u;
+            vh_native_spu_render(&synth,out,frames);
+            for(unsigned i=0;i<frames;i++) {
+                release_trace_blocks[start+i]=out[i*2u];
+                assert(out[i*2u+1u]==0);
+            }
+            start+=frames;
+        }
+        assert(!memcmp(release_trace_one,release_trace_blocks,
+                       sizeof(release_trace_one)));
+        assert(!!vh_native_spu_voice_active(&synth,0)==(expected==0));
+        assert(synth.voice[0].adsr.level==(expected ? 0 : 0x7fff));
+        if (expected) {
+            assert(vh_native_spu_allocate_slot(&synth)==0);
+            assert(vh_native_spu_note_on(&synth,0,samples,100u,0,100,
+                                         4096u,15u,0u,1.f,0.f)==0);
+            assert(synth.voice[0].adsr.phase==VH_ADSR_ATTACK);
+            vh_native_spu_render(&synth,out,4u);
+            assert(out[0]>0 && out[1]==0);
+        }
+    }
+}
+
 static void test_pitch_one_shot_and_polyphony(void) {
     int16_t source[] = {1000, 2000, 3000, 4000};
     vh_native_spu_reset(&synth);
@@ -144,6 +233,7 @@ static void test_rejected_params_and_ring_backpressure(void) {
 int main(void) {
     test_adpcm_into_native_mixer();
     test_envelope_release_and_free_slot();
+    test_release_rates_and_chunk_independence();
     test_pitch_one_shot_and_polyphony();
     test_gaussian_integer_voice_and_loop_history();
     test_20_voice_round_robin();
