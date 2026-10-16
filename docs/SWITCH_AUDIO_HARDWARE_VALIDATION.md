@@ -297,3 +297,12 @@ python3 tests/test_switch_audio_long_cohort.py
 Отчёт раздельно классифицирует наблюдаемые `pcm_fail/lease_fail`, `home_fail/reopen/recover`, пропуски `GAP`, недостаточные PCM-страницы и подтверждённые EXIT. В нём **нельзя автоматически доказать**, что `home_resumes` относятся именно к физическому сну, что старый CSV пережил перезапуск SD или что звук воспроизводится без дефектов. Поэтому `hardware_status` всегда `HARDWARE NOT TESTED`, а возможные `report_triage` — `INVESTIGATE`, `INCONCLUSIVE`, `REVIEW` и `MANUAL_REVIEW_REQUIRED`. Никакого аппаратного `PASS` инструмент не присваивает.
 
 Программные проверки отчётности находятся в [`tests/test_report_switch_audio_hardware.py`](../tests/test_report_switch_audio_hardware.py) и входят в `make test` / `make test-audio-stream`. Для аппаратного завершения по-прежнему необходимы **настоящие CSV**, прослушивание и отдельная ручная карточка сессии.
+
+
+## Этап №216 — сверка NRO с GitHub Actions artifact и полным коммитом
+
+Добавлена самостоятельная [сверка происхождения сборки](SWITCH_AUDIO_STAGE214_DEVICE_HANDOFF.md#7-этап-216--офлайн-сверка-nro-с-конкретным-github-actions-artifact). Инструмент [`verify_switch_audio_build_provenance.py`](../tools/verify_switch_audio_build_provenance.py) сопоставляет полный Git SHA NRO-манифеста, конкретный завершённый run workflow `Switch toolchain readiness`, официальный artifact `vandal-hearts-switch-prototype`, SHA-256 ZIP и точное содержимое NRO внутри ZIP. Данные для сверки берутся из **локально сохранённых JSON-ответов GitHub API** и неизменённого архива — никаких сетевых запросов во время проверки программа не выполняет.
+
+Результат `CONSISTENT_WITH_PROVIDED_GITHUB_METADATA` означает только внутреннюю согласованность **предоставленных** данных: без подписанной аттестации и независимо подтверждённого источника JSON это не криптографическое доказательство происхождения. Не путайте SHA-256 ZIP и SHA-256 находящегося в нём NRO. При несоответствии возвращается код `2`; успешный код `0` означает лишь совпадение проверенных байтов/метаданных. Физическая приёмка остаётся `HARDWARE NOT TESTED`.
+
+Регрессионные сценарии поддельного коммита, неправильного workflow/run/artifact, испорченного или небезопасного ZIP и подмены NRO входят в `make test` / `make test-audio-stream`.
