@@ -13,6 +13,7 @@ on:
       - 'tools/publish_map02_blendg1_witness.py'
       - 'tools/promote_map02_putpixel_stage.py'
       - 'tests/test_promote_map02_putpixel_stage.py'
+      - 'tests/test_map02_paired_publish_chain.py'
       - 'tests/test_publish_map02_blendg1_witness.py'
       - 'tools/verify_map02_blendg1_witness.py'
       - 'tests/test_map02_blendg1_complete_events.py'
@@ -36,6 +37,7 @@ on:
       - 'tools/publish_map02_blendg1_witness.py'
       - 'tools/promote_map02_putpixel_stage.py'
       - 'tests/test_promote_map02_putpixel_stage.py'
+      - 'tests/test_map02_paired_publish_chain.py'
       - 'tests/test_publish_map02_blendg1_witness.py'
       - 'tools/verify_map02_blendg1_witness.py'
       - 'tests/test_map02_blendg1_complete_events.py'
@@ -70,7 +72,8 @@ jobs:
             tests.test_publish_map02_blendg1_witness \
             tests.test_map02_blendg1_complete_events \
             tests.test_map02_scoped_blend_stage \
-            tests.test_promote_map02_putpixel_stage
+            tests.test_promote_map02_putpixel_stage \
+            tests.test_map02_paired_publish_chain
       - name: Checkout pinned public original PC raster source
         uses: actions/checkout@v4
         with:
