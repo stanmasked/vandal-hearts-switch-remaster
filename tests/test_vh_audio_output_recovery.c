@@ -12,7 +12,7 @@
 
 typedef struct {
     unsigned opened, playing, failures_left;
-    unsigned fail_stop, fail_open, fail_start;
+    unsigned fail_stop, fail_open, fail_start, fail_starts_left;
     unsigned submits, stops, closes, opens, starts;
     uint64_t accepted_frames, checksum, attempted_hash;
     const int16_t *attempted_pointer;
@@ -63,7 +63,8 @@ static int mock_stop(void *ctx) {
 }
 static void mock_close(void *ctx) {
     MockOutput *d=ctx;
-    assert(d->opened && !d->playing);
+    if(!d->opened) return;
+    assert(!d->playing);
     ++d->closes;
     d->opened=0;
 }
@@ -79,6 +80,10 @@ static int mock_start(void *ctx) {
     MockOutput *d=ctx;
     ++d->starts;
     if(d->fail_start) return -1;
+    if(d->fail_starts_left) {
+        --d->fail_starts_left;
+        return -1;
+    }
     assert(d->opened && !d->playing);
     d->playing=1;
     return 0;
@@ -149,6 +154,74 @@ static void test_failed_restart_paths(void) {
     }
 }
 
+/* Explicit applet HOME resume and ordinary focus-only starts.
+ * A successful recovery must never submit a page or increment any
+ * produced PCM counter; a terminal error leaves ownership unchanged.
+ */
+static void test_resume_restart_paths(void) {
+    VhAudioOutputRecovery counters={0};
+    MockOutput d={.opened=1,.playing=0};
+    VhAudioOutputOps ops=ops_for(&d);
+    assert(vh_audio_output_resume_recover(NULL,&counters,1)==-1);
+    assert(vh_audio_output_resume_recover(&ops,NULL,1)==-1);
+    assert(!d.submits && !d.starts && !counters.pages_submitted);
+
+    /* Focus only: the current stopped service should simply start. */
+    assert(vh_audio_output_resume_recover(&ops,&counters,0)==0);
+    assert(d.playing && d.opened && d.starts==1);
+    assert(!counters.resume_restarts && !counters.resume_failures);
+    assert(mock_stop(&d)==0);
+
+    /* Explicit HOME: close stale stopped handles even if start on
+     * the previous session might otherwise report success. */
+    assert(vh_audio_output_resume_recover(&ops,&counters,1)==0);
+    assert(d.playing && d.opened && d.closes==1 && d.opens==1);
+    assert(counters.resume_restarts==1 && counters.resume_recoveries==1);
+    assert(mock_stop(&d)==0);
+
+    /* A start failure without a resume serial also forces reopen. */
+    d.fail_starts_left=1;
+    assert(vh_audio_output_resume_recover(&ops,&counters,0)==0);
+    assert(d.playing && counters.resume_restarts==2);
+    assert(counters.resume_failures==1 && counters.resume_recoveries==2);
+    assert(mock_stop(&d)==0);
+
+    /* Forced HOME resume: first fresh service start fails, second
+     * one succeeds; both attempts are bounded. */
+    d.fail_starts_left=1;
+    assert(vh_audio_output_resume_recover(&ops,&counters,1)==0);
+    assert(d.playing && counters.resume_restarts==4);
+    assert(counters.resume_failures==2 && counters.resume_recoveries==3);
+    assert(mock_stop(&d)==0);
+
+    /* A permanently failing output cannot spin forever or produce
+     * a false success; the caller must enter normal teardown. */
+    d.fail_start=1;
+    const unsigned before=d.starts;
+    assert(vh_audio_output_resume_recover(&ops,&counters,1)==-1);
+    assert(d.starts==before+VH_AUDIO_OUTPUT_RESTART_LIMIT);
+    assert(!d.playing && d.opened);
+    assert(counters.resume_restarts==6);
+    assert(counters.resume_failures==4);
+    assert(counters.pages_submitted==0 && counters.frames_submitted==0);
+
+    for(unsigned error=0;error<2;error++) {
+        MockOutput bad={.opened=1,.playing=0};
+        VhAudioOutputRecovery stats={0};
+        VhAudioOutputOps broken=ops_for(&bad);
+        bad.fail_stop=(error==0);
+        bad.fail_open=(error==1);
+        assert(vh_audio_output_resume_recover(&broken,&stats,1)==-1);
+        assert(stats.pages_submitted==0u && stats.frames_submitted==0u);
+        if(!error) {
+            assert(bad.opened && !bad.playing && bad.closes==0u);
+        } else {
+            assert(!bad.opened && !bad.playing);
+            assert(stats.resume_restarts==VH_AUDIO_OUTPUT_RESTART_LIMIT);
+        }
+    }
+}
+
 #define SEQ_HDR 'p','Q','E','S',0,0,0,0,1,0xe0,7,0xa1,0x20,0,0
 static const uint8_t field_seq[]={
     SEQ_HDR,0,0xc0,7,0,0x90,60,110,
@@ -204,7 +277,49 @@ static void test_replay_prepared_page_preserves_music_clock(void) {
     VhAudioOutputOps ops[2]={ops_for(&device[0]),ops_for(&device[1])};
     VhAudioOutputRecovery counters[2]={{0},{0}};
     unsigned expected_restarts=0,expected_bad_submits=0,expected_recoveries=0;
+    unsigned home_reopens=0, home_start_failures=0;
     for(unsigned block=0;block<TOTAL_BLOCKS;block++) {
+        if(block==9u || block==31u || block==60u || block==88u) {
+            /* Both musical timelines pause in sync, while the
+             * injected backend simulates an invalidated HOME service.
+             * No scene, voice or resampler samples are generated until
+             * audout is reopened and focused again. */
+            const uint64_t before_clock[2]={
+                resampler[0].input_frames,resampler[1].input_frames
+            };
+            const uint64_t before_frames[2]={
+                spu[0].frames_rendered,spu[1].frames_rendered
+            };
+            const uint64_t before_pages[2]={
+                counters[0].pages_submitted,counters[1].pages_submitted
+            };
+            for(unsigned i=0;i<2u;i++) {
+                assert(mock_stop(&device[i])==0);
+                assert(!device[i].playing);
+            }
+            /* Multiple paused owner turns do not synthesize
+             * anything or queue a duplicate output page. */
+            for(unsigned paused=0;paused<20u;paused++) {
+                for(unsigned i=0;i<2u;i++) {
+                    assert(resampler[i].input_frames==before_clock[i]);
+                    assert(spu[i].frames_rendered==before_frames[i]);
+                    assert(counters[i].pages_submitted==before_pages[i]);
+                }
+            }
+            const unsigned injected=block==31u ? 1u :
+                                    block==60u ? 1u : 0u;
+            device[1].fail_starts_left=injected;
+            home_start_failures+=injected;
+            for(unsigned i=0;i<2u;i++) {
+                assert(vh_audio_output_resume_recover(
+                    &ops[i],&counters[i],1)==0);
+                assert(device[i].opened && device[i].playing);
+                assert(resampler[i].input_frames==before_clock[i]);
+                assert(spu[i].frames_rendered==before_frames[i]);
+                assert(counters[i].pages_submitted==before_pages[i]);
+            }
+            home_reopens+=2u;
+        }
         if(block==22u || block==57u || block==81u) {
             for(unsigned i=0;i<2u;i++)
                 assert(vh_music_scene_request(&music[i],
@@ -245,6 +360,12 @@ static void test_replay_prepared_page_preserves_music_clock(void) {
                counters[1].frames_submitted);
         assert(device[0].checksum==device[1].checksum);
     }
+    assert(home_reopens==8u && home_start_failures==2u);
+    assert(counters[0].resume_restarts==4u);
+    assert(counters[1].resume_restarts==6u);
+    assert(counters[0].resume_recoveries==4u);
+    assert(counters[1].resume_recoveries==4u);
+    assert(counters[1].resume_failures==2u);
     assert(counters[1].recoveries==expected_recoveries);
     assert(counters[1].restart_attempts==expected_restarts);
     assert(counters[1].submit_failures==expected_bad_submits);
@@ -258,6 +379,7 @@ static void test_replay_prepared_page_preserves_music_clock(void) {
 
 int main(void) {
     test_failed_restart_paths();
+    test_resume_restart_paths();
     test_replay_prepared_page_preserves_music_clock();
     puts("bounded device error recovery and SEQ/SPU clock preservation: PASS");
     return 0;
