@@ -13,7 +13,8 @@ import unittest
 
 import test_verify_map02_vram_timeline as timeline_fixture
 from tools.verify_map02_source_native_ft4_join import (
-    _ft4_palette_state, _ft4_provably_outside_drawenv,
+    _ft4_audited_crop_classes, _ft4_palette_state,
+    _ft4_provably_outside_drawenv,
     _source_signature, verify_timeline_join,
 )
 
@@ -181,6 +182,82 @@ class TimelineToNativeFt4JoinTests(unittest.TestCase):
         self.write_native()
         with self.assertRaisesRegex(ValueError, "entirely zero 4-bpp CLUT"):
             self.verify()
+
+    def test_crop_stp_uses_sampled_index_not_unused_palette_entries(self):
+        # Source face 0 uses page5 + CLUT31978. Force index1 opaque while
+        # leaving a valid, but unreachable, STP entry at palette index15.
+        for i in range(2):
+            raw = bytearray(self.base.vrams[i])
+            timeline_fixture.fixture.word(raw, 673, 499, 0x001f)
+            timeline_fixture.fixture.word(raw, 687, 499, 0x8000)
+            self.base.vrams[i] = bytes(raw)
+        for probe in self.base.events[0]["texture"]["probes"]:
+            probe["bgr555"] = 0x001f
+        self.native_vrams = [self.base.vrams[1], self.base.vrams[0]]
+        self.save()
+        for native_event in self.native_events[2:4]:
+            native_event["semi"] = 1
+        self.write_native()
+        # Coarse CLUT inspection sees index15's STP, but it is absent in
+        # the independently verified 16x16 texture crop.
+        self.assertTrue(_ft4_palette_state(
+            self.native_snapshots[2], self.native_events[2])[1])
+        z, stp, opaque = _ft4_audited_crop_classes(
+            self.base.events[0], self.native_snapshots[2],
+            self.native_events[2])
+        self.assertEqual(stp, 0)
+        self.assertGreater(opaque, 0)
+        report = self.verify()
+        self.assertEqual(
+            report["matched_ft4_draws_zero_delta_unknown_with_stp_blend_possible"], 0)
+        self.assertEqual(report["matched_ft4_zero_delta_stp_candidate_abr0"], 0)
+        self.assertFalse(report["native_dda_texel_sampling_path_observed"])
+
+        # Change a non-probe texel from index1 to index15 within the 4-bpp
+        # crop. Both source and native images change, probes stay truthful.
+        # Page5 word for u=240..243 v=192 is (x=380,y=192).
+        for i in range(2):
+            raw = bytearray(self.base.vrams[i])
+            timeline_fixture.fixture.word(raw, 380, 192, 0x1f11)
+            self.base.vrams[i] = bytes(raw)
+        self.native_vrams = [self.base.vrams[1], self.base.vrams[0]]
+        self.save()
+        for native_event in self.native_events[2:4]:
+            native_event["semi"] = 1
+        self.write_native()
+        report = self.verify()
+        self.assertEqual(
+            report["matched_ft4_draws_zero_delta_unknown_with_stp_blend_possible"], 1)
+        self.assertGreater(report["matched_ft4_audited_crop_stp_texels"], 0)
+        self.assertGreater(report["matched_ft4_audited_crop_opaque_texels"], 0)
+
+    def test_windowed_crop_classifies_bgr555_zero_and_bit15(self):
+        # Probe the *same* texture nibble with and without an E2 texture
+        # window. No geometry or rasterized pixel path is asserted.
+        raw = bytearray(1024 * 512 * 2)
+        clut = 31978
+        timeline_fixture.fixture.word(raw, 673, 499, 0x8000)
+        timeline_fixture.fixture.word(raw, 674, 499, 0x001f)
+        texture = {"u": 0, "v": 0, "w": 0, "h": 0}
+        source_event = {"texture": texture}
+        native_event = {"ft4": {"tpage": 5, "clut": clut},
+                        "window": [0, 0, 0, 0]}
+        # At the page origin, zero index->zero CLUT produces transparency.
+        self.assertEqual(
+            _ft4_audited_crop_classes(source_event, raw, native_event),
+            (1, 0, 0))
+        # Texture-window masks and offsets re-target this UV to u=8.
+        timeline_fixture.fixture.word(raw, 322, 0, 0x2222)
+        native_event["window"] = [1, 0, 1, 0]
+        self.assertEqual(
+            _ft4_audited_crop_classes(source_event, raw, native_event),
+            (0, 0, 1))
+        # Replacing texel index2 with 1 selects BGR555=0x8000 (STP),
+        # which is NOT transparent 0000h.
+        timeline_fixture.fixture.word(raw, 322, 0, 0x1111)
+        self.assertEqual(
+            _ft4_audited_crop_classes(source_event, raw, native_event),
+            (0, 1, 0))
 
     def test_full_clut_requires_all_sixteen_zero_and_stp_abr_is_only_possible(self):
         raw = bytearray(1024 * 512 * 2)
