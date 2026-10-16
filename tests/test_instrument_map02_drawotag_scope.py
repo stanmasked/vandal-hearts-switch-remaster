@@ -58,6 +58,7 @@ static void TrcFrameEnd(void) {}
 int main(void) {
     VHMap02BlendEvent event;
     P_TAG root;
+    (void)event;
     root.tag = 1;
     slots[1].tag = 2;
     slots[2].tag = 3;
