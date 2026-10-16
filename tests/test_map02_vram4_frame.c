@@ -115,6 +115,11 @@ static void fixture(void) {
     set_observation(1,11,11,0,192,7,31980); /* page7 green opaque */
     set_observation(2,8,19,1,128,6,31979); /* page6 blue STP */
     observations[2].blend=blend;
+    /* Only the third polygon applies a GP0(E2) window. */
+    observations[2].registers.mask_x=1;
+    observations[2].registers.mask_y=1;
+    observations[2].registers.offset_x=1;
+    observations[2].registers.offset_y=1;
     for(y=0;y<256u;++y)for(x=0;x<64u;++x) {
         vword(320+x,y,0x1111);
         vword(384+x,y,0x1111);
@@ -123,6 +128,8 @@ static void fixture(void) {
     /* Clut origins: 42*16,43*16,44*16, row499. */
     vword(672+1,499,0x001F);
     vword(688+1,499,0xFC00);
+    vword(688+2,499,0x7FFF); /* window-addressed white opaque */
+    vword(384+62,200,0x2222); /* effective UV 248..251,200 */
     vword(704+1,499,0x03E0);
 }
 static void test_all_three_faces_and_per_primitive_vram_state(void) {
@@ -144,7 +151,9 @@ static void test_all_three_faces_and_per_primitive_vram_state(void) {
     assert(prepared[1].quad.projection.ot_slot==832u);
     assert(stats[0].decoded_texels==65536u);
     assert(stats[0].stp_palette_texels==0u);
-    assert(stats[2].stp_palette_texels==65536u);
+    assert(stats[2].stp_palette_texels==65520u);
+    assert(atlases[2*VH_MAP02_VRAM4_ATLAS_BYTES+192u*128u+120u]==0x22u);
+    assert(atlases[0*VH_MAP02_VRAM4_ATLAS_BYTES+192u*128u+120u]==0x11u);
     assert((uint16_t)(palettes[2] | ((unsigned)palettes[3]<<8))==0x001fu);
     assert((uint16_t)(palettes[2*32+2] | ((unsigned)palettes[2*32+3]<<8))==0xFC00u);
     assert(atlases[N*VH_MAP02_VRAM4_ATLAS_BYTES]==0xC7u);
@@ -152,7 +161,7 @@ static void test_all_three_faces_and_per_primitive_vram_state(void) {
     assert(vh_map02_ot_scene_draw(&w.scene,&canvas,scratch,classes,
                                   SCRATCH,pack,NULL,&drawn,&px));
     assert(drawn==N && px==N*256u);
-    assert(callback_count==256u);
+    assert(callback_count==240u);
     /* Far green, near blue STP, then near red opaque (last wins). */
     assert(fb[25*STRIDE+25]==UINT32_C(0xffff0000));
     assert(fb[19*STRIDE+25]==BG);
