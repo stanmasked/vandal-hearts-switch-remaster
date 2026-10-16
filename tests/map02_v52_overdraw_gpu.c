@@ -17,8 +17,9 @@
 #define MAX_LAYERS 5
 #define N_SCENES 5
 #define SX 80
-#define SY 80
+#define SY 40
 #define SW 16
+#define SH 160
 #define HS 2
 #define PX 88
 #define PY 88
@@ -76,25 +77,28 @@ static const Scene SCENES[N_SCENES] = {
 
 static unsigned short (*s_vram)[1024];
 static const unsigned short *s_hires;
-static unsigned short hd_pixels[SW*HS*SW*HS];
+static unsigned short hd_pixels[SW*HS*SH*HS];
+static const int BAND_Y[]={55,60,119,120,179,180,190};
+#define BAND_COUNT (sizeof(BAND_Y)/sizeof(BAND_Y[0]))
+
 static const int HSSTRIDE=1024*HS;
 
 static void quad(RVert *a,RVert *b,RVert *c,RVert *d,int u,int v) {
     a->x=SX; a->y=SY; a->u=u; a->v=v;
     b->x=SX+SW; b->y=SY; b->u=u; b->v=v;
-    c->x=SX; c->y=SY+SW; c->u=u; c->v=v;
-    d->x=SX+SW; d->y=SY+SW; d->u=u; d->v=v;
+    c->x=SX; c->y=SY+SH; c->u=u; c->v=v;
+    d->x=SX+SW; d->y=SY+SH; d->u=u; d->v=v;
 }
 static void reset_region(unsigned short bg) {
     int x,y;
-    for(y=SY;y<SY+SW;y++)
+    for(y=SY;y<SY+SH;y++)
       for(x=SX;x<SX+SW;x++) s_vram[y][x]=bg;
-    HiresMirrorRect(SX,SY,SW,SW);
+    HiresMirrorRect(SX,SY,SW,SH);
 }
 static unsigned long long hash_region(void) {
     unsigned long long h=1469598103934665603ull;
     int x,y;
-    for(y=SY*HS;y<(SY+SW)*HS;y++)
+    for(y=SY*HS;y<(SY+SH)*HS;y++)
       for(x=SX*HS;x<(SX+SW)*HS;x++) {
         h^=s_hires[(size_t)y*HSSTRIDE+x];
         h*=1099511628211ull;
@@ -163,6 +167,8 @@ static int run_scene(const Scene *s,int workers) {
     unsigned long long hash_direct,hash_threaded;
     int i,x,y;
     unsigned f;
+    unsigned short band_native[BAND_COUNT],band_direct[BAND_COUNT],band_worker[BAND_COUNT];
+
     /* VRAM texture sources live far away from the output region. */
     setup_textures(s);
     reset_region(s->background);
@@ -176,6 +182,7 @@ static int run_scene(const Scene *s,int workers) {
         emit_layer(s,i,idx);
     }
     native=s_vram[PY][PX];
+    for(i=0;i<(int)BAND_COUNT;i++) band_native[i]=s_vram[BAND_Y[i]][PX];
     reset_region(s->background);
     for(i=0;i<s->count;i++) {
         const int idx=s->reverse?s->count-1-i:i;
@@ -187,7 +194,9 @@ static int run_scene(const Scene *s,int workers) {
     }
     direct=s_hires[(size_t)HPY*HSSTRIDE+HPX];
     hash_direct=hash_region();
-    for(y=0;y<SW*HS;y++)for(x=0;x<SW*HS;x++)
+    for(i=0;i<(int)BAND_COUNT;i++)
+        band_direct[i]=s_hires[(size_t)(BAND_Y[i]*HS)*HSSTRIDE+HPX];
+    for(y=0;y<SH*HS;y++)for(x=0;x<SW*HS;x++)
         hd_pixels[y*SW*HS+x]=s_hires[(size_t)(SY*HS+y)*HSSTRIDE+SX*HS+x];
     reset_region(s->background);
     HiresFrameReset();
@@ -205,7 +214,9 @@ static int run_scene(const Scene *s,int workers) {
     HiresRasterizeThreaded(0,240);
     threaded=s_hires[(size_t)HPY*HSSTRIDE+HPX];
     hash_threaded=hash_region();
-    for(y=0;y<SW*HS;y++)for(x=0;x<SW*HS;x++){
+    for(i=0;i<(int)BAND_COUNT;i++)
+        band_worker[i]=s_hires[(size_t)(BAND_Y[i]*HS)*HSSTRIDE+HPX];
+    for(y=0;y<SH*HS;y++)for(x=0;x<SW*HS;x++){
        unsigned short got=s_hires[(size_t)(SY*HS+y)*HSSTRIDE+SX*HS+x];
        if(got!=hd_pixels[y*SW*HS+x]){
            fprintf(stderr,"V52 FAIL HD framebuffer differs scene=%s workers=%d x=%d y=%d direct=%u deferred=%u\n",
@@ -213,12 +224,17 @@ static int run_scene(const Scene *s,int workers) {
            return 0;
        }
     }
+    for(i=0;i<(int)BAND_COUNT;i++) {
+        printf("V52BOUND scene=%s y=%d native=%u direct=%u deferred=%u\n",
+          s->name,BAND_Y[i],(unsigned)band_native[i],
+          (unsigned)band_direct[i],(unsigned)band_worker[i]);
+    }
     printf("V52RESULT scene=%s layers=%d reverse=%d workers=%d background=%u "
            "native=%u direct=%u deferred=%u x=%d y=%d hx=%d hy=%d "
            "directhash=%016llx deferredhash=%016llx pixels=%d\n",
            s->name,s->count,s->reverse,workers,(unsigned)s->background,
            (unsigned)native,(unsigned)direct,(unsigned)threaded,
-           PX,PY,HPX,HPY,hash_direct,hash_threaded,(SW*HS)*(SW*HS));
+           PX,PY,HPX,HPY,hash_direct,hash_threaded,(SW*HS)*(SH*HS));
     return direct==threaded&&hash_direct==hash_threaded;
 }
 int main(void) {
