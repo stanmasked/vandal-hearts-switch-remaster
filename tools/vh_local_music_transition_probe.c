@@ -217,9 +217,18 @@ int main(int argc,char **argv) {
             goto error;
         }
     }
-    if(resampler.input_frames!=(uint64_t)scenes*blocks*VH_AUDIO_BLOCK_FRAMES ||
-       resampler.next_output_tick!=frame_total*VH_AUDIO_SAMPLE_RATE) {
-        fprintf(stderr,"PCM clock continuity check failed\n");
+    const uint64_t total_input=(uint64_t)scenes*blocks*VH_AUDIO_BLOCK_FRAMES;
+    /* The last source sample cannot be linearly interpolated with an
+     * unavailable future sample. For every complete 44.1-kHz stream,
+     * exactly floor((N-1)*48000/44100)+1 output frames are expected,
+     * independently of how the source is split across scene blocks.
+     */
+    const uint64_t exact_output=(total_input-1u)*VH_NATIVE_AUDOUT_RATE/
+                                 VH_AUDIO_SAMPLE_RATE+1u;
+    if(resampler.input_frames!=total_input ||
+       resampler.next_output_tick!=frame_total*VH_AUDIO_SAMPLE_RATE ||
+       frame_total!=exact_output) {
+        fprintf(stderr,"PCM clock continuity or frame count failed\n");
         goto error;
     }
 
