@@ -5,7 +5,8 @@ Each event comes from the exact branch in the original source-instrumented
 PC rasterizer and carries the live DrawOTag frame/ordinal/type. Re-check
 the private source-keyed MAP02→GTE→GPU→VRAM→OTZ overdraw evidence
 before attributing to a source terrain FT4. Do not infer why unlogged
-pixels were skipped. This is not physical PS1 mask/clip emulation.
+pixels were skipped. This is not physical PS1 mask/clip emulation. Vertical reasons 4–7
+identify executed rejected *scanlines*, not triangle coverage of X.
 """
 import argparse
 import hashlib
@@ -67,8 +68,8 @@ def verify_skips(source_dir, native_dir, *, compiler="gcc"):
         raise ValueError("raster skip log empty, incomplete, or at record cap")
     sampled_xy = None
     last_ordinal = -1
-    counts = {1: 0, 2: 0, 3: 0}
-    source_counts = {1: 0, 2: 0, 3: 0}
+    counts = {code: 0 for code in range(1, 8)}
+    source_counts = {code: 0 for code in range(1, 8)}
     source_primitive_ordinals = set()
     for i, line in enumerate(rows):
         e = parse_json(line, f"native raster skip {i}")
@@ -93,7 +94,7 @@ def verify_skips(source_dir, native_dir, *, compiler="gcc"):
             sampled_xy = (x, y)
         elif sampled_xy != (x, y):
             raise ValueError("raster skip log switches private VRAM coordinate")
-        reason = number(e["reason"], "original raster skip reason", 1, 3)
+        reason = number(e["reason"], "original raster skip reason", 1, 7)
         # Both zero-texel branches are exclusively textured FT4 or SPRT
         # in the fixed PC GPU dispatch; F4/TILE cannot sample a texture.
         if reason in (1, 3) and observed_type not in (2, 3):
@@ -117,6 +118,17 @@ def verify_skips(source_dir, native_dir, *, compiler="gcc"):
         "source_keyed_dda_zero_texel_events": source_counts[1],
         "source_keyed_dda_horizontal_clip_events": source_counts[2],
         "source_keyed_legacy_zero_texel_events": source_counts[3],
+        "observed_upside_down_below_top_scanline_break_events": counts[4],
+        "observed_upside_down_above_bottom_scanline_continue_events": counts[5],
+        "observed_forward_above_bottom_scanline_break_events": counts[6],
+        "observed_forward_below_top_scanline_no_span_events": counts[7],
+        "source_keyed_upside_down_below_top_scanline_break_events": source_counts[4],
+        "source_keyed_upside_down_above_bottom_scanline_continue_events": source_counts[5],
+        "source_keyed_forward_above_bottom_scanline_break_events": source_counts[6],
+        "source_keyed_forward_below_top_scanline_no_span_events": source_counts[7],
+        "vertical_scanline_rejections_observed": sum(counts[r] for r in range(4, 8)),
+        "vertical_scanline_rejections_attributed_to_source_ft4":
+            sum(source_counts[r] for r in range(4, 8)),
         "source_keyed_ft4_primitives_with_direct_skip_observation":
             len(source_primitive_ordinals),
         "verified_original_source_to_native_gpu_join": True,
@@ -124,6 +136,8 @@ def verify_skips(source_dir, native_dir, *, compiler="gcc"):
         "all_executed_raster_skip_branches_captured": False,
         "unlogged_pixel_cause_inferred": False,
         "vertical_clip_per_pixel_confirmed": False,
+        "vertical_clip_scanline_branches_observed_only": True,
+        "vertical_scanline_horizontal_coverage_proven": False,
         "triangle_coverage_and_mask_test_verified": False,
         "ps1_hardware_stp_abr_mask_equivalence": False,
         "original_gameplay_authenticated": False,
