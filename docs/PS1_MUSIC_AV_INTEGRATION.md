@@ -450,3 +450,34 @@ exact count of 48-kHz output frames.
 All fixtures are synthesized in CI and do not contain original
 Vandal Hearts music. Hardware audibility and PS1 waveform fidelity
 are not established by these tests.
+
+### Detecting music-voice allocation pressure
+
+The local SEQ/VAB transition audit also reports three numerical,
+synthetic-testable measurements for the 20-slot PC-port-style music
+SPU: `peak_active_voices`, `saturated_note_requests`, and
+`first_saturated_note_block`. The last field is a **1-based**
+512-frame audio-block position, or zero when no pressure occurred.
+
+The resolver wrapper inspects the current SPU *before* each resolved
+note is allocated, which catches multiple note-on events dispatched
+inside the same block. A **saturated note request** is a successfully
+resolved note arriving while all 20 music voices are still active.
+This is a sign that the round-robin allocation path may displace
+an existing voice; it is **not** by itself proof of an audible dropout
+or an exact count of hardware PS1 voice steals. ADSR release voices
+may still occupy active slots, and the metric excludes unresolvable
+notes. No music sample bytes or individual note identities are logged.
+
+The synthetic regression exercises (a) exactly 20 simultaneous
+distinct notes, expected to fill all slots with **zero** saturated
+requests; and (b) 23 simultaneous distinct notes, expected to produce
+**three** saturated requests in the first block. Delayed Note Off
+messages for two already displaced voices must not release the newer
+slot owners. A/B/A/B bank switching then checks that pressure counters
+reset per scene, the next bank has only its own note, and the 48-kHz
+resampler clock remains exact.
+
+This host-only diagnostic does not change voice allocation policy.
+Direct comparison with the game's original SEQ/VH/VB and hardware
+sound capture remains outstanding.
