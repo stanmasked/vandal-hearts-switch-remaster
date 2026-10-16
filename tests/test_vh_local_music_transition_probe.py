@@ -22,7 +22,8 @@ def synth_dir(directory, wet=False, bank_b=False, fallback_program=False,
               no_note_on=False, program_change_retrigger=False,
               delayed_program_change=False, accelerated_tempo=False,
               multiple_tempo_loop=False, polyphony_notes=0,
-              release_overlap=None, release_waves=None):
+              release_overlap=None, release_waves=None,
+              adsr2_release=None):
     directory.mkdir()
     files = make_synthetic_files()
     vh = bytearray(files["music.vh"])
@@ -31,6 +32,13 @@ def synth_dir(directory, wet=False, bank_b=False, fallback_program=False,
         vh[TONE_OFFSET + 1] = 4  # Valid VAB reverb-send mode.
     if mute_master:
         vh[24] = 0  # Every note resolves, but both output gains are zero.
+    if adsr2_release is not None:
+        if not 0 <= adsr2_release <= 0xFFFF:
+            raise ValueError("ADSR2 release must fit a 16-bit VAB tone")
+        # The native importer must propagate these actual VagAtr bits
+        # through the normal VAB tone resolver into the SPU voice.
+        vh[TONE_OFFSET + 18] = adsr2_release & 0xFF
+        vh[TONE_OFFSET + 19] = adsr2_release >> 8
     if bank_b:
         vb[18:32] = b"\x44" * 14
         vb[34:48] = b"\xDD" * 14
@@ -574,6 +582,64 @@ class NativeLocalMusicTransitionTests(unittest.TestCase):
                         self.assertEqual(
                             {p.name: p.read_bytes() for p in folder.iterdir()},
                             before)
+
+    def test_vab_adsr2_release_rates_drive_actual_spu_retirement(self):
+        # This is an end-to-end importer/resolver/sequencer/SPU test.
+        # A synthetic pQES note lasts to tick 240 (block 22); each
+        # release code is loaded from the VAB tone table, not injected
+        # directly into the SPU. EOT at tick 480 is beyond block 42.
+        cases = (
+            (0x0000, 22),   # fast linear
+            (0x0005, 22),   # 64 PCM frames
+            (0x000A, 25),   # 2048 frames = 4 render blocks
+            (0x0020, 22),   # fast exponential
+            (0x0025, 22),   # 496 frames
+            (0x002A, 39),   # 8842 frames = 18 render blocks
+            (0x001F, 0),    # no release level step (held)
+        )
+        for rate, retirement_block in cases:
+            with self.subTest(adsr2=hex(rate)):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    a, b = root / "release-variant", root / "control"
+                    original_a = synth_dir(a, adsr2_release=rate)
+                    original_b = synth_dir(b, bank_b=True)
+                    cmd = [str(PROGRAM), str(a), str(b), "2", "42"]
+                    first = subprocess.run(cmd, capture_output=True, text=True)
+                    again = subprocess.run(cmd, capture_output=True, text=True)
+                    self.assertEqual(first.returncode, 0, first.stderr)
+                    self.assertEqual(first.stdout, again.stdout)
+                    report = json.loads(first.stdout)
+                    target, control = report["measurements"]
+                    self.assertEqual(target["note_requests"], 1)
+                    self.assertEqual(target["resolved_notes"], 1)
+                    self.assertEqual(target["note_offs"], 1)
+                    self.assertEqual(target["first_note_off_block"], 22)
+                    self.assertEqual(target["unresolved_notes"], 0)
+                    self.assertEqual(target["fallback_notes"], 0)
+                    self.assertEqual(target["peak_active_voices"], 1)
+                    self.assertEqual(target["adsr_release_slot_retirements"],
+                                     1 if retirement_block else 0)
+                    self.assertEqual(target["first_release_retirement_block"],
+                                     retirement_block)
+                    self.assertEqual(target["last_release_retirement_block"],
+                                     retirement_block)
+                    self.assertGreaterEqual(
+                        target["peak_releasing_voices_before_render"], 1)
+                    self.assertEqual(control["adsr_release_slot_retirements"], 1)
+                    self.assertEqual(control["first_release_retirement_block"], 22)
+                    self.assertEqual(control["last_release_retirement_block"], 22)
+                    self.assertEqual(control["note_requests"], 1)
+                    self.assertEqual(control["saturated_note_requests"], 0)
+                    self.assertEqual(report["input_frames"], 2 * 42 * 512)
+                    self.assertEqual(report["output_frames"],
+                                     (2 * 42 * 512 - 1) * 48000 // 44100 + 1)
+                    self.assertNotIn(str(root), first.stdout)
+                    self.assertNotIn(str(root), first.stderr)
+                    for directory, original in ((a, original_a), (b, original_b)):
+                        self.assertEqual(
+                            {f.name: f.read_bytes() for f in directory.iterdir()},
+                            original)
 
     def test_repeated_release_waves_retire_or_steal_slots(self):
         # Long synthetic high-polyphony stress: start 20 voices, then
