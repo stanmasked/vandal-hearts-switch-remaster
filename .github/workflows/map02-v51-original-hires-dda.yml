@@ -548,6 +548,8 @@ jobs:
           assert r["actual_modes_per_pass"]==18 and r["total_original_GPU_mode_executions"]==54,r
           assert r["true_hires_scale"]==2,r
           assert r["direct_hires_vs_deferred_equal_count"]==18,r
+          assert r["full_32x32_hd_region_equal_count"]==18,r
+          assert r["full_region_pixels_compared_per_mode"]==1024,r
           assert "indexed4_dither" in r["native_vs_hires_different_cases"],r
           assert not r["HD_replacement_approved"] and not r["genuine_gameplay_proven"],r
           print("PASS: 18 original GPU modes have independently verified native, direct-HD and deferred-HD pixels.")
@@ -577,6 +579,17 @@ jobs:
               ],capture_output=True,text=True)
               assert r.returncode==1,(name,r.returncode,r.stderr,r.stdout)
               broken.unlink()
+          hash_rows=[i for i,line in enumerate(lines) if line.startswith("V51HASH name=indexed4_abr1 ")]
+          assert len(hash_rows)==1
+          damaged=lines.copy()
+          damaged[hash_rows[0]]=damaged[hash_rows[0]].replace("threaded=","threaded=0",1)
+          badhash=Path("proof/SYNTHETIC_V51_CORRUPT_hd_region.txt")
+          badhash.write_text("\n".join(damaged)+"\n")
+          check=subprocess.run([
+              "python3","-m","remaster.tools.verify_map02_hires_modes_v51",str(badhash)
+          ],capture_output=True,text=True)
+          assert check.returncode==1,(check.returncode,check.stderr,check.stdout)
+          badhash.unlink()
           omitted=[line for line in lines if not line.startswith("V51THREAD name=direct15_stp ")]
           p=Path("proof/SYNTHETIC_V51_CORRUPT_missing_mode.txt")
           p.write_text("\n".join(omitted)+"\n")
