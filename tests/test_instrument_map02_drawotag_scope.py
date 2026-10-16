@@ -116,12 +116,14 @@ class DrawOTagScopeTests(unittest.TestCase):
         instrumented = instrument(source)
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            for name, src, enabled in (
+            cases = [
                 ("original", source, False),
                 ("patched-off", instrumented, False),
                 ("patched-on", instrumented, True),
-                ("patched-stage", instrumented, True),
-            ):
+            ]
+            if os.name == "posix":
+                cases.append(("patched-stage", instrumented, True))
+            for name, src, enabled in cases:
                 with self.subTest(name=name):
                     path = root / (name + ".c")
                     binary = root / name
