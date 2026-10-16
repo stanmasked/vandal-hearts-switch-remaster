@@ -18,6 +18,9 @@ on:
       - "source/vh_native_seq.h"
       - "source/vh_native_vab.c"
       - "source/vh_native_vab.h"
+      - "source/vh_audio_assets.c"
+      - "source/vh_audio_assets.h"
+      - "tests/test_vh_audio_assets.c"
       - "tests/test_vh_native_vab.c"
       - "tests/test_vh_native_seq.c"
       - "tests/test_native_spu_gaussian.py"
@@ -59,14 +62,18 @@ jobs:
           "$DEVKITPRO/devkitA64/bin/aarch64-none-elf-gcc" \
             -std=c11 -Wall -Wextra -Werror -O2 -Isource \
             -c source/vh_native_vab.c -o build/vh_native_vab_switch.o
+          "$DEVKITPRO/devkitA64/bin/aarch64-none-elf-gcc" \
+            -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+            -c source/vh_audio_assets.c -o build/vh_audio_assets_switch.o
           "$DEVKITPRO/devkitA64/bin/aarch64-none-elf-nm" \
-            --defined-only build/vh_native_vab_switch.o
+            --defined-only build/vh_audio_assets_switch.o
           test -s build/vh_audio_stream_switch.o
           test -s build/vh_spu_adpcm_switch.o
           test -s build/vh_native_spu_switch.o
           test -s build/vh_spu_gaussian_switch.o
           test -s build/vh_native_seq_switch.o
           test -s build/vh_native_vab_switch.o
+          test -s build/vh_audio_assets_switch.o
       - name: Upload cross-compiled transport object
         uses: actions/upload-artifact@v4
         with:
@@ -78,4 +85,5 @@ jobs:
             build/vh_spu_gaussian_switch.o
             build/vh_native_seq_switch.o
             build/vh_native_vab_switch.o
+            build/vh_audio_assets_switch.o
           if-no-files-found: error
