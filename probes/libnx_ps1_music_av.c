@@ -37,6 +37,7 @@ static atomic_bool audio_stop;
 static atomic_int audio_fault;
 static atomic_uint pcm_blocks_generated;
 static atomic_uint audout_buffers_completed;
+static atomic_uint synthetic_scene_switches;
 static int audio_active;
 static int using_user_files;
 static int sdmc_mounted_here;
@@ -59,6 +60,16 @@ static const uint8_t fixture_seq[] = {
     0,0x90,60,110, 0x81,0x70,0x80,60,0,
     0x81,0x70,0xff,0x2f,
 };
+/* Alternate synthetic cue, same generated VAB bank, different note.
+ * User-owned SD SEQ/VH/VB are never automatically switched by this probe.
+ */
+static const uint8_t fixture_seq_b[] = {
+    'p','Q','E','S',0,0,0,0, 0x01,0xe0,0x07,0xa1,0x20,0,0,
+    0,0xc0,7, 0,0xb0,7,127, 0,0xb0,10,64,
+    0,0x90,64,110, 0x81,0x70,0x80,64,0,
+    0x81,0x70,0xff,0x2f,
+};
+
 static const uint8_t fixture_vag[32] = {
     0x02,0x04,0x22,0x22,0x22,0x22,0x22,0x22,
     0x22,0x22,0x22,0x22,0x22,0x22,0x22,0x22,
@@ -180,7 +191,26 @@ static const VhAudioOutputOps output_ops={
 
 static void audio_worker(void *unused) {
     (void)unused;
+    unsigned rendered_blocks=0, fixture_b=0;
     while (!atomic_load(&audio_stop)) {
+        /* For generated fixtures only, exercise the real transactional
+         * SEQ scene-switch API on the owning audio thread. The previous
+         * audout page has already returned before reaching this point.
+         */
+        if (!using_user_files && rendered_blocks &&
+            rendered_blocks % 64u == 0u) {
+            const uint8_t *next=fixture_b ? fixture_seq : fixture_seq_b;
+            const size_t next_size=fixture_b
+                ? sizeof(fixture_seq) : sizeof(fixture_seq_b);
+            if (vh_native_seq_switch_scene(
+                    &seq,next,next_size,&synth,
+                    vh_native_vab_resolve,&synthetic_bank,0)) {
+                atomic_store(&audio_fault,4);
+                break;
+            }
+            fixture_b^=1u;
+            atomic_fetch_add(&synthetic_scene_switches,1u);
+        }
         if (vh_native_seq_advance_block(&seq) < 0) {
             atomic_store(&audio_fault, 1);
             break;
@@ -207,6 +237,7 @@ static void audio_worker(void *unused) {
             break;
         }
         atomic_fetch_add(&audout_buffers_completed, 1u);
+        ++rendered_blocks;
     }
 }
 
@@ -222,6 +253,7 @@ static int start_native_audio(void) {
     atomic_store(&audio_fault, 0);
     atomic_store(&pcm_blocks_generated, 0u);
     atomic_store(&audout_buffers_completed, 0u);
+    atomic_store(&synthetic_scene_switches, 0u);
     result = threadCreate(&sound_thread, audio_worker, NULL, NULL,
                           16 * 1024, 0x2c, -2);
     if (R_FAILED(result)) {
@@ -305,6 +337,17 @@ static void paint(VhCanvas *canvas, const VhGameState *state,
         (pcm_blocks >= 16u && returned_buffers >= 16u)
         ? sound_ok : source_missing;
     vh_canvas_fill_rect(canvas, 1000, 270, 130, 24, pipeline_color);
+    /* Separate synthetic-only proof that the audio-owner has switched
+     * scenes at least twice while PCM pages continued to return. This
+     * is a software transition counter, never an audible-audio claim.
+     * Neutral gray for user files and incomplete/error sources.
+     */
+    const unsigned scene_switches=atomic_load(&synthetic_scene_switches);
+    const uint32_t switch_color=asset_source_status != 0 ? grid :
+        !healthy ? sound_fail :
+        (scene_switches >= 2u &&
+         returned_buffers >= 128u) ? sound_ok : source_missing;
+    vh_canvas_fill_rect(canvas,1000,325,130,18,switch_color);
     /* Animated heartbeat proves video continues while audout worker runs. */
     vh_canvas_fill_rect(canvas, 70, 610, 800, 14, grid);
     vh_canvas_fill_rect(canvas, 70, 610, 20 + (int)(frame % 780u), 14, hero);
