@@ -209,3 +209,65 @@ Remaining work for original MAP02: feed validated source art, real
 screen-projected vertices and ordering-table parameters. These ABR
 diagnostics alone do not establish the visibility or visual accuracy
 of any original map face.
+
+
+## MAP02 side lighting and distance attenuation
+
+The portable `source/map02_terrain_lighting.h` implements the
+**terrain face-color rule**, reconstructed directly from the pinned US
+PC-port `src/core/graphics.c`. This is a new stage between the
+4-bit CLUT decoder and the textured FT4 rasterizer.
+
+For normal and edge terrain, the source selects a precomputed
+`gSideLightColor[tileModel->shades[faceIdx]]` entry (26 lighting
+directions). It then calculates `fade = clamp(max(5,otz) - 150, 0, 256)`
+and computes each GPU command color byte as
+`side - ((side * fade) >> 8)` with integer arithmetic. The
+overhead renderer does **not** use this distance formula; instead
+it sets all three command channels to its supplied `brightness`
+value. The source audit rejects changes to either contract.
+
+The color is applied to already-decoded texture RGB using the reference
+PS1 textured-polygon modulation rule
+`min(255, (texel8 * command_color8) >> 7)`. The value **128** is
+neutral, so a 5-bit texel expanded to RGB888 remains unchanged when
+the side light is 128 and depth attenuation is zero. This CPU
+approximation is deterministic and integer-only, but does not claim
+pixel-perfect emulation of GPU rounding, original 15-bit framebuffer
+quantization, color dithering, GTE projection or texture modulation
+exceptions.
+
+`vh_map02_tint_crop_rgba32` provides a stride-checked color pass
+compatible with the existing CLUT4 decoded 16×16 texture crop.
+**Transparent-zero/STP classes remain separate and unchanged**. Their
+handling still belongs to the classified FT4 rasterizer, with the
+primitive's actual ABE flag and ABR selection supplied explicitly.
+
+The native Switch `source/main.c` diagnostic now demonstrates
+a **synthetic** cycle of depths 150–406 for two independently tinted
+indexed-4/CLUT texture crops. The first is opaque aside from zero-color
+cutouts; the second illustrates the four ABE-gated ABR modes. Both
+use generated texels and placeholder side-light RGB, not the game
+disc's original textures or computed GTE lighting.
+
+Validation:
+
+- `tests/test_map02_terrain_lighting.c` checks the depth formula
+  against an independently evaluated integer reference for all 256
+  side-channel values across OTZ 0–899, plus boundary and saturation
+  cases.
+- The same test covers the full 26-entry light-index selection, the
+  distinct overhead path, RGB modulation, invalid-stride refusal and
+  shaded source pixels passed through FT4's transparency and ABR path.
+- `tests/test_audit_map02_face_source.py` makes source regression
+  tests fail on changed normal/edge face lighting or changed overhead
+  brightness assignments.
+- GitHub Actions and the host sanitizer suite compile and execute
+  these tests; the Switch workflow builds and checks the NRO.
+
+Outstanding work: read genuine MAP02 model normals and lighting
+state, reproduce or approximate `UpdateLight` / GTE lighting for
+the 26 directional entries, implement camera projection and ordering,
+then compare the generated screen pixels with captured PlayStation
+output. The verified **face-color arithmetic alone** does not complete
+the lighting or game renderer.
