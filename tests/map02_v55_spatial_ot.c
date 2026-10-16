@@ -19,7 +19,7 @@
 #define PX 88
 #define PY 60
 #define NPX 177
-#define NPY 176
+#define NPY 120
 #define ROW 2048
 #define COUNT 8
 #define BURSTS 24
