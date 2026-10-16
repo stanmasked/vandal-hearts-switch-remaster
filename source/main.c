@@ -203,7 +203,15 @@ int main(int argc, char **argv) {
     const int audio_started = vh_switch_game_audio_start(
         vh_game_music_for_state(&state)) == 0;
     AppletHookCookie focus_hook = {0};
+    int resume_message_enabled = 0;
     if (audio_started) {
+        /* Only full Application applets support this libnx setting.
+         * HOME/sleep may suspend all threads before a focus callback,
+         * so request an explicit OnResume notification when supported.
+         */
+        if (appletGetAppletType() == AppletType_Application)
+            resume_message_enabled =
+                R_SUCCEEDED(appletSetRestartMessageEnabled(true));
         vh_switch_game_audio_set_focus(
             appletGetFocusState() == AppletFocusState_InFocus);
         appletHook(&focus_hook, on_music_applet_event, NULL);
@@ -254,6 +262,8 @@ int main(int argc, char **argv) {
     if (audio_started) {
         appletUnhook(&focus_hook);
         vh_switch_game_audio_stop();
+        if (resume_message_enabled)
+            (void)appletSetRestartMessageEnabled(false);
     }
     framebufferClose(&fb);
     return 0;
