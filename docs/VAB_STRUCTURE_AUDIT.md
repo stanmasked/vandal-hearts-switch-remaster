@@ -491,6 +491,50 @@ These checks cover serialized host-side lifetime management only, not
 cross-thread teardown while audio is actively running on real Switch
 hardware. The old bank must stay allocated until a controlled detach.
 
+## Strict audout released-buffer ownership (single PCM page)
+
+The Switch worker intentionally uses a single statically allocated,
+0x1000-aligned 48-kHz stereo PCM page. Its storage must not be changed
+until hardware no longer references it. In current libnx,
+[`audoutPlayBuffer`](https://github.com/switchbrew/libnx/blob/master/nx/source/services/audout.c)
+calls `audoutAppendAudioOutBuffer` followed by
+`audoutWaitPlayFinish`, which waits for **a released buffer**, not
+necessarily the descriptor most recently submitted. Merely receiving
+`R_SUCCEEDED` is therefore insufficient evidence that our specific
+PCM page is writable again.
+
+The worker now guards each submission through the portable
+`VhAudioBufferLease` (see
+`source/vh_audio_buffer_lease.[ch]`). The lease begins immediately
+before libnx submission and clears **only when the returned
+`AudioOutBuffer *` is the exact same descriptor**. A different or
+missing descriptor is an error; the page remains owned by the device.
+In that case the bounded existing recovery logic stops and
+**closes the entire old audout session** before retrying the same
+unmodified synthesized PCM block through a new session. Stopping
+playback alone never clears the lease, since stopped sessions may
+still own queued buffers. Closing clears descriptor data metadata
+and the lease; page bytes are zeroed only on final shutdown,
+*after* `audoutExit`.
+
+The synthetic
+`tests/test_vh_audio_buffer_lease.c` regression exercises exact
+and foreign descriptor releases, stale releases from an earlier
+buffer, stopping with a still-owned buffer, session teardown,
+ambiguous submission failure, a bounded two-restart recovery,
+retry exhaustion, and resuming after an entirely closed session.
+It is part of `make test` and `make test-audio-stream`, plus a
+dedicated **ASan/UBSan** GitHub Actions gate. No original game
+sample data is used.
+
+This addresses accidental DMA-buffer reuse and queued stale PCM,
+**not** an absolute guarantee against audible pops: in an
+ambiguous PlayBuffer failure, already-heard frames cannot be
+distinguished from unplayed frames solely using this libnx
+contract, and physical output edges may be discontinuous.
+Real Switch HOME/sleep/exit scenarios are still required to
+verify glitch and latency behavior before shipping.
+
 ## Bounded recovery after an audout page submission failure
 
 The Nintendo Switch native audio owner now handles a failed
