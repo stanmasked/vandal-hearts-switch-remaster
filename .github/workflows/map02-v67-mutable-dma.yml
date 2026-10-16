@@ -2049,6 +2049,7 @@ jobs:
           python3 -m remaster.tools.audit_map02_v67_versioned_ram \
             --snapshot-dir proof/v67-private-frames \
             --frames 4 --source-class user-supplied-unverified \
+            --probe proof/SYNTHETIC_V67_C_GPU_OBSERVATIONS.jsonl \
             --make-manifest proof/SYNTHETIC_V67_FRAME_HASHES.json
           python3 -m remaster.tools.audit_map02_v67_versioned_ram \
             --snapshot-dir proof/v67-private-frames \
