@@ -183,7 +183,7 @@ static void test_mutations_do_not_change_staged_output(void) {
         case 3: textures[1].registers.clut = -1; break;
         case 4: observations[0].raw_otz++; break;
         case 5: observations[1].gpu_xy[3][0]++; break;
-        case 6: requests[1].camera.tr[0]++; break;
+        case 6: requests[1].camera.tr[0] += 32; break; /* observable XY change */
         case 7: decoded[59u * 304u + 302u] = 1; break;
         case 8: observations[0].camera_frame--; break;
         case 9: requests[1].u = 255; break;
