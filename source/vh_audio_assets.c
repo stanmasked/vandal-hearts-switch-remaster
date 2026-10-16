@@ -55,47 +55,50 @@ done:
     return result;
 }
 
+static int fail_load(VhAudioAssets *pending, int status) {
+    dispose(pending);
+    free(pending);
+    return status;
+}
+
 int vh_audio_assets_load(VhAudioAssets *assets, const char *directory) {
     if (!assets || !directory || !*directory ||
         assets->seq || assets->vh || assets->vb || assets->pcm)
         return VH_AUDIO_ASSET_ERROR;
 
-    VhAudioAssets pending;
-    memset(&pending, 0, sizeof(pending));
+    /* Large VAB metadata stays off the Switch thread stack. */
+    VhAudioAssets *pending = (VhAudioAssets *)calloc(1, sizeof(*pending));
+    if (!pending) return VH_AUDIO_ASSET_ERROR;
     const int a = read_file(directory, VH_AUDIO_ASSET_SEQ_FILENAME,
                             VH_AUDIO_ASSET_MAX_SEQ_BYTES,
-                            &pending.seq, &pending.seq_size);
+                            &pending->seq, &pending->seq_size);
     const int b = read_file(directory, VH_AUDIO_ASSET_VH_FILENAME,
                             VH_AUDIO_ASSET_MAX_VH_BYTES,
-                            &pending.vh, &pending.vh_size);
+                            &pending->vh, &pending->vh_size);
     const int c = read_file(directory, VH_AUDIO_ASSET_VB_FILENAME,
                             VH_AUDIO_ASSET_MAX_VB_BYTES,
-                            &pending.vb, &pending.vb_size);
+                            &pending->vb, &pending->vb_size);
     if (a || b || c) {
         const int missing = (a == 1 && b == 1 && c == 1);
-        dispose(&pending);
-        return missing ? VH_AUDIO_ASSET_MISSING : VH_AUDIO_ASSET_ERROR;
+        return fail_load(pending, missing ? VH_AUDIO_ASSET_MISSING : VH_AUDIO_ASSET_ERROR);
     }
     /* The conservative upper bound is 28 mono PCM frames per 16 bytes
      * of compressed VB. VH/VB importer decodes only referenced samples.
      */
-    const size_t blocks = pending.vb_size / VH_SPU_ADPCM_BLOCK_BYTES;
+    const size_t blocks = pending->vb_size / VH_SPU_ADPCM_BLOCK_BYTES;
     if (!blocks || blocks > SIZE_MAX / VH_SPU_ADPCM_BLOCK_FRAMES) {
-        dispose(&pending);
-        return VH_AUDIO_ASSET_ERROR;
+        return fail_load(pending, VH_AUDIO_ASSET_ERROR);
     }
-    pending.pcm_capacity = blocks * VH_SPU_ADPCM_BLOCK_FRAMES;
-    if (pending.pcm_capacity > SIZE_MAX / sizeof(int16_t)) {
-        dispose(&pending);
-        return VH_AUDIO_ASSET_ERROR;
+    pending->pcm_capacity = blocks * VH_SPU_ADPCM_BLOCK_FRAMES;
+    if (pending->pcm_capacity > SIZE_MAX / sizeof(int16_t)) {
+        return fail_load(pending, VH_AUDIO_ASSET_ERROR);
     }
-    pending.pcm = (int16_t *)calloc(pending.pcm_capacity, sizeof(int16_t));
-    if (!pending.pcm ||
-        vh_native_vab_load(&pending.bank, pending.vh, pending.vh_size,
-                           pending.vb, pending.vb_size, pending.pcm,
-                           pending.pcm_capacity)) {
-        dispose(&pending);
-        return VH_AUDIO_ASSET_ERROR;
+    pending->pcm = (int16_t *)calloc(pending->pcm_capacity, sizeof(int16_t));
+    if (!pending->pcm ||
+        vh_native_vab_load(&pending->bank, pending->vh, pending->vh_size,
+                           pending->vb, pending->vb_size, pending->pcm,
+                           pending->pcm_capacity)) {
+        return fail_load(pending, VH_AUDIO_ASSET_ERROR);
     }
 
     /* Validate full pQES before publishing borrowed pointers to the
@@ -104,12 +107,12 @@ int vh_audio_assets_load(VhAudioAssets *assets, const char *directory) {
     VhNativeSeq validation;
     VhNativeSpu silent;
     vh_native_spu_reset(&silent);
-    if (vh_native_seq_init(&validation, pending.seq, pending.seq_size,
-                           &silent, vh_native_vab_resolve, &pending.bank,
+    if (vh_native_seq_init(&validation, pending->seq, pending->seq_size,
+                           &silent, vh_native_vab_resolve, &pending->bank,
                            0 /* bounded source; stop controlled by caller */)) {
-        dispose(&pending);
-        return VH_AUDIO_ASSET_ERROR;
+        return fail_load(pending, VH_AUDIO_ASSET_ERROR);
     }
-    *assets = pending;
+    *assets = *pending;
+    free(pending);
     return VH_AUDIO_ASSET_OK;
 }
