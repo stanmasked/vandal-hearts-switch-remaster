@@ -36,7 +36,10 @@ int vh_game_music_banks_load(VhGameMusicBanks **out, const char *root) {
         dispose(pending);
         return VH_AUDIO_ASSET_ERROR;
     }
-    const int b=vh_audio_assets_load(&pending->selected,selected);
+    const size_t remaining =
+        VH_GAME_MUSIC_MAX_TOTAL_VB_BYTES - pending->field.vb_size;
+    const int b=vh_audio_assets_load_bounded(
+        &pending->selected,selected,remaining);
     if (a!=VH_AUDIO_ASSET_OK || b!=VH_AUDIO_ASSET_OK) {
         const int entirely_absent =
             a==VH_AUDIO_ASSET_MISSING && b==VH_AUDIO_ASSET_MISSING;
@@ -44,9 +47,9 @@ int vh_game_music_banks_load(VhGameMusicBanks **out, const char *root) {
         return entirely_absent ? VH_AUDIO_ASSET_MISSING
                                : VH_AUDIO_ASSET_ERROR;
     }
-    /* Guard simultaneous bank memory pressure. The compressed-file
-     * cap also bounds the 28-per-16 PCM arena to roughly 42 MiB total.
-     * Each source has its own preexisting strict 8 MiB VB cap.
+    /* Defense in depth: the second set had its compressed-VB bound
+     * checked BEFORE allocating its VB and decoded PCM arrays. Keep
+     * the post-load aggregate assertion against future loader changes.
      */
     if (pending->field.vb_size >
           VH_GAME_MUSIC_MAX_TOTAL_VB_BYTES - pending->selected.vb_size) {
