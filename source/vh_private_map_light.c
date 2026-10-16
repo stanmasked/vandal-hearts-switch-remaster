@@ -69,7 +69,7 @@ void vh_map_update_light(CVECTOR output[VH_MAP_SIDE_NORMALS],
              (intensity + (((int)response.g * (128-intensity)) >> 7))) >> 7);
         output[i].b=(unsigned char)(((int)light_color->b *
              (intensity + (((int)response.b * (128-intensity)) >> 7))) >> 7);
-        output[i].c=0;
+        output[i].cd=0;
     }
     PopMatrix();
     /* Original map 32 special case only, NOT applied to map 11. */
