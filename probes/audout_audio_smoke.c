@@ -28,7 +28,11 @@ static uint8_t fixture_vb[48];
 static int16_t fixture_pcm[56];
 
 static int16_t in_44100[VH_AUDIO_BLOCK_FRAMES * 2u];
-static int16_t out_48000[VH_AUDIO_RESAMPLE_MAX_FRAMES * 2u]
+/* libnx AudioOutBuffer.buffer_size advertises a full 0x1000 page,
+ * not merely the active 640 stereo frames. Back it with that entire
+ * aligned page so audout never sees an undersized memory mapping.
+ */
+static int16_t out_48000[0x1000u / sizeof(int16_t)]
     __attribute__((aligned(0x1000)));
 
 static const uint8_t fixture_seq[] = {
@@ -137,7 +141,14 @@ int main(int argc, char **argv) {
 
     AudioOutBuffer desc = {0};
     desc.buffer = out_48000;
-    desc.buffer_size = 4096u; /* audout buffer aligned to 0x1000 */
+    desc.buffer_size = sizeof(out_48000);
+    if (desc.buffer_size != 0x1000u) {
+        audoutStopAudioOut();
+        audoutExit();
+        vh_audio_assets_close(&user_assets);
+        consoleExit(NULL);
+        return 8;
+    }
     unsigned played_blocks = 0;
     int result = 0;
     while (appletMainLoop() && played_blocks < MAX_PROBE_BLOCKS) {
