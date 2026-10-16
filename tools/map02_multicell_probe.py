@@ -127,3 +127,31 @@ def placement_invariants(face):
         "gpu_corners": [corner["gpu_corner"] for corner in original],
         "uv_corners": [corner["uv"] for corner in original],
     }
+
+
+def order_faces_by_external_otz(faces, otz_by_cell):
+    """Associate caller-captured GTE OTZ with cells; never estimate depth.
+
+    Ordering is ascending OTZ for diagnostics only, NOT a PS1 ordering-table
+    insertion policy or a claim about the renderer's draw order. Equal depths
+    retain input order. Every cell needs a distinct (z,x) and a supplied
+    unsigned 16-bit OTZ. Booleans and extra measurements are rejected.
+    """
+    keys = [(face["z"], face["x"]) for face in faces]
+    if len(keys) != len(set(keys)):
+        raise ValueError("duplicate cell in depth batch")
+    if set(otz_by_cell) != set(keys):
+        raise ValueError("OTZ measurements must match placed cells exactly")
+    for key in keys:
+        value = otz_by_cell[key]
+        if type(value) is not int or not 0 <= value <= 65535:
+            raise ValueError("OTZ must be an unsigned 16-bit integer")
+    return [
+        {"z": face["z"], "x": face["x"],
+         "record_index": face["record_index"], "otz": otz_by_cell[key],
+         "input_order": i}
+        for i, (key, face) in sorted(
+            enumerate(zip(keys, faces)),
+            key=lambda pair: (otz_by_cell[pair[1][0]], pair[0])
+        )
+    ]
