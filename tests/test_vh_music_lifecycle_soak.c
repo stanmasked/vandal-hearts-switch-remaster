@@ -237,11 +237,16 @@ static void stress(const char *csv_prefix) {
             const int home_serial=(sleep_events%2u)==0u;
             const unsigned requested=(sleep_events%3u)==0u
                 ? VH_GAME_MUSIC_HERO_SELECTED : VH_GAME_MUSIC_FIELD;
+            uint64_t paused_pages[2]={0},paused_frames[2]={0};
+            uint64_t paused_log_total[2]={0};
             for(unsigned i=0;i<2u;i++) {
                 MusicOwner *o=&owner[i];
                 vh_game_music_mailbox_set_focus(&o->mailbox,0);
                 assert(do_stop(&o->backend)==0);
                 journal_sample(o,(uint64_t)block*12u,2);
+                paused_pages[i]=o->recovery.pages_submitted;
+                paused_frames[i]=o->recovery.frames_submitted;
+                paused_log_total[i]=o->journal.total;
                 memcpy(&paused_spu[i],&o->spu,sizeof o->spu);
                 memcpy(&paused_scene[i],&o->scene,sizeof o->scene);
                 memcpy(&paused_resampler[i],&o->resampler,
@@ -257,6 +262,9 @@ static void stress(const char *csv_prefix) {
                     assert(!vh_game_music_mailbox_focused(&o->mailbox));
                     assert_frozen(o,i);
                     assert(!o->backend.playing);
+                    assert(o->recovery.pages_submitted==paused_pages[i]);
+                    assert(o->recovery.frames_submitted==paused_frames[i]);
+                    assert(o->journal.total==paused_log_total[i]);
                 }
             }
             for(unsigned i=0;i<2u;i++) {
