@@ -199,9 +199,44 @@ int main(void) {
     printf("preloaded two-bank soak: 1400 blocks, %llu frames, %u switches, %u deferred PASS\n",
            (unsigned long long)output_frames,director.switches,deferred);
 
-    /* Explicitly stop audio and all borrowed pointers before freeing. */
-    assert(vh_music_scene_request(&director,NULL,0)==0);
-    assert(!spu.voice[0].active);
+    /* Release both PCM arenas while a fade has a pending *other* bank.
+     * A normal silence request returns BUSY at this point. The caller
+     * owns the producer lock and must detach before freeing any bank.
+     */
+    assert(vh_music_scene_request(&director,&a,4u)==0);
+    assert(director.stage==VH_MUSIC_FADE_OUT);
+    assert(vh_music_scene_render(&director,output)==0);
+    assert(director.pending.id==VH_GAME_MUSIC_FIELD);
+    assert(vh_music_scene_request(&director,NULL,0)==-2);
+    assert(vh_music_scene_detach(&director)==0);
+    assert(director.stage==VH_MUSIC_SILENT);
+    assert(director.seq.bytes==NULL && director.seq.context==NULL);
+    assert(director.active.context==NULL &&
+           director.pending.context==NULL);
+    for(unsigned voice=0;voice<VH_NATIVE_MUSIC_VOICES;voice++) {
+        assert(!spu.voice[voice].active);
+        assert(spu.voice[voice].pcm==NULL);
+    }
+    vh_game_music_banks_close(&pack);
+    assert(pack==NULL);
+    for(unsigned i=0;i<1024u;i++)output[i]=1234;
+    assert(vh_music_scene_render(&director,output)==0);
+    for(unsigned i=0;i<1024u;i++)assert(output[i]==0);
+
+    /* Reload genuine heap-owned synthetic VH/VB allocations. The new
+     * scene must not read the already-freed outgoing PCM or SEQ.
+     */
+    assert(vh_game_music_banks_load(&pack,root)==VH_AUDIO_ASSET_OK);
+    assert(pack!=NULL);
+    VhMusicCue restarted={0};
+    assert(vh_game_music_banks_cue(pack,VH_GAME_MUSIC_FIELD,&restarted)==0);
+    assert(vh_music_scene_request(&director,&restarted,0)==0);
+    assert(vh_music_scene_render(&director,output)==0);
+    assert(director.active.id==VH_GAME_MUSIC_FIELD);
+    assert(director.seq.note_ons==1u);
+    assert(spu.voice[0].pcm==pack->field.bank.samples[1].pcm);
+    assert(spu.voice[0].active);
+    assert(vh_music_scene_detach(&director)==0);
     vh_game_music_banks_close(&pack);
     assert(pack==NULL);
     vh_game_music_banks_close(&pack);
