@@ -196,6 +196,7 @@ static void stress(void) {
     init_owner(&owner[0]);
     init_owner(&owner[1]);
     unsigned sleep_events=0, resume_start_faults=0, submit_faults=0;
+    unsigned fade_blocks_seen=0, wet_reverb_seen=0;
     for(unsigned block=0;block<BLOCKS;block++) {
         if(block && block%SLEEP_INTERVAL==0u) {
             ++sleep_events;
@@ -269,7 +270,22 @@ static void stress(void) {
         assert(owner[0].backend.accepted_digest==
                owner[1].backend.accepted_digest);
         assert(owner[0].scene.blocks_rendered==block+1u);
+        if(owner[0].scene.stage==VH_MUSIC_FADE_OUT ||
+           owner[0].scene.stage==VH_MUSIC_FADE_IN ||
+           owner[0].scene.stage==VH_MUSIC_SWITCH_PENDING)
+            ++fade_blocks_seen;
+        if(block%8u==0u) {
+            for(size_t j=0;j<VH_REV_SAMPLES;j++) {
+                if(owner[0].spu.reverb.work[j]!=0) {
+                    ++wet_reverb_seen;
+                    break;
+                }
+            }
+        }
     }
+    assert(fade_blocks_seen>0u && wet_reverb_seen>0u);
+    assert(owner[0].scene.switches>4u);
+    assert(owner[0].scene.switches==owner[1].scene.switches);
     assert(sleep_events==(BLOCKS-1u)/SLEEP_INTERVAL);
     assert(resume_start_faults>0 && submit_faults>0);
     assert(owner[1].recovery.submit_failures==submit_faults);
@@ -309,7 +325,7 @@ static void stress(void) {
         assert(vh_music_scene_detach(&owner[i].scene)==0);
     }
     printf("HOME/sleep + scene + reverb soak: %u blocks, "
-           "%u pauses, %u resume start faults, %u PCM retries PASS\\n",
+           "%u pauses, %u resume start faults, %u PCM retries PASS\n",
            BLOCKS,sleep_events,resume_start_faults,submit_faults);
 }
 int main(void) {
