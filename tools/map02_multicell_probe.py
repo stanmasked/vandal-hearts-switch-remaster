@@ -258,3 +258,39 @@ def audit_multicell_gte_batch(faces, samples):
         "faces": reports,
         "evidence_scope": "synthetic placement plus caller-supplied GTE OTZ; no rendered frame",
     }
+
+
+def bind_external_screen_corners(faces, screen_samples):
+    """Attach four externally captured PS1 GPU screen corners per source face.
+
+    Keys are (z,x,record_index,face_index). The four XY pairs are in
+    *source perimeter* order: poly0, poly1, poly3, poly2. This does not
+    execute RTPS/RTPT, clipping, backface culling or rasterization.
+    Screen values are signed 16-bit coordinates for transport validation,
+    not proof that a given PS1 command accepted those coordinates.
+    """
+    keys = []
+    for face in faces:
+        source = face["source_face"]
+        key = (face["z"], face["x"], face["record_index"], source["face"])
+        if (source["z"], source["x"], source["record_index"]) != key[:3]:
+            raise ValueError("screen source provenance mismatch")
+        keys.append(key)
+    if len(set(keys)) != len(keys):
+        raise ValueError("duplicate screen face provenance")
+    if not isinstance(screen_samples, dict) or set(screen_samples) != set(keys):
+        raise ValueError("screen samples must match source faces exactly")
+    result = []
+    for key in keys:
+        xy = screen_samples[key]
+        if (not isinstance(xy, (list, tuple)) or len(xy) != 4 or
+                any(not isinstance(point, (list, tuple)) or len(point) != 2 or
+                    any(type(v) is not int or not -32768 <= v <= 32767
+                        for v in point) for point in xy)):
+            raise ValueError("screen corners require four signed-16 XY pairs")
+        result.append({
+            "source_key": list(key),
+            "perimeter_xy": [list(p) for p in xy],
+            "gpu_poly_xy": [list(xy[i]) for i in (0, 1, 3, 2)],
+        })
+    return result
