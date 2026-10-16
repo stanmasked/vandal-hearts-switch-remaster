@@ -162,12 +162,16 @@ int main(void) {
     /* Synthetic-only guard: the known stable transitions stay below 1024
      * PCM16 steps. Never use this threshold as a PS1 accuracy claim.
      */
+    /* First three legacy synthetic seams were measured at 112, 365
+     * and 125; preserve their original 1024 regression guard.
+     * The extended A/B soak reaches a repeatable maximum of 1367 from
+     * synthetic-note phase alignment. Its separate 2048 guard catches
+     * major new discontinuities without treating a valid note onset
+     * as a guaranteed inaudible or PlayStation-identical transition.
+     */
     for (unsigned seam=0;seam<SCENE_COUNT-1u;seam++) {
-        /* The <=1024 guard was established only for the original
-         * three-transition fixture. Additional wet-history seams must
-         * be measured before a defensible longer-run limit is chosen.
-         */
         if (seam<3u) assert(seam_deltas[seam] <= 1024u);
+        assert(seam_deltas[seam] <= 2048u);
         if (seam_deltas[seam]>largest_seam)
             largest_seam=seam_deltas[seam];
     }
