@@ -255,6 +255,37 @@ static void test_neighbor_projection_under_quarter_turns(void) {
     }
 }
 
+static void test_neighbor_projection_under_diagonal_q12_rotations(void) {
+    VhMap02ProjectCamera c = camera();
+    const VhMap02ProjectVertex a[4] = {
+        {0,0,512},{100,0,640},{100,100,640},{0,100,512}
+    };
+    const VhMap02ProjectVertex b[4] = {
+        {100,0,640},{200,0,640},{200,100,640},{100,100,640}
+    };
+    /* Rounded fixed-point rotations; these are synthetic camera inputs,
+     * not values recovered from the original MAP02 runtime. */
+    const int16_t rotations[4][4] = {
+        {2896,2896,-2896,2896}, {-2896,2896,-2896,-2896},
+        {-2896,-2896,2896,-2896}, {2896,-2896,2896,2896}
+    };
+    VhMap02ProjectFace p = {0}, q = {0};
+    unsigned jointly_visible = 0;
+    for (unsigned i = 0; i < 4; ++i) {
+        c.rt[0][0] = rotations[i][0]; c.rt[0][2] = rotations[i][1];
+        c.rt[2][0] = rotations[i][2]; c.rt[2][2] = rotations[i][3];
+        c.tr[2] = 1024;
+        assert(vh_map02_project_face(&c,a,4096,&p));
+        assert(vh_map02_project_face(&c,b,4096,&q));
+        if (p.visible && q.visible) {
+            ++jointly_visible;
+            assert(p.gpu[1].x == q.gpu[0].x && p.gpu[1].y == q.gpu[0].y);
+            assert(p.gpu[3].x == q.gpu[2].x && p.gpu[3].y == q.gpu[2].y);
+        }
+    }
+    assert(jointly_visible > 0);
+}
+
 int main(void) {
     test_screen_quad_and_ordering();
     test_backface_and_zero_area();
@@ -266,6 +297,7 @@ int main(void) {
     test_neighbor_normals_and_projection_in_one_batch();
     test_neighbor_projection_under_camera_translation();
     test_neighbor_projection_under_quarter_turns();
+    test_neighbor_projection_under_diagonal_q12_rotations();
     puts("MAP02 portable projection, NCLIP, AVSZ4 and OT slot tests passed");
     return 0;
 }
