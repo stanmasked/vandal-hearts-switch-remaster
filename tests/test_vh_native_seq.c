@@ -180,12 +180,53 @@ static void test_512_pcm_event_to_spu_fifo(void) {
     assert(seq.cycles_completed==1 && !seq.playing);
 }
 
+static int resolve_with_missing(void *ctx, unsigned program,
+                                unsigned note, unsigned velocity,
+                                unsigned volume, unsigned pan,
+                                VhSeqTone *out) {
+    if (note==61u) return -1;
+    return resolve(ctx,program,note,velocity,volume,pan,out);
+}
+
+static void test_preflight_instrument_coverage(void) {
+    setup();
+    VhSeqAudit info={0};
+    assert(vh_native_seq_audit(controls_song,sizeof controls_song,
+                               resolve,&log_state,&info)==0);
+    assert(info.note_events==1u && info.resolved_notes==1u);
+    assert(info.missing_notes==0u && !info.has_missing);
+    assert(info.program_changes==1u && info.tempo_changes==0u);
+    assert(log_state.calls==1 && log_state.program==7u);
+    assert(log_state.volume==80u && log_state.pan==0u);
+    assert(spu.frames_rendered==0 && !spu.voice[0].active);
+
+    memset(&log_state,0,sizeof log_state);
+    assert(vh_native_seq_audit(running_song,sizeof running_song,
+                  resolve_with_missing,&log_state,&info)==0);
+    assert(info.note_events==2u && info.resolved_notes==1u);
+    assert(info.missing_notes==1u && info.has_missing);
+    assert(info.first_missing_program==0u);
+    assert(info.first_missing_channel==0u);
+    assert(info.first_missing_note==61u);
+    assert(info.tempo_changes==1u);
+
+    VhSeqAudit before=info;
+    assert(vh_native_seq_audit(invalid_data,sizeof invalid_data,
+                               resolve,&log_state,&info)==-1);
+    assert(!memcmp(&info,&before,sizeof info));
+    assert(vh_native_seq_audit(NULL,sizeof controls_song,
+                               resolve,&log_state,&info)==-1);
+    assert(vh_native_seq_audit(controls_song,sizeof controls_song,
+                               NULL,&log_state,&info)==-1);
+}
+
 int main(void) {
     test_validation_and_source_immutability();
     test_512_block_controls_and_ring_pressure();
     test_running_tempo_and_repeat_seam();
     test_voice_stealing_stale_note_off();
     test_512_pcm_event_to_spu_fifo();
+    test_preflight_instrument_coverage();
     puts("native pQES SEQ -> 20-voice SPU -> PCM ring: PASS");
     return 0;
 }
