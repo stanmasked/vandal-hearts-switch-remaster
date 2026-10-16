@@ -10,6 +10,7 @@ from tools.map02_multicell_probe import (
     place_faces, shared_vertices, shared_edges, boundary_report,
     face_cross_xyz, placement_invariants, order_faces_by_external_otz,
     bind_gte_face_samples, place_selected_faces, audit_multicell_gte_batch, bind_external_screen_corners,
+    audit_multicell_screen_batch,
 )
 
 
@@ -383,6 +384,42 @@ class MultiCellTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "duplicate screen"):
             bind_external_screen_corners([faces[0], faces[0]],
                                          {(2, 3, 59, 0): good})
+
+
+    def test_combined_screen_depth_batch_preserves_face_identity(self):
+        keys = [(2, 3, 0), (2, 4, 0)]
+        faces = place_selected_faces(self.data, keys,
+                                     {k: (0, 0, 15, 15) for k in keys},
+                                     step_x=64, step_z=64)
+        depth = {(2, 3, 59, 0): {"otz": 700},
+                 (2, 4, 60, 0): {"otz": 200}}
+        screen = {(2, 3, 59, 0): [(0, 0), (8, 0), (8, 8), (0, 8)],
+                  (2, 4, 60, 0): [(8, 0), (16, 0), (16, 8), (8, 8)]}
+        report = audit_multicell_screen_batch(faces, depth, screen)
+        self.assertEqual(report["face_count"], 2)
+        self.assertEqual(report["cell_count"], 2)
+        self.assertEqual([f["otz"] for f in report["faces"]], [700, 200])
+        self.assertEqual(report["faces"][1]["source_key"], [2, 4, 60, 0])
+        self.assertEqual(report["faces"][0]["gpu_poly_xy"],
+                         [[0, 0], [8, 0], [0, 8], [8, 8]])
+        self.assertEqual([f["input_order"] for f in report["faces"]], [0, 1])
+
+    def test_combined_batch_rejects_cross_face_screen_swap(self):
+        keys = [(2, 3, 0), (2, 4, 0)]
+        faces = place_selected_faces(self.data, keys,
+                                     {k: (0, 0, 15, 15) for k in keys},
+                                     step_x=64, step_z=64)
+        depth = {(2, 3, 59, 0): {"otz": 700},
+                 (2, 4, 60, 0): {"otz": 200}}
+        wrongly_keyed = {(2, 3, 60, 0): [(0, 0)] * 4,
+                         (2, 4, 59, 0): [(1, 1)] * 4}
+        with self.assertRaisesRegex(ValueError, "match source"):
+            audit_multicell_screen_batch(faces, depth, wrongly_keyed)
+        with self.assertRaisesRegex(ValueError, "match source"):
+            audit_multicell_screen_batch(faces, {}, {
+                (2, 3, 59, 0): [(0, 0)] * 4,
+                (2, 4, 60, 0): [(1, 1)] * 4,
+            })
 
 
 if __name__ == "__main__":
