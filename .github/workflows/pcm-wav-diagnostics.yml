@@ -1,0 +1,29 @@
+name: PCM WAV diagnostics
+
+on:
+  push:
+    branches:
+      - feat/native-av-ps1-seq-integration
+    paths:
+      - 'tools/analyze_pcm_wav.py'
+      - 'tests/test_analyze_pcm_wav.py'
+      - '.github/workflows/pcm-wav-diagnostics.yml'
+  pull_request:
+    paths:
+      - 'tools/analyze_pcm_wav.py'
+      - 'tests/test_analyze_pcm_wav.py'
+      - '.github/workflows/pcm-wav-diagnostics.yml'
+  workflow_dispatch:
+
+jobs:
+  pcm-wav-unit-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate WAV diagnostics
+        run: python3 -m unittest discover -s tests -p 'test_analyze_pcm_wav.py' -v
