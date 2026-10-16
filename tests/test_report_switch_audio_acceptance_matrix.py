@@ -93,6 +93,22 @@ class AcceptanceMatrixTests(unittest.TestCase):
         self.assertTrue(result["retests"])
         self.assertEqual(result["hardware_status"], "HARDWARE NOT TESTED")
 
+    def test_unknown_audio_or_output_mode_never_mark_home_sleep_long_run_ready(self):
+        self.obs["sessions"][0]["music_audible"] = "UNKNOWN"
+        cases = self.scenarios()
+        for scenario_id in ("H01", "H02", "H03", "H04"):
+            self.assertEqual(cases[scenario_id]["status"], matrix.INCOMPLETE)
+        self.obs["sessions"][0]["music_audible"] = "YES"
+        self.obs["sessions"][0]["audio_output"] = "UNKNOWN"
+        cases = self.scenarios()
+        for scenario_id in ("H01", "H02", "H03", "H04"):
+            self.assertEqual(cases[scenario_id]["status"], matrix.INCOMPLETE)
+
+    def test_unspecified_launch_mode_does_not_count_as_complete_first_run(self):
+        self.obs["sessions"][1]["launch_mode"] = "UNKNOWN"
+        self.assertEqual(self.scenarios()["H01"]["status"], matrix.INCOMPLETE)
+        self.assertEqual(self.review()["result"], "INCONCLUSIVE")
+
     def test_home_below_ten_gets_targeted_retest(self):
         self.obs["sessions"][1]["home_returns"] = 2
         result = self.review()
