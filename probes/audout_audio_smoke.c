@@ -17,6 +17,7 @@
 
 #define LOCAL_AUDIO_DIR "sdmc:/switch/vandal-hearts-remake/audio"
 #define MAX_PROBE_BLOCKS 1200u
+#define SYNTHETIC_SCENE_BLOCKS 64u
 
 static VhAudioAssets user_assets;
 static VhNativeVab synthetic_bank;
@@ -40,6 +41,14 @@ static const uint8_t fixture_seq[] = {
     'p','Q','E','S',0,0,0,0, 0x01,0xe0,0x07,0xa1,0x20,0,0,
     0,0xc0,7, 0,0xb0,7,127, 0,0xb0,10,64,
     0,0x90,60,110, 0x81,0x70,0x80,60,0,
+    0x81,0x70,0xff,0x2f,
+};
+/* Alternating fixture only; user-supplied SEQ/VH/VB is NEVER
+ * switched automatically by this console diagnostic. */
+static const uint8_t fixture_seq_b[] = {
+    'p','Q','E','S',0,0,0,0, 0x01,0xe0,0x07,0xa1,0x20,0,0,
+    0,0xc0,7, 0,0xb0,7,127, 0,0xb0,10,64,
+    0,0x90,64,110, 0x81,0x70,0x80,64,0,
     0x81,0x70,0xff,0x2f,
 };
 static const uint8_t fixture_vag[32] = {
@@ -106,6 +115,7 @@ static int prepare_music(int *using_user_files) {
 typedef struct {
     AudioOutBuffer page;
     VhAudioSubmitTiming timing;
+    VhAudioSceneWaits scene_waits;
     int initialized;
     int started;
 } NativeOutput;
@@ -182,6 +192,9 @@ int main(int argc, char **argv) {
         return 1;
     }
     printf("Source: %s\n", user_files ? "user-owned SD files" : "synthetic");
+    if (!user_files)
+        printf("Fixture changes every %u returned PCM pages; SD music unchanged\n",
+               SYNTHETIC_SCENE_BLOCKS);
     consoleUpdate(NULL);
 
     NativeOutput output={0};
@@ -206,9 +219,29 @@ int main(int argc, char **argv) {
     uint64_t compute_ticks_total = 0, compute_ticks_max = 0;
     unsigned compute_over_budget = 0;
     unsigned played_blocks = 0;
+    unsigned fixture_b = 0, completed_switches = 0;
     int result = 0;
     while (appletMainLoop() && played_blocks < MAX_PROBE_BLOCKS) {
         const uint64_t tick_begin = armGetSystemTick();
+        unsigned switched_this_block=0;
+        /* The previous blocking audout call returned its exact page
+         * before this loop iteration, and no old PCM page is queued.
+         * Never switch a user-owned SD music set automatically.
+         */
+        if (!user_files && played_blocks &&
+            played_blocks%SYNTHETIC_SCENE_BLOCKS==0u) {
+            const uint8_t *next=fixture_b ? fixture_seq : fixture_seq_b;
+            const size_t next_size=fixture_b
+                ? sizeof(fixture_seq) : sizeof(fixture_seq_b);
+            if (vh_native_seq_switch_scene(&seq,next,next_size,&synth,
+                                           vh_native_vab_resolve,
+                                           &synthetic_bank,0)) {
+                result=8;
+                break;
+            }
+            fixture_b^=1u;
+            switched_this_block=1u;
+        }
         if (vh_native_seq_advance_block(&seq) < 0) {
             result = 5;
             break;
@@ -228,14 +261,25 @@ int main(int argc, char **argv) {
         /* Retry the same fully rendered page after a bounded backend
          * restart. A failed output must not advance any music clock.
          */
-        if (vh_audio_output_submit_recover(&ops,&recovery,
-                                           out_48000,count)) {
-            result = 7;
+        const VhAudioSubmitTiming before_submit=output.timing;
+        const int submit_result=vh_audio_output_submit_recover(
+            &ops,&recovery,out_48000,count);
+        if (vh_audio_output_record_scene_page(
+                &output.scene_waits,&before_submit,&output.timing,
+                tick_frequency,count,(int)switched_this_block,
+                submit_result==0)) {
+            result=9;
+            break;
+        }
+        if (submit_result) {
+            result=7;
             break;
         }
         ++played_blocks;
+        completed_switches+=switched_this_block;
         if (played_blocks % 128u == 0u) {
-            printf("Blocks=%u notes=%llu cycles=%u\n", played_blocks,
+            printf("Blocks=%u fixture_switches=%u notes=%llu cycles=%u\n",
+                   played_blocks,completed_switches,
                    (unsigned long long)seq.note_ons,seq.cycles_completed);
             if (tick_frequency) {
                 const unsigned long long max_us =
@@ -259,6 +303,27 @@ int main(int argc, char **argv) {
                    (unsigned long long)max_wait_us,
                    (unsigned long long)output.timing.waits_longer_than_page,
                    (unsigned long long)output.timing.failed_submissions);
+            const VhAudioPageWaitBucket *normal=&output.scene_waits.ordinary;
+            const VhAudioPageWaitBucket *boundary=
+                &output.scene_waits.first_after_switch;
+            printf("steady pages=%llu avg=%llu us peak=%llu us slow=%llu retries=%llu\n",
+                   (unsigned long long)normal->pages,
+                   (unsigned long long)(normal->pages
+                       ? vh_audio_output_ticks_to_us(normal->total_ticks,
+                           tick_frequency)/normal->pages : 0u),
+                   (unsigned long long)vh_audio_output_ticks_to_us(
+                       normal->peak_page_ticks,tick_frequency),
+                   (unsigned long long)normal->slow_pages,
+                   (unsigned long long)normal->retried_pages);
+            printf("boundary pages=%llu avg=%llu us peak=%llu us slow=%llu retries=%llu\n",
+                   (unsigned long long)boundary->pages,
+                   (unsigned long long)(boundary->pages
+                       ? vh_audio_output_ticks_to_us(boundary->total_ticks,
+                           tick_frequency)/boundary->pages : 0u),
+                   (unsigned long long)vh_audio_output_ticks_to_us(
+                       boundary->peak_page_ticks,tick_frequency),
+                   (unsigned long long)boundary->slow_pages,
+                   (unsigned long long)boundary->retried_pages);
             consoleUpdate(NULL);
         }
     }
@@ -278,6 +343,18 @@ int main(int argc, char **argv) {
                output.timing.max_ticks,tick_frequency),
            (unsigned long long)output.timing.waits_longer_than_page,
            (unsigned long long)output.timing.failed_submissions);
+    const VhAudioPageWaitBucket *normal=&output.scene_waits.ordinary;
+    const VhAudioPageWaitBucket *boundary=&output.scene_waits.first_after_switch;
+    printf("Audout scene summary: switched=%u steady=%llu boundary=%llu\n",
+           completed_switches,(unsigned long long)normal->pages,
+           (unsigned long long)boundary->pages);
+    printf("Service wait peaks: steady=%llu us boundary=%llu us; retries=%llu/%llu\n",
+           (unsigned long long)vh_audio_output_ticks_to_us(
+               normal->peak_page_ticks,tick_frequency),
+           (unsigned long long)vh_audio_output_ticks_to_us(
+               boundary->peak_page_ticks,tick_frequency),
+           (unsigned long long)normal->retried_pages,
+           (unsigned long long)boundary->retried_pages);
     printf("Audio probe ended, result=%d\n",result);
     consoleUpdate(NULL);
     consoleExit(NULL);
