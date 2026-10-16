@@ -1970,8 +1970,8 @@ jobs:
           python3 -m remaster.tools.apply_map02_v78_pcsx_rearmed upstream-pcsx
           git -C upstream-pcsx diff --check
           test "$(git -C upstream-pcsx diff --name-only | wc -l)" -eq 6
-          git -C upstream-pcsx diff --name-only | sort | diff -u <(printf '%s\\n' \\
-            Makefile frontend/main.c libpcsxcore/plugins.c libpcsxcore/psxhw.c \\
+          git -C upstream-pcsx diff --name-only | sort | diff -u <(printf '%s\n' \
+            Makefile frontend/main.c libpcsxcore/plugins.c libpcsxcore/psxhw.c \
             libpcsxcore/psxdma.c libpcsxcore/psxcounters.c | sort) -
           grep -F 'vh78_vblank_observed_count++' upstream-pcsx/libpcsxcore/psxcounters.c
           grep -F 'GPU_vBlank( 1, 0 );' upstream-pcsx/libpcsxcore/psxcounters.c
