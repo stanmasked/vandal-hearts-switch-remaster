@@ -79,7 +79,9 @@ static void setup_model(void) {
               s_slot243->canonical == 243, "exact v24 slot 243 identity");
     if (!s_slot241 || !s_slot243) return;
     for (i = 641; i <= 644; ++i) {
-        const VH_Map02Texture *entry = i == 643 ? s_slot243 : s_slot241;
+        const VH_Map02Texture *entry;
+        if (i == 642) continue; /* local slot 242 is absent from the real v24 table */
+        entry = i == 643 ? s_slot243 : s_slot241;
         V43_CHECK(entry->slot == i - 400 || i == 644,
                   "gfx global-to-local slot offset matches v24");
         gGfxClutIds[i] = entry->clut;
