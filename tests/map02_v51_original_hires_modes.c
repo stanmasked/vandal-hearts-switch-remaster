@@ -50,6 +50,25 @@ static const Test CASES[] = {
     {"window_8bit",        1,248,200, 1,1,0,0,33, 0x801f,0x4210,1,3,0},
 };
 
+/* Whole 32x32 supersampled surface parity, not just one debug pixel. */
+static void seed_native_background(unsigned short (*vram)[1024], unsigned short bg) {
+    int x,y;
+    for (y=80; y<96; y++)
+        for (x=80; x<96; x++) vram[y][x]=bg;
+}
+static unsigned long long hash_hires_quad(const unsigned short *hires) {
+    unsigned long long h=1469598103934665603ull;
+    const int stride=1024*SCALE;
+    int x,y;
+    for (y=80*SCALE;y<96*SCALE;y++) {
+        for (x=80*SCALE;x<96*SCALE;x++) {
+            h^=hires[(size_t)y*stride+x];
+            h*=1099511628211ull;
+        }
+    }
+    return h;
+}
+
 static int apply_case(const Test *t) {
     unsigned short (*vram)[1024] = PC_GpuVram();
     const int ueff=(t->u & ~(t->twmx*8)) | ((t->twox & t->twmx)*8);
@@ -63,6 +82,7 @@ static int apply_case(const Test *t) {
     RVert a,b,c,d;
     RenderCtx rc;
     unsigned short after, hd_direct, hd_threaded;
+    unsigned long long hash_direct, hash_threaded;
     const unsigned short *hires;
     size_t hires_bytes=0;
     unsigned filler;
@@ -78,10 +98,10 @@ static int apply_case(const Test *t) {
     }
     vram[ty][tx]=word;
     if (index>=0) vram[cy][cx+index]=t->texel;
-    vram[NY][NX]=t->background;
-    /* Mirror a known original PS1 background before any drawing: the
-     * native and hi-res tests always begin from the SAME BGR555 halfword. */
-    HiresMirrorRect(NX,NY,1,1);
+    seed_native_background(vram,t->background);
+    /* Initialize the full textured quad, not just the measured pixel:
+     * ABR must see the same background for both entire HD passes. */
+    HiresMirrorRect(80,80,16,16);
     hires=(const unsigned short *)PC_GpuHiresBytes(&hires_bytes);
     if (!hires || hires_bytes < (pixel_offset+1)*sizeof(*hires) ||
         hires[pixel_offset] != t->background) return 0;
@@ -106,12 +126,13 @@ static int apply_case(const Test *t) {
     rc.target=1; rc.scale=SCALE;
     FillQuad(&rc,a,b,c,d,128,128,128,1,tpage,clut,t->semi,t->abr);
     hd_direct=hires[pixel_offset];
+    hash_direct=hash_hires_quad(hires);
 
     /* Run the SAME case via the ACTUAL deferred threaded path. Force the
      * production >=64-primitive threshold with distant synthetic rects,
      * whose output cannot touch the tested (NX,NY) pixel. */
-    vram[NY][NX]=t->background;
-    HiresMirrorRect(NX,NY,1,1);
+    seed_native_background(vram,t->background);
+    HiresMirrorRect(80,80,16,16);
     if (hires[pixel_offset]!=t->background) return 0;
     HiresFrameReset();
     HiresAppendQuad(&rc,a,b,c,d,128,128,128,1,tpage,clut,t->semi,t->abr);
@@ -120,11 +141,19 @@ static int apply_case(const Test *t) {
                         1,1,0,0,0);
     HiresRasterizeThreaded(0,240);
     hd_threaded=hires[pixel_offset];
+    hash_threaded=hash_hires_quad(hires);
+    if (hash_direct!=hash_threaded) {
+        fprintf(stderr,"V51 FAIL full 32x32 HD region mismatch case=%s direct=%016llx threaded=%016llx\n",
+                t->name,hash_direct,hash_threaded);
+        return 0;
+    }
     if (hd_direct!=hd_threaded) {
         fprintf(stderr,"V51 FAIL direct/threaded pixel differs case=%s direct=%u threaded=%u\n",
                 t->name,(unsigned)hd_direct,(unsigned)hd_threaded);
         return 0;
     }
+    printf("V51HASH name=%s direct=%016llx threaded=%016llx\n",
+           t->name,hash_direct,hash_threaded);
     printf("V50 name=%s depth=%d tpage=%d clut=%d u=%d v=%d "
            "maskx=%d masky=%d offx=%d offy=%d tx=%d ty=%d "
            "word=%u index=%d palx=%d paly=%d palette=%u "
