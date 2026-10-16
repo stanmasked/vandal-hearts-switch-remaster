@@ -1,4 +1,9 @@
 """Synthetic framebuffer assertions only; never imply actual console audio."""
+import json
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
 import unittest
 
 from PIL import Image
@@ -81,6 +86,35 @@ class NativeAVScreenshotTests(unittest.TestCase):
         first, second = make_frames((20, 20, 20))
         with self.assertRaisesRegex(ValueError, "status marker absent"):
             inspect_images(first, second)
+
+    def test_cli_requires_exact_audio_origin_and_audout_status(self):
+        with tempfile.TemporaryDirectory() as folder:
+            before, after = make_frames(audio=AUDIO_FAIL, source=AUDIO_FAIL)
+            first_path = Path(folder) / "before.png"
+            second_path = Path(folder) / "after.png"
+            before.save(first_path)
+            after.save(second_path)
+            # Standalone script path avoids assumptions about Python package.
+            prefix = [sys.executable, "tests/check_native_av_screenshot.py"]
+            args = [str(first_path), str(second_path),
+                    "--require-audio-source", "invalid_or_partial",
+                    "--require-audout-status", "unavailable_or_error"]
+            passed = subprocess.run(prefix + args, capture_output=True, text=True)
+            self.assertEqual(passed.returncode, 0, passed.stderr)
+            report = json.loads(passed.stdout)
+            self.assertEqual(report["audio_source"], "invalid_or_partial")
+            self.assertFalse(report["user_music_identity_verified"])
+            denied = subprocess.run(prefix + args[:2] +
+                                    ["--require-audio-source", "user_files"],
+                                    capture_output=True, text=True)
+            self.assertNotEqual(denied.returncode, 0)
+            self.assertIn("expected audio source", denied.stderr)
+            denied_audio = subprocess.run(
+                prefix + args[:2] + ["--require-audout-status", "initialized"],
+                capture_output=True, text=True
+            )
+            self.assertNotEqual(denied_audio.returncode, 0)
+            self.assertIn("expected audout status", denied_audio.stderr)
 
     def test_no_hero_is_rejected(self):
         first, second = make_frames()
