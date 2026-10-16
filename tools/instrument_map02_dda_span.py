@@ -81,9 +81,12 @@ def prepare_span(original_gpu, original_raster, output_dir):
     gpu = scope_gpu(gpu_capture(gpu_raw.decode("utf-8")))
     raster = instrument_span(instrument_vertical(
         instrument_raster_skips(scope_raster(raster_raw.decode("utf-8")))))
+    # Keep validation ahead of publication and never overwrite overlay files.
     output_dir.mkdir(parents=True)
-    (output_dir / "libgpu.span.c").write_text(gpu, encoding="utf-8")
-    (output_dir / "pc_raster.span.c").write_text(raster, encoding="utf-8")
+    with (output_dir / "libgpu.span.c").open("x", encoding="utf-8") as stream:
+        stream.write(gpu)
+    with (output_dir / "pc_raster.span.c").open("x", encoding="utf-8") as stream:
+        stream.write(raster)
     return {"pinned_original_gpu": True, "native_only": True,
             "entered_spans_only": True,
             "vertical_rejected_row_coverage_proven": False,
