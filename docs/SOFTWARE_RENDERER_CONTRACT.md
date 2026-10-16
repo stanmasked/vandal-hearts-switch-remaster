@@ -1059,3 +1059,34 @@ interleaved native packets, tampered manifests, false frame labels,
 ambiguous FT4 matching, and claimed ordering metadata. No retail
 MAP02 gameplay, complete original GPU command stream, physical PS1
 raster parity, or Switch running scene is established by these tests.
+
+
+## Observed native FT4 VRAM changes and repeat-address overdraw evidence
+
+`tools/verify_map02_native_overdraw.py` extends the source-keyed
+`AddPrim/DrawOTag` depth/LIFO join with a strict local comparison
+of **actual before/after VRAM halfwords** for each uniquely identified
+normal-terrain FT4. It re-runs every underlying source/compiled GTE,
+original GPU packet, VRAM texture/CLUT and claimed ordering validation
+before analyzing any observed changes. Adjacent native captures must
+have **identical previous-after / next-before VRAM** or the analysis
+fails closed due to an unattributed intervening change.
+
+The new module reports aggregate counts of changed 16-bit VRAM
+words, distinct addresses, addresses changed by **two or more**
+source-keyed FT4 draws, observed BGR555 bit-15 transitions,
+and counts within/outside each packet's **screen AABB proxy**.
+Changes made by unmatched sprite/tile/FT4 events are not incorrectly
+credited to source terrain. Pixel bytes, original geometry, camera
+and palette remain private; the report is SHA/count only.
+See `docs/MAP02_NATIVE_OVERDRAW_EVIDENCE.md`.
+
+**What is NOT proven:** unchanged VRAM can follow a same-color write,
+transparent texel, GPU mask rejection, outside drawing area or other
+conditions. Bit-15 changes do not prove ABR/STP mode decisions or
+GP0(E6) mask policy. Screen AABB != actual PC GPU DDA triangle pixel
+coverage, and PC framebuffer VRAM addresses may be offset from
+nominal XY. Consecutive equal snapshots cannot rule out an intervening
+write-and-restore. This tool does not establish original gameplay
+authenticity, complete DrawOTag capture, physical PS1 raster parity
+or a live Nintendo Switch game screenshot.
