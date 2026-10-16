@@ -21,7 +21,8 @@ def synth_dir(directory, wet=False, bank_b=False, fallback_program=False,
               out_of_range_note=False, mute_master=False,
               no_note_on=False, program_change_retrigger=False,
               delayed_program_change=False, accelerated_tempo=False,
-              multiple_tempo_loop=False, polyphony_notes=0):
+              multiple_tempo_loop=False, polyphony_notes=0,
+              release_overlap=None):
     directory.mkdir()
     files = make_synthetic_files()
     vh = bytearray(files["music.vh"])
@@ -67,6 +68,26 @@ def synth_dir(directory, wet=False, bank_b=False, fallback_program=False,
         if polyphony_notes == 23:
             melody.extend((0, 0x80, 40, 0, 0, 0x80, 41, 0))
         melody.extend((0x81, 0x70, 0xFF, 0x2F))
+        files["music.seq"] = files["music.seq"][:15] + bytes(melody)
+    if release_overlap is not None:
+        if release_overlap not in ("immediate", "after_release"):
+            raise ValueError("unsupported release-overlap fixture")
+        melody = bytearray((0, 0xC0, 7))
+        for key in range(40, 60):
+            melody.extend((0, 0x90, key, 110))
+        melody.extend((45, 0x80, 40, 0,
+                       0, 0x80, 41, 0,
+                       0, 0x80, 42, 0))
+        # Tick45 = block5. The immediate variant keys on all three
+        # while the old slots still occupy the ADSR_RELEASE phase;
+        # waiting another 45 ticks allows that release to finish.
+        melody.extend((0 if release_overlap=="immediate" else 45,
+                       0x90, 60, 110,
+                       0, 0x90, 61, 110,
+                       0, 0x90, 62, 110,
+                       0, 0x80, 40, 0,
+                       0, 0x80, 41, 0,
+                       0x81, 0x70, 0xFF, 0x2F))
         files["music.seq"] = files["music.seq"][:15] + bytes(melody)
     if multiple_tempo_loop:
         # Two native FF51 events (250000 and 750000 us/quarter) inside
@@ -530,6 +551,66 @@ class NativeLocalMusicTransitionTests(unittest.TestCase):
                         self.assertEqual(
                             {p.name: p.read_bytes() for p in folder.iterdir()},
                             before)
+
+    def test_releasing_voices_are_occupied_until_adsr_finishes(self):
+        # Both sequences start 20 held notes, then NoteOff 3 of them
+        # at tick45 (block5). The immediate cue keys on three new
+        # notes in that same block: released slots remain occupied.
+        # The delayed cue keys on at tick90 (block9), after their
+        # native ADSR release has reached zero and become reusable.
+        for kind, expected_saturated, first_note_block in (
+                ("immediate", 3, 5), ("after_release", 0, 0)):
+            with self.subTest(kind=kind):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    a, b = root / "release-a", root / "plain-b"
+                    original_a = synth_dir(a, release_overlap=kind)
+                    original_b = synth_dir(b, bank_b=True)
+                    command = [str(PROGRAM), str(a), str(b), "4", "12"]
+                    first = subprocess.run(command, capture_output=True, text=True)
+                    again = subprocess.run(command, capture_output=True, text=True)
+                    self.assertEqual(first.returncode, 0, first.stderr)
+                    self.assertEqual(first.stdout, again.stdout)
+                    report = json.loads(first.stdout)
+                    for cue in (report["measurements"][0],
+                                report["measurements"][2]):
+                        self.assertEqual(cue["note_requests"], 23)
+                        self.assertEqual(cue["resolved_notes"], 23)
+                        self.assertEqual(cue["note_offs"], 3)
+                        self.assertEqual(cue["peak_active_voices"], 20)
+                        self.assertEqual(cue["unresolved_notes"], 0)
+                        self.assertEqual(cue["fallback_notes"], 0)
+                        self.assertEqual(cue["saturated_note_requests"],
+                                         expected_saturated)
+                        self.assertEqual(cue["first_saturated_note_block"],
+                                         first_note_block)
+                        self.assertEqual(cue["notes_while_release_active"],
+                                         3 if kind == "immediate" else 0)
+                        self.assertEqual(cue["saturated_with_release_requests"],
+                                         expected_saturated)
+                        self.assertEqual(cue["peak_releasing_voices"],
+                                         3 if kind == "immediate" else 0)
+                        self.assertEqual(cue["first_release_overlap_block"],
+                                         first_note_block)
+                        self.assertEqual(cue["first_note_block"], 1)
+                        self.assertEqual(cue["last_note_block"],
+                                         5 if kind == "immediate" else 9)
+                        self.assertEqual(cue["first_note_off_block"], 5)
+                        self.assertGreater(cue["nonzero_samples"], 0)
+                    for cue in (report["measurements"][1],
+                                report["measurements"][3]):
+                        self.assertEqual(cue["note_requests"], 1)
+                        self.assertEqual(cue["saturated_note_requests"], 0)
+                        self.assertEqual(cue["notes_while_release_active"], 0)
+                        self.assertEqual(cue["peak_releasing_voices"], 0)
+                    frames = 4 * 12 * 512
+                    self.assertEqual(report["output_frames"],
+                                     (frames - 1) * 48000 // 44100 + 1)
+                    self.assertNotIn(str(root), first.stdout)
+                    for folder, original in ((a, original_a), (b, original_b)):
+                        self.assertEqual(
+                            {f.name: f.read_bytes() for f in folder.iterdir()},
+                            original)
 
     def test_resolved_notes_can_produce_silent_pcm_with_zero_gain(self):
         with tempfile.TemporaryDirectory() as tmp:
