@@ -27,7 +27,9 @@ def inspect_images(first: Image.Image, second: Image.Image) -> dict:
     center = first.getpixel((452, 296))
     if not near(center, HERO):
         raise ValueError(f"hero marker absent at expected grid coordinate: {center}")
-    audio_sample = first.getpixel((108, 104))
+    # Audio status moved to the right of NeXium's top-left OSD.
+    # Guest content is vertically scaled into the 694-pixel viewport.
+    audio_sample = first.getpixel((1050, 160))
     red, green, blue = audio_sample
     # Some emulator capture paths transform the blue component of the
     # libnx RGBA8 status fill (one observed green pixel was 60,212,91).
@@ -44,8 +46,11 @@ def inspect_images(first: Image.Image, second: Image.Image) -> dict:
 
     # Sample only the heartbeat; animated bar is separate from the cursor,
     # so its change demonstrates video-loop progress without emulated input.
-    before = first.crop((70, 610, 870, 624))
-    after = second.crop((70, 610, 870, 624))
+    # Native framebuffer y=610 maps to about y=588 in a 1280x694
+    # guest viewport above NeXium's bottom 26-pixel status bar.
+    # Use a bounded band away from the tile grid and emulator OSD.
+    before = first.crop((70, 565, 870, 640))
+    after = second.crop((70, 565, 870, 640))
     changed = sum(1 for a,b in zip(before.getdata(), after.getdata())
                   if max(abs(x-y) for x,y in zip(a,b)) > 20)
     if changed < 16:
