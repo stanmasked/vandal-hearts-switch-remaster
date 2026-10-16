@@ -268,24 +268,31 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
                pcm->first_wait_band);
         printf("PCM boundary step is NOT proof of a click.\n");
     } else {
-        printf("REPORT 3/3: HUMAN LISTENING / A BUTTON\n\n");
-        printf("A marks=%llu; all windows=%llu\n",
+        printf("REPORT 3/3: HUMAN A / NORMAL B / ALL\n\n");
+        printf("Windows: A=%llu B=%llu all=%llu\n",
                (unsigned long long)marks->manual_marks,
+               (unsigned long long)marks->control_marks,
                (unsigned long long)marks->returned_pages);
-        printf("Switch in window, A/all=%llu/%llu\n",
+        printf("Event overlaps: A / B / all\n");
+        printf("Cue change: %llu / %llu / %llu\n",
                (unsigned long long)marks->marks_near_switch,
+               (unsigned long long)marks->controls_near_switch,
                (unsigned long long)marks->windows_near_switch);
-        printf(">2x in window, A/all=%llu/%llu\n",
+        printf(">2x wait: %llu / %llu / %llu\n",
                (unsigned long long)marks->marks_near_wait_over_2x,
+               (unsigned long long)marks->controls_near_wait_over_2x,
                (unsigned long long)marks->windows_near_wait_over_2x);
-        printf(">4x in window, A/all=%llu/%llu\n",
+        printf(">4x wait: %llu / %llu / %llu\n",
                (unsigned long long)marks->marks_near_wait_over_4x,
+               (unsigned long long)marks->controls_near_wait_over_4x,
                (unsigned long long)marks->windows_near_wait_over_4x);
-        printf("Retry in window, A/all=%llu/%llu\n",
+        printf("Retry: %llu / %llu / %llu\n",
                (unsigned long long)marks->marks_near_retry,
+               (unsigned long long)marks->controls_near_retry,
                (unsigned long long)marks->windows_near_retry);
-        printf("Peak PCM16 step near A=%u\n",
-               marks->peak_seam_near_mark);
+        printf("Peak PCM16 near A/B=%u/%u\n",
+               marks->peak_seam_near_mark,
+               marks->peak_seam_near_control);
         printf("Max A poll gap=%llu us\n",
                (unsigned long long)vh_audio_output_ticks_to_us(
                    poll->max_gap_ticks,hz));
@@ -296,7 +303,8 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
                (unsigned long long)poll->samples,
                r->listen_evidence ? "INVALID" : "VALID",
                r->poll_evidence ? "INVALID" : "VALID");
-        printf("Short taps can be missed; no A != no glitches.\n");
+        printf("B = operator says normal; not random sampling.\n");
+        printf("Short taps missed; zero A != no glitches.\n");
     }
     printf("\nLEFT/RIGHT change page; PLUS exit.\n");
     printf("No audio recorded; inspect on real Switch.\n");
@@ -322,8 +330,9 @@ int main(int argc, char **argv) {
     if (!user_files)
         printf("Fixture changes every %u returned PCM pages; SD music unchanged\n",
                SYNTHETIC_SCENE_BLOCKS);
-    printf("Press A during playback if you hear an audio defect.\n");
-    printf("A is a manual annotation, not automatic glitch detection.\n");
+    printf("A = perceived audio defect; B = sounds normal (control).\n");
+    printf("Press separately; simultaneous A+B edges are ignored.\n");
+    printf("These are manual tags, never automatic glitch detection.\n");
     consoleUpdate(NULL);
     padConfigureInput(1,HidNpadStyleSet_NpadStandard);
     PadState pad;
@@ -439,8 +448,14 @@ int main(int argc, char **argv) {
             result=14;
             break;
         }
-        if ((padGetButtonsDown(&pad)&HidNpadButton_A) &&
-            vh_audio_listening_mark(&listening_marks)) {
+        const uint64_t pressed=padGetButtonsDown(&pad);
+        const int pressed_a=(pressed&HidNpadButton_A)!=0;
+        const int pressed_b=(pressed&HidNpadButton_B)!=0;
+        /* Opposing annotations in one poll are ambiguous. Ignore
+         * both rather than assert two contradictory observations. */
+        if (pressed_a!=pressed_b &&
+            (pressed_a ? vh_audio_listening_mark(&listening_marks) :
+                         vh_audio_listening_control(&listening_marks))) {
             result=13;
             break;
         }

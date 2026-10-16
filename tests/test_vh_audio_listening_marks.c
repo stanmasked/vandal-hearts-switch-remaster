@@ -9,6 +9,8 @@
 int main(void) {
     VhAudioListeningMarks m={0};
     assert(vh_audio_listening_mark(&m)==-1); /* no returned page */
+    assert(vh_audio_listening_control(&m)==-1);
+    assert(vh_audio_listening_mark_kind(&m,2u)==-1);
     assert(vh_audio_listening_verify(&m,0u)==0);
     assert(vh_audio_listening_observe(&m,4u,0u,0u,0u)==-1);
     assert(vh_audio_listening_observe(&m,0u,2u,0u,0u)==-1);
@@ -32,6 +34,14 @@ int main(void) {
     assert(m.marks_near_wait_over_4x==1u);
     assert(m.marks_near_retry==1u);
     assert(m.peak_seam_near_mark==4000u);
+    /* B shares the precise A look-back but has distinct counters. */
+    assert(vh_audio_listening_control(&m)==0);
+    assert(m.control_marks==1u && m.controls_near_switch==1u);
+    assert(m.controls_near_wait_over_2x==1u);
+    assert(m.controls_near_wait_over_4x==1u);
+    assert(m.controls_near_retry==1u);
+    assert(m.peak_seam_near_control==4000u);
+    assert(m.manual_marks==2u);
     assert(m.windows_near_switch==1u);
     assert(m.windows_near_wait_over_2x==1u);
     assert(m.windows_near_wait_over_4x==1u);
@@ -43,6 +53,12 @@ int main(void) {
     assert(m.returned_pages==VH_LISTEN_RECENT_PAGES+2u);
     assert(vh_audio_listening_mark(&m)==0);
     assert(m.manual_marks==3u);
+    assert(vh_audio_listening_control(&m)==0);
+    assert(m.control_marks==2u && m.controls_near_switch==1u);
+    assert(m.controls_near_wait_over_2x==1u);
+    assert(m.controls_near_wait_over_4x==1u);
+    assert(m.controls_near_retry==1u);
+    assert(m.peak_seam_near_control==4000u);
     assert(m.marks_near_switch==1u);
     assert(m.marks_near_wait_over_2x==1u);
     assert(m.marks_near_wait_over_4x==1u);
@@ -63,6 +79,7 @@ int main(void) {
     assert(vh_audio_listening_verify(&damaged,m.returned_pages)==-1);
     const VhAudioListeningMarks unchanged=damaged;
     assert(vh_audio_listening_mark(&damaged)==-1);
+    assert(vh_audio_listening_control(&damaged)==-1);
     assert(memcmp(&damaged,&unchanged,sizeof damaged)==0);
     damaged=m;
     damaged.marks_near_switch=damaged.manual_marks+1u;
@@ -78,6 +95,18 @@ int main(void) {
     damaged.windows_near_wait_over_4x=
         damaged.windows_near_wait_over_2x+1u;
     assert(vh_audio_listening_verify(&damaged,m.returned_pages)==-1);
+    damaged=m;
+    damaged.controls_near_wait_over_4x=
+        damaged.controls_near_wait_over_2x+1u;
+    assert(vh_audio_listening_verify(&damaged,m.returned_pages)==-1);
+    damaged=m;
+    damaged.controls_near_retry=damaged.control_marks+1u;
+    assert(vh_audio_listening_verify(&damaged,m.returned_pages)==-1);
+    damaged=m;
+    damaged.control_marks=UINT64_MAX;
+    const VhAudioListeningMarks guard=damaged;
+    assert(vh_audio_listening_control(&damaged)==-1);
+    assert(memcmp(&damaged,&guard,sizeof damaged)==0);
     /* A new 2..4x wait increments only its own baseline
      * (not >4x, cue switch or retry). */
     assert(vh_audio_listening_observe(&m,2u,0u,0u,2500u)==0);
@@ -90,6 +119,14 @@ int main(void) {
     assert(m.manual_marks==4u);
     assert(m.marks_near_switch==1u && m.marks_near_wait_over_2x==2u);
     assert(m.marks_near_wait_over_4x==1u && m.marks_near_retry==1u);
+    assert(vh_audio_listening_control(&m)==0);
+    assert(m.control_marks==3u);
+    assert(m.controls_near_switch==1u);
+    assert(m.controls_near_wait_over_2x==2u);
+    assert(m.controls_near_wait_over_4x==1u);
+    assert(m.controls_near_retry==1u);
+    assert(m.peak_seam_near_control==4000u);
+    assert(m.manual_marks==4u);
     assert(vh_audio_listening_verify(&m,m.returned_pages)==0);
     assert(vh_audio_listening_verify(NULL,0u)==-1);
     puts("manual listening marks: ring wrap, wait/switch/retry audit PASS");

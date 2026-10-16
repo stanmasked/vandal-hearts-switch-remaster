@@ -1138,3 +1138,37 @@ The display labels the run as **FULL PCM accounting**, not as
 audio can establish whether clicks/dropouts were audible. No PCM,
 button history, copyrighted asset or screenshot is automatically
 saved or uploaded.
+
+
+### Operator-selected normal-sounding B-button control
+
+The standalone on-console audout NRO now supports two **different
+subjective annotations** during music playback:
+
+- Press **A** when you believe you hear a click, gap, or other defect.
+- Press **B** when the audio currently sounds normal. B is an
+  explicit operator-selected *negative control*, not a randomized
+  baseline. Press them separately; if A and B rising edges occur
+  together in a single controller poll, both are ignored.
+
+Both record the identical past 32 **returned PCM pages**, using the
+same shared classifier for a synthetic scene switch, >2x/>4x
+backend waiting, output retry, and largest inter-page PCM16 step.
+Two independent count sets are retained. The existing all-returned-page
+baseline remains unchanged. The third on-console report shows event
+overlaps as **A / B / all**, with denominators A marks, B marks,
+and returned pages, respectively. No derived significance score is
+printed: overlapping windows, selection effects, delayed manual
+reaction and controller polling gaps prevent causal or statistical
+inference. Zero B marks also means no usable subjective-control
+comparison.
+
+For practical listening, choose a few normal-sounding moments with
+B in addition to any perceived faults with A. Do not label the
+control data as a verified absence of clicks: it only describes
+what the operator thought at the time. Press buttons long enough
+to cross at least one audout return, then release them before
+marking another event. No PCM capture, copyrighted sample material,
+button-event history or files are stored. The portable test checks
+shared A/B window classification, counter separation, ring expiry,
+corruption, and no-mutation on overflow.

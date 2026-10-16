@@ -27,6 +27,14 @@ typedef struct {
     uint64_t marks_near_wait_over_2x;
     uint64_t marks_near_wait_over_4x;
     uint64_t marks_near_retry;
+    /* Explicit B-button NEGATIVE CONTROL: an operator-selected
+     * moment perceived as normal. It is not an unbiased sample. */
+    uint64_t control_marks;
+    uint64_t controls_near_switch;
+    uint64_t controls_near_wait_over_2x;
+    uint64_t controls_near_wait_over_4x;
+    uint64_t controls_near_retry;
+    uint32_t peak_seam_near_control;
     /* For EVERY returned page, ask if its last 32 pages overlap the
      * same events as a human-marked window. These windows overlap and
      * are NOT statistically independent observations. */
@@ -107,28 +115,47 @@ static inline int vh_audio_listening_observe(
     return 0;
 }
 
-/* One explicit A-button press marks a *perceived* issue. Correlation
- * is intentionally fuzzy because a human reacts after hearing sound
- * and audoutPlayBuffer returns synchronously. No causality claimed.
+/* A-button press: user perceives possible audio defect.
+ * B-button press: user hears no defect (operator-selected control).
+ * Both examine exactly the same last 32 returned PCM pages as the
+ * all-page reference. They do not prove any audible effect.
+ * mode 0=A anomaly, mode 1=B normal-sounding negative control.
+ * On bad mode, ring corruption or counter overflow, no mutation.
  */
-static inline int vh_audio_listening_mark(VhAudioListeningMarks *m) {
-    if (!m || !m->returned_pages || m->manual_marks==UINT64_MAX)
-        return -1;
+static inline int vh_audio_listening_mark_kind(
+    VhAudioListeningMarks *m, unsigned mode) {
+    if (!m || mode>1u || !m->returned_pages) return -1;
     VhListenWindow w;
     if (vh_audio_listening_window(
             m,VH_LISTEN_RECENT_PAGES,&w)) return -1;
-    if ((w.scene_boundary && m->marks_near_switch==UINT64_MAX) ||
-        (w.over_2x && m->marks_near_wait_over_2x==UINT64_MAX) ||
-        (w.over_4x && m->marks_near_wait_over_4x==UINT64_MAX) ||
-        (w.retry && m->marks_near_retry==UINT64_MAX)) return -1;
-    ++m->manual_marks;
-    m->marks_near_switch+=w.scene_boundary;
-    m->marks_near_wait_over_2x+=w.over_2x;
-    m->marks_near_wait_over_4x+=w.over_4x;
-    m->marks_near_retry+=w.retry;
-    if (w.peak_step>m->peak_seam_near_mark)
-        m->peak_seam_near_mark=w.peak_step;
+    uint64_t *marks=mode ? &m->control_marks : &m->manual_marks;
+    uint64_t *sw=mode ? &m->controls_near_switch : &m->marks_near_switch;
+    uint64_t *slow2=mode ? &m->controls_near_wait_over_2x :
+                         &m->marks_near_wait_over_2x;
+    uint64_t *slow4=mode ? &m->controls_near_wait_over_4x :
+                         &m->marks_near_wait_over_4x;
+    uint64_t *retry=mode ? &m->controls_near_retry : &m->marks_near_retry;
+    uint32_t *peak=mode ? &m->peak_seam_near_control :
+                          &m->peak_seam_near_mark;
+    if (*marks==UINT64_MAX ||
+        (w.scene_boundary && *sw==UINT64_MAX) ||
+        (w.over_2x && *slow2==UINT64_MAX) ||
+        (w.over_4x && *slow4==UINT64_MAX) ||
+        (w.retry && *retry==UINT64_MAX)) return -1;
+    ++*marks;
+    *sw+=w.scene_boundary;
+    *slow2+=w.over_2x;
+    *slow4+=w.over_4x;
+    *retry+=w.retry;
+    if (w.peak_step>*peak) *peak=w.peak_step;
     return 0;
+}
+
+static inline int vh_audio_listening_mark(VhAudioListeningMarks *m) {
+    return vh_audio_listening_mark_kind(m,0u);
+}
+static inline int vh_audio_listening_control(VhAudioListeningMarks *m) {
+    return vh_audio_listening_mark_kind(m,1u);
 }
 
 /* Reject invalid final metadata before presenting marked observations. */
@@ -139,13 +166,20 @@ static inline int vh_audio_listening_verify(
         m->marks_near_wait_over_2x>m->manual_marks ||
         m->marks_near_wait_over_4x>m->marks_near_wait_over_2x ||
         m->marks_near_retry>m->manual_marks ||
+        m->controls_near_switch>m->control_marks ||
+        m->controls_near_wait_over_2x>m->control_marks ||
+        m->controls_near_wait_over_4x>m->controls_near_wait_over_2x ||
+        m->controls_near_retry>m->control_marks ||
         m->windows_near_switch>m->returned_pages ||
         m->windows_near_wait_over_2x>m->returned_pages ||
         m->windows_near_wait_over_4x>m->windows_near_wait_over_2x ||
         m->windows_near_retry>m->returned_pages ||
         m->peak_seam_near_mark>65535u ||
+        m->peak_seam_near_control>65535u ||
         (!m->manual_marks && m->peak_seam_near_mark) ||
-        (!m->returned_pages && m->manual_marks)) return -1;
+        (!m->control_marks && m->peak_seam_near_control) ||
+        (!m->returned_pages && (m->manual_marks || m->control_marks)))
+        return -1;
     const unsigned n=(unsigned)(m->returned_pages<VH_LISTEN_RECENT_PAGES
         ? m->returned_pages : VH_LISTEN_RECENT_PAGES);
     for (unsigned i=0;i<n;i++) {
