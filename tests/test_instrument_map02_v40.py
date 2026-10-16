@@ -23,6 +23,7 @@ GPU = """
 RASTER = """
     HiresPrim *hp;
     hp->rc = *rch;
+    hp->rc = *rch; /* rect path */
     RenderCtx rc = hp->rc;
     HiresRasterizeBand(s_hpool.band[id].clipY, s_hpool.band[id].clipH);
     /* V39 marker declaration: */
@@ -51,7 +52,7 @@ class TestV40(unittest.TestCase):
         self.assertIn("cx->rc->v40Gfx", s)
         self.assertIn("cx->rc->v40Route", s)
         self.assertNotIn("extern volatile unsigned VH_Map02V39Token;", s)
-        self.assertIn("hp->rc = *rch;", s)
+        self.assertEqual(s.count("hp->rc = *rch;"), 2)
         self.assertIn("RenderCtx rc = hp->rc;", s)
 
     def test_all_paths_reject_double_patch(self):
