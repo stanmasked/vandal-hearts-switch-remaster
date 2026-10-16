@@ -69,7 +69,13 @@ static inline int vh_map02_vram_ledger_import_packet(
         vh_map02_ledger_packet_u32(packet+20u) != bytes)
         return 0;
     count = (size_t)vh_map02_ledger_packet_u32(packet+16u);
-    if (count > VH_MAP02_VRAM_LEDGER_MAX_EVENTS || count > capacity)
+    if (count > VH_MAP02_VRAM_LEDGER_MAX_EVENTS || count > capacity ||
+        vh_map02_vram_ledger_ranges_overlap(
+            packet, bytes, out, count * sizeof *out) ||
+        vh_map02_vram_ledger_ranges_overlap(
+            packet, bytes, out_count, sizeof *out_count) ||
+        vh_map02_vram_ledger_ranges_overlap(
+            out, count * sizeof *out, out_count, sizeof *out_count))
         return 0;
     for (i=24u; i<32u; ++i)
         if (packet[i] != 0u) return 0;
