@@ -7,6 +7,7 @@
 #include "platform_input.h"
 #include "software_renderer.h"
 #include "ft4_textured_quad.h"
+#include "ps1_indexed_texture.h"
 
 #define FB_WIDTH 1280
 #define FB_HEIGHT 720
@@ -29,8 +30,12 @@
 #define COLOR_WHITE    RGBA8_MAXALPHA(224, 234, 246)
 #define COLOR_MUTED    RGBA8_MAXALPHA(105, 126, 151)
 
-/* Generated orientation-marker texture; never game assets or PS1 art. */
-static u32 g_ft4_probe_pixels[16 * 16];
+/* Synthetic MAP02-like 4bpp atlas and two independent 16-color CLUTs.
+ * No proprietary game art is compiled into the Switch prototype. */
+static u8 g_ft4_probe_atlas[256 * 128];
+static u8 g_ft4_probe_cluts[2][32];
+static u32 g_ft4_probe_pixels[2][16 * 16];
+static int g_ft4_probe_ready = 0;
 
 static void fill_rect(u32 *pixels, u32 stride, int x, int y,
                       int width, int height, u32 color) {
@@ -91,18 +96,56 @@ static void draw_text(u32 *pixels, u32 stride, int x, int y,
     }
 }
 
-/* Exercise the portable FT4 rasterizer on the actual Switch framebuffer.
- * Synthetic asymmetric colors make UV flipping visible at a glance. */
+/* Synthetic indexed/CLUT -> RGBA32 -> FT4 proof on the real NRO framebuffer.
+ * Two MAP02 UV rectangles, (240,192) and (240,208), are represented with
+ * generated non-symmetric color patterns. No original game pixels. */
+static u32 vh_switch_pack_ps1_rgb(u8 r, u8 g, u8 b, void *unused) {
+    (void)unused;
+    return RGBA8_MAXALPHA(r, g, b);
+}
+
 static void init_ft4_probe_texture(void) {
-    for (int y = 0; y < 16; ++y) {
-        for (int x = 0; x < 16; ++x) {
-            g_ft4_probe_pixels[y * 16 + x] = RGBA8_MAXALPHA(
-                16 + x * 15, 16 + y * 15, 36 + ((x + 2 * y) % 4) * 48);
+    const int crop_v[2] = {192, 208};
+    memset(g_ft4_probe_atlas, 0, sizeof(g_ft4_probe_atlas));
+    memset(g_ft4_probe_cluts, 0, sizeof(g_ft4_probe_cluts));
+    g_ft4_probe_ready = 0;
+    for (int texture = 0; texture < 2; ++texture) {
+        for (int index = 0; index < 16; ++index) {
+            /* BGR555; STP on index 3 is preserved by the decoder stats. */
+            const u16 raw = (u16)(
+                ((index * (texture ? 2 : 1)) & 31) |
+                (((index * (texture ? 1 : 2)) & 31) << 5) |
+                (((15 - index) & 31) << 10) |
+                (index == 3 ? 0x8000 : 0));
+            g_ft4_probe_cluts[texture][index * 2] = (u8)raw;
+            g_ft4_probe_cluts[texture][index * 2 + 1] = (u8)(raw >> 8);
+        }
+        for (int y = 0; y < 16; ++y) {
+            for (int x = 0; x < 16; ++x) {
+                const int u = 240 + x;
+                const int offset = (crop_v[texture] + y) * 128 + u / 2;
+                const u8 index = (u8)((x + (texture ? 5 : 3) * y) & 15);
+                if (u & 1) {
+                    g_ft4_probe_atlas[offset] =
+                        (u8)((g_ft4_probe_atlas[offset] & 0x0f) | (index << 4));
+                } else {
+                    g_ft4_probe_atlas[offset] =
+                        (u8)((g_ft4_probe_atlas[offset] & 0xf0) | index);
+                }
+            }
+        }
+        VhPs1Clut4Stats stats = {0, 0, 0};
+        if (!vh_ps1_decode_clut4_crop(
+                g_ft4_probe_atlas, sizeof(g_ft4_probe_atlas),
+                256, 256, 128, g_ft4_probe_cluts[texture], 32,
+                240, (size_t)crop_v[texture], 16, 16,
+                g_ft4_probe_pixels[texture], 16,
+                vh_switch_pack_ps1_rgb, NULL, &stats) ||
+            stats.pixels_decoded != 256) {
+            return;
         }
     }
-    g_ft4_probe_pixels[0] = COLOR_WHITE;
-    g_ft4_probe_pixels[15] = COLOR_CURSOR;
-    g_ft4_probe_pixels[15 * 16] = COLOR_ENEMY;
+    g_ft4_probe_ready = 1;
 }
 
 static void draw_ft4_probe(VhCanvas *canvas, u32 *pixels, u32 stride) {
@@ -113,16 +156,20 @@ static void draw_ft4_probe(VhCanvas *canvas, u32 *pixels, u32 stride) {
         {1106, 352}, {978, 352}, {978, 480}, {1106, 480}
     };
     VhFt4Vertex quad[4];
-    draw_text(pixels, stride, 975, 137, "FT4 UV PROBE", COLOR_MUTED, 1);
+    draw_text(pixels, stride, 975, 137, "CLUT4 FT4 A", COLOR_MUTED, 1);
+    draw_text(pixels, stride, 975, 323, "CLUT4 FT4 B", COLOR_MUTED, 1);
+    if (!g_ft4_probe_ready) {
+        draw_text(pixels, stride, 975, 500, "CLUT ERROR", COLOR_ENEMY, 1);
+        return;
+    }
     if (vh_ft4_from_face_perimeter(normal, 0, 0, 15, 15, quad)) {
-        (void)vh_canvas_draw_ft4_rgba32(canvas, g_ft4_probe_pixels,
-                                          16, 16, 16, quad);
+        (void)vh_canvas_draw_ft4_rgba32(canvas, g_ft4_probe_pixels[0],
+                                         16, 16, 16, quad);
     }
     vh_canvas_draw_rect_outline(canvas, 978, 164, 128, 128, COLOR_GRID);
-    draw_text(pixels, stride, 975, 323, "MIRROR PROBE", COLOR_MUTED, 1);
     if (vh_ft4_from_face_perimeter(mirror, 0, 0, 15, 15, quad)) {
-        (void)vh_canvas_draw_ft4_rgba32(canvas, g_ft4_probe_pixels,
-                                          16, 16, 16, quad);
+        (void)vh_canvas_draw_ft4_rgba32(canvas, g_ft4_probe_pixels[1],
+                                         16, 16, 16, quad);
     }
     vh_canvas_draw_rect_outline(canvas, 978, 352, 128, 128, COLOR_GRID);
 }
