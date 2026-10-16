@@ -37,7 +37,7 @@ static void make_quad(POLY_FT4 *q, int x, int y, u_short tpage) {
 }
 
 static int draw_frame(int gfx, int valid_terrain) {
-    u_long ot[16];
+    unsigned int ot[16];
     POLY_FT4 terrain, mimic_sprite;
     TILE fillers[64];
     int i;
@@ -67,9 +67,9 @@ static int draw_frame(int gfx, int valid_terrain) {
         RECT r;
         unsigned short p1 = 0, p2 = 0;
         setRECT(&r, 96, 96, 1, 1);
-        StoreImage(&r, (u_long *)&p1);
+        StoreImage(&r, (unsigned int *)&p1);
         setRECT(&r, 224, 96, 1, 1);
-        StoreImage(&r, (u_long *)&p2);
+        StoreImage(&r, (unsigned int *)&p2);
         VERIFY((p1 & 0x7fff) != 0, "real DDA drew terrain into native VRAM");
         VERIFY((p2 & 0x7fff) != 0, "untagged mimic sprite still draws normally");
     }
@@ -118,7 +118,7 @@ int main(void) {
     for (i = 0; i < VH_TEX_SIZE * VH_TEX_SIZE; ++i)
         texture[i] = 0x001f;
     setRECT(&upload, 640, 0, VH_TEX_SIZE, VH_TEX_SIZE);
-    LoadImage(&upload, (u_long *)texture);
+    LoadImage(&upload, (unsigned int *)texture);
     VERIFY(draw_frame(641, 1), "frame 1 GPU pass");
     VERIFY(draw_frame(643, 1), "frame 2 GPU pass, recycled OT token and changed gfx");
     VERIFY(draw_frame(644, 0), "frame 3 GPU path with wrong map and no provenance");
