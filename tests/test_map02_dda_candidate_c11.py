@@ -41,6 +41,16 @@ int main(int argc, char **argv) {
     VH_Map02RejectedEdges(&cx, 16, 10, 20, 6);
     vh_pixel_sample_y = 9;
     VH_Map02RejectedEdges(&cx, 9, 10, 20, 7);
+    rc.target = 1;
+    VH_Map02RejectedEdges(&cx, 9, 10, 20, 7);
+    rc.target = 0;
+    vh_pixel_sample_active = 0;
+    VH_Map02RejectedEdges(&cx, 9, 10, 20, 7);
+    vh_pixel_sample_active = 1;
+    vh_sample_scope_active = 0;
+    VH_Map02RejectedEdges(&cx, 9, 10, 20, 7);
+    vh_sample_scope_active = 1;
+    VH_Map02RejectedEdges(&cx, 10, 10, 20, 7);
 #endif
     return 0;
 }
@@ -74,6 +84,8 @@ class CandidateC11Tests(unittest.TestCase):
                     self.assertEqual([row["reason"] for row in records], [4, 5, 6, 7])
                     self.assertEqual([row["y"] for row in records], [9, 16, 16, 9])
                     self.assertEqual([row["step"] for row in records], [0, 1, 2, 3])
+                    self.assertEqual(len(records), 4)
+                    self.assertEqual({row["stage"] for row in records}, {"rejected_edge_candidate"})
                 else:
                     self.assertFalse(journal.exists())
             bad = subprocess.run(
