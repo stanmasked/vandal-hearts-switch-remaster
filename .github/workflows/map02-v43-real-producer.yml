@@ -1,0 +1,166 @@
+name: Map02 v43 original RenderMapTile plus real GTE and GPU runtime
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v43-real-producer.yml'
+      - 'tests/map02_v43_real_producer.c'
+      - 'tests/map02_v42_gpu_runtime.c'
+      - 'tests/map02_v42_test_shims.c'
+      - 'tools/instrument_map02_v41.py'
+      - 'tools/instrument_map02_v40.py'
+      - 'tools/instrument_map02_v39.py'
+      - 'tools/verify_map02_v41.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-game-terrain-producer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - name: Checkout diagnostics
+        uses: actions/checkout@v4
+        with:
+          path: remaster
+          persist-credentials: false
+      - name: Checkout exact public PC-port source
+        uses: actions/checkout@v4
+        with:
+          repository: HalmyLyseas/VandalHearts-PcPort
+          ref: 14552fffa0e0b47e02b57592e274fc6e7a649923
+          path: pcport
+          persist-credentials: false
+      - name: Apply read-only origin + frame observers to disposable checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m remaster.tools.make_map02_trace_patch pcport --output "$RUNNER_TEMP/map02-v42.patch"
+          (
+            cd pcport
+            git apply --check "$RUNNER_TEMP/map02-v42.patch"
+            git apply "$RUNNER_TEMP/map02-v42.patch"
+          )
+          python3 -m remaster.tools.instrument_map02_v39 pcport \
+            --header remaster/tools/vh_map02_v39_tokens.h --apply
+          python3 -m remaster.tools.instrument_map02_v40 pcport --apply
+          python3 -m remaster.tools.instrument_map02_v41 pcport --apply
+          (
+            cd pcport
+            git diff --check
+            git rev-parse HEAD | grep -x 14552fffa0e0b47e02b57592e274fc6e7a649923
+          )
+      - name: Compile original game terrain producer and real GPU/GTE modules
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          mkdir -p proof
+          opts=(-std=gnu89 -O2 -g -fno-omit-frame-pointer
+                -ffunction-sections -fdata-sections
+                -DPC_PORT -DPC_FEAT -DVH_MAP02_V39_TRACE
+                -Ipcport/platform/pc/include -Ipcport/platform/pc/src)
+          "$CC" "${opts[@]}" -c pcport/platform/pc/src/libgpu.c -o proof/libgpu.o
+          "$CC" "${opts[@]}" -c pcport/platform/pc/src/pc_raster.c -o proof/pc_raster.o
+          "$CC" "${opts[@]}" -c remaster/tests/map02_v42_test_shims.c -o proof/test_shims.o
+          # The pinned game source still contains GNU89 forward-declaration
+          # ambiguities diagnosed by Clang. Match v39-v41 object-build gate.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("pcport/src/core/graphics.c")
+          s = p.read_text()
+          anchor = '#include "PsyQ/gtemac.h"'
+          assert s.count(anchor) == 1
+          extra = ('\nvoid UpdateMapTileLighting(MapTileModel *tileModel);'
+                   '\nvoid RenderMapTile(u32 *ot, MapTileModel *tileModel, s32 gridColor);'
+                   '\nvoid RenderEdgeMapTile(u32 *ot, MapTileModel *tileModel, s32 gridColor);'
+                   '\nvoid RenderOverheadMapTile(u32 *ot, MapTileModel *tileModel, s32 brightness);')
+          p.write_text(s.replace(anchor, anchor + extra, 1))
+          PY
+          common=(-std=gnu89 -O2 -g -fno-omit-frame-pointer
+                  -ffunction-sections -fdata-sections
+                  -DPERMUTER -DPC_PORT -DPC_FEAT -DVH_REGION_US
+                  -DVH_TRACE_MAP02 -DVH_MAP02_V39_TRACE
+                  '-Dasm(x)='
+                  -Ipcport/platform/pc/include -Ipcport/platform/pc/src -Ipcport/include
+                  -Ipcport
+                  -include pc_forward_decls.h
+                  -Wno-incompatible-pointer-types -Wno-int-conversion
+                  -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast)
+          "$CC" "${common[@]}" -c pcport/src/core/graphics.c -o proof/graphics.o
+          "$CC" "${opts[@]}" -c pcport/platform/pc/src/libgte.c -o proof/libgte.o
+          "$CC" "${common[@]}" -c remaster/tests/map02_v43_real_producer.c -o proof/driver.o
+          "$CC" -Wl,--gc-sections -o proof/map02_gpu_runtime \
+            proof/driver.o proof/graphics.o proof/libgte.o proof/libgpu.o proof/pc_raster.o proof/test_shims.o \
+            -lm -lpthread
+          nm -a proof/map02_gpu_runtime | grep -q PC_Map02V39MarkSubmitted
+          nm -a proof/map02_gpu_runtime | grep -q RenderMapTile
+          nm -a proof/map02_gpu_runtime | grep -q PC_GTE_RTPT
+          strings proof/map02_gpu_runtime | grep -F '[v40-terrain-hires] f=%u'
+          sha256sum proof/*.o proof/map02_gpu_runtime > proof/SHA256SUMS
+      - name: Run real RenderMapTile to GTE to GPU and threaded DDA without game assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./proof/map02_gpu_runtime 2> proof/real-producer-SYNTHETIC-stderr.log
+          VH_RASTER_THREADS=1 ./proof/map02_gpu_runtime \
+            2> proof/real-producer-SYNTHETIC-single-worker-stderr.log
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          a = Path("proof/real-producer-SYNTHETIC-stderr.log").read_text()
+          b = Path("proof/real-producer-SYNTHETIC-single-worker-stderr.log").read_text()
+          rx = re.compile(r"\[v43\] FRAMEBUFFER_HASH native=([0-9a-f]+) hires=([0-9a-f]+)")
+          assert "[raster] hi-res worker threads: 2" in a, "did not enable two-thread rasterizer"
+          assert "[raster] hi-res worker threads: 1" in b, "did not enable single-thread control"
+          ma, mb = rx.findall(a), rx.findall(b)
+          assert len(ma) == len(mb) == 1, (ma, mb)
+          assert ma[0] == mb[0], f"framebuffer mismatch between 2 and 1 threads: {ma}, {mb}"
+          assert "[v43] PASS real graphics.c RenderMapTile" in a and "[v43] PASS real graphics.c RenderMapTile" in b
+          print("PASS: original GPU VRAM and hi-res buffers hash-identically with 1 vs 2 threads.")
+          print("framebuffer native={}, hires={}".format(*ma[0]))
+          PY
+          grep -F '[v43] PASS real graphics.c RenderMapTile' proof/real-producer-SYNTHETIC-stderr.log
+          python3 -m remaster.tools.verify_map02_v41 \
+            proof/real-producer-SYNTHETIC-stderr.log \
+            --output proof/real-producer-SYNTHETIC-correlated.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r = json.loads(Path("proof/real-producer-SYNTHETIC-correlated.json").read_text())
+          assert r["status"] == "provenance_correlated", r
+          assert r["paired_primitive_count"] == 2, r
+          assert r["ot_primitive_count"] == 2, r
+          assert r["frames_with_events"] == 2, r
+          assert r["native_sample_count"] > 0, r
+          assert r["hires_sample_count"] > 0, r
+          assert r["errors"] == [], r
+          assert not r["gameplay_execution_proven"], r
+          assert not r["pixel_equivalence_proven"], r
+          lines = Path("proof/real-producer-SYNTHETIC-stderr.log").read_text().splitlines()
+          for name in ("v39-terrain-ot", "v39-terrain-dda", "v40-terrain-hires"):
+              assert any(f"[{name}]" in x for x in lines), name
+          # An untagged matching-UV sprite and a wrong-map FT4 still draw
+          # but must not gain a terrain provenance event.
+          assert not any("[v39-terrain-ot] f=3 " in x for x in lines), lines
+          assert {p["gfx"] for p in r["examples_of_paired_frame_tokens"]} == {641, 643}, r
+          print("PASS: original RenderMapTile, real GTE, GPU executed with two correlated frames.")
+          print("PASS: UV-identical untagged sprites and wrong-map terrain remain untagged.")
+          print("NOTE: game renderer source with synthetic model is NOT a playable Vandal Hearts game.")
+          PY
+          printf 'compiler=%s\npublic_upstream=14552fffa0e0b47e02b57592e274fc6e7a649923\nreal_objects=graphics,libgte,libgpu,pc_raster\nterrain_geometry=synthetic (constructed SVECTOR model)\ntexture=synthetic\nuserdata=none\nfull_game_linked=no\nfull_game_played=no\n' \
+            '${{ matrix.cc }}' > proof/BUILD_INFO.txt
+      - name: Upload runtime logs and binary hash proofs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-v43-${{ matrix.cc }}-real-gpu-synthetic
+          path: proof/
+          if-no-files-found: warn
