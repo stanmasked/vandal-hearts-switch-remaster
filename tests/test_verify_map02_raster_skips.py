@@ -138,8 +138,8 @@ class NativeRasterSkipAuditTests(unittest.TestCase):
             verify_skips(self.source,self.native)
 
     def test_original_ot_order_rechecked_before_skip_attribution(self):
-        self.base.base.entries[1],self.base.base.entries[2]=(
-            self.base.base.entries[2],self.base.base.entries[1])
+        self.base.base.base.entries[1],self.base.base.base.entries[2]=(
+            self.base.base.base.entries[2],self.base.base.base.entries[1])
         self.save()
         with self.assertRaisesRegex(ValueError,"violates.*OT depth/LIFO"):
             verify_skips(self.source,self.native)
