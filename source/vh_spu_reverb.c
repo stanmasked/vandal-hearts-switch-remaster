@@ -58,8 +58,31 @@ static int mul(int value, int16_t coeff) {
 }
 static int filter(const int16_t *hist, int pos) {
     int64_t acc = 0;
+#ifdef VH_REV_FIR_REFERENCE
+    /* Baseline retained only for the separate host performance
+     * comparison. The shipped Switch build uses the branch below.
+     */
     for (int i = 0; i < (int)VH_REV_FIR_TAPS; ++i)
         acc += (int64_t)fir[i] * hist[(pos+i) % (int)VH_REV_FIR_TAPS];
+#else
+    /* The STUDIO_C FIR has coefficients only at even positions
+     * 0,2,...,38 and at the odd center 19. Compute the 21 nonzero
+     * products rather than 39, and use one wrap subtraction rather
+     * than 21 remainder operations. Since the sum is accumulated in
+     * int64_t, rearranging these additions cannot change PCM bits.
+     *
+     * 'pos' is always a validated ring cursor in [0,38].
+     */
+    int slot = pos;
+    for (int i = 0; i < (int)VH_REV_FIR_TAPS; i += 2) {
+        acc += (int64_t)fir[i] * hist[slot];
+        slot += 2;
+        if (slot >= (int)VH_REV_FIR_TAPS) slot -= (int)VH_REV_FIR_TAPS;
+    }
+    int center = pos + 19;
+    if (center >= (int)VH_REV_FIR_TAPS) center -= (int)VH_REV_FIR_TAPS;
+    acc += (int64_t)fir[19] * hist[center];
+#endif
     return clip16(acc / INT64_C(32768));
 }
 static int reflect(VhSpuReverb *s, int input, int fb_reg, int wr_reg) {
