@@ -130,7 +130,8 @@ static void paint(VhCanvas *canvas, const VhGameState *state,
         }
     }
     const int healthy = audio_active && atomic_load(&audio_fault) == 0;
-    vh_canvas_fill_rect(canvas, 74, 80, 130, 52,
+    /* Keep status clear of NeXium's top-left performance overlay. */
+    vh_canvas_fill_rect(canvas, 1000, 150, 130, 52,
                         healthy ? sound_ok : sound_fail);
     /* Animated heartbeat proves video continues while audout worker runs. */
     vh_canvas_fill_rect(canvas, 70, 610, 800, 14, grid);
