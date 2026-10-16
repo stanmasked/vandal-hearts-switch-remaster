@@ -199,6 +199,7 @@ int main(int argc, char **argv) {
 
     NativeOutput output={0};
     VhAudioOutputRecovery recovery={0};
+    VhAudioPcmSeams seam_stats={0};
     const VhAudioOutputOps ops={
         &output,native_submit,native_stop,native_close,native_open,native_start
     };
@@ -275,6 +276,14 @@ int main(int argc, char **argv) {
             result=7;
             break;
         }
+        /* Audit only successfully released logical pages, not
+         * failed attempts or a freshly rendered, undelivered page. */
+        if (vh_audio_output_record_pcm_seam(
+                &seam_stats,out_48000,count,(int)switched_this_block,
+                &before_submit,&output.timing,tick_frequency)) {
+            result=11;
+            break;
+        }
         ++played_blocks;
         completed_switches+=switched_this_block;
         if (played_blocks % 128u == 0u) {
@@ -342,10 +351,12 @@ int main(int argc, char **argv) {
         played_blocks,completed_switches,MAX_PROBE_BLOCKS,
         user_files ? 0u : SYNTHETIC_SCENE_BLOCKS,
         result==0 && played_blocks==MAX_PROBE_BLOCKS);
-    if (run_evidence<0 && result==0) result=10;
+    const int seam_evidence=vh_audio_output_verify_pcm_seams(
+        &seam_stats,&output.scene_waits,played_blocks);
+    if ((run_evidence<0 || seam_evidence) && result==0) result=10;
     printf("Run evidence: %s (accepted=%u / planned=%u, source=%s)\n",
-           run_evidence==1 ? "FULL PCM PAGE ACCOUNTING" :
-           run_evidence==0 ? "INCOMPLETE - NO FULL-RUN CLAIM" :
+           run_evidence==1 && seam_evidence==0 ? "FULL PCM PAGE ACCOUNTING" :
+           run_evidence==0 && seam_evidence==0 ? "INCOMPLETE - NO FULL-RUN CLAIM" :
                              "COUNTER MISMATCH - INVALID",
            played_blocks,MAX_PROBE_BLOCKS,
            user_files ? "SD music" : "generated fixture");
@@ -389,6 +400,22 @@ int main(int argc, char **argv) {
            (unsigned long long)boundary->wait_le_4pages,
            (unsigned long long)boundary->wait_gt_4pages,
            (unsigned long long)boundary->pages);
+    /* PCM jumps are not audible clicks; zero means no observed step
+     * OR an empty band. Interpret alongside the wait page counts. */
+    printf("Max PCM16 seam by audout wait band (1x/2x/4x/>4x):\n");
+    printf("Steady: %u %u %u %u\n",
+           seam_stats.ordinary.peak_abs_step[0],
+           seam_stats.ordinary.peak_abs_step[1],
+           seam_stats.ordinary.peak_abs_step[2],
+           seam_stats.ordinary.peak_abs_step[3]);
+    printf("Switch: %u %u %u %u\n",
+           seam_stats.first_after_switch.peak_abs_step[0],
+           seam_stats.first_after_switch.peak_abs_step[1],
+           seam_stats.first_after_switch.peak_abs_step[2],
+           seam_stats.first_after_switch.peak_abs_step[3]);
+    printf("PCM seam audit: %s (%llu pages returned)\n",
+           seam_evidence==0 ? "VALID" : "INVALID",
+           (unsigned long long)seam_stats.delivered_pages);
     printf("Audio probe ended, result=%d\n",result);
     printf("Press + to close this results screen.\n");
     consoleUpdate(NULL);

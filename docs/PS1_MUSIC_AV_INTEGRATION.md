@@ -962,3 +962,33 @@ a sample underrun, an audible gap, or PS1 parity. The purpose is
 to make the distribution and its relation to cue switching readable
 on a photo of the physical Switch results screen, without exporting
 copyrighted music or any audio recordings.
+
+
+### Paired PCM seam and audout latency observations
+
+The standalone NRO now pairs each returned 48-kHz PCM page with its
+corresponding four-band audout service-wait observation. After the
+service returns the exact submitted PCM buffer descriptor, the probe
+computes the **maximum absolute adjacent stereo PCM16 sample step**
+between the preceding returned page and this page. Results are
+separated into ordinary pages and first pages after synthetic cue
+switches. The first page has no predecessor and contributes no seam;
+a retry of the same PCM page contributes only one seam. User-owned
+SEQ banks are never automatically switched.
+
+The final Switch console screen prints one maximum PCM seam magnitude
+per wait band and category, alongside the existing wait histogram.
+Zero may mean an empty band or a zero step. A portable verifier checks
+that seam counts equal returned pages minus the first, that they match
+the category totals and do not exceed their wait-bin page counts.
+The experiment retains only the previous stereo frame in memory and
+aggregates: no copyrighted samples, recordings or identifiers are
+exported. A five-page generated host test includes a failed submission,
+a successful retry, corruption detection and invalid-input isolation.
+
+A sharp PCM step is **not** automatically a click, nor is a long
+\`audoutPlayBuffer\` wait necessarily a dropout. Pairing the two
+observations narrows down where to listen on a physical Nintendo
+Switch; it cannot establish audible effects without hardware
+listening or external sound capture. No resampling, scene switching
+or output scheduling behavior is changed.

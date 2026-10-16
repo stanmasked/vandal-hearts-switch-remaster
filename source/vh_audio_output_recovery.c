@@ -109,6 +109,107 @@ int vh_audio_output_record_scene_page(
     return 0;
 }
 
+/* Reuse the inclusive four-bin classification used by page telemetry.
+ * Caller validates tick_frequency*frames before this calculation. */
+static unsigned pcm_seam_wait_band(uint64_t waited, uint64_t nominal) {
+    return waited<=nominal ? 0u :
+           nominal>UINT64_MAX/2u || waited<=nominal*2u ? 1u :
+           nominal>UINT64_MAX/4u || waited<=nominal*4u ? 2u : 3u;
+}
+
+int vh_audio_output_record_pcm_seam(
+    VhAudioPcmSeams *stats, const int16_t *stereo, size_t frames,
+    int first_after_switch, const VhAudioSubmitTiming *before,
+    const VhAudioSubmitTiming *after, uint64_t tick_frequency) {
+    if (!stats || !stereo || !before || !after || !frames ||
+        frames>VH_AUDIO_RESAMPLE_MAX_FRAMES || !tick_frequency ||
+        tick_frequency>UINT64_MAX/frames ||
+        (first_after_switch!=0 && first_after_switch!=1) ||
+        after->calls<=before->calls ||
+        after->total_ticks<before->total_ticks ||
+        after->failed_submissions<before->failed_submissions ||
+        stats->delivered_pages==UINT64_MAX ||
+        (stats->has_previous!=0 && stats->has_previous!=1) ||
+        (stats->has_previous!=(stats->delivered_pages!=0)) ||
+        (first_after_switch && !stats->has_previous))
+        return -1;
+    const uint64_t attempts=after->calls-before->calls;
+    const uint64_t failures=
+        after->failed_submissions-before->failed_submissions;
+    if (attempts>VH_AUDIO_OUTPUT_RESTART_LIMIT+1u ||
+        failures>=attempts || attempts-failures!=1u)
+        return -1;
+    const uint64_t nominal=(uint64_t)frames*tick_frequency/
+                           VH_NATIVE_AUDOUT_RATE;
+    const unsigned band=pcm_seam_wait_band(
+        after->total_ticks-before->total_ticks,nominal);
+    VhAudioPcmSeamBucket *bucket=first_after_switch
+        ? &stats->first_after_switch : &stats->ordinary;
+    uint32_t jump=0u;
+    if (stats->has_previous) {
+        if (bucket->count[band]==UINT64_MAX) return -1;
+        int32_t dl=(int32_t)stereo[0]-(int32_t)stats->last_l;
+        int32_t dr=(int32_t)stereo[1]-(int32_t)stats->last_r;
+        if (dl<0) dl=-dl;
+        if (dr<0) dr=-dr;
+        jump=(uint32_t)(dl>dr ? dl : dr);
+    }
+    if (stats->has_previous) {
+        ++bucket->count[band];
+        if (jump>bucket->peak_abs_step[band])
+            bucket->peak_abs_step[band]=jump;
+    }
+    stats->last_l=stereo[2u*(frames-1u)];
+    stats->last_r=stereo[2u*(frames-1u)+1u];
+    stats->has_previous=1;
+    ++stats->delivered_pages;
+    return 0;
+}
+
+int vh_audio_output_verify_pcm_seams(
+    const VhAudioPcmSeams *stats, const VhAudioSceneWaits *waits,
+    uint64_t completed_pages) {
+    if (!stats || !waits || stats->delivered_pages!=completed_pages ||
+        stats->has_previous!=(completed_pages!=0)) return -1;
+    const VhAudioPcmSeamBucket *const buckets[]={
+        &stats->ordinary, &stats->first_after_switch
+    };
+    const VhAudioPageWaitBucket *const groups[]={
+        &waits->ordinary, &waits->first_after_switch
+    };
+    const uint64_t page_counts[2][VH_PCM_SEAM_BANDS]={
+        {waits->ordinary.wait_le_page,waits->ordinary.wait_le_2pages,
+         waits->ordinary.wait_le_4pages,waits->ordinary.wait_gt_4pages},
+        {waits->first_after_switch.wait_le_page,
+         waits->first_after_switch.wait_le_2pages,
+         waits->first_after_switch.wait_le_4pages,
+         waits->first_after_switch.wait_gt_4pages}
+    };
+    uint64_t all=0;
+    for (unsigned group=0;group<2u;group++) {
+        const VhAudioPageWaitBucket *const pages=groups[group];
+        if (pages->failed_pages>pages->pages) return -1;
+        uint64_t expected=pages->pages-pages->failed_pages;
+        if (!group && completed_pages) {
+            if (!expected) return -1;
+            --expected; /* first returned PCM page has no prior tail */
+        }
+        uint64_t seen=0;
+        for (unsigned bin=0;bin<VH_PCM_SEAM_BANDS;bin++) {
+            const uint64_t count=buckets[group]->count[bin];
+            const uint32_t peak=buckets[group]->peak_abs_step[bin];
+            if (count>page_counts[group][bin] ||
+                (count==0u && peak!=0u) || peak>65535u ||
+                seen>UINT64_MAX-count) return -1;
+            seen+=count;
+        }
+        if (seen!=expected || all>UINT64_MAX-seen) return -1;
+        all+=seen;
+    }
+    return all==(completed_pages ? completed_pages-1u : 0u)
+           ? 0 : -1;
+}
+
 static int bucket_distribution_valid(const VhAudioPageWaitBucket *b) {
     if (b->wait_le_page>UINT64_MAX-b->wait_le_2pages) return 0;
     const uint64_t first=b->wait_le_page+b->wait_le_2pages;

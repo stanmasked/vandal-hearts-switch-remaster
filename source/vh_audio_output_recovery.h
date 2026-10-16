@@ -84,6 +84,38 @@ int vh_audio_output_record_scene_page(
     uint64_t tick_frequency, size_t frames, int first_after_switch,
     int delivered);
 
+/* Aggregate the inter-page PCM16 stereo step, grouped by the same
+ * 48-kHz audout wait bands and synthetic scene-boundary classification.
+ * A PCM seam is NOT proof of an audible click or service underrun.
+ * The last L/R samples are held in memory only, never exported.
+ */
+#define VH_PCM_SEAM_BANDS 4u
+typedef struct {
+    uint64_t count[VH_PCM_SEAM_BANDS];
+    uint32_t peak_abs_step[VH_PCM_SEAM_BANDS];
+} VhAudioPcmSeamBucket;
+typedef struct {
+    VhAudioPcmSeamBucket ordinary, first_after_switch;
+    uint64_t delivered_pages;
+    int16_t last_l, last_r;
+    int has_previous;
+} VhAudioPcmSeams;
+
+/* Only call after the exact PCM descriptor was returned. The first
+ * successful page has no predecessor. All input errors are atomic.
+ * Pass exactly the same raw timing snapshots as record_scene_page.
+ */
+int vh_audio_output_record_pcm_seam(
+    VhAudioPcmSeams *stats, const int16_t *stereo, size_t frames,
+    int first_after_switch, const VhAudioSubmitTiming *before,
+    const VhAudioSubmitTiming *after, uint64_t tick_frequency);
+
+/* Returns 0 only if the completed-page total and the cross-tabulated
+ * seam counts agree with the ordinary/boundary audout histograms. */
+int vh_audio_output_verify_pcm_seams(
+    const VhAudioPcmSeams *stats, const VhAudioSceneWaits *waits,
+    uint64_t completed_pages);
+
 /* Reconcile the final on-device evidence with actual returned pages.
  *  1: full run reached expected_pages with all counters consistent
  *  0: internally consistent, but interrupted/failed/incomplete run
