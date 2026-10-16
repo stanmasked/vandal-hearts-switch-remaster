@@ -595,6 +595,7 @@ jobs:
               -Wno-incompatible-pointer-types -Wno-builtin-declaration-mismatch
               -Wno-discarded-qualifiers -Wno-pointer-to-int-cast
               -Wno-int-to-pointer-cast -Wno-int-conversion
+              -Werror=implicit-function-declaration
             )
             mkdir -p build/map02-vertical-dda
             for mode in diagnostic baseline; do
