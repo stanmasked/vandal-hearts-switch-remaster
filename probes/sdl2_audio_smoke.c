@@ -1,17 +1,19 @@
 #include <SDL.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "vh_audio_stream.h"
 #include "vh_native_spu.h"
 #include "vh_native_seq.h"
+#include "vh_native_vab.h"
 #include "vh_spu_adpcm.h"
 
 #define WIDTH 1280
 #define HEIGHT 720
 
 /* Native Switch SDL2 streaming probe, using only a synthetic PS1 SEQ
- * and fabricated VAG blocks. NOT a real VAB/game sound or proof of audible output.
+ * and fabricated VH/VB bank. NOT real game sound or proof of audible output.
  * The PCM producer runs on the main thread; callback consumes buffered
  * PCM or fills underruns with silence. Device locking protects the ring.
  */
@@ -19,7 +21,10 @@ static VhAudioStream pcm_stream;
 static VhNativeSpu native_spu;
 static VhNativeSeq native_seq;
 static int seq_failed = 0;
+static VhNativeVab native_bank;
 static int16_t decoded_vag[VH_SPU_ADPCM_BLOCK_FRAMES * 2u];
+static uint8_t synthetic_vh[32u + 128u * 16u + 512u + 512u];
+static uint8_t synthetic_vb[16u + 32u];
 static SDL_atomic_t callback_count = {0};
 
 
@@ -58,42 +63,45 @@ static const uint8_t synthetic_seq[] = {
     0x81,0x70,0xff,0x2f,
 };
 
-static int synthetic_note_provider(void *context,
-                                   unsigned program, unsigned note,
-                                   unsigned velocity, unsigned volume,
-                                   unsigned pan, VhSeqTone *tone) {
-    (void)context;
-    if (program != 7 || note != 60) return -1;
-    const float level = ((float)velocity / 127.f) *
-                        ((float)volume / 127.f);
-    const float lp = pan < 64 ? 1.f : (float)(127u-pan)/63.f;
-    const float rp = pan >= 64 ? 1.f : (float)pan/63.f;
-    tone->pcm = decoded_vag;
-    tone->frames = 56;
-    tone->loop_start = 0;
-    tone->loop_end = 56;
-    tone->pitch_step = 0x1000;
-    tone->adsr1 = 0x000f;
-    tone->adsr2 = 0;
-    tone->gain_left = level * lp * 0.6f;
-    tone->gain_right = level * rp * 0.3f;
-    return 0;
-}
-
 static int init_synthetic_seq(void) {
-    VhSpuAdpcmInfo info;
-    if (vh_spu_adpcm_decode(
-        synthetic_vag, sizeof(synthetic_vag), decoded_vag,
-        sizeof(decoded_vag) / sizeof(decoded_vag[0]), &info) != 0)
+    /* One sparse program (program ID 7), one looping two-block VAG.
+     * The VH is fabricated entirely at startup. No game assets.
+     */
+    memset(synthetic_vh, 0, sizeof(synthetic_vh));
+    memset(synthetic_vb, 0, sizeof(synthetic_vb));
+    memcpy(synthetic_vh, "pBAV", 4);
+    synthetic_vh[18] = 8; /* declared program count includes sparse ID 7 */
+    synthetic_vh[20] = 1; /* one tone */
+    synthetic_vh[22] = 1; /* one playable VAG */
+    synthetic_vh[24] = 127;
+    const size_t prog = 32u + 7u * 16u;
+    synthetic_vh[prog] = 1;
+    synthetic_vh[prog+1] = 127;
+    synthetic_vh[prog+4] = 64;
+    const size_t tone = 32u + 128u * 16u;
+    synthetic_vh[tone+2] = 127;
+    synthetic_vh[tone+3] = 64;
+    synthetic_vh[tone+4] = 60;
+    synthetic_vh[tone+6] = 40;
+    synthetic_vh[tone+7] = 100;
+    synthetic_vh[tone+16] = 15; /* ADSR1 little endian */
+    synthetic_vh[tone+20] = 7;  /* parent program 7 */
+    synthetic_vh[tone+22] = 1;  /* VAG index 1 */
+    const size_t sizes = tone + 512u;
+    synthetic_vh[sizes] = 2;   /* zero entry: 16 bytes */
+    synthetic_vh[sizes+2] = 4; /* VAG #1: 32 bytes */
+    memcpy(synthetic_vb + 16, synthetic_vag, sizeof(synthetic_vag));
+    if (vh_native_vab_load(
+            &native_bank, synthetic_vh, sizeof(synthetic_vh),
+            synthetic_vb, sizeof(synthetic_vb), decoded_vag,
+            sizeof(decoded_vag)/sizeof(decoded_vag[0])) != 0)
         return -1;
-    if (info.frames != 56 || info.loop_start_frame != 0 ||
-        info.loop_end_frame != 56) return -1;
     vh_native_spu_reset(&native_spu);
     if (vh_native_spu_set_interpolation(&native_spu, VH_SPU_GAUSSIAN) != 0)
         return -1;
     return vh_native_seq_init(
         &native_seq, synthetic_seq, sizeof(synthetic_seq),
-        &native_spu, synthetic_note_provider, NULL,
+        &native_spu, vh_native_vab_resolve, &native_bank,
         0 /* repeat until probe closes */);
 }
 
@@ -150,7 +158,7 @@ int main(int argc, char **argv) {
     show_status(renderer, 220, 110, 20); /* orange until callback observed */
     vh_audio_stream_reset(&pcm_stream);
     if (init_synthetic_seq() != 0) {
-        fprintf(stderr, "Synthetic SEQ/VAG/SPU initialization failed\n");
+        fprintf(stderr, "Synthetic SEQ/VH/VB/SPU initialization failed\n");
         SDL_DestroyRenderer(renderer);
         SDL_DestroyWindow(window);
         SDL_Quit();
@@ -188,7 +196,7 @@ int main(int argc, char **argv) {
         SDL_Quit();
         return 5;
     }
-    fprintf(stderr, "Synthetic SEQ -> SPU -> SDL2 opened: %d Hz, %u channels, %u callback frames\n",
+    fprintf(stderr, "Synthetic SEQ + VH/VB -> SPU -> SDL2 opened: %d Hz, %u channels, %u callback frames\n",
             obtained.freq, (unsigned)obtained.channels, (unsigned)obtained.samples);
 
     pump_synthetic_audio(device);
