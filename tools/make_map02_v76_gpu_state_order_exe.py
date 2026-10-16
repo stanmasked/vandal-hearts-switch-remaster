@@ -43,6 +43,7 @@ REGIONS=(
     ("e6_mask_restored",152,0x03e0),
     ("e1_abr0_sprite",168,0xbc0f),
     ("e1_abr1_sprite",184,0xfc1f),
+    ("e1_abr_restored",200,0xbc0f),
 )
 def ft4(x,clut,u,semi=False,tpage=0):
     return ((0x2f000000 if semi else 0x2d000000),
@@ -89,7 +90,9 @@ def gp0_stream():
     cmds.extend(sprite(168,CLUT_A,0))
     cmds.append(0xe1000020)
     cmds.extend(sprite(184,CLUT_A,0))
-    cmds.extend((0xe1000000,0xe2000000,0xe6000000))
+    cmds.append(0xe1000000)
+    cmds.extend(sprite(200,CLUT_A,0))
+    cmds.extend((0xe2000000,0xe6000000))
     return tuple(cmds)
 GP0_SEQUENCE=gp0_stream()
 def expected_pixel(x,y):
