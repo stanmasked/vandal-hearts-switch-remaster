@@ -90,4 +90,11 @@ static inline unsigned vh_ps1_tpage_abr(uint16_t texture_page) {
     return (texture_page >> 5) & 3u;
 }
 
+/* Original POLY_FT4 command is 0x2c, optionally plus bit0 TGE (raw
+ * texture) and bit1 ABE (semi-transparency). Terrain uses 0x2c.
+ * Do not infer ABE from the CLUT STP bit or TPage ABR selection. */
+static inline int vh_ps1_ft4_primitive_semi(uint8_t gpu_code) {
+    return ((gpu_code & 0xfcu) == 0x2cu) && ((gpu_code & 0x02u) != 0);
+}
+
 #endif
