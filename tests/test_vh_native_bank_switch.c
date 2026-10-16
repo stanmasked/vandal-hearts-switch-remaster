@@ -1,6 +1,6 @@
-/* Two fully decoded synthetic VH/VB banks, one persistent output clock.
- * Switching only after stopping SEQ and resetting SPU avoids dangling
- * voices referencing the previous bank's caller-owned sample arena.
+/* Two decoded synthetic VH/VB banks, 16 scene lifetimes and one
+ * persistent output clock. Transactional switching must detach borrowed
+ * voice PCM pointers without erasing the STUDIO_C wet-tail history.
  */
 #include <assert.h>
 #include <stdint.h>
@@ -11,6 +11,8 @@
 #include "vh_audio_stream.h"
 
 #define VH_SIZE (32u + 128u*16u + 512u + 512u)
+#define SCENE_COUNT 16u
+#define SCENE_BLOCKS 16u
 static uint8_t vh[2][VH_SIZE], vb[2][48];
 static int16_t pcm[2][56];
 static VhNativeVab bank[2];
@@ -46,10 +48,11 @@ int main(void) {
     assert(memcmp(pcm[0],pcm[1],56u*sizeof(int16_t))!=0);
     vh_audio_resample_reset(&resampler);
     uint64_t output_frames=0, checksum[2]={0,0};
-    uint32_t seam_deltas[3]={0,0,0};
+    uint32_t seam_deltas[SCENE_COUNT-1u]={0};
+    uint32_t largest_seam=0u;
     int16_t last_left=0,last_right=0;
     int have_last=0;
-    for (unsigned transition=0;transition<4u;transition++) {
+    for (unsigned transition=0;transition<SCENE_COUNT;transition++) {
         const unsigned scene=transition%2u;
         if (!transition) {
             vh_native_spu_reset(&spu);
@@ -107,7 +110,7 @@ int main(void) {
                 assert(!spu.voice[slot].active);
             }
         }
-        for (unsigned block=0;block<16u;block++) {
+        for (unsigned block=0;block<SCENE_BLOCKS;block++) {
             assert(vh_native_seq_advance_block(&seq)>=0);
             if (block==0u) {
                 /* The first note after each switch must bind to the new
@@ -144,25 +147,33 @@ int main(void) {
                 checksum[scene]=checksum[scene]*UINT64_C(1099511628211)
                                 +(uint16_t)out[i]+1u;
         }
-        assert(spu.frames_rendered==16u*512u);
+        assert(spu.frames_rendered==SCENE_BLOCKS*512u);
         assert(seq.note_ons>0u);
         assert(bank[scene].selected_program==7u);
         assert(bank[scene].selected_vag==1u);
     }
     /* Bank A and B must each trigger notes; no lost sequencer state. */
-    assert(output_frames>34000u);
-    assert(resampler.input_frames==64u*512u);
-    const uint64_t expected=((uint64_t)64u*512u-1u)*160u/147u+1u;
+    assert(output_frames>130000u);
+    assert(resampler.input_frames==(uint64_t)SCENE_COUNT*SCENE_BLOCKS*512u);
+    const uint64_t expected=((uint64_t)SCENE_COUNT*SCENE_BLOCKS*512u-1u)*160u/147u+1u;
     assert(output_frames+2u>=expected && output_frames<=expected+1u);
     assert(resampler.next_output_tick==output_frames*44100u);
     assert(checksum[0]!=checksum[1]);
     /* Synthetic-only guard: the known stable transitions stay below 1024
      * PCM16 steps. Never use this threshold as a PS1 accuracy claim.
      */
-    for (unsigned seam=0;seam<3u;seam++)
+    for (unsigned seam=0;seam<SCENE_COUNT-1u;seam++) {
         assert(seam_deltas[seam] <= 1024u);
+        if (seam_deltas[seam]>largest_seam)
+            largest_seam=seam_deltas[seam];
+    }
+    /* Retain the original first-three seam report for regression
+     * comparison, then report the maximum across all 15 transitions.
+     */
     printf("VAB seam adjacent-sample deltas (PCM16): %u %u %u\n",
            seam_deltas[0],seam_deltas[1],seam_deltas[2]);
+    printf("VAB extended transition soak: %u scenes, %u blocks, %u switches, max seam=%u PCM16\n",
+           SCENE_COUNT,SCENE_COUNT*SCENE_BLOCKS,SCENE_COUNT-1u,largest_seam);
     puts("two synthetic VAB banks: safe SEQ SPU switch, continuous PCM clock PASS");
     return 0;
 }
