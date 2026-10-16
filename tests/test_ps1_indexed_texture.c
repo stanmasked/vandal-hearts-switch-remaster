@@ -215,8 +215,9 @@ static void test_classified_clut_mask_ft4_and_optional_blend(void) {
     count = vh_canvas_draw_ft4_classified_rgba32(
         &canvas, decoded, 16, 16, 18, gpu,
         classes, 18, test_stp_blend, &stp_calls);
-    assert(count >= visible);
-    assert(stp_calls >= flags_stp);
+    /* Every covered texel (including shared-diagonal ones) is drawn once. */
+    assert(count == visible);
+    assert(stp_calls == flags_stp);
     for (row = 0; row < 16; ++row) {
         for (col = 0; col < 16; ++col) {
             uint8_t klass = classes[row * 18 + col];
@@ -232,7 +233,7 @@ static void test_classified_clut_mask_ft4_and_optional_blend(void) {
     /* No blend callback => STP is copied, but zero still punches through. */
     for (row = 0; row < FB_STRIDE * FB_H; ++row) fb[row] = CLEAR;
     assert(vh_canvas_draw_ft4_classified_rgba32(
-        &canvas, decoded, 16, 16, 18, gpu, classes, 18, NULL, NULL) >= visible);
+        &canvas, decoded, 16, 16, 18, gpu, classes, 18, NULL, NULL) == visible);
     for (row = 0; row < 16; ++row)
         for (col = 0; col < 16; ++col) {
             uint8_t klass = classes[row * 18 + col];
