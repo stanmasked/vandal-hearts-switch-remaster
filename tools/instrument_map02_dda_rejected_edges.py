@@ -53,7 +53,7 @@ def instrument_rejected_edges(raster):
         replacement = (
             f"VH_Map02SkipAt(vh_pixel_sample_x, y, {reason});\n"
             "#if defined(VH_MAP02_DDA_REJECTED_EDGES_TRACE)\n"
-            f"                    VH_Map02RejectedEdges(cx, y, left_x, right_x, {reason});\n"
+            f"                    if ({'y < cx->clipT' if reason in (4, 7) else 'y > cx->clipB'}) VH_Map02RejectedEdges(cx, y, left_x, right_x, {reason});\n"
             "#endif"
         )
         result = one(result, original, replacement,
