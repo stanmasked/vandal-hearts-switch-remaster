@@ -6,10 +6,22 @@ import sys
 import struct
 import unittest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from tests.test_map02_prs_v45 import synth_models
+
 from tools.preflight_map02_prs_v45 import WIDTH,STRIDE,load_v24
 from tools.verify_map02_face_evidence_v46 import compare,_draw_events,V46Invalid
 HEADER=Path(__file__).resolve().parents[1]/"tests/fixtures/vh_map02_hd_lookup_v24.h"
+
+def synth_models():
+    buf=bytearray(WIDTH*12*STRIDE)
+    for x,slot in ((19,241),(20,243)):
+        off=(8*WIDTH+x)*STRIDE
+        for i,(vx,vy,vz) in enumerate(((0,0,1000),(64,0,1000),
+                                       (64,64,1000),(0,64,1000))):
+            struct.pack_into("<hhhh",buf,off+i*8,vx,vy,vz,0)
+        struct.pack_into("<h",buf,off+176,slot+400)
+        buf[off+212:off+216]=bytes((0,1,2,3))
+        buf[off+302]=1
+    return bytes(buf)
 
 def fixture():
     buf=bytearray(synth_models())
