@@ -1,0 +1,18 @@
+{
+  "schema": "vh-switch-audio-session-card/v1",
+  "session_id": "REPLACE_WITH_OPERATOR_SESSION_ID",
+  "csv": "session-01/audio-diagnostics-0000.csv",
+  "csv_sha256": "REPLACE_WITH_ACTUAL_CSV_SHA256",
+  "nro_sha256": "REPLACE_WITH_ACTUAL_NRO_SHA256",
+  "git_sha": "REPLACE_WITH_ACTUAL_GIT_COMMIT_SHA",
+  "launch_id": "REPLACE_WITH_DISTINCT_LAUNCH_LABEL",
+  "start_utc": "REPLACE_WITH_ACTUAL_ISO_DATETIME_WITH_TIMEZONE",
+  "end_utc": "REPLACE_WITH_ACTUAL_ISO_DATETIME_WITH_TIMEZONE",
+  "console_label": "REPLACE_WITH_NONPERSONAL_DEVICE_LABEL",
+  "launch_mode": "UNKNOWN",
+  "audio_output": "UNKNOWN",
+  "music_audible": "UNKNOWN",
+  "audio_artifacts": "UNKNOWN",
+  "normal_exit": "UNKNOWN",
+  "observer_note": "TEMPLATE ONLY. Fill the actual audible playback observations and independently verify the launch."
+}
