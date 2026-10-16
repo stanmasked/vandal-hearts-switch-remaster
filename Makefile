@@ -76,6 +76,8 @@ test-audio-stream: $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(B
 	./$(BUILD)/test_vh_native_seq
 	./$(BUILD)/test_vh_native_vab
 	./$(BUILD)/test_vh_audio_assets
+	./$(BUILD)/test_vh_audio_resample
+	./$(BUILD)/test_vh_spu_reverb
 	python3 tests/test_native_spu_adpcm.py
 	python3 tests/test_native_spu_gaussian.py
 	python3 tests/test_native_vab_python_reference.py
