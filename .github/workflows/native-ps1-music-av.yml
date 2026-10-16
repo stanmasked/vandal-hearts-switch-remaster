@@ -188,6 +188,8 @@ jobs:
           scene_switch_gate=()
           if [[ "$source" == "synthetic" ]]; then
             scene_switch_gate=(--require-synthetic-scene-switches)
+          elif [[ "$source" == "user_files" ]]; then
+            scene_switch_gate=(--require-no-synthetic-switches)
           fi
           python3 tests/check_native_av_screenshot.py "$SHOT1" "$SHOT2" \
             --require-audio-source "$source" --require-audout-status "$audout" \
