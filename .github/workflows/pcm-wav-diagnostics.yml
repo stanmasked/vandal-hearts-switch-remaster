@@ -58,3 +58,10 @@ jobs:
           /tmp/export_native_seq_pcm_wav /tmp/native-seq-spu-48k.wav
           python3 tools/analyze_pcm_wav.py /tmp/native-seq-spu-48k.wav \
             --expected-rate 48000 --fail-on-silence
+      - name: Verify native PCM reproducibility
+        run: |
+          /tmp/export_native_seq_pcm_wav /tmp/native-seq-spu-48k-repeat.wav
+          cmp /tmp/native-seq-spu-48k.wav /tmp/native-seq-spu-48k-repeat.wav
+          sha256sum /tmp/native-seq-spu-48k.wav
+          python3 tools/analyze_pcm_wav.py /tmp/native-seq-spu-48k-repeat.wav \
+            --expected-rate 48000 --fail-on-silence
