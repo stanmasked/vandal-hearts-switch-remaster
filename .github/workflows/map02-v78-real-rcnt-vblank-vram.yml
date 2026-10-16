@@ -1968,7 +1968,7 @@ jobs:
           [[ "$(git -C upstream-pcsx rev-parse HEAD)" == "$pin" ]]
           python3 -m remaster.tools.apply_map02_v78_pcsx_rearmed upstream-pcsx
           git -C upstream-pcsx diff --check
-          test "$(git -C upstream-pcsx diff --name-only | wc -l)" -eq 5
+          test "$(git -C upstream-pcsx diff --name-only | wc -l)" -eq 6
           grep -F '(void)vh66_pcsx_gp1_observe(value)' upstream-pcsx/libpcsxcore/psxhw.c
           grep -F '(void)vh66_pcsx_dma2_observe' upstream-pcsx/libpcsxcore/psxdma.c
           for source in psxhw psxdma; do
