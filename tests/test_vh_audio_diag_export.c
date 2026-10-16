@@ -16,6 +16,7 @@
 
 typedef struct {
     int fail_exists,fail_open,fail_write,fail_flush,fail_close,fail_rename;
+    int fail_read,tamper_after_write;
     unsigned opens,writes,flushes,closes,renames,removes,stats;
 } FaultIO;
 
@@ -32,6 +33,10 @@ static FILE *mock_open(void *p,const char *path) {
     ++f->opens;
     return f->fail_open ? NULL : fopen(path,"wb");
 }
+static FILE *mock_open_read(void *p,const char *path) {
+    FaultIO *f=p;
+    return f->fail_read ? NULL : fopen(path,"rb");
+}
 static int mock_write(void *p,const VhAudioDiagJournal *j,FILE *file) {
     FaultIO *f=p;
     ++f->writes;
@@ -41,7 +46,13 @@ static int mock_write(void *p,const VhAudioDiagJournal *j,FILE *file) {
         (void)fputs("partial,not,valid\n",file);
         return -1;
     }
-    return vh_audio_diag_journal_write_csv(j,file);
+    const int result=vh_audio_diag_journal_write_csv(j,file);
+    if(f->tamper_after_write) {
+        /* Silent corruption: row-count writer reports success
+         * despite unexpected extra bytes appended to the stream. */
+        if(fputs("tampered SD sector\\n",file)==EOF) return -1;
+    }
+    return result;
 }
 static int mock_flush(void *p,FILE *file) {
     FaultIO *f=p;
@@ -67,7 +78,7 @@ static int mock_remove(void *p,const char *path) {
 }
 static VhAudioDiagExportOps callbacks(FaultIO *f) {
     const VhAudioDiagExportOps o={
-        f,mock_exists,mock_open,mock_write,mock_flush,mock_close,
+        f,mock_exists,mock_open,mock_open_read,mock_write,mock_flush,mock_close,
         mock_rename,mock_remove
     };
     return o;
@@ -125,7 +136,7 @@ static void test_failure_matrix(const char *dir) {
            VH_AUDIO_EXPORT_INVALID);
     assert(!present(expected));
 
-    for(unsigned mode=0;mode<6u;mode++) {
+    for(unsigned mode=0;mode<8u;mode++) {
         memset(&flags,0,sizeof flags);
         flags.fail_exists=mode==0u;
         flags.fail_open=mode==1u;
@@ -133,13 +144,17 @@ static void test_failure_matrix(const char *dir) {
         flags.fail_flush=mode==3u;
         flags.fail_close=mode==4u;
         flags.fail_rename=mode==5u;
+        flags.fail_read=mode==6u;
+        flags.tamper_after_write=mode==7u;
         const VhAudioDiagExportResult want=(VhAudioDiagExportResult)
             (mode==0u ? VH_AUDIO_EXPORT_STAT:
              mode==1u ? VH_AUDIO_EXPORT_OPEN:
              mode==2u ? VH_AUDIO_EXPORT_WRITE:
              mode==3u ? VH_AUDIO_EXPORT_FLUSH:
              mode==4u ? VH_AUDIO_EXPORT_CLOSE:
-                        VH_AUDIO_EXPORT_RENAME);
+             mode==5u ? VH_AUDIO_EXPORT_RENAME:
+             mode==6u ? VH_AUDIO_EXPORT_READ:
+                        VH_AUDIO_EXPORT_VERIFY);
         snprintf(path,sizeof path,"dirty");
         assert(vh_audio_diag_export(&journal,dir,&ops,path,sizeof path)==want);
         assert(path[0]=='\0');
@@ -147,7 +162,7 @@ static void test_failure_matrix(const char *dir) {
         assert(!present(temp));
         if(mode>1u) {
             assert(flags.opens==1);
-            assert(flags.closes==1);
+            assert(flags.closes==(mode==5u || mode==7u ? 2u : 1u));
             assert(flags.removes==1);
         }
         if(mode==0u) assert(flags.opens==0);
@@ -159,10 +174,32 @@ static void test_failure_matrix(const char *dir) {
     assert(vh_audio_diag_export(&journal,dir,&ops,path,sizeof path)==
            VH_AUDIO_EXPORT_OK);
     assert(!strcmp(path,expected));
-    assert(flags.renames==1 && flags.closes==1);
+    assert(flags.renames==1 && flags.closes==2);
     assert(!present(temp));
     read_valid(expected);
 
+    /* A failed later session MUST NOT truncate an earlier valid CSV.
+     * Repeat write errors AND a silent-corruption failure after a
+     * successfully written staging file; the previous checksum
+     * and numbered slot must remain unchanged across all retries.
+     */
+    for(unsigned turn=0;turn<12u;turn++) {
+        memset(&flags,0,sizeof flags);
+        flags.fail_write=(turn%3u)==0u;
+        flags.fail_read=(turn%3u)==1u;
+        flags.tamper_after_write=(turn%3u)==2u;
+        const VhAudioDiagExportResult expected_error=
+            flags.fail_write ? VH_AUDIO_EXPORT_WRITE :
+            flags.fail_read ? VH_AUDIO_EXPORT_READ :
+                              VH_AUDIO_EXPORT_VERIFY;
+        assert(vh_audio_diag_export(&journal,dir,&ops,path,sizeof path)==
+               expected_error);
+        assert(!path[0]);
+        assert(!present(temp));
+        assert(!present("not-used"));
+        read_valid(expected);
+    }
+    memset(&flags,0,sizeof flags);
     /* A failed later session MUST NOT truncate an earlier valid CSV. */
     flags.fail_write=1;
     assert(vh_audio_diag_export(&journal,dir,&ops,path,sizeof path)==
@@ -239,7 +276,7 @@ int main(void) {
         assert(remove(path)==0);
     }
     assert(rmdir(dir)==0);
-    puts("SD journal export: temp/rename, 6 injected failures, "
-         "prior-file preservation, 64-slot bounds PASS");
+    puts("SD journal export: exact readback, 8 injected failure paths, "
+         "12 repeated corrupt writes, prior-file preservation, 64-slot bounds PASS");
     return 0;
 }
