@@ -4,6 +4,7 @@
 #include <string.h>
 #include "../source/map02_captured_vram4_bridge.h"
 #include "../source/map02_vram4_timeline_frame.h"
+#include "../source/map02_vram4_transfer_ledger.h"
 
 /* Invented MAP02/GTE/VRAM evidence; this test is NOT a real game capture. */
 enum { N = 3, OT = 1024, W = 64, H = 64, STRIDE = 68, SCRATCH = 256 };
@@ -327,11 +328,133 @@ static void test_timeline_invalid_snapshots_fail_before_output(void) {
     assert_timeline_workspace_unmodified();
 }
 
+
+static uint8_t ledger_replay[VH_MAP02_VRAM_BYTES];
+
+static VhMap02VramTransfer clut_clear_event(void) {
+    VhMap02VramTransfer ev = {0};
+    ev.frame = 42u;
+    ev.step = 0u;
+    ev.before_submission = 1u;
+    ev.operation = VH_MAP02_VRAM_OP_CLEAR;
+    ev.x = 1; ev.y = 499; ev.w = 1; ev.h = 1;
+    ev.green = 248; /* BGR555 0x03e0: same observed CLUT mutation */
+    return ev;
+}
+
+static void test_transfer_ledger_gates_pixels_and_missing_writes(void) {
+    VhMap02Vram4TimelineEntry entries[2];
+    VhMap02Vram4TimelineInput input;
+    VhMap02Vram4FrameWorkspace w = workspace();
+    VhMap02VramTransfer clear = clut_clear_event();
+    VhCanvas canvas = {framebuffer,STRIDE,W,H};
+    size_t drawn = 0u, pixels = 0u;
+    timeline_fixture(entries);
+    clear_timeline_workspace();
+    input = timeline_input(entries);
+
+    /* The changed CLUT cannot be silently attributed to an unlogged GPU
+     * operation, even though both per-face GTE and VRAM snapshots are valid. */
+    assert(!vh_map02_vram4_timeline_build_with_ledger(
+        &input,&w,NULL,0u,ledger_replay,sizeof ledger_replay));
+    assert_timeline_workspace_unmodified();
+
+    assert(vh_map02_vram4_timeline_verify_ledger(
+        &input,&w,&clear,1u,ledger_replay,sizeof ledger_replay));
+    assert(vh_map02_vram4_timeline_build_with_ledger(
+        &input,&w,&clear,1u,ledger_replay,sizeof ledger_replay));
+    assert(w.scene.count == 2u && heads[896] == 1u);
+    assert((uint16_t)(palettes[2] | ((unsigned)palettes[3]<<8)) == 0x001fu);
+    assert((uint16_t)(palettes[32+2] |
+                      ((unsigned)palettes[32+3]<<8)) == 0x03e0u);
+    assert(vh_map02_ot_scene_draw(&w.scene,&canvas,scratch,classes,SCRATCH,
+                                  pack,NULL,&drawn,&pixels));
+    assert(drawn == 2u && pixels == 512u);
+    assert(framebuffer[25u*STRIDE+25u] == UINT32_C(0xffff0000));
+    assert(framebuffer[25u*STRIDE+45u] == UINT32_C(0xff00ff00));
+}
+
+static void test_transfer_ledger_mutations_leave_renderer_untouched(void) {
+    VhMap02Vram4TimelineEntry entries[2];
+    VhMap02Vram4TimelineInput input;
+    VhMap02Vram4FrameWorkspace w = workspace();
+    const uint8_t green[2] = {0xe0u,0x03u};
+    for (unsigned mutation=0u; mutation<14u; ++mutation) {
+        VhMap02VramTransfer ev = clut_clear_event();
+        timeline_fixture(entries);
+        clear_timeline_workspace();
+        input=timeline_input(entries);
+        switch (mutation) {
+        case 0: ev.frame = 41u; break;
+        case 1: ev.step = 1u; break;
+        case 2: ev.before_submission = 0u; break;
+        case 3: ev.before_submission = 2u; break;
+        case 4: ev.green = 224; break; /* wrong observed CLUT color */
+        case 5: ev.x = 2; break;       /* wrong palette address */
+        case 6: ev.operation = 99; break;
+        case 7: ev.w = 0; break;
+        case 8: ev.w = 2048; ev.h = 2048; break;
+        case 9: ev.operation = VH_MAP02_VRAM_OP_LOAD;
+                ev.load_le = green; ev.load_bytes = 1u; break;
+        case 10: ev.operation = VH_MAP02_VRAM_OP_MOVE;
+                 ev.dest_x = 0; ev.dest_y = 0; break;
+        case 11: entries[1].vram_snapshot_frame++; break;
+        case 12: entries[1].vram_snapshot_index = 0u; break;
+        case 13: word(later_vram, 400u * 1024u + 15u, 0x7c00);
+                 break; /* unrelated VRAM mutation is still unexplained */
+        }
+        assert(!vh_map02_vram4_timeline_build_with_ledger(
+            &input,&w,&ev,1u,ledger_replay,sizeof ledger_replay));
+        assert_timeline_workspace_unmodified();
+    }
+    timeline_fixture(entries);
+    clear_timeline_workspace();
+    input=timeline_input(entries);
+    VhMap02VramTransfer ev=clut_clear_event();
+    assert(!vh_map02_vram4_timeline_build_with_ledger(
+        &input,&w,&ev,1u,ledger_replay,sizeof ledger_replay-1u));
+    assert_timeline_workspace_unmodified();
+    /* Complete identical VRAM snapshots require zero transfer events. */
+    entries[1].vram_le = entries[0].vram_le;
+    assert(vh_map02_vram4_timeline_verify_ledger(
+        &input,&w,NULL,0u,ledger_replay,sizeof ledger_replay));
+}
+
+static void test_transfer_ledger_source_copy_semantics(void) {
+    VhMap02VramTransfer ev = {0};
+    const uint8_t payload[4] = {0x1fu,0x00u,0xe0u,0x03u};
+    memset(ledger_replay,0,sizeof ledger_replay);
+    ev.frame=42u; ev.step=0u; ev.before_submission=1u;
+    ev.operation=VH_MAP02_VRAM_OP_LOAD;
+    ev.x=-1; ev.y=0; ev.w=2; ev.h=1;
+    ev.load_le=payload; ev.load_bytes=sizeof payload;
+    assert(vh_map02_vram_ledger_event_valid(&ev,0u,42u,2u));
+    vh_map02_vram_ledger_apply(ledger_replay,&ev);
+    assert(vh_map02_vram_ledger_read(ledger_replay,0u)==0x03e0u);
+    ev=(VhMap02VramTransfer){0};
+    ev.frame=42u; ev.step=0u; ev.before_submission=1u;
+    ev.operation=VH_MAP02_VRAM_OP_MOVE;
+    ev.x=10;ev.y=12;ev.w=3;ev.h=1;
+    ev.dest_x=11;ev.dest_y=12;
+    for(unsigned x=10u;x<14u;++x)
+        vh_map02_vram_ledger_write(
+            ledger_replay,12u*1024u+x,(uint16_t)(x-9u));
+    assert(vh_map02_vram_ledger_event_valid(&ev,0u,42u,2u));
+    vh_map02_vram_ledger_apply(ledger_replay,&ev);
+    /* PC MoveImage copies in-place from left to right, not memmove. */
+    for(unsigned x=10u;x<14u;++x)
+        assert(vh_map02_vram_ledger_read(
+            ledger_replay,12u*1024u+x)==1u);
+}
+
 int main(void) {
     test_verified_capture_flows_to_vram4_and_ot();
     test_mutations_do_not_change_staged_output();
     test_timeline_detects_clut_change_between_submissions();
     test_timeline_invalid_snapshots_fail_before_output();
+    test_transfer_ledger_gates_pixels_and_missing_writes();
+    test_transfer_ledger_mutations_leave_renderer_untouched();
+    test_transfer_ledger_source_copy_semantics();
     puts("MAP02 captured GTE -> source FT4 -> VRAM4 -> OT pixel tests passed");
     return 0;
 }
