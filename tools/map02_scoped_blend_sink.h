@@ -17,6 +17,7 @@ typedef struct VHMap02BlendEvent {
 } VHMap02BlendEvent;
 
 void vh_map02_scope_reset(void);
+void vh_map02_scope_abort(void);
 int vh_map02_scope_begin_frame(unsigned frame, int x, int y);
 int vh_map02_scope_begin_primitive(unsigned ordinal);
 int vh_map02_scope_end_primitive(void);
