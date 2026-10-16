@@ -191,10 +191,35 @@ static void test_fade_ramp_matches_unscaled_audio(void) {
     assert(scene.blocks_rendered==1u && reference_scene.blocks_rendered==1u);
 }
 
+static void test_pending_corruption_fails_closed(void) {
+    setup();
+    VhMusicCue first=cue_a();
+    assert(vh_music_scene_request(&scene,&first,0)==0);
+    assert(vh_music_scene_render(&scene,out)==0);
+
+    uint8_t mutable_song[sizeof song_b];
+    memcpy(mutable_song,song_b,sizeof mutable_song);
+    VhMusicCue pending=cue_b();
+    pending.seq=mutable_song;
+    assert(vh_music_scene_request(&scene,&pending,1)==0);
+    mutable_song[0]='X'; /* a caller must keep queued assets stable */
+    assert(vh_music_scene_render(&scene,out)==0);
+    assert(scene.stage==VH_MUSIC_SWITCH_PENDING);
+    memset(out,0x7f,sizeof out);
+    assert(vh_music_scene_render(&scene,out)==-1);
+    assert(scene.last_error);
+    assert(!has_signal(out));
+    memset(out,0x7f,sizeof out);
+    assert(vh_music_scene_render(&scene,out)==-1);
+    assert(!has_signal(out));
+    assert(vh_music_scene_request(&scene,&first,0)==-1);
+}
+
 int main(void) {
     test_validation_and_zero_fade_restart();
     test_two_block_fade_and_silence();
     test_fade_ramp_matches_unscaled_audio();
+    test_pending_corruption_fails_closed();
     puts("game scene music cues: fade / switch / silence / validation PASS");
     return 0;
 }
