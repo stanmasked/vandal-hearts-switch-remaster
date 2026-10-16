@@ -27,9 +27,9 @@ MAX_EVENTS = 64
 
 def complete_events(raw, label):
     """Reject truncated/noncanonical JSONL even when the hash is valid."""
-    if not raw.endswith(b"\\n") or b"\\r" in raw:
+    if not raw.endswith(b"\n") or b"\r" in raw:
         raise ValueError(label + ": incomplete or noncanonical line ending")
-    lines = raw.split(b"\\n")[:-1]
+    lines = raw.split(b"\n")[:-1]
     if not 1 <= len(lines) < MAX_EVENTS or any(not line.strip() for line in lines):
         raise ValueError(label + ": missing, empty, or over event limit")
     return [parse_json(line, label) for line in lines]
