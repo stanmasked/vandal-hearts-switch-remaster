@@ -6,6 +6,7 @@
 #include "game_renderer.h"
 #include "platform_input.h"
 #include "software_renderer.h"
+#include "ft4_textured_quad.h"
 
 #define FB_WIDTH 1280
 #define FB_HEIGHT 720
@@ -27,6 +28,9 @@
 #define COLOR_CURSOR   RGBA8_MAXALPHA(255, 219, 102)
 #define COLOR_WHITE    RGBA8_MAXALPHA(224, 234, 246)
 #define COLOR_MUTED    RGBA8_MAXALPHA(105, 126, 151)
+
+/* Generated orientation-marker texture; never game assets or PS1 art. */
+static u32 g_ft4_probe_pixels[16 * 16];
 
 static void fill_rect(u32 *pixels, u32 stride, int x, int y,
                       int width, int height, u32 color) {
@@ -87,6 +91,42 @@ static void draw_text(u32 *pixels, u32 stride, int x, int y,
     }
 }
 
+/* Exercise the portable FT4 rasterizer on the actual Switch framebuffer.
+ * Synthetic asymmetric colors make UV flipping visible at a glance. */
+static void init_ft4_probe_texture(void) {
+    for (int y = 0; y < 16; ++y) {
+        for (int x = 0; x < 16; ++x) {
+            g_ft4_probe_pixels[y * 16 + x] = RGBA8_MAXALPHA(
+                16 + x * 15, 16 + y * 15, 36 + ((x + 2 * y) % 4) * 48);
+        }
+    }
+    g_ft4_probe_pixels[0] = COLOR_WHITE;
+    g_ft4_probe_pixels[15] = COLOR_CURSOR;
+    g_ft4_probe_pixels[15 * 16] = COLOR_ENEMY;
+}
+
+static void draw_ft4_probe(VhCanvas *canvas, u32 *pixels, u32 stride) {
+    const VhFt4Point normal[4] = {
+        {978, 164}, {1106, 164}, {1106, 292}, {978, 292}
+    };
+    const VhFt4Point mirror[4] = {
+        {1106, 352}, {978, 352}, {978, 480}, {1106, 480}
+    };
+    VhFt4Vertex quad[4];
+    draw_text(pixels, stride, 975, 137, "FT4 UV PROBE", COLOR_MUTED, 1);
+    if (vh_ft4_from_face_perimeter(normal, 0, 0, 15, 15, quad)) {
+        (void)vh_canvas_draw_ft4_rgba32(canvas, g_ft4_probe_pixels,
+                                          16, 16, 16, quad);
+    }
+    vh_canvas_draw_rect_outline(canvas, 978, 164, 128, 128, COLOR_GRID);
+    draw_text(pixels, stride, 975, 323, "MIRROR PROBE", COLOR_MUTED, 1);
+    if (vh_ft4_from_face_perimeter(mirror, 0, 0, 15, 15, quad)) {
+        (void)vh_canvas_draw_ft4_rgba32(canvas, g_ft4_probe_pixels,
+                                          16, 16, 16, quad);
+    }
+    vh_canvas_draw_rect_outline(canvas, 978, 352, 128, 128, COLOR_GRID);
+}
+
 static void draw_frame(u32 *pixels, u32 stride, int cursor_x, int cursor_y,
                        int hero_x, int hero_y, int enemy_x, int enemy_y,
                        int hero_selected, u32 frame_tick) {
@@ -137,6 +177,8 @@ static void draw_frame(u32 *pixels, u32 stride, int cursor_x, int cursor_y,
         }
     }
 
+    draw_ft4_probe(&canvas, pixels, stride);
+
     fill_rect(pixels, stride, 72, 590, FB_WIDTH - 144, 2, COLOR_GRID);
     fill_rect(pixels, stride, 72, 615, 42, 42, COLOR_HERO);
     fill_rect(pixels, stride, 132, 615, 42, 42, COLOR_ENEMY);
@@ -173,6 +215,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    init_ft4_probe_texture();
     VhGameState state = {1, 2, 1, 2, 6, 3, 0};
     u32 frame_tick = 0;
 
