@@ -88,3 +88,23 @@ def prepare_span(original_gpu, original_raster, output_dir):
             "entered_spans_only": True,
             "vertical_rejected_row_coverage_proven": False,
             "retail_MAP02_verified": False}
+
+def main():
+    """Offline CLI for reproducible source-pinned overlay generation."""
+    import argparse
+    import json
+    from pathlib import Path
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("original_gpu", type=Path)
+    parser.add_argument("original_raster", type=Path)
+    parser.add_argument("--output-dir", type=Path, required=True)
+    args = parser.parse_args()
+    try:
+        result = prepare_span(args.original_gpu, args.original_raster, args.output_dir)
+    except (OSError, UnicodeError, ValueError) as exc:
+        parser.error(str(exc))
+    print(json.dumps(result, sort_keys=True, indent=2))
+
+
+if __name__ == "__main__":
+    main()
