@@ -17,7 +17,11 @@ FAKE = (SOURCE + "\n" + SPAN_ANCHOR + "\n"
         DDA_DRAW_ANCHOR + "\n" +
         DDA_END_ANCHOR + "\n}\n"
         "void fake_legacy(void) {\n" +
-        LEGACY_ANCHOR + "\n}\n")
+        LEGACY_ANCHOR + "\n}\n" +
+        "void test_rows(void) {\n"
+        "            y--; left_x -= lstep; right_x -= rstep;\n"
+        "        do {\n            if (y > cx->clipB) break;\n"
+        "}\n")
 
 
 class NativeRasterSkipGeneratorTests(unittest.TestCase):
@@ -26,6 +30,7 @@ class NativeRasterSkipGeneratorTests(unittest.TestCase):
         self.assertIn("VH_Map02SkipAt(current_x, y, 1);",output)
         self.assertIn("VH_Map02SkipAt(vh_pixel_sample_x, y, 2);",output)
         self.assertIn("VH_Map02SkipAt(x, y, 3);",output)
+        self.assertEqual(output.count("VH_Map02SkipAt(vh_pixel_sample_x, y, 4);"),2)
         self.assertIn("vh_pixel_sample_active &&",output) if False else None
         self.assertIn("vh_sample_scope_active",output)
         self.assertIn("vh_map02_skip_count >= VH_MAP02_SKIP_CAP",output)
