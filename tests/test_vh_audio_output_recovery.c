@@ -18,6 +18,7 @@ typedef struct {
     const int16_t *page_pointer;
     size_t page_frames;
     uint64_t page_hash, checksum;
+    VhAudioSubmitTiming timing;
 } Mock;
 
 static uint64_t hash_page(const int16_t *pcm, size_t frames) {
@@ -42,8 +43,15 @@ static int submit(void *ctx,const int16_t *pcm,size_t frames) {
     }
     ++m->attempts_this_page;
     ++m->submissions;
+    /* Fake backend latency, not elapsed wall-clock CI time. One
+     * record per raw attempt, including retries and failures.
+     */
+    const uint64_t waited=(m->submissions%5u==0u)
+        ? 250000u : 110000u;
     if (m->failures_left) {
         --m->failures_left;
+        assert(vh_audio_output_record_submit_timing(
+            &m->timing,waited,19200000u,frames,0)==0);
         return -1;
     }
     /* Simulate a successful libnx return with a wrong (or missing)
@@ -58,8 +66,11 @@ static int submit(void *ctx,const int16_t *pcm,size_t frames) {
         --m->null_returns_left;
         returned=NULL;
     }
-    if (!vh_audio_output_page_returned(&m->owned_descriptor,returned))
-        return -1;
+    const int returned_ours=
+        vh_audio_output_page_returned(&m->owned_descriptor,returned);
+    assert(vh_audio_output_record_submit_timing(
+        &m->timing,waited,19200000u,frames,returned_ours)==0);
+    if (!returned_ours) return -1;
     ++m->accepted;
     m->checksum=(m->checksum ^ hash)*UINT64_C(1099511628211);
     return 0;
@@ -245,6 +256,9 @@ int main(void) {
            VH_AUDIO_OUTPUT_RESTART_LIMIT);
     assert(never_returned.accepted==0u);
     assert(never_returned.submissions==VH_AUDIO_OUTPUT_RESTART_LIMIT+1u);
+    assert(never_returned.timing.calls==never_returned.submissions);
+    assert(never_returned.timing.failed_submissions==
+           never_returned.submissions);
     assert(hash_page(dst,32u)==guarded_hash);
     for(unsigned i=0;i<128u;i++)
         sample[i]=(int16_t)((int)i*113-7000);
@@ -435,6 +449,10 @@ int main(void) {
     assert(switch_count==5u);
     assert(switching.accepted==48u);
     assert(switching.submissions==48u+extra_submits);
+    assert(switching.timing.calls==switching.submissions);
+    assert(switching.timing.failed_submissions==extra_submits);
+    assert(switching.timing.waits_longer_than_page>0u);
+    assert(switching.timing.max_ticks==250000u);
     assert(switching.checksum==check_hash);
     assert(switch_stats.frames_submitted==frame_count);
     assert(switch_stats.pages_submitted==48u);
