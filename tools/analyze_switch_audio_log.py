@@ -23,7 +23,7 @@ COLUMNS = (
     "pcm_fail", "pcm_restart", "pcm_recover", "home_fail", "home_reopen",
     "home_recover", "lease_fail", "lease_reset", "vab_warn",
 )
-EVENTS = {"START", "PERIODIC", "STATE", "RESUME", "ERROR", "EXIT", "CLOCK"}
+EVENTS = {"START", "PERIODIC", "STATE", "RESUME", "ERROR", "EXIT", "CLOCK", "GAP"}
 U32 = (1 << 32) - 1
 U64 = (1 << 64) - 1
 ROWS_LIMIT = 128
@@ -95,6 +95,8 @@ def summarize(rows: list[dict[str, int | str]]) -> dict:
     latency: list[int] = []
     unobserved_latency = 0
     clock_events = 0
+    gaps = 0
+    unlocalized_faults: dict[str, int] = {name: 0 for name in FAULTS}
     possible_stalls: list[dict[str, int]] = []
     error_entries = int(first["status"] < 0)
     last_worst = 0
@@ -102,6 +104,8 @@ def summarize(rows: list[dict[str, int | str]]) -> dict:
         delta: dict[str, int] = {}
         if cur["elapsed_ms"] < prev["elapsed_ms"]:
             clock_events += 1
+        if cur["event"] == "GAP":
+            gaps += 1
         for key in COUNTERS:
             before, after = prev[key], cur[key]
             assert isinstance(before, int) and isinstance(after, int)
@@ -114,12 +118,16 @@ def summarize(rows: list[dict[str, int | str]]) -> dict:
         if cur["status"] < 0 and prev["status"] >= 0:
             error_entries += 1
         if delta["first_pcm_count"]:
-            if cur["last_pcm_us"] > 0:
+            if cur["event"] != "GAP" and cur["last_pcm_us"] > 0:
                 latency.append(int(cur["last_pcm_us"]))
-            unobserved_latency += delta["first_pcm_count"] - int(cur["last_pcm_us"] > 0)
+            # GAP contains aggregated counter changes from events
+            # whose timing and individual latency are gone forever.
+            unobserved_latency += delta["first_pcm_count"] - int(
+                cur["event"] != "GAP" and cur["last_pcm_us"] > 0)
         if (cur["elapsed_ms"] >= prev["elapsed_ms"] and
             cur["elapsed_ms"] - prev["elapsed_ms"] >= STALL_MS and
             cur["status"] == prev["status"] == 1 and
+            cur["event"] != "GAP" and
             delta["output_pages"] == 0):
             possible_stalls.append({
                 "start_ms": prev["elapsed_ms"],
@@ -127,12 +135,15 @@ def summarize(rows: list[dict[str, int | str]]) -> dict:
             })
         for key in FAULTS:
             if delta[key]:
-                errors.append({
-                    "at_ms": cur["elapsed_ms"],
-                    "kind": key,
-                    "increments": delta[key],
-                    "segment": clock_events,
-                })
+                if cur["event"] == "GAP":
+                    unlocalized_faults[key] += delta[key]
+                else:
+                    errors.append({
+                        "at_ms": cur["elapsed_ms"],
+                        "kind": key,
+                        "increments": delta[key],
+                        "segment": clock_events + gaps,
+                    })
         last_worst = max(last_worst, int(cur["worst_pcm_us"]))
     last_worst = max(last_worst, int(first["worst_pcm_us"]))
 
@@ -163,6 +174,12 @@ def summarize(rows: list[dict[str, int | str]]) -> dict:
     warnings: list[str] = []
     if first["event"] != "START":
         warnings.append("Beginning of the session is not present in the ring buffer.")
+    if gaps:
+        warnings.append(
+            "Historical GAP: oldest incident timestamps were evicted, "
+            "but cumulative fault counts remain visible. "
+            "Faults across the GAP must not be assigned to the boundary timestamp."
+        )
     if last["event"] != "EXIT":
         warnings.append("No EXIT row; this might be a partial export.")
     if clock_events:
@@ -177,7 +194,7 @@ def summarize(rows: list[dict[str, int | str]]) -> dict:
         warnings.append("VAB fallback warnings recorded; timbre fidelity is not confirmed.")
     if max_latency is not None and max_latency > 100_000:
         warnings.append("Some completed-buffer acknowledgements exceeded 100 ms.")
-    if errors or error_entries or possible_stalls:
+    if errors or any(unlocalized_faults.values()) or error_entries or possible_stalls:
         severity = "INVESTIGATE"
     elif clock_events or any(resets.values()) or max_latency is not None and max_latency > 50_000:
         severity = "REVIEW"
@@ -190,6 +207,8 @@ def summarize(rows: list[dict[str, int | str]]) -> dict:
         "time_end_ms": last["elapsed_ms"],
         "observed_elapsed_ms": sum(time_spans) if not clock_events else None,
         "time_rollbacks": clock_events,
+        "historical_gaps": gaps,
+        "unlocalized_faults": unlocalized_faults,
         "events": dict(sorted(Counter(str(r["event"]) for r in rows).items())),
         "starting_status": first["status"],
         "ending_status": last["status"],
@@ -233,6 +252,8 @@ def format_text(name: str, report: dict) -> str:
         f"Fault clusters (<=60s): {len(report['fault_clusters_60s'])}, "
         f"repeated: {report['repeated_fault_clusters_60s']}",
         f"Possible output stalls: {len(report['possible_output_stalls'])}",
+        f"Historical gaps: {report['historical_gaps']}; evicted incident "
+        f"counts: {report['unlocalized_faults']}",
         f"Confirmed PCM acknowledgement latency: {lat['recorded_samples']} samples; "
         f"median {lat['median']} us; p95 {lat['p95']} us; "
         f"max {lat['max_observed']} us",
