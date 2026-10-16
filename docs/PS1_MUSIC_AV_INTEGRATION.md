@@ -53,3 +53,19 @@ UBSan-checked long-duration synthetic SEQ/SPU/reverb/resampler soak,
 builds the NRO without SDL2/pacman downloads, and exercises the
 framebuffer in NeXium. All CI tests use synthetic audio assets.
 Full Switch functionality still requires local hardware validation.
+
+## First NeXium run of the combined SEQ/VAB/SPU + framebuffer NRO
+
+GitHub Actions [run #38865008839](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38865008839)
+successfully compiled the new NRO and ran the SEQ/SPU/reverb/resampler
+host regression and UBSan test. The separate NeXium runtime stage also
+passed: the synthetic tactical grid and hero marker were observed;
+**8,138 pixels changed** between the two frame samples, and
+`audout_status` was `initialized`. The build artifact and raw NeXium
+screenshots/log are retained in that CI run.
+
+These results **do not** confirm audible music playback, correct
+hardware sample timing, fidelity to the original game, or successful
+loading of an actual user-owned `music.seq/music.vh/music.vb` set.
+CI includes no proprietary audio files and exercises the synthetic
+fixture only. A separate on-device recording is required for those claims.
