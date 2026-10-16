@@ -76,6 +76,20 @@ int main(void) {
             assert(spu.voice[0].pcm==old_pcm);
             assert(spu.reverb.cursor==old_cursor);
 
+            /* A different SPU is not the current voice owner. Refuse
+             * the transition without detaching or mutating either mixer.
+             */
+            static VhNativeSpu unrelated_spu;
+            vh_native_spu_reset(&unrelated_spu);
+            assert(vh_native_seq_switch_scene(
+                &seq,song,sizeof song,&unrelated_spu,
+                vh_native_vab_resolve,&bank[scene],0)==-1);
+            assert(seq.bytes==old_bytes && seq.note_ons==old_notes);
+            assert(spu.voice[0].pcm==old_pcm);
+            assert(spu.frames_rendered==old_frames);
+            assert(unrelated_spu.frames_rendered==0u);
+            assert(unrelated_spu.voice[0].pcm==NULL);
+
             /* Successful switch releases all old voices but preserves
              * STUDIO_C's delay/FIR history and its wet configuration.
              */
