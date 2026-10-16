@@ -491,6 +491,45 @@ These checks cover serialized host-side lifetime management only, not
 cross-thread teardown while audio is actively running on real Switch
 hardware. The old bank must stay allocated until a controlled detach.
 
+## Bounded recovery after an audout page submission failure
+
+The Nintendo Switch native audio owner now handles a failed
+`audoutPlayBuffer` without immediately discarding the scene. The
+`vh_audio_output_submit_recover` helper stops and closes the current
+output session, reinitializes audout, verifies 48-kHz stereo PCM16,
+restarts playback and resends the **same pre-rendered PCM page**,
+up to two restart attempts. A successful retry does **not** invoke
+the SEQ scheduler, SPU mixer, fade controller or 44.1→48-kHz
+resampler for that block again, avoiding skipped musical time.
+An unrecoverable stop, open, start or submit failure terminates
+through the existing audio-owner teardown instead of retrying forever.
+
+The recovery is limited to the **output service**: decoded music
+banks, SPU voice/sample positions, current fade, SEQ controllers and
+resampling phase remain owned by the audio producer, with no
+on-demand SD I/O. Audout must stop/discard queued pages before the
+PCM buffer may be reused. Output playback previously accepted by
+a device cannot be independently proven to have reached speakers
+after an ambiguous libnx service failure; the bounded restart
+prioritizes internal clock consistency and fail-closed handling.
+
+The portable `tests/test_vh_audio_output_recovery.c` uses a
+deterministic mock backend to inject immediate submission errors,
+one- and two-restart recoveries, exhausted retries and stop/open/start
+errors. A second regression feeds **96 rendered SEQ→SPU→resampler
+blocks**, including three scene-change requests, to both a clean
+backend and a failure-injected backend. It compares final accepted
+PCM page hashes, output frame counts, scene ownership and musical
+clocks, asserting that each input block is synthesized exactly once
+regardless of how often its final PCM page is resent.
+
+Run `make test-audio-stream`; GitHub Actions also executes
+the specific recovery test under AddressSanitizer and UBSan.
+These host regressions prove deterministic driver fault handling
+for synthetic data. They do not yet prove actual console audout
+service recovery, hardware output continuity or the sound of
+original Vandal Hearts compositions.
+
 ## SPU ADSR and sample cursor (host-only)
 
 The next isolated component is `tools/simulate_spu_voice.py`, which
