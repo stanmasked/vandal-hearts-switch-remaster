@@ -65,6 +65,6 @@ python3 tools/report_switch_audio_acceptance_matrix.py \
 
 ## Тестирование
 
-[18 синтетических регрессионных тестов](../tests/test_report_switch_audio_acceptance_matrix.py) проверяют все семь строк, требования HOME/сна/длительности, старые схемы H05, ошибки PCM/выхода, неактуальные хеши, Markdown/JSON, приоритет повторных испытаний и неизменность исходных файлов. Тесты включены в `make test` и `make test-audio-stream`; ни один из них не использует физическую Nintendo Switch.
+[20 синтетических регрессионных тестов](../tests/test_report_switch_audio_acceptance_matrix.py) проверяют все семь строк, требования HOME/сна/длительности, старые схемы H05, ошибки PCM/выхода, неактуальные хеши, Markdown/JSON, приоритет повторных испытаний и неизменность исходных файлов, а также неполные сведения о слышимом звуке и режиме запуска. Тесты включены в `make test` и `make test-audio-stream`; ни один из них не использует физическую Nintendo Switch.
 
 Продолжение: [протокол первого запуска №219](SWITCH_AUDIO_STAGE219_FIRST_RUN_PROTOCOL.md), [проверки согласованности №220](SWITCH_AUDIO_STAGE220_CONSISTENCY_GATES.md), [пакет H01–H07 №212](SWITCH_AUDIO_STAGE212_ACCEPTANCE_PACK.md).
