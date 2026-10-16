@@ -6,7 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.extract_map02_trace import TraceByteStream, extract_trace_lines, extract_trace_text
+from tools.extract_map02_trace import (MAX_RAW_LINE_BYTES, TraceByteStream,
+                                       extract_trace_lines, extract_trace_text)
 
 
 def entries():
@@ -59,6 +60,50 @@ class ExtractMap02TraceTests(unittest.TestCase):
         malformed = b'{"z":8,"x":19,"face":0,"stage":"draw","gfx":\n'
         with self.assertRaisesRegex(ValueError, "line 3"):
             invalid.feed(malformed)
+
+    def test_oversized_plain_console_line_is_skipped_without_unbounded_memory(self):
+        valid = json.dumps(entries()[0]).encode("utf-8") + b"\n"
+        reader = TraceByteStream()
+        noise = b"GPU: " + b"x" * (MAX_RAW_LINE_BYTES * 2)
+        output = []
+        payload = b"startup\n" + noise + b"\n" + valid
+        for index in range(0, len(payload), 4093):
+            output.extend(reader.feed(payload[index:index + 4093]))
+            self.assertLessEqual(len(reader._pending), MAX_RAW_LINE_BYTES)
+        output.extend(reader.finish())
+        self.assertEqual(output, [entries()[0]])
+        self.assertEqual(reader.line_number, 3)
+
+    def test_oversized_no_newline_plain_noise_discarded_on_finish(self):
+        reader = TraceByteStream()
+        noise = b"unrelated " + b"x" * (MAX_RAW_LINE_BYTES * 2)
+        for offset in range(0, len(noise), 65536):
+            self.assertEqual(reader.feed(noise[offset:offset + 65536]), [])
+            self.assertLessEqual(len(reader._pending), MAX_RAW_LINE_BYTES)
+        self.assertEqual(reader.finish(), [])
+        self.assertEqual(reader.line_number, 1)
+
+    def test_oversized_json_trace_line_fails_closed_and_retains_valid_prefix(self):
+        entry = entries()[0]
+        valid = json.dumps(entry).encode("utf-8") + b"\n"
+        oversized = b'{"z":8,"x":19,"face":0,"stage":"draw","gfx":' + (
+            b"x" * (MAX_RAW_LINE_BYTES + 1)
+        )
+        saved = []
+        reader = TraceByteStream()
+        data = valid + oversized
+        with self.assertRaisesRegex(ValueError, "malformed Map02 trace object at line 2: oversized"):
+            for offset in range(0, len(data), 65536):
+                reader.feed(data[offset:offset + 65536], on_event=saved.append)
+        self.assertEqual(saved, [entry])
+        self.assertLessEqual(len(reader._pending), MAX_RAW_LINE_BYTES)
+
+    def test_oversized_non_trace_json_object_is_rejected_conservatively(self):
+        # A huge JSON-looking console line might be a Map02 object whose
+        # identifying keys occur later, so do not silently discard it.
+        reader = TraceByteStream()
+        with self.assertRaisesRegex(ValueError, "line 1: oversized JSON-looking line"):
+            reader.feed(b'{"debug":"' + b"x" * (MAX_RAW_LINE_BYTES + 1))
 
     def test_ignores_other_json_structures(self):
         ev = entries()[0]
