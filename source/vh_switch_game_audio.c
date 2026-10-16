@@ -89,15 +89,40 @@ static void audio_worker(void *unused) {
         state = -3;
         goto cleanup;
     }
-    if (R_FAILED(audoutStartAudioOut())) { state = -4; goto cleanup; }
-    playing = 1;
+    /* Initialize the output session, but start playback only when the
+     * applet is actually focused. Keeping the service stopped during
+     * HOME/sleep avoids stale queued data on resume.
+     */
     AudioOutBuffer desc = {0};
     desc.buffer = pcm_48000_page;
     desc.buffer_size = sizeof(pcm_48000_page);
 
     unsigned accepted = VH_GAME_MUSIC_SILENT;
-    atomic_store_explicit(&audio_status, 1, memory_order_release);
+    atomic_store_explicit(&audio_status, 0, memory_order_release);
     while (vh_game_music_mailbox_running(&mailbox)) {
+        if (!vh_game_music_mailbox_focused(&mailbox)) {
+            if (playing) {
+                if (R_FAILED(audoutStopAudioOut())) {
+                    state = -9;
+                    break;
+                }
+                playing = 0;
+            }
+            atomic_store_explicit(&audio_status, 2, memory_order_release);
+            /* No SEQ block, SPU sample or resampler clock may advance
+             * while paused. The main frame loop is never blocked here.
+             */
+            svcSleepThread(16000000LL);
+            continue;
+        }
+        if (!playing) {
+            if (R_FAILED(audoutStartAudioOut())) {
+                state = -4;
+                break;
+            }
+            playing = 1;
+            atomic_store_explicit(&audio_status, 1, memory_order_release);
+        }
         /* The game thread only publishes the newest desired state.
          * The audio thread alone owns scene fades and SPU state;
          * requests during a fade are retried on later audio blocks.
@@ -158,6 +183,11 @@ int vh_switch_game_audio_start(unsigned initial_scene) {
 void vh_switch_game_audio_post(unsigned desired_scene) {
     if (thread_started)
         vh_game_music_mailbox_post(&mailbox, desired_scene);
+}
+
+void vh_switch_game_audio_set_focus(int in_focus) {
+    if (thread_started)
+        vh_game_music_mailbox_set_focus(&mailbox, in_focus);
 }
 
 int vh_switch_game_audio_status(void) {
