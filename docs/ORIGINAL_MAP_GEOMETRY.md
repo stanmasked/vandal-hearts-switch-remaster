@@ -484,6 +484,24 @@ footprint nearly coincides with the prior test area. This
 native scene must show visibly attenuated magenta/cyan
 rather than full-intensity primaries.
 
-**Acceptance pending the native CI screenshot.** Original
-side normals, `UpdateLight`, grid-color overrides and real
-game-authored camera values remain out of scope.
+**Acceptance: PASS** — [GitHub Actions #38830050760](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38830050760)
+at source revision `0f6c043113d9123af76af9fb2079b4afdab1cde8`
+completed **all three CI jobs successfully**. The pinned original
+GTE projection yielded **OTZ=197**, above the original
+`RenderMapTile` attenuation threshold. Using a test-only
+neutral base color of (128,128,128), the rasterized 1280×720
+NeXium screenshot measured **magenta=(206,0,206)** and
+**cyan=(0,206,206)**, rather than their non-attenuated 255
+values. Both values were independently verified twice.
+The source-exact distance formula passed **84 C test cases**
+and the full preflight ran **90 Python tests**. The preceding
+single UV/CLUT patch, three-face NCLIP demonstration and
+overlapping near/far OTZ screenshot tests also passed unchanged.
+
+This confirms actual original-GTE-distance-driven texture
+modulation through the pinned rasterizer inside Switch NRO
+and NeXium. It is NOT proof of reconstructed game-authored
+light directions or intensities.
+
+Original side normals, `UpdateLight`, grid-color overrides
+and real game-authored camera values remain out of scope.
