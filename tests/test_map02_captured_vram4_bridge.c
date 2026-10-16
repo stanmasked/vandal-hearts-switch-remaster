@@ -762,6 +762,87 @@ static void test_direct_ledger_rejects_noncanonical_unused_fields(void) {
     assert(!vh_map02_vram_ledger_event_valid(&ev,0u,42u,3u));
 }
 
+
+/* Input snapshots and pending GPU writes are treated as immutable evidence.
+ * Reject aliased replay storage BEFORE copying the initial 1 MiB image. */
+static uint8_t ledger_alias_workspace[VH_MAP02_VRAM_BYTES];
+static uint8_t ledger_alias_payload[VH_MAP02_VRAM_BYTES];
+
+static void test_vram_replay_rejects_aliasing_before_mutation(void) {
+    VhMap02Vram4TimelineEntry entries[3];
+    VhMap02VramTransfer transfers[3];
+    VhMap02Vram4TimelineInput input;
+    VhMap02Vram4FrameWorkspace w=workspace();
+    three_transition_fixture(entries,transfers);
+    clear_timeline_workspace();
+    input=timeline_input(entries);
+    input.count=3u;
+    assert(vh_map02_vram4_timeline_verify_ledger(
+        &input,&w,transfers,3u,ledger_replay,sizeof ledger_replay));
+    assert(!vh_map02_vram4_timeline_build_with_ledger(
+        &input,&w,transfers,3u,vram,sizeof vram));
+    assert_timeline_workspace_unmodified();
+    assert(!vh_map02_vram4_timeline_build_with_ledger(
+        &input,&w,transfers,3u,later_vram,sizeof later_vram));
+    assert_timeline_workspace_unmodified();
+    assert(!vh_map02_vram4_timeline_build_with_ledger(
+        &input,&w,transfers,3u,third_vram,sizeof third_vram));
+    assert_timeline_workspace_unmodified();
+
+    memset(ledger_alias_workspace,0x5a,sizeof ledger_alias_workspace);
+    w.atlases=ledger_alias_workspace;
+    w.atlas_capacity_bytes=N*VH_MAP02_VRAM4_ATLAS_BYTES;
+    assert(!vh_map02_vram4_timeline_build_with_ledger(
+        &input,&w,transfers,3u,
+        ledger_alias_workspace,sizeof ledger_alias_workspace));
+    assert(ledger_alias_workspace[0]==0x5au);
+    assert_timeline_workspace_unmodified();
+    w=workspace();
+
+    memset(ledger_alias_payload,0,sizeof ledger_alias_payload);
+    memcpy(ledger_alias_payload,later_green_load,sizeof later_green_load);
+    transfers[0].load_le=ledger_alias_payload;
+    assert(!vh_map02_vram4_timeline_build_with_ledger(
+        &input,&w,transfers,3u,
+        ledger_alias_payload,sizeof ledger_alias_payload));
+    assert(ledger_alias_payload[0]==later_green_load[0]);
+    assert_timeline_workspace_unmodified();
+}
+
+static void test_import_packet_rejects_alias_to_decoded_output(void) {
+    union {
+        VhMap02VramTransfer events[3];
+        uint8_t bytes[sizeof(VhMap02VramTransfer)*3u];
+    } alias;
+    uint8_t clean[84u];
+    VhMap02VramTransfer decoded_events[2];
+    size_t count=71u;
+    packet_fixture(clean);
+    memset(&alias,0xa5,sizeof alias);
+    packet_fixture(alias.bytes);
+    assert(!vh_map02_vram_ledger_import_packet(
+        alias.bytes,84u,42u,2u,
+        alias.events,3u,&count));
+    assert(count==71u);
+    assert(memcmp(alias.bytes,"VHMAPGL1",8u)==0);
+    assert(vh_map02_ledger_packet_u32(alias.bytes+20u)==84u);
+
+    /* A writable event-count pointer inside the packet would overwrite
+     * captured binary metadata, even when the event array is separate. */
+    assert(!vh_map02_vram_ledger_import_packet(
+        clean,sizeof clean,42u,2u,decoded_events,2u,
+        (size_t *)(void *)(clean+16u)));
+    assert(vh_map02_ledger_packet_u32(clean+16u)==1u);
+
+    /* Overlap between output count and the decoded events is invalid too. */
+    assert(!vh_map02_vram_ledger_import_packet(
+        clean,sizeof clean,42u,2u,decoded_events,2u,
+        (size_t *)(void *)&decoded_events[0]));
+    assert(vh_map02_vram_ledger_import_packet(
+        clean,sizeof clean,42u,2u,decoded_events,2u,&count));
+    assert(count==1u && decoded_events[0].green==248);
+}
+
 int main(void) {
     test_verified_capture_flows_to_vram4_and_ot();
     test_mutations_do_not_change_staged_output();
@@ -776,6 +857,8 @@ int main(void) {
     test_late_snapshot_mismatch_prevents_any_render_output();
     test_three_boundary_ledger_packet_import();
     test_direct_ledger_rejects_noncanonical_unused_fields();
+    test_vram_replay_rejects_aliasing_before_mutation();
+    test_import_packet_rejects_alias_to_decoded_output();
     puts("MAP02 captured GTE -> source FT4 -> VRAM4 -> OT pixel tests passed");
     return 0;
 }
