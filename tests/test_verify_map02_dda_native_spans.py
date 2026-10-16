@@ -40,6 +40,16 @@ class SpanJournalTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_native_spans(serialize(BASE).replace(b"12", b"NaN", 1))
 
+    def test_reject_duplicate_json_keys(self):
+        raw = serialize(BASE)
+        raw = raw.replace(b'"frame": 3', b'"frame": 3, "frame": 3')
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            parse_native_spans(raw)
+
+    def test_reject_crlf(self):
+        with self.assertRaises(ValueError):
+            parse_native_spans(serialize(BASE).replace(b"\\n", b"\\r\\n"))
+
     def test_reject_backward_primitive(self):
         with self.assertRaises(ValueError):
             parse_native_spans(serialize(dict(BASE, step=0, primitive_ordinal=10),
