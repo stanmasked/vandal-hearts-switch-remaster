@@ -1,5 +1,5 @@
 {
-  "schema": "vh-switch-audio-first-run-operator/v1",
+  "schema": "vh-switch-audio-first-run-operator/v2",
   "build_git_sha": "REPLACE_WITH_ACTUAL_40_CHARACTER_GIT_SHA",
   "nro_sha256": "REPLACE_WITH_ACTUAL_64_CHARACTER_NRO_SHA256",
   "sessions": [
@@ -33,5 +33,6 @@
     }
   ],
   "prior_csv_sha256_before": null,
-  "prior_csv_sha256_after": null
+  "prior_csv_sha256_after": null,
+  "prior_csv_path": null
 }
