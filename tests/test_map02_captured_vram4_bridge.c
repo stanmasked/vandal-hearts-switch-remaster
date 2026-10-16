@@ -5,6 +5,7 @@
 #include "../source/map02_captured_vram4_bridge.h"
 #include "../source/map02_vram4_timeline_frame.h"
 #include "../source/map02_vram4_transfer_ledger.h"
+#include "../source/map02_vram4_transfer_import.h"
 
 /* Invented MAP02/GTE/VRAM evidence; this test is NOT a real game capture. */
 enum { N = 3, OT = 1024, W = 64, H = 64, STRIDE = 68, SCRATCH = 256 };
@@ -447,6 +448,107 @@ static void test_transfer_ledger_source_copy_semantics(void) {
             ledger_replay,12u*1024u+x)==1u);
 }
 
+
+static void packet_u32(uint8_t *data, size_t at, uint32_t value) {
+    for (unsigned b=0u; b<4u; ++b)
+        data[at+b] = (uint8_t)(value >> (b*8u));
+}
+
+static void packet_fixture(uint8_t packet[84]) {
+    memset(packet,0,84u);
+    memcpy(packet,"VHMAPGL1",8u);
+    packet_u32(packet,8u,42u);  /* frame */
+    packet_u32(packet,12u,2u); /* submissions */
+    packet_u32(packet,16u,1u); /* transfer count */
+    packet_u32(packet,20u,84u); /* total length */
+    packet_u32(packet,32u+4u,1u); /* before submission 1 */
+    packet_u32(packet,32u+8u,VH_MAP02_VRAM_OP_CLEAR);
+    packet_u32(packet,32u+12u,1u); /* x=1 */
+    packet_u32(packet,32u+16u,499u); /* y=499 */
+    packet_u32(packet,32u+20u,1u); /* w */
+    packet_u32(packet,32u+24u,1u); /* h */
+    packet_u32(packet,32u+40u,248u); /* green, BGR555 0x03e0 */
+}
+
+static void test_private_transfer_packet_import_and_draw(void) {
+    uint8_t packet[84];
+    VhMap02VramTransfer events[2];
+    VhMap02Vram4TimelineEntry entries[2];
+    VhMap02Vram4TimelineInput input;
+    VhMap02Vram4FrameWorkspace w=workspace();
+    VhCanvas canvas={framebuffer,STRIDE,W,H};
+    size_t count=77u,drawn=0u,pixels=0u;
+    packet_fixture(packet);
+    timeline_fixture(entries);
+    clear_timeline_workspace();
+    input=timeline_input(entries);
+    assert(vh_map02_vram_ledger_import_packet(
+        packet,sizeof packet,42u,2u,events,2u,&count));
+    assert(count==1u);
+    assert(events[0].operation==VH_MAP02_VRAM_OP_CLEAR);
+    assert(events[0].step==0u && events[0].before_submission==1u);
+    assert(events[0].x==1 && events[0].y==499 && events[0].green==248);
+    assert(vh_map02_vram4_timeline_build_from_packet(
+        &input,&w,packet,sizeof packet,events,2u,
+        ledger_replay,sizeof ledger_replay));
+    assert(vh_map02_ot_scene_draw(&w.scene,&canvas,scratch,classes,SCRATCH,
+                                  pack,NULL,&drawn,&pixels));
+    assert(drawn==2u && pixels==512u);
+    assert(framebuffer[25u*STRIDE+25u]==UINT32_C(0xffff0000));
+    assert(framebuffer[25u*STRIDE+45u]==UINT32_C(0xff00ff00));
+}
+
+static void test_private_transfer_packet_corruption_is_atomic(void) {
+    uint8_t packet[88];
+    VhMap02VramTransfer events[2], unchanged[2];
+    VhMap02Vram4TimelineEntry entries[2];
+    VhMap02Vram4TimelineInput input;
+    VhMap02Vram4FrameWorkspace w=workspace();
+    for (unsigned mutation=0u; mutation<15u; ++mutation) {
+        size_t count=73u,bytes=84u;
+        packet_fixture(packet);
+        timeline_fixture(entries);
+        clear_timeline_workspace();
+        input=timeline_input(entries);
+        memset(events,0xa5,sizeof events);
+        memcpy(unchanged,events,sizeof events);
+        switch(mutation) {
+        case 0: packet[0]='!'; break;
+        case 1: packet_u32(packet,8u,41u); break; /* wrong frame */
+        case 2: packet_u32(packet,12u,3u); break; /* wrong submission count */
+        case 3: packet_u32(packet,16u,2u); break; /* missing event */
+        case 4: packet_u32(packet,20u,85u); break; /* length mismatch */
+        case 5: packet[24]=1u; break; /* nonzero reserved header */
+        case 6: packet_u32(packet,32u,1u); break; /* invalid step */
+        case 7: packet_u32(packet,36u,0u); break; /* invalid boundary */
+        case 8: packet_u32(packet,40u,99u); break; /* unsupported op */
+        case 9: packet_u32(packet,60u,3u); break; /* nonzero unused dest x */
+        case 10: packet_u32(packet,80u,2u); break; /* nonzero payload length */
+        case 11: packet_u32(packet,52u,0u); break; /* zero width */
+        case 12: packet_u32(packet,72u,256u); break; /* invalid green */
+        case 13: packet_u32(packet,32u+52u-4u,40000u); break;
+        case 14: bytes=83u; break; /* truncated record */
+        }
+        assert(!vh_map02_vram_ledger_import_packet(
+            packet,bytes,42u,2u,events,2u,&count));
+        assert(count==73u);
+        assert(memcmp(events,unchanged,sizeof events)==0);
+        assert(!vh_map02_vram4_timeline_build_from_packet(
+            &input,&w,packet,bytes,events,2u,
+            ledger_replay,sizeof ledger_replay));
+        assert_timeline_workspace_unmodified();
+    }
+    packet_fixture(packet);
+    timeline_fixture(entries);
+    clear_timeline_workspace();
+    input=timeline_input(entries);
+    packet_u32(packet,44u,2u); /* wrong X: valid packet, bad VRAM replay */
+    assert(!vh_map02_vram4_timeline_build_from_packet(
+        &input,&w,packet,84u,events,2u,
+        ledger_replay,sizeof ledger_replay));
+    assert_timeline_workspace_unmodified();
+}
+
 int main(void) {
     test_verified_capture_flows_to_vram4_and_ot();
     test_mutations_do_not_change_staged_output();
@@ -455,6 +557,8 @@ int main(void) {
     test_transfer_ledger_gates_pixels_and_missing_writes();
     test_transfer_ledger_mutations_leave_renderer_untouched();
     test_transfer_ledger_source_copy_semantics();
+    test_private_transfer_packet_import_and_draw();
+    test_private_transfer_packet_corruption_is_atomic();
     puts("MAP02 captured GTE -> source FT4 -> VRAM4 -> OT pixel tests passed");
     return 0;
 }
