@@ -94,14 +94,14 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(d["status"],"refused")
         self.assertIn("OT tpage/CLUT",str(d["errors"]))
     def test_wrong_frame_rejected(self):
-        d=self.check(gpu=[ot(3,101,641,31978),N1,H1,O2,N2,H2])
-        self.assertEqual(d["status"],"refused")
+        with self.assertRaisesRegex(V46Invalid,"GPU DDA provenance inconsistent"):
+            self.check(gpu=[ot(3,101,641,31978),N1,H1,O2,N2,H2])
     def test_mismatched_ot_gfx_rejected(self):
-        d=self.check(gpu=[ot(1,101,643,31978),N1,H1,O2,N2,H2])
-        self.assertEqual(d["status"],"refused")
+        with self.assertRaisesRegex(V46Invalid,"GPU DDA provenance inconsistent"):
+            self.check(gpu=[ot(1,101,643,31978),N1,H1,O2,N2,H2])
     def test_orphan_hires_sample_rejected(self):
-        d=self.check(gpu=[O1,N1,H1,O2,N2,pix("v40-terrain-hires",3,101,643)])
-        self.assertEqual(d["status"],"refused")
+        with self.assertRaisesRegex(V46Invalid,"GPU DDA provenance inconsistent"):
+            self.check(gpu=[O1,N1,H1,O2,N2,pix("v40-terrain-hires",3,101,643)])
     def test_no_hires_sample_rejected(self):
         d=self.check(gpu=[O1,N1,O2,N2,H2])
         self.assertEqual(d["status"],"refused")
@@ -113,8 +113,8 @@ class EvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(V46Invalid,"repeated face"):
             self.check(graphics=[G1,G1,G2])
     def test_duplicate_ot_rejected(self):
-        d=self.check(gpu=[O1,O1,N1,H1,O2,N2,H2])
-        self.assertEqual(d["status"],"refused")
+        with self.assertRaisesRegex(V46Invalid,"GPU DDA provenance inconsistent"):
+            self.check(gpu=[O1,O1,N1,H1,O2,N2,H2])
     def test_wrong_map_unobserved_is_not_false_evidence(self):
         d=self.check(graphics=[],gpu=[])
         self.assertEqual(d["status"],"insufficient_evidence")
@@ -135,7 +135,7 @@ class EvidenceTests(unittest.TestCase):
         d=self.check(gpu=[O1,N1,H1,extra,O2,N2,H2])
         self.assertEqual(d["status"],"refused")
     def test_legacy_unframed_ddas_rejected(self):
-        d=self.check(gpu=[O1,N1.replace("f=1 ",""),H1,O2,N2,H2])
-        self.assertEqual(d["status"],"refused")
+        with self.assertRaisesRegex(V46Invalid,"GPU DDA provenance inconsistent"):
+            self.check(gpu=[O1,N1.replace("f=1 ",""),H1,O2,N2,H2])
 
 if __name__=="__main__":unittest.main()
