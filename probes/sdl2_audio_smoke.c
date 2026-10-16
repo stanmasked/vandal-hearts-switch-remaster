@@ -85,6 +85,7 @@ static int init_synthetic_seq(void) {
     synthetic_vh[prog+1] = 127;
     synthetic_vh[prog+4] = 64;
     const size_t tone = 32u + 128u * 16u;
+    synthetic_vh[tone+1] = 4; /* music tone's reverb send */
     synthetic_vh[tone+2] = 127;
     synthetic_vh[tone+3] = 64;
     synthetic_vh[tone+4] = 60;
