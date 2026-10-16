@@ -410,3 +410,30 @@ All directories must already exist with mode 0700 and no symlinks.
 This pipeline has not yet been exercised with actual gameplay,
 and successful synthetic tests must not be described as physical
 PlayStation hardware equivalence.
+
+## What the paired staging stage does *not* establish
+
+`vh_map02_stage_private_pair` has no access to independently sampled
+native VRAM snapshots or source-keyed GTE evidence. It writes two
+**pending** event logs from the same closed in-memory C sink. They are
+internally consistent, but this alone does not prove original gameplay,
+complete pixel coverage, independent source provenance, or physical
+PS1 blending semantics.
+
+`tools/promote_map02_putpixel_stage.py` is a separate fail-closed
+gate. It checks the pre-existing `gpu-putpixel-ot.json` manifest,
+requires the staged PutPixel SHA-256 to equal the independently
+supplied digest, validates 0..63 contiguous step indices and numeric
+bounds, copies the staged bytes into a private no-overwrite final file
+and runs the **full** source-keyed
+`verify_map02_putpixel_scope.verify_pixel_ot`. Failure removes the
+new final file; successfully verifying an arbitrary synthetic fixture
+is not sufficient to establish real original game provenance.
+
+`tests/test_map02_paired_publish_chain.py` exercises the entire
+Python publication sequence, with the expensive original-GTE/VRAM
+verifier deliberately **mocked**. This tests software integration,
+hash binding and format compatibility, not game correctness. Together
+with the compiled C paired-stage test, it closes the
+C JSONL -> PutPixel -> BlendG1 formatting gap. It does **not**
+replace actual private source/VRAM witnesses or a native PC-port build.
