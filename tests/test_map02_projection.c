@@ -80,11 +80,39 @@ static void test_invalid_input_never_overwrites_output(void) {
     assert(!vh_map02_project_face(&c, verts, 1024, NULL));
     assert(marker.nclip_mac0 == 12345 && marker.depth == 222);
 }
+static void test_adjacent_faces_share_projected_edge(void) {
+    VhMap02ProjectCamera c = camera();
+    const VhMap02ProjectVertex left[4] = {
+        {0,0,512},{100,0,512},{100,100,512},{0,100,512}
+    };
+    const VhMap02ProjectVertex right[4] = {
+        {100,0,512},{200,0,512},{200,100,512},{100,100,512}
+    };
+    VhMap02ProjectFace a = {0}, b = {0};
+    assert(vh_map02_project_face(&c, left, 1024, &a));
+    assert(vh_map02_project_face(&c, right, 1024, &b));
+    assert(a.visible && b.visible && a.ot_in_bounds && b.ot_in_bounds);
+    assert(a.otz == b.otz && a.ot_slot == b.ot_slot);
+    /* GPU FT4 order is 0,1,3,2 relative to source perimeter. */
+    assert(a.gpu[1].x == b.gpu[0].x && a.gpu[1].y == b.gpu[0].y);
+    assert(a.gpu[3].x == b.gpu[2].x && a.gpu[3].y == b.gpu[2].y);
+    assert(a.gpu[1].x == 210 && a.gpu[3].y == 170);
+    /* Changing depth in only one face destroys shared-screen equality. */
+    VhMap02ProjectVertex shifted[4];
+    memcpy(shifted, right, sizeof shifted);
+    for (unsigned i = 0; i < 4; ++i) shifted[i].z = 768;
+    assert(vh_map02_project_face(&c, shifted, 1024, &b));
+    assert(b.visible);
+    assert(b.otz != a.otz);
+    assert(b.gpu[0].x != a.gpu[1].x);
+}
+
 int main(void) {
     test_screen_quad_and_ordering();
     test_backface_and_zero_area();
     test_perspective_clipping_and_flag_reset();
     test_invalid_input_never_overwrites_output();
+    test_adjacent_faces_share_projected_edge();
     puts("MAP02 portable projection, NCLIP, AVSZ4 and OT slot tests passed");
     return 0;
 }
