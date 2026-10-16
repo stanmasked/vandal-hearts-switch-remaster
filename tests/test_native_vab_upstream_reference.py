@@ -97,6 +97,39 @@ int upstream_pick(int requested, int note, const unsigned char *vags,
         )
 
 
+def check_upstream_inactive_and_gap_slots(pick) -> int:
+    """Pin upstream selection of usable records invisible to nTone-only parsers."""
+    vags = (ctypes.c_uint8 * (128 * 16))()
+    lows = (ctypes.c_uint8 * (128 * 16))()
+    highs = (ctypes.c_uint8 * (128 * 16))()
+    # p0 has only two declared tones, but upstream scans all 16.
+    for program, tone, vag, low, high in (
+        (0, 0, 1, 40, 60), (0, 1, 2, 40, 70),
+        (0, 2, 2, 115, 120),  # inactive nTone slot
+        (1, 0, 3, 80, 100),   # empty p1 inherits p7 packed block
+        (7, 0, 3, 80, 100),
+        (8, 0, 4, 40, 50),    # empty p8 inherits p10 packed block
+        (10, 0, 4, 40, 50),
+    ):
+        i = program * 16 + tone
+        vags[i], lows[i], highs[i] = vag, low, high
+
+    for program, note, expected_program, expected_tone in (
+        (0, 117, 0, 2),
+        (1, 90, 1, 0),
+        (8, 45, 8, 0),
+    ):
+        selected = ctypes.c_int(-1)
+        tone = pick(program, note, vags, lows, highs, ctypes.byref(selected))
+        if (selected.value, tone) != (expected_program, expected_tone):
+            raise AssertionError(
+                f"PC-port inactive/gap slot: {program}/{note} -> "
+                f"{selected.value}/{tone}; expected "
+                f"{expected_program}/{expected_tone}"
+            )
+    return 3
+
+
 def run(source_path: Path) -> int:
     with tempfile.TemporaryDirectory(prefix="vh-upstream-exec-") as folder:
         root = Path(folder)
@@ -117,6 +150,9 @@ def run(source_path: Path) -> int:
             ctypes.POINTER(ctypes.c_int),
         ]
         pick.restype = ctypes.c_int
+
+        shadow_cases = check_upstream_inactive_and_gap_slots(pick)
+        print(f"Pinned upstream inactive/gap tone behaviour: PASS {shadow_cases} cases")
 
         native = ctypes.CDLL(str(native_so))
         load = native.vh_native_vab_load
