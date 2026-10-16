@@ -637,3 +637,55 @@ there is no live Switch gameplay renderer hookup or screenshot
 validation yet. Authentic MAP02 material→UVWH, palette, camera and
 placement still require the independent ongoing source/gameplay
 provenance audits. Do not replace them with guessed values.
+
+## MAP02 multi-face painter ordering via original PC GPU OT buckets
+
+`source/map02_terrain_ot_scene.h` assembles multiple **prepared**
+`VhMap02TerrainQuad` objects from the validated single-face pipeline
+into a reusable caller-owned scene. The queue does not assign UVWH,
+select an asset palette, guess GTE camera state or invent world
+placement: each submitted face retains caller-supplied material data.
+
+The pinned public PC-port `platform/pc/src/libgpu.c` establishes
+the actual ordering-table chain:
+
+- `ClearOTag` links buckets in **ascending array index**, 0 to
+  `OT_SIZE-1`, beginning at `ot[0]`.
+- `AddPrim` prepends a primitive to its bucket. Consequently two
+  primitives at the **same depth bucket** render in the **reverse
+  order they were submitted** (LIFO).
+- Original terrain uses `OT_SIZE - max(5, AVSZ4 OTZ)` for its
+  bucket. With ascending bucket traversal, **high-OTZ distant
+  terrain is rendered before lower-OTZ foreground terrain**.
+
+The new queue emulates these **bucket and link rules**, rather than
+applying a generic ascending-OTZ sort. Both head and node arrays
+are provided by the caller; submitting a quad is O(1) and never
+allocates memory. Rendering first checks all referenced quads,
+depths, bucket indices, links, texture buffers and available
+scratch space, so malformed/cyclic chains are rejected before
+touching a pixel. It then invokes the existing classified CLUT4
+FT4 rasterizer with each primitive's supplied palette and optional
+STP callback. Frame reset is explicit.
+
+Source fidelity is independently gated by
+`tools/audit_map02_ot_source.py`, which requires the **exact pinned
+Git blob** for `libgpu.c` and checks all three
+`ClearOTag/AddPrim/DrawOTag` ordering statements. Synthetic
+`tests/test_map02_terrain_ot_scene.c` verifies three overlapping
+polygons in deliberately scrambled submission order:
+far green, then **same-bucket LIFO** blue and red, with red
+winning the composited pixel. Other cases check capacity limits,
+invalid/cyclic links, incorrect depth-slot associations, failure
+without framebuffer modification, empty scenes and scene reuse.
+Both `make test`, `make test-sanitize` and the pinned MAP02
+upstream workflow run the regression.
+
+**Accuracy limits:** This composits only terrain FT4 polygons;
+the real game OT also contains sprites, environment commands,
+translucent objects and other GPU primitives. The CPU rasterizer
+is affine and approximate, not original PS1 hardware. The camera,
+geometry, indexed pixels and palettes in these tests are invented.
+Consequently a passing synthetic scene is **not proof** that the
+authentic MAP02 renders on Switch. The real asset/UV/CLUT/camera
+provenance stages remain independent blockers.
