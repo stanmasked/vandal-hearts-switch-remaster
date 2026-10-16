@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 
 #include "vh_audio_diag_journal.h"
+#include "vh_audio_diag_export.h"
 
 #include "game_rules.h"
 #include "game_state.h"
@@ -343,11 +344,11 @@ int main(int argc, char **argv) {
         if (resume_message_enabled)
             (void)appletSetRestartMessageEnabled(false);
     }
+    int export_status=0;
     if (log_has_samples) {
-        /* CSV export ONLY after the output worker is joined.
-         * Never write files in the audout callback/render hot path.
-         * Explicit Y opt-in; at most 128 bounded numeric samples.
-         * The fixed path contains NO PCM, SEQ, VH or VB resources.
+        /* ONLY after joining the audio worker, commit a new numbered
+         * CSV by closed-temp -> rename. Never truncate a prior report.
+         * No filesystem operations take place in an audout callback.
          */
         VhAudioDiagnostics final_sample={0};
         if (audio_started)
@@ -356,21 +357,23 @@ int main(int argc, char **argv) {
             final_sample.status=-1;
         const uint64_t elapsed_ms=armTicksToNs(
             armGetSystemTick()-session_start_tick)/UINT64_C(1000000);
-        (void)vh_audio_diag_journal_finish(
-            &hardware_audio_log,elapsed_ms,&final_sample);
-        (void)mkdir("sdmc:/switch",0777);
-        (void)mkdir("sdmc:/switch/vandal-hearts-remake",0777);
-        const char *path=
-            "sdmc:/switch/vandal-hearts-remake/audio-diagnostics.csv";
-        FILE *export=fopen(path,"w");
-        if (export) {
-            const int written=vh_audio_diag_journal_write_csv(
-                &hardware_audio_log,export);
-            const int closed=fclose(export);
-            if (written<0 || closed!=0)
-                (void)remove(path); /* never leave incomplete CSV */
+        if (vh_audio_diag_journal_finish(
+                &hardware_audio_log,elapsed_ms,&final_sample)!=1) {
+            export_status=2;
+        } else {
+            (void)mkdir("sdmc:/switch",0777);
+            (void)mkdir("sdmc:/switch/vandal-hearts-remake",0777);
+            char saved_path[VH_AUDIO_DIAG_EXPORT_PATH_CAP];
+            const VhAudioDiagExportResult result=vh_audio_diag_export(
+                &hardware_audio_log,"sdmc:/switch/vandal-hearts-remake",
+                NULL,saved_path,sizeof saved_path);
+            if (result!=VH_AUDIO_EXPORT_OK) {
+                fprintf(stderr,"audio diagnostics export failed: %d\\n",
+                        (int)result);
+                export_status=2;
+            }
         }
     }
     framebufferClose(&fb);
-    return 0;
+    return export_status;
 }
