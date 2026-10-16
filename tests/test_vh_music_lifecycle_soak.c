@@ -10,6 +10,7 @@
 
 #include "vh_audio_output_recovery.h"
 #include "vh_audio_output_ramp.h"
+#include "vh_audio_output_edges.h"
 #include "vh_audio_resample.h"
 #include "vh_game_music_mailbox.h"
 #include "vh_music_scene.h"
@@ -306,6 +307,33 @@ static void stress(void) {
     assert(owner[0].output_frames==owner[1].output_frames);
     const uint64_t finished_clock=owner[0].resampler.input_frames;
     assert(finished_clock==(uint64_t)BLOCKS*512u);
+    /* Cooperative exit: a 96-frame PCM fade to digital zero uses
+     * only the most recently confirmed output sample. Unlike a new
+     * SEQ block, this must not touch SPU voices, the reverb buffer,
+     * the scene position or the resampler time. The HOME/focus-loss
+     * path deliberately skips output of this tail. */
+    int16_t stop_tail[2][VH_AUDIO_STOP_TAIL_FRAMES*2u];
+    const uint64_t final_44k[2]={
+        owner[0].resampler.input_frames,owner[1].resampler.input_frames
+    };
+    const uint64_t final_rendered[2]={
+        owner[0].scene.blocks_rendered,owner[1].scene.blocks_rendered
+    };
+    for(unsigned i=0;i<2u;i++) {
+        MusicOwner *o=&owner[i];
+        const size_t count=o->output_count;
+        assert(count>0u);
+        assert(!vh_audio_stop_tail_build(stop_tail[i],
+            VH_AUDIO_STOP_TAIL_FRAMES,
+            o->output[2u*count-2u],o->output[2u*count-1u]));
+        assert(stop_tail[i][0]==o->output[2u*count-2u]);
+        assert(stop_tail[i][1]==o->output[2u*count-1u]);
+        assert(stop_tail[i][(VH_AUDIO_STOP_TAIL_FRAMES-1u)*2u]==0);
+        assert(stop_tail[i][(VH_AUDIO_STOP_TAIL_FRAMES-1u)*2u+1u]==0);
+        assert(o->resampler.input_frames==final_44k[i]);
+        assert(o->scene.blocks_rendered==final_rendered[i]);
+    }
+    assert(!memcmp(stop_tail[0],stop_tail[1],sizeof stop_tail[0]));
     for(unsigned i=0;i<2u;i++) {
         MusicOwner *o=&owner[i];
         vh_game_music_mailbox_stop(&o->mailbox);
