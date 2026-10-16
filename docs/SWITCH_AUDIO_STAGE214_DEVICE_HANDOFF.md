@@ -117,3 +117,38 @@ python3 tools/report_switch_audio_hardware.py switch-audio-results-214 \
 Во всех случаях `hardware_status` сохраняется `HARDWARE NOT TESTED`. Синтетические host-тесты не могут подтвердить качество звучания, настоящие 10 возвратов HOME, 5 циклов сна, 30–60 минут работы, сохранность старого CSV на SD после новой сессии или независимость двух физических запусков. Эти поля заполняются только в отдельной [ручной карточке сессии](SWITCH_AUDIO_STAGE212_SESSION_TEMPLATE.md).
 
 Для проверки логики предусмотрен [`tests/test_report_switch_audio_hardware.py`](../tests/test_report_switch_audio_hardware.py) — чистые/повреждённые журналы, раздельные PCM и HOME-сбои, недостаточные записи, копии одинаковых CSV, подмена файлов, вывод Markdown/JSON и отказ без ложного статуса успеха. Тест запускается через `make test` и `make test-audio-stream`.
+
+
+## 7. Этап №216 — офлайн-сверка NRO с конкретным GitHub Actions artifact
+
+[Проверяющий инструмент](../tools/verify_switch_audio_build_provenance.py) требует **четыре независимых локальных входа**: существующий комплект с `audio-evidence-manifest.json`, оригинальный ZIP из GitHub Actions, снимок JSON выбранного workflow run и снимок JSON метаданных artifact. Комплект должен быть создан с обязательным `--ci-run-url`, соответствующим тому же реальному запуску. Для этой проверки используется **только** workflow `Switch toolchain readiness`, ветка `test/cdxa-extract-decode-pipeline` и архив `vandal-hearts-switch-prototype`.
+
+1. Сохраните **неизменённый ZIP** с вкладки Artifacts конкретного успешного [запуска GitHub Actions](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/workflows/switch-toolchain.yml). Обязательно запишите номер run и артефакта. SHA-256 ZIP и его содержимого проверяются по метаданным GitHub.
+2. Получите **официальные JSON-ответы GitHub REST API**, желательно непосредственно по HTTPS в момент проверки. При доступном `gh` CLI и подключённой учётной записи:
+
+```sh
+gh api repos/stanmasked/vandal-hearts-switch-remaster/actions/runs/RUN_ID \
+  > run.json
+gh api repos/stanmasked/vandal-hearts-switch-remaster/actions/artifacts/ARTIFACT_ID \
+  > artifact.json
+```
+
+3. Используйте пакет этапа №213/214, созданный с **действительным** URL того же run (`--ci-run-url https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/RUN_ID`). Поместите `run.json`, `artifact.json` и ZIP **вне** папки с NRO/CSV, чтобы не смешивать неизменяемое свидетельство и рабочие отчёты.
+4. Запустите:
+
+```sh
+python3 tools/verify_switch_audio_build_provenance.py \
+  switch-audio-results-214 \
+  --artifact-zip /path/to/original-artifact.zip \
+  --run-json /path/to/run.json \
+  --artifact-json /path/to/artifact.json \
+  > /path/to/provenance-report.json
+```
+
+**Что именно проверяется:** полное совпадение Git SHA с `head_sha` запуска и артефакта, репозиторий, ветка, путь и имя workflow, состояние `completed/success`, `run_id`, `artifact_id`, имя артефакта, флаг `expired`, объявленный размер и SHA-256 ZIP, единственный ожидаемый NRO в архиве и **его точные байты** против NRO из проверенного манифеста. Архив не распаковывается на диск; предусмотрены ограничители размеров и количества элементов и отказ при опасных/повторяющихся ZIP-путях.
+
+**Результат:** `comparison: CONSISTENT_WITH_PROVIDED_GITHUB_METADATA` и `build_provenance: LOCAL_METADATA_CROSSCHECK_NOT_SIGNED`. Код `0` — только успешная **локальная сверка**. Код `2` и `comparison: FAILED` — несоответствие, повреждение или некорректные метаданные. Невозможно автоматически утверждать, что оператор получил JSON непосредственно с GitHub, что они не редактировались или что NRO имеет криптографическую аттестацию происхождения. Результат никогда не равен `HARDWARE PASS`, неизменный статус — `HARDWARE NOT TESTED`.
+
+Для новых комплектов фиксируйте SHA-256 и идентификаторы сборки сразу при получении артефакта. Порог аппаратной приёмки по-прежнему требует настоящих CSV со Switch, независимых прогонов, проверки слухом и ручной [карточки сессии](SWITCH_AUDIO_STAGE212_SESSION_TEMPLATE.md).
+
+Host-only регрессии: [`tests/test_verify_switch_audio_build_provenance.py`](../tests/test_verify_switch_audio_build_provenance.py), подключены к `make test` и `make test-audio-stream`. Тесты используют только синтетические ZIP и NRO-заголовки, **не** реальную консоль и не игровые ресурсы.
