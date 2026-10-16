@@ -1,6 +1,7 @@
 """Entirely synthetic MAP02 source/GTE/OT/native GPU/DDA counter join."""
 import hashlib
 import json
+import struct
 import unittest
 
 import test_verify_map02_native_overdraw as fixture
@@ -56,6 +57,36 @@ class SourceDdaCountsJoinTests(unittest.TestCase):
         (self.src / "gpu-native-dda-count-join.json").write_text(
             json.dumps(join, sort_keys=True))
 
+    def install_scoped_putpixel(self):
+        # Only one selected coordinate is observed. Reuse the actual
+        # fixture's two consecutive source-FT4 VRAM changes at (30,30).
+        def at(raw):
+            return struct.unpack_from("<H", raw, 2*(30*1024+30))[0]
+        v0 = at(self.baseline.base.bytes_before)
+        v1 = at(self.baseline.first)
+        v2 = at(self.baseline.second)
+        rows = [
+            {"stage":"native_putpixel", "step":i, "frame":12,
+             "primitive_ordinal":i+1, "primitive_type":2,
+             "x":30, "y":30, "before":a, "front":b, "after":b,
+             "abr":1, "semi":0, "textured":1, "accurate":1}
+            for i, (a,b) in enumerate(((v0,v1),(v1,v2)))
+        ]
+        raw=b"".join((json.dumps(x,sort_keys=True)+"\n").encode()
+                     for x in rows)
+        (self.gpu/"putpixel-native-events.jsonl").write_bytes(raw)
+        meta={
+            "schema":"vh.map02.native-putpixel-ot.v1",
+            "source_frame":411, "gpu_draw_frame":12,
+            "overdraw_manifest_sha256":sha(
+                (self.src/"gpu-native-overdraw.json").read_bytes()),
+            "native_events_sha256":sha(
+                (self.gpu/"gpu-native-events.jsonl").read_bytes()),
+            "putpixel_events_sha256":sha(raw),
+        }
+        (self.src/"gpu-putpixel-ot.json").write_text(
+            json.dumps(meta,sort_keys=True))
+
     def verify(self):
         return verify_source_dda_counts(self.src, self.gpu)
 
@@ -81,6 +112,33 @@ class SourceDdaCountsJoinTests(unittest.TestCase):
         for value in ('"xy"', '"clut"', '"tpage"', '"perimeter_xy"',
                       "31978", "0x801f"):
             self.assertNotIn(value, public)
+
+    def test_optional_same_binary_putpixel_evidence_reverified(self):
+        no_pixel = self.verify()
+        self.assertFalse(no_pixel["optional_scoped_putpixel_evidence_verified"])
+        self.install_scoped_putpixel()
+        result = self.verify()
+        self.assertTrue(result["optional_scoped_putpixel_evidence_verified"])
+        self.assertEqual(result["observed_coordinate_scoped_putpixel_calls"],2)
+        self.assertEqual(result["observed_putpixel_calls_on_source_ft4"],2)
+        self.assertEqual(result["observed_same_color_putpixel_calls"],0)
+        self.assertFalse(result["pixel_writes_equal_to_samples_proven"])
+
+        # SHA-invalid coordinate-scoped evidence cannot be mixed with a
+        # separately verified DDA file from the same native DrawOTag run.
+        path=self.gpu/"putpixel-native-events.jsonl"
+        path.write_bytes(path.read_bytes()+b" ")
+        with self.assertRaisesRegex(ValueError,"SHA-256 mismatch"):
+            self.verify()
+
+    def test_half_supplied_putpixel_capture_is_rejected(self):
+        (self.gpu/"putpixel-native-events.jsonl").write_bytes(b"\n")
+        with self.assertRaisesRegex(ValueError,"evidence is incomplete"):
+            self.verify()
+        (self.gpu/"putpixel-native-events.jsonl").unlink()
+        (self.src/"gpu-putpixel-ot.json").write_text("{}")
+        with self.assertRaisesRegex(ValueError,"evidence is incomplete"):
+            self.verify()
 
     def test_no_dda_sampling_with_native_vram_change_is_not_falsely_rejected(self):
         self.rows[0]["zero"] = self.rows[0]["stp"] = self.rows[0]["opaque"] = 0
