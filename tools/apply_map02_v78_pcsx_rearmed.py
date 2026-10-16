@@ -181,8 +181,8 @@ def apply(root:Path):
     main=repo/"frontend/main.c"
     frontend=main.read_text()
     frontend=once(frontend,
-      '#include "revision.h"\\n',
-      '#include "revision.h"\\n'+vblank_source(build()[1]),
+      '#include "revision.h"\n',
+      '#include "revision.h"\n'+vblank_source(build()[1]),
       "frontend receipt hook symbol and monotonic bounded ring")
     frontend=once(frontend,
       "\tint vh77_multiphase_smoke = 0;\n",
