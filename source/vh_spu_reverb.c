@@ -27,6 +27,23 @@ static const int16_t fir[VH_REV_FIR_TAPS] = {
     0, 1332, 0, -2960, 0, 10246, 16384, 10246, 0, -2960, 0,
     1332, 0, -616, 0, 266, 0, -103, 0, 35, 0, -10, 0, 2, 0, -1
 };
+/* Pre-reduce all register offsets modulo the 0x37F0-sample work
+ * buffer. Original encoded STUDIO_C register values remain above and
+ * are used by the reference build. The accelerated path requires no
+ * per-access division. tests/test_native_spu_reverb_reference.py
+ * validates every value against the original unsigned register.
+ */
+#ifndef VH_REV_FIR_REFERENCE
+static const uint16_t reg_addr[REG_COUNT] = {
+    908, 676, 13808, 9968, 7248, 13440, 9360, 12976,
+    2656, 13136, 14316, 11616, 13348, 10480, 12132, 9676,
+    11620, 9064, 9060, 6052, 8112, 4800, 7100, 3912,
+    6056, 3188, 3184, 2272, 1360, 680, 2192, 2192
+};
+_Static_assert(sizeof(reg_addr)/sizeof(reg_addr[0]) == REG_COUNT,
+               "One reduced offset per STUDIO_C register");
+#endif
+
 _Static_assert(sizeof(studio_c)/sizeof(studio_c[0]) == 32,
                "STUDIO_C has 32 registers");
 _Static_assert(sizeof(fir)/sizeof(fir[0]) == VH_REV_FIR_TAPS,
@@ -37,12 +54,20 @@ static int clip16(int64_t x) {
     if (x > INT16_MAX) return INT16_MAX;
     return (int)x;
 }
+/* Both paths use the same circular SPU addresses and preserve the
+ * order of feedback reads/writes. The reference path is enabled
+ * exclusively in host benchmarking; Switch builds use the fast path.
+ */
+#ifdef VH_REV_FIR_REFERENCE
 static int rev_off(int reg) {
     return (int)(uint16_t)studio_c[reg] * 4;
 }
 static int wrap(int pos) {
     pos %= (int)VH_REV_SAMPLES;
     return pos < 0 ? pos + (int)VH_REV_SAMPLES : pos;
+}
+static int reg_delta(int reg, int other) {
+    return rev_off(reg) - rev_off(other);
 }
 static int read_reg(const VhSpuReverb *s, int reg, int delta) {
     return s->work[wrap(s->cursor + rev_off(reg) + delta)];
@@ -53,6 +78,28 @@ static int read_at(const VhSpuReverb *s, int delta) {
 static void write_reg(VhSpuReverb *s, int reg, int value) {
     s->work[wrap(s->cursor + rev_off(reg))] = (int16_t)clip16(value);
 }
+#else
+/* All callers supply offsets within [-WORK, +WORK] and cursor is
+ * always [0,WORK-1]. One conditional adjustment replaces modulus.
+ */
+static int wrap(int pos) {
+    if (pos < 0) pos += (int)VH_REV_SAMPLES;
+    if (pos >= (int)VH_REV_SAMPLES) pos -= (int)VH_REV_SAMPLES;
+    return pos;
+}
+static int reg_delta(int reg, int other) {
+    return (int)reg_addr[reg] - (int)reg_addr[other];
+}
+static int read_reg(const VhSpuReverb *s, int reg, int delta) {
+    return s->work[wrap(s->cursor + (int)reg_addr[reg] + delta)];
+}
+static int read_at(const VhSpuReverb *s, int delta) {
+    return s->work[wrap(s->cursor + delta)];
+}
+static void write_reg(VhSpuReverb *s, int reg, int value) {
+    s->work[wrap(s->cursor + (int)reg_addr[reg])] = (int16_t)clip16(value);
+}
+#endif
 static int mul(int value, int16_t coeff) {
     return (int)(((int64_t)value * coeff) / INT64_C(32768));
 }
@@ -98,7 +145,7 @@ static int comb(VhSpuReverb *s, int base) {
     return v;
 }
 static int allpass(VhSpuReverb *s, int input, int apf, int delay, int vol) {
-    const int delta = rev_off(apf)-rev_off(delay);
+    const int delta = reg_delta(apf, delay);
     int previous = read_at(s, delta);
     const int stored = input - mul(previous, studio_c[vol]);
     write_reg(s, apf, stored);
