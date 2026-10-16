@@ -343,6 +343,32 @@ static void test_projection_ot_boundaries_and_saturation(void) {
     assert((p.rtpt_flags & (1u << 13)) != 0u);
 }
 
+static void test_unr_perspective_division_threshold(void) {
+    VhMap02ProjectCamera c = camera();
+    VhMap02ProjectSxy xy = {0};
+    uint16_t sz = 0;
+    uint32_t flags = 0;
+    const VhMap02ProjectVertex at_threshold = {10,20,128};
+    const VhMap02ProjectVertex just_above = {10,20,129};
+    uint32_t dividend = 0;
+    assert(vh_map02_proj_unr(256,128,&flags,&dividend));
+    assert(dividend == 0x1ffffu);
+    assert((flags & (1u << 17)) != 0u);
+    flags = 0;
+    assert(vh_map02_proj_unr(256,129,&flags,&dividend));
+    assert(dividend < 0x1ffffu);
+    assert((flags & (1u << 17)) == 0u);
+    flags = 0;
+    assert(vh_map02_project_vertex(&c,at_threshold,&xy,&sz,&flags));
+    assert(sz == 128 && (flags & (1u << 17)) != 0u);
+    flags = 0;
+    assert(vh_map02_project_vertex(&c,just_above,&xy,&sz,&flags));
+    assert(sz == 129 && (flags & (1u << 17)) == 0u);
+    flags = 0;
+    assert(vh_map02_proj_unr(256,0,&flags,&dividend));
+    assert(dividend == 0x1ffffu && (flags & (1u << 17)) != 0u);
+}
+
 int main(void) {
     test_screen_quad_and_ordering();
     test_backface_and_zero_area();
@@ -357,6 +383,7 @@ int main(void) {
     test_neighbor_projection_under_diagonal_q12_rotations();
     test_shared_projection_across_depth_and_screen_clamps();
     test_projection_ot_boundaries_and_saturation();
+    test_unr_perspective_division_threshold();
     puts("MAP02 portable projection, NCLIP, AVSZ4 and OT slot tests passed");
     return 0;
 }
