@@ -1,0 +1,397 @@
+name: Map02 v48 actual GPU texel STP and BGR555 before-after pixel proof
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v48-gpu-pixels.yml'
+      - 'tools/instrument_map02_v48.py'
+      - 'tools/verify_map02_pixels_v48.py'
+      - 'tests/map02_v48_pixel_runtime.c'
+      - 'tests/test_map02_pixels_v48.py'
+      - 'tools/instrument_map02_v47.py'
+      - 'tools/verify_map02_faces_v47.py'
+      - 'tests/map02_v47_same_gfx_runtime.c'
+      - 'tests/test_map02_faces_v47.py'
+      - 'tools/verify_map02_face_evidence_v46.py'
+      - 'tests/test_map02_face_evidence_v46.py'
+      - 'tests/map02_v46_stable_face_runtime.c'
+      - 'tools/preflight_map02_prs_v45.py'
+      - 'tests/test_map02_prs_v45.py'
+      - 'tests/map02_v45_prs_fixture_runtime.c'
+      - 'tests/map02_v45_unpack_tokens_native.c'
+      - 'tests/map02_v44_prs_v24_runtime.c'
+      - 'tests/fixtures/vh_map02_hd_lookup_v24.h'
+      - 'tests/map02_v43_real_producer.c'
+      - 'tests/map02_v42_gpu_runtime.c'
+      - 'tests/map02_v42_test_shims.c'
+      - 'tools/instrument_map02_v41.py'
+      - 'tools/instrument_map02_v40.py'
+      - 'tools/instrument_map02_v39.py'
+      - 'tools/verify_map02_v41.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pixel-gpu-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - name: Checkout diagnostics
+        uses: actions/checkout@v4
+        with:
+          path: remaster
+          persist-credentials: false
+      - name: Checkout exact public PC-port source
+        uses: actions/checkout@v4
+        with:
+          repository: HalmyLyseas/VandalHearts-PcPort
+          ref: 14552fffa0e0b47e02b57592e274fc6e7a649923
+          path: pcport
+          persist-credentials: false
+      - name: Apply read-only origin + frame observers to disposable checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m remaster.tools.make_map02_trace_patch pcport --output "$RUNNER_TEMP/map02-v42.patch"
+          (
+            cd pcport
+            git apply --check "$RUNNER_TEMP/map02-v42.patch"
+            git apply "$RUNNER_TEMP/map02-v42.patch"
+          )
+          python3 -m remaster.tools.instrument_map02_v39 pcport \
+            --header remaster/tools/vh_map02_v39_tokens.h --apply
+          python3 -m remaster.tools.instrument_map02_v40 pcport --apply
+          python3 -m remaster.tools.instrument_map02_v41 pcport --apply
+          python3 -m remaster.tools.instrument_map02_v47 pcport --apply
+          python3 -m remaster.tools.instrument_map02_v48 pcport --apply
+          (
+            cd pcport
+            git diff --check
+            git rev-parse HEAD | grep -x 14552fffa0e0b47e02b57592e274fc6e7a649923
+          )
+      - name: Run preflight unit and adversarial bounds tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_prs_v45.py' -v
+      - name: Run face provenance join adversarial cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_face_evidence_v46.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_faces_v47.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_pixels_v48.py' -v
+      - name: Compile original PRS unpacker, game terrain producer, GTE and GPU
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          mkdir -p proof
+          opts=(-std=gnu89 -O2 -g -fno-omit-frame-pointer
+                -ffunction-sections -fdata-sections
+                -DPC_PORT -DPC_FEAT -DVH_MAP02_V39_TRACE
+                -Ipcport/platform/pc/include -Ipcport/platform/pc/src)
+          "$CC" "${opts[@]}" -c pcport/platform/pc/src/libgpu.c -o proof/libgpu.o
+          "$CC" "${opts[@]}" -c pcport/platform/pc/src/pc_raster.c -o proof/pc_raster.o
+          "$CC" "${opts[@]}" -c remaster/tests/map02_v42_test_shims.c -o proof/test_shims.o
+          # The pinned game source still contains GNU89 forward-declaration
+          # ambiguities diagnosed by Clang. Match v39-v41 object-build gate.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("pcport/src/core/graphics.c")
+          s = p.read_text()
+          anchor = '#include "PsyQ/gtemac.h"'
+          assert s.count(anchor) == 1
+          extra = ('\nvoid UpdateMapTileLighting(MapTileModel *tileModel);'
+                   '\nvoid RenderMapTile(u32 *ot, MapTileModel *tileModel, s32 gridColor);'
+                   '\nvoid RenderEdgeMapTile(u32 *ot, MapTileModel *tileModel, s32 gridColor);'
+                   '\nvoid RenderOverheadMapTile(u32 *ot, MapTileModel *tileModel, s32 brightness);')
+          p.write_text(s.replace(anchor, anchor + extra, 1))
+          PY
+          common=(-std=gnu89 -O2 -g -fno-omit-frame-pointer
+                  -ffunction-sections -fdata-sections
+                  -DPERMUTER -DPC_PORT -DPC_FEAT -DVH_REGION_US
+                  -DVH_TRACE_MAP02 -DVH_MAP02_V39_TRACE
+                  '-Dasm(x)='
+                  -Ipcport/platform/pc/include -Ipcport/platform/pc/src -Ipcport/include
+                  -Iremaster/tests/fixtures
+                  -Ipcport
+                  -include pc_forward_decls.h
+                  -Wno-incompatible-pointer-types -Wno-int-conversion
+                  -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast)
+          "$CC" "${common[@]}" -c pcport/src/core/graphics.c -o proof/graphics.o
+          "$CC" "${opts[@]}" -c pcport/platform/pc/src/libgte.c -o proof/libgte.o
+          "$CC" "${common[@]}" -c pcport/src/maps/unpack.c -o proof/unpack.o
+          "$CC" "${common[@]}" -c remaster/tests/map02_v48_pixel_runtime.c -o proof/driver.o
+          "$CC" -Wl,--gc-sections -o proof/map02_gpu_runtime \
+            proof/driver.o proof/unpack.o proof/graphics.o proof/libgte.o proof/libgpu.o proof/pc_raster.o proof/test_shims.o \
+            -lm -lpthread
+          nm -a proof/map02_gpu_runtime | grep -q PC_Map02V39MarkSubmitted
+          nm -a proof/map02_gpu_runtime | grep -q RenderMapTile
+          nm -a proof/map02_gpu_runtime | grep -q PC_GTE_RTPT
+          nm -a proof/map02_gpu_runtime | grep -q ProcessMapFileData
+          nm -a proof/map02_gpu_runtime | grep -q UnpackMapFileData
+          strings proof/map02_gpu_runtime | grep -F '[v40-terrain-hires] f=%u'
+          sha256sum proof/*.o proof/map02_gpu_runtime > proof/SHA256SUMS
+      - name: Compare real C unpacker against bounded Python across token classes
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=gnu89 -O2 -ffunction-sections -fdata-sections \
+            -c remaster/tests/map02_v45_unpack_tokens_native.c -o proof/native_tokens.o
+          "$CC" -Wl,--gc-sections proof/native_tokens.o proof/unpack.o \
+            -o proof/native_token_differential
+          ./proof/native_token_differential > proof/NATIVE_TOKEN_DIFFERENTIAL.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          from remaster.tools.preflight_map02_prs_v45 import unpack_bounded
+          fixtures = {
+              "literal": (b"\x00ABCDEFGH", 8),
+              "absolute": (b"\x01\x00\x00", 3),
+              "relative": (b"\x01\x80", 2),
+              "literal_run": (b"\x01\xc0abcdefgh", 8),
+              "relative_overlap": (b"\x02A\x81", 3),
+              "absolute_overlap": (bytes((2, ord("X"), 3, 222)), 4),
+          }
+          result = Path("proof/NATIVE_TOKEN_DIFFERENTIAL.txt").read_text()
+          rows = [line.split() for line in result.splitlines()
+                  if line.startswith("NATIVE_TOKEN ")]
+          assert len(rows) == len(fixtures), (rows, result)
+          assert len({row[1] for row in rows}) == len(fixtures)
+          for _, name, length, native_hash in rows:
+              payload, expected = fixtures[name]
+              data = unpack_bounded(payload, expected)
+              h = 1469598103934665603
+              for byte in data:
+                  h = ((h ^ byte) * 1099511628211) & 0xffffffffffffffff
+              assert int(length) == expected, name
+              assert native_hash == f"{h:016x}", (name, native_hash, f"{h:016x}")
+          print("PASS: bounded Python and original PC-port decoder match on all six token fixtures.")
+          PY
+      - name: Execute genuine PRS unpacker and validate generated synthetic data
+        shell: bash
+        run: |
+          set -euo pipefail
+          VH_V45_SYNTHETIC_PRS_OUTPUT=proof/SYNTHETIC_M_MAP02.PRS ./proof/map02_gpu_runtime > proof/real-producer-SYNTHETIC-graphics.jsonl 2> proof/real-producer-SYNTHETIC-stderr.log || { tail -n 120 proof/real-producer-SYNTHETIC-stderr.log; exit 1; }
+          VH_RASTER_THREADS=1 ./proof/map02_gpu_runtime \
+            2> proof/real-producer-SYNTHETIC-single-worker-stderr.log
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          a = Path("proof/real-producer-SYNTHETIC-stderr.log").read_text()
+          b = Path("proof/real-producer-SYNTHETIC-single-worker-stderr.log").read_text()
+          rx = re.compile(r"\[v44\] FRAMEBUFFER_HASH native=([0-9a-f]+) hires=([0-9a-f]+)")
+          assert "[raster] hi-res worker threads: 2" in a, "did not enable two-thread rasterizer"
+          assert "[raster] hi-res worker threads: 1" in b, "did not enable single-thread control"
+          ma, mb = rx.findall(a), rx.findall(b)
+          assert len(ma) == len(mb) == 1, (ma, mb)
+          assert ma[0] == mb[0], f"framebuffer mismatch between 2 and 1 threads: {ma}, {mb}"
+          assert "[v45] PASS real UnpackMapFileData" in a and "[v45] PASS real UnpackMapFileData" in b
+          assert "[v44] UNPACK_OK " in a and "[v44] UNPACK_OK " in b
+          print("PASS: original GPU VRAM and hi-res buffers hash-identically with 1 vs 2 threads.")
+          print("framebuffer native={}, hires={}".format(*ma[0]))
+          PY
+          grep -F '[v45] PASS real UnpackMapFileData' proof/real-producer-SYNTHETIC-stderr.log
+          grep -F '[v45] REFERENCE_DECODED_FNV64=' proof/real-producer-SYNTHETIC-stderr.log
+          grep -F '[v44] UNPACK_OK ' proof/real-producer-SYNTHETIC-stderr.log
+          python3 -m remaster.tools.verify_map02_v41 \
+            proof/real-producer-SYNTHETIC-stderr.log \
+            --output proof/real-producer-SYNTHETIC-correlated.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r = json.loads(Path("proof/real-producer-SYNTHETIC-correlated.json").read_text())
+          assert r["status"] == "provenance_correlated", r
+          assert r["paired_primitive_count"] == 3, r
+          assert r["ot_primitive_count"] == 3, r
+          assert r["frames_with_events"] == 2, r
+          assert r["native_sample_count"] > 0, r
+          assert r["hires_sample_count"] > 0, r
+          assert r["errors"] == [], r
+          assert not r["gameplay_execution_proven"], r
+          assert not r["pixel_equivalence_proven"], r
+          lines = Path("proof/real-producer-SYNTHETIC-stderr.log").read_text().splitlines()
+          for name in ("v39-terrain-ot", "v39-terrain-dda", "v40-terrain-hires"):
+              assert any(f"[{name}]" in x for x in lines), name
+          # An untagged matching-UV sprite and a wrong-map FT4 still draw
+          # but must not gain a terrain provenance event.
+          assert not any("[v39-terrain-ot] f=3 " in x for x in lines), lines
+          assert {p["gfx"] for p in r["examples_of_paired_frame_tokens"]} == {641, 643}, r
+          print("PASS: original PRS unpacker, v24 lookup, RenderMapTile, GTE/GPU all executed.")
+          print("PASS: UV-identical untagged sprites and wrong-map terrain remain untagged.")
+          print("NOTE: original unpacker is exercised on a SYNTHETIC M_MAP02 layout, not retail PRS.")
+          PY
+          printf 'compiler=%s\npublic_upstream=14552fffa0e0b47e02b57592e274fc6e7a649923\nreal_objects=unpack,graphics,libgte,libgpu,pc_raster\nmap_prs_payload=SYNTHETIC fixture 28x12 MapTileModel\ntexture_pixels=SYNTHETIC 4bpp and CLUT\ntexture_metadata=user-owned v24 120-slot reference\nface_identity=immutable coordinates (8,19,0) and (11,11,0)\nretail_map=NOT TESTED\nuserdata=none\nfull_game_linked=no\nfull_game_played=no\n' \
+            '${{ matrix.cc }}' > proof/BUILD_INFO.txt
+      - name: Differential-test bounded preflight against real decoder output
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m remaster.tools.preflight_map02_prs_v45 \
+            proof/SYNTHETIC_M_MAP02.PRS --synthetic-fixture \
+            --output proof/SYNTHETIC_PRSPREFLIGHT_v45.json
+          python3 - <<'PY'
+          import json, re
+          from pathlib import Path
+          from remaster.tools.preflight_map02_prs_v45 import read_prs, unpack_bounded
+          report = json.loads(Path("proof/SYNTHETIC_PRSPREFLIGHT_v45.json").read_text())
+          assert report["status"] == "structurally_valid_unverified_source", report
+          assert report["input_provenance"] == "caller_declared_synthetic"
+          assert not report["retail_map_authenticity_proven"]
+          assert not report["runtime_tpage_clut_uv_proven"]
+          assert not report["HD_replacement_approved"]
+          assert report["lookup_v24_rows"] == 120
+          assert report["lookup_v24_canonical_masters"] == 96
+          assert report["map_grid"]["total_tiles"] == 336
+          assert report["decoded_bytes"] == 102144
+          assert report["v24_matched_faces"] == 3, report
+          assert report["v24_unmatched_faces"] == 0, report
+          assert set(report["v24_matched_local_slot_counts"]) == {"241", "243"}
+          stream, _, _ = read_prs(Path("proof/SYNTHETIC_M_MAP02.PRS"))
+          decoded = unpack_bounded(stream)
+          h = 1469598103934665603
+          for b in decoded:
+              h ^= b
+              h = h * 1099511628211 & 0xffffffffffffffff
+          logged = Path("proof/real-producer-SYNTHETIC-stderr.log").read_text()
+          match = re.findall(r"\[v45\] REFERENCE_DECODED_FNV64=([0-9a-f]{16})", logged)
+          assert len(match) == 1 and match[0] == f"{h:016x}", (match, hex(h))
+          print("PASS: independent bounded Python decoded bytes match native C decompressor bit-for-bit.")
+          PY
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          base = Path("proof/SYNTHETIC_M_MAP02.PRS").read_bytes()
+          for name, payload in {
+              "truncated": base[:-1],
+              "nonzero_tail": base+b"\x80",
+              "bomb_header": b"\xff\xff\xff\x7f"+base[4:],
+          }.items():
+              p = Path("proof")/f"SYNTHETIC_CORRUPT_{name}.prs"
+              p.write_bytes(payload)
+              r = subprocess.run(["python3", "-m", "remaster.tools.preflight_map02_prs_v45",
+                                  str(p)], capture_output=True, text=True, check=False)
+              assert r.returncode == 1 and "[v45-preflight] REFUSED:" in r.stderr, (name, r.returncode, r.stderr)
+              p.unlink()
+          print("PASS: truncated, padded nonzero, excessive length files refused by public CLI.")
+          PY
+      - name: Verify ALL submitted map11 face OT tokens including duplicate GFX
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m remaster.tools.verify_map02_faces_v47 \
+            proof/SYNTHETIC_M_MAP02.PRS \
+            proof/real-producer-SYNTHETIC-stderr.log \
+            --synthetic-fixture \
+            --output proof/SYNTHETIC_ALL_FACE_TOKENS_v47.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("proof/SYNTHETIC_ALL_FACE_TOKENS_v47.json")
+          r=json.loads(p.read_text())
+          assert r["status"] == "matched_sampled_faces", r
+          assert r["tagged_ot_count"] == r["face_marker_count"] == 3, r
+          assert r["matched_face_count"] == r["both_pass_sampled_count"] == 3, r
+          assert r["distinct_face_coordinates_count"] == 3, r
+          assert r["duplicate_gfx_face_pairs"] == 1, r
+          assert {(x["frame"],x["z"],x["x"],x["gfx"],x["local_slot"])
+                  for x in r["rows"]} == {
+                      (1,8,19,641,241),(1,8,20,641,241),(2,11,11,643,243)
+                  }, r
+          assert not r["retail_map_authenticity_proven"]
+          assert not r["genuine_gameplay_proven"]
+          assert not r["HD_replacement_approved"]
+          print("PASS: all three actual submitted faces uniquely joined to PRS by minted OT token.")
+          print("PASS: same frame, same GFX 641, identical palette/UV, two DIFFERENT map tiles!")
+          print("NOTE: original game GPU code executed on deliberately synthetic models.")
+          PY
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          import json
+          base=Path("proof/real-producer-SYNTHETIC-stderr.log").read_text()
+          assert "[v47-terrain-face-ot]" in base
+          assert " x=20 " in base
+          cases = {
+              "wrong_uv": (" u=240 v=192", " u=239 v=192"),
+              "wrong_cell": (" z=8 x=20 face=0", " z=8 x=21 face=0"),
+              "wrong_frame": ("[v47-terrain-face-ot] f=1", "[v47-terrain-face-ot] f=3"),
+          }
+          for name,(old,new) in cases.items():
+              assert old in base, name
+              path=Path("proof")/f"SYNTHETIC_INVALID_v47_{name}.log"
+              path.write_text(base.replace(old,new,1))
+              result=subprocess.run([
+                  "python3","-m","remaster.tools.verify_map02_faces_v47",
+                  "proof/SYNTHETIC_M_MAP02.PRS",str(path),"--synthetic-fixture"
+              ],capture_output=True,text=True)
+              assert result.returncode == 1, (name,result.returncode,result.stderr,result.stdout)
+              if result.stdout:
+                  report=json.loads(result.stdout)
+                  assert report["status"]=="refused", report
+              path.unlink()
+          print("PASS: real native logs tampered at UV/tile/frame all fail closed.")
+          PY
+      - name: Independently verify original PutPixel before/after STP and BGR555
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m remaster.tools.verify_map02_pixels_v48 \
+            proof/SYNTHETIC_M_MAP02.PRS \
+            proof/real-producer-SYNTHETIC-stderr.log \
+            --synthetic-fixture \
+            --output proof/SYNTHETIC_REAL_GPU_PIXEL_PROOF_v48.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("proof/SYNTHETIC_REAL_GPU_PIXEL_PROOF_v48.json")
+          r=json.loads(p.read_text())
+          assert r["status"] == "pixel_decisions_correlated", r
+          assert r["matched_source_face_count"] == 3, r
+          assert r["per_token_pixel_observed_count"] == 3, r
+          assert r["native_pixel_observations"] > 0, r
+          assert r["hires_pixel_observations"] > 0, r
+          assert r["pixel_decisions"].get("opaque",0) > 0, r
+          assert not r["HD_replacement_approved"]
+          assert not r["pixel_perfect_visual_fidelity_proven"]
+          print("PASS: actual original PutPixel before/after independent BGR555/STP audit.")
+          print("NOTE: this synthetic scene contains opaque texture pixels only.")
+          PY
+          python3 - <<'PY'
+          from pathlib import Path
+          import json, subprocess
+          original=Path("proof/real-producer-SYNTHETIC-stderr.log").read_text()
+          assert "[v48-terrain-pixel]" in original, "no original GPU pixel decisions captured"
+          def refuse(name,old,new):
+              assert old in original, (name,old)
+              altered=Path("proof")/f"SYNTHETIC_CORRUPTED_PIXEL_{name}.log"
+              altered.write_text(original.replace(old,new,1))
+              result=subprocess.run([
+                  "python3","-m","remaster.tools.verify_map02_pixels_v48",
+                  "proof/SYNTHETIC_M_MAP02.PRS",str(altered),"--synthetic-fixture"
+              ],capture_output=True,text=True)
+              assert result.returncode == 1,(name,result.returncode,result.stderr,result.stdout)
+              if result.stdout:
+                  parsed=json.loads(result.stdout)
+                  assert parsed["status"]=="refused",parsed
+              altered.unlink()
+          refuse("output"," after=31 "," after=30 ")
+          refuse("source"," raw=31 "," raw=0 ")
+          print("PASS: tampering actual GPU output or texel sample is detected.")
+          PY
+      - name: Upload runtime logs and binary hash proofs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-v48-${{ matrix.cc }}-real-gpu-synthetic
+          path: proof/
+          if-no-files-found: warn
