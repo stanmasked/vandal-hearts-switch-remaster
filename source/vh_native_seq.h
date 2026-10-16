@@ -21,6 +21,7 @@ typedef struct {
     int64_t loop_start, loop_end;
     uint32_t pitch_step;
     uint16_t adsr1, adsr2;
+    unsigned reverb_send; /* selected VAB tone VagAtr.mode bit2 */
     float gain_left, gain_right;
 } VhSeqTone;
 
