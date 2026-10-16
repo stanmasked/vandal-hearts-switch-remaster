@@ -137,8 +137,30 @@ static inline int vh_map02_vram4_timeline_build_from_packet(
     VhMap02VramTransfer *events, size_t event_capacity,
     uint8_t *scratch_vram, size_t scratch_bytes) {
     size_t events_count = 0u;
-    if (!input ||
-        !vh_map02_vram_ledger_import_packet(
+    size_t event_bytes;
+    /* Decoder outputs are caller-writable. Guard ALL output and evidence
+     * spans before importing even the first event: otherwise a valid
+     * packet could overwrite its own camera, VRAM or OT inputs. */
+    if (!input || !workspace || !packet || !events || !scratch_vram ||
+        event_capacity == 0u ||
+        event_capacity > VH_MAP02_VRAM_LEDGER_MAX_EVENTS ||
+        !vh_map02_vram4_timeline_preflight(input, workspace))
+        return 0;
+    event_bytes = event_capacity * sizeof *events;
+    if (!vh_map02_vram4_timeline_buffer_is_isolated(
+            input, workspace, events, event_bytes) ||
+        !vh_map02_vram4_timeline_buffer_is_isolated(
+            input, workspace, packet, packet_bytes) ||
+        !vh_map02_vram4_timeline_buffer_is_isolated(
+            input, workspace, scratch_vram, scratch_bytes) ||
+        vh_map02_vram_ledger_ranges_overlap(
+            events, event_bytes, packet, packet_bytes) ||
+        vh_map02_vram_ledger_ranges_overlap(
+            events, event_bytes, scratch_vram, scratch_bytes) ||
+        vh_map02_vram_ledger_ranges_overlap(
+            packet, packet_bytes, scratch_vram, scratch_bytes))
+        return 0;
+    if (!vh_map02_vram_ledger_import_packet(
             packet,packet_bytes,input->frame,input->count,
             events,event_capacity,&events_count))
         return 0;
