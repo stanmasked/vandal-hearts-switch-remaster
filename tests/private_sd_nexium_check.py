@@ -160,12 +160,12 @@ def check_geometry(image_path):
     probes = (
         ("left top red", (260,210), (255,0,0)),
         ("right top magenta", (850,210), (255,0,255)),
-        ("left bottom blue", (330,400), (0,0,255)),
+        ("left bottom blue", (400,400), (0,0,255)),
         ("right bottom cyan", (850,400), (0,255,255)),
-        # Orthographic former left edge starts at x=2; the real GTE
-        # projection moves its top edge left to x=0, so only the GTE
-        # implementation can color this sample.
-        ("perspective-only red left edge", (120,205), (255,0,0)),
+        # Old orthographic geometry began at native (2,2), around
+        # screen (320,160); genuine GTE projection puts a red top
+        # edge at (300,125), which the former scene left black.
+        ("perspective-only red upper edge", (300,125), (255,0,0)),
     )
     for title, (x,y), expected in probes:
         pixel = frame.getpixel((x,y))
