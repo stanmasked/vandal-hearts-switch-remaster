@@ -8,7 +8,7 @@ from tools.map02_face_geometry import (
 )
 from tools.map02_multicell_probe import (
     place_faces, shared_vertices, shared_edges, boundary_report,
-    face_cross_xyz, placement_invariants,
+    face_cross_xyz, placement_invariants, order_faces_by_external_otz,
 )
 
 
@@ -150,6 +150,33 @@ class MultiCellTests(unittest.TestCase):
     def test_cross_product_rejects_invalid_shape(self):
         with self.assertRaisesRegex(ValueError, "four XYZ"):
             face_cross_xyz([[0, 0, 0]])
+
+
+    def test_external_otz_is_attached_without_projection_guess(self):
+        faces = place_faces(self.data, self.cells, self.uv,
+                            step_x=64, step_z=64)
+        measurements = {(2, 3): 900, (2, 4): 100, (3, 3): 900}
+        ordered = order_faces_by_external_otz(faces, measurements)
+        self.assertEqual([(f["z"], f["x"], f["otz"]) for f in ordered],
+                         [(2, 4, 100), (2, 3, 900), (3, 3, 900)])
+        self.assertEqual([f["input_order"] for f in ordered], [1, 0, 2])
+        self.assertEqual([f["record_index"] for f in ordered], [60, 59, 87])
+
+    def test_external_otz_requires_complete_valid_measurements(self):
+        faces = place_faces(self.data, self.cells[:2], self.uv,
+                            step_x=64, step_z=64)
+        for bad in ({}, {(2, 3): 1, (2, 4): 2, (9, 9): 3}):
+            with self.subTest(measurements=bad):
+                with self.assertRaisesRegex(ValueError, "match placed"):
+                    order_faces_by_external_otz(faces, bad)
+        for value in (-1, 65536, True, 1.25):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, "unsigned 16-bit"):
+                    order_faces_by_external_otz(
+                        faces, {(2, 3): value, (2, 4): 0})
+        with self.assertRaisesRegex(ValueError, "duplicate cell"):
+            order_faces_by_external_otz(
+                [faces[0], faces[0]], {(2, 3): 10})
 
 
 if __name__ == "__main__":
