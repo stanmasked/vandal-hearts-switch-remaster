@@ -120,7 +120,7 @@ class MusicBankAuditCliTests(unittest.TestCase):
             folder = Path(path)
             fixtures(folder)
             seq_file = folder / "selected" / "music.seq"
-            seq_file.write_bytes(b"pQES" + b"\\x00" * 11)
+            seq_file.write_bytes(seq(7, 60)[:15] + bytes((0, 0x90, 60)))
             result = run(path)
             self.assertEqual(result.returncode, 3, result.stderr)
             self.assertEqual(result.stdout, "")
@@ -208,6 +208,85 @@ class MusicBankAuditCliTests(unittest.TestCase):
             strict = run("--strict", path)
             self.assertEqual(strict.returncode, 4, strict.stderr)
             self.assertEqual(json.loads(strict.stdout), report)
+
+    def test_multiple_fallbacks_retain_first_event_per_scene(self):
+        """Counts include later mismatches, but diagnostics keep the first."""
+        with tempfile.TemporaryDirectory() as path:
+            folder = Path(path)
+            fixtures(folder)
+            field_events = bytes((
+                0, 0xC0, 9,          # first fallback: program 9 / note 60
+                0, 0x90, 60, 100,
+                0, 0xC0, 7,          # exact note must not overwrite it
+                0, 0x90, 62, 100,
+                0, 0xC0, 12,
+                0, 0x90, 65, 100,    # second fallback in field
+                0, 0x90, 65, 0,      # note_off, not third fallback
+                0x81, 0x70, 0xFF, 0x2F,
+            ))
+            selected_events = bytes((
+                0, 0xC0, 7,
+                0, 0x90, 67, 100,    # exact first note
+                0, 0xC0, 10,
+                0, 0x90, 69, 100,    # first fallback in selected
+                0, 0xC0, 11,
+                0, 0x90, 71, 100,    # second fallback in selected
+                0, 0x80, 71, 0,      # explicit note_off is not counted
+                0x81, 0x70, 0xFF, 0x2F,
+            ))
+            (folder / "field" / "music.seq").write_bytes(
+                seq(7, 60)[:15] + field_events
+            )
+            (folder / "selected" / "music.seq").write_bytes(
+                seq(7, 60)[:15] + selected_events
+            )
+
+            normal = run(path)
+            self.assertEqual(normal.returncode, 0, normal.stderr)
+            report = json.loads(normal.stdout)
+            for scene in ("field", "selected"):
+                data = report[scene]
+                self.assertEqual(data["note_on"], 3)
+                self.assertEqual(data["resolved"], 3)
+                self.assertEqual(data["missing"], 0)
+                self.assertEqual(data["fallback"], 2)
+                self.assertEqual(data["program_changes"], 3)
+                self.assertIsNone(data["first_missing"])
+            self.assertEqual(report["field"]["first_fallback"], {
+                "program": 9, "note": 60, "selected_program": 7,
+                "selected_tone": 0, "selected_vag": 1,
+            })
+            self.assertEqual(report["selected"]["first_fallback"], {
+                "program": 10, "note": 69, "selected_program": 7,
+                "selected_tone": 0, "selected_vag": 1,
+            })
+            strict = run("--strict", path)
+            self.assertEqual(strict.returncode, 4, strict.stderr)
+            self.assertEqual(json.loads(strict.stdout), report)
+            self.assertNotIn(path, normal.stdout)
+            self.assertNotIn(path, strict.stderr)
+
+    def test_truncated_running_status_and_tempo_are_rejected(self):
+        """An invalid final SEQ must not emit a partial report for either bank."""
+        with tempfile.TemporaryDirectory() as path:
+            folder = Path(path)
+            fixtures(folder)
+            seq_file = folder / "selected" / "music.seq"
+            header = seq(7, 60)[:15]
+            invalid_events = (
+                bytes((0, 0x90, 60, 105, 0, 0xFF, 0x51, 7, 0xA1, 0x20,
+                       0, 67, 100, 0x81, 0x70, 0xFF, 0x2F)),
+                bytes((0, 0xC0, 7, 0, 0x90, 60)),
+                bytes((0, 0xFF, 0x51, 7, 0xA1)), # incomplete tempo bytes
+            )
+            for events in invalid_events:
+                with self.subTest(events=events):
+                    seq_file.write_bytes(header + events)
+                    for args in ((path,), ("--strict", path)):
+                        result = run(*args)
+                        self.assertEqual(result.returncode, 3, result.stderr)
+                        self.assertEqual(result.stdout, "")
+                        self.assertNotIn(path, result.stderr)
 
     def test_missing_partial_corrupt_and_help(self):
         with tempfile.TemporaryDirectory() as path:
