@@ -1026,3 +1026,48 @@ native file loading of a user's own licensed game data, full native
 PS1 reverb and native hardware-accurate pitch. The VH/VB import code
 is a first **in-memory integration layer**, not by itself a complete
 shipping music engine.
+
+
+## User-owned local SEQ/VH/VB on Switch (first read-only loader)
+
+The new `source/vh_audio_assets.h/.c` provides a **bounded,
+transactional, read-only** file loader for an optional local set:
+`music.seq`, `music.vh`, `music.vb`. The Switch SDL2 audio probe
+looks in `sdmc:/switch/vandal-hearts-remake/audio/`.
+
+Every source is loaded via `rb`; only fixed filenames are accepted.
+The limits are 256 KiB (SEQ), 68,128 bytes (VH) and 8 MiB (VB).
+Only referenced VAGs are decoded into the caller-owned PCM arena;
+the conservative scratch allocation can reach 28 MiB for an 8 MiB
+VB. SEQ and VH/VB are validated **before** the audio device starts.
+The entire staged bank is published only if all three files,
+all referenced ADPCM headers and SEQ validation pass.
+
+The intermediate bank and file-load metadata are allocated on the
+heap to reduce Switch-thread stack pressure. The original files and
+decoded PCM remain allocated as long as the sequencer or audio device
+can refer to them, and are freed only after audio-device closure.
+
+`VH_AUDIO_ASSET_MISSING` means all three paths were absent:
+only then is the synthetic SEQ/VH/VB probe used. A partial set,
+oversize file, malformed SEQ, invalid ADPCM/VAB or read error
+returns `VH_AUDIO_ASSET_ERROR` and does not silently fall back.
+No source data is uploaded, logged as binary, rewritten or committed.
+
+`tests/test_vh_audio_assets.c` creates temporary **synthetic**
+files to exercise valid loading, no-overwrite behavior, missing and
+partial sets, corrupt SEQ/VH/VB, oversize SEQ/VH/VB and long path
+rejection. `make test-audio-stream` now also runs the previously
+omitted native VAB regression and this asset-loader test. The host
+audio workflow configures strict C11 and UBSan builds; the AArch64
+workflow is configured to compile the new loader, too.
+
+Deployment and known limitations: [Switch local audio test
+instructions](SWITCH_LOCAL_AUDIO_TEST.md).
+
+This remains an **experimental standalone audio probe**. Running the
+host regressions, building the updated Switch NRO and comparing output
+on physical hardware are separate acceptance criteria. A faithful
+PS1 reverb engine, runtime pitch refinement, integration into
+gameplay scenes and validated release of original music are not
+established by this loader.
