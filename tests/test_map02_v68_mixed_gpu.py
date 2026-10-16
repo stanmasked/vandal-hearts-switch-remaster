@@ -14,7 +14,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from tools.audit_map02_v68_mixed_gpu import audit,main,DmaError
 from tools.audit_map02_v67_versioned_ram import manifest_for_frames
 from tools.ingest_map02_v65_gpu_probe import SCHEMA as PROBE_SCHEMA
-from tests.test_map02_v67_versioned_ram import cases
+from test_map02_v67_versioned_ram import cases
 
 def generate():
     frames,meta,raw,entries=cases()
