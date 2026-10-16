@@ -222,7 +222,14 @@ void vh_switch_game_audio_post(unsigned desired_scene) {
 }
 
 void vh_switch_game_audio_set_focus(int in_focus) {
-    if (thread_started)
+    if (!thread_started) return;
+    /* A focus-loss event can arrive just before libnx suspends every
+     * user thread. On the subsequent first in-focus frame, request
+     * explicit audout recovery even if OnResume was never delivered.
+     */
+    if (in_focus && !vh_game_music_mailbox_focused(&mailbox))
+        vh_game_music_mailbox_on_resume(&mailbox, 1);
+    else
         vh_game_music_mailbox_set_focus(&mailbox, in_focus);
 }
 
