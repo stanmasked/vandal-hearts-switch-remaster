@@ -11,7 +11,7 @@ from tools.map02_multicell_probe import (
     face_cross_xyz, placement_invariants, order_faces_by_external_otz,
     bind_gte_face_samples, place_selected_faces, audit_multicell_gte_batch, bind_external_screen_corners,
     audit_multicell_screen_batch, audit_projected_shared_vertices,
-    audit_projected_shared_edges,
+    audit_projected_shared_edges, audit_horizontal_edge_contacts,
 )
 
 
@@ -500,6 +500,47 @@ class MultiCellTests(unittest.TestCase):
             (2, 4, 60, 0): samples[(2, 4, 60, 0)],
         })
         self.assertEqual(one_corner["shared_world_edges"], 0)
+
+
+    def test_horizontal_edge_contact_distinguishes_elevation(self):
+        keys = [(2, 3, 0), (2, 4, 0)]
+        uv = {key: (0, 0, 15, 15) for key in keys}
+        faces = place_selected_faces(self.data, keys, uv,
+                                     step_x=64, step_z=64)
+        report = audit_horizontal_edge_contacts(faces)
+        self.assertEqual(report["coincident_count"], 1)
+        self.assertEqual(report["height_separated_count"], 0)
+        data = fixture()
+        origin = (2 * STRIDE + 4) * RECORD_SIZE
+        for i in range(4):
+            struct.pack_into("<h", data, origin + i * 8 + 2, 16)
+        raised = place_selected_faces(data, keys, uv, step_x=64, step_z=64)
+        report = audit_horizontal_edge_contacts(raised)
+        self.assertEqual(report["coincident_count"], 0)
+        self.assertEqual(report["height_separated_count"], 1)
+        self.assertEqual(report["height_separated_edges"][0]["endpoint_heights"],
+                         [[0, 0], [16, 16]])
+        self.assertEqual(shared_edges(*raised), [])
+
+    def test_sloping_height_contact_matches_only_when_both_ends_match(self):
+        data = fixture()
+        origin = (2 * STRIDE + 3) * RECORD_SIZE
+        for i in (1, 2):
+            struct.pack_into("<h", data, origin + i * 8 + 2, 16)
+        keys = [(2, 3, 0), (2, 4, 0)]
+        uv = {key: (0, 0, 15, 15) for key in keys}
+        faces = place_selected_faces(data, keys, uv,
+                                     step_x=64, step_z=64)
+        report = audit_horizontal_edge_contacts(faces)
+        self.assertEqual(report["height_separated_count"], 1)
+        other_origin = (2 * STRIDE + 4) * RECORD_SIZE
+        for i in (0, 3):
+            struct.pack_into("<h", data, other_origin + i * 8 + 2, 16)
+        faces = place_selected_faces(data, keys, uv,
+                                     step_x=64, step_z=64)
+        report = audit_horizontal_edge_contacts(faces)
+        self.assertEqual(report["coincident_count"], 1)
+        self.assertEqual(report["height_separated_count"], 0)
 
 
 if __name__ == "__main__":
