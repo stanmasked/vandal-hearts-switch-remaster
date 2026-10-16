@@ -119,7 +119,9 @@ static void test_pause_and_resume_with_last_scene(void) {
     assert(vh_game_music_mailbox_read(&inbox)==
            VH_GAME_MUSIC_HERO_SELECTED);
 
-    vh_game_music_mailbox_set_focus(&inbox,1);
+    assert(vh_game_music_mailbox_resume_serial(&inbox)==0u);
+    vh_game_music_mailbox_on_resume(&inbox,1);
+    assert(vh_game_music_mailbox_resume_serial(&inbox)==1u);
     for(unsigned i=0;i<20;i++) audio_turn();
     assert(music.active.id==VH_GAME_MUSIC_HERO_SELECTED);
     assert(music.switches==2);
@@ -135,7 +137,8 @@ static void test_pause_and_resume_with_last_scene(void) {
     const uint64_t later=music.blocks_rendered;
     for(unsigned i=0;i<128u;i++) audio_turn();
     assert(music.blocks_rendered==later);
-    vh_game_music_mailbox_set_focus(&inbox,1);
+    vh_game_music_mailbox_on_resume(&inbox,1);
+    assert(vh_game_music_mailbox_resume_serial(&inbox)==2u);
     audio_turn();
     assert(music.blocks_rendered==later+1);
     assert(music.switches==2);
