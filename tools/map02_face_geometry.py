@@ -62,9 +62,9 @@ def decode_face(decoded: bytes, z: int, x: int, face_index: int,
     indices = tuple(record[FACE_TABLE_OFFSET + face_index * 4:
                            FACE_TABLE_OFFSET + (face_index + 1) * 4])
     if any(vertex >= VERTEX_COUNT for vertex in indices):
-        raise ValueError(f"z={z},x={x}: face vertex index outside 0..21")
+        raise ValueError(f"z={z},x={x}: face-{face_index} vertex index outside 0..21")
     if len(set(indices)) < 3:
-        raise ValueError(f"z={z},x={x}: degenerate face vertex indices")
+        raise ValueError(f"z={z},x={x}: degenerate face-{face_index} vertex indices")
     coords = [
         list(struct.unpack_from("<hhh", record, index * VERTEX_BYTES))
         for index in indices
