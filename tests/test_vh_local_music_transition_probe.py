@@ -17,7 +17,8 @@ PROGRAM = Path(os.environ.get("VH_LOCAL_MUSIC_TRANSITION_PROBE",
 TONE_OFFSET = 32 + 128 * 16
 
 
-def synth_dir(directory, wet=False, bank_b=False, fallback_program=False):
+def synth_dir(directory, wet=False, bank_b=False, fallback_program=False,
+              out_of_range_note=False):
     directory.mkdir()
     files = make_synthetic_files()
     vh = bytearray(files["music.vh"])
@@ -29,14 +30,21 @@ def synth_dir(directory, wet=False, bank_b=False, fallback_program=False):
         vb[34:48] = b"\xDD" * 14
     files["music.vh"] = bytes(vh)
     files["music.vb"] = bytes(vb)
-    if fallback_program:
-        # Synthetic SEQ now requests program 9 while the only VAB tone
-        # remains in program 7. Native global-tone fallback must be used.
+    if fallback_program or out_of_range_note:
         seq = bytearray(files["music.seq"])
-        program_event = seq.index(0xC0)
-        self_program = program_event + 1
-        assert seq[self_program] == 7
-        seq[self_program] = 9
+        if fallback_program:
+            # Program 9 is missing. The global resolver chooses program 7.
+            program_event = seq.index(0xC0)
+            assert seq[program_event + 1] == 7
+            seq[program_event + 1] = 9
+        if out_of_range_note:
+            # Program 7 exists, but key 110 lies beyond tone's 40..100
+            # range. This exercises closest-range fallback in same program.
+            on = seq.index(0x90)
+            off = seq.index(0x80)
+            assert seq[on + 1] == 60 and seq[off + 1] == 60
+            seq[on + 1] = 110
+            seq[off + 1] = 110
         files["music.seq"] = bytes(seq)
     for name, data in files.items():
         (directory / name).write_bytes(data)
@@ -99,6 +107,26 @@ class NativeLocalMusicTransitionTests(unittest.TestCase):
             for folder, original in ((a, originals_a), (b, originals_b)):
                 self.assertEqual(
                     {p.name: p.read_bytes() for p in folder.iterdir()}, original)
+
+    def test_note_outside_tone_range_counts_as_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b = Path(tmp) / "a", Path(tmp) / "b"
+            synth_dir(a, out_of_range_note=True)
+            synth_dir(b)
+            result = subprocess.run(
+                [str(PROGRAM), str(a), str(b), "2", "16"],
+                capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = json.loads(result.stdout)
+            early, later = report["measurements"]
+            self.assertGreater(early["resolved_notes"], 0)
+            self.assertEqual(early["fallback_notes"], early["resolved_notes"])
+            self.assertEqual(early["direct_match_notes"], 0)
+            self.assertEqual(early["unresolved_notes"], 0)
+            self.assertEqual(later["fallback_notes"], 0)
+            self.assertEqual(later["direct_match_notes"],
+                             later["resolved_notes"])
+            self.assertNotIn(str(tmp), result.stdout)
 
     def test_missing_bank_file_fails_without_partial_json_or_path(self):
         with tempfile.TemporaryDirectory() as tmp:
