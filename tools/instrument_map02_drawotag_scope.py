@@ -24,7 +24,8 @@ DECLARATIONS = r"""#ifdef VH_MAP02_SCOPED_BLEND_PROBE
 extern void vh_map02_scope_reset(void);
 extern void vh_map02_scope_abort(void);
 extern int vh_map02_scope_begin_frame(unsigned frame, int x, int y);
-extern int vh_map02_scope_begin_primitive(unsigned ordinal);
+extern int vh_map02_scope_begin_primitive(unsigned ordinal,
+                                             unsigned primitive_type);
 extern int vh_map02_scope_end_primitive(void);
 extern int vh_map02_scope_end_frame(void);
 
@@ -86,7 +87,9 @@ FRAME_NEW = r"""    s_drawFrame++;
 PRIM_NEW = r"""        if (!isBucket) {
 #ifdef VH_MAP02_SCOPED_BLEND_PROBE
             if (vh_scope_active &&
-                !vh_map02_scope_begin_primitive(vh_scope_ordinal))
+                !vh_map02_scope_begin_primitive(
+                    vh_scope_ordinal,
+                    (unsigned)PC_GPU_PRIM_TYPE((P_TAG *)cur)))
                 vh_map02_scope_abort();
             vh_scope_ordinal++;
 #endif"""
