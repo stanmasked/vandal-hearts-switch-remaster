@@ -181,7 +181,7 @@ int main(void) {
     printf("VAB all scene seams (PCM16):");
     for (unsigned seam=0;seam<SCENE_COUNT-1u;seam++)
         printf(" %u",seam_deltas[seam]);
-    putchar('\\n');
+    putchar('\n');
     puts("two synthetic VAB banks: safe SEQ SPU switch, continuous PCM clock PASS");
     return 0;
 }
