@@ -1,0 +1,30 @@
+name: MAP02 DDA span synthetic C11 regression
+on:
+  pull_request:
+    paths:
+      - 'tools/map02_dda_coverage.py'
+      - 'tools/map02_dda_span_join.py'
+      - 'tools/instrument_map02_dda_span.py'
+      - 'tests/test_map02_dda_coverage.py'
+      - 'tests/test_map02_dda_span_join.py'
+      - 'tests/test_instrument_map02_dda_span.py'
+      - 'tests/test_map02_dda_span_c11.py'
+      - '.github/workflows/map02-dda-span.yml'
+  workflow_dispatch:
+jobs:
+  native-span:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run synthetic DDA span tests
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_map02_dda_coverage.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_dda_span_join.py' -v
+          python3 -m unittest discover -s tests -p 'test_instrument_map02_dda_span.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_dda_span_c11.py' -v
