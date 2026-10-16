@@ -294,3 +294,30 @@ def bind_external_screen_corners(faces, screen_samples):
             "gpu_poly_xy": [list(xy[i]) for i in (0, 1, 3, 2)],
         })
     return result
+
+
+def audit_multicell_screen_batch(faces, otz_samples, screen_samples):
+    """Join independently captured OTZ and projected corners by face identity.
+
+    This is a provenance/transport audit, not a reproduction of RTPS, RTPT,
+    NCLIP, AVSZ, ordering-table insertion, clipping or pixel output.
+    """
+    depth = audit_multicell_gte_batch(faces, otz_samples)
+    projected = bind_external_screen_corners(faces, screen_samples)
+    if len(depth["faces"]) != len(projected):
+        raise ValueError("screen/depth batch length mismatch")
+    combined = []
+    for face, corners in zip(depth["faces"], projected):
+        if face["source_key"] != corners["source_key"]:
+            raise ValueError("screen/depth source face mismatch")
+        combined.append({
+            **face,
+            "screen_perimeter_xy": corners["perimeter_xy"],
+            "gpu_poly_xy": corners["gpu_poly_xy"],
+        })
+    return {
+        "face_count": depth["face_count"],
+        "cell_count": depth["cell_count"],
+        "faces": combined,
+        "evidence_scope": "external OTZ and screen XY only; no original GTE execution or rendered frame",
+    }
