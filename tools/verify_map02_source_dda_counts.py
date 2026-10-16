@@ -99,6 +99,10 @@ def verify_source_dda_counts(source_dir, native_dir, *, compiler="gcc"):
     source_ft4_without_dda_samples = 0
     full_zero_clut_dda_consistent = 0
     possible_stp_abr = [0, 0, 0, 0]
+    no_vram_delta = set()
+    nonzero_dda_no_vram_delta = set()
+    opaque_dda_no_vram_delta = 0
+    stp_dda_no_vram_delta = 0
     unmatched_ordinals = set(per_ft4).difference(match_ordinals)
     for ordinal, row in per_ft4.items():
         if ordinal in unmatched_ordinals:
@@ -118,6 +122,12 @@ def verify_source_dda_counts(source_dir, native_dir, *, compiler="gcc"):
                              expected=VRAM_BYTES)
         changed = before != after
         total_samples = sum(values)
+        if not changed:
+            no_vram_delta.add(ordinal)
+            if total_samples:
+                nonzero_dda_no_vram_delta.add(ordinal)
+            opaque_dda_no_vram_delta += values[2] > 0
+            stp_dda_no_vram_delta += values[1] > 0
         if total_samples == 0:
             source_ft4_without_dda_samples += 1
             if changed:
@@ -152,6 +162,33 @@ def verify_source_dda_counts(source_dir, native_dir, *, compiler="gcc"):
         if pixel_report["source_keyed_ft4_draws_checked"] != len(match_ordinals):
             raise ValueError("scoped PutPixel source FT4 count disagrees with DDA join")
 
+    # A full-frame VRAM equality check cannot see a same-color WritePixel
+    # or a pixel written and restored during one primitive. Only direct,
+    # independently verified PutPixel events for the chosen private (X,Y)
+    # may establish those facts; never infer them from DDA counts alone.
+    observed_no_delta_calls = set()
+    observed_no_delta_same_color = set()
+    observed_no_delta_changed_then_restored = set()
+    observed_nonzero_dda_no_delta_same_color = set()
+    if pixel_report is not None:
+        pixel_raw = private_file(native_dir, PIXEL_LOG, max_bytes=16 * 1024)
+        for line in pixel_raw.splitlines():
+            call = parse_json(line, "verified scoped PutPixel event")
+            ordinal = call["primitive_ordinal"]
+            if ordinal not in no_vram_delta:
+                continue
+            observed_no_delta_calls.add(ordinal)
+            if call["before"] == call["after"]:
+                observed_no_delta_same_color.add(ordinal)
+                if ordinal in nonzero_dda_no_vram_delta:
+                    observed_nonzero_dda_no_delta_same_color.add(ordinal)
+            else:
+                # The per-primitive final snapshot is unchanged; a direct
+                # intermediate delta necessarily got restored by a later
+                # observed write at this coordinate (upstream validator
+                # proves the recorded calls are continuous).
+                observed_no_delta_changed_then_restored.add(ordinal)
+
     return {
         "source_dda_join_manifest_sha256": digest(manifest_raw),
         "source_overdraw_manifest_sha256": digest(overdraw_raw),
@@ -170,6 +207,21 @@ def verify_source_dda_counts(source_dir, native_dir, *, compiler="gcc"):
         "source_ft4_draws_with_no_dda_samples": source_ft4_without_dda_samples,
         "source_ft4_draws_with_no_dda_samples_but_vram_changes":
             zero_sample_changed_vram,
+        "source_ft4_draws_without_vram_change": len(no_vram_delta),
+        "source_ft4_nonzero_dda_samples_without_vram_change":
+            len(nonzero_dda_no_vram_delta),
+        "source_ft4_opaque_dda_samples_without_vram_change":
+            opaque_dda_no_vram_delta,
+        "source_ft4_stp_dda_samples_without_vram_change":
+            stp_dda_no_vram_delta,
+        "source_ft4_no_vram_delta_with_observed_putpixel_calls":
+            len(observed_no_delta_calls),
+        "source_ft4_no_vram_delta_with_direct_same_color_putpixel":
+            len(observed_no_delta_same_color),
+        "source_ft4_no_vram_delta_with_direct_transient_putpixel_change":
+            len(observed_no_delta_changed_then_restored),
+        "source_ft4_nonzero_dda_no_vram_delta_with_same_color_putpixel":
+            len(observed_nonzero_dda_no_delta_same_color),
         "source_ft4_all_zero_clut_consistent_with_dda": full_zero_clut_dda_consistent,
         "source_ft4_stp_crop_candidates_by_abr": possible_stp_abr,
         "optional_scoped_putpixel_evidence_verified": pixel_report is not None,
