@@ -154,6 +154,65 @@ class TimelineToNativeFt4JoinTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "vertex"):
             _ft4_provably_outside_drawenv([0, 0, 8, 8, 0, 0], [1, 2])
 
+    def test_all_zero_clut_proves_transparent_ft4_and_rejects_pixel_write(self):
+        # The first source face uses CLUT #31978, index 1 = 0x801f.
+        # Remove its only nonzero entry in BOTH independently SHA-bound
+        # timeline snapshots and correct the observed PC texture probes.
+        for i in range(2):
+            raw = bytearray(self.base.vrams[i])
+            timeline_fixture.fixture.word(raw, 673, 499, 0)
+            self.base.vrams[i] = bytes(raw)
+        for probe in self.base.events[0]["texture"]["probes"]:
+            probe["bgr555"] = 0
+        self.native_vrams = [self.base.vrams[1], self.base.vrams[0]]
+        self.save()
+        result = self.verify()
+        self.assertEqual(
+            result["matched_ft4_draws_zero_delta_full_4bpp_clut_transparent"], 1)
+        self.assertEqual(result["matched_ft4_draws_zero_delta_cause_unknown"], 1)
+        self.assertEqual(result["matched_ft4_draws_proven_no_coverage"], 0)
+
+        # A native FT4 cannot draw any pixel if its entire indexed CLUT
+        # was zero before the primitive; reject contradictory post-snapshots.
+        after = bytearray(self.native_snapshots[3])
+        timeline_fixture.fixture.word(after, 0, 0, 0x001f)
+        self.native_snapshots[3] = bytes(after)
+        self.write_native()
+        with self.assertRaisesRegex(ValueError, "entirely zero 4-bpp CLUT"):
+            self.verify()
+
+    def test_bgr555_bit15_is_not_transparency_and_stp_does_not_explain_zero(self):
+        # Existing source face zero delta has an STP red CLUT entry, but no
+        # automatic classification as blend-cancelled is permissible.
+        for event in self.native_events[2:4]:
+            event["semi"] = 1
+        self.write_native()
+        report = self.verify()
+        self.assertEqual(
+            report["matched_ft4_draws_zero_delta_unknown_with_stp_blend_possible"], 1)
+        self.assertEqual(report["matched_ft4_draws_zero_delta_cause_unknown"], 2)
+        self.assertEqual(
+            report["matched_ft4_draws_zero_delta_full_4bpp_clut_transparent"], 0)
+
+        # 0x8000 is NOT a zero/transparent texel in the pinned PC raster.
+        # Update the same CLUT entry and its independently captured probes.
+        for i in range(2):
+            raw = bytearray(self.base.vrams[i])
+            timeline_fixture.fixture.word(raw, 673, 499, 0x8000)
+            self.base.vrams[i] = bytes(raw)
+        for probe in self.base.events[0]["texture"]["probes"]:
+            probe["bgr555"] = 0x8000
+        self.native_vrams = [self.base.vrams[1], self.base.vrams[0]]
+        self.save()
+        for event in self.native_events[2:4]:
+            event["semi"] = 1
+        self.write_native()
+        report = self.verify()
+        self.assertEqual(
+            report["matched_ft4_draws_zero_delta_full_4bpp_clut_transparent"], 0)
+        self.assertEqual(
+            report["matched_ft4_draws_zero_delta_unknown_with_stp_blend_possible"], 1)
+
     def test_zero_draw_delta_has_separate_proven_clipping_and_unknown_causes(self):
         # Two source-matched native FT4s initially have no pixel delta.
         # With old captures we cannot attribute either zero to clipping.
