@@ -107,12 +107,33 @@ static void test_adjacent_faces_share_projected_edge(void) {
     assert(b.gpu[0].x != a.gpu[1].x);
 }
 
+static void test_sloped_neighbors_share_gte_screen_endpoints(void) {
+    VhMap02ProjectCamera c = camera();
+    const VhMap02ProjectVertex left[4] = {
+        {0,0,512},{100,0,640},{100,100,640},{0,100,512}
+    };
+    const VhMap02ProjectVertex right[4] = {
+        {100,0,640},{200,0,640},{200,100,640},{100,100,640}
+    };
+    VhMap02ProjectFace a = {0}, b = {0};
+    assert(vh_map02_project_face(&c, left, 1024, &a));
+    assert(vh_map02_project_face(&c, right, 1024, &b));
+    assert(a.visible && b.visible);
+    /* Match the two *identical* shared 3D endpoints in GPU corner order. */
+    assert(a.gpu[1].x == b.gpu[0].x && a.gpu[1].y == b.gpu[0].y);
+    assert(a.gpu[3].x == b.gpu[2].x && a.gpu[3].y == b.gpu[2].y);
+    /* OTZ is per face: even with a shared edge, depths can differ. */
+    assert(a.otz != b.otz);
+    assert(a.ot_in_bounds && b.ot_in_bounds);
+}
+
 int main(void) {
     test_screen_quad_and_ordering();
     test_backface_and_zero_area();
     test_perspective_clipping_and_flag_reset();
     test_invalid_input_never_overwrites_output();
     test_adjacent_faces_share_projected_edge();
+    test_sloped_neighbors_share_gte_screen_endpoints();
     puts("MAP02 portable projection, NCLIP, AVSZ4 and OT slot tests passed");
     return 0;
 }
