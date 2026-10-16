@@ -530,6 +530,48 @@ for synthetic data. They do not yet prove actual console audout
 service recovery, hardware output continuity or the sound of
 original Vandal Hearts compositions.
 
+## HOME/sleep audout resume recovery (native Switch owner)
+
+An applet `OnResume` or focus-loss/focus-regain pair can leave
+`audout` in an already stopped, restarted or stale state.
+The Switch audio-owner thread now records a **pending reopen** after
+a new resume serial and stops the old output before attempting
+another music render block. If HOME is still unfocused, the reopen
+remains pending while all SEQ event positions, SPU voice cursors,
+STUDIO_C reverb samples, 44.1-kHz input frames and 48-kHz
+resampling phase stay unchanged.
+
+When focus returns, `vh_audio_output_resume_recover` performs a
+**fresh audout close/open/start** after a resume serial and validates
+48-kHz stereo PCM16 as part of the backend's open operation.
+A plain focus-only restart first tries to start the existing stopped
+session; if that fails, it also attempts a fresh session. Failed
+starts are retried within the two-restart limit, and a terminal
+stop/open/start failure exits through the existing safe audio
+teardown rather than running a busy loop.
+
+This is distinct from an `audoutPlayBuffer` failure: the resume
+path has **no outstanding newly synthesized PCM block**, so it
+never replays an old output buffer, modifies a scene, or advances
+the musical clock merely to restart the device. Only the normal
+producer turn *after* a successful audout start creates the
+next SEQ→SPU→PCM block. Resuming from an ongoing fade continues
+its current position rather than reinitializing it.
+
+The portable `tests/test_vh_audio_output_recovery.c` injects
+focus-only start failures, forced HOME reopens, transient failures
+on the first fresh session, persistent failures, and unsafe stop/open
+errors. The 96-block deterministic clean-versus-faulty comparison
+now includes **four paired HOME pauses/reopens**, of which two
+inject an initial start failure. During the pauses the test
+rechecks unchanged SEQ, SPU, 44.1-kHz and 48-kHz PCM positions,
+and after recovery it checks the exact accepted PCM fingerprint
+and note/scene state against the failure-free producer.
+
+This is a host-simulated audout service contract and devkitPro
+compile gate. Real Switch HOME/sleep transitions, queued hardware
+pages, and audible glitch behavior still require physical testing.
+
 ## SPU ADSR and sample cursor (host-only)
 
 The next isolated component is `tools/simulate_spu_voice.py`, which
