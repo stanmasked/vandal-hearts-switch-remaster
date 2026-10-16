@@ -3,6 +3,8 @@
 No game frames, textures, pixel data or hardware assertions are produced.
 """
 import os
+import json
+import stat
 import shutil
 import subprocess
 import tempfile
@@ -92,6 +94,8 @@ class DrawOTagScopeTests(unittest.TestCase):
         self.assertIn("(unsigned)PC_GPU_PRIM_TYPE((P_TAG *)cur)", patched)
         self.assertIn("vh_map02_scope_end_primitive()", patched)
         self.assertIn("vh_map02_scope_end_frame()", patched)
+        self.assertIn("#ifdef VH_MAP02_POSIX_STAGE", patched)
+        self.assertIn("vh_map02_stage_private_blendg1(private_dir)", patched)
         self.assertEqual(patched.count("if (vh_scope_active) vh_map02_scope_abort();"), 2)
         self.assertIn("vh_scope_ordinal++", patched)
 
@@ -116,6 +120,7 @@ class DrawOTagScopeTests(unittest.TestCase):
                 ("original", source, False),
                 ("patched-off", instrumented, False),
                 ("patched-on", instrumented, True),
+                ("patched-stage", instrumented, True),
             ):
                 with self.subTest(name=name):
                     path = root / (name + ".c")
@@ -125,7 +130,9 @@ class DrawOTagScopeTests(unittest.TestCase):
                         "cc", "-std=c99", "-Wall", "-Wextra", "-Werror",
                         "-I", str(ROOT / "tools"),
                         * (["-DVH_MAP02_SCOPED_BLEND_PROBE"] if enabled else []),
+                        * (["-DVH_MAP02_POSIX_STAGE"] if name == "patched-stage" else []),
                         str(path), str(ROOT / "tools/map02_scoped_blend_sink.c"),
+                        * ([str(ROOT / "tools/map02_scoped_blend_stage.c")] if name == "patched-stage" else []),
                         "-o", str(binary),
                     ], check=True, capture_output=True, text=True)
                     env = os.environ.copy()
@@ -133,8 +140,18 @@ class DrawOTagScopeTests(unittest.TestCase):
                         env.update(VH_MAP02_PROBE_FRAME="1",
                                    VH_MAP02_PROBE_X="4",
                                    VH_MAP02_PROBE_Y="3")
+                    if name == "patched-stage":
+                        private_dir = root / "private-stage"
+                        private_dir.mkdir(mode=0o700)
+                        env["VH_MAP02_PROBE_OUTPUT_DIR"] = str(private_dir)
                     subprocess.run([str(binary)], env=env, check=True,
                                    capture_output=True, text=True)
+                    if name == "patched-stage":
+                        staged = private_dir / "blendg1-native-events.pending.jsonl"
+                        self.assertEqual(stat.S_IMODE(staged.stat().st_mode), 0o600)
+                        rows = [json.loads(line) for line in staged.read_text().splitlines()]
+                        self.assertEqual([r["primitive_ordinal"] for r in rows], [0, 1])
+                        self.assertFalse(list(private_dir.glob(".*.tmp")))
                     if enabled:
                         env["VH_MAP02_TEST_ABORT"] = "1"
                         subprocess.run([str(binary)], env=env, check=True,
