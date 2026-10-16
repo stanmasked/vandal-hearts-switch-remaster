@@ -181,3 +181,73 @@ correct audible transitions, or absence of crackling on resume.
 The main tactical prototype still plays two **synthetic** cues.
 Loading separate user-owned music banks for gameplay scenes is
 not part of this change.
+
+## Two preloaded user-provided music banks (stage 178)
+
+The tactical NRO can now optionally preload **two independent**
+user-owned pQES/VH/VB music sets before starting libnx `audout`.
+The required SD folder structure is:
+
+```text
+sdmc:/switch/vandal-hearts-remake/audio/
+  field/
+    music.seq
+    music.vh
+    music.vb
+  selected/
+    music.seq
+    music.vh
+    music.vb
+```
+
+The portable `source/vh_game_music_banks.h/.c` manager loads the
+`field` and `selected` triplets using the already validated
+read-only `vh_audio_assets_load()`. **Both** must validate before
+a music pack can become active. The two sets have independent,
+persistent decoded PCM arenas and separate `VhNativeVab`
+metadata; the SEQ resolver associated with each `VhMusicCue`
+uses that cue's own bank. During an eight-block fade from one
+scene to another, both banks remain valid and the old SPU sample
+pointers are not freed until the entire audio worker exits.
+All disk I/O, ADPCM decoding and bank validation happen on the
+**audio worker before the audout service starts**, never in the
+main game frame loop or inside the stream render loop.
+
+**Failure policy:**
+
+- Both complete sets absent → use two existing synthetic diagnostic
+  cues (this is the only automatic fallback).
+- Either set incomplete, corrupt, oversized or unreadable → report
+  an audio error; no automatic synthetic substitution and no partially
+  loaded user pack. The tactical framebuffer remains operational.
+- Individual compressed VB files are bounded by the existing 8 MiB
+  file limit, with an additional **12 MiB combined** compressed-VB
+  budget for the pair. Its conservative worst-case decoded PCM
+  staging can approach 42 MiB (plus the original VB/SEQ/VH
+  bytes and runtime structures). Insufficient memory fails cleanly.
+
+The scene mapping is unchanged: ordinary tactical cursor navigation
+requests `field`, while choosing the hero requests `selected`.
+Exiting selection or completing a move returns to `field`.
+The main/game thread publishes only a small atomic scene ID. It
+never holds a bank pointer, decodes a VAG or calls an audio service.
+
+The synthetic regression `tests/test_vh_game_music_banks.c`
+creates an isolated temporary directory with two distinct
+manufactured banks. It checks the all-or-nothing loading policy,
+independent decoded PCM addresses and sample contents, preservation
+of old memory during a fade, resolution of the new bank's voice,
+zero overwrite of a live pack, missing and corrupt second bank,
+and proper cleanup. It runs in host CI under strict C11/UBSan
+and as part of `make test-audio-stream`.
+The dedicated devkitA64 GitHub workflow links the updated **main
+tactical** NRO with this scene-bank manager.
+
+**Not yet established:** on-console SD mount and file I/O, available
+RAM for a full-size pair, audible scene transitions with original
+game banks, or handling of all real-game program mappings. The
+file payloads and music are user-supplied; they are never embedded
+in the NRO or committed to GitHub. The standalone libnx audio-only
+diagnostic still has its older *single* `music.seq/.vh/.vb` path
+and is independent of this two-bank tactical interface.
+
