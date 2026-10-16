@@ -855,9 +855,14 @@ files. Existing outputs cannot be silently overwritten.
 ## Re-entering map 11 during one capture
 
 The capture and offline evidence verifier now split **repeated map-11 loads**
-into distinct episodes when another `post_load` for an already loaded
-target appears **after renderer activity**. Each episode is checked by the
-original strict `visit` / `draw` / `skip` validator independently.
+into distinct episodes when any new `post_load` for a target face appears
+**after renderer activity**, even if that face was missing from the previous
+load. The pinned PC-port loader emits the two target-face load observations
+together before the renderer begins. This conservative rule prevents
+**complementary incomplete loads** (only face A in one load, only face B in
+the next) from being incorrectly combined into a complete PRS/DAT verdict.
+Each episode is checked by the original strict `visit` / `draw` / `skip`
+validator independently.
 This permits a player to leave map 11 and return in the same PC-port session
 without treating the second legitimate load as a duplicate of the first.
 
@@ -882,7 +887,10 @@ or contradictory, a good first episode cannot conceal the failure.
 
 A repeated loader record **before any renderer evidence** remains an
 ambiguous duplicate, rather than being silently interpreted as a second
-valid load. Malformed coordinate objects in captured JSON are handed to
+valid load. If the first load lacks one of the bridge faces, or a new
+post-load event arrives while an earlier full-trace `visit` has no matching
+`draw`/`skip`, those failures remain attached to their original episode,
+not suppressed by events from a later map load. Malformed coordinate objects in captured JSON are handed to
 the validator as invalid records; they cannot crash episode splitting
 before a partial evidence report is written. The standalone
 `tools.verify_map02_trace` command now shares the same episode logic
