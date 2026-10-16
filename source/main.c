@@ -6,6 +6,7 @@
 #include "game_renderer.h"
 #include "platform_input.h"
 #include "software_renderer.h"
+#include "vh_switch_game_audio.h"
 
 #define FB_WIDTH 1280
 #define FB_HEIGHT 720
@@ -89,7 +90,8 @@ static void draw_text(u32 *pixels, u32 stride, int x, int y,
 
 static void draw_frame(u32 *pixels, u32 stride, int cursor_x, int cursor_y,
                        int hero_x, int hero_y, int enemy_x, int enemy_y,
-                       int hero_selected, u32 frame_tick) {
+                       int hero_selected, u32 frame_tick,
+                       int audio_status) {
     fill_rect(pixels, stride, 0, 0, FB_WIDTH, FB_HEIGHT, COLOR_BG);
 
     /* Compact bitmap labels keep the prototype self-contained and asset-free. */
@@ -148,6 +150,11 @@ static void draw_frame(u32 *pixels, u32 stride, int cursor_x, int cursor_y,
     fill_rect(pixels, stride, 1000, 600, 96, 8, COLOR_GRID);
     fill_rect(pixels, stride, 1000, 600, 8 + (int)(frame_tick % 89), 8, COLOR_HERO);
     draw_text(pixels, stride, 1000, 612, "FRAME", COLOR_MUTED, 1);
+    draw_text(pixels, stride, 1000, 633,
+              audio_status < 0 ? "AUDIO ERROR" :
+              audio_status == 0 ? "AUDIO START" :
+              hero_selected ? "MUSIC FOCUS" : "MUSIC FIELD",
+              audio_status < 0 ? COLOR_ENEMY : COLOR_MUTED, 1);
 
     /* Small status indicator changes color while the unit is selected. */
     fill_rect(pixels, stride, FB_WIDTH - 116, 42, 44, 44,
@@ -174,6 +181,12 @@ int main(int argc, char **argv) {
     }
 
     VhGameState state = {1, 2, 1, 2, 6, 3, 0};
+    /* Music is rendered by a dedicated audout thread; startup failure
+     * must not prevent the tactical prototype from remaining playable.
+     * No audout blocking occurs in this input/framebuffer loop.
+     */
+    const int audio_started = vh_switch_game_audio_start(
+        vh_game_music_for_state(&state)) == 0;
     u32 frame_tick = 0;
 
     while (appletMainLoop()) {
@@ -189,8 +202,12 @@ int main(int argc, char **argv) {
         if (buttons_down & HidNpadButton_B)     actions |= VH_INPUT_CANCEL;
         if (buttons_down & HidNpadButton_Plus)  actions |= VH_INPUT_QUIT;
 
+        const unsigned previous_music = vh_game_music_for_state(&state);
         if (vh_process_input(&state, actions, GRID_WIDTH, GRID_HEIGHT, MOVE_RANGE))
             break;
+        const unsigned next_music = vh_game_music_for_state(&state);
+        if (audio_started && previous_music != next_music)
+            vh_switch_game_audio_post(next_music);
 
         u32 stride_bytes = 0;
         u32 *pixels = (u32 *)framebufferBegin(&fb, &stride_bytes);
@@ -198,11 +215,16 @@ int main(int argc, char **argv) {
             const u32 stride_pixels = stride_bytes / sizeof(u32);
             draw_frame(pixels, stride_pixels, state.cursor_x, state.cursor_y,
                        state.hero_x, state.hero_y, state.enemy_x, state.enemy_y,
-                       state.hero_selected, frame_tick++);
+                       state.hero_selected, frame_tick++,
+                       audio_started ? vh_switch_game_audio_status() : -1);
         }
         framebufferEnd(&fb);
     }
 
+    /* Wait for the audio producer only once during shutdown, never
+     * during a gameplay/framebuffer frame.
+     */
+    if (audio_started) vh_switch_game_audio_stop();
     framebufferClose(&fb);
     return 0;
 }
