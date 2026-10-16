@@ -24,6 +24,8 @@ def compare_blendg1_witnesses(putpixel_rows, witness_rows):
     if not isinstance(putpixel_rows, list) or not isinstance(witness_rows, list):
         raise ValueError("witness streams must be lists")
     requested = [p for p in putpixel_rows if p.get("semi") == 1]
+    if not requested:
+        raise ValueError("no directly witnessed semi-transparent BlendG1 call")
     if len(requested) != len(witness_rows):
         raise ValueError("BlendG1 witnesses missing or unexpected")
     counts = [[0] * 4 for _ in range(2)]
