@@ -371,6 +371,24 @@ int main(int argc, char **argv) {
                boundary->peak_page_ticks,tick_frequency),
            (unsigned long long)normal->retried_pages,
            (unsigned long long)boundary->retried_pages);
+    /* Exclusive, frame-duration-normalized wait bands preserve the
+     * shape of the latency distribution without storing raw timing,
+     * filenames, event bytes or any copyrighted PCM samples.
+     * Boundary pages are shown separately from steady-state pages.
+     */
+    printf("Wait bands [<=1x, <=2x, <=4x, >4x] nominal PCM page:\n");
+    printf("Steady: %llu %llu %llu %llu (pages=%llu)\n",
+           (unsigned long long)normal->wait_le_page,
+           (unsigned long long)normal->wait_le_2pages,
+           (unsigned long long)normal->wait_le_4pages,
+           (unsigned long long)normal->wait_gt_4pages,
+           (unsigned long long)normal->pages);
+    printf("Switch: %llu %llu %llu %llu (pages=%llu)\n",
+           (unsigned long long)boundary->wait_le_page,
+           (unsigned long long)boundary->wait_le_2pages,
+           (unsigned long long)boundary->wait_le_4pages,
+           (unsigned long long)boundary->wait_gt_4pages,
+           (unsigned long long)boundary->pages);
     printf("Audio probe ended, result=%d\n",result);
     printf("Press + to close this results screen.\n");
     consoleUpdate(NULL);
