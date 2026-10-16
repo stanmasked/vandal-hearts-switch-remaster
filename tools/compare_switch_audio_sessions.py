@@ -75,6 +75,9 @@ def group(paths: list[Path]) -> dict:
             quality_issues.append(f"fewer than {MIN_PAGES_PER_SESSION} observed PCM pages")
         if report["time_rollbacks"]:
             quality_issues.append("clock rollback")
+        if report["historical_gaps"]:
+            quality_issues.append(
+                "historical GAP: missing incident timing in evicted rows")
         if report["counter_rollbacks"]:
             quality_issues.append("counter rollback")
         if rows[-1]["event"] != "EXIT":
@@ -115,6 +118,10 @@ def group(paths: list[Path]) -> dict:
         },
         "truncated_windows": sum(not x["window_begins_at_session_start"]
                                  for x in sessions),
+        "historical_gaps": sum(
+            bool(audio.summarize(audio.load_csv(Path(x["file"])))["historical_gaps"])
+            for x in sessions
+        ),
     }
 
 
@@ -132,6 +139,8 @@ def compare(baseline: dict, candidate: dict) -> dict:
         reasons.append("At least one cohort has insufficient or inconsistent retained data.")
     if baseline["truncated_windows"] or candidate["truncated_windows"]:
         warnings.append("Some sessions retain only the end of gameplay; historical events are unavailable.")
+    if baseline["historical_gaps"] or candidate["historical_gaps"]:
+        warnings.append("Historical GAP contains aggregated faults with unknown timing; comparison is inconclusive.")
     if cc["home_resumes"] < MIN_HOME_EVENTS_PER_GROUP or bc["home_resumes"] < MIN_HOME_EVENTS_PER_GROUP:
         warnings.append("Insufficient observed HOME events for comparative HOME failure rates.")
     elif valid and (
