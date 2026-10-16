@@ -945,11 +945,18 @@ Use `--layout iso-2048` only for a true 2048-byte-sector ISO. An
 alternative `--sector-bias` must be grounded in an independently verified
 disc layout, not guessed.
 
-The selected disc is streamed to a fixed-name private temporary file,
-limited to 1 GiB and checked against its declared uncompressed size.
-The file is deleted automatically. The auditor reads only the required
-Map02 sectors, checks raw Mode2 Form1 sector EDC, decompresses PRS within
-a bounded buffer and compares the two bridge-face GFX bytes with DAT.
+The selected disc member is **decompressed in one sequential stream**,
+with a maximum declared/actual size of 1 GiB. Unlike the initial version,
+the auditor **never writes an entire disc image**. It retains only two
+fixed-name, short sector windows in a private temporary directory: 12
+sectors for PRS and 117 sectors for DAT (a total of 303,408 bytes for
+2352-byte raw images or 264,192 bytes for 2048-byte ISO images).
+With `--without-dat`, only the 12 PRS sectors are retained. The raw
+windows are deleted automatically after the audit.
+
+The normal sector checker still validates Mode2 Form1 EDC, the bounded
+PRS decompressor still verifies the full map buffer, and the comparison
+still covers the two bridge-face GFX bytes.
 The JSON output contains metadata, hashes and the face indices—not
 copyrighted sector contents or texture bytes. No resource is uploaded
 or committed, and the original archive is not changed.
