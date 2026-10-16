@@ -690,10 +690,13 @@ jobs:
           PY
           PYTHONPATH=remaster python3 - <<'PY'
           from pathlib import Path
-          from tools.instrument_map02_dda_span import instrument_span
-          path = Path("/tmp/vh-map02-vertical-dda/pc_raster.vertical.c")
-          path.with_name("pc_raster.span.c").write_text(
-              instrument_span(path.read_text(encoding="utf-8")), encoding="utf-8")
+          from tools.instrument_map02_dda_span import prepare_span
+          report = prepare_span(
+              Path("upstream/platform/pc/src/libgpu.c"),
+              Path("upstream/platform/pc/src/pc_raster.c"),
+              Path("/tmp/vh-map02-native-span-overlay"))
+          assert report["pinned_original_gpu"]
+          assert not report["vertical_rejected_row_coverage_proven"]
           PY
           (
             cd upstream/platform/pc
@@ -724,7 +727,7 @@ jobs:
                 span_extra=(-DVH_MAP02_DDA_SPAN_TRACE)
               fi
               gcc "${flags[@]}" "${extra[@]}" "${span_extra[@]}" \
-                -c /tmp/vh-map02-vertical-dda/pc_raster.span.c \
+                -c /tmp/vh-map02-native-span-overlay/pc_raster.span.c \
                 -o "build/map02-vertical-dda/span.${mode}.o"
               ld -r "build/map02-vertical-dda/gpu.${mode}.o" \
                 "build/map02-vertical-dda/raster.${mode}.o" \
