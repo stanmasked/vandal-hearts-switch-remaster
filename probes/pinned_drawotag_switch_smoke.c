@@ -389,10 +389,13 @@ static int draw_private_map_preview(void) {
             poly->y0 = (short)((unsigned)projected[0] >> 16);
             poly->x1 = (short)(projected[1] & 0xffff);
             poly->y1 = (short)((unsigned)projected[1] >> 16);
-            poly->x2 = (short)(projected[2] & 0xffff);
-            poly->y2 = (short)((unsigned)projected[2] >> 16);
-            poly->x3 = (short)(projected[3] & 0xffff);
-            poly->y3 = (short)((unsigned)projected[3] >> 16);
+            /* Matches src/core/graphics.c::RenderMapTile exactly:
+             * 3 RTPT results go to POLY vertices 0,1,3;
+             * the fourth RTPS result goes to POLY vertex 2. */
+            poly->x3 = (short)(projected[2] & 0xffff);
+            poly->y3 = (short)((unsigned)projected[2] >> 16);
+            poly->x2 = (short)(projected[3] & 0xffff);
+            poly->y2 = (short)((unsigned)projected[3] >> 16);
             setUVWH(poly, uv[0], uv[1], uv[2], uv[3]);
             setRGB0(poly, 128, 128, 128);
             setTPage(poly, 0, 0, 320, 0);
