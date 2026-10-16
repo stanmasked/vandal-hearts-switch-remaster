@@ -215,11 +215,97 @@ static void test_pending_corruption_fails_closed(void) {
     assert(vh_music_scene_request(&scene,&first,0)==-1);
 }
 
+static void assert_scene_fully_detached(void) {
+    assert(scene.stage==VH_MUSIC_SILENT);
+    assert(scene.active.id==0u && scene.pending.id==0u);
+    assert(scene.active.seq==NULL && scene.pending.seq==NULL);
+    assert(scene.active.context==NULL && scene.pending.context==NULL);
+    assert(scene.seq.bytes==NULL && scene.seq.context==NULL);
+    assert(scene.seq.resolver==NULL && !scene.seq.playing);
+    assert(scene.fade_blocks==0u && scene.fade_position==0u);
+    assert(scene.next_fade_in==0u && !scene.last_error);
+    for(unsigned i=0;i<VH_NATIVE_MUSIC_VOICES;i++) {
+        assert(spu.voice[i].pcm==NULL);
+        assert(!spu.voice[i].active);
+    }
+    for(unsigned i=0;i<VH_REV_SAMPLES;i++)
+        assert(spu.reverb.work[i]==0);
+    assert(spu.interpolation==VH_SPU_GAUSSIAN);
+    assert(spu.reverb_enabled==1 && spu.reverb_depth==0.5f);
+}
+
+static void test_forced_bank_detach_in_all_fade_stages(void) {
+    setup();
+    VhMusicCue first=cue_a(),second=cue_b();
+    assert(vh_music_scene_detach(NULL)==-1);
+    VhMusicScene invalid={0};
+    assert(vh_music_scene_detach(&invalid)==-1);
+    assert(vh_music_scene_detach(&scene)==0);
+    const uint32_t initial_switches=scene.switches;
+    assert(vh_music_scene_detach(&scene)==0);
+    assert(scene.switches==initial_switches);
+    for(unsigned stage=0;stage<4u;++stage) {
+        assert(vh_music_scene_request(&scene,&first,0)==0);
+        assert(vh_music_scene_render(&scene,out)==0);
+        assert(has_signal(out));
+        if(stage==0u) {
+            assert(scene.stage==VH_MUSIC_PLAYING);
+        } else {
+            assert(vh_music_scene_request(&scene,&second,2)==0);
+            if(stage>=2u) {
+                assert(vh_music_scene_render(&scene,out)==0);
+                assert(vh_music_scene_render(&scene,out)==0);
+                assert(scene.stage==VH_MUSIC_SWITCH_PENDING);
+            }
+            if(stage==3u) {
+                assert(vh_music_scene_render(&scene,out)==0);
+                assert(scene.stage==VH_MUSIC_FADE_IN);
+            }
+            if(stage==1u) assert(scene.stage==VH_MUSIC_FADE_OUT);
+        }
+        assert(vh_music_scene_request(&scene,NULL,0)==
+               (stage==0u ? 0 : -2));
+        if(stage==0u) {
+            /* Recreate an active owner to test the detach path. */
+            assert(vh_music_scene_request(&scene,&first,0)==0);
+            assert(vh_music_scene_render(&scene,out)==0);
+        }
+        const uint64_t blocks=scene.blocks_rendered;
+        const uint32_t switches=scene.switches;
+        assert(vh_music_scene_detach(&scene)==0);
+        assert(scene.blocks_rendered==blocks);
+        assert(scene.switches==switches+1u);
+        assert_scene_fully_detached();
+
+        /* Source memory is now logically invalid; clearing it must
+         * never contaminate subsequent silence or the next cue. */
+        memset(pcm_a,0xa5,sizeof pcm_a);
+        memset(pcm_b,0x5a,sizeof pcm_b);
+        memset(out,0x7f,sizeof out);
+        assert(vh_music_scene_render(&scene,out)==0);
+        assert(!has_signal(out));
+        assert(vh_music_scene_detach(&scene)==0);
+        assert(scene.switches==switches+1u);
+        /* Restore the synthetic source before starting another pass. */
+        for(unsigned i=0;i<128u;i++) {
+            pcm_a[i]=(int16_t)(11000+(int)i*17);
+            pcm_b[i]=(int16_t)(-10000-(int)i*13);
+        }
+    }
+    assert(vh_music_scene_request(&scene,&second,0)==0);
+    assert(vh_music_scene_render(&scene,out)==0);
+    assert(scene.active.id==202u && synth.voice[0].pcm==pcm_b);
+    assert(has_signal(out));
+    assert(vh_music_scene_detach(&scene)==0);
+    assert_scene_fully_detached();
+}
+
 int main(void) {
     test_validation_and_zero_fade_restart();
     test_two_block_fade_and_silence();
     test_fade_ramp_matches_unscaled_audio();
     test_pending_corruption_fails_closed();
+    test_forced_bank_detach_in_all_fade_stages();
     puts("game scene music cues: fade / switch / silence / validation PASS");
     return 0;
 }
