@@ -31,6 +31,7 @@ class SeqTone(ctypes.Structure):
         ("pitch_step", ctypes.c_uint32),
         ("adsr1", ctypes.c_uint16),
         ("adsr2", ctypes.c_uint16),
+        ("reverb_send", ctypes.c_uint),
         ("gain_left", ctypes.c_float),
         ("gain_right", ctypes.c_float),
     ]
