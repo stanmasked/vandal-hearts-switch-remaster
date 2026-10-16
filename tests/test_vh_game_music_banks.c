@@ -111,6 +111,14 @@ int main(void) {
            pack->selected.bank.samples[1].pcm[0]);
     assert(pack->field.vb_size+pack->selected.vb_size <=
            VH_GAME_MUSIC_MAX_TOTAL_VB_BYTES);
+    assert(pack->field_audit.note_events==1u);
+    assert(pack->selected_audit.note_events==1u);
+    assert(pack->field_audit.resolved_notes==1u);
+    assert(pack->selected_audit.resolved_notes==1u);
+    assert(!pack->field_audit.has_missing &&
+           !pack->selected_audit.has_missing);
+    assert(pack->field_fallback_notes==0u &&
+           pack->selected_fallback_notes==0u);
 
     VhMusicCue a={0},b={0};
     assert(vh_game_music_banks_cue(pack,VH_GAME_MUSIC_FIELD,&a)==0);
@@ -160,6 +168,21 @@ int main(void) {
     remove_file("selected","music.seq");
     assert(vh_game_music_banks_load(&pack,root)==VH_AUDIO_ASSET_ERROR);
     assert(pack==NULL);
+    file("selected","music.seq",music_selected,sizeof music_selected);
+    /* A structurally valid song asking for a different program remains
+     * playable through the documented global VH fallback, but the
+     * preload compatibility report must flag the different timbre.
+     */
+    uint8_t mismatch[sizeof music_selected];
+    memcpy(mismatch,music_selected,sizeof mismatch);
+    mismatch[17]=9; /* original program-change payload was #7 */
+    file("selected","music.seq",mismatch,sizeof mismatch);
+    assert(vh_game_music_banks_load(&pack,root)==VH_AUDIO_ASSET_OK);
+    assert(pack->selected_audit.note_events==1u);
+    assert(pack->selected_audit.resolved_notes==1u);
+    assert(pack->selected_fallback_notes==1u);
+    assert(pack->field_fallback_notes==0u);
+    vh_game_music_banks_close(&pack);
     file("selected","music.seq",music_selected,sizeof music_selected);
     cleanup_scene("field");
     cleanup_scene("selected");
