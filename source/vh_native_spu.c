@@ -107,6 +107,16 @@ void vh_native_spu_reset(VhNativeSpu *spu) {
     if (spu) memset(spu, 0, sizeof(*spu));
 }
 
+void vh_native_spu_clear_voices_keep_reverb(VhNativeSpu *spu) {
+    if (!spu) return;
+    /* Preserve the FIR/delay work area and wet settings without copying
+     * the large reverb buffer onto the Switch thread stack.
+     */
+    memset(spu->voice, 0, sizeof(spu->voice));
+    spu->steal_index = 0;
+    spu->frames_rendered = 0;
+}
+
 int vh_native_spu_set_interpolation(VhNativeSpu *spu, unsigned mode) {
     if (!spu || (mode != VH_SPU_NEAREST && mode != VH_SPU_GAUSSIAN))
         return -1;
