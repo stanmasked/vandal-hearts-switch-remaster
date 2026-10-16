@@ -5,10 +5,11 @@ from PIL import Image
 from check_native_av_screenshot import inspect_images, HERO, AUDIO_OK, AUDIO_FAIL
 
 
-def make_frames(audio=AUDIO_OK, advance=True):
+def make_frames(audio=AUDIO_OK, advance=True, source=(83, 100, 119)):
     before = Image.new("RGB", (1280, 720), (17, 23, 39))
     before.putpixel((452, 296), HERO)
     before.putpixel((1050, 160), audio)
+    before.putpixel((1050, 218), source)
     after = before.copy()
     if advance:
         for x in range(105, 148):
@@ -23,9 +24,36 @@ class NativeAVScreenshotTests(unittest.TestCase):
         result = inspect_images(first, second)
         self.assertEqual(result["video_framebuffer"], "observed")
         self.assertEqual(result["audout_status"], "initialized")
+        self.assertEqual(result["audio_source"], "synthetic")
+        self.assertFalse(result["user_music_identity_verified"])
         self.assertGreater(result["heartbeat_changed_pixels"], 16)
         self.assertFalse(result["audible_audio_verified"])
         self.assertFalse(result["actual_gameplay_verified"])
+
+    def test_user_source_is_separate_from_audout_initialization(self):
+        first, second = make_frames(source=AUDIO_OK)
+        report = inspect_images(first, second)
+        self.assertEqual(report["audio_source"], "user_files")
+        self.assertEqual(report["audout_status"], "initialized")
+        self.assertFalse(report["user_music_identity_verified"])
+        self.assertFalse(report["audible_audio_verified"])
+
+    def test_invalid_or_partial_source_is_not_synthetic(self):
+        first, second = make_frames(audio=AUDIO_FAIL, source=AUDIO_FAIL)
+        report = inspect_images(first, second)
+        self.assertEqual(report["audio_source"], "invalid_or_partial")
+        self.assertEqual(report["audout_status"], "unavailable_or_error")
+
+    def test_unavailable_sd_mount_is_explicit(self):
+        first, second = make_frames(audio=AUDIO_FAIL, source=(255, 219, 102))
+        report = inspect_images(first, second)
+        self.assertEqual(report["audio_source"], "sd_unavailable")
+        self.assertFalse(report["audible_audio_verified"])
+
+    def test_unknown_source_marker_fails_closed(self):
+        first, second = make_frames(source=(20, 30, 40))
+        with self.assertRaisesRegex(ValueError, "audio-source status marker absent"):
+            inspect_images(first, second)
 
     def test_emulator_transformed_green_audio_status_is_still_classified(self):
         first, second = make_frames((60, 212, 91))
