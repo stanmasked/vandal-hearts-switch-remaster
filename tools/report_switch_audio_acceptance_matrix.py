@@ -86,7 +86,9 @@ def build_matrix(root: Path, observations: dict, *,
         row["operator_music_audible"] != "YES" or
         row["operator_artifacts"] != "NONE" or
         row["operator_normal_exit"] != "YES"
-        for row in session_rows)
+        for row in session_rows) or any(
+            row["launch_mode"] == "UNKNOWN" or row["audio_output"] == "UNKNOWN"
+            for row in observations["sessions"])
     h01_data = {
         "session_count": len(session_rows),
         "two_distinct_csv_sufficient": coverage["H01_two_different_csv_1000_pages_each"],
@@ -117,7 +119,7 @@ def build_matrix(root: Path, observations: dict, *,
             "Resume counter or operator-reported sound/exit problem needs cycle-level investigation.",
             {"operator_home_returns": home_total})
     elif home_total < 10 or "UNEXPLAINED_HOME_COUNTER" in codes or \
-            any(row["operator_physical_switch"] != "YES" for row in session_rows):
+            incomplete_operator:
         add("H02", INCOMPLETE,
             "Ten observed HOME returns not consistently documented; CSV counters are not physical HOME events.",
             {"operator_home_returns": home_total})
@@ -131,8 +133,7 @@ def build_matrix(root: Path, observations: dict, *,
         add("H03", INVESTIGATE,
             "Audio/exit or resume fault observed; isolate whether sleep or HOME caused it.",
             {"operator_sleep_cycles": sleep_total, "csv_sleep_cycles": "NOT_OBSERVABLE"})
-    elif sleep_total < 5 or any(
-            row["operator_physical_switch"] != "YES" for row in session_rows):
+    elif sleep_total < 5 or incomplete_operator:
         add("H03", INCOMPLETE,
             "Five physical sleep cycles not documented; HOME resumes do not identify sleep.",
             {"operator_sleep_cycles": sleep_total, "csv_sleep_cycles": "NOT_OBSERVABLE"})
@@ -146,8 +147,7 @@ def build_matrix(root: Path, observations: dict, *,
         add("H04", INVESTIGATE,
             "A session has reported audio failure or observed PCM problem; long-run stability not demonstrated.",
             {"operator_longest_minutes": minutes})
-    elif minutes < 30 or any(
-            row["operator_physical_switch"] != "YES" for row in session_rows):
+    elif minutes < 30 or incomplete_operator:
         add("H04", INCOMPLETE,
             "Need a documented >=30 minute continuous physical listening session.",
             {"operator_longest_minutes": minutes})
