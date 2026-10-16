@@ -752,3 +752,75 @@ were genuinely captured in retail gameplay. No original game assets
 are published; no live Switch gameplay renderer is connected here.
 It performs a strict *consistency check plus diagnostic rendering*,
 not a screenshot comparison or PS1 GPU hardware validation.
+
+
+## Raw 1024×512 PS1 VRAM → genuine 4bpp tpage/CLUT/texture-window addressing
+
+`source/map02_vram4_page.h` is the new **source-format texture bridge**
+between a *caller-owned* original PC/PS1 GPU VRAM snapshot and the
+previously tested source-keyed FT4 compositor. The entire input is
+`1024×512×2 = 1048576` little-endian bytes of BGR555/STP halfwords.
+The caller must independently supply the `tpage`, `clut` and GP0
+texture-window register values **observed for that specific polygon**.
+The adapter never guesses these values from material numbers or UVs.
+
+For each local texel coordinate `u,v` in 0–255, the converter
+recomputes PS1 texture-window addressing:
+
+```text
+u' = (u & ~(mask_x * 8)) | ((offset_x & mask_x) * 8)
+v' = (v & ~(mask_y * 8)) | ((offset_y & mask_y) * 8)
+word_x = (tpage & 15) * 64 + (u' / 4)
+word_y = ((tpage >> 4) & 1) * 256 + v'
+index = (vram[word_y][word_x] >> ((u' & 3) * 4)) & 15
+clut_x = (clut & 63) * 16
+clut_y = (clut >> 6) & 511
+color_word = vram[clut_y][clut_x + index]
+```
+
+A successful call materializes a **full 256×256 packed 4-bit atlas**
+(32768 bytes, 128-byte stride), plus the **16 exact BGR555 palette
+entries** (32 bytes), suitable for
+`vh_map02_ot_scene_add / vh_map02_ot_scene_draw`. It preserves index
+zero, the CLUT raw transparency word and bit-15 STP; classification and
+blending remain explicit policies of the existing CPU FT4 rasterizer.
+The texture window is baked into the atlas, so FT4 UV coordinates
+retain their unchanged original meaning.
+
+Only 4-bpp tpages are accepted; 8-bpp and direct 15-bpp modes are
+**explicitly rejected**, never misdecoded as 4-bpp. Malformed register
+values, incomplete VRAM, undersized atlas and palette buffers fail
+**without modifying any output**. Input/output memory must be
+non-aliasing and owned by the caller.
+
+The synthetic integration regression
+`tests/test_map02_vram4_page.c` proves the complete chain:
+
+**raw VRAM halfwords → texture window → 4-bit index → VRAM CLUT →
+source-identity-checked MAP02 external GTE face → original OT bucket →
+classified RGBA32 FT4 pixels**, with transparent index 0, opaque
+palette entries and callback-mediated STP. It independently exercises
+GP0 window mask/offset on both UV axes, unusual index positions,
+storage guards and unsupported texture modes. Tests run in
+`make test`, `make test-sanitize` and the MAP02 pinned-source CI.
+
+To avoid accidentally matching a convenient approximation,
+`tools/verify_map02_pc_vram4_equivalence.py` extracts the **original
+public PC-port** `TPageOrigin` and `SampleTexture` functions from the
+exact pinned `platform/pc/src/pc_raster.c` Git blob
+`ba8a05d161ad778c0b75e452ff0a11ed163c65cd`, compiles
+them with GCC, and checks the **actual BGR555 raw sampled halfword**
+against the new atlas/CLUT output for **524288 synthetic pixel samples**
+(8 varied tpage/CLUT/window register scenarios × 256²).
+The MAP02 upstream workflow checks the original source Git blob and
+runs this native differential as well as mutated-source rejection tests.
+This proves tested agreement with the **PC implementation**, not
+the PlayStation's hardware GPU.
+
+**Evidence limitation:** these VRAM contents, camera observations,
+UVWH metadata and polygon geometry are **synthetic fixtures**.
+The adapter can consume a real owned VRAM snapshot, but does not
+establish when or where it was captured, that source assets are
+original, that the attached tpage/clut parameters correspond to the
+same actual drawing frame, or that the CPU-affine rasterizer matches
+hardware PS1 output. No proprietary VRAM snapshot is checked in.

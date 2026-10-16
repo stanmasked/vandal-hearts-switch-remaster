@@ -41,12 +41,14 @@ on:
       - 'source/map02_terrain_quad.h'
       - 'source/map02_terrain_ot_scene.h'
       - 'source/map02_external_gte_ft4.h'
+      - 'source/map02_vram4_page.h'
       - 'tests/test_map02_face_direction.c'
       - 'tests/test_map02_op0_reference.c'
       - 'tests/test_map02_projection.c'
       - 'tests/test_map02_terrain_quad.c'
       - 'tests/test_map02_terrain_ot_scene.c'
       - 'tests/test_map02_external_gte_ft4.c'
+      - 'tests/test_map02_vram4_page.c'
       - 'tests/test_audit_map02_ot_source.py'
       - 'tools/audit_map02_ot_source.py'
       - 'tests/test_map02_terrain_lighting.c'
@@ -59,6 +61,8 @@ on:
       - 'tools/verify_map02_pc_normal_equivalence.py'
       - 'tools/verify_map02_pc_op0_equivalence.py'
       - 'tools/verify_map02_pc_projection_equivalence.py'
+      - 'tools/verify_map02_pc_vram4_equivalence.py'
+      - 'tests/test_verify_map02_pc_vram4_equivalence.py'
       - 'tools/audit_map02_projection_source.py'
       - 'tools/instrument_map02_camera.py'
       - 'tools/verify_map02_camera_capture.py'
@@ -120,12 +124,14 @@ on:
       - 'source/map02_terrain_quad.h'
       - 'source/map02_terrain_ot_scene.h'
       - 'source/map02_external_gte_ft4.h'
+      - 'source/map02_vram4_page.h'
       - 'tests/test_map02_face_direction.c'
       - 'tests/test_map02_op0_reference.c'
       - 'tests/test_map02_projection.c'
       - 'tests/test_map02_terrain_quad.c'
       - 'tests/test_map02_terrain_ot_scene.c'
       - 'tests/test_map02_external_gte_ft4.c'
+      - 'tests/test_map02_vram4_page.c'
       - 'tests/test_audit_map02_ot_source.py'
       - 'tools/audit_map02_ot_source.py'
       - 'tests/test_map02_terrain_lighting.c'
@@ -138,6 +144,8 @@ on:
       - 'tools/verify_map02_pc_normal_equivalence.py'
       - 'tools/verify_map02_pc_op0_equivalence.py'
       - 'tools/verify_map02_pc_projection_equivalence.py'
+      - 'tools/verify_map02_pc_vram4_equivalence.py'
+      - 'tests/test_verify_map02_pc_vram4_equivalence.py'
       - 'tools/audit_map02_projection_source.py'
       - 'tools/instrument_map02_camera.py'
       - 'tools/verify_map02_camera_capture.py'
@@ -195,6 +203,7 @@ jobs:
             platform/pc/tools/build_data_segment.py
             platform/pc/src/libcd.c
             platform/pc/src/libgte.c
+            platform/pc/src/pc_raster.c
             platform/pc/src/libgpu.c
           sparse-checkout-cone-mode: false
 
@@ -375,7 +384,10 @@ jobs:
             /tmp/vh-map02-ot-scene
             gcc -std=c11 -Wall -Wextra -Werror -O2 tests/test_map02_external_gte_ft4.c -o /tmp/vh-map02-external-gte-ft4 -lm
             /tmp/vh-map02-external-gte-ft4
+            gcc -std=c11 -Wall -Wextra -Werror -O2 tests/test_map02_vram4_page.c -o /tmp/vh-map02-vram4-page -lm
+            /tmp/vh-map02-vram4-page
             python3 -m unittest discover -s tests -p 'test_audit_map02_ot_source.py' -v
+            python3 -m unittest discover -s tests -p 'test_verify_map02_pc_vram4_equivalence.py' -v
             python3 -m unittest discover -s tests -p 'test_audit_map02_projection_source.py' -v
             python3 -m unittest discover -s tests -p 'test_map02_camera_provenance.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_pc_op0_equivalence.py' -v
@@ -390,6 +402,8 @@ jobs:
           PYTHONPATH=remaster python3 -m tools.verify_map02_pc_normal_equivalence upstream/platform/pc/src/libgte.c remaster/source/map02_face_direction.h > /tmp/vh-map02-q12-native-equivalence.json
           PYTHONPATH=remaster python3 -m tools.verify_map02_pc_op0_equivalence upstream/platform/pc/src/libgte.c remaster/source/map02_op0_reference.h > /tmp/vh-map02-op0-native-equivalence.json
           PYTHONPATH=remaster python3 -m tools.verify_map02_pc_projection_equivalence upstream/platform/pc/src/libgte.c remaster/source/map02_projection.h > /tmp/vh-map02-projection-native-equivalence.json
+          PYTHONPATH=remaster python3 -m tools.verify_map02_pc_vram4_equivalence upstream/platform/pc/src/pc_raster.c remaster/source/map02_vram4_page.h > /tmp/vh-map02-vram4-pc-native.json
+          python3 -c 'import json; x=json.load(open("/tmp/vh-map02-vram4-pc-native.json")); assert x["matches_pinned_pc_raster"] and x["compiled_pc_sampletexture_matches"] and x["pixels_compared"]==524288 and not x["ps1_hardware_pixels_verified"]; print("524288 PS1 4bpp texels match compiled pinned PC SampleTexture across 8 GPU register scenarios.")'
           PYTHONPATH=remaster python3 -m tools.audit_map02_projection_source upstream/src/core/graphics.c > /tmp/vh-map02-projection-source-audit.json
           PYTHONPATH=remaster python3 -m tools.audit_map02_ot_source upstream/platform/pc/src/libgpu.c > /tmp/vh-map02-ot-source-audit.json
           python3 -c 'import json; x=json.load(open("/tmp/vh-map02-ot-source-audit.json")); assert x["matches_pinned_pc_libgpu"] and x["pinned_pc_gpu_source_audited"] and x["pc_ot_bucket_order"] == "0..n-1" and not x["ps1_hardware_gpu_verified"]; print("Pinned PC GPU ClearOTag/AddPrim/DrawOTag order verified.")'
