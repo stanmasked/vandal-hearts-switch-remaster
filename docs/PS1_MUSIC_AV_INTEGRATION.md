@@ -632,3 +632,48 @@ diagnostics workflow. Passing these software checks does **not**
 establish hardware PS1 release timing, pitch/envelope parity, or
 audible Switch quality; privately owned original SEQ/VH/VB and
 physical playback captures are still required for that assessment.
+
+### Switching away from slow/never-ending ADSR Release
+
+The local offline audit also inspects **both sides** of every successful
+A/B bank swap. Before `vh_native_seq_switch_scene` it measures:
+
+- `prior_bank_active_voices`: active voices still using the old bank;
+- `prior_bank_release_voices`: active old voices in ADSR Release;
+- `prior_bank_pcm_references`: voice records with a non-null PCM
+  pointer, **including inactive** voices whose Release already ended.
+
+After switching it verifies that **all** 20 voice records have
+`active=0`, a null PCM pointer and an Off ADSR phase; the SPU
+allocation index and per-scene render counter have reset; the
+sequencer references the new SEQ and resolver; and the caller-owned
+resampler has retained its exact clock state. Full STUDIO_C reverb
+history is compared byte-for-byte across the switch, together with
+the Gaussian interpolation setting and global wet configuration.
+The additive report flags
+`prior_bank_voices_cleared` and
+`reverb_history_preserved_on_switch` for each scene. The initial
+scene has no incoming switch and reports both flags as false.
+
+**Important distinction:** in the current production renderer,
+a voice that naturally finishes Release becomes inactive, but the
+voice record may still contain a borrowed PCM pointer until it is
+reassigned or the bank is switched. This is permitted while its
+original PCM arena is still owned by the loaded bank. It would be
+unsafe to unload that arena while leaving this pointer accessible
+to later code. The scene-switch code clears *both* active Release
+voices and inactive residual references before any bank unload.
+
+Synthetic CI covers 16 scenes alternating a wet bank with
+`ADSR2=0x002A` (a slow exponential Release that remains active at
+block 32) and a zero-dry-gain bank with fast Release. A second
+regression switches away from `ADSR2=0x001F`, which cannot retire
+within the test window, into a **zero-note** SEQ. The next scene
+may still contain nonzero post-resampler PCM solely from prior
+STUDIO_C wet history, although all old voices and pointers were
+discarded. In all cases the original files are read-only and
+never published.
+
+These assertions describe the host software switch and do not
+prove that physical Switch audout buffer ownership or original
+PlayStation hardware envelope behavior are identical.
