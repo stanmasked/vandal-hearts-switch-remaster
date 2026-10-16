@@ -123,7 +123,8 @@ def parse_gp0_v62(words:list[int],initial_mask:tuple[int,int]=(0,0),
             })
         elif 0x20<=opcode<=0x3f:
             vertices=4 if opcode&8 else 3
-            events.append({"type":"POLYGON","opcode":opcode,
+            events.append({"type":(f"DRAW_{opcode:02X}" if opcode<0x30 else "POLYGON"),
+                           "opcode":opcode,
                            "vertices":vertices,"textured":bool(opcode&4),
                            "gouraud":bool(opcode&16),
                            "mask_set":mask_set,"mask_check":mask_check})
