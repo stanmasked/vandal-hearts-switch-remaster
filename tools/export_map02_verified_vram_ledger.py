@@ -84,6 +84,14 @@ def export_verified_ledger(folder: Path, output: Path, *, compiler="gcc"):
         report["frame"], report["submitted_faces_checked"], events)
     if output.is_dir() or not output.parent.is_dir():
         raise ValueError("output parent must be an existing local directory")
+    # The packet may contain unredistributable LoadImage bytes. Never
+    # write one beneath a Git worktree (including a symlink to one), where
+    # an accidental git add could publish private game-derived resources.
+    # A worktree may have either a .git directory OR a .git pointer file.
+    actual_parent = output.parent.resolve(strict=True)
+    if any((parent / ".git").exists() or (parent / ".git").is_symlink()
+           for parent in (actual_parent, *actual_parent.parents)):
+        raise ValueError("private MAP02 packet output must be outside a Git worktree")
     # O_EXCL rejects replacing files and symlink targets, including a
     # previously exported packet. Exclusive mode 0600 keeps bytes private.
     fd = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
