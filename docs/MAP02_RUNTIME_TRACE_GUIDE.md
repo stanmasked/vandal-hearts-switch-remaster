@@ -926,3 +926,39 @@ multiple map-11 loads under `--require-full-trace` or
 `--require-complete`. Its legacy line-iterator helpers remain
 available for already-in-memory text. Regression tests use synthetic
 multi-megabyte noise and do not require copyrighted game resources.
+
+
+## Local read-only audit of the original 7z disc archive
+
+The archive can be examined locally without manually extracting or uploading
+any proprietary game resources. Install `7z` or `7zz`, then run:
+
+```sh
+python3 -m tools.audit_map02_archive \
+  '/path/to/Vandal_Hearts_(RU)_v1.6.7z' \
+  --layout mode2-2352
+```
+
+The tool reads archive metadata and expects exactly one BIN/ISO/IMG disc.
+For multiple tracks, specify `--member 'exact archive member path'`.
+Use `--layout iso-2048` only for a true 2048-byte-sector ISO. An
+alternative `--sector-bias` must be grounded in an independently verified
+disc layout, not guessed.
+
+The selected disc is streamed to a fixed-name private temporary file,
+limited to 1 GiB and checked against its declared uncompressed size.
+The file is deleted automatically. The auditor reads only the required
+Map02 sectors, checks raw Mode2 Form1 sector EDC, decompresses PRS within
+a bounded buffer and compares the two bridge-face GFX bytes with DAT.
+The JSON output contains metadata, hashes and the face indices—not
+copyrighted sector contents or texture bytes. No resource is uploaded
+or committed, and the original archive is not changed.
+
+The optional `--require-prior-provenance` gate requires exact hashes of
+previously audited US PRS/DAT data. A localized disc might legitimately
+differ. Failure to match those hashes means identity has not been
+established, not that the localized edition is unplayable.
+
+Archive examination is static source-disc evidence, **not** a live PC-port
+trace or proof of visible pixels. CI tests this workflow with a synthetic
+ISO and an emulated 7z program; it never downloads proprietary game data.
