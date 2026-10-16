@@ -150,9 +150,15 @@ class DrawOTagScopeTests(unittest.TestCase):
                                    capture_output=True, text=True)
                     if name == "patched-stage":
                         staged = private_dir / "blendg1-native-events.pending.jsonl"
+                        pixels = private_dir / "putpixel-native-events.pending.jsonl"
                         self.assertEqual(stat.S_IMODE(staged.stat().st_mode), 0o600)
+                        self.assertEqual(stat.S_IMODE(pixels.stat().st_mode), 0o600)
                         rows = [json.loads(line) for line in staged.read_text().splitlines()]
+                        pixel_rows = [json.loads(line) for line in pixels.read_text().splitlines()]
                         self.assertEqual([r["primitive_ordinal"] for r in rows], [0, 1])
+                        self.assertEqual([r["primitive_ordinal"] for r in pixel_rows], [0, 1])
+                        self.assertEqual([r["putpixel_step"] for r in rows], [0, 1])
+                        self.assertEqual([r["step"] for r in pixel_rows], [0, 1])
                         self.assertFalse(list(private_dir.glob(".*.tmp")))
                     if enabled:
                         env["VH_MAP02_TEST_ABORT"] = "1"
