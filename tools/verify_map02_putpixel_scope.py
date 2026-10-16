@@ -19,6 +19,7 @@ from tools.verify_map02_source_native_ft4_join import (
     _source_signature, _native_signature,
 )
 from tools.verify_map02_native_overdraw import verify_native_overdraw
+from tools.map02_observed_blends import summarize_observed_blends
 
 SCHEMA = "vh.map02.native-putpixel-ot.v1"
 PIXEL_LOG = "putpixel-native-events.jsonl"
@@ -155,7 +156,9 @@ def verify_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
             matched_source_draws += 1
             unchanged_source += before_val == after_val
 
+    blend_report = summarize_observed_blends(rows)
     return {
+        **blend_report,
         "pixel_ot_manifest_sha256": digest(meta_raw),
         "native_gpu_event_log_sha256": digest(native_raw),
         "scoped_putpixel_log_sha256": digest(pixel_raw),
