@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "../source/map02_captured_vram4_bridge.h"
+#include "../source/map02_vram4_timeline_frame.h"
 
 /* Invented MAP02/GTE/VRAM evidence; this test is NOT a real game capture. */
 enum { N = 3, OT = 1024, W = 64, H = 64, STRIDE = 68, SCRATCH = 256 };
@@ -212,9 +213,125 @@ static void test_mutations_do_not_change_staged_output(void) {
     assert(memcmp(submissions,previous,sizeof previous) == 0);
 }
 
+
+static uint8_t later_vram[VH_MAP02_VRAM_BYTES];
+
+static VhMap02Vram4TimelineInput timeline_input(
+    const VhMap02Vram4TimelineEntry entries[2]) {
+    VhMap02Vram4TimelineInput input = {0};
+    input.frame = 42u;
+    input.decoded = decoded;
+    input.decoded_bytes = sizeof decoded;
+    input.entries = entries;
+    input.count = 2u;
+    input.ot_size = OT;
+    return input;
+}
+
+static void timeline_fixture(VhMap02Vram4TimelineEntry entries[2]) {
+    VhMap02SourceFaceRequest requests[N];
+    VhMap02CapturedFaceProjection observations[N];
+    VhMap02CapturedTextureState textures[N];
+    size_t count = 0u;
+    fixture(requests,observations,textures);
+    /* Same texture page and CLUT for both polygons, different sampled
+     * VRAM content at each submitted primitive's acquisition instant. */
+    textures[1].registers = textures[0].registers;
+    assert(vh_map02_stage_captured_vram4_faces(
+        decoded,sizeof decoded,requests,observations,textures,
+        N,OT,submissions,N,&count));
+    assert(count == 2u);
+    memcpy(later_vram,vram,sizeof vram);
+    word(later_vram,499u * 1024u + 1u,0x03e0);
+    for (unsigned i=0u; i<2u; ++i) {
+        entries[i] = (VhMap02Vram4TimelineEntry){0};
+        entries[i].face = submissions[i];
+        entries[i].vram_le = i == 0u ? vram : later_vram;
+        entries[i].vram_bytes = VH_MAP02_VRAM_BYTES;
+        entries[i].vram_snapshot_frame = 42u;
+        entries[i].submission_index = i;
+        entries[i].vram_snapshot_index = i;
+    }
+}
+
+static void clear_timeline_workspace(void) {
+    memset(heads,0,sizeof heads);
+    memset(nodes,0,sizeof nodes);
+    memset(prepared,0,sizeof prepared);
+    memset(stats,0,sizeof stats);
+    memset(atlases,0xa5,sizeof atlases);
+    memset(palettes,0x5a,sizeof palettes);
+    for (size_t i=0u; i<H*STRIDE; ++i)
+        framebuffer[i] = BG;
+}
+
+static void assert_timeline_workspace_unmodified(void) {
+    assert(heads[0] == 0u && heads[896] == 0u);
+    assert(nodes[0].quad == NULL);
+    assert(prepared[0].quad.drawable == 0u);
+    assert(stats[0].decoded_texels == 0u);
+    assert(atlases[0] == 0xa5u && palettes[0] == 0x5au);
+}
+
+static void test_timeline_detects_clut_change_between_submissions(void) {
+    VhMap02Vram4TimelineEntry entries[2];
+    VhMap02Vram4TimelineInput input;
+    VhMap02Vram4FrameWorkspace w = workspace();
+    VhCanvas canvas = {framebuffer,STRIDE,W,H};
+    size_t drawn = 0u, pixels = 0u;
+    timeline_fixture(entries);
+    clear_timeline_workspace();
+    input = timeline_input(entries);
+    assert(vh_map02_vram4_timeline_preflight(&input,&w));
+    assert(vh_map02_vram4_timeline_build(&input,&w));
+    assert(w.scene.count == 2u);
+    assert(w.scene.heads[896] == 1u && nodes[1].next == 0u);
+    assert((uint16_t)(palettes[2] | ((unsigned)palettes[3]<<8)) == 0x001fu);
+    assert((uint16_t)(palettes[32+2] | ((unsigned)palettes[32+3]<<8)) == 0x03e0u);
+    assert(vh_map02_ot_scene_draw(&w.scene,&canvas,scratch,classes,SCRATCH,
+                                  pack,NULL,&drawn,&pixels));
+    assert(drawn == 2u && pixels == 512u);
+    assert(framebuffer[25u*STRIDE+25u] == UINT32_C(0xffff0000));
+    assert(framebuffer[25u*STRIDE+45u] == UINT32_C(0xff00ff00));
+    assert(framebuffer[25u*STRIDE+55u] == BG);
+}
+
+static void test_timeline_invalid_snapshots_fail_before_output(void) {
+    VhMap02Vram4TimelineEntry entries[2];
+    VhMap02Vram4TimelineInput input;
+    VhMap02Vram4FrameWorkspace w = workspace();
+    for (unsigned mutation=0u; mutation<9u; ++mutation) {
+        timeline_fixture(entries);
+        clear_timeline_workspace();
+        input=timeline_input(entries);
+        switch (mutation) {
+        case 0: entries[1].vram_snapshot_frame = 43u; break;
+        case 1: entries[1].submission_index = 0u; break;
+        case 2: entries[1].vram_snapshot_index = 0u; break;
+        case 3: entries[1].vram_bytes -= 1u; break;
+        case 4: entries[0].vram_le = NULL; break;
+        case 5: entries[1].face.gpu_register_frame = 43u; break;
+        case 6: entries[1].face.face = entries[0].face.face; break;
+        case 7: entries[1].face.registers.tpage |= 128; break;
+        case 8: input.frame = 43u; break;
+        }
+        assert(!vh_map02_vram4_timeline_preflight(&input,&w));
+        assert(!vh_map02_vram4_timeline_build(&input,&w));
+        assert_timeline_workspace_unmodified();
+    }
+    timeline_fixture(entries);
+    clear_timeline_workspace();
+    input=timeline_input(entries);
+    w.palette_capacity_bytes=VH_MAP02_VRAM4_CLUT_BYTES;
+    assert(!vh_map02_vram4_timeline_build(&input,&w));
+    assert_timeline_workspace_unmodified();
+}
+
 int main(void) {
     test_verified_capture_flows_to_vram4_and_ot();
     test_mutations_do_not_change_staged_output();
+    test_timeline_detects_clut_change_between_submissions();
+    test_timeline_invalid_snapshots_fail_before_output();
     puts("MAP02 captured GTE -> source FT4 -> VRAM4 -> OT pixel tests passed");
     return 0;
 }
