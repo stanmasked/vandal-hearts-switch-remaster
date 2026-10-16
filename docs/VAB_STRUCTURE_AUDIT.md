@@ -947,3 +947,82 @@ acquisition, live multi-track playback, pitch bend, reverb, exact
 OpenAL latency simulation or real Nintendo Switch listening test.
 Compilation or CI acceptance alone would not establish a working
 game-music port.
+
+
+## Native sparse VH/VB bank import and PsyQ key-on resolver
+
+The Switch-oriented code now contains a first validated Sony VH/VB
+bank importer, `source/vh_native_vab.h/.c`, rather than resolving
+every synthetic SEQ note to the same hardcoded VAG sample.
+
+`vh_native_vab_load()` takes **caller-owned, in-memory VH and VB
+byte arrays** and a caller-supplied PCM16 arena. It validates:
+
+- the `pBAV` header, 128 fixed-size program records, and 0–16 active
+  tones in each populated program;
+- the **sparse/packed** tone table (one fixed 512-byte block per
+  populated program, even when program IDs contain gaps);
+- each active tone's key range, original parent program, one-based VAG
+  ID, ADSR, per-tone volume and pan;
+- all 256 VAG size entries with 8-byte size units, including the
+  **index-0 entry counted in cumulative VB offsets**;
+- required VB bounds, every referenced VAG's 16-byte ADPCM header,
+  and capacity of the supplied decoded PCM arena.
+
+Each **referenced** VAG is decoded exactly once using the same
+`vh_spu_adpcm_decode()` C source as the native probe. The bank
+structure is only published after all tables and ADPCM headers pass
+validation and the required PCM fits. Source VH and VB arrays are
+read-only. The caller must keep decoded PCM storage alive for as long
+as any native SPU voice uses it. No game data or generated audio is
+committed, and no decoding takes place in the SDL2 callback.
+
+`vh_native_vab_resolve()` now implements the SEQ tone-selection
+order in the PC-port `SeqPickTone`: first the requested program's
+first matching range, then the first matching range in global
+program/tone order, then the closest **minimum key boundary**
+globally (ties select the first entry). It uses the approximate
+equal-tempered pitch ratio from `PitchRatio`, clamped to the existing
+native SPU's pitch-step register range. This is **not** Sony's exact
+PS1 pitch-register lookup table.
+
+The resolver also applies the reference key-on gain pipeline:
+velocity × channel volume × bank master volume × selected program
+volume × tone volume, with **four integer /127 truncations**.
+It applies tone, program and channel pan separately, followed by the
+squared PsyQ software volume law and the reference PC-port's
+diagnostic `1.012` gain trim. The output is a `VhSeqTone` object
+for the existing C SEQ → native SPU interface.
+
+The Switch SDL2 probe has been updated again: it now fabricates a
+complete small **sparse VH**, matching **VB** and **pQES SEQ**
+in memory at startup, loads the bank through the native importer,
+then dispatches notes into SPU Gaussian/ADSR mixing and the synchronized
+PCM FIFO. The only data in the repository is a **synthetic audio
+fixture**. Real VH/VB file acquisition and lifetime management on
+the console are still pending.
+
+Verification files:
+
+```sh
+make test-audio-stream
+# Includes tests/test_vh_native_vab.c:
+# synthetic sparse programs, offsets, loops, note selection, gains,
+# input immutability and end-to-end SEQ -> VAB -> SPU -> stereo PCM.
+python3 tests/test_native_vab_python_reference.py
+# Synthetic differential native C versus Python note lookup,
+# approximate pitch, ADSR and PsyQ stereo gain.
+```
+
+The focused audio GitHub workflow is configured for native `-Werror`,
+UBSan and differential Python comparisons. The AArch64 workflow
+cross-compiles `vh_native_vab.c` alongside the pre-existing SPU,
+Gaussian, SEQ and audio transport modules.
+
+**Not yet established:** execution of these newly added checks in a
+GitHub Actions run, a newly linked updated Switch NRO, playback on
+actual Nintendo Switch hardware, fidelity against original recordings,
+native file loading of a user's own licensed game data, full native
+PS1 reverb and native hardware-accurate pitch. The VH/VB import code
+is a first **in-memory integration layer**, not by itself a complete
+shipping music engine.
