@@ -5,6 +5,7 @@ void vh_game_music_mailbox_init(VhGameMusicMailbox *box, unsigned scene) {
     atomic_init(&box->desired_scene, scene);
     atomic_init(&box->running, 1);
     atomic_init(&box->focused, 1);
+    atomic_init(&box->resume_serial, 0u);
 }
 
 void vh_game_music_mailbox_post(VhGameMusicMailbox *box, unsigned scene) {
@@ -28,6 +29,20 @@ void vh_game_music_mailbox_set_focus(VhGameMusicMailbox *box,
 int vh_game_music_mailbox_focused(const VhGameMusicMailbox *box) {
     return box ? atomic_load_explicit(&box->focused,
                                       memory_order_acquire) : 0;
+}
+
+void vh_game_music_mailbox_on_resume(VhGameMusicMailbox *box,
+                                     int focused) {
+    if (!box) return;
+    vh_game_music_mailbox_set_focus(box, focused);
+    atomic_fetch_add_explicit(&box->resume_serial, 1u,
+                              memory_order_release);
+}
+
+unsigned vh_game_music_mailbox_resume_serial(
+    const VhGameMusicMailbox *box) {
+    return box ? atomic_load_explicit(&box->resume_serial,
+                                      memory_order_acquire) : 0u;
 }
 
 void vh_game_music_mailbox_stop(VhGameMusicMailbox *box) {
