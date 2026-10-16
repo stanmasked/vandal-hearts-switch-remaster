@@ -1,0 +1,324 @@
+name: PCM WAV diagnostics
+
+on:
+  push:
+    branches:
+      - feat/native-av-ps1-seq-integration
+    paths:
+      - 'tools/analyze_pcm_wav.py'
+      - 'tests/test_analyze_pcm_wav.py'
+      - 'tests/test_analyze_pcm_cli.py'
+      - 'tests/test_seq_pcm_measurements.py'
+      - 'tests/test_render_ps1_seq.py'
+      - 'tests/test_seq_to_chord_schedule.py'
+      - 'tools/render_ps1_seq.py'
+      - 'tests/export_native_seq_pcm_wav.c'
+      - 'tests/test_native_pcm_capture.py'
+      - 'tests/test_vh_resample_partition.c'
+      - 'tests/test_vh_resample_long_clock.c'
+      - 'tests/test_vh_resample_capacity_guard.c'
+      - 'tests/test_vh_resample_retry.c'
+      - 'tests/test_vh_resample_resume.c'
+      - 'tests/test_vh_pcm_scene_source_switch.c'
+      - 'tests/test_vh_native_bank_switch.c'
+      - 'tests/test_vh_reverb_bank_tail.c'
+      - 'tests/test_vh_audio_pause_fifo.c'
+      - 'tests/test_vh_audio_pause_wrap.c'
+      - 'tests/test_vh_native_audio_soak.c'
+      - 'tests/test_vh_native_vab.c'
+      - 'source/vh_native_vab.c'
+      - 'source/vh_audio_stream.c'
+      - 'tools/inspect_native_pcm_capture.py'
+      - 'tools/analyze_pcm_discontinuities.py'
+      - 'tests/test_analyze_pcm_discontinuities.py'
+      - 'source/vh_native_seq.c'
+      - 'source/vh_native_seq.h'
+      - 'source/vh_native_spu.c'
+      - 'source/vh_native_spu.h'
+      - 'source/vh_audio_resample.c'
+      - '.github/workflows/pcm-wav-diagnostics.yml'
+  pull_request:
+    paths:
+      - 'tools/analyze_pcm_wav.py'
+      - 'tests/test_analyze_pcm_wav.py'
+      - 'tests/test_analyze_pcm_cli.py'
+      - 'tests/test_seq_pcm_measurements.py'
+      - 'tests/test_render_ps1_seq.py'
+      - 'tests/test_seq_to_chord_schedule.py'
+      - 'tools/render_ps1_seq.py'
+      - 'tests/export_native_seq_pcm_wav.c'
+      - 'tests/test_native_pcm_capture.py'
+      - 'tests/test_vh_resample_partition.c'
+      - 'tests/test_vh_resample_long_clock.c'
+      - 'tests/test_vh_resample_capacity_guard.c'
+      - 'tests/test_vh_resample_retry.c'
+      - 'tests/test_vh_resample_resume.c'
+      - 'tests/test_vh_pcm_scene_source_switch.c'
+      - 'tests/test_vh_native_bank_switch.c'
+      - 'tests/test_vh_reverb_bank_tail.c'
+      - 'tests/test_vh_audio_pause_fifo.c'
+      - 'tests/test_vh_audio_pause_wrap.c'
+      - 'tests/test_vh_native_audio_soak.c'
+      - 'tests/test_vh_native_vab.c'
+      - 'source/vh_native_vab.c'
+      - 'source/vh_audio_stream.c'
+      - 'tools/inspect_native_pcm_capture.py'
+      - 'tools/analyze_pcm_discontinuities.py'
+      - 'tests/test_analyze_pcm_discontinuities.py'
+      - 'source/vh_native_seq.c'
+      - 'source/vh_native_seq.h'
+      - 'source/vh_native_spu.c'
+      - 'source/vh_native_spu.h'
+      - 'source/vh_audio_resample.c'
+      - '.github/workflows/pcm-wav-diagnostics.yml'
+  workflow_dispatch:
+
+jobs:
+  pcm-wav-unit-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate WAV diagnostics
+        run: |
+          python3 -m unittest discover -s tests -p 'test_analyze_pcm*.py' -v
+          python3 tests/test_seq_pcm_measurements.py
+          python3 tests/test_native_pcm_capture.py
+          python3 tests/test_analyze_pcm_discontinuities.py
+      - name: Measure actual native C SEQ to SPU to 48k WAV
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+            tests/export_native_seq_pcm_wav.c \
+            source/vh_native_seq.c source/vh_native_spu.c \
+            source/vh_spu_reverb.c source/vh_spu_gaussian.c \
+            source/vh_audio_resample.c source/vh_audio_stream.c \
+            -lm -o /tmp/export_native_seq_pcm_wav
+          /tmp/export_native_seq_pcm_wav /tmp/native-seq-spu-48k.wav
+          python3 tools/analyze_pcm_wav.py /tmp/native-seq-spu-48k.wav \
+            --expected-rate 48000 --fail-on-silence
+      - name: Verify native PCM reproducibility
+        run: |
+          /tmp/export_native_seq_pcm_wav /tmp/native-seq-spu-48k-repeat.wav
+          cmp /tmp/native-seq-spu-48k.wav /tmp/native-seq-spu-48k-repeat.wav
+          sha256sum /tmp/native-seq-spu-48k.wav
+          python3 tools/inspect_native_pcm_capture.py /tmp/native-seq-spu-48k.wav
+          python3 tools/inspect_native_pcm_capture.py /tmp/native-seq-spu-48k-repeat.wav
+          python3 tools/analyze_pcm_discontinuities.py /tmp/native-seq-spu-48k.wav
+          python3 tools/analyze_pcm_wav.py /tmp/native-seq-spu-48k-repeat.wav \
+            --expected-rate 48000 --fail-on-silence
+      - name: Verify resampler PCM invariant to source block partitioning
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+            tests/test_vh_resample_partition.c source/vh_audio_resample.c \
+            -o /tmp/test_vh_resample_partition
+          /tmp/test_vh_resample_partition
+      - name: Verify long-run PCM resampler clock stability
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+            tests/test_vh_resample_long_clock.c source/vh_audio_resample.c \
+            -o /tmp/test_vh_resample_long_clock
+          /tmp/test_vh_resample_long_clock
+      - name: Check resampler block and long clock tests under UBSan
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=undefined -fno-sanitize-recover=all \
+            tests/test_vh_resample_partition.c source/vh_audio_resample.c \
+            -o /tmp/test_vh_resample_partition_ubsan
+          /tmp/test_vh_resample_partition_ubsan
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=undefined -fno-sanitize-recover=all \
+            tests/test_vh_resample_long_clock.c source/vh_audio_resample.c \
+            -o /tmp/test_vh_resample_long_clock_ubsan
+          /tmp/test_vh_resample_long_clock_ubsan
+      - name: Native PCM signal diagnostics under UBSan
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=undefined -fno-sanitize-recover=all \
+            tests/export_native_seq_pcm_wav.c \
+            source/vh_native_seq.c source/vh_native_spu.c \
+            source/vh_spu_reverb.c source/vh_spu_gaussian.c \
+            source/vh_audio_resample.c source/vh_audio_stream.c \
+            -lm -o /tmp/export_native_seq_pcm_wav_ubsan
+          /tmp/export_native_seq_pcm_wav_ubsan /tmp/native-seq-spu-48k-ubsan.wav
+          cmp /tmp/native-seq-spu-48k.wav /tmp/native-seq-spu-48k-ubsan.wav
+          python3 tools/inspect_native_pcm_capture.py /tmp/native-seq-spu-48k-ubsan.wav
+          python3 tools/analyze_pcm_wav.py /tmp/native-seq-spu-48k-ubsan.wav \
+            --expected-rate 48000 --fail-on-silence
+      - name: Detect native PCM memory faults with AddressSanitizer
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -fno-sanitize-recover=all \
+            tests/export_native_seq_pcm_wav.c \
+            source/vh_native_seq.c source/vh_native_spu.c \
+            source/vh_spu_reverb.c source/vh_spu_gaussian.c \
+            source/vh_audio_resample.c source/vh_audio_stream.c \
+            -lm -o /tmp/export_native_seq_pcm_wav_asan
+          /tmp/export_native_seq_pcm_wav_asan /tmp/native-seq-spu-48k-asan.wav
+          cmp /tmp/native-seq-spu-48k.wav /tmp/native-seq-spu-48k-asan.wav
+          python3 tools/inspect_native_pcm_capture.py /tmp/native-seq-spu-48k-asan.wav
+          python3 tools/analyze_pcm_wav.py /tmp/native-seq-spu-48k-asan.wav \
+            --expected-rate 48000 --fail-on-silence
+          python3 tools/analyze_pcm_discontinuities.py /tmp/native-seq-spu-48k-asan.wav
+      - name: ASan and UBSan on variable-block resampling
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -fno-sanitize-recover=all \
+            tests/test_vh_resample_partition.c source/vh_audio_resample.c \
+            -o /tmp/test_vh_resample_partition_asan
+          /tmp/test_vh_resample_partition_asan
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -fno-sanitize-recover=all \
+            tests/test_vh_resample_long_clock.c source/vh_audio_resample.c \
+            -o /tmp/test_vh_resample_long_clock_asan
+          /tmp/test_vh_resample_long_clock_asan
+      - name: Check resampler output capacity and guard integrity under ASan
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -fno-sanitize-recover=all \
+            tests/test_vh_resample_capacity_guard.c source/vh_audio_resample.c \
+            -o /tmp/test_vh_resample_capacity_guard
+          /tmp/test_vh_resample_capacity_guard
+      - name: Check repeated failed-capacity retry preserves PCM
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -fno-sanitize-recover=all \
+            tests/test_vh_resample_retry.c source/vh_audio_resample.c \
+            -o /tmp/test_vh_resample_retry
+          /tmp/test_vh_resample_retry
+      - name: Verify resampler state resume without duplicate PCM
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -fno-sanitize-recover=all \
+            tests/test_vh_resample_resume.c source/vh_audio_resample.c \
+            -o /tmp/test_vh_resample_resume
+          /tmp/test_vh_resample_resume
+      - name: Validate queued PCM across synthetic pause under sanitizers
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -fno-sanitize-recover=all \
+            tests/test_vh_audio_pause_fifo.c source/vh_audio_stream.c \
+            -o /tmp/test_vh_audio_pause_fifo
+          /tmp/test_vh_audio_pause_fifo
+      - name: Validate PCM pause across FIFO ring wrap and underrun
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -fno-sanitize-recover=all \
+            tests/test_vh_audio_pause_wrap.c source/vh_audio_stream.c \
+            -o /tmp/test_vh_audio_pause_wrap
+          /tmp/test_vh_audio_pause_wrap
+      - name: Verify long-running SEQ SPU reverb PCM under sanitizers
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -fno-sanitize-recover=all \
+            tests/test_vh_native_audio_soak.c \
+            source/vh_native_seq.c source/vh_native_spu.c \
+            source/vh_spu_reverb.c source/vh_spu_gaussian.c \
+            source/vh_audio_resample.c source/vh_audio_stream.c \
+            -lm -o /tmp/test_vh_native_audio_soak_asan
+          /tmp/test_vh_native_audio_soak_asan
+      - name: Compare optimized and sanitized full SEQ SPU soak
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+            tests/test_vh_native_audio_soak.c \
+            source/vh_native_seq.c source/vh_native_spu.c \
+            source/vh_spu_reverb.c source/vh_spu_gaussian.c \
+            source/vh_audio_resample.c source/vh_audio_stream.c \
+            -lm -o /tmp/test_vh_native_audio_soak_optimized
+          /tmp/test_vh_native_audio_soak_optimized > /tmp/soak-optimized.txt
+          /tmp/test_vh_native_audio_soak_asan > /tmp/soak-sanitized.txt
+          diff -u /tmp/soak-optimized.txt /tmp/soak-sanitized.txt
+          cat /tmp/soak-optimized.txt
+      - name: Gate PCM verification on sparse VAB note selection
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+            tests/test_vh_native_vab.c source/vh_native_vab.c \
+            source/vh_native_seq.c source/vh_native_spu.c \
+            source/vh_spu_reverb.c source/vh_spu_gaussian.c \
+            source/vh_spu_adpcm.c source/vh_audio_stream.c \
+            -lm -o /tmp/test_vh_native_vab_pcm_gate
+          /tmp/test_vh_native_vab_pcm_gate
+      - name: Validate sparse VAB selection under ASan and UBSan
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -fno-sanitize-recover=all \
+            tests/test_vh_native_vab.c source/vh_native_vab.c \
+            source/vh_native_seq.c source/vh_native_spu.c \
+            source/vh_spu_reverb.c source/vh_spu_gaussian.c \
+            source/vh_spu_adpcm.c source/vh_audio_stream.c \
+            -lm -o /tmp/test_vh_native_vab_sanitized
+          /tmp/test_vh_native_vab_sanitized
+      - name: Check VAB selection reproducibility across optimization levels
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O0 -Isource \
+            tests/test_vh_native_vab.c source/vh_native_vab.c \
+            source/vh_native_seq.c source/vh_native_spu.c \
+            source/vh_spu_reverb.c source/vh_spu_gaussian.c \
+            source/vh_spu_adpcm.c source/vh_audio_stream.c \
+            -lm -o /tmp/test_vh_native_vab_o0
+          /tmp/test_vh_native_vab_o0 > /tmp/vab-o0.txt
+          /tmp/test_vh_native_vab_pcm_gate > /tmp/vab-o2.txt
+          /tmp/test_vh_native_vab_sanitized > /tmp/vab-sanitized.txt
+          diff -u /tmp/vab-o0.txt /tmp/vab-o2.txt
+          diff -u /tmp/vab-o2.txt /tmp/vab-sanitized.txt
+      - name: Recheck VAB selection determinism across repeated executions
+        run: |
+          /tmp/test_vh_native_vab_pcm_gate > /tmp/vab-repeat-1.txt
+          /tmp/test_vh_native_vab_pcm_gate > /tmp/vab-repeat-2.txt
+          /tmp/test_vh_native_vab_pcm_gate > /tmp/vab-repeat-3.txt
+          cmp /tmp/vab-repeat-1.txt /tmp/vab-repeat-2.txt
+          cmp /tmp/vab-repeat-1.txt /tmp/vab-repeat-3.txt
+          cmp /tmp/vab-o2.txt /tmp/vab-repeat-1.txt
+      - name: Verify synthetic scene-source PCM clock continuity
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=undefined -fno-sanitize-recover=all \
+            tests/test_vh_pcm_scene_source_switch.c source/vh_audio_resample.c \
+            -o /tmp/test_vh_pcm_scene_source_switch
+          /tmp/test_vh_pcm_scene_source_switch
+      - name: Check two decoded VAB banks across SEQ SPU scene transition
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -fno-sanitize-recover=all \
+            tests/test_vh_native_bank_switch.c source/vh_native_vab.c \
+            source/vh_native_seq.c source/vh_native_spu.c \
+            source/vh_spu_reverb.c source/vh_spu_gaussian.c \
+            source/vh_spu_adpcm.c source/vh_audio_resample.c \
+            source/vh_audio_stream.c -lm -o /tmp/test_vh_native_bank_switch
+          /tmp/test_vh_native_bank_switch | tee /tmp/vab-seams-first.txt
+          /tmp/test_vh_native_bank_switch > /tmp/vab-seams-repeat.txt
+          cmp /tmp/vab-seams-first.txt /tmp/vab-seams-repeat.txt
+          grep -Fq 'VAB seam adjacent-sample deltas (PCM16):' /tmp/vab-seams-first.txt
+      - name: Verify voice-only SPU reset preserves reverb tail under sanitizers
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -fno-sanitize-recover=all \
+            tests/test_vh_reverb_bank_tail.c \
+            source/vh_native_spu.c source/vh_spu_reverb.c \
+            source/vh_spu_gaussian.c source/vh_audio_stream.c \
+            -lm -o /tmp/test_vh_reverb_bank_tail
+          /tmp/test_vh_reverb_bank_tail
