@@ -54,6 +54,8 @@ on:
       - 'tests/test_vh_audio_mark_buttons.c'
       - 'source/vh_audio_input_poll.h'
       - 'source/vh_audio_report_pages.h'
+      - 'source/vh_audio_compute_timing.h'
+      - 'tests/test_vh_audio_compute_timing.c'
       - 'tests/test_vh_audio_report_pages.c'
       - 'tests/test_vh_audio_input_poll.c'
       - 'source/vh_audio_resample.c'
@@ -109,6 +111,8 @@ on:
       - 'tests/test_vh_audio_mark_buttons.c'
       - 'source/vh_audio_input_poll.h'
       - 'source/vh_audio_report_pages.h'
+      - 'source/vh_audio_compute_timing.h'
+      - 'tests/test_vh_audio_compute_timing.c'
       - 'tests/test_vh_audio_report_pages.c'
       - 'tests/test_vh_audio_input_poll.c'
       - 'source/vh_audio_resample.c'
@@ -424,6 +428,14 @@ jobs:
             source/vh_spu_reverb.c source/vh_spu_gaussian.c \
             source/vh_audio_stream.c -lm -o /tmp/test_vh_audio_output_recovery
           /tmp/test_vh_audio_output_recovery
+      - name: Validate DSP compute timing and failed-page accounting under UBSan
+        run: |
+          set -euo pipefail
+          cc -std=c11 -Wall -Wextra -Werror -O2 -g -Isource \
+            -fsanitize=undefined -fno-sanitize-recover=all \
+            tests/test_vh_audio_compute_timing.c \
+            -o /tmp/test_vh_audio_compute_timing_ubsan
+          /tmp/test_vh_audio_compute_timing_ubsan
       - name: Validate report page navigation and strict evidence under UBSan
         run: |
           set -euo pipefail

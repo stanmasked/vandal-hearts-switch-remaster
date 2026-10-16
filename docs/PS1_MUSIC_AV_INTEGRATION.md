@@ -1252,3 +1252,36 @@ No copyrighted audio, PCM sample buffers or input timing logs are
 used. This test only validates counting and window boundaries;
 it is not a physical hardware listening test or evidence that
 audible glitches are absent.
+
+
+### Restored DSP processing-budget evidence in the native audout results
+
+The three-screen diagnostic layout originally retained backend wait
+histograms and audio seam counters but accidentally dropped the DSP
+processing cost from its final on-device results. That cost was still
+measured and printed only in periodic scrolling progress lines, which
+can disappear from the Switch console before the operator photographs
+the final report.
+
+Report **1/3** now includes average and peak compute time in
+microseconds, the number of rendered pages exceeding their nominal
+44.1-kHz SEQ/SPU/resampling budget, the number of synthesized pages
+and an independent compute-page integrity verdict. The measurement
+excludes blocking audout service waits and result-screen rendering.
+It includes any synthetic fixture scene-switch work before that
+page's render.
+
+The portable compute accumulator rejects a zero budget and integer
+overflow without modifying previous measurements. A final consistency
+check allows exactly the delivered-page count or one additional
+rendered-but-undelivered page (if an output submission terminated
+the probe); two or more missing deliveries, negative accounting,
+inconsistent peak or impossible over-budget totals fail closed.
+The final FULL PCM-accounting label now also requires this check.
+
+Both \`make test\` and \`make test-audio-stream\` include a host
+regression for threshold boundaries, an interrupted final audout
+submission, arithmetic saturation and tampered statistics. The PCM
+workflow additionally runs it with UBSan. This change adds only
+bounded in-memory diagnostic metadata. It does not speed up the
+audio engine or demonstrate glitch-free playback on physical Switch.

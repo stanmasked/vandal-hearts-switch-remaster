@@ -17,6 +17,7 @@
 #include "vh_audio_listener_input.h"
 #include "vh_audio_input_poll.h"
 #include "vh_audio_report_pages.h"
+#include "vh_audio_compute_timing.h"
 #include "vh_native_seq.h"
 #include "vh_native_spu.h"
 
@@ -192,6 +193,8 @@ typedef struct {
     const VhAudioListeningMarks *marks;
     const VhAudioInputPoll *poll;
     const VhAudioMarkButtons *buttons;
+    const VhAudioComputeTiming *compute;
+    int compute_evidence;
     uint64_t tick_frequency;
     unsigned played, switched, user_files;
     int result, seam_evidence, listen_evidence, poll_evidence;
@@ -226,6 +229,18 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
                (unsigned long long)r->output->timing.waits_longer_than_page);
         printf("Restarts=%u recovered=%u\n",
                r->recovery->restart_attempts,r->recovery->recoveries);
+        const uint64_t rendered=r->compute->rendered_pages;
+        const uint64_t total_us=vh_audio_output_ticks_to_us(
+            r->compute->total_ticks,hz);
+        printf("DSP avg/peak: %llu / %llu us\n",
+               (unsigned long long)(rendered?total_us/rendered:0u),
+               (unsigned long long)vh_audio_output_ticks_to_us(
+                   r->compute->max_ticks,hz));
+        printf("DSP >budget=%llu; rendered=%llu\n",
+               (unsigned long long)r->compute->over_budget,
+               (unsigned long long)rendered);
+        printf("DSP page audit=%s\n",
+               r->compute_evidence==0 ? "VALID" : "INVALID");
         printf("Wait bins: <=1x <=2x <=4x >4x\n");
         printf("Normal: %llu %llu %llu %llu\n",
                (unsigned long long)n->wait_le_page,
@@ -367,8 +382,7 @@ int main(int argc, char **argv) {
     const uint64_t tick_frequency = armGetSystemTickFreq();
     const uint64_t block_budget_ticks =
         tick_frequency * VH_AUDIO_BLOCK_FRAMES / VH_AUDIO_SAMPLE_RATE;
-    uint64_t compute_ticks_total = 0, compute_ticks_max = 0;
-    unsigned compute_over_budget = 0;
+    VhAudioComputeTiming compute={0};
     unsigned played_blocks = 0;
     unsigned fixture_b = 0, completed_switches = 0;
     int result = 0;
@@ -406,9 +420,11 @@ int main(int argc, char **argv) {
             break;
         }
         const uint64_t elapsed_ticks = armGetSystemTick() - tick_begin;
-        compute_ticks_total += elapsed_ticks;
-        if (elapsed_ticks > compute_ticks_max) compute_ticks_max = elapsed_ticks;
-        if (elapsed_ticks > block_budget_ticks) ++compute_over_budget;
+        if (vh_audio_compute_record(&compute,elapsed_ticks,
+                                    block_budget_ticks)) {
+            result=16;
+            break;
+        }
         /* Retry the same fully rendered page after a bounded backend
          * restart. A failed output must not advance any music clock.
          */
@@ -473,14 +489,17 @@ int main(int argc, char **argv) {
                    played_blocks,completed_switches,
                    (unsigned long long)seq.note_ons,seq.cycles_completed);
             if (tick_frequency) {
-                const unsigned long long max_us =
-                    (unsigned long long)(compute_ticks_max*1000000u /
-                                         tick_frequency);
-                const unsigned long long avg_us =
-                    (unsigned long long)(compute_ticks_total*1000000u /
-                                         (tick_frequency * played_blocks));
-                printf("DSP compute avg=%llu us peak=%llu us, over budget=%u\n",
-                       avg_us, max_us, compute_over_budget);
+                const uint64_t avg_us=
+                    vh_audio_output_ticks_to_us(
+                        compute.total_ticks,tick_frequency)/
+                    (compute.rendered_pages?compute.rendered_pages:1u);
+                const uint64_t max_us=
+                    vh_audio_output_ticks_to_us(
+                        compute.max_ticks,tick_frequency);
+                printf("DSP compute avg=%llu us peak=%llu us, over budget=%llu\n",
+                       (unsigned long long)avg_us,
+                       (unsigned long long)max_us,
+                       (unsigned long long)compute.over_budget);
             }
             const uint64_t total_wait_us=
                 vh_audio_output_ticks_to_us(
@@ -533,6 +552,8 @@ int main(int argc, char **argv) {
         played_blocks,completed_switches,MAX_PROBE_BLOCKS,
         user_files ? 0u : SYNTHETIC_SCENE_BLOCKS,
         result==0 && played_blocks==MAX_PROBE_BLOCKS);
+    const int compute_evidence=vh_audio_compute_verify(
+        &compute,played_blocks);
     const int seam_evidence=vh_audio_output_verify_pcm_seams(
         &seam_stats,&output.scene_waits,played_blocks);
     const int listen_evidence=vh_audio_listening_verify(
@@ -543,13 +564,15 @@ int main(int argc, char **argv) {
             &mark_buttons,played_blocks,listening_marks.manual_marks,
             listening_marks.control_marks);
     if ((run_evidence<0 || seam_evidence || listen_evidence ||
-         poll_evidence) && result==0) result=10;
+         poll_evidence || compute_evidence) && result==0) result=10;
     const unsigned verdict=vh_audio_report_evidence(
-        run_evidence,seam_evidence,listen_evidence,poll_evidence);
+        run_evidence,seam_evidence,listen_evidence,poll_evidence,
+        compute_evidence);
     const VhAudioProbeReport report={
         .output=&output,.recovery=&recovery,.seams=&seam_stats,
         .marks=&listening_marks,.poll=&input_poll,
         .buttons=&mark_buttons,
+        .compute=&compute,.compute_evidence=compute_evidence,
         .tick_frequency=tick_frequency,
         .played=played_blocks,.switched=completed_switches,
         .user_files=(unsigned)user_files,.result=result,

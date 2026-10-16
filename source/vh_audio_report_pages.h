@@ -15,9 +15,9 @@
 #define VH_AUDIO_REPORT_FULL 2u
 
 static inline unsigned vh_audio_report_evidence(
-    int run, int seams, int listening, int input) {
+    int run, int seams, int listening, int input, int compute) {
     if ((run!=0 && run!=1) || seams!=0 ||
-        listening!=0 || input!=0)
+        listening!=0 || input!=0 || compute!=0)
         return VH_AUDIO_REPORT_INVALID;
     return run==1 ? VH_AUDIO_REPORT_FULL : VH_AUDIO_REPORT_INCOMPLETE;
 }

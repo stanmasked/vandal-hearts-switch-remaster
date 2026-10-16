@@ -7,16 +7,17 @@
 
 int main(void) {
     unsigned page=0u;
-    assert(vh_audio_report_evidence(1,0,0,0)==VH_AUDIO_REPORT_FULL);
-    assert(vh_audio_report_evidence(0,0,0,0)==VH_AUDIO_REPORT_INCOMPLETE);
+    assert(vh_audio_report_evidence(1,0,0,0,0)==VH_AUDIO_REPORT_FULL);
+    assert(vh_audio_report_evidence(0,0,0,0,0)==VH_AUDIO_REPORT_INCOMPLETE);
     for (int bad=-1;bad<=2;bad++) {
         if (bad==0) continue;
-        assert(vh_audio_report_evidence(1,bad,0,0)==VH_AUDIO_REPORT_INVALID);
-        assert(vh_audio_report_evidence(1,0,bad,0)==VH_AUDIO_REPORT_INVALID);
-        assert(vh_audio_report_evidence(1,0,0,bad)==VH_AUDIO_REPORT_INVALID);
+        assert(vh_audio_report_evidence(1,bad,0,0,0)==VH_AUDIO_REPORT_INVALID);
+        assert(vh_audio_report_evidence(1,0,bad,0,0)==VH_AUDIO_REPORT_INVALID);
+        assert(vh_audio_report_evidence(1,0,0,bad,0)==VH_AUDIO_REPORT_INVALID);
+        assert(vh_audio_report_evidence(1,0,0,0,bad)==VH_AUDIO_REPORT_INVALID);
     }
-    assert(vh_audio_report_evidence(-1,0,0,0)==VH_AUDIO_REPORT_INVALID);
-    assert(vh_audio_report_evidence(2,0,0,0)==VH_AUDIO_REPORT_INVALID);
+    assert(vh_audio_report_evidence(-1,0,0,0,0)==VH_AUDIO_REPORT_INVALID);
+    assert(vh_audio_report_evidence(2,0,0,0,0)==VH_AUDIO_REPORT_INVALID);
     assert(vh_audio_report_navigate(&page,VH_AUDIO_REPORT_NEXT)==0);
     assert(page==1u);
     assert(vh_audio_report_navigate(&page,VH_AUDIO_REPORT_NEXT)==0);
