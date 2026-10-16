@@ -89,14 +89,28 @@ def main():
     parser.add_argument("before", type=Path)
     parser.add_argument("after", type=Path)
     parser.add_argument("--require-synthetic-source", action="store_true",
-                        help="CI must see correctly mounted SD with all three files absent")
+                        help="legacy empty SD fixture check")
+    parser.add_argument("--require-audio-source",
+                        choices=("synthetic", "user_files", "invalid_or_partial",
+                                 "sd_unavailable"),
+                        help="require evidence of this exact guest SD loading outcome")
+    parser.add_argument("--require-audout-status",
+                        choices=("initialized", "unavailable_or_error"),
+                        help="require this exact audout service status")
     args = parser.parse_args()
     try:
         with Image.open(args.before) as first, Image.open(args.after) as second:
             report = inspect_images(first, second)
-        if args.require_synthetic_source and report["audio_source"] != "synthetic":
-            raise ValueError("expected an empty mounted SD fixture, got "
-                             + report["audio_source"])
+        expected_source = ("synthetic" if args.require_synthetic_source
+                           else args.require_audio_source)
+        if expected_source and report["audio_source"] != expected_source:
+            raise ValueError("expected audio source " + expected_source
+                             + ", got " + report["audio_source"])
+        if (args.require_audout_status
+                and report["audout_status"] != args.require_audout_status):
+            raise ValueError("expected audout status "
+                             + args.require_audout_status + ", got "
+                             + report["audout_status"])
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
     print(json.dumps(report, indent=2))
