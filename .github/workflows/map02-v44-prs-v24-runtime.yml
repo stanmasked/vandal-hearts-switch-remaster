@@ -115,7 +115,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./proof/map02_gpu_runtime 2> proof/real-producer-SYNTHETIC-stderr.log
+          ./proof/map02_gpu_runtime 2> proof/real-producer-SYNTHETIC-stderr.log || { tail -n 120 proof/real-producer-SYNTHETIC-stderr.log; exit 1; }
           VH_RASTER_THREADS=1 ./proof/map02_gpu_runtime \
             2> proof/real-producer-SYNTHETIC-single-worker-stderr.log
           python3 - <<'PY'
