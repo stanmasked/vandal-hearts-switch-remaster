@@ -60,7 +60,7 @@ class V62GP0PacketTests(unittest.TestCase):
         self.assertEqual([e["gouraud"] for e in q],[False,True,False,True])
 
     def test_polyline_alternate_termination(self):
-        for terminator in (0x50005000,0x55555555,0x5fffffff):
+        for terminator in (0x50005000,0x55555555,0x5abc5fff):
             with self.subTest(terminator=terminator):
                 r=parse_gp0([0x480000ff,xy(1,1),xy(2,2),xy(3,3),terminator,
                              0xe6000003])
