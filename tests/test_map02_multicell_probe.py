@@ -254,5 +254,59 @@ class MultiCellTests(unittest.TestCase):
                                  step_x=0, step_z=64)
 
 
+    def test_all_18_face_slots_have_distinct_material_shade_and_depth(self):
+        data = fixture()
+        origin = (2 * STRIDE + 3) * RECORD_SIZE
+        data[origin + FACE_COUNT_OFFSET] = 18
+        selections = [(2, 3, i) for i in range(18)]
+        uv = {}
+        samples = {}
+        for i in range(18):
+            indices = (0, 1, 2, 3) if i % 2 == 0 else (3, 2, 1, 0)
+            data[origin + FACE_TABLE_OFFSET + i * 4:
+                 origin + FACE_TABLE_OFFSET + (i + 1) * 4] = bytes(indices)
+            struct.pack_into("<h", data, origin + GFX_OFFSET + 2 * i, 300 + i)
+            data[origin + 284 + i] = 20 + i
+            uv[(2, 3, i)] = (i * 12, 0, 11, 15)
+            samples[(2, 3, 59, i)] = {"otz": 1000 + i}
+        faces = place_selected_faces(data, selections, uv, step_x=64, step_z=64)
+        self.assertEqual(len(faces), 18)
+        self.assertEqual([f["source_face"]["local_gfx"] for f in faces],
+                         list(range(300, 318)))
+        self.assertEqual([f["source_face"]["face_shade"] for f in faces],
+                         list(range(20, 38)))
+        self.assertEqual([f["source_face"]["face"] for f in faces],
+                         list(range(18)))
+        self.assertEqual(
+            [f["source_face"]["face_corners"][0]["uv"][0] for f in faces],
+            [i * 12 for i in range(18)])
+        bound = bind_gte_face_samples(faces, samples)
+        self.assertEqual([b["otz"] for b in bound], list(range(1000, 1018)))
+        self.assertTrue(all(placement_invariants(f)["translation_exact"]
+                            and placement_invariants(f)["cross_preserved"]
+                            for f in faces))
+        with self.assertRaisesRegex(ValueError, "face index outside"):
+            place_selected_faces(data, [(2, 3, 18)],
+                                 {(2, 3, 18): (0, 0, 15, 15)},
+                                 step_x=64, step_z=64)
+
+    def test_mutation_of_single_face_slot_is_detected_without_aliasing(self):
+        data = fixture()
+        origin = (2 * STRIDE + 3) * RECORD_SIZE
+        data[origin + FACE_COUNT_OFFSET] = 2
+        data[origin + FACE_TABLE_OFFSET + 4:
+             origin + FACE_TABLE_OFFSET + 8] = bytes((0, 1, 2, 3))
+        data[origin + 284] = 10
+        data[origin + 285] = 11
+        keys = [(2, 3, 0), (2, 3, 1)]
+        uv = {key: (0, 0, 15, 15) for key in keys}
+        first = place_selected_faces(data, keys, uv, step_x=64, step_z=64)
+        data[origin + 285] = 99
+        second = place_selected_faces(data, keys, uv, step_x=64, step_z=64)
+        self.assertEqual(first[0]["source_face"], second[0]["source_face"])
+        self.assertEqual(second[1]["source_face"]["face_shade"], 99)
+        self.assertNotEqual(first[1]["source_face"], second[1]["source_face"])
+
+
 if __name__ == "__main__":
     unittest.main()
