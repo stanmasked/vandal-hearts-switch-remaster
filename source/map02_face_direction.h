@@ -78,7 +78,9 @@ static inline int64_t vh_map02_candidate_dot(
     const unsigned axes = (unsigned)(direction.x != 0)
                         + (unsigned)(direction.y != 0)
                         + (unsigned)(direction.z != 0);
-    const int64_t q12 = axes == 1u ? 4096 : axes == 2u ? 2896 : 2365;
+    /* Diagnostic on UNNORMALIZED cross products only. The actual
+     * classifier uses vh_map02_best_q12_direction below. */
+    const int64_t q12 = axes == 1u ? 4096 : axes == 2u ? 2896 : 2364;
     return (normal.x * direction.x + normal.y * direction.y +
             normal.z * direction.z) * q12;
 }
