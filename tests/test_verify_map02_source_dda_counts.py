@@ -64,7 +64,8 @@ class SourceDdaCountsJoinTests(unittest.TestCase):
             return struct.unpack_from("<H", raw, 2*(30*1024+30))[0]
         v0 = at(self.baseline.base.bytes_before)
         v1 = at(self.baseline.first)
-        v2 = at(self.baseline.second)
+        v2 = at(self.baseline.base.override_snapshots.get(
+            5, self.baseline.second))
         rows = [
             {"stage":"native_putpixel", "step":i, "frame":12,
              "primitive_ordinal":i+1, "primitive_type":2,
@@ -139,6 +140,71 @@ class SourceDdaCountsJoinTests(unittest.TestCase):
         (self.src/"gpu-putpixel-ot.json").write_text("{}")
         with self.assertRaisesRegex(ValueError,"evidence is incomplete"):
             self.verify()
+
+    def test_nonzero_dda_with_unchanged_vram_and_observed_same_color_putpixel(self):
+        # FT4 ordinal 2 selects nonzero texture colors, but its full
+        # before/after VRAM images match. This alone proves NO reason:
+        # identical blend/copy results, invisible writes and alpha behavior
+        # cannot be inferred from DDA aggregate counts.
+        self.baseline.base.override_snapshots[5] = self.baseline.first
+        self.save()
+        uncertain = self.verify()
+        self.assertEqual(uncertain["source_ft4_draws_without_vram_change"], 1)
+        self.assertEqual(
+            uncertain["source_ft4_nonzero_dda_samples_without_vram_change"], 1)
+        self.assertEqual(
+            uncertain["source_ft4_opaque_dda_samples_without_vram_change"], 1)
+        self.assertEqual(
+            uncertain["source_ft4_stp_dda_samples_without_vram_change"], 1)
+        self.assertEqual(
+            uncertain["source_ft4_no_vram_delta_with_direct_same_color_putpixel"], 0)
+        self.assertFalse(uncertain["optional_scoped_putpixel_evidence_verified"])
+
+        # Direct same-color PutPixel call at chosen private VRAM coordinate,
+        # authenticated by an independent per-primitive before/after gate.
+        self.install_scoped_putpixel()
+        verified = self.verify()
+        self.assertTrue(verified["optional_scoped_putpixel_evidence_verified"])
+        self.assertEqual(
+            verified["source_ft4_no_vram_delta_with_observed_putpixel_calls"], 1)
+        self.assertEqual(
+            verified["source_ft4_no_vram_delta_with_direct_same_color_putpixel"], 1)
+        self.assertEqual(
+            verified["source_ft4_nonzero_dda_no_vram_delta_with_same_color_putpixel"], 1)
+        self.assertEqual(
+            verified["source_ft4_no_vram_delta_with_direct_transient_putpixel_change"], 0)
+        self.assertFalse(verified["pixel_writes_equal_to_samples_proven"])
+
+    def test_putpixel_write_then_restore_hidden_by_final_vram_snapshot(self):
+        # Final VRAM equality can hide transient PutPixel changes.
+        self.baseline.base.override_snapshots[5] = self.baseline.first
+        self.save()
+        self.install_scoped_putpixel()
+        pixel_file = self.gpu / "putpixel-native-events.jsonl"
+        rows = [json.loads(line) for line in pixel_file.read_bytes().splitlines()]
+        final_color = rows[1]["before"]
+        temporary_color = final_color ^ 0x001f
+        self.assertNotEqual(final_color, temporary_color)
+        rows[1]["front"] = rows[1]["after"] = temporary_color
+        last = dict(rows[1])
+        last.update(step=2, before=temporary_color, front=final_color,
+                    after=final_color)
+        rows.append(last)
+        payload = b"".join((json.dumps(x, sort_keys=True)+"\\n").encode()
+                           for x in rows)
+        pixel_file.write_bytes(payload)
+        manifest = self.src/"gpu-putpixel-ot.json"
+        data = json.loads(manifest.read_text())
+        data["putpixel_events_sha256"] = sha(payload)
+        manifest.write_text(json.dumps(data, sort_keys=True))
+        evidence = self.verify()
+        self.assertEqual(
+            evidence["source_ft4_no_vram_delta_with_direct_same_color_putpixel"], 0)
+        self.assertEqual(
+            evidence["source_ft4_no_vram_delta_with_direct_transient_putpixel_change"], 1)
+        self.assertEqual(
+            evidence["observed_coordinate_scoped_putpixel_calls"], 3)
+        self.assertFalse(evidence["fallback_or_same_color_write_reason_proven"])
 
     def test_no_dda_sampling_with_native_vram_change_is_not_falsely_rejected(self):
         self.rows[0]["zero"] = self.rows[0]["stp"] = self.rows[0]["opaque"] = 0
