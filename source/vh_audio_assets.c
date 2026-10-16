@@ -1,4 +1,5 @@
 #include "vh_audio_assets.h"
+#include "vh_spu_adpcm.h"
 
 #include <errno.h>
 #include <limits.h>
