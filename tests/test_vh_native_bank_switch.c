@@ -130,6 +130,11 @@ int main(void) {
     assert(output_frames+2u>=expected && output_frames<=expected+1u);
     assert(resampler.next_output_tick==output_frames*44100u);
     assert(checksum[0]!=checksum[1]);
+    /* Synthetic-only guard: the known stable transitions stay below 1024
+     * PCM16 steps. Never use this threshold as a PS1 accuracy claim.
+     */
+    for (unsigned seam=0;seam<3u;seam++)
+        assert(seam_deltas[seam] <= 1024u);
     printf("VAB seam adjacent-sample deltas (PCM16): %u %u %u\n",
            seam_deltas[0],seam_deltas[1],seam_deltas[2]);
     puts("two synthetic VAB banks: safe SEQ SPU switch, continuous PCM clock PASS");
