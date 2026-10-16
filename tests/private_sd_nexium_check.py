@@ -196,6 +196,32 @@ def stage_distance(sd_root):
     return metadata
 
 
+def stage_side_lighting(sd_root):
+    """Opt into real 26-normal GTE NCCS with a PRIVATE one-byte fixture.
+
+    Same synthetic 3-face NCLIP scene; visible left face uses normal 4
+    (-X, directional red brighter) and right normal 2 (+X, ambient only).
+    No real map-light state is implied.
+    """
+    from inspect_vh_map_geometry import MAP_11_STRIDE,TILE_BYTES,VERTICES_BYTES,GFX_BYTES,FACE_BYTES
+    from stage_vh_private_map_geometry import stage_map11_geometry
+    from stage_vh_private_map_bank import RELATIVE_DESTINATION
+    stage(sd_root)
+    data=bytearray(synthetic_geometry_models())
+    base=(3*MAP_11_STRIDE+6)*TILE_BYTES
+    shade=base+VERTICES_BYTES+GFX_BYTES+FACE_BYTES
+    data[shade+1]=4
+    data[shade+2]=2
+    report=stage_map11_geometry(bytes(data),sd_root)
+    assert report["active_faces"]==3
+    path=Path(sd_root)/RELATIVE_DESTINATION/"LIGHT_TEST_INTENSITY.BIN"
+    if path.exists() or path.is_symlink():
+        raise FileExistsError("private light intensity already exists")
+    path.write_bytes(bytes((32,)))
+    print("Staged original GTE NCCS 26-normal light: intensity 32, -X and +X")
+    return report
+
+
 def stage_geometry(sd_root):
     from stage_vh_private_map_geometry import stage_map11_geometry
     metadata = stage_map11_geometry(synthetic_geometry_models(), sd_root)
@@ -318,6 +344,26 @@ def check_distance(image_path):
     return True
 
 
+def check_side_lighting(image_path):
+    from PIL import Image
+    frame=Image.open(image_path).convert("RGB")
+    if frame.size!=(1280,720):
+        raise ValueError("unexpected 26-normal lighting screenshot dimensions")
+    samples=(
+        ("-X direct-lit red", (260,210), (255,0,0)),
+        ("-X ambient-only blue", (400,400), (0,0,64)),
+        ("+X ambient magenta", (850,210), (64,0,64)),
+        ("+X ambient cyan", (850,400), (0,64,64)),
+    )
+    for title,(x,y),expected in samples:
+        pixel=frame.getpixel((x,y))
+        print("Original 26-normal GTE NCCS",title,pixel)
+        if max(abs(a-b) for a,b in zip(pixel,expected))>12:
+            raise ValueError(f"wrong face lighting {title}: {pixel} expected {expected}")
+    print("Pinned GTE NCCS per-side color lighting verified on synthetic map")
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group(required=True)
@@ -329,6 +375,8 @@ def main():
     group.add_argument("--check-depth-screenshot", type=Path)
     group.add_argument("--stage-distance-sd-root", type=Path)
     group.add_argument("--check-distance-screenshot", type=Path)
+    group.add_argument("--stage-side-light-sd-root", type=Path)
+    group.add_argument("--check-side-light-screenshot", type=Path)
     args = parser.parse_args()
     if args.stage_sd_root is not None:
         stage(args.stage_sd_root)
@@ -344,6 +392,10 @@ def main():
         stage_distance(args.stage_distance_sd_root)
     elif args.check_distance_screenshot is not None:
         check_distance(args.check_distance_screenshot)
+    elif args.stage_side_light_sd_root is not None:
+        stage_side_lighting(args.stage_side_light_sd_root)
+    elif args.check_side_light_screenshot is not None:
+        check_side_lighting(args.check_side_light_screenshot)
     else:
         check(args.check_screenshot)
 
