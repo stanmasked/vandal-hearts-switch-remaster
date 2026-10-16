@@ -23,20 +23,24 @@ SCHEMA="map02-v67-versioned-pre-submit-ram-v1"
 RAM_BYTES=2*1024*1024
 MAX_FRAMES=64
 MAX_TOTAL_WORDS=MAX_FRAMES*65536
-FIELDS={"schema","source_class","ram_size","base_address","frame_sha256"}
+FIELDS={"schema","source_class","ram_size","base_address","frame_sha256","entry_points"}
 HEX=set("0123456789abcdef")
 
 def digest(data:bytes)->str:
     return hashlib.sha256(data).hexdigest()
 
-def manifest_for_frames(versions:list[bytes],source_class:str):
+def manifest_for_frames(versions:list[bytes],source_class:str,entry_points:list[int]):
     if (source_class not in ("synthetic","user-supplied-unverified")
             or not 1<=len(versions)<=MAX_FRAMES
             or any(len(ram)!=RAM_BYTES for ram in versions)):
         raise DmaError("bounded PS1 RAM frame versions or source class invalid")
+    if (not isinstance(entry_points,list) or len(entry_points)!=len(versions)
+            or any(type(h)!=int or h<0 or h>=RAM_BYTES or h%4 for h in entry_points)):
+        raise DmaError("DMA head binding for every frame is required")
     return {
         "schema":SCHEMA,"source_class":source_class,
         "ram_size":RAM_BYTES,"base_address":0,
+        "entry_points":entry_points,
         "frame_sha256":[digest(ram) for ram in versions]
     }
 
@@ -48,6 +52,10 @@ def check_manifest(versions:list[bytes],manifest:dict):
             type(manifest["ram_size"])!=int or manifest["ram_size"]!=RAM_BYTES or
             type(manifest["base_address"])!=int or manifest["base_address"]!=0):
         raise DmaError("RAM versioned snapshot metadata invalid")
+    heads=manifest["entry_points"]
+    if (not isinstance(heads,list) or len(heads)!=len(versions)
+            or any(type(h)!=int or h<0 or h>=RAM_BYTES or h%4 for h in heads)):
+        raise DmaError("missing or invalid bound frame DMA head")
     hashes=manifest["frame_sha256"]
     if (not isinstance(hashes,list) or not 1<=len(hashes)<=MAX_FRAMES
             or len(hashes)!=len(versions)
@@ -103,7 +111,7 @@ def _validate_stream(versions:list[bytes],manifest:dict,observations:bytes):
         head=event["head"]
         words=event["words"]
         if (type(event["frame"])!=int or event["frame"]!=frame or
-            type(head)!=int or head<0 or head>=RAM_BYTES or head%4 or
+            type(head)!=int or head!=manifest["entry_points"][frame] or
             not isinstance(words,list) or not 1<=len(words)<=65536
             or any(type(x)!=int or x<0 or x>0xffffffff for x in words)):
             raise DmaError("invalid DMA2 frame, head or GP0 words")
@@ -180,10 +188,16 @@ def main():
     reports=[]
     try:
         if a.make_manifest:
-            if a.manifest or a.probe or a.output or a.frames is None:
-                raise DmaError("manifest creation requires --frames only")
+            if a.manifest or a.probe is None or a.output or a.frames is None:
+                raise DmaError("manifest creation requires --probe and --frames")
             versions=read_snapshots(a.snapshot_dir,a.frames)
-            metadata=manifest_for_frames(versions,a.source_class)
+            header,events=parse_observations(local_bytes(a.probe,8*1024*1024))
+            if header["source_class"]!=a.source_class:
+                raise DmaError("source class differs from observed header")
+            heads=[e["head"] for e in events if e.get("kind")=="GP0_DMA2"]
+            if len(heads)!=a.frames:
+                raise DmaError("probe frame count differs from observed heads")
+            metadata=manifest_for_frames(versions,a.source_class,heads)
             if a.make_manifest.is_symlink() or a.make_manifest.exists():
                 raise DmaError("refusing overwrite of RAM version manifest")
             a.make_manifest.parent.mkdir(parents=True,exist_ok=True)
