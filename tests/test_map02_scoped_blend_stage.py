@@ -37,14 +37,19 @@ int main(int argc, char **argv) {
         assert(!vh_map02_stage_private_blendg1(argv[1]));
         return 0;
     }
+    vh_map02_probe_begin(9, 10, 0x0473, 0x0020, 0, 0, 0, 1);
+    vh_map02_probe_end(9, 10, 0x0020); /* opaque, no BlendG1 call */
     assert(vh_map02_scope_end_primitive());
     assert(vh_map02_scope_end_frame());
-    result = vh_map02_stage_private_blendg1(argv[1]);
-    if (strcmp(argv[2], "publish") == 0) {
+    if (strncmp(argv[2], "pair-", 5) == 0)
+        result = vh_map02_stage_private_pair(argv[1]);
+    else
+        result = vh_map02_stage_private_blendg1(argv[1]);
+    if (strcmp(argv[2], "publish") == 0 || strcmp(argv[2], "pair-publish") == 0) {
         assert(result);
         return 0;
     }
-    if (strcmp(argv[2], "refuse") == 0) {
+    if (strcmp(argv[2], "refuse") == 0 || strcmp(argv[2], "pair-refuse") == 0) {
         assert(!result);
         return 0;
     }
@@ -91,6 +96,48 @@ class PrivateBlendStageTests(unittest.TestCase):
         self.assertEqual(event["blend_result"], 0x0473)
         self.run_stage("refuse")
         self.assertEqual(final.read_bytes(), raw)
+        self.assertFalse(list(self.private.glob(".*.tmp")))
+
+    def test_pair_has_same_frame_and_independent_blend_events(self):
+        self.run_stage("pair-publish")
+        pixel_file = self.private / "putpixel-native-events.pending.jsonl"
+        blend_file = self.private / "blendg1-native-events.pending.jsonl"
+        pixel_raw, blend_raw = pixel_file.read_bytes(), blend_file.read_bytes()
+        pixels = [json.loads(line) for line in pixel_raw.splitlines()]
+        blends = [json.loads(line) for line in blend_raw.splitlines()]
+        self.assertEqual(len(pixels), 2)
+        self.assertEqual(len(blends), 1)
+        self.assertEqual([p["step"] for p in pixels], [0, 1])
+        self.assertEqual(pixels[0]["frame"], blends[0]["frame"])
+        self.assertEqual(pixels[0]["primitive_ordinal"],
+                         blends[0]["primitive_ordinal"])
+        self.assertEqual(blends[0]["blend_fg"], pixels[0]["front"] | 0x8000)
+        self.assertEqual(blends[0]["blend_result"], pixels[0]["after"])
+        self.assertEqual([p["semi"] for p in pixels], [1, 0])
+        self.assertEqual(stat.S_IMODE(pixel_file.stat().st_mode), 0o600)
+        self.assertEqual(stat.S_IMODE(blend_file.stat().st_mode), 0o600)
+        self.run_stage("pair-refuse")
+        self.assertEqual(pixel_file.read_bytes(), pixel_raw)
+        self.assertEqual(blend_file.read_bytes(), blend_raw)
+        self.assertFalse(list(self.private.glob(".*.tmp")))
+
+    def test_pair_rolls_back_if_second_destination_exists(self):
+        pixel_file = self.private / "putpixel-native-events.pending.jsonl"
+        pixel_file.write_bytes(b"occupied\n")
+        self.run_stage("pair-refuse")
+        self.assertEqual(pixel_file.read_bytes(), b"occupied\n")
+        self.assertFalse((self.private /
+                          "blendg1-native-events.pending.jsonl").exists())
+        self.assertFalse(list(self.private.glob(".*.tmp")))
+
+    def test_pair_rejects_second_destination_symlink(self):
+        target = self.root / "target"
+        target.write_bytes(b"untouched\n")
+        (self.private / "putpixel-native-events.pending.jsonl").symlink_to(target)
+        self.run_stage("pair-refuse")
+        self.assertEqual(target.read_bytes(), b"untouched\n")
+        self.assertFalse((self.private /
+                          "blendg1-native-events.pending.jsonl").exists())
         self.assertFalse(list(self.private.glob(".*.tmp")))
 
     def test_unselected_incomplete_and_nonprivate_directories(self):
