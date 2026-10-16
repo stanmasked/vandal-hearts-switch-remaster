@@ -106,6 +106,7 @@ def publish_blendg1_witness(source_dir, native_dir, *, compiler="gcc"):
         raise ValueError("completed BlendG1 witness already exists")
     log_temp = manifest_temp = None
     published_log = False
+    published_manifest = False
     try:
         log_temp = _prepare_private_file(log_final, staged_raw)
         manifest_temp = _prepare_private_file(manifest_final, manifest_raw)
@@ -114,10 +115,12 @@ def publish_blendg1_witness(source_dir, native_dir, *, compiler="gcc"):
         if log_final.read_bytes() != staged_raw:
             raise ValueError("published BlendG1 log failed readback")
         os.link(manifest_temp, manifest_final)  # publish completion marker LAST
+        published_manifest = True
         if manifest_final.read_bytes() != manifest_raw:
-            manifest_final.unlink()
             raise ValueError("published BlendG1 manifest failed readback")
     except BaseException:
+        if published_manifest:
+            manifest_final.unlink(missing_ok=True)
         if published_log:
             log_final.unlink(missing_ok=True)
         raise
