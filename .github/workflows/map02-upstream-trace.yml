@@ -697,6 +697,15 @@ jobs:
               Path("/tmp/vh-map02-native-span-overlay"))
           assert report["pinned_original_gpu"]
           assert not report["vertical_rejected_row_coverage_proven"]
+          gpu_old = Path("/tmp/vh-map02-vertical-dda/libgpu.vertical.c").read_bytes()
+          gpu_new = Path("/tmp/vh-map02-native-span-overlay/libgpu.span.c").read_bytes()
+          assert gpu_old == gpu_new, "span overlay changed the native GPU observer"
+          vertical = Path("/tmp/vh-map02-vertical-dda/pc_raster.vertical.c").read_text()
+          span = Path("/tmp/vh-map02-native-span-overlay/pc_raster.span.c").read_text()
+          for reason in (4, 5, 6, 7):
+              anchor = f"VH_Map02SkipAt(vh_pixel_sample_x, y, {reason});"
+              assert vertical.count(anchor) == span.count(anchor) == 1
+          assert span.count("VH_Map02SpanObserve(cx, y, x_start, x_bound);") == 1
           PY
           (
             cd upstream/platform/pc
