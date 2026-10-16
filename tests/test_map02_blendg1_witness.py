@@ -55,8 +55,8 @@ class BlendG1WitnessTests(unittest.TestCase):
 
     def test_no_semi_requires_no_blend(self):
         p = pixel(0, 0, 2, semi=0)
-        self.assertEqual(compare_blendg1_witnesses([p], [])
-                         ["observed_blendg1_putpixel_pairs"], 0)
+        with self.assertRaises(ValueError):
+            compare_blendg1_witnesses([p], [])
         with self.assertRaises(ValueError):
             compare_blendg1_witnesses([p], [witness(p)])
 
