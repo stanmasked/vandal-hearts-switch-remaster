@@ -371,10 +371,17 @@ jobs:
           import json, subprocess
           original=Path("proof/real-producer-SYNTHETIC-stderr.log").read_text()
           assert "[v48-terrain-pixel]" in original, "no original GPU pixel decisions captured"
-          def refuse(name,old,new):
-              assert old in original, (name,old)
+          import re
+          def refuse(name, field):
+              # Change the EXACT first original GPU pixel record rather than
+              # presuming game lighting emitted a fixed raw/output value.
+              pat=re.compile(r"(\[v48-terrain-pixel\][^\n]*\b"+field+r"=)(\d+)")
+              match=pat.search(original)
+              assert match is not None, (name,field)
+              current=int(match.group(2))
+              corrupt=current ^ 1
               altered=Path("proof")/f"SYNTHETIC_CORRUPTED_PIXEL_{name}.log"
-              altered.write_text(original.replace(old,new,1))
+              altered.write_text(original[:match.start(2)]+str(corrupt)+original[match.end(2):])
               result=subprocess.run([
                   "python3","-m","remaster.tools.verify_map02_pixels_v48",
                   "proof/SYNTHETIC_M_MAP02.PRS",str(altered),"--synthetic-fixture"
@@ -384,8 +391,8 @@ jobs:
                   parsed=json.loads(result.stdout)
                   assert parsed["status"]=="refused",parsed
               altered.unlink()
-          refuse("output"," after=31 "," after=30 ")
-          refuse("source"," raw=31 "," raw=0 ")
+          refuse("output","after")
+          refuse("source","raw")
           print("PASS: tampering actual GPU output or texel sample is detected.")
           PY
       - name: Upload runtime logs and binary hash proofs
