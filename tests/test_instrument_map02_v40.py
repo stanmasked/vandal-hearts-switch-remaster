@@ -12,7 +12,7 @@ HEADER = """typedef struct {
 } RenderCtx;
 """
 GPU = """
-    rcn.target = 0; rcn.scale = 1;
+            rcn.target = 0; rcn.scale = 1;
     rch = rcn; rch.target = 1; rch.scale = hiScale;
     VhMap02V39Tag v39Tag;
     if (something) {
