@@ -523,3 +523,47 @@ not the PlayStation hardware's cycle-accurate envelope scheduler.
 A saturated request signals allocator pressure, not proof of a
 particular stolen voice or audible dropout. No production voice
 allocation or release behavior has been modified.
+
+### Natural release retirement and repeated voice reuse
+
+A note entering `VH_ADSR_RELEASE` is not immediately removed from
+the SPU. To separate *natural* completion of that phase from
+round-robin replacement of a still-active voice, the private-bank
+auditor now samples each slot immediately before and after every
+512-frame SPU render. The following additional metrics are reported:
+
+- `adsr_release_slot_retirements` — the count of slots which were
+  active in Release immediately before rendering and were inactive
+  after rendering the block. This does **not** count Release voices
+  overwritten by a new Note On before the render.
+- `first_release_retirement_block` and
+  `last_release_retirement_block` — the earliest and latest
+  1-based 512-frame block in which such retirement was observed.
+  They are both zero when no retirement occurred.
+- `peak_releasing_voices_before_render` — the highest number of
+  simultaneously active Release voices observed just before a
+  block's SPU rendering begins.
+
+A synthetic 40-block sequence starts 20 distinct music voices and
+executes four successive waves of three Note Offs and three new
+Note Ons. In the **immediate** case all 12 new requests arrive
+while the corresponding Release voices still occupy slots; these
+voices are replaced before rendering, so the test expects 12
+saturated requests and zero natural Release retirements. In the
+**delayed** case the SPU renders the Release phase before the next
+requests: the test expects zero saturated requests and 12 natural
+retirements, first in block 5 and last in block 29.
+
+A separate stress test alternates these two banks for 16 scenes,
+checking that Release-retirement and saturation counts reset on
+every bank switch, that the new bank's notes are resolved from
+its own decoded PCM, and that the rolling output resampler still
+produces the exact number of 48-kHz frames. Neither test includes
+the original copyrighted game audio.
+
+These are **observational, block-granularity software metrics**.
+A Release voice that becomes inactive and is reused within the
+same render block cannot be individually timestamped here.
+A zero retirement count does not mean the voice never entered
+Release, and it does not establish waveform or cycle parity
+with original PlayStation hardware.
