@@ -684,6 +684,13 @@ jobs:
           assert m["vertical_row_rejected_but_horizontal_coverage_unknown"]
           assert not m["per_pixel_triangle_coverage_verified"]
           PY
+          PYTHONPATH=remaster python3 - <<'PY'
+          from pathlib import Path
+          from tools.instrument_map02_dda_span import instrument_span
+          path = Path("/tmp/vh-map02-vertical-dda/pc_raster.vertical.c")
+          path.with_name("pc_raster.span.c").write_text(
+              instrument_span(path.read_text(encoding="utf-8")), encoding="utf-8")
+          PY
           (
             cd upstream/platform/pc
             flags=(
@@ -708,10 +715,22 @@ jobs:
               gcc "${flags[@]}" "${extra[@]}" \
                 -c /tmp/vh-map02-vertical-dda/pc_raster.vertical.c \
                 -o "build/map02-vertical-dda/raster.${mode}.o"
+              span_extra=()
+              if [[ "$mode" == diagnostic ]]; then
+                span_extra=(-DVH_MAP02_DDA_SPAN_TRACE)
+              fi
+              gcc "${flags[@]}" "${extra[@]}" "${span_extra[@]}" \
+                -c /tmp/vh-map02-vertical-dda/pc_raster.span.c \
+                -o "build/map02-vertical-dda/span.${mode}.o"
               ld -r "build/map02-vertical-dda/gpu.${mode}.o" \
                 "build/map02-vertical-dda/raster.${mode}.o" \
                 -o "build/map02-vertical-dda/linked.${mode}.o"
             done
+            nm -a build/map02-vertical-dda/span.diagnostic.o | grep VH_Map02SpanObserve
+            if nm -a build/map02-vertical-dda/span.baseline.o | grep -q VH_Map02SpanObserve; then
+              echo "Span observer leaked into baseline" >&2
+              exit 1
+            fi
             nm -a build/map02-vertical-dda/linked.diagnostic.o | grep VH_Map02SkipAt
             nm -a build/map02-vertical-dda/linked.diagnostic.o | grep VH_Map02PixelScopeSet
             if nm -a build/map02-vertical-dda/linked.baseline.o | grep -Eq 'VH_Map02SkipAt|VH_Map02PixelScope|VH_PixelSampleRecord|VH_CaptureEvent'; then
