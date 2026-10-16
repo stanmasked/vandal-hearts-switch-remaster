@@ -204,3 +204,47 @@ guest-SD NeXium run checks this indicator in addition to previously
 verified music-source identity, audio-buffer processing and animated
 framebuffer. This establishes **software switching progress only**,
 not correct audibility or the original game's music cue rules.
+
+## EON wet/dry differential and resampling-phase investigation
+
+The synthetic 16-scene A/B bank test `tests/test_vh_native_bank_switch.c`
+uses a VAB tone with `VagAtr.mode` bit 2 **unset**. Thus, although
+STUDIO_C remains enabled, it receives no voice send and cannot explain
+the late increasing PCM seam in that specific test. Its baseline dry
+max across 15 transitions is **1367 PCM16**.
+
+A separate host regression, `tests/test_vh_native_bank_switch_reverb.c`,
+sets `VagAtr.mode` bit 2 and runs matched **wet STUDIO_C** and
+**fully dry** SEQ/SPU/resampler paths through the same 16 synthetic
+scenes. On the recorded CI run, **280,621 stereo sample values**
+differed between these outputs; the peak 48-kHz adjacent-sample
+changes were **1269 PCM16 wet** versus **1367 dry**. Reverb can alter
+individual seams in either direction, but a wet tail is **not needed**
+to reproduce the rising dry 48-kHz seam values.
+
+Tracing the source *before resampling* isolates the pattern:
+
+| Source and output | A→B seams | B→A seams |
+| --- | --- | --- |
+| Dry SPU at 44,100 Hz | 194 (repeats) | 2429 (repeats) |
+| Dry output at 48,000 Hz | 112, 125, 139, 152, 165, 179, 14, 27 | 365, 532, 699, 866, 1033, 1200, 1367 |
+| EON wet output at 48,000 Hz | 109, 210, 187, 191, 205, 227, 104, 110 | 523, 585, 649, 792, 950, 1109, 1269 |
+
+The identical alternating 44.1-kHz source discontinuities and
+changing 48-kHz seam values correspond to a **changing fractional
+resampler boundary position** (the test logs this position for each
+scene). This explains the measured synthetic pattern without
+requiring a random DSP discontinuity or lost PCM clock. It does
+**not** prove that an audible click is absent, nor that the actual
+PlayStation original makes the same transitions.
+
+The differential regression asserts that the source-level A→B and
+B→A magnitude bands remain separate, that wet seams stay within the
+measured synthetic safety envelope, that the dry/wet outputs differ,
+and that continuous resampler clocks are identical. ASan/UBSan and
+repeated-execution comparisons run in PCM WAV diagnostics.
+
+**Decision:** Do not add automatic crossfades or modify reverb merely
+to suppress these diagnostic numbers. Future work needs a genuine
+user-supplied SEQ/VH/VB comparison and capture on a physical Switch
+before selecting a perceptual artifact fix.
