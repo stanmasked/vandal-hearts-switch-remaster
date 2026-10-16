@@ -10,11 +10,16 @@ from PIL import Image
 from check_native_av_screenshot import inspect_images, HERO, AUDIO_OK, AUDIO_FAIL
 
 
-def make_frames(audio=AUDIO_OK, advance=True, source=(83, 100, 119)):
+def make_frames(audio=AUDIO_OK, advance=True, source=(83, 100, 119),
+                pipeline=None):
     before = Image.new("RGB", (1280, 720), (17, 23, 39))
     before.putpixel((452, 296), HERO)
     before.putpixel((1050, 160), audio)
     before.putpixel((1050, 218), source)
+    before.putpixel((1050, 280), (
+        pipeline if pipeline is not None
+        else AUDIO_FAIL if audio == AUDIO_FAIL else AUDIO_OK
+    ))
     after = before.copy()
     if advance:
         for x in range(105, 148):
@@ -30,6 +35,7 @@ class NativeAVScreenshotTests(unittest.TestCase):
         self.assertEqual(result["video_framebuffer"], "observed")
         self.assertEqual(result["audout_status"], "initialized")
         self.assertEqual(result["audio_source"], "synthetic")
+        self.assertEqual(result["audio_pipeline_progress"], "buffers_returned")
         self.assertFalse(result["user_music_identity_verified"])
         self.assertGreater(result["heartbeat_changed_pixels"], 16)
         self.assertFalse(result["audible_audio_verified"])
@@ -48,6 +54,7 @@ class NativeAVScreenshotTests(unittest.TestCase):
         report = inspect_images(first, second)
         self.assertEqual(report["audio_source"], "invalid_or_partial")
         self.assertEqual(report["audout_status"], "unavailable_or_error")
+        self.assertEqual(report["audio_pipeline_progress"], "inactive_or_error")
 
     def test_unavailable_sd_mount_is_explicit(self):
         first, second = make_frames(audio=AUDIO_FAIL, source=(255, 219, 102))
@@ -82,6 +89,18 @@ class NativeAVScreenshotTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "heartbeat did not advance"):
             inspect_images(first, second)
 
+    def test_initialized_but_stalled_audio_cannot_pass_progress_gate(self):
+        first, second = make_frames(pipeline=(255, 219, 102))
+        report = inspect_images(first, second)
+        self.assertEqual(report["audout_status"], "initialized")
+        self.assertEqual(report["audio_pipeline_progress"], "not_yet_confirmed")
+        self.assertFalse(report["audible_audio_verified"])
+
+    def test_missing_pipeline_status_never_silently_passes(self):
+        first, second = make_frames(pipeline=(20, 30, 40))
+        with self.assertRaisesRegex(ValueError, "audio pipeline status marker absent"):
+            inspect_images(first, second)
+
     def test_no_audio_status_marker_is_rejected(self):
         first, second = make_frames((20, 20, 20))
         with self.assertRaisesRegex(ValueError, "status marker absent"):
@@ -98,12 +117,14 @@ class NativeAVScreenshotTests(unittest.TestCase):
             prefix = [sys.executable, "tests/check_native_av_screenshot.py"]
             args = [str(first_path), str(second_path),
                     "--require-audio-source", "invalid_or_partial",
-                    "--require-audout-status", "unavailable_or_error"]
+                    "--require-audout-status", "unavailable_or_error",
+                    "--require-audio-pipeline", "inactive_or_error"]
             passed = subprocess.run(prefix + args, capture_output=True, text=True)
             self.assertEqual(passed.returncode, 0, passed.stderr)
             report = json.loads(passed.stdout)
             self.assertEqual(report["audio_source"], "invalid_or_partial")
             self.assertFalse(report["user_music_identity_verified"])
+            self.assertEqual(report["audio_pipeline_progress"], "inactive_or_error")
             denied = subprocess.run(prefix + args[:2] +
                                     ["--require-audio-source", "user_files"],
                                     capture_output=True, text=True)
