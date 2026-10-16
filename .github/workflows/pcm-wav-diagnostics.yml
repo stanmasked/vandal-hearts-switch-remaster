@@ -94,3 +94,15 @@ jobs:
             tests/test_vh_resample_long_clock.c source/vh_audio_resample.c \
             -o /tmp/test_vh_resample_long_clock
           /tmp/test_vh_resample_long_clock
+      - name: Check resampler block and long clock tests under UBSan
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=undefined -fno-sanitize-recover=all \
+            tests/test_vh_resample_partition.c source/vh_audio_resample.c \
+            -o /tmp/test_vh_resample_partition_ubsan
+          /tmp/test_vh_resample_partition_ubsan
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=undefined -fno-sanitize-recover=all \
+            tests/test_vh_resample_long_clock.c source/vh_audio_resample.c \
+            -o /tmp/test_vh_resample_long_clock_ubsan
+          /tmp/test_vh_resample_long_clock_ubsan
