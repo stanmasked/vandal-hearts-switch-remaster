@@ -164,8 +164,8 @@ int main(void) {
      */
     /* First three legacy synthetic seams were measured at 112, 365
      * and 125; preserve their original 1024 regression guard.
-     * The extended A/B soak reaches a repeatable maximum of 1367 from
-     * synthetic-note phase alignment. Its separate 2048 guard catches
+     * The extended A/B soak has measured a maximum of 1367, which
+     * may reflect synthetic-note phase alignment. Its 2048 guard catches
      * major new discontinuities without treating a valid note onset
      * as a guaranteed inaudible or PlayStation-identical transition.
      */
