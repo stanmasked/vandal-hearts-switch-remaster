@@ -85,8 +85,10 @@ on:
       - 'tools/verify_map02_native_putpixel.py'
       - 'tools/instrument_map02_putpixel_scope.py'
       - 'tools/instrument_map02_raster_skips.py'
+      - 'tools/instrument_map02_dda_texel_counts.py'
       - 'tools/instrument_map02_vertical_dda.py'
       - 'tools/verify_map02_raster_skips.py'
+      - 'tools/verify_map02_dda_texel_counts.py'
       - 'tools/verify_map02_putpixel_scope.py'
       - 'tools/verify_map02_camera_capture.py'
       - 'tools/verify_map02_frame_bundle.py'
@@ -104,9 +106,11 @@ on:
       - 'tests/test_verify_map02_native_putpixel.py'
       - 'tests/test_instrument_map02_putpixel_scope.py'
       - 'tests/test_instrument_map02_raster_skips.py'
+      - 'tests/test_instrument_map02_dda_texel_counts.py'
       - 'tests/test_instrument_map02_vertical_dda.py'
       - 'tests/test_verify_map02_vertical_dda.py'
       - 'tests/test_verify_map02_raster_skips.py'
+      - 'tests/test_verify_map02_dda_texel_counts.py'
       - 'tests/test_verify_map02_putpixel_scope.py'
       - 'tests/test_verify_map02_frame_bundle.py'
       - 'tests/test_verify_map02_vram_timeline.py'
@@ -214,8 +218,10 @@ on:
       - 'tools/verify_map02_native_putpixel.py'
       - 'tools/instrument_map02_putpixel_scope.py'
       - 'tools/instrument_map02_raster_skips.py'
+      - 'tools/instrument_map02_dda_texel_counts.py'
       - 'tools/instrument_map02_vertical_dda.py'
       - 'tools/verify_map02_raster_skips.py'
+      - 'tools/verify_map02_dda_texel_counts.py'
       - 'tools/verify_map02_putpixel_scope.py'
       - 'tools/verify_map02_camera_capture.py'
       - 'tools/verify_map02_frame_bundle.py'
@@ -233,9 +239,11 @@ on:
       - 'tests/test_verify_map02_native_putpixel.py'
       - 'tests/test_instrument_map02_putpixel_scope.py'
       - 'tests/test_instrument_map02_raster_skips.py'
+      - 'tests/test_instrument_map02_dda_texel_counts.py'
       - 'tests/test_instrument_map02_vertical_dda.py'
       - 'tests/test_verify_map02_vertical_dda.py'
       - 'tests/test_verify_map02_raster_skips.py'
+      - 'tests/test_verify_map02_dda_texel_counts.py'
       - 'tests/test_verify_map02_putpixel_scope.py'
       - 'tests/test_verify_map02_frame_bundle.py'
       - 'tests/test_verify_map02_vram_timeline.py'
@@ -656,6 +664,65 @@ jobs:
             nm -a build/map02-native-raster-skips/combined.probe.o | grep VH_Map02PixelScopeSet
             if nm -a build/map02-native-raster-skips/combined.baseline.o | grep -Eq 'VH_Map02SkipAt|VH_Map02PixelScope|VH_PixelSampleRecord|VH_CaptureEvent'; then
               echo "Native raster skip probe leaked into baseline object" >&2
+              exit 1
+            fi
+          )
+          test -z "$(cd upstream && git status --porcelain -- platform/pc/src/libgpu.c platform/pc/src/pc_raster.c)"
+
+      - name: Count actual native FT4 DDA BGR555 decisions in synchronized DrawOTag scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd remaster
+            python3 -m unittest discover -s tests -p 'test_instrument_map02_dda_texel_counts.py' -v
+            python3 -m unittest discover -s tests -p 'test_verify_map02_dda_texel_counts.py' -v
+          )
+          PYTHONPATH=remaster python3 -m tools.instrument_map02_dda_texel_counts \
+            upstream/platform/pc/src/libgpu.c \
+            upstream/platform/pc/src/pc_raster.c \
+            --output-dir /tmp/vh-map02-dda-texel-counts \
+            > /tmp/vh-map02-dda-texel-counts.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('/tmp/vh-map02-dda-texel-counts.json').read_text())
+          assert r["original_source_pinned"] and r["native_dda_only"]
+          assert r["maximum_ft4_count_records"] == 64
+          assert not r["pixels_written_or_ps1_accuracy_proven"]
+          print("Actual DDA texel decision counter generated from pinned original PC GPU.")
+          PY
+          (
+            cd upstream/platform/pc
+            flags=(
+              -m64 -std=gnu89 -fno-builtin-csqrt
+              -DPERMUTER -DPC_PORT -DPC_FEAT -DVH_REGION_US
+              '-Dasm(x)=' -Ibuild/include_stage -Iinclude -I../.. -Isrc
+              -include pc_forward_decls.h
+              -Wno-incompatible-pointer-types -Wno-builtin-declaration-mismatch
+              -Wno-discarded-qualifiers -Wno-pointer-to-int-cast
+              -Wno-int-to-pointer-cast -Wno-int-conversion
+            )
+            mkdir -p build/map02-dda-texel-counts
+            for mode in probe baseline; do
+              extra=()
+              if [[ "$mode" == probe ]]; then
+                extra=(-DVH_MAP02_GPU_CAPTURE -DVH_MAP02_PUTPIXEL_SCOPE -DVH_MAP02_DDA_TEXEL_COUNTS)
+              fi
+              gcc "${flags[@]}" "${extra[@]}" \
+                -c /tmp/vh-map02-dda-texel-counts/libgpu.dda-count.c \
+                -o "build/map02-dda-texel-counts/libgpu.${mode}.o"
+              gcc "${flags[@]}" "${extra[@]}" \
+                -c /tmp/vh-map02-dda-texel-counts/pc_raster.dda-count.c \
+                -o "build/map02-dda-texel-counts/pc_raster.${mode}.o"
+              ld -r "build/map02-dda-texel-counts/libgpu.${mode}.o" \
+                "build/map02-dda-texel-counts/pc_raster.${mode}.o" \
+                -o "build/map02-dda-texel-counts/combined.${mode}.o"
+            done
+            nm -a build/map02-dda-texel-counts/combined.probe.o | grep VH_Map02TexelCount
+            nm -a build/map02-dda-texel-counts/combined.probe.o | grep VH_Map02TexelFinish
+            if nm -a build/map02-dda-texel-counts/combined.baseline.o | grep -Eq 'VH_Map02Texel|vh_dda_texel|VH_Map02PixelScope|VH_CaptureEvent'; then
+              echo "DDA texel counter leaked into baseline PC GPU objects" >&2
               exit 1
             fi
           )
