@@ -99,6 +99,9 @@ typedef struct {
     uint64_t delivered_pages;
     int16_t last_l, last_r;
     int has_previous;
+    /* Last successfully returned page; no PCM sample material here. */
+    uint32_t last_abs_step;
+    unsigned last_wait_band;
 } VhAudioPcmSeams;
 
 /* Only call after the exact PCM descriptor was returned. The first

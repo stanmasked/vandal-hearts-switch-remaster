@@ -12,6 +12,7 @@
 #include "vh_audio_assets.h"
 #include "vh_audio_resample.h"
 #include "vh_audio_output_recovery.h"
+#include "vh_audio_listening_marks.h"
 #include "vh_native_seq.h"
 #include "vh_native_spu.h"
 
@@ -195,11 +196,17 @@ int main(int argc, char **argv) {
     if (!user_files)
         printf("Fixture changes every %u returned PCM pages; SD music unchanged\n",
                SYNTHETIC_SCENE_BLOCKS);
+    printf("Press A during playback if you hear an audio defect.\\n");
+    printf("A is a manual annotation, not automatic glitch detection.\\n");
     consoleUpdate(NULL);
+    padConfigureInput(1,HidNpadStyleSet_NpadStandard);
+    PadState pad;
+    padInitializeDefault(&pad);
 
     NativeOutput output={0};
     VhAudioOutputRecovery recovery={0};
     VhAudioPcmSeams seam_stats={0};
+    VhAudioListeningMarks listening_marks={0};
     const VhAudioOutputOps ops={
         &output,native_submit,native_stop,native_close,native_open,native_start
     };
@@ -284,8 +291,25 @@ int main(int argc, char **argv) {
             result=11;
             break;
         }
+        const uint64_t calls_this_page=
+            output.timing.calls-before_submit.calls;
+        if (vh_audio_listening_observe(
+                &listening_marks,seam_stats.last_wait_band,
+                switched_this_block,(unsigned)(calls_this_page>1u),
+                seam_stats.last_abs_step)) {
+            result=12;
+            break;
+        }
         ++played_blocks;
         completed_switches+=switched_this_block;
+        /* Read A-button rising edge only after audout has returned
+         * its PCM descriptor; do not touch SEQ, SPU or resampler. */
+        padUpdate(&pad);
+        if ((padGetButtonsDown(&pad)&HidNpadButton_A) &&
+            vh_audio_listening_mark(&listening_marks)) {
+            result=13;
+            break;
+        }
         if (played_blocks % 128u == 0u) {
             printf("Blocks=%u fixture_switches=%u notes=%llu cycles=%u\n",
                    played_blocks,completed_switches,
@@ -353,10 +377,15 @@ int main(int argc, char **argv) {
         result==0 && played_blocks==MAX_PROBE_BLOCKS);
     const int seam_evidence=vh_audio_output_verify_pcm_seams(
         &seam_stats,&output.scene_waits,played_blocks);
-    if ((run_evidence<0 || seam_evidence) && result==0) result=10;
+    const int listen_evidence=vh_audio_listening_verify(
+        &listening_marks,played_blocks);
+    if ((run_evidence<0 || seam_evidence || listen_evidence) &&
+        result==0) result=10;
     printf("Run evidence: %s (accepted=%u / planned=%u, source=%s)\n",
-           run_evidence==1 && seam_evidence==0 ? "FULL PCM PAGE ACCOUNTING" :
-           run_evidence==0 && seam_evidence==0 ? "INCOMPLETE - NO FULL-RUN CLAIM" :
+           run_evidence==1 && seam_evidence==0 && listen_evidence==0 ?
+               "FULL PCM PAGE ACCOUNTING" :
+           run_evidence==0 && seam_evidence==0 && listen_evidence==0 ?
+               "INCOMPLETE - NO FULL-RUN CLAIM" :
                              "COUNTER MISMATCH - INVALID",
            played_blocks,MAX_PROBE_BLOCKS,
            user_files ? "SD music" : "generated fixture");
@@ -416,6 +445,16 @@ int main(int argc, char **argv) {
     printf("PCM seam audit: %s (%llu pages returned)\n",
            seam_evidence==0 ? "VALID" : "INVALID",
            (unsigned long long)seam_stats.delivered_pages);
+    printf("Manual A marks=%llu; last-32-page co-occurrence:\n",
+           (unsigned long long)listening_marks.manual_marks);
+    printf("Near switch=%llu wait>2x=%llu wait>4x=%llu retry=%llu\n",
+           (unsigned long long)listening_marks.marks_near_switch,
+           (unsigned long long)listening_marks.marks_near_wait_over_2x,
+           (unsigned long long)listening_marks.marks_near_wait_over_4x,
+           (unsigned long long)listening_marks.marks_near_retry);
+    printf("Peak PCM16 seam near mark=%u; audit=%s\n",
+           listening_marks.peak_seam_near_mark,
+           listen_evidence==0 ? "VALID" : "INVALID");
     printf("Audio probe ended, result=%d\n",result);
     printf("Press + to close this results screen.\n");
     consoleUpdate(NULL);
@@ -423,9 +462,6 @@ int main(int argc, char **argv) {
      * Keep only the console visible for a human hardware measurement.
      * This does not produce any additional music or change clocks.
      */
-    padConfigureInput(1,HidNpadStyleSet_NpadStandard);
-    PadState pad;
-    padInitializeDefault(&pad);
     while (appletMainLoop()) {
         padUpdate(&pad);
         if (padGetButtonsDown(&pad)&HidNpadButton_Plus) break;

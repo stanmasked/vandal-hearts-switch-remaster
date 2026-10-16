@@ -992,3 +992,35 @@ observations narrows down where to listen on a physical Nintendo
 Switch; it cannot establish audible effects without hardware
 listening or external sound capture. No resampling, scene switching
 or output scheduling behavior is changed.
+
+
+### Manual listening marks on physical Nintendo Switch (A button)
+
+The console-only audout probe now accepts a **rising A-button press during
+the 1,200-page playback run** as a *user-reported perceived issue*. Each
+press reviews up to the **previous 32 returned PCM pages** (~0.37 seconds
+at 512 source frames / 44.1 kHz), accounting for approximate human
+reaction latency; it is NOT a precise timestamp of the acoustic event.
+
+The in-memory ring holds only the four-level audout wait bin, whether
+a page was the first after a synthetic cue change, whether its output
+submission needed recovery, and the inter-page maximum PCM16 adjacent
+sample step. The final results screen summarizes the number of A
+presses and how many had, *anywhere in the look-back window*, a cue
+transition, >2x or >4x wait, or retry. It also displays the largest
+PCM16 seam step seen near any button mark.
+
+Manual marks are not sample-level audio recordings, proof of actual
+clicks, or evidence that a delayed audout call caused an audible fault:
+a human button press is delayed and the window may overlap unrelated
+events. The check does not write any files or music to SD. Pressing A
+does not trigger cue changes, silence, playback pause, DSP reset or
+recovery. At the end the probe separately verifies that ring input
+contains exactly the returned-page count and summary counters remain
+valid. Use **Plus** on the final report to exit, as before.
+
+A new portable, copyright-free host regression checks marker
+aggregation, window expiry/wraparound, invalid observations, and
+corrupted counts. Until physical Switch listening happens, A-marker
+counts must be treated as **unobserved**, not zero-perceived-issues
+hardware evidence.

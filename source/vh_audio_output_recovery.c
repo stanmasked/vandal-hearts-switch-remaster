@@ -162,6 +162,8 @@ int vh_audio_output_record_pcm_seam(
     stats->last_l=stereo[2u*(frames-1u)];
     stats->last_r=stereo[2u*(frames-1u)+1u];
     stats->has_previous=1;
+    stats->last_abs_step=jump;
+    stats->last_wait_band=band;
     ++stats->delivered_pages;
     return 0;
 }
@@ -170,7 +172,9 @@ int vh_audio_output_verify_pcm_seams(
     const VhAudioPcmSeams *stats, const VhAudioSceneWaits *waits,
     uint64_t completed_pages) {
     if (!stats || !waits || stats->delivered_pages!=completed_pages ||
-        stats->has_previous!=(completed_pages!=0)) return -1;
+        stats->has_previous!=(completed_pages!=0) ||
+        stats->last_wait_band>=VH_PCM_SEAM_BANDS ||
+        stats->last_abs_step>65535u) return -1;
     const VhAudioPcmSeamBucket *const buckets[]={
         &stats->ordinary, &stats->first_after_switch
     };
