@@ -27,6 +27,15 @@ typedef struct {
     unsigned resume_failures, resume_restarts, resume_recoveries;
 } VhAudioOutputRecovery;
 
+/* A single reusable audout PCM page is safe to overwrite only when
+ * libnx reports that the identical AudioOutBuffer descriptor was released.
+ * Call after a successful audoutPlayBuffer; another pointer (or NULL)
+ * is a backend submission failure, not permission to reuse the page.
+ * Pure pointer identity: callers need not dereference foreign pointers.
+ */
+int vh_audio_output_page_returned(const void *submitted,
+                                  const void *released);
+
 /* Return 0 after ONE successful device submission, -1 on terminal
  * failure. Once submit fails, stop/close/reinitialize and re-send
  * the exact same PCM page at most RESTART_LIMIT times.
