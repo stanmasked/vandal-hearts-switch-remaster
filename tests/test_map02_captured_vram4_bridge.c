@@ -904,6 +904,64 @@ static void test_packet_bridge_rejects_aliases_before_import(void) {
     assert(w.scene.count==2u);
 }
 
+
+/* A syntactically valid packet can still be semantically wrong. A failed
+ * VRAM replay must never leak partially imported event descriptors to the
+ * caller: only fully accepted scenes commit public event output. */
+static void test_packet_bridge_events_commit_only_on_success(void) {
+    VhMap02Vram4TimelineEntry entries[2];
+    VhMap02Vram4TimelineInput input;
+    VhMap02Vram4FrameWorkspace w=workspace();
+    VhMap02VramTransfer decoded_events[2], sentinel[2];
+    uint8_t packet[84u];
+    packet_fixture(packet);
+    timeline_fixture(entries);
+    input=timeline_input(entries);
+    clear_timeline_workspace();
+    memset(decoded_events,0x5au,sizeof decoded_events);
+    memcpy(sentinel,decoded_events,sizeof sentinel);
+
+    /* Valid packet syntax and frame: unexpected CLEAR target makes the
+     * captured second VRAM snapshot disagree during replay. */
+    packet_u32(packet,44u,2u);
+    assert(!vh_map02_vram4_timeline_build_from_packet(
+        &input,&w,packet,sizeof packet,decoded_events,2u,
+        ledger_replay,sizeof ledger_replay));
+    assert(memcmp(decoded_events,sentinel,sizeof sentinel)==0);
+    assert_timeline_workspace_unmodified();
+
+    /* Correct CLEAR target, but a single unrelated captured VRAM word is
+     * corrupted after the earlier source/GTE and event checks. */
+    packet_fixture(packet);
+    word(later_vram,400u*1024u+400u,0x001fu);
+    assert(!vh_map02_vram4_timeline_build_from_packet(
+        &input,&w,packet,sizeof packet,decoded_events,2u,
+        ledger_replay,sizeof ledger_replay));
+    assert(memcmp(decoded_events,sentinel,sizeof sentinel)==0);
+    assert_timeline_workspace_unmodified();
+
+    /* A truncated packet also leaves the public event array unchanged. */
+    assert(!vh_map02_vram4_timeline_build_from_packet(
+        &input,&w,packet,sizeof packet-1u,decoded_events,2u,
+        ledger_replay,sizeof ledger_replay));
+    assert(memcmp(decoded_events,sentinel,sizeof sentinel)==0);
+    assert_timeline_workspace_unmodified();
+
+    /* Reset the synthetic timeline and verify that a successful complete
+     * replay commits the decoded event(s), without changing spare slots. */
+    timeline_fixture(entries);
+    input=timeline_input(entries);
+    assert(vh_map02_vram4_timeline_build_from_packet(
+        &input,&w,packet,sizeof packet,decoded_events,2u,
+        ledger_replay,sizeof ledger_replay));
+    assert(decoded_events[0].operation==VH_MAP02_VRAM_OP_CLEAR);
+    assert(decoded_events[0].x==1 && decoded_events[0].y==499);
+    assert(decoded_events[0].green==248 && decoded_events[0].step==0u);
+    assert(memcmp(&decoded_events[1],&sentinel[1],
+                  sizeof decoded_events[1])==0);
+    assert(w.scene.count==2u);
+}
+
 int main(void) {
     test_verified_capture_flows_to_vram4_and_ot();
     test_mutations_do_not_change_staged_output();
@@ -921,6 +979,7 @@ int main(void) {
     test_vram_replay_rejects_aliasing_before_mutation();
     test_import_packet_rejects_alias_to_decoded_output();
     test_packet_bridge_rejects_aliases_before_import();
+    test_packet_bridge_events_commit_only_on_success();
     puts("MAP02 captured GTE -> source FT4 -> VRAM4 -> OT pixel tests passed");
     return 0;
 }
