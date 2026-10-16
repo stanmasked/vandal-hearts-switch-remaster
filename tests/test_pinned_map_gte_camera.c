@@ -84,8 +84,8 @@ int main(void) {
      * inverse pitch offset), not a fixed pixel-depth override. */
     {
         SVECTOR far[4] = {
-            {-64,68,36,0},{0,68,36,0},
-            {0,68,116,0},{-64,68,116,0},
+            {-64,-68,36,0},{0,-68,36,0},
+            {0,-68,116,0},{-64,-68,116,0},
         };
         int near_xy[4], far_xy[4], ni, nf, flags, p, a;
         ni = RotTransPers4(
