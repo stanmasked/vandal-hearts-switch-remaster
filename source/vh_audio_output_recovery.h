@@ -51,6 +51,32 @@ int vh_audio_output_record_submit_timing(
 uint64_t vh_audio_output_ticks_to_us(uint64_t ticks,
                                      uint64_t tick_frequency);
 
+/* Compare audout waiting on the first PCM page after a scene switch
+ * with the ordinary PCM pages. Only successful pages are needed to
+ * compare running delays; terminal failures have a separate count.
+ * "slow_pages" counts pages containing at least one *raw* service
+ * call longer than that page's 48-kHz duration. Retry time is included
+ * in total_ticks but reopening time is not. This is observation only.
+ */
+typedef struct {
+    uint64_t pages, total_ticks, peak_page_ticks;
+    uint64_t slow_pages, retried_pages, failed_pages;
+} VhAudioPageWaitBucket;
+typedef struct {
+    VhAudioPageWaitBucket ordinary, first_after_switch;
+} VhAudioSceneWaits;
+
+/* Record one logical PCM page AFTER submit_recover, using the raw
+ * timing accumulator copied before and read after that call.
+ * A snapshot must contain 1..RESTART_LIMIT+1 new service calls.
+ * Rejected counters or inconsistent snapshots leave *groups unchanged.
+ */
+int vh_audio_output_record_scene_page(
+    VhAudioSceneWaits *groups,
+    const VhAudioSubmitTiming *before, const VhAudioSubmitTiming *after,
+    uint64_t tick_frequency, size_t frames, int first_after_switch,
+    int delivered);
+
 /* A single reusable audout PCM page is safe to overwrite only when
  * libnx reports that the identical AudioOutBuffer descriptor was released.
  * Call after a successful audoutPlayBuffer; another pointer (or NULL)
