@@ -78,6 +78,33 @@ int main(void) {
         printf("Original pinned GTE NCLIP front=%d reverse=%d AVSZ4=%d\\n",
                front,back,depth);
     }
+    /* Two source MapTileModel faces should project to nearly the
+     * SAME screen coordinates but have DISTINCT original GTE OTZ.
+     * The second is an exact camera-space 2x scale (integer-rounded
+     * inverse pitch offset), not a fixed pixel-depth override. */
+    {
+        SVECTOR far[4] = {
+            {-64,68,36,0},{0,68,36,0},
+            {0,68,116,0},{-64,68,116,0},
+        };
+        int near_xy[4], far_xy[4], ni, nf, flags, p, a;
+        ni = RotTransPers4(
+            &model[0],&model[1],&model[2],&model[3],
+            &near_xy[0],&near_xy[1],&near_xy[2],&near_xy[3],
+            &p,&flags);
+        nf = RotTransPers4(
+            &far[0],&far[1],&far[2],&far[3],
+            &far_xy[0],&far_xy[1],&far_xy[2],&far_xy[3],
+            &p,&flags);
+        assert(nf > ni + 10);
+        for (a=0;a<4;++a) {
+            int dx=x_of(near_xy[a])-x_of(far_xy[a]);
+            int dy=y_of(near_xy[a])-y_of(far_xy[a]);
+            assert(dx>=-2 && dx<=2);
+            assert(dy>=-2 && dy<=2);
+        }
+        printf("Original pinned GTE overlap: near OTZ=%d far OTZ=%d\n",ni,nf);
+    }
     puts("PASS: pinned PS1 GTE perspective, signed NCLIP culling and AVSZ4 depth");
     return 0;
 }
