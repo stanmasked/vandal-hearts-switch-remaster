@@ -57,10 +57,13 @@ def verify_source_contract(field: str, graphics: str, gpu: str) -> dict:
     if gpu.count(UV_MACRO) != 1:
         raise ValueError("setUVWH PS1 UV coordinate convention changed")
     paths = []
+    # Fail on an absent/duplicated function before deriving neighbor
+    # boundaries. This distinguishes missing render paths from malformed code.
+    for name, _ in RENDERERS:
+        if graphics.count(f"void {name}(") != 1:
+            raise ValueError(f"{name} function missing or ambiguous")
     for name, next_name in RENDERERS:
         anchor = f"void {name}("
-        if graphics.count(anchor) != 1:
-            raise ValueError(f"{name} function missing or ambiguous")
         first = graphics.index(anchor)
         last = graphics.find(f"{next_name}(", first + len(anchor))
         if last < first:
