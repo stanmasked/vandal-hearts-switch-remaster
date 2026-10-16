@@ -16,6 +16,8 @@ static int failure(void) {
     return 0;
 }
 
+void vh_map02_scope_abort(void) { (void)failure(); }
+
 void vh_map02_scope_reset(void) {
     memset(captured, 0, sizeof(captured));
     memset(&pending, 0, sizeof(pending));
