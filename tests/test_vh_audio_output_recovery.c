@@ -556,6 +556,93 @@ int main(void) {
     assert(resampler.input_frames==48u*512u);
     assert(frame_count==((48u*512u-1u)*48000u)/44100u+1u);
     assert(resampler.next_output_tick==frame_count*44100u);
+    /* A successful test is only eligible for FULL once all returned
+     * PCM pages, synthetic scene changes and service waits reconcile.
+     * The same facts are INCOMPLETE when the requested duration is
+     * longer, or when a human stops the test early.
+     */
+    assert(vh_audio_output_verify_run(
+        &measured_pages,&switch_stats,&switching.timing,
+        48u,5u,48u,8u,1)==1);
+    assert(vh_audio_output_verify_run(
+        &measured_pages,&switch_stats,&switching.timing,
+        48u,5u,64u,8u,1)==0);
+    assert(vh_audio_output_verify_run(
+        &measured_pages,&switch_stats,&switching.timing,
+        48u,5u,48u,8u,0)==0);
+    assert(vh_audio_output_verify_run(
+        &measured_pages,&switch_stats,&switching.timing,
+        48u,4u,48u,8u,1)==-1);
+    assert(vh_audio_output_verify_run(
+        &measured_pages,&switch_stats,&switching.timing,
+        48u,5u,48u,0u,1)==-1);
+    assert(vh_audio_output_verify_run(
+        &measured_pages,&switch_stats,&switching.timing,
+        47u,5u,48u,8u,1)==-1);
+    assert(vh_audio_output_verify_run(
+        NULL,&switch_stats,&switching.timing,
+        48u,5u,48u,8u,1)==-1);
+    assert(vh_audio_output_verify_run(
+        &measured_pages,NULL,&switching.timing,
+        48u,5u,48u,8u,1)==-1);
+    assert(vh_audio_output_verify_run(
+        &measured_pages,&switch_stats,NULL,
+        48u,5u,48u,8u,1)==-1);
+    VhAudioSceneWaits altered=measured_pages;
+    altered.first_after_switch.pages=6u;
+    assert(vh_audio_output_verify_run(
+        &altered,&switch_stats,&switching.timing,
+        48u,5u,48u,8u,1)==-1);
+    altered=measured_pages;
+    altered.ordinary.total_ticks++;
+    assert(vh_audio_output_verify_run(
+        &altered,&switch_stats,&switching.timing,
+        48u,5u,48u,8u,1)==-1);
+    altered=measured_pages;
+    altered.ordinary.failed_pages=altered.ordinary.pages+1u;
+    assert(vh_audio_output_verify_run(
+        &altered,&switch_stats,&switching.timing,
+        48u,5u,48u,8u,1)==-1);
+    VhAudioOutputRecovery altered_recovery=switch_stats;
+    altered_recovery.pages_submitted++;
+    assert(vh_audio_output_verify_run(
+        &measured_pages,&altered_recovery,&switching.timing,
+        48u,5u,48u,8u,1)==-1);
+    VhAudioSubmitTiming altered_timing=switching.timing;
+    altered_timing.failed_submissions++;
+    assert(vh_audio_output_verify_run(
+        &measured_pages,&switch_stats,&altered_timing,
+        48u,5u,48u,8u,1)==-1);
+    /* A failed logical page is accounted for without ever claiming
+     * that the audio service returned a usable PCM page.
+     */
+    VhAudioSceneWaits aborted={0};
+    aborted.ordinary.pages=1u;
+    aborted.ordinary.failed_pages=1u;
+    aborted.ordinary.total_ticks=100u;
+    aborted.ordinary.peak_page_ticks=100u;
+    VhAudioOutputRecovery aborted_recovery={.submit_failures=1u};
+    VhAudioSubmitTiming aborted_timing={
+        .calls=1u,.total_ticks=100u,.max_ticks=100u,
+        .failed_submissions=1u};
+    assert(vh_audio_output_verify_run(
+        &aborted,&aborted_recovery,&aborted_timing,
+        0u,0u,48u,8u,0)==0);
+    /* A user-owned bank is never automatically switched; the same
+     * class of observations is valid only with zero boundary pages.
+     */
+    VhAudioSceneWaits sd_pages={0};
+    sd_pages.ordinary.pages=2u;
+    sd_pages.ordinary.total_ticks=200u;
+    sd_pages.ordinary.peak_page_ticks=100u;
+    VhAudioOutputRecovery sd_recovery={.pages_submitted=2u};
+    VhAudioSubmitTiming sd_timing={
+        .calls=2u,.total_ticks=200u,.max_ticks=100u};
+    assert(vh_audio_output_verify_run(
+        &sd_pages,&sd_recovery,&sd_timing,2u,0u,2u,0u,1)==1);
+    assert(vh_audio_output_verify_run(
+        &sd_pages,&sd_recovery,&sd_timing,2u,1u,2u,0u,1)==-1);
+
     printf("audout recovery: %u accepted pages, %u restarts, clock stable PASS\n",
            device.accepted,stats.restart_attempts);
     return 0;
