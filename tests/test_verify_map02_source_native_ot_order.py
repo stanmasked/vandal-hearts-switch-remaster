@@ -122,7 +122,7 @@ class NativeOtOrderingTests(unittest.TestCase):
             verify_ot_join(self.source,self.native)
 
     def test_submitted_source_bundle_mutation_detected(self):
-        self.base.events[1]["gte"]["raw_otz"]=192
+        self.base.base.events[1]["gte"]["raw_otz"]=192
         self.save()
         with self.assertRaisesRegex(ValueError,"compiled PC GTE mismatch"):
             verify_ot_join(self.source,self.native)
