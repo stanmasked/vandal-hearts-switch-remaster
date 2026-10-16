@@ -567,3 +567,37 @@ same render block cannot be individually timestamped here.
 A zero retirement count does not mean the voice never entered
 Release, and it does not establish waveform or cycle parity
 with original PlayStation hardware.
+
+### ADSR Release rate matrix and PCM partition independence
+
+The native SPU host regression exercises the unmodified production
+`vh_native_spu_render` envelope logic against **synthetic looping PCM**.
+The loop ensures a voice can retire only through ADSR, not because its
+source sample reached the end. Every case starts at Q15 level
+`0x7FFF`, issues Note Off, and renders 9,000 frames twice:
+first one PCM frame per call, then in irregular 127-frame chunks.
+The complete PCM16 outputs must be byte-for-byte identical.
+
+| VAB ADSR2 release bits | Release law | Expected rendered frames to retire |
+| --- | --- | ---: |
+| `0x0000` | Linear, fast | 2 |
+| `0x0005` | Linear, moderate | 64 |
+| `0x000A` | Linear, slow | 2,048 |
+| `0x0020` | Exponential, fast | 16 |
+| `0x0025` | Exponential, moderate | 496 |
+| `0x002A` | Exponential, slow | 8,842 |
+| `0x001F` | All-ones release shift | Does not retire within 9,000 frames |
+
+The special all-ones case is explicitly bounded: the test never
+waits indefinitely for the voice to retire. It checks that the
+voice remains in Release, keeps its level and stays unavailable
+for free-slot allocation. All naturally retired voices must move
+to ADSR Off, become allocatable again, and successfully restart
+the Attack envelope when a new note is assigned.
+
+The rate/frame numbers here are **regression expectations for the
+project's PC-port-style software envelope**. They are not measured
+PS1 hardware timings; exact parity requires original-game audio
+and hardware comparison. This test runs on the host and under
+ASan/UBSan in the PCM diagnostics CI. It neither embeds original
+audio nor changes native SPU playback.
