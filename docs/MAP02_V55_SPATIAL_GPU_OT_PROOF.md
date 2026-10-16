@@ -8,10 +8,9 @@ Draft stacked PR: https://github.com/stanmasked/vandal-hearts-switch-remaster/pu
 ## Purpose
 
 Extend the successful v54 256-packet original GPU DrawOTag test beyond
-a single overlapped rectangle. v55 spatially separates 24 six-burst
-groups? No: the exact fixture has **24 total 8-command bursts**, split
-into FOUR sets of SIX overdraw bursts, each in its own native screen
-region. Each set contributes 48 significant GPU packets to a separate
+a single overlapped rectangle. v55 splits **24 total
+8-command overdraw bursts into FOUR sets of SIX**, each occupying
+its own native screen region. Each set contributes 48 significant GPU packets to a separate
 OT depth bucket. A fifth OT bucket contains 64 nonoverlapping TILE
 fillers, resulting in **256 real original DrawOTag packet visits per
 synthetic scene**.
