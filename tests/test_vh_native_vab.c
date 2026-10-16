@@ -412,6 +412,80 @@ static void test_seq_shadow_program_changes_stereo_pcm(void) {
     assert(vh_audio_stream_queued(&fifo)==0u);
 }
 
+/* Two simultaneous MIDI channels may request the same VAG/note with
+ * different ProgAtr and CC levels. Their stereo gains and note-off
+ * ownership must remain independent throughout SEQ -> SPU playback.
+ */
+static void test_seq_concurrent_shadow_and_source_channels(void) {
+    fixture();
+    vh[32u+1u*16u+1u]=95;
+    vh[32u+1u*16u+4u]=0;
+    vh[32u+7u*16u+1u]=127;
+    vh[32u+7u*16u+4u]=127;
+    memset(&bank,0,sizeof bank);
+    assert(vh_native_vab_load(&bank,vh,sizeof vh,vb,96,arena,224)==0);
+    vh_native_spu_reset(&spu);
+    vh_audio_stream_reset(&fifo);
+    static const uint8_t song[] = {
+        'p','Q','E','S',0,0,0,0,1,0xe0,7,0xa1,0x20,0,0,
+        0,0xc0,1,          /* ch0 aliases VAG3 with hard-left pan */
+        0,0xc1,7,          /* ch1 owns VAG3 with hard-right pan */
+        0,0xb0,7,90,       /* ch0 volume */
+        0,0xb1,7,40,       /* ch1 volume, independent */
+        0,0x90,90,100,
+        0,0x91,90,100,
+        0x78,0x80,90,0,    /* ch0 note-off must not release ch1 */
+        0x78,0x81,90,0,
+        0x78,0xff,0x2f
+    };
+    VhSeqAudit report={0};
+    assert(vh_native_seq_audit(song,sizeof song,vh_native_vab_resolve,
+                               &bank,&report)==0);
+    assert(report.note_events==2 && report.resolved_notes==2 &&
+           report.missing_notes==0 && report.program_changes==2);
+    assert(vh_native_seq_init(&seq,song,sizeof song,&spu,
+                              vh_native_vab_resolve,&bank,1)==0);
+    assert(vh_native_seq_pump(&seq,&fifo)==512);
+    assert(vh_audio_stream_read(&fifo,output,512)==512);
+    assert(seq.note_ons==2 && seq.note_offs==0);
+    const int left_slot=seq.note_slot[0][90];
+    const int right_slot=seq.note_slot[1][90];
+    assert(left_slot>=0 && right_slot>=0 && left_slot!=right_slot);
+    assert(seq.owner_ch[left_slot]==0 && seq.owner_ch[right_slot]==1);
+    assert(spu.voice[left_slot].pcm==bank.samples[3].pcm &&
+           spu.voice[right_slot].pcm==bank.samples[3].pcm);
+    assert(spu.voice[left_slot].gain_left>0.f &&
+           spu.voice[left_slot].gain_right==0.f);
+    assert(spu.voice[right_slot].gain_left==0.f &&
+           spu.voice[right_slot].gain_right>0.f);
+    assert(spu.voice[left_slot].gain_left >
+           spu.voice[right_slot].gain_right);
+    unsigned left=0,right=0;
+    for(unsigned i=0;i<512u;++i) {
+        if(output[2u*i]) ++left;
+        if(output[2u*i+1u]) ++right;
+    }
+    assert(left>0 && right>0);
+
+    unsigned blocks=0;
+    while(seq.note_offs==0 && blocks++<40u) {
+        assert(vh_native_seq_pump(&seq,&fifo)==512);
+        assert(vh_audio_stream_read(&fifo,output,512)==512);
+    }
+    assert(seq.note_offs==1);
+    assert(seq.note_slot[0][90]==-1);
+    assert(seq.note_slot[1][90]==right_slot);
+    assert(seq.owner_ch[right_slot]==1 && seq.owner_note[right_slot]==90);
+
+    while(seq.playing && blocks++<100u) {
+        assert(vh_native_seq_pump(&seq,&fifo)==512);
+        assert(vh_audio_stream_read(&fifo,output,512)==512);
+    }
+    assert(seq.note_offs==2 && seq.note_ons==2 && !seq.playing);
+    assert(seq.note_slot[1][90]==-1);
+    assert(seq.cycles_completed==1u && seq.last_error==0);
+}
+
 static void test_strict_invalid_banks_and_no_publish(void) {
     fixture();
     memset(&bank,0x5a,sizeof bank);
@@ -484,6 +558,7 @@ int main(void) {
     test_strict_invalid_banks_and_no_publish();
     test_actual_native_seq_to_vab_to_spu_pcm();
     test_seq_shadow_program_changes_stereo_pcm();
+    test_seq_concurrent_shadow_and_source_channels();
     puts("native sparse VH/VB -> SEQ -> SPU stereo PCM: PASS");
     return 0;
 }
