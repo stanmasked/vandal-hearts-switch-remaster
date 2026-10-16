@@ -8,6 +8,7 @@
 #include <string.h>
 #include "PsyQ/libgpu.h"
 #include "PsyQ/libgte.h"
+#include "inline_gte.h"
 #include "pc_gpu_internal.h"
 #include "pc_platform.h"
 #include "switch_sdl2_observer_backend.h"
@@ -316,7 +317,8 @@ static int draw_frame(int frame) {
 static int draw_private_map_preview(void) {
     DRAWENV draw;
     DISPENV display;
-    unsigned int ot[1];
+    enum { PRIVATE_OT_BUCKETS = 256 };
+    unsigned int ot[PRIVATE_OT_BUCKETS];
     TILE clear;
     POLY_FT4 preview, terrain_faces[VH_MAP_MODEL_MAX_FACES];
     unsigned face_index, face_drawn = 0;
@@ -329,7 +331,7 @@ static int draw_private_map_preview(void) {
     PutDispEnv(&display);
     LoadImage(&page, (unsigned int *)map_tex_words);
     LoadImage(&palette, (unsigned int *)map_clut_words);
-    ClearOTag(ot, 1);
+    ClearOTag(ot, PRIVATE_OT_BUCKETS);
     if (private_geometry_active) {
         MATRIX camera = {0};
         SVECTOR pitch = {-512, 0, 0, 0};
@@ -345,17 +347,16 @@ static int draw_private_map_preview(void) {
         TransMatrix(&camera, &camera_zoom);
         SetRotMatrix(&camera);
         SetTransMatrix(&camera);
-        /* Source-authored MapTileModel face indices/vertices, independent
-         * GFX slot -> LAND_DT UVWH / CLUT. This intentionally uses a
-         * deterministic ORTHOGRAPHIC preview transform, NOT yet the
-         * original GTE camera / RenderMapTile terrain renderer. */
+        /* Original RenderMapTile GTE sequence and depth-bucket submission
+         * with per-face authored UVWH and CLUT. The camera constants
+         * remain TEST ONLY (not recovered from actual game data). */
         for (face_index = 0; face_index < private_geometry.face_count;
              ++face_index) {
             const VhPreviewFace *face = &private_geometry.faces[face_index];
             unsigned slot, palette_id;
             const unsigned char *uv;
             SVECTOR source_vertices[4];
-            int projected[4], projected_ir0, projected_flags, otz;
+            int opz, otz;
             unsigned i;
             POLY_FT4 *poly;
             if (face->local_gfx <= 0) continue;
@@ -374,33 +375,32 @@ static int draw_private_map_preview(void) {
                 source_vertices[i].vz = face->vertex[i][2];
                 source_vertices[i].pad = 0;
             }
-            /* RotTransPers4 invokes actual upstream GTE RTPT then RTPS
-             * and AVSZ4. It returns four signed packed screen XY pairs. */
-            otz = RotTransPers4(
-                &source_vertices[0], &source_vertices[1],
-                &source_vertices[2], &source_vertices[3],
-                &projected[0], &projected[1],
-                &projected[2], &projected[3],
-                &projected_ir0, &projected_flags);
-            if (otz <= 0) continue;
+            /* This is the actual upstream RenderMapTile GTE opcode
+             * sequence, including signed backface rejection:
+             * RTPT -> NCLIP -> RTPS -> AVSZ4. Unlike RotTransPers4,
+             * NCLIP must execute BEFORE loading the fourth vertex,
+             * while SXY FIFO still contains source vertices 0/1/2. */
+            gte_ldv3(&source_vertices[0], &source_vertices[1],
+                     &source_vertices[2]);
+            gte_rtpt();
+            gte_nclip();
+            gte_stopz(&opz);
+            if (opz <= 0) continue;
             poly = &terrain_faces[face_drawn++];
             SetPolyFT4(poly);
-            poly->x0 = (short)(projected[0] & 0xffff);
-            poly->y0 = (short)((unsigned)projected[0] >> 16);
-            poly->x1 = (short)(projected[1] & 0xffff);
-            poly->y1 = (short)((unsigned)projected[1] >> 16);
-            /* Matches src/core/graphics.c::RenderMapTile exactly:
-             * 3 RTPT results go to POLY vertices 0,1,3;
-             * the fourth RTPS result goes to POLY vertex 2. */
-            poly->x3 = (short)(projected[2] & 0xffff);
-            poly->y3 = (short)((unsigned)projected[2] >> 16);
-            poly->x2 = (short)(projected[3] & 0xffff);
-            poly->y2 = (short)((unsigned)projected[3] >> 16);
+            gte_stsxy3(&poly->x0, &poly->x1, &poly->x3);
+            gte_ldv0(&source_vertices[3]);
+            gte_rtps();
+            gte_stsxy(&poly->x2);
+            gte_avsz4();
+            gte_stotz(&otz);
+            if (otz < 5) otz = 5; /* RenderMapTile near OT clamp */
+            if (otz >= PRIVATE_OT_BUCKETS) otz = PRIVATE_OT_BUCKETS - 1;
             setUVWH(poly, uv[0], uv[1], uv[2], uv[3]);
             setRGB0(poly, 128, 128, 128);
             setTPage(poly, 0, 0, 320, 0);
             setClut(poly, 672, 496 + palette_id - 32);
-            AddPrim(&ot[0], poly);
+            AddPrim(&ot[PRIVATE_OT_BUCKETS - otz], poly);
         }
         if (!face_drawn) return 0;
     } else {
@@ -413,9 +413,11 @@ static int draw_private_map_preview(void) {
         setRGB0(&preview, 128, 128, 128);
         setTPage(&preview, 0, 0, 320, 0);
         setClut(&preview, 672, 496 + private_map.local_clut_id - 32);
-        AddPrim(&ot[0], &preview);
+        AddPrim(&ot[1], &preview);
     }
     tile(&clear, 0, 0, 12, 9, 0, 0, 0);
+    /* OT bucket zero draws first; farther faces (larger OTZ) are
+     * inserted in earlier buckets, nearer faces over them. */
     AddPrim(&ot[0], &clear);
     DrawOTag(ot);
     return 1;
