@@ -67,7 +67,7 @@ int main(void) {
     invalid_walk = getenv("VH_MAP02_TEST_ABORT") != 0;
     DrawOTag((unsigned *)&root);
 #ifdef VH_MAP02_SCOPED_BLEND_PROBE
-    if (invalid_walk) {
+    if (invalid_walk || getenv("VH_MAP02_TEST_BAD_CONFIG")) {
         assert(vh_map02_scope_failed());
         assert(!vh_map02_scope_copy(0, &event));
     } else {
@@ -135,6 +135,11 @@ class DrawOTagScopeTests(unittest.TestCase):
                                    capture_output=True, text=True)
                     if enabled:
                         env["VH_MAP02_TEST_ABORT"] = "1"
+                        subprocess.run([str(binary)], env=env, check=True,
+                                       capture_output=True, text=True)
+                        del env["VH_MAP02_TEST_ABORT"]
+                        env["VH_MAP02_TEST_BAD_CONFIG"] = "1"
+                        env["VH_MAP02_PROBE_X"] = "garbage"
                         subprocess.run([str(binary)], env=env, check=True,
                                        capture_output=True, text=True)
 
