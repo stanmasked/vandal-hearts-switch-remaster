@@ -9,6 +9,7 @@ on:
       - 'tests/test_map02_dda_span_join.py'
       - 'tests/test_instrument_map02_dda_span.py'
       - 'tests/test_map02_dda_span_c11.py'
+      - 'tests/test_map02_dda_span_composition.py'
       - '.github/workflows/map02-dda-span.yml'
   workflow_dispatch:
 jobs:
@@ -28,3 +29,4 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_map02_dda_span_join.py' -v
           python3 -m unittest discover -s tests -p 'test_instrument_map02_dda_span.py' -v
           python3 -m unittest discover -s tests -p 'test_map02_dda_span_c11.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_dda_span_composition.py' -v
