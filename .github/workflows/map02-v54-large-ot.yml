@@ -794,11 +794,24 @@ jobs:
             grep -F "[raster] hi-res worker threads: $workers" \
               "proof/SYNTHETIC_V54_LARGE_OT_$workers.stderr"
           done
-          python3 -m remaster.tools.verify_map02_large_ot_v54 \
+          if ! python3 -m remaster.tools.verify_map02_large_ot_v54 \
             proof/SYNTHETIC_V54_LARGE_OT_1.log \
             proof/SYNTHETIC_V54_LARGE_OT_2.log \
             proof/SYNTHETIC_V54_LARGE_OT_4.log \
-            --output proof/SYNTHETIC_V54_LARGE_OT_PROOF.json
+            --output proof/SYNTHETIC_V54_LARGE_OT_PROOF.json; then
+            echo "V54 actual OT oracle refused:"
+            python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("proof/SYNTHETIC_V54_LARGE_OT_PROOF.json").read_text())
+          print("status:",d["status"])
+          for key,r in d["reports"].items():
+              print("worker",key,"status",r["status"],"errors",r["errors"][:8],"scenes",r["scenes"])
+          PY
+            head -n 12 proof/SYNTHETIC_V54_LARGE_OT_1.log
+            tail -n 12 proof/SYNTHETIC_V54_LARGE_OT_1.log
+            exit 1
+          fi
           python3 - <<'PY'
           import json
           from pathlib import Path
