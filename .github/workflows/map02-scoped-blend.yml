@@ -6,13 +6,18 @@ on:
       - 'tools/instrument_map02_scoped_blend.py'
       - 'tools/map02_scoped_blend_sink.c'
       - 'tools/map02_scoped_blend_sink.h'
-      - 'tests/test_map02_scoped_blend_sink.py'
       - 'tests/test_instrument_map02_scoped_blend.py'
+      - 'tests/test_map02_scoped_blend_sink.py'
+      - 'tests/test_map02_scoped_blend_integration.py'
       - '.github/workflows/map02-scoped-blend.yml'
   pull_request:
     paths:
       - 'tools/instrument_map02_scoped_blend.py'
+      - 'tools/map02_scoped_blend_sink.c'
+      - 'tools/map02_scoped_blend_sink.h'
       - 'tests/test_instrument_map02_scoped_blend.py'
+      - 'tests/test_map02_scoped_blend_sink.py'
+      - 'tests/test_map02_scoped_blend_integration.py'
       - '.github/workflows/map02-scoped-blend.yml'
 
 jobs:
@@ -25,5 +30,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Check synthetic source transformation and C probes
-        run: python3 -m unittest -v tests.test_instrument_map02_scoped_blend tests.test_map02_scoped_blend_sink
+      - name: Check synthetic source, sink, and generated-code integration
+        run: |
+          python3 -m unittest -v \
+            tests.test_instrument_map02_scoped_blend \
+            tests.test_map02_scoped_blend_sink \
+            tests.test_map02_scoped_blend_integration
+      - name: Checkout pinned public original PC raster source
+        uses: actions/checkout@v4
+        with:
+          repository: HalmyLyseas/VandalHearts-PcPort
+          ref: 14552fffa0e0b47e02b57592e274fc6e7a649923
+          path: upstream-pc
+          persist-credentials: false
+      - name: Fail closed on upstream rasterizer source drift
+        run: |
+          python3 -m tools.instrument_map02_scoped_blend \
+            upstream-pc/platform/pc/src/pc_raster.c \
+            "${RUNNER_TEMP}/pc_raster.scoped-probe.c"
+          test -s "${RUNNER_TEMP}/pc_raster.scoped-probe.c"
