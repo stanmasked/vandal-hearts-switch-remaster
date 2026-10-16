@@ -176,7 +176,7 @@ static void test_neighbor_normals_and_projection_in_one_batch(void) {
     uint8_t tile[VH_MAP02_TILE_BYTES] = {0};
     uint8_t shade[2] = {255,255};
     VhMap02Cross normals[2];
-    VhMap02ProjectFace projected[2] = {{0},{0}};
+    VhMap02ProjectFace projected[2] = {0};
     tile[302] = 2;
     for (unsigned i = 0; i < 6; ++i) {
         const int16_t xyz[3] = {vertices[i].x,vertices[i].y,vertices[i].z};
