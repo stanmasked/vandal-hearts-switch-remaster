@@ -30,6 +30,50 @@ class SpanInstrumentationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "refusing overwrite"):
                 prepare_span(gpu, raster, dest)
 
+    def test_failed_second_overlay_write_rolls_back(self):
+        import tempfile
+        from contextlib import ExitStack
+        from pathlib import Path
+        from unittest.mock import patch
+        from tools.prepare_map02_pcport import git_blob_sha1
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            gpu, raster, dest = root / "libgpu.c", root / "pc_raster.c", root / "out"
+            gpu.write_text("fake gpu")
+            raster.write_text("fake raster")
+            native_open = Path.open
+
+            def reject_second(file, mode="r", *args, **kwargs):
+                if file.name == "pc_raster.span.c" and mode == "x":
+                    raise OSError("injected second-file write failure")
+                return native_open(file, mode, *args, **kwargs)
+
+            # Exercise publication/rollback with controlled input transforms;
+            # do not mistake synthetic input for the pinned original GPU.
+            with ExitStack() as stack:
+                stack.enter_context(patch(
+                    "tools.instrument_map02_putpixel_scope.GPU_BLOB",
+                    git_blob_sha1(gpu.read_bytes())))
+                stack.enter_context(patch(
+                    "tools.instrument_map02_putpixel_scope.RASTER_BLOB",
+                    git_blob_sha1(raster.read_bytes())))
+                for symbol in (
+                    "tools.instrument_map02_gpu_native_events.instrument",
+                    "tools.instrument_map02_putpixel_scope.scope_gpu",
+                    "tools.instrument_map02_putpixel_scope.scope_raster",
+                    "tools.instrument_map02_raster_skips.instrument_raster_skips",
+                    "tools.instrument_map02_vertical_dda.instrument_vertical",
+                    "tools.instrument_map02_dda_span.instrument_span",
+                ):
+                    stack.enter_context(patch(symbol, side_effect=lambda src: src))
+                stack.enter_context(patch.object(Path, "open", new=reject_second))
+                with self.assertRaisesRegex(OSError, "injected second-file"):
+                    prepare_span(gpu, raster, dest)
+            self.assertFalse(dest.exists())
+            self.assertTrue(gpu.exists())
+            self.assertTrue(raster.exists())
+
     def test_offline_cli_refuses_unpinned_inputs(self):
         import os
         import subprocess
