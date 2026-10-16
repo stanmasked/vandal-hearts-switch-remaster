@@ -1196,3 +1196,31 @@ simultaneous A+B chords, later release/re-arm, damaged counters,
 invalid input bits and saturated counters. The change affects only
 diagnostic controller handling, with no effect on sound rendering,
 audout submission, music asset loading or SD storage.
+
+
+### Atomic A/B annotations on failed or interrupted audout reports
+
+Previously the single-threaded probe first committed the A/B held-state
+gate (including a count of accepted button annotations), and only then
+tried to update the 32-page listening ring. A damaged ring or saturated
+listening counter could reject the second operation after the first was
+already committed. Final audit correctly detected the disagreement,
+but the two in-memory diagnostic objects were already inconsistent.
+
+The new portable input helper stages only the small button-gate struct
+and checks that its poll index is exactly the previous delivered page.
+It then commits the associated A/B listening observation first, and
+only after success commits the staged button gate. On error, neither
+object is modified. This enforces exactly one gate update per recorded
+PCM page, prevents duplicate samples and rejects skipped page counts.
+The output recovery, SEQ/SPU resampler and audout scheduling paths
+are untouched. No sample data or button history is recorded.
+
+A host regression tests an A/B held/chord timeline, repeated polling
+on one page, corrupted ring data, saturated listening count, a page
+without a matching input sample (as in an aborted probe), illegal
+button flags and a gate counter ahead of the delivered-page count.
+The regression runs through both host Make targets and independently
+under CI UndefinedBehaviorSanitizer. Neither these tests nor a clean
+FULL PCM-accounting verdict prove there are no audible glitches on a
+physical Nintendo Switch.

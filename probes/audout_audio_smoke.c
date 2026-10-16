@@ -14,6 +14,7 @@
 #include "vh_audio_output_recovery.h"
 #include "vh_audio_listening_marks.h"
 #include "vh_audio_mark_buttons.h"
+#include "vh_audio_listener_input.h"
 #include "vh_audio_input_poll.h"
 #include "vh_audio_report_pages.h"
 #include "vh_native_seq.h"
@@ -459,14 +460,11 @@ int main(int argc, char **argv) {
         const uint64_t held=padGetButtons(&pad);
         const unsigned ab=(held&HidNpadButton_A ? VH_AUDIO_MARK_A : 0u) |
                           (held&HidNpadButton_B ? VH_AUDIO_MARK_B : 0u);
-        unsigned tag=0u;
-        if (vh_audio_mark_buttons_sample(&mark_buttons,ab,&tag)) {
-            result=15;
-            break;
-        }
-        if (tag && (tag==VH_AUDIO_MARK_A
-              ? vh_audio_listening_mark(&listening_marks)
-              : vh_audio_listening_control(&listening_marks))) {
+        /* A tag and the accepted-button counters must commit
+         * together; failed marker writes never advance input state.
+         * This also rejects duplicate/missing logical-page samples. */
+        if (vh_audio_listener_input_page(
+                &mark_buttons,&listening_marks,ab)) {
             result=13;
             break;
         }
