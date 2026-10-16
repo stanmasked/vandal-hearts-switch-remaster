@@ -233,7 +233,13 @@ cleanup:
     /* All queued buffers are done; discard every borrowed bank/PCM
      * voice pointer before finally freeing the two local asset sets.
      */
-    vh_native_spu_reset(&spu);
+    /* audout is stopped/exited before detaching borrowed bank memory.
+     * This also cancels a fade or a queued second-bank cue; no SEQ,
+     * SPU voice or wet reverb state may retain a freed PCM pointer. */
+    if (director.spu == &spu)
+        (void)vh_music_scene_detach(&director);
+    else
+        vh_native_spu_reset(&spu);
     vh_music_scene_init(&director, &spu);
     vh_game_music_banks_close(&loaded_banks);
     atomic_store_explicit(&audio_status, state, memory_order_release);
