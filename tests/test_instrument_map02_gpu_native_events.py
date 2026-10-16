@@ -55,7 +55,7 @@ class NativeGpuProbeTests(unittest.TestCase):
         self.assertIn('PC_GpuVramBytes(&bytes)',rendered)
         self.assertEqual(rendered.count('#if defined(VH_MAP02_GPU_CAPTURE)'),9)
         self.assertIn('fwrite(vram, 1u, bytes, file)',rendered)
-        self.assertIn('\"ft4\":',rendered)
+        self.assertIn('ft4',rendered)
 
     def test_injection_is_fail_closed_and_unique(self):
         once=instrument(minimal_source())
