@@ -439,3 +439,23 @@ def audit_horizontal_edge_contacts(faces):
         "height_separated_count": len(separated),
         "evidence_scope": "XZ edge alignment only; no GTE or GPU seam claim",
     }
+
+
+def audit_elevated_projected_edges(faces, screen_samples):
+    """Correlate exact-3D screen edge agreement with XZ height contacts.
+
+    A height-separated XZ edge is not flagged as a projection mismatch.
+    A truly shared 3D edge may be compared using captured endpoint XY.
+    Both diagnostics assume the caller provided one consistent camera state.
+    """
+    edges = audit_projected_shared_edges(faces, screen_samples)
+    contacts = audit_horizontal_edge_contacts(faces)
+    return {
+        "exact_shared_3d_edges": edges["shared_world_edges"],
+        "projected_matches": edges["screen_matches"],
+        "projected_mismatches": edges["screen_mismatches"],
+        "height_separated_xz_contacts": contacts["height_separated_count"],
+        "mismatched_exact_edges": edges["mismatched"],
+        "height_separated_edges": contacts["height_separated_edges"],
+        "evidence_scope": "external screen XY and hypothetical tile placement; no original GTE execution",
+    }
