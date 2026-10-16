@@ -96,6 +96,15 @@ static void test_long_session_rollover_and_csv(void) {
     assert(fgets(line,sizeof line,f));
     assert(!strncmp(line,"elapsed_ms,event,status,home_resumes,",
                     strlen("elapsed_ms,event,status,home_resumes,")));
+    assert(fgets(line,sizeof line,f));
+    assert(strstr(line,",START,")!=NULL);
+    assert(!strncmp(line,"0,START,",8));
+    assert(fgets(line,sizeof line,f));
+    assert(strstr(line,",GAP,")!=NULL);
+    const unsigned long long gap_ms=strtoull(line,NULL,10);
+    assert(gap_ms>0u);
+    rewind(f);
+    assert(fgets(line,sizeof line,f)); /* skip header again */
     uint64_t previous=0;
     unsigned rows=0,found_exit=0;
     while(fgets(line,sizeof line,f)) {
@@ -112,6 +121,62 @@ static void test_long_session_rollover_and_csv(void) {
     assert(found_exit==1u);
     assert(previous==(uint64_t)ITERATIONS*20u);
     fclose(f);
+}
+
+/* Preserve the initial fault count even if a later 45-minute
+ * flawless run flushes all incident/event rows from the bounded ring.
+ * The exporter marks the missing chronology GAP, but cumulative
+ * counters still expose earlier errors from the session origin.
+ */
+static void test_early_errors_survive_multiple_ring_rollovers(void) {
+    vh_audio_diag_journal_reset(&log_state);
+    VhAudioDiagnostics d={.status=1};
+    assert(vh_audio_diag_journal_sample(&log_state,0,&d)==1);
+    d.submit_failures=8u;
+    d.resume_failures=3u;
+    d.lease_mismatches=2u;
+    d.pages_submitted=10u;
+    assert(vh_audio_diag_journal_sample(&log_state,1,&d)==1);
+    /* Fill and wrap the ring repeatedly with later clean output.
+     * A periodic heartbeat provides a row every 5 seconds. */
+    for(unsigned i=1;i<=1400u;i++) {
+        d.pages_submitted=10u+(uint64_t)i*32u;
+        d.frames_submitted=d.pages_submitted*557u;
+        assert(vh_audio_diag_journal_sample(
+            &log_state,(uint64_t)i*5000u+1u,&d)==1);
+    }
+    assert(log_state.count==VH_AUDIO_DIAG_JOURNAL_CAPACITY);
+    assert(log_state.total==1402u);
+    assert(vh_audio_diag_journal_finish(
+        &log_state,UINT64_C(1401)*5000u+1u,&d)==1);
+    FILE *stream=tmpfile();
+    assert(stream);
+    assert(vh_audio_diag_journal_write_csv(&log_state,stream)==
+           VH_AUDIO_DIAG_JOURNAL_CAPACITY);
+    rewind(stream);
+    char line[512];
+    assert(fgets(line,sizeof line,stream));
+    assert(fgets(line,sizeof line,stream));
+    assert(!strncmp(line,"0,START,",8));
+    assert(fgets(line,sizeof line,stream));
+    assert(strstr(line,",GAP,")!=NULL);
+    unsigned long long ms=0,pcm_pages=0;
+    unsigned pcm_fails=0;
+    /* Parse the consistent 18-column header positions without
+     * assuming evicted error row timing or preserving its event. */
+    assert(sscanf(line,"%llu,GAP,%*d,%*u,%*u,%*llu,%*llu,%llu,"
+                       "%*llu,%u,",&ms,&pcm_pages,&pcm_fails)==3);
+    assert(ms>500000u);
+    assert(pcm_pages>40000u);
+    assert(pcm_fails==8u);
+    unsigned rows=2u, errors_in_recent_rows=0;
+    while(fgets(line,sizeof line,stream)) {
+        if(strstr(line,",ERROR,"))++errors_in_recent_rows;
+        ++rows;
+    }
+    assert(rows==VH_AUDIO_DIAG_JOURNAL_CAPACITY);
+    assert(errors_in_recent_rows==0u);
+    fclose(stream);
 }
 
 static void test_invalid_journal_and_counter_saturation(void) {
@@ -136,6 +201,7 @@ static void test_invalid_journal_and_counter_saturation(void) {
 int main(void) {
     test_event_selection();
     test_long_session_rollover_and_csv();
+    test_early_errors_survive_multiple_ring_rollovers();
     test_invalid_journal_and_counter_saturation();
     puts("33-minute audio journal: bounded 128 rows, chronological "
          "CSV and 100000 snapshot attempts PASS");
