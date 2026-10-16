@@ -299,6 +299,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import subprocess
+          import json
           src=Path("proof/real-producer-SYNTHETIC-graphics.jsonl").read_text()
           assert '"tpage":5' in src
           bad=Path("proof/SYNTHETIC_CORRUPT_GFX_METADATA.jsonl")
