@@ -210,6 +210,61 @@ class NativeLocalMusicTransitionTests(unittest.TestCase):
             self.assertGreater(sounding["resolved_notes"], 0)
             self.assertFalse(sounding["silent_pcm"])
 
+    def test_maximum_scene_count_long_pcm_soak(self):
+        # 32 scenes stress the maximum supported transition count. Use
+        # 32 blocks/scene (>0.5m source frames) to exercise fractional
+        # resampler phase, wet-tail carry and repeatable per-scene stats.
+        scenes, blocks = 32, 32
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            a, b = root / "bank-a", root / "bank-b"
+            originals_a = synth_dir(a, wet=True)
+            originals_b = synth_dir(b, bank_b=True, fallback_program=True)
+            cmd = [str(PROGRAM), str(a), str(b),
+                   str(scenes), str(blocks)]
+            first = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            second = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertEqual(first.stdout, second.stdout)
+            self.assertNotIn(str(root), first.stdout)
+            data = json.loads(first.stdout)
+            self.assertEqual(data["scenes"], scenes)
+            self.assertEqual(data["blocks_per_scene"], blocks)
+            source_frames = scenes * blocks * 512
+            self.assertEqual(data["input_frames"], source_frames)
+            self.assertEqual(data["output_frames"],
+                             (source_frames - 1) * 48000 // 44100 + 1)
+            measures = data["measurements"]
+            self.assertEqual(len(measures), scenes)
+            self.assertEqual(sum(x["output_frames"] for x in measures),
+                             data["output_frames"])
+            self.assertEqual(sum(x["input_frames"] for x in measures),
+                             source_frames)
+            self.assertEqual([x["scene"] for x in measures],
+                             list(range(scenes)))
+            self.assertEqual([x["bank"] for x in measures],
+                             ["A", "B"] * (scenes // 2))
+            self.assertTrue(all(x["note_requests"] == x["resolved_notes"] +
+                                 x["unresolved_notes"] for x in measures))
+            self.assertTrue(all(x["resolved_notes"] > 0 for x in measures))
+            self.assertTrue(all(x["unresolved_notes"] == 0 for x in measures))
+            self.assertTrue(all(x["zero_gain_notes"] == 0 for x in measures))
+            self.assertTrue(all(x["nonzero_samples"] > 0 for x in measures))
+            self.assertTrue(all(x["events"] >= x["resolved_notes"] for x in measures))
+            self.assertEqual([x["reverb_send_seen"] for x in measures],
+                             [True, False] * (scenes // 2))
+            self.assertEqual([x["fallback_notes"] == x["resolved_notes"]
+                              for x in measures], [False, True] * (scenes // 2))
+            self.assertEqual([x["direct_match_notes"] ==
+                              x["resolved_notes"] for x in measures],
+                             [True, False] * (scenes // 2))
+            self.assertTrue(all(0 <= x["resampler_boundary_fraction"] < 48000
+                                for x in measures))
+            for folder, original in ((a, originals_a), (b, originals_b)):
+                self.assertEqual(
+                    {p.name: p.read_bytes() for p in folder.iterdir()}, original)
+
     def test_missing_bank_file_fails_without_partial_json_or_path(self):
         with tempfile.TemporaryDirectory() as tmp:
             a, b = Path(tmp) / "a", Path(tmp) / "b"
