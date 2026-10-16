@@ -47,6 +47,7 @@ RENDERER_ANCHORS = (
     "gte_stsxy3(&poly->x0, &poly->x1, &poly->x3);",
     "gte_ldv0(&tileModel->vertices[pFaceVerts[3]]);",
     "gte_stsxy(&poly->x2);",
+    "poly->code = GPU_CODE_POLY_FT4;",
     "AddPrim(ot + OT_SIZE - otz, poly);",
 )
 
@@ -72,6 +73,8 @@ def verify_source_contract(field: str, graphics: str, gpu: str) -> dict:
         for statement in RENDERER_ANCHORS:
             if statement not in body:
                 raise ValueError(f"{name} GPU face mapping changed: {statement}")
+        if ("GPU_CODE_SEMI_TRANS" in body or "setSemiTrans(" in body):
+            raise ValueError(f"{name} unexpectedly enables terrain ABE blending")
         if name != "RenderOverheadMapTile":
             if "setUVWH(poly, texX, texY, texW, texH);" not in body:
                 raise ValueError(f"{name} no longer samples GFX UVWH normally")
@@ -95,6 +98,9 @@ def verify_source_contract(field: str, graphics: str, gpu: str) -> dict:
         "source_face_perimeter_to_polygon_vertices": [0, 1, 3, 2],
         "source_face_perimeter_to_uv": ["uv0", "uv1", "uv3", "uv2"],
         "field_and_gpu_layout_verified": True,
+        "terrain_polygon_code": "GPU_CODE_POLY_FT4 (0x2c)",
+        "terrain_abe_enabled": False,
+        "terrain_abe_scope": "normal, edge and overhead terrain branches in pinned C",
         "scope": "pinned C source interpretation, not runtime projection or visible pixels",
     }
 
