@@ -37,7 +37,7 @@ class VerticalDdaObserverTests(unittest.TestCase):
         self.assertIn("continue;", out)
         self.assertIn("break;", out)
         self.assertIn("if (cx->textured) { luv.u += cx->step.dudy;", out) if False else None
-        self.assertEqual(out.count("#if defined(VH_MAP02_DDA_VERTICAL_TRACE)"), 4)
+        self.assertEqual(out.count("#if defined(VH_MAP02_DDA_VERTICAL_TRACE)"), 5)
         with self.assertRaisesRegex(ValueError, "already installed"):
             instrument_vertical(out)
 
