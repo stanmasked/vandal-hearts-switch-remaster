@@ -36,20 +36,31 @@ static void make_quad(POLY_FT4 *q, int x, int y, u_short tpage) {
     q->u3 = 63; q->v3 = 63;
 }
 
-static int draw_frame(int gfx) {
+static int draw_frame(int gfx, int valid_terrain) {
     u_long ot[16];
     POLY_FT4 terrain, mimic_sprite;
+    TILE fillers[64];
     int i;
     u_short tpage = GetTPage(2, 0, 640, 0);
 
     make_quad(&terrain, 64, 64, tpage);
     make_quad(&mimic_sprite, 192, 64, tpage);
     ClearOTag(ot, 16);
+    /* Add >64 primitives so the real hi-res scheduler uses 2 row-band
+     * workers, exercising immutable per-primitive context under concurrency. */
+    for (i = 0; i < 64; ++i) {
+        SetTile(&fillers[i]);
+        setRGB0(&fillers[i], 0, 0, 0);
+        setXY0(&fillers[i], 280 + (i % 8), 180 + (i / 8));
+        setWH(&fillers[i], 1, 1);
+        AddPrim(&ot[0], &fillers[i]);
+    }
     /* Sprite mimics exact terrain texture metadata; never mark it. */
     AddPrim(&ot[0], &mimic_sprite);
     /* A real terrain polygon invokes the v39 marker immediately after AddPrim. */
     AddPrim(&ot[0], &terrain);
-    PC_Map02V39MarkSubmitted(&ot[0], &terrain, gfx, 11, 1);
+    PC_Map02V39MarkSubmitted(&ot[0], &terrain, gfx,
+                              valid_terrain ? 11 : 2, 1);
     DrawOTag(&ot[0]);
 
     {
@@ -108,13 +119,14 @@ int main(void) {
         texture[i] = 0x001f;
     setRECT(&upload, 640, 0, VH_TEX_SIZE, VH_TEX_SIZE);
     LoadImage(&upload, (u_long *)texture);
-    VERIFY(draw_frame(641), "frame 1 GPU pass");
-    VERIFY(draw_frame(643), "frame 2 GPU pass, recycled OT token and changed gfx");
+    VERIFY(draw_frame(641, 1), "frame 1 GPU pass");
+    VERIFY(draw_frame(643, 1), "frame 2 GPU pass, recycled OT token and changed gfx");
+    VERIFY(draw_frame(644, 0), "frame 3 GPU path with wrong map and no provenance");
     if (failures) {
         fprintf(stderr, "[v42-smoke] FAIL: %d native GPU assertions\n", failures);
         return 1;
     }
-    fprintf(stderr, "[v42-smoke] PASS: 2 synthetic frames, 2 tagged terrain FT4,"
-                    " 2 untagged matching-UV sprite FT4; real native/hires DDA\n");
+    fprintf(stderr, "[v42-smoke] PASS: 3 synthetic frames, 2 tagged terrain FT4,"
+                    " 3 untagged matching-UV sprite FT4; real native/hires DDA\n");
     return 0;
 }
