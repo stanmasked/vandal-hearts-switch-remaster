@@ -18,7 +18,8 @@ TONE_OFFSET = 32 + 128 * 16
 
 
 def synth_dir(directory, wet=False, bank_b=False, fallback_program=False,
-              out_of_range_note=False, mute_master=False):
+              out_of_range_note=False, mute_master=False,
+              no_note_on=False):
     directory.mkdir()
     files = make_synthetic_files()
     vh = bytearray(files["music.vh"])
@@ -32,7 +33,7 @@ def synth_dir(directory, wet=False, bank_b=False, fallback_program=False,
         vb[34:48] = b"\xDD" * 14
     files["music.vh"] = bytes(vh)
     files["music.vb"] = bytes(vb)
-    if fallback_program or out_of_range_note:
+    if fallback_program or out_of_range_note or no_note_on:
         seq = bytearray(files["music.seq"])
         if fallback_program:
             # Program 9 is missing. The global resolver chooses program 7.
@@ -47,6 +48,12 @@ def synth_dir(directory, wet=False, bank_b=False, fallback_program=False,
             assert seq[on + 1] == 60 and seq[off + 1] == 60
             seq[on + 1] = 110
             seq[off + 1] = 110
+        if no_note_on:
+            on = seq.index(0x90)
+            assert seq[on + 2] == 110
+            # MIDI-style Note On velocity zero is Note Off; the SEQ
+            # parser must not ask the bank to resolve this event.
+            seq[on + 2] = 0
         files["music.seq"] = bytes(seq)
     for name, data in files.items():
         (directory / name).write_bytes(data)
@@ -164,6 +171,27 @@ class NativeLocalMusicTransitionTests(unittest.TestCase):
             for folder, expected in ((a, originals_a), (b, originals_b)):
                 self.assertEqual(
                     {p.name: p.read_bytes() for p in folder.iterdir()}, expected)
+
+    def test_no_note_on_is_not_counted_as_missing_or_muted_instrument(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b = Path(tmp) / "note-off-only", Path(tmp) / "notes"
+            synth_dir(a, no_note_on=True)
+            synth_dir(b)
+            result = subprocess.run(
+                [str(PROGRAM), str(a), str(b), "2", "16"],
+                capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            silent, sounding = json.loads(result.stdout)["measurements"]
+            self.assertGreater(silent["events"], 0)
+            self.assertEqual(silent["note_requests"], 0)
+            self.assertEqual(silent["resolved_notes"], 0)
+            self.assertEqual(silent["unresolved_notes"], 0)
+            self.assertEqual(silent["zero_gain_notes"], 0)
+            self.assertTrue(silent["silent_pcm"])
+            self.assertEqual(silent["nonzero_samples"], 0)
+            self.assertGreater(sounding["note_requests"], 0)
+            self.assertGreater(sounding["resolved_notes"], 0)
+            self.assertFalse(sounding["silent_pcm"])
 
     def test_missing_bank_file_fails_without_partial_json_or_path(self):
         with tempfile.TemporaryDirectory() as tmp:
