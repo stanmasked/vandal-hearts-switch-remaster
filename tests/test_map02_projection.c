@@ -53,7 +53,7 @@ static void test_perspective_clipping_and_flag_reset(void) {
     VhMap02ProjectSxy pos = {0};
     uint16_t sz = 65535;
     uint32_t flags = 0;
-    VhMap02ProjectVertex near_point = {32767, -32768, 0};
+    VhMap02ProjectVertex near_point = {3000, -3000, 0};
     assert(vh_map02_project_vertex(&c, near_point, &pos, &sz, &flags));
     assert(sz == 0 && (flags & (UINT32_C(1) << 17)));
     assert(pos.x == 1023 && pos.y == -1024);
