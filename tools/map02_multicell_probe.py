@@ -321,3 +321,39 @@ def audit_multicell_screen_batch(faces, otz_samples, screen_samples):
         "faces": combined,
         "evidence_scope": "external OTZ and screen XY only; no original GTE execution or rendered frame",
     }
+
+
+def audit_projected_shared_vertices(faces, screen_samples):
+    """Compare externally captured XY only where full world XYZ agrees.
+
+    Per-face source perimeter corner order is used. Different heights never
+    count as the same 3D vertex. Disagreement is diagnostic rather than a
+    rasterized crack claim (clipping, camera state and GPU effects are outside
+    this probe).
+    """
+    projected = bind_external_screen_corners(faces, screen_samples)
+    owners = {}
+    for face, sample in zip(faces, projected):
+        for i, (xyz, xy) in enumerate(zip(face["world_xyz_hypothesis"],
+                                          sample["perimeter_xy"])):
+            owners.setdefault(tuple(xyz), []).append({
+                "source_key": sample["source_key"], "corner": i, "xy": xy,
+            })
+    matched = []
+    mismatched = []
+    for xyz, occurrences in sorted(owners.items()):
+        if len({tuple(o["source_key"]) for o in occurrences}) < 2:
+            continue
+        entry = {"xyz": list(xyz), "occurrences": occurrences}
+        if len({tuple(o["xy"]) for o in occurrences}) == 1:
+            matched.append(entry)
+        else:
+            mismatched.append(entry)
+    return {
+        "shared_world_vertices": len(matched) + len(mismatched),
+        "screen_matches": len(matched),
+        "screen_mismatches": len(mismatched),
+        "matched": matched,
+        "mismatched": mismatched,
+        "evidence_scope": "external per-face XY comparison, not GTE or GPU rendering",
+    }
