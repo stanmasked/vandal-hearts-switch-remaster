@@ -277,9 +277,19 @@ SEQ, alternates A/B on the audio owner, clears borrowed voices at each
 transition, and preserves the STUDIO_C work buffer and resampler clock.
 
 The stdout JSON is **metrics only**: per-scene dispatched events,
-successfully started notes, whether voice reverb sends were observed,
+successfully started notes, note-resolution requests, missing or
+unresolvable requests, fallback notes, directly matched notes,
+per-note reverb sends, whether any active voice sent to reverb,
 raw 44.1-kHz and output 48-kHz boundary deltas, resampler fraction,
-and frame counts. No PCM frames, original bytes, track names, file
+and frame counts. The counters are collected by a wrapper around the
+unchanged production VAB resolver. Here **fallback** means the resolver
+used a tone outside the requested program/key range: either a different
+program or the nearest available key range. This is not necessarily an
+audio defect, but can indicate a mismatch between SEQ and VH/VB. The
+original resolver tries a global or nearest-tone fallback, so a bank
+with missing intended notes can have `unresolved_notes = 0` while
+`fallback_notes` is elevated. These counters describe the actual
+limited audit window, not an exhaustive scan of a track. No PCM frames, original bytes, track names, file
 paths, or bank contents are serialized. The program opens files
 read-only and does not create or overwrite audio files. The output
 report is created **only** if the operator explicitly redirects
