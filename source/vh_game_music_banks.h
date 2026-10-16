@@ -18,6 +18,17 @@
  * violation: VH_AUDIO_ASSET_ERROR; no partial pack is published.
  */
 #define VH_GAME_MUSIC_MAX_TOTAL_VB_BYTES (12u * 1024u * 1024u)
+
+/* The first mismatched SEQ program/key and the tone chosen by the
+ * PC-port-compatible global VH fallback. Diagnostic only: a valid
+ * fallback may be musically intentional, not always an error.
+ */
+typedef struct {
+    unsigned valid;
+    unsigned requested_program, note;
+    unsigned selected_program, selected_tone, selected_vag;
+} VhGameMusicFallback;
+
 typedef struct {
     VhAudioAssets field, selected;
     /* Audited during preload, before any audio service opens. Full
@@ -26,6 +37,7 @@ typedef struct {
      */
     VhSeqAudit field_audit, selected_audit;
     uint32_t field_fallback_notes, selected_fallback_notes;
+    VhGameMusicFallback field_first_fallback, selected_first_fallback;
 } VhGameMusicBanks;
 
 /* On success allocates *out and transfers ownership to caller.
