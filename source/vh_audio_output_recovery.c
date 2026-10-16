@@ -98,7 +98,7 @@ int vh_audio_output_verify_run(
     const VhAudioOutputRecovery *recovery,
     const VhAudioSubmitTiming *timing,
     uint64_t completed_pages, uint64_t completed_fixture_switches,
-    uint64_t expected_pages, int using_user_files,
+    uint64_t expected_pages, uint64_t fixture_switch_period_pages,
     int finished_without_error) {
     if (!groups || !recovery || !timing || !expected_pages ||
         completed_pages>expected_pages)
@@ -127,12 +127,13 @@ int vh_audio_output_verify_run(
         boundary->pages-boundary->failed_pages;
     const uint64_t retry_pages=
         steady->retried_pages+boundary->retried_pages;
-    const uint64_t expected_switches=using_user_files || !completed_pages
-        ? 0u : (completed_pages-1u)/64u;
+    const uint64_t expected_switches=
+        !fixture_switch_period_pages || !completed_pages
+        ? 0u : (completed_pages-1u)/fixture_switch_period_pages;
     if (returned_pages!=completed_pages ||
         boundary_returned!=completed_fixture_switches ||
         completed_fixture_switches!=expected_switches ||
-        (using_user_files && boundary->pages!=0u) ||
+        (!fixture_switch_period_pages && boundary->pages!=0u) ||
         recovery->pages_submitted!=completed_pages ||
         recovery->submit_failures!=timing->failed_submissions ||
         recovery->recoveries>retry_pages ||
