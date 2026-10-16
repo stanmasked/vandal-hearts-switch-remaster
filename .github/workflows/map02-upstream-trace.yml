@@ -732,9 +732,12 @@ jobs:
               ld -r "build/map02-vertical-dda/gpu.${mode}.o" \
                 "build/map02-vertical-dda/raster.${mode}.o" \
                 -o "build/map02-vertical-dda/linked.${mode}.o"
+              ld -r "build/map02-vertical-dda/gpu.${mode}.o" \
+                "build/map02-vertical-dda/span.${mode}.o" \
+                -o "build/map02-vertical-dda/span-linked.${mode}.o"
             done
-            nm -a build/map02-vertical-dda/span.diagnostic.o | grep VH_Map02SpanObserve
-            if nm -a build/map02-vertical-dda/span.baseline.o | grep -q VH_Map02SpanObserve; then
+            nm -a build/map02-vertical-dda/span-linked.diagnostic.o | grep VH_Map02SpanObserve
+            if nm -a build/map02-vertical-dda/span-linked.baseline.o | grep -Eq "VH_Map02SpanObserve|VH_Map02SkipAt|VH_Map02PixelScope|VH_PixelSampleRecord"; then
               echo "Span observer leaked into baseline" >&2
               exit 1
             fi
