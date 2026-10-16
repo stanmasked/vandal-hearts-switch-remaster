@@ -37,6 +37,9 @@ typedef struct {
     unsigned first_note_block, last_note_block;
     unsigned first_note_off_block, first_cross_program_block;
     unsigned first_out_of_range_block;
+    unsigned cycles_completed, first_cycle_block, last_cycle_block;
+    unsigned observed_tempo_changes, first_tempo_change_block;
+    unsigned last_tempo_change_block, final_tempo_us_per_quarter;
     uint64_t nonzero_samples, clipped_samples;
     int64_t channel_sum[2];
     uint64_t channel_squared_sum[2];
@@ -149,11 +152,23 @@ int main(int argc,char **argv) {
         for(unsigned b=0;b<blocks;b++) {
             const uint64_t previous_notes=seq.note_ons;
             const uint64_t previous_offs=seq.note_offs;
+            const uint32_t previous_cycles=seq.cycles_completed;
+            const uint32_t previous_tempo=seq.tempo;
             const uint64_t previous_cross=resolver_audit.cross_program;
             const uint64_t previous_outside=resolver_audit.out_of_range;
             if (vh_native_seq_advance_block(&seq)<0) {
                 fprintf(stderr,"SEQ playback error\n");
                 goto error;
+            }
+            if (seq.cycles_completed>previous_cycles) {
+                if (!metric->first_cycle_block) metric->first_cycle_block=b+1u;
+                metric->last_cycle_block=b+1u;
+            }
+            if (seq.tempo!=previous_tempo) {
+                ++metric->observed_tempo_changes;
+                if (!metric->first_tempo_change_block)
+                    metric->first_tempo_change_block=b+1u;
+                metric->last_tempo_change_block=b+1u;
             }
             if (seq.note_ons>previous_notes) {
                 if (!metric->first_note_block) metric->first_note_block=b+1u;
@@ -217,6 +232,8 @@ int main(int argc,char **argv) {
         metric->output_frames=frame_total-start_output;
         metric->notes=seq.note_ons;
         metric->note_offs=seq.note_offs;
+        metric->cycles_completed=seq.cycles_completed;
+        metric->final_tempo_us_per_quarter=seq.tempo;
         metric->events=seq.dispatched_events;
         metric->note_requests=resolver_audit.requests;
         metric->unresolved_notes=resolver_audit.unresolved;
@@ -242,7 +259,18 @@ int main(int argc,char **argv) {
             metric->last_note_block>blocks ||
             metric->first_note_off_block>blocks ||
             metric->first_cross_program_block>blocks ||
-            metric->first_out_of_range_block>blocks) {
+            metric->first_out_of_range_block>blocks ||
+            metric->first_cycle_block>blocks ||
+            metric->last_cycle_block>blocks ||
+            metric->first_tempo_change_block>blocks ||
+            metric->last_tempo_change_block>blocks ||
+            (metric->cycles_completed==0u)!=(metric->first_cycle_block==0u) ||
+            (metric->cycles_completed==0u)!=(metric->last_cycle_block==0u) ||
+            (metric->observed_tempo_changes==0u)!=
+                (metric->first_tempo_change_block==0u) ||
+            (metric->observed_tempo_changes==0u)!=
+                (metric->last_tempo_change_block==0u) ||
+            metric->final_tempo_us_per_quarter==0u) {
             fprintf(stderr,"SEQ block-timing accounting failed\n");
             goto error;
         }
@@ -312,6 +340,13 @@ int main(int argc,char **argv) {
                "\"first_note_off_block\":%u,"
                "\"first_cross_program_block\":%u,"
                "\"first_out_of_range_block\":%u,"
+               "\"cycles_completed\":%u,"
+               "\"first_cycle_block\":%u,"
+               "\"last_cycle_block\":%u,"
+               "\"observed_tempo_changes\":%u,"
+               "\"first_tempo_change_block\":%u,"
+               "\"last_tempo_change_block\":%u,"
+               "\"final_tempo_us_per_quarter\":%u,"
                "\"reverb_send_seen\":%s,"
                "\"peak_pcm16\":%u,"
                "\"nonzero_samples\":%" PRIu64 ","
@@ -335,6 +370,9 @@ int main(int argc,char **argv) {
                m->first_note_block,m->last_note_block,
                m->first_note_off_block,m->first_cross_program_block,
                m->first_out_of_range_block,
+               m->cycles_completed,m->first_cycle_block,m->last_cycle_block,
+               m->observed_tempo_changes,m->first_tempo_change_block,
+               m->last_tempo_change_block,m->final_tempo_us_per_quarter,
                m->sent_to_reverb?"true":"false",
                m->peak_pcm16,m->nonzero_samples,m->clipped_samples,
                (double)m->channel_sum[0]/(double)m->output_frames,
