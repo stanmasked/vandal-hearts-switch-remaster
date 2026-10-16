@@ -158,6 +158,44 @@ def stage_depth(sd_root):
     return geometry
 
 
+def synthetic_distant_shading_models():
+    """One face deep enough to trigger source RenderMapTile OTZ fade.
+
+    Scale the same near left quad 8x in camera space. The inverse test
+    -45 degree pitch shifts source Y by -68*(8-1) and source Z by
+    +68*(8-1). GTE OTZ becomes roughly 8*24 ~= 192, above the
+    original game's distance fade threshold of 150.
+    """
+    from inspect_vh_map_geometry import (
+        MAP_11_BYTES, MAP_11_STRIDE, TILE_BYTES,
+        VERTICES_BYTES, GFX_BYTES,
+    )
+    models=bytearray(MAP_11_BYTES)
+    base=(3*MAP_11_STRIDE+6)*TILE_BYTES
+    near=((-32,0,-16),(0,0,-16),(0,0,24),(-32,0,24))
+    distant=tuple((8*x,8*y-476,8*z+476) for x,y,z in near)
+    for i,xyz in enumerate(distant):
+        for k,value in enumerate(xyz):
+            offset=base+8*i+2*k
+            models[offset:offset+2]=int(value).to_bytes(
+                2,"little",signed=True
+            )
+    models[base+VERTICES_BYTES:base+VERTICES_BYTES+2]=(242).to_bytes(2,"little")
+    idx=base+VERTICES_BYTES+GFX_BYTES
+    models[idx:idx+4]=bytes((0,1,2,3))
+    models[base+TILE_BYTES-2]=1
+    return bytes(models)
+
+
+def stage_distance(sd_root):
+    from stage_vh_private_map_geometry import stage_map11_geometry
+    stage(sd_root)
+    metadata=stage_map11_geometry(synthetic_distant_shading_models(),sd_root)
+    assert metadata["active_faces"]==1
+    print("Staged distant face: OTZ > 150 must dim magenta/cyan")
+    return metadata
+
+
 def stage_geometry(sd_root):
     from stage_vh_private_map_geometry import stage_map11_geometry
     metadata = stage_map11_geometry(synthetic_geometry_models(), sd_root)
@@ -260,6 +298,26 @@ def check_depth(image_path):
     return True
 
 
+def check_distance(image_path):
+    from PIL import Image
+
+    frame=Image.open(image_path).convert("RGB")
+    if frame.size!=(1280,720):
+        raise ValueError("unexpected distance shading screenshot size")
+    for label,(x,y),channels in (
+        ("faded magenta",(260,210),(0,2)),
+        ("faded cyan",(400,400),(1,2)),
+    ):
+        rgb=frame.getpixel((x,y))
+        print("OTZ distance attenuation",label,rgb)
+        if any(not (150<=rgb[c]<=245) for c in channels):
+            raise ValueError(f"distance color channel not attenuated: {label} {rgb}")
+        if any(rgb[c]>40 for c in range(3) if c not in channels):
+            raise ValueError(f"distance color leaks unexpected channels: {label} {rgb}")
+    print("Source RenderMapTile far-distance shading verified in NeXium")
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group(required=True)
@@ -269,6 +327,8 @@ def main():
     group.add_argument("--check-geometry-screenshot", type=Path)
     group.add_argument("--stage-depth-sd-root", type=Path)
     group.add_argument("--check-depth-screenshot", type=Path)
+    group.add_argument("--stage-distance-sd-root", type=Path)
+    group.add_argument("--check-distance-screenshot", type=Path)
     args = parser.parse_args()
     if args.stage_sd_root is not None:
         stage(args.stage_sd_root)
@@ -280,6 +340,10 @@ def main():
         stage_depth(args.stage_depth_sd_root)
     elif args.check_depth_screenshot is not None:
         check_depth(args.check_depth_screenshot)
+    elif args.stage_distance_sd_root is not None:
+        stage_distance(args.stage_distance_sd_root)
+    elif args.check_distance_screenshot is not None:
+        check_distance(args.check_distance_screenshot)
     else:
         check(args.check_screenshot)
 
