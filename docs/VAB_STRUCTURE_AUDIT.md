@@ -270,6 +270,47 @@ identity on unusual nonzero inactive slots, actual game banks, timing,
 gain, sound quality, PS1 hardware or Switch speaker output. These
 remain separate validation gates. Original music is never uploaded.
 
+## PC-port inactive slots and sparse-program aliases
+
+The actual pinned PC-port VAB importer (`SsVabOpenHeadSticky`) maps each
+program through a packed 16-tone block index. The index advances only
+for populated programs; programs with `nTone == 0` **before the last populated
+program** may therefore read the next populated program's block.
+The upstream `SeqPickTone` also searches all 16 tone slots, including
+positions after the declared `nTone`, whenever their VAG index is positive.
+
+The native Switch loader currently limits selection to validated active
+(`tone < nTone`) slots. **The 3,840-case executable comparison covers
+synthetic banks whose inactive slots are zero and whose oracle mapping
+includes only declared active tones; it does not establish parity for
+the alias cases described here.** A gap in program numbering can produce
+a different selected program, gain, or even silence in the PC port.
+
+Use the additional read-only preflight before attempting music playback:
+
+```sh
+python3 tools/audit_pcport_vab_aliases.py /local/music.vh --vb /local/music.vb
+python3 tools/audit_pcport_vab_aliases.py /local/music.vh --vb /local/music.vb --strict
+python3 tests/test_audit_pcport_vab_aliases.py
+```
+
+The JSON `schema: 1` report gives a `gap_alias_tones` count,
+`inactive_slot_tones` count and each potentially selectable record's
+program, tone, source packed-program, VAG and key range. It includes
+hashes, not the local file path or audio payload. `--strict` exits 4
+when aliases need manual PC-port compatibility review; it is not a
+claim that every such alias is audible in actual SEQ playback. Invalid
+VH, incomplete tables, or a mismatch between the declared number of
+programs and populated blocks are rejected rather than guessed.
+
+The CI also runs the **unmodified, compiled upstream `SeqPickTone`**
+with three explicit cases: a nonzero inactive tone slot and two empty
+programs inheriting later packed blocks. This establishes the reference
+selection behaviour for these cases, **not** equivalence of the native
+loader. The actual native resolution of such banks must be reconciled
+before claiming PC-port fidelity. The original Vandal Hearts soundbank
+remains local and is never copied to GitHub.
+
 ## SPU ADSR and sample cursor (host-only)
 
 The next isolated component is `tools/simulate_spu_voice.py`, which
