@@ -182,3 +182,26 @@ $(BUILD)/$(OPENAL_TARGET).nro: $(BUILD)/$(OPENAL_TARGET).elf $(BUILD)/$(OPENAL_T
 
 clean:
 	rm -rf $(BUILD)
+
+
+# Asset-free, SDL2-independent combined software-video + native audout NRO.
+# This demonstrates the integration boundary; not original music or gameplay.
+.PHONY: native-av-probe test-native-tone
+
+test-native-tone: $(BUILD)/test_native_tone
+	./$(BUILD)/test_native_tone
+
+$(BUILD)/test_native_tone: tests/test_native_tone.c source/vh_native_tone.h | $(BUILD)
+	$(HOST_CC) -std=c11 -O2 -Wall -Wextra -Werror $< -o $@
+
+$(BUILD)/libnx-av-switch-probe.elf: probes/libnx_av_smoke.c source/vh_native_tone.h source/game_state.h source/game_renderer.h source/software_renderer.h source/platform_input.h | $(BUILD)
+	$(CC) $(CFLAGS) -std=c11 -Isource $(LDFLAGS) $< -o $@ $(LDLIBS)
+
+$(BUILD)/libnx-av-switch-probe.nacp: | $(BUILD)
+	$(NACPTOOL) --create "Vandal Hearts Native AV Probe" "$(APP_AUTHOR)" "$(APP_VERSION)" $@
+
+$(BUILD)/libnx-av-switch-probe.nro: $(BUILD)/libnx-av-switch-probe.elf $(BUILD)/libnx-av-switch-probe.nacp
+	$(ELF2NRO) $< $@ --nacp=$(BUILD)/libnx-av-switch-probe.nacp
+
+native-av-probe: $(BUILD)/libnx-av-switch-probe.nro
+	python3 tests/check_nro.py $<
