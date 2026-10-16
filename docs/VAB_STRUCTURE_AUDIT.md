@@ -427,6 +427,40 @@ do not prove exact Sony SPU timing, original music fidelity,
 or physical Nintendo Switch output. All fixtures are
 synthetic and no original music is uploaded.
 
+## Bank lifetime and forced audio scene teardown
+
+Two complete local VH/VB/SEQ banks are preloaded into separate PCM
+arenas. Scene transitions borrow the bank and sample pointers until
+the old cue fades out and the director switches on a **512-frame**
+boundary; ordinary scene requests cannot interrupt a pending fade.
+Both banks must therefore remain allocated during normal transitions.
+
+For exiting the audio producer or intentionally unloading both banks
+while a cue is still active, `vh_music_scene_detach(&director)` provides
+an explicit **audio-owner-only** teardown. It stops all SPU voices,
+clears the reverb history and every borrowed active/pending SEQ,
+VAB resolver/context and PCM voice pointer; the scene becomes silent
+without finishing a fade. The SPU's interpolation/reverb settings
+and scene block count are retained. The method is idempotent and
+does not require the pending fade to complete.
+
+**Lifetime order is mandatory:** stop and drain the SDL/audout
+consumer, serialize against `vh_music_scene_render` and other
+audio-owner work, call `vh_music_scene_detach`, then call
+`vh_game_music_banks_close`. The detach operation is not a
+thread-synchronization primitive and does not drain samples already
+enqueued in an external audio device.
+
+The Nintendo Switch audio-worker exit path now follows this order.
+Synthetic regressions verify detach from PLAYING, FADE_OUT,
+SWITCH_PENDING, and FADE_IN, including repeated detach and
+recovery with a new cue. A second regression stops a fade between
+**two separately allocated VH/VB banks**, detaches, frees both
+heap-backed PCM arenas, proves that subsequent rendering is silent,
+reloads both banks and resumes the next scene without retaining old
+voice pointers. This verifies lifetime cleanup in host tests; it
+does not establish real hardware concurrency or playback fidelity.
+
 ## SPU ADSR and sample cursor (host-only)
 
 The next isolated component is `tools/simulate_spu_voice.py`, which
