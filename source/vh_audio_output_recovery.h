@@ -24,6 +24,7 @@ typedef struct {
     uint64_t pages_submitted;
     uint64_t frames_submitted;
     unsigned submit_failures, restart_attempts, recoveries;
+    unsigned resume_failures, resume_restarts, resume_recoveries;
 } VhAudioOutputRecovery;
 
 /* Return 0 after ONE successful device submission, -1 on terminal
@@ -38,5 +39,17 @@ typedef struct {
 int vh_audio_output_submit_recover(
     const VhAudioOutputOps *ops, VhAudioOutputRecovery *stats,
     const int16_t *stereo, size_t frames);
+
+/* Start a paused output session without rendering any new PCM.
+ * force_reopen is true after a HOME/sleep resume serial changes:
+ * stop/close any stale audout service, then open/start fresh.
+ * Otherwise first try start() on the existing stopped session and
+ * recreate it if the start fails. At most RESTART_LIMIT fresh
+ * sessions are attempted. Return -1 after an exhausted/unsafe
+ * stop; never change SEQ/SPU/PCM clocks or caller-owned music banks.
+ */
+int vh_audio_output_resume_recover(
+    const VhAudioOutputOps *ops, VhAudioOutputRecovery *stats,
+    int force_reopen);
 
 #endif
