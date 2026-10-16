@@ -117,10 +117,13 @@ static void VH_CaptureEvent(const char *phase, const char *operation, int transf
         fputs("null", log);
     fprintf(log, ",\"dest\":[%d,%d],\"rgb\":[%d,%d,%d],"
             "\"primitive_type\":%d,\"semi\":%d,"
-            "\"window\":[%d,%d,%d,%d],\"draw_mode\":[%d,%d,%d],"
+            "\"window\":[%d,%d,%d,%d],\"draw_env\":[%d,%d,%d,%d,%d,%d],\"draw_mode\":[%d,%d,%d],"
             "\"upload\":\"%s\",\"ft4\":",
             dest_x, dest_y, r, g, b, type, semi,
             s_twMaskX, s_twMaskY, s_twOffX, s_twOffY,
+            s_drawEnv.clip.x, s_drawEnv.clip.y,
+            s_drawEnv.clip.w, s_drawEnv.clip.h,
+            s_drawEnv.ofs[0], s_drawEnv.ofs[1],
             s_drawModeTPage, s_drawModeAbr, s_drawModeDither,
             upload_name);
     if (quad)
