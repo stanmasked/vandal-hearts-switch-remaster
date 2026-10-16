@@ -225,13 +225,13 @@ static void assert_scene_fully_detached(void) {
     assert(scene.fade_blocks==0u && scene.fade_position==0u);
     assert(scene.next_fade_in==0u && !scene.last_error);
     for(unsigned i=0;i<VH_NATIVE_MUSIC_VOICES;i++) {
-        assert(spu.voice[i].pcm==NULL);
-        assert(!spu.voice[i].active);
+        assert(synth.voice[i].pcm==NULL);
+        assert(!synth.voice[i].active);
     }
     for(unsigned i=0;i<VH_REV_SAMPLES;i++)
-        assert(spu.reverb.work[i]==0);
-    assert(spu.interpolation==VH_SPU_GAUSSIAN);
-    assert(spu.reverb_enabled==1 && spu.reverb_depth==0.5f);
+        assert(synth.reverb.work[i]==0);
+    assert(synth.interpolation==VH_SPU_GAUSSIAN);
+    assert(synth.reverb_enabled==1 && synth.reverb_depth==0.5f);
 }
 
 static void test_forced_bank_detach_in_all_fade_stages(void) {
