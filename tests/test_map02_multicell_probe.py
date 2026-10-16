@@ -11,6 +11,7 @@ from tools.map02_multicell_probe import (
     face_cross_xyz, placement_invariants, order_faces_by_external_otz,
     bind_gte_face_samples, place_selected_faces, audit_multicell_gte_batch, bind_external_screen_corners,
     audit_multicell_screen_batch, audit_projected_shared_vertices,
+    audit_projected_shared_edges,
 )
 
 
@@ -454,6 +455,51 @@ class MultiCellTests(unittest.TestCase):
         report = audit_projected_shared_vertices(faces, samples)
         self.assertEqual(report["shared_world_vertices"], 0)
         self.assertEqual(report["screen_mismatches"], 0)
+
+
+    def test_shared_edge_endpoint_projection_and_reversed_winding(self):
+        keys = [(2, 3, 0), (2, 4, 0)]
+        faces = place_selected_faces(self.data, keys,
+                                     {k: (0, 0, 15, 15) for k in keys},
+                                     step_x=64, step_z=64)
+        samples = {
+            (2, 3, 59, 0): [(0, 0), (8, 0), (8, 8), (0, 8)],
+            (2, 4, 60, 0): [(8, 0), (16, 0), (16, 8), (8, 8)],
+        }
+        result = audit_projected_shared_edges(faces, samples)
+        self.assertEqual((result["shared_world_edges"], result["screen_matches"],
+                          result["screen_mismatches"]), (1, 1, 0))
+        samples[(2, 4, 60, 0)][3] = (9, 8)
+        result = audit_projected_shared_edges(faces, samples)
+        self.assertEqual((result["screen_matches"], result["screen_mismatches"]),
+                         (0, 1))
+        samples[(2, 4, 60, 0)][3] = (8, 8)
+        data = fixture()
+        origin = (2 * STRIDE + 4) * RECORD_SIZE
+        data[origin + FACE_TABLE_OFFSET:origin + FACE_TABLE_OFFSET + 4] = bytes((3, 2, 1, 0))
+        reversed_faces = place_selected_faces(data, keys,
+                                              {k: (0, 0, 15, 15) for k in keys},
+                                              step_x=64, step_z=64)
+        samples[(2, 4, 60, 0)] = list(reversed(samples[(2, 4, 60, 0)]))
+        self.assertEqual(audit_projected_shared_edges(
+            reversed_faces, samples)["screen_matches"], 1)
+
+    def test_projected_edge_requires_shared_full_xyz(self):
+        keys = [(2, 3, 0), (3, 3, 0), (2, 4, 0)]
+        faces = place_selected_faces(self.data, keys,
+                                     {k: (0, 0, 15, 15) for k in keys},
+                                     step_x=64, step_z=64)
+        samples = {(2, 3, 59, 0): [(0, 0)] * 4,
+                   (3, 3, 87, 0): [(1, 1)] * 4,
+                   (2, 4, 60, 0): [(2, 2)] * 4}
+        result = audit_projected_shared_edges(faces, samples)
+        self.assertEqual(result["shared_world_edges"], 2)
+        self.assertEqual(result["screen_mismatches"], 2)
+        one_corner = audit_projected_shared_edges(faces[1:], {
+            (3, 3, 87, 0): samples[(3, 3, 87, 0)],
+            (2, 4, 60, 0): samples[(2, 4, 60, 0)],
+        })
+        self.assertEqual(one_corner["shared_world_edges"], 0)
 
 
 if __name__ == "__main__":
