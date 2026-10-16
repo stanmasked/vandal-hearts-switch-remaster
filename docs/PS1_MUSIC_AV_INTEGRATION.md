@@ -1105,3 +1105,36 @@ steady/scene-switch trace with a recovered submission and a distinct
 two-delivered/one-failed trace starting in the >4x band. No music
 content, audio samples or timing traces are written to SD. This
 is evidence-accounting hardening, not evidence of audible glitches.
+
+
+### Three photograph-friendly diagnostic report pages (standalone audout NRO)
+
+After the probe stops the audio service and releases the music banks,
+the old accumulating console log is replaced by a **cleared, paginated
+three-screen report**. Press **LEFT/RIGHT** to move between screens
+(wrapping at either end); press **PLUS** to exit. Each screen redraws
+only when its page changes, and navigation starts after playback
+finishes, so it cannot alter SEQ/SPU scheduling or actual audout waits.
+
+- **1/3 Device/service:** exact returned-page accounting result,
+  source identity (generated fixture vs user-owned SD), service call
+  counts, retry totals and separate normal/switch wait distributions.
+- **2/3 PCM:** exact seam counter audit, per-band seam counts and
+  peak steps for ordinary/boundary pages, failed-page totals and first
+  page's wait classification.
+- **3/3 Listening:** human A-mark overlap against the all-page
+  baseline, the observed peak PCM step, and input-poll coverage
+  / integrity (including long polling gaps and missed-short-tap
+  warning).
+
+The former single long report could scroll the first verdict and
+histogram off the Switch console, particularly after many periodic
+progress messages. The three short cleared screens keep each group
+together for separate photographs. A portable regression verifies
+both page-direction wrap and no-false-FULL status when any audit fails.
+
+The display labels the run as **FULL PCM accounting**, not as
+"glitch free": only listening or independently recorded hardware
+audio can establish whether clicks/dropouts were audible. No PCM,
+button history, copyrighted asset or screenshot is automatically
+saved or uploaded.

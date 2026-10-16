@@ -48,6 +48,8 @@ on:
       - 'source/vh_audio_output_recovery.h'
       - 'source/vh_audio_listening_marks.h'
       - 'source/vh_audio_input_poll.h'
+      - 'source/vh_audio_report_pages.h'
+      - 'tests/test_vh_audio_report_pages.c'
       - 'tests/test_vh_audio_input_poll.c'
       - 'source/vh_audio_resample.c'
       - '.github/workflows/pcm-wav-diagnostics.yml'
@@ -96,6 +98,8 @@ on:
       - 'source/vh_audio_output_recovery.h'
       - 'source/vh_audio_listening_marks.h'
       - 'source/vh_audio_input_poll.h'
+      - 'source/vh_audio_report_pages.h'
+      - 'tests/test_vh_audio_report_pages.c'
       - 'tests/test_vh_audio_input_poll.c'
       - 'source/vh_audio_resample.c'
       - '.github/workflows/pcm-wav-diagnostics.yml'
@@ -410,6 +414,14 @@ jobs:
             source/vh_spu_reverb.c source/vh_spu_gaussian.c \
             source/vh_audio_stream.c -lm -o /tmp/test_vh_audio_output_recovery
           /tmp/test_vh_audio_output_recovery
+      - name: Validate report page navigation and strict evidence under UBSan
+        run: |
+          set -euo pipefail
+          cc -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+            -fsanitize=undefined -fno-sanitize-recover=all \
+            tests/test_vh_audio_report_pages.c \
+            -o /tmp/test_vh_audio_report_pages_ubsan
+          /tmp/test_vh_audio_report_pages_ubsan
       - name: Verify Switch input polling intervals under UBSan
         run: |
           set -euo pipefail

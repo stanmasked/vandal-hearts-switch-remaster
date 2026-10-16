@@ -14,6 +14,7 @@
 #include "vh_audio_output_recovery.h"
 #include "vh_audio_listening_marks.h"
 #include "vh_audio_input_poll.h"
+#include "vh_audio_report_pages.h"
 #include "vh_native_seq.h"
 #include "vh_native_spu.h"
 
@@ -176,6 +177,130 @@ static int native_submit(void *opaque,const int16_t *pcm,size_t frames) {
             &dev->timing,elapsed,armGetSystemTickFreq(),frames,accepted))
         return -1;
     return accepted ? 0 : -1;
+}
+
+/* Each report screen is deliberately short enough for a single
+ * photograph of the Nintendo Switch framebuffer console. Called
+ * only after stopped audout and released SD music assets.
+ */
+typedef struct {
+    const NativeOutput *output;
+    const VhAudioOutputRecovery *recovery;
+    const VhAudioPcmSeams *seams;
+    const VhAudioListeningMarks *marks;
+    const VhAudioInputPoll *poll;
+    uint64_t tick_frequency;
+    unsigned played, switched, user_files;
+    int result, seam_evidence, listen_evidence, poll_evidence;
+    unsigned verdict;
+} VhAudioProbeReport;
+
+static void vh_audio_show_report(const VhAudioProbeReport *r,
+                                 unsigned page) {
+    const VhAudioPageWaitBucket *n=&r->output->scene_waits.ordinary;
+    const VhAudioPageWaitBucket *s=&r->output->scene_waits.first_after_switch;
+    const VhAudioPcmSeams *pcm=r->seams;
+    const VhAudioListeningMarks *marks=r->marks;
+    const VhAudioInputPoll *poll=r->poll;
+    const uint64_t hz=r->tick_frequency;
+    consoleClear();
+    printf("Vandal Hearts - native audout diagnostic\n");
+    if (page==0u) {
+        printf("REPORT 1/3: DEVICE / SERVICE\n\n");
+        printf("Source: %s\n",r->user_files ? "user SD music" : "generated fixture");
+        printf("Result=%d  PCM accounting=%s\n",r->result,
+               r->verdict==VH_AUDIO_REPORT_FULL ? "FULL" :
+               r->verdict==VH_AUDIO_REPORT_INCOMPLETE ? "INCOMPLETE" :
+                                                       "INVALID");
+        printf("Pages %u/%u, fixture switches=%u\n",
+               r->played,MAX_PROBE_BLOCKS,r->switched);
+        printf("Backend calls=%llu  failed=%llu\n",
+               (unsigned long long)r->output->timing.calls,
+               (unsigned long long)r->output->timing.failed_submissions);
+        printf("Peak wait=%llu us; >page calls=%llu\n",
+               (unsigned long long)vh_audio_output_ticks_to_us(
+                   r->output->timing.max_ticks,hz),
+               (unsigned long long)r->output->timing.waits_longer_than_page);
+        printf("Restarts=%u recovered=%u\n",
+               r->recovery->restart_attempts,r->recovery->recoveries);
+        printf("Wait bins: <=1x <=2x <=4x >4x\n");
+        printf("Normal: %llu %llu %llu %llu\n",
+               (unsigned long long)n->wait_le_page,
+               (unsigned long long)n->wait_le_2pages,
+               (unsigned long long)n->wait_le_4pages,
+               (unsigned long long)n->wait_gt_4pages);
+        printf("Switch: %llu %llu %llu %llu\n",
+               (unsigned long long)s->wait_le_page,
+               (unsigned long long)s->wait_le_2pages,
+               (unsigned long long)s->wait_le_4pages,
+               (unsigned long long)s->wait_gt_4pages);
+        printf("Service delay alone is NOT an audible glitch.\n");
+    } else if (page==1u) {
+        printf("REPORT 2/3: PCM SEAMS / COUNTS\n\n");
+        printf("Seam audit=%s; pages=%llu\n",
+               r->seam_evidence ? "INVALID" : "VALID",
+               (unsigned long long)pcm->delivered_pages);
+        printf("Bins: <=1x <=2x <=4x >4x\n");
+        printf("Normal seam counts: %llu %llu %llu %llu\n",
+               (unsigned long long)pcm->ordinary.count[0],
+               (unsigned long long)pcm->ordinary.count[1],
+               (unsigned long long)pcm->ordinary.count[2],
+               (unsigned long long)pcm->ordinary.count[3]);
+        printf("Switch seam counts: %llu %llu %llu %llu\n",
+               (unsigned long long)pcm->first_after_switch.count[0],
+               (unsigned long long)pcm->first_after_switch.count[1],
+               (unsigned long long)pcm->first_after_switch.count[2],
+               (unsigned long long)pcm->first_after_switch.count[3]);
+        printf("Peak PCM16 seam, normal:\n%u %u %u %u\n",
+               pcm->ordinary.peak_abs_step[0],
+               pcm->ordinary.peak_abs_step[1],
+               pcm->ordinary.peak_abs_step[2],
+               pcm->ordinary.peak_abs_step[3]);
+        printf("Peak PCM16 seam, switch:\n%u %u %u %u\n",
+               pcm->first_after_switch.peak_abs_step[0],
+               pcm->first_after_switch.peak_abs_step[1],
+               pcm->first_after_switch.peak_abs_step[2],
+               pcm->first_after_switch.peak_abs_step[3]);
+        printf("Failed logical pages (normal/switch): %llu/%llu\n",
+               (unsigned long long)n->failed_pages,
+               (unsigned long long)s->failed_pages);
+        printf("First delivered page wait bin: %u (0..3)\n",
+               pcm->first_wait_band);
+        printf("PCM boundary step is NOT proof of a click.\n");
+    } else {
+        printf("REPORT 3/3: HUMAN LISTENING / A BUTTON\n\n");
+        printf("A marks=%llu; all windows=%llu\n",
+               (unsigned long long)marks->manual_marks,
+               (unsigned long long)marks->returned_pages);
+        printf("Switch in window, A/all=%llu/%llu\n",
+               (unsigned long long)marks->marks_near_switch,
+               (unsigned long long)marks->windows_near_switch);
+        printf(">2x in window, A/all=%llu/%llu\n",
+               (unsigned long long)marks->marks_near_wait_over_2x,
+               (unsigned long long)marks->windows_near_wait_over_2x);
+        printf(">4x in window, A/all=%llu/%llu\n",
+               (unsigned long long)marks->marks_near_wait_over_4x,
+               (unsigned long long)marks->windows_near_wait_over_4x);
+        printf("Retry in window, A/all=%llu/%llu\n",
+               (unsigned long long)marks->marks_near_retry,
+               (unsigned long long)marks->windows_near_retry);
+        printf("Peak PCM16 step near A=%u\n",
+               marks->peak_seam_near_mark);
+        printf("Max A poll gap=%llu us\n",
+               (unsigned long long)vh_audio_output_ticks_to_us(
+                   poll->max_gap_ticks,hz));
+        printf("Long polls >1x/>4x: %llu/%llu\n",
+               (unsigned long long)poll->gaps_over_page,
+               (unsigned long long)poll->gaps_over_4pages);
+        printf("A polls=%llu; mark/poll audit=%s/%s\n",
+               (unsigned long long)poll->samples,
+               r->listen_evidence ? "INVALID" : "VALID",
+               r->poll_evidence ? "INVALID" : "VALID");
+        printf("Short taps can be missed; no A != no glitches.\n");
+    }
+    printf("\nLEFT/RIGHT change page; PLUS exit.\n");
+    printf("No audio recorded; inspect on real Switch.\n");
+    consoleUpdate(NULL);
 }
 
 int main(int argc, char **argv) {
@@ -392,106 +517,42 @@ int main(int argc, char **argv) {
         &input_poll,played_blocks);
     if ((run_evidence<0 || seam_evidence || listen_evidence ||
          poll_evidence) && result==0) result=10;
-    printf("Run evidence: %s (accepted=%u / planned=%u, source=%s)\n",
-           run_evidence==1 && seam_evidence==0 &&
-           listen_evidence==0 && poll_evidence==0 ?
-               "FULL PCM PAGE ACCOUNTING" :
-           run_evidence==0 && seam_evidence==0 &&
-           listen_evidence==0 && poll_evidence==0 ?
-               "INCOMPLETE - NO FULL-RUN CLAIM" :
-                             "COUNTER MISMATCH - INVALID",
-           played_blocks,MAX_PROBE_BLOCKS,
-           user_files ? "SD music" : "generated fixture");
-    printf("Output pages=%llu restarts=%u recovered=%u failures=%u\n",
-           (unsigned long long)recovery.pages_submitted,
-           recovery.restart_attempts,recovery.recoveries,
-           recovery.submit_failures);
-    printf("audout waits: calls=%llu peak=%llu us >page=%llu failed=%llu\n",
-           (unsigned long long)output.timing.calls,
-           (unsigned long long)vh_audio_output_ticks_to_us(
-               output.timing.max_ticks,tick_frequency),
-           (unsigned long long)output.timing.waits_longer_than_page,
-           (unsigned long long)output.timing.failed_submissions);
-    const VhAudioPageWaitBucket *normal=&output.scene_waits.ordinary;
-    const VhAudioPageWaitBucket *boundary=&output.scene_waits.first_after_switch;
-    printf("Audout scene summary: switched=%u steady=%llu boundary=%llu\n",
-           completed_switches,(unsigned long long)normal->pages,
-           (unsigned long long)boundary->pages);
-    printf("Service wait peaks: steady=%llu us boundary=%llu us; retries=%llu/%llu\n",
-           (unsigned long long)vh_audio_output_ticks_to_us(
-               normal->peak_page_ticks,tick_frequency),
-           (unsigned long long)vh_audio_output_ticks_to_us(
-               boundary->peak_page_ticks,tick_frequency),
-           (unsigned long long)normal->retried_pages,
-           (unsigned long long)boundary->retried_pages);
-    /* Exclusive, frame-duration-normalized wait bands preserve the
-     * shape of the latency distribution without storing raw timing,
-     * filenames, event bytes or any copyrighted PCM samples.
-     * Boundary pages are shown separately from steady-state pages.
-     */
-    printf("Wait bands [<=1x, <=2x, <=4x, >4x] nominal PCM page:\n");
-    printf("Steady: %llu %llu %llu %llu (pages=%llu)\n",
-           (unsigned long long)normal->wait_le_page,
-           (unsigned long long)normal->wait_le_2pages,
-           (unsigned long long)normal->wait_le_4pages,
-           (unsigned long long)normal->wait_gt_4pages,
-           (unsigned long long)normal->pages);
-    printf("Switch: %llu %llu %llu %llu (pages=%llu)\n",
-           (unsigned long long)boundary->wait_le_page,
-           (unsigned long long)boundary->wait_le_2pages,
-           (unsigned long long)boundary->wait_le_4pages,
-           (unsigned long long)boundary->wait_gt_4pages,
-           (unsigned long long)boundary->pages);
-    /* PCM jumps are not audible clicks; zero means no observed step
-     * OR an empty band. Interpret alongside the wait page counts. */
-    printf("Max PCM16 seam by audout wait band (1x/2x/4x/>4x):\n");
-    printf("Steady: %u %u %u %u\n",
-           seam_stats.ordinary.peak_abs_step[0],
-           seam_stats.ordinary.peak_abs_step[1],
-           seam_stats.ordinary.peak_abs_step[2],
-           seam_stats.ordinary.peak_abs_step[3]);
-    printf("Switch: %u %u %u %u\n",
-           seam_stats.first_after_switch.peak_abs_step[0],
-           seam_stats.first_after_switch.peak_abs_step[1],
-           seam_stats.first_after_switch.peak_abs_step[2],
-           seam_stats.first_after_switch.peak_abs_step[3]);
-    printf("PCM seam audit: %s (%llu pages returned)\n",
-           seam_evidence==0 ? "VALID" : "INVALID",
-           (unsigned long long)seam_stats.delivered_pages);
-    printf("A marks=%llu / all windows=%llu (32-page lookback)\n",
-           (unsigned long long)listening_marks.manual_marks,
-           (unsigned long long)listening_marks.returned_pages);
-    printf("Switch overlap A/all=%llu/%llu; >2x=%llu/%llu\n",
-           (unsigned long long)listening_marks.marks_near_switch,
-           (unsigned long long)listening_marks.windows_near_switch,
-           (unsigned long long)listening_marks.marks_near_wait_over_2x,
-           (unsigned long long)listening_marks.windows_near_wait_over_2x);
-    printf(">4x overlap A/all=%llu/%llu; retry=%llu/%llu\n",
-           (unsigned long long)listening_marks.marks_near_wait_over_4x,
-           (unsigned long long)listening_marks.windows_near_wait_over_4x,
-           (unsigned long long)listening_marks.marks_near_retry,
-           (unsigned long long)listening_marks.windows_near_retry);
-    printf("Peak PCM16 seam near A=%u; mark audit=%s\n",
-           listening_marks.peak_seam_near_mark,
-           listen_evidence==0 ? "VALID" : "INVALID");
-    printf("A poll gap max=%llu us; >page=%llu >4page=%llu\n",
-           (unsigned long long)vh_audio_output_ticks_to_us(
-               input_poll.max_gap_ticks,tick_frequency),
-           (unsigned long long)input_poll.gaps_over_page,
-           (unsigned long long)input_poll.gaps_over_4pages);
-    printf("A polls=%llu audit=%s; short taps may be missed\n",
-           (unsigned long long)input_poll.samples,
-           poll_evidence==0 ? "VALID" : "INVALID");
-    printf("Audio probe ended, result=%d\n",result);
-    printf("Press + to close this results screen.\n");
-    consoleUpdate(NULL);
-    /* The service and borrowed music PCM have already been shut down.
-     * Keep only the console visible for a human hardware measurement.
-     * This does not produce any additional music or change clocks.
-     */
+    const unsigned verdict=vh_audio_report_evidence(
+        run_evidence,seam_evidence,listen_evidence,poll_evidence);
+    const VhAudioProbeReport report={
+        .output=&output,.recovery=&recovery,.seams=&seam_stats,
+        .marks=&listening_marks,.poll=&input_poll,
+        .tick_frequency=tick_frequency,
+        .played=played_blocks,.switched=completed_switches,
+        .user_files=(unsigned)user_files,.result=result,
+        .seam_evidence=seam_evidence,
+        .listen_evidence=listen_evidence,.poll_evidence=poll_evidence,
+        .verdict=verdict
+    };
+    /* All source assets and audout handles are already released.
+     * Redrawing these fixed reports cannot affect playback timing. */
+    unsigned report_page=0u;
+    vh_audio_show_report(&report,report_page);
     while (appletMainLoop()) {
         padUpdate(&pad);
-        if (padGetButtonsDown(&pad)&HidNpadButton_Plus) break;
+        const uint64_t buttons=padGetButtonsDown(&pad);
+        unsigned commands=0u;
+        if (buttons&HidNpadButton_Left)
+            commands|=VH_AUDIO_REPORT_PREV;
+        if (buttons&HidNpadButton_Right)
+            commands|=VH_AUDIO_REPORT_NEXT;
+        if (buttons&HidNpadButton_Plus)
+            commands|=VH_AUDIO_REPORT_QUIT;
+        const unsigned previous_page=report_page;
+        const int nav=vh_audio_report_navigate(&report_page,commands);
+        if (nav==1) break;
+        if (nav<0) {
+            result=15;
+            break;
+        }
+        if (report_page!=previous_page)
+            vh_audio_show_report(&report,report_page);
+        consoleUpdate(NULL);
         svcSleepThread(100000000ll);
     }
     consoleExit(NULL);
