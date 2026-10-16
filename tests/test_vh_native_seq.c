@@ -266,6 +266,147 @@ static void test_sustained_voices_across_tempo_pan_and_backpressure(void) {
     assert(seq.last_error==0);
 }
 
+/* A clean FF2F seam rewinds the event reader, not the musical
+ * channel state: PC-port SeqEndOfTrack retains tempo, chProg, CC7,
+ * CC10 and held voices, and resets running status and tick budget.
+ */
+typedef struct {
+    unsigned calls;
+    unsigned program[8], note[8], volume[8], pan[8];
+} LoopTrace;
+
+static int resolve_loop_trace(void *ctx, unsigned program, unsigned note,
+                              unsigned velocity, unsigned volume,
+                              unsigned pan, VhSeqTone *out) {
+    LoopTrace *trace=ctx;
+    if (trace->calls >= 8u) return -1;
+    const unsigned n=trace->calls++;
+    trace->program[n]=program;
+    trace->note[n]=note;
+    trace->volume[n]=volume;
+    trace->pan[n]=pan;
+    return resolve_pan_sensitive(&log_state,program,note,velocity,
+                                 volume,pan,out);
+}
+
+static void test_two_cycle_tempo_control_and_held_voice_seam(void) {
+    static const uint8_t song[] = {
+        HEADER,
+        0,0x90,60,100,               /* first cycle uses p0 defaults */
+        15,0xc0,9,                   /* p9 persists over clean FF2F */
+        0,0xb0,7,40,                 /* channel volume 40 */
+        0,0xb0,10,127,               /* hard right */
+        0,0xff,0x51,0x03,0xd0,0x90, /* tempo 250000 */
+        0,0x90,61,100,               /* held over the loop */
+        30,0xff,0x2f                /* clean EOT at tick45 */
+    };
+    LoopTrace trace={0};
+    setup();
+    assert(vh_native_seq_init(&seq,song,sizeof song,&spu,
+                              resolve_loop_trace,&trace,2)==0);
+    for(unsigned block=1;block<=7u;++block) {
+        assert(vh_native_seq_pump(&seq,&ring)==512);
+        assert(vh_audio_stream_read(&ring,pcm,512)==512);
+        assert(seq.blocks_advanced==block);
+        assert(spu.frames_rendered==(uint64_t)block*512u);
+        assert(vh_audio_stream_queued(&ring)==0);
+        if(block==1u) {
+            assert(trace.calls==1u && seq.note_ons==1u);
+            assert(seq.tempo==500000u);
+            assert(trace.program[0]==0u && trace.note[0]==60u);
+            assert(trace.volume[0]==127u && trace.pan[0]==64u);
+        }
+        if(block==2u) {
+            assert(trace.calls==2u && seq.note_ons==2u);
+            assert(seq.tempo==250000u && seq.programs[0]==9u);
+            assert(seq.volumes[0]==40u && seq.pans[0]==127u);
+            assert(trace.program[1]==9u && trace.note[1]==61u);
+            assert(trace.volume[1]==40u && trace.pan[1]==127u);
+        }
+        if(block==3u) {
+            assert(trace.calls==2u && seq.cycles_completed==0u);
+            assert(seq.playing);
+        }
+        if(block==4u) {
+            /* EOT resets the tick accumulator; the zero-delta
+             * first note of pass 2 immediately retriggers note60. */
+            assert(seq.cycles_completed==1u && seq.playing);
+            assert(seq.note_ons==3u && trace.calls==3u);
+            assert(seq.tempo==250000u && seq.programs[0]==9u);
+            assert(seq.volumes[0]==40u && seq.pans[0]==127u);
+            assert(seq.pending_delta==15u);
+            assert(seq.running==0x90u);
+            assert(seq.tick_budget==0.0);
+            assert(trace.program[2]==9u && trace.note[2]==60u);
+            assert(trace.volume[2]==40u && trace.pan[2]==127u);
+            assert(seq.note_slot[0][61]>=0);
+        }
+        if(block==5u) {
+            assert(seq.note_ons==4u && trace.calls==4u);
+            assert(trace.program[3]==9u && trace.note[3]==61u);
+            assert(trace.volume[3]==40u && trace.pan[3]==127u);
+            assert(seq.cycles_completed==1u);
+        }
+        if(block==6u) {
+            assert(seq.playing && seq.cycles_completed==1u);
+            assert(trace.calls==4u);
+        }
+        if(block==7u) {
+            assert(!seq.playing && seq.cycles_completed==2u);
+            assert(seq.note_ons==4u && seq.note_offs==4u);
+            assert(seq.note_slot[0][60]==-1);
+            assert(seq.note_slot[0][61]==-1);
+            assert(seq.last_error==0);
+        }
+    }
+}
+
+static void test_infinite_clean_eot_soak_with_fifo_backpressure(void) {
+    static const uint8_t song[] = {
+        HEADER,
+        0,0x90,64,100, 30,0xc0,7,
+        0,0xb0,7,90, 0,0xb0,10,0,
+        0,0xff,0x51,0x03,0xd0,0x90,
+        0,0xff,0x2f
+    };
+    setup();
+    assert(vh_native_seq_init(&seq,song,sizeof song,&spu,
+                              resolve_pan_sensitive,&log_state,0)==0);
+    int16_t zeros[VH_AUDIO_RING_FRAMES*2u]={0};
+    for(unsigned block=0;block<160u;++block) {
+        if(block==64u) {
+            const uint64_t frames=spu.frames_rendered;
+            const uint64_t events=seq.dispatched_events;
+            const uint32_t cycles=seq.cycles_completed;
+            assert(vh_audio_stream_write(&ring,zeros,VH_AUDIO_RING_FRAMES)
+                   ==VH_AUDIO_RING_FRAMES);
+            assert(vh_native_seq_pump(&seq,&ring)==0);
+            assert(spu.frames_rendered==frames);
+            assert(seq.dispatched_events==events);
+            assert(seq.cycles_completed==cycles);
+            vh_audio_stream_reset(&ring);
+        }
+        assert(vh_native_seq_pump(&seq,&ring)==512);
+        assert(vh_audio_stream_read(&ring,pcm,512)==512);
+        assert(seq.playing && seq.last_error==0);
+        assert(seq.blocks_advanced==block+1u);
+        assert(vh_audio_stream_queued(&ring)==0);
+        assert(seq.note_ons>=seq.cycles_completed);
+        if(seq.cycles_completed) {
+            assert(seq.tempo==250000u);
+            assert(seq.programs[0]==7u);
+            assert(seq.volumes[0]==90u && seq.pans[0]==0u);
+        }
+    }
+    assert(seq.cycles_completed>=25u);
+    assert(seq.note_ons==seq.cycles_completed+1u);
+    assert(spu.frames_rendered==160u*512u);
+    const uint64_t note_on_before=seq.note_ons;
+    vh_native_seq_stop(&seq);
+    assert(!seq.playing);
+    assert(seq.note_ons==note_on_before && seq.last_error==0);
+}
+
 static void test_voice_stealing_stale_note_off(void) {
     setup();
     assert(vh_native_seq_init(&seq,steal_song,sizeof steal_song,
@@ -337,6 +478,8 @@ int main(void) {
     test_512_block_controls_and_ring_pressure();
     test_running_tempo_and_repeat_seam();
     test_sustained_voices_across_tempo_pan_and_backpressure();
+    test_two_cycle_tempo_control_and_held_voice_seam();
+    test_infinite_clean_eot_soak_with_fifo_backpressure();
     test_voice_stealing_stale_note_off();
     test_512_pcm_event_to_spu_fifo();
     test_preflight_instrument_coverage();
