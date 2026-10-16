@@ -282,3 +282,62 @@ strict framing rules: UTF-8 JSON objects, exactly one final LF per
 nonempty JSONL row, no CRLF or blank rows, and fewer than 64 events per
 stream. The staged log is checked before any final file is created.
 A completed marker does not exempt a log from independent revalidation.
+
+## POSIX private staged export from the original DrawOTag walker
+
+A separate POSIX-only stage writer is now available:
+`tools/map02_scoped_blend_stage.c/.h`. Link it together with the scoped
+sink and the two patched PC-port translation units, and define both
+`VH_MAP02_SCOPED_BLEND_PROBE` and `VH_MAP02_POSIX_STAGE` in this
+**private diagnostic build**. The second macro is deliberately separate
+so Windows builds and the ordinary render path do not depend on POSIX
+file functions.
+
+With all existing frame/X/Y variables configured, explicitly opt in to
+disk staging through:
+
+```sh
+# This directory must already exist, be owned by the current user,
+# and have exactly 0700 permissions.
+export VH_MAP02_PROBE_OUTPUT_DIR=/private/map02/native-capture
+```
+
+At the end of the selected `DrawOTag` frame, **before deferred HD
+workers run**, the instrumented walker first seals the bounded native
+VRAM event buffer. Only if the seal succeeds does it call
+`vh_map02_stage_private_blendg1`. If no output directory is
+specified, all records remain in memory. An explicitly set empty or
+invalid output path causes the capture to fail closed. No files are
+written from ordinary gameplay builds without both macros.
+
+The staging writer:
+
+- collects **only observed accurate-mode BlendG1** records from the
+  sealed native VRAM buffer, never reconstructing them from PutPixel;
+- limits the pending log to 16 KiB and requires a final LF;
+- checks that the destination is a non-symlinked, owned POSIX directory
+  with mode 0700;
+- creates a private 0600 temporary file without following symlinks,
+  checks write/fsync, rereads and compares every byte;
+- publishes `blendg1-native-events.pending.jsonl` with an **exclusive
+  hard link**, preventing overwrite and refusing an existing file;
+- syncs the directory and removes the temporary name; on failure,
+  attempts to roll back any file created by the current call.
+
+There is no printed game data, no automatic GitHub upload, no overwrite
+or synthetic witness generation. Crash recovery is intentionally manual:
+an orphaned pending file or stale temporary file must never be treated
+as verified evidence. It is only input to the independent
+`publish_map02_blendg1_witness.py`, which requires the verified
+PutPixel/VRAM/DrawOTag bundle and publishes a SHA-256 manifest last.
+
+`tests/test_map02_scoped_blend_stage.py` checks exclusive private
+publication, mode bits, JSONL structure, incomplete capture rejection,
+symlink rejection, and permissive-directory rejection. The
+`DrawOTag` source regression also builds a **separate**
+`VH_MAP02_POSIX_STAGE` configuration and checks automatic staging
+during a synthetic selected frame.
+
+This stage does **not** provide a corresponding independently
+authenticated PutPixel log and does not yet demonstrate a successful
+full original-PC-port build or a genuine MAP02 gameplay capture.
