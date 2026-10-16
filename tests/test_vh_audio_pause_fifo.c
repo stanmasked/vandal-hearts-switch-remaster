@@ -21,12 +21,16 @@ int main(void) {
         /* Each frame is consumed exactly once, including after pause.
          * Pausing means do not produce or consume any queued frames.
          */
-        if(block==8u || block==16u) {
-            size_t saved=vh_audio_stream_queued(&queue);
-            assert(saved==0u);
-            assert(vh_audio_stream_queued(&queue)==saved);
-        }
         assert(vh_audio_stream_write(&queue,in,512u)==512u);
+        if(block==8u || block==16u) {
+            /* Queued frames must remain untouched during the pause. */
+            size_t saved=vh_audio_stream_queued(&queue);
+            size_t read_pos=queue.read_index;
+            size_t write_pos=queue.write_index;
+            assert(saved==512u);
+            assert(vh_audio_stream_queued(&queue)==saved);
+            assert(queue.read_index==read_pos && queue.write_index==write_pos);
+        }
         memset(out,0,sizeof out);
         assert(vh_audio_stream_read(&queue,out,512u)==512u);
         assert(memcmp(out,in,sizeof in)==0);
