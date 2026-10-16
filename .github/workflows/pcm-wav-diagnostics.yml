@@ -8,12 +8,20 @@ on:
       - 'tools/analyze_pcm_wav.py'
       - 'tests/test_analyze_pcm_wav.py'
       - 'tests/test_analyze_pcm_cli.py'
+      - 'tests/test_seq_pcm_measurements.py'
+      - 'tests/test_render_ps1_seq.py'
+      - 'tests/test_seq_to_chord_schedule.py'
+      - 'tools/render_ps1_seq.py'
       - '.github/workflows/pcm-wav-diagnostics.yml'
   pull_request:
     paths:
       - 'tools/analyze_pcm_wav.py'
       - 'tests/test_analyze_pcm_wav.py'
       - 'tests/test_analyze_pcm_cli.py'
+      - 'tests/test_seq_pcm_measurements.py'
+      - 'tests/test_render_ps1_seq.py'
+      - 'tests/test_seq_to_chord_schedule.py'
+      - 'tools/render_ps1_seq.py'
       - '.github/workflows/pcm-wav-diagnostics.yml'
   workflow_dispatch:
 
@@ -28,4 +36,6 @@ jobs:
         with:
           python-version: '3.12'
       - name: Validate WAV diagnostics
-        run: python3 -m unittest discover -s tests -p 'test_analyze_pcm*.py' -v
+        run: |
+          python3 -m unittest discover -s tests -p 'test_analyze_pcm*.py' -v
+          python3 tests/test_seq_pcm_measurements.py
