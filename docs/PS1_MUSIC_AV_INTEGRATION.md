@@ -677,3 +677,48 @@ never published.
 These assertions describe the host software switch and do not
 prove that physical Switch audout buffer ownership or original
 PlayStation hardware envelope behavior are identical.
+
+### audout single-page ownership during SEQ bank transitions
+
+The native libnx sound probes submit one 4-KiB-aligned
+`AudioOutBuffer` page using blocking `audoutPlayBuffer`. A successful
+service return **alone** is not sufficient evidence that this
+particular page may be overwritten: `released` must point to the
+**same descriptor** as the submitted page. Both
+`probes/libnx_ps1_music_av.c` and
+`probes/audout_audio_smoke.c` now enforce this invariant using
+`vh_audio_output_page_returned`, a portable pointer-identity check.
+The latter probe also checks PCM size against its actual allocated
+4-KiB output page instead of an undefined local descriptor.
+
+A wrong or null returned descriptor is treated as a failed submission
+and passed through the existing two-restart
+`vh_audio_output_submit_recover` policy. The prepared PCM data and
+its pointer remain unchanged across the retries, and no new
+SEQ/SPU/resampling operation is performed in that path. Stop/close
+must succeed before a retry can reuse the backing page; if all
+allowed attempts fail, the caller must stop the audio pipeline rather
+than proceed as if the page had been released.
+
+The host test `test_vh_audio_output_recovery.c` now fault-injects
+both **foreign** and **null** returned descriptors. It confirms a
+recovery with an identical immutable PCM page after reopening the
+output service, and a terminal, fail-closed response when every
+attempt returns a foreign descriptor.
+
+Its six-scene (48-block) synthetic SEQ/SPU test also alternates two
+different source PCM arrays after **each eighth completed output
+page**. Each of the five scene switches is allowed only after the
+previous mock output page was returned; all outgoing borrowed voice
+pointers are cleared, the STUDIO_C delay buffers remain unchanged,
+and the rolling 48-kHz resampler keeps its exact clock.
+Fault-injected submission errors and wrong/absent returned
+descriptors are interleaved throughout the run. Accepted pages must
+have the expected cumulative PCM hash and frame count, without
+duplicate synthesis or skipped frames.
+
+These are host-level lifecycle and CI compilation checks. They do
+**not** establish physical speaker output, real DMA synchronization,
+or libnx behavior on an actual Nintendo Switch. The separate SDL2
+feasibility workflow may also be blocked by devkitPro package-network
+availability, independently of these audio invariants.
