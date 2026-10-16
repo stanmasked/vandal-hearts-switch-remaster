@@ -288,9 +288,21 @@ program or the nearest available key range. This is not necessarily an
 audio defect, but can indicate a mismatch between SEQ and VH/VB. The
 original resolver tries a global or nearest-tone fallback, so a bank
 with missing intended notes can have `unresolved_notes = 0` while
-`fallback_notes` is elevated. These counters describe the actual
-limited audit window, not an exhaustive scan of a track. No PCM frames, original bytes, track names, file
-paths, or bank contents are serialized. The program opens files
+`fallback_notes` is elevated. With a validated VAB containing playable
+tones, the resolver's global/nearest-tone fallback will generally
+resolve every valid request: `unresolved_notes = 0` does **not** mean
+the intended instrument was selected.
+
+The local report also distinguishes notes that resolved with zero
+left/right gain (`zero_gain_notes`) from scenes that actually rendered
+silent output (`silent_pcm`, `nonzero_samples`, `peak_pcm16`,
+`clipped_samples`). These are **post-resampler 48-kHz** measurements.
+A zero-gain scene may still have nonzero PCM because the prior scene's
+STUDIO_C reverb tail survives the transition. This identifies silence
+within the limited audit window, **not** across an entire song.
+
+No PCM frames, original bytes, track names, file paths, or bank
+contents are serialized. The program opens files
 read-only and does not create or overwrite audio files. The output
 report is created **only** if the operator explicitly redirects
 stdout (as illustrated above), and should stay private if its
