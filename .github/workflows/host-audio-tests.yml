@@ -324,6 +324,9 @@ jobs:
       - name: End to end HOME recovery counters via real C CSV and Python comparison
         run: |
           python3 tests/test_switch_audio_telemetry_e2e.py
+      - name: Long 2048-page clean and fault-injected HOME music cohort
+        run: |
+          python3 tests/test_switch_audio_long_cohort.py
       - name: HOME sleep lifecycle under ASan and UBSan
         env:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
