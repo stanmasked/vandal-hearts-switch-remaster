@@ -13,6 +13,7 @@ from private_sd_nexium_check import (  # noqa: E402
     synthetic_geometry_models, synthetic_depth_geometry_models, stage_depth,
     synthetic_distant_shading_models, stage_distance,
     stage_side_lighting,
+    synthetic_derived_shade_models,stage_derived_shades,
 )
 from inspect_vh_map_geometry import (  # noqa: E402
     MAP_11_BYTES, MAP_11_STRIDE, TILE_BYTES, parse_tile,
@@ -131,6 +132,21 @@ class StagedModelTests(unittest.TestCase):
             self.assertEqual(
                 [f["local_gfx_slot"] for f in face],[242,241,242]
             )
+
+    def test_auto_normal_stage_preserves_wrong_source_shades(self):
+        with tempfile.TemporaryDirectory() as d:
+            stage_derived_shades(Path(d))
+            target=Path(d)/RELATIVE_DESTINATION
+            self.assertEqual((target/"LIGHT_RECOMPUTE_SHADES.BIN").read_bytes(),
+                             bytes((1,)))
+            self.assertEqual((target/"LIGHT_TEST_INTENSITY.BIN").read_bytes(),
+                             bytes((32,)))
+            data=(target/GEOMETRY_NAME).read_bytes()
+            self.assertEqual(data,synthetic_derived_shade_models())
+            faces=parse_tile(data,6,3)["faces"]
+            self.assertEqual([x["shade_index"] for x in faces],[1,2,4])
+            self.assertEqual(faces[1]["vertex_xyz"][1][1],-16)
+            self.assertEqual(faces[2]["vertex_xyz"][1][1],16)
 
     def test_stage_readback_and_no_overwrite(self):
         with tempfile.TemporaryDirectory() as d:
