@@ -14,7 +14,7 @@ def parse_native_spans(raw: bytes):
     if type(raw) is not bytes or len(raw) > 16384:
         raise ValueError("invalid or oversized journal")
     lines = raw.splitlines()
-    if not 1 <= len(lines) <= MAX_EVENTS or not raw.endswith(b"\\n"):
+    if not 1 <= len(lines) <= MAX_EVENTS or not raw.endswith(b"\n"):
         raise ValueError("empty, truncated or saturated journal")
     result = []
     last_key = None
