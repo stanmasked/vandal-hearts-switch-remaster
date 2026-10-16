@@ -20,6 +20,7 @@ typedef struct {
     atomic_uint desired_scene;
     atomic_int running;
     atomic_int focused; /* 1=in focus; 0=suspended/background */
+    atomic_uint resume_serial; /* explicit OnResume forces audout reopen */
 } VhGameMusicMailbox;
 
 void vh_game_music_mailbox_init(VhGameMusicMailbox *box, unsigned scene);
@@ -30,6 +31,14 @@ unsigned vh_game_music_mailbox_read(const VhGameMusicMailbox *box);
  */
 void vh_game_music_mailbox_set_focus(VhGameMusicMailbox *box, int focused);
 int vh_game_music_mailbox_focused(const VhGameMusicMailbox *box);
+/* applet OnResume is not necessarily preceded by a processed focus-loss
+ * notification when libnx automatically suspends all user threads.
+ * Only an actual resume event increments this serial; repeated focus
+ * sampling each gameplay frame must not restart audout.
+ */
+void vh_game_music_mailbox_on_resume(VhGameMusicMailbox *box, int focused);
+unsigned vh_game_music_mailbox_resume_serial(
+    const VhGameMusicMailbox *box);
 void vh_game_music_mailbox_stop(VhGameMusicMailbox *box);
 int vh_game_music_mailbox_running(const VhGameMusicMailbox *box);
 
