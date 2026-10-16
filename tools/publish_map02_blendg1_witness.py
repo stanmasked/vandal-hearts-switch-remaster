@@ -91,6 +91,15 @@ def publish_blendg1_witness(source_dir, native_dir, *, compiler="gcc"):
     if verified["observed_native_putpixel_calls"] != len(pixels):
         raise ValueError("upstream PutPixel verification disagrees with staged count")
 
+    # Reject changes while the expensive DrawOTag/VRAM verifier was running.
+    for root, name, original, bound in (
+        (source_dir, PIXEL_MANIFEST, pixel_meta, 64 * 1024),
+        (native_dir, PIXEL_LOG, pixel_raw, MAX_BYTES),
+        (native_dir, STAGED_LOG, staged_raw, MAX_BYTES),
+    ):
+        if private_file(root, name, max_bytes=bound) != original:
+            raise ValueError("private witness input changed during verification")
+
     manifest = {
         "schema": SCHEMA,
         "pixel_ot_manifest_sha256": hashlib.sha256(pixel_meta).hexdigest(),
