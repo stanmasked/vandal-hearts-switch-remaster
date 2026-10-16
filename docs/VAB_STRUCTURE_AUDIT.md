@@ -208,6 +208,31 @@ synthetic lookup consistency only; no original Vandal Hearts music has been
 rendered through this tool.
 
 
+## Expanded native/Python tone-selection differential gate
+
+`python3 tests/test_native_vab_python_reference.py` now exercises **3,840
+deterministic program/key combinations**: all 128 MIDI keys for five
+requested programs (three populated and two absent) in six separate,
+entirely synthetic sparse VH/VB layouts. The variants cover inclusive
+range boundaries, overlapping regions, sparse and singleton programs,
+global-first matching, and equal-distance `key_min` ties.
+
+Each combination compares the native C-selected PCM VAG address against
+the VAG reported by `tools/resolve_vab_note.py`. It also checks decoded
+frame count, ADSR words, and the approximate (clamped) pitch step.
+Comparing **PCM pointers** is necessary because two tone records can
+otherwise have identical ADSR settings.
+
+This Python resolver models the publicly available PC-port `SeqPickTone`
+algorithm in `platform/pc/src/libsnd.c`, whose range checks are
+inclusive and whose nearest-key tie resolution retains the earliest
+program/tone entry. The test does **not** compile or call the upstream
+PC-port implementation, and it does not establish hardware PS1 fidelity.
+In particular, the reference `SeqPickTone` scans all 16 tone positions,
+while this project's validated VAB import currently uses active `nTone`
+slots; unusual inactive-but-populated records require a separate check.
+No original soundtrack bytes are included or needed.
+
 ## SPU ADSR and sample cursor (host-only)
 
 The next isolated component is `tools/simulate_spu_voice.py`, which
