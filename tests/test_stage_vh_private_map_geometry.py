@@ -39,6 +39,30 @@ class StagedModelTests(unittest.TestCase):
         self.assertEqual(validate_map11_models(self.models)["active_faces"],3)
         self.assertEqual(validate_map11_models(self.models)["populated_tiles"],1)
 
+    def test_native_raster_follows_exact_nclip_depth_pipeline(self):
+        source = (ROOT / "probes" / "pinned_drawotag_switch_smoke.c").read_text()
+        start = source.index("static int draw_private_map_preview(void)")
+        end = source.index("/* Test-only inert providers", start)
+        region = source[start:end]
+        ops = (
+            "gte_ldv3(&source_vertices[0]",
+            "gte_rtpt();",
+            "gte_nclip();",
+            "gte_stopz(&opz);",
+            "if (opz <= 0) continue;",
+            "gte_stsxy3(&poly->x0, &poly->x1, &poly->x3);",
+            "gte_ldv0(&source_vertices[3]);",
+            "gte_rtps();",
+            "gte_stsxy(&poly->x2);",
+            "gte_avsz4();",
+            "gte_stotz(&otz);",
+            "AddPrim(&ot[PRIVATE_OT_BUCKETS - otz], poly);",
+        )
+        positions = [region.index(part) for part in ops]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn("ClearOTag(ot, PRIVATE_OT_BUCKETS);", region)
+        self.assertIn("AddPrim(&ot[0], &clear);", region)
+
     def test_stage_readback_and_no_overwrite(self):
         with tempfile.TemporaryDirectory() as d:
             report = stage_map11_geometry(self.models,d)
