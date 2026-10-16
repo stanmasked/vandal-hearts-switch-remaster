@@ -66,11 +66,11 @@ class NativeGaussianTests(unittest.TestCase):
     def test_all_512_coefficients_identical_to_python_source(self):
         native_source = (ROOT / "source/vh_spu_gaussian.c").read_text()
         declaration = re.search(
-            r"static const int16_t gauss\\[512\\]\\s*=\\s*\\{([^}]*)\\};",
+            r"static const int16_t gauss\[512\]\s*=\s*\{([^}]*)\};",
             native_source, re.S
         )
         self.assertIsNotNone(declaration)
-        coeffs = tuple(int(n) for n in re.findall(r"-?\\d+", declaration.group(1)))
+        coeffs = tuple(int(n) for n in re.findall(r"-?\d+", declaration.group(1)))
         self.assertEqual(len(coeffs), 512)
         self.assertEqual(coeffs, GAUSS)
 
