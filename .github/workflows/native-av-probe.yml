@@ -1,0 +1,65 @@
+name: Native libnx graphics and audio integration probe
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/native-av-probe.yml'
+      - 'probes/libnx_av_smoke.c'
+      - 'source/vh_native_tone.h'
+      - 'source/game_renderer.h'
+      - 'source/game_state.h'
+      - 'source/game_rules.h'
+      - 'source/platform_input.h'
+      - 'source/software_renderer.h'
+      - 'tests/test_native_tone.c'
+      - 'tests/check_nro.py'
+      - 'Makefile'
+  pull_request:
+    paths:
+      - '.github/workflows/native-av-probe.yml'
+      - 'probes/libnx_av_smoke.c'
+      - 'source/vh_native_tone.h'
+      - 'tests/test_native_tone.c'
+      - 'Makefile'
+
+permissions:
+  contents: read
+
+jobs:
+  native-av:
+    name: Compile native framebuffer plus audout NRO (no SDL2)
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Verify 48-kHz generated PCM on host
+        shell: bash
+        run: |
+          set -euxo pipefail
+          make test-native-tone
+          gcc -std=c11 -O1 -g -Wall -Wextra -Werror \
+            -fsanitize=undefined -fno-sanitize-recover=all \
+            tests/test_native_tone.c -o build/test_native_tone_ubsan
+          ./build/test_native_tone_ubsan
+
+      - name: Build native graphics and audio integration NRO
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          make native-av-probe
+          test -s build/libnx-av-switch-probe.nro
+
+      - name: Upload native AV probe (no proprietary game assets)
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-libnx-video-audout-probe
+          path: build/libnx-av-switch-probe.nro
+          if-no-files-found: error
