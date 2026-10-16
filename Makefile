@@ -40,7 +40,8 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_vh_
 	./$(BUILD)/test_vh_audio_resample
 	./$(BUILD)/test_vh_spu_reverb
 	./$(BUILD)/test_vh_native_audio_soak
-	./$(BUILD)/test_vh_audio_output_recovery $(BUILD)/test_vh_audio_pcm_seams
+	./$(BUILD)/test_vh_audio_output_recovery
+	./$(BUILD)/test_vh_audio_pcm_seams
 	python3 tests/test_restore_ps1_str.py
 	python3 tests/test_inspect_cdxa.py
 	python3 tests/test_extract_cdxa_payload.py
@@ -82,7 +83,8 @@ test-audio-stream: $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(B
 	./$(BUILD)/test_vh_audio_resample
 	./$(BUILD)/test_vh_spu_reverb
 	./$(BUILD)/test_vh_native_audio_soak
-	./$(BUILD)/test_vh_audio_output_recovery $(BUILD)/test_vh_audio_pcm_seams
+	./$(BUILD)/test_vh_audio_output_recovery
+	./$(BUILD)/test_vh_audio_pcm_seams
 	python3 tests/test_native_spu_adpcm.py
 	python3 tests/test_native_spu_gaussian.py
 	python3 tests/test_native_vab_python_reference.py
