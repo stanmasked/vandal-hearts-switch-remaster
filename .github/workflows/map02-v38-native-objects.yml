@@ -67,6 +67,10 @@ jobs:
               'void RenderEdgeMapTile(u32 *ot, MapTileModel *tileModel, s32 gridColor);\n'
               'void RenderOverheadMapTile(u32 *ot, MapTileModel *tileModel, s32 brightness);')
 
+          inject("pcport/src/states/game_setup.c", '#include "PsyQ/libsn.h"',
+              '#include "PsyQ/libsn.h"\n'
+              'void UpdateTileElevation(u8 tileZ, u8 tileX);')
+
           inject(gpu, "#define VRAM_H 512",
               "#define VRAM_H 512\n"
               "/* Opt-in read-only diagnostic state, NOT an HD override. */\n"
