@@ -5,6 +5,7 @@
  */
 #include <errno.h>
 #include <inttypes.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,6 +34,8 @@ typedef struct {
     uint64_t note_requests, unresolved_notes, fallback_notes;
     uint64_t reverb_send_notes, zero_gain_notes;
     uint64_t nonzero_samples, clipped_samples;
+    int64_t channel_sum[2];
+    uint64_t channel_squared_sum[2];
     uint32_t peak_pcm16;
     uint32_t spu_seam, audout_seam, resampler_fraction;
 } SceneMetric;
@@ -173,6 +176,10 @@ int main(int argc,char **argv) {
                 metric->nonzero_samples+=(value!=0);
                 metric->clipped_samples+=(value==INT16_MIN ||
                                           value==INT16_MAX);
+                const unsigned channel=(unsigned)(sample%2u);
+                metric->channel_sum[channel]+=(int64_t)value;
+                metric->channel_squared_sum[channel]+=
+                    (uint64_t)((int64_t)value*(int64_t)value);
             }
             last_source[0]=source[2u*(VH_AUDIO_BLOCK_FRAMES-1u)];
             last_source[1]=source[2u*(VH_AUDIO_BLOCK_FRAMES-1u)+1u];
@@ -247,6 +254,10 @@ int main(int argc,char **argv) {
                "\"peak_pcm16\":%u,"
                "\"nonzero_samples\":%" PRIu64 ","
                "\"clipped_samples\":%" PRIu64 ","
+               "\"mean_pcm16_left\":%.3f,"
+               "\"mean_pcm16_right\":%.3f,"
+               "\"rms_pcm16_left\":%.3f,"
+               "\"rms_pcm16_right\":%.3f,"
                "\"silent_pcm\":%s,"
                "\"spu_boundary_delta_pcm16\":%u,"
                "\"audout_boundary_delta_pcm16\":%u,"
@@ -259,6 +270,12 @@ int main(int argc,char **argv) {
                m->reverb_send_notes,m->zero_gain_notes,
                m->sent_to_reverb?"true":"false",
                m->peak_pcm16,m->nonzero_samples,m->clipped_samples,
+               (double)m->channel_sum[0]/(double)m->output_frames,
+               (double)m->channel_sum[1]/(double)m->output_frames,
+               sqrt((double)m->channel_squared_sum[0]/
+                    (double)m->output_frames),
+               sqrt((double)m->channel_squared_sum[1]/
+                    (double)m->output_frames),
                m->nonzero_samples?"false":"true",
                m->spu_seam,m->audout_seam,m->resampler_fraction,
                m->input_frames,m->output_frames);
