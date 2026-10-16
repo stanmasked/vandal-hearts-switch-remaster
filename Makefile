@@ -29,7 +29,7 @@ LDLIBS   := -L$(DEVKITPRO)/libnx/lib -lnx
 .PHONY: all clean test test-sanitize verify-nro sdl2-probe sdl2-gl-probe sdl2-texture-probe rgb24-texture-probe sdl2-audio-probe openal-probe
 all: $(BUILD)/$(TARGET).nro
 
-test: $(BUILD)/test_private_map_geometry $(BUILD)/private_map_bank_bridge  $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_rgb24_frame $(BUILD)/test_switch_presenter_layout $(BUILD)/test_ps1_memory_view $(BUILD)/test_map_buffer_gate $(BUILD)/test_map_decode_checked $(BUILD)/test_map_load_checked $(BUILD)/test_private_map_bank
+test: $(BUILD)/test_private_map_shading $(BUILD)/test_private_map_geometry $(BUILD)/private_map_bank_bridge  $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_rgb24_frame $(BUILD)/test_switch_presenter_layout $(BUILD)/test_ps1_memory_view $(BUILD)/test_map_buffer_gate $(BUILD)/test_map_decode_checked $(BUILD)/test_map_load_checked $(BUILD)/test_private_map_bank
 	./$(BUILD)/test_game_rules
 	./$(BUILD)/test_software_renderer
 	./$(BUILD)/test_rgb24_frame
@@ -40,6 +40,7 @@ test: $(BUILD)/test_private_map_geometry $(BUILD)/private_map_bank_bridge  $(BUI
 	./$(BUILD)/test_map_load_checked
 	./$(BUILD)/test_private_map_bank
 	./$(BUILD)/test_private_map_geometry
+	./$(BUILD)/test_private_map_shading
 	python3 tests/test_restore_ps1_str.py
 	python3 tests/test_inspect_cdxa.py
 	python3 tests/test_extract_cdxa_payload.py
@@ -119,6 +120,9 @@ $(BUILD)/test_map_decode_checked: tests/test_map_decode_checked.c source/map_dec
 
 $(BUILD)/test_map_load_checked: tests/test_map_load_checked.c source/map_load_checked.h source/map_buffer_gate.h source/map_decode_checked.h source/ps1_memory_view.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@
+
+$(BUILD)/test_private_map_shading: tests/test_private_map_shading.c source/vh_private_map_shading.h | $(BUILD)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 tests/test_private_map_shading.c -o $@
 
 $(BUILD)/test_private_map_geometry: tests/test_private_map_geometry.c source/vh_private_map_geometry.c source/vh_private_map_geometry.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 tests/test_private_map_geometry.c source/vh_private_map_geometry.c -o $@
