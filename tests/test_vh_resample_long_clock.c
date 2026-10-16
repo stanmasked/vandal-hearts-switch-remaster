@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include "vh_audio_resample.h"
+#include "vh_audio_stream.h"
 
 #define BLOCKS 8192u
 static VhAudioResample converter;
