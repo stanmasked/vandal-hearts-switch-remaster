@@ -43,6 +43,8 @@ on:
       - 'tests/test_ft4_textured_quad.c'
       - 'tests/test_map02_face_geometry.py'
       - 'tools/audit_map02_face_source.py'
+      - 'tools/audit_map02_direction_source.py'
+      - 'tests/test_audit_map02_direction_source.py'
       - 'tests/test_audit_map02_face_source.py'
       - 'tests/test_map02_texture_pixel_proof.py'
       - 'tools/verify_map02_unpack_equivalence.py'
@@ -96,6 +98,8 @@ on:
       - 'tests/test_ft4_textured_quad.c'
       - 'tests/test_map02_face_geometry.py'
       - 'tools/audit_map02_face_source.py'
+      - 'tools/audit_map02_direction_source.py'
+      - 'tests/test_audit_map02_direction_source.py'
       - 'tests/test_audit_map02_face_source.py'
       - 'tests/test_map02_texture_pixel_proof.py'
       - 'tools/verify_map02_unpack_equivalence.py'
@@ -263,10 +267,13 @@ jobs:
             gcc -std=c11 -Wall -Wextra -Werror -O2 tests/test_map02_face_direction.c -o /tmp/vh-map02-face-normal-test
             /tmp/vh-map02-face-normal-test
             python3 -m unittest discover -s tests -p 'test_audit_map02_face_source.py' -v
+            python3 -m unittest discover -s tests -p 'test_audit_map02_direction_source.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_unpack_equivalence.py' -v
             python3 -m unittest discover -s tests -p 'test_instrument_map02_renderer.py' -v
             python3 -m unittest discover -s tests -p 'test_map02_renderer_smoke.py' -v
           )
+          PYTHONPATH=remaster python3 -m tools.audit_map02_direction_source upstream/src/core/graphics.c remaster/source/map02_face_direction.h > /tmp/vh-map02-direction-contract.json
+          python3 -c 'import json; x=json.load(open("/tmp/vh-map02-direction-contract.json")); assert x["matches_pinned_source"] and x["direction_count"] == 26 and x["portable_direction_table_matches_upstream"] and not x["rounding_equivalence_with_gte"]; print("Pinned 26 terrain normals and source shading choice verified; GTE rounding remains unverified.")'
           PYTHONPATH=remaster python3 -m tools.audit_map02_face_source upstream > /tmp/vh-map02-face-gpu-contract.json
           python3 -c 'import json; x=json.load(open("/tmp/vh-map02-face-gpu-contract.json")); assert x["matches_pinned_source"] and x["field_and_gpu_layout_verified"] and len(x["renderer_paths"]) == 3; print("Pinned map model and all 3 POLY_FT4 UV bindings verified.")'
           PYTHONPATH=remaster python3 -m tools.verify_map02_unpack_equivalence upstream/src/maps/unpack.c > /tmp/vh-map02-unpack-equivalence.json
