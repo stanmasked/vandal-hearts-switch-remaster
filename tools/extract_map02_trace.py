@@ -10,8 +10,6 @@ import json
 import sys
 from pathlib import Path
 
-from tools.verify_map02_trace import evaluate_trace
-
 TRACE_FIELDS = frozenset(("z", "x", "face", "stage"))
 # A map-face observation is only a few hundred bytes. Bound console buffering
 # while leaving the raw evidence log byte-for-byte intact.
@@ -21,6 +19,13 @@ MAX_RAW_LINE_BYTES = 1024 * 1024
 def parse_trace_line(raw_line: str, lineno: int):
     """Parse one game-output line; return a matching observation or None."""
     line = raw_line.strip()
+    if len(raw_line.encode("utf-8", errors="replace")) > MAX_RAW_LINE_BYTES:
+        if line.startswith("{"):
+            raise ValueError(
+                f"malformed Map02 trace object at line {lineno}: "
+                f"oversized JSON-looking line exceeds {MAX_RAW_LINE_BYTES} bytes"
+            )
+        return None
     if not line.startswith("{"):
         return None
     try:
@@ -107,6 +112,18 @@ class TraceByteStream:
         return [entry] if entry is not None else []
 
 
+def extract_trace_bytes(chunks) -> list:
+    """Parse binary input incrementally with a strict per-line memory limit."""
+    reader = TraceByteStream()
+    entries = []
+    for chunk in chunks:
+        entries.extend(reader.feed(chunk))
+    entries.extend(reader.finish())
+    if not entries:
+        raise ValueError("no Map02 trace events found in capture")
+    return entries
+
+
 def extract_trace_lines(lines) -> list:
     """Extract from a line iterator without materializing the entire raw log."""
     entries = []
@@ -135,13 +152,17 @@ def main() -> int:
     args = parser.parse_args()
     try:
         if args.capture == "-":
-            entries = extract_trace_lines(sys.stdin)
+            entries = extract_trace_bytes(
+                iter(lambda: sys.stdin.buffer.read(65536), b"")
+            )
         else:
-            with Path(args.capture).open("r", encoding="utf-8",
-                                         errors="replace") as handle:
-                entries = extract_trace_lines(handle)
+            with Path(args.capture).open("rb") as handle:
+                entries = extract_trace_bytes(
+                    iter(lambda: handle.read(65536), b"")
+                )
         if args.require_complete or args.require_full_trace:
-            result = evaluate_trace(entries, require_full_trace=args.require_full_trace)
+            from tools.evaluate_map02_session import evaluate_capture_session
+            result = evaluate_capture_session(entries, require_full_trace=args.require_full_trace)
             if result["errors"]:
                 raise ValueError("incomplete or invalid Map02 trace: " + "; ".join(result["errors"]))
         payload = "".join(json.dumps(entry, ensure_ascii=False, separators=(",", ":")) + "\n" for entry in entries)
