@@ -14,6 +14,7 @@
 #include "switch_sdl2_observer_backend.h"
 #include "vh_private_map_bank.h"
 #include "vh_private_map_geometry.h"
+#include "vh_private_map_shading.h"
 
 extern int PC_GpuInit(int width, int height, const char *title);
 extern void PC_GpuGetWindowSize(int *width, int *height, int *scale);
@@ -397,7 +398,14 @@ static int draw_private_map_preview(void) {
             if (otz < 5) otz = 5; /* RenderMapTile near OT clamp */
             if (otz >= PRIVATE_OT_BUCKETS) otz = PRIVATE_OT_BUCKETS - 1;
             setUVWH(poly, uv[0], uv[1], uv[2], uv[3]);
-            setRGB0(poly, 128, 128, 128);
+            /* Original RenderMapTile distance shading is applied after
+             * AVSZ4 using each component of the side-light color.
+             * Until original game-light tables are connected, this
+             * synthetic 12x9 test scene supplies a neutral 128 base. */
+            {
+                unsigned char shade = vh_map_distance_component(128, otz);
+                setRGB0(poly, shade, shade, shade);
+            }
             setTPage(poly, 0, 0, 320, 0);
             setClut(poly, 672, 496 + palette_id - 32);
             AddPrim(&ot[PRIVATE_OT_BUCKETS - otz], poly);
