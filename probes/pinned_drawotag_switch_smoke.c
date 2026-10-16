@@ -15,6 +15,7 @@
 #include "vh_private_map_bank.h"
 #include "vh_private_map_geometry.h"
 #include "vh_private_map_shading.h"
+#include "vh_private_map_light.h"
 
 extern int PC_GpuInit(int width, int height, const char *title);
 extern void PC_GpuGetWindowSize(int *width, int *height, int *scale);
@@ -40,6 +41,7 @@ static VhPrivateMapBank private_map;
 static int private_map_active;
 static VhPreviewGeometry private_geometry;
 static int private_geometry_active;
+static unsigned char private_light_intensity=128;
 static const unsigned char map_land_record[1797] = {
     [0] = 16, [1] = 16, [2] = 15, [3] = 15,
     [257 * 4] = 32,              /* Slot 0 -> first local CLUT row */
@@ -335,6 +337,10 @@ static int draw_private_map_preview(void) {
     ClearOTag(ot, PRIVATE_OT_BUCKETS);
     if (private_geometry_active) {
         MATRIX camera = {0};
+        SVECTOR light_rotation = {0,0,0,0};
+        CVECTOR light_base = {128,128,128,0};
+        SVECTOR light_normals[VH_MAP_SIDE_NORMALS];
+        CVECTOR face_lights[VH_MAP_SIDE_NORMALS];
         SVECTOR pitch = {-512, 0, 0, 0};
         VECTOR camera_zoom = {0, 0, 96, 0};
         /* The pinned ORIGINAL PC-port libgte.c models PS1 RTPT,
@@ -342,6 +348,10 @@ static int draw_private_map_preview(void) {
          * neutral test camera is selected solely for our 12x9 probe,
          * NOT copied from the game's battle camera state. */
         InitGeom();
+        vh_map_init_side_normals(light_normals);
+        vh_map_update_light(face_lights, light_normals,
+                            &light_rotation, &light_base,
+                            private_light_intensity, 11);
         SetGeomOffset(6, 4);
         SetGeomScreen(14);
         RotMatrix(&pitch, &camera);
@@ -398,13 +408,19 @@ static int draw_private_map_preview(void) {
             if (otz < 5) otz = 5; /* RenderMapTile near OT clamp */
             if (otz >= PRIVATE_OT_BUCKETS) otz = PRIVATE_OT_BUCKETS - 1;
             setUVWH(poly, uv[0], uv[1], uv[2], uv[3]);
-            /* Original RenderMapTile distance shading is applied after
-             * AVSZ4 using each component of the side-light color.
-             * Until original game-light tables are connected, this
-             * synthetic 12x9 test scene supplies a neutral 128 base. */
+            /* Per-face shade selector comes from the original
+             * MapTileModel. The color table was computed with the
+             * original pinned GTE NCCS UpdateLight pipeline.
+             * Intensity 128 is a neutral, regression-compatible default;
+             * intensity 32 is explicitly selected by the isolated
+             * LIGHT_TEST_INTENSITY.BIN synthetic SD fixture. */
+            if (face->shade_index >= VH_MAP_SIDE_NORMALS) return 0;
             {
-                unsigned char shade = vh_map_distance_component(128, otz);
-                setRGB0(poly, shade, shade, shade);
+                const CVECTOR *side = &face_lights[face->shade_index];
+                setRGB0(poly,
+                    vh_map_distance_component(side->r, otz),
+                    vh_map_distance_component(side->g, otz),
+                    vh_map_distance_component(side->b, otz));
             }
             setTPage(poly, 0, 0, 320, 0);
             setClut(poly, 672, 496 + palette_id - 32);
@@ -515,6 +531,14 @@ int main(void) {
                     goto done;
                 }
                 private_geometry_active = geometry_status == 1;
+                if (private_geometry_active) {
+                    int light_status = vh_map_read_demo_intensity(
+                        VH_MAP_LIGHT_DEMO_PATH, &private_light_intensity);
+                    if (light_status < 0) {
+                        fprintf(stderr, "Private light intensity file invalid\\n");
+                        goto done;
+                    }
+                }
             }
         }
     }
