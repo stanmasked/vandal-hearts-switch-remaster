@@ -113,7 +113,10 @@ static void *packet(ScenePrims *p,int id) {
 static void append_ot(ScenePrims *p,int scene) {
   int i,k,id,bucket;
   ClearOTag(p[0].ot,8);
-  for(i=0;i<FILLERS;i++){
+  /* Head insertion reverses each bucket; insert filler packets in reverse
+   * to make the actual DrawOTag trace increasing index, just like the four
+   * depth-sorted semantic buckets. */
+  for(i=FILLERS-1;i>=0;i--){
     V54_Register(&p[0].fillers[i],-1,i,7,1);
     AddPrim(&p[0].ot[7],&p[0].fillers[i]);
   }
