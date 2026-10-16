@@ -63,6 +63,21 @@ class EvidenceBundleTests(unittest.TestCase):
         self.assertEqual([s["observed_pcm_pages"] for s in result["sessions"]],
                          [1200, 1300])
 
+    def test_byte_identical_csv_copies_are_not_two_independent_sessions(self):
+        (self.root / self.sessions[1]).write_bytes(
+            (self.root / self.sessions[0]).read_bytes())
+        report = self.create()
+        self.assertEqual(report["integrity"], "VERIFIED")
+        self.assertEqual(report["telemetry_readiness"], "INCOMPLETE")
+        self.assertIn("Identical CSV bytes", report["evidence_warnings"][0])
+
+    def test_nro_modified_after_manifest_is_rejected(self):
+        self.create()
+        path = self.root / self.nro
+        path.write_bytes(path.read_bytes() + b"tampered")
+        with self.assertRaisesRegex(bundle.BundleError, "size or SHA-256 mismatch"):
+            bundle.inspect(self.root)
+
     def test_corrupted_csv_size_or_byte_is_rejected(self):
         self.create()
         path = self.root / self.sessions[0]
