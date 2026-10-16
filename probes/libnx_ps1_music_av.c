@@ -14,6 +14,7 @@
 #include "platform_input.h"
 #include "vh_audio_assets.h"
 #include "vh_audio_resample.h"
+#include "vh_audio_output_recovery.h"
 #include "vh_native_seq.h"
 #include "vh_native_spu.h"
 
@@ -116,11 +117,69 @@ static int prepare_music(int *using_user_files) {
 }
 
 
+/* All mutations of the audout service are serialized: startup happens
+ * before threadStart, recovery runs only on the worker, and teardown
+ * happens only after threadWaitForExit. A rejected PCM page remains intact.
+ */
+typedef struct {
+    AudioOutBuffer page;
+    int initialized;
+    int started;
+} NativeOutput;
+static NativeOutput native_output;
+static VhAudioOutputRecovery output_recovery;
+
+static void native_close(void *opaque) {
+    NativeOutput *dev=(NativeOutput *)opaque;
+    if (!dev->initialized) return;
+    audoutExit();
+    dev->initialized=0;
+    dev->started=0;
+}
+static int native_open(void *opaque) {
+    NativeOutput *dev=(NativeOutput *)opaque;
+    if (dev->initialized || R_FAILED(audoutInitialize())) return -1;
+    dev->initialized=1;
+    if (audoutGetSampleRate()!=VH_NATIVE_AUDOUT_RATE ||
+        audoutGetChannelCount()!=2 ||
+        audoutGetPcmFormat()!=PcmFormat_Int16) {
+        native_close(dev);
+        return -1;
+    }
+    memset(&dev->page,0,sizeof(dev->page));
+    dev->page.buffer=audio_page;
+    dev->page.buffer_size=sizeof(audio_page);
+    return dev->page.buffer_size==AUDIO_PAGE_BYTES ? 0 : -1;
+}
+static int native_start(void *opaque) {
+    NativeOutput *dev=(NativeOutput *)opaque;
+    if (!dev->initialized || dev->started ||
+        R_FAILED(audoutStartAudioOut())) return -1;
+    dev->started=1;
+    return 0;
+}
+static int native_stop(void *opaque) {
+    NativeOutput *dev=(NativeOutput *)opaque;
+    if (!dev->started) return 0;
+    if (R_FAILED(audoutStopAudioOut())) return -1;
+    dev->started=0;
+    return 0;
+}
+static int native_submit(void *opaque,const int16_t *pcm,size_t frames) {
+    NativeOutput *dev=(NativeOutput *)opaque;
+    if (!dev->initialized || !dev->started || pcm!=audio_page ||
+        !frames || frames>VH_AUDIO_RESAMPLE_MAX_FRAMES) return -1;
+    dev->page.data_size=frames*2u*sizeof(int16_t);
+    AudioOutBuffer *released=NULL;
+    return R_SUCCEEDED(audoutPlayBuffer(&dev->page,&released)) ? 0 : -1;
+}
+static const VhAudioOutputOps output_ops={
+    &native_output,native_submit,native_stop,
+    native_close,native_open,native_start
+};
+
 static void audio_worker(void *unused) {
     (void)unused;
-    AudioOutBuffer desc = {0};
-    desc.buffer = audio_page;
-    desc.buffer_size = sizeof(audio_page);
     while (!atomic_load(&audio_stop)) {
         if (vh_native_seq_advance_block(&seq) < 0) {
             atomic_store(&audio_fault, 1);
@@ -130,7 +189,7 @@ static void audio_worker(void *unused) {
         const size_t count = vh_audio_resample_process(
             &resampler, in_44100, VH_AUDIO_BLOCK_FRAMES, audio_page,
             VH_AUDIO_RESAMPLE_MAX_FRAMES);
-        if (!count || count * 2u * sizeof(int16_t) > desc.buffer_size) {
+        if (!count || count * 2u * sizeof(int16_t) > sizeof(audio_page)) {
             atomic_store(&audio_fault, 2);
             break;
         }
@@ -138,9 +197,12 @@ static void audio_worker(void *unused) {
          * buffer. Report the two independently to avoid false playback
          * claims when an output service is stalled. */
         atomic_fetch_add(&pcm_blocks_generated, 1u);
-        desc.data_size = count * 2u * sizeof(int16_t);
-        AudioOutBuffer *released = NULL;
-        if (R_FAILED(audoutPlayBuffer(&desc, &released))) {
+        /* Restart a broken service at most twice, replaying this same
+         * already-rendered PCM page. No additional SEQ/SPU frames are
+         * synthesized while the backend is recovering.
+         */
+        if (vh_audio_output_submit_recover(
+                &output_ops, &output_recovery, audio_page, count)) {
             atomic_store(&audio_fault, 3);
             break;
         }
@@ -149,19 +211,13 @@ static void audio_worker(void *unused) {
 }
 
 static int start_native_audio(void) {
-    Result result = audoutInitialize();
-    if (R_FAILED(result)) return 0;
-    if (audoutGetSampleRate() != VH_NATIVE_AUDOUT_RATE ||
-        audoutGetChannelCount() != 2 ||
-        audoutGetPcmFormat() != PcmFormat_Int16) {
-        audoutExit();
+    if (native_open(&native_output) || native_start(&native_output)) {
+        (void)native_stop(&native_output);
+        native_close(&native_output);
         return 0;
     }
-    result = audoutStartAudioOut();
-    if (R_FAILED(result)) {
-        audoutExit();
-        return 0;
-    }
+    memset(&output_recovery,0,sizeof(output_recovery));
+    Result result;
     atomic_store(&audio_stop, false);
     atomic_store(&audio_fault, 0);
     atomic_store(&pcm_blocks_generated, 0u);
@@ -169,15 +225,15 @@ static int start_native_audio(void) {
     result = threadCreate(&sound_thread, audio_worker, NULL, NULL,
                           16 * 1024, 0x2c, -2);
     if (R_FAILED(result)) {
-        audoutStopAudioOut();
-        audoutExit();
+        (void)native_stop(&native_output);
+        native_close(&native_output);
         return 0;
     }
     result = threadStart(&sound_thread);
     if (R_FAILED(result)) {
         threadClose(&sound_thread);
-        audoutStopAudioOut();
-        audoutExit();
+        (void)native_stop(&native_output);
+        native_close(&native_output);
         return 0;
     }
     return 1;
@@ -188,8 +244,8 @@ static void stop_native_audio(void) {
     atomic_store(&audio_stop, true);
     (void)threadWaitForExit(&sound_thread);
     threadClose(&sound_thread);
-    audoutStopAudioOut();
-    audoutExit();
+    (void)native_stop(&native_output);
+    native_close(&native_output);
 }
 
 static void paint(VhCanvas *canvas, const VhGameState *state,
