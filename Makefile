@@ -213,3 +213,28 @@ $(BUILD)/$(OPENAL_TARGET).nro: $(BUILD)/$(OPENAL_TARGET).elf $(BUILD)/$(OPENAL_T
 
 clean:
 	rm -rf $(BUILD)
+
+
+# Combined native libnx framebuffer plus PS1 SEQ/VAB/SPU sound transport.
+# A separate experimental NRO: never packages original music or game assets.
+.PHONY: ps1-music-av-probe
+
+PS1_MUSIC_AV_SOURCES := probes/libnx_ps1_music_av.c source/vh_audio_resample.c \
+	source/vh_audio_assets.c source/vh_native_vab.c source/vh_native_seq.c \
+	source/vh_native_spu.c source/vh_spu_reverb.c source/vh_spu_adpcm.c \
+	source/vh_spu_gaussian.c source/vh_audio_stream.c
+
+$(BUILD)/libnx-ps1-music-av.elf: $(PS1_MUSIC_AV_SOURCES) \
+	source/vh_audio_assets.h source/vh_audio_resample.h \
+	source/vh_native_spu.h source/vh_native_seq.h \
+	source/game_renderer.h source/game_state.h | $(BUILD)
+	$(CC) $(CFLAGS) -std=c11 -Isource $(LDFLAGS) $(PS1_MUSIC_AV_SOURCES) -o $@ $(LDLIBS) -lm
+
+$(BUILD)/libnx-ps1-music-av.nacp: | $(BUILD)
+	$(NACPTOOL) --create "Vandal Hearts PS1 Music AV Prototype" "$(APP_AUTHOR)" "$(APP_VERSION)" $@
+
+$(BUILD)/libnx-ps1-music-av.nro: $(BUILD)/libnx-ps1-music-av.elf $(BUILD)/libnx-ps1-music-av.nacp
+	$(ELF2NRO) $< $@ --nacp=$(BUILD)/libnx-ps1-music-av.nacp
+
+ps1-music-av-probe: $(BUILD)/libnx-ps1-music-av.nro
+	python3 tests/check_nro.py $<
