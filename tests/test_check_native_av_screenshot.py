@@ -11,7 +11,7 @@ from check_native_av_screenshot import inspect_images, HERO, AUDIO_OK, AUDIO_FAI
 
 
 def make_frames(audio=AUDIO_OK, advance=True, source=(83, 100, 119),
-                pipeline=None):
+                pipeline=None, synthetic_switches=None):
     before = Image.new("RGB", (1280, 720), (17, 23, 39))
     before.putpixel((452, 296), HERO)
     before.putpixel((1050, 160), audio)
@@ -20,6 +20,8 @@ def make_frames(audio=AUDIO_OK, advance=True, source=(83, 100, 119),
         pipeline if pipeline is not None
         else AUDIO_FAIL if audio == AUDIO_FAIL else AUDIO_OK
     ))
+    if synthetic_switches is not None:
+        before.putpixel((1050, 322), synthetic_switches)
     after = before.copy()
     if advance:
         for x in range(105, 148):
@@ -40,6 +42,33 @@ class NativeAVScreenshotTests(unittest.TestCase):
         self.assertGreater(result["heartbeat_changed_pixels"], 16)
         self.assertFalse(result["audible_audio_verified"])
         self.assertFalse(result["actual_gameplay_verified"])
+
+    def test_synthetic_scene_switch_marker_requires_completed_transitions(self):
+        first, second = make_frames(synthetic_switches=AUDIO_OK)
+        report = inspect_images(first, second)
+        self.assertEqual(report["synthetic_scene_switches"], "confirmed")
+        pending_first, pending_second = make_frames(
+            synthetic_switches=(255, 219, 102))
+        pending = inspect_images(pending_first, pending_second)
+        self.assertEqual(pending["synthetic_scene_switches"], "pending")
+        missing_first, missing_second = make_frames()
+        self.assertEqual(inspect_images(missing_first, missing_second)[
+            "synthetic_scene_switches"], "not_observed")
+        with tempfile.TemporaryDirectory() as folder:
+            first_path = Path(folder) / "before.png"
+            second_path = Path(folder) / "after.png"
+            cmd = [sys.executable, "tests/check_native_av_screenshot.py",
+                   str(first_path), str(second_path),
+                   "--require-synthetic-scene-switches"]
+            first.save(first_path)
+            second.save(second_path)
+            ok = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertEqual(ok.returncode, 0, ok.stderr)
+            pending_first.save(first_path)
+            pending_second.save(second_path)
+            denied = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertNotEqual(denied.returncode, 0)
+            self.assertIn("scene-switch marker not confirmed", denied.stderr)
 
     def test_user_source_is_separate_from_audout_initialization(self):
         first, second = make_frames(source=AUDIO_OK)
