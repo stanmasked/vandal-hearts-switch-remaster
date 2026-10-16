@@ -176,6 +176,50 @@ def _ft4_palette_state(before_vram, native_event):
 
 
 
+
+def _ft4_audited_crop_classes(source_event, before_vram, native_event):
+    """Return (transparent, STP, opaque) counts in the audited 4-bpp UV crop.
+
+    Each UV of the source-backed 16x16 crop is decoded using the exact PC
+    texture-window and 4-bit nibble/CLUT addressing formulas. This set is
+    NOT the set of texels sampled by DDA; coverage, roundoff, and repeated
+    sampling are not proven here. Its STP entries are candidates only.
+    """
+    packet = native_event["ft4"]
+    if (packet["tpage"] >> 7) & 3:
+        return None
+    texture = source_event["texture"]
+    window = native_event["window"]
+    mask_x, mask_y, offset_x, offset_y = window
+    mask_x *= 8
+    mask_y *= 8
+    offset_x = (offset_x & window[0]) * 8
+    offset_y = (offset_y & window[1]) * 8
+    tpage = packet["tpage"]
+    page_x = (tpage & 15) * 64
+    page_y = ((tpage >> 4) & 1) * 256
+    clut = packet["clut"]
+    palette_offset = (((clut >> 6) & 511) * 1024 +
+                      (clut & 63) * 16) * 2
+    classes = [0, 0, 0]
+    for v in range(texture["v"], texture["v"] + texture["h"] + 1):
+        vy = (v & ~mask_y) | offset_y
+        for u in range(texture["u"], texture["u"] + texture["w"] + 1):
+            ux = (u & ~mask_x) | offset_x
+            word_offset = ((page_y + vy) * 1024 +
+                           page_x + ux // 4) * 2
+            word = (before_vram[word_offset] |
+                    (before_vram[word_offset + 1] << 8))
+            index = (word >> ((ux & 3) * 4)) & 15
+            palette_byte = palette_offset + index * 2
+            bgr555 = (before_vram[palette_byte] |
+                      (before_vram[palette_byte + 1] << 8))
+            classification = 0 if bgr555 == 0 else (1 if bgr555 & 0x8000 else 2)
+            classes[classification] += 1
+    return tuple(classes)
+
+
+
 def _native_after_vram(native_dir, native_events, before):
     """Retrieve paired post-draw snapshot only after native capture verified."""
     next_step = before["step"] + 1
@@ -276,6 +320,7 @@ def verify_join(source_dir, native_dir, *, compiler="gcc"):
     proved_no_coverage = no_delta_unknown = all_zero_clut = 0
     stp_blend_possible_unknown = 0
     stp_candidate_abr = [0, 0, 0, 0]
+    audited_crop = [0, 0, 0]
     for face_index, match_index in enumerate(selected):
         native = gpu_draw_events[match_index]
         snapshot = private_file(native_dir, native["snapshot"], expected=VRAM_BYTES)
@@ -290,7 +335,12 @@ def verify_join(source_dir, native_dir, *, compiler="gcc"):
         n, m, checked, excluded = _ft4_draw_delta(
             snapshot, post, source_events[face_index], native.get("draw_env"),
             native["ft4"]["xy"])
-        transparent, stp_possible, abr_mode = _ft4_palette_state(snapshot, native)
+        transparent, _, abr_mode = _ft4_palette_state(snapshot, native)
+        crop = _ft4_audited_crop_classes(source_events[face_index], snapshot, native)
+        if crop is not None:
+            for cls in range(3):
+                audited_crop[cls] += crop[cls]
+        stp_possible = (native["semi"] == 1 and crop is not None and crop[1] > 0)
         if transparent and n:
             raise ValueError("native FT4 changed VRAM with entirely zero 4-bpp CLUT")
         clip_checked += checked
@@ -331,6 +381,10 @@ def verify_join(source_dir, native_dir, *, compiler="gcc"):
         "matched_ft4_zero_delta_stp_candidate_abr1": stp_candidate_abr[1],
         "matched_ft4_zero_delta_stp_candidate_abr2": stp_candidate_abr[2],
         "matched_ft4_zero_delta_stp_candidate_abr3": stp_candidate_abr[3],
+        "matched_ft4_audited_crop_transparent_texels": audited_crop[0],
+        "matched_ft4_audited_crop_stp_texels": audited_crop[1],
+        "matched_ft4_audited_crop_opaque_texels": audited_crop[2],
+        "native_dda_texel_sampling_path_observed": False,
         "native_ft4_pixels_bit_exact_to_ps1": False,
         "screen_corners_uv_page_clut_window_exact": True,
         "source_gte_verified_by_compiled_reference": True,
@@ -392,6 +446,7 @@ def verify_timeline_join(source_dir, native_dir, *, compiler="gcc"):
     proved_no_coverage = no_delta_unknown = all_zero_clut = 0
     stp_blend_possible_unknown = 0
     stp_candidate_abr = [0, 0, 0, 0]
+    audited_crop = [0, 0, 0]
     for source_index, native_index in enumerate(selected):
         reference = private_file(
             source_dir, f"gpu-vram-{source_index:03d}.bin", expected=VRAM_BYTES)
@@ -410,8 +465,15 @@ def verify_timeline_join(source_dir, native_dir, *, compiler="gcc"):
             before, post, source_events[source_index],
             native_ft4[native_index].get("draw_env"),
             native_ft4[native_index]["ft4"]["xy"])
-        transparent, stp_possible, abr_mode = _ft4_palette_state(
+        transparent, _, abr_mode = _ft4_palette_state(
             before, native_ft4[native_index])
+        crop = _ft4_audited_crop_classes(
+            source_events[source_index], before, native_ft4[native_index])
+        if crop is not None:
+            for cls in range(3):
+                audited_crop[cls] += crop[cls]
+        stp_possible = (native_ft4[native_index]["semi"] == 1 and
+                        crop is not None and crop[1] > 0)
         if transparent and n:
             raise ValueError("native FT4 changed VRAM with entirely zero 4-bpp CLUT")
         clip_checked += checked
@@ -451,6 +513,10 @@ def verify_timeline_join(source_dir, native_dir, *, compiler="gcc"):
         "matched_ft4_zero_delta_stp_candidate_abr1": stp_candidate_abr[1],
         "matched_ft4_zero_delta_stp_candidate_abr2": stp_candidate_abr[2],
         "matched_ft4_zero_delta_stp_candidate_abr3": stp_candidate_abr[3],
+        "matched_ft4_audited_crop_transparent_texels": audited_crop[0],
+        "matched_ft4_audited_crop_stp_texels": audited_crop[1],
+        "matched_ft4_audited_crop_opaque_texels": audited_crop[2],
+        "native_dda_texel_sampling_path_observed": False,
         "native_ft4_pixels_bit_exact_to_ps1": False,
         "screen_corners_uv_page_clut_window_exact": True,
         "pc_gte_source_timeline_verified": True,
