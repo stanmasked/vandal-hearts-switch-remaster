@@ -137,6 +137,42 @@ class MusicBankAuditCliTests(unittest.TestCase):
             self.assertEqual(result.stdout, "")
             self.assertNotIn(path, result.stderr)
 
+    def test_interleaved_channels_keep_independent_programs(self):
+        """A program change on channel 1 must not leak into channel 0."""
+        with tempfile.TemporaryDirectory() as path:
+            folder = Path(path)
+            fixtures(folder)
+            # Both channels request notes covered by program 7, but
+            # channel 1 requests program 9 and must be reported as fallback.
+            # Velocity-zero note_on is note_off, not another note to audit.
+            events = bytes((
+                0, 0xC0, 7,       # ch0 -> program 7
+                0, 0xC1, 9,       # ch1 -> program 9
+                0, 0x90, 60, 100, # ch0 -> exact
+                0, 0x91, 67, 100, # ch1 -> fallback
+                0, 0x91, 67, 0,   # ch1 -> note_off
+                0, 0xFF, 0x2F,
+            ))
+            (folder / "selected" / "music.seq").write_bytes(
+                seq(7, 60)[:15] + events
+            )
+            normal = run(path)
+            self.assertEqual(normal.returncode, 0, normal.stderr)
+            report = json.loads(normal.stdout)
+            selected = report["selected"]
+            self.assertEqual(selected["note_on"], 2)
+            self.assertEqual(selected["resolved"], 2)
+            self.assertEqual(selected["program_changes"], 2)
+            self.assertEqual(selected["fallback"], 1)
+            self.assertEqual(selected["missing"], 0)
+            self.assertEqual(selected["first_fallback"], {
+                "program": 9, "note": 67, "selected_program": 7,
+                "selected_tone": 0, "selected_vag": 1,
+            })
+            strict = run("--strict", path)
+            self.assertEqual(strict.returncode, 4, strict.stderr)
+            self.assertEqual(json.loads(strict.stdout), report)
+
     def test_missing_partial_corrupt_and_help(self):
         with tempfile.TemporaryDirectory() as path:
             folder = Path(path)
