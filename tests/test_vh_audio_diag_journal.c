@@ -182,6 +182,50 @@ static void test_early_errors_survive_multiple_ring_rollovers(void) {
     fclose(stream);
 }
 
+/* Verify the exact bytes seen after closing/reopening a staged CSV,
+ * including the header, all fields, the last newline and exact EOF.
+ * These tests are independent of the exporter fault-injection mocks. */
+static void test_staged_file_exact_readback(void) {
+    vh_audio_diag_journal_reset(&log_state);
+    VhAudioDiagnostics d={.status=1};
+    assert(vh_audio_diag_journal_sample(&log_state,0,&d)==1);
+    d.submit_failures=2u;
+    d.pages_submitted=1000u;
+    assert(vh_audio_diag_journal_sample(&log_state,5000,&d)==1);
+    d.status=0;
+    assert(vh_audio_diag_journal_finish(&log_state,6000,&d)==1);
+    FILE *f=tmpfile();
+    assert(f);
+    assert(vh_audio_diag_journal_write_csv(&log_state,f)==3);
+    assert(fflush(f)==0);
+    rewind(f);
+    assert(vh_audio_diag_journal_verify_csv(&log_state,f)==3);
+    rewind(f);
+    assert(fputc('X',f)=='X'); /* corrupt first header byte */
+    assert(fflush(f)==0);
+    rewind(f);
+    assert(vh_audio_diag_journal_verify_csv(&log_state,f)==-1);
+    assert(fclose(f)==0);
+
+    f=tmpfile();
+    assert(f);
+    assert(vh_audio_diag_journal_write_csv(&log_state,f)==3);
+    assert(fputs("UNEXPECTED TRAILING SD BYTES\n",f)!=EOF);
+    assert(fflush(f)==0);
+    rewind(f);
+    assert(vh_audio_diag_journal_verify_csv(&log_state,f)==-1);
+    assert(fclose(f)==0);
+
+    f=tmpfile();
+    assert(f);
+    assert(fputs("elapsed_ms,event,status",f)!=EOF);
+    assert(fflush(f)==0);
+    rewind(f);
+    assert(vh_audio_diag_journal_verify_csv(&log_state,f)==-1);
+    assert(fclose(f)==0);
+    assert(vh_audio_diag_journal_verify_csv(NULL,NULL)==-1);
+}
+
 static void test_invalid_journal_and_counter_saturation(void) {
     vh_audio_diag_journal_reset(&log_state);
     VhAudioDiagnostics s={.status=1};
@@ -205,6 +249,7 @@ int main(void) {
     test_event_selection();
     test_long_session_rollover_and_csv();
     test_early_errors_survive_multiple_ring_rollovers();
+    test_staged_file_exact_readback();
     test_invalid_journal_and_counter_saturation();
     puts("33-minute audio journal: bounded 128 rows, chronological "
          "CSV and 100000 snapshot attempts PASS");
