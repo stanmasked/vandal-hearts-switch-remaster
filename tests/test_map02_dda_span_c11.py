@@ -12,6 +12,7 @@ import unittest
 
 from tools.instrument_map02_dda_span import instrument_span
 from tools.instrument_map02_raster_skips import SPAN_ANCHOR
+from tools.verify_map02_dda_native_spans import parse_native_spans
 
 C_TEMPLATE = r'''
 #include <stdio.h>
@@ -75,7 +76,11 @@ class NativeSpanCompileTests(unittest.TestCase):
                                capture_output=True, text=True)
                 log = root / "dda-native-spans.jsonl"
                 if enabled:
-                    rows = [json.loads(line) for line in log.read_text().splitlines()]
+                    raw = log.read_bytes()
+                    validated = parse_native_spans(raw)
+                    self.assertEqual(len(validated), 1)
+                    self.assertEqual((validated[0].x_start, validated[0].x_bound), (10, 20))
+                    rows = [json.loads(line) for line in raw.splitlines()]
                     self.assertEqual(len(rows), 1)
                     self.assertEqual(rows[0]["x_start"], 10)
                     self.assertEqual(rows[0]["x_bound"], 20)
