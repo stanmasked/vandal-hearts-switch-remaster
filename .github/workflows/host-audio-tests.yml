@@ -126,6 +126,24 @@ jobs:
       - name: Offline Switch PCM journal analysis and hostile CSV validation
         run: |
           python3 tests/test_analyze_switch_audio_log.py
+      - name: SD export staging and 6 filesystem error paths
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+             tests/test_vh_audio_diag_export.c \
+             source/vh_audio_diag_export.c source/vh_audio_diag_journal.c \
+             -o build/test_vh_audio_diag_export
+          ./build/test_vh_audio_diag_export
+      - name: SD export error handling under ASan and UBSan
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+             -fsanitize=address,undefined -fno-omit-frame-pointer \
+             tests/test_vh_audio_diag_export.c \
+             source/vh_audio_diag_export.c source/vh_audio_diag_journal.c \
+             -o build/test_vh_audio_diag_export_asan
+          ./build/test_vh_audio_diag_export_asan
       - name: Long-session audio CSV ring journal and fault events
         run: |
           cc -std=c11 -Wall -Wextra -Werror -O2 -Isource \
