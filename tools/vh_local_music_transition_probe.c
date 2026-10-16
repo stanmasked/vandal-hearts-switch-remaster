@@ -25,12 +25,17 @@ static VhAudioAssets banks[2];
 static VhNativeSpu spu;
 static VhNativeSeq seq;
 static VhAudioResample resampler;
+/* Snapshot wet history outside the 32-kB stack of the offline utility. */
+static VhSpuReverb switch_reverb_snapshot;
 static int16_t source[VH_AUDIO_BLOCK_FRAMES*2u];
 static int16_t output[VH_AUDIO_RESAMPLE_MAX_FRAMES*2u];
 
 typedef struct {
     uint64_t output_frames, input_frames, notes, note_offs, events;
     unsigned bank_index, blocks, sent_to_reverb;
+    unsigned prior_bank_active_voices, prior_bank_release_voices;
+    unsigned prior_bank_pcm_references, prior_bank_voices_cleared;
+    unsigned reverb_history_preserved_on_switch;
     uint64_t note_requests, unresolved_notes, fallback_notes;
     uint64_t cross_program_fallback_notes, out_of_range_fallback_notes;
     uint64_t reverb_send_notes, zero_gain_notes;
@@ -166,6 +171,25 @@ int main(int argc,char **argv) {
     for (unsigned i=0;i<scenes;i++) {
         const unsigned bank_id=i%2u;
         VhAudioAssets *asset=&banks[bank_id];
+        SceneMetric *metric=&scene_metrics[i];
+        metric->bank_index=bank_id;
+        /* Observe borrowed previous-bank PCM and Release voices before
+         * switching. Production switch_scene must discard them without
+         * touching STUDIO_C history or the caller-owned resampler clock.
+         */
+        const uint64_t prior_input_frames=resampler.input_frames;
+        const uint64_t prior_output_tick=resampler.next_output_tick;
+        if (i) {
+            for (unsigned v=0;v<VH_NATIVE_MUSIC_VOICES;v++) {
+                const VhNativeVoice *voice=&spu.voice[v];
+                metric->prior_bank_active_voices+=(voice->active!=0);
+                metric->prior_bank_release_voices+=
+                    (voice->active && voice->adsr.phase==VH_ADSR_RELEASE);
+                metric->prior_bank_pcm_references+=(voice->pcm!=NULL);
+            }
+            memcpy(&switch_reverb_snapshot,&spu.reverb,
+                   sizeof(switch_reverb_snapshot));
+        }
         memset(&resolver_audit,0,sizeof(resolver_audit));
         resolver_audit.bank=&asset->bank;
         resolver_audit.spu=&spu;
@@ -178,8 +202,38 @@ int main(int argc,char **argv) {
             fprintf(stderr,"Native SEQ scene initialization failed\n");
             goto error;
         }
-        SceneMetric *metric=&scene_metrics[i];
-        metric->bank_index=bank_id;
+        if (i) {
+            metric->reverb_history_preserved_on_switch=
+                (memcmp(&spu.reverb,&switch_reverb_snapshot,
+                        sizeof(switch_reverb_snapshot))==0);
+            metric->prior_bank_voices_cleared=1u;
+            for (unsigned v=0;v<VH_NATIVE_MUSIC_VOICES;v++) {
+                const VhNativeVoice *voice=&spu.voice[v];
+                if (voice->active || voice->pcm!=NULL ||
+                    voice->adsr.phase!=VH_ADSR_OFF)
+                    metric->prior_bank_voices_cleared=0u;
+            }
+            if (!metric->prior_bank_voices_cleared ||
+                !metric->reverb_history_preserved_on_switch ||
+                !spu.reverb_enabled || spu.reverb_depth!=0.5f ||
+                spu.interpolation!=VH_SPU_GAUSSIAN ||
+                spu.steal_index || spu.frames_rendered ||
+                seq.note_ons || seq.note_offs ||
+                seq.spu!=&spu || seq.context!=&resolver_audit ||
+                seq.bytes!=asset->seq ||
+                resampler.input_frames!=prior_input_frames ||
+                resampler.next_output_tick!=prior_output_tick) {
+                fprintf(stderr,"Music bank switch retained a voice or reset DSP clocks\n");
+                goto error;
+            }
+        }
+        if (metric->prior_bank_release_voices>
+                metric->prior_bank_active_voices ||
+            metric->prior_bank_active_voices>VH_NATIVE_MUSIC_VOICES ||
+            metric->prior_bank_pcm_references>VH_NATIVE_MUSIC_VOICES) {
+            fprintf(stderr,"Previous-bank voice accounting failed\n");
+            goto error;
+        }
         metric->blocks=blocks;
         const uint64_t start_output=frame_total;
         for(unsigned b=0;b<blocks;b++) {
@@ -434,6 +488,11 @@ int main(int argc,char **argv) {
                "\"direct_match_notes\":%" PRIu64 ","
                "\"reverb_send_notes\":%" PRIu64 ","
                "\"zero_gain_notes\":%" PRIu64 ","
+               "\"prior_bank_active_voices\":%u,"
+               "\"prior_bank_release_voices\":%u,"
+               "\"prior_bank_pcm_references\":%u,"
+               "\"prior_bank_voices_cleared\":%s,"
+               "\"reverb_history_preserved_on_switch\":%s,"
                "\"saturated_note_requests\":%" PRIu64 ","
                "\"notes_while_release_active\":%" PRIu64 ","
                "\"saturated_with_release_requests\":%" PRIu64 ","
@@ -477,6 +536,10 @@ int main(int argc,char **argv) {
                m->cross_program_fallback_notes,
                m->out_of_range_fallback_notes,m->notes-m->fallback_notes,
                m->reverb_send_notes,m->zero_gain_notes,
+               m->prior_bank_active_voices,m->prior_bank_release_voices,
+               m->prior_bank_pcm_references,
+               m->prior_bank_voices_cleared?"true":"false",
+               m->reverb_history_preserved_on_switch?"true":"false",
                m->saturated_note_requests,
                m->notes_while_release_active,
                m->saturated_with_release_requests,
