@@ -236,6 +236,8 @@ jobs:
         run: python3 tests/test_native_spu_gaussian.py
       - name: Differential-check native VH/VB resolver against Python
         run: python3 tests/test_native_vab_python_reference.py
+      - name: Detect PC-port ghost aliases in sparse VAB layouts
+        run: python3 tests/test_audit_pcport_vab_aliases.py
       - name: Execute pinned upstream SeqPickTone against native VAB
         run: |
           mkdir -p build
