@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 HARNESS = r"""
 #include <assert.h>
+#include <string.h>
 #include "map02_scoped_blend_sink.h"
 
 static void valid_accurate(void) {
@@ -19,7 +20,7 @@ static void valid_accurate(void) {
 static void setup(void) {
     vh_map02_scope_reset();
     assert(vh_map02_scope_begin_frame(7, 4, 3));
-    assert(vh_map02_scope_begin_primitive(0));
+    assert(vh_map02_scope_begin_primitive(0, 4));
 }
 static void reject(void) {
     assert(vh_map02_scope_failed());
@@ -30,14 +31,21 @@ static void reject(void) {
 int main(void) {
     VHMap02BlendEvent e;
     unsigned i;
+    char private_line[512];
+    vh_map02_scope_reset();
+    vh_map02_probe_begin(0, 0, 0, 1, 1, 1, 1, 1);
+    vh_map02_probe_end(0, 0, 1);
+    assert(!vh_map02_scope_failed()); /* no selected frame */
     setup();
     assert(!vh_map02_scope_copy(0, &e));
+    assert(!vh_map02_scope_format_putpixel(0, private_line,
+                                           (unsigned)sizeof private_line));
     /* Writes to other coordinates are not recorded. */
     vh_map02_probe_begin(5, 3, 0, 0, 0, 0, 0, 0);
     vh_map02_probe_end(5, 3, 0);
     valid_accurate();
     assert(vh_map02_scope_end_primitive());
-    assert(vh_map02_scope_begin_primitive(1));
+    assert(vh_map02_scope_begin_primitive(1, 5));
     vh_map02_probe_begin(4, 3, 0x0030, 0x0040, 3, 1, 0, 0);
     vh_map02_probe_end(4, 3, 0x0050); /* legacy blend, no BlendG1 call */
     vh_map02_probe_begin(4, 3, 0x0050, 0x0070, 0, 0, 0, 0);
@@ -47,6 +55,20 @@ int main(void) {
     assert(vh_map02_scope_count() == 3);
     assert(vh_map02_scope_copy(0, &e));
     assert(e.frame == 7 && e.ordinal == 0 && e.step == 0);
+    assert(e.primitive_type == 4);
+    assert(vh_map02_scope_format_putpixel(0, private_line,
+                                          (unsigned)sizeof private_line) > 0);
+    assert(strstr(private_line, "\"primitive_type\":4") != NULL);
+    assert(private_line[strlen(private_line) - 1] == '\n');
+    assert(vh_map02_scope_format_blendg1(0, private_line,
+                                         (unsigned)sizeof private_line) > 0);
+    assert(strstr(private_line, "\"blend_fg\":32769") != NULL);
+    assert(private_line[strlen(private_line) - 1] == '\n');
+    assert(!vh_map02_scope_format_blendg1(1, private_line,
+                                          (unsigned)sizeof private_line));
+    assert(!vh_map02_scope_format_putpixel(0, private_line, 1));
+    vh_map02_probe_begin(4, 3, 0, 1, 1, 1, 1, 1);
+    assert(!vh_map02_scope_failed()); /* after frame: ignored */
     assert(e.has_blend == 1 && e.blend_fg == 0x8001);
     assert(e.blend_bg == 0x0020 && e.blend_result == 0x0030);
     assert(vh_map02_scope_copy(1, &e));
@@ -78,7 +100,12 @@ int main(void) {
 
     setup();
     assert(vh_map02_scope_end_primitive());
-    assert(!vh_map02_scope_begin_primitive(2)); /* skipped ordinal */
+    assert(!vh_map02_scope_begin_primitive(2, 4)); /* skipped ordinal */
+    reject();
+
+    vh_map02_scope_reset();
+    assert(vh_map02_scope_begin_frame(7, 4, 3));
+    assert(!vh_map02_scope_begin_primitive(0, 256));
     reject();
 
     setup();
