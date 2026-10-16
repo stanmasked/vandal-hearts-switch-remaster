@@ -9,7 +9,7 @@ from tools.map02_face_geometry import (
 from tools.map02_multicell_probe import (
     place_faces, shared_vertices, shared_edges, boundary_report,
     face_cross_xyz, placement_invariants, order_faces_by_external_otz,
-    bind_gte_face_samples, place_selected_faces,
+    bind_gte_face_samples, place_selected_faces, audit_multicell_gte_batch,
 )
 
 
@@ -306,6 +306,51 @@ class MultiCellTests(unittest.TestCase):
         self.assertEqual(first[0]["source_face"], second[0]["source_face"])
         self.assertEqual(second[1]["source_face"]["face_shade"], 99)
         self.assertNotEqual(first[1]["source_face"], second[1]["source_face"])
+
+
+    def test_multicell_multiface_batch_preserves_provenance(self):
+        data = fixture()
+        for z, x in self.cells[:2]:
+            origin = (z * STRIDE + x) * RECORD_SIZE
+            data[origin + FACE_COUNT_OFFSET] = 2
+            data[origin + FACE_TABLE_OFFSET + 4:
+                 origin + FACE_TABLE_OFFSET + 8] = bytes((3, 2, 1, 0))
+            struct.pack_into("<h", data, origin + GFX_OFFSET + 2, 410 + x)
+            data[origin + 285] = 10 + x
+        keys = [(2, 3, 0), (2, 4, 1), (2, 3, 1), (2, 4, 0)]
+        faces = place_selected_faces(data, keys,
+                                     {key: (0, 0, 15, 15) for key in keys},
+                                     step_x=64, step_z=64)
+        samples = {
+            (2, 3, 59, 0): {"otz": 400},
+            (2, 4, 60, 1): {"otz": 100},
+            (2, 3, 59, 1): {"otz": 300},
+            (2, 4, 60, 0): {"otz": 200},
+        }
+        report = audit_multicell_gte_batch(faces, samples)
+        self.assertEqual(report["cell_count"], 2)
+        self.assertEqual(report["face_count"], 4)
+        self.assertEqual([f["source_key"] for f in report["faces"]],
+                         [[2, 3, 59, 0], [2, 4, 60, 1],
+                          [2, 3, 59, 1], [2, 4, 60, 0]])
+        self.assertEqual([f["otz"] for f in report["faces"]],
+                         [400, 100, 300, 200])
+        self.assertEqual([f["input_order"] for f in report["faces"]],
+                         [0, 1, 2, 3])
+        self.assertEqual(report["faces"][1]["local_gfx"], 414)
+
+    def test_multicell_batch_rejects_missing_samples_and_moved_vertex(self):
+        keys = [(2, 3, 0), (2, 4, 0)]
+        faces = place_selected_faces(
+            self.data, keys, {key: (0, 0, 15, 15) for key in keys},
+            step_x=64, step_z=64)
+        samples = {(2, 3, 59, 0): {"otz": 100},
+                   (2, 4, 60, 0): {"otz": 200}}
+        with self.assertRaisesRegex(ValueError, "match source"):
+            audit_multicell_gte_batch(faces, {(2, 3, 59, 0): {"otz": 100}})
+        faces[1]["world_xyz_hypothesis"][0][0] += 1
+        with self.assertRaisesRegex(ValueError, "translation invariant"):
+            audit_multicell_gte_batch(faces, samples)
 
 
 if __name__ == "__main__":
