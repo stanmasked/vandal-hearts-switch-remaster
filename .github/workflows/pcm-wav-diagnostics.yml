@@ -22,6 +22,11 @@ on:
       - 'tests/test_vh_pcm_scene_source_switch.c'
       - 'tests/test_vh_native_bank_switch.c'
       - 'tests/test_vh_native_bank_switch_reverb.c'
+      - 'tools/vh_local_music_transition_probe.c'
+      - 'tests/test_vh_local_music_transition_probe.py'
+      - 'source/vh_audio_assets.c'
+      - 'source/vh_audio_assets.h'
+      - 'Makefile'
       - 'tests/test_vh_reverb_bank_tail.c'
       - 'tests/test_vh_audio_output_recovery.c'
       - 'tests/test_vh_audio_pause_fifo.c'
@@ -60,6 +65,11 @@ on:
       - 'tests/test_vh_pcm_scene_source_switch.c'
       - 'tests/test_vh_native_bank_switch.c'
       - 'tests/test_vh_native_bank_switch_reverb.c'
+      - 'tools/vh_local_music_transition_probe.c'
+      - 'tests/test_vh_local_music_transition_probe.py'
+      - 'source/vh_audio_assets.c'
+      - 'source/vh_audio_assets.h'
+      - 'Makefile'
       - 'tests/test_vh_reverb_bank_tail.c'
       - 'tests/test_vh_audio_output_recovery.c'
       - 'tests/test_vh_audio_pause_fifo.c'
@@ -338,6 +348,22 @@ jobs:
           /tmp/test_vh_vab_eon_differential > /tmp/vab-eon-repeat.txt
           cmp /tmp/vab-eon-first.txt /tmp/vab-eon-repeat.txt
           grep -Fq 'VAB differential EON wet/dry:' /tmp/vab-eon-first.txt
+      - name: Audit local synthetic fixture banks without exporting music
+        run: |
+          set -euo pipefail
+          make test-local-music-transition
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -fno-sanitize-recover=all \
+            tools/vh_local_music_transition_probe.c \
+            source/vh_audio_assets.c source/vh_native_vab.c \
+            source/vh_native_seq.c source/vh_native_spu.c \
+            source/vh_spu_reverb.c source/vh_spu_adpcm.c \
+            source/vh_spu_gaussian.c source/vh_audio_resample.c \
+            source/vh_audio_stream.c -lm -o /tmp/vh_local_music_transition_probe_asan
+          VH_LOCAL_MUSIC_TRANSITION_PROBE=/tmp/vh_local_music_transition_probe_asan \
+            python3 -m unittest discover -s tests \
+              -p 'test_vh_local_music_transition_probe.py' -v
       - name: Verify voice-only SPU reset preserves reverb tail under sanitizers
         run: |
           cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
