@@ -114,6 +114,21 @@ int vh_native_spu_set_interpolation(VhNativeSpu *spu, unsigned mode) {
     return 0;
 }
 
+int vh_native_spu_set_reverb(VhNativeSpu *spu, int enabled, float depth) {
+    if (!spu || !isfinite(depth) || depth < 0.0f || depth > 1.0f)
+        return -1;
+    spu->reverb_enabled = !!enabled;
+    spu->reverb_depth = depth;
+    return 0;
+}
+
+int vh_native_spu_set_voice_reverb(VhNativeSpu *spu, unsigned slot,
+                                   int enabled) {
+    if (!spu || slot >= VH_NATIVE_MUSIC_VOICES) return -1;
+    spu->voice[slot].reverb_send = !!enabled;
+    return 0;
+}
+
 int vh_native_spu_allocate_slot(VhNativeSpu *spu) {
     if (!spu) return -1;
     for (unsigned slot = 0; slot < VH_NATIVE_MUSIC_VOICES; ++slot) {
@@ -173,6 +188,7 @@ void vh_native_spu_render(VhNativeSpu *spu, int16_t *out_stereo, size_t frames) 
     }
     for (size_t frame = 0; frame < frames; ++frame) {
         double left = 0.0, right = 0.0;
+        double send_left = 0.0, send_right = 0.0;
         for (unsigned slot = 0; slot < VH_NATIVE_MUSIC_VOICES; ++slot) {
             VhNativeVoice *v = &spu->voice[slot];
             if (!v->active) continue;
@@ -187,8 +203,14 @@ void vh_native_spu_render(VhNativeSpu *spu, int16_t *out_stereo, size_t frames) 
                 : v->pcm[index];
             const double current =
                 (double)fetched * v->adsr.level / 32767.0;
-            left += current * v->gain_left;
-            right += current * v->gain_right;
+            const double vl = current * v->gain_left;
+            const double vr = current * v->gain_right;
+            left += vl;
+            right += vr;
+            if (v->reverb_send) {
+                send_left += vl;
+                send_right += vr;
+            }
             v->phase += v->pitch_step;
             if (v->loop_end > v->loop_start && v->loop_start >= 0) {
                 const uint64_t end = (uint64_t)v->loop_end << 12;
@@ -202,6 +224,19 @@ void vh_native_spu_render(VhNativeSpu *spu, int16_t *out_stereo, size_t frames) 
             } else if (v->phase >> 12 >= v->frames) {
                 v->active = 0;
             }
+        }
+        if (spu->reverb_enabled) {
+            int wet_l = 0, wet_r = 0;
+            /* Keep the FIR/work-buffer advancing during silence so the
+             * reverb tail decays instead of freezing at Note Off.
+             * As in the PC reference, truncate the dry mix and send
+             * independently before passing it to the reverb network.
+             */
+            vh_spu_reverb_process(
+                &spu->reverb, (int)send_left, (int)send_right,
+                spu->reverb_depth, &wet_l, &wet_r);
+            left = (int)left + wet_l;
+            right = (int)right + wet_r;
         }
         out_stereo[2 * frame] = clip16(left);
         out_stereo[2 * frame + 1] = clip16(right);
