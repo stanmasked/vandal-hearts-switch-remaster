@@ -1,0 +1,55 @@
+name: Switch tactical prototype with integrated audio
+
+on:
+  push:
+    branches:
+      - test/cdxa-extract-decode-pipeline
+    paths:
+      - "source/main.c"
+      - "source/vh_*"
+      - "source/game_state.h"
+      - "source/platform_input.h"
+      - "tests/test_vh_game_music_mailbox.c"
+      - "Makefile"
+      - ".github/workflows/switch-tactical-music-nro.yml"
+  pull_request:
+    paths:
+      - "source/main.c"
+      - "source/vh_*"
+      - "Makefile"
+      - ".github/workflows/switch-tactical-music-nro.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tactical-music-nro:
+    name: Build tactical framebuffer game with nonblocking libnx audout
+    runs-on: ubuntu-latest
+    container: devkitpro/devkita64:latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run portable tactical-music and audio regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          make build/test_vh_game_music_mailbox
+          ./build/test_vh_game_music_mailbox
+          make test-audio-stream
+      - name: Build and inspect integrated tactical NRO
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          make verify-nro
+          test -s build/vandal-hearts-prototype.nro
+      - name: Upload integrated tactical NRO
+        uses: actions/upload-artifact@v4
+        with:
+          name: vandal-hearts-tactical-with-native-music
+          path: build/vandal-hearts-prototype.nro
+          if-no-files-found: error
