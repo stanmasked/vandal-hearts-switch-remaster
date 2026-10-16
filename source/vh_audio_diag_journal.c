@@ -20,6 +20,7 @@ static int add(VhAudioDiagJournal *j,uint64_t ms,
     slot->elapsed_ms=ms;
     slot->event=event;
     slot->snapshot=*s;
+    if (!j->total) j->origin=*slot;
     j->head=(j->head+1u)%VH_AUDIO_DIAG_JOURNAL_CAPACITY;
     if(j->count<VH_AUDIO_DIAG_JOURNAL_CAPACITY) ++j->count;
     if(j->total<UINT64_MAX) ++j->total;
@@ -70,8 +71,26 @@ static const char *name(VhAudioDiagEvent event) {
     case VH_AUDIO_DIAG_EVENT_ERROR: return "ERROR";
     case VH_AUDIO_DIAG_EVENT_EXIT: return "EXIT";
     case VH_AUDIO_DIAG_EVENT_CLOCK: return "CLOCK";
+    case VH_AUDIO_DIAG_EVENT_GAP: return "GAP";
     default: return "UNKNOWN";
     }
+}
+
+static int write_entry(FILE *f,const VhAudioDiagJournalEntry *entry,
+                       VhAudioDiagEvent event) {
+    const VhAudioDiagnostics *s=&entry->snapshot;
+    return fprintf(f,"%llu,%s,%d,%u,%u,%llu,%llu,%llu,%llu,"
+                     "%u,%u,%u,%u,%u,%u,%u,%u,%u\n",
+              (unsigned long long)entry->elapsed_ms,name(event),
+              s->status,s->resume_events,s->confirmed_resumes,
+              (unsigned long long)s->last_confirmed_us,
+              (unsigned long long)s->worst_confirmed_us,
+              (unsigned long long)s->pages_submitted,
+              (unsigned long long)s->frames_submitted,
+              s->submit_failures,s->restart_attempts,s->recoveries,
+              s->resume_failures,s->resume_restarts,s->resume_recoveries,
+              s->lease_mismatches,s->abandoned_sessions,
+              s->bank_warnings)<0 ? -1 : 0;
 }
 
 int vh_audio_diag_journal_write_csv(const VhAudioDiagJournal *j,FILE *f) {
@@ -82,24 +101,21 @@ int vh_audio_diag_journal_write_csv(const VhAudioDiagJournal *j,FILE *f) {
              "pcm_fail,pcm_restart,pcm_recover,home_fail,home_reopen,"
              "home_recover,lease_fail,lease_reset,vab_warn\n",f)==EOF)
         return -1;
+    const int wrapped=j->total>VH_AUDIO_DIAG_JOURNAL_CAPACITY;
     const uint32_t start=(j->head+VH_AUDIO_DIAG_JOURNAL_CAPACITY-
                           j->count)%VH_AUDIO_DIAG_JOURNAL_CAPACITY;
+    if(wrapped && write_entry(f,&j->origin,j->origin.event))
+        return -1;
     for(uint32_t i=0;i<j->count;i++) {
+        /* One slot must make room for the preserved initial sample.
+         * The oldest retained row becomes GAP, and its counters
+         * include all events that fell out of the ring. */
+        if(wrapped && i==0u) continue;
         const VhAudioDiagJournalEntry *entry=&j->entries[
             (start+i)%VH_AUDIO_DIAG_JOURNAL_CAPACITY];
-        const VhAudioDiagnostics *s=&entry->snapshot;
-        if(fprintf(f,"%llu,%s,%d,%u,%u,%llu,%llu,%llu,%llu,"
-                     "%u,%u,%u,%u,%u,%u,%u,%u,%u\n",
-              (unsigned long long)entry->elapsed_ms,name(entry->event),
-              s->status,s->resume_events,s->confirmed_resumes,
-              (unsigned long long)s->last_confirmed_us,
-              (unsigned long long)s->worst_confirmed_us,
-              (unsigned long long)s->pages_submitted,
-              (unsigned long long)s->frames_submitted,
-              s->submit_failures,s->restart_attempts,s->recoveries,
-              s->resume_failures,s->resume_restarts,s->resume_recoveries,
-              s->lease_mismatches,s->abandoned_sessions,
-              s->bank_warnings)<0) return -1;
+        const VhAudioDiagEvent event=wrapped && i==1u
+            ? VH_AUDIO_DIAG_EVENT_GAP : entry->event;
+        if(write_entry(f,entry,event)) return -1;
     }
     return ferror(f) ? -1 : (int)j->count;
 }
