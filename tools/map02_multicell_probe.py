@@ -227,3 +227,34 @@ def place_selected_faces(decoded: bytes, selections, uvwh_by_face, *,
             "source_face": source,
         })
     return result
+
+
+def audit_multicell_gte_batch(faces, samples):
+    """Validate a face batch against externally captured GTE OTZ samples.
+
+    Input order is preserved. No PS1 ordering table or projection is inferred.
+    Only exact source face identity and translation invariants are audited.
+    """
+    bound = bind_gte_face_samples(faces, samples)
+    reports = []
+    for face, sample in zip(faces, bound):
+        invariants = placement_invariants(face)
+        if not invariants["translation_exact"]:
+            raise ValueError("face translation invariant failed")
+        if not invariants["cross_preserved"]:
+            raise ValueError("face normal invariant failed")
+        reports.append({
+            "source_key": sample["source_key"],
+            "otz": sample["otz"],
+            "local_gfx": sample["local_gfx"],
+            "face_shade": sample["face_shade"],
+            "cross_xyz": invariants["placed_cross_xyz"],
+            "uv_corners": invariants["uv_corners"],
+            "input_order": len(reports),
+        })
+    return {
+        "face_count": len(reports),
+        "cell_count": len({(f["z"], f["x"]) for f in faces}),
+        "faces": reports,
+        "evidence_scope": "synthetic placement plus caller-supplied GTE OTZ; no rendered frame",
+    }
