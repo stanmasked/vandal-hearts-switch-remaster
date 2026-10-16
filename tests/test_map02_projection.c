@@ -369,6 +369,24 @@ static void test_unr_perspective_division_threshold(void) {
     assert(dividend == 0x1ffffu && (flags & (1u << 17)) != 0u);
 }
 
+static void test_unr_threshold_sweep(void) {
+    /* Integer-only boundary sweep: saturation begins at H >= 2*SZ,
+     * including SZ=0. No empirical camera parameters are assumed. */
+    const uint16_t heights[] = {1, 2, 64, 255, 256, 511, 1024, 32767};
+    for (unsigned i = 0; i < sizeof heights / sizeof heights[0]; ++i) {
+        const uint16_t h = heights[i];
+        const uint16_t near = (uint16_t)(h / 2u);
+        const uint16_t beyond = (uint16_t)(near + 1u);
+        uint32_t flags = 0, quotient = 0;
+        assert(vh_map02_proj_unr(h, near, &flags, &quotient));
+        assert(quotient == 0x1ffffu && (flags & (1u << 17)) != 0u);
+        flags = 0;
+        assert(vh_map02_proj_unr(h, beyond, &flags, &quotient));
+        assert((flags & (1u << 17)) == 0u);
+        assert(quotient <= 0x1ffffu);
+    }
+}
+
 int main(void) {
     test_screen_quad_and_ordering();
     test_backface_and_zero_area();
@@ -384,6 +402,7 @@ int main(void) {
     test_shared_projection_across_depth_and_screen_clamps();
     test_projection_ot_boundaries_and_saturation();
     test_unr_perspective_division_threshold();
+    test_unr_threshold_sweep();
     puts("MAP02 portable projection, NCLIP, AVSZ4 and OT slot tests passed");
     return 0;
 }
