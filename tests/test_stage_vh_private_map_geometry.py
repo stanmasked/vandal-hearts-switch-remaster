@@ -9,7 +9,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-from private_sd_nexium_check import synthetic_geometry_models  # noqa: E402
+from private_sd_nexium_check import (  # noqa: E402
+    synthetic_geometry_models, synthetic_depth_geometry_models, stage_depth,
+)
 from inspect_vh_map_geometry import (  # noqa: E402
     MAP_11_BYTES, MAP_11_STRIDE, TILE_BYTES, parse_tile,
 )
@@ -62,6 +64,36 @@ class StagedModelTests(unittest.TestCase):
         self.assertEqual(positions, sorted(positions))
         self.assertIn("ClearOTag(ot, PRIVATE_OT_BUCKETS);", region)
         self.assertIn("AddPrim(&ot[0], &clear);", region)
+
+    def test_overlapping_far_first_near_last_faces(self):
+        """Different source depths must keep the SAME screenshot footprint."""
+        data=synthetic_depth_geometry_models()
+        self.assertEqual(len(data),MAP_11_BYTES)
+        tile=parse_tile(data,6,3)
+        self.assertEqual(tile["face_count"],2)
+        far,near=tile["faces"]
+        self.assertEqual([far["local_gfx_slot"],near["local_gfx_slot"]],
+                         [242,241])
+        self.assertEqual(far["vertex_indices"],[0,1,2,3])
+        self.assertEqual(near["vertex_indices"],[4,5,6,7])
+        for f,n in zip(far["vertex_xyz"],near["vertex_xyz"]):
+            self.assertEqual(f[0],2*n[0])
+            self.assertEqual(f[1],2*n[1]+68)
+            self.assertEqual(f[2],2*n[2]+68)
+        self.assertEqual(validate_map11_models(data)["active_faces"],2)
+
+    def test_depth_stage_uses_separate_non_overwriting_sd_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            result=stage_depth(root)
+            self.assertEqual(result["active_faces"],2)
+            p=root/RELATIVE_DESTINATION
+            self.assertEqual((p/GEOMETRY_NAME).read_bytes(),
+                             synthetic_depth_geometry_models())
+            self.assertTrue((p/"F_TEX01.DAT").is_file())
+            self.assertTrue((p/"LAND_DT.DAT").is_file())
+            with self.assertRaises(FileExistsError):
+                stage_depth(root)
 
     def test_stage_readback_and_no_overwrite(self):
         with tempfile.TemporaryDirectory() as d:
