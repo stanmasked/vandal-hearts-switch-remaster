@@ -3,6 +3,7 @@
  */
 #include <assert.h>
 #include <stdatomic.h>
+#include <threads.h>
 #include <stdio.h>
 #include "vh_game_music_mailbox.h"
 #include "platform_input.h"
@@ -61,9 +62,63 @@ static void test_last_request_wins_without_waiting(void) {
     assert(vh_game_music_mailbox_read(NULL)==VH_GAME_MUSIC_SILENT);
 }
 
+typedef struct {
+    VhGameMusicMailbox *mailbox;
+    atomic_int finished;
+    atomic_uint observations;
+} MusicStress;
+
+static int stress_writer(void *arg) {
+    MusicStress *test = arg;
+    for (unsigned i=0;i<50000u;i++) {
+        const unsigned scene = (i & 1u)
+            ? VH_GAME_MUSIC_FIELD : VH_GAME_MUSIC_HERO_SELECTED;
+        vh_game_music_mailbox_post(test->mailbox, scene);
+    }
+    vh_game_music_mailbox_post(
+        test->mailbox, VH_GAME_MUSIC_HERO_SELECTED);
+    atomic_store_explicit(&test->finished, 1, memory_order_release);
+    return 0;
+}
+
+static int stress_reader(void *arg) {
+    MusicStress *test = arg;
+    do {
+        const unsigned observed =
+            vh_game_music_mailbox_read(test->mailbox);
+        assert(observed==VH_GAME_MUSIC_FIELD ||
+               observed==VH_GAME_MUSIC_HERO_SELECTED);
+        atomic_fetch_add_explicit(&test->observations,1,
+                                  memory_order_relaxed);
+    } while (!atomic_load_explicit(&test->finished,
+                                  memory_order_acquire));
+    assert(vh_game_music_mailbox_read(test->mailbox) ==
+           VH_GAME_MUSIC_HERO_SELECTED);
+    return 0;
+}
+
+static void test_concurrent_last_request_wins(void) {
+    VhGameMusicMailbox box;
+    vh_game_music_mailbox_init(&box, VH_GAME_MUSIC_FIELD);
+    MusicStress stress = { .mailbox=&box };
+    atomic_init(&stress.finished,0);
+    atomic_init(&stress.observations,0);
+    thrd_t writer,reader;
+    assert(thrd_create(&reader,stress_reader,&stress)==thrd_success);
+    assert(thrd_create(&writer,stress_writer,&stress)==thrd_success);
+    int status=-1;
+    assert(thrd_join(writer,&status)==thrd_success && status==0);
+    assert(thrd_join(reader,&status)==thrd_success && status==0);
+    assert(atomic_load_explicit(&stress.observations,
+                                memory_order_relaxed)>0);
+    vh_game_music_mailbox_stop(&box);
+    assert(!vh_game_music_mailbox_running(&box));
+}
+
 int main(void) {
     test_input_events_are_music_events();
     test_last_request_wins_without_waiting();
+    test_concurrent_last_request_wins();
     puts("tactical input to nonblocking music scene mailbox: PASS");
     return 0;
 }
