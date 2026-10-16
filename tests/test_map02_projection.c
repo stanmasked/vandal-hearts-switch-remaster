@@ -310,6 +310,32 @@ static void test_shared_projection_across_depth_and_screen_clamps(void) {
     assert(compared >= 3);
 }
 
+static void test_projection_ot_boundaries_and_saturation(void) {
+    VhMap02ProjectCamera c = camera();
+    const VhMap02ProjectVertex face[4] = {
+        {0,0,512},{100,0,512},{100,100,512},{0,100,512}
+    };
+    VhMap02ProjectFace p = {0};
+    assert(vh_map02_project_face(&c,face,128,&p));
+    assert(p.visible && p.otz == 128 && p.ot_in_bounds && p.ot_slot == 0);
+    assert(vh_map02_project_face(&c,face,127,&p));
+    assert(p.visible && !p.ot_in_bounds);
+    c.zsf4 = 0;
+    assert(vh_map02_project_face(&c,face,5,&p));
+    assert(p.visible && p.otz == 0 && p.depth == 5 &&
+           p.ot_in_bounds && p.ot_slot == 0);
+    assert(vh_map02_project_face(&c,face,4,&p));
+    assert(p.visible && !p.ot_in_bounds);
+    c = camera();
+    c.ofx = 1023 << 16; c.ofy = 1023 << 16;
+    assert(vh_map02_project_face(&c,face,128,&p));
+    assert(p.visible);
+    assert(p.gpu[0].x == 1023 && p.gpu[0].y == 1023);
+    assert(p.gpu[1].x == 1023 && p.gpu[3].y == 1023);
+    assert((p.rtpt_flags & (1u << 14)) != 0u);
+    assert((p.rtpt_flags & (1u << 13)) != 0u);
+}
+
 int main(void) {
     test_screen_quad_and_ordering();
     test_backface_and_zero_area();
@@ -323,6 +349,7 @@ int main(void) {
     test_neighbor_projection_under_quarter_turns();
     test_neighbor_projection_under_diagonal_q12_rotations();
     test_shared_projection_across_depth_and_screen_clamps();
+    test_projection_ot_boundaries_and_saturation();
     puts("MAP02 portable projection, NCLIP, AVSZ4 and OT slot tests passed");
     return 0;
 }
