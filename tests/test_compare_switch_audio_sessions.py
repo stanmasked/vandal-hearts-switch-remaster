@@ -194,6 +194,7 @@ class ComparisonTests(unittest.TestCase):
         for _ in range(2):
             rows = make_rows(count=21, pages_per_step=200)
             rows[1]["event"] = "GAP"
+            rows[0]["home_fail"] = 0
             for row in rows[1:]:
                 # Early bursts were evicted and are only represented
                 # by cumulative counts at the GAP boundary.
