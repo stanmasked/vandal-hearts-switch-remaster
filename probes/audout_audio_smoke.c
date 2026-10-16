@@ -209,7 +209,7 @@ int main(int argc, char **argv) {
         const size_t count = vh_audio_resample_process(
             &resampler, in_44100, VH_AUDIO_BLOCK_FRAMES,
             out_48000, VH_AUDIO_RESAMPLE_MAX_FRAMES);
-        if (!count || count * 2u * sizeof(int16_t) > desc.buffer_size) {
+        if (!count || count * 2u * sizeof(int16_t) > sizeof(out_48000)) {
             result = 6;
             break;
         }
