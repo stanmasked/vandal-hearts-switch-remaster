@@ -83,7 +83,11 @@ static void VH_CaptureEvent(const char *phase, const char *operation, int transf
     if (!vram || bytes != 1024u * 512u * 2u) return;
     file = fopen(snapshot_path, "wb");
     if (!file) return;
-    if (fwrite(vram, 1u, bytes, file) != bytes || fclose(file) != 0) return;
+    {
+        size_t produced = fwrite(vram, 1u, bytes, file);
+        int closed = fclose(file);
+        if (produced != bytes || closed != 0) return;
+    }
     upload_name[0] = '\0';
     if (upload && upload_words > 0u && upload_words <= 16384u) {
         n = snprintf(upload_name, sizeof upload_name, "gpu-%04u-upload.bin", seq);
@@ -94,8 +98,11 @@ static void VH_CaptureEvent(const char *phase, const char *operation, int transf
         file = fopen(upload_path, "wb");
         if (!file) return;
         /* Original PC binary layout is little-endian on supported hosts. */
-        if (fwrite(upload, sizeof(unsigned short), upload_words, file) != upload_words ||
-            fclose(file) != 0) return;
+        {
+            size_t produced = fwrite(upload, sizeof(unsigned short), upload_words, file);
+            int closed = fclose(file);
+            if (produced != upload_words || closed != 0) return;
+        }
     }
     n = snprintf(log_path, sizeof log_path, "%s/gpu-native-events.jsonl", vh_capture_dir);
     if (n < 0 || (size_t)n >= sizeof log_path) return;
