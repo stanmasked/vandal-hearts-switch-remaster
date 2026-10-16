@@ -28,8 +28,17 @@ def inspect_images(first: Image.Image, second: Image.Image) -> dict:
     if not near(center, HERO):
         raise ValueError(f"hero marker absent at expected grid coordinate: {center}")
     audio_sample = first.getpixel((108, 104))
-    status = ("initialized" if near(audio_sample, AUDIO_OK) else
-              "unavailable_or_error" if near(audio_sample, AUDIO_FAIL) else "unknown")
+    red, green, blue = audio_sample
+    # Some emulator capture paths transform the blue component of the
+    # libnx RGBA8 status fill (one observed green pixel was 60,212,91).
+    # Recognize the intended green-vs-red signal by channel dominance,
+    # without accepting dark backgrounds, grayscale, or arbitrary colors.
+    green_signal = (green >= 155 and green > red + 70
+                    and green > blue + 40)
+    red_signal = (red >= 145 and red > green + 40
+                  and red > blue + 40)
+    status = ("initialized" if green_signal else
+              "unavailable_or_error" if red_signal else "unknown")
     if status == "unknown":
         raise ValueError(f"audio-service status marker absent: {audio_sample}")
 
