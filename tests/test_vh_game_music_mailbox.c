@@ -58,7 +58,21 @@ static void test_suspend_resume_preserves_latest_scene(void) {
     vh_game_music_mailbox_post(&box,VH_GAME_MUSIC_HERO_SELECTED);
     assert(vh_game_music_mailbox_read(&box)==VH_GAME_MUSIC_HERO_SELECTED);
     assert(!vh_game_music_mailbox_focused(&box));
+    /* Repeated focus polling must not reopen the device.
+     * A real libnx OnResume sends an explicit generation change.
+     */
+    assert(vh_game_music_mailbox_resume_serial(&box)==0u);
     vh_game_music_mailbox_set_focus(&box,2);
+    assert(vh_game_music_mailbox_focused(&box));
+    assert(vh_game_music_mailbox_resume_serial(&box)==0u);
+    vh_game_music_mailbox_on_resume(&box,1);
+    assert(vh_game_music_mailbox_resume_serial(&box)==1u);
+    assert(vh_game_music_mailbox_focused(&box));
+    vh_game_music_mailbox_on_resume(&box,0);
+    assert(vh_game_music_mailbox_resume_serial(&box)==2u);
+    assert(!vh_game_music_mailbox_focused(&box));
+    vh_game_music_mailbox_on_resume(&box,1);
+    assert(vh_game_music_mailbox_resume_serial(&box)==3u);
     assert(vh_game_music_mailbox_focused(&box));
     assert(vh_game_music_mailbox_read(&box)==VH_GAME_MUSIC_HERO_SELECTED);
     vh_game_music_mailbox_set_focus(&box,-4);
@@ -105,7 +119,7 @@ static int stress_writer(void *arg) {
     vh_game_music_mailbox_set_focus(test->mailbox,0);
     vh_game_music_mailbox_post(
         test->mailbox, VH_GAME_MUSIC_HERO_SELECTED);
-    vh_game_music_mailbox_set_focus(test->mailbox,1);
+    vh_game_music_mailbox_on_resume(test->mailbox,1);
     atomic_store_explicit(&test->finished, 1, memory_order_release);
     return 0;
 }
@@ -126,6 +140,7 @@ static int stress_reader(void *arg) {
     assert(vh_game_music_mailbox_read(test->mailbox) ==
            VH_GAME_MUSIC_HERO_SELECTED);
     assert(vh_game_music_mailbox_focused(test->mailbox));
+    assert(vh_game_music_mailbox_resume_serial(test->mailbox)==1u);
     return 0;
 }
 
