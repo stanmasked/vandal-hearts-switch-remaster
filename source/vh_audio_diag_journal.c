@@ -1,6 +1,7 @@
 #include "vh_audio_diag_journal.h"
 
 #include <limits.h>
+#include <stdio.h>
 #include <string.h>
 
 void vh_audio_diag_journal_reset(VhAudioDiagJournal *j) {
@@ -76,46 +77,93 @@ static const char *name(VhAudioDiagEvent event) {
     }
 }
 
-static int write_entry(FILE *f,const VhAudioDiagJournalEntry *entry,
-                       VhAudioDiagEvent event) {
+/* A canonical, bounded line formatter is shared by the CSV writer
+ * and the verification pass that reads bytes BACK from staged storage.
+ * Maximum line length is below 384 bytes even with UINT64_MAX for
+ * every wide counter. Any truncation fails closed instead of creating
+ * a seemingly complete CSV with missing digits.
+ */
+#define CSV_LINE_CAP 384u
+static const char csv_header[]=
+    "elapsed_ms,event,status,home_resumes,first_pcm_count,"
+    "last_pcm_us,worst_pcm_us,output_pages,output_frames,"
+    "pcm_fail,pcm_restart,pcm_recover,home_fail,home_reopen,"
+    "home_recover,lease_fail,lease_reset,vab_warn\n";
+
+static int format_entry(char *line,size_t capacity,
+                        const VhAudioDiagJournalEntry *entry,
+                        VhAudioDiagEvent event) {
     const VhAudioDiagnostics *s=&entry->snapshot;
-    return fprintf(f,"%llu,%s,%d,%u,%u,%llu,%llu,%llu,%llu,"
-                     "%u,%u,%u,%u,%u,%u,%u,%u,%u\n",
-              (unsigned long long)entry->elapsed_ms,name(event),
-              s->status,s->resume_events,s->confirmed_resumes,
-              (unsigned long long)s->last_confirmed_us,
-              (unsigned long long)s->worst_confirmed_us,
-              (unsigned long long)s->pages_submitted,
-              (unsigned long long)s->frames_submitted,
-              s->submit_failures,s->restart_attempts,s->recoveries,
-              s->resume_failures,s->resume_restarts,s->resume_recoveries,
-              s->lease_mismatches,s->abandoned_sessions,
-              s->bank_warnings)<0 ? -1 : 0;
+    const int n=snprintf(line,capacity,
+        "%llu,%s,%d,%u,%u,%llu,%llu,%llu,%llu,"
+        "%u,%u,%u,%u,%u,%u,%u,%u,%u\n",
+        (unsigned long long)entry->elapsed_ms,name(event),
+        s->status,s->resume_events,s->confirmed_resumes,
+        (unsigned long long)s->last_confirmed_us,
+        (unsigned long long)s->worst_confirmed_us,
+        (unsigned long long)s->pages_submitted,
+        (unsigned long long)s->frames_submitted,
+        s->submit_failures,s->restart_attempts,s->recoveries,
+        s->resume_failures,s->resume_restarts,s->resume_recoveries,
+        s->lease_mismatches,s->abandoned_sessions,s->bank_warnings);
+    return n>0 && (size_t)n<capacity ? 0 : -1;
+}
+
+static int journal_valid(const VhAudioDiagJournal *j) {
+    return j && j->count && j->count<=VH_AUDIO_DIAG_JOURNAL_CAPACITY &&
+           j->head<VH_AUDIO_DIAG_JOURNAL_CAPACITY;
+}
+
+/* Yield each serialized row in the SAME order to both consumers.
+ * On rollover START is pinned, the first retained row is skipped
+ * and the next row is labelled GAP, retaining at most 128 lines.
+ */
+static const VhAudioDiagJournalEntry *journal_row(
+    const VhAudioDiagJournal *j,uint32_t i,VhAudioDiagEvent *event) {
+    const int wrapped=j->total>VH_AUDIO_DIAG_JOURNAL_CAPACITY;
+    if(wrapped && i==0u) {
+        *event=j->origin.event;
+        return &j->origin;
+    }
+    const uint32_t start=(j->head+VH_AUDIO_DIAG_JOURNAL_CAPACITY-
+                          j->count)%VH_AUDIO_DIAG_JOURNAL_CAPACITY;
+    const uint32_t offset=wrapped ? i : i;
+    const uint32_t slot=(start+offset)%VH_AUDIO_DIAG_JOURNAL_CAPACITY;
+    const VhAudioDiagJournalEntry *entry=&j->entries[slot];
+    *event=wrapped && i==1u ? VH_AUDIO_DIAG_EVENT_GAP : entry->event;
+    return entry;
 }
 
 int vh_audio_diag_journal_write_csv(const VhAudioDiagJournal *j,FILE *f) {
-    if(!j || !f || j->count>VH_AUDIO_DIAG_JOURNAL_CAPACITY ||
-       j->head>=VH_AUDIO_DIAG_JOURNAL_CAPACITY) return -1;
-    if(fputs("elapsed_ms,event,status,home_resumes,first_pcm_count,"
-             "last_pcm_us,worst_pcm_us,output_pages,output_frames,"
-             "pcm_fail,pcm_restart,pcm_recover,home_fail,home_reopen,"
-             "home_recover,lease_fail,lease_reset,vab_warn\n",f)==EOF)
-        return -1;
-    const int wrapped=j->total>VH_AUDIO_DIAG_JOURNAL_CAPACITY;
-    const uint32_t start=(j->head+VH_AUDIO_DIAG_JOURNAL_CAPACITY-
-                          j->count)%VH_AUDIO_DIAG_JOURNAL_CAPACITY;
-    if(wrapped && write_entry(f,&j->origin,j->origin.event))
-        return -1;
+    if(!journal_valid(j) || !f) return -1;
+    if(fputs(csv_header,f)==EOF) return -1;
+    char line[CSV_LINE_CAP];
     for(uint32_t i=0;i<j->count;i++) {
-        /* One slot must make room for the preserved initial sample.
-         * The oldest retained row becomes GAP, and its counters
-         * include all events that fell out of the ring. */
-        if(wrapped && i==0u) continue;
-        const VhAudioDiagJournalEntry *entry=&j->entries[
-            (start+i)%VH_AUDIO_DIAG_JOURNAL_CAPACITY];
-        const VhAudioDiagEvent event=wrapped && i==1u
-            ? VH_AUDIO_DIAG_EVENT_GAP : entry->event;
-        if(write_entry(f,entry,event)) return -1;
+        VhAudioDiagEvent event;
+        const VhAudioDiagJournalEntry *entry=journal_row(j,i,&event);
+        if(format_entry(line,sizeof line,entry,event) || fputs(line,f)==EOF)
+            return -1;
     }
     return ferror(f) ? -1 : (int)j->count;
+}
+
+/* No file is promoted to .csv unless exact readback matches the
+ * expected canonical header, rows, line endings and EOF. A short
+ * write returning a false success, post-write corruption or appended
+ * garbage is rejected. Readback verifies filesystem-visible bytes,
+ * NOT their durability after real hardware power loss.
+ */
+int vh_audio_diag_journal_verify_csv(const VhAudioDiagJournal *j,FILE *f) {
+    if(!journal_valid(j) || !f) return -1;
+    char actual[CSV_LINE_CAP],expected[CSV_LINE_CAP];
+    if(!fgets(actual,sizeof actual,f) ||
+       strcmp(actual,csv_header)!=0) return -1;
+    for(uint32_t i=0;i<j->count;i++) {
+        VhAudioDiagEvent event;
+        const VhAudioDiagJournalEntry *entry=journal_row(j,i,&event);
+        if(format_entry(expected,sizeof expected,entry,event) ||
+           !fgets(actual,sizeof actual,f) || strcmp(actual,expected)!=0)
+            return -1;
+    }
+    return fgetc(f)==EOF && !ferror(f) ? (int)j->count : -1;
 }
