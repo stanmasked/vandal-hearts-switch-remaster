@@ -79,6 +79,53 @@ static inline int vh_map02_vram_ledger_ranges_overlap(
 }
 
 
+/* A future writable or immutable buffer is isolated from ALL captured
+ * evidence and all output surfaces. Call after timeline_preflight().
+ * The caller separately rejects overlap between pairs of new buffers
+ * (e.g. packet vs decoded events, scratch vs packet). */
+static inline int vh_map02_vram4_timeline_buffer_is_isolated(
+    const VhMap02Vram4TimelineInput *input,
+    const VhMap02Vram4FrameWorkspace *workspace,
+    const void *buffer, size_t bytes) {
+    size_t i;
+    if (!input || !workspace || !buffer || !bytes)
+        return 0;
+    if (vh_map02_vram_ledger_ranges_overlap(
+            buffer, bytes, input, sizeof *input) ||
+        vh_map02_vram_ledger_ranges_overlap(
+            buffer, bytes, workspace, sizeof *workspace) ||
+        vh_map02_vram_ledger_ranges_overlap(
+            buffer, bytes, input->decoded, input->decoded_bytes) ||
+        vh_map02_vram_ledger_ranges_overlap(
+            buffer, bytes, input->entries,
+            input->count * sizeof *input->entries) ||
+        vh_map02_vram_ledger_ranges_overlap(
+            buffer, bytes, workspace->bucket_heads,
+            input->ot_size * sizeof *workspace->bucket_heads) ||
+        vh_map02_vram_ledger_ranges_overlap(
+            buffer, bytes, workspace->nodes,
+            input->count * sizeof *workspace->nodes) ||
+        vh_map02_vram_ledger_ranges_overlap(
+            buffer, bytes, workspace->prepared,
+            input->count * sizeof *workspace->prepared) ||
+        vh_map02_vram_ledger_ranges_overlap(
+            buffer, bytes, workspace->atlases,
+            input->count * VH_MAP02_VRAM4_ATLAS_BYTES) ||
+        vh_map02_vram_ledger_ranges_overlap(
+            buffer, bytes, workspace->palettes,
+            input->count * VH_MAP02_VRAM4_CLUT_BYTES) ||
+        vh_map02_vram_ledger_ranges_overlap(
+            buffer, bytes, workspace->stats,
+            input->count * sizeof *workspace->stats))
+        return 0;
+    for (i = 0u; i < input->count; ++i)
+        if (vh_map02_vram_ledger_ranges_overlap(
+                buffer, bytes, input->entries[i].vram_le,
+                input->entries[i].vram_bytes))
+            return 0;
+    return 1;
+}
+
 static inline int vh_map02_vram_ledger_event_valid(
     const VhMap02VramTransfer *ev, size_t index,
     uint64_t frame, size_t submissions) {
@@ -169,46 +216,13 @@ static inline int vh_map02_vram4_timeline_verify_ledger(
         event_count > VH_MAP02_VRAM_LEDGER_MAX_EVENTS ||
         (event_count && !events))
         return 0;
-    /* Prevent self-fulfilling comparisons when scratch aliases a captured
-     * snapshot or rewrites pending transfers, source geometry or OT buffers.
-     * All of these checks occur before even the first scratch write. */
-    if (vh_map02_vram_ledger_ranges_overlap(
-            scratch_vram, scratch_bytes, input, sizeof *input) ||
-        vh_map02_vram_ledger_ranges_overlap(
-            scratch_vram, scratch_bytes, workspace, sizeof *workspace) ||
-        vh_map02_vram_ledger_ranges_overlap(
-            scratch_vram, scratch_bytes, input->decoded,
-            input->decoded_bytes) ||
-        vh_map02_vram_ledger_ranges_overlap(
-            scratch_vram, scratch_bytes, input->entries,
-            input->count * sizeof *input->entries) ||
+    /* Reject aliasing before copying any bytes into replay scratch. */
+    if (!vh_map02_vram4_timeline_buffer_is_isolated(
+            input, workspace, scratch_vram, scratch_bytes) ||
         vh_map02_vram_ledger_ranges_overlap(
             scratch_vram, scratch_bytes, events,
-            event_count * sizeof *events) ||
-        vh_map02_vram_ledger_ranges_overlap(
-            scratch_vram, scratch_bytes, workspace->bucket_heads,
-            input->ot_size * sizeof *workspace->bucket_heads) ||
-        vh_map02_vram_ledger_ranges_overlap(
-            scratch_vram, scratch_bytes, workspace->nodes,
-            input->count * sizeof *workspace->nodes) ||
-        vh_map02_vram_ledger_ranges_overlap(
-            scratch_vram, scratch_bytes, workspace->prepared,
-            input->count * sizeof *workspace->prepared) ||
-        vh_map02_vram_ledger_ranges_overlap(
-            scratch_vram, scratch_bytes, workspace->atlases,
-            input->count * VH_MAP02_VRAM4_ATLAS_BYTES) ||
-        vh_map02_vram_ledger_ranges_overlap(
-            scratch_vram, scratch_bytes, workspace->palettes,
-            input->count * VH_MAP02_VRAM4_CLUT_BYTES) ||
-        vh_map02_vram_ledger_ranges_overlap(
-            scratch_vram, scratch_bytes, workspace->stats,
-            input->count * sizeof *workspace->stats))
+            event_count * sizeof *events))
         return 0;
-    for (i = 0u; i < input->count; ++i)
-        if (vh_map02_vram_ledger_ranges_overlap(
-                scratch_vram, scratch_bytes, input->entries[i].vram_le,
-                input->entries[i].vram_bytes))
-            return 0;
     for (i = 0u; i < event_count; ++i) {
         if (!vh_map02_vram_ledger_event_valid(
                 &events[i], i, input->frame, input->count) ||
