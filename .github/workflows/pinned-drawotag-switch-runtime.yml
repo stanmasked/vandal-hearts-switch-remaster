@@ -10,6 +10,8 @@ on:
       - "probes/pinned_drawotag_switch_smoke.c"
       - "source/vh_private_map_bank.*"
       - "source/vh_private_map_geometry.*"
+      - "source/vh_private_map_shading.h"
+      - "tests/test_private_map_shading.c"
       - "tools/stage_vh_private_map_geometry.py"
       - "tests/test_private_map_geometry.c"
       - "tests/test_pinned_map_gte_camera.c"
@@ -64,6 +66,11 @@ jobs:
         run: python3 tests/test_decode_vh_map_prs.py
       - name: Validate synthetic owner-only geometry staging
         run: python3 tests/test_stage_vh_private_map_geometry.py
+      - name: Host-test source-exact RenderMapTile distance shading
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -O2 \
+            tests/test_private_map_shading.c -o /tmp/vh-map-shading-test
+          /tmp/vh-map-shading-test
       - name: Host-test original MapTileModel C loader
         run: |
           gcc -std=c11 -Wall -Wextra -Werror -O2 \
