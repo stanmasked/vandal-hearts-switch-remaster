@@ -267,10 +267,32 @@ that could not have been covered by the old orthographic geometry.
 These tests are separate from the established synthetic single-UV-patch
 GPU assertions.
 
-**Acceptance status:** source integration and source-aligned test
-vectors are in the branch. This section is a candidate until a
-completed CI run demonstrates a passing NRO build, GTE host test and
-full two-face private virtual-SD screenshot.
+**Acceptance status: PASS** — [GitHub Actions #38827488368](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38827488368), at commit `19f063e1cde0010a90458898be2ca7f2fa813712`, passed all THREE jobs:
+Switch NRO cross-compilation, ordinary original DrawOTag smoke and private
+virtual-SD synthetic map-11 GTE projection. The original `libgte.c`
+host regression completed successfully with perspective and positive
+OTZ; source-backed MapTileModel validation, PRS and texture checks passed.
+
+The private NeXium scenario first reverified the existing four-color
+UV/CLUT patch. Next the SAME NRO loaded the full synthetic 28×12
+304-byte map model slab from virtual SD; its original-port `RotMatrix`
+and `RotTransPers4` perspective, per-face GFX 241/242 and
+CLUT 35/36 displayed the correct 1280×720 screenshot samples:
+
+| Name | Screenshot XY | Observed RGB |
+| --- | --- | --- |
+| Left top red | (260,210) | (255,0,0) |
+| Right top magenta | (850,210) | (255,0,255) |
+| Left bottom blue | (400,400) | (0,0,255) |
+| Right bottom cyan | (850,400) | (0,255,255) |
+| GTE-only near upper edge | (300,125) | (255,0,0) |
+
+The fifth sample is OUTSIDE the old orthographic quad and INSIDE the
+GTE-projected trapezoid. Early exploratory CI runs failed on stale
+orthographic screenshot point locations, not on GPU build or GTE
+math. The green run additionally verifies native NRO0 segments,
+85 Python tests, separate host C texture/model validators, and the
+host projection test, with no synthetic smoke regressions.
 
 The existing original `RenderMapTile` itself is **not** compiled
 into this test NRO: it still requires map state, lighting, camera
