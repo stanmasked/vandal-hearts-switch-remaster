@@ -123,3 +123,31 @@ all three synthetic SD variants, preventing an initialized-but-stalled
 audio service from being counted as healthy playback. A green marker
 proves **software audio buffer processing**, not audible audio through
 speakers or parity with original PS1 timing.
+
+## Transactional scene switching (host-tested, not wired into gameplay)
+
+The native SEQ/SPU layer exposes
+`vh_native_seq_switch_scene(&seq, next_seq, next_seq_size, &spu,
+vh_native_vab_resolve, &next_bank, 0)`.
+
+This routine validates the incoming SEQ before touching the current
+sequencer or SPU. Invalid SEQ input leaves the current scene running,
+with its existing PCM voice references and reverb intact. Successful
+switching releases the old bank's voices, removes every old PCM pointer,
+and retains the STUDIO_C delay/FIR history and configuration. The caller
+owns the resampler, so its 44.1-to-48-kHz clock is not reset. A mismatched
+SPU instance is rejected.
+
+**Lifetime and thread requirements:** Load and validate the *next* VH/VB
+bank and its decoded PCM storage before switching; retain its storage
+until its voices have finished or been cleared. Perform the SEQ switch
+only when the native audout worker is paused/joined or otherwise
+synchronized, never concurrently with the DSP render callback. Any
+already-submitted audout page must be handled separately; the SEQ
+function does not resend, drain, or replay those pages.
+
+The A/B/A/B synthetic bank regression exercises the successful and
+invalid-SEQ paths, old-bank pointer removal, different-SPU rejection,
+wet-tail preservation and uninterrupted resampling. All of these
+are host-side tests. The combined NRO currently loads one bank and does
+**not yet** invoke this transition API from the game's scene controller.
