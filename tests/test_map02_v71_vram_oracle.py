@@ -53,7 +53,7 @@ class V71VRAMPixelOracleTests(unittest.TestCase):
     def test_green_rectangle_overlap(self):
         self.assertEqual(GP0_SEQUENCE[12:15],(0x6000ff00,0x00100018,0x00040004))
     def test_all_gp0_words_emitted_to_mips_store(self):
-        self.assertEqual(sum(1 for w in self.code if w==sw(9,0,8)),len(GP0_SEQUENCE))
+        self.assertEqual(sum(1 for w in self.code if w==sw(9,0,8)),len(GP0_SEQUENCE)+1)  # GP1 also uses t0
     def test_expected_flat_red_bgr555(self):
         self.assertEqual(expected_color_at(16,16),0x001f)
         self.assertEqual(expected_color_at(19,19),0x001f)
