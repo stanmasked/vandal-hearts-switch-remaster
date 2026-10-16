@@ -471,3 +471,49 @@ correct interpretation of *synthetic* vertices only; it does NOT establish
 whether MAP02's actual faces diverge. This is neither a PS1 hardware GTE
 implementation nor proof of screen projection, draw order, runtime lighting
 or rendered pixels. Existing Switch shading/runtime paths are untouched.
+
+
+## MAP02 screen-space GTE projection and ordering reference
+
+`source/map02_projection.h` implements a **pure, bounded diagnostic**
+for normal terrain faces using caller-provided camera registers and local
+16-bit SVECTOR vertices. The original pinned
+`src/core/graphics.c:RenderMapTile` order is reconstructed exactly at
+the command level:
+
+1. `RTPT` projects the first three vertices and fills SXY/SZ FIFOs;
+   `NCLIP` tests their signed `MAC0 > 0`. Faces with nonpositive
+   `MAC0` do not submit a polygon or calculate AVSZ4.
+2. An accepted face stores first three screen corners as FT4
+   `x0, x1, x3`. The fourth vertex is projected through `RTPS`
+   (which clears its own GTE FLAG) and stored in `x2`.
+3. `AVSZ4` computes `OTZ` from the most recent four SZ entries using
+   `ZSF4`; normal terrain clamps it to a minimum of 5 and inserts
+   the primitive at `OT_SIZE - otz`. The diagnostic checks that
+   this index lies inside the explicitly supplied OT length.
+   The pinned renderer itself has no equivalent upper-bound guard.
+
+The portable implementation uses the same UNR perspective divider table
+formula (computed per call without mutable global state), Q12
+rotation/translation, signed perspective multiplication, SX/SY saturation,
+negative round-down arithmetic, NCLIP sign and 16-bit OTZ saturation as
+the **pinned PC source**. It preserves separate RTPT and RTPS flags for
+diagnosis; it does not emulate actual MIPS GTE timing, 44-bit accumulator
+flags, BIOS routines, or GPU polygon rasterization.
+
+`tools/verify_map02_pc_projection_equivalence.py` extracts and compiles
+the **actual pinned PC** `Sat16`, `SatU16`, `BuildUnrTable`,
+`CountLeadingZeroes16`, `UnrDivide`, `TransformOne`,
+`PC_GTE_RTPS`, `PC_GTE_RTPT`, `PC_GTE_NCLIP`, and `PC_GTE_AVSZ4`
+functions and compares the new model on **4099 deterministic synthetic
+quads**. `tools/audit_map02_projection_source.py` independently
+checks the original `RenderMapTile` culling, FT4 corner, AVSZ4 and
+OT submission command order. Both gates reject changed pinned upstream
+blob hashes or required function/renderer statement mutations.
+
+**Evidence boundary:** the camera registers used in tests are
+synthetic, not captured from real MAP02 gameplay. The actual Switch
+renderer, GPU ordering table, runtime material data and artwork
+were not modified. The result is PC-port mathematical equivalence
+for these tested inputs, **not** live map pixels, real-camera placement,
+full PS1 hardware equality, or evidence of a playable rendered scene.
