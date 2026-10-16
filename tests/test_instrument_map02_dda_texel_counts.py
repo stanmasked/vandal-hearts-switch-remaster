@@ -34,7 +34,7 @@ class NativeDdaTexelCounterGeneratorTests(unittest.TestCase):
         )
         for source in originals:
             with self.subTest(source=source[:40]):
-                with self.assertRaisesRegex(ValueError, "pinned source anchor|original"):
+                with self.assertRaisesRegex(ValueError, "pinned source anchor|pinned PutPixel source|original"):
                     instrument_scoped_raster(scope_raster(source))
 
 
