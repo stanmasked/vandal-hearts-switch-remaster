@@ -3,6 +3,11 @@
 
 #include <limits.h>
 
+int vh_audio_output_page_returned(const void *submitted,
+                                  const void *released) {
+    return submitted != NULL && released == submitted;
+}
+
 int vh_audio_output_submit_recover(
     const VhAudioOutputOps *ops, VhAudioOutputRecovery *stats,
     const int16_t *stereo, size_t frames) {
