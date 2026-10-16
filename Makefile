@@ -187,8 +187,8 @@ $(BUILD)/test_vh_audio_output_ramp: tests/test_vh_audio_output_ramp.c source/vh_
 $(BUILD)/test_vh_audio_buffer_lease: tests/test_vh_audio_buffer_lease.c source/vh_audio_buffer_lease.c source/vh_audio_buffer_lease.h source/vh_audio_output_recovery.c source/vh_audio_output_recovery.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Isource tests/test_vh_audio_buffer_lease.c source/vh_audio_buffer_lease.c source/vh_audio_output_recovery.c -o $@
 
-$(BUILD)/test_vh_audio_output_recovery: tests/test_vh_audio_output_recovery.c source/vh_audio_output_recovery.c source/vh_audio_output_recovery.h source/vh_music_scene.c source/vh_music_scene.h source/vh_audio_resample.c source/vh_native_seq.c source/vh_native_spu.c source/vh_spu_reverb.c source/vh_spu_gaussian.c source/vh_audio_stream.c | $(BUILD)
-	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Isource tests/test_vh_audio_output_recovery.c source/vh_audio_output_recovery.c source/vh_music_scene.c source/vh_audio_resample.c source/vh_native_seq.c source/vh_native_spu.c source/vh_spu_reverb.c source/vh_spu_gaussian.c source/vh_audio_stream.c -lm -o $@
+$(BUILD)/test_vh_audio_output_recovery: tests/test_vh_audio_output_recovery.c source/vh_audio_output_recovery.c source/vh_audio_output_recovery.h source/vh_audio_output_ramp.c source/vh_audio_output_ramp.h source/vh_music_scene.c source/vh_music_scene.h source/vh_audio_resample.c source/vh_native_seq.c source/vh_native_spu.c source/vh_spu_reverb.c source/vh_spu_gaussian.c source/vh_audio_stream.c | $(BUILD)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Isource tests/test_vh_audio_output_recovery.c source/vh_audio_output_recovery.c source/vh_audio_output_ramp.c source/vh_music_scene.c source/vh_audio_resample.c source/vh_native_seq.c source/vh_native_spu.c source/vh_spu_reverb.c source/vh_spu_gaussian.c source/vh_audio_stream.c -lm -o $@
 
 $(BUILD)/test_vh_audio_resample: tests/test_vh_audio_resample.c source/vh_audio_resample.c source/vh_audio_resample.h source/vh_audio_stream.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Isource tests/test_vh_audio_resample.c source/vh_audio_resample.c -o $@
