@@ -53,6 +53,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_vh_
 	./$(BUILD)/test_vh_music_lifecycle_soak
 	./$(BUILD)/test_vh_game_music_banks
 	python3 tests/test_analyze_switch_audio_log.py
+	python3 tests/test_compare_switch_audio_sessions.py
 	python3 tests/test_vh_music_bank_audit_cli.py
 	python3 tests/test_audit_pcport_vab_aliases.py
 	python3 tests/test_restore_ps1_str.py
@@ -109,6 +110,7 @@ test-audio-stream: $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(B
 	./$(BUILD)/test_vh_music_lifecycle_soak
 	./$(BUILD)/test_vh_game_music_banks
 	python3 tests/test_analyze_switch_audio_log.py
+	python3 tests/test_compare_switch_audio_sessions.py
 	python3 tests/test_vh_music_bank_audit_cli.py
 	python3 tests/test_audit_pcport_vab_aliases.py
 	python3 tests/test_native_spu_adpcm.py
