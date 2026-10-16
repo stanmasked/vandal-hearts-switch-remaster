@@ -4,12 +4,20 @@ on:
   push:
     paths:
       - "source/texture_sample.h"
+      - "source/ps1_indexed_texture.h"
+      - "source/ft4_textured_quad.h"
+      - "tests/test_ps1_indexed_texture.c"
+      - "tests/test_ft4_textured_quad.c"
       - "tests/test_texture_sample.c"
       - "Makefile"
       - ".github/workflows/host-texture-tests.yml"
   pull_request:
     paths:
       - "source/texture_sample.h"
+      - "source/ps1_indexed_texture.h"
+      - "source/ft4_textured_quad.h"
+      - "tests/test_ps1_indexed_texture.c"
+      - "tests/test_ft4_textured_quad.c"
       - "tests/test_texture_sample.c"
       - "Makefile"
       - ".github/workflows/host-texture-tests.yml"
@@ -22,10 +30,18 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
       - name: Run texture sampling unit test
-        run: make build/test_texture_sample && ./build/test_texture_sample
+        run: make build/test_texture_sample build/test_ft4_textured_quad build/test_ps1_indexed_texture && ./build/test_texture_sample && ./build/test_ft4_textured_quad && ./build/test_ps1_indexed_texture
       - name: Run texture sampling sanitizers
         run: |
           gcc -std=c11 -Wall -Wextra -Werror -O1 -g \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
             tests/test_texture_sample.c -o build/test_texture_sample_sanitize
           ./build/test_texture_sample_sanitize
+          gcc -std=c11 -Wall -Wextra -Werror -O1 -g \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            tests/test_ft4_textured_quad.c -o build/test_ft4_textured_quad_sanitize
+          ./build/test_ft4_textured_quad_sanitize
+          gcc -std=c11 -Wall -Wextra -Werror -O1 -g \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            tests/test_ps1_indexed_texture.c -o build/test_ps1_indexed_texture_sanitize
+          ./build/test_ps1_indexed_texture_sanitize
