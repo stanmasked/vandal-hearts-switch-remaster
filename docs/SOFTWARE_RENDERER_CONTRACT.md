@@ -384,3 +384,42 @@ The next fidelity milestone is an independently executed
 GTE cross-product and signed-IR edge comparison on varied map
 geometry, followed by the real 26-entry light-color table,
 camera projection and captured gameplay comparison.
+
+
+## MAP02 OP0 input register and MAC readback comparison
+
+The separate `source/map02_op0_reference.h` models two intentionally
+different paths for the terrain's `gte_OuterProduct0(first, second, result)`:
+
+- **Pinned PC-port reference:** `PC_GTE_LoadOPV1` retains all 32 bits of
+  the first edge; `PC_GTE_LoadOPV2` truncates the second edge to signed
+  16-bit IR components. `PC_GTE_OP0` computes the cross product, then
+  `PC_GTE_StoreLVNL` exports **MAC1–MAC3**, *not* saturated IR1–IR3.
+  The portable model explicitly wraps the computed MAC into signed 32-bit
+  output, corresponding to the native PC comparison compiled with
+  `-fwrapv` (source-level signed overflow otherwise has undefined C
+  behavior).
+- **PS1 register-boundary approximation:** the pinned MIPS
+  `gte_ldopv1` macro writes the first edge to the GTE matrix diagonal
+  control registers, whose OP0 coefficient fields are signed 16-bit.
+  The pinned `gte_ldopv2` writes the second edge to IR1–IR3; both
+  inputs therefore pass through explicit 16-bit sign extension.
+  The model returns the low 32 bits of the conceptual MAC results.
+
+**Validated scope:** `tests/test_map02_op0_reference.c` covers the
+expected signs, MAC-vs-IR distinction, extremes and output safety.
+`tools/verify_map02_pc_op0_equivalence.py` extracts the actual
+`Sat16`, `PC_GTE_LoadOPV1`, `PC_GTE_LoadOPV2`, `PC_GTE_OP0` and
+`PC_GTE_StoreLVNL` functions from the pinned public
+`platform/pc/src/libgte.c`, compiles them and compares MAC results
+for 4106 deterministic edge pairs. The CI gate rejects changes to the
+pinned source blob or these extraction/operation anchors.
+
+**Not yet proven:** real GTE 44-bit accumulator overflow/FLAG behavior,
+possible PS1 BIOS `VectorNormalS` differences, actual MAP02 face
+classifications on disc geometry, or rendered pixels. The existing
+`vh_map02_face_direction` is **not silently switched** to either OP0
+model: it retains the separately tested full-width PC mathematical
+normal reference until integration can be validated on actual maps.
+The PS1 model is therefore only an independently testable input
+boundary, not a hardware-exact emulator.
