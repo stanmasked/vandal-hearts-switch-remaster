@@ -19,6 +19,9 @@ from tools.verify_map02_native_overdraw import verify_native_overdraw
 from tools.verify_map02_dda_texel_counts import (
     MANIFEST as COUNTS_MANIFEST, ROWS, verify_dda_counts,
 )
+from tools.verify_map02_putpixel_scope import (
+    PIXEL_LOG, verify_pixel_ot,
+)
 from tools.verify_map02_source_native_ft4_join import (
     _native_signature, _source_signature, _ft4_palette_state,
     _ft4_audited_crop_classes,
@@ -133,6 +136,22 @@ def verify_source_dda_counts(source_dir, native_dir, *, compiler="gcc"):
         if before_event["semi"] == 1 and crop is not None and crop[1]:
             possible_stp_abr[abr] += 1
 
+    # An optional coordinate-scoped PutPixel proof is independent of
+    # aggregate DDA selection: it can include barycentric fallback calls
+    # and repeated same-color writes. Require BOTH artifacts if either was
+    # supplied, then revalidate the existing source/OT/VRAM join as well.
+    pixel_manifest = source_dir / "gpu-putpixel-ot.json"
+    pixel_log = native_dir / PIXEL_LOG
+    pixel_seen = (pixel_manifest.exists() or pixel_manifest.is_symlink() or
+                  pixel_log.exists() or pixel_log.is_symlink())
+    pixel_report = None
+    if pixel_seen:
+        if not (pixel_manifest.exists() and pixel_log.exists()):
+            raise ValueError("optional scoped PutPixel evidence is incomplete")
+        pixel_report = verify_pixel_ot(source_dir, native_dir, compiler=compiler)
+        if pixel_report["source_keyed_ft4_draws_checked"] != len(match_ordinals):
+            raise ValueError("scoped PutPixel source FT4 count disagrees with DDA join")
+
     return {
         "source_dda_join_manifest_sha256": digest(manifest_raw),
         "source_overdraw_manifest_sha256": digest(overdraw_raw),
@@ -153,6 +172,14 @@ def verify_source_dda_counts(source_dir, native_dir, *, compiler="gcc"):
             zero_sample_changed_vram,
         "source_ft4_all_zero_clut_consistent_with_dda": full_zero_clut_dda_consistent,
         "source_ft4_stp_crop_candidates_by_abr": possible_stp_abr,
+        "optional_scoped_putpixel_evidence_verified": pixel_report is not None,
+        "observed_coordinate_scoped_putpixel_calls":
+            pixel_report["observed_native_putpixel_calls"] if pixel_report else 0,
+        "observed_putpixel_calls_on_source_ft4":
+            pixel_report["calls_attributed_to_source_keyed_ft4"] if pixel_report else 0,
+        "observed_same_color_putpixel_calls":
+            pixel_report["actual_same_color_calls_invisible_to_vram_delta"]
+            if pixel_report else 0,
         "source_geometry_gte_and_ot_order_reverified": True,
         "native_dda_sample_counters_reverified": True,
         "source_to_native_gpu_frame_provenance_authenticated": False,
