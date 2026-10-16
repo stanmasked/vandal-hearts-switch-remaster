@@ -9,6 +9,31 @@ void vh_music_scene_init(VhMusicScene *scene, VhNativeSpu *spu) {
     scene->spu = spu;
 }
 
+int vh_music_scene_detach(VhMusicScene *s) {
+    if (!s || !s->spu) return -1;
+    /* This is the explicit point where caller-owned SEQ/VAB/PCM can
+     * become freeable. Every SPU voice and reverb history is zeroed
+     * BEFORE the director loses the borrowed source pointers.
+     * The audout/SDL consumer must already be stopped and drained.
+     */
+    const unsigned interpolation = s->spu->interpolation;
+    const int reverb_enabled = s->spu->reverb_enabled;
+    const float reverb_depth = s->spu->reverb_depth;
+    vh_native_spu_reset(s->spu);
+    if (vh_native_spu_set_interpolation(s->spu, interpolation) ||
+        vh_native_spu_set_reverb(s->spu, reverb_enabled, reverb_depth))
+        return -1;
+    const int had_cue = s->active.id || s->pending.id;
+    memset(&s->seq, 0, sizeof(s->seq));
+    memset(&s->active, 0, sizeof(s->active));
+    memset(&s->pending, 0, sizeof(s->pending));
+    s->stage = VH_MUSIC_SILENT;
+    s->fade_blocks = s->fade_position = s->next_fade_in = 0u;
+    s->last_error = 0;
+    if (had_cue) ++s->switches;
+    return 0;
+}
+
 uint32_t vh_music_scene_active_id(const VhMusicScene *scene) {
     return scene ? scene->active.id : 0u;
 }
