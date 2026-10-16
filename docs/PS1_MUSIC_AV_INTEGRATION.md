@@ -1053,3 +1053,29 @@ The host regression explicitly verifies that one isolated synthetic
 cue/wait/retry is present in exactly 32 adjacent all-page windows,
 disappears immediately after ring wrap, distinguishes >2x from >4x
 waits and rejects corrupted baseline counters.
+
+
+### A-button input sampling coverage
+
+Input is sampled once, after each synchronous audout buffer return.
+Short button presses entirely between polls can be lost. A long
+backend call, retry, or diagnostic console update may extend that
+interval even when every PCM page eventually returns.
+
+The physical Switch results page therefore also prints the longest
+actual system-tick interval between consecutive padUpdate calls,
+the number of intervals exceeding one or four times the nominal
+duration of their PCM output page, and the total number of polls.
+The first sample has no measured interval. These indicators describe
+input sampling, NOT backend underruns, missed-press counts, or
+audible defects. The final report validates exactly one recorded
+controller poll per successfully returned logical PCM page.
+
+For human testing, hold A through at least one music block after
+noticing an anomaly, then release before another annotation. The
+32-returned-page look-back corresponds to nominal audio duration,
+not guaranteed elapsed wall time if audout stalls. Neither these
+numbers nor an absence of A marks establishes glitch-free output.
+No playback path, copyrighted bytes, controller history, or SD
+storage is changed. The portable regression checks boundary cases,
+overflow, invalid counters and non-monotone tick samples.

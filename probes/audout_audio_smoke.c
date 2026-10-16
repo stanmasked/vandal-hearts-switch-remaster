@@ -13,6 +13,7 @@
 #include "vh_audio_resample.h"
 #include "vh_audio_output_recovery.h"
 #include "vh_audio_listening_marks.h"
+#include "vh_audio_input_poll.h"
 #include "vh_native_seq.h"
 #include "vh_native_spu.h"
 
@@ -207,6 +208,7 @@ int main(int argc, char **argv) {
     VhAudioOutputRecovery recovery={0};
     VhAudioPcmSeams seam_stats={0};
     VhAudioListeningMarks listening_marks={0};
+    VhAudioInputPoll input_poll={0};
     const VhAudioOutputOps ops={
         &output,native_submit,native_stop,native_close,native_open,native_start
     };
@@ -305,6 +307,13 @@ int main(int argc, char **argv) {
         /* Read A-button rising edge only after audout has returned
          * its PCM descriptor; do not touch SEQ, SPU or resampler. */
         padUpdate(&pad);
+        const uint64_t sample_tick=armGetSystemTick();
+        const uint64_t page_ticks=
+            (uint64_t)count*tick_frequency/VH_NATIVE_AUDOUT_RATE;
+        if (vh_audio_input_poll_record(&input_poll,sample_tick,page_ticks)) {
+            result=14;
+            break;
+        }
         if ((padGetButtonsDown(&pad)&HidNpadButton_A) &&
             vh_audio_listening_mark(&listening_marks)) {
             result=13;
@@ -379,12 +388,16 @@ int main(int argc, char **argv) {
         &seam_stats,&output.scene_waits,played_blocks);
     const int listen_evidence=vh_audio_listening_verify(
         &listening_marks,played_blocks);
-    if ((run_evidence<0 || seam_evidence || listen_evidence) &&
-        result==0) result=10;
+    const int poll_evidence=vh_audio_input_poll_verify(
+        &input_poll,played_blocks);
+    if ((run_evidence<0 || seam_evidence || listen_evidence ||
+         poll_evidence) && result==0) result=10;
     printf("Run evidence: %s (accepted=%u / planned=%u, source=%s)\n",
-           run_evidence==1 && seam_evidence==0 && listen_evidence==0 ?
+           run_evidence==1 && seam_evidence==0 &&
+           listen_evidence==0 && poll_evidence==0 ?
                "FULL PCM PAGE ACCOUNTING" :
-           run_evidence==0 && seam_evidence==0 && listen_evidence==0 ?
+           run_evidence==0 && seam_evidence==0 &&
+           listen_evidence==0 && poll_evidence==0 ?
                "INCOMPLETE - NO FULL-RUN CLAIM" :
                              "COUNTER MISMATCH - INVALID",
            played_blocks,MAX_PROBE_BLOCKS,
@@ -461,6 +474,14 @@ int main(int argc, char **argv) {
     printf("Peak PCM16 seam near A=%u; mark audit=%s\n",
            listening_marks.peak_seam_near_mark,
            listen_evidence==0 ? "VALID" : "INVALID");
+    printf("A poll gap max=%llu us; >page=%llu >4page=%llu\n",
+           (unsigned long long)vh_audio_output_ticks_to_us(
+               input_poll.max_gap_ticks,tick_frequency),
+           (unsigned long long)input_poll.gaps_over_page,
+           (unsigned long long)input_poll.gaps_over_4pages);
+    printf("A polls=%llu audit=%s; short taps may be missed\n",
+           (unsigned long long)input_poll.samples,
+           poll_evidence==0 ? "VALID" : "INVALID");
     printf("Audio probe ended, result=%d\n",result);
     printf("Press + to close this results screen.\n");
     consoleUpdate(NULL);
