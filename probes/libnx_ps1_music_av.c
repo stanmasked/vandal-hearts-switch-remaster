@@ -40,6 +40,8 @@ static atomic_uint pcm_blocks_generated;
 static atomic_uint audout_buffers_completed;
 static atomic_uint synthetic_scene_switches;
 static atomic_uint audout_wait_peak_us;
+static atomic_uint audout_switch_page_peak_us;
+static atomic_uint audout_switch_pages_recorded;
 static atomic_uint audout_waits_longer_than_page;
 static atomic_uint audout_failed_returns;
 static int audio_active;
@@ -139,6 +141,7 @@ static int prepare_music(int *using_user_files) {
 typedef struct {
     AudioOutBuffer page;
     VhAudioSubmitTiming timing;
+    VhAudioSceneWaits scene_waits;
     int initialized;
     int started;
 } NativeOutput;
@@ -249,15 +252,41 @@ static void audio_worker(void *unused) {
          * already-rendered PCM page. No additional SEQ/SPU frames are
          * synthesized while the backend is recovering.
          */
+        const VhAudioSubmitTiming before_submit=native_output.timing;
         const int submit_result=vh_audio_output_submit_recover(
             &output_ops,&output_recovery,audio_page,count);
+        /* Count a successful/failed logical PCM page exactly once,
+         * regardless of the raw audoutPlayBuffer attempts inside
+         * recovery. Only the very first page after a synthetic
+         * switch receives the boundary tag.
+         */
+        const int telemetry_rc=vh_audio_output_record_scene_page(
+            &native_output.scene_waits,&before_submit,
+            &native_output.timing,armGetSystemTickFreq(),count,
+            (int)switched_this_block,submit_result==0);
+        if (telemetry_rc) {
+            atomic_store(&audio_fault,5);
+            break;
+        }
         /* Publish snapshots atomically; only the audio producer may
          * write the detailed, non-atomic timing accumulator.
          */
         const uint64_t peak_us=vh_audio_output_ticks_to_us(
-            native_output.timing.max_ticks,armGetSystemTickFreq());
+            native_output.scene_waits.ordinary.peak_page_ticks,
+            armGetSystemTickFreq());
+        const uint64_t switch_peak_us=vh_audio_output_ticks_to_us(
+            native_output.scene_waits.first_after_switch.peak_page_ticks,
+            armGetSystemTickFreq());
         atomic_store(&audout_wait_peak_us,
                      (unsigned)(peak_us>UINT_MAX ? UINT_MAX : peak_us));
+        atomic_store(&audout_switch_page_peak_us,
+                     (unsigned)(switch_peak_us>UINT_MAX
+                         ? UINT_MAX : switch_peak_us));
+        const uint64_t transition_pages=
+            native_output.scene_waits.first_after_switch.pages;
+        atomic_store(&audout_switch_pages_recorded,
+                     (unsigned)(transition_pages>UINT_MAX
+                         ? UINT_MAX : transition_pages));
         const uint64_t slow=native_output.timing.waits_longer_than_page;
         const uint64_t failed=native_output.timing.failed_submissions;
         atomic_store(&audout_waits_longer_than_page,
@@ -283,6 +312,7 @@ static int start_native_audio(void) {
     }
     memset(&output_recovery,0,sizeof(output_recovery));
     memset(&native_output.timing,0,sizeof(native_output.timing));
+    memset(&native_output.scene_waits,0,sizeof(native_output.scene_waits));
     Result result;
     atomic_store(&audio_stop, false);
     atomic_store(&audio_fault, 0);
@@ -290,6 +320,8 @@ static int start_native_audio(void) {
     atomic_store(&audout_buffers_completed, 0u);
     atomic_store(&synthetic_scene_switches, 0u);
     atomic_store(&audout_wait_peak_us,0u);
+    atomic_store(&audout_switch_page_peak_us,0u);
+    atomic_store(&audout_switch_pages_recorded,0u);
     atomic_store(&audout_waits_longer_than_page,0u);
     atomic_store(&audout_failed_returns,0u);
     result = threadCreate(&sound_thread, audio_worker, NULL, NULL,
@@ -386,10 +418,12 @@ static void paint(VhCanvas *canvas, const VhGameState *state,
         (scene_switches >= 2u &&
          returned_buffers >= 128u) ? sound_ok : source_missing;
     vh_canvas_fill_rect(canvas,1000,325,130,18,switch_color);
-    /* The thin BLUE latency bar is a relative peak wait gauge.
-     * Full width = four nominal 512-frame page durations. A blocking
-     * audout wait longer than one page is not automatically a glitch.
-     * Telemetry counters come from the audio thread via atomics.
+    /* BLUE: peak sum of audout service waits on normal PCM pages.
+     * LIGHT BLUE: the very first page after a synthetic SEQ switch.
+     * Both gauges cap at four nominal source-block durations.
+     * Timing can include multiple audout submissions after recovery,
+     * but not service stop/reopen. Slow calls are not glitch proof.
+     * Telemetry comes from the audio thread via atomics.
      */
     const unsigned peak_wait_us=atomic_load(&audout_wait_peak_us);
     const unsigned slow_waits=atomic_load(&audout_waits_longer_than_page);
@@ -402,6 +436,17 @@ static void paint(VhCanvas *canvas, const VhGameState *state,
     const int wait_width=(int)((uint64_t)clamped*130u/max_display);
     vh_canvas_fill_rect(canvas,1000,375,130,12,grid);
     vh_canvas_fill_rect(canvas,1000,375,wait_width,12,hero);
+    const unsigned switch_count=atomic_load(&audout_switch_pages_recorded);
+    const unsigned switch_peak=atomic_load(&audout_switch_page_peak_us);
+    const unsigned boundary_clamped=switch_peak>max_display
+        ? max_display : switch_peak;
+    const int boundary_width=(int)((uint64_t)boundary_clamped*130u/
+                                   max_display);
+    vh_canvas_fill_rect(canvas,1000,399,130,12,grid);
+    if (!using_user_files && switch_count) {
+        vh_canvas_fill_rect(canvas,1000,399,boundary_width,12,
+                            RGBA8_MAXALPHA(158,198,246));
+    }
     /* Distinct counters are sampled even when not rendered as text:
      * a warning is not derived from slow waits alone, since the
      * blocking API can normally wait for a page to finish playing.
