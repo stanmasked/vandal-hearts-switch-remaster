@@ -46,6 +46,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_vh_
 	./$(BUILD)/test_vh_music_focus_resume
 	./$(BUILD)/test_vh_game_music_banks
 	python3 tests/test_vh_music_bank_audit_cli.py
+	python3 tests/test_audit_pcport_vab_aliases.py
 	python3 tests/test_restore_ps1_str.py
 	python3 tests/test_inspect_cdxa.py
 	python3 tests/test_extract_cdxa_payload.py
@@ -93,6 +94,7 @@ test-audio-stream: $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(B
 	./$(BUILD)/test_vh_music_focus_resume
 	./$(BUILD)/test_vh_game_music_banks
 	python3 tests/test_vh_music_bank_audit_cli.py
+	python3 tests/test_audit_pcport_vab_aliases.py
 	python3 tests/test_native_spu_adpcm.py
 	python3 tests/test_native_spu_gaussian.py
 	python3 tests/test_native_vab_python_reference.py
