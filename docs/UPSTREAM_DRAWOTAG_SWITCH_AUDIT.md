@@ -531,3 +531,66 @@ simplified orthographic screen transform (not original `gte_rtpt`,
 has real terrain/gameplay been rendered or tested on Switch hardware.
 Full limitations and safe local usage are in
 `docs/ORIGINAL_MAP_GEOMETRY.md`.
+
+## Original pinned PS1 GTE model projection in native NeXium (CI #38827488368)
+
+**Verified:** [GitHub Actions run #38827488368](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38827488368)
+at code SHA `19f063e1cde0010a90458898be2ca7f2fa813712`
+completed ALL three jobs with `success`: `cross-compile`,
+`Run original DrawOTag raster NRO in NeXium`, and
+`Synthetic SD map 11 preview through original DrawOTag`.
+
+The prior native map-11 geometry preview used a test-only
+orthographic projection (plain integer source vertex division).
+It now cross-links and calls **the original pinned PC-port
+`platform/pc/src/libgte.c`**, at upstream SHA
+`14552fffa0e0b47e02b57592e274fc6e7a649923`.
+The NRO initializes and uses its PS1 GTE software model via
+`InitGeom`, `SetGeomOffset`, `SetGeomScreen`, `RotMatrix`,
+`TransMatrix`, `SetRotMatrix`, `SetTransMatrix` and
+`RotTransPers4`. The latter calls original software
+RTPT + RTPS + AVSZ4; the host regression
+`tests/test_pinned_map_gte_camera.c` confirmed positive depth
+(`OTZ=24`), valid perspective points and deterministic repeat.
+
+Vertex packet semantics now also match
+`src/core/graphics.c::RenderMapTile` exactly:
+the first three source vertex projections write `poly->x0`,
+`poly->x1`, `poly->x3`, while the fourth writes
+`poly->x2`. The synthetic source-format map tile's
+`faces[][0..3]` index order was changed accordingly, and the
+existing geometry C and Python tests protect it.
+
+On **synthetic** virtual SD input, the same NRO draws two
+independent source `MapTileModel` polygons with separate
+texture slots 241/242 and local CLUT rows 35/36. The final
+1280×720 NeXium image matched exact pixel colors at:
+
+- (260,210) → red `(255,0,0)`
+- (850,210) → magenta `(255,0,255)`
+- (400,400) → blue `(0,0,255)`
+- (850,400) → cyan `(0,255,255)`
+- (300,125) → red `(255,0,0)`, **only inside the new
+  GTE trapezoid** (the old orthographic scene left this black)
+
+CI also ran the unchanged four-quadrant F_TEX/LAND_DT synthetic
+private screenshot **before** adding map geometry, preserving all
+previous renderer/SD checks. The baseline TIM, ABR0–3, STP,
+texture-window tests passed, **85 Python host tests** and the
+C file-reader/geometry tests passed, and Switch NRO0 structure
+was verified. A first exploratory screenshot check had
+stale sampling points for the old projection; screenshots
+from the failed exploratory runs showed the correct actual
+raster data. Final pixel locations were determined from the
+real captured image and checked individually before the
+green run.
+
+**Do not overclaim:** This is the **original PC-port GTE software
+implementation** applied to synthetic native MapTileModel data
+with an explicitly handpicked camera for a tiny 12×9 test frame.
+It is not original PS1 hardware GTE, game-authored camera
+transform, backface/depth/light `RenderMapTile` pass, a real
+`M_MAP02.PRS` terrain scene, or proof of physical Switch
+execution. No commercial game bytes were redistributed.
+See `docs/ORIGINAL_MAP_GEOMETRY.md` for exact camera constants
+and source-limit notes.
