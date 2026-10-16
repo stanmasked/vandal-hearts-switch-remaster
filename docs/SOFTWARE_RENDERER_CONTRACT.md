@@ -928,3 +928,37 @@ between adjacent captures, and the reported labels and hashes do not
 prove original gameplay or the actual timing of a VRAM write. No
 retail frame capture, physical PS1 GPU behavior or live Switch renderer
 integration is claimed by these tests.
+
+
+## Replaying original PC GPU VRAM transfers between source-keyed MAP02 submissions
+
+`tools/verify_map02_gpu_write_ledger.py` adds a **strict, offline,
+SHA-bound transfer ledger** over the existing private per-submission
+VRAM timeline. Every event must be one of the source-backed
+`LoadImage`, `MoveImage`, or `ClearImage` operations. In
+particular, overlapping `MoveImage` executes the original
+**row-major, in-place** copying order (not `memmove`). `LoadImage`
+uses the original source rectangle stride and clipped VRAM writes.
+`ClearImage` uses absolute VRAM coordinates and original
+5-bit BGR555 truncation. The source audit locks the exact
+`libgpu.c` and `pc_raster.c` public PC-port Git blobs.
+
+Replaying begins with the first private full-size VRAM snapshot and
+applies the time-ordered, separately hashed transfer stream. At every
+submission boundary the result must **fully match** the next
+independently hashed VRAM snapshot, not merely the sampled material
+colors. Unexplained differences (including actual `POLY_FT4` raster
+writes not encoded by this limited ledger) **fail closed**; they are
+not silently classified as successful transfer events. The verifier
+returns only aggregate counts and digests, never game pixels or
+geometry. Nine synthetic tests cover clipped loads, color packing,
+overlapping moves, tampering, missing commands, and unknown GPU
+writes. CI also verifies the original pinned source anchors.
+
+See `docs/MAP02_GPU_VRAM_WRITE_LEDGER.md` for private input file
+format, SHA manifest, and local invocation. **This is still an
+offline consistency gate**, not an authentic original-game GPU
+command stream or continuous memory-write monitor. It does not
+yet model `DrawOTag` raster writes, GPU state changes, hidden
+intervening modifications or PS1 hardware behavior, and it does
+not validate an actual MAP02 scene on Switch.
