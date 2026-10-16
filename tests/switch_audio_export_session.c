@@ -51,7 +51,7 @@ static void create_session(int faulty) {
 int main(int argc,char **argv) {
     if(argc!=4 || strcmp(argv[1],"--directory")!=0) {
         fputs("usage: switch_audio_export_session --directory DIR "
-              "clean|faulty|interrupted\\n",stderr);
+              "clean|faulty|interrupted\n",stderr);
         return 2;
     }
     const char *dir=argv[2], *mode=argv[3];
@@ -66,9 +66,9 @@ int main(int argc,char **argv) {
         if(n<=0 || (size_t)n>=sizeof temp) return 3;
         FILE *f=fopen(temp,"wb");
         if(!f) return 3;
-        if(fputs("elapsed_ms,event,PARTIAL\\n0,not-a-CSV\\n",f)==EOF ||
+        if(fputs("elapsed_ms,event,PARTIAL\n0,not-a-CSV\n",f)==EOF ||
            fflush(f)!=0 || fclose(f)!=0) return 3;
-        printf("INTERRUPTED %s\\n",temp);
+        printf("INTERRUPTED %s\n",temp);
         return 0;
     }
     if(strcmp(mode,"clean") && strcmp(mode,"faulty")) return 2;
@@ -77,7 +77,7 @@ int main(int argc,char **argv) {
     const VhAudioDiagExportResult code=vh_audio_diag_export(
         &journal,dir,NULL,dest,sizeof dest);
     if(code!=VH_AUDIO_EXPORT_OK) {
-        fprintf(stderr,"export status %d\\n",(int)code);
+        fprintf(stderr,"export status %d\n",(int)code);
         return 4;
     }
     puts(dest);
