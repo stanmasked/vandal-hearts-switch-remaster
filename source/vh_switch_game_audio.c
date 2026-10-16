@@ -9,6 +9,7 @@
 #include "vh_audio_output_recovery.h"
 #include "vh_audio_buffer_lease.h"
 #include "vh_audio_output_ramp.h"
+#include "vh_audio_output_edges.h"
 #include "vh_game_music_banks.h"
 #include "vh_music_scene.h"
 
@@ -23,6 +24,8 @@ static int thread_started;
 static VhGameMusicMailbox mailbox;
 static atomic_int audio_status;
 static atomic_uint bank_warning_notes;
+static atomic_uint resume_latency_samples;
+static atomic_ullong resume_latency_worst_us;
 static VhNativeSpu spu;
 static VhMusicScene director;
 static VhAudioResample rate_converter;
@@ -163,6 +166,31 @@ static int output_start(void *opaque) {
     return 0;
 }
 
+/* Cooperative app exit only, while audout is still focused and
+ * playing. Unlike PlayBuffer this wait is time-bounded: an applet
+ * focus-loss/sleep transition MUST use the immediate stop path.
+ * Failure leaves the lease held until output_close/audoutExit.
+ */
+static int output_tail_submit_bounded(VhSwitchOutput *s, size_t frames) {
+    if (!s || !*s->opened || !*s->playing ||
+        !frames || frames>VH_AUDIO_STOP_TAIL_FRAMES ||
+        vh_audio_buffer_lease_begin(&s->lease,s->buffer))
+        return -1;
+    s->buffer->next=NULL;
+    s->buffer->data_offset=0;
+    s->buffer->data_size=frames*2u*sizeof(int16_t);
+    if (R_FAILED(audoutAppendAudioOutBuffer(s->buffer))) return -1;
+    AudioOutBuffer *released=NULL;
+    u32 released_count=0;
+    /* 2-ms buffer and generous <=12-ms wait; never infinite after
+     * the main loop has requested that the audio worker stop. */
+    if (R_FAILED(audoutWaitPlayFinish(
+            &released,&released_count,UINT64_C(12000000))) ||
+        !released_count)
+        return -1;
+    return vh_audio_buffer_lease_release(&s->lease,released);
+}
+
 static void audio_worker(void *unused) {
     (void)unused;
     int state = -1;
@@ -180,6 +208,10 @@ static void audio_worker(void *unused) {
     };
     VhAudioOutputRecovery recovery_stats = {0};
     VhAudioOutputRamp output_ramp = {VH_AUDIO_OUTPUT_RAMP_FRAMES};
+    VhAudioResumeLatency resume_stats = {0};
+    uint64_t resume_begin_tick = 0;
+    int16_t last_pcm_left = 0, last_pcm_right = 0;
+    int have_last_pcm = 0;
     VhGameMusicBanks *loaded_banks = NULL;
     const int pack_status = vh_game_music_banks_load(
         &loaded_banks, VH_GAME_MUSIC_SD_ROOT);
@@ -256,6 +288,7 @@ static void audio_worker(void *unused) {
             continue;
         }
         if (!playing) {
+            const uint64_t start_tick=armGetSystemTick();
             if (vh_audio_output_resume_recover(
                     &recovery_ops, &recovery_stats,
                     pending_resume_reopen)) {
@@ -267,6 +300,7 @@ static void audio_worker(void *unused) {
              * A PlayBuffer retry resubmits the already modified page,
              * not a second pass through this envelope. */
             vh_audio_output_ramp_arm(&output_ramp);
+            resume_begin_tick=start_tick;
             atomic_store_explicit(&audio_status, 1, memory_order_release);
         }
         /* The game thread only publishes the newest desired state.
@@ -319,9 +353,44 @@ static void audio_worker(void *unused) {
             state = -8;
             break;
         }
+        /* Submission returned ownership of THIS exact 48-kHz page.
+         * Store the terminal sample for optional normal-exit taper;
+         * never inspect or overwrite it while the device owns it. */
+        last_pcm_left=pcm_48000_page[2u*count-2u];
+        last_pcm_right=pcm_48000_page[2u*count-1u];
+        have_last_pcm=1;
+        if (resume_begin_tick) {
+            const uint64_t elapsed_ns=armTicksToNs(
+                armGetSystemTick()-resume_begin_tick);
+            vh_audio_resume_latency_record(&resume_stats,elapsed_ns);
+            const unsigned samples=resume_stats.count>UINT32_MAX
+                ? UINT32_MAX : (unsigned)resume_stats.count;
+            atomic_store_explicit(&resume_latency_samples,samples,
+                                  memory_order_release);
+            atomic_store_explicit(&resume_latency_worst_us,
+                resume_stats.max_ns/UINT64_C(1000),
+                memory_order_release);
+            resume_begin_tick=0;
+        }
     }
     if (state == -1) state = 0; /* clean stop requested by main thread */
 cleanup:
+    /* A cooperative exit may send a SHORT last-sample-to-zero tail.
+     * Never attempt output after HOME/focus loss: audout can already
+     * be suspended, and a non-bounded submit could deadlock shutdown.
+     * This tail is not produced by SEQ/SPU/resampler and cannot move
+     * musical time; any output error simply falls through to close.
+     */
+    if (state==0 && playing &&
+        vh_game_music_mailbox_focused(&mailbox) && have_last_pcm &&
+        (last_pcm_left || last_pcm_right) &&
+        !recovery_backend.lease.in_flight &&
+        !vh_audio_stop_tail_build(
+            pcm_48000_page,
+            sizeof(pcm_48000_page)/(2u*sizeof(int16_t)),
+            last_pcm_left,last_pcm_right))
+        (void)output_tail_submit_bounded(&recovery_backend,
+                                         VH_AUDIO_STOP_TAIL_FRAMES);
     /* A stopped audout service may retain queued buffers. Close the
      * old session BEFORE overwriting or releasing the shared PCM page.
      */
@@ -349,6 +418,10 @@ int vh_switch_game_audio_start(unsigned initial_scene) {
     vh_game_music_mailbox_init(&mailbox, initial_scene);
     atomic_store_explicit(&audio_status, 0, memory_order_release);
     atomic_store_explicit(&bank_warning_notes, 0u,
+                          memory_order_release);
+    atomic_store_explicit(&resume_latency_samples, 0u,
+                          memory_order_release);
+    atomic_store_explicit(&resume_latency_worst_us, 0u,
                           memory_order_release);
     Result rc = threadCreate(&audio_thread, audio_worker, NULL,
                              NULL, 0x10000u, 0x2Cu, -2);
@@ -400,4 +473,14 @@ void vh_switch_game_audio_stop(void) {
     threadWaitForExit(&audio_thread);
     threadClose(&audio_thread);
     thread_started = 0;
+}
+
+unsigned vh_switch_game_audio_resume_latency_samples(void) {
+    return atomic_load_explicit(&resume_latency_samples,
+                                memory_order_acquire);
+}
+
+uint64_t vh_switch_game_audio_resume_worst_confirmed_us(void) {
+    return (uint64_t)atomic_load_explicit(&resume_latency_worst_us,
+                                         memory_order_acquire);
 }
