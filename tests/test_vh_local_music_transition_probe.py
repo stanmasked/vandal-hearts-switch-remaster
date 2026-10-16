@@ -207,6 +207,70 @@ class NativeLocalMusicTransitionTests(unittest.TestCase):
             self.assertNotIn(str(tmp), result.stderr)
             self.assertIn("Invalid, incomplete", result.stderr)
 
+    def test_corrupt_music_files_fail_closed_without_leaking_private_content(self):
+        # Every case is a *single* malformed component alongside a
+        # complete, valid synthetic second bank. Both entry positions
+        # are checked; no partial JSON is allowed on any load failure.
+        tone = TONE_OFFSET
+        original = make_synthetic_files()
+        mutations = {
+            "seq_bad_magic": ("music.seq", b"X" + original["music.seq"][1:]),
+            "seq_truncated_header": ("music.seq", original["music.seq"][:14]),
+            "seq_no_eot": ("music.seq", original["music.seq"][:-2]),
+            "seq_invalid_running_status": (
+                "music.seq",
+                original["music.seq"][:16] + b"\\x7f" +
+                original["music.seq"][17:]),
+            "seq_empty": ("music.seq", b""),
+            "vh_bad_magic": ("music.vh", b"X" + original["music.vh"][1:]),
+            "vh_truncated_header": ("music.vh", original["music.vh"][:31]),
+            "vh_invalid_range": (
+                "music.vh",
+                original["music.vh"][:tone + 6] + b"\\x69" +
+                original["music.vh"][tone + 7:]),
+            "vh_out_of_range_sample": (
+                "music.vh",
+                original["music.vh"][:tone + 22] + b"\\x02" +
+                original["music.vh"][tone + 23:]),
+            "vb_invalid_adpcm_filter": (
+                "music.vb",
+                original["music.vb"][:16] + b"\\x50" +
+                original["music.vb"][17:]),
+            "vb_invalid_adpcm_flags": (
+                "music.vb",
+                original["music.vb"][:17] + b"\\x80" +
+                original["music.vb"][18:]),
+            "vb_truncated": ("music.vb", original["music.vb"][:32]),
+            "vb_empty": ("music.vb", b""),
+        }
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            a, b = root / "bank-a", root / "bank-b"
+            for position in (0, 1):
+                for title, (name, altered) in mutations.items():
+                    with self.subTest(position=position, corruption=title):
+                        for directory in (a, b):
+                            directory.mkdir(exist_ok=True)
+                            for filename, content in original.items():
+                                (directory / filename).write_bytes(content)
+                        damaged = (a, b)[position] / name
+                        damaged.write_bytes(altered)
+                        first = subprocess.run(
+                            [str(PROGRAM), str(a), str(b), "2", "4"],
+                            capture_output=True, text=True)
+                        self.assertEqual(first.returncode, 3, (title, first.stderr))
+                        self.assertEqual(first.stdout, "")
+                        self.assertIn("Invalid, incomplete", first.stderr)
+                        self.assertNotIn(str(root), first.stderr)
+                        self.assertNotIn(str(root), first.stdout)
+                        self.assertEqual(damaged.read_bytes(), altered)
+                        # Loading a damaged component must not touch the
+                        # other local bank or any of its original bytes.
+                        other = (b, a)[position]
+                        self.assertEqual(
+                            {f.name: f.read_bytes() for f in other.iterdir()},
+                            original)
+
     def test_invalid_numeric_options_rejected_before_reading(self):
         with tempfile.TemporaryDirectory() as tmp:
             a, b = Path(tmp) / "a", Path(tmp) / "b"
