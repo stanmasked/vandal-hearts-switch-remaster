@@ -124,6 +124,9 @@ static int dispatch(VhNativeSeq *s, const SeqEvent *event) {
             tone.loop_end, tone.pitch_step, tone.adsr1, tone.adsr2,
             tone.gain_left, tone.gain_right))
             return -1;
+        if (vh_native_spu_set_voice_reverb(
+                s->spu, (unsigned)slot, !!tone.reverb_send))
+            return -1;
         s->note_slot[ch][event->a] = (int8_t)slot;
         s->owner_ch[slot] = (int8_t)ch;
         s->owner_note[slot] = (int8_t)event->a;
