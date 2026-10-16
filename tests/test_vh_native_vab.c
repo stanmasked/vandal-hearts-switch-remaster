@@ -164,6 +164,14 @@ static void test_tone_range_boundaries_and_nearest_ties(void) {
     bank.tones[0][1].low=0;  bank.tones[0][1].high=5;
     bank.tones[7][0].low=50; bank.tones[7][0].high=55;
     bank.tones[10][0].low=80; bank.tones[10][0].high=90;
+    /* These in-memory aliases were copied at load time: update their
+     * synthetic ranges when changing the owning packed block. */
+    for(unsigned p=1;p<7;++p) {
+        bank.tones[p][0].low=50; bank.tones[p][0].high=55;
+    }
+    for(unsigned p=8;p<10;++p) {
+        bank.tones[p][0].low=80; bank.tones[p][0].high=90;
+    }
     VhSeqTone out={0};
     assert(vh_native_vab_resolve(&bank,99,40,127,127,64,&out)==0);
     assert(bank.selected_program==1 && bank.selected_vag==3);
@@ -173,6 +181,9 @@ static void test_tone_range_boundaries_and_nearest_ties(void) {
     bank.tones[0][1].low=30; bank.tones[0][1].high=35;
     bank.tones[7][0].low=50; bank.tones[7][0].high=55;
     bank.tones[10][0].low=70; bank.tones[10][0].high=75;
+    for(unsigned p=8;p<10;++p) {
+        bank.tones[p][0].low=70; bank.tones[p][0].high=75;
+    }
     assert(vh_native_vab_resolve(&bank,99,20,127,127,64,&out)==0);
     assert(bank.selected_program==0 && bank.selected_tone==0);
     assert(vh_native_vab_resolve(&bank,99,40,127,127,64,&out)==0);
