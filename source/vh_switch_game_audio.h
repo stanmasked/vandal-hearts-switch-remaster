@@ -2,6 +2,7 @@
 #define VH_SWITCH_GAME_AUDIO_H
 
 #include "vh_game_music_mailbox.h"
+#include "vh_audio_diagnostics.h"
 #include <stdint.h>
 
 /* Main tactical NRO uses this separate libnx audout worker. The
@@ -36,5 +37,10 @@ unsigned vh_switch_game_audio_bank_warnings(void);
  */
 unsigned vh_switch_game_audio_resume_latency_samples(void);
 uint64_t vh_switch_game_audio_resume_worst_confirmed_us(void);
+/* Inexpensive, read-only diagnostic snapshot for the optional on-screen
+ * hardware testing overlay. Does not acquire locks or call audout.
+ * Individual counters can span adjacent audio-owner turns.
+ */
+void vh_switch_game_audio_diagnostics(VhAudioDiagnostics *out);
 
 #endif
