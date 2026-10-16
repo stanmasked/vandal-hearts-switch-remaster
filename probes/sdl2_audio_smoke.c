@@ -104,7 +104,8 @@ static int init_synthetic_seq(void) {
             sizeof(decoded_vag)/sizeof(decoded_vag[0])) != 0)
         return -1;
     vh_native_spu_reset(&native_spu);
-    if (vh_native_spu_set_interpolation(&native_spu, VH_SPU_GAUSSIAN) != 0)
+    if (vh_native_spu_set_interpolation(&native_spu, VH_SPU_GAUSSIAN) != 0 ||
+        vh_native_spu_set_reverb(&native_spu, 1, 0.5f) != 0)
         return -1;
     return vh_native_seq_init(
         &native_seq, synthetic_seq, sizeof(synthetic_seq),
