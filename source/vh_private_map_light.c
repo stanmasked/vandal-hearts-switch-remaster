@@ -62,7 +62,11 @@ void vh_map_update_light(CVECTOR output[VH_MAP_SIDE_NORMALS],
     mtx.t[0] = mtx.t[1] = mtx.t[2] = 0;
     SetLightMatrix(&mtx);
     for (i=0;i<VH_MAP_SIDE_NORMALS;i++) {
-        gte_NormalColorCol(&normals[i], &mid, &response);
+        /* The pinned inline_gte wrapper accepts a mutable pointer even
+         * though GTE LDV0 only reads its input. Preserve caller's const
+         * table by passing a local source-normal copy. */
+        SVECTOR normal = normals[i];
+        gte_NormalColorCol(&normal, &mid, &response);
         output[i].r=(unsigned char)(((int)light_color->r *
              (intensity + (((int)response.r * (128-intensity)) >> 7))) >> 7);
         output[i].g=(unsigned char)(((int)light_color->g *
