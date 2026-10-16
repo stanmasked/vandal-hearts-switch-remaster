@@ -20,6 +20,18 @@ extern void PC_Map02V39MarkSubmitted(void *ot, void *prim,
 static unsigned short texture[VH_TEX_SIZE * VH_TEX_SIZE];
 static int failures;
 
+static unsigned long long checksum(const void *ptr, size_t bytes) {
+    const unsigned char *p = (const unsigned char *)ptr;
+    unsigned long long h = 1469598103934665603ull;
+    size_t i;
+    for (i = 0; i < bytes; ++i) {
+        h ^= p[i];
+        h *= 1099511628211ull;
+    }
+    return h;
+}
+
+
 #define VERIFY(cond, desc) do { \
     if (!(cond)) { fprintf(stderr, "[v42-smoke] FAIL: %s\n", desc); failures++; } \
 } while (0)
@@ -99,7 +111,7 @@ int main(void) {
         perror("setenv");
         return 2;
     }
-    if (setenv("VH_RASTER_THREADS", "2", 1) != 0) {
+    if (!getenv("VH_RASTER_THREADS") && setenv("VH_RASTER_THREADS", "2", 1) != 0) {
         perror("setenv");
         return 2;
     }
@@ -125,6 +137,17 @@ int main(void) {
     if (failures) {
         fprintf(stderr, "[v42-smoke] FAIL: %d native GPU assertions\n", failures);
         return 1;
+    }
+    {
+        size_t vn = 0, hn = 0;
+        const void *native = PC_GpuVramBytes(&vn);
+        const void *hires = PC_GpuHiresBytes(&hn);
+        if (!native || !hires || vn == 0 || hn == 0) {
+            fprintf(stderr, "[v42-smoke] FAIL: cannot hash real GPU framebuffers\n");
+            return 1;
+        }
+        fprintf(stderr, "[v42-smoke] FRAMEBUFFER_HASH native=%016llx hires=%016llx\n",
+                checksum(native, vn), checksum(hires, hn));
     }
     fprintf(stderr, "[v42-smoke] PASS: 3 synthetic frames, 2 tagged terrain FT4,"
                     " 3 untagged matching-UV sprite FT4; real native/hires DDA\n");
