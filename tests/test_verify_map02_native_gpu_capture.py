@@ -102,6 +102,28 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"expected integer"):
             verify_capture(self.root,target_frame=12)
 
+    def test_optional_drawenv_metadata_is_bounded_and_paired(self):
+        # Old probe output omitting DRAWENV remains valid, but newer
+        # recorder instances supply exact clip/offset for FT4 checks.
+        for event in self.events:
+            event["draw_env"]=[0,0,1024,512,-30,25]
+        self.save()
+        self.assertEqual(verify_capture(self.root,target_frame=12)[
+            "draw_otag_primitive_pairs"],1)
+        self.events[3]["draw_env"][4] = -31
+        self.save()
+        with self.assertRaisesRegex(ValueError, "before/after metadata diverges"):
+            verify_capture(self.root,target_frame=12)
+        self.events[3]["draw_env"][4] = -30
+        self.events[2]["draw_env"][2] = -1
+        self.save()
+        with self.assertRaisesRegex(ValueError, "DRAWENV"):
+            verify_capture(self.root,target_frame=12)
+        self.events[2]["draw_env"]=[0,0,1024]
+        self.save()
+        with self.assertRaisesRegex(ValueError, "DRAWENV"):
+            verify_capture(self.root,target_frame=12)
+
     def test_load_image_payload_name_and_length(self):
         payload=b"\x1f\x00"
         self.events=self.events[:2]
