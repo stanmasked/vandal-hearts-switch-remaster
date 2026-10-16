@@ -5,6 +5,9 @@ import struct
 import unittest
 
 import test_verify_map02_vram_timeline as timeline_fixture
+from tools.export_map02_verified_vram_ledger import (
+    HEADER, RECORD, export_verified_ledger, pack_verified_events,
+)
 from tools.verify_map02_gpu_write_ledger import (
     VRAM_BYTES, apply_transfer, audit_original_source,
     verify_write_ledger,
@@ -47,6 +50,49 @@ class GpuWriteLedgerTests(unittest.TestCase):
             "timeline_sha256":sha((self.root/"timeline.json").read_bytes()),
             "transfers_sha256":sha(stream),
         },sort_keys=True),encoding="utf-8")
+
+    def test_private_packet_export_runs_full_ledger_verification(self):
+        output = self.root / "private-transfers.bin"
+        report = export_verified_ledger(self.root, output)
+        raw = output.read_bytes()
+        self.assertEqual(report["schema"], "vh.map02.transfer-packet.v1")
+        self.assertEqual(report["packet_sha256"], sha(raw))
+        self.assertEqual(report["gpu_transfer_events_replayed"], 2)
+        self.assertFalse(report["pc_gameplay_authenticated"])
+        self.assertEqual(
+            HEADER.unpack_from(raw),
+            (b"VHMAPGL1", self.base.frame, 2, 2, len(raw), bytes(8)))
+        first = RECORD.unpack_from(raw, HEADER.size)
+        second = RECORD.unpack_from(raw, HEADER.size + RECORD.size)
+        self.assertEqual(first, (0,1,3,0,0,1,1,0,0,160,136,32,0))
+        self.assertEqual(second, (1,1,3,690,499,1,1,0,0,0,248,0,0))
+        self.assertEqual(len(raw), HEADER.size + 2 * RECORD.size)
+        self.assertEqual(output.stat().st_mode & 0o777, 0o600)
+        with self.assertRaises(FileExistsError):
+            export_verified_ledger(self.root, output)
+
+    def test_private_packet_export_rejects_unexplained_write(self):
+        self.events = self.events[:1]
+        self.write()
+        output = self.root / "no-export.bin"
+        with self.assertRaisesRegex(ValueError, "missing/rasterized GPU write"):
+            export_verified_ledger(self.root, output)
+        self.assertFalse(output.exists())
+
+    def test_private_packet_load_payload_is_canonical(self):
+        payload = struct.pack("<HH", 0x001f, 0x03e0)
+        events = [({
+            "step": 0, "before_submission": 1, "op": "load",
+            "rect": [-1, 0, 2, 1],
+        }, payload)]
+        data = pack_verified_events(42, 2, events)
+        self.assertEqual(HEADER.unpack_from(data),
+                         (b"VHMAPGL1", 42, 2, 1, len(data), bytes(8)))
+        self.assertEqual(RECORD.unpack_from(data, HEADER.size),
+                         (0,1,1,-1,0,2,1,0,0,0,0,0,4))
+        self.assertEqual(data[-4:], payload)
+        with self.assertRaisesRegex(ValueError, "payload"):
+            pack_verified_events(42, 2, [(events[0][0], payload[:-1])])
 
     def test_clear_operations_account_for_all_vram_mutations(self):
         result=verify_write_ledger(self.root)
