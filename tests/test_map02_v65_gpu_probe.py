@@ -231,8 +231,8 @@ class LocalGpuProbeTests(unittest.TestCase):
 
     def test_sanitized_audit_does_not_export_raw_words(self):
         out=json.dumps(audit(self.ram,self.manifest,self.log))
-        for bad in ("e6000003","0xe600","0x6000","\\\"head\\\":",
-                    "\\\"words\\\":","tpage_x",
+        for bad in ("e6000003","0xe600","0x6000",'"head":',
+                    '"words":',"tpage_x",
                     "gp0_sha256","before_frame","entry_points","private_gpu_ram.bin"):
             self.assertNotIn(bad,out)
 
