@@ -94,8 +94,8 @@ static inline int32_t vh_map02_q12_component(
     unsigned __int128 target;
     unsigned low = 0, high = 4097;
     if (!component || !magnitude_sq) return 0;
-    absolute = (unsigned __int128)(
-        component < 0 ? -(component + 1) + 1 : component);
+    absolute = (unsigned __int128)(component < 0 ?
+        (uint64_t)(-(component + 1)) + 1u : (uint64_t)component);
     target = absolute * absolute * 4096u * 4096u;
     while (high - low > 1) {
         unsigned mid = low + (high - low) / 2;
@@ -110,7 +110,13 @@ static inline int32_t vh_map02_q12_component(
 static inline int vh_map02_normal_q12(
     VhMap02Cross normal, int32_t result[3]) {
     unsigned __int128 a, b, c, squared;
-    if (!result || (normal.x == 0 && normal.y == 0 && normal.z == 0))
+    /* Each component of a cross of two 16-bit vertex differences
+     * is bounded by 2 * 65535^2. Reject impossible raw cross vectors
+     * before multiplication of squared magnitudes by 4096^2. */
+    if (!result || (normal.x == 0 && normal.y == 0 && normal.z == 0) ||
+        normal.x < -INT64_C(8589672450) || normal.x > INT64_C(8589672450) ||
+        normal.y < -INT64_C(8589672450) || normal.y > INT64_C(8589672450) ||
+        normal.z < -INT64_C(8589672450) || normal.z > INT64_C(8589672450))
         return 0;
     /* Construct unsigned squares without negating INT64_MIN directly. */
     a = (unsigned __int128)(normal.x < 0 ?
