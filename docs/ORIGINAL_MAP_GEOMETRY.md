@@ -654,8 +654,43 @@ the normal indices from geometry, then pass them through
 the already-verified GTE NCCS, distance shading and FT4
 GPU primitives.
 
-**Status:** The original source-face GTE OP0/normal-index
-host test and new Switch NRO compilation have already passed
-in an intermediate CI run. Final screenshot acceptance for
-the sixth NeXium mode has not yet been recorded here.
-No owner commercial map bytes were required.
+**Acceptance: PASS** — [GitHub Actions #38866183785](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38866183785),
+source revision `1fa9072230d9df056a2d4093a5730dff8257c537`,
+completed **all three jobs SUCCESS**: Switch NRO cross-compile,
+the original pinned DrawOTag raster NeXium test and six
+synthetic private-SD graphics modes.
+
+The host preflight passed **92 Python tests**, source
+GTE `UpdateMapTileLighting` tests covering +X/-X/+Y/-Y
+and a repeated-ID fallback, and separate C tests for the
+texture-bank, map geometry, source 26-normal `UpdateLight`,
+distance attenuation and original RTPT/GTE projection.
+The ELF→NRO image validated with a proper NRO0 header
+and in-bounds segments.
+
+For the NEW sixth scenario, the virtual SD input
+intentionally stored the **wrong** face shades (left
++X, right -X), while the true geometry comprised two
+oppositely sloped surfaces. After loading, the native
+`gte_OuterProduct0 → VectorNormalS → 26-way dot/tie
+→ UpdateLight NCCS → FT4/DrawOTag` chain produced the
+following **real measured pixels** at 1280×720:
+
+| Region | Sample XY | Captured RGB |
+| --- | --- | --- |
+| left tilted face, red texel | (260,210) | **(189,0,0)** |
+| right tilted face, magenta texel | (850,280) | **(57,0,57)** |
+
+The test explicitly asserts a substantial left/right
+difference, rather than trusting the source `shades[]`.
+The image checker passed twice (polling and after capture).
+The five prior texture, culling, depth and lighting scene
+checks remained successful.
+
+This verifies original-format vertex coordinates and
+indices driving correct **automatically derived face
+lighting** in a Switch NRO executed by NeXium. The
+original 336-tile `UpdateMapLighting` game loop, actual
+game light state and owner-supplied `M_MAP02.PRS` are
+still outside this milestone. No proprietary game bytes
+were included in CI or the artifact.
