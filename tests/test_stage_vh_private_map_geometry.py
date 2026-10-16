@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 from private_sd_nexium_check import (  # noqa: E402
     synthetic_geometry_models, synthetic_depth_geometry_models, stage_depth,
     synthetic_distant_shading_models, stage_distance,
+    stage_side_lighting,
 )
 from inspect_vh_map_geometry import (  # noqa: E402
     MAP_11_BYTES, MAP_11_STRIDE, TILE_BYTES, parse_tile,
@@ -114,6 +115,22 @@ class StagedModelTests(unittest.TestCase):
             self.assertEqual((p/GEOMETRY_NAME).read_bytes(),
                              synthetic_distant_shading_models())
             self.assertTrue((p/"F_TEX01.DAT").is_file())
+
+    def test_opt_in_26_normal_light_sd_fixture(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            result=stage_side_lighting(root)
+            self.assertEqual(result["active_faces"],3)
+            dest=root/RELATIVE_DESTINATION
+            self.assertEqual(
+                (dest/"LIGHT_TEST_INTENSITY.BIN").read_bytes(),b"\\x20"
+            )
+            source=(dest/GEOMETRY_NAME).read_bytes()
+            face=parse_tile(source,6,3)["faces"]
+            self.assertEqual([f["shade_index"] for f in face],[1,4,2])
+            self.assertEqual(
+                [f["local_gfx_slot"] for f in face],[242,241,242]
+            )
 
     def test_stage_readback_and_no_overwrite(self):
         with tempfile.TemporaryDirectory() as d:
