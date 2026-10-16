@@ -1,0 +1,27 @@
+# Generated builds and local test outputs.
+build/
+__pycache__/
+*.pyc
+.DS_Store
+
+# NEVER commit user-owned PlayStation game/audio assets or extracted music.
+# The homebrew audio probe loads its local set from the SD card.
+*.seq
+*.SEQ
+*.vh
+*.VH
+*.vb
+*.VB
+*.vag
+*.VAG
+*.wav
+*.WAV
+*.iso
+*.ISO
+*.cue
+*.CUE
+*.bin
+*.BIN
+sdmc/
+private-assets/
+user-audio/
