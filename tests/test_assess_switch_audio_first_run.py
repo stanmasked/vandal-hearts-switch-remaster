@@ -188,6 +188,17 @@ class FirstRunOperatorEvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(assess.OperatorError, "session fields"):
             assess.read_observations(self.observations)
 
+    def test_unhashable_enum_value_is_a_clean_validation_error(self):
+        for field in ("music_audible", "audio_artifacts", "launch_mode",
+                      "audio_output", "normal_exit"):
+            original = self.record["sessions"][0][field]
+            self.record["sessions"][0][field] = ["MALFORMED"]
+            self.write_record()
+            with self.subTest(field=field), self.assertRaisesRegex(
+                    assess.OperatorError, "invalid " + field):
+                assess.read_observations(self.observations)
+            self.record["sessions"][0][field] = original
+
     def test_modified_immutable_csv_causes_failure(self):
         self.write_record()
         path = self.root / self.files[0]
