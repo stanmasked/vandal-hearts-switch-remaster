@@ -543,6 +543,9 @@ jobs:
           set -euo pipefail
           (
             cd remaster
+            python3 -m unittest discover -s tests -p 'test_instrument_map02_dda_span.py' -v
+            python3 -m unittest discover -s tests -p 'test_map02_dda_span_composition.py' -v
+            python3 -m unittest discover -s tests -p 'test_verify_map02_dda_native_spans.py' -v
             python3 -m unittest discover -s tests -p 'test_instrument_map02_vertical_dda.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_vertical_dda.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_raster_skips.py' -v
