@@ -356,7 +356,20 @@ int main(int argc, char **argv) {
            (unsigned long long)normal->retried_pages,
            (unsigned long long)boundary->retried_pages);
     printf("Audio probe ended, result=%d\n",result);
+    printf("Press + to close this results screen.\n");
     consoleUpdate(NULL);
+    /* The service and borrowed music PCM have already been shut down.
+     * Keep only the console visible for a human hardware measurement.
+     * This does not produce any additional music or change clocks.
+     */
+    padConfigureInput(1,HidNpadStyleSet_NpadStandard);
+    PadState pad;
+    padInitializeDefault(&pad);
+    while (appletMainLoop()) {
+        padUpdate(&pad);
+        if (padGetButtonsDown(&pad)&HidNpadButton_Plus) break;
+        svcSleepThread(100000000ll);
+    }
     consoleExit(NULL);
     return result;
 }
