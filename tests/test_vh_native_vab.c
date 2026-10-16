@@ -117,6 +117,77 @@ static void test_metadata_selection_and_audio(void) {
     assert(vh_native_vab_resolve(&bank,128,60,100,100,64,&out)==-1);
 }
 
+/* Exact inclusivity, sparse-program priority, and PC-port-compatible
+ * nearest-low-bound selection. These cases are independent of SEQ timing.
+ */
+static void test_tone_range_boundaries_and_nearest_ties(void) {
+    fixture();
+    memset(&bank,0,sizeof bank);
+    assert(vh_native_vab_load(&bank,vh,sizeof vh,vb,96,arena,224)==0);
+    struct Selection {
+        unsigned requested, note, chosen_program, chosen_tone, chosen_vag;
+    };
+    static const struct Selection cases[] = {
+        {0,  0, 0, 0, 1},   /* outside every range: nearest low=40 */
+        {0, 40, 0, 0, 1},   /* shared lower bound: first local tone */
+        {0, 60, 0, 0, 1},   /* inclusive upper bound for first tone */
+        {0, 61, 0, 1, 2},   /* second overlapping local tone */
+        {0, 70, 0, 1, 2},   /* inclusive upper bound for second tone */
+        {0, 71, 7, 0, 3},   /* nearest low=80, not nearest upper end */
+        {7, 79, 7, 0, 3},   /* same requested program, outside its range */
+        {7, 80, 7, 0, 3},   /* inclusive lower bound */
+        {7,100, 7, 0, 3},   /* inclusive upper bound */
+        {7,101, 7, 0, 3},   /* nearest global lower bound */
+        {10,40,10, 0, 4},   /* requested program beats global p0 match */
+        {10,50,10, 0, 4},
+        {10,51, 0, 0, 1},   /* first global range after local miss */
+        {99,40, 0, 0, 1},   /* sparse absent program */
+        {99,70, 0, 1, 2},
+        {99,75, 7, 0, 3},
+        {99,127,7, 0, 3},
+    };
+    for(size_t i=0;i<sizeof cases/sizeof cases[0];++i) {
+        const struct Selection *c=&cases[i];
+        VhSeqTone out={0};
+        assert(vh_native_vab_resolve(&bank,c->requested,c->note,
+                                     127,127,64,&out)==0);
+        assert(bank.selected_program==c->chosen_program);
+        assert(bank.selected_tone==c->chosen_tone);
+        assert(bank.selected_vag==c->chosen_vag);
+        assert(out.pcm==bank.samples[c->chosen_vag].pcm);
+        assert(out.frames==bank.samples[c->chosen_vag].frames);
+    }
+
+    /* No range contains 40. Lower boundaries (10 vs 50), not
+     * distances to the upper endpoints (35 vs 50), choose VAG3. */
+    bank.tones[0][0].low=10; bank.tones[0][0].high=35;
+    bank.tones[0][1].low=0;  bank.tones[0][1].high=5;
+    bank.tones[7][0].low=50; bank.tones[7][0].high=55;
+    bank.tones[10][0].low=80; bank.tones[10][0].high=90;
+    VhSeqTone out={0};
+    assert(vh_native_vab_resolve(&bank,99,40,127,127,64,&out)==0);
+    assert(bank.selected_program==7 && bank.selected_vag==3);
+
+    /* Equal distances to key_min keep first packed-table order. */
+    bank.tones[0][0].low=10; bank.tones[0][0].high=15;
+    bank.tones[0][1].low=30; bank.tones[0][1].high=35;
+    bank.tones[7][0].low=50; bank.tones[7][0].high=55;
+    bank.tones[10][0].low=70; bank.tones[10][0].high=75;
+    assert(vh_native_vab_resolve(&bank,99,20,127,127,64,&out)==0);
+    assert(bank.selected_program==0 && bank.selected_tone==0);
+    assert(vh_native_vab_resolve(&bank,99,40,127,127,64,&out)==0);
+    assert(bank.selected_program==0 && bank.selected_tone==1);
+    assert(vh_native_vab_resolve(&bank,99,60,127,127,64,&out)==0);
+    assert(bank.selected_program==7 && bank.selected_tone==0);
+
+    const unsigned p=bank.selected_program, t=bank.selected_tone;
+    const unsigned vag=bank.selected_vag;
+    assert(vh_native_vab_resolve(&bank,128,60,127,127,64,&out)==-1);
+    assert(vh_native_vab_resolve(&bank,99,128,127,127,64,&out)==-1);
+    assert(bank.selected_program==p && bank.selected_tone==t &&
+           bank.selected_vag==vag);
+}
+
 static void test_strict_invalid_banks_and_no_publish(void) {
     fixture();
     memset(&bank,0x5a,sizeof bank);
@@ -183,6 +254,7 @@ static void test_actual_native_seq_to_vab_to_spu_pcm(void) {
 
 int main(void) {
     test_metadata_selection_and_audio();
+    test_tone_range_boundaries_and_nearest_ties();
     test_strict_invalid_banks_and_no_publish();
     test_actual_native_seq_to_vab_to_spu_pcm();
     puts("native sparse VH/VB -> SEQ -> SPU stereo PCM: PASS");
