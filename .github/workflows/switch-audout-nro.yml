@@ -1,0 +1,51 @@
+name: Switch libnx audout music NRO
+
+on:
+  push:
+    branches:
+      - test/cdxa-extract-decode-pipeline
+    paths:
+      - "source/vh_*"
+      - "probes/audout_audio_smoke.c"
+      - "tests/test_vh_audio_resample.c"
+      - "Makefile"
+      - ".github/workflows/switch-audout-nro.yml"
+  pull_request:
+    paths:
+      - "source/vh_*"
+      - "probes/audout_audio_smoke.c"
+      - "Makefile"
+      - ".github/workflows/switch-audout-nro.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audout-nro:
+    name: Build native audout music NRO without SDL2
+    runs-on: ubuntu-latest
+    container: devkitpro/devkita64:latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify streaming host resampler
+        shell: bash
+        run: |
+          set -euo pipefail
+          make test-audio-stream
+      - name: Build and validate native audout NRO
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          make audout-audio-probe
+          test -s build/audout-audio-switch-probe.nro
+      - name: Upload native music NRO (user assets not included)
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-audout-music-nro
+          path: build/audout-audio-switch-probe.nro
+          if-no-files-found: error
