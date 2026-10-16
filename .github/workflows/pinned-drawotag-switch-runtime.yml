@@ -650,6 +650,60 @@ jobs:
           # black border + two independently indexed POLY_FT4 faces, which
           # rules out the legacy synthetic smoke scene.
           python3 tests/private_sd_nexium_check.py --check-geometry-screenshot "$SHOT"
+      - name: Stage adversarial OTZ overlap into separate virtual SD
+        run: |
+          python3 tests/private_sd_nexium_check.py --stage-depth-sd-root /tmp/vh-depth-nexium/sdmc
+          test -s /tmp/vh-depth-nexium/sdmc/switch/vandal-hearts-remaster/private-assets/F_TEX01.DAT
+          test -s /tmp/vh-depth-nexium/sdmc/switch/vandal-hearts-remaster/private-assets/LAND_DT.DAT
+          test -s /tmp/vh-depth-nexium/sdmc/switch/vandal-hearts-remaster/private-assets/MAP11_MODELS_28X12.BIN
+      - name: Prove overlapping GTE polygons are occluded by OTZ depth
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p private-sd-evidence
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+          export NEXIUM_DATA_ROOT=/tmp/vh-depth-nexium
+          export NRO=nros/pinned-drawotag-switch.nro
+          export SHOT=private-sd-evidence/map11-depth-occlusion.png
+          export LOG=private-sd-evidence/depth-occlusion-nexium.log
+          timeout --kill-after=5s 65s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
+            set -euo pipefail
+            "$NEXIUM_BIN" "$NRO" >"$LOG" 2>&1 &
+            pid=$!
+            ready=0
+            sleep 10
+            for attempt in $(seq 1 20); do
+              if ! kill -0 "$pid" 2>/dev/null; then
+                echo "NeXium exited before far/near OTZ overlap preview" >&2
+                tail -n 80 "$LOG" >&2 || true
+                exit 1
+              fi
+              window="$(xdotool search --onlyvisible --name "NeXium" 2>/dev/null | tail -n 1 || true)"
+              if [ -n "$window" ]; then
+                import -window "$window" "$SHOT"
+                if python3 tests/private_sd_nexium_check.py --check-depth-screenshot "$SHOT"; then
+                  echo "Depth-occlusion GTE far/near test frame visible on poll $attempt"
+                  ready=1
+                  break
+                fi
+              fi
+              sleep 2
+            done
+            kill -INT "$pid" 2>/dev/null || true
+            sleep 1
+            kill -KILL "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+            test "$ready" = 1
+          '
+          echo "Depth-occlusion emulator log:"
+          tail -n 80 "$LOG" || true
+          # NeXium does not forward guest fprintf(stderr) to this host log.
+          # The screenshot checker instead requires a unique PRIVATE
+          # black border + two overlapping original GTE POLY_FT4 faces, which
+          # rules out the legacy synthetic smoke scene.
+          python3 tests/private_sd_nexium_check.py --check-depth-screenshot "$SHOT"
       - name: Upload private synthetic SD screenshot and diagnostic
         if: always()
         uses: actions/upload-artifact@v4
