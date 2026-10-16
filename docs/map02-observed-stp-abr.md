@@ -51,7 +51,7 @@ Required witness fields are `stage`, `putpixel_step`, `frame`,
 `front`, and `after`. The instrumented original-PC entry/exit observer
 must emit these values directly; constructing them from the PutPixel log
 does **not** count as an independent witness. The verifier fails closed
-when the opt-in trace is absent or does not match.
+when the opt-in trace is absent or does not match. A capture with no\nobserved semi-transparent BlendG1 call also fails closed; an all-opaque\nPutPixel sample is not a successful test of blending.
 
 This strictly validates **event correspondence**, not the mathematics of
 BlendG1. The source PC binary/instrumentation is not changed by this
