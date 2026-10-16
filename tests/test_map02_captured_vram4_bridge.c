@@ -549,6 +549,186 @@ static void test_private_transfer_packet_corruption_is_atomic(void) {
     assert_timeline_workspace_unmodified();
 }
 
+
+/* Synthetic three-submission capture: two distinct VRAM boundaries. The
+ * observations/VRAM snapshots are created independently of the replayer. */
+static uint8_t third_vram[VH_MAP02_VRAM_BYTES];
+static const uint8_t later_green_load[2] = {0xe0u,0x03u};
+
+static void three_transition_fixture(
+    VhMap02Vram4TimelineEntry entries[3],
+    VhMap02VramTransfer transfers[3]) {
+    VhMap02SourceFaceRequest requests[N];
+    VhMap02CapturedFaceProjection observations[N];
+    VhMap02CapturedTextureState textures[N];
+    size_t count=0u;
+    fixture(requests,observations,textures);
+
+    /* The last face is front-facing in this deliberately invented map. */
+    for (unsigned i=0u;i<4u;++i)
+        decoded[59u*304u+216u+i]=(uint8_t)i;
+    requests[2].camera.ofx=52<<16;
+    observations[2].nclip_mac0=256;
+    observations[2].visible=1u;
+    observations[2].raw_otz=128;
+    const int16_t third_xy[4][2] = {
+        {52,20},{68,20},{52,36},{68,36}
+    };
+    memcpy(observations[2].gpu_xy,third_xy,sizeof third_xy);
+    textures[1].registers=textures[0].registers;
+    textures[2].registers=textures[0].registers;
+    assert(vh_map02_stage_captured_vram4_faces(
+        decoded,sizeof decoded,requests,observations,textures,
+        N,OT,submissions,N,&count));
+    assert(count==3u);
+
+    /* The second palette entry is a blue source for MoveImage. */
+    word(vram,499u*1024u+2u,0x7c00);
+    memcpy(later_vram,vram,sizeof vram);
+    word(later_vram,499u*1024u+1u,0x03e0);
+    memcpy(third_vram,later_vram,sizeof later_vram);
+    word(third_vram,499u*1024u+1u,0x7c00);
+    word(third_vram,400u*1024u+400u,0x001f);
+
+    for(unsigned i=0u;i<3u;++i) {
+        entries[i]=(VhMap02Vram4TimelineEntry){0};
+        entries[i].face=submissions[i];
+        entries[i].vram_le=i==0u?vram:(i==1u?later_vram:third_vram);
+        entries[i].vram_bytes=VH_MAP02_VRAM_BYTES;
+        entries[i].vram_snapshot_frame=42u;
+        entries[i].submission_index=i;
+        entries[i].vram_snapshot_index=i;
+        transfers[i]=(VhMap02VramTransfer){0};
+        transfers[i].frame=42u;
+        transfers[i].step=i;
+    }
+    transfers[0].before_submission=1u;
+    transfers[0].operation=VH_MAP02_VRAM_OP_LOAD;
+    transfers[0].x=1;transfers[0].y=499;
+    transfers[0].w=1;transfers[0].h=1;
+    transfers[0].load_le=later_green_load;
+    transfers[0].load_bytes=sizeof later_green_load;
+    transfers[1].before_submission=2u;
+    transfers[1].operation=VH_MAP02_VRAM_OP_MOVE;
+    transfers[1].x=2;transfers[1].y=499;
+    transfers[1].w=1;transfers[1].h=1;
+    transfers[1].dest_x=1;transfers[1].dest_y=499;
+    transfers[2].before_submission=2u;
+    transfers[2].operation=VH_MAP02_VRAM_OP_CLEAR;
+    transfers[2].x=400;transfers[2].y=400;
+    transfers[2].w=1;transfers[2].h=1;
+    transfers[2].red=255;
+}
+
+static void test_three_face_ledger_uses_both_submission_boundaries(void) {
+    VhMap02Vram4TimelineEntry entries[3];
+    VhMap02VramTransfer transfers[3];
+    VhMap02Vram4TimelineInput input;
+    VhMap02Vram4FrameWorkspace w=workspace();
+    VhCanvas canvas={framebuffer,STRIDE,W,H};
+    size_t drawn=0u,pixels=0u;
+    three_transition_fixture(entries,transfers);
+    clear_timeline_workspace();
+    input=timeline_input(entries);
+    input.count=3u;
+
+    assert(vh_map02_vram4_timeline_verify_ledger(
+        &input,&w,transfers,3u,ledger_replay,sizeof ledger_replay));
+    assert(vh_map02_vram4_timeline_build_with_ledger(
+        &input,&w,transfers,3u,ledger_replay,sizeof ledger_replay));
+    assert(w.scene.count==3u);
+    assert(heads[896]==2u && nodes[2].next==1u &&
+           nodes[1].next==0u && nodes[0].next==SIZE_MAX);
+    assert((uint16_t)(palettes[2] | ((unsigned)palettes[3]<<8))==0x001fu);
+    assert((uint16_t)(palettes[32u+2u] |
+                      ((unsigned)palettes[32u+3u]<<8))==0x03e0u);
+    assert((uint16_t)(palettes[64u+2u] |
+                      ((unsigned)palettes[64u+3u]<<8))==0x7c00u);
+    assert(vh_map02_ot_scene_draw(&w.scene,&canvas,scratch,classes,SCRATCH,
+                                  pack,NULL,&drawn,&pixels));
+    assert(drawn==3u);
+    assert(framebuffer[25u*STRIDE+25u]==UINT32_C(0xffff0000));
+    assert(framebuffer[25u*STRIDE+45u]==UINT32_C(0xff00ff00));
+    assert(framebuffer[25u*STRIDE+55u]==UINT32_C(0xff0000ff));
+    assert(framebuffer[25u*STRIDE+4u]==BG);
+}
+
+static void test_late_snapshot_mismatch_prevents_any_render_output(void) {
+    VhMap02Vram4TimelineEntry entries[3];
+    VhMap02VramTransfer transfers[3];
+    VhMap02Vram4TimelineInput input;
+    VhMap02Vram4FrameWorkspace w=workspace();
+    for(unsigned mutation=0u;mutation<7u;++mutation) {
+        three_transition_fixture(entries,transfers);
+        clear_timeline_workspace();
+        input=timeline_input(entries);
+        input.count=3u;
+        switch(mutation) {
+        case 0: word(third_vram,400u*1024u+400u,0u); break;
+        case 1: word(third_vram,499u*1024u+1u,0x03e0); break;
+        case 2: transfers[1].dest_x=3; break;
+        case 3: transfers[2].green=248; break;
+        case 4: transfers[0].before_submission=2u; break;
+        case 5: transfers[1].before_submission=1u; break;
+        case 6: entries[2].vram_snapshot_index=1u; break;
+        }
+        assert(!vh_map02_vram4_timeline_build_with_ledger(
+            &input,&w,transfers,3u,ledger_replay,sizeof ledger_replay));
+        assert_timeline_workspace_unmodified();
+    }
+}
+
+static void test_three_boundary_ledger_packet_import(void) {
+    VhMap02Vram4TimelineEntry entries[3];
+    VhMap02VramTransfer transfers[3],imported[3];
+    VhMap02Vram4TimelineInput input;
+    VhMap02Vram4FrameWorkspace w=workspace();
+    uint8_t packet[32u+52u*3u+2u];
+    size_t offset=32u,decoded_count=0u;
+    three_transition_fixture(entries,transfers);
+    clear_timeline_workspace();
+    input=timeline_input(entries);
+    input.count=3u;
+    memset(packet,0,sizeof packet);
+    memcpy(packet,"VHMAPGL1",8u);
+    packet_u32(packet,8u,42u);
+    packet_u32(packet,12u,3u);
+    packet_u32(packet,16u,3u);
+    packet_u32(packet,20u,sizeof packet);
+    for(unsigned i=0u;i<3u;++i) {
+        const VhMap02VramTransfer *t=&transfers[i];
+        packet_u32(packet,offset,(uint32_t)t->step);
+        packet_u32(packet,offset+4u,(uint32_t)t->before_submission);
+        packet_u32(packet,offset+8u,(uint32_t)t->operation);
+        packet_u32(packet,offset+12u,(uint32_t)t->x);
+        packet_u32(packet,offset+16u,(uint32_t)t->y);
+        packet_u32(packet,offset+20u,(uint32_t)t->w);
+        packet_u32(packet,offset+24u,(uint32_t)t->h);
+        packet_u32(packet,offset+28u,(uint32_t)t->dest_x);
+        packet_u32(packet,offset+32u,(uint32_t)t->dest_y);
+        packet_u32(packet,offset+36u,(uint32_t)t->red);
+        packet_u32(packet,offset+40u,(uint32_t)t->green);
+        packet_u32(packet,offset+44u,(uint32_t)t->blue);
+        packet_u32(packet,offset+48u,(uint32_t)t->load_bytes);
+        offset+=52u;
+        if(t->load_bytes) {
+            memcpy(packet+offset,t->load_le,t->load_bytes);
+            offset+=t->load_bytes;
+        }
+    }
+    assert(offset==sizeof packet);
+    assert(vh_map02_vram_ledger_import_packet(
+        packet,sizeof packet,42u,3u,imported,3u,&decoded_count));
+    assert(decoded_count==3u);
+    assert(vh_map02_vram4_timeline_build_from_packet(
+        &input,&w,packet,sizeof packet,imported,3u,
+        ledger_replay,sizeof ledger_replay));
+    assert(w.scene.count==3u);
+    /* Move event references the exact recorded source/destination. */
+    assert(imported[1].x==2 && imported[1].dest_x==1);
+    assert(imported[2].red==255 && imported[2].before_submission==2u);
+}
+
 int main(void) {
     test_verified_capture_flows_to_vram4_and_ot();
     test_mutations_do_not_change_staged_output();
@@ -559,6 +739,9 @@ int main(void) {
     test_transfer_ledger_source_copy_semantics();
     test_private_transfer_packet_import_and_draw();
     test_private_transfer_packet_corruption_is_atomic();
+    test_three_face_ledger_uses_both_submission_boundaries();
+    test_late_snapshot_mismatch_prevents_any_render_output();
+    test_three_boundary_ledger_packet_import();
     puts("MAP02 captured GTE -> source FT4 -> VRAM4 -> OT pixel tests passed");
     return 0;
 }
