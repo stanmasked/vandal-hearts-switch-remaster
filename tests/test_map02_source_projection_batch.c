@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "../source/map02_source_projection_batch.h"
+#include "../source/map02_terrain_ot_scene.h"
 
 /* Deliberately invented tiles and cameras: no retail MAP02 bytes. */
 static uint8_t decoded[VH_MAP02_SOURCE_DECODED_BYTES];
