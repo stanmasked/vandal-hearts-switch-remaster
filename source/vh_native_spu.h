@@ -56,6 +56,12 @@ typedef struct {
 } VhNativeSpu;
 
 void vh_native_spu_reset(VhNativeSpu *spu);
+/* Scene transition: discard every voice and borrowed PCM pointer while
+ * keeping the STUDIO_C wet-tail history and current DSP configuration.
+ * Stop/reinitialize the owning SEQ before using this function; all pending
+ * output pages must also be handled by the caller. Resets per-scene counters.
+ */
+void vh_native_spu_clear_voices_keep_reverb(VhNativeSpu *spu);
 /* Set VH_SPU_NEAREST (0) or VH_SPU_GAUSSIAN (1); -1 on invalid. */
 int vh_native_spu_set_interpolation(VhNativeSpu *spu, unsigned mode);
 /* Studio C wet level in [0,1]; disabled by default, preserving dry PCM. */
