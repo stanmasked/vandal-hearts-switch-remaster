@@ -371,3 +371,37 @@ warning, not necessarily corrupted original data.
 contract on manufactured SEQ/VH/VB fixtures, normal/strict
 behavior, and all-or-nothing bank loading. No copyrighted
 game data is required for CI.
+
+## Verified long-duration two-bank interchange (stage 180)
+
+The offline user-bank audit now preserves a **first-fallback example**
+for each musical scene: original SEQ program and note, together
+with the PC-port-style resolved VH program, tone index, and decoded
+VAG index. The portable `tools/vh_music_bank_audit.c` emits that
+information as JSON and supports the additional `--strict`
+instrument-coverage mode; it does not print or copy audio
+samples. Tests generate two complete synthetic VAB banks and
+exercise exact-note matching, the fallback warning, corrupted
+or missing triplets, and exit-code semantics.
+
+The two-bank regression was further extended to **1,400 sequential
+512-frame SPU/STUDIO_C blocks** with the real preloaded
+`field` and `selected` VAB objects alive concurrently.
+It switches scenes using normal fade staging, verifies active
+SPU voices always point into one of the two retained decoded
+sample banks, feeds every block to the stateful 44,100→48,000-Hz
+resampler and checks the complete output-frame count.
+This is more stringent than changing two synthetic pQES notes
+while sharing one PCM array.
+
+Verified host CI
+[#38921667637](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38921667637)
+passed with **780,190 output stereo frames**, **32 scene switches**
+and one deferred transition across the 1,400 blocks, including the
+UBSan build and the offline JSON CLI test. The integrated tactical
+NRO was built separately in
+[#38921637729](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38921637729)
+as artifact `vandal-hearts-tactical-with-native-music`.
+Neither test claims actual on-device playback; a physical Switch
+and user-provided SEQ/VH/VB remain required for audio comparison
+with the original release.
