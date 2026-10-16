@@ -68,4 +68,12 @@ int vh_audio_diag_journal_finish(VhAudioDiagJournal *journal,
 int vh_audio_diag_journal_write_csv(const VhAudioDiagJournal *journal,
                                      FILE *stream);
 
+/* Verify EXACT stored CSV bytes (including all rows and EOF) by reading
+ * a staged file opened in binary read mode. Called after fclose of
+ * the writer and before rename to a numbered .csv. Returns number
+ * of verified rows, or -1 for mismatch, truncation, garbage or I/O
+ * failure. No allocation; does not prove SD power-loss durability. */
+int vh_audio_diag_journal_verify_csv(const VhAudioDiagJournal *journal,
+                                      FILE *stream);
+
 #endif
