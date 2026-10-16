@@ -89,7 +89,7 @@ jobs:
                   -DPERMUTER -DPC_PORT -DPC_FEAT -DVH_REGION_US
                   -DVH_TRACE_MAP02 -DVH_MAP02_V39_TRACE
                   '-Dasm(x)='
-                  -Ipcport/platform/pc/include -Ipcport/include
+                  -Ipcport/platform/pc/include -Ipcport/platform/pc/src -Ipcport/include
                   -Ipcport
                   -include pc_forward_decls.h
                   -Wno-incompatible-pointer-types -Wno-int-conversion
