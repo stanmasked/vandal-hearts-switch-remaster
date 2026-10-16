@@ -128,8 +128,10 @@ def audit_archive(archive: Path, *, member_name=None, layout="mode2-2352",
     sector_size = RAW_BYTES if layout == "mode2-2352" else USER_BYTES
     if layout not in ("mode2-2352", "iso-2048"):
         raise ValueError("layout must be mode2-2352 or iso-2048")
-    required_last = (DAT_START_SECTOR + DAT_SECTOR_COUNT if with_dat
-                     else START_SECTOR + SECTOR_COUNT) + sector_bias
+    required_last = max(
+        START_SECTOR + SECTOR_COUNT,
+        DAT_START_SECTOR + DAT_SECTOR_COUNT if with_dat else 0,
+    ) + sector_bias
     if required_last < 0 or member["size"] < required_last * sector_size:
         raise ValueError("archived disc too short for expected map sector table")
     with tempfile.TemporaryDirectory(prefix="vh-map02-archive-") as temp:
