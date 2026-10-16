@@ -232,7 +232,7 @@ static void test_repeated_reload_after_corrupt_local_banks(void) {
     for(unsigned i=0;i<1024u;++i)output[i]=123;
     assert(vh_music_scene_render(&director,output)==0);
     for(unsigned i=0;i<1024u;++i)assert(output[i]==0);
-    printf("two-bank reload recovery: %u failed updates, %u safe replacements PASS\\n",
+    printf("two-bank reload recovery: %u failed updates, %u safe replacements PASS\n",
            failed,replaced);
 }
 
