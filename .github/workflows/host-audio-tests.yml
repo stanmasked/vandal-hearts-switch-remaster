@@ -275,7 +275,8 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
              -fsanitize=address,undefined -fno-omit-frame-pointer \
              tests/test_vh_music_lifecycle_soak.c \
-             source/vh_audio_output_recovery.c source/vh_game_music_mailbox.c \
+             source/vh_audio_output_recovery.c source/vh_audio_output_ramp.c \
+             source/vh_game_music_mailbox.c \
              source/vh_music_scene.c source/vh_audio_resample.c \
              source/vh_native_seq.c source/vh_native_spu.c \
              source/vh_spu_reverb.c source/vh_spu_gaussian.c \
