@@ -312,3 +312,51 @@ Six synthetic regression tests verify nibble order, CLUT lookup,
 raw-color SHA-256, PNG contents/panel positions, strict provenance
 rejection and EDC-failure handling. They do not require or embed
 original game pixels.
+
+
+## Verified model-to-GPU corner mapping (2026-10-16)
+
+The source-pixel comparison report now also includes `face_geometry`
+for each target face, reconstructed from the same PRS and DAT records
+that supply the GFX values. `tools/map02_face_geometry.py` reads the
+exact 304-byte `MapTileModel` layout: 22 padded 8-byte
+SVECTORs at offset 0, 18 signed 16-bit GFX at offset 176, four
+face-vertex indices per face at offset 212, shade bytes at offset 284,
+face count at offset 302 and height at offset 303.
+
+The mapping is checked directly against three files in pinned upstream
+PC-port commit `14552fffa0e0b47e02b57592e274fc6e7a649923`:
+
+- `include/field.h`: model layout and array sizes
+- `src/core/graphics.c`: all three terrain rendering methods
+  `RenderMapTile`, `RenderEdgeMapTile`,
+  `RenderOverheadMapTile`
+- `platform/pc/include/PsyQ/libgpu.h`: the exact
+  `setUVWH` macro and UV corner ordering
+
+For a source face with perimeter vertex indices `[a,b,c,d]`, the
+PC-port assigns **`poly.x0=a, poly.x1=b, poly.x3=c, poly.x2=d`**.
+The corresponding source-face perimeter UVs are
+`[(u,v), (u+w,v), (u+w,v+h), (u,v+h)]`.
+Mapping the vertices in the wrong order would mirror or transpose an
+HD texture even if the source pixel hashes were perfect.
+
+The new `both_target_face_geometries` provenance field requires
+valid active face-0 topology, nonzero first-triangle area, correct signed
+16-bit PRS/DAT GFX values, and byte-for-byte equality of both target
+tile records **except their face-0 material indices**. A malformed or
+empty face produces explicit diagnostic failure; the comparison image
+is then refused in normal strict-provenance mode. The JSON lists
+model-local X/Y/Z for each corner plus matching UVs, shade, and face
+count. It does **not** project through the camera, perform GPU backface
+culling, blend transparent pixels, or prove that a face was ever visible.
+
+To reproduce the independent source-contract check on a local checkout:
+
+```sh
+python3 -m tools.audit_map02_face_source   /path/to/pinned/VandalHearts-PcPort
+```
+
+This verifier checks exact pinned Git blob identities by default; it
+does not read proprietary game data. Both its source checks and the
+synthetic face-geometry tests are part of GitHub Actions.
