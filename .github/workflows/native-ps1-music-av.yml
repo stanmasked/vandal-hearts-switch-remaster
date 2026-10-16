@@ -171,19 +171,23 @@ jobs:
             empty)
               source="synthetic"
               audout="initialized"
+              pipeline="buffers_returned"
               ;;
             full)
               source="user_files"
               audout="initialized"
+              pipeline="buffers_returned"
               ;;
             partial)
               source="invalid_or_partial"
               audout="unavailable_or_error"
+              pipeline="inactive_or_error"
               ;;
             *) exit 2 ;;
           esac
           python3 tests/check_native_av_screenshot.py "$SHOT1" "$SHOT2" \
-            --require-audio-source "$source" --require-audout-status "$audout"
+            --require-audio-source "$source" --require-audout-status "$audout" \
+            --require-audio-pipeline "$pipeline"
 
       - name: Upload AV runtime evidence
         if: always()
