@@ -130,7 +130,7 @@ int main(void) {
     assert(output_frames+2u>=expected && output_frames<=expected+1u);
     assert(resampler.next_output_tick==output_frames*44100u);
     assert(checksum[0]!=checksum[1]);
-    printf("VAB seam adjacent-sample deltas (PCM16): %u %u %u\\n",
+    printf("VAB seam adjacent-sample deltas (PCM16): %u %u %u\n",
            seam_deltas[0],seam_deltas[1],seam_deltas[2]);
     puts("two synthetic VAB banks: safe SEQ SPU switch, continuous PCM clock PASS");
     return 0;
