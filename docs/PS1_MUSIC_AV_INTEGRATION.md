@@ -248,3 +248,47 @@ repeated-execution comparisons run in PCM WAV diagnostics.
 to suppress these diagnostic numbers. Future work needs a genuine
 user-supplied SEQ/VH/VB comparison and capture on a physical Switch
 before selecting a perceptual artifact fix.
+
+## Local-only two-bank transition audit for user-owned music
+
+Build and exercise the host utility with generated, copyright-free
+fixtures:
+
+\`\`\`sh
+make test-local-music-transition
+\`\`\`
+
+For locally owned SEQ/VH/VB resources, place each complete three-file
+set in a separate **private directory**, using exactly these names:
+\`music.seq\`, \`music.vh\`, and \`music.vb\`. Then run, locally:
+
+\`\`\`sh
+make build/vh_local_music_transition_probe
+./build/vh_local_music_transition_probe \
+  /private/music/bank_A /private/music/bank_B 16 16 \
+  > /private/music/transition-audit.json
+\`\`\`
+
+The optional final arguments are the **number of scenes** (2–32;
+default 4) and **512-frame blocks per scene** (1–4096; default 16).
+The engine reads both banks with the same strict all-or-nothing
+\`vh_audio_assets_load\` logic used by the Switch probe, validates each
+SEQ, alternates A/B on the audio owner, clears borrowed voices at each
+transition, and preserves the STUDIO_C work buffer and resampler clock.
+
+The stdout JSON is **metrics only**: per-scene dispatched events,
+successfully started notes, whether voice reverb sends were observed,
+raw 44.1-kHz and output 48-kHz boundary deltas, resampler fraction,
+and frame counts. No PCM frames, original bytes, track names, file
+paths, or bank contents are serialized. The program opens files
+read-only and does not create or overwrite audio files. The output
+report is created **only** if the operator explicitly redirects
+stdout (as illustrated above), and should stay private if its
+measurements might identify the music set.
+
+The command is intentionally offline: **do not upload or commit**
+the music directories or any original game audio. CI only invokes it
+against our independently generated synthetic test banks and checks
+malformed/missing resources, determinism, clock continuity, and
+ASan/UBSan. The report does **not** certify physical Switch audibility,
+original PS1 waveform matching, or perfect support for every track.
