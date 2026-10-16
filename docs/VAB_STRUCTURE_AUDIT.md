@@ -491,6 +491,53 @@ These checks cover serialized host-side lifetime management only, not
 cross-thread teardown while audio is actively running on real Switch
 hardware. The old bank must stay allocated until a controlled detach.
 
+## Cooperative normal-stop PCM tail and measured resume response
+
+Normal application shutdown is different from HOME/sleep: the audio
+worker usually still has a valid started `audout` session. On
+**cooperative, in-focus application exit only**, it now produces one
+optional **96-frame / 2-ms stereo PCM16 ramp** from the last
+*confirmed released* sample to digital zero. The ramp is generated
+directly into the one already returned output page, with no new
+SEQ events, SPU voices, wet reverb or 44.1→48-kHz resampler work.
+Only on this controlled exit, libnx `audoutAppendAudioOutBuffer`
+and `audoutWaitPlayFinish` are called with a **12-ms finite
+timeout**, rather than the infinite wait in `audoutPlayBuffer`.
+The exact descriptor identity is checked again. If the final page
+cannot be appended, released in time or verified, exit continues
+by stopping and closing the entire audout service; the lease remains
+protected until `audoutExit`. A zero last sample requires no tail.
+
+**HOME/focus loss does not attempt this tail**. At that point the
+applet might already have suspended or invalidated audout, so an
+extra output command could stall the audio owner. It continues
+using the immediate stop/reopen policy with the 4-ms start ramp
+from stage 200. The optional normal-exit taper is not a guarantee
+against a hardware pop when abruptly entering HOME.
+
+The Switch audio worker also measures elapsed system-counter time
+from a successful audout **resume/start attempt** to completion of
+the **first returned PCM buffer**, using libnx `armGetSystemTick`
+and `armTicksToNs`. Non-blocking atomic getters
+`vh_switch_game_audio_resume_latency_samples()` and
+`vh_switch_game_audio_resume_worst_confirmed_us()` expose the
+number of recorded sessions and worst elapsed microseconds.
+These are diagnostic counters, not a promise of speaker-onset latency
+or a user-facing benchmark. They are reset for each audio-worker
+startup. The stats helper records count, min/max, last, total and
+threshold counts above 50 ms/100 ms with overflow saturation.
+
+`source/vh_audio_output_edges.[ch]` and
+`tests/test_vh_audio_output_edges.c` check the entire two-ms
+stereo taper (including signed PCM16 extrema, strictly bounded
+adjacent-sample steps, a zero terminal sample and unchanged storage
+beyond the tail), plus latency threshold and counter saturation.
+The existing 512-block/63-pause stress test now synthesizes identical
+normal-exit tails for both clean and fault-injected producers,
+checking their byte identity and unchanged music clocks before
+device teardown. These are host tests, also run under ASan/UBSan,
+not an actual audio hardware latency measurement.
+
 ## 4-ms output de-click ramp after audout start or HOME resume
 
 To avoid a sudden full-amplitude sample at the start of a new 48-kHz
