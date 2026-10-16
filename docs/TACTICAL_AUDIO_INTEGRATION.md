@@ -254,3 +254,57 @@ in the NRO or committed to GitHub. The standalone libnx audio-only
 diagnostic still has its older *single* `music.seq/.vh/.vb` path
 and is independent of this two-bank tactical interface.
 
+
+
+## Instrument coverage diagnostics and rapid scene stress (stage 179)
+
+New `vh_native_seq_audit()` in `source/vh_native_seq.c` performs a
+**bounded, first-pass, no-playback** scan over a Sony `pQES` stream.
+It shares the already validated event decoder used by the player,
+including running MIDI status, per-channel program changes, control
+volume/pan, tempo and the PS1 end-of-track marker. It calls the
+selected tone resolver for each note-on, without allocating SPU voice
+slots, advancing the SEQ clock or writing any PCM output.
+The public `VhSeqAudit` records counts of all events, playable and
+unresolved note-ons, program/tempo changes, plus the first missing
+program, note and channel. Failed parsing leaves the result object
+unchanged.
+
+The dual-bank loader analyzes **both** user-provided scenes after
+validating and decoding both sets but before opening `audout`.
+A VAB-specific resolver wrapper records whether a note was matched
+in the requested program/range or required the PC-port-compatible
+global tone fallback. The resulting report is kept with the loaded
+bank. A song that contains note-on events but cannot resolve any
+note is rejected; a song with valid fallback notes is allowed to
+play but is flagged as a possible **timbre mismatch**, not as a
+fatal loader error.
+
+The audio thread publishes an atomic sum of preload warnings
+(missing and fallback note events). The tactical HUD shows
+`VAB FALLBACK` when the count is nonzero while music is running.
+Neither the HUD nor the game-input thread reads VAB structures
+or uses the audio service. This is an initial instrument-coverage
+diagnostic, **not** proof of matching Sony SPU patches or pitch;
+real user-supplied tracks must be verified aurally on a Switch.
+
+New regression coverage:
+
+- `tests/test_vh_native_seq.c` checks running-status note-ons,
+  channel volume/pan/program changes, tempo events, missing
+  instruments, source/PCM immutability and rejection of malformed
+  SEQ without publishing a partial report.
+- `tests/test_vh_game_music_banks.c` loads two independent
+  synthetic sample banks and verifies counts and fallback warnings
+  when the SEQ program is deliberately changed to a different
+  instrument number.
+- `tests/test_vh_music_scene_soak.c` now includes a second,
+  deterministic latest-wins stress scenario with **100,000 rapid
+  scene updates** while the SEQ/SPU/STUDIO_C/48-kHz output continues.
+  The GitHub host run `#38919909484` confirmed **834 deferred
+  scene requests**, **121 completed switches** and **1,783,292
+  resampled output frames** with no fatal transition error.
+
+None of these fixtures contains copyrighted game music.
+The physical Switch audio experience, including input latency
+during complex musical passages, remains to be tested.
