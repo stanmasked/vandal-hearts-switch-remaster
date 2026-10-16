@@ -199,31 +199,27 @@ static void audio_worker(void *unused) {
     unsigned accepted = VH_GAME_MUSIC_SILENT;
     unsigned handled_resume =
         vh_game_music_mailbox_resume_serial(&mailbox);
+    int pending_resume_reopen = 0;
     atomic_store_explicit(&audio_status, 0, memory_order_release);
     while (vh_game_music_mailbox_running(&mailbox)) {
         const unsigned newest_resume =
             vh_game_music_mailbox_resume_serial(&mailbox);
         if (newest_resume != handled_resume) {
             handled_resume = newest_resume;
-            /* HOME/sleep can suspend this thread before it sees focus
-             * loss. Reopen audout explicitly on resume while keeping
-             * SEQ, SPU, reverb and resampler playback positions.
-             */
-            if (playing) {
-                if (stop_audout_checked()) {
-                    state = -9;
-                    break;
-                }
-                playing = 0;
+            /* Mark the audout session stale even if the service still
+             * reports a valid 'started' state after HOME/sleep. Hold
+             * this flag until applet focus returns; no music clocks
+             * may advance during the suspended interval. */
+            pending_resume_reopen = 1;
+            if (output_stop(&recovery_backend)) {
+                state = -9;
+                break;
             }
         }
         if (!vh_game_music_mailbox_focused(&mailbox)) {
-            if (playing) {
-                if (stop_audout_checked()) {
-                    state = -9;
-                    break;
-                }
-                playing = 0;
+            if (output_stop(&recovery_backend)) {
+                state = -9;
+                break;
             }
             atomic_store_explicit(&audio_status, 2, memory_order_release);
             /* No SEQ block, SPU sample or resampler clock may advance
@@ -233,11 +229,13 @@ static void audio_worker(void *unused) {
             continue;
         }
         if (!playing) {
-            if (start_audout_checked()) {
+            if (vh_audio_output_resume_recover(
+                    &recovery_ops, &recovery_stats,
+                    pending_resume_reopen)) {
                 state = -4;
                 break;
             }
-            playing = 1;
+            pending_resume_reopen = 0;
             atomic_store_explicit(&audio_status, 1, memory_order_release);
         }
         /* The game thread only publishes the newest desired state.
