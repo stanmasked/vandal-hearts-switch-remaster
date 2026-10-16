@@ -39,3 +39,49 @@ The host-side renderer tests cover valid and out-of-bounds pixel writes, clipped
 ## Current limitation
 
 The Switch prototype still owns framebuffer acquisition and presentation in `source/main.c`. This contract only isolates the rectangle rasterization primitive; it is not a complete rendering backend and does not yet render the original Vandal Hearts game.
+
+
+## Textured FT4 diagnostic path
+
+`source/ft4_textured_quad.h` is a portable, self-contained CPU
+reference rasterizer for textured `POLY_FT4` quadrilaterals. It
+accepts a screen-space four-corner face perimeter, a caller-supplied
+UVWH crop and an already decoded packed RGBA32 source texture. The
+helper `vh_ft4_from_face_perimeter` maps original Vandal Hearts
+terrain face vertices to PS1 GPU corner order:
+
+```text
+face perimeter [0, 1, 2, 3] → GPU [0, 1, 3, 2]
+GPU uv0=(u,v)  uv1=(u+w,v)
+GPU uv2=(u,v+h)  uv3=(u+w,v+h)
+```
+
+The quad is split into the two FT4 triangles (0,1,2) and (1,3,2),
+rasterized at pixel centers with affine barycentric interpolation and
+nearest-neighbor texture sampling. It accepts either polygon winding
+and clips to the framebuffer bounds before integer conversion.
+Texture dimensions/stride, coordinates and invalid inputs are checked;
+destination row padding must remain untouched.
+
+The native Switch prototype's `source/main.c` now renders two
+**synthetic** 16×16 UV diagnostic samples in its right-hand panel,
+one with normal face ordering and one mirrored. Both use the portable
+rasterizer on the actual libnx framebuffer. This is a graphics plumbing
+test, not a claim that the original MAP02 geometry or its art has been
+loaded into the running game.
+
+The host suite builds `tests/test_ft4_textured_quad.c`, including
+pixel-exact orientation tests with asymmetric textures, the MAP02
+(240,192) and (240,208) 16×16 crops, mirror handling, clipping, stride
+padding, invalid inputs and degenerate polygons. GitHub Actions verifies
+the portable rasterizer, and the Switch toolchain workflow builds a
+native NRO. `make test-sanitize` also exercises the tests under
+ASan/UBSan where supported.
+
+**Limitations:** the rasterizer does not implement PS1 GTE screen-space
+projection, depth buffering/ordering tables, perspective corrections,
+texture-page windows, dithering, vertex shading, semitransparency or STP
+color-key behavior. It samples caller-decoded RGBA32 rather than raw
+4-bit CLUT atlas bytes. Quads are diagnostic affine approximations and
+cannot establish pixel-identical correspondence to a real PlayStation
+capture. Real PRS/DAT game assets are not embedded in the binary.
