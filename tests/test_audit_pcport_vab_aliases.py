@@ -41,6 +41,7 @@ class PcPortAliasAuditTests(unittest.TestCase):
         self.assertEqual(report["highest_populated_program"], 10)
         self.assertEqual(report["gap_alias_tones"], 8)
         self.assertEqual(report["inactive_slot_tones"], 0)
+        self.assertEqual(report["zero_volume_alias_tones"], 8)
         self.assertTrue(report["requires_pcport_compatibility_review"])
         self.assertEqual(
             [(x["program"], x["source_program"], x["vag"])
@@ -65,7 +66,41 @@ class PcPortAliasAuditTests(unittest.TestCase):
             "program": 0, "tone": 2, "source_program": 0,
             "vag": 2, "key_min": 115, "key_max": 120,
             "valid_vag_and_range": True,
+            "program_volume": 0, "program_pan": 0,
+            "source_program_volume": 0, "source_program_pan": 0,
+            "zero_program_volume": True,
         })
+
+    def test_empty_aliases_retain_own_volume_and_stereo_pan(self):
+        vh = bytearray(self.vh.read_bytes())
+        program_table = 32
+        # Alias p1/p8 deliberately disagree with the source ProgAtr.
+        for program, volume, pan in (
+            (1, 95, 0), (7, 127, 127),
+            (8, 63, 64), (10, 127, 127),
+        ):
+            vh[program_table + program * 16 + 1] = volume
+            vh[program_table + program * 16 + 4] = pan
+        self.vh.write_bytes(vh)
+        report = audit_aliases(self.vh, self.vb)
+        alias1 = next(item for item in report["aliases"]
+                      if item["program"] == 1)
+        alias8 = next(item for item in report["aliases"]
+                      if item["program"] == 8)
+        self.assertEqual(
+            (alias1["program_volume"], alias1["program_pan"],
+             alias1["source_program_volume"], alias1["source_program_pan"]),
+            (95, 0, 127, 127),
+        )
+        self.assertEqual(
+            (alias8["program_volume"], alias8["program_pan"],
+             alias8["source_program_volume"], alias8["source_program_pan"]),
+            (63, 64, 127, 127),
+        )
+        self.assertFalse(alias1["zero_program_volume"])
+        self.assertFalse(alias8["zero_program_volume"])
+        self.assertEqual(report["zero_volume_alias_tones"], 6)
+        self.assertTrue(report["requires_pcport_compatibility_review"])
 
     def test_unused_slot_out_of_bounds_vag_is_diagnosed(self):
         vh = bytearray(self.vh.read_bytes())
