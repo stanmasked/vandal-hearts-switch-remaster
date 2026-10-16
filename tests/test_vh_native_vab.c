@@ -97,10 +97,10 @@ static void test_metadata_selection_and_audio(void) {
     assert(vh_native_vab_resolve(&bank,7,45,127,127,64,&out)==0);
     assert(bank.selected_program==0 && bank.selected_vag==1);
     assert(vh_native_vab_resolve(&bank,99,90,127,127,64,&out)==0);
-    assert(bank.selected_program==7 && bank.selected_vag==3);
+    assert(bank.selected_program==1 && bank.selected_vag==3);
     assert(out.reverb_send == 1);
     assert(vh_native_vab_resolve(&bank,0,75,127,127,64,&out)==0);
-    assert(bank.selected_program==7 && bank.selected_vag==3);
+    assert(bank.selected_program==1 && bank.selected_vag==3);
     assert(vh_native_vab_resolve(&bank,99,15,127,127,64,&out)==0);
     assert(bank.selected_program==0 && bank.selected_vag==1);
     assert(vh_native_vab_resolve(&bank,0,60,127,127,64,&out)==0);
@@ -133,18 +133,18 @@ static void test_tone_range_boundaries_and_nearest_ties(void) {
         {0, 60, 0, 0, 1},   /* inclusive upper bound for first tone */
         {0, 61, 0, 1, 2},   /* second overlapping local tone */
         {0, 70, 0, 1, 2},   /* inclusive upper bound for second tone */
-        {0, 71, 7, 0, 3},   /* nearest low=80, not nearest upper end */
-        {7, 79, 7, 0, 3},   /* same requested program, outside its range */
+        {0, 71, 1, 0, 3},   /* nearest low=80, not nearest upper end */
+        {7, 79, 1, 0, 3},   /* same requested program, outside its range */
         {7, 80, 7, 0, 3},   /* inclusive lower bound */
         {7,100, 7, 0, 3},   /* inclusive upper bound */
-        {7,101, 7, 0, 3},   /* nearest global lower bound */
+        {7,101, 1, 0, 3},   /* nearest global lower bound */
         {10,40,10, 0, 4},   /* requested program beats global p0 match */
         {10,50,10, 0, 4},
         {10,51, 0, 0, 1},   /* first global range after local miss */
         {99,40, 0, 0, 1},   /* sparse absent program */
         {99,70, 0, 1, 2},
-        {99,75, 7, 0, 3},
-        {99,127,7, 0, 3},
+        {99,75, 1, 0, 3},
+        {99,127,1, 0, 3},
     };
     for(size_t i=0;i<sizeof cases/sizeof cases[0];++i) {
         const struct Selection *c=&cases[i];
@@ -166,7 +166,7 @@ static void test_tone_range_boundaries_and_nearest_ties(void) {
     bank.tones[10][0].low=80; bank.tones[10][0].high=90;
     VhSeqTone out={0};
     assert(vh_native_vab_resolve(&bank,99,40,127,127,64,&out)==0);
-    assert(bank.selected_program==7 && bank.selected_vag==3);
+    assert(bank.selected_program==1 && bank.selected_vag==3);
 
     /* Equal distances to key_min keep first packed-table order. */
     bank.tones[0][0].low=10; bank.tones[0][0].high=15;
@@ -178,7 +178,7 @@ static void test_tone_range_boundaries_and_nearest_ties(void) {
     assert(vh_native_vab_resolve(&bank,99,40,127,127,64,&out)==0);
     assert(bank.selected_program==0 && bank.selected_tone==1);
     assert(vh_native_vab_resolve(&bank,99,60,127,127,64,&out)==0);
-    assert(bank.selected_program==7 && bank.selected_tone==0);
+    assert(bank.selected_program==1 && bank.selected_tone==0);
 
     const unsigned p=bank.selected_program, t=bank.selected_tone;
     const unsigned vag=bank.selected_vag;
@@ -186,6 +186,50 @@ static void test_tone_range_boundaries_and_nearest_ties(void) {
     assert(vh_native_vab_resolve(&bank,99,128,127,127,64,&out)==-1);
     assert(bank.selected_program==p && bank.selected_tone==t &&
            bank.selected_vag==vag);
+}
+
+/* The reference loader maps empty programs to the following packed
+ * block and keeps nonzero inactive slots in its 16-tone selection table.
+ */
+static void test_shadow_tones_and_aliases(void) {
+    fixture();
+    const size_t shadow=2080u+2u*32u;
+    vh[shadow+2]=127;
+    vh[shadow+3]=64;
+    vh[shadow+4]=117;
+    vh[shadow+6]=115;
+    vh[shadow+7]=120;
+    w16(shadow+20,0);
+    w16(shadow+22,2);
+    memset(&bank,0,sizeof bank);
+    assert(vh_native_vab_load(&bank,vh,sizeof vh,vb,96,arena,224)==0);
+    assert(bank.program_tones[0]==2);
+    assert(bank.tones[0][2].present && bank.tones[0][2].vag==2);
+    assert(bank.program_tones[1]==0 && bank.tones[1][0].present);
+    assert(bank.tones[1][0].vag==3);
+    assert(bank.program_tones[8]==0 && bank.tones[8][0].vag==4);
+    VhSeqTone out={0};
+    assert(vh_native_vab_resolve(&bank,0,117,127,127,64,&out)==0);
+    assert(bank.selected_program==0 && bank.selected_tone==2 &&
+           bank.selected_vag==2 && out.pcm==bank.samples[2].pcm);
+    assert(vh_native_vab_resolve(&bank,1,90,127,127,64,&out)==0);
+    assert(bank.selected_program==1 && bank.selected_tone==0 &&
+           bank.selected_vag==3 && out.pcm==bank.samples[3].pcm);
+    assert(vh_native_vab_resolve(&bank,8,45,127,127,64,&out)==0);
+    assert(bank.selected_program==8 && bank.selected_tone==0 &&
+           bank.selected_vag==4 && out.pcm==bank.samples[4].pcm);
+
+    /* A malformed hidden record must not bypass VAG validation or
+     * replace the published bank. */
+    const VhNativeVab snapshot=bank;
+    w16(shadow+22,5); /* bank contains only VAGs 1..4 */
+    assert(vh_native_vab_load(&bank,vh,sizeof vh,vb,96,arena,224)==-1);
+    assert(!memcmp(&bank,&snapshot,sizeof bank));
+    w16(shadow+22,2);
+    vh[shadow+6]=121;
+    vh[shadow+7]=120;
+    assert(vh_native_vab_load(&bank,vh,sizeof vh,vb,96,arena,224)==-1);
+    assert(!memcmp(&bank,&snapshot,sizeof bank));
 }
 
 static void test_strict_invalid_banks_and_no_publish(void) {
@@ -255,6 +299,7 @@ static void test_actual_native_seq_to_vab_to_spu_pcm(void) {
 int main(void) {
     test_metadata_selection_and_audio();
     test_tone_range_boundaries_and_nearest_ties();
+    test_shadow_tones_and_aliases();
     test_strict_invalid_banks_and_no_publish();
     test_actual_native_seq_to_vab_to_spu_pcm();
     puts("native sparse VH/VB -> SEQ -> SPU stereo PCM: PASS");
