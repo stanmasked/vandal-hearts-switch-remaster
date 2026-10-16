@@ -35,6 +35,7 @@ def compare_blendg1_witnesses(putpixel_rows, witness_rows):
         last_step = step
         for key, upper in (("frame", 2**32 - 1),
                            ("primitive_ordinal", 2**32 - 1),
+                           ("primitive_type", 255),
                            ("x", 1023), ("y", 511),
                            ("accurate", 1), ("abr", 3),
                            ("before", 65535), ("front", 65535),
@@ -49,9 +50,10 @@ def compare_blendg1_witnesses(putpixel_rows, witness_rows):
     if len(requested) != len(witness_rows):
         raise ValueError("BlendG1 witnesses missing or unexpected")
     counts = [[0] * 4 for _ in range(2)]
-    keys = ("frame", "primitive_ordinal", "x", "y", "accurate",
+    keys = ("frame", "primitive_ordinal", "primitive_type", "x", "y", "accurate",
             "abr", "before", "front", "after")
     limits = {"frame": 2**32 - 1, "primitive_ordinal": 2**32 - 1,
+              "primitive_type": 255,
               "x": 1023, "y": 511, "accurate": 1, "abr": 3,
               "before": 65535, "front": 65535, "after": 65535}
     for p, w in zip(requested, witness_rows):
