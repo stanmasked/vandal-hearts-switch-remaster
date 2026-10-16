@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit PC-port VAB tone aliases absent from the validated active-tone model.
+"""Audit sparse PC-port VAB tone aliases, mixing attributes and risk.
 
 The pinned PC-port SsVabOpenHeadSticky constructs a 16-tone view for
 every program up to the highest populated program. Empty program IDs
@@ -40,10 +40,18 @@ def audit_aliases(vh: Path, vb: Path | None = None) -> dict[str, object]:
         )
     highest = populated[-1]["program"]
     with vh.open("rb") as stream:
-        stream.seek(TONE_BASE)
+        stream.seek(32)
+        programs_raw = stream.read(128 * 16)
         raw = stream.read(len(populated) * BLOCK_BYTES)
+    if len(programs_raw) != 128 * 16:
+        raise ValueError("VAB program attributes truncated")
     if len(raw) != len(populated) * BLOCK_BYTES:
         raise ValueError("packed tone data truncated")
+    attributes = {
+        program: (programs_raw[program * 16 + 1],
+                  programs_raw[program * 16 + 4])
+        for program in range(highest + 1)
+    }
 
     active_counts = {entry["program"]: entry["tones"] for entry in populated}
     aliases: list[dict[str, object]] = []
@@ -59,6 +67,8 @@ def audit_aliases(vh: Path, vb: Path | None = None) -> dict[str, object]:
                 continue
             low, high = raw[offset + 6], raw[offset + 7]
             playable = (vag <= bank["vags"] and low <= high and high <= 127)
+            program_volume, program_pan = attributes[program]
+            source_volume, source_pan = attributes[source_program]
             aliases.append({
                 "kind": "empty_program" if not active else "inactive_slot",
                 "program": program,
@@ -68,6 +78,11 @@ def audit_aliases(vh: Path, vb: Path | None = None) -> dict[str, object]:
                 "key_min": low,
                 "key_max": high,
                 "valid_vag_and_range": playable,
+                "program_volume": program_volume,
+                "program_pan": program_pan,
+                "source_program_volume": source_volume,
+                "source_program_pan": source_pan,
+                "zero_program_volume": program_volume == 0,
             })
         if active:
             packed_index += 1
@@ -82,6 +97,9 @@ def audit_aliases(vh: Path, vb: Path | None = None) -> dict[str, object]:
         "highest_populated_program": highest,
         "gap_alias_tones": gaps,
         "inactive_slot_tones": inactive,
+        "zero_volume_alias_tones": sum(
+            item["zero_program_volume"] for item in aliases
+        ),
         "aliases": aliases,
         "requires_pcport_compatibility_review": bool(aliases),
     }
