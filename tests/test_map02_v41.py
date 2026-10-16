@@ -175,7 +175,7 @@ class TestCorrelation(unittest.TestCase):
         self.assertEqual(r["frames_with_events"], 0)
 
     def test_negative_screen_coordinates_allowed(self):
-        r = self.report(ot(), pixel().replace("x=64", "x=-1"),
+        r = self.report(ot(), pixel().replace(" x=64 ", " x=-1 "),
                         pixel("v40-terrain-hires"))
         self.assertEqual(r["status"], "provenance_correlated")
 
