@@ -83,8 +83,8 @@ static inline int vh_map02_ot_scene_add(
         return 0;
     slot = scene->ot_size - (size_t)quad->projection.depth;
     if (slot != quad->projection.ot_slot || slot >= scene->ot_size ||
-        scene->heads[slot] != SIZE_MAX &&
-            scene->heads[slot] >= scene->count)
+        (scene->heads[slot] != SIZE_MAX &&
+         scene->heads[slot] >= scene->count))
         return 0;
     node = (VhMap02OtTerrainNode){
         quad, atlas4, atlas_bytes, clut_le, clut_bytes,
