@@ -63,19 +63,20 @@ int main(void) {
     slots[2].tag = 3;
     slots[3].tag = 4;
     slots[4].tag = 0;
+    invalid_walk = getenv("VH_MAP02_TEST_ABORT") != 0;
     DrawOTag((unsigned *)&root);
 #ifdef VH_MAP02_SCOPED_BLEND_PROBE
+    if (invalid_walk) {
+        assert(vh_map02_scope_failed());
+        assert(!vh_map02_scope_copy(0, &event));
+    } else {
     assert(!vh_map02_scope_failed());
     assert(vh_map02_scope_count() == 2);
     assert(vh_map02_scope_copy(0, &event) && event.ordinal == 0);
     assert(vh_map02_scope_copy(1, &event) && event.ordinal == 1);
-    invalid_walk = 1;
-    visits = 0;
-    DrawOTag((unsigned *)&root);
-    assert(vh_map02_scope_failed());
-    assert(!vh_map02_scope_copy(0, &event));
+    }
 #else
-    assert(visits == 2);
+    assert(visits == (invalid_walk ? 1u : 2u));
 #endif
     return 0;
 }
@@ -90,7 +91,6 @@ class DrawOTagScopeTests(unittest.TestCase):
         self.assertIn("vh_map02_scope_end_frame()", patched)
         self.assertEqual(patched.count("if (vh_scope_active) vh_map02_scope_abort();"), 2)
         self.assertIn("vh_scope_ordinal++", patched)
-        self.assertIn("Hires", "Hires is unrelated to the synthetic fixture")
 
     def test_source_drift_rejected(self):
         source = source_fixture()
@@ -132,6 +132,10 @@ class DrawOTagScopeTests(unittest.TestCase):
                                    VH_MAP02_PROBE_Y="3")
                     subprocess.run([str(binary)], env=env, check=True,
                                    capture_output=True, text=True)
+                    if enabled:
+                        env["VH_MAP02_TEST_ABORT"] = "1"
+                        subprocess.run([str(binary)], env=env, check=True,
+                                       capture_output=True, text=True)
 
 if __name__ == "__main__":
     unittest.main()
