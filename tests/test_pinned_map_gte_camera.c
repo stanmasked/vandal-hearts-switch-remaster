@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "PsyQ/libgte.h"
+#include "inline_gte.h"
 
 static int x_of(int xy) { return (short)(xy & 0xffff); }
 static int y_of(int xy) { return (short)((unsigned)xy >> 16); }
@@ -50,6 +51,33 @@ int main(void) {
         assert(memcmp(xy,again,sizeof(xy))==0);
         assert(p2==p && flags2==flags);
     }
-    puts("PASS: native pinned PS1 GTE RTPT/RTPS + AVSZ4 perspective");
+    /* Original RenderMapTile culls signed GTE NCLIP area <= 0.
+     * Reversing the two outer vertices reverses winding and sign.
+     * This test uses the ORIGINAL pinned PC_GTE_NCLIP implementation. */
+    {
+        int front, back, depth;
+        gte_ldv3(&model[0], &model[1], &model[2]);
+        gte_rtpt();
+        gte_nclip();
+        gte_stopz(&front);
+        assert(front > 0);
+        gte_ldv3(&model[2], &model[1], &model[0]);
+        gte_rtpt();
+        gte_nclip();
+        gte_stopz(&back);
+        assert(back < 0);
+        assert(back == -front);
+        /* A fresh four-vertex RTPT + RTPS must retain AVSZ4 OTZ. */
+        gte_ldv3(&model[0], &model[1], &model[2]);
+        gte_rtpt();
+        gte_ldv0(&model[3]);
+        gte_rtps();
+        gte_avsz4();
+        gte_stotz(&depth);
+        assert(depth == otz);
+        printf("Original pinned GTE NCLIP front=%d reverse=%d AVSZ4=%d\\n",
+               front,back,depth);
+    }
+    puts("PASS: pinned PS1 GTE perspective, signed NCLIP culling and AVSZ4 depth");
     return 0;
 }
