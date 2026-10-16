@@ -130,4 +130,40 @@ static inline int vh_map02_prepare_external_face(
     *out=prepared;
     return 1;
 }
+
+/*
+ * Fail-closed batch conversion: each observation must map to one unique
+ * (record_index, face_index) and match all source face bytes. A full
+ * validation pass runs BEFORE writing any outputs. The caller keeps
+ * inputs immutable during the call, owns all arrays and separately
+ * decides submission order (this adapter never sorts).
+ */
+static inline int vh_map02_prepare_external_batch(
+    const uint8_t *decoded, size_t decoded_size,
+    const VhMap02ExternalFaceEvidence *samples,
+    size_t count, size_t ot_size,
+    VhMap02ExternalPreparedFace *out, size_t capacity) {
+    size_t i,j;
+    VhMap02ExternalPreparedFace check;
+    if (!decoded || !samples || !out ||
+        count > capacity ||
+        count > VH_MAP02_EXTERNAL_ACTIVE_Z *
+                VH_MAP02_EXTERNAL_ACTIVE_X *
+                VH_MAP02_FACE_MAX_COUNT)
+        return 0;
+    for (i=0; i<count; ++i) {
+        if (!vh_map02_prepare_external_face(
+                decoded,decoded_size,&samples[i],ot_size,&check))
+            return 0;
+        for (j=0; j<i; ++j)
+            if (samples[i].record_index == samples[j].record_index &&
+                samples[i].face_index == samples[j].face_index)
+                return 0;
+    }
+    for (i=0; i<count; ++i)
+        if (!vh_map02_prepare_external_face(
+                decoded,decoded_size,&samples[i],ot_size,&out[i]))
+            return 0; /* unreachable for immutable validated inputs */
+    return 1;
+}
 #endif
