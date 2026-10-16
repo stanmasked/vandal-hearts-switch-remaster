@@ -2,6 +2,7 @@
 import unittest
 
 from tools.audit_map02_face_source import (
+    DISTANCE_LIGHT_ANCHORS, OVERHEAD_LIGHT_ANCHOR,
     FIELD_LAYOUT, RENDERER_ANCHORS, RENDERERS, UV_MACRO,
     verify_source_contract,
 )
@@ -19,7 +20,10 @@ def synthetic_c_sources():
             else "setUVWH(poly, gGfxSubTextures[gfx][0], gGfxSubTextures[gfx][1], "
                  "gGfxSubTextures[gfx][2], gGfxSubTextures[gfx][3]);"
         )
-        blocks.append(f"void {name}(u32 *ot) {{\n{lines}\n{uv}\n}}\n")
+        lighting = ("\n".join(DISTANCE_LIGHT_ANCHORS)
+                    if name != "RenderOverheadMapTile"
+                    else OVERHEAD_LIGHT_ANCHOR)
+        blocks.append(f"void {name}(u32 *ot) {{\n{lines}\n{uv}\n{lighting}\n}}\n")
     blocks.append("s32 GetBestViewOfTarget(s8 z, s8 x, s32 arg) { return 0; }\n")
     return field, "\n".join(blocks), gpu
 
@@ -102,6 +106,37 @@ class Map02FaceSourceTests(unittest.TestCase):
                 field, graphics.replace("poly->code = GPU_CODE_POLY_FT4;",
                                         "poly->code = 0x2e;"), gpu
             )
+
+    def test_original_distance_shade_and_overhead_brightness_are_pinned(self):
+        field, graphics, gpu = synthetic_c_sources()
+        result = verify_source_contract(field, graphics, gpu)
+        self.assertIn("otz - 150", result["normal_edge_lighting"])
+        self.assertIn("setRGB0(brightness", result["overhead_lighting"])
+        for statement in (
+            "shading = otz - 150;",
+            "r2 = gSideLightColor[tileModel->shades[faceIdx]].r;",
+            "poly->r0 = r1 - (r2 >> 8);",
+            "poly->g0 = g1 - (g2 >> 8);",
+            "poly->b0 = b1 - (b2 >> 8);",
+        ):
+            with self.subTest(source_line=statement):
+                with self.assertRaisesRegex(ValueError, "terrain depth lighting changed"):
+                    verify_source_contract(
+                        field, graphics.replace(statement, "/* removed */"), gpu)
+        with self.assertRaisesRegex(ValueError, "overhead terrain brightness"):
+            verify_source_contract(
+                field, graphics.replace(OVERHEAD_LIGHT_ANCHOR, "/* removed */"),
+                gpu)
+
+    def test_overhead_brightness_does_not_use_normal_distance_shade(self):
+        field, graphics, gpu = synthetic_c_sources()
+        start = graphics.index("void RenderOverheadMapTile(")
+        stop = graphics.index("s32 GetBestViewOfTarget(", start)
+        overhead = graphics[start:stop]
+        self.assertIn(OVERHEAD_LIGHT_ANCHOR, overhead)
+        self.assertNotIn("shading = otz - 150;", overhead)
+        self.assertTrue(verify_source_contract(field, graphics, gpu)
+                        ["field_and_gpu_layout_verified"])
 
     def test_each_renderer_uses_texture_table_uvwh(self):
         field, graphics, gpu = synthetic_c_sources()
