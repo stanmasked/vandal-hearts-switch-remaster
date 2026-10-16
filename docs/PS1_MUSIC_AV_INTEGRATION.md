@@ -601,3 +601,34 @@ PS1 hardware timings; exact parity requires original-game audio
 and hardware comparison. This test runs on the host and under
 ASan/UBSan in the PCM diagnostics CI. It neither embeds original
 audio nor changes native SPU playback.
+
+### End-to-end SEQ/VAB ADSR2 release verification
+
+A companion regression checks the same seven release-rate encodings
+through the entire **synthetic pQES → imported pBAV VH/VB tone → native
+SPU → 44.1-to-48-kHz PCM** path, rather than configuring the SPU
+envelope directly. Each generated tone stores ADSR2 in its actual
+little-endian VH tone-table field. A note-off at SEQ tick 240 is
+dispatched before rendering **block 22** (480 PPQN, 500,000
+µs/quarter). The resulting voice retirement should occur in:
+
+| ADSR2 release bits | First and last Release retirement block |
+| --- | ---: |
+| `0x0000`, `0x0005` | 22 |
+| `0x000A` | 25 |
+| `0x0020`, `0x0025` | 22 |
+| `0x002A` | 39 |
+| `0x001F` | No retirement within 42 blocks |
+
+The second synthetic bank retains its default fast Release (block
+22) in every test. All seven pairs are run twice to check exact,
+repeatable JSON output, both input-bank byte-for-byte immutability,
+the isolation of each scene's counters, and the exact 48-kHz frame
+total. The audit does not export decoded PCM or source file bytes.
+
+The standalone native SPU release-rate test and these seven
+end-to-end cases are both exercised under **ASan/UBSan** in the PCM
+diagnostics workflow. Passing these software checks does **not**
+establish hardware PS1 release timing, pitch/envelope parity, or
+audible Switch quality; privately owned original SEQ/VH/VB and
+physical playback captures are still required for that assessment.
