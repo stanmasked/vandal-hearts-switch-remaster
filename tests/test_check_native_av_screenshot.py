@@ -8,11 +8,11 @@ from check_native_av_screenshot import inspect_images, HERO, AUDIO_OK, AUDIO_FAI
 def make_frames(audio=AUDIO_OK, advance=True):
     before = Image.new("RGB", (1280, 720), (17, 23, 39))
     before.putpixel((452, 296), HERO)
-    before.putpixel((108, 104), audio)
+    before.putpixel((1050, 160), audio)
     after = before.copy()
     if advance:
         for x in range(105, 148):
-            for y in range(610, 624):
+            for y in range(588, 601):
                 after.putpixel((x, y), HERO)
     return before, after
 
