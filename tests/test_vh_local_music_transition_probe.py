@@ -20,7 +20,8 @@ TONE_OFFSET = 32 + 128 * 16
 def synth_dir(directory, wet=False, bank_b=False, fallback_program=False,
               out_of_range_note=False, mute_master=False,
               no_note_on=False, program_change_retrigger=False,
-              delayed_program_change=False, accelerated_tempo=False):
+              delayed_program_change=False, accelerated_tempo=False,
+              multiple_tempo_loop=False):
     directory.mkdir()
     files = make_synthetic_files()
     vh = bytearray(files["music.vh"])
@@ -50,6 +51,23 @@ def synth_dir(directory, wet=False, bank_b=False, fallback_program=False,
             0x81, 0x70, 0x80, 60, 0,
             0, 0x80, 61, 0,
             0, 0x80, 110, 0,
+            0, 0xFF, 0x2F,
+        ])
+    if multiple_tempo_loop:
+        # Two native FF51 events (250000 and 750000 us/quarter) inside
+        # each cycle. EOT is 90 ticks after entry. The production SEQ
+        # retains its final tempo at EOT until the tick-zero FF51
+        # on the next cycle, so event positions must stay deterministic.
+        files["music.seq"] = files["music.seq"][:15] + bytes([
+            0, 0xC0, 7,
+            0, 0x90, 60, 100,
+            0, 0xFF, 0x51, 0x03, 0xD0, 0x90,
+            30, 0x90, 61, 110,
+            0, 0xFF, 0x51, 0x0B, 0x71, 0xB0,
+            30, 0x90, 62, 110,
+            30, 0x80, 60, 0,
+            0, 0x80, 61, 0,
+            0, 0x80, 62, 0,
             0, 0xFF, 0x2F,
         ])
     if accelerated_tempo and not delayed_program_change:
@@ -330,6 +348,65 @@ class NativeLocalMusicTransitionTests(unittest.TestCase):
             for folder, saved in ((regular, original_regular),
                                   (faster, original_faster),
                                   (other, original_other)):
+                self.assertEqual(
+                    {p.name: p.read_bytes() for p in folder.iterdir()}, saved)
+
+    def test_two_ff51_tempos_and_repeated_end_of_track_cycles(self):
+        # Independently calculated from 480 PPQN / 44.1-kHz
+        # 512-frame budgets. Tempo updates are applied to *later*
+        # blocks, and EOT resets tick_budget while retaining tempo.
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b = Path(tmp) / "loop-a", Path(tmp) / "ordinary-b"
+            original_a = synth_dir(a, multiple_tempo_loop=True, wet=True)
+            original_b = synth_dir(b)
+            expected = {
+                # blocks: notes, completed cycles, last note,
+                # observed end-of-block tempo transitions, final tempo
+                4: (2, 0, 2, 2, 750000),
+                8: (3, 0, 6, 2, 750000),
+                16: (6, 1, 15, 4, 750000),
+                32: (11, 3, 30, 8, 750000),
+            }
+            for blocks, (notes, cycles, last_note, transitions,
+                         ending_tempo) in expected.items():
+                with self.subTest(blocks=blocks):
+                    cmd = [str(PROGRAM), str(a), str(b), "2", str(blocks)]
+                    first = subprocess.run(cmd, capture_output=True, text=True)
+                    repeat = subprocess.run(cmd, capture_output=True, text=True)
+                    self.assertEqual(first.returncode, 0, first.stderr)
+                    self.assertEqual(first.stdout, repeat.stdout)
+                    report = json.loads(first.stdout)
+                    a_scene, b_scene = report["measurements"]
+                    self.assertEqual(a_scene["note_requests"], notes)
+                    self.assertEqual(a_scene["resolved_notes"], notes)
+                    self.assertEqual(a_scene["unresolved_notes"], 0)
+                    self.assertEqual(a_scene["fallback_notes"], 0)
+                    self.assertEqual(a_scene["first_note_block"], 1)
+                    self.assertEqual(a_scene["last_note_block"], last_note)
+                    self.assertEqual(a_scene["cycles_completed"], cycles)
+                    self.assertEqual(a_scene["first_cycle_block"],
+                                     10 if cycles else 0)
+                    self.assertEqual(a_scene["last_cycle_block"],
+                                     (0, 10, 19, 28)[cycles])
+                    self.assertEqual(a_scene["observed_tempo_changes"],
+                                     transitions)
+                    self.assertEqual(a_scene["first_tempo_change_block"], 1)
+                    self.assertEqual(a_scene["last_tempo_change_block"],
+                                     {4: 2, 8: 2, 16: 12, 32: 30}[blocks])
+                    self.assertEqual(a_scene["final_tempo_us_per_quarter"],
+                                     ending_tempo)
+                    self.assertGreater(a_scene["nonzero_samples"], 0)
+                    self.assertEqual(b_scene["first_note_block"], 1)
+                    self.assertEqual(b_scene["observed_tempo_changes"], 0)
+                    self.assertEqual(b_scene["cycles_completed"], 0)
+                    self.assertEqual(b_scene["final_tempo_us_per_quarter"],
+                                     500000)
+                    total = 2 * blocks * 512
+                    self.assertEqual(report["input_frames"], total)
+                    self.assertEqual(report["output_frames"],
+                                     (total - 1) * 48000 // 44100 + 1)
+                    self.assertNotIn(str(tmp), first.stdout)
+            for folder, saved in ((a, original_a), (b, original_b)):
                 self.assertEqual(
                     {p.name: p.read_bytes() for p in folder.iterdir()}, saved)
 
