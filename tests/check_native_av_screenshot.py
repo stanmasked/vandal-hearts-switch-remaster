@@ -61,6 +61,25 @@ def inspect_images(first: Image.Image, second: Image.Image) -> dict:
     else:
         raise ValueError(f"audio-source status marker absent: {source_pixel}")
 
+    # Runtime-generated PCM and audout return progress, represented by a
+    # different guest rectangle from the simple service startup marker.
+    # Green means >=16 DSP blocks AND >=16 completed audout buffers;
+    # amber is a potential stalled device, red is unavailable/error.
+    progress_pixel = first.getpixel((1050, 280))
+    pr, pg, pb = progress_pixel
+    if near(progress_pixel, AUDIO_OK) or (
+        pg >= 155 and pg > pr + 70 and pg > pb + 40
+    ):
+        pipeline = "buffers_returned"
+    elif near(progress_pixel, AUDIO_FAIL) or (
+        pr >= 145 and pr > pg + 40 and pr > pb + 40
+    ):
+        pipeline = "inactive_or_error"
+    elif pr > 180 and pg > 150 and pb < 160 and pr > pb + 70:
+        pipeline = "not_yet_confirmed"
+    else:
+        raise ValueError(f"audio pipeline status marker absent: {progress_pixel}")
+
     # Sample only the heartbeat; animated bar is separate from the cursor,
     # so its change demonstrates video-loop progress without emulated input.
     # Native framebuffer y=610 maps to about y=588 in a 1280x694
@@ -78,6 +97,7 @@ def inspect_images(first: Image.Image, second: Image.Image) -> dict:
         "heartbeat_changed_pixels": changed,
         "audout_status": status,
         "audio_source": source,
+        "audio_pipeline_progress": pipeline,
         "user_music_identity_verified": False,
         "audible_audio_verified": False,
         "actual_gameplay_verified": False,
@@ -97,6 +117,10 @@ def main():
     parser.add_argument("--require-audout-status",
                         choices=("initialized", "unavailable_or_error"),
                         help="require this exact audout service status")
+    parser.add_argument("--require-audio-pipeline",
+                        choices=("buffers_returned", "inactive_or_error",
+                                 "not_yet_confirmed"),
+                        help="require worker DSP + audout returned-buffer evidence")
     args = parser.parse_args()
     try:
         with Image.open(args.before) as first, Image.open(args.after) as second:
@@ -111,6 +135,11 @@ def main():
             raise ValueError("expected audout status "
                              + args.require_audout_status + ", got "
                              + report["audout_status"])
+        if (args.require_audio_pipeline
+                and report["audio_pipeline_progress"] != args.require_audio_pipeline):
+            raise ValueError("expected audio pipeline "
+                             + args.require_audio_pipeline + ", got "
+                             + report["audio_pipeline_progress"])
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
     print(json.dumps(report, indent=2))
