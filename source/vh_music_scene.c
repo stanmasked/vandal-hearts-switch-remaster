@@ -91,7 +91,11 @@ static int16_t scale_pcm(int16_t sample, int32_t gain) {
 
 int vh_music_scene_render(VhMusicScene *s,
                           int16_t stereo[VH_AUDIO_BLOCK_FRAMES * 2u]) {
-    if (!s || !s->spu || !stereo || s->last_error) return -1;
+    if (!s || !s->spu || !stereo) return -1;
+    if (s->last_error) {
+        memset(stereo, 0, VH_AUDIO_BLOCK_FRAMES * 2u * sizeof(*stereo));
+        return -1;
+    }
 
     if (s->stage == VH_MUSIC_SWITCH_PENDING) {
         const VhMusicCue pending = s->pending;
