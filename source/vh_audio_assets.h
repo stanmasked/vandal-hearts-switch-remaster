@@ -43,6 +43,12 @@ typedef struct {
  * audio device/SEQ voices before calling vh_audio_assets_close().
  */
 int vh_audio_assets_load(VhAudioAssets *assets, const char *directory);
+/* Optional stricter size limit for a second preloaded bank. Input bound
+ * is checked before allocating compressed VB and decoded PCM arrays.
+ * Existing single-bank users keep the original 8-MiB upper bound.
+ */
+int vh_audio_assets_load_bounded(VhAudioAssets *assets,
+                                 const char *directory, size_t max_vb_bytes);
 void vh_audio_assets_close(VhAudioAssets *assets);
 
 #endif
