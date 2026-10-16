@@ -81,6 +81,23 @@ jobs:
         run: |
           set -euo pipefail
           ./proof/map02_gpu_runtime 2> proof/real-gpu-SYNTHETIC-stderr.log
+          VH_RASTER_THREADS=1 ./proof/map02_gpu_runtime \
+            2> proof/real-gpu-SYNTHETIC-single-worker-stderr.log
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          a = Path("proof/real-gpu-SYNTHETIC-stderr.log").read_text()
+          b = Path("proof/real-gpu-SYNTHETIC-single-worker-stderr.log").read_text()
+          rx = re.compile(r"\[v42-smoke\] FRAMEBUFFER_HASH native=([0-9a-f]+) hires=([0-9a-f]+)")
+          assert "[raster] hi-res worker threads: 2" in a, "did not enable two-thread rasterizer"
+          assert "[raster] hi-res worker threads: 1" in b, "did not enable single-thread control"
+          ma, mb = rx.findall(a), rx.findall(b)
+          assert len(ma) == len(mb) == 1, (ma, mb)
+          assert ma[0] == mb[0], f"framebuffer mismatch between 2 and 1 threads: {ma}, {mb}"
+          assert "[v42-smoke] PASS:" in a and "[v42-smoke] PASS:" in b
+          print("PASS: original GPU VRAM and hi-res buffers hash-identically with 1 vs 2 threads.")
+          print("framebuffer native={}, hires={}".format(*ma[0]))
+          PY
           grep -F '[v42-smoke] PASS:' proof/real-gpu-SYNTHETIC-stderr.log
           python3 -m remaster.tools.verify_map02_v41 \
             proof/real-gpu-SYNTHETIC-stderr.log \
