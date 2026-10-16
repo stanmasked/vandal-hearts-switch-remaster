@@ -1,0 +1,18 @@
+#ifndef VH_SWITCH_GAME_AUDIO_H
+#define VH_SWITCH_GAME_AUDIO_H
+
+#include "vh_game_music_mailbox.h"
+
+/* Main tactical NRO uses this separate libnx audout worker. The
+ * framebuffer/input loop never blocks on audoutPlayBuffer.
+ * Audio fixtures are synthesized in memory; no copyrighted assets.
+ */
+int vh_switch_game_audio_start(unsigned initial_scene);
+void vh_switch_game_audio_post(unsigned desired_scene);
+void vh_switch_game_audio_stop(void);
+/* 0 starting/not started, 1 running, negative means audio failed.
+ * Main gameplay can continue silently if the device is unavailable.
+ */
+int vh_switch_game_audio_status(void);
+
+#endif
