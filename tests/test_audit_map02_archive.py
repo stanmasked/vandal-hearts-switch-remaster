@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from tools.audit_map02_archive import (
     MAX_DISC_BYTES, archive_members, audit_archive, pick_disc_member,
+    stream_member_sector_windows,
 )
 from tools.audit_map02_disc_prs import PRIOR_DAT_LENGTH, unpack_prs
 from test_audit_map02_disc_prs import (
@@ -72,6 +73,11 @@ class AuditMap02ArchiveTests(unittest.TestCase):
             self.assertEqual(result["member_bytes"], image.stat().st_size)
             self.assertTrue(result["original_archive_modified"] is False)
             self.assertTrue(result["temporary_disc_deleted"])
+            self.assertFalse(result["full_disc_reconstructed"])
+            self.assertEqual(result["temporarily_retained_sector_bytes"],
+                             (12 + 117) * 2048)
+            self.assertLess(result["temporarily_retained_sector_bytes"],
+                            result["member_bytes"] // 10)
             self.assertEqual(hashlib.sha256(archive.read_bytes()).hexdigest(),
                              before_archive)
             self.assertEqual([face["local_gfx"] for face in result["target_faces"]],
@@ -107,6 +113,56 @@ class AuditMap02ArchiveTests(unittest.TestCase):
                               "size": MAX_DISC_BYTES + 1}], None)
         with self.assertRaisesRegex(ValueError, "wildcard"):
             pick_disc_member([{"path": "part?.iso", "size": 1000}], None)
+
+    def test_sector_stream_only_writes_selected_windows_not_whole_disc(self):
+        with tempfile.TemporaryDirectory() as dirname:
+            root = Path(dirname)
+            archive, image, archiver = self._fixture(root)
+            p1 = root / "private-prs-range.bin"
+            p2 = root / "private-dat-range.bin"
+            ranges = [(100, 241, p1),
+                      (image.stat().st_size - 321, 321, p2)]
+            member = {"path": "game image.iso", "size": image.stat().st_size}
+            with patch.dict(os.environ, {"FAKE_MAP02_DISC": str(image)}):
+                streamed = stream_member_sector_windows(archive, member,
+                                                         str(archiver), ranges)
+            self.assertEqual(streamed, image.stat().st_size)
+            with image.open("rb") as original:
+                original.seek(100)
+                self.assertEqual(p1.read_bytes(), original.read(241))
+                original.seek(image.stat().st_size - 321)
+                self.assertEqual(p2.read_bytes(), original.read(321))
+            self.assertEqual(sum(path.stat().st_size for path in (p1, p2)), 562)
+            self.assertFalse((root / "owned-disc-temporary.bin").exists())
+
+    def test_rejects_invalid_or_overlapping_ranges_before_unarchiving(self):
+        with tempfile.TemporaryDirectory() as dirname:
+            root = Path(dirname)
+            archive, image, archiver = self._fixture(root)
+            member = {"path": "game image.iso", "size": image.stat().st_size}
+            for bad in (
+                [(0, 100, root / "a"), (50, 10, root / "b")],
+                [(-2, 10, root / "a")],
+                [(0, 0, root / "a")],
+                [(member["size"] - 4, 8, root / "a")],
+                [(0, 100, root / "a"), (0, 2, root / "b")],
+            ):
+                with self.subTest(ranges=bad):
+                    with self.assertRaisesRegex(ValueError, "invalid, overlapping"):
+                        stream_member_sector_windows(archive, member, str(archiver), bad)
+
+    def test_archive_without_dat_retains_only_twelve_prs_sectors(self):
+        with tempfile.TemporaryDirectory() as dirname:
+            root = Path(dirname)
+            archive, image, archiver = self._fixture(root)
+            with patch.dict(os.environ, {"FAKE_MAP02_DISC": str(image)}):
+                report = audit_archive(archive, layout="iso-2048",
+                                       with_dat=False, sevenzip=archiver)
+            self.assertEqual(report["temporarily_retained_sector_bytes"],
+                             12 * 2048)
+            self.assertNotIn("dat_comparison", report)
+            self.assertIsNone(report["dat_start_sector"])
+            self.assertFalse(report["full_disc_reconstructed"])
 
     def test_declared_size_mismatch_rejected_not_silently_truncated(self):
         with tempfile.TemporaryDirectory() as dirname:
