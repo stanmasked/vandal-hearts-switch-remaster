@@ -707,3 +707,66 @@ game-authored camera state or authentic
 claim to reproduce the complete `RenderMapTile` or
 actual PS1 hardware. The source project and game bytes
 remain separate from public test/release artifacts.
+
+## Original 26-side light normals and pinned GTE NCCS UpdateLight: native PASS (CI #38863911984)
+
+**Verified:** [GitHub Actions #38863911984](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38863911984)
+for executable code revision `0c005f382a69099e1e954ca6461394edd3533432`,
+with `cross-compile=success`, `Run original DrawOTag raster NRO in NeXium=success`
+and `Synthetic SD map 11 preview through original DrawOTag=success`.
+The host ran **91 Python tests** plus the independent C bank loader,
+MapTileModel loader, distance-shading and GTE projection tests, and
+the NEW `tests/test_private_map_light.c` unit against
+the exact pinned upstream `platform/pc/src/libgte.c`.
+The NRO passed structural NRO0 bounds checks.
+
+The source `src/core/graphics.c::SetupLightNormals` declares
+26 combinations of cardinal and diagonal face normals.
+`source/vh_private_map_light.[ch]` reproduces their order and uses
+the actual pinned `VectorNormalS` Q12 normalization.
+Its source-equivalent `UpdateLight` calls original pinned
+`RotMatrix`/`RotTrans`, installs a one-row GTE light matrix,
+then uses `gte_NormalColorCol` (actual `NCCS`) on every
+normal and calculates the source's exact integer RGB expression.
+For map 32 only it also implements the original nine
+mirrored normal colors; no such mirror is applied for map 11.
+
+The demo deliberately uses **chosen synthetic parameters**:
+zero-angle rotation, color (128,128,128), ambient intensity 32.
+The C test verified normal -X produces **(128,32,32)** and
+opposite +X **(32,32,32)**; all 26 normals produce neutral
+(128,128,128) at intensity 128. A private, opt-in, **one-byte**
+`LIGHT_TEST_INTENSITY.BIN` on the virtual SD selects the
+nonneutral intensity. The NRO's original-format
+`MapTileModel.shades[face]` selects a light direction per face;
+the result is then modulated by the already-proven OTZ
+distance attenuation and submitted through original
+`POLY_FT4/DrawOTag`. Missing intensity file maintains
+all established screenshot outputs; malformed byte count/value
+is rejected.
+
+The NeXium job ran **five separate modes** on the same Switch
+NRO, with synthetic, owner-format SD files: original 4-color
+UV/CLUT patch; the 3-face signed NCLIP scene; the
+near/far depth-occlusion overlap; distant face fading; and
+the isolated 26-normal NCCS directional-light scene.
+The last screenshot verified exact original FT4 output:
+left-top red **(255,0,0)**,
+left-bottom blue **(0,0,57)**,
+right-top magenta **(57,0,57)** and
+right-bottom cyan **(0,57,57)**.
+Colors were recorded in the final screenshot twice.
+All four prior modes remained successful.
+Evidence artifacts in the CI run include `map11-side-light.png`
+and the current compiled `pinned-original-drawotag-switch-nro`.
+
+**Important boundary:** This is the FIRST confirmed
+`MapTileModel.shades[] -> 26 source normals -> pinned GTE NCCS
+-> per-face RGB -> OTZ fading -> original FT4/DrawOTag`
+synthetic GPU path in NeXium. Neither the real game's dynamic
+light rotation `gLightRotation`, base `gLightColor`,
+`UpdateMapTileLighting`, scene camera nor the entire
+`RenderMapTile` have been restored from retail game state.
+No authentic `M_MAP02.PRS` bytes or physical Switch hardware
+were used. This is a genuine pinned GTE/software-renderer
+integration milestone, NOT yet full game-map parity.
