@@ -67,6 +67,21 @@ int main(void) {
                                   vh_native_vab_resolve,&bank[scene],0)==0);
         for (unsigned block=0;block<16u;block++) {
             assert(vh_native_seq_advance_block(&seq)>=0);
+            if (block==0u) {
+                /* The first note after each switch must bind to the new
+                 * bank, never to the previous bank's decoded PCM arena.
+                 */
+                unsigned bound=0;
+                for (unsigned slot=0;slot<VH_NATIVE_MUSIC_VOICES;slot++) {
+                    if (spu.voice[slot].pcm) {
+                        assert(spu.voice[slot].pcm==bank[scene].samples[1].pcm);
+                        if (scene)
+                            assert(spu.voice[slot].pcm!=bank[0].samples[1].pcm);
+                        ++bound;
+                    }
+                }
+                assert(bound>0u);
+            }
             vh_native_spu_render(&spu,source,512u);
             size_t n=vh_audio_resample_process(
                 &resampler,source,512u,out,640u);
