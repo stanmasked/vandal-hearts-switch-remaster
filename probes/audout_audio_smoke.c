@@ -179,7 +179,7 @@ int main(int argc, char **argv) {
         &output,native_submit,native_stop,native_close,native_open,native_start
     };
     if (native_open(&output) || native_start(&output)) {
-        printf("audout initialization or format negotiation failed\\n");
+        printf("audout initialization or format negotiation failed\n");
         (void)native_stop(&output);
         native_close(&output);
         vh_audio_assets_close(&user_assets);
@@ -245,7 +245,7 @@ int main(int argc, char **argv) {
     if (native_stop(&output)) result=7;
     native_close(&output);
     vh_audio_assets_close(&user_assets);
-    printf("Output pages=%llu restarts=%u recovered=%u failures=%u\\n",
+    printf("Output pages=%llu restarts=%u recovered=%u failures=%u\n",
            (unsigned long long)recovery.pages_submitted,
            recovery.restart_attempts,recovery.recoveries,
            recovery.submit_failures);
