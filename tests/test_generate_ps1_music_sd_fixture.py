@@ -14,7 +14,7 @@ from tools.generate_ps1_music_sd_fixture import (
 class SyntheticSDMusicFixtures(unittest.TestCase):
     def test_three_modes_have_distinct_provenance_and_never_imply_audible_music(self):
         files = make_synthetic_files()
-        self.assertEqual(len(SEQ), 36)
+        self.assertEqual(len(SEQ), 39)
         self.assertEqual(files["music.seq"][:4], b"pQES")
         self.assertEqual(files["music.vh"][:4], b"pBAV")
         self.assertEqual(len(files["music.vh"]), 3104)
