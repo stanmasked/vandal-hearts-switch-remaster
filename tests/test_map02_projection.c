@@ -328,10 +328,17 @@ static void test_projection_ot_boundaries_and_saturation(void) {
     assert(p.visible && !p.ot_in_bounds);
     c = camera();
     c.ofx = 1023 << 16; c.ofy = 1023 << 16;
+    VhMap02ProjectSxy xy = {0};
+    uint16_t sz = 0;
+    uint32_t flags = 0;
+    assert(vh_map02_project_vertex(&c,face[2],&xy,&sz,&flags));
+    assert(xy.x == 1023 && xy.y == 1023 && sz == 512);
+    assert((flags & (1u << 14)) != 0u);
+    assert((flags & (1u << 13)) != 0u);
     assert(vh_map02_project_face(&c,face,128,&p));
-    assert(p.visible);
-    assert(p.gpu[0].x == 1023 && p.gpu[0].y == 1023);
-    assert(p.gpu[1].x == 1023 && p.gpu[3].y == 1023);
+    /* Saturation collapses every corner to one XY: NCLIP culls it. */
+    assert(!p.visible && p.nclip_mac0 == 0);
+    assert(!p.ot_in_bounds && p.otz == 0);
     assert((p.rtpt_flags & (1u << 14)) != 0u);
     assert((p.rtpt_flags & (1u << 13)) != 0u);
 }
