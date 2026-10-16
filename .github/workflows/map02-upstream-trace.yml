@@ -81,6 +81,8 @@ on:
       - 'tools/verify_map02_source_native_ft4_join.py'
       - 'tools/verify_map02_source_native_ot_order.py'
       - 'tools/verify_map02_native_overdraw.py'
+      - 'tools/instrument_map02_native_putpixel.py'
+      - 'tools/verify_map02_native_putpixel.py'
       - 'tools/verify_map02_camera_capture.py'
       - 'tools/verify_map02_frame_bundle.py'
       - 'tools/verify_map02_vram_timeline.py'
@@ -92,6 +94,8 @@ on:
       - 'tests/test_verify_map02_source_native_ft4_join.py'
       - 'tests/test_verify_map02_source_native_ot_order.py'
       - 'tests/test_verify_map02_native_overdraw.py'
+      - 'tests/test_instrument_map02_native_putpixel.py'
+      - 'tests/test_verify_map02_native_putpixel.py'
       - 'tests/test_verify_map02_frame_bundle.py'
       - 'tests/test_verify_map02_vram_timeline.py'
       - 'tests/test_verify_map02_gpu_write_ledger.py'
@@ -192,6 +196,8 @@ on:
       - 'tools/verify_map02_source_native_ft4_join.py'
       - 'tools/verify_map02_source_native_ot_order.py'
       - 'tools/verify_map02_native_overdraw.py'
+      - 'tools/instrument_map02_native_putpixel.py'
+      - 'tools/verify_map02_native_putpixel.py'
       - 'tools/verify_map02_camera_capture.py'
       - 'tools/verify_map02_frame_bundle.py'
       - 'tools/verify_map02_vram_timeline.py'
@@ -203,6 +209,8 @@ on:
       - 'tests/test_verify_map02_source_native_ft4_join.py'
       - 'tests/test_verify_map02_source_native_ot_order.py'
       - 'tests/test_verify_map02_native_overdraw.py'
+      - 'tests/test_instrument_map02_native_putpixel.py'
+      - 'tests/test_verify_map02_native_putpixel.py'
       - 'tests/test_verify_map02_frame_bundle.py'
       - 'tests/test_verify_map02_vram_timeline.py'
       - 'tests/test_verify_map02_gpu_write_ledger.py'
@@ -453,6 +461,55 @@ jobs:
             fi
           )
           test -z "$(cd upstream && git status --porcelain -- platform/pc/src/libgpu.c)"
+
+      - name: Compile source-pinned optional native PutPixel sample observer
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd remaster
+            python3 -m unittest discover -s tests -p 'test_instrument_map02_native_putpixel.py' -v
+            python3 -m unittest discover -s tests -p 'test_verify_map02_native_putpixel.py' -v
+          )
+          mkdir -p /tmp/vh-map02-native-pixel
+          PYTHONPATH=remaster python3 -m tools.instrument_map02_native_putpixel \
+            upstream/platform/pc/src/pc_raster.c \
+            --output /tmp/vh-map02-native-pixel/pc_raster.capture.c \
+            > /tmp/vh-map02-native-pixel/result.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path("/tmp/vh-map02-native-pixel/result.json").read_text())
+          assert result["source_pinned"] and result["native_vram_only"]
+          assert result["max_pixel_records"] == 64
+          assert not result["actual_gameplay_captured"]
+          print("Native PutPixel opt-in observer produced from pinned public PC raster source.")
+          PY
+          (
+            cd upstream/platform/pc
+            common_flags=(
+              -m64 -std=gnu89 -fno-builtin-csqrt
+              -DPERMUTER -DPC_PORT -DPC_FEAT -DVH_REGION_US
+              '-Dasm(x)=' -Ibuild/include_stage -Iinclude -I../.. -Isrc
+              -include pc_forward_decls.h
+              -Wno-incompatible-pointer-types -Wno-builtin-declaration-mismatch
+              -Wno-discarded-qualifiers -Wno-pointer-to-int-cast
+              -Wno-int-to-pointer-cast -Wno-int-conversion
+            )
+            mkdir -p build/map02-native-putpixel
+            gcc "${common_flags[@]}" -DVH_MAP02_PUTPIXEL_SAMPLE \
+              -c /tmp/vh-map02-native-pixel/pc_raster.capture.c \
+              -o build/map02-native-putpixel/capture.o
+            gcc "${common_flags[@]}" \
+              -c /tmp/vh-map02-native-pixel/pc_raster.capture.c \
+              -o build/map02-native-putpixel/baseline.o
+            nm -a build/map02-native-putpixel/capture.o | grep VH_PixelSampleRecord
+            if nm -a build/map02-native-putpixel/baseline.o | grep -q VH_PixelSampleRecord; then
+              echo "Native pixel observer leaked into ordinary raster object" >&2
+              exit 1
+            fi
+          )
+          test -z "$(cd upstream && git status --porcelain -- platform/pc/src/pc_raster.c)"
 
       - name: Verify pinned make-overlay diagnostic object compilation
         shell: bash
