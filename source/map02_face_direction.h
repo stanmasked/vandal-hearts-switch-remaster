@@ -8,12 +8,18 @@
  * The 26 signed vectors and cross-product vertex selection come from
  * pinned US src/core/graphics.c SetupLightNormals/UpdateMapTileLighting.
  * The original performs gte_OuterProduct0, VectorNormalS and compares
- * normalized Q12 vectors, with a six-part tie breaker. Here the
- * candidate vectors are pre-normalized to Q12 (4096, 2896, 2365)
- * and projected against an unnormalized signed 64-bit cross product.
- * Exact-match ties are resolved by the same six-part rule. The index
- * is deterministic, but GTE integer roundoff near boundaries can
- * differ. Never label it bit-exact PS1 GTE emulation.
+ * normalized Q12 vectors with a six-part tie breaker. PC-port
+ * VectorNormalS computes sqrt magnitude and truncates toward zero
+ * after multiplying by 4096. This implementation obtains the same
+ * mathematical integer quotient without floating-point rounding via
+ * 128-bit integer comparisons: axes=4096, 2-axes=2896, 3-axes=2364.
+ * The source's sign/normalized-component equality tie break is exact
+ * for the represented cross product. However, the original GTE's OP0
+ * uses 16-bit IR inputs and hardware arithmetic, which can differ
+ * from this full-width cross product on out-of-range geometry. Neither
+ * PC floating-point libm nor actual PS1 GPU/GTE execution is used:
+ * this is a bounded, deterministic PC-port math reference, NOT a
+ * certified cycle/bit-exact hardware GTE emulator.
  */
 #include <stddef.h>
 #include <stdint.h>
@@ -77,6 +83,104 @@ static inline int64_t vh_map02_candidate_dot(
             normal.z * direction.z) * q12;
 }
 
+/* The integer-normalized Q12 component is the largest q in 0..4096
+ * for which q*q*(x*x+y*y+z*z) <= 4096*4096*c*c. This exactly computes
+ * trunc(4096*abs(c)/sqrt(magnitude squared)) without floating-point
+ * sqrt or hidden FPU rounding. 128-bit intermediate prevents overflow
+ * for all 16-bit input vertices and their 64-bit cross products. */
+static inline int32_t vh_map02_q12_component(
+    int64_t component, unsigned __int128 magnitude_sq) {
+    unsigned __int128 absolute;
+    unsigned __int128 target;
+    unsigned low = 0, high = 4097;
+    if (!component || !magnitude_sq) return 0;
+    absolute = (unsigned __int128)(
+        component < 0 ? -(component + 1) + 1 : component);
+    target = absolute * absolute * 4096u * 4096u;
+    while (high - low > 1) {
+        unsigned mid = low + (high - low) / 2;
+        if ((unsigned __int128)mid * mid * magnitude_sq <= target)
+            low = mid;
+        else
+            high = mid;
+    }
+    return component < 0 ? -(int32_t)low : (int32_t)low;
+}
+
+static inline int vh_map02_normal_q12(
+    VhMap02Cross normal, int32_t result[3]) {
+    unsigned __int128 a, b, c, squared;
+    if (!result || (normal.x == 0 && normal.y == 0 && normal.z == 0))
+        return 0;
+    /* Construct unsigned squares without negating INT64_MIN directly. */
+    a = (unsigned __int128)(normal.x < 0 ?
+        (uint64_t)(-(normal.x + 1)) + 1u : (uint64_t)normal.x);
+    b = (unsigned __int128)(normal.y < 0 ?
+        (uint64_t)(-(normal.y + 1)) + 1u : (uint64_t)normal.y);
+    c = (unsigned __int128)(normal.z < 0 ?
+        (uint64_t)(-(normal.z + 1)) + 1u : (uint64_t)normal.z);
+    squared = a * a + b * b + c * c;
+    result[0] = vh_map02_q12_component(normal.x, squared);
+    result[1] = vh_map02_q12_component(normal.y, squared);
+    result[2] = vh_map02_q12_component(normal.z, squared);
+    return 1;
+}
+
+/* Exact original six checks, on the NORMALIZED Q12 components:
+ * three matching nonzero signs followed by three component equalities. */
+static inline int vh_map02_q12_tie_count(
+    const int32_t normal[3], const int32_t candidate[3]) {
+    int count = 0;
+    unsigned axis;
+    for (axis = 0; axis < 3; ++axis) {
+        if ((normal[axis] > 0 && candidate[axis] > 0) ||
+            (normal[axis] < 0 && candidate[axis] < 0))
+            ++count;
+        if (normal[axis] == candidate[axis])
+            ++count;
+    }
+    return count;
+}
+
+/* Reconstruct PC-port VectorNormalS direction table mathematically.
+ * 4096/sqrt(2) truncates to 2896; 4096/sqrt(3) to 2364, NOT 2365. */
+static inline void vh_map02_direction_q12(
+    VhMap02Direction direction, int32_t result[3]) {
+    unsigned axes = (unsigned)(direction.x != 0) +
+                    (unsigned)(direction.y != 0) +
+                    (unsigned)(direction.z != 0);
+    int32_t scale = axes == 1u ? 4096 : axes == 2u ? 2896 : 2364;
+    result[0] = direction.x * scale;
+    result[1] = direction.y * scale;
+    result[2] = direction.z * scale;
+}
+
+static inline int vh_map02_best_q12_direction(
+    VhMap02Cross normal, uint8_t *out_index) {
+    int32_t q[3], candidate[3], incumbent[3];
+    int64_t greatest = -0x1000000;
+    unsigned best = 0, i;
+    if (!out_index || !vh_map02_normal_q12(normal, q)) return 0;
+    for (i = 0; i < VH_MAP02_LIGHT_DIRECTION_COUNT; ++i) {
+        int64_t score;
+        vh_map02_direction_q12(vh_map02_directions[i], candidate);
+        score = (int64_t)q[0] * candidate[0] +
+                (int64_t)q[1] * candidate[1] +
+                (int64_t)q[2] * candidate[2];
+        if (score > greatest) {
+            best = i;
+            greatest = score;
+        } else if (score == greatest) {
+            vh_map02_direction_q12(vh_map02_directions[best], incumbent);
+            if (vh_map02_q12_tie_count(q, candidate) >
+                vh_map02_q12_tie_count(q, incumbent))
+                best = i;
+        }
+    }
+    *out_index = (uint8_t)best;
+    return 1;
+}
+
 /* Input: raw 304-byte little-endian MapTileModel, faceIdx < faceCt.
  * Returns nonzero on well-formed, nondegenerate geometry; outputs the
  * best-matching index and optionally the unnormalized model-space normal.
@@ -88,9 +192,7 @@ static inline int vh_map02_face_direction(
     unsigned vi[4], first, second, third, i;
     int32_t p[3][3], e1[3], e2[3];
     VhMap02Cross normal;
-    int64_t best = INT64_MIN;
-    int best_tie = -1;
-    unsigned best_idx = 0u;
+
 
     if (!tile || !shade_idx || tile_bytes < VH_MAP02_TILE_BYTES ||
         tile[302] == 0 || tile[302] > VH_MAP02_FACE_COUNT ||
@@ -134,16 +236,7 @@ static inline int vh_map02_face_direction(
     normal.z = (int64_t)e1[0] * e2[1] - (int64_t)e1[1] * e2[0];
     if (normal.x == 0 && normal.y == 0 && normal.z == 0) return 0;
 
-    for (i = 0; i < VH_MAP02_LIGHT_DIRECTION_COUNT; ++i) {
-        const int64_t score = vh_map02_candidate_dot(normal, vh_map02_directions[i]);
-        const int tie = vh_map02_direction_tie_count(normal, vh_map02_directions[i]);
-        if (score > best || (score == best && tie > best_tie)) {
-            best = score;
-            best_tie = tie;
-            best_idx = i;
-        }
-    }
-    *shade_idx = (uint8_t)best_idx;
+    if (!vh_map02_best_q12_direction(normal, shade_idx)) return 0;
     if (out_normal) *out_normal = normal;
     return 1;
 }
