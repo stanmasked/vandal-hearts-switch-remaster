@@ -152,7 +152,10 @@ static int native_submit(void *opaque,const int16_t *pcm,size_t frames) {
         frames>VH_AUDIO_RESAMPLE_MAX_FRAMES) return -1;
     dev->page.data_size=frames*2u*sizeof(int16_t);
     AudioOutBuffer *returned=NULL;
-    return R_SUCCEEDED(audoutPlayBuffer(&dev->page,&returned)) ? 0 : -1;
+    /* Only the matching returned descriptor makes this single
+     * page safe for the next block or a bank transition. */
+    if (R_FAILED(audoutPlayBuffer(&dev->page,&returned))) return -1;
+    return vh_audio_output_page_returned(&dev->page,returned) ? 0 : -1;
 }
 
 int main(int argc, char **argv) {
