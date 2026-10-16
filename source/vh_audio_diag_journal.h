@@ -20,7 +20,8 @@ typedef enum {
     VH_AUDIO_DIAG_EVENT_RESUME=3,
     VH_AUDIO_DIAG_EVENT_ERROR=4,
     VH_AUDIO_DIAG_EVENT_EXIT=5,
-    VH_AUDIO_DIAG_EVENT_CLOCK=6
+    VH_AUDIO_DIAG_EVENT_CLOCK=6,
+    VH_AUDIO_DIAG_EVENT_GAP=7 /* exporter-only marker: old rows evicted */
 } VhAudioDiagEvent;
 
 typedef struct {
@@ -31,6 +32,10 @@ typedef struct {
 
 typedef struct {
     VhAudioDiagJournalEntry entries[VH_AUDIO_DIAG_JOURNAL_CAPACITY];
+    /* Retain initial counter origin OUTSIDE the ring; on wrap export
+     * origin + latest 127 snapshots, with an explicit GAP event to
+     * make unobservable historical event ordering unambiguous. */
+    VhAudioDiagJournalEntry origin;
     uint32_t head; /* next write */
     uint32_t count;
     uint64_t total; /* saturates at UINT64_MAX */
@@ -51,7 +56,11 @@ int vh_audio_diag_journal_finish(VhAudioDiagJournal *journal,
                                   uint64_t elapsed_ms,
                                   const VhAudioDiagnostics *snapshot);
 
-/* Writes chronological CSV rows using stdio. ONLY call from the
+/* After rollover, exports START + a GAP snapshot + the newest 126
+ * snapshots (still <=128 total rows). The GAP contains the FIRST
+ * retained counters after eviction; cumulative deltas from START
+ * include all past failures, but their exact timing is unknown.
+ * Writes chronological CSV rows using stdio. ONLY call from the
  * game/main thread AFTER the audio worker has been joined; never
  * call this function during synthesis or the audio callback.
  * Returns number of exported rows, or -1 on output error.
