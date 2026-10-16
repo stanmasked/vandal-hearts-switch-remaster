@@ -183,3 +183,24 @@ output before the failure; restarting audout may therefore truncate
 sound or produce a discontinuity. The host tests guarantee software
 clock preservation, **not** glitch-free or exactly-once sound on
 Nintendo Switch hardware. Real Switch audio capture remains necessary.
+
+## Synthetic music-scene transitions in the combined NRO
+
+With a complete SD music bank, the combined NRO leaves the user-owned
+`music.seq/.vh/.vb` playing and does **not** cycle cues. With **no** music
+files present on a mounted SD, the fixture-only audio worker alternates
+two generated pQES songs every **64 successfully submitted 512-frame**
+SPU blocks. The transition uses `vh_native_seq_switch_scene` on the
+audio-owning thread; it validates the next SEQ, clears old voice PCM
+references and preserves STUDIO_C reverb. The independent 44.1→48-kHz
+resampler is not reset. Both fixture songs resolve into the same
+generated VAB; neither contains original game music.
+
+A fourth framebuffer indicator at x=1000, y=325 changes from amber to
+green once **two** fixture scene transitions have each produced and
+successfully returned their first PCM page from audout. It is neutral
+gray for user-owned music and invalid/partial sources. The synthetic
+guest-SD NeXium run checks this indicator in addition to previously
+verified music-source identity, audio-buffer processing and animated
+framebuffer. This establishes **software switching progress only**,
+not correct audibility or the original game's music cue rules.
