@@ -38,9 +38,11 @@ on:
       - 'source/map02_face_direction.h'
       - 'source/map02_op0_reference.h'
       - 'source/map02_projection.h'
+      - 'source/map02_terrain_quad.h'
       - 'tests/test_map02_face_direction.c'
       - 'tests/test_map02_op0_reference.c'
       - 'tests/test_map02_projection.c'
+      - 'tests/test_map02_terrain_quad.c'
       - 'tests/test_map02_terrain_lighting.c'
       - 'tests/test_ps1_abr_blend.c'
       - 'tests/test_ps1_indexed_texture.c'
@@ -109,9 +111,11 @@ on:
       - 'source/map02_face_direction.h'
       - 'source/map02_op0_reference.h'
       - 'source/map02_projection.h'
+      - 'source/map02_terrain_quad.h'
       - 'tests/test_map02_face_direction.c'
       - 'tests/test_map02_op0_reference.c'
       - 'tests/test_map02_projection.c'
+      - 'tests/test_map02_terrain_quad.c'
       - 'tests/test_map02_terrain_lighting.c'
       - 'tests/test_ps1_abr_blend.c'
       - 'tests/test_ps1_indexed_texture.c'
@@ -352,6 +356,8 @@ jobs:
             /tmp/vh-map02-op0-test
             gcc -std=c11 -Wall -Wextra -Werror -O2 tests/test_map02_projection.c -o /tmp/vh-map02-projection-test
             /tmp/vh-map02-projection-test
+            gcc -std=c11 -Wall -Wextra -Werror -O2 tests/test_map02_terrain_quad.c -o /tmp/vh-map02-tile-to-pixels -lm
+            /tmp/vh-map02-tile-to-pixels
             python3 -m unittest discover -s tests -p 'test_audit_map02_projection_source.py' -v
             python3 -m unittest discover -s tests -p 'test_map02_camera_provenance.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_pc_op0_equivalence.py' -v

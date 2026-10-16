@@ -581,3 +581,59 @@ gameplay session here. The screenshot/visible pixels, correct tile
 world-placement and actual PS1 BIOS/hardware accuracy remain
 unverified. For a culled face the trace is taken at first observation;
 it does not prove the face is always culled on later frames.
+
+
+## MAP02 decoded terrain face → projected FT4 → indexed 4-bpp pixels
+
+`source/map02_terrain_quad.h` joins several **already independently
+tested** components into a runnable, portable **diagnostic** pipeline.
+Unlike a static corner-order audit, it takes a decoded 304-byte tile
+record and actually writes synthetic textured pixels into a caller-owned
+RGBA32 framebuffer.
+
+The new `vh_map02_prepare_terrain_quad` call:
+
+- Accepts exactly **304 bytes** from a tile record matching pinned
+  `MapTileModel`: **22** local `SVECTOR`s at 8 bytes each,
+  `gfx[18]` at byte 176, `faces[18][4]` at byte 212,
+  `shades[18]` at byte 284 and `faceCt` at byte 302.
+- Preserves the source 16-bit material index and face shading index.
+  `GFX_NULL=0` skips projection, including otherwise invalid vertices,
+  as in the original normal terrain renderer.
+- Decodes four little-endian signed 16-bit vertices via their validated
+  face indices, then uses `vh_map02_project_face` to execute the
+  **PC-port-matched** `RTPT/NCLIP/RTPS/AVSZ4` reference.
+- Declares a quad drawable only when its face is accepted by
+  `NCLIP > 0` and its depth fits the explicitly bounded ordering
+  table. It prepares the original FT4 GPU corner mapping
+  `face[0],face[1],face[3],face[2]` with caller-supplied UVWH.
+- Rejects invalid record lengths, UV bounds, face count and vertex
+  indices without mutating the output object.
+
+The `vh_map02_draw_terrain_4bpp` call consumes a **supplied**
+256×256 packed four-bit indexed atlas and 16-entry little-endian
+BGR555 palette. It decodes the selected UVWH crop into caller-owned
+scratch buffers, including the distinction between fully transparent
+zero, opaque and STP-marked texels. It then rasterizes an affine
+`POLY_FT4` through the already audited top-left pixel rule and
+optional explicit STP blend callback. Nothing is allocated or saved;
+the framebuffer and all scratch space belong to the caller.
+
+**Asset-free execution test**:
+`tests/test_map02_terrain_quad.c`, wired into both `make test` and
+`make test-sanitize`, builds an invented 304-byte tile, identity-Q12
+camera, packed 4-bpp test atlas, BGR555 CLUT and 56×48 framebuffer.
+It checks all four projected FT4 corners, `NCLIP`, `OTZ`/OT slot,
+every transparent source column, 16 STP blend callbacks, pixel
+coordinates/stride guard, culled and out-of-OT faces, null material
+and failure-without-output-mutation. The MAP02 upstream workflow runs
+this same compiled integration test independently.
+
+**Strict evidence limits:** The input vertices, camera, texture and
+CLUT are synthetic. No game assets, authentic UV/material associations,
+map-grid world transforms or original rendered pixels are certified.
+The rasterizer is CPU-affine and **not** a PS1 GPU hardware emulator;
+there is no live Switch gameplay renderer hookup or screenshot
+validation yet. Authentic MAP02 material→UVWH, palette, camera and
+placement still require the independent ongoing source/gameplay
+provenance audits. Do not replace them with guessed values.
