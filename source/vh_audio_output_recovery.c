@@ -3,6 +3,47 @@
 
 #include <limits.h>
 
+uint64_t vh_audio_output_ticks_to_us(uint64_t ticks,
+                                     uint64_t tick_frequency) {
+    if (!tick_frequency) return 0;
+    const uint64_t seconds=ticks/tick_frequency;
+    const uint64_t remainder=ticks%tick_frequency;
+    /* Expected Switch tick rates are orders of magnitude smaller
+     * than UINT64_MAX/1,000,000. Guard atypical synthetic inputs. */
+    if (seconds>UINT64_MAX/UINT64_C(1000000) ||
+        remainder>UINT64_MAX/UINT64_C(1000000))
+        return UINT64_MAX;
+    const uint64_t whole=seconds*UINT64_C(1000000);
+    const uint64_t fraction=remainder*UINT64_C(1000000)/tick_frequency;
+    if (fraction>UINT64_MAX-whole) return UINT64_MAX;
+    return whole+fraction;
+}
+
+int vh_audio_output_record_submit_timing(
+    VhAudioSubmitTiming *timing, uint64_t elapsed_ticks,
+    uint64_t tick_frequency, size_t frames, int accepted) {
+    if (!timing || !tick_frequency || !frames ||
+        frames>VH_AUDIO_RESAMPLE_MAX_FRAMES ||
+        tick_frequency>UINT64_MAX/frames ||
+        timing->calls==UINT64_MAX ||
+        timing->total_ticks>UINT64_MAX-elapsed_ticks)
+        return -1;
+    const uint64_t page_ticks=(uint64_t)frames*tick_frequency/
+                              VH_NATIVE_AUDOUT_RATE;
+    const int slow=elapsed_ticks>page_ticks;
+    const int failed=!accepted;
+    if ((slow && timing->waits_longer_than_page==UINT64_MAX) ||
+        (failed && timing->failed_submissions==UINT64_MAX))
+        return -1;
+    ++timing->calls;
+    timing->total_ticks+=elapsed_ticks;
+    if (elapsed_ticks>timing->max_ticks)
+        timing->max_ticks=elapsed_ticks;
+    timing->waits_longer_than_page+=(unsigned)slow;
+    timing->failed_submissions+=(unsigned)failed;
+    return 0;
+}
+
 int vh_audio_output_page_returned(const void *submitted,
                                   const void *released) {
     return submitted != NULL && released == submitted;
