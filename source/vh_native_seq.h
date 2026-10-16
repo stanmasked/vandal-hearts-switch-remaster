@@ -72,6 +72,7 @@ int vh_native_seq_init(VhNativeSeq *seq, const uint8_t *bytes, size_t length,
  * new SEQ at frame zero. The 44.1->48k resampler is caller-owned and is
  * intentionally not reset. Caller must synchronize with audio playback,
  * keep the new bank's PCM alive, and handle already-submitted audout pages.
+ * An active SEQ must retain its original SPU instance; mismatches fail.
  */
 int vh_native_seq_switch_scene(VhNativeSeq *seq,
                                const uint8_t *bytes, size_t length,
