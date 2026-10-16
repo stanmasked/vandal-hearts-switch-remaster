@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 from private_sd_nexium_check import (  # noqa: E402
     synthetic_geometry_models, synthetic_depth_geometry_models, stage_depth,
+    synthetic_distant_shading_models, stage_distance,
 )
 from inspect_vh_map_geometry import (  # noqa: E402
     MAP_11_BYTES, MAP_11_STRIDE, TILE_BYTES, parse_tile,
@@ -94,6 +95,25 @@ class StagedModelTests(unittest.TestCase):
             self.assertTrue((p/"LAND_DT.DAT").is_file())
             with self.assertRaises(FileExistsError):
                 stage_depth(root)
+
+    def test_distant_shading_fixture_preserves_perspective_shape(self):
+        data=synthetic_distant_shading_models()
+        self.assertEqual(len(data),MAP_11_BYTES)
+        face=parse_tile(data,6,3)["faces"][0]
+        self.assertEqual(face["local_gfx_slot"],242)
+        near=((-32,0,-16),(0,0,-16),(0,0,24),(-32,0,24))
+        for p,n in zip(face["vertex_xyz"],near):
+            self.assertEqual(p,[8*n[0],8*n[1]-476,8*n[2]+476])
+        self.assertEqual(validate_map11_models(data)["active_faces"],1)
+
+    def test_stage_distance_fixture_independently(self):
+        with tempfile.TemporaryDirectory() as d:
+            report=stage_distance(Path(d))
+            self.assertEqual(report["active_faces"],1)
+            p=Path(d)/RELATIVE_DESTINATION
+            self.assertEqual((p/GEOMETRY_NAME).read_bytes(),
+                             synthetic_distant_shading_models())
+            self.assertTrue((p/"F_TEX01.DAT").is_file())
 
     def test_stage_readback_and_no_overwrite(self):
         with tempfile.TemporaryDirectory() as d:
