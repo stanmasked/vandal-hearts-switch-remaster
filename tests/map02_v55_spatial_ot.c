@@ -197,6 +197,9 @@ static int run_scene(int scene,int workers) {
   unsigned long long region_ot_hash[REGIONS],region_direct_hash[REGIONS];
   unsigned short region_native[REGIONS],region_hd[REGIONS],region_direct[REGIONS];
   int region;
+  unsigned short gap_native[5],gap_hd[5];
+  const int gap_x[5]={120,120,120,120,88};
+  const int gap_y[5]={60,120,180,216,140};
   int i,x,y;
   populate();
   for(i=0;i<BURSTS;i++) init_prims(&p[i],i);
@@ -209,6 +212,10 @@ static int run_scene(int scene,int workers) {
   append_ot(p,scene);
   DrawOTag(p[0].ot);
   native=vram[PY][PX];
+  for(i=0;i<5;i++) {
+    gap_native[i]=vram[gap_y[i]][gap_x[i]];
+    gap_hd[i]=hires[(size_t)(gap_y[i]*S)*ROW+(gap_x[i]*S+1)];
+  }
   for(region=0;region<REGIONS;region++) {
     int xx=region_x(region*6)+W/2;
     int yy=region_y(region*6)+H/2;
@@ -251,6 +258,13 @@ static int run_scene(int scene,int workers) {
       region_ot_hash[region],region_direct_hash[region]);
     if(region_hd[region]!=region_direct[region] ||
        region_ot_hash[region]!=region_direct_hash[region]) return 0;
+  }
+  for(i=0;i<5;i++){
+    unsigned short actual=hires[(size_t)(gap_y[i]*S)*ROW+(gap_x[i]*S+1)];
+    printf("V55GAP scene=%d workers=%d slot=%d x=%d y=%d hx=%d hy=%d native=%u hires=%u direct=%u\n",
+      scene,workers,i,gap_x[i],gap_y[i],gap_x[i]*S+1,gap_y[i]*S,
+      (unsigned)gap_native[i],(unsigned)gap_hd[i],(unsigned)actual);
+    if(gap_native[i]!=0 || gap_hd[i]!=0 || actual!=0) return 0;
   }
   printf("V55SUMMARY scene=%d workers=%d bursts=%d buckets=%d packets=%d native=%u hires=%u direct=%u "
          "othash=%016llx directhash=%016llx pixels=%d clut4=%u clut8=%u "
