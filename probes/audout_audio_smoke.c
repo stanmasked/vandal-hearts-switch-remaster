@@ -344,7 +344,7 @@ int main(int argc, char **argv) {
         result==0 && played_blocks==MAX_PROBE_BLOCKS);
     if (run_evidence<0 && result==0) result=10;
     printf("Run evidence: %s (accepted=%u / planned=%u, source=%s)\n",
-           run_evidence==1 ? "FULL HOST CONTRACT" :
+           run_evidence==1 ? "FULL PCM PAGE ACCOUNTING" :
            run_evidence==0 ? "INCOMPLETE - NO FULL-RUN CLAIM" :
                              "COUNTER MISMATCH - INVALID",
            played_blocks,MAX_PROBE_BLOCKS,
