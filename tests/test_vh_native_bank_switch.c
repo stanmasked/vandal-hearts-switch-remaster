@@ -53,7 +53,9 @@ int main(void) {
             assert(!seq.playing);
             /* Old voices cannot retain pointers into the previous PCM bank. */
             for (unsigned slot=0;slot<VH_NATIVE_MUSIC_VOICES;slot++)
-                assert(!spu.voice[slot].active || spu.voice[slot].released);
+                assert(!spu.voice[slot].active ||
+                       spu.voice[slot].adsr.phase==VH_ADSR_RELEASE ||
+                       spu.voice[slot].adsr.phase==VH_ADSR_OFF);
         }
         vh_native_spu_reset(&spu);
         assert(vh_native_seq_init(&seq,song,sizeof song,&spu,
