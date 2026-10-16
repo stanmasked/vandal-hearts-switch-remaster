@@ -120,6 +120,22 @@ jobs:
              tests/test_vh_audio_resample.c source/vh_audio_resample.c \
              -o build/test_vh_audio_resample_ubsan
           ./build/test_vh_audio_resample_ubsan
+      - name: Switch audio diagnostic HUD ASCII and counter bounds
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+             tests/test_vh_audio_diagnostics.c source/vh_audio_diagnostics.c \
+             -o build/test_vh_audio_diagnostics
+          ./build/test_vh_audio_diagnostics
+      - name: Switch audio diagnostic HUD under ASan and UBSan
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+             -fsanitize=address,undefined -fno-omit-frame-pointer \
+             tests/test_vh_audio_diagnostics.c source/vh_audio_diagnostics.c \
+             -o build/test_vh_audio_diagnostics_asan
+          ./build/test_vh_audio_diagnostics_asan
       - name: Normal exit 2-ms PCM taper and resume timing counters
         run: |
           cc -std=c11 -Wall -Wextra -Werror -O2 -Isource \
