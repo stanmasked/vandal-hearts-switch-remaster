@@ -42,6 +42,7 @@ on:
       - 'source/map02_terrain_ot_scene.h'
       - 'source/map02_external_gte_ft4.h'
       - 'source/map02_vram4_page.h'
+      - 'source/map02_vram4_frame.h'
       - 'tests/test_map02_face_direction.c'
       - 'tests/test_map02_op0_reference.c'
       - 'tests/test_map02_projection.c'
@@ -49,6 +50,7 @@ on:
       - 'tests/test_map02_terrain_ot_scene.c'
       - 'tests/test_map02_external_gte_ft4.c'
       - 'tests/test_map02_vram4_page.c'
+      - 'tests/test_map02_vram4_frame.c'
       - 'tests/test_audit_map02_ot_source.py'
       - 'tools/audit_map02_ot_source.py'
       - 'tests/test_map02_terrain_lighting.c'
@@ -125,6 +127,7 @@ on:
       - 'source/map02_terrain_ot_scene.h'
       - 'source/map02_external_gte_ft4.h'
       - 'source/map02_vram4_page.h'
+      - 'source/map02_vram4_frame.h'
       - 'tests/test_map02_face_direction.c'
       - 'tests/test_map02_op0_reference.c'
       - 'tests/test_map02_projection.c'
@@ -132,6 +135,7 @@ on:
       - 'tests/test_map02_terrain_ot_scene.c'
       - 'tests/test_map02_external_gte_ft4.c'
       - 'tests/test_map02_vram4_page.c'
+      - 'tests/test_map02_vram4_frame.c'
       - 'tests/test_audit_map02_ot_source.py'
       - 'tools/audit_map02_ot_source.py'
       - 'tests/test_map02_terrain_lighting.c'
@@ -386,6 +390,8 @@ jobs:
             /tmp/vh-map02-external-gte-ft4
             gcc -std=c11 -Wall -Wextra -Werror -O2 tests/test_map02_vram4_page.c -o /tmp/vh-map02-vram4-page -lm
             /tmp/vh-map02-vram4-page
+            gcc -std=c11 -Wall -Wextra -Werror -O2 tests/test_map02_vram4_frame.c -o /tmp/vh-map02-frame-ot -lm
+            /tmp/vh-map02-frame-ot
             python3 -m unittest discover -s tests -p 'test_audit_map02_ot_source.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_pc_vram4_equivalence.py' -v
             python3 -m unittest discover -s tests -p 'test_audit_map02_projection_source.py' -v
