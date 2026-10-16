@@ -20,7 +20,7 @@ TONE_OFFSET = 32 + 128 * 16
 def synth_dir(directory, wet=False, bank_b=False, fallback_program=False,
               out_of_range_note=False, mute_master=False,
               no_note_on=False, program_change_retrigger=False,
-              delayed_program_change=False):
+              delayed_program_change=False, accelerated_tempo=False):
     directory.mkdir()
     files = make_synthetic_files()
     vh = bytearray(files["music.vh"])
@@ -52,6 +52,8 @@ def synth_dir(directory, wet=False, bank_b=False, fallback_program=False,
             0, 0x80, 110, 0,
             0, 0xFF, 0x2F,
         ])
+    if accelerated_tempo and not delayed_program_change:
+        raise ValueError("accelerated tempo requires a delayed-program sequence")
     if delayed_program_change:
         # At 480 PPQN and 500000 us/quarter, each 512-frame block
         # supplies about 11.145 MIDI ticks. At delta 45, the retrigger
@@ -59,9 +61,13 @@ def synth_dir(directory, wet=False, bank_b=False, fallback_program=False,
         # tick 135, the nearest-key fallback and explicit Note Off
         # become due in block 13 (not in any earlier block).
         # EOT is beyond the 16-block observation window.
-        files["music.seq"] = files["music.seq"][:15] + bytes([
-            0, 0xC0, 7,
-            0, 0x90, 60, 100,
+        lead = bytes([0, 0xC0, 7, 0, 0x90, 60, 100])
+        # FF51 in native Sony SEQ contains 3 raw tempo bytes with no
+        # extra SMF length. 250000 us/quarter doubles ticks per block,
+        # starting with the block AFTER the FF51 event was dispatched.
+        tempo_change = (bytes([0, 0xFF, 0x51, 0x03, 0xD0, 0x90])
+                        if accelerated_tempo else b"")
+        tail = bytes([
             45, 0x90, 60, 100,
             0, 0xC0, 9,
             0, 0x90, 61, 110,
@@ -72,6 +78,7 @@ def synth_dir(directory, wet=False, bank_b=False, fallback_program=False,
             0, 0x80, 110, 0,
             0, 0xFF, 0x2F,
         ])
+        files["music.seq"] = files["music.seq"][:15] + lead + tempo_change + tail
     if fallback_program or out_of_range_note or no_note_on:
         seq = bytearray(files["music.seq"])
         if fallback_program:
@@ -285,6 +292,46 @@ class NativeLocalMusicTransitionTests(unittest.TestCase):
             for folder, original in ((a, saved_a), (b, saved_b)):
                 self.assertEqual(
                     {p.name: p.read_bytes() for p in folder.iterdir()}, original)
+
+    def test_native_tempo_change_moves_delayed_events_without_clock_reset(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            regular, faster, other = (root / "regular", root / "faster",
+                                      root / "other")
+            original_regular = synth_dir(regular, delayed_program_change=True)
+            original_faster = synth_dir(
+                faster, delayed_program_change=True, accelerated_tempo=True)
+            original_other = synth_dir(other)
+            for bank, cross_at, outside_at in ((regular, 5, 13),
+                                               (faster, 3, 7)):
+                with self.subTest(bank=bank.name):
+                    result = subprocess.run(
+                        [str(PROGRAM), str(bank), str(other), "2", "16"],
+                        capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    first, second = json.loads(result.stdout)["measurements"]
+                    self.assertEqual(first["note_requests"], 4)
+                    self.assertEqual(first["resolved_notes"], 4)
+                    self.assertEqual(first["note_offs"], 2)
+                    self.assertEqual(first["first_note_block"], 1)
+                    self.assertEqual(first["last_note_block"], outside_at)
+                    self.assertEqual(first["first_note_off_block"], cross_at)
+                    self.assertEqual(first["first_cross_program_block"], cross_at)
+                    self.assertEqual(first["first_out_of_range_block"], outside_at)
+                    self.assertEqual(first["fallback_notes"], 2)
+                    self.assertEqual(first["cross_program_fallback_notes"], 1)
+                    self.assertEqual(first["out_of_range_fallback_notes"], 1)
+                    self.assertEqual(first["unresolved_notes"], 0)
+                    self.assertEqual(second["first_note_block"], 1)
+                    self.assertEqual(second["fallback_notes"], 0)
+                    self.assertEqual(json.loads(result.stdout)["output_frames"],
+                                     (2 * 16 * 512 - 1) * 48000 // 44100 + 1)
+                    self.assertNotIn(str(root), result.stdout)
+            for folder, saved in ((regular, original_regular),
+                                  (faster, original_faster),
+                                  (other, original_other)):
+                self.assertEqual(
+                    {p.name: p.read_bytes() for p in folder.iterdir()}, saved)
 
     def test_resolved_notes_can_produce_silent_pcm_with_zero_gain(self):
         with tempfile.TemporaryDirectory() as tmp:
