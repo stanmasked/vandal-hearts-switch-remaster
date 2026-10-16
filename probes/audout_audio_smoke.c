@@ -11,6 +11,7 @@
 
 #include "vh_audio_assets.h"
 #include "vh_audio_resample.h"
+#include "vh_audio_output_recovery.h"
 #include "vh_native_seq.h"
 #include "vh_native_spu.h"
 
@@ -98,6 +99,62 @@ static int prepare_music(int *using_user_files) {
     return prepare_synthetic();
 }
 
+/* All device callbacks run on the single probe audio producer thread.
+ * A failed audoutPlayBuffer keeps the immutable 48-kHz page in out_48000;
+ * reopening the service must not re-run SEQ, SPU or the resampler.
+ */
+typedef struct {
+    AudioOutBuffer page;
+    int initialized;
+    int started;
+} NativeOutput;
+
+static void native_close(void *opaque) {
+    NativeOutput *dev=opaque;
+    if (!dev->initialized) return;
+    audoutExit();
+    dev->initialized=0;
+    dev->started=0;
+}
+static int native_open(void *opaque) {
+    NativeOutput *dev=opaque;
+    if (dev->initialized || R_FAILED(audoutInitialize())) return -1;
+    dev->initialized=1;
+    if (audoutGetSampleRate()!=VH_NATIVE_AUDOUT_RATE ||
+        audoutGetChannelCount()!=2u ||
+        audoutGetPcmFormat()!=PcmFormat_Int16) {
+        native_close(dev);
+        return -1;
+    }
+    memset(&dev->page,0,sizeof dev->page);
+    dev->page.buffer=out_48000;
+    dev->page.buffer_size=sizeof out_48000;
+    return dev->page.buffer_size==0x1000u ? 0 : -1;
+}
+static int native_start(void *opaque) {
+    NativeOutput *dev=opaque;
+    if (!dev->initialized || dev->started ||
+        R_FAILED(audoutStartAudioOut())) return -1;
+    dev->started=1;
+    return 0;
+}
+static int native_stop(void *opaque) {
+    NativeOutput *dev=opaque;
+    if (!dev->started) return 0;
+    if (R_FAILED(audoutStopAudioOut())) return -1;
+    dev->started=0;
+    return 0;
+}
+static int native_submit(void *opaque,const int16_t *pcm,size_t frames) {
+    NativeOutput *dev=opaque;
+    if (!dev->initialized || !dev->started ||
+        pcm!=out_48000 || frames==0 ||
+        frames>VH_AUDIO_RESAMPLE_MAX_FRAMES) return -1;
+    dev->page.data_size=frames*2u*sizeof(int16_t);
+    AudioOutBuffer *returned=NULL;
+    return R_SUCCEEDED(audoutPlayBuffer(&dev->page,&returned)) ? 0 : -1;
+}
+
 int main(int argc, char **argv) {
     (void)argc; (void)argv;
     consoleInit(NULL);
@@ -116,41 +173,20 @@ int main(int argc, char **argv) {
     printf("Source: %s\n", user_files ? "user-owned SD files" : "synthetic");
     consoleUpdate(NULL);
 
-    Result rc = audoutInitialize();
-    if (R_FAILED(rc)) {
-        printf("audout init failed: 0x%08x\n", rc);
+    NativeOutput output={0};
+    VhAudioOutputRecovery recovery={0};
+    const VhAudioOutputOps ops={
+        &output,native_submit,native_stop,native_close,native_open,native_start
+    };
+    if (native_open(&output) || native_start(&output)) {
+        printf("audout initialization or format negotiation failed\\n");
+        (void)native_stop(&output);
+        native_close(&output);
         vh_audio_assets_close(&user_assets);
         consoleExit(NULL);
         return 2;
     }
-    if (audoutGetSampleRate() != VH_NATIVE_AUDOUT_RATE ||
-        audoutGetChannelCount() != 2u ||
-        audoutGetPcmFormat() != PcmFormat_Int16) {
-        printf("Unsupported audout format/rate\n");
-        audoutExit();
-        vh_audio_assets_close(&user_assets);
-        consoleExit(NULL);
-        return 3;
-    }
-    rc = audoutStartAudioOut();
-    if (R_FAILED(rc)) {
-        printf("audout start failed: 0x%08x\n", rc);
-        audoutExit();
-        vh_audio_assets_close(&user_assets);
-        consoleExit(NULL);
-        return 4;
-    }
 
-    AudioOutBuffer desc = {0};
-    desc.buffer = out_48000;
-    desc.buffer_size = sizeof(out_48000);
-    if (desc.buffer_size != 0x1000u) {
-        audoutStopAudioOut();
-        audoutExit();
-        vh_audio_assets_close(&user_assets);
-        consoleExit(NULL);
-        return 8;
-    }
     /* System ticks measure SEQ + DSP + 48k conversion, excluding
      * audoutPlayBuffer wait and console updates. */
     const uint64_t tick_frequency = armGetSystemTickFreq();
@@ -178,10 +214,11 @@ int main(int argc, char **argv) {
         compute_ticks_total += elapsed_ticks;
         if (elapsed_ticks > compute_ticks_max) compute_ticks_max = elapsed_ticks;
         if (elapsed_ticks > block_budget_ticks) ++compute_over_budget;
-        desc.data_size = count * 2u * sizeof(int16_t);
-        AudioOutBuffer *released = NULL;
-        rc = audoutPlayBuffer(&desc, &released);
-        if (R_FAILED(rc)) {
+        /* Retry the same fully rendered page after a bounded backend
+         * restart. A failed output must not advance any music clock.
+         */
+        if (vh_audio_output_submit_recover(&ops,&recovery,
+                                           out_48000,count)) {
             result = 7;
             break;
         }
@@ -205,9 +242,13 @@ int main(int argc, char **argv) {
     /* The blocking audoutPlayBuffer returned its buffer before we
      * release bank PCM. No audio thread may outlive this cleanup.
      */
-    audoutStopAudioOut();
-    audoutExit();
+    if (native_stop(&output)) result=7;
+    native_close(&output);
     vh_audio_assets_close(&user_assets);
+    printf("Output pages=%llu restarts=%u recovered=%u failures=%u\\n",
+           (unsigned long long)recovery.pages_submitted,
+           recovery.restart_attempts,recovery.recoveries,
+           recovery.submit_failures);
     printf("Audio probe ended, result=%d\n",result);
     consoleUpdate(NULL);
     consoleExit(NULL);
