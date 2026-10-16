@@ -50,7 +50,8 @@ class MultiCellTests(unittest.TestCase):
         faces = place_faces(self.data, self.cells[:2], self.uv,
                             step_x=-64, step_z=64)
         self.assertEqual(faces[0]["grid_offset_xyz"], [-192, 0, 128])
-        self.assertEqual(shared_vertices(*faces),\n                         [[-192, 0, 128], [-192, 0, 192]])
+        self.assertEqual(shared_vertices(*faces),
+                         [[-192, 0, 128], [-192, 0, 192]])
 
     def test_duplicate_invalid_steps_and_missing_uv(self):
         with self.assertRaisesRegex(ValueError, "duplicate"):
