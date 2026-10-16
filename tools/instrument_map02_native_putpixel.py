@@ -24,6 +24,7 @@ HELPERS = r'''
  * Both location and destination are explicit private opt-in inputs.
  * No log I/O occurs for the normal binary without this macro. */
 #define VH_PIXEL_SAMPLE_MAX 64u
+static int AccurateEnabled(void); /* defined by the original rasterizer */
 static int vh_pixel_sample_init;
 static int vh_pixel_sample_active;
 static int vh_pixel_sample_x, vh_pixel_sample_y;
