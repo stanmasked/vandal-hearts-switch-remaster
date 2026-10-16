@@ -1,6 +1,9 @@
 name: Host SPU audio regressions
 
 on:
+  push:
+    branches:
+      - test/cdxa-extract-decode-pipeline
   pull_request:
     paths:
       - "tools/**"
