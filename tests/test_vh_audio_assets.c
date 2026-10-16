@@ -158,6 +158,25 @@ static void test_reject_bad_seq_and_vh_vb(void) {
     remove_sources();
 }
 
+static void test_strict_vb_preallocation_cap(void) {
+    VhAudioAssets assets={0};
+    fixture();
+    put_sources();
+    assert(vh_audio_assets_load_bounded(&assets,dir_template,0)==
+           VH_AUDIO_ASSET_ERROR);
+    assert(vh_audio_assets_load_bounded(&assets,dir_template,47)==
+           VH_AUDIO_ASSET_ERROR);
+    assert(!assets.vb && !assets.pcm && !assets.bank.active);
+    assert(vh_audio_assets_load_bounded(&assets,dir_template,48)==
+           VH_AUDIO_ASSET_OK);
+    assert(assets.pcm_capacity==84);
+    vh_audio_assets_close(&assets);
+    assert(vh_audio_assets_load_bounded(&assets,dir_template,
+              VH_AUDIO_ASSET_MAX_VB_BYTES+1u)==VH_AUDIO_ASSET_OK);
+    vh_audio_assets_close(&assets);
+    remove_sources();
+}
+
 static void test_size_limits_and_path_guard(void) {
     VhAudioAssets assets = {0};
     fixture();
@@ -209,6 +228,7 @@ int main(void) {
     test_all_or_nothing_and_readonly();
     test_reject_bad_seq_and_vh_vb();
     test_size_limits_and_path_guard();
+    test_strict_vb_preallocation_cap();
     assert(rmdir(dir_template) == 0);
     puts("read-only local SEQ/VH/VB assets: PASS (synthetic)");
     return 0;
