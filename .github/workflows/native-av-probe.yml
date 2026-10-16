@@ -94,27 +94,27 @@ jobs:
       - name: Download NeXium nightly
         shell: bash
         env:
-          GH_TOKEN: $X{{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euxo pipefail
-          release_json="$X(curl -fsSL --retry 3 -H "Authorization: Bearer $XGH_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/nexium-emu/nexium-nightly/releases/tags/nightly)"
-          asset_url="$X(printf '%s' "$Xrelease_json" | jq -r '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
-          test -n "$Xasset_url"
-          curl -fL --retry 3 "$Xasset_url" -o /tmp/nexium-linux.tar.gz
+          release_json="$(curl -fsSL --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/nexium-emu/nexium-nightly/releases/tags/nightly)"
+          asset_url="$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
+          test -n "$asset_url"
+          curl -fL --retry 3 "$asset_url" -o /tmp/nexium-linux.tar.gz
           mkdir -p /tmp/nexium
           tar -xzf /tmp/nexium-linux.tar.gz -C /tmp/nexium
-          emu_bin="$X(find /tmp/nexium -type f -executable \( -name 'nexium-gui' -o -name 'nexium' \) -print -quit)"
-          test -n "$Xemu_bin"
-          echo "NEXIUM_BIN=$Xemu_bin" >> "$GITHUB_ENV"
+          emu_bin="$(find /tmp/nexium -type f -executable \( -name 'nexium-gui' -o -name 'nexium' \) -print -quit)"
+          test -n "$emu_bin"
+          echo "NEXIUM_BIN=$emu_bin" >> "$GITHUB_ENV"
 
       - name: Capture two native AV framebuffer states
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p runtime-evidence
-          icd="$X(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
-          test -n "$Xicd"
-          export VK_ICD_FILENAMES="$Xicd"
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
           export NRO="nros/libnx-av-switch-probe.nro"
           export SHOT1="runtime-evidence/av-before.png"
           export SHOT2="runtime-evidence/av-after.png"
