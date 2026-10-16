@@ -5,6 +5,7 @@
  */
 #include <switch.h>
 #include <stdbool.h>
+#include <limits.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <string.h>
@@ -38,6 +39,9 @@ static atomic_int audio_fault;
 static atomic_uint pcm_blocks_generated;
 static atomic_uint audout_buffers_completed;
 static atomic_uint synthetic_scene_switches;
+static atomic_uint audout_wait_peak_us;
+static atomic_uint audout_waits_longer_than_page;
+static atomic_uint audout_failed_returns;
 static int audio_active;
 static int using_user_files;
 static int sdmc_mounted_here;
@@ -134,6 +138,7 @@ static int prepare_music(int *using_user_files) {
  */
 typedef struct {
     AudioOutBuffer page;
+    VhAudioSubmitTiming timing;
     int initialized;
     int started;
 } NativeOutput;
@@ -182,10 +187,19 @@ static int native_submit(void *opaque,const int16_t *pcm,size_t frames) {
         !frames || frames>VH_AUDIO_RESAMPLE_MAX_FRAMES) return -1;
     dev->page.data_size=frames*2u*sizeof(int16_t);
     AudioOutBuffer *released=NULL;
-    /* A successful service call is not permission to overwrite the
-     * single DMA page unless that exact descriptor was released. */
-    if (R_FAILED(audoutPlayBuffer(&dev->page,&released))) return -1;
-    return vh_audio_output_page_returned(&dev->page,released) ? 0 : -1;
+    /* Record raw blocking time for each libnx submission attempt.
+     * A returned foreign descriptor is not permission to recycle
+     * the backing 4-KiB PCM page, even if the call itself succeeded.
+     */
+    const uint64_t start_ticks=armGetSystemTick();
+    const Result result=audoutPlayBuffer(&dev->page,&released);
+    const uint64_t elapsed=armGetSystemTick()-start_ticks;
+    const int accepted=R_SUCCEEDED(result) &&
+        vh_audio_output_page_returned(&dev->page,released);
+    if (vh_audio_output_record_submit_timing(
+            &dev->timing,elapsed,armGetSystemTickFreq(),frames,accepted))
+        return -1;
+    return accepted ? 0 : -1;
 }
 static const VhAudioOutputOps output_ops={
     &native_output,native_submit,native_stop,
@@ -235,8 +249,22 @@ static void audio_worker(void *unused) {
          * already-rendered PCM page. No additional SEQ/SPU frames are
          * synthesized while the backend is recovering.
          */
-        if (vh_audio_output_submit_recover(
-                &output_ops, &output_recovery, audio_page, count)) {
+        const int submit_result=vh_audio_output_submit_recover(
+            &output_ops,&output_recovery,audio_page,count);
+        /* Publish snapshots atomically; only the audio producer may
+         * write the detailed, non-atomic timing accumulator.
+         */
+        const uint64_t peak_us=vh_audio_output_ticks_to_us(
+            native_output.timing.max_ticks,armGetSystemTickFreq());
+        atomic_store(&audout_wait_peak_us,
+                     (unsigned)(peak_us>UINT_MAX ? UINT_MAX : peak_us));
+        const uint64_t slow=native_output.timing.waits_longer_than_page;
+        const uint64_t failed=native_output.timing.failed_submissions;
+        atomic_store(&audout_waits_longer_than_page,
+                     (unsigned)(slow>UINT_MAX ? UINT_MAX : slow));
+        atomic_store(&audout_failed_returns,
+                     (unsigned)(failed>UINT_MAX ? UINT_MAX : failed));
+        if (submit_result) {
             atomic_store(&audio_fault, 3);
             break;
         }
@@ -254,12 +282,16 @@ static int start_native_audio(void) {
         return 0;
     }
     memset(&output_recovery,0,sizeof(output_recovery));
+    memset(&native_output.timing,0,sizeof(native_output.timing));
     Result result;
     atomic_store(&audio_stop, false);
     atomic_store(&audio_fault, 0);
     atomic_store(&pcm_blocks_generated, 0u);
     atomic_store(&audout_buffers_completed, 0u);
     atomic_store(&synthetic_scene_switches, 0u);
+    atomic_store(&audout_wait_peak_us,0u);
+    atomic_store(&audout_waits_longer_than_page,0u);
+    atomic_store(&audout_failed_returns,0u);
     result = threadCreate(&sound_thread, audio_worker, NULL, NULL,
                           16 * 1024, 0x2c, -2);
     if (R_FAILED(result)) {
@@ -354,6 +386,28 @@ static void paint(VhCanvas *canvas, const VhGameState *state,
         (scene_switches >= 2u &&
          returned_buffers >= 128u) ? sound_ok : source_missing;
     vh_canvas_fill_rect(canvas,1000,325,130,18,switch_color);
+    /* The thin BLUE latency bar is a relative peak wait gauge.
+     * Full width = four nominal 512-frame page durations. A blocking
+     * audout wait longer than one page is not automatically a glitch.
+     * Telemetry counters come from the audio thread via atomics.
+     */
+    const unsigned peak_wait_us=atomic_load(&audout_wait_peak_us);
+    const unsigned slow_waits=atomic_load(&audout_waits_longer_than_page);
+    const unsigned failed_returns=atomic_load(&audout_failed_returns);
+    const unsigned page_us=VH_AUDIO_BLOCK_FRAMES*1000000u/
+                           VH_AUDIO_SAMPLE_RATE;
+    const unsigned max_display=page_us*4u;
+    const unsigned clamped=peak_wait_us>max_display
+        ? max_display : peak_wait_us;
+    const int wait_width=(int)((uint64_t)clamped*130u/max_display);
+    vh_canvas_fill_rect(canvas,1000,375,130,12,grid);
+    vh_canvas_fill_rect(canvas,1000,375,wait_width,12,hero);
+    /* Distinct counters are sampled even when not rendered as text:
+     * a warning is not derived from slow waits alone, since the
+     * blocking API can normally wait for a page to finish playing.
+     */
+    (void)slow_waits;
+    (void)failed_returns;
     /* Animated heartbeat proves video continues while audout worker runs. */
     vh_canvas_fill_rect(canvas, 70, 610, 800, 14, grid);
     vh_canvas_fill_rect(canvas, 70, 610, 20 + (int)(frame % 780u), 14, hero);
