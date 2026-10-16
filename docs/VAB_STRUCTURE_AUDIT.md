@@ -491,6 +491,44 @@ These checks cover serialized host-side lifetime management only, not
 cross-thread teardown while audio is actively running on real Switch
 hardware. The old bank must stay allocated until a controlled detach.
 
+## 4-ms output de-click ramp after audout start or HOME resume
+
+To avoid a sudden full-amplitude sample at the start of a new 48-kHz
+output session, the Switch worker now arms a **192-frame (4 ms) PCM16
+stereo gain ramp** after a successful `audout` start or resume. The
+first frame starts at zero gain, both channels gain linearly, and the
+last ramp frame already reaches full original amplitude. The following
+frame and all later pages are unchanged. A ramp can span multiple
+small PCM pages without restarting on the next page.
+
+The envelope is applied exactly **once** to the freshly resampled
+48-kHz page, **before** `vh_audio_output_submit_recover` and before
+the PCM buffer is handed to libnx. In particular, an uncertain
+`audoutPlayBuffer` failure retries the *same transformed page* after
+the old service has been closed and its PCM buffer lease released;
+it does not apply an extra fade, resynthesize the note, change SEQ
+tempo, move SPU/reverb positions, or advance the 44.1→48-kHz
+resampler again. The ramp has bounded integer arithmetic (no float,
+allocation, audio device calls, or extra staging buffer).
+
+`source/vh_audio_output_ramp.[ch]` and
+`tests/test_vh_audio_output_ramp.c` cover signed PCM16 extrema,
+hard-zero first frame, monotonic left/right envelopes, exact
+full-amplitude frame-191→frame-192 continuity, a ramp spanning
+three PCM pages, rearming and no repeated attenuation. The existing
+96-block audout recovery comparison and 512-block HOME/sleep scene
+soak now also apply an identical ramp on both the clean control
+producer and the failure-injected producer, verifying exact submitted
+PCM, controller/fade state, SPU/reverb clock, and retry immutability.
+The tests run under regular host CI and **ASan/UBSan**; the new ramp
+is linked into the built native Switch NRO.
+
+This attenuates abrupt onset clicks after a new output session,
+but **cannot guarantee silent HOME/stop edges**, preserve hardware
+queued frames lost during an audout reset, or remove audible glitches
+from uncertain already-played output. A real-console listening and
+latency test is still required.
+
 ## Strict audout released-buffer ownership (single PCM page)
 
 The Switch worker intentionally uses a single statically allocated,
