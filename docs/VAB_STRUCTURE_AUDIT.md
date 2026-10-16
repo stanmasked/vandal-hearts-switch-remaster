@@ -233,6 +233,43 @@ while this project's validated VAB import currently uses active `nTone`
 slots; unusual inactive-but-populated records require a separate check.
 No original soundtrack bytes are included or needed.
 
+## Executed upstream PC-port SeqPickTone regression
+
+The host audio CI now runs `tests/test_native_vab_upstream_reference.py`
+against **the actual compiled C function** `SeqPickTone`, extracted unchanged
+from the GPL-2.0-licensed
+[VandalHearts-PcPort `libsnd.c`](https://github.com/HalmyLyseas/VandalHearts-PcPort/blob/17427153fd3560fcb9adf3a8f484d9ff7fc530e9/platform/pc/src/libsnd.c).
+The upstream source is downloaded only during CI from pinned commit
+`17427153fd3560fcb9adf3a8f484d9ff7fc530e9`; it is **not** vendored or
+built into the Switch executable. The harness checks that the named
+function exists uniquely and compiles its unmodified body with compatible
+metadata-only `Vab` and `Tone` structures.
+
+Run the same test on a Linux/macOS host with a C compiler:
+
+```sh
+mkdir -p build
+curl --fail --location --show-error --silent \
+  https://raw.githubusercontent.com/HalmyLyseas/VandalHearts-PcPort/17427153fd3560fcb9adf3a8f484d9ff7fc530e9/platform/pc/src/libsnd.c \
+  -o build/upstream-libsnd.c
+python3 tests/test_native_vab_upstream_reference.py build/upstream-libsnd.c
+```
+
+For all 128 notes, five requested programs, and six synthetic bank
+layouts (**3,840 comparisons**), the harness checks the original C function's
+chosen program/tone/VAG against the native C resolver's selected PCM
+sample address. It compares the selection algorithm independently of
+the Python model above. The minimal adapter uses a known 11-program
+search ceiling (highest populated program 10 plus one), matching the
+reference loader's populated-program convention for these fixtures;
+other `Tone` fields are not needed by `SeqPickTone`.
+
+**Limits:** the entire upstream VAB loader is not compiled or executed.
+An algorithm match on generated active-tone banks does not establish
+identity on unusual nonzero inactive slots, actual game banks, timing,
+gain, sound quality, PS1 hardware or Switch speaker output. These
+remain separate validation gates. Original music is never uploaded.
+
 ## SPU ADSR and sample cursor (host-only)
 
 The next isolated component is `tools/simulate_spu_voice.py`, which
