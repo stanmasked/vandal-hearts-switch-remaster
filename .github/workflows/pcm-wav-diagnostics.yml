@@ -20,6 +20,7 @@ on:
       - 'tests/test_vh_resample_retry.c'
       - 'tests/test_vh_resample_resume.c'
       - 'tests/test_vh_audio_pause_fifo.c'
+      - 'tests/test_vh_audio_pause_wrap.c'
       - 'source/vh_audio_stream.c'
       - 'tools/inspect_native_pcm_capture.py'
       - 'tools/analyze_pcm_discontinuities.py'
@@ -45,6 +46,7 @@ on:
       - 'tests/test_vh_resample_retry.c'
       - 'tests/test_vh_resample_resume.c'
       - 'tests/test_vh_audio_pause_fifo.c'
+      - 'tests/test_vh_audio_pause_wrap.c'
       - 'source/vh_audio_stream.c'
       - 'tools/inspect_native_pcm_capture.py'
       - 'tools/analyze_pcm_discontinuities.py'
@@ -201,3 +203,11 @@ jobs:
             tests/test_vh_audio_pause_fifo.c source/vh_audio_stream.c \
             -o /tmp/test_vh_audio_pause_fifo
           /tmp/test_vh_audio_pause_fifo
+      - name: Validate PCM pause across FIFO ring wrap and underrun
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -fno-sanitize-recover=all \
+            tests/test_vh_audio_pause_wrap.c source/vh_audio_stream.c \
+            -o /tmp/test_vh_audio_pause_wrap
+          /tmp/test_vh_audio_pause_wrap
