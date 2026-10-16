@@ -59,10 +59,12 @@ def group(paths: list[Path]) -> dict:
         "home_reopen", "first_pcm_count")}
     latencies = []
     missing_individual_latency = 0
+    gap_sessions = 0
     problems = []
     for path in paths:
         rows = audio.load_csv(path)
         report = audio.summarize(rows)
+        gap_sessions += int(report["historical_gaps"] > 0)
         inc = report["observed_counter_increments"]
         for name in totals:
             totals[name] += inc[name]
@@ -118,10 +120,7 @@ def group(paths: list[Path]) -> dict:
         },
         "truncated_windows": sum(not x["window_begins_at_session_start"]
                                  for x in sessions),
-        "historical_gaps": sum(
-            bool(audio.summarize(audio.load_csv(Path(x["file"])))["historical_gaps"])
-            for x in sessions
-        ),
+        "historical_gaps": gap_sessions,
     }
 
 
