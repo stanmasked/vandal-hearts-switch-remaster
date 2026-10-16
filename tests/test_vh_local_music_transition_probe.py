@@ -19,7 +19,8 @@ TONE_OFFSET = 32 + 128 * 16
 
 def synth_dir(directory, wet=False, bank_b=False, fallback_program=False,
               out_of_range_note=False, mute_master=False,
-              no_note_on=False, program_change_retrigger=False):
+              no_note_on=False, program_change_retrigger=False,
+              delayed_program_change=False):
     directory.mkdir()
     files = make_synthetic_files()
     vh = bytearray(files["music.vh"])
@@ -48,6 +49,26 @@ def synth_dir(directory, wet=False, bank_b=False, fallback_program=False,
             0, 0x90, 110, 110,
             0x81, 0x70, 0x80, 60, 0,
             0, 0x80, 61, 0,
+            0, 0x80, 110, 0,
+            0, 0xFF, 0x2F,
+        ])
+    if delayed_program_change:
+        # At 480 PPQN and 500000 us/quarter, each 512-frame block
+        # supplies about 11.145 MIDI ticks. At delta 45, the retrigger
+        # and cross-program fallback become due in block 5. At total
+        # tick 135, the nearest-key fallback and explicit Note Off
+        # become due in block 13 (not in any earlier block).
+        # EOT is beyond the 16-block observation window.
+        files["music.seq"] = files["music.seq"][:15] + bytes([
+            0, 0xC0, 7,
+            0, 0x90, 60, 100,
+            45, 0x90, 60, 100,
+            0, 0xC0, 9,
+            0, 0x90, 61, 110,
+            90, 0xC0, 7,
+            0, 0x90, 110, 110,
+            0, 0x80, 60, 0,
+            0x81, 0x70, 0x80, 61, 0,
             0, 0x80, 110, 0,
             0, 0xFF, 0x2F,
         ])
@@ -216,6 +237,54 @@ class NativeLocalMusicTransitionTests(unittest.TestCase):
             for folder, before in ((a, original_a), (b, original_b)):
                 self.assertEqual(
                     {p.name: p.read_bytes() for p in folder.iterdir()}, before)
+
+    def test_delayed_program_change_is_due_only_in_correct_audio_block(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b = Path(tmp) / "delayed-a", Path(tmp) / "ordinary-b"
+            saved_a = synth_dir(a, delayed_program_change=True)
+            saved_b = synth_dir(b, bank_b=True)
+            expected = {
+                4: (1, 0, 0, 0, 0, 1),
+                8: (3, 1, 1, 0, 5, 5),
+                12: (3, 1, 1, 0, 5, 5),
+                16: (4, 2, 1, 1, 5, 13),
+            }
+            for blocks, (notes, offs, cross, outside, first_off,
+                         last_note) in expected.items():
+                with self.subTest(blocks=blocks):
+                    cmd = [str(PROGRAM), str(a), str(b), "2", str(blocks)]
+                    first = subprocess.run(cmd, capture_output=True, text=True)
+                    second = subprocess.run(cmd, capture_output=True, text=True)
+                    self.assertEqual(first.returncode, 0, first.stderr)
+                    self.assertEqual(first.stdout, second.stdout)
+                    report = json.loads(first.stdout)
+                    cue, other = report["measurements"]
+                    self.assertEqual(cue["note_requests"], notes)
+                    self.assertEqual(cue["resolved_notes"], notes)
+                    self.assertEqual(cue["unresolved_notes"], 0)
+                    self.assertEqual(cue["note_offs"], offs)
+                    self.assertEqual(cue["cross_program_fallback_notes"], cross)
+                    self.assertEqual(cue["out_of_range_fallback_notes"], outside)
+                    self.assertEqual(cue["fallback_notes"], cross + outside)
+                    self.assertEqual(cue["first_note_block"], 1)
+                    self.assertEqual(cue["last_note_block"], last_note)
+                    self.assertEqual(cue["first_note_off_block"], first_off)
+                    self.assertEqual(cue["first_cross_program_block"],
+                                     5 if cross else 0)
+                    self.assertEqual(cue["first_out_of_range_block"],
+                                     13 if outside else 0)
+                    self.assertGreater(cue["nonzero_samples"], 0)
+                    self.assertEqual(other["first_note_block"], 1)
+                    self.assertEqual(other["cross_program_fallback_notes"], 0)
+                    self.assertEqual(other["out_of_range_fallback_notes"], 0)
+                    total_input = 2 * blocks * 512
+                    self.assertEqual(report["input_frames"], total_input)
+                    self.assertEqual(report["output_frames"],
+                                     (total_input - 1) * 48000 // 44100 + 1)
+                    self.assertNotIn(str(tmp), first.stdout)
+            for folder, original in ((a, saved_a), (b, saved_b)):
+                self.assertEqual(
+                    {p.name: p.read_bytes() for p in folder.iterdir()}, original)
 
     def test_resolved_notes_can_produce_silent_pcm_with_zero_gain(self):
         with tempfile.TemporaryDirectory() as tmp:
