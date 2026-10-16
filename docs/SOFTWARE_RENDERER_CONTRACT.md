@@ -517,3 +517,67 @@ renderer, GPU ordering table, runtime material data and artwork
 were not modified. The result is PC-port mathematical equivalence
 for these tested inputs, **not** live map pixels, real-camera placement,
 full PS1 hardware equality, or evidence of a playable rendered scene.
+
+
+## Capturing the *real* MAP02 camera and verifying projection (opt-in)
+
+The synthetic GTE projection verification does **not** establish the runtime
+view transform. `tools/instrument_map02_camera.py` now allows a
+**read-only, opt-in** source-level camera trace from a separately owned
+working PC-port checkout. It checks the exact pinned upstream Git blobs
+for `src/core/graphics.c` and `platform/pc/src/libgte.c` before
+producing two **new** `graphics.camera.c` and `libgte.camera.c` files;
+it refuses to overwrite the original files or an existing output folder.
+
+When these generated source units replace the corresponding translation
+units in an independently built, locally runnable PC port, defining
+`PC_FEAT` and `VH_TRACE_MAP02_CAMERA` exposes a temporary GTE
+register accessor and a guarded normal-terrain trace:
+
+- Restricts output to **map number 11**, `RenderMapTile`,
+  face zero of `(z=8,x=19)` and `(z=11,x=11)`, with **one event per face**
+  at its first normal-renderer visit with a non-null material.
+- Captures 16 actual resident GTE control-register values **before**
+  `RTPT`: nine RT matrix coefficients in row-major order,
+  TRX/TRY/TRZ, OFX, OFY, H and ZSF4. These are **not inferred**
+  from higher-level camera rotation or a screenshot.
+- Captures four original 16-bit vertex positions, signed `NCLIP`
+  MAC0, cull decision, and (when front-facing) the actual four
+  `POLY_FT4` projected corners and **unclamped** `AVSZ4` OTZ.
+  An NCLIP-culled face has null screen and OTZ in the trace.
+- Emits JSONL `stage=camera_projection` locally. Trace output may
+  contain copyrighted map vertices; **do not commit or upload the
+  raw trace without deciding that it is appropriate**. The normal
+  non-debug compilation excludes all added tracing symbols.
+
+Command to generate the two compile-ready C translation units:
+
+```sh
+python3 -m tools.instrument_map02_camera /private/VandalHearts-PcPort \
+    --output-dir /private/MAP02-camera-instrumented
+```
+
+The output is source-only; this is **not** a runnable build by itself.
+Configure the pinned PC port's build to compile the generated
+`graphics.camera.c` and `libgte.camera.c` **instead of** their
+corresponding originals, and define `-DVH_TRACE_MAP02_CAMERA`.
+Start the owned game and enter map 11 to obtain local JSONL records.
+
+Then verify locally against the separately differential-tested
+portable C GTE projection model:
+
+```sh
+python3 -m tools.verify_map02_camera_capture /private/camera-projection.jsonl
+```
+
+The verifier checks target IDs, types, bounds, unique first-only
+events, signed NCLIP/visibility, screen corners and raw OTZ using
+a compiled C projector. Its public JSON report contains only SHA-256
+of the trace and aggregate counts (no map vertices or camera data).
+
+**Caveats:** This instrumentation has been **compiled in CI against
+the pinned public PC source**, but it has not been run in an actual
+gameplay session here. The screenshot/visible pixels, correct tile
+world-placement and actual PS1 BIOS/hardware accuracy remain
+unverified. For a culled face the trace is taken at first observation;
+it does not prove the face is always culled on later frames.

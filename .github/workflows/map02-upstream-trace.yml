@@ -52,6 +52,9 @@ on:
       - 'tools/verify_map02_pc_op0_equivalence.py'
       - 'tools/verify_map02_pc_projection_equivalence.py'
       - 'tools/audit_map02_projection_source.py'
+      - 'tools/instrument_map02_camera.py'
+      - 'tools/verify_map02_camera_capture.py'
+      - 'tests/test_map02_camera_provenance.py'
       - 'tests/test_audit_map02_projection_source.py'
       - 'tools/audit_map02_op0_geometry.py'
       - 'tools/map02_op0_geometry_scan.c'
@@ -120,6 +123,9 @@ on:
       - 'tools/verify_map02_pc_op0_equivalence.py'
       - 'tools/verify_map02_pc_projection_equivalence.py'
       - 'tools/audit_map02_projection_source.py'
+      - 'tools/instrument_map02_camera.py'
+      - 'tools/verify_map02_camera_capture.py'
+      - 'tests/test_map02_camera_provenance.py'
       - 'tests/test_audit_map02_projection_source.py'
       - 'tools/audit_map02_op0_geometry.py'
       - 'tools/map02_op0_geometry_scan.c'
@@ -263,6 +269,55 @@ jobs:
           git apply --reverse ../map02-trace.patch
           test -z "$(git status --porcelain -- src/core/graphics.c src/states/game_setup.c)"
 
+      - name: Compile source-pinned opt-in MAP02 camera instrumentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=remaster python3 -m tools.instrument_map02_camera upstream \
+            --output-dir /tmp/vh-map02-camera-source > /tmp/vh-map02-camera-source-report.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("/tmp/vh-map02-camera-source-report.json").read_text())
+          assert report["generated"] == ["graphics.camera.c", "libgte.camera.c"]
+          assert len(report["camera_fields"]) == 16
+          assert report["target_faces"] == [[8,19,0],[11,11,0]]
+          assert report["gameplay_camera_captured"] is False
+          print("Generated read-only pinned camera instrumentation; no game data captured.")
+          PY
+          (
+            cd upstream/platform/pc
+            common_flags=(
+              -m64 -std=gnu89 -fno-builtin-csqrt
+              -DPERMUTER -DPC_PORT -DPC_FEAT -DVH_REGION_US
+              '-Dasm(x)=' -Ibuild/include_stage -Iinclude -I../..
+              -include pc_forward_decls.h
+              -Wno-incompatible-pointer-types -Wno-builtin-declaration-mismatch
+              -Wno-discarded-qualifiers -Wno-pointer-to-int-cast
+              -Wno-int-to-pointer-cast -Wno-int-conversion
+            )
+            mkdir -p build/map02-camera-objects
+            for unit in graphics libgte; do
+              gcc "${common_flags[@]}" -DVH_TRACE_MAP02_CAMERA \
+                -c "/tmp/vh-map02-camera-source/${unit}.camera.c" \
+                -o "build/map02-camera-objects/${unit}.trace.o"
+              gcc "${common_flags[@]}" \
+                -c "/tmp/vh-map02-camera-source/${unit}.camera.c" \
+                -o "build/map02-camera-objects/${unit}.baseline.o"
+            done
+            nm -a build/map02-camera-objects/libgte.trace.o | grep ' T VH_Map02CameraRegisters'
+            nm -a build/map02-camera-objects/graphics.trace.o | grep ' U VH_Map02CameraRegisters'
+            if nm -a build/map02-camera-objects/libgte.baseline.o | grep -q VH_Map02CameraRegisters; then
+              echo "GTE accessor leaked into non-opt-in build" >&2
+              exit 1
+            fi
+            if nm -a build/map02-camera-objects/graphics.baseline.o | grep -q VH_Map02CameraEvent; then
+              echo "Camera trace leaked into non-opt-in build" >&2
+              exit 1
+            fi
+          )
+          test -z "$(cd upstream && git status --porcelain -- src/core/graphics.c platform/pc/src/libgte.c)"
+
       - name: Verify pinned make-overlay diagnostic object compilation
         shell: bash
         run: |
@@ -298,6 +353,7 @@ jobs:
             gcc -std=c11 -Wall -Wextra -Werror -O2 tests/test_map02_projection.c -o /tmp/vh-map02-projection-test
             /tmp/vh-map02-projection-test
             python3 -m unittest discover -s tests -p 'test_audit_map02_projection_source.py' -v
+            python3 -m unittest discover -s tests -p 'test_map02_camera_provenance.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_pc_op0_equivalence.py' -v
             python3 -m unittest discover -s tests -p 'test_audit_map02_op0_geometry.py' -v
             python3 -m unittest discover -s tests -p 'test_audit_map02_face_source.py' -v
