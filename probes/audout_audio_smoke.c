@@ -105,6 +105,7 @@ static int prepare_music(int *using_user_files) {
  */
 typedef struct {
     AudioOutBuffer page;
+    VhAudioSubmitTiming timing;
     int initialized;
     int started;
 } NativeOutput;
@@ -152,10 +153,17 @@ static int native_submit(void *opaque,const int16_t *pcm,size_t frames) {
         frames>VH_AUDIO_RESAMPLE_MAX_FRAMES) return -1;
     dev->page.data_size=frames*2u*sizeof(int16_t);
     AudioOutBuffer *returned=NULL;
-    /* Only the matching returned descriptor makes this single
-     * page safe for the next block or a bank transition. */
-    if (R_FAILED(audoutPlayBuffer(&dev->page,&returned))) return -1;
-    return vh_audio_output_page_returned(&dev->page,returned) ? 0 : -1;
+    /* Measure actual blocking service time (one invocation, including
+     * failed attempts), separately from the pre-render DSP budget. */
+    const uint64_t before=armGetSystemTick();
+    const Result rc=audoutPlayBuffer(&dev->page,&returned);
+    const uint64_t elapsed=armGetSystemTick()-before;
+    const int accepted=R_SUCCEEDED(rc) &&
+        vh_audio_output_page_returned(&dev->page,returned);
+    if (vh_audio_output_record_submit_timing(
+            &dev->timing,elapsed,armGetSystemTickFreq(),frames,accepted))
+        return -1;
+    return accepted ? 0 : -1;
 }
 
 int main(int argc, char **argv) {
@@ -239,6 +247,18 @@ int main(int argc, char **argv) {
                 printf("DSP compute avg=%llu us peak=%llu us, over budget=%u\n",
                        avg_us, max_us, compute_over_budget);
             }
+            const uint64_t total_wait_us=
+                vh_audio_output_ticks_to_us(
+                    output.timing.total_ticks,tick_frequency);
+            const uint64_t max_wait_us=
+                vh_audio_output_ticks_to_us(
+                    output.timing.max_ticks,tick_frequency);
+            printf("audout waits avg=%llu us peak=%llu us, >page=%llu failures=%llu\n",
+                   (unsigned long long)(output.timing.calls
+                       ? total_wait_us/output.timing.calls : 0u),
+                   (unsigned long long)max_wait_us,
+                   (unsigned long long)output.timing.waits_longer_than_page,
+                   (unsigned long long)output.timing.failed_submissions);
             consoleUpdate(NULL);
         }
     }
@@ -252,6 +272,12 @@ int main(int argc, char **argv) {
            (unsigned long long)recovery.pages_submitted,
            recovery.restart_attempts,recovery.recoveries,
            recovery.submit_failures);
+    printf("audout waits: calls=%llu peak=%llu us >page=%llu failed=%llu\n",
+           (unsigned long long)output.timing.calls,
+           (unsigned long long)vh_audio_output_ticks_to_us(
+               output.timing.max_ticks,tick_frequency),
+           (unsigned long long)output.timing.waits_longer_than_page,
+           (unsigned long long)output.timing.failed_submissions);
     printf("Audio probe ended, result=%d\n",result);
     consoleUpdate(NULL);
     consoleExit(NULL);
