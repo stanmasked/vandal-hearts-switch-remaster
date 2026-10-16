@@ -79,13 +79,13 @@ class V77MultiphaseGpuState(unittest.TestCase):
         self.assertEqual(PHASE_GP0[0].count(0x60ff0000),6)
         self.assertEqual(PHASE_GP0[0][-3:],(E1_ABR1,E2_MAP_TO_U12,E6_FORCE_MASK))
     def test_second_phase_emits_no_register_changes(self):
-        self.assertEqual(PHASE_GP0[1],sprite(X[0])+tile(X[1]))
+        self.assertEqual(PHASE_GP0[1],sprite(X[0])+tile(X[1],0x600000ff))
         self.assertIsNone(PHASE_GP1[1])
     def test_fifo_reset_phase_emits_no_gp0_state_changes(self):
-        self.assertEqual(PHASE_GP0[2],sprite(X[2])+tile(X[3]))
+        self.assertEqual(PHASE_GP0[2],sprite(X[2])+tile(X[3],0x600000ff))
     def test_full_reset_restores_only_drawing_area(self):
         self.assertEqual(PHASE_GP0[3][:2],(0xe3000000,0xe407ffff))
-        self.assertEqual(PHASE_GP0[3][2:],sprite(X[4])+tile(X[5]))
+        self.assertEqual(PHASE_GP0[3][2:],sprite(X[4])+tile(X[5],0x600000ff))
         self.assertNotIn(E1_ABR1,PHASE_GP0[3])
     def test_textured_sprite_uses_gpu_persistent_e1(self):
         self.assertEqual(sprite(X[0])[0],0x67ffffff)
