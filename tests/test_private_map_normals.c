@@ -42,6 +42,70 @@ int main(void) {
     assert(model.faces[3].shade_index==4); /* -X */
     assert(model.faces[4].shade_index==5); /* -Z, repeated ID fallback */
     assert(model.faces[4].vertex_index[1]==0);
+    /* Every source SetupLightNormals direction is represented by one
+     * distinct lattice-facing triangle, including all 20 diagonals.
+     * Generate their winding geometrically (and verify classification),
+     * instead of hand-picking an expected shade index in model data. */
+    {
+        static const signed char dirs[26][3]={
+            {0,1,0},{0,-1,0},{1,0,0},{0,0,1},{-1,0,0},{0,0,-1},
+            {1,0,-1},{1,0,1},{-1,0,1},{-1,0,-1},
+            {1,1,0},{0,1,1},{-1,1,0},{0,1,-1},
+            {1,1,-1},{1,1,1},{-1,1,1},{-1,1,-1},
+            {1,-1,0},{0,-1,1},{-1,-1,0},{0,-1,-1},
+            {1,-1,-1},{1,-1,1},{-1,-1,1},{-1,-1,-1},
+        };
+        unsigned direction;
+        for(direction=0;direction<26;++direction) {
+            short p[4][3]={{0}};
+            unsigned axis=dirs[direction][0] ? 0u : 1u;
+            unsigned other=(axis+1u)%3u;
+            unsigned third=(axis+2u)%3u;
+            const unsigned char ids2[4]={0,1,2,3};
+            VhPreviewGeometry candidate={0};
+            int cross_sign;
+            /* Choose two perpendicular tangents where
+             * tangent0 x tangent1 aligns with target lattice vector.
+             * For lattice vector n, tangent0=(n_other,-n_axis,0)
+             * on the selected axes, tangent1=n x tangent0.
+             */
+            int n[3]={dirs[direction][0],dirs[direction][1],dirs[direction][2]};
+            int t0[3]={0},t1[3];
+            t0[axis]=n[other];
+            t0[other]=-n[axis];
+            if(!t0[axis] && !t0[other]) {
+                t0[other]=n[third];
+                t0[third]=-n[other];
+            }
+            t1[0]=n[1]*t0[2]-n[2]*t0[1];
+            t1[1]=n[2]*t0[0]-n[0]*t0[2];
+            t1[2]=n[0]*t0[1]-n[1]*t0[0];
+            for(cross_sign=0;cross_sign<3;++cross_sign) {
+                p[1][cross_sign]=(short)(t1[cross_sign]*16);
+                p[2][cross_sign]=(short)((t1[cross_sign]+t0[cross_sign])*16);
+                p[3][cross_sign]=(short)(t0[cross_sign]*16);
+            }
+            candidate.face_count=1;
+            face_set(&candidate.faces[0],
+                     (const short (*)[3])p,ids2);
+            assert(vh_map_recompute_shade_indices(&candidate,normals)==1);
+            assert(candidate.faces[0].shade_index==direction);
+        }
+        puts("PASS: all 26 source vector directions classify identically");
+    }
+    /* A geometrically zero-area polygon has the source's zero-normal
+     * Q12 vector and must select the earliest equal-dot winner: 0.
+     * Repeated original indices select a fallback but cannot invent
+     * a normal when all four vertex coordinates coincide. */
+    {
+        VhPreviewGeometry degenerate={0};
+        short zeros[4][3]={{0}};
+        unsigned char indices[4]={0,0,0,0};
+        degenerate.face_count=1;
+        face_set(&degenerate.faces[0],(const short (*)[3])zeros,indices);
+        assert(vh_map_recompute_shade_indices(&degenerate,normals)==1);
+        assert(degenerate.faces[0].shade_index==0);
+    }
 
     copy=model;
     copy.faces[3].vertex_index[2]=22;
