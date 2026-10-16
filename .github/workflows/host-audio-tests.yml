@@ -321,6 +321,9 @@ jobs:
         run: |
           make build/test_vh_music_lifecycle_soak
           ./build/test_vh_music_lifecycle_soak
+      - name: End to end HOME recovery counters via real C CSV and Python comparison
+        run: |
+          python3 tests/test_switch_audio_telemetry_e2e.py
       - name: HOME sleep lifecycle under ASan and UBSan
         env:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
