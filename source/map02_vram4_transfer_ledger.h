@@ -78,15 +78,22 @@ static inline int vh_map02_vram_ledger_event_valid(
     words = (size_t)ev->w * (size_t)ev->h;
     if (words > VH_MAP02_VRAM_LEDGER_MAX_WORDS)
         return 0;
+    /* Canonicalize fields unused by each PC GPU operation. The binary
+     * importer already enforces this: callers using the C API directly
+     * must not bypass that evidence-format constraint. */
     if (ev->operation == VH_MAP02_VRAM_OP_LOAD)
-        return ev->load_le && ev->load_bytes == words * 2u;
+        return ev->dest_x == 0 && ev->dest_y == 0 &&
+               ev->red == 0 && ev->green == 0 && ev->blue == 0 &&
+               ev->load_le && ev->load_bytes == words * 2u;
     if (ev->load_le || ev->load_bytes)
         return 0;
     if (ev->operation == VH_MAP02_VRAM_OP_MOVE)
-        return ev->dest_x >= -2048 && ev->dest_x <= 2048 &&
+        return ev->red == 0 && ev->green == 0 && ev->blue == 0 &&
+               ev->dest_x >= -2048 && ev->dest_x <= 2048 &&
                ev->dest_y >= -2048 && ev->dest_y <= 2048;
     if (ev->operation == VH_MAP02_VRAM_OP_CLEAR)
-        return ev->red >= 0 && ev->red <= 255 &&
+        return ev->dest_x == 0 && ev->dest_y == 0 &&
+               ev->red >= 0 && ev->red <= 255 &&
                ev->green >= 0 && ev->green <= 255 &&
                ev->blue >= 0 && ev->blue <= 255;
     return 0;
