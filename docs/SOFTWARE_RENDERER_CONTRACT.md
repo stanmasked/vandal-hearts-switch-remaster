@@ -1196,3 +1196,37 @@ or exact FT4 coverage. No additional unobserved pixel cause
 or GP0(E6) mask rejection is inferred. CI executes synthetic
 fixture tests and source-pinned PC object compilation, not
 original gameplay or a physical PlayStation GPU comparison.
+
+
+## Native original DDA vertical scanline branch evidence
+
+`tools/instrument_map02_vertical_dda.py` composes the exact
+pinned PC `libgpu.c` + `pc_raster.c` with synchronized
+`DrawOTag`, native `PutPixel`, original sampled zero-texel
+and horizontal-clipping observers. It additionally instruments
+the four actual branches of `dda_part` in the upward and
+downward scanline walks: crossing `clipT`/`clipB` with
+`break`, `continue`, or suppressing the call to
+`dda_span`. The four new reason codes are 4–7.
+The generated observer requires the existing raster probe and
+compiles away from the default PC GPU build; no original raster
+calculations, UV progression, geometry, or user game content
+are changed.
+
+`tools/verify_map02_raster_skips.py` now also accepts
+these additional codes, revalidates the full original source
+MAP02/GTE/FT4/VRAM/OTZ-LIFO private capture chain,
+checks actual GPU frame/ordinal/type and monotonic events,
+and reports only SHA-256 plus separated **vertical scanline
+rejection counts**. The original 1–3 code meanings and
+all earlier native raster tests remain preserved.
+See `docs/MAP02_VERTICAL_DDA_SCANLINE_EVIDENCE.md`
+for opt-in local capture and private manifest instructions.
+
+**Critical limit:** the chosen native X merely identifies the
+sampled VRAM coordinate. An observed vertically rejected Y
+is evidence of an original rejected **scanline**, not evidence
+that the triangle would have covered that X inside the rejected
+scanline. No exact pixel coverage, vertical pixel skip cause,
+hardware GPU mask test, STP/ABR parity, original gameplay, or
+Switch-on-device scene is authenticated by this tool.
