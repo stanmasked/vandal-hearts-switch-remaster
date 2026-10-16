@@ -70,7 +70,12 @@ abort **before the OT scene is built**. No game data is uploaded.
   boundaries starting at 1. Event payloads are limited to 16,384 words.
 
 The decoder rejects trailing bytes and truncated records and preserves
-output on malformed packets. The packet is **not** a complete capture:
+output on malformed packets. The higher-level
+`vh_map02_vram4_timeline_build_from_packet()` stages up to 512 event
+descriptors privately (bounded stack storage) and commits the caller's event
+array only when packet decoding, full VRAM replay and scene construction all
+succeed. On replay mismatch or malformed packet, the caller-owned event array
+remains byte-for-byte unchanged; replay scratch may have been modified. The packet is **not** a complete capture:
 its input geometry, GTE camera, GPU register state, palette and VRAM
 snapshots remain separate caller-owned, unmodified files.
 
