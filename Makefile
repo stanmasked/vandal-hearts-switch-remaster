@@ -29,7 +29,7 @@ LDLIBS   := -L$(DEVKITPRO)/libnx/lib -lnx
 .PHONY: all clean test test-audio-stream test-sanitize verify-nro sdl2-probe sdl2-gl-probe sdl2-texture-probe sdl2-audio-probe audout-audio-probe openal-probe
 all: $(BUILD)/$(TARGET).nro
 
-test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(BUILD)/test_vh_native_seq $(BUILD)/test_vh_native_vab $(BUILD)/test_vh_audio_assets $(BUILD)/test_vh_audio_resample $(BUILD)/test_vh_spu_reverb $(BUILD)/test_vh_native_audio_soak $(BUILD)/test_vh_music_scene $(BUILD)/test_vh_music_scene_soak $(BUILD)/test_vh_game_music_mailbox $(BUILD)/test_vh_music_focus_resume $(BUILD)/test_vh_game_music_banks
+test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(BUILD)/test_vh_native_seq $(BUILD)/test_vh_native_vab $(BUILD)/test_vh_audio_assets $(BUILD)/test_vh_audio_resample $(BUILD)/test_vh_spu_reverb $(BUILD)/test_vh_native_audio_soak $(BUILD)/test_vh_music_scene $(BUILD)/test_vh_music_scene_soak $(BUILD)/test_vh_game_music_mailbox $(BUILD)/test_vh_music_focus_resume $(BUILD)/test_vh_game_music_banks $(BUILD)/vh_music_bank_audit
 	./$(BUILD)/test_game_rules
 	./$(BUILD)/test_software_renderer
 	./$(BUILD)/test_vh_audio_stream
@@ -45,6 +45,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_vh_
 	./$(BUILD)/test_vh_game_music_mailbox
 	./$(BUILD)/test_vh_music_focus_resume
 	./$(BUILD)/test_vh_game_music_banks
+	python3 tests/test_vh_music_bank_audit_cli.py
 	python3 tests/test_restore_ps1_str.py
 	python3 tests/test_inspect_cdxa.py
 	python3 tests/test_extract_cdxa_payload.py
@@ -77,7 +78,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_vh_
 	python3 tests/test_native_vab_python_reference.py
 	python3 tests/test_native_spu_reverb_reference.py
 
-test-audio-stream: $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(BUILD)/test_vh_native_seq $(BUILD)/test_vh_native_vab $(BUILD)/test_vh_audio_assets $(BUILD)/test_vh_audio_resample $(BUILD)/test_vh_spu_reverb $(BUILD)/test_vh_native_audio_soak $(BUILD)/test_vh_music_scene $(BUILD)/test_vh_music_scene_soak $(BUILD)/test_vh_game_music_mailbox $(BUILD)/test_vh_music_focus_resume $(BUILD)/test_vh_game_music_banks
+test-audio-stream: $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(BUILD)/test_vh_native_seq $(BUILD)/test_vh_native_vab $(BUILD)/test_vh_audio_assets $(BUILD)/test_vh_audio_resample $(BUILD)/test_vh_spu_reverb $(BUILD)/test_vh_native_audio_soak $(BUILD)/test_vh_music_scene $(BUILD)/test_vh_music_scene_soak $(BUILD)/test_vh_game_music_mailbox $(BUILD)/test_vh_music_focus_resume $(BUILD)/test_vh_game_music_banks $(BUILD)/vh_music_bank_audit
 	./$(BUILD)/test_vh_audio_stream
 	./$(BUILD)/test_vh_native_spu
 	./$(BUILD)/test_vh_native_seq
@@ -91,6 +92,7 @@ test-audio-stream: $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(B
 	./$(BUILD)/test_vh_game_music_mailbox
 	./$(BUILD)/test_vh_music_focus_resume
 	./$(BUILD)/test_vh_game_music_banks
+	python3 tests/test_vh_music_bank_audit_cli.py
 	python3 tests/test_native_spu_adpcm.py
 	python3 tests/test_native_spu_gaussian.py
 	python3 tests/test_native_vab_python_reference.py
@@ -138,6 +140,9 @@ $(BUILD)/test_vh_audio_stream: tests/test_vh_audio_stream.c source/vh_audio_stre
 
 $(BUILD)/test_vh_game_music_banks: tests/test_vh_game_music_banks.c source/vh_game_music_banks.c source/vh_game_music_banks.h source/vh_audio_assets.c source/vh_audio_assets.h source/vh_native_vab.c source/vh_native_vab.h source/vh_music_scene.c source/vh_music_scene.h source/vh_native_seq.c source/vh_native_seq.h source/vh_native_spu.c source/vh_native_spu.h source/vh_spu_reverb.c source/vh_spu_reverb.h source/vh_spu_gaussian.c source/vh_spu_gaussian.h source/vh_spu_adpcm.c source/vh_spu_adpcm.h source/vh_audio_stream.c source/vh_audio_stream.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Isource tests/test_vh_game_music_banks.c source/vh_game_music_banks.c source/vh_audio_assets.c source/vh_native_vab.c source/vh_music_scene.c source/vh_native_seq.c source/vh_native_spu.c source/vh_spu_reverb.c source/vh_spu_gaussian.c source/vh_spu_adpcm.c source/vh_audio_stream.c -lm -o $@
+
+$(BUILD)/vh_music_bank_audit: tools/vh_music_bank_audit.c source/vh_game_music_banks.c source/vh_game_music_banks.h source/vh_audio_assets.c source/vh_audio_assets.h source/vh_native_vab.c source/vh_native_vab.h source/vh_music_scene.c source/vh_music_scene.h source/vh_native_seq.c source/vh_native_seq.h source/vh_native_spu.c source/vh_native_spu.h source/vh_spu_reverb.c source/vh_spu_reverb.h source/vh_spu_gaussian.c source/vh_spu_gaussian.h source/vh_spu_adpcm.c source/vh_spu_adpcm.h source/vh_audio_stream.c source/vh_audio_stream.h | $(BUILD)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Isource tools/vh_music_bank_audit.c source/vh_game_music_banks.c source/vh_audio_assets.c source/vh_native_vab.c source/vh_music_scene.c source/vh_native_seq.c source/vh_native_spu.c source/vh_spu_reverb.c source/vh_spu_gaussian.c source/vh_spu_adpcm.c source/vh_audio_stream.c -lm -o $@
 
 $(BUILD)/test_vh_music_focus_resume: tests/test_vh_music_focus_resume.c source/vh_game_music_mailbox.c source/vh_game_music_mailbox.h source/vh_music_scene.c source/vh_music_scene.h source/vh_native_seq.c source/vh_native_seq.h source/vh_native_spu.c source/vh_native_spu.h source/vh_spu_reverb.c source/vh_spu_reverb.h source/vh_spu_gaussian.c source/vh_spu_gaussian.h source/vh_audio_resample.c source/vh_audio_resample.h source/vh_audio_stream.c source/vh_audio_stream.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Isource tests/test_vh_music_focus_resume.c source/vh_game_music_mailbox.c source/vh_music_scene.c source/vh_native_seq.c source/vh_native_spu.c source/vh_spu_reverb.c source/vh_spu_gaussian.c source/vh_audio_resample.c source/vh_audio_stream.c -lm -o $@
