@@ -229,6 +229,7 @@ selected:
     out->pitch_step = pitch;
     out->adsr1 = found->adsr1;
     out->adsr2 = found->adsr2;
+    out->reverb_send = !!(found->mode & 4u);
     out->gain_left = l * l * 1.012f;
     out->gain_right = r * r * 1.012f;
     bank->selected_program = selected_program;
