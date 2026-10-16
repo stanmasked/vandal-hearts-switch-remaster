@@ -870,3 +870,53 @@ variant is built for this branch instead of remaining untested until
 merging into the older CD-XA pipeline base. It still does not
 establish successful playback on the user's hardware; the device
 must be run and listened to separately.
+
+### Final audout results: complete, interrupted, or inconsistent
+
+The standalone console NRO now produces an additional
+`Run evidence` result after stopping audio and closing the service.
+This deliberately avoids interpreting a return from
+`audoutPlayBuffer` or a clean applet close as evidence that the
+**entire** 1,200-block hardware observation ran to completion.
+
+The portable verifier `vh_audio_output_verify_run` reconciles:
+
+- successfully returned output pages against the recovered service's
+  accepted-page counter and the sum of *accepted* ordinary and
+  first-after-switch logical pages (which excludes failed pages);
+- completed generated-SEQuencer scene switches against the number
+  of accepted boundary pages and the configured fixture cadence
+  (one switch after every **64** accepted PCM blocks);
+- zero scene switches and zero boundary pages for a user-owned
+  SD-loaded music set, which must not be switched automatically;
+- cumulative blocking ticks from both page categories against the
+  raw `audoutPlayBuffer` timing accumulator, including failed
+  calls and restarts, as well as failure and recovery counts;
+- monotonicity and safe bounds for counts and intermediate sums.
+
+Exactly three outcomes are possible. **FULL PCM PAGE ACCOUNTING**
+means the complete 1,200-page run finished without application
+errors *and* every accounting invariant passed.
+**INCOMPLETE - NO FULL-RUN CLAIM** means available counters reconcile,
+but the applet exited before the planned number of pages or a
+submission/stop error interrupted execution. **COUNTER MISMATCH -
+INVALID** means independent counts contradict each other; no
+successful run should be claimed. The applet sets a nonzero
+diagnostic result code if an otherwise error-free run produces a
+counter mismatch.
+
+Even FULL is **not** proof of audible output or glitch-free playback:
+there is still no physical Switch sound capture or hardware timing
+validation in CI. The result screen is held open after all audio
+services and bank resources have been closed; press **Plus (+)** to
+exit after recording the evidence.
+
+Host regression uses an independently constructed 48-page,
+six-scene synthetic playback trace. It verifies that the same trace
+is FULL when 48 pages are expected, INCOMPLETE when 64 are expected,
+and INVALID when page counts, switches, timing totals or recovery
+counters are falsified. It separately exercises an aborted failed
+page and a two-page user-owned-bank accounting scenario. The
+standalone NRO is compiled via the `Switch libnx audout music NRO`
+workflow on the active feature branch and its binary artifact
+contains no original game music.
