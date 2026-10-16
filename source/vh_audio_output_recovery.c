@@ -93,6 +93,58 @@ int vh_audio_output_record_scene_page(
     return 0;
 }
 
+int vh_audio_output_verify_run(
+    const VhAudioSceneWaits *groups,
+    const VhAudioOutputRecovery *recovery,
+    const VhAudioSubmitTiming *timing,
+    uint64_t completed_pages, uint64_t completed_fixture_switches,
+    uint64_t expected_pages, int using_user_files,
+    int finished_without_error) {
+    if (!groups || !recovery || !timing || !expected_pages ||
+        completed_pages>expected_pages)
+        return -1;
+    const VhAudioPageWaitBucket *steady=&groups->ordinary;
+    const VhAudioPageWaitBucket *boundary=&groups->first_after_switch;
+    if (steady->pages<steady->failed_pages ||
+        boundary->pages<boundary->failed_pages ||
+        steady->slow_pages>steady->pages ||
+        boundary->slow_pages>boundary->pages ||
+        steady->retried_pages>steady->pages ||
+        boundary->retried_pages>boundary->pages ||
+        steady->total_ticks<steady->peak_page_ticks ||
+        boundary->total_ticks<boundary->peak_page_ticks ||
+        steady->pages>UINT64_MAX-boundary->pages ||
+        steady->total_ticks>UINT64_MAX-boundary->total_ticks ||
+        steady->failed_pages>UINT64_MAX-boundary->failed_pages ||
+        steady->retried_pages>UINT64_MAX-boundary->retried_pages)
+        return -1;
+
+    const uint64_t logical_pages=steady->pages+boundary->pages;
+    const uint64_t failed_pages=
+        steady->failed_pages+boundary->failed_pages;
+    const uint64_t returned_pages=logical_pages-failed_pages;
+    const uint64_t boundary_returned=
+        boundary->pages-boundary->failed_pages;
+    const uint64_t retry_pages=
+        steady->retried_pages+boundary->retried_pages;
+    const uint64_t expected_switches=using_user_files || !completed_pages
+        ? 0u : (completed_pages-1u)/64u;
+    if (returned_pages!=completed_pages ||
+        boundary_returned!=completed_fixture_switches ||
+        completed_fixture_switches!=expected_switches ||
+        (using_user_files && boundary->pages!=0u) ||
+        recovery->pages_submitted!=completed_pages ||
+        recovery->submit_failures!=timing->failed_submissions ||
+        recovery->recoveries>retry_pages ||
+        recovery->recoveries>completed_pages ||
+        recovery->restart_attempts<recovery->recoveries ||
+        timing->calls<logical_pages ||
+        timing->total_ticks!=steady->total_ticks+boundary->total_ticks)
+        return -1;
+    return finished_without_error && completed_pages==expected_pages &&
+           failed_pages==0u ? 1 : 0;
+}
+
 int vh_audio_output_page_returned(const void *submitted,
                                   const void *released) {
     return submitted != NULL && released == submitted;
