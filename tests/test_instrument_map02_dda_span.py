@@ -74,6 +74,61 @@ class SpanInstrumentationTests(unittest.TestCase):
             self.assertTrue(gpu.exists())
             self.assertTrue(raster.exists())
 
+    def test_partial_first_overlay_file_is_removed(self):
+        import tempfile
+        from contextlib import ExitStack
+        from pathlib import Path
+        from unittest.mock import patch
+        from tools.prepare_map02_pcport import git_blob_sha1
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            gpu, raster, dest = root / "gpu.c", root / "raster.c", root / "out"
+            gpu.write_text("sample gpu")
+            raster.write_text("sample raster")
+            real_open = Path.open
+
+            class PartialWriter:
+                def __init__(self, wrapped):
+                    self.wrapped = wrapped
+                def __enter__(self):
+                    self.wrapped.__enter__()
+                    return self
+                def write(self, content):
+                    self.wrapped.write(content[:3])
+                    raise OSError("injected partial first-file write")
+                def __exit__(self, *args):
+                    return self.wrapped.__exit__(*args)
+
+            def inject(file, mode="r", *args, **kwargs):
+                stream = real_open(file, mode, *args, **kwargs)
+                if file.name == "libgpu.span.c" and mode == "x":
+                    return PartialWriter(stream)
+                return stream
+
+            with ExitStack() as stack:
+                stack.enter_context(patch(
+                    "tools.instrument_map02_putpixel_scope.GPU_BLOB",
+                    git_blob_sha1(gpu.read_bytes())))
+                stack.enter_context(patch(
+                    "tools.instrument_map02_putpixel_scope.RASTER_BLOB",
+                    git_blob_sha1(raster.read_bytes())))
+                for symbol in (
+                    "tools.instrument_map02_gpu_native_events.instrument",
+                    "tools.instrument_map02_putpixel_scope.scope_gpu",
+                    "tools.instrument_map02_putpixel_scope.scope_raster",
+                    "tools.instrument_map02_raster_skips.instrument_raster_skips",
+                    "tools.instrument_map02_vertical_dda.instrument_vertical",
+                    "tools.instrument_map02_dda_span.instrument_span",
+                ):
+                    stack.enter_context(patch(symbol, side_effect=lambda src: src))
+                stack.enter_context(patch.object(Path, "open", new=inject))
+                with self.assertRaisesRegex(OSError, "injected partial first-file"):
+                    prepare_span(gpu, raster, dest)
+            self.assertFalse(dest.exists())
+            self.assertEqual(gpu.read_text(), "sample gpu")
+            self.assertEqual(raster.read_text(), "sample raster")
+
     def test_offline_cli_refuses_unpinned_inputs(self):
         import os
         import subprocess
