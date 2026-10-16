@@ -138,6 +138,55 @@ int main(void) {
                  .checksum=UINT64_C(1469598103934665603)};
     VhAudioOutputOps ops=callbacks(&device);
     VhAudioOutputRecovery stats={0};
+    /* Deterministic synthetic timer: distinguishes expected blocking
+     * page waits from failed backend calls, without sleeping in CI.
+     * The page budget at 19.2 MHz / 48 kHz for 576 frames is 230400.
+     */
+    VhAudioSubmitTiming timing={0};
+    const uint64_t freq=UINT64_C(19200000);
+    assert(vh_audio_output_record_submit_timing(
+               &timing,100000u,freq,576u,1)==0);
+    assert(vh_audio_output_record_submit_timing(
+               &timing,240000u,freq,576u,0)==0);
+    assert(vh_audio_output_record_submit_timing(
+               &timing,230400u,freq,576u,1)==0);
+    assert(timing.calls==3u);
+    assert(timing.total_ticks==570400u);
+    assert(timing.max_ticks==240000u);
+    assert(timing.waits_longer_than_page==1u);
+    assert(timing.failed_submissions==1u);
+    assert(vh_audio_output_ticks_to_us(240000u,freq)==12500u);
+    assert(vh_audio_output_ticks_to_us(freq,freq)==1000000u);
+    assert(vh_audio_output_ticks_to_us(UINT64_MAX,1u)==UINT64_MAX);
+    assert(vh_audio_output_ticks_to_us(100u,0u)==0u);
+    const VhAudioSubmitTiming stable=timing;
+    assert(vh_audio_output_record_submit_timing(
+               NULL,10u,freq,576u,1)==-1);
+    assert(vh_audio_output_record_submit_timing(
+               &timing,10u,0u,576u,1)==-1);
+    assert(vh_audio_output_record_submit_timing(
+               &timing,10u,freq,0u,1)==-1);
+    assert(vh_audio_output_record_submit_timing(
+               &timing,10u,freq,VH_AUDIO_RESAMPLE_MAX_FRAMES+1u,1)==-1);
+    assert(vh_audio_output_record_submit_timing(
+               &timing,10u,UINT64_MAX,576u,1)==-1);
+    assert(!memcmp(&timing,&stable,sizeof timing));
+    timing.calls=UINT64_MAX;
+    assert(vh_audio_output_record_submit_timing(
+               &timing,10u,freq,576u,1)==-1);
+    timing=stable;
+    timing.total_ticks=UINT64_MAX;
+    assert(vh_audio_output_record_submit_timing(
+               &timing,1u,freq,576u,1)==-1);
+    timing=stable;
+    timing.failed_submissions=UINT64_MAX;
+    assert(vh_audio_output_record_submit_timing(
+               &timing,10u,freq,576u,0)==-1);
+    timing=stable;
+    timing.waits_longer_than_page=UINT64_MAX;
+    assert(vh_audio_output_record_submit_timing(
+               &timing,240000u,freq,576u,1)==-1);
+
     assert(vh_audio_output_submit_recover(NULL,&stats,dst,10u)==-1);
     assert(vh_audio_output_submit_recover(&ops,NULL,dst,10u)==-1);
     assert(vh_audio_output_submit_recover(&ops,&stats,NULL,10u)==-1);
