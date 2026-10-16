@@ -394,6 +394,39 @@ regressions**, not sample-perfect PS1 hardware verification, a
 comparison to an original soundtrack recording, or an on-console
 Nintendo Switch listening test.
 
+## Clean SEQ end-of-track repeat state
+
+The pinned PC-port `SeqEndOfTrack` in `platform/pc/src/libsnd.c`
+retains the **current tempo, MIDI channel programs, CC7/CC10 values
+and held voices** at a clean `FF 2F` repeat seam. It resets the
+read cursor to the first event, running status to zero and tick
+budget to zero; a finite repeat releases held voices only on
+the final pass. The native Switch SEQ scheduler models these
+behaviours, rather than resetting the synthesizer at each loop.
+
+`tests/test_vh_native_seq.c` now checks a two-pass synthetic SEQ
+with a first note using default program/controls, followed by
+program 9, volume 40, hard-right pan and a tempo change from
+500000 to 250000 microseconds per quarter. The second pass's
+first note must use **the retained program 9 and controls**,
+while the held preceding note is not key-offed at the clean
+repeat seam. Checks cover exact 512-frame dispatch blocks,
+the first event's zero delta, note retrigger ownership,
+running status, tick-budget reset, and final voice release.
+
+A separate 160-block **infinite-repeat soak** runs a clean
+`FF 2F` track with tempo/control changes and an explicit
+full PCM-ring backpressure event. It verifies that no SEQ
+events, render frames, tempo or cycles advance while the
+ring is full, subsequent cycles resume, and an explicit
+stop terminates the repeat.
+
+Both checks run as native C host regressions under the
+project's existing CI and sanitizer test targets. They
+do not prove exact Sony SPU timing, original music fidelity,
+or physical Nintendo Switch output. All fixtures are
+synthetic and no original music is uploaded.
+
 ## SPU ADSR and sample cursor (host-only)
 
 The next isolated component is `tools/simulate_spu_voice.py`, which
