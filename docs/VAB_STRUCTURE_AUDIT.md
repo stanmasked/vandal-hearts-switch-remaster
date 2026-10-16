@@ -228,9 +228,10 @@ algorithm in `platform/pc/src/libsnd.c`, whose range checks are
 inclusive and whose nearest-key tie resolution retains the earliest
 program/tone entry. The test does **not** compile or call the upstream
 PC-port implementation, and it does not establish hardware PS1 fidelity.
-In particular, the reference `SeqPickTone` scans all 16 tone positions,
-while this project's validated VAB import currently uses active `nTone`
-slots; unusual inactive-but-populated records require a separate check.
+The Python metadata helper still models active `nTone` records only,
+whereas the native VAB loader now also handles validated hidden tone slots
+and sparse-program aliases. Thus this Python test checks VAG and note
+parameters, not the exact selected program in those additional cases.
 No original soundtrack bytes are included or needed.
 
 ## Executed upstream PC-port SeqPickTone regression
@@ -255,18 +256,22 @@ curl --fail --location --show-error --silent \
 python3 tests/test_native_vab_upstream_reference.py build/upstream-libsnd.c
 ```
 
-For all 128 notes, five requested programs, and six synthetic bank
-layouts (**3,840 comparisons**), the harness checks the original C function's
-chosen program/tone/VAG against the native C resolver's selected PCM
-sample address. It compares the selection algorithm independently of
-the Python model above. The minimal adapter uses a known 11-program
-search ceiling (highest populated program 10 plus one), matching the
-reference loader's populated-program convention for these fixtures;
-other `Tone` fields are not needed by `SeqPickTone`.
+For all 128 notes, **nine** requested programs (including empty
+programs 1, 6, 8 and 9), and six synthetic bank layouts (**6,912
+comparisons**), the harness checks the original C function's selected
+program/tone/VAG triple against the native C resolver's diagnostic
+selection fields **and** PCM address. The reference adapter reconstructs
+the packed-block alias view of `SsVabOpenHeadSticky` rather than assuming
+that an empty program owns no tones. It uses the known 11-program search
+ceiling (highest populated program 10 plus one); all other `Tone`
+fields are irrelevant to this particular selection algorithm.
 
 **Limits:** the entire upstream VAB loader is not compiled or executed.
-An algorithm match on generated active-tone banks does not establish
-identity on unusual nonzero inactive slots, actual game banks, timing,
+The executable comparison includes empty-program aliases but the six
+large fixtures still have zero-valued *inactive* tone slots. Separate
+native C tests verify valid and malformed nonzero inactive slots,
+while three additional pinned-upstream cases cover their selection.
+These checks do not establish identity on actual game banks, timing,
 gain, sound quality, PS1 hardware or Switch speaker output. These
 remain separate validation gates. Original music is never uploaded.
 
@@ -279,12 +284,14 @@ program** may therefore read the next populated program's block.
 The upstream `SeqPickTone` also searches all 16 tone slots, including
 positions after the declared `nTone`, whenever their VAG index is positive.
 
-The native Switch loader currently limits selection to validated active
-(`tone < nTone`) slots. **The 3,840-case executable comparison covers
-synthetic banks whose inactive slots are zero and whose oracle mapping
-includes only declared active tones; it does not establish parity for
-the alias cases described here.** A gap in program numbering can produce
-a different selected program, gain, or even silence in the PC port.
+The native Switch loader now preserves these program aliases and
+nonzero inactive slots **when their VAG references and note ranges can be
+validated**. For safety, it rejects corrupt referenced shadow slots
+atomically instead of reproducing an unsafe upstream sample lookup.
+The executable oracle compares 6,912 synthetic cases and separate C
+tests cover the new shadow-slot semantics. Aliases can affect the selected
+program and gain, including silent notes when the alias program has
+zero volume; this behaviour is not necessarily a playback error.
 
 Use the additional read-only preflight before attempting music playback:
 
@@ -305,10 +312,10 @@ programs and populated blocks are rejected rather than guessed.
 
 The CI also runs the **unmodified, compiled upstream `SeqPickTone`**
 with three explicit cases: a nonzero inactive tone slot and two empty
-programs inheriting later packed blocks. This establishes the reference
-selection behaviour for these cases, **not** equivalence of the native
-loader. The actual native resolution of such banks must be reconciled
-before claiming PC-port fidelity. The original Vandal Hearts soundbank
+programs inheriting later packed blocks. This establishes the reference selection behaviour for these cases.
+Separate native C tests now confirm valid hidden slots and aliases,
+and that malformed hidden VAG references or key ranges reject the
+entire bank without modifying its previously published metadata. The original Vandal Hearts soundbank
 remains local and is never copied to GitHub.
 
 ## SPU ADSR and sample cursor (host-only)
