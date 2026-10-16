@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Read-only local M_MAP02 audit of a user-owned 7z disc archive.
 
-Select one archived PS1 BIN/ISO, stream it to a private temporary file
-under a fixed basename (never use archive paths), audit the bounded sector
-ranges, then delete the temporary file. Report only metadata/hashes and
-the two target GFX indices. No proprietary bytes are sent to GitHub.
+Decompress one archived PS1 BIN/ISO once, retaining only the two sector
+windows required to audit PRS/DAT. Never reconstruct a full proprietary disc
+image on disk. Report metadata, hashes and target GFX, not resource bytes.
 """
 import argparse
+from contextlib import ExitStack
 import json
 from pathlib import Path
 import re
@@ -89,21 +89,46 @@ def pick_disc_member(members: list[dict], explicit: str | None) -> dict:
     return entry
 
 
-def stream_member_to_file(archive: Path, member: dict, sevenzip: str,
-                          destination: Path) -> int:
+def stream_member_sector_windows(
+    archive: Path, member: dict, sevenzip: str,
+    windows: list[tuple[int, int, Path]],
+) -> int:
+    """Stream one 7z member, retaining only requested raw sector windows.
+
+    Windows contain (byte_offset, byte_length, private_output_path). They
+    must be sorted/nonoverlapping and wholly within the declared member size.
+    The 7z stdout still covers the full member, but proprietary bytes outside
+    the exact ranges are never written to disk.
+    """
+    last_end = 0
+    for start, length, _ in windows:
+        if (type(start) is not int or type(length) is not int
+                or start < last_end or length <= 0
+                or start + length > member["size"]):
+            raise ValueError("invalid, overlapping or out-of-range disc sector windows")
+        last_end = start + length
+
     command = [sevenzip, "x", "-so", "-bd", str(archive), member["path"]]
-    count = 0
-    # Fixed private path prevents any archive path traversal. Raw game data
-    # exists only in a TemporaryDirectory and is never printed or committed.
-    with destination.open("xb") as handle:
+    total = 0
+    written = [0] * len(windows)
+    with ExitStack() as stack:
+        handles = [stack.enter_context(path.open("xb")) for _, _, path in windows]
         proc = subprocess.Popen(command, stdout=subprocess.PIPE,
                                 stderr=subprocess.DEVNULL)
         try:
             for chunk in iter(lambda: proc.stdout.read(65536), b""):
-                count += len(chunk)
-                if count > member["size"] or count > MAX_DISC_BYTES:
+                chunk_begin = total
+                chunk_end = total + len(chunk)
+                if chunk_end > member["size"] or chunk_end > MAX_DISC_BYTES:
                     raise ValueError("7z extracted more bytes than declared disc member")
-                handle.write(chunk)
+                for index, (start, length, _) in enumerate(windows):
+                    end = start + length
+                    left = max(start, chunk_begin)
+                    right = min(end, chunk_end)
+                    if left < right:
+                        handles[index].write(chunk[left - chunk_begin:right - chunk_begin])
+                        written[index] += right - left
+                total = chunk_end
             if proc.wait(timeout=120) != 0:
                 raise ValueError("7z disc member extraction failed")
         finally:
@@ -112,9 +137,11 @@ def stream_member_to_file(archive: Path, member: dict, sevenzip: str,
                 proc.wait(timeout=30)
             if proc.stdout is not None:
                 proc.stdout.close()
-    if count != member["size"]:
+    if total != member["size"]:
         raise ValueError("extracted disc member size differs from 7z listing")
-    return count
+    if any(count != length for count, (_, length, _) in zip(written, windows)):
+        raise ValueError("one or more requested Map02 sector windows are incomplete")
+    return total
 
 
 def audit_archive(archive: Path, *, member_name=None, layout="mode2-2352",
@@ -128,18 +155,29 @@ def audit_archive(archive: Path, *, member_name=None, layout="mode2-2352",
     sector_size = RAW_BYTES if layout == "mode2-2352" else USER_BYTES
     if layout not in ("mode2-2352", "iso-2048"):
         raise ValueError("layout must be mode2-2352 or iso-2048")
+    prs_first = START_SECTOR + sector_bias
+    dat_first = DAT_START_SECTOR + sector_bias
+    if prs_first < 0 or (with_dat and dat_first < 0):
+        raise ValueError("selected Map02 sector before beginning of archived image")
     required_last = max(
-        START_SECTOR + SECTOR_COUNT,
-        DAT_START_SECTOR + DAT_SECTOR_COUNT if with_dat else 0,
-    ) + sector_bias
-    if required_last < 0 or member["size"] < required_last * sector_size:
+        prs_first + SECTOR_COUNT,
+        dat_first + DAT_SECTOR_COUNT if with_dat else 0,
+    )
+    if member["size"] < required_last * sector_size:
         raise ValueError("archived disc too short for expected map sector table")
+
     with tempfile.TemporaryDirectory(prefix="vh-map02-archive-") as temp:
-        disc = Path(temp) / "owned-disc-temporary.bin"
-        size = stream_member_to_file(archive, member, tool, disc)
-        prs = read_sectors(disc, layout, sector_bias)
-        dat = (read_sectors(disc, layout, sector_bias,
-                            start_sector=DAT_START_SECTOR,
+        prs_window = Path(temp) / "map02-prs-sectors.bin"
+        dat_window = Path(temp) / "map02-dat-sectors.bin"
+        windows = [(prs_first * sector_size, SECTOR_COUNT * sector_size, prs_window)]
+        if with_dat:
+            windows.append((dat_first * sector_size,
+                            DAT_SECTOR_COUNT * sector_size, dat_window))
+        windows.sort(key=lambda window: window[0])
+        size = stream_member_sector_windows(archive, member, tool, windows)
+        prs = read_sectors(prs_window, layout, start_sector=0,
+                           sector_count=SECTOR_COUNT)
+        dat = (read_sectors(dat_window, layout, start_sector=0,
                             sector_count=DAT_SECTOR_COUNT)[:PRIOR_DAT_LENGTH]
                if with_dat else None)
         result = audit_prs(prs, dat=dat)
@@ -155,6 +193,8 @@ def audit_archive(archive: Path, *, member_name=None, layout="mode2-2352",
         "dat_start_sector": DAT_START_SECTOR if with_dat else None,
         "original_archive_modified": False,
         "temporary_disc_deleted": True,
+        "full_disc_reconstructed": False,
+        "temporarily_retained_sector_bytes": sum(length for _, length, _ in windows),
         "evidence_scope": (
             "read-only disc resource hashes and GFX; "
             "not a PC-port gameplay trace or visible framebuffer pixels"
