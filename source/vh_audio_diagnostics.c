@@ -1,6 +1,7 @@
 #include "vh_audio_diagnostics.h"
 
 #include <stdio.h>
+#include <stdint.h>
 #include <string.h>
 
 int vh_audio_diag_format(const VhAudioDiagnostics *s, VhAudioDiagText *o) {
@@ -27,8 +28,11 @@ int vh_audio_diag_format(const VhAudioDiagnostics *s, VhAudioDiagText *o) {
              s->resume_failures,s->resume_restarts);
     snprintf(o->line[9],VH_AUDIO_DIAG_LINE_CAP,"LEASE FAIL %u RESET %u",
              s->lease_mismatches,s->abandoned_sessions);
+    const uint32_t recovered =
+        UINT32_MAX-s->recoveries < s->resume_recoveries
+        ? UINT32_MAX : s->recoveries+s->resume_recoveries;
     snprintf(o->line[10],VH_AUDIO_DIAG_LINE_CAP,"VAB WARN %u RECOVERED %u",
-             s->bank_warnings,s->recoveries+s->resume_recoveries);
+             s->bank_warnings,recovered);
     /* Even under arbitrary UINT32_MAX metrics, every label remains
      * legible on the in-game diagnostic overlay. */
     return 0;
