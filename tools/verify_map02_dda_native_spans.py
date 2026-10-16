@@ -27,6 +27,7 @@ def parse_native_spans(raw: bytes):
         raise ValueError("empty, truncated or saturated journal")
     result = []
     last_key = None
+    seen_rows = set()
     for expected_step, line in enumerate(lines):
         def reject_constant(value):
             raise ValueError("nonfinite JSON constant")
@@ -47,11 +48,16 @@ def parse_native_spans(raw: bytes):
                 0 <= obj["y"] <= 511 and
                 0 <= obj["clip_t"] <= obj["clip_b"] <= 511 and
                 0 <= obj["clip_l"] <= obj["clip_r"] <= 1023 and
+                obj["clip_t"] <= obj["y"] <= obj["clip_b"] and
                 obj["x_start"] <= obj["x_bound"]):
             raise ValueError("invalid DDA geometry")
         key = (obj["frame"], obj["primitive_ordinal"])
         if last_key is not None and key < last_key:
             raise ValueError("primitive ordering decreased")
+        row_key = (obj["frame"], obj["primitive_ordinal"], obj["y"])
+        if row_key in seen_rows:
+            raise ValueError("duplicate entered DDA row")
+        seen_rows.add(row_key)
         last_key = key
         result.append(Span(obj["frame"], obj["primitive_ordinal"],
                            obj["y"], obj["x_start"], obj["x_bound"],
