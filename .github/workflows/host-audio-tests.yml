@@ -141,6 +141,8 @@ jobs:
         run: python3 tests/test_native_spu_gaussian.py
       - name: Differential-check native VH/VB resolver against Python
         run: python3 tests/test_native_vab_python_reference.py
+      - name: Differential-check native STUDIO_C against PC-port integer oracle
+        run: python3 tests/test_native_spu_reverb_reference.py
       - name: Run VAB, SPU and synthetic audio tests
         run: |
           python3 tests/test_inspect_spu_vag.py
