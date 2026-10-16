@@ -106,3 +106,20 @@ The test asserts no observed content proves the identity of original
 music or actual audible sound on a Nintendo Switch.
 Host tests also ensure this CI fixture generator does not overwrite
 existing audio files and rejects symlinked output directories.
+
+## Additional guest audio processing progress gate
+
+The runtime now shows a third independent rectangular status marker:
+
+- Green: guest SEQ/SPU/resampler generated at least **16 stereo PCM blocks**
+  and at least **16 calls to `audoutPlayBuffer` have returned**.
+- Amber: audout started but there is not yet evidence of 16 completed
+  PCM and audout-return iterations; a stalled audio output may remain here.
+- Red: audio pipeline was not started or recorded an error.
+
+Counts are atomic and updated by the audio worker, separate from the
+main-thread framebuffer. The NeXium CI checks this third status for
+all three synthetic SD variants, preventing an initialized-but-stalled
+audio service from being counted as healthy playback. A green marker
+proves **software audio buffer processing**, not audible audio through
+speakers or parity with original PS1 timing.
