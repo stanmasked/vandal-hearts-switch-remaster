@@ -824,3 +824,49 @@ underflows, glitches, latency to actual sound output, or audio
 fidelity on hardware. The NeXium runner does not capture speaker
 audio. Measurement of these timings on a physical Switch remains
 a separate acceptance step.
+
+### Standalone Switch audout console: captureable A/B latency results
+
+The independent `build/audout-audio-switch-probe.nro` now offers a
+text-based counterpart to the combined graphics probe. It loads
+locally owned SEQ/VH/VB from SD when available; otherwise, it plays
+two different **generated** SEQ cues (same generated VAB), switching
+between them **only after each 64 successfully returned PCM pages**.
+Original SD-loaded music is never automatically replaced or switched.
+
+The output prints `fixture_switches` and the two per-page categories
+every 128 completed blocks, as well as a final comparison:
+
+- `steady pages`: average and peak audout service wait in
+  microseconds, pages with slow backend calls, and retry counts;
+- `boundary pages`: the same quantities for the **first** PCM
+  page after each synthetic cue switch;
+- `Audout scene summary`: accepted normal/boundary page totals,
+  completed fixture switches and per-class wait peaks.
+
+The console labels measured waits, **not** actual audible glitches.
+The raw audout timer includes each retry attempt, and the associated
+page is counted exactly once. The SEQ/SPU/resampler calculation and
+the blocking audout call are timed separately. The first new-cue page
+is tagged only when a synthetic switch succeeds and an output
+submission begins; a terminal submission error is reported rather
+than quietly advancing to the next scene.
+
+For a physical Switch check, launch the NRO from the CI artifact
+`native-audout-music-nro` (or `make audout-audio-probe` with
+devkitA64), choose the generated-fixture path by **not** placing a
+user-owned complete audio bank at
+`sdmc:/switch/vandal-hearts-remake/audio`, and observe the
+text counters while listening. The test stops music and closes
+audout before displaying its final report; **press Plus (+) to exit**
+after recording the results or taking a screenshot. The final
+results remain on-screen until then. No proprietary audio is
+included in the NRO, and this diagnostic does not write logs or
+original bytes to the SD card.
+
+The `Switch libnx audout music NRO` CI is now enabled on
+`feat/native-av-ps1-seq-integration`, so the standalone console
+variant is built for this branch instead of remaining untested until
+merging into the older CD-XA pipeline base. It still does not
+establish successful playback on the user's hardware; the device
+must be run and listened to separately.
