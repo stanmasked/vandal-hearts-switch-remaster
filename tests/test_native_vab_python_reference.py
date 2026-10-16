@@ -216,6 +216,71 @@ class NativeVabDifferentialTests(unittest.TestCase):
                 self.assertAlmostEqual(result.gain_left, left, places=5)
                 self.assertAlmostEqual(result.gain_right, right, places=5)
 
+    def test_sparse_alias_gain_pan_matches_python_oracle(self):
+        """Same VAG, different ProgAtr: compare all gain/pan stages."""
+        vh = bytearray(self.vh)
+        for program, volume, pan in (
+            (1, 95, 0), (7, 127, 127),
+            (8, 63, 64), (10, 127, 127),
+        ):
+            offset = 32 + program * 16
+            vh[offset + 1] = volume
+            vh[offset + 4] = pan
+        source = (ctypes.c_uint8 * len(vh)).from_buffer_copy(vh)
+        self.assertEqual(self.load(
+            self.bank, source, len(vh), self.source_vb, len(self.vb),
+            self.pcm, len(self.pcm),
+        ), 0)
+        # p2 keeps its zero-valued ProgAtr, but aliases the same
+        # VAG3 used by audible p1/p7. p8 aliases p10's VAG4.
+        cases = (
+            (1, 90, 3, 95, 0),
+            (7, 90, 3, 127, 127),
+            (2, 90, 3, 0, 0),
+            (8, 45, 4, 63, 64),
+            (10, 45, 4, 127, 127),
+        )
+        base = ctypes.addressof(self.pcm)
+        compared = 0
+        for program, note, vag, program_volume, program_pan in cases:
+            for velocity in (40, 100, 127):
+                for channel_volume in (40, 90, 127):
+                    for channel_pan in (0, 32, 64, 96, 127):
+                        with self.subTest(
+                            program=program, note=note,
+                            velocity=velocity, volume=channel_volume,
+                            pan=channel_pan,
+                        ):
+                            tone = SeqTone()
+                            self.assertEqual(
+                                self.resolve(self.bank, program, note,
+                                             velocity, channel_volume,
+                                             channel_pan,
+                                             ctypes.byref(tone)), 0,
+                            )
+                            self.assertEqual(
+                                ctypes.cast(tone.pcm, ctypes.c_void_p).value,
+                                base + (vag - 1) * 28 * 2,
+                            )
+                            left, right = seq_voice_gains(
+                                velocity=velocity,
+                                channel_volume=channel_volume,
+                                bank_volume=127,
+                                program_volume=program_volume,
+                                tone_volume=117,
+                                tone_pan=64,
+                                program_pan=program_pan,
+                                channel_pan=channel_pan,
+                            )
+                            self.assertAlmostEqual(
+                                tone.gain_left, left, places=5,
+                            )
+                            self.assertAlmostEqual(
+                                tone.gain_right, right, places=5,
+                            )
+                            compared += 1
+        self.assertEqual(compared, 225)
+
     def test_bad_capacity_does_not_modify_bank_or_input(self):
         snapshot = bytes(self.bank)
         short = (ctypes.c_int16 * 111)()
