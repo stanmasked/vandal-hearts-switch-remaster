@@ -28,7 +28,7 @@ LDLIBS   := -L$(DEVKITPRO)/libnx/lib -lnx
 .PHONY: all clean test test-sanitize verify-nro sdl2-probe sdl2-gl-probe sdl2-texture-probe sdl2-audio-probe openal-probe
 all: $(BUILD)/$(TARGET).nro
 
-test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_texture_sample $(BUILD)/test_ft4_textured_quad $(BUILD)/test_ps1_indexed_texture $(BUILD)/test_ps1_abr_blend $(BUILD)/test_map02_terrain_lighting $(BUILD)/test_map02_face_direction $(BUILD)/test_map02_projection $(BUILD)/test_map02_terrain_quad $(BUILD)/test_map02_source_projection_batch $(BUILD)/test_map02_terrain_ot_scene $(BUILD)/test_map02_external_gte_ft4 $(BUILD)/test_map02_vram4_page $(BUILD)/test_map02_vram4_frame
+test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_texture_sample $(BUILD)/test_ft4_textured_quad $(BUILD)/test_ps1_indexed_texture $(BUILD)/test_ps1_abr_blend $(BUILD)/test_map02_terrain_lighting $(BUILD)/test_map02_face_direction $(BUILD)/test_map02_projection $(BUILD)/test_map02_terrain_quad $(BUILD)/test_map02_source_projection_batch $(BUILD)/test_map02_captured_projection_batch $(BUILD)/test_map02_terrain_ot_scene $(BUILD)/test_map02_external_gte_ft4 $(BUILD)/test_map02_vram4_page $(BUILD)/test_map02_vram4_frame
 	./$(BUILD)/test_game_rules
 	./$(BUILD)/test_software_renderer
 	./$(BUILD)/test_texture_sample
@@ -40,6 +40,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_tex
 	./$(BUILD)/test_map02_projection
 	./$(BUILD)/test_map02_terrain_quad
 	./$(BUILD)/test_map02_source_projection_batch
+	./$(BUILD)/test_map02_captured_projection_batch
 	./$(BUILD)/test_map02_terrain_ot_scene
 	./$(BUILD)/test_map02_external_gte_ft4
 	./$(BUILD)/test_map02_vram4_page
@@ -89,6 +90,7 @@ test-sanitize: | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_map02_projection.c -o $(BUILD)/test_map02_projection_sanitize
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_map02_terrain_quad.c -o $(BUILD)/test_map02_terrain_quad_sanitize -lm
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_map02_source_projection_batch.c -o $(BUILD)/test_map02_source_projection_batch_sanitize -lm
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_map02_captured_projection_batch.c -o $(BUILD)/test_map02_captured_projection_batch_sanitize -lm
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_map02_terrain_ot_scene.c -o $(BUILD)/test_map02_terrain_ot_scene_sanitize -lm
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_map02_external_gte_ft4.c -o $(BUILD)/test_map02_external_gte_ft4_sanitize -lm
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_map02_vram4_page.c -o $(BUILD)/test_map02_vram4_page_sanitize -lm
@@ -104,6 +106,7 @@ test-sanitize: | $(BUILD)
 	./$(BUILD)/test_map02_projection_sanitize
 	./$(BUILD)/test_map02_terrain_quad_sanitize
 	./$(BUILD)/test_map02_source_projection_batch_sanitize
+	./$(BUILD)/test_map02_captured_projection_batch_sanitize
 	./$(BUILD)/test_map02_terrain_ot_scene_sanitize
 	./$(BUILD)/test_map02_external_gte_ft4_sanitize
 	./$(BUILD)/test_map02_vram4_page_sanitize
@@ -161,6 +164,9 @@ $(BUILD)/test_map02_terrain_quad: tests/test_map02_terrain_quad.c source/map02_t
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@ -lm
 
 $(BUILD)/test_map02_source_projection_batch: tests/test_map02_source_projection_batch.c source/map02_source_projection_batch.h source/map02_terrain_ot_scene.h source/map02_terrain_quad.h source/map02_projection.h source/ft4_textured_quad.h source/ps1_indexed_texture.h source/software_renderer.h | $(BUILD)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@ -lm
+
+$(BUILD)/test_map02_captured_projection_batch: tests/test_map02_captured_projection_batch.c source/map02_captured_projection_batch.h source/map02_source_projection_batch.h source/map02_terrain_quad.h source/map02_projection.h source/ft4_textured_quad.h source/ps1_indexed_texture.h source/software_renderer.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 $< -o $@ -lm
 
 $(BUILD)/test_map02_terrain_ot_scene: tests/test_map02_terrain_ot_scene.c source/map02_terrain_ot_scene.h source/map02_terrain_quad.h source/map02_projection.h source/ft4_textured_quad.h source/ps1_indexed_texture.h source/software_renderer.h | $(BUILD)
