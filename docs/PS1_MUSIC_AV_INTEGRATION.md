@@ -355,3 +355,35 @@ nonzero output are not contradictory.
 
 Both tests are included in the normal host audit and the ASan/UBSan
 PCM diagnostics workflow. The original music is never copied to CI.
+
+### SEQ program changes, repeated notes and fallback classification
+
+The offline auditor now separates the existing `fallback_notes` into
+`cross_program_fallback_notes` and
+`out_of_range_fallback_notes`, whose sum must equal the total.
+The first counter covers a resolver selection from a different program
+than the one currently requested by SEQ. The second covers a selection
+in the requested program but outside the note's key range. The latter
+may be an intentional nearest-key fallback; neither is automatically
+a playback defect. `direct_match_notes` remains the complement of
+the fallback count among successful resolutions.
+
+The additional `note_offs` counter comes from the native sequencer.
+It counts voices actually released by note-off handling, **including**
+same-pitch retriggers and other sequencer stop actions. It does not
+equal the number of raw MIDI Note Off events in the SEQ file.
+
+A generated regression supplies same-block program changes
+(7 → 9 → 7), twice triggers key 60 without an intervening explicit
+Note Off, then requests key 61 under the missing program and key 110
+outside the existing tone's range. In a 16-block audit window this
+checks four resolved notes, two direct matches, one cross-program
+fallback, one nearest-range fallback, and one voice release caused by
+the repeated note. Switching to a second complete generated bank
+must preserve 48-kHz frame accounting without carrying stale voices
+from the previous scene.
+
+All classifications are measurements of the runtime resolver's
+actual decisions. They are not a claim that these program mappings
+match the original game's intended orchestration; that still requires
+comparison using privately supplied original assets.
