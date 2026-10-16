@@ -1840,7 +1840,7 @@ jobs:
           idx=next(i for i,e in enumerate(entries) if e["kind"]=="GP0_DMA2")
           before=entries[idx]["words"][1]
           entries[idx]["words"][1]^=1
-          temp.write_text("".join(json.dumps(x)+"\\n" for x in entries))
+          temp.write_text("".join(json.dumps(x)+"\n" for x in entries))
           cmd=["python3","-m","remaster.tools.ingest_map02_v65_gpu_probe",
                "--ram",ram,"--manifest",manifest,"--probe",str(temp)]
           p=subprocess.run(cmd,capture_output=True,text=True)
@@ -1849,7 +1849,7 @@ jobs:
           entries[idx]["words"][1]=before
           idx=next(i for i,e in enumerate(entries) if e["kind"]=="GP1_WRITE")
           entries[idx]["word"]=0x01000000
-          temp.write_text("".join(json.dumps(x)+"\\n" for x in entries))
+          temp.write_text("".join(json.dumps(x)+"\n" for x in entries))
           # A dishonest producer can change GP1(00) to GP1(01). Such a
           # *consistent* fabricated trace must not be trusted as hardware.
           p=subprocess.run(cmd,capture_output=True,text=True)
