@@ -170,9 +170,14 @@ resampler phase during retries, and verifies the retried PCM pointer
 and sample bytes are unchanged. The test is included in
 `make test-audio-stream` and the PCM diagnostics workflow.
 
-**Scope and limitations:** This path is currently integrated into the
-standalone audout music probe only. The combined graphics/audio NRO
-has its own output worker and does not yet use the recovery helper.
+**Scope and limitations:** The recovery helper is now wired into both
+the standalone native audout probe and the combined graphics/audio
+NeXium/NRO audio worker. The combined worker starts its service before
+launching the music thread; its retries occur exclusively in that
+thread; and the main thread waits for it to exit before final teardown
+and unloading user-owned PCM banks. A recovered submit increments the
+completed-buffer counter once, not once per failed attempt.
+
 A failed device call may have produced an *ambiguous* amount of audible
 output before the failure; restarting audout may therefore truncate
 sound or produce a discontinuity. The host tests guarantee software
