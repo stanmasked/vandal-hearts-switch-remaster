@@ -35,6 +35,7 @@
 static u8 g_ft4_probe_atlas[256 * 128];
 static u8 g_ft4_probe_cluts[2][32];
 static u32 g_ft4_probe_pixels[2][16 * 16];
+static u8 g_ft4_probe_classes[2][16 * 16];
 static int g_ft4_probe_ready = 0;
 
 static void fill_rect(u32 *pixels, u32 stride, int x, int y,
@@ -112,7 +113,7 @@ static void init_ft4_probe_texture(void) {
     for (int texture = 0; texture < 2; ++texture) {
         for (int index = 0; index < 16; ++index) {
             /* BGR555; STP on index 3 is preserved by the decoder stats. */
-            const u16 raw = (u16)(
+            const u16 raw = index == 0 ? 0 : (u16)(
                 ((index * (texture ? 2 : 1)) & 31) |
                 (((index * (texture ? 1 : 2)) & 31) << 5) |
                 (((15 - index) & 31) << 10) |
@@ -135,17 +136,28 @@ static void init_ft4_probe_texture(void) {
             }
         }
         VhPs1Clut4Stats stats = {0, 0, 0};
-        if (!vh_ps1_decode_clut4_crop(
+        if (!vh_ps1_decode_clut4_crop_classified(
                 g_ft4_probe_atlas, sizeof(g_ft4_probe_atlas),
                 256, 256, 128, g_ft4_probe_cluts[texture], 32,
                 240, (size_t)crop_v[texture], 16, 16,
                 g_ft4_probe_pixels[texture], 16,
+                g_ft4_probe_classes[texture], 16,
                 vh_switch_pack_ps1_rgb, NULL, &stats) ||
-            stats.pixels_decoded != 256) {
+            stats.pixels_decoded != 256 || stats.transparent_zero_pixels != 16 ||
+            stats.stp_flag_pixels != 16) {
             return;
         }
     }
     g_ft4_probe_ready = 1;
+}
+
+/* Explicit visual debugging of STP: magenta means "semi flag detected".
+ * This is NOT a PlayStation ABR blend mode and cannot be mistaken for one. */
+static u32 vh_switch_highlight_stp(u32 destination, u32 source, void *unused) {
+    (void)destination;
+    (void)source;
+    (void)unused;
+    return RGBA8_MAXALPHA(255, 0, 255);
 }
 
 static void draw_ft4_probe(VhCanvas *canvas, u32 *pixels, u32 stride) {
@@ -156,20 +168,22 @@ static void draw_ft4_probe(VhCanvas *canvas, u32 *pixels, u32 stride) {
         {1106, 352}, {978, 352}, {978, 480}, {1106, 480}
     };
     VhFt4Vertex quad[4];
-    draw_text(pixels, stride, 975, 137, "CLUT4 FT4 A", COLOR_MUTED, 1);
-    draw_text(pixels, stride, 975, 323, "CLUT4 FT4 B", COLOR_MUTED, 1);
+    draw_text(pixels, stride, 975, 137, "CLUT4 CUTOUT", COLOR_MUTED, 1);
+    draw_text(pixels, stride, 975, 323, "STP DEBUG", COLOR_MUTED, 1);
     if (!g_ft4_probe_ready) {
         draw_text(pixels, stride, 975, 500, "CLUT ERROR", COLOR_ENEMY, 1);
         return;
     }
     if (vh_ft4_from_face_perimeter(normal, 0, 0, 15, 15, quad)) {
-        (void)vh_canvas_draw_ft4_rgba32(canvas, g_ft4_probe_pixels[0],
-                                         16, 16, 16, quad);
+        (void)vh_canvas_draw_ft4_classified_rgba32(
+            canvas, g_ft4_probe_pixels[0], 16, 16, 16, quad,
+            g_ft4_probe_classes[0], 16, NULL, NULL);
     }
     vh_canvas_draw_rect_outline(canvas, 978, 164, 128, 128, COLOR_GRID);
     if (vh_ft4_from_face_perimeter(mirror, 0, 0, 15, 15, quad)) {
-        (void)vh_canvas_draw_ft4_rgba32(canvas, g_ft4_probe_pixels[1],
-                                         16, 16, 16, quad);
+        (void)vh_canvas_draw_ft4_classified_rgba32(
+            canvas, g_ft4_probe_pixels[1], 16, 16, 16, quad,
+            g_ft4_probe_classes[1], 16, vh_switch_highlight_stp, NULL);
     }
     vh_canvas_draw_rect_outline(canvas, 978, 352, 128, 128, COLOR_GRID);
 }
