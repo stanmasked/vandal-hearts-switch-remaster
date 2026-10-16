@@ -870,3 +870,25 @@ must be associated with the appropriate submission event instead of
 applying one frozen image to all faces. This diagnostic does not
 implement GPU commands, character/sprite layers, true PS1 raster
 accuracy, HD asset replacement or live NRO rendering.
+
+
+## Local private MAP02 frame-bundle integrity gate
+
+`tools/verify_map02_frame_bundle.py` accepts a **locally acquired,
+caller-owned** decoded MAP02 buffer (187264 bytes), GPU VRAM image
+(1048576 bytes), 1–32 submitted terrain face events and a SHA-256
+manifest with frame labels. It validates exact source face identities
+(including all local XYZ values), rejects reused keys or mixed frame
+labels, compiles the portable PC-GTE reference to compare RTPT, NCLIP,
+RTPS, FT4 screen corners and raw OTZ, and independently samples the
+actual 4-bpp texture page/CLUT/texture-window bytes. Caller-supplied
+original BGR555 pixel probes are checked when present, but never
+inferred. The public JSON report contains **counts and hashes only**,
+not geometry, raw VRAM, palette colors or camera data.
+
+Full required local file layout, schema and CLI are documented in
+`docs/MAP02_PRIVATE_FRAME_BUNDLE.md`. Asset-free mutation tests are
+run by MAP02 CI. A successful report proves **self-consistency of
+supplied files**, not genuine retail gameplay or PS1 hardware pixels;
+GPU VRAM stability between submissions is not established by a
+single snapshot, and the existing native Switch scene is unchanged.
