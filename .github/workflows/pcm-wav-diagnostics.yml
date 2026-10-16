@@ -16,6 +16,7 @@ on:
       - 'tests/test_native_pcm_capture.py'
       - 'tests/test_vh_resample_partition.c'
       - 'tests/test_vh_resample_long_clock.c'
+      - 'tests/test_vh_resample_capacity_guard.c'
       - 'tools/inspect_native_pcm_capture.py'
       - 'tools/analyze_pcm_discontinuities.py'
       - 'tests/test_analyze_pcm_discontinuities.py'
@@ -36,6 +37,7 @@ on:
       - 'tests/test_native_pcm_capture.py'
       - 'tests/test_vh_resample_partition.c'
       - 'tests/test_vh_resample_long_clock.c'
+      - 'tests/test_vh_resample_capacity_guard.c'
       - 'tools/inspect_native_pcm_capture.py'
       - 'tools/analyze_pcm_discontinuities.py'
       - 'tests/test_analyze_pcm_discontinuities.py'
@@ -156,3 +158,14 @@ jobs:
             tests/test_vh_resample_long_clock.c source/vh_audio_resample.c \
             -o /tmp/test_vh_resample_long_clock_asan
           /tmp/test_vh_resample_long_clock_asan
+      - name: Check resampler output capacity and guard integrity under ASan
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -fno-sanitize-recover=all \
+            tests/test_vh_resample_capacity_guard.c source/vh_audio_resample.c \
+            -o /tmp/test_vh_resample_capacity_guard
+          /tmp/test_vh_resample_capacity_guard
