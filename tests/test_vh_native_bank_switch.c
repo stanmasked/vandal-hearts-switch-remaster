@@ -67,8 +67,12 @@ int main(void) {
         assert(bank[scene].selected_program==7u);
         assert(bank[scene].selected_vag==1u);
     }
+    /* Bank A and B must each trigger notes; no lost sequencer state. */
     assert(output_frames>17000u);
     assert(resampler.input_frames==32u*512u);
+    const uint64_t expected=((uint64_t)32u*512u-1u)*160u/147u+1u;
+    assert(output_frames+2u>=expected && output_frames<=expected+1u);
+    assert(resampler.next_output_tick==output_frames*44100u);
     assert(checksum[0]!=checksum[1]);
     puts("two synthetic VAB banks: safe SEQ SPU switch, continuous PCM clock PASS");
     return 0;
