@@ -50,10 +50,16 @@ def instrument_rejected_edges(raster):
                  "pinned native DDA walker")
     for reason in (4, 5, 6, 7):
         original = f"VH_Map02SkipAt(vh_pixel_sample_x, y, {reason});"
+        # The original skip call is nested under a single-line C if in
+        # branches 4-6 and under an else-if in branch 7. Keep that syntax.
+        # The separate candidate observer performs its own target/sample
+        # checks; this does not alter the original rejection decision.
+        condition = "y < cx->clipT" if reason in (4, 7) else "y > cx->clipB"
         replacement = (
             f"VH_Map02SkipAt(vh_pixel_sample_x, y, {reason});\n"
             "#if defined(VH_MAP02_DDA_REJECTED_EDGES_TRACE)\n"
-            f"                    if ({'y < cx->clipT' if reason in (4, 7) else 'y > cx->clipB'}) VH_Map02RejectedEdges(cx, y, left_x, right_x, {reason});\n"
+            f"                    if ({condition}) "
+            f"VH_Map02RejectedEdges(cx, y, left_x, right_x, {reason});\n"
             "#endif"
         )
         result = one(result, original, replacement,
