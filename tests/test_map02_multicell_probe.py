@@ -10,7 +10,7 @@ from tools.map02_multicell_probe import (
     place_faces, shared_vertices, shared_edges, boundary_report,
     face_cross_xyz, placement_invariants, order_faces_by_external_otz,
     bind_gte_face_samples, place_selected_faces, audit_multicell_gte_batch, bind_external_screen_corners,
-    audit_multicell_screen_batch,
+    audit_multicell_screen_batch, audit_projected_shared_vertices,
 )
 
 
@@ -420,6 +420,40 @@ class MultiCellTests(unittest.TestCase):
                 (2, 3, 59, 0): [(0, 0)] * 4,
                 (2, 4, 60, 0): [(1, 1)] * 4,
             })
+
+
+    def test_projected_shared_corners_agree_across_adjacent_cells(self):
+        keys = [(2, 3, 0), (2, 4, 0)]
+        faces = place_selected_faces(self.data, keys,
+                                     {k: (0, 0, 15, 15) for k in keys},
+                                     step_x=64, step_z=64)
+        samples = {
+            (2, 3, 59, 0): [(0, 0), (8, 0), (8, 8), (0, 8)],
+            (2, 4, 60, 0): [(8, 0), (16, 0), (16, 8), (8, 8)],
+        }
+        report = audit_projected_shared_vertices(faces, samples)
+        self.assertEqual(report["shared_world_vertices"], 2)
+        self.assertEqual(report["screen_matches"], 2)
+        self.assertEqual(report["screen_mismatches"], 0)
+        samples[(2, 4, 60, 0)][0] = (9, 0)
+        report = audit_projected_shared_vertices(faces, samples)
+        self.assertEqual(report["screen_matches"], 1)
+        self.assertEqual(report["screen_mismatches"], 1)
+
+    def test_height_separation_does_not_create_shared_projection(self):
+        data = fixture()
+        origin = (2 * STRIDE + 4) * RECORD_SIZE
+        for i in range(4):
+            struct.pack_into("<h", data, origin + i * 8 + 2, 16)
+        keys = [(2, 3, 0), (2, 4, 0)]
+        faces = place_selected_faces(data, keys,
+                                     {k: (0, 0, 15, 15) for k in keys},
+                                     step_x=64, step_z=64)
+        samples = {(2, 3, 59, 0): [(0, 0)] * 4,
+                   (2, 4, 60, 0): [(9, 9)] * 4}
+        report = audit_projected_shared_vertices(faces, samples)
+        self.assertEqual(report["shared_world_vertices"], 0)
+        self.assertEqual(report["screen_mismatches"], 0)
 
 
 if __name__ == "__main__":
