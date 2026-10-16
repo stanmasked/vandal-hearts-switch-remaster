@@ -114,12 +114,18 @@ static void test_512_block_controls_and_ring_pressure(void) {
     assert(log_state.velocity==100 && log_state.volume==80);
     assert(log_state.pan==0);
     assert(seq.note_ons==1 && seq.playing==1);
-    /* NoteOff at tick240 occurs in later 512-frame blocks. */
-    for(unsigned i=0;i<25;i++) {
+    /* 480 PPQN, 500000 us/quarter: 512 frames advance 11.145... ticks.
+     * NoteOff at tick240 becomes due at block 22 (zero-based index 21).
+     */
+    for(unsigned i=0;i<20;i++) {
         assert(vh_audio_stream_read(&ring,pcm,512)==512);
         assert(vh_native_seq_pump(&seq,&ring)==512);
     }
-    assert(seq.note_offs==1 && seq.cycles_completed==0);
+    assert(seq.blocks_advanced==21 && seq.note_offs==0 && seq.playing);
+    assert(vh_audio_stream_read(&ring,pcm,512)==512);
+    assert(vh_native_seq_pump(&seq,&ring)==512);
+    assert(seq.blocks_advanced==22 && seq.note_offs==1);
+    assert(seq.cycles_completed==1 && !seq.playing);
     assert(log_state.calls==1);
 }
 
@@ -132,8 +138,8 @@ static void test_running_tempo_and_repeat_seam(void) {
     assert(seq.note_offs==1);
     assert(seq.tempo==250000); /* PS1 FF51 has no SMF length */
     assert(seq.playing);
-    for(unsigned n=0;n<8 && seq.playing;n++)
-        assert(vh_native_seq_advance_block(&seq)>=0);
+    assert(vh_native_seq_advance_block(&seq)>=0);
+    assert(seq.blocks_advanced==2); /* tempo switched after first block */
     assert(!seq.playing && seq.cycles_completed==1);
     assert(seq.note_offs==2);
     setup();
