@@ -44,10 +44,10 @@ def verify_dda_counts(directory, *, target_frame):
         raise ValueError("native GPU snapshots reached cap; completeness unknown")
     events = [parse_json(line, f"native GPU event {i}")
               for i, line in enumerate(native_raw.splitlines())]
+    draws = [event for event in events[::2] if event["operation"] == "draw"]
     ft4_ordinals = [
-        i for i, event in enumerate(events[::2])
-        if event["operation"] == "draw" and event["primitive_type"] == 2
-        and event["ft4"] is not None
+        i for i, event in enumerate(draws)
+        if event["primitive_type"] == 2 and event["ft4"] is not None
     ]
     lines = counts_raw.splitlines()
     if not 1 <= len(lines) < MAX_ROWS or any(not row.strip() for row in lines):
