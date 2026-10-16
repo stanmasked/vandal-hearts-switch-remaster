@@ -333,6 +333,22 @@ int main(int argc, char **argv) {
     if (native_stop(&output)) result=7;
     native_close(&output);
     vh_audio_assets_close(&user_assets);
+    /* Printed proof must never be inferred merely from a clean
+     * applet exit: check page identity, fixture-switch cadence, raw
+     * timing and logical-page accounting before claiming a full run.
+     */
+    const int run_evidence=vh_audio_output_verify_run(
+        &output.scene_waits,&recovery,&output.timing,
+        played_blocks,completed_switches,MAX_PROBE_BLOCKS,
+        user_files ? 0u : SYNTHETIC_SCENE_BLOCKS,
+        result==0 && played_blocks==MAX_PROBE_BLOCKS);
+    if (run_evidence<0 && result==0) result=10;
+    printf("Run evidence: %s (accepted=%u / planned=%u, source=%s)\n",
+           run_evidence==1 ? "FULL HOST CONTRACT" :
+           run_evidence==0 ? "INCOMPLETE - NO FULL-RUN CLAIM" :
+                             "COUNTER MISMATCH - INVALID",
+           played_blocks,MAX_PROBE_BLOCKS,
+           user_files ? "SD music" : "generated fixture");
     printf("Output pages=%llu restarts=%u recovered=%u failures=%u\n",
            (unsigned long long)recovery.pages_submitted,
            recovery.restart_attempts,recovery.recoveries,
