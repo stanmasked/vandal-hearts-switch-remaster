@@ -79,11 +79,18 @@ def walk_dma(data:bytes, base:int, entry:int):
 # GP0 commands do not necessarily align to DMA linked-list node boundaries.
 # Length is defined by *the actual GP0 opcode*, not occurrences of 0xE6 in
 # unrelated payload data. Unsupported variable-length opcodes refuse closed.
-def parse_gp0(words:list[int]):
+def parse_gp0(words:list[int], initial_mask:tuple[int,int]=(0,0), return_state:bool=False):
+    """Parse GP0 words; optionally carry persistent E6 state across DMA lists.
+
+    GP0(E6) persists until another E6 or an external GPU reset. Separate
+    captures MUST NOT be concatenated without evidence about GPU resets.
+    """
+    if not (isinstance(initial_mask,tuple) and len(initial_mask)==2
+            and all(type(x)==int and x in (0,1) for x in initial_mask)):
+        raise DmaError("invalid initial E6 state")
     events=[]
     pos=0
-    mask_set=0
-    mask_check=0
+    mask_set,mask_check=initial_mask
     while pos<len(words):
         command=words[pos]
         opcode=command>>24
@@ -121,19 +128,20 @@ def parse_gp0(words:list[int]):
         elif opcode in (0xe1,0xe2,0xe3,0xe4,0xe5):
             events.append({"type":f"E{opcode&15}","word":command})
         pos+=count
-    return events
+    return (events,(mask_set,mask_check)) if return_state else events
 
 def decode(data:bytes, manifest:dict):
     manifest_check(data,manifest)
     frames=[]
     total_nodes=0
+    mask_state=(0,0)
     for head in manifest["entry_points"]:
         words,nodes=walk_dma(data,manifest["base_address"],head)
-        events=parse_gp0(words)
+        events,mask_state=parse_gp0(words,initial_mask=mask_state,return_state=True)
         if not events:raise DmaError("no GPU events in one frame")
         total_nodes+=len(nodes)
         frames.append({"head":head,"nodes":nodes,"events":events,
-                       "gp0_words":len(words)})
+                       "gp0_words":len(words),"mask_state_at_end":mask_state})
     return {"source_class":manifest["source_class"],
             "sha256":manifest["sha256"],
             "frames":frames,"total_nodes":total_nodes,
