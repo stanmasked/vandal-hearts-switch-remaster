@@ -781,9 +781,14 @@ jobs:
             proof/large_ot_v54.o proof/libgpu.o proof/pc_raster.o proof/ot_trace_shims_v54.o \
             -lm -lpthread -o proof/v54_real_large_ot
           for workers in 1 2 4; do
-            VH_RASTER_THREADS="$workers" ./proof/v54_real_large_ot \
+            if ! VH_RASTER_THREADS="$workers" ./proof/v54_real_large_ot \
               > "proof/SYNTHETIC_V54_LARGE_OT_$workers.log" \
-              2> "proof/SYNTHETIC_V54_LARGE_OT_$workers.stderr"
+              2> "proof/SYNTHETIC_V54_LARGE_OT_$workers.stderr"; then
+              echo "V54 ORIGINAL GPU executable refused: worker=$workers"
+              cat "proof/SYNTHETIC_V54_LARGE_OT_$workers.stderr"
+              tail -n 14 "proof/SYNTHETIC_V54_LARGE_OT_$workers.log"
+              exit 1
+            fi
             grep -F "V54 ORIGINAL_DRAWOTAG_LARGE_SCENES=2 PACKETS=256 WORKERS=$workers SYNTHETIC_ONLY" \
               "proof/SYNTHETIC_V54_LARGE_OT_$workers.stderr"
             grep -F "[raster] hi-res worker threads: $workers" \
