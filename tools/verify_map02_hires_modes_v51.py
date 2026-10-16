@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 import sys
 
@@ -27,6 +28,8 @@ def split_cases(lines):
     for line in lines:
         found=[name for name,prefix in PREFIXES.items() if line.startswith(prefix)]
         if not found:
+            if line.startswith("V51HASH "):
+                continue
             if line.startswith(("V50","V51")):
                 raise BadHiresProof("malformed GPU mode record")
             continue
@@ -46,8 +49,27 @@ def split_cases(lines):
     return parsed,summaries
 
 
+HASH_RE=re.compile(r"^V51HASH name=([a-z][a-z0-9_]*) direct=([0-9a-f]{16}) threaded=([0-9a-f]{16})$")
+def full_region_hashes(lines):
+    hashes={}
+    for line in lines:
+        if not line.startswith("V51HASH"):
+            continue
+        m=HASH_RE.fullmatch(line.strip())
+        if not m:
+            raise BadHiresProof("malformed complete-hires-region hash")
+        name,left,right=m.groups()
+        if name in hashes:
+            raise BadHiresProof("duplicate HD region hash for "+name)
+        hashes[name]=(left,right)
+    if set(hashes)!=EXPECTED:
+        raise BadHiresProof("missing or extra original HD region hashes")
+    return hashes
+
+
 def audit(lines):
     records,results=split_cases(lines)
+    hashes=full_region_hashes(lines)
     errors=[]
     checks=[]
     diffs=[]
@@ -61,6 +83,8 @@ def audit(lines):
                     errors.append(f"{name}/{kind}: original GPU input {key} disagrees with native")
             if (record["x"],record["y"])!=(2*native["x"]+1,2*native["y"]):
                 errors.append(f"{name}/{kind}: rendered target pixel not in correct 2x block")
+        if hashes[name][0]!=hashes[name][1]:
+            errors.append(name+": full 32x32 direct-vs-threaded HD region differs")
         if (hd["x"],hd["y"])!=(worker["x"],worker["y"]):
             errors.append(name+": different direct/threaded HD pixel addresses")
         if hd["after"]!=worker["after"]:
@@ -90,6 +114,8 @@ def audit(lines):
         "true_hires_scale":2,
         "deferred_renderer_workers_requested":2,
         "direct_hires_vs_deferred_equal_count":sum(c["same_hd_color"] for c in checks),
+        "full_32x32_hd_region_equal_count":sum(left==right for left,right in hashes.values()),
+        "full_region_pixels_compared_per_mode":32*32,
         "native_vs_hires_different_cases":diffs,
         "native_original_summary":results["native"]["status"],
         "hires_original_summary":results["hires"]["status"],
