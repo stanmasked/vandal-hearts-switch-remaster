@@ -83,7 +83,7 @@ static void test_source_page_nibbles_clut_and_guards(void) {
               VH_MAP02_VRAM4_CLUT_BYTES,&stats));
     assert(stats.decoded_texels==65536u);
     assert(stats.zero_index_texels==1u);
-    assert(stats.stp_palette_texels==65533u);
+    assert(stats.stp_palette_texels==65529u);
     assert(stats.page_word_x==320 && stats.page_word_y==0);
     assert(stats.clut_word_x==672 && stats.clut_word_y==499);
     assert(nibble(atlas,240,192)==0u);
@@ -210,12 +210,13 @@ static void test_vram_to_keyed_terrain_ot_and_pixel_output(void) {
     assert(vh_map02_ot_scene_draw(&scene,&screen,scratch,classes,
         256u,pack,NULL,&drawn,&pixel_count));
     assert(drawn==1u && pixel_count==255u);
-    assert(stp_calls==253u);
+    assert(stp_calls==249u);
     assert(framebuffer[20*STRIDE+20]==CLEAR);
     assert(framebuffer[20*STRIDE+21]==(CLEAR ^ UINT32_C(0xffff0000)));
     assert(framebuffer[20*STRIDE+22]==UINT32_C(0xff00ff00));
     assert(framebuffer[20*STRIDE+23]==UINT32_C(0xff0000ff));
     assert(framebuffer[20*STRIDE+24]==(CLEAR ^ UINT32_C(0xffff0000)));
+    assert(framebuffer[28*STRIDE+28]==UINT32_C(0xff848484)); /* index 4 in alternate VRAM word */
     assert(framebuffer[35*STRIDE+35]==(CLEAR ^ UINT32_C(0xffff0000)));
     assert(framebuffer[19*STRIDE+20]==CLEAR);
     assert(framebuffer[25*STRIDE+56]==CLEAR);
