@@ -151,3 +151,30 @@ invalid-SEQ paths, old-bank pointer removal, different-SPU rejection,
 wet-tail preservation and uninterrupted resampling. All of these
 are host-side tests. The combined NRO currently loads one bank and does
 **not yet** invoke this transition API from the game's scene controller.
+
+## Recovering failed native audout submissions
+
+The standalone `audout-audio-probe` uses the portable
+`vh_audio_output_submit_recover` transport helper. It renders and
+resamples one stereo page **before** submitting it; a failed
+`audoutPlayBuffer` cannot cause the helper to run SEQ/SPU or the
+44.1-to-48-kHz resampler again. Recovery stops and recreates the
+native audio service, then attempts to send exactly the same PCM page,
+with a limit of two service restarts. A permanent error stops the probe
+with a nonzero result rather than advancing music blindly.
+
+The host `tests/test_vh_audio_output_recovery.c` fault-injects rejected
+pages, exhausted retries, stop/open/start failures and HOME-resume
+handling. It asserts stable SEQ note counts, SPU frame counts and
+resampler phase during retries, and verifies the retried PCM pointer
+and sample bytes are unchanged. The test is included in
+`make test-audio-stream` and the PCM diagnostics workflow.
+
+**Scope and limitations:** This path is currently integrated into the
+standalone audout music probe only. The combined graphics/audio NRO
+has its own output worker and does not yet use the recovery helper.
+A failed device call may have produced an *ambiguous* amount of audible
+output before the failure; restarting audout may therefore truncate
+sound or produce a discontinuity. The host tests guarantee software
+clock preservation, **not** glitch-free or exactly-once sound on
+Nintendo Switch hardware. Real Switch audio capture remains necessary.
