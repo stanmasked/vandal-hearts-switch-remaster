@@ -85,3 +85,53 @@ color-key behavior. It samples caller-decoded RGBA32 rather than raw
 4-bit CLUT atlas bytes. Quads are diagnostic affine approximations and
 cannot establish pixel-identical correspondence to a real PlayStation
 capture. Real PRS/DAT game assets are not embedded in the binary.
+
+
+## PS1 4-bit indexed atlas and CLUT-to-FT4 bridge
+
+The native Switch prototype now exercises a **complete synthetic
+indexed4-to-polygon color path**, implemented without embedding any
+original game textures. The portable `source/ps1_indexed_texture.h`
+decoder reads 4-bit packed atlas texels and their 16-color little-endian
+BGR555 CLUT entries. Even logical u selects the low nibble of the atlas
+byte; odd u selects the high nibble. This exactly matches the atlas
+coordinate convention used by the MAP02 forensic Python tooling.
+
+The decoder accepts a 256×256 logical texel atlas with a 128-byte row
+stride; an original MAP02 subtexture UVWH of
+`(240,192,15,15)` or `(240,208,15,15)` represents
+**16×16 inclusive texels**. It checks the dimensions and source byte
+bounds, preserves 16-bit CLUT words via `vh_ps1_clut4_read_raw`,
+and produces RGBA32 texels using a caller-supplied pixel-format packer.
+The Switch path supplies `RGBA8_MAXALPHA` through that callback
+rather than assuming a host endian/order convention.
+
+The native `source/main.c` fills those two UV regions with
+asymmetrical **generated nibble indices**, supplies two synthetic
+16-color palettes, and decodes both crops. The existing FT4
+rasterizer then transfers the resulting pixels onto a normal and
+mirrored four-corner screen-space quad in the diagnostic panel.
+
+The new test `tests/test_ps1_indexed_texture.c` verifies:
+
+- Even/odd 4-bit nibble order and row-stride addressing
+- Exact little-endian raw CLUT selection and BGR555-to-RGB888 expansion
+- Zero and STP-bit occurrence counters, without losing raw semantics
+- Every expected output pixel after the CLUT-to-FT4 path, including
+  padding and clipped canvas boundaries
+- Invalid crop extents, short palettes, overflow-prone dimensions and
+  invalid sampler arguments leaving output and statistics unchanged
+
+Both `make test` and `make test-sanitize` include the test;
+the MAP02 upstream workflow and host texture safety workflow independently
+compile and execute it. The Switch toolchain workflow builds a new NRO
+with both synthetic indexed4 panels.
+
+**Important limitations:** palette word zero is *counted*, not made
+transparent, and STP is preserved as metadata, not automatically blended.
+The pixel preview is deliberately opaque so that no default transparency
+or dithering rule is falsely attributed to original PS1 hardware. This
+implementation has no GPU ordering-table, texture-page/clut upload,
+GTE projection, polygon shading, or original PS1 game assets embedded.
+It is an independently tested native rendering bridge and not yet
+pixel-equivalent gameplay.
