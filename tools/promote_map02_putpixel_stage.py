@@ -16,7 +16,7 @@ from tools.publish_map02_blendg1_witness import (
     _private_directory, _prepare_private_file, MAX_BYTES,
 )
 from tools.verify_map02_native_gpu_capture import private_file
-from tools.verify_map02_frame_bundle import fields, parse_json, sha_check
+from tools.verify_map02_frame_bundle import fields, number, parse_json, sha_check
 from tools.verify_map02_blendg1_witness import complete_events
 from tools.verify_map02_putpixel_scope import (
     SCHEMA, FIELDS, PIXEL_LOG, verify_pixel_ot,
@@ -39,10 +39,23 @@ def promote_staged_putpixel(source_dir, native_dir, *, compiler="gcc"):
     raw = private_file(native_dir, PENDING, max_bytes=MAX_BYTES)
     sha_check(raw, meta["putpixel_events_sha256"], "staged native PutPixel")
     rows = complete_events(raw, "staged native PutPixel")
+    frame = number(meta["gpu_draw_frame"], "GPU DrawOTag frame", 1, 2**32 - 1)
     for index, row in enumerate(rows):
         fields(row, FIELDS, "staged PutPixel")
-        if row["stage"] != "native_putpixel" or row["step"] != index:
+        if row["stage"] != "native_putpixel" or number(
+                row["step"], "PutPixel step", 0, 63) != index:
             raise ValueError("staged PutPixel stage or step inconsistent")
+        if number(row["frame"], "PutPixel frame", 1, 2**32 - 1) != frame:
+            raise ValueError("staged PutPixel frame differs from manifest")
+        for key, low, high in (
+                ("primitive_ordinal", 0, 2**32 - 1),
+                ("primitive_type", 0, 255),
+                ("x", 0, 1023), ("y", 0, 511),
+                ("before", 0, 65535), ("front", 0, 65535),
+                ("after", 0, 65535), ("abr", 0, 3),
+                ("semi", 0, 1), ("textured", 0, 1),
+                ("accurate", 0, 1)):
+            number(row[key], key, low, high)
 
     target = native_dir / PIXEL_LOG
     if target.exists() or target.is_symlink():
