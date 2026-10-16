@@ -15,7 +15,7 @@ def _uint(row, name, upper):
 
 
 def compare_blendg1_witnesses(putpixel_rows, witness_rows):
-    """Require one witness for each semi PutPixel and none for opaque copy.
+    """Require witness only for accurate-mode semi PutPixel, not legacy blending.
 
     Each witness contains the PutPixel step, frame, primitive ordinal, x/y,
     accurate, abr, input 'before' and 'front', and output 'after'.
@@ -43,7 +43,7 @@ def compare_blendg1_witnesses(putpixel_rows, witness_rows):
         if _uint(p, "semi", 1) == 0:
             if _uint(p, "front", 65535) != _uint(p, "after", 65535):
                 raise ValueError("opaque PutPixel differs from front copy")
-    requested = [p for p in putpixel_rows if p["semi"] == 1]
+    requested = [p for p in putpixel_rows if p["semi"] == 1 and p["accurate"] == 1]
     if not requested:
         raise ValueError("no directly witnessed semi-transparent BlendG1 call")
     if len(requested) != len(witness_rows):
@@ -66,6 +66,8 @@ def compare_blendg1_witnesses(putpixel_rows, witness_rows):
     return {
         "observed_blendg1_witnesses_by_accuracy_and_abr": counts,
         "observed_blendg1_putpixel_pairs": len(witness_rows),
+        "legacy_semi_putpixel_calls_without_blendg1": sum(
+            p["semi"] == 1 and p["accurate"] == 0 for p in putpixel_rows),
         "observed_blendg1_entry_exit_matches_putpixel": True,
         "blendg1_arithmetic_equivalence_proven": False,
         "full_original_pixel_coverage_proven": False,
