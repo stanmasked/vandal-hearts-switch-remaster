@@ -31,7 +31,7 @@ FILE_SIZES = {
     "map02.decoded.bin": MAP_BYTES,
     "gpu-vram-le.bin": VRAM_BYTES,
 }
-DIGEST_RE = re.compile(r"[0-9a-f]{64}\\Z")
+DIGEST_RE = re.compile(r"[0-9a-f]{64}\Z")
 
 def unique_pairs(pairs):
     out = {}
