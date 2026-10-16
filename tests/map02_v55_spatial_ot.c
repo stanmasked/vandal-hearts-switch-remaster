@@ -107,7 +107,7 @@ static void init_prims(ScenePrims *p,int burst) {
   p->tex15.clut=0;SetSemiTrans(&p->tex15,1);
   SetSprt(&p->sprt);setRGB0(&p->sprt,128,128,128);
   setXY0(&p->sprt,region_x(burst),region_y(burst));setWH(&p->sprt,W,H);
-  p->sprt.u0=24;p->sprt.v0=0;p->sprt.clut=GetClut(672,498);
+  p->sprt.u0=24;p->sprt.v0=48;p->sprt.clut=GetClut(672,498);
   SetSemiTrans(&p->sprt,1);
   SetPolyF4(&p->f4);setRGB0(&p->f4,128,0,128);
   setXYWH(&p->f4,region_x(burst),region_y(burst),W,H);SetSemiTrans(&p->f4,1);
@@ -174,7 +174,7 @@ static void draw_manual(int id,RenderCtx *rc,int burst) {
     case MODE_SPRT:
       rc->twMaskX=rc->twMaskY=rc->twOffX=rc->twOffY=1;break;
     case SPRITE8:
-      q4(&a,&b,&c,&d,24,0,1,burst);
+      q4(&a,&b,&c,&d,24,48,1,burst);
       FillQuad(rc,a,b,c,d,128,128,128,1,GetTPage(1,1,384,0),
                GetClut(672,498),1,1);break;
     case MODE_F4:
