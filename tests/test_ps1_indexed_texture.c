@@ -168,10 +168,104 @@ static void test_invalid_parameters_cannot_write(void) {
     assert(stats.pixels_decoded == old.pixels_decoded);
     for (i = 0; i < 18 * 16; ++i) assert(crop[i] == CLEAR);
 }
+static uint32_t test_stp_blend(uint32_t dst, uint32_t src, void *context) {
+    size_t *calls = (size_t *)context;
+    assert(dst == CLEAR);
+    assert(src != CLEAR);
+    ++(*calls);
+    return UINT32_C(0xfaceb00c); /* Visible sentinel, not a PS1 ABR formula. */
+}
+
+static void test_classified_clut_mask_ft4_and_optional_blend(void) {
+    uint8_t classes[18 * 16];
+    uint32_t decoded[18 * 16];
+    VhFt4Point face[4] = {{1, 1}, {17, 1}, {17, 17}, {1, 17}};
+    VhFt4Vertex gpu[4];
+    VhCanvas canvas = {fb, FB_STRIDE, FB_W, FB_H};
+    VhPs1Clut4Stats result = {0, 0, 0};
+    size_t row, col, stp_calls = 0, count = 0, visible = 0, flags_stp = 0;
+    assert(vh_ps1_classify_clut_word(0) == VH_PS1_TEXEL_TRANSPARENT);
+    assert(vh_ps1_classify_clut_word(0x7fffu) == VH_PS1_TEXEL_OPAQUE);
+    assert(vh_ps1_classify_clut_word(0x8000u) == VH_PS1_TEXEL_STP);
+    assert(vh_ps1_classify_clut_word(0xffffu) == VH_PS1_TEXEL_STP);
+    memset(classes, 0xa5, sizeof(classes));
+    for (row = 0; row < 18 * 16; ++row) decoded[row] = CLEAR;
+    assert(vh_ps1_decode_clut4_crop_classified(
+        atlas, sizeof(atlas), ATLAS_W, ATLAS_H, ATLAS_STRIDE,
+        clut_le, sizeof(clut_le), 240, 192, 16, 16,
+        decoded, 18, classes, 18, pack_rgba, NULL, &result));
+    for (row = 0; row < 16; ++row) {
+        for (col = 0; col < 16; ++col) {
+            unsigned i = (unsigned)((col + 3 * row) & 15u);
+            uint8_t expected = i == 0 ? VH_PS1_TEXEL_TRANSPARENT :
+                (i == 3 ? VH_PS1_TEXEL_STP : VH_PS1_TEXEL_OPAQUE);
+            assert(classes[row * 18 + col] == expected);
+            visible += expected != VH_PS1_TEXEL_TRANSPARENT;
+            flags_stp += expected == VH_PS1_TEXEL_STP;
+        }
+        assert(classes[row * 18 + 16] == 0xa5);
+        assert(classes[row * 18 + 17] == 0xa5);
+    }
+    assert(result.transparent_zero_pixels == 16);
+    assert(result.stp_flag_pixels == flags_stp);
+    assert(result.pixels_decoded == 256);
+    assert(vh_ft4_from_face_perimeter(face, 0, 0, 15, 15, gpu));
+
+    for (row = 0; row < FB_STRIDE * FB_H; ++row) fb[row] = CLEAR;
+    count = vh_canvas_draw_ft4_classified_rgba32(
+        &canvas, decoded, 16, 16, 18, gpu,
+        classes, 18, test_stp_blend, &stp_calls);
+    assert(count >= visible);
+    assert(stp_calls >= flags_stp);
+    for (row = 0; row < 16; ++row) {
+        for (col = 0; col < 16; ++col) {
+            uint8_t klass = classes[row * 18 + col];
+            uint32_t expected = klass == VH_PS1_TEXEL_TRANSPARENT ? CLEAR :
+                (klass == VH_PS1_TEXEL_STP ? UINT32_C(0xfaceb00c) :
+                 decoded[row * 18 + col]);
+            assert(fb[(row + 1) * FB_STRIDE + col + 1] == expected);
+        }
+        assert(fb[(row + 1) * FB_STRIDE] == CLEAR);
+        assert(fb[(row + 1) * FB_STRIDE + 17] == CLEAR);
+    }
+
+    /* No blend callback => STP is copied, but zero still punches through. */
+    for (row = 0; row < FB_STRIDE * FB_H; ++row) fb[row] = CLEAR;
+    assert(vh_canvas_draw_ft4_classified_rgba32(
+        &canvas, decoded, 16, 16, 18, gpu, classes, 18, NULL, NULL) >= visible);
+    for (row = 0; row < 16; ++row)
+        for (col = 0; col < 16; ++col) {
+            uint8_t klass = classes[row * 18 + col];
+            assert(fb[(row + 1) * FB_STRIDE + col + 1] ==
+                   (klass ? decoded[row * 18 + col] : CLEAR));
+        }
+
+    /* Invalid buffer strides must not modify the framebuffer or statistics. */
+    assert(vh_canvas_draw_ft4_classified_rgba32(
+        &canvas, decoded, 16, 16, 18, gpu, classes, 15, NULL, NULL) == 0);
+    assert(vh_canvas_draw_ft4_classified_rgba32(
+        &canvas, decoded, 16, 16, 18, gpu, classes, SIZE_MAX, NULL, NULL) == 0);
+    {
+        VhPs1Clut4Stats untouched = {9, 8, 7};
+        uint8_t invalid_classes[18 * 16];
+        memset(invalid_classes, 0x55, sizeof(invalid_classes));
+        assert(!vh_ps1_decode_clut4_crop_classified(
+            atlas, sizeof(atlas), ATLAS_W, ATLAS_H, ATLAS_STRIDE,
+            clut_le, sizeof(clut_le), 240, 192, 16, 16,
+            decoded, 18, invalid_classes, 15, pack_rgba, NULL, &untouched));
+        assert(untouched.transparent_zero_pixels == 9);
+        assert(untouched.stp_flag_pixels == 8);
+        assert(untouched.pixels_decoded == 7);
+        for (row = 0; row < 18 * 16; ++row)
+            assert(invalid_classes[row] == 0x55);
+    }
+}
+
 int main(void) {
     test_nibble_and_palette_raw();
     test_decode_then_draw_ft4_with_exact_pixel_orientation();
     test_invalid_parameters_cannot_write();
+    test_classified_clut_mask_ft4_and_optional_blend();
     puts("PS1 indexed4 CLUT-to-FT4 tests passed");
     return 0;
 }
