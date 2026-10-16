@@ -311,6 +311,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import subprocess
+          import json
           base=Path("proof/real-producer-SYNTHETIC-stderr.log").read_text()
           assert "[v47-terrain-face-ot]" in base
           assert " x=20 " in base
