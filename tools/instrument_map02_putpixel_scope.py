@@ -58,13 +58,12 @@ def scope_raster(original):
     # First use the exact previously tested source-pinned observer, with
     # identical direct WritePixel. Only its optional capture metadata changes.
     src = instrument_raster_pixel(original)
-    src = one(src, f"#if defined({RASTER_ORIGINAL_FLAG})",
-              f"#if defined({FLAG})", "raster helper macro first")
-    # The three remaining helper/callsite guards are source generated, and
-    # all must be changed so on/off builds are mutually coherent.
-    if src.count(RASTER_ORIGINAL_FLAG) != 2:
+    # The original generator inserts three #if guards. Every one
+    # must use this new combined-instrumentation macro.
+    original_guard = f"#if defined({RASTER_ORIGINAL_FLAG})"
+    if src.count(original_guard) != 3:
         raise ValueError("pixel observer guard count drift")
-    src = src.replace(RASTER_ORIGINAL_FLAG, FLAG)
+    src = src.replace(original_guard, f"#if defined({FLAG})")
     src = one(src, "static unsigned vh_pixel_sample_count;",
               "static unsigned vh_pixel_sample_count;\n"
               "static void VH_PixelSampleInit(void);\n" + SCOPE_STATE,
