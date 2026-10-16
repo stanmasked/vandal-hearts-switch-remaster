@@ -12,6 +12,8 @@ import subprocess
 import tempfile
 import unittest
 
+from tools.map02_blendg1_witness import compare_blendg1_witnesses
+
 ROOT = Path(__file__).resolve().parents[1]
 
 HARNESS = r"""
@@ -113,6 +115,9 @@ class PrivateBlendStageTests(unittest.TestCase):
                          blends[0]["primitive_ordinal"])
         self.assertEqual(blends[0]["blend_fg"], pixels[0]["front"] | 0x8000)
         self.assertEqual(blends[0]["blend_result"], pixels[0]["after"])
+        report = compare_blendg1_witnesses(pixels, blends)
+        self.assertEqual(report["observed_blendg1_putpixel_pairs"], 1)
+        self.assertFalse(report["ps1_hardware_equivalence_proven"])
         self.assertEqual([p["semi"] for p in pixels], [1, 0])
         self.assertEqual(stat.S_IMODE(pixel_file.stat().st_mode), 0o600)
         self.assertEqual(stat.S_IMODE(blend_file.stat().st_mode), 0o600)
