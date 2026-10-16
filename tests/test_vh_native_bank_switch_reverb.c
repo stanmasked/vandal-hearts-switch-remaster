@@ -186,6 +186,26 @@ int main(void) {
     assert(resample_wet.next_output_tick==resample_dry.next_output_tick);
     assert(resample_wet.next_output_tick==output_frames*44100u);
     assert(seam_dry[0]==112u && seam_dry[1]==365u && seam_dry[2]==125u);
+    /* On the 44.1-kHz synthetic source, each A->B boundary repeats
+     * the same low discontinuity and each B->A boundary the same
+     * larger one. The 48-kHz adjacent samples vary with fractional
+     * resampler position, so do not attribute this trend to STUDIO_C.
+     * Ranges are fixture-only regression guards, not audible limits.
+     */
+    for (unsigned seam=0;seam<SCENES-1u;seam++) {
+        if ((seam%2u)==0u) {
+            assert(source_seam_dry[seam]>=128u);
+            assert(source_seam_dry[seam]<=256u);
+        } else {
+            assert(source_seam_dry[seam]>=2000u);
+            assert(source_seam_dry[seam]<=3072u);
+        }
+        assert(seam_wet[seam]<=2048u);
+        assert(seam_wet_contribution[seam]<=1024u);
+    }
+    assert(source_seam_dry[1]==source_seam_dry[3]);
+    assert(seam_dry[1]!=seam_dry[3]);
+    assert(output_fraction[1]!=output_fraction[3]);
     print_seams("VAB differential dry seams PCM16",seam_dry);
     print_seams("VAB differential wet seams PCM16",seam_wet);
     print_seams("VAB differential wet-only adjacent changes PCM16",
