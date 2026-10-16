@@ -13,7 +13,7 @@ import unittest
 
 import test_verify_map02_vram_timeline as timeline_fixture
 from tools.verify_map02_source_native_ft4_join import (
-    _source_signature, verify_timeline_join,
+    _ft4_provably_outside_drawenv, _source_signature, verify_timeline_join,
 )
 
 
@@ -135,6 +135,24 @@ class TimelineToNativeFt4JoinTests(unittest.TestCase):
         self.assertEqual(report["matched_ft4_draw_changed_vram_words"], 2)
         self.assertEqual(
             report["matched_ft4_draw_changed_texture_or_clut_words"], 1)
+
+    def test_conservative_ft4_geometry_guard_at_clip_boundary(self):
+        xy = [10, 10, 20, 10, 10, 20, 20, 20]
+        self.assertIsNone(_ft4_provably_outside_drawenv(None, xy))
+        self.assertTrue(_ft4_provably_outside_drawenv(
+            [30, 0, 10, 50, 0, 0], xy))  # 20+8 < 30
+        self.assertFalse(_ft4_provably_outside_drawenv(
+            [28, 0, 10, 50, 0, 0], xy))  # 20+8 touches edge: unknown
+        self.assertFalse(_ft4_provably_outside_drawenv(
+            [0, 0, 40, 40, 0, 0], xy))
+        self.assertTrue(_ft4_provably_outside_drawenv(
+            [0, 0, 10, 50, 150, -150], xy))
+        self.assertTrue(_ft4_provably_outside_drawenv(
+            [0, 0, 0, 512, 0, 0], xy))
+        with self.assertRaisesRegex(ValueError, "DRAWENV"):
+            _ft4_provably_outside_drawenv([1, 2, 3], xy)
+        with self.assertRaisesRegex(ValueError, "vertex"):
+            _ft4_provably_outside_drawenv([0, 0, 8, 8, 0, 0], [1, 2])
 
     def test_zero_draw_delta_has_separate_proven_clipping_and_unknown_causes(self):
         # Two source-matched native FT4s initially have no pixel delta.
