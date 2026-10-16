@@ -10,6 +10,15 @@ EXPECTED = frozenset(("stage", "step", "frame", "primitive_ordinal",
                       "primitive_type", "y", "x_start", "x_bound",
                       "clip_l", "clip_r", "clip_t", "clip_b"))
 
+def unique_pairs(pairs):
+    record = {}
+    for key, value in pairs:
+        if key in record:
+            raise ValueError("duplicate JSON key")
+        record[key] = value
+    return record
+
+
 def parse_native_spans(raw: bytes):
     if type(raw) is not bytes or len(raw) > 16384:
         raise ValueError("invalid or oversized journal")
@@ -22,7 +31,7 @@ def parse_native_spans(raw: bytes):
         def reject_constant(value):
             raise ValueError("nonfinite JSON constant")
         try:
-            obj = json.loads(line, parse_constant=reject_constant)
+            obj = json.loads(line, parse_constant=reject_constant, object_pairs_hook=unique_pairs)
         except (ValueError, UnicodeError) as exc:
             raise ValueError("invalid span JSONL") from exc
         if type(obj) is not dict or frozenset(obj) != EXPECTED:
