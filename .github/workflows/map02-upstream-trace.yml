@@ -97,6 +97,7 @@ on:
       - 'tests/test_instrument_map02_gpu_native_events.py'
       - 'tests/test_verify_map02_native_gpu_capture.py'
       - 'tests/test_verify_map02_source_native_ft4_join.py'
+      - 'tests/test_verify_map02_timeline_native_ft4_join.py'
       - 'tests/test_verify_map02_source_native_ot_order.py'
       - 'tests/test_verify_map02_native_overdraw.py'
       - 'tests/test_instrument_map02_native_putpixel.py'
@@ -225,6 +226,7 @@ on:
       - 'tests/test_instrument_map02_gpu_native_events.py'
       - 'tests/test_verify_map02_native_gpu_capture.py'
       - 'tests/test_verify_map02_source_native_ft4_join.py'
+      - 'tests/test_verify_map02_timeline_native_ft4_join.py'
       - 'tests/test_verify_map02_source_native_ot_order.py'
       - 'tests/test_verify_map02_native_overdraw.py'
       - 'tests/test_instrument_map02_native_putpixel.py'
@@ -444,6 +446,7 @@ jobs:
             python3 -m unittest discover -s tests -p 'test_instrument_map02_gpu_native_events.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_native_gpu_capture.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_source_native_ft4_join.py' -v
+            python3 -m unittest discover -s tests -p 'test_verify_map02_timeline_native_ft4_join.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_source_native_ot_order.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_native_overdraw.py' -v
           )
