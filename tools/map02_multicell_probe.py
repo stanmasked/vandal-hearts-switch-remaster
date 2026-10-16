@@ -45,3 +45,45 @@ def shared_vertices(first: dict, second: dict):
     a = {tuple(p) for p in first["world_xyz_hypothesis"]}
     b = {tuple(p) for p in second["world_xyz_hypothesis"]}
     return [list(p) for p in sorted(a & b)]
+
+
+def shared_edges(first: dict, second: dict):
+    """Find identical complete 3D boundary segments, independent of winding.
+
+    A shared point alone does not establish an edge; differing heights
+    intentionally do not match. This is exact integer model-space geometry,
+    not a screen-space seam or PS1 rasterization test.
+    """
+    def segments(face):
+        vertices = [tuple(p) for p in face["world_xyz_hypothesis"]]
+        return {
+            tuple(sorted((vertices[i], vertices[(i + 1) % len(vertices)])))
+            for i in range(len(vertices))
+            if vertices[i] != vertices[(i + 1) % len(vertices)]
+        }
+
+    common = segments(first) & segments(second)
+    return [[list(a), list(b)] for a, b in sorted(common)]
+
+
+def boundary_report(faces):
+    """Classify each translated perimeter segment by incidence count.
+
+    Counts >2 identify non-manifold or overlapping synthetic placements.
+    Height differences remain separate edges rather than being merged.
+    """
+    incidence = {}
+    for face in faces:
+        vertices = [tuple(p) for p in face["world_xyz_hypothesis"]]
+        for i in range(len(vertices)):
+            a, b = vertices[i], vertices[(i + 1) % len(vertices)]
+            if a == b:
+                continue
+            segment = tuple(sorted((a, b)))
+            incidence.setdefault(segment, []).append((face["z"], face["x"]))
+    return {
+        "outer_edges": sum(len(owners) == 1 for owners in incidence.values()),
+        "paired_edges": sum(len(owners) == 2 for owners in incidence.values()),
+        "nonmanifold_edges": sum(len(owners) > 2 for owners in incidence.values()),
+        "edge_count": len(incidence),
+    }
