@@ -104,6 +104,60 @@ def synthetic_geometry_models():
     return bytes(models)
 
 
+def synthetic_depth_geometry_models():
+    """Two overlapping source-format faces with intentionally reversed OT order.
+
+    Face 0 is FAR (magenta/cyan, slot 242), face 1 is NEAR
+    (red/blue, slot 241). Near is inserted LAST, so a one-bucket
+    head-linked DrawOTag would paint the far face on TOP. The real
+    OTZ-indexed buckets must instead draw FAR then NEAR.
+    The far rectangle is scaled by 2 in camera space, using the
+    inverse of the pinned -45-degree pitch plus translation (0,0,96):
+    world far = 2*near + (0,68,68). Its screen footprint nearly
+    coincides with near, but its OTZ is about twice as large.
+    """
+    from inspect_vh_map_geometry import (
+        MAP_11_BYTES, MAP_11_STRIDE, TILE_BYTES,
+        VERTICES_BYTES, GFX_BYTES, FACE_BYTES,
+    )
+    models = bytearray(MAP_11_BYTES)
+    base = (3 * MAP_11_STRIDE + 6) * TILE_BYTES
+    near = (
+        (-32,0,-16), (0,0,-16), (0,0,24), (-32,0,24),
+    )
+    far = tuple((2*x,2*y+68,2*z+68) for x,y,z in near)
+    points = far + near
+    for i, xyz in enumerate(points):
+        for k, value in enumerate(xyz):
+            offset = base + i*8 + 2*k
+            models[offset:offset+2] = int(value).to_bytes(
+                2, "little", signed=True
+            )
+    for n, (slot, indices) in enumerate((
+        (242, (0,1,2,3)), # far first, should be behind
+        (241, (4,5,6,7)), # near last, should be in front
+    )):
+        offset = base + VERTICES_BYTES + n*2
+        models[offset:offset+2] = slot.to_bytes(2,"little")
+        face_offset = base + VERTICES_BYTES + GFX_BYTES + n*4
+        models[face_offset:face_offset+4] = bytes(indices)
+        models[base + VERTICES_BYTES + GFX_BYTES +
+               FACE_BYTES + n] = 1
+    models[base + TILE_BYTES - 2] = 2
+    return bytes(models)
+
+
+def stage_depth(sd_root):
+    """Keep depth-sort emulation independent from the legacy SD fixture."""
+    from stage_vh_private_map_geometry import stage_map11_geometry
+    bank = stage(sd_root)
+    geometry = stage_map11_geometry(synthetic_depth_geometry_models(), sd_root)
+    assert bank["local_clut_id"] == 35
+    assert geometry["active_faces"] == 2
+    print("Staged far-FIRST near-LAST map11 depth-occlusion test")
+    return geometry
+
+
 def stage_geometry(sd_root):
     from stage_vh_private_map_geometry import stage_map11_geometry
     metadata = stage_map11_geometry(synthetic_geometry_models(), sd_root)
@@ -183,6 +237,29 @@ def check_geometry(image_path):
     return True
 
 
+def check_depth(image_path):
+    from PIL import Image
+
+    frame = Image.open(image_path).convert("RGB")
+    if frame.size != (1280,720):
+        raise ValueError("unexpected OTZ depth screenshot dimensions")
+    # Center samples lie in both overlapping source rectangles, unlike
+    # the green/magenta standalone single-patch case. The NEAR face
+    # must win despite being inserted last into the graph.
+    samples = (
+        ("near red covers far magenta", (260,210), (255,0,0)),
+        ("near blue covers far cyan", (400,400), (0,0,255)),
+        ("depth scene right remains empty", (850,210), (6,6,8)),
+    )
+    for title, (x,y), expected in samples:
+        actual=frame.getpixel((x,y))
+        print("OTZ overlap",title,actual)
+        if max(abs(a-b) for a,b in zip(actual,expected))>28:
+            raise ValueError(f"wrong OTZ occlusion for {title}: {actual}")
+    print("Original GTE depth-sorted far/near overlap verified")
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group(required=True)
@@ -190,6 +267,8 @@ def main():
     group.add_argument("--check-screenshot", type=Path)
     group.add_argument("--stage-geometry-sd-root", type=Path)
     group.add_argument("--check-geometry-screenshot", type=Path)
+    group.add_argument("--stage-depth-sd-root", type=Path)
+    group.add_argument("--check-depth-screenshot", type=Path)
     args = parser.parse_args()
     if args.stage_sd_root is not None:
         stage(args.stage_sd_root)
@@ -197,6 +276,10 @@ def main():
         stage_geometry(args.stage_geometry_sd_root)
     elif args.check_geometry_screenshot is not None:
         check_geometry(args.check_geometry_screenshot)
+    elif args.stage_depth_sd_root is not None:
+        stage_depth(args.stage_depth_sd_root)
+    elif args.check_depth_screenshot is not None:
+        check_depth(args.check_depth_screenshot)
     else:
         check(args.check_screenshot)
 
