@@ -36,7 +36,7 @@ int vh_audio_diag_journal_sample(VhAudioDiagJournal *j,
     const VhAudioDiagnostics *p=&last->snapshot;
     VhAudioDiagEvent event=VH_AUDIO_DIAG_EVENT_PERIODIC;
     if (ms<last->elapsed_ms) event=VH_AUDIO_DIAG_EVENT_CLOCK;
-    else if(s->status<0 && p->status>=0 ||
+    else if((s->status<0 && p->status>=0) ||
             s->submit_failures!=p->submit_failures ||
             s->resume_failures!=p->resume_failures ||
             s->lease_mismatches!=p->lease_mismatches)
