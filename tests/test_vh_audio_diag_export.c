@@ -207,6 +207,19 @@ static void test_boundaries_and_counters(void) {
     journal.total=UINT64_MAX;
     assert(journal.total==UINT64_MAX);
     assert(journal.count==3);
+    FILE *huge=tmpfile();
+    assert(huge);
+    assert(vh_audio_diag_journal_write_csv(&journal,huge)==3);
+    rewind(huge);
+    char line[512];
+    assert(fgets(line,sizeof line,huge)); /* column header */
+    assert(fgets(line,sizeof line,huge)); /* START */
+    assert(fgets(line,sizeof line,huge)); /* ERROR */
+    assert(fgets(line,sizeof line,huge)); /* EXIT */
+    assert(strstr(line,",4294967295,"));
+    assert(strstr(line,",18446744073709551615,18446744073709551615,"));
+    assert(!fgets(line,sizeof line,huge));
+    assert(fclose(huge)==0);
     journal.entries[2].snapshot.frames_submitted=668400;
     journal.entries[2].snapshot.pages_submitted=1200;
     journal.entries[2].snapshot.submit_failures=9;
