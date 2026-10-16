@@ -27,6 +27,17 @@ class NativeAVScreenshotTests(unittest.TestCase):
         self.assertFalse(result["audible_audio_verified"])
         self.assertFalse(result["actual_gameplay_verified"])
 
+    def test_emulator_transformed_green_audio_status_is_still_classified(self):
+        first, second = make_frames((60, 212, 91))
+        result = inspect_images(first, second)
+        self.assertEqual(result["audout_status"], "initialized")
+        self.assertFalse(result["audible_audio_verified"])
+
+    def test_ambiguous_color_does_not_pass_audio_classification(self):
+        first, second = make_frames((100, 130, 110))
+        with self.assertRaisesRegex(ValueError, "status marker absent"):
+            inspect_images(first, second)
+
     def test_audio_error_still_allows_visual_diagnostic(self):
         first, second = make_frames(AUDIO_FAIL)
         result = inspect_images(first, second)
