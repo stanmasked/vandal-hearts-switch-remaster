@@ -53,9 +53,11 @@ META_KEYS=("depth","raw","semi","abr","dither","maskx","masky","offx","offy","u"
 LAYER_REQ={"scene","seq","source","depth","tpage","clut","u","v",
            "maskx","masky","offx","offy","tx","ty","word","index",
            "palx","paly","palette","raw","semi","abr","dither"}
+BOUND_REQ={"scene","y","native","direct","deferred"}
+BAND_Y=(55,60,119,120,179,180,190)
 RESULT_REQ={"scene","layers","reverse","workers","background","native",
             "direct","deferred","x","y","hx","hy","directhash","deferredhash","pixels"}
-RX=re.compile(r"^V52(L|RESULT) (.*)$")
+RX=re.compile(r"^V52(L|RESULT|BOUND) (.*)$")
 NAME_RX=re.compile(r"^([a-z0-9_]+)$")
 HASH_RX=re.compile(r"^[0-9a-f]{16}$")
 MAX_LOG=1024*1024
@@ -82,7 +84,7 @@ def parse(line):
         else:
             try:out[key]=int(value)
             except ValueError as exc:raise BadLayerEvidence("not an integer "+key) from exc
-    if set(out)!=(LAYER_REQ if kind=="L" else RESULT_REQ):
+    if set(out)!=(LAYER_REQ if kind=="L" else BOUND_REQ if kind=="BOUND" else RESULT_REQ):
         raise BadLayerEvidence("unexpected or missing original GPU fields")
     if out["scene"] not in SCENES:
         raise BadLayerEvidence("unknown scene")
@@ -128,6 +130,7 @@ def source_provenance(p,expected_source):
 def audit(lines,thread_label=None):
     results={}
     layers=defaultdict(dict)
+    bounds=defaultdict(dict)
     errors=[]
     for line in lines:
         try:
@@ -135,7 +138,11 @@ def audit(lines,thread_label=None):
             if entry is None:continue
             kind,p=entry
             name=p["scene"]
-            if kind=="L":
+            if kind=="BOUND":
+                if p["y"] in bounds[name]:
+                    raise BadLayerEvidence("duplicate GPU band boundary sample")
+                bounds[name][p["y"]]=p
+            elif kind=="L":
                 if p["seq"] in layers[name]:
                     raise BadLayerEvidence("duplicate layer sequence")
                 layers[name][p["seq"]]=p
@@ -148,6 +155,8 @@ def audit(lines,thread_label=None):
         errors.append("missing or extra rendered scene")
     if set(layers)!=set(SCENES):
         errors.append("missing source-layer records")
+    if set(bounds)!=set(SCENES):
+        errors.append("missing high-resolution GPU band boundary samples")
     samples={}
     counts=defaultdict(int)
     for name,(background,reverse,original) in SCENES.items():
@@ -155,8 +164,18 @@ def audit(lines,thread_label=None):
         if actual is None:continue
         if (actual["layers"],actual["reverse"],actual["background"])!=(len(original),int(reverse),background):
             errors.append(name+": wrong scene layering/background metadata")
-        if actual["pixels"]!=1024:
-            errors.append(name+": original C did not compare all 1024 HD region pixels")
+        if actual["pixels"]!=10240:
+            errors.append(name+": original C did not compare all 10240 hi-res band-crossing pixels")
+        if set(bounds.get(name,{}))!=set(BAND_Y):
+            errors.append(name+": missing, extra, or wrong worker band boundary samples")
+        else:
+            for boundary_y,pixel in sorted(bounds[name].items()):
+                expected_native=expected_sample(name,88,boundary_y)
+                expected_hd=expected_sample(name,177,boundary_y*2)
+                if pixel["native"]!=expected_native:
+                    errors.append(name+": native border y="+str(boundary_y)+" differs from BGR555 oracle")
+                if pixel["direct"]!=expected_hd or pixel["deferred"]!=expected_hd:
+                    errors.append(name+": original HD border y="+str(boundary_y)+" disagrees with oracle")
         if thread_label is not None and actual["workers"]!=thread_label:
             errors.append(name+": subprocess worker count differs from request")
         if actual["workers"] not in (1,2,4):
@@ -187,6 +206,9 @@ def audit(lines,thread_label=None):
             errors.append(name+": hi-res direct/deferred framebuffer mismatch")
         samples[name]={"native":actual["native"],
                        "hires":actual["direct"],
+                       "band_probes":{str(y):{"native":bounds[name][y]["native"],
+                                              "hires":bounds[name][y]["direct"]}
+                                      for y in BAND_Y if y in bounds[name]},
                        "full_hd_32x32_hash":actual["directhash"]}
     if "mixed_stp" in samples and "mixed_reversed" in samples:
         if samples["mixed_stp"]["native"]==samples["mixed_reversed"]["native"]:
@@ -202,7 +224,9 @@ def audit(lines,thread_label=None):
         "scene_count":len(samples),
         "layer_count_per_scene":5,
         "actual_gpu_layer_submissions":sum(len(x) for x in layers.values()),
-        "whole_hires_pixels_per_scene":1024,
+        "whole_hires_pixels_per_scene":10240,
+        "worker_band_boundaries_checked":[60,120,180],
+        "cross_band_probes_per_scene":len(BAND_Y),
         "worker_count":thread_label,
         "source_formats":{k:counts[k] for k in ("indexed4","indexed8","direct15")},
         "stp_abr_cases":{str(i):counts["abr"+str(i)] for i in range(4)},
@@ -234,7 +258,7 @@ def cross_worker(reports):
             "status":"verified" if not errors else "refused",
             "workers_checked":[1,2,4],
             "scene_count":len(SCENES),
-            "full_hd_pixels_checked_per_run":1024*len(SCENES),
+            "full_hd_pixels_checked_per_run":10240*len(SCENES),
             "HD_replacement_approved":False,
             "errors":errors}
 
