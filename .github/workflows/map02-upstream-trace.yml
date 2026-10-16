@@ -397,6 +397,7 @@ jobs:
               -Wno-discarded-qualifiers -Wno-pointer-to-int-cast
               -Wno-int-to-pointer-cast -Wno-int-conversion
             )
+            common_flags+=(-Isrc)
             mkdir -p build/map02-gpu-native-probe
             gcc "${common_flags[@]}" -DVH_MAP02_GPU_CAPTURE \
               -c /tmp/vh-map02-gpu-native/libgpu.capture.c \
