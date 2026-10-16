@@ -63,6 +63,15 @@ def instrument_scoped_raster(scoped):
     if FLAG in scoped:
         raise ValueError("DDA texel counter already installed")
     scoped = one(
+        scoped, "static void VH_PixelSampleInit(void);",
+        "static void VH_PixelSampleInit(void);\n"
+        f"#if defined({FLAG})\n"
+        "static void VH_Map02TexelReset(void);\n"
+        "static void VH_Map02TexelFinish(void);\n"
+        "#endif",
+        "scope-state forward declarations for DDA counters",
+    )
+    scoped = one(
         scoped, "static void VH_PixelSampleRecord(",
         RECORD + "\nstatic void VH_PixelSampleRecord(",
         "native DDA aggregate helper insertion",
