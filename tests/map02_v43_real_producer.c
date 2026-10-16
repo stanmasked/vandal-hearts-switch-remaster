@@ -22,6 +22,8 @@ static Graphics s_v43Graphics;
 Graphics *gGraphicsPtr = &s_v43Graphics;
 s32 gQuadIndex;
 CVECTOR gSideLightColor[26];
+u8 gShowBlueMovementGrid;
+u8 gGridColorOscillation;
 s16 gGfxClutIds[GFX_CT];
 s16 gGfxTPageIds[GFX_CT];
 u8 gGfxSubTextures[GFX_CT][4];
