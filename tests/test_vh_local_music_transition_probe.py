@@ -676,8 +676,13 @@ class NativeLocalMusicTransitionTests(unittest.TestCase):
                                  1 if index % 2 else 0)
                 self.assertEqual(cue["prior_bank_release_voices"],
                                  1 if index % 2 else 0)
+                # Renderer retires a fast-Release voice by clearing
+                # its active flag but leaves its borrowed PCM pointer
+                # intact until the next bank reset. This is harmless
+                # while the source bank remains loaded; switch_scene
+                # must clear even these inactive stale pointers.
                 self.assertEqual(cue["prior_bank_pcm_references"],
-                                 1 if index % 2 else 0)
+                                 1 if index else 0)
                 self.assertEqual(cue["prior_bank_voices_cleared"], index != 0)
                 self.assertEqual(cue["reverb_history_preserved_on_switch"],
                                  index != 0)
