@@ -44,6 +44,52 @@ static int cue(uint32_t id, unsigned fade) {
     };
     return vh_music_scene_request(&scene,&c,fade);
 }
+static void rapid_scene_stress(void) {
+    /* Game publishes 40 changes per block while the audio owner
+     * consumes only the latest scene ID, without queue growth.
+     */
+    vh_native_spu_reset(&synth);
+    vh_audio_resample_reset(&converter);
+    vh_music_scene_init(&scene,&synth);
+    assert(vh_native_spu_set_interpolation(&synth,VH_SPU_GAUSSIAN)==0);
+    assert(vh_native_spu_set_reverb(&synth,1,0.5f)==0);
+    assert(cue(1,0)==0);
+    unsigned accepted=1, deferred=0, updates=0;
+    uint64_t frames=0;
+    for(unsigned block=0; block<3200; ++block) {
+        unsigned desired=1;
+        if (block<2500) {
+            for(unsigned input=0; input<40; ++input) {
+                desired=((block / 7u + input) & 1u) ? 1u : 2u;
+                ++updates;
+            }
+        }
+        if (desired!=accepted) {
+            const int result=cue(desired,8u);
+            assert(result==0 || result==-2);
+            if (!result) accepted=desired;
+            else ++deferred;
+        }
+        assert(vh_music_scene_render(&scene,pcm)==0);
+        const size_t count=vh_audio_resample_process(
+            &converter,pcm,512,out,640);
+        assert(count>=555 && count<=559);
+        frames+=count;
+        assert(converter.input_frames==(uint64_t)(block+1)*512u);
+        assert(!scene.last_error);
+        assert(scene.active.id==1 || scene.active.id==2);
+    }
+    assert(updates==2500u*40u);
+    assert(deferred>0 && scene.switches>2);
+    assert(accepted==1 && scene.active.id==1);
+    assert(scene.stage==VH_MUSIC_PLAYING);
+    assert(scene.switches<256);
+    const uint64_t expected=((uint64_t)3200u*512u-1u)*160u/147u+1u;
+    assert(frames>=expected-2 && frames<=expected+2);
+    printf("rapid scene switches: PASS %u requests, %u deferred, %u switches, %llu frames\n",
+           updates,deferred,scene.switches,(unsigned long long)frames);
+}
+
 int main(void) {
     for(unsigned i=0;i<128;i++)sample[i]=(int16_t)(
         (int)(i*237u%24000u)-12000);
@@ -87,5 +133,6 @@ int main(void) {
     assert(nonzero>100000 && checksum!=UINT64_C(1469598103934665603));
     printf("scene->SEQ->SPU->STUDIO_C->48k: PASS %u blocks, %llu frames, 2 fades, checksum %016llx\n",
            BLOCKS,(unsigned long long)frames,(unsigned long long)checksum);
+    rapid_scene_stress();
     return 0;
 }
