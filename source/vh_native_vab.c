@@ -23,9 +23,13 @@ int vh_native_vab_load(VhNativeVab *bank, const uint8_t *vh, size_t vh_size,
                        int16_t *pcm_arena, size_t pcm_capacity) {
     if (!bank || !vh || !vb || !pcm_arena || vh_size < 32u + 128u * 16u ||
         memcmp(vh, "pBAV", 4u)) return -1;
+    const uint32_t declared_size =
+        (uint32_t)vh[12] | ((uint32_t)vh[13] << 8) |
+        ((uint32_t)vh[14] << 16) | ((uint32_t)vh[15] << 24);
     const unsigned num_programs = le16(vh + 18);
     const unsigned num_vags = le16(vh + 22);
-    if (num_programs > VH_VAB_PROGRAMS || num_vags > 255u ||
+    if ((declared_size && declared_size < 32u) ||
+        num_programs > VH_VAB_PROGRAMS || num_vags > 255u ||
         vh[24] > 127u) return -1;
 
     VhNativeVab prepared;
