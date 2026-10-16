@@ -144,10 +144,47 @@ static void test_null_material_keeps_source_identity_but_does_not_draw(void) {
     assert(out[0].quad.drawable && out[2].quad.drawable);
 }
 
+
+static void test_multicell_batch_preserves_pc_ordering_table_insertion(void) {
+    VhMap02SourceFaceRequest r[3];
+    VhMap02SourceProjectedFace out[3];
+    VhMap02OtTerrainScene scene;
+    size_t heads[1024];
+    VhMap02OtTerrainNode nodes[3];
+    static uint8_t atlas[32768], palette[32];
+    fixture(r);
+    assert(vh_map02_project_source_batch(
+        decoded, sizeof decoded, r, 3, 1024, out, 3));
+    assert(vh_map02_ot_scene_init(&scene, heads, 1024, nodes, 3));
+    for (unsigned i = 0; i < 3u; ++i)
+        assert(vh_map02_ot_scene_add(
+            &scene, &out[i].quad, atlas, sizeof atlas,
+            palette, sizeof palette, NULL, NULL) == 2);
+    /* All at depth 128: original AddPrim inserts at bucket head. */
+    assert(scene.count == 3u && heads[896] == 2u);
+    assert(nodes[2].next == 1u && nodes[1].next == 0u);
+    assert(nodes[0].next == SIZE_MAX);
+
+    r[1].camera.tr[2] = 256; /* only second cell moves in camera Z */
+    assert(vh_map02_project_source_batch(
+        decoded, sizeof decoded, r, 3, 1024, out, 3));
+    assert(vh_map02_ot_scene_init(&scene, heads, 1024, nodes, 3));
+    for (unsigned i = 0; i < 3u; ++i)
+        assert(vh_map02_ot_scene_add(
+            &scene, &out[i].quad, atlas, sizeof atlas,
+            palette, sizeof palette, NULL, NULL) == 2);
+    /* Farther face is drawn from lower OT bucket; same-depth faces LIFO. */
+    assert(out[1].quad.projection.otz == 192);
+    assert(heads[832] == 1u && nodes[1].next == SIZE_MAX);
+    assert(heads[896] == 2u && nodes[2].next == 0u);
+    assert(nodes[0].next == SIZE_MAX);
+}
+
 int main(void) {
     test_source_keys_materials_and_tile_cameras();
     test_rejects_invalid_batch_without_partial_writes();
     test_null_material_keeps_source_identity_but_does_not_draw();
+    test_multicell_batch_preserves_pc_ordering_table_insertion();
     puts("MAP02 source-keyed multi-cell GTE/FT4 batch tests passed");
     return 0;
 }
