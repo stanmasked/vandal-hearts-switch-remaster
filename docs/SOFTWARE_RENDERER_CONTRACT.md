@@ -154,3 +154,58 @@ rasterizer is `vh_canvas_draw_ft4_classified_rgba32`, with an optional
 pixel-format-aware STP callback; `vh_canvas_draw_ft4_rgba32` retains
 its original opaque default. This is a validated diagnostic path,
 **not yet a pixel-equivalent simulation of original PS1 gameplay**.
+
+
+## PS1 ABR reference blending and MAP02 ABE audit
+
+A portable reference implementation of the four PS1 **ABR** blending
+choices now lives in `source/ps1_abr_blend.h`. It reads the blend
+mode from texture-page bits 5–6, and decodes the polygon semi-transparency
+enable (**ABE**) from the real `POLY_FT4` GPU command byte:
+
+| ABR | 5-bit channel arithmetic (B=old, F=new) |
+| --- | --- |
+| 0 | B/2 + F/2 |
+| 1 | min(31, B + F) |
+| 2 | max(0, B - F) |
+| 3 | min(31, B + F/4) |
+
+The reference uses **integer truncation** for halves/quarters, saturation
+for addition/subtraction and bit replication to convert results back to
+8-bit. The callback accepts a caller-specified packed pixel format via
+RGB unpack/pack operations; `RGBA8_MAXALPHA` is used in the Switch
+probe. This is a 5-bit reference implementation, not a verified
+pixel-perfect model of PS1 dithering, modulation and framebuffer mask
+behavior. Source: the PSX-SPX **GPU (MISC)** and **Rendering Attributes**
+specifications.
+
+Crucially, for textured polygons, a source texel is blended **only
+when ABE is enabled in the polygon code and bit15/STP is set** for that
+texel. Color `0x0000` is skipped. Nonzero unflagged texels are
+copied opaque, and STP texels on polygons with ABE disabled are likewise
+copied opaque.
+
+The pinned US PC-port's terrain renderers (`RenderMapTile`,
+`RenderEdgeMapTile`, `RenderOverheadMapTile`) all assign
+`poly->code = GPU_CODE_POLY_FT4;`. The upstream enum defines
+`GPU_CODE_POLY_FT4=0x2c` and `GPU_CODE_SEMI_TRANS=0x02`;
+therefore **normal MAP02 terrain has ABE disabled**. The terrain
+source audit asserts that none of the three render paths enables
+semi-transparency, guarding against a false remastering change where
+STP alone would trigger blending.
+
+By contrast, the synthetic Switch demonstrator uses **0x2e**
+(`FT4|ABE`) for its second panel, cycling through all four ABR
+modes every 120 frames. The first panel tests transparent color-0
+cutouts. Both use generated pixels instead of copyrighted game art.
+
+The host tests `tests/test_ps1_abr_blend.c` exercise all four
+formulas, clamping, invalid-state handling, ABE=off copying, GPU opcode
+interpretation, the texture page bits, transparent-source clipping and
+per-pixel STP blending through a real FT4. GitHub Actions tests these
+with sanitizers and compiles the NRO.
+
+Remaining work for original MAP02: feed validated source art, real
+screen-projected vertices and ordering-table parameters. These ABR
+diagnostics alone do not establish the visibility or visual accuracy
+of any original map face.
