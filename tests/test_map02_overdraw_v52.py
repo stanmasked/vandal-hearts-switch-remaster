@@ -35,13 +35,19 @@ def scenario_lines(worker):
                 "raw":raw,"semi":semi,"abr":abr,"dither":dither
             }
             lines.append("V52L "+" ".join(k+"="+str(v) for k,v in parts.items()))
+        for y in (55,60,119,120,179,180,190):
+            border={"scene":name,"y":y,
+                    "native":expected_sample(name,88,y),
+                    "direct":expected_sample(name,177,2*y),
+                    "deferred":expected_sample(name,177,2*y)}
+            lines.append("V52BOUND "+" ".join(k+"="+str(v) for k,v in border.items()))
         native=expected_sample(name,88,88)
         hires=expected_sample(name,177,176)
         details={
             "scene":name,"layers":len(order),"reverse":int(reverse),"workers":worker,
             "background":background,"native":native,"direct":hires,"deferred":hires,
             "x":88,"y":88,"hx":177,"hy":176,
-            "directhash":"1234567890abcdef","deferredhash":"1234567890abcdef","pixels":1024
+            "directhash":"1234567890abcdef","deferredhash":"1234567890abcdef","pixels":10240
         }
         lines.append("V52RESULT "+" ".join(k+"="+str(v) for k,v in details.items()))
     return lines
@@ -57,11 +63,30 @@ class OrderedOriginalGpuTests(unittest.TestCase):
         self.assertEqual(r["status"],"verified_synthetic_layered_GPU")
         self.assertEqual(r["scene_count"],5)
         self.assertEqual(r["actual_gpu_layer_submissions"],25)
+        self.assertEqual(r["whole_hires_pixels_per_scene"],10240)
+        self.assertEqual(r["cross_band_probes_per_scene"],7)
         self.assertTrue(r["order_sensitive_pair_different"])
         self.assertFalse(r["HD_replacement_approved"])
     def test_1_2_4_worker_reports_agree(self):
         reports={w:audit(scenario_lines(w),w) for w in (1,2,4)}
         self.assertEqual(cross_worker(reports)["status"],"verified")
+    def test_wrong_boundary_crossing_pixel_rejected(self):
+        def change(rows):
+            for i,row in enumerate(rows):
+                if row.startswith("V52BOUND scene=mixed_stp y=120"):
+                    current=expected_sample("mixed_stp",177,240)
+                    rows[i]=row.replace("direct="+str(current),"direct="+str(current^1))
+                    break
+            return rows
+        self.assertEqual(self.check(change)["status"],"refused")
+    def test_missing_worker_band_boundary_refused(self):
+        def change(rows):
+            return [r for r in rows if not r.startswith("V52BOUND scene=abr_chain y=180")]
+        self.assertEqual(self.check(change)["status"],"refused")
+    def test_duplicate_worker_band_boundary_refused(self):
+        def change(rows):
+            return rows+[next(r for r in rows if r.startswith("V52BOUND scene=abr_chain y=180"))]
+        self.assertEqual(self.check(change)["status"],"refused")
     def test_wrong_layer_source_index_rejected(self):
         def edit(r):
             r[0]=r[0].replace("source=0","source=1")
