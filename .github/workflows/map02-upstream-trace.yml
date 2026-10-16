@@ -225,6 +225,7 @@ jobs:
             platform/pc/src/libgte.c
             platform/pc/src/pc_raster.c
             platform/pc/src/libgpu.c
+            platform/pc/src/pc_gpu_internal.h
           sparse-checkout-cone-mode: false
 
       - name: Audit local preflight against public pinned upstream
