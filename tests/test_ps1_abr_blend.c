@@ -49,6 +49,12 @@ static void test_exact_5bit_modes_and_saturation(void) {
     assert(vh_ps1_abr_blend_5bit(24, 15, VH_PS1_ABR_QUARTER) == 27);
     assert(vh_ps1_abr_blend_5bit(31, 31, VH_PS1_ABR_QUARTER) == 31);
     assert(!vh_ps1_abr_mode_valid(4));
+    assert(!vh_ps1_ft4_primitive_semi(0x2cu)); /* MAP02 normal terrain */
+    assert(!vh_ps1_ft4_primitive_semi(0x2du)); /* raw opaque textured */
+    assert(vh_ps1_ft4_primitive_semi(0x2eu));  /* ABE enabled */
+    assert(vh_ps1_ft4_primitive_semi(0x2fu));  /* raw textured + ABE */
+    assert(!vh_ps1_ft4_primitive_semi(0x20u)); /* untextured polygon */
+    assert(!vh_ps1_ft4_primitive_semi(0x00u));
     assert(vh_ps1_abr_blend_5bit(32, 10, VH_PS1_ABR_ADD) == 0);
     assert(vh_ps1_abr_blend_5bit(7, 32, VH_PS1_ABR_ADD) == 0);
     assert(vh_ps1_abr_blend_5bit(7, 10, 4) == 0);
