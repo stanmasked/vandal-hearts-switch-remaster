@@ -83,7 +83,7 @@ class TextureSourceMath(unittest.TestCase):
             independent_sample(p)
     def test_reject_out_of_bounds_clut_address(self):
         p=dict(DEFAULT,tpage=133,u=240,tx=440,clut=63,word=0xff00,
-               index=0,palx=1008,palette=31)
+               index=0,palx=1008,paly=0,palette=31)
         # index0 is valid, another index=255 would read outside VRAM.
         self.assertEqual(independent_sample(p),"indexed8")
         p.update(word=0x00ff,index=255,palx=1263)
