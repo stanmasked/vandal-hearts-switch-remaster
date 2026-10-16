@@ -148,7 +148,9 @@ def inspect(root: Path) -> dict:
     )
     if unexpected:
         raise BundleError("untracked NRO/CSV: " + ", ".join(unexpected[:4]))
-    enough = (len(observed) >= 2 and
+    hashes = [item["sha256"] for item in manifest["sessions"]]
+    duplicate_payloads = len(hashes) != len(set(hashes))
+    enough = (len(observed) >= 2 and not duplicate_payloads and
               all(s["observed_pcm_pages"] >= 1000 and s["has_exit"] and
                   not s["counter_rollbacks"] for s in observed))
     return {
@@ -158,6 +160,9 @@ def inspect(root: Path) -> dict:
         "git_sha": manifest["git_sha"],
         "session_count": len(observed),
         "sessions": observed,
+        "evidence_warnings": (["Identical CSV bytes in different paths: "
+                               "copies cannot count as independent sessions."]
+                              if duplicate_payloads else []),
         "limitations": ("Hashes are unauthenticated; independent physical sessions, "
                         "audible fidelity, HOME/sleep and power-loss durability are not proven."),
     }
