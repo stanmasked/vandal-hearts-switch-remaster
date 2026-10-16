@@ -2,6 +2,7 @@
 #define VH_SWITCH_GAME_AUDIO_H
 
 #include "vh_game_music_mailbox.h"
+#include <stdint.h>
 
 /* Main tactical NRO uses this separate libnx audout worker. The
  * framebuffer/input loop never blocks on audoutPlayBuffer.
@@ -27,5 +28,13 @@ int vh_switch_game_audio_status(void);
  * means potential timbre mismatch, not an audio-device failure.
  */
 unsigned vh_switch_game_audio_bank_warnings(void);
+/* Observational diagnostics; zero until a resumed session has
+ * completed its first PCM page. Measured from the audout start
+ * attempt to confirmation of the first returned AudioOutBuffer;
+ * NOT equivalent to actual audible-onset latency at the speaker.
+ * Safe to query from the gameplay thread without blocking.
+ */
+unsigned vh_switch_game_audio_resume_latency_samples(void);
+uint64_t vh_switch_game_audio_resume_worst_confirmed_us(void);
 
 #endif
