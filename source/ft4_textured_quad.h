@@ -73,6 +73,18 @@ static inline double vh_ft4_edge(
          - (y - (double)a->y) * ((double)b->x - a->x);
 }
 
+/* Top-left rasterization convention in screen-space Y-down coordinates.
+ * Shared diagonal pixels belong to exactly one of the two FT4 triangles,
+ * preventing STP blending twice along their common edge.
+ * vh_ft4_edge uses the opposite sign of the standard 2D cross product. */
+static inline int vh_ft4_edge_inclusive(
+    const VhFt4Vertex *a, const VhFt4Vertex *b, double area) {
+    const double dx = (double)b->x - a->x;
+    const double dy = (double)b->y - a->y;
+    if (area < 0.0) return dy < 0.0 || (dy == 0.0 && dx > 0.0);
+    return dy > 0.0 || (dy == 0.0 && dx < 0.0);
+}
+
 static inline int vh_ft4_inputs_valid(
     const VhCanvas *canvas, const uint32_t *texture,
     size_t tex_width, size_t tex_height, size_t tex_stride,
@@ -103,7 +115,8 @@ static inline int vh_ft4_inputs_valid(
 /*
  * Affine FT4 (0,1,2) & (1,3,2), with optional PS1 class mask.
  * Class values: 0 = transparent black; 1 = opaque; 2 = STP flagged.
- * Zero class skips framebuffer writes. STP is copied as opaque unless
+ * Zero class skips framebuffer writes. Shared edges use a top-left rule to
+ * prevent duplicate semi-blending. STP is copied as opaque unless
  * an explicit caller-owned blend callback is supplied; that callback can
  * implement the selected polygon's ABR policy in its native pixel format.
  * No perspective correction, hardware GPU raster rules or dithering.
@@ -159,7 +172,13 @@ static inline size_t vh_canvas_draw_ft4_classified_rgba32(
                 double gamma = vh_ft4_edge(a, b, px, py) / area;
                 double u, v;
                 size_t tx, ty;
-                if (alpha < -1e-12 || beta < -1e-12 || gamma < -1e-12)
+                /* Exclude lower/right edges on equality (top-left fill).
+                 * On a shared edge, the two triangles have opposite edge
+                 * directions, so only one wins the tie. */
+                if (alpha < -1e-12 || beta < -1e-12 || gamma < -1e-12 ||
+                    (fabs(alpha) <= 1e-12 && !vh_ft4_edge_inclusive(b, c, area)) ||
+                    (fabs(beta) <= 1e-12 && !vh_ft4_edge_inclusive(c, a, area)) ||
+                    (fabs(gamma) <= 1e-12 && !vh_ft4_edge_inclusive(a, b, area)))
                     continue;
                 u = alpha * a->u + beta * b->u + gamma * c->u;
                 v = alpha * a->v + beta * b->v + gamma * c->v;
