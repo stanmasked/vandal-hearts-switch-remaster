@@ -308,3 +308,66 @@ New regression coverage:
 None of these fixtures contains copyrighted game music.
 The physical Switch audio experience, including input latency
 during complex musical passages, remains to be tested.
+
+
+## Offline user-music coverage report (stage 180)
+
+An asset-free host command can now **audit two private SEQ/VH/VB
+directories before copying them to the Switch SD card**. On a
+Linux/macOS development machine with a C11 compiler, run:
+
+```sh
+make build/vh_music_bank_audit
+./build/vh_music_bank_audit "/path/to/audio"
+./build/vh_music_bank_audit --strict "/path/to/audio"
+```
+
+The root must contain `field/{music.seq,music.vh,music.vb}` and
+`selected/{music.seq,music.vh,music.vb}`, exactly as the native
+tactical NRO expects. The utility uses **the same bounded loader
+and note resolver as the Switch implementation** and writes a
+machine-readable JSON report to standard output. It does not write
+or upload any music resources. Example of the relevant schema:
+
+```json
+{
+  "schema": 1,
+  "field": {
+    "events": 4, "note_on": 1, "resolved": 1, "missing": 0,
+    "fallback": 0, "program_changes": 1, "tempo_changes": 0,
+    "first_missing": null, "first_fallback": null
+  },
+  "selected": {
+    "events": 4, "note_on": 1, "resolved": 1, "missing": 0,
+    "fallback": 1, "program_changes": 1, "tempo_changes": 0,
+    "first_missing": null,
+    "first_fallback": {
+      "program": 9, "note": 67, "selected_program": 7,
+      "selected_tone": 0, "selected_vag": 1
+    }
+  }
+}
+```
+
+`first_fallback` reports the **first** SEQ program and note that
+fell back to another VH tone, including the selected program,
+tone slot and actual decoded VAG. The warning is diagnostic:
+the PC-port-style global fallback can be deliberate, but it
+can also indicate a mismatched bank or altered timbre. A
+`first_missing` entry provides the first unplayable note's
+channel, program and pitch. This report scans the first pass
+of each SEQ, **not** its potentially infinite repeat loop,
+and does not measure actual audio quality.
+
+Exit statuses: `0` validated, `1` invalid CLI arguments,
+`2` neither pack found, `3` incomplete/corrupt/over-budget
+assets, and `4` validated but strict mode detected missing
+or fallback notes. The default mode allows valid fallback notes
+and exits successfully, matching the Switch playback policy.
+A non-zero `--strict` code is therefore an instrument-audit
+warning, not necessarily corrupted original data.
+
+`tests/test_vh_music_bank_audit_cli.py` verifies the JSON
+contract on manufactured SEQ/VH/VB fixtures, normal/strict
+behavior, and all-or-nothing bank loading. No copyrighted
+game data is required for CI.
