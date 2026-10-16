@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "vh_audio_output_recovery.h"
+#include "vh_audio_output_ramp.h"
 #include "vh_audio_resample.h"
 #include "vh_music_scene.h"
 
@@ -276,6 +277,7 @@ static void test_replay_prepared_page_preserves_music_clock(void) {
     };
     VhAudioOutputOps ops[2]={ops_for(&device[0]),ops_for(&device[1])};
     VhAudioOutputRecovery counters[2]={{0},{0}};
+    VhAudioOutputRamp envelopes[2]={{0},{0}}; /* initial start fades in */
     unsigned expected_restarts=0,expected_bad_submits=0,expected_recoveries=0;
     unsigned home_reopens=0, home_start_failures=0;
     for(unsigned block=0;block<TOTAL_BLOCKS;block++) {
@@ -317,6 +319,8 @@ static void test_replay_prepared_page_preserves_music_clock(void) {
                 assert(resampler[i].input_frames==before_clock[i]);
                 assert(spu[i].frames_rendered==before_frames[i]);
                 assert(counters[i].pages_submitted==before_pages[i]);
+                vh_audio_output_ramp_arm(&envelopes[i]);
+                assert(envelopes[i].position==0u);
             }
             home_reopens+=2u;
         }
@@ -331,6 +335,12 @@ static void test_replay_prepared_page_preserves_music_clock(void) {
                 &resampler[i],pcm[i],VH_AUDIO_BLOCK_FRAMES,
                 output[i],VH_AUDIO_RESAMPLE_MAX_FRAMES);
             assert(count>=555u && count<=559u);
+            assert(vh_audio_output_ramp_apply(
+                &envelopes[i],output[i],count)==0);
+            assert(envelopes[i].position==VH_AUDIO_OUTPUT_RAMP_FRAMES);
+            /* The page is transformed exactly once, BEFORE the
+             * bounded submit retry. MockOutput fingerprints it at
+             * the first attempt and checks every replay byte. */
             const unsigned faults=i==1u ?
                 (block%19u==5u ? 2u :
                 (block%13u==3u ? 1u:0u)) : 0u;
@@ -358,6 +368,9 @@ static void test_replay_prepared_page_preserves_music_clock(void) {
                resampler[1].next_output_tick);
         assert(counters[0].frames_submitted==
                counters[1].frames_submitted);
+        assert(envelopes[0].position==envelopes[1].position);
+        assert(memcmp(output[0],output[1],
+                      device[0].attempted_frames*2u*sizeof(int16_t))==0);
         assert(device[0].checksum==device[1].checksum);
     }
     assert(home_reopens==8u && home_start_failures==2u);
