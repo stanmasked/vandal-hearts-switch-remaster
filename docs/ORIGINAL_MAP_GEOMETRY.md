@@ -419,6 +419,29 @@ absence of extraneous right-hand geometry. This is a distinct
 regression gate from the existing four-color UV scene and the
 three-face NCLIP scene. All fixtures are synthetic.
 
-**Acceptance pending:** a completed CI with successful NRO and
-NeXium depth-occlusion screenshot. Genuine game camera constants,
-retail `M_MAP02.PRS`, and lighting remain out of scope.
+**Acceptance: PASS** — [GitHub Actions #38829473254](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38829473254),
+code revision `32088a872301a9640ca7e23b3ec6307ec6169eef`,
+finished **all three jobs successfully**: cross-compilation,
+asset-free original GPU NeXium raster and multi-mode private
+SD NeXium. The pinned PC-port GTE host test returned
+**near OTZ=24, far OTZ=49**, with near-coincident screen
+positions. The private NeXium job separately captured
+(a) the standalone four-quadrant UV/CLUT texture,
+(b) the two-visible-plus-one-reversed NCLIP scene,
+and (c) the overlapping far-first/near-last geometry scene
+staged in a SECOND isolated virtual SD root.
+
+In the final scene, the actual 1280×720 NeXium screenshot
+measured `(260,210)=(255,0,0)` (near red over far magenta),
+`(400,400)=(0,0,255)` (near blue over far cyan), and
+`(850,210)=(0,0,0)` (empty space). All screenshot
+checks passed both in the polling loop and a second independent
+post-capture check. The original bank/GTE/model loaders and all
+**88 Python tests** passed. No real game data were used.
+
+This independently confirms that the original pinned GTE
+depth calculation and the reduced `ClearOTag/AddPrim/DrawOTag`
+bucket ordering correctly handle intentional overlapping
+source-format faces in the native Switch NRO under NeXium.
+It is not evidence of game-authored lighting, real
+`M_MAP02.PRS` or a hardware Nintendo Switch test.
