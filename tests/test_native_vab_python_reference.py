@@ -120,6 +120,75 @@ class NativeVabDifferentialTests(unittest.TestCase):
                     1,
                 )
 
+    def test_full_keyspace_across_synthetic_sparse_bank_variants(self):
+        """Compare C PCM selection with the PC-port-style Python resolver.
+
+        Six constructed VH layouts exercise inclusive key edges,
+        overlapping tone slots, sparse programs, singleton regions,
+        key_min-distance ties, and first-global-range precedence.
+        VAG PCM pointers distinguish tones even when ADSR matches.
+        """
+        key_layouts = (
+            ("baseline", ((40, 60), (40, 70), (80, 100), (40, 50))),
+            ("all_overlap", ((0, 127), (0, 127), (0, 127), (0, 127))),
+            ("single_notes", ((0, 0), (127, 127), (64, 64), (65, 65))),
+            ("nearest_ties", ((10, 15), (30, 35), (50, 55), (70, 75))),
+            ("cross_program", ((0, 30), (80, 100), (40, 60), (20, 45))),
+            ("outer_edges", ((0, 0), (0, 0), (127, 127), (127, 127))),
+        )
+        tone_offsets = (2080, 2080 + 32, 2080 + 512, 2080 + 1024)
+        pcm_base = ctypes.addressof(self.pcm)
+        checks = 0
+        for label, ranges in key_layouts:
+            with self.subTest(bank=label):
+                vh = bytearray(self.vh)
+                for offset, (low, high) in zip(tone_offsets, ranges):
+                    vh[offset + 6] = low
+                    vh[offset + 7] = high
+                self.file_vh.write_bytes(vh)
+                native_vh = (ctypes.c_uint8 * len(vh)).from_buffer_copy(vh)
+                self.assertEqual(
+                    self.load(
+                        self.bank, native_vh, len(vh),
+                        self.source_vb, len(self.vb),
+                        self.pcm, len(self.pcm),
+                    ), 0, label,
+                )
+                # 0/7/10 are populated; 99 and 127 are sparse and must
+                # use a global match or nearest lower-bound fallback.
+                for program in (0, 7, 10, 99, 127):
+                    for note in range(128):
+                        reference = resolve_note(
+                            self.file_vh, program=program, note=note,
+                            vb=self.file_vb,
+                        )
+                        native = SeqTone()
+                        self.assertEqual(
+                            self.resolve(self.bank, program, note,
+                                         127, 127, 64, ctypes.byref(native)),
+                            0, (label, program, note),
+                        )
+                        vag = reference["vag"]
+                        self.assertEqual(
+                            ctypes.cast(native.pcm, ctypes.c_void_p).value,
+                            pcm_base + (vag - 1) * 28 * ctypes.sizeof(ctypes.c_int16),
+                            (label, program, note, reference["lookup"],
+                             reference["selected_program"],
+                             reference["tone"], vag),
+                        )
+                        self.assertEqual(native.frames, 28)
+                        self.assertEqual(native.adsr1, reference["adsr1"])
+                        self.assertEqual(native.adsr2, reference["adsr2"])
+                        expected_pitch = min(
+                            16384, max(1, reference["pitch_step_approx"])
+                        )
+                        self.assertLessEqual(
+                            abs(native.pitch_step - expected_pitch), 1,
+                            (label, program, note),
+                        )
+                        checks += 1
+        self.assertEqual(checks, 6 * 5 * 128)
+
     def test_pan_volume_velocity_matches_python_gain_law(self):
         for volume, velocity, pan in [
             (127, 127, 64), (90, 100, 32), (40, 80, 0),
