@@ -106,13 +106,17 @@ int vh_audio_assets_load(VhAudioAssets *assets, const char *directory) {
      * bank, and before opening the audio device. This is read-only.
      */
     VhNativeSeq validation;
-    VhNativeSpu silent;
-    vh_native_spu_reset(&silent);
-    if (vh_native_seq_init(&validation, pending->seq, pending->seq_size,
-                           &silent, vh_native_vab_resolve, &pending->bank,
-                           0 /* bounded source; stop controlled by caller */)) {
-        return fail_load(pending, VH_AUDIO_ASSET_ERROR);
-    }
+    /* SPU now owns the STUDIO_C work buffer. Do not place ~30 KiB of
+     * temporary synth state on the restricted Switch main-thread stack.
+     */
+    VhNativeSpu *silent = (VhNativeSpu *)calloc(1, sizeof(*silent));
+    if (!silent) return fail_load(pending, VH_AUDIO_ASSET_ERROR);
+    const int valid_seq = vh_native_seq_init(
+        &validation, pending->seq, pending->seq_size,
+        silent, vh_native_vab_resolve, &pending->bank,
+        0 /* caller-controlled repeat, parser validates before playback */);
+    free(silent);
+    if (valid_seq) return fail_load(pending, VH_AUDIO_ASSET_ERROR);
     *assets = *pending;
     free(pending);
     return VH_AUDIO_ASSET_OK;
