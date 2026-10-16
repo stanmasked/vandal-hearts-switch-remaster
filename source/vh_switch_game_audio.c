@@ -19,6 +19,7 @@ static Thread audio_thread;
 static int thread_started;
 static VhGameMusicMailbox mailbox;
 static atomic_int audio_status;
+static atomic_uint bank_warning_notes;
 static VhNativeSpu spu;
 static VhMusicScene director;
 static VhAudioResample rate_converter;
@@ -95,6 +96,15 @@ static void audio_worker(void *unused) {
     VhGameMusicBanks *loaded_banks = NULL;
     const int pack_status = vh_game_music_banks_load(
         &loaded_banks, VH_GAME_MUSIC_SD_ROOT);
+    if (pack_status == VH_AUDIO_ASSET_OK) {
+        const unsigned warnings =
+            loaded_banks->field_fallback_notes +
+            loaded_banks->selected_fallback_notes +
+            loaded_banks->field_audit.missing_notes +
+            loaded_banks->selected_audit.missing_notes;
+        atomic_store_explicit(&bank_warning_notes, warnings,
+                              memory_order_release);
+    }
     if (pack_status == VH_AUDIO_ASSET_ERROR) {
         /* A corrupt/incomplete user pack MUST NOT silently play
          * synthetic music. Keep the tactical grid running silently.
@@ -234,6 +244,8 @@ int vh_switch_game_audio_start(unsigned initial_scene) {
         return -1;
     vh_game_music_mailbox_init(&mailbox, initial_scene);
     atomic_store_explicit(&audio_status, 0, memory_order_release);
+    atomic_store_explicit(&bank_warning_notes, 0u,
+                          memory_order_release);
     Result rc = threadCreate(&audio_thread, audio_worker, NULL,
                              NULL, 0x10000u, 0x2Cu, -2);
     if (R_FAILED(rc)) return -1;
@@ -270,6 +282,11 @@ void vh_switch_game_audio_on_resume(int in_focus) {
 
 int vh_switch_game_audio_status(void) {
     return atomic_load_explicit(&audio_status, memory_order_acquire);
+}
+
+unsigned vh_switch_game_audio_bank_warnings(void) {
+    return atomic_load_explicit(&bank_warning_notes,
+                                memory_order_acquire);
 }
 
 void vh_switch_game_audio_stop(void) {
