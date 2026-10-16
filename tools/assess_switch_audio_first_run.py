@@ -87,15 +87,15 @@ def read_observations(path: Path) -> dict:
         identifiers.add(ident)
         paths.add(name)
         for field in ("physical_switch", "music_audible", "normal_exit"):
-            require(session[field] in ANSWER and isinstance(session[field], str),
+            require(isinstance(session[field], str) and session[field] in ANSWER,
                     f"invalid {field}: use YES, NO or UNKNOWN")
-        require(session["audio_artifacts"] in ARTIFACTS and
-                isinstance(session["audio_artifacts"], str),
+        require(isinstance(session["audio_artifacts"], str) and
+                session["audio_artifacts"] in ARTIFACTS,
                 "invalid audio_artifacts")
-        require(session["launch_mode"] in MODES and
-                isinstance(session["launch_mode"], str), "invalid launch_mode")
-        require(session["audio_output"] in OUTPUTS and
-                isinstance(session["audio_output"], str), "invalid audio_output")
+        require(isinstance(session["launch_mode"], str) and
+                session["launch_mode"] in MODES, "invalid launch_mode")
+        require(isinstance(session["audio_output"], str) and
+                session["audio_output"] in OUTPUTS, "invalid audio_output")
         for field in ("home_returns", "sleep_resumes", "continuous_minutes"):
             count = session[field]
             require(count is None or
