@@ -36,8 +36,11 @@ typedef struct {
     uint64_t reverb_send_notes, zero_gain_notes;
     uint64_t saturated_note_requests;
     uint64_t notes_while_release_active, saturated_with_release_requests;
+    uint64_t adsr_release_slot_retirements;
     unsigned peak_active_voices, peak_releasing_voices;
+    unsigned peak_releasing_voices_before_render;
     unsigned first_saturated_note_block, first_release_overlap_block;
+    unsigned first_release_retirement_block, last_release_retirement_block;
     unsigned first_note_block, last_note_block;
     unsigned first_note_off_block, first_cross_program_block;
     unsigned first_out_of_range_block;
@@ -224,15 +227,34 @@ int main(int argc,char **argv) {
              * snapshots inside the resolver (which can see a burst
              * of multiple note-ons in a single 512-frame block).
              */
-            unsigned active_after=0u;
-            for (unsigned v=0;v<VH_NATIVE_MUSIC_VOICES;v++)
-                active_after+=(spu.voice[v].active!=0);
+            unsigned active_after=0u, releasing_after=0u;
+            uint8_t release_at_render[VH_NATIVE_MUSIC_VOICES]={0};
+            for (unsigned v=0;v<VH_NATIVE_MUSIC_VOICES;v++) {
+                const VhNativeVoice *voice=&spu.voice[v];
+                active_after+=(voice->active!=0);
+                release_at_render[v]=(uint8_t)(voice->active &&
+                                               voice->adsr.phase==VH_ADSR_RELEASE);
+                releasing_after+=release_at_render[v];
+                if (voice->active && voice->reverb_send)
+                    metric->sent_to_reverb=1u;
+            }
             if (active_after>metric->peak_active_voices)
                 metric->peak_active_voices=active_after;
-            for (unsigned v=0;v<VH_NATIVE_MUSIC_VOICES;v++)
-                if (spu.voice[v].active && spu.voice[v].reverb_send)
-                    metric->sent_to_reverb=1u;
+            if (releasing_after>metric->peak_releasing_voices_before_render)
+                metric->peak_releasing_voices_before_render=releasing_after;
             vh_native_spu_render(&spu,source,VH_AUDIO_BLOCK_FRAMES);
+            /* Count slots whose Release phase ran to completion in the
+             * renderer, not voices overwritten by a new Note On.
+             * Each 512-frame block is a single observation interval.
+             */
+            for (unsigned v=0;v<VH_NATIVE_MUSIC_VOICES;v++) {
+                if (release_at_render[v] && !spu.voice[v].active) {
+                    ++metric->adsr_release_slot_retirements;
+                    if (!metric->first_release_retirement_block)
+                        metric->first_release_retirement_block=b+1u;
+                    metric->last_release_retirement_block=b+1u;
+                }
+            }
             if (b==0u && i && have_last) {
                 metric->spu_seam=max2(
                     absolute_delta(source[0],last_source[0]),
@@ -316,6 +338,16 @@ int main(int argc,char **argv) {
             metric->first_saturated_note_block>blocks ||
             metric->peak_active_voices>VH_NATIVE_MUSIC_VOICES ||
             metric->peak_releasing_voices>metric->peak_active_voices ||
+            metric->peak_releasing_voices_before_render>
+                metric->peak_active_voices ||
+            metric->adsr_release_slot_retirements>
+                (uint64_t)VH_NATIVE_MUSIC_VOICES*blocks ||
+            (metric->adsr_release_slot_retirements==0u)!=
+                (metric->first_release_retirement_block==0u) ||
+            (metric->adsr_release_slot_retirements==0u)!=
+                (metric->last_release_retirement_block==0u) ||
+            metric->first_release_retirement_block>blocks ||
+            metric->last_release_retirement_block>blocks ||
             metric->notes_while_release_active>metric->notes ||
             metric->saturated_with_release_requests>
                 metric->saturated_note_requests ||
@@ -405,10 +437,14 @@ int main(int argc,char **argv) {
                "\"saturated_note_requests\":%" PRIu64 ","
                "\"notes_while_release_active\":%" PRIu64 ","
                "\"saturated_with_release_requests\":%" PRIu64 ","
+               "\"adsr_release_slot_retirements\":%" PRIu64 ","
                "\"peak_active_voices\":%u,"
                "\"peak_releasing_voices\":%u,"
+               "\"peak_releasing_voices_before_render\":%u,"
                "\"first_saturated_note_block\":%u,"
                "\"first_release_overlap_block\":%u,"
+               "\"first_release_retirement_block\":%u,"
+               "\"last_release_retirement_block\":%u,"
                "\"first_note_block\":%u,"
                "\"last_note_block\":%u,"
                "\"first_note_off_block\":%u,"
@@ -444,8 +480,12 @@ int main(int argc,char **argv) {
                m->saturated_note_requests,
                m->notes_while_release_active,
                m->saturated_with_release_requests,
+               m->adsr_release_slot_retirements,
                m->peak_active_voices,m->peak_releasing_voices,
+               m->peak_releasing_voices_before_render,
                m->first_saturated_note_block,m->first_release_overlap_block,
+               m->first_release_retirement_block,
+               m->last_release_retirement_block,
                m->first_note_block,m->last_note_block,
                m->first_note_off_block,m->first_cross_program_block,
                m->first_out_of_range_block,
