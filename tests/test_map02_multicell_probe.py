@@ -9,7 +9,7 @@ from tools.map02_face_geometry import (
 from tools.map02_multicell_probe import (
     place_faces, shared_vertices, shared_edges, boundary_report,
     face_cross_xyz, placement_invariants, order_faces_by_external_otz,
-    bind_gte_face_samples, place_selected_faces, audit_multicell_gte_batch,
+    bind_gte_face_samples, place_selected_faces, audit_multicell_gte_batch, bind_external_screen_corners,
 )
 
 
@@ -351,6 +351,38 @@ class MultiCellTests(unittest.TestCase):
         faces[1]["world_xyz_hypothesis"][0][0] += 1
         with self.assertRaisesRegex(ValueError, "translation invariant"):
             audit_multicell_gte_batch(faces, samples)
+
+
+    def test_screen_corners_preserve_gpu_ft4_cross_order_and_face_keys(self):
+        keys = [(2, 3, 0), (2, 4, 0)]
+        faces = place_selected_faces(self.data, keys,
+                                     {key: (0, 0, 15, 15) for key in keys},
+                                     step_x=64, step_z=64)
+        bound = bind_external_screen_corners(faces, {
+            (2, 3, 59, 0): [(10, 20), (30, 20), (30, 40), (10, 40)],
+            (2, 4, 60, 0): [(-32768, 32767), (50, 60), (70, 80), (90, 100)]
+        })
+        self.assertEqual(bound[0]["gpu_poly_xy"],
+                         [[10, 20], [30, 20], [10, 40], [30, 40]])
+        self.assertEqual(bound[1]["source_key"], [2, 4, 60, 0])
+        self.assertEqual(bound[1]["perimeter_xy"][0], [-32768, 32767])
+
+    def test_screen_samples_reject_mismatch_invalid_coordinates_and_duplicates(self):
+        keys = [(2, 3, 0)]
+        faces = place_selected_faces(self.data, keys,
+                                     {keys[0]: (0, 0, 15, 15)},
+                                     step_x=64, step_z=64)
+        good = [(1, 2), (3, 4), (5, 6), (7, 8)]
+        with self.assertRaisesRegex(ValueError, "match source"):
+            bind_external_screen_corners(faces, {(2, 3, 60, 0): good})
+        for bad in (good[:3], [(True, 0)] + good[1:],
+                    [(32768, 0)] + good[1:], [(1.5, 0)] + good[1:]):
+            with self.subTest(bad=bad):
+                with self.assertRaisesRegex(ValueError, "signed-16"):
+                    bind_external_screen_corners(faces, {(2, 3, 59, 0): bad})
+        with self.assertRaisesRegex(ValueError, "duplicate screen"):
+            bind_external_screen_corners([faces[0], faces[0]],
+                                         {(2, 3, 59, 0): good})
 
 
 if __name__ == "__main__":
