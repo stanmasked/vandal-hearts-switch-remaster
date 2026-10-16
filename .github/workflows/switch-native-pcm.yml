@@ -1,6 +1,9 @@
 name: Switch native PCM transport cross-compile
 
 on:
+  push:
+    branches:
+      - test/cdxa-extract-decode-pipeline
   pull_request:
     paths:
       - "source/vh_audio_stream.c"
