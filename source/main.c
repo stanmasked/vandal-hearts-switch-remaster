@@ -368,7 +368,7 @@ int main(int argc, char **argv) {
                 &hardware_audio_log,"sdmc:/switch/vandal-hearts-remake",
                 NULL,saved_path,sizeof saved_path);
             if (result!=VH_AUDIO_EXPORT_OK) {
-                fprintf(stderr,"audio diagnostics export failed: %d\\n",
+                fprintf(stderr,"audio diagnostics export failed: %d\n",
                         (int)result);
                 export_status=2;
             }
