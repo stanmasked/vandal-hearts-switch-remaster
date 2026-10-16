@@ -7,6 +7,7 @@
 typedef struct {
     VhNativeVab *bank;
     uint32_t fallback_notes;
+    VhGameMusicFallback first;
 } BankAuditContext;
 
 /* The existing PC-like resolver uses requested-program range first,
@@ -24,8 +25,17 @@ static int audit_resolve(void *context, unsigned program, unsigned note,
             &audit->bank->tones[audit->bank->selected_program]
                                [audit->bank->selected_tone];
         if (audit->bank->selected_program != program ||
-            note < tone->low || note > tone->high)
+            note < tone->low || note > tone->high) {
             ++audit->fallback_notes;
+            if (!audit->first.valid) {
+                audit->first=(VhGameMusicFallback){
+                    .valid=1u, .requested_program=program, .note=note,
+                    .selected_program=audit->bank->selected_program,
+                    .selected_tone=audit->bank->selected_tone,
+                    .selected_vag=audit->bank->selected_vag
+                };
+            }
+        }
     }
     return status;
 }
@@ -104,6 +114,8 @@ int vh_game_music_banks_load(VhGameMusicBanks **out, const char *root) {
     }
     pending->field_fallback_notes=field_audit.fallback_notes;
     pending->selected_fallback_notes=selected_audit.fallback_notes;
+    pending->field_first_fallback=field_audit.first;
+    pending->selected_first_fallback=selected_audit.first;
     *out=pending;
     return VH_AUDIO_ASSET_OK;
 }
