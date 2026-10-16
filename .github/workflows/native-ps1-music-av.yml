@@ -147,7 +147,7 @@ jobs:
             test -s "$SHOT2"
           '
           python3 -m unittest discover -s tests -p 'test_check_native_av_screenshot.py' -v
-          python3 tests/check_native_av_screenshot.py "$SHOT1" "$SHOT2"
+          python3 tests/check_native_av_screenshot.py "$SHOT1" "$SHOT2" --require-synthetic-source
 
       - name: Upload AV runtime evidence
         if: always()
