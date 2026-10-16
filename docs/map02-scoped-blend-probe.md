@@ -341,3 +341,72 @@ during a synthetic selected frame.
 This stage does **not** provide a corresponding independently
 authenticated PutPixel log and does not yet demonstrate a successful
 full original-PC-port build or a genuine MAP02 gameplay capture.
+
+## Paired PutPixel + BlendG1 source staging (same closed frame)
+
+`vh_map02_stage_private_pair(private_directory)` supersedes the older
+BlendG1-only staging entry point for the generated `DrawOTag` build.
+With `VH_MAP02_SCOPED_BLEND_PROBE`, `VH_MAP02_POSIX_STAGE`, and an
+explicit nonempty `VH_MAP02_PROBE_OUTPUT_DIR`, the closed native-VRAM
+capture is staged as **two files from the same in-memory event array**:
+
+- `putpixel-native-events.pending.jsonl`: every observed native
+  PutPixel event in contiguous step order (including opaque and legacy
+  blend events)
+- `blendg1-native-events.pending.jsonl`: only independently observed
+  accurate-mode BlendG1 calls, carrying the originating PutPixel step
+
+Both files have the same frame, selected coordinates and original
+DrawOTag primitive provenance. Both are prepared in private 0600
+temporary files, flushed, reread byte-for-byte, and installed with
+exclusive hard links. If a second link fails, the first newly
+published name is rolled back without overwriting either pre-existing
+file. The two-file operation is **not a crash-atomic transaction**:
+an unclean power loss can leave an orphaned pending file, which is
+not trusted and must be recovered manually. The ordinary program
+does not emit either log unless explicitly opted in.
+
+The previous `vh_map02_stage_private_blendg1` remains for legacy
+diagnostic smoke tests but the current `DrawOTag` generator uses
+the paired entry point. The private test suite now covers matching
+frame/ordinal/step values and refusal to overwrite either name.
+
+### Strict promotion and final witness validation
+
+Two **separately supplied** pieces of original evidence are required
+before any pending files become accepted witness logs:
+
+1. `gpu-putpixel-ot.json` in the private source bundle, containing
+   the SHA-256 of the staged PutPixel bytes and independently captured
+   DrawOTag/VRAM evidence references. This cannot be generated or
+   authenticated from the PutPixel staging file alone.
+2. The remaining original source-keyed GTE, DrawOTag and VRAM
+   snapshots required by `verify_map02_putpixel_scope.py`.
+
+With those independent private inputs in place, run:
+
+```sh
+python3 -m tools.promote_map02_putpixel_stage \
+  /private/map02/source-bundle /private/map02/native-capture
+
+python3 -m tools.publish_map02_blendg1_witness \
+  /private/map02/source-bundle /private/map02/native-capture
+
+python3 -m tools.verify_map02_blendg1_witness \
+  /private/map02/source-bundle /private/map02/native-capture
+```
+
+The first program verifies canonical JSONL, strictly bounded numeric
+fields, source-frame agreement and the independently supplied
+PutPixel SHA-256, publishes `putpixel-native-events.jsonl`
+exclusively, and immediately calls the **full** upstream PutPixel
+source/VRAM verifier. If verification fails, the newly published file
+is removed. It will never manufacture missing OT/VRAM evidence.
+The second program independently checks BlendG1 and binds its
+published witness to the PutPixel manifest. The third checks the
+complete witness chain again.
+
+All directories must already exist with mode 0700 and no symlinks.
+This pipeline has not yet been exercised with actual gameplay,
+and successful synthetic tests must not be described as physical
+PlayStation hardware equivalence.
