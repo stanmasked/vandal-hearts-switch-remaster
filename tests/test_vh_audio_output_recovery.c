@@ -234,6 +234,11 @@ int main(void) {
     assert(grouping.first_after_switch.pages==2u);
     assert(grouping.first_after_switch.failed_pages==1u);
     assert(grouping.first_after_switch.total_ticks==390000u);
+    assert(grouping.first_after_switch.wait_le_page==1u);
+    assert(grouping.first_after_switch.wait_le_2pages==1u);
+    assert(grouping.first_after_switch.wait_le_4pages==0u);
+    assert(grouping.first_after_switch.wait_gt_4pages==0u);
+    assert(grouping.ordinary.wait_le_page==1u);
     const VhAudioSceneWaits fixed_grouping=grouping;
     assert(vh_audio_output_record_scene_page(
         NULL,&first_before,&first_after,freq,576u,1,1)==-1);
@@ -267,6 +272,46 @@ int main(void) {
     assert(vh_audio_output_record_scene_page(
         &grouping,&first_before,&first_after,freq,576u,1,1)==-1);
     grouping=fixed_grouping;
+
+    /* Four disjoint latency bands, normalized by *actual* stereo
+     * page length (576 / 48000 seconds), not nominal source blocks.
+     * No allocations or samples are stored by the histogram.
+     */
+    VhAudioSceneWaits latency_bands={0};
+    VhAudioSubmitTiming previous={0};
+    static const uint64_t band_ticks[]={100000u,300000u,
+                                       700000u,1200000u};
+    for (unsigned i=0;i<4u;i++) {
+        VhAudioSubmitTiming next=previous;
+        next.calls++;
+        next.total_ticks+=band_ticks[i];
+        if (band_ticks[i]>next.max_ticks)
+            next.max_ticks=band_ticks[i];
+        if (band_ticks[i]>230400u)
+            next.waits_longer_than_page++;
+        assert(vh_audio_output_record_scene_page(
+            &latency_bands,&previous,&next,freq,576u,0,1)==0);
+        previous=next;
+    }
+    const VhAudioPageWaitBucket *hist=&latency_bands.ordinary;
+    assert(hist->pages==4u && hist->wait_le_page==1u);
+    assert(hist->wait_le_2pages==1u);
+    assert(hist->wait_le_4pages==1u);
+    assert(hist->wait_gt_4pages==1u);
+    VhAudioOutputRecovery hist_recovery={.pages_submitted=4u};
+    assert(vh_audio_output_verify_run(
+        &latency_bands,&hist_recovery,&previous,
+        4u,0u,4u,0u,1)==1);
+    VhAudioSceneWaits corrupt_bands=latency_bands;
+    corrupt_bands.ordinary.wait_le_2pages++;
+    assert(vh_audio_output_verify_run(
+        &corrupt_bands,&hist_recovery,&previous,
+        4u,0u,4u,0u,1)==-1);
+    corrupt_bands=latency_bands;
+    corrupt_bands.ordinary.wait_gt_4pages--;
+    assert(vh_audio_output_verify_run(
+        &corrupt_bands,&hist_recovery,&previous,
+        4u,0u,4u,0u,1)==-1);
 
     assert(vh_audio_output_submit_recover(NULL,&stats,dst,10u)==-1);
     assert(vh_audio_output_submit_recover(&ops,NULL,dst,10u)==-1);
@@ -603,6 +648,11 @@ int main(void) {
     assert(vh_audio_output_verify_run(
         &altered,&switch_stats,&switching.timing,
         48u,5u,48u,8u,1)==-1);
+    altered=measured_pages;
+    altered.first_after_switch.wait_gt_4pages++;
+    assert(vh_audio_output_verify_run(
+        &altered,&switch_stats,&switching.timing,
+        48u,5u,48u,8u,1)==-1);
     VhAudioOutputRecovery altered_recovery=switch_stats;
     altered_recovery.pages_submitted++;
     assert(vh_audio_output_verify_run(
@@ -621,6 +671,7 @@ int main(void) {
     aborted.ordinary.failed_pages=1u;
     aborted.ordinary.total_ticks=100u;
     aborted.ordinary.peak_page_ticks=100u;
+    aborted.ordinary.wait_le_page=1u;
     VhAudioOutputRecovery aborted_recovery={.submit_failures=1u};
     VhAudioSubmitTiming aborted_timing={
         .calls=1u,.total_ticks=100u,.max_ticks=100u,
@@ -635,6 +686,7 @@ int main(void) {
     sd_pages.ordinary.pages=2u;
     sd_pages.ordinary.total_ticks=200u;
     sd_pages.ordinary.peak_page_ticks=100u;
+    sd_pages.ordinary.wait_le_page=2u;
     VhAudioOutputRecovery sd_recovery={.pages_submitted=2u};
     VhAudioSubmitTiming sd_timing={
         .calls=2u,.total_ticks=200u,.max_ticks=100u};
