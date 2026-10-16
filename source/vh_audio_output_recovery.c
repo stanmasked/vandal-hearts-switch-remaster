@@ -78,7 +78,22 @@ int vh_audio_output_record_scene_page(
     const uint64_t was_slow=(slow_calls!=0);
     const uint64_t retried=(attempts>1u);
     const uint64_t failed=(!delivered);
-    if (bucket->pages==UINT64_MAX ||
+    /* Compare the logical page's total backend wait with its own PCM
+     * duration, not a fixed 512/44100 estimate. Guard x2 and x4
+     * thresholds before multiplying. Exactly ONE histogram bin wins.
+     */
+    const uint64_t nominal=(uint64_t)frames*tick_frequency/
+                           VH_NATIVE_AUDOUT_RATE;
+    const unsigned wait_bin=
+        ticks<=nominal ? 0u :
+        nominal>UINT64_MAX/2u || ticks<=nominal*2u ? 1u :
+        nominal>UINT64_MAX/4u || ticks<=nominal*4u ? 2u : 3u;
+    uint64_t *const bins[]={
+        &bucket->wait_le_page,&bucket->wait_le_2pages,
+        &bucket->wait_le_4pages,&bucket->wait_gt_4pages
+    };
+    if (*bins[wait_bin]==UINT64_MAX ||
+        bucket->pages==UINT64_MAX ||
         bucket->total_ticks>UINT64_MAX-ticks ||
         bucket->slow_pages>UINT64_MAX-was_slow ||
         bucket->retried_pages>UINT64_MAX-retried ||
@@ -90,7 +105,17 @@ int vh_audio_output_record_scene_page(
     bucket->slow_pages+=was_slow;
     bucket->retried_pages+=retried;
     bucket->failed_pages+=failed;
+    ++*bins[wait_bin];
     return 0;
+}
+
+static int bucket_distribution_valid(const VhAudioPageWaitBucket *b) {
+    if (b->wait_le_page>UINT64_MAX-b->wait_le_2pages) return 0;
+    const uint64_t first=b->wait_le_page+b->wait_le_2pages;
+    if (first>UINT64_MAX-b->wait_le_4pages) return 0;
+    const uint64_t third=first+b->wait_le_4pages;
+    if (third>UINT64_MAX-b->wait_gt_4pages) return 0;
+    return third+b->wait_gt_4pages==b->pages;
 }
 
 int vh_audio_output_verify_run(
@@ -105,7 +130,9 @@ int vh_audio_output_verify_run(
         return -1;
     const VhAudioPageWaitBucket *steady=&groups->ordinary;
     const VhAudioPageWaitBucket *boundary=&groups->first_after_switch;
-    if (steady->pages<steady->failed_pages ||
+    if (!bucket_distribution_valid(steady) ||
+        !bucket_distribution_valid(boundary) ||
+        steady->pages<steady->failed_pages ||
         boundary->pages<boundary->failed_pages ||
         steady->slow_pages>steady->pages ||
         boundary->slow_pages>boundary->pages ||
