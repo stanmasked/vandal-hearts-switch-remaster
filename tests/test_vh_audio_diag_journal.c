@@ -161,11 +161,14 @@ static void test_early_errors_survive_multiple_ring_rollovers(void) {
     assert(fgets(line,sizeof line,stream));
     assert(strstr(line,",GAP,")!=NULL);
     unsigned long long ms=0,pcm_pages=0;
-    unsigned pcm_fails=0;
-    /* Parse the consistent 18-column header positions without
-     * assuming evicted error row timing or preserving its event. */
-    assert(sscanf(line,"%llu,GAP,%*d,%*u,%*u,%*llu,%*llu,%llu,"
-                       "%*llu,%u,",&ms,&pcm_pages,&pcm_fails)==3);
+    unsigned pcm_fails=0, homes=0, acknowledged=0;
+    int status=0;
+    unsigned long long last_us=0,worst_us=0,frames=0;
+    /* Explicit fields avoid GCC's suppressed-length scanf warning
+     * under the production -Werror compiler flags. */
+    assert(sscanf(line,"%llu,GAP,%d,%u,%u,%llu,%llu,%llu,%llu,%u,",
+                  &ms,&status,&homes,&acknowledged,&last_us,&worst_us,
+                  &pcm_pages,&frames,&pcm_fails)==9);
     assert(ms>500000u);
     assert(pcm_pages>40000u);
     assert(pcm_fails==8u);
