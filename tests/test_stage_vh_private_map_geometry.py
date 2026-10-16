@@ -123,7 +123,7 @@ class StagedModelTests(unittest.TestCase):
             self.assertEqual(result["active_faces"],3)
             dest=root/RELATIVE_DESTINATION
             self.assertEqual(
-                (dest/"LIGHT_TEST_INTENSITY.BIN").read_bytes(),b"\\x20"
+                (dest/"LIGHT_TEST_INTENSITY.BIN").read_bytes(),bytes((32,))
             )
             source=(dest/GEOMETRY_NAME).read_bytes()
             face=parse_tile(source,6,3)["faces"]
