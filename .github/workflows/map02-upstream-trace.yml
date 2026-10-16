@@ -85,6 +85,7 @@ on:
       - 'tools/verify_map02_native_putpixel.py'
       - 'tools/instrument_map02_putpixel_scope.py'
       - 'tools/instrument_map02_raster_skips.py'
+      - 'tools/instrument_map02_vertical_dda.py'
       - 'tools/verify_map02_raster_skips.py'
       - 'tools/verify_map02_putpixel_scope.py'
       - 'tools/verify_map02_camera_capture.py'
@@ -102,6 +103,8 @@ on:
       - 'tests/test_verify_map02_native_putpixel.py'
       - 'tests/test_instrument_map02_putpixel_scope.py'
       - 'tests/test_instrument_map02_raster_skips.py'
+      - 'tests/test_instrument_map02_vertical_dda.py'
+      - 'tests/test_verify_map02_vertical_dda.py'
       - 'tests/test_verify_map02_raster_skips.py'
       - 'tests/test_verify_map02_putpixel_scope.py'
       - 'tests/test_verify_map02_frame_bundle.py'
@@ -210,6 +213,7 @@ on:
       - 'tools/verify_map02_native_putpixel.py'
       - 'tools/instrument_map02_putpixel_scope.py'
       - 'tools/instrument_map02_raster_skips.py'
+      - 'tools/instrument_map02_vertical_dda.py'
       - 'tools/verify_map02_raster_skips.py'
       - 'tools/verify_map02_putpixel_scope.py'
       - 'tools/verify_map02_camera_capture.py'
@@ -227,6 +231,8 @@ on:
       - 'tests/test_verify_map02_native_putpixel.py'
       - 'tests/test_instrument_map02_putpixel_scope.py'
       - 'tests/test_instrument_map02_raster_skips.py'
+      - 'tests/test_instrument_map02_vertical_dda.py'
+      - 'tests/test_verify_map02_vertical_dda.py'
       - 'tests/test_verify_map02_raster_skips.py'
       - 'tests/test_verify_map02_putpixel_scope.py'
       - 'tests/test_verify_map02_frame_bundle.py'
@@ -647,6 +653,69 @@ jobs:
             nm -a build/map02-native-raster-skips/combined.probe.o | grep VH_Map02PixelScopeSet
             if nm -a build/map02-native-raster-skips/combined.baseline.o | grep -Eq 'VH_Map02SkipAt|VH_Map02PixelScope|VH_PixelSampleRecord|VH_CaptureEvent'; then
               echo "Native raster skip probe leaked into baseline object" >&2
+              exit 1
+            fi
+          )
+          test -z "$(cd upstream && git status --porcelain -- platform/pc/src/libgpu.c platform/pc/src/pc_raster.c)"
+
+      - name: Verify native DDA vertical scanline rejections on pinned original PC GPU
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd remaster
+            python3 -m unittest discover -s tests -p 'test_instrument_map02_vertical_dda.py' -v
+            python3 -m unittest discover -s tests -p 'test_verify_map02_vertical_dda.py' -v
+            python3 -m unittest discover -s tests -p 'test_verify_map02_raster_skips.py' -v
+          )
+          PYTHONPATH=remaster python3 -m tools.instrument_map02_vertical_dda \
+            upstream/platform/pc/src/libgpu.c \
+            upstream/platform/pc/src/pc_raster.c \
+            --output-dir /tmp/vh-map02-vertical-dda \
+            > /tmp/vh-map02-vertical-dda.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path("/tmp/vh-map02-vertical-dda.json").read_text())
+          assert m["original_pc_gpu_sources_pinned"]
+          assert m["same_native_drawotag_session"]
+          assert m["single_coordinate_bounded_record_cap"] == 64
+          assert len(m["vertical_scanline_reasons"]) == 4
+          assert m["vertical_row_rejected_but_horizontal_coverage_unknown"]
+          assert not m["per_pixel_triangle_coverage_verified"]
+          PY
+          (
+            cd upstream/platform/pc
+            flags=(
+              -m64 -std=gnu89 -fno-builtin-csqrt
+              -DPERMUTER -DPC_PORT -DPC_FEAT -DVH_REGION_US
+              '-Dasm(x)=' -Ibuild/include_stage -Iinclude -I../.. -Isrc
+              -include pc_forward_decls.h
+              -Wno-incompatible-pointer-types -Wno-builtin-declaration-mismatch
+              -Wno-discarded-qualifiers -Wno-pointer-to-int-cast
+              -Wno-int-to-pointer-cast -Wno-int-conversion
+            )
+            mkdir -p build/map02-vertical-dda
+            for mode in diagnostic baseline; do
+              extra=()
+              if [[ "$mode" == diagnostic ]]; then
+                extra=(-DVH_MAP02_GPU_CAPTURE -DVH_MAP02_PUTPIXEL_SCOPE
+                       -DVH_MAP02_RASTER_SKIP_TRACE -DVH_MAP02_DDA_VERTICAL_TRACE)
+              fi
+              gcc "${flags[@]}" "${extra[@]}" \
+                -c /tmp/vh-map02-vertical-dda/libgpu.vertical.c \
+                -o "build/map02-vertical-dda/gpu.${mode}.o"
+              gcc "${flags[@]}" "${extra[@]}" \
+                -c /tmp/vh-map02-vertical-dda/pc_raster.vertical.c \
+                -o "build/map02-vertical-dda/raster.${mode}.o"
+              ld -r "build/map02-vertical-dda/gpu.${mode}.o" \
+                "build/map02-vertical-dda/raster.${mode}.o" \
+                -o "build/map02-vertical-dda/linked.${mode}.o"
+            done
+            nm -a build/map02-vertical-dda/linked.diagnostic.o | grep VH_Map02SkipAt
+            nm -a build/map02-vertical-dda/linked.diagnostic.o | grep VH_Map02PixelScopeSet
+            if nm -a build/map02-vertical-dda/linked.baseline.o | grep -Eq 'VH_Map02SkipAt|VH_Map02PixelScope|VH_PixelSampleRecord|VH_CaptureEvent'; then
+              echo "Private vertical DDA diagnostic symbol leaked into ordinary PC rendering" >&2
               exit 1
             fi
           )
