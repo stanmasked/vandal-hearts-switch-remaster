@@ -61,6 +61,7 @@ static int prepare_synthetic(void) {
     fixture_vh[p+1] = 127;
     fixture_vh[p+4] = 64;
     const size_t t = 32u + 128u*16u;
+    fixture_vh[t+1] = 4; /* music tone routes to STUDIO_C send */
     fixture_vh[t+2] = 127;
     fixture_vh[t+3] = 64;
     fixture_vh[t+4] = 60;
