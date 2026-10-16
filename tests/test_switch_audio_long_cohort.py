@@ -82,7 +82,14 @@ class LongSwitchCohort(unittest.TestCase):
             self.assertEqual(faulty_group["counters"]["pcm_fail"], 14)
             self.assertEqual(faulty_group["counters"]["home_fail"], 4)
             self.assertEqual(faulty_group["counters"]["pcm_recover"], 10)
-            self.assertEqual(faulty_group["counters"]["home_recover"], 4)
+            # A successful forced HOME reopening is itself counted as
+            # recovery, even when the first start succeeds. Compare
+            # the extra focus-only restart separately from the ten
+            # healthy forced-session reopenings in the two runs.
+            self.assertEqual(clean_group["counters"]["home_recover"], 10)
+            self.assertEqual(faulty_group["counters"]["home_recover"], 12)
+            self.assertEqual(faulty_group["counters"]["home_recover"] -
+                             clean_group["counters"]["home_recover"], 2)
             self.assertEqual(clean_group["latency"]["sample_count"], 20)
             self.assertEqual(faulty_group["latency"]["sample_count"], 20)
             self.assertEqual(clean_group["truncated_windows"], 0)
