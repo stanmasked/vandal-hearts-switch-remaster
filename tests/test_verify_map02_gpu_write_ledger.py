@@ -1,7 +1,11 @@
 """Mutation tests for PC-port VRAM transfer ledger and fail-closed replay."""
+import ctypes
 import hashlib
 import json
+from pathlib import Path
 import struct
+import subprocess
+import tempfile
 import unittest
 
 import test_verify_map02_vram_timeline as timeline_fixture
@@ -78,6 +82,57 @@ class GpuWriteLedgerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "missing/rasterized GPU write"):
             export_verified_ledger(self.root, output)
         self.assertFalse(output.exists())
+
+    def test_python_packet_roundtrips_through_compiled_c_decoder(self):
+        output = self.root / "checked-transfers.bin"
+        export_verified_ledger(self.root, output)
+        packet = output.read_bytes()
+        source = r"""
+#include <stddef.h>
+#include <stdint.h>
+#include "map02_vram4_transfer_import.h"
+int verify_packet(const uint8_t *buffer, size_t bytes,
+                  uint32_t frame, size_t submissions) {
+    VhMap02VramTransfer ev[4];
+    size_t n = 777u;
+    if (!vh_map02_vram_ledger_import_packet(
+            buffer,bytes,frame,submissions,ev,4u,&n))
+        return 0;
+    return n == 2u &&
+           ev[0].operation == VH_MAP02_VRAM_OP_CLEAR &&
+           ev[0].x == 0 && ev[0].y == 0 &&
+           ev[0].red == 160 && ev[0].green == 136 &&
+           ev[1].before_submission == 1u &&
+           ev[1].x == 690 && ev[1].y == 499 &&
+           ev[1].green == 248 && ev[1].load_le == NULL;
+}
+"""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "packet.c").write_text(source, encoding="utf-8")
+            include = Path(__file__).resolve().parent.parent / "source"
+            compiled = subprocess.run(
+                ["gcc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                 "-O2", "-fPIC", "-shared", "-I", str(include),
+                 str(root / "packet.c"), "-o", str(root / "packet.so")],
+                capture_output=True, text=True, timeout=30)
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+            library = ctypes.CDLL(str(root / "packet.so"))
+            check = library.verify_packet
+            check.argtypes = [ctypes.POINTER(ctypes.c_uint8),
+                              ctypes.c_size_t, ctypes.c_uint32,
+                              ctypes.c_size_t]
+            check.restype = ctypes.c_int
+            def call(raw):
+                data = (ctypes.c_uint8 * len(raw)).from_buffer_copy(raw)
+                return check(data,len(raw),self.base.frame,2)
+            self.assertEqual(call(packet),1)
+            altered = bytearray(packet)
+            altered[0] = ord("!")
+            self.assertEqual(call(altered),0)
+            altered = bytearray(packet)
+            altered[20] ^= 1
+            self.assertEqual(call(altered),0)
 
     def test_private_packet_load_payload_is_canonical(self):
         payload = struct.pack("<HH", 0x001f, 0x03e0)
