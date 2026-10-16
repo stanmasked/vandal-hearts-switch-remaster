@@ -56,7 +56,7 @@ class Map02VramTransferDifferentialTests(unittest.TestCase):
         cls.native = ctypes.CDLL(str(cls.root / "replay.so")).apply_one
         cls.native.argtypes = [
             ctypes.POINTER(ctypes.c_uint8),
-            *([ctypes.c_int] * 11),
+            *([ctypes.c_int] * 10),
             ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t,
         ]
         cls.native.restype = ctypes.c_int
