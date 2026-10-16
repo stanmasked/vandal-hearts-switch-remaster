@@ -20,6 +20,9 @@ void PC_LangPatchFwdUpload(int x, int y, int w, int h, unsigned short *pix) {
 }
 
 void TrcInit(void) {}
+void TrcWrite(char op, const void *a, u32 na, const void *b, u32 nb) {
+    (void)op; (void)a; (void)na; (void)b; (void)nb;
+}
 void TrcPrim(int type, const void *p) { (void)type; (void)p; }
 void TrcFrameEnd(void) {}
 int TrcReplaying(void) { return 0; }
