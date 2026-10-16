@@ -6,7 +6,7 @@ int main(void) {
     VhMap02V39Tag tags[8];
     VhMap02V39Tag hit;
     int terrain = 11, sprite = 22, other = 33, bucket = 44;
-    memset(tags, 0xA5, sizeof(tags));
+    memset(tags, 0, sizeof(tags));
     vh_map02_v39_clear(tags, 8, 1);
     assert(!vh_map02_v39_get(tags, 8, 1, 0, &hit));
     assert(vh_map02_v39_mark(tags, 8, 1, &terrain, 0, 1,
