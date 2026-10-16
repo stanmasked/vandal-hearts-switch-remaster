@@ -225,11 +225,13 @@ clean:
 .PHONY: ps1-music-av-probe
 
 PS1_MUSIC_AV_SOURCES := probes/libnx_ps1_music_av.c source/vh_audio_resample.c \
+	source/vh_audio_output_recovery.c \
 	source/vh_audio_assets.c source/vh_native_vab.c source/vh_native_seq.c \
 	source/vh_native_spu.c source/vh_spu_reverb.c source/vh_spu_adpcm.c \
 	source/vh_spu_gaussian.c source/vh_audio_stream.c
 
 $(BUILD)/libnx-ps1-music-av.elf: $(PS1_MUSIC_AV_SOURCES) \
+	source/vh_audio_output_recovery.h \
 	source/vh_audio_assets.h source/vh_audio_resample.h \
 	source/vh_native_spu.h source/vh_native_seq.h \
 	source/game_renderer.h source/game_state.h | $(BUILD)
