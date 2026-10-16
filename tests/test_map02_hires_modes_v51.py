@@ -32,8 +32,9 @@ def rows():
 
 class CrossPassTests(unittest.TestCase):
     def check(self,records):
+        hashes=[f"V51HASH name={name} direct=0123456789abcdef threaded=0123456789abcdef" for name in EXPECTED]
         with patch("tools.verify_map02_hires_modes_v51.split_cases",return_value=records):
-            return audit([])
+            return audit(hashes)
     def test_18_distinct_native_hires_worker_cases(self):
         r=self.check(rows())
         self.assertEqual(r["status"],"original_hires_modes_verified")
@@ -70,6 +71,16 @@ class CrossPassTests(unittest.TestCase):
         r[0]["hires"]["indexed4_dither"]["after"] = 30
         r[0]["threaded"]["indexed4_dither"]["after"] = 30
         self.assertEqual(self.check(r)["status"],"refused")
+    def test_full_hires_region_tampering_rejected(self):
+        from tools.verify_map02_hires_modes_v51 import full_region_hashes
+        hashes=[f"V51HASH name={name} direct=0123456789abcdef threaded=0123456789abcdef" for name in EXPECTED]
+        hashes[0]=hashes[0].replace("threaded=0123456789abcdef","threaded=0123456789abcdee")
+        with patch("tools.verify_map02_hires_modes_v51.split_cases",return_value=rows()):
+            self.assertEqual(audit(hashes)["status"],"refused")
+    def test_missing_region_hash_refused(self):
+        from tools.verify_map02_hires_modes_v51 import full_region_hashes
+        with self.assertRaises(BadHiresProof):
+            full_region_hashes([])
     def test_missing_captured_native_set_fails_closed(self):
         with self.assertRaises(BadHiresProof):
             split_cases([])
