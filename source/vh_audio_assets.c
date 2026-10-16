@@ -62,7 +62,11 @@ static int fail_load(VhAudioAssets *pending, int status) {
     return status;
 }
 
-int vh_audio_assets_load(VhAudioAssets *assets, const char *directory) {
+int vh_audio_assets_load_bounded(VhAudioAssets *assets,
+                                 const char *directory, size_t max_vb_bytes) {
+    if (!max_vb_bytes) return VH_AUDIO_ASSET_ERROR;
+    if (max_vb_bytes > VH_AUDIO_ASSET_MAX_VB_BYTES)
+        max_vb_bytes = VH_AUDIO_ASSET_MAX_VB_BYTES;
     if (!assets || !directory || !*directory ||
         assets->seq || assets->vh || assets->vb || assets->pcm)
         return VH_AUDIO_ASSET_ERROR;
@@ -77,7 +81,7 @@ int vh_audio_assets_load(VhAudioAssets *assets, const char *directory) {
                             VH_AUDIO_ASSET_MAX_VH_BYTES,
                             &pending->vh, &pending->vh_size);
     const int c = read_file(directory, VH_AUDIO_ASSET_VB_FILENAME,
-                            VH_AUDIO_ASSET_MAX_VB_BYTES,
+                            max_vb_bytes,
                             &pending->vb, &pending->vb_size);
     if (a || b || c) {
         const int missing = (a == 1 && b == 1 && c == 1);
@@ -120,4 +124,9 @@ int vh_audio_assets_load(VhAudioAssets *assets, const char *directory) {
     *assets = *pending;
     free(pending);
     return VH_AUDIO_ASSET_OK;
+}
+
+int vh_audio_assets_load(VhAudioAssets *assets, const char *directory) {
+    return vh_audio_assets_load_bounded(
+        assets, directory, VH_AUDIO_ASSET_MAX_VB_BYTES);
 }
