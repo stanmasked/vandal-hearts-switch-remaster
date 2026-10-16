@@ -18,6 +18,7 @@ from tools.instrument_map02_native_putpixel import (
 )
 from tools.instrument_map02_gpu_native_events import (
     PINNED_SOURCE as GPU_BLOB,
+    instrument as instrument_gpu_native,
 )
 from tools.prepare_map02_pcport import git_blob_sha1
 
@@ -122,12 +123,14 @@ extern void VH_Map02PixelScopeClear(void);
               "                vh_sample_primitive_ordinal++, type);\n"
               "#endif\n            switch (type) {",
               "begin native primitive scope")
-    src = one(src, "            default:\n                break;\n            }\n        }\n        nextTok = rawTagOfCur;",
-              "            default:\n                break;\n            }\n"
-              f"#if defined({FLAG})\n"
+    # GPU before/after VRAM snapshots and DrawOTag scoped PutPixel data
+    # MUST be taken in the SAME run; the preceding native-capture injection
+    # leaves its own after-hook immediately following the original switch.
+    src = one(src, "#endif\n        }\n        nextTok = rawTagOfCur;",
+              "#endif\n#if defined(" + FLAG + ")\n"
               "            VH_Map02PixelScopeClear();\n"
               "#endif\n        }\n        nextTok = rawTagOfCur;",
-              "end native primitive scope")
+              "end native primitive scope after GPU snapshot")
     return src
 
 
@@ -139,7 +142,7 @@ def prepare(gpu_path, raster_path, output_dir):
         raise ValueError("source-pinned PC libgpu.c Git blob differs")
     if git_blob_sha1(raster_bytes) != RASTER_BLOB:
         raise ValueError("source-pinned PC pc_raster.c Git blob differs")
-    gpu = scope_gpu(gpu_bytes.decode("utf-8"))
+    gpu = scope_gpu(instrument_gpu_native(gpu_bytes.decode("utf-8")))
     raster = scope_raster(raster_bytes.decode("utf-8"))
     output_dir.mkdir(parents=True)
     (output_dir / "libgpu.scope.c").write_text(gpu, encoding="utf-8")
@@ -147,14 +150,16 @@ def prepare(gpu_path, raster_path, output_dir):
     return {
         "exact_original_gpu_sources_pinned": True,
         "generated": ["libgpu.scope.c", "pc_raster.scope.c"],
-        "enabled_by": f"-D{FLAG}",
+        "enabled_by": [f"-D{FLAG}", "-DVH_MAP02_GPU_CAPTURE"],
         "required_private_environment": [
             "VH_MAP02_PUTPIXEL_DIR", "VH_MAP02_PUTPIXEL_X",
             "VH_MAP02_PUTPIXEL_Y", "VH_MAP02_PUTPIXEL_FRAME",
+            "VH_MAP02_GPU_CAPTURE_DIR", "VH_MAP02_GPU_CAPTURE_FRAME",
         ],
         "pixel_calls_record_cap": 64,
         "scope_walk_includes_all_native_primitives": True,
         "native_primitive_frame_and_ordinal_logged": True,
+        "synchronized_native_gpu_capture_in_same_binary": True,
         "original_gameplay_captured": False,
         "ordinary_gpu_backend_modified": False,
     }
