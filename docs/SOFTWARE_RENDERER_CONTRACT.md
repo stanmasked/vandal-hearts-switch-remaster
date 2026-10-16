@@ -80,11 +80,14 @@ ASan/UBSan where supported.
 
 **Limitations:** the rasterizer does not implement PS1 GTE screen-space
 projection, depth buffering/ordering tables, perspective corrections,
-texture-page windows, dithering, vertex shading, semitransparency or STP
-color-key behavior. It samples caller-decoded RGBA32 rather than raw
-4-bit CLUT atlas bytes. Quads are diagnostic affine approximations and
-cannot establish pixel-identical correspondence to a real PlayStation
-capture. Real PRS/DAT game assets are not embedded in the binary.
+texture-page windows, dithering, vertex shading, or PS1 hardware
+semi-transparency modes. It can now omit fully transparent source texels
+and route STP-flagged pixels through a caller-selected blend callback.
+It samples decoded RGBA32 with a separate texel-class mask rather than
+reading 4-bit indices directly inside the triangle loop. Quads remain
+diagnostic affine approximations and cannot establish pixel-identical
+correspondence to a real PlayStation capture. No original game assets
+are embedded in the binary.
 
 
 ## PS1 4-bit indexed atlas and CLUT-to-FT4 bridge
@@ -127,11 +130,27 @@ the MAP02 upstream workflow and host texture safety workflow independently
 compile and execute it. The Switch toolchain workflow builds a new NRO
 with both synthetic indexed4 panels.
 
-**Important limitations:** palette word zero is *counted*, not made
-transparent, and STP is preserved as metadata, not automatically blended.
-The pixel preview is deliberately opaque so that no default transparency
-or dithering rule is falsely attributed to original PS1 hardware. This
-implementation has no GPU ordering-table, texture-page/clut upload,
-GTE projection, polygon shading, or original PS1 game assets embedded.
-It is an independently tested native rendering bridge and not yet
-pixel-equivalent gameplay.
+**Important limitations:** source palette word zero can now
+be *skipped* during FT4 rasterization, while STP is retained as a separate
+per-pixel class. The normal Switch diagnostic shows zero-color cutouts
+with STP copied unchanged; the mirrored diagnostic highlights STP pixels
+in **magenta** through an explicitly labeled debug callback.
+Magenta is **not** a PS1 ABR blend formula. This implementation does not
+infer the correct blend mode, distinguish all textured GPU states, or
+synthesize texture-page uploads, GPU ordering, GTE projection or polygon
+shading. No original PS1 game assets are embedded.
+
+The two FT4 triangles use a top-left edge ownership rule: each shared
+edge pixel belongs to only one triangle. Without it, STP pixels along
+the shared diagonal could be blended twice. Regression tests enforce
+**exactly one STP callback per covered tagged texel**, no writes for
+zero-color texels and unchanged destination row padding.
+
+The source-level CLUT classification API is
+`vh_ps1_decode_clut4_crop_classified` (optional byte-per-pixel class
+mask: 0=transparent zero, 1=opaque, 2=STP). The old
+`vh_ps1_decode_clut4_crop` stays source-compatible. The masked
+rasterizer is `vh_canvas_draw_ft4_classified_rgba32`, with an optional
+pixel-format-aware STP callback; `vh_canvas_draw_ft4_rgba32` retains
+its original opaque default. This is a validated diagnostic path,
+**not yet a pixel-equivalent simulation of original PS1 gameplay**.
