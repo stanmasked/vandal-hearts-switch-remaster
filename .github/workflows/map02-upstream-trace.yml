@@ -51,6 +51,8 @@ on:
       - 'tools/verify_map02_pc_normal_equivalence.py'
       - 'tools/verify_map02_pc_op0_equivalence.py'
       - 'tools/verify_map02_pc_projection_equivalence.py'
+      - 'tools/audit_map02_projection_source.py'
+      - 'tests/test_audit_map02_projection_source.py'
       - 'tools/audit_map02_op0_geometry.py'
       - 'tools/map02_op0_geometry_scan.c'
       - 'tests/test_audit_map02_direction_source.py'
@@ -117,6 +119,8 @@ on:
       - 'tools/verify_map02_pc_normal_equivalence.py'
       - 'tools/verify_map02_pc_op0_equivalence.py'
       - 'tools/verify_map02_pc_projection_equivalence.py'
+      - 'tools/audit_map02_projection_source.py'
+      - 'tests/test_audit_map02_projection_source.py'
       - 'tools/audit_map02_op0_geometry.py'
       - 'tools/map02_op0_geometry_scan.c'
       - 'tests/test_audit_map02_direction_source.py'
@@ -293,6 +297,7 @@ jobs:
             /tmp/vh-map02-op0-test
             gcc -std=c11 -Wall -Wextra -Werror -O2 tests/test_map02_projection.c -o /tmp/vh-map02-projection-test
             /tmp/vh-map02-projection-test
+            python3 -m unittest discover -s tests -p 'test_audit_map02_projection_source.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_pc_op0_equivalence.py' -v
             python3 -m unittest discover -s tests -p 'test_audit_map02_op0_geometry.py' -v
             python3 -m unittest discover -s tests -p 'test_audit_map02_face_source.py' -v
@@ -305,6 +310,8 @@ jobs:
           PYTHONPATH=remaster python3 -m tools.verify_map02_pc_normal_equivalence upstream/platform/pc/src/libgte.c remaster/source/map02_face_direction.h > /tmp/vh-map02-q12-native-equivalence.json
           PYTHONPATH=remaster python3 -m tools.verify_map02_pc_op0_equivalence upstream/platform/pc/src/libgte.c remaster/source/map02_op0_reference.h > /tmp/vh-map02-op0-native-equivalence.json
           PYTHONPATH=remaster python3 -m tools.verify_map02_pc_projection_equivalence upstream/platform/pc/src/libgte.c remaster/source/map02_projection.h > /tmp/vh-map02-projection-native-equivalence.json
+          PYTHONPATH=remaster python3 -m tools.audit_map02_projection_source upstream/src/core/graphics.c > /tmp/vh-map02-projection-source-audit.json
+          python3 -c 'import json; x=json.load(open("/tmp/vh-map02-projection-source-audit.json")); assert x["matches_pinned_graphics"] and x["matches_normal_terrain_source_order"] and x["projected_face_vertex_to_ft4_corner"] == [0,1,3,2] and not x["ps1_hardware_projection_verified"]; print("Pinned original RenderMapTile projection/culling/OT submission order verified.")'
           python3 -c 'import json; x=json.load(open("/tmp/vh-map02-projection-native-equivalence.json")); assert x["matches_pinned_pc_libgte"] and x["cases"] == 4099 and x["compiled_pc_rtpt_nclip_rtps_avsz4_matches"] and not x["ps1_hardware_gte_verified"]; print("4099 native PC terrain projection/cull/depth cases match portable reference; PS1 hardware remains unverified.")'
           python3 -c 'import json; x=json.load(open("/tmp/vh-map02-op0-native-equivalence.json")); assert x["matches_pinned_pc_libgte"] and x["cases"] == 4106 and x["compiled_pc_op0_mac_matches"] and x["pc_vs_ps1_register_input_difference_cases"] > 0 and not x["ps1_hardware_gte_verified"]; print("Pinned PC OP0 MAC matches portable 32/16 register model on 4106 edge pairs; PS1 GTE not hardware verified.")'
           python3 -c 'import json; x=json.load(open("/tmp/vh-map02-q12-native-equivalence.json")); assert x["matches_pinned_pc_libgte"] and x["cases"] == 2119 and x["vector_q12_matches_pc_port"] and x["all_26_indices_match_pc_port"] and not x["ps1_hardware_gte_verified"]; print("Native PC VectorNormalS and 26-direction classification match on 2119 synthetic normals.")'
