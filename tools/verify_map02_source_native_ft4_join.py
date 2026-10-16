@@ -112,8 +112,19 @@ def verify_join(source_dir, native_dir, *, compiler="gcc"):
         for i, line in enumerate(log_raw.splitlines())
     ]
     # Every before/after pair has already passed source-native validation.
-    gpu_draw_events = [native_events[i] for i in range(0, len(native_events), 2)
-                       if _native_signature(native_events[i]) is not None]
+    gpu_draw_events = []
+    for i in range(0, len(native_events), 2):
+        before, after = native_events[i:i+2]
+        if _native_signature(before) is None:
+            continue
+        # The native recorder emits a before/after pair for one FT4 draw.
+        # The texture window and draw mode must not mutate inside that
+        # primitive; the generic snapshot validator intentionally permits
+        # state changes across other kinds of GPU primitives (DR_MODE).
+        if (before["window"] != after["window"] or
+                before["draw_mode"] != after["draw_mode"]):
+            raise ValueError("native FT4 texture/draw state changed during primitive")
+        gpu_draw_events.append(before)
     if not gpu_draw_events:
         raise ValueError("native capture has no FT4 draw packets")
 
