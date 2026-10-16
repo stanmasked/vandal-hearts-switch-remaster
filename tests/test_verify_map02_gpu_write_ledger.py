@@ -1,0 +1,173 @@
+"""Mutation tests for PC-port VRAM transfer ledger and fail-closed replay."""
+import hashlib
+import json
+import struct
+import unittest
+
+import test_verify_map02_vram_timeline as timeline_fixture
+from tools.verify_map02_gpu_write_ledger import (
+    VRAM_BYTES, apply_transfer, audit_original_source,
+    verify_write_ledger,
+)
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+def word(vram,x,y,value):
+    struct.pack_into("<H",vram,2*(y*1024+x),value)
+
+def get(vram,x,y):
+    return struct.unpack_from("<H",vram,2*(y*1024+x))[0]
+
+
+class GpuWriteLedgerTests(unittest.TestCase):
+    def setUp(self):
+        self.base = timeline_fixture.Map02TimelineTests(
+            methodName="test_two_original_source_keys_and_independent_changed_clut")
+        self.base.setUp()
+        self.addCleanup(self.base.doCleanups)
+        self.root=self.base.root
+        self.events=[
+            {"step":0,"before_submission":1,"op":"clear",
+             "rect":[0,0,1,1],"rgb":[160,136,32]},
+            {"step":1,"before_submission":1,"op":"clear",
+             "rect":[690,499,1,1],"rgb":[0,248,0]},
+        ]
+        self.write()
+
+    def write(self):
+        self.base.save()
+        stream=b"".join((json.dumps(ev,sort_keys=True)+"\n").encode()
+                        for ev in self.events)
+        (self.root/"gpu-writes.jsonl").write_bytes(stream)
+        (self.root/"write-ledger.json").write_text(json.dumps({
+            "schema":"vh.map02.gpu.transfer-ledger.v1",
+            "frame":self.base.frame,
+            "pc_source_commit":timeline_fixture.fixture.PINNED_PC_SOURCE,
+            "timeline_sha256":sha((self.root/"timeline.json").read_bytes()),
+            "transfers_sha256":sha(stream),
+        },sort_keys=True),encoding="utf-8")
+
+    def test_clear_operations_account_for_all_vram_mutations(self):
+        result=verify_write_ledger(self.root)
+        self.assertEqual(result["snapshot_transitions_replayed"],1)
+        self.assertEqual(result["load_image_events"],0)
+        self.assertEqual(result["move_image_events"],0)
+        self.assertEqual(result["clear_image_events"],2)
+        self.assertEqual(result["changed_vram_words_explained"],2)
+        self.assertEqual(result["vram_word_assignments"],2)
+        self.assertEqual(result["changed_current_face_clut_words"],1)
+        self.assertTrue(result["every_supplied_snapshot_matches_transfer_replay"])
+        for flag in ("all_vram_writes_captured","rasterized_gpu_writes_modeled",
+                     "pc_gameplay_authenticated","ps1_hardware_pixels_verified",
+                     "raw_game_bytes_emitted"):
+            self.assertFalse(result[flag])
+        serialized=json.dumps(result)
+        for secret in ("perimeter_xy","vertices","bgr555","raw_otz","rgb"):
+            self.assertNotIn(secret,serialized)
+
+    def test_load_image_payload_with_digest_and_clipping(self):
+        self.events[1]={"step":1,"before_submission":1,"op":"load",
+                        "rect":[690,499,1,1],
+                        "payload_sha256":sha(struct.pack("<H",0x03e0))}
+        (self.root/"load-0001.bin").write_bytes(struct.pack("<H",0x03e0))
+        self.write()
+        result=verify_write_ledger(self.root)
+        self.assertEqual(result["load_image_events"],1)
+        path=self.root/"load-0001.bin"
+        path.write_bytes(b"\x00\x00")
+        with self.assertRaisesRegex(ValueError,"SHA-256 mismatch"):
+            verify_write_ledger(self.root)
+        data=bytearray(VRAM_BYTES)
+        payload=struct.pack("<HH",0x7c00,0x03e0)
+        self.assertEqual(apply_transfer(data,{"op":"load","rect":[-1,0,2,1]},payload),1)
+        self.assertEqual(get(data,0,0),0x03e0)
+
+    def test_original_move_image_is_in_place_forward_not_memmove(self):
+        # Overlap: moving three words one to the right repeats the first
+        # source word across the destination in the real PC-port.
+        start=bytearray(self.base.vrams[0])
+        for x,c in zip((10,11,12,13),(0x001f,0x03e0,0x7c00,0)):
+            word(start,x,12,c)
+        target=bytearray(start)
+        copy={"step":0,"before_submission":1,"op":"move",
+              "rect":[10,12,3,1],"dest":[11,12]}
+        self.assertEqual(apply_transfer(target,copy,None),3)
+        self.assertEqual([get(target,x,12) for x in (10,11,12,13)],
+                         [0x001f]*4)
+        self.base.vrams=[bytes(start),bytes(target)]
+        for probe in self.base.events[1]["texture"]["probes"]:
+            probe["bgr555"]=0x7c00
+        self.events=[copy]
+        self.write()
+        result=verify_write_ledger(self.root)
+        self.assertEqual(result["move_image_events"],1)
+        self.assertEqual(result["changed_vram_words_explained"],3)
+        self.assertEqual(result["changed_current_face_clut_words"],0)
+
+    def test_missing_transfer_cannot_be_silently_attributed_to_raster(self):
+        self.events=self.events[:1]  # The changed CLUT has no explanation.
+        self.write()
+        with self.assertRaisesRegex(ValueError,"missing/rasterized GPU write"):
+            verify_write_ledger(self.root)
+
+    def test_unaccounted_texture_write_and_raster_write_rejected(self):
+        self.events=self.events[:1]
+        self.events[0]["rgb"]=[0,248,0] # changes a different color at (0,0)
+        self.write()
+        with self.assertRaisesRegex(ValueError,"VRAM differs"):
+            verify_write_ledger(self.root)
+        self.events[0]["rgb"]=[160,136,32]
+        self.write()
+        with self.assertRaisesRegex(ValueError,"VRAM differs"):
+            verify_write_ledger(self.root)
+
+    def test_source_audit_requires_true_pinned_git_blobs(self):
+        with self.assertRaisesRegex(ValueError,"not the pinned revision"):
+            audit_original_source(b"synthetic libgpu",b"synthetic raster")
+
+    def test_invalid_payload_timeline_hash_and_event_order_refused(self):
+        self.events[1]["before_submission"]=0
+        self.write()
+        with self.assertRaisesRegex(ValueError,"submission boundary"):
+            verify_write_ledger(self.root)
+        self.events[1]["before_submission"]=1
+        self.events[1]["step"]=7
+        self.write()
+        with self.assertRaisesRegex(ValueError,"order is not contiguous"):
+            verify_write_ledger(self.root)
+        self.events[1]["step"]=1
+        self.write()
+        manifest=self.root/"write-ledger.json"
+        m=json.loads(manifest.read_text())
+        m["timeline_sha256"]="0"*64
+        manifest.write_text(json.dumps(m))
+        with self.assertRaisesRegex(ValueError,"timeline manifest: SHA-256 mismatch"):
+            verify_write_ledger(self.root)
+
+    def test_unsupported_write_ops_and_symlink_payload_rejected(self):
+        self.events[1]["op"]="gp0-raster-quad"
+        self.write()
+        with self.assertRaisesRegex(ValueError,"unsupported transfer API"):
+            verify_write_ledger(self.root)
+        self.events[1]={"step":1,"before_submission":1,"op":"load",
+                        "rect":[690,499,1,1],
+                        "payload_sha256":sha(struct.pack("<H",0x03e0))}
+        file=self.root/"load-0001.bin"
+        file.symlink_to(self.root/"gpu-vram-000.bin")
+        self.write()
+        with self.assertRaisesRegex(ValueError,"missing, linked or non-regular"):
+            verify_write_ledger(self.root)
+
+    def test_clear_clip_and_bgr555_truncation(self):
+        raw=bytearray(VRAM_BYTES)
+        self.assertEqual(apply_transfer(raw,{"op":"clear",
+             "rect":[-1,-1,3,3],"rgb":[255,128,8]},None),4)
+        packed=(31)|((128>>3)<<5)|((8>>3)<<10)
+        for x,y in ((0,0),(1,0),(0,1),(1,1)):
+            self.assertEqual(get(raw,x,y),packed)
+        self.assertEqual(get(raw,2,2),0)
+
+
+if __name__=="__main__":
+    unittest.main()
