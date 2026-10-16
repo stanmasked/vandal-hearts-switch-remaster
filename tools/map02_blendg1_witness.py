@@ -18,7 +18,7 @@ def compare_blendg1_witnesses(putpixel_rows, witness_rows):
     """Require witness only for accurate-mode semi PutPixel, not legacy blending.
 
     Each witness contains the PutPixel step, frame, primitive ordinal, x/y,
-    accurate, abr, input 'before' and 'front', and output 'after'.
+    accurate, abr, PutPixel words, and independently observed fg/bg/result.
     This validates correspondence, NOT the blend arithmetic itself.
     """
     if not isinstance(putpixel_rows, list) or not isinstance(witness_rows, list):
@@ -62,6 +62,14 @@ def compare_blendg1_witnesses(putpixel_rows, witness_rows):
         for key in keys:
             if _uint(w, key, limits[key]) != p[key]:
                 raise ValueError("BlendG1 witness differs from PutPixel: " + key)
+        # Actual BlendG1 fg has bit 15 forced high; bg is destination before.
+        # Do not accept an echo of PutPixel values as a complete witness.
+        if _uint(w, "blend_fg", 65535) != (p["front"] | 0x8000):
+            raise ValueError("BlendG1 fg argument disagrees with PutPixel front")
+        if _uint(w, "blend_bg", 65535) != p["before"]:
+            raise ValueError("BlendG1 bg argument disagrees with destination")
+        if _uint(w, "blend_result", 65535) != p["after"]:
+            raise ValueError("BlendG1 result disagrees with PutPixel")
         counts[p["accurate"]][p["abr"]] += 1
     return {
         "observed_blendg1_witnesses_by_accuracy_and_abr": counts,
