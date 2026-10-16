@@ -146,6 +146,7 @@ jobs:
             platform/pc/tools/gen_kanji_font.py
             platform/pc/tools/build_data_segment.py
             platform/pc/src/libcd.c
+            platform/pc/src/libgte.c
           sparse-checkout-cone-mode: false
 
       - name: Audit local preflight against public pinned upstream
@@ -272,8 +273,8 @@ jobs:
             python3 -m unittest discover -s tests -p 'test_instrument_map02_renderer.py' -v
             python3 -m unittest discover -s tests -p 'test_map02_renderer_smoke.py' -v
           )
-          PYTHONPATH=remaster python3 -m tools.audit_map02_direction_source upstream/src/core/graphics.c remaster/source/map02_face_direction.h > /tmp/vh-map02-direction-contract.json
-          python3 -c 'import json; x=json.load(open("/tmp/vh-map02-direction-contract.json")); assert x["matches_pinned_source"] and x["direction_count"] == 26 and x["portable_direction_table_matches_upstream"] and not x["rounding_equivalence_with_gte"]; print("Pinned 26 terrain normals and source shading choice verified; GTE rounding remains unverified.")'
+          PYTHONPATH=remaster python3 -m tools.audit_map02_direction_source upstream/src/core/graphics.c remaster/source/map02_face_direction.h --pc-libgte upstream/platform/pc/src/libgte.c > /tmp/vh-map02-direction-contract.json
+          python3 -c 'import json; x=json.load(open("/tmp/vh-map02-direction-contract.json")); assert x["matches_pinned_source"] and x["direction_count"] == 26 and x["portable_direction_table_matches_upstream"] and x["pc_libgte_matches_pinned"] and x["pc_normal_math"]["pc_vectornormal_uses_sqrt_and_truncation"] and x["pc_normal_math"]["candidate_q12_scales"] == [4096,2896,2364] and not x["rounding_equivalence_with_gte"]; print("Pinned 26 terrain normals and PC VectorNormalS Q12 truncation verified; PS1 hardware GTE remains unverified.")'
           PYTHONPATH=remaster python3 -m tools.audit_map02_face_source upstream > /tmp/vh-map02-face-gpu-contract.json
           python3 -c 'import json; x=json.load(open("/tmp/vh-map02-face-gpu-contract.json")); assert x["matches_pinned_source"] and x["field_and_gpu_layout_verified"] and len(x["renderer_paths"]) == 3; print("Pinned map model and all 3 POLY_FT4 UV bindings verified.")'
           PYTHONPATH=remaster python3 -m tools.verify_map02_unpack_equivalence upstream/src/maps/unpack.c > /tmp/vh-map02-unpack-equivalence.json
