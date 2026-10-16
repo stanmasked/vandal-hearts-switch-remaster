@@ -198,6 +198,76 @@ int main(void) {
     assert(vh_audio_output_record_submit_timing(
                &timing,240000u,freq,576u,1)==-1);
 
+    /* Per-logical-page wait grouping; retries count as ONE accepted
+     * page and their raw blocking ticks are accumulated together.
+     */
+    VhAudioSceneWaits grouping={0};
+    const VhAudioSubmitTiming first_before={0};
+    const VhAudioSubmitTiming first_after={
+        .calls=2u, .total_ticks=340000u,
+        .waits_longer_than_page=1u, .failed_submissions=1u
+    };
+    assert(vh_audio_output_record_scene_page(
+        &grouping,&first_before,&first_after,freq,576u,1,1)==0);
+    assert(grouping.first_after_switch.pages==1u);
+    assert(grouping.first_after_switch.total_ticks==340000u);
+    assert(grouping.first_after_switch.peak_page_ticks==340000u);
+    assert(grouping.first_after_switch.slow_pages==1u);
+    assert(grouping.first_after_switch.retried_pages==1u);
+    assert(grouping.first_after_switch.failed_pages==0u);
+    const VhAudioSubmitTiming second_after={
+        .calls=3u, .total_ticks=460000u,
+        .waits_longer_than_page=1u, .failed_submissions=1u
+    };
+    assert(vh_audio_output_record_scene_page(
+        &grouping,&first_after,&second_after,freq,576u,0,1)==0);
+    assert(grouping.ordinary.pages==1u);
+    assert(grouping.ordinary.total_ticks==120000u);
+    assert(grouping.ordinary.slow_pages==0u);
+    assert(grouping.ordinary.retried_pages==0u);
+    const VhAudioSubmitTiming failed_after={
+        .calls=4u, .total_ticks=510000u,
+        .waits_longer_than_page=1u, .failed_submissions=2u
+    };
+    assert(vh_audio_output_record_scene_page(
+        &grouping,&second_after,&failed_after,freq,576u,1,0)==0);
+    assert(grouping.first_after_switch.pages==2u);
+    assert(grouping.first_after_switch.failed_pages==1u);
+    assert(grouping.first_after_switch.total_ticks==390000u);
+    const VhAudioSceneWaits fixed_grouping=grouping;
+    assert(vh_audio_output_record_scene_page(
+        NULL,&first_before,&first_after,freq,576u,1,1)==-1);
+    assert(vh_audio_output_record_scene_page(
+        &grouping,NULL,&first_after,freq,576u,1,1)==-1);
+    assert(vh_audio_output_record_scene_page(
+        &grouping,&first_before,NULL,freq,576u,1,1)==-1);
+    assert(vh_audio_output_record_scene_page(
+        &grouping,&first_after,&first_before,freq,576u,1,1)==-1);
+    assert(vh_audio_output_record_scene_page(
+        &grouping,&first_before,&first_after,0u,576u,1,1)==-1);
+    assert(vh_audio_output_record_scene_page(
+        &grouping,&first_before,&first_after,freq,0u,1,1)==-1);
+    assert(vh_audio_output_record_scene_page(
+        &grouping,&first_before,&first_after,freq,
+        VH_AUDIO_RESAMPLE_MAX_FRAMES+1u,1,1)==-1);
+    assert(vh_audio_output_record_scene_page(
+        &grouping,&first_before,&first_after,freq,576u,1,0)==-1);
+    assert(vh_audio_output_record_scene_page(
+        &grouping,&first_before,&first_after,UINT64_MAX,576u,1,1)==-1);
+    VhAudioSubmitTiming too_many=first_after;
+    too_many.calls=VH_AUDIO_OUTPUT_RESTART_LIMIT+2u;
+    assert(vh_audio_output_record_scene_page(
+        &grouping,&first_before,&too_many,freq,576u,1,1)==-1);
+    assert(!memcmp(&grouping,&fixed_grouping,sizeof grouping));
+    grouping.first_after_switch.pages=UINT64_MAX;
+    assert(vh_audio_output_record_scene_page(
+        &grouping,&first_before,&first_after,freq,576u,1,1)==-1);
+    grouping=fixed_grouping;
+    grouping.first_after_switch.total_ticks=UINT64_MAX;
+    assert(vh_audio_output_record_scene_page(
+        &grouping,&first_before,&first_after,freq,576u,1,1)==-1);
+    grouping=fixed_grouping;
+
     assert(vh_audio_output_submit_recover(NULL,&stats,dst,10u)==-1);
     assert(vh_audio_output_submit_recover(&ops,NULL,dst,10u)==-1);
     assert(vh_audio_output_submit_recover(&ops,&stats,NULL,10u)==-1);
@@ -384,6 +454,7 @@ int main(void) {
                     .checksum=UINT64_C(1469598103934665603)};
     VhAudioOutputOps switch_ops=callbacks(&switching);
     VhAudioOutputRecovery switch_stats={0};
+    VhAudioSceneWaits measured_pages={0};
     uint64_t check_hash=UINT64_C(1469598103934665603);
     uint64_t frame_count=0;
     unsigned switch_count=0, extra_submits=0, recovered_pages=0;
@@ -433,10 +504,15 @@ int main(void) {
         switching.null_returns_left=(block%17u==11u);
         const unsigned failures=switching.failures_left+
             switching.mismatched_returns_left+switching.null_returns_left;
+        const VhAudioSubmitTiming before_page=switching.timing;
         extra_submits+=failures;
         recovered_pages+=(failures!=0u);
         assert(vh_audio_output_submit_recover(&switch_ops,&switch_stats,
                                               dst,frames)==0);
+        const int boundary=block && block%8u==0u;
+        assert(vh_audio_output_record_scene_page(
+                   &measured_pages,&before_page,&switching.timing,
+                   freq,frames,boundary,1)==0);
         assert(switching.accepted==block+1u);
         assert(switch_stats.pages_submitted==block+1u);
         assert(switching.attempts_this_page==failures+1u);
@@ -453,6 +529,18 @@ int main(void) {
     assert(switching.timing.failed_submissions==extra_submits);
     assert(switching.timing.waits_longer_than_page>0u);
     assert(switching.timing.max_ticks==250000u);
+    assert(measured_pages.first_after_switch.pages==5u);
+    assert(measured_pages.ordinary.pages==43u);
+    assert(measured_pages.first_after_switch.failed_pages==0u);
+    assert(measured_pages.ordinary.failed_pages==0u);
+    assert(measured_pages.first_after_switch.total_ticks+
+           measured_pages.ordinary.total_ticks==switching.timing.total_ticks);
+    assert(measured_pages.first_after_switch.retried_pages+
+           measured_pages.ordinary.retried_pages==recovered_pages);
+    assert(measured_pages.first_after_switch.slow_pages+
+           measured_pages.ordinary.slow_pages>0u);
+    assert(measured_pages.first_after_switch.peak_page_ticks>0u);
+    assert(measured_pages.ordinary.peak_page_ticks>0u);
     assert(switching.checksum==check_hash);
     assert(switch_stats.frames_submitted==frame_count);
     assert(switch_stats.pages_submitted==48u);
