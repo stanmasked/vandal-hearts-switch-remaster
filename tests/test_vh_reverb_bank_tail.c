@@ -20,10 +20,11 @@ int main(void) {
     for (unsigned b=0;b<16u;b++)
         vh_native_spu_render(&before,scratch,512u);
     const VhSpuReverb history=before.reverb;
-    /* Detach every bank-owned voice, but preserve the reverb processor. */
-    vh_native_spu_reset(&resumed);
-    assert(vh_native_spu_set_reverb(&resumed,1,0.5f)==0);
-    resumed.reverb=history;
+    /* Exercise the same voice-only transition API used by scene changes. */
+    resumed=before;
+    vh_native_spu_clear_voices_keep_reverb(&resumed);
+    assert(resumed.frames_rendered==0u);
+    assert(resumed.reverb_enabled && resumed.reverb_depth==0.5f);
     vh_native_spu_reset(&control);
     assert(vh_native_spu_set_reverb(&control,1,0.5f)==0);
     for (unsigned slot=0;slot<VH_NATIVE_MUSIC_VOICES;slot++) {
