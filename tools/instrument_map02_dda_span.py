@@ -56,3 +56,35 @@ def instrument_span(raster):
     VH_Map02SpanObserve(cx, y, x_start, x_bound);
 #endif""", "actual native dda_span entry")
     return raster
+
+def prepare_span(original_gpu, original_raster, output_dir):
+    """Generate pinned original GPU/span overlay without mutating upstream.
+
+    Fail closed on source drift or an existing destination.
+    """
+    from pathlib import Path
+    from tools.instrument_map02_putpixel_scope import (
+        GPU_BLOB, RASTER_BLOB, scope_gpu, scope_raster,
+    )
+    from tools.instrument_map02_gpu_native_events import instrument as gpu_capture
+    from tools.instrument_map02_raster_skips import instrument_raster_skips
+    from tools.instrument_map02_vertical_dda import instrument_vertical
+    from tools.prepare_map02_pcport import git_blob_sha1
+
+    output_dir = Path(output_dir)
+    if output_dir.exists() or output_dir.is_symlink():
+        raise ValueError("output directory exists; refusing overwrite")
+    gpu_raw = Path(original_gpu).read_bytes()
+    raster_raw = Path(original_raster).read_bytes()
+    if git_blob_sha1(gpu_raw) != GPU_BLOB or git_blob_sha1(raster_raw) != RASTER_BLOB:
+        raise ValueError("source does not match pinned original PC GPU Git blobs")
+    gpu = scope_gpu(gpu_capture(gpu_raw.decode("utf-8")))
+    raster = instrument_span(instrument_vertical(
+        instrument_raster_skips(scope_raster(raster_raw.decode("utf-8")))))
+    output_dir.mkdir(parents=True)
+    (output_dir / "libgpu.span.c").write_text(gpu, encoding="utf-8")
+    (output_dir / "pc_raster.span.c").write_text(raster, encoding="utf-8")
+    return {"pinned_original_gpu": True, "native_only": True,
+            "entered_spans_only": True,
+            "vertical_rejected_row_coverage_proven": False,
+            "retail_MAP02_verified": False}
