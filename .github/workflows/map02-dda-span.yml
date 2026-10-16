@@ -1,5 +1,8 @@
 name: MAP02 DDA span synthetic C11 regression
 on:
+  push:
+    branches:
+      - 'work/map02-dda-coverage-independent-audit'
   pull_request:
     paths:
       - 'tools/map02_dda_coverage.py'
