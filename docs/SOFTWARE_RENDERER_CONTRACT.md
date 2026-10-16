@@ -1230,3 +1230,17 @@ that the triangle would have covered that X inside the rejected
 scanline. No exact pixel coverage, vertical pixel skip cause,
 hardware GPU mask test, STP/ABR parity, original gameplay, or
 Switch-on-device scene is authenticated by this tool.
+
+
+## Observed native DDA vertical clip branch (selected span only)
+
+The opt-in `tools/instrument_map02_raster_skips.py` now observes original
+ascending and descending DDA row evaluation before their `clipT/clipB`
+rejection branches. Reason code `4` is emitted **only** if the selected
+native VRAM Y is outside the allowed vertical drawing area and the
+selected X is inside the corresponding current half-open DDA edge span.
+`tools/verify_map02_raster_skips.py` validates the event with the same
+SHA-bound source-to-GTE-to-GPU frame and ordinal evidence as codes 1–3.
+This is evidence of an executed scanline vertical clip, **not** a proof
+of actual triangle coverage, GPU mask testing or hardware PS1 pixel parity.
+The feature remains absent from the regular build without opt-in flags.
