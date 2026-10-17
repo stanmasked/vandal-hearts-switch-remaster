@@ -87,8 +87,8 @@ int main(int argc, char **argv) {
         if (written <= 0) return 5;
         fwrite(result, 1, (size_t)written, stdout);
     } else {
-        if (written || !vh_map02_cd_probe_failed() &&
-            strcmp(argv[2], "no-completion")) return 6;
+        if (written || (!vh_map02_cd_probe_failed() &&
+            strcmp(argv[2], "no-completion"))) return 6;
     }
     return fclose(s_disc) != 0 ? 7 : 0;
 }
