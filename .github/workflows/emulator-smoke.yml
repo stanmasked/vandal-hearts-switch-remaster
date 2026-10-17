@@ -19,6 +19,8 @@ on:
       - 'tests/test_vh_audout_queue_export.c'
       - 'tools/audit_nexium_audout_queue.py'
       - 'tools/audit_nexium_audout_latency.py'
+      - 'tools/audit_nexium_audout_scene_correlation.py'
+      - 'tests/test_audit_nexium_audout_scene_correlation.py'
       - 'tests/test_audit_nexium_audout_latency.py'
       - 'tools/audit_nexium_audout_repeatability.py'
       - 'tools/analyze_nexium_audout_window_maxima.py'
@@ -76,6 +78,7 @@ jobs:
           python3 -m unittest discover -s tests -p "test_analyze_nexium_scene_audio.py" -v
           python3 -m unittest discover -s tests -p "test_audit_nexium_audout_queue.py" -v
           python3 -m unittest discover -s tests -p "test_audit_nexium_audout_latency.py" -v
+          python3 -m unittest discover -s tests -p "test_audit_nexium_audout_scene_correlation.py" -v
           python3 -m unittest discover -s tests -p "test_audit_nexium_audout_repeatability.py" -v
           python3 -m unittest discover -s tests -p "test_analyze_nexium_audout_window_maxima.py" -v
           python3 -m unittest discover -s tests -p "test_verify_switch_runtime_nro.py" -v
@@ -728,6 +731,26 @@ jobs:
             --output runtime-evidence/scene-soak/soak-audout-latency-verification.json
           python3 -m json.tool runtime-evidence/scene-soak/soak-audout-latency-verification.json >/dev/null
           echo "Actual individual audout API-call duration bands checked across original guest SD; not audible underrun proof." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify guest-clock-bound scene input and audout-second relation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s runtime-evidence/scene-soak/soak-audout-clock-unverified.csv
+          test -s runtime-evidence/scene-soak/soak-audout-clock-export-result.txt
+          python3 tools/audit_nexium_audout_scene_correlation.py \
+            --clock-csv runtime-evidence/scene-soak/soak-audout-clock-unverified.csv \
+            --clock-locations runtime-evidence/scene-soak/soak-audout-clock-locations.txt \
+            --clock-receipt runtime-evidence/scene-soak/soak-audout-clock-export-result.txt \
+            --latency-csv runtime-evidence/scene-soak/soak-audout-latency-unverified.csv \
+            --latency-verification runtime-evidence/scene-soak/soak-audout-latency-verification.json \
+            --scene-csv runtime-evidence/scene-soak/soak-guest-optical.csv \
+            --scene-verification runtime-evidence/scene-soak/soak-verification.json \
+            --queue-verification runtime-evidence/scene-soak/soak-audout-verification.json \
+            --sd-root "$RUNNER_TEMP/vh-nexium-stage268-${GITHUB_RUN_ID}" \
+            --output runtime-evidence/scene-soak/soak-audout-scene-correlation.json
+          python3 -m json.tool runtime-evidence/scene-soak/soak-audout-scene-correlation.json >/dev/null
+          echo "Scene INPUTs and audout calls co-occur on the guest clock; no causal or audible claims." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Record audio capture boundary
         if: always()
