@@ -94,6 +94,17 @@ class PrivateFullPcBuildTests(unittest.TestCase):
         self.assertEqual(len(result["pc_executable_sha256"]), 64)
         self.assertEqual(result["private_retail_inputs_binding_sha256"], "9" * 64)
 
+    def test_unstable_original_elf_digest_prevents_private_receipt(self):
+        with (patch("tools.build_map02_cycle_pc_local.subprocess.run",
+                    side_effect=self.build_fake),
+              patch("tools.build_map02_cycle_pc_local.stable_owned_elf_sha256",
+                    side_effect=ValueError("private ELF digest input changed during hashing")),
+              patch("tools.map02_cycle_build_provenance.create_build_receipt") as publish):
+            with self.assertRaisesRegex(ValueError, "changed during hashing"):
+                build_full_pc(self.upstream, self.bundle,
+                              report_dir=self.upstream.parent / "report")
+        publish.assert_not_called()
+
     def test_optional_private_build_receipt_emitted_only_after_elf_audit(self):
         report_dir = self.upstream.parent / "build-receipt"
         report_dir.mkdir(mode=0o700)
