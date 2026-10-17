@@ -68,7 +68,7 @@ class TestExactSlowCalls(unittest.TestCase):
             (b"TOTAL,-1,0,0,0,0,0,106,0",b"TOTAL,-1,0,0,0,0,0,106,1"),
             (b"CALL,0,7,",b"CALL,1,7,"),
             (b",45000000,1,0,0\n",b",44999999,1,0,0\n"),
-            (b"CALL,0,7,",b"CALL,0,8,"),
+            (b"CALL,0,7,",b"CALL,0,43,"),
             (b"CALL,0,7,",b"CALL,0,7,"),
         )
         for i,(old,new) in enumerate(replacements):
