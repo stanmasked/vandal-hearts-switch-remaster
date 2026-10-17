@@ -18,6 +18,7 @@ from tools.check_map02_cycle_make_plan import (
     audit, preflight, BUILD,
 )
 from tools.check_map02_cycle_elf import audit_cycle_elf
+from tools.check_map02_original_font_c import verify_generated_original_font
 from tools.check_map02_private_pc_inputs import verify_private_pc_inputs
 from tools.map02_local_capture_handoff import _sha_file, verify_pinned_upstream
 from tools.publish_map02_blendg1_witness import _private_directory
@@ -84,6 +85,7 @@ def create_build_receipt(report_dir, pc_binary, upstream, bundle,
         raise ValueError("no confirmed local PC ELF build to record")
     planned = audit(upstream, bundle)
     checked = audit_cycle_elf(binary)
+    verify_generated_original_font(upstream, bundle, krom_source=krom_source)
     from tools.check_map02_cycle_make_plan import preflight
     preflight(upstream, bundle)
     from tools.verify_map02_native_gpu_capture import private_file
@@ -157,6 +159,7 @@ def verify_build_receipt(report_dir, pc_binary, upstream, bundle,
         raise ValueError("noncanonical private PC build bytes")
     planned = audit(upstream, bundle)
     checked = audit_cycle_elf(binary)
+    verify_generated_original_font(upstream, bundle, krom_source=krom_source)
     manifest_bytes = private_file(
         _private_directory(bundle), "map02_cycle_build_inputs.json",
         max_bytes=8192)
