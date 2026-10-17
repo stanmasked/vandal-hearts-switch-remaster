@@ -85,6 +85,55 @@ performance or source soundtrack fidelity.
   with exact original-SD auditor passed.
 - Offline cross-run comparison: byte-rechecked on both archived
   evidence files, matching the original-SD verifier receipts.
-- New reusable Stage-275 cross-run comparison tool and synthetic
-  negative tests: committed; **host CI and new emulator workflow
-  acceptance pending** until their subsequent Actions finish.
+- Reusable Stage-275 cross-run comparison tool and synthetic negative
+  tests: **host CI passed** in [39075155491](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39075155491), and the pinned NeXium
+  runtime passed in [39075005998](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39075005998).
+- Independent real-archive comparison workflow: **passed** in
+  [39075889640](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39075889640), which downloaded source artifacts
+  from GitHub Actions runs 39072903722 and 39073836066, rechecked
+  hashes and archived its JSON verdict. This workflow now accepts
+  four actual source runs, with new four-run CI acceptance tracked separately.
+
+
+## Four same-binary original-SD accepted observations
+
+Two additional workflows independently completed the full exact
+original-SD slow-call gate:
+
+- [39074970372](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39074970372)
+- [39075005998](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39075005998)
+
+All four releases had **identical NRO SHA-256**
+\`4be7635609589952363d3255e81537343a5893bff3611ecd30df48d39d6f35cb\`.
+An additional offline archival audit rechecked source copied CSVs,
+call timestamps, queue/latency aggregates and earlier original-SD
+verdicts for the four successful runs:
+
+| NeXium run | Total audout calls | Calls ≥40 ms | Calls ≥50 ms | Exact slow events lost |
+| --- | ---: | ---: | ---: | ---: |
+| 39072903722 | 1,942 | 22 | 2 | 0 |
+| 39073836066 | 1,990 | 13 | 0 | 0 |
+| 39074970372 | 1,920 | 28 | 4 | 0 |
+| 39075005998 | 1,963 | 23 | 4 | 0 |
+| **Combined observations** | **7,815** | **86** | **10** | **0** |
+
+At least one ≥50 ms call began within ±500 ms of scene INPUTs
+in the third and fourth runs, at serials {2,4} and {2,9}
+respectively. The first two runs had no ≥50 ms call beginning
+within that window around any scene INPUT. Differences between
+NeXium runs must not be treated as proof of a cause, a deterministic
+audio-quality threshold, a particular scene defect, a device underrun
+or a Nintendo Switch hardware result.
+
+The dedicated
+[\`.github/workflows/nexium-slow-runs-comparison.yml\`](../.github/workflows/nexium-slow-runs-comparison.yml)
+now obtains four prior completed successful runs directly from
+GitHub's own Actions artifacts (read-only \`actions:read\` token),
+checks distinct run IDs, re-packages source bytes without modifying
+them, runs the reusable comparer and preserves the result. Its
+report states clearly that the original transient guest SD cannot
+be reopened during retrospective comparison; the original-SD status
+comes from each source workflow's previously completed audit.
+The first **two-run** comparison in Actions 39075889640 was
+successful. **Acceptance of the expanded four-run GitHub Actions
+comparison is separate** until that newer workflow finishes.
