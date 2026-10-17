@@ -110,6 +110,8 @@ def verify_capture(directory: Path, *, target_frame: int):
     pairs=0;draws=loads=moves=clears=0
     assignments=0;draw_changed_words=transfer_changed_words=0
     snapshot_hashes=[]
+    upload_hashes=[]
+    load_pairs_without_payload=0
     entered_target_draw_frame=False
     for i in range(0,len(events),2):
         before,after=events[i:i+2]
@@ -141,16 +143,20 @@ def verify_capture(directory: Path, *, target_frame: int):
             transfer_changed_words+=changed
             if kind=="load":
                 loads+=1
-                # A bounded original upload is only present for the
-                # second (post-LoadImage) record, and may be omitted by
-                # the source recorder for >16384-word transfers.
+                # Original C emits upload bytes only on the AFTER event.
+                # Omission can mean an intentionally unrecorded transfer;
+                # do not confuse this with a verified zero-byte upload.
+                if before["upload"]:
+                    raise ValueError("LoadImage before event must not claim an upload payload")
                 upload=after["upload"]
                 if upload:
                     rect=after["rect"]
                     area=rect[2]*rect[3]
                     if not 0<area<=16384:
                         raise ValueError("LoadImage payload exists for invalid/oversized rectangle")
-                    private_file(directory,upload,expected=area*2)
+                    upload_hashes.append(sha(private_file(directory,upload,expected=area*2)))
+                else:
+                    load_pairs_without_payload+=1
             elif kind=="move":
                 moves+=1
             elif kind=="clear":
@@ -158,6 +164,11 @@ def verify_capture(directory: Path, *, target_frame: int):
     return {
         "native_gpu_events_sha256":sha(log_raw),
         "vram_snapshot_sha256_list_sha256":sha("".join(snapshot_hashes).encode("ascii")),
+        "upload_payload_sha256_list_sha256":(
+            sha("".join(upload_hashes).encode("ascii")) if upload_hashes else None
+        ),
+        "load_pairs_with_verified_payload":len(upload_hashes),
+        "load_pairs_without_payload":load_pairs_without_payload,
         "frame":target_frame,
         "native_gpu_pairs_verified":pairs,
         "draw_otag_primitive_pairs":draws,
