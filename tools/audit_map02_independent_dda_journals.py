@@ -85,6 +85,8 @@ def audit(directory: Path, *, native_frame=None):
         "verified": False,
         "frame": None,
         "gpu_events_sha256": None,
+        "vram_snapshot_sha256_list_sha256": None,
+        "native_gpu_pairs_verified": None,
         "draw_primitives_in_bounded_capture": None,
         "observed_dda_primitive_keys": None,
     }
@@ -131,6 +133,8 @@ def audit(directory: Path, *, native_frame=None):
             "verified": True,
             "frame": native_frame,
             "gpu_events_sha256": capture["native_gpu_events_sha256"],
+            "vram_snapshot_sha256_list_sha256": capture["vram_snapshot_sha256_list_sha256"],
+            "native_gpu_pairs_verified": capture["native_gpu_pairs_verified"],
             "draw_primitives_in_bounded_capture": len(draw_packets),
             "observed_dda_primitive_keys": len({
                 x.primitive_ordinal for x in spans
@@ -142,6 +146,11 @@ def audit(directory: Path, *, native_frame=None):
         "shared_frame_ids": sorted(span_frames & candidate_frames),
         "same_primitive_row_keys": len(span_keys & candidate_keys),
         "single_sample_envelope_consistent": True,
+        # A missing journal is an absence of recorded evidence, NOT a claim
+        # of zero executed or vertically rejected rows.
+        "dda_observation_mode": ("both" if spans and candidates else
+                                 "entered_only" if spans else "rejected_only"),
+        "all_dda_journal_classes_observed": bool(spans and candidates),
         "native_gpu_binding": gpu_binding,
         "notes": [
             "Missing journals mean missing observations, not zero GPU events.",
