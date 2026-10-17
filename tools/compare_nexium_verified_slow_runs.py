@@ -85,7 +85,12 @@ def audit_archive(path: Path)->dict:
         receipt=z.read(PREFIX+"soak-audout-slow-export-result.txt")
     run_id=preflight.get("run_id")
     nro=preflight.get("nro_sha256")
-    if (type(run_id) is not int or run_id<=0
+    if (preflight.get("result")!="SAME_WORKFLOW_BUILD_ARTIFACT_HASH_AND_STRUCTURE_VERIFIED"
+            or preflight.get("hardware_status")!="HARDWARE NOT TESTED"
+            or type(preflight.get("git_sha")) is not str
+            or len(preflight["git_sha"])!=40
+            or any(c not in "0123456789abcdef" for c in preflight["git_sha"])
+            or type(run_id) is not int or run_id<=0
             or type(preflight.get("run_attempt")) is not int
             or preflight["run_attempt"]<1
             or type(nro) is not str or len(nro)!=64
@@ -180,7 +185,7 @@ def compare_archives(archives: list[Path])->dict:
         "nro_sha256":runs[0]["nro_sha256"],
         "runs":runs,
         "common_scene_serials_near_ge50":sorted(common),
-        "independent_real_runs":len(runs),
+        "distinct_archive_run_ids":len(runs),
         "original_transient_guest_sd_reopened_now":False,
         "real_original_sd_acceptance_source":"PRIOR_SAME_WORKFLOW_AUDIT_REPORT",
         "slow_call_scene_causality_proven":False,
@@ -199,7 +204,7 @@ def main()->int:
         args.output.write_text(json.dumps(report,indent=2,sort_keys=True)+"\n",
                                encoding="utf-8")
         print(json.dumps({"result":report["result"],
-                          "runs":report["independent_real_runs"],
+                          "runs":report["distinct_archive_run_ids"],
                           "common_scene_serials_near_ge50":
                             report["common_scene_serials_near_ge50"],
                           "physical_switch_tested":False},sort_keys=True))
