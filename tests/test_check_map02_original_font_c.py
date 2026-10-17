@@ -5,6 +5,7 @@ No game executable, licensed KROM, ROM, BIOS or original generated C is used.
 import hashlib
 from pathlib import Path
 import tempfile
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -147,6 +148,31 @@ class PrivateOriginalFontCProvenanceTests(unittest.TestCase):
         bios.write_bytes(raw)
         self.assertTrue(self.check(krom_source=bios)[
             "pinned_original_krom_font_c_identical"])
+
+    def test_owned_krom_generated_c_and_real_native_elf_are_bound_together(self):
+        c_file = self.root / "linked-synthetic.c"
+        c_file.write_text(
+            "const unsigned char pc_kanji_charset2[6270] = {"
+            + ",".join(str(value) for value in self.glyphs)
+            + "};\\nint main(void) {return 0;}\\n")
+        binary = self.root / "linked-synthetic-elf"
+        subprocess.run(["cc", str(c_file), "-o", str(binary)],
+                       check=True, capture_output=True, timeout=30)
+        report = font.verify_linked_original_font(
+            self.upstream, self.bundle, binary, krom_source=self.source)
+        self.assertTrue(report["linked_original_us_font_bytes_match"])
+        self.assertFalse(report["actual_gameplay_executed"])
+
+        altered = self.root / "linked-altered-elf"
+        raw = bytearray(binary.read_bytes())
+        position = raw.find(self.glyphs)
+        self.assertGreaterEqual(position, 0)
+        raw[position + 75] ^= 1
+        altered.write_bytes(raw)
+        altered.chmod(0o700)
+        with self.assertRaisesRegex(ValueError, "linked original US font bytes differ"):
+            font.verify_linked_original_font(
+                self.upstream, self.bundle, altered, krom_source=self.source)
 
     def test_generated_serializer_exact_original_public_format(self):
         text = font._expected_us_font_c(self.glyphs)
