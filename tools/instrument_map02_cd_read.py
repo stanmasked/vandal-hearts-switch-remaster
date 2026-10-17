@@ -65,13 +65,13 @@ def instrument_core_cd(source):
     start = source.index('   case 7:\n', loader)
     end = source.index('   case 8:\n', start)
     segment = source[start:end]
-    anchor = '       } else {\n          gCdLoader.state = 99;\n       }\n       break;\n'
-    replacement = ('       } else {\n          gCdLoader.state = 99;\n       }\n'
+    anchor = '      } else {\n         gCdLoader.state = 99;\n      }\n      break;\n'
+    replacement = ('      } else {\n         gCdLoader.state = 99;\n      }\n'
                    '#ifdef VH_MAP02_CD_READ_PROBE\n'
-                   '       vh_map02_cd_loader_complete(gCdLoader.cdf,\n'
-                   '           CDF_M_MAP02_PRS, gCdLoader.state);\n'
+                   '      vh_map02_cd_loader_complete(gCdLoader.cdf,\n'
+                   '          CDF_M_MAP02_PRS, gCdLoader.state);\n'
                    '#endif\n'
-                   '       break;\n')
+                   '      break;\n')
     segment = once(segment, anchor, replacement)
     return source[:start] + segment + source[end:]
 
