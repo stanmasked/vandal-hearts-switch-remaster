@@ -321,7 +321,7 @@ jobs:
           )
           echo "Original CD loader and full native GPU/VRAM/scoped capture compile together."
           echo "This is NOT a full retail executable or proof of MAP02 rendering."
-      - name: Compile original public US game and backend sources except retail-font-dependent text.c
+      - name: Compile original public game/backend source except verified retail assets include dependencies
         shell: bash
         run: |
           set -euo pipefail
@@ -332,7 +332,7 @@ jobs:
           )
           python3 -m tools.check_map02_cycle_object_inventory \
             upstream-pc "${RUNNER_TEMP}/map02-cycle-private-build"
-          echo "Public original PC modules compiled except retail glyph text.c; no assets or complete game ELF."
+          echo "All asset-free original game and PC backend objects compiled; generated retail assets and game ELF absent."
       - name: Fail closed on upstream rasterizer source drift
         run: |
           python3 -m tools.instrument_map02_scoped_blend \
