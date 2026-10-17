@@ -30,6 +30,15 @@ int vh_audio_page_lease_ready(const VhAudioPageLease *lease) {
     return lease && !lease->in_flight;
 }
 
+int vh_audio_output_transport_outcome(
+    int descriptor_returned, int timing_result, unsigned *timing_fault) {
+    /* This flag is diagnostic only and cannot change whether the
+     * backend physically accepted and released its PCM descriptor. */
+    if(timing_result && timing_fault)
+        *timing_fault=1u;
+    return descriptor_returned ? 0 : -1;
+}
+
 uint64_t vh_audio_output_ticks_to_us(uint64_t ticks,
                                      uint64_t tick_frequency) {
     if (!tick_frequency) return 0;
