@@ -25,7 +25,8 @@ KINDS={"vblank","gp1_mmio","gpu_dma2_start","gp0_unai_handled","unai_sample_delt
        "mixed_worker_steps","mixed_worker_order",
        "mixed_sync_a0_store_count","mixed_sync_copy_store_count",
        "mixed_sync_copy_same_count",
-       "cycle1_a0_queued","cycle1_a0_done","cycle1_a0_stores","cycle1_copy_queued","cycle1_copy_done","cycle1_copy_stores","cycle1_copy_same","cycle1_masked_copy","cycle1_sync_a0","cycle1_sync_copy","cycle1_sync_same","cycle2_a0_queued","cycle2_a0_done","cycle2_a0_stores","cycle2_copy_queued","cycle2_copy_done","cycle2_copy_stores","cycle2_copy_same","cycle2_masked_copy","cycle2_sync_a0","cycle2_sync_copy","cycle2_sync_same"}
+       "cycle1_a0_queued","cycle1_a0_done","cycle1_a0_stores","cycle1_copy_queued","cycle1_copy_done","cycle1_copy_stores","cycle1_copy_same","cycle1_masked_copy","cycle1_sync_a0","cycle1_sync_copy","cycle1_sync_same","cycle2_a0_queued","cycle2_a0_done","cycle2_a0_stores","cycle2_copy_queued","cycle2_copy_done","cycle2_copy_stores","cycle2_copy_same","cycle2_masked_copy","cycle2_sync_a0","cycle2_sync_copy","cycle2_sync_same",
+       "pressure_tried","pressure_accepted","pressure_idle_fallback","pressure_full_fallback","pressure_peak_words","pressure_worker_completed","pressure_worker_stores","pressure_sync_stores","pressure_pending_words","pressure_worker_same","pressure_sync_same"}
 FIELDS={"kind","seq","value","cycle","frame"}
 
 class Refused(ValueError):pass
@@ -73,7 +74,8 @@ def validate(content: bytes):
                 item["kind"].startswith("post_async_sync_") or
                 item["kind"].startswith("mixed_") or
                 item["kind"].startswith("cycle1_") or
-                item["kind"].startswith("cycle2_")) and (item["cycle"]!=0 or
+                item["kind"].startswith("cycle2_") or
+                item["kind"].startswith("pressure_")) and (item["cycle"]!=0 or
                 item["value"]==0xffffffff):
                 raise Refused("invalid aggregate gpulib store event")
             if item["kind"]=="gp1_mmio":gp1+=1

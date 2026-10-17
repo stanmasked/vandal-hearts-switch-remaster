@@ -1,0 +1,340 @@
+name: MAP02 v92 pinned async GPU queue occupancy and fallback stores
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v92-queue-pressure.yml'
+      - 'tools/apply_map02_v86_pcsx_rearmed.py'
+      - 'tools/summarize_map02_v85_native_stores.py'
+      - 'tests/test_map02_v85_native_stores.py'
+      - 'tools/summarize_map02_v84_unai_samples.py'
+      - 'tests/test_map02_v84_unai_samples.py'
+      - 'tools/summarize_map02_v86_gpulib_stores.py'
+      - 'tests/test_map02_v86_gpulib_stores.py'
+      - 'tools/apply_map02_v87_pcsx_rearmed.py'
+      - 'tools/summarize_map02_v87_gpulib_edges.py'
+      - 'tests/test_map02_v87_gpulib_edges.py'
+      - 'tools/apply_map02_v88_pcsx_rearmed.py'
+      - 'tools/summarize_map02_v88_async_dma.py'
+      - 'tests/test_map02_v88_async_dma.py'
+      - 'tools/apply_map02_v89_pcsx_rearmed.py'
+      - 'tools/summarize_map02_v89_async_copy.py'
+      - 'tests/test_map02_v89_async_copy.py'
+      - 'tools/apply_map02_v90_pcsx_rearmed.py'
+      - 'tools/summarize_map02_v90_mixed_order.py'
+      - 'tests/test_map02_v90_mixed_order.py'
+      - 'tools/apply_map02_v91_pcsx_rearmed.py'
+      - 'tools/summarize_map02_v91_mode_cycles.py'
+      - 'tests/test_map02_v91_mode_cycles.py'
+      - 'tools/apply_map02_v92_pcsx_rearmed.py'
+      - 'tools/summarize_map02_v92_queue_pressure.py'
+      - 'tests/test_map02_v92_queue_pressure.py'
+      - 'tools/map02_v80_native_timeline.*'
+      - 'tools/map02_v81_event_jsonl.*'
+      - 'tools/verify_map02_v82_native_trace.py'
+      - 'tests/test_map02_v83_unai_dispatch.py'
+      - 'tools/summarize_map02_v83_unai_vblank.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pinned-unai-dispatch:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: remaster
+          persist-credentials: false
+      - name: Synthetic regression tests for v80-v92
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          for version in 80 81 82 83 84 85 86 87 88 89 90 91 92; do
+            case "$version" in
+              80) pattern='test_map02_v80_native_observer.py';;
+              81) pattern='test_map02_v81_event_jsonl.py';;
+              82) pattern='test_map02_v82_native_publish.py';;
+              83) pattern='test_map02_v83_unai_dispatch.py';;
+              84) pattern='test_map02_v84_unai_samples.py';;
+              85) pattern='test_map02_v85_native_stores.py';;
+              86) pattern='test_map02_v86_gpulib_stores.py';;
+              87) pattern='test_map02_v87_gpulib_edges.py';;
+              88) pattern='test_map02_v88_async_dma.py';;
+              89) pattern='test_map02_v89_async_copy.py';;
+              90) pattern='test_map02_v90_mixed_order.py';;
+              91) pattern='test_map02_v91_mode_cycles.py';;
+              92) pattern='test_map02_v92_queue_pressure.py';;
+            esac
+            python3 -m unittest discover -s remaster/tests -p "$pattern" -v
+          done
+      - name: Patch pinned upstream with Unai post-dispatch observer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init -q upstream-pcsx
+          git -C upstream-pcsx remote add origin https://github.com/notaz/pcsx_rearmed.git
+          pin=8b6c163575e6ce9a0537553e0d4ed4225315955e
+          git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
+          git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
+          test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
+          python3 -m remaster.tools.apply_map02_v92_pcsx_rearmed upstream-pcsx
+          git -C upstream-pcsx diff --check
+          grep -F 'vh80_record(VH83_GP0_UNAI_HANDLED' upstream-pcsx/plugins/gpu_unai/gpulib_if.cpp
+          grep -F 'VH83_UNAI_DISPATCH_PASS' upstream-pcsx/frontend/main.c
+          grep -F 'VH84_UNAI_SAMPLES_PASS' upstream-pcsx/frontend/main.c
+          grep -F 'VH86_GPULIB_PASS' upstream-pcsx/frontend/main.c
+          grep -F 'VH87_GPULIB_PASS' upstream-pcsx/frontend/main.c
+          grep -F 'VH88_ASYNC_PASS' upstream-pcsx/frontend/main.c
+          grep -F 'VH89_ASYNC_COPY_PASS' upstream-pcsx/frontend/main.c
+          grep -F 'VH90_MIXED_PASS' upstream-pcsx/frontend/main.c
+          grep -F 'VH91_CYCLES_PASS' upstream-pcsx/frontend/main.c
+          grep -F 'VH92_PRESSURE_PASS' upstream-pcsx/frontend/main.c
+          grep -F 'vh92_track_depth' upstream-pcsx/plugins/gpulib/gpu_async.c
+          grep -F 'vh90_worker_token' upstream-pcsx/plugins/gpulib/gpu_async.c
+          grep -F 'vh89_copy_note_store' upstream-pcsx/plugins/gpulib/gpu_async.c
+          grep -F 'vh88_async_counter' upstream-pcsx/plugins/gpulib/gpu_async.c
+      - name: Build actual Unai software renderer with C/C++ observability
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cc == 'clang' && 'clang++' || 'g++' }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libsdl1.2-dev libpng-dev zlib1g-dev
+          git -C upstream-pcsx submodule update --init --depth=1
+          mkdir -p proof/public
+          (
+            cd upstream-pcsx
+            CC="$CC" CXX="$CXX" ./configure --platform=generic --gpu=unai --disable-dynarec --sound-drivers=sdl
+            make -j2 VH_MAP02_V66_PCSX_PROBE=1 CC="$CC" CXX="$CXX" > ../proof/private-build.log 2>&1
+            test -s pcsx
+            grep -Fx 'USE_ASYNC_GPU = 1' config.mak
+            nm pcsx | grep -w vh88_async_counter
+            nm pcsx | grep -w vh89_copy_metric
+            nm pcsx | grep -w vh90_stat
+            nm pcsx | grep -w vh92_pressure_metric
+            nm pcsx | grep -w vh80_record
+            nm pcsx | grep -w vh81_format_jsonl
+            nm pcsx | grep -w vh82_publish_private
+          ) || { tail -n 100 proof/private-build.log; exit 1; }
+          echo 'Pinned Unai actual pixel store C/C++ instrumentation linked, synthetic-only' > proof/public/v92-build-summary.txt
+      - name: Real pinned emulator synthetic MIPS/VBlank/Unai GP0 post-handler trace
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -m 700 -p proof/private
+          mkdir -m 700 -p proof/v92-home
+          python3 -m remaster.tools.make_map02_v78_vblank_mips_exe --output proof/private/V92_SYNTHETIC.EXE
+          test "$(stat -c %s proof/private/V92_SYNTHETIC.EXE)" -eq 10240
+          export VH_MAP02_V82_PRIVATE_PATH="$PWD/proof/private/V92_RENDERER_EVENTS.jsonl"
+          test ! -e "$VH_MAP02_V82_PRIVATE_PATH"
+          timeout 75s env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v92-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread --vh92-async-queue-pressure \
+            proof/private/V92_SYNTHETIC.EXE > proof/private/v92-runtime.log 2>&1 || {
+              tail -n 110 proof/private/v92-runtime.log
+              exit 1
+            }
+          grep -F 'VH78_VBLANK_VRAM_PASS vblanks=4 phases=4 samples=2380' proof/private/v92-runtime.log
+          grep -F 'VH82_PRIVATE_EXPORT_PASS vblanks=4 ' proof/private/v92-runtime.log
+          grep -F 'VH83_UNAI_DISPATCH_PASS handled=' proof/private/v92-runtime.log
+          grep -F 'VH84_UNAI_SAMPLES_PASS comparisons=' proof/private/v92-runtime.log
+          grep -F 'VH85_UNAI_STORES_PASS attempts=' proof/private/v92-runtime.log
+          grep -F 'VH86_GPULIB_PASS mips_a0_stores=' proof/private/v92-runtime.log
+          grep -F 'VH87_GPULIB_PASS overlap_stores=' proof/private/v92-runtime.log
+          grep -F 'VH88_ASYNC_PASS queued=' proof/private/v92-runtime.log
+          grep -F 'VH89_ASYNC_COPY_PASS queued=' proof/private/v92-runtime.log
+          grep -F 'VH90_MIXED_PASS a0_queued=' proof/private/v92-runtime.log
+          grep -F 'VH91_CYCLE_PASS round=1 ' proof/private/v92-runtime.log
+          grep -F 'VH91_CYCLE_PASS round=2 ' proof/private/v92-runtime.log
+          grep -F 'VH91_CYCLES_PASS rounds=2' proof/private/v92-runtime.log
+          grep -F 'VH92_PRESSURE_PASS attempts=' proof/private/v92-runtime.log
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          from remaster.tools.verify_map02_v82_native_trace import validate
+          from remaster.tools.summarize_map02_v83_unai_vblank import summarize
+          from remaster.tools.summarize_map02_v84_unai_samples import summarize as samples
+          from remaster.tools.summarize_map02_v85_native_stores import summarize as stores
+          from remaster.tools.summarize_map02_v86_gpulib_stores import summarize as gpulib
+          from remaster.tools.summarize_map02_v87_gpulib_edges import summarize as edges
+          from remaster.tools.summarize_map02_v88_async_dma import summarize as asynchronous
+          from remaster.tools.summarize_map02_v89_async_copy import summarize as copied
+          from remaster.tools.summarize_map02_v90_mixed_order import summarize as mixed
+          from remaster.tools.summarize_map02_v91_mode_cycles import summarize as cycled
+          from remaster.tools.summarize_map02_v92_queue_pressure import summarize as pressure
+          log=Path("proof/private/v92-runtime.log").read_text()
+          head=re.findall(r'VH83_UNAI_DISPATCH_PASS handled=(\d+)',log)
+          tail=re.findall(r'VH82_PRIVATE_EXPORT_PASS vblanks=(\d+) gp1_mmio=(\d+) entries=(\d+) bytes=(\d+) drops=(\d+)',log)
+          assert len(head)==len(tail)==1
+          observed=int(head[0])
+          vblanks,gp1,entries,size,drops=map(int,tail[0])
+          assert observed>0 and vblanks==4 and gp1>=2 and drops==0
+          path=Path("proof/private/V92_RENDERER_EVENTS.jsonl")
+          assert path.stat().st_mode&0o777==0o600
+          evidence=validate(path.read_bytes())
+          assert evidence["gp0_unai_handled"]==observed
+          timing=summarize(path.read_bytes())
+          assert sum(e["unai_handler_events"] for e in timing["between_vblanks"])+timing["before_first_vblank"]+timing["after_last_vblank"]==observed
+          assert timing["original_retail_MAP02_verified"] is False
+          pixels=samples(path.read_bytes())
+          assert pixels["handler_comparisons"]==observed
+          assert pixels["changed_handlers"]>0 and pixels["unchanged_handlers"]>0
+          assert pixels["changed_sample_points"]>0
+          assert pixels["original_retail_MAP02_verified"] is False
+          native=stores(path.read_bytes())
+          assert native["gp0_handlers"]==observed
+          assert native["native_store_attempts"]>native["native_stores_writing_previous_value"]>0
+          assert native["native_stores_writing_new_value"]>0
+          assert native["original_retail_MAP02_verified"] is False
+          memory=gpulib(path.read_bytes())
+          assert memory["mips_a0_16bit_store_assignments"]>memory["mips_a0_same_value_assignments"]>0
+          assert memory["host_gp0_80_copy_16bit_store_assignments"]==32
+          assert memory["host_gp0_80_copy_same_value_assignments"]==16
+          assert memory["host_gp0_80_submitted_by_interpreted_MIPS"] is False
+          overlap=edges(path.read_bytes())
+          assert overlap["host_overlap_16bit_stores"]==16
+          assert overlap["host_overlap_same_value_stores"]==8
+          assert overlap["host_mask_a0_16bit_stores"]==12
+          assert overlap["host_mask_a0_same_value_stores"]==4
+          assert overlap["host_xwrap_16bit_stores"]==8
+          assert overlap["host_xwrap_same_value_stores"]==4
+          assert overlap["all_v87_commands_are_host_submitted"] is True
+          assert overlap["retail_MAP02_verified"] is False
+          assert overlap["HD_replacement_approved"] is False
+          async_evidence=asynchronous(path.read_bytes())
+          assert async_evidence["async_queued_submissions"]>0
+          assert async_evidence["async_worker_completed_transfers"]==async_evidence["async_queued_submissions"]
+          assert async_evidence["async_worker_16bit_assignments"]==8*async_evidence["async_queued_submissions"]
+          assert 0<async_evidence["async_worker_same_value_assignments"]<async_evidence["async_worker_16bit_assignments"]
+          assert async_evidence["original_retail_MAP02_verified"] is False
+          cp=copied(path.read_bytes())
+          assert cp["async_gp0_80_queued"]==cp["async_gp0_80_completed_by_gpu_worker"]==4
+          assert cp["async_gp0_80_16bit_stores"]==16
+          assert cp["async_gp0_80_same_value_stores"]==8
+          assert cp["async_gp0_80_masked_completed"]==2
+          assert cp["after_worker_sync_gp0_80_16bit_stores"]==8
+          assert cp["after_worker_sync_gp0_80_same_value_stores"]==4
+          assert cp["all_v89_GP0_commands_host_submitted"] is True
+          assert cp["retail_MAP02_verified"] is False
+          mix=mixed(path.read_bytes())
+          assert mix["async_A0_accepted_by_worker_queue"]==mix["async_A0_completed_by_worker"]==4
+          assert mix["async_GP0_80_accepted_by_worker_queue"]==mix["async_GP0_80_completed_by_worker"]==3
+          assert mix["async_A0_native_16bit_stores"]==32
+          assert mix["async_GP0_80_native_16bit_stores"]==24
+          assert mix["async_GP0_80_masked_copies"]==1
+          assert mix["worker_ordered_semantic_steps"]==7
+          assert mix["worker_order_rolling_hash"]==27249034
+          assert mix["after_worker_shutdown_sync_A0_stores"]==8
+          assert mix["after_worker_shutdown_sync_copy_stores"]==16
+          assert mix["after_worker_shutdown_sync_same_value_copies"]==8
+          assert mix["retail_MAP02_verified"] is False
+          rounds=cycled(path.read_bytes())
+          assert len(rounds["mode_cycles"])==2
+          for q in rounds["mode_cycles"]:
+              assert q["worker_GP0_80_accepted"]==q["worker_GP0_80_completed"]==2
+              assert q["worker_GP0_80_16bit_stores"]==16
+              assert q["worker_GP0_80_same_value_stores"]==0
+              assert q["worker_masked_GP0_80_copies"]==1
+              assert q["worker_A0_completed"]==q["worker_A0_accepted"]
+              assert q["worker_A0_16bit_stores"]==8*q["worker_A0_accepted"]
+              assert q["after_worker_shutdown_sync_A0_stores"]==8
+              assert q["after_worker_shutdown_sync_copy_stores"]==16
+              assert q["after_worker_shutdown_sync_copy_same"]==8
+          assert rounds["first_cycle_VRAM_preserved_after_second_callback_transition"] is True
+          assert rounds["original_retail_MAP02_verified"] is False
+          queue=pressure(path.read_bytes())
+          assert queue["host_A0_uploads"]==16
+          assert queue["async_queue_accepted"]>0
+          assert queue["async_queue_accepted"]==queue["real_worker_completions"]
+          assert queue["post_GPUfreeze_pending_queue_words"]==0
+          assert queue["observed_native_ring_peak_words"]<=32768
+          assert queue["actual_worker_16bit_store_assignments"]==8192*queue["async_queue_accepted"]
+          assert queue["actual_sync_fallback_16bit_store_assignments"]==8192*(16-queue["async_queue_accepted"])
+          assert queue["all_host_16bit_assignments_verified"] is True
+          assert queue["full_retail_MAP02_verified"] is False
+          assert queue["HD_replacement_approved"] is False
+          assert evidence["vblank_edges"]==vblanks and evidence["gp1_mmio"]==gp1
+          assert evidence["events"]==entries and evidence["bytes"]==size
+          assert evidence["original_retail_MAP02_verified"] is False
+          assert evidence["HD_replacement_approved"] is False
+          capture=re.findall(r"VH84_UNAI_SAMPLES_PASS comparisons=(\d+) changed_handlers=(\d+) unchanged_handlers=(\d+)",log)
+          assert len(capture)==1
+          assert list(map(int,capture[0]))==[observed,pixels["changed_handlers"],pixels["unchanged_handlers"]]
+          logged=re.findall(r"VH85_UNAI_STORES_PASS attempts=(\d+) same_value=(\d+) changed_value=(\d+) handlers=(\d+)",log)
+          assert len(logged)==1
+          assert list(map(int,logged[0]))==[
+              native["native_store_attempts"],native["native_stores_writing_previous_value"],
+              native["native_stores_writing_new_value"],observed]
+          copylog=re.findall(r"VH86_GPULIB_PASS mips_a0_stores=(\d+) mips_a0_same=(\d+) host_copy_stores=(\d+) host_copy_same=(\d+)",log)
+          assert len(copylog)==1
+          assert list(map(int,copylog[0]))==[
+              memory["mips_a0_16bit_store_assignments"],memory["mips_a0_same_value_assignments"],
+              memory["host_gp0_80_copy_16bit_store_assignments"],memory["host_gp0_80_copy_same_value_assignments"]]
+          extra=re.findall(r"VH87_GPULIB_PASS overlap_stores=(\d+) overlap_same=(\d+) mask_stores=(\d+) mask_same=(\d+) wrap_stores=(\d+) wrap_same=(\d+)",log)
+          assert len(extra)==1
+          assert list(map(int,extra[0]))==[16,8,12,4,8,4]
+          ah=re.findall(r"VH88_ASYNC_PASS queued=(\d+) completed=(\d+) stores=(\d+) same=(\d+) changed=(\d+)",log)
+          assert len(ah)==1
+          assert list(map(int,ah[0]))==[
+              async_evidence["async_queued_submissions"],async_evidence["async_worker_completed_transfers"],
+              async_evidence["async_worker_16bit_assignments"],async_evidence["async_worker_same_value_assignments"],
+              async_evidence["async_worker_new_value_assignments"]]
+          ch=re.findall(r"VH89_ASYNC_COPY_PASS queued=(\d+) completed=(\d+) stores=(\d+) same=(\d+) masked=(\d+) sync_stores=(\d+) sync_same=(\d+)",log)
+          assert len(ch)==1
+          assert list(map(int,ch[0]))==[4,4,16,8,2,8,4]
+          mx=re.findall(r"VH90_MIXED_PASS a0_queued=(\d+) a0_done=(\d+) a0_stores=(\d+) a0_same=(\d+) copy_queued=(\d+) copy_done=(\d+) copy_stores=(\d+) copy_same=(\d+) masked=(\d+) steps=(\d+) order=(\d+) sync_a0=(\d+) sync_copy=(\d+) sync_same=(\d+)",log)
+          assert len(mx)==1
+          assert list(map(int,mx[0]))==[4,4,32,8,3,3,24,0,1,7,27249034,8,16,8]
+          repeats=re.findall(r"VH91_CYCLE_PASS round=(\d+) a0_queue=(\d+) a0_done=(\d+) a0_stores=(\d+) copies=(\d+)/(\d+) copy_stores=(\d+) copy_same=(\d+) mask=(\d+) sync_a0=(\d+) sync_copy=(\d+) sync_same=(\d+)",log)
+          assert len(repeats)==2
+          for i,rec in enumerate(repeats):
+              seq=list(map(int,rec))
+              m=rounds["mode_cycles"][i]
+              assert seq==[i+1,m["worker_A0_accepted"],m["worker_A0_completed"],
+                  m["worker_A0_16bit_stores"],m["worker_GP0_80_accepted"],
+                  m["worker_GP0_80_completed"],m["worker_GP0_80_16bit_stores"],
+                  m["worker_GP0_80_same_value_stores"],m["worker_masked_GP0_80_copies"],
+                  m["after_worker_shutdown_sync_A0_stores"],
+                  m["after_worker_shutdown_sync_copy_stores"],
+                  m["after_worker_shutdown_sync_copy_same"]]
+          assert len(re.findall(r"VH91_CYCLES_PASS rounds=2 async_copies=4 sync_copies=4 cross_round_retained=1",log))==1
+          pressure_log=re.findall(r"VH92_PRESSURE_PASS attempts=(\d+) accepted=(\d+) idle=(\d+) full=(\d+) peak_words=(\d+) pending=(\d+) worker_done=(\d+) worker_stores=(\d+) sync_stores=(\d+) worker_same=(\d+) sync_same=(\d+)",log)
+          assert len(pressure_log)==1
+          assert list(map(int,pressure_log[0]))==[
+              queue["host_A0_uploads"],queue["async_queue_accepted"],
+              queue["native_idle_to_sync_fallback"],queue["native_full_to_sync_fallback"],
+              queue["observed_native_ring_peak_words"],queue["post_GPUfreeze_pending_queue_words"],
+              queue["real_worker_completions"],queue["actual_worker_16bit_store_assignments"],
+              queue["actual_sync_fallback_16bit_store_assignments"],
+              queue["actual_worker_same_value_assignments"],queue["actual_sync_same_value_assignments"]]
+          Path("proof/public/v92-runtime-summary.txt").write_text(
+              "Real pinned PCSX Unai software renderer: synthetic 24-point VRAM comparisons.\n"+
+              f"VBlank=4, VRAM samples=2380, handled={observed}, drops=0, byte-exact private trace valid.\n"+
+              "Native async GPU queue peak and empty/space fallbacks: all 131072 host A0 stores accounted; zero pending after GPUfreeze.\n")
+          PY
+          sha256sum "$VH_MAP02_V82_PRIVATE_PATH" > proof/private/native.sha256
+          if timeout 75s env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v92-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread --vh83-unai-gp0-smoke \
+            proof/private/V92_SYNTHETIC.EXE > proof/private/duplicate.log 2>&1; then
+            echo 'ERROR duplicate native report was accepted'
+            exit 1
+          fi
+          grep -F 'VH82_PRIVATE_PUBLISH_REFUSED' proof/private/duplicate.log
+          sha256sum -c proof/private/native.sha256
+          test ! -e "$VH_MAP02_V82_PRIVATE_PATH.tmp"
+          echo 'Duplicate private path refused without overwriting events.' >> proof/public/v92-runtime-summary.txt
+      - name: Publish aggregate status only, never private trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-v92-${{ matrix.cc }}-status
+          path: proof/public/
+          if-no-files-found: warn
