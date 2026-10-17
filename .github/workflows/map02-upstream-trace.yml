@@ -122,8 +122,10 @@ on:
       - 'tools/instrument_map02_multi_putpixel_scope.py'
       - 'tools/prepare_map02_private_gpu_make_overlay.py'
       - 'tools/verify_map02_private_gpu_make_overlay.py'
+      - 'tools/build_map02_private_gpu_make_overlay.py'
       - 'tests/test_prepare_map02_private_gpu_make_overlay.py'
       - 'tests/test_verify_map02_private_gpu_make_overlay.py'
+      - 'tests/test_build_map02_private_gpu_make_overlay.py'
       - 'tools/audit_map02_putpixel_samples.py'
       - 'tools/verify_map02_camera_capture.py'
       - 'tools/verify_map02_frame_bundle.py'
@@ -248,6 +250,7 @@ jobs:
             cd remaster
             python3 -m unittest discover -s tests -p 'test_prepare_map02_private_gpu_make_overlay.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_private_gpu_make_overlay.py' -v
+            python3 -m unittest discover -s tests -p 'test_build_map02_private_gpu_make_overlay.py' -v
           )
           PYTHONPATH=remaster python3 -m tools.prepare_map02_private_gpu_make_overlay \
             upstream --output-dir /tmp/vh-map02-pinned-private-make \
@@ -268,10 +271,21 @@ jobs:
           assert not x["game_assets_included"] and not x["retail_map02_gameplay_captured"]
           assert not x["hd_replacement_authorized"]
           PY
+          PYTHONPATH=remaster python3 -m tools.build_map02_private_gpu_make_overlay \
+            upstream --output-dir /tmp/vh-map02-pinned-private-make \
+            --manifest /tmp/vh-map02-private-make.json \
+            --build-dir build-map02-private-ci > /tmp/vh-map02-sealed-make.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("/tmp/vh-map02-sealed-make.json").read_text())
+          assert report["sealed_inputs"] == 4
+          assert report["verified_source_bytes_used_for_compilation"]
+          assert sorted(report["objects_sha256"]) == ["libgpu.o", "pc_raster.o"]
+          assert not report["all_headers_sealed"] and not report["hd_replacement_authorized"]
+          PY
           (
             cd upstream/platform/pc
-            make -f Makefile -f /tmp/vh-map02-pinned-private-make/map02_private_gpu.mk \
-              BUILD_DIR=build-map02-private-ci map02-private-gpu-objects
             test -s build-map02-private-ci/libgpu.o
             test -s build-map02-private-ci/pc_raster.o
             for symbol in VH_CaptureEvent VH_Map02PixelScopeSet \

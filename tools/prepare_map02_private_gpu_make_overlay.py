@@ -81,15 +81,19 @@ ifeq ($(BUILD_DIR),build-map02-)
 $(error MAP02 private GPU BUILD_DIR requires a nonempty suffix)
 endif
 VH_MAP02_PRIVATE_GPU_SRC := {root}
+# CLI variables optionally supply Linux sealed /proc/self/fd inputs.
+# Normal prepared-overlay builds keep the same generated .c files.
+VH_MAP02_PRIVATE_GPU_C := $(VH_MAP02_PRIVATE_GPU_SRC)/{GENERATED_GPU}
+VH_MAP02_PRIVATE_RASTER_C := $(VH_MAP02_PRIVATE_GPU_SRC)/{GENERATED_RASTER}
 VH_MAP02_PRIVATE_GPU_DEFINES := {definitions}
 
-$(BUILD_DIR)/libgpu.o: $(VH_MAP02_PRIVATE_GPU_SRC)/{GENERATED_GPU}
+$(BUILD_DIR)/libgpu.o: $(VH_MAP02_PRIVATE_GPU_C)
 \t@mkdir -p $(dir $@)
-\t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_PRIVATE_GPU_DEFINES) -Iinclude -Isrc -g -MMD -MP -c -o $@ $(VH_MAP02_PRIVATE_GPU_SRC)/{GENERATED_GPU}
+\t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_PRIVATE_GPU_DEFINES) -Iinclude -Isrc -g -MMD -MP -x c -c -o $@ $(VH_MAP02_PRIVATE_GPU_C)
 
-$(BUILD_DIR)/pc_raster.o: $(VH_MAP02_PRIVATE_GPU_SRC)/{GENERATED_RASTER}
+$(BUILD_DIR)/pc_raster.o: $(VH_MAP02_PRIVATE_RASTER_C)
 \t@mkdir -p $(dir $@)
-\t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_PRIVATE_GPU_DEFINES) -Iinclude -Isrc -g -MMD -MP -c -o $@ $(VH_MAP02_PRIVATE_GPU_SRC)/{GENERATED_RASTER}
+\t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_PRIVATE_GPU_DEFINES) -Iinclude -Isrc -g -MMD -MP -x c -c -o $@ $(VH_MAP02_PRIVATE_RASTER_C)
 
 # The upstream 'link' recipe names GAME_O_FILES and BACKEND_OBJS but
 # depends only on DATA_OBJS. On a clean checkout it can therefore reach
