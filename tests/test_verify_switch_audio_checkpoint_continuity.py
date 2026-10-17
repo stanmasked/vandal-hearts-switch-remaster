@@ -188,7 +188,8 @@ class CheckpointContinuityTests(unittest.TestCase):
         self.extend()
         self.checkpoint_current()
         (self.storage / "chain" / "000001.json").unlink()
-        with self.assertRaisesRegex(chain.ChainError, "CHAIN_COUNT_MISMATCH"):
+        # The chain directory validates contiguous numbering before total count.
+        with self.assertRaisesRegex(chain.ChainError, "CHAIN_GAP_OR_REORDER"):
             self.assess()
 
     def test_removed_new_receipt_detected_by_full_current_audit(self):
