@@ -79,7 +79,7 @@ class GenuineVblankMipsDma(unittest.TestCase):
                 self.assertIn(value,src)
         self.assertNotIn("psxRegs.cycle =",src)
         self.assertNotIn("psxRegs.cycle+=",src)
-        self.assertNotRegex(src,r"(?m)^\\s*GPU_vBlank\\s*\\(")
+        self.assertNotRegex(src,r"(?m)^[ \t]*GPU_vBlank\s*\(")
         self.assertIn("VH126_WAIT_PC_REFUSED",src)
         self.assertNotIn("vh115_vblank();",src)
         self.assertNotIn("vh80_record(",src)
