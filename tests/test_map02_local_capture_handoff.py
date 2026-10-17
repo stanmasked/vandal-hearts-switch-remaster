@@ -1,0 +1,196 @@
+"""Asset-free pre-run executable/game-image and final MAP02 handoff tests.
+
+The production final GTE/DrawOTag verifier is mocked here ONLY. Original
+game assets are never included; binary and game image are synthetic bytes.
+"""
+import hashlib
+import json
+import os
+from pathlib import Path
+import stat
+import tempfile
+import unittest
+from unittest.mock import patch
+
+from tools.map02_local_capture_handoff import (
+    HANDOFF, PLAN, _validate_plan, _validated_handoff,
+    prepare_local_capture, seal_local_capture, verify_local_capture,
+)
+from tools.publish_map02_window_scoped_witness import MANIFEST as FINAL
+
+
+def digest(raw):
+    return hashlib.sha256(raw).hexdigest()
+
+
+class LocalMap02CaptureHandoffTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        self.handoff = root / "handoff"
+        self.source = root / "source"
+        self.windows = root / "windows"
+        self.scoped = root / "scoped"
+        for directory in (
+            self.handoff, self.source, self.windows, self.scoped,
+        ):
+            directory.mkdir(mode=0o700)
+        self.binary = root / "pc-original-test-binary"
+        self.game = root / "owned-synthetic-game-image"
+        self.binary.write_bytes(b"synthetic instrumented PC program, not executable")
+        self.game.write_bytes(b"fake tiny game image; no retail content")
+        self.game.chmod(0o600)
+        self.session = "a" * 64
+        self.final_bytes = (json.dumps({
+            "gpu_frame": 7, "capture_session_linked": True,
+            "capture_session_sha256": self.session,
+            "only_synthetic_test_fixture": True,
+        }, sort_keys=True) + "\n").encode()
+        (self.source / FINAL).write_bytes(self.final_bytes)
+        self.final_mock = patch(
+            "tools.map02_local_capture_handoff.verify_published_window_scoped_witness",
+            return_value={"private_witness_sha256": digest(self.final_bytes),
+                          "global_draw_ordinals_checked": 2},
+        )
+        self.verified = self.final_mock.start()
+        self.addCleanup(self.final_mock.stop)
+
+    def prepare(self):
+        return prepare_local_capture(self.handoff, self.binary, self.game, frame=7)
+
+    def seal(self):
+        return seal_local_capture(self.handoff, self.source, self.windows,
+                                  self.scoped, self.binary, self.game)
+
+    def verify(self):
+        return verify_local_capture(self.handoff, self.source, self.windows,
+                                    self.scoped, self.binary, self.game)
+
+    def test_prelaunch_plan_and_verified_handoff_are_private_and_bound(self):
+        before = self.prepare()
+        self.assertFalse(before["capture_executed"])
+        self.assertFalse(before["original_gameplay_authenticated"])
+        plan = json.loads((self.handoff / PLAN).read_bytes())
+        self.assertEqual(plan["pc_executable_sha256"], digest(self.binary.read_bytes()))
+        self.assertEqual(plan["owned_game_image_sha256"], digest(self.game.read_bytes()))
+        self.assertEqual(stat.S_IMODE((self.handoff / PLAN).stat().st_mode), 0o600)
+        after = self.seal()
+        self.assertFalse(after["gameplay_origin_authenticated"])
+        self.assertEqual(after["gpu_draw_frame"], 7)
+        handoff = json.loads((self.handoff / HANDOFF).read_bytes())
+        self.assertEqual(handoff["capture_session_sha256"], self.session)
+        self.assertEqual(handoff["source_gte_gpu_witness_sha256"],
+                         digest(self.final_bytes))
+        self.assertEqual(stat.S_IMODE((self.handoff / HANDOFF).stat().st_mode),
+                         0o600)
+        self.assertEqual(self.verify()["local_capture_handoff_sha256"],
+                         after["local_capture_handoff_sha256"])
+        self.assertGreaterEqual(self.verified.call_count, 3)
+        self.assertFalse(list(self.handoff.glob(".*.tmp")))
+
+    def test_never_overwrite_plan_or_handoff(self):
+        self.prepare()
+        with self.assertRaisesRegex(ValueError, "already exists"):
+            self.prepare()
+        self.seal()
+        with self.assertRaisesRegex(ValueError, "already exists"):
+            self.seal()
+
+    def test_detects_changed_local_pc_binary_before_sealing(self):
+        self.prepare()
+        self.binary.write_bytes(self.binary.read_bytes() + b" changed")
+        with self.assertRaisesRegex(ValueError, "differs from pre-run"):
+            self.seal()
+        self.assertFalse((self.handoff / HANDOFF).exists())
+
+    def test_detects_changed_game_image_before_sealing(self):
+        self.prepare()
+        self.game.write_bytes(self.game.read_bytes() + b" changed")
+        with self.assertRaisesRegex(ValueError, "differs from pre-run"):
+            self.seal()
+        self.assertFalse((self.handoff / HANDOFF).exists())
+
+    def test_reverify_rejects_mutated_binary_and_owned_input(self):
+        self.prepare()
+        self.seal()
+        self.binary.write_bytes(self.binary.read_bytes() + b" bad")
+        with self.assertRaises(ValueError):
+            self.verify()
+        self.binary.write_bytes(b"synthetic instrumented PC program, not executable")
+        self.game.write_bytes(b"different input, not retail image")
+        with self.assertRaises(ValueError):
+            self.verify()
+
+    def test_reverify_rejects_modified_final_gte_witness(self):
+        self.prepare()
+        self.seal()
+        final = self.source / FINAL
+        final.write_bytes(self.final_bytes + b"\n")
+        with self.assertRaisesRegex(ValueError, "digest changed"):
+            self.verify()
+        self.assertTrue((self.handoff / HANDOFF).exists())
+
+    def test_rejects_wrong_gpu_session_and_gte_verifier_failure(self):
+        self.prepare()
+        self.verified.return_value = {
+            "private_witness_sha256": "0" * 64,
+        }
+        with self.assertRaisesRegex(ValueError, "digest changed"):
+            self.seal()
+        self.verified.side_effect = ValueError("source GTE not checked")
+        with self.assertRaisesRegex(ValueError, "GTE"):
+            self.seal()
+        self.assertFalse((self.handoff / HANDOFF).exists())
+
+    def test_missing_and_symlinked_or_worldreadable_game_refused(self):
+        self.game.chmod(0o644)
+        with self.assertRaisesRegex(ValueError, "owner-private"):
+            self.prepare()
+        self.game.chmod(0o600)
+        link = self.handoff.parent / "game-link"
+        link.symlink_to(self.game)
+        with self.assertRaisesRegex(ValueError, "linked"):
+            prepare_local_capture(self.handoff, self.binary, link, frame=7)
+        self.handoff.chmod(0o755)
+        with self.assertRaises(ValueError):
+            self.prepare()
+
+    def test_source_directories_must_not_alias_or_be_public(self):
+        self.prepare()
+        with self.assertRaises(ValueError):
+            seal_local_capture(self.handoff, self.handoff, self.windows,
+                               self.scoped, self.binary, self.game)
+        self.scoped.chmod(0o755)
+        with self.assertRaises(ValueError):
+            self.seal()
+
+    def test_bad_frame_and_duplicate_keys_and_false_attestation_refused(self):
+        with self.assertRaises(ValueError):
+            prepare_local_capture(self.handoff, self.binary, self.game,
+                                  frame=0)
+        self.prepare()
+        path = self.handoff / PLAN
+        raw = path.read_bytes()
+        path.write_bytes(raw.replace(b'"target_gpu_draw_frame":7',
+                                     b'"target_gpu_draw_frame":7,"target_gpu_draw_frame":7'))
+        with self.assertRaises(ValueError):
+            self.seal()
+        self.assertFalse((self.handoff / HANDOFF).exists())
+        self.assertRaises(ValueError, _validated_handoff, {
+            "schema": "vh.map02.local-capture-handoff.v1",
+            "owned_game_binary_executed_proven": True,
+        })
+
+    def test_exclusive_link_error_rolls_back(self):
+        self.prepare()
+        with patch("tools.map02_local_capture_handoff.os.link",
+                   side_effect=OSError("local permission denied")):
+            with self.assertRaises(OSError):
+                self.seal()
+        self.assertFalse((self.handoff / HANDOFF).exists())
+        self.assertFalse(list(self.handoff.glob(".*.tmp")))
+
+
+if __name__ == "__main__":
+    unittest.main()
