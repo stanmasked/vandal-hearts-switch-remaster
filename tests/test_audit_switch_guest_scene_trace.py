@@ -82,7 +82,7 @@ class TestGuestSceneTrace(unittest.TestCase):
         with self.assertRaises(TraceError):
             analyze_sd_csv(self.sd_data().replace("4,POST,1","4,OTHER,1"))
         with self.assertRaises(TraceError):
-            analyze_sd_csv(self.sd_data().replace("0,INPUT,1","1,INPUT,1"))
+            analyze_sd_csv(self.sd_data().replace("3,INPUT,1","4,INPUT,1"))
 
     def test_sd_forged_dropped_and_extra_bytes_rejected(self):
         with self.assertRaises(TraceError):
@@ -90,7 +90,7 @@ class TestGuestSceneTrace(unittest.TestCase):
         with self.assertRaises(TraceError):
             analyze_sd_csv(self.sd_data()+"UNEXPECTED")
         with self.assertRaises(TraceError):
-            analyze_sd_csv(self.sd_data().replace("0,INPUT","00,INPUT"))
+            analyze_sd_csv(self.sd_data().replace("3,INPUT","03,INPUT"))
 
     def test_sd_rejects_missing_and_malformed_header(self):
         with self.assertRaises(TraceError):
@@ -98,7 +98,7 @@ class TestGuestSceneTrace(unittest.TestCase):
         with self.assertRaises(TraceError):
             analyze_sd_csv(self.sd_data().replace("dropped_total","x"))
         with self.assertRaises(TraceError):
-            analyze_sd_csv(self.sd_data().replace("0,INPUT","0,\x00INPUT"))
+            analyze_sd_csv(self.sd_data().replace("3,INPUT","3,\x00INPUT"))
 
     def test_duplicate_invalid_footer_and_missing_row_rejected(self):
         with self.assertRaises(TraceError):
