@@ -4,6 +4,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "map02_cycle_order.h"
 #include "map02_capture_session.h"
+#include "map02_cd_read_probe.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -77,8 +78,16 @@ void vh_map02_cycle_draw_start(unsigned frame) {
 int vh_map02_cycle_failed(void) { return observed.failed; }
 int vh_map02_cycle_format_jsonl(char *out, size_t capacity) {
     const char *token;
+    char cd_receipt[512];
     int n;
     if (observed.failed || observed.step != 6 || !out || !capacity)
+        return 0;
+    /* This receipt can only be published after BOTH observers agree:
+     * 12 consecutive original sectors copied without CRC modification,
+     * one completed loader, and the ordered DrawOTag boundary. The CD
+     * receipt is privately staged separately; never embed its raw values. */
+    if (vh_map02_cd_probe_failed() ||
+        vh_map02_cd_probe_format_jsonl(cd_receipt, sizeof cd_receipt) <= 0)
         return 0;
     token = vh_map02_capture_session_token();
     if (!token || strlen(token) != 32u) return 0;
