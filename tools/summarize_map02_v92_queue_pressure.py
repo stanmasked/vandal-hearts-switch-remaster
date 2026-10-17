@@ -26,10 +26,15 @@ def summarize(raw:bytes):
     earlier=summarize_v91(raw)
     validate(raw)
     events=[json.loads(line) for line in raw.decode("ascii").splitlines()]
-    tail=events[-len(KINDS):]
+    starts=[i for i,e in enumerate(events) if e["kind"]==KINDS[0]]
+    if len(starts)!=1:
+        raise Refused("missing/duplicate queue-pressure first event")
+    start=starts[0]
+    tail=events[start:start+len(KINDS)]
     if len(tail)!=len(KINDS) or tuple(e["kind"] for e in tail)!=KINDS:
         raise Refused("missing or reordered post-drain native DMA queue metrics")
-    if any(e["kind"] in KINDS for e in events[:-len(KINDS)]):
+    if any(e["kind"] in KINDS for i,e in enumerate(events)
+           if not start<=i<start+len(KINDS)):
         raise Refused("duplicate or misplaced A0 queue-pressure aggregate")
     tried,accepted,idle,full,peak,done,worker,sync,pending,ws,ss=(
         e["value"] for e in tail)
