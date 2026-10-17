@@ -78,6 +78,18 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"incomplete"):
             verify_capture(self.root,target_frame=12)
 
+    def test_transfer_after_target_draw_is_not_a_valid_native_capture(self):
+        # The original capture probes transfers at drawFrame + 1, but
+        # primitives at drawFrame. Reversing the pairs is impossible for
+        # the monotonically progressing target DrawOTag frame.
+        self.events = self.events[2:4] + self.events[0:2]
+        for step, event in enumerate(self.events):
+            event["step"] = step
+            event["snapshot"] = f"gpu-{step:04d}-vram.bin"
+        self.save()
+        with self.assertRaisesRegex(ValueError, "transfer appears after"):
+            verify_capture(self.root, target_frame=12)
+
     def test_missing_snapshot_symlink_invalid_size(self):
         path=self.root/"gpu-0003-vram.bin"
         path.unlink()
