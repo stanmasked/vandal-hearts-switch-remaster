@@ -21,13 +21,20 @@ def fixture():
     rows=v92_fixture()
     detail=sum(row["kind"] in DETAIL_TYPES for row in rows)
     assert detail<4050
-    for _ in range(4050-detail):
-        rows.append(dict(kind="gp0_unai_handled",value=0x600000ff,
-                         seq=len(rows)+1,cycle=0,frame=0))
-    aggregate=len(rows)-4050+3
-    total=4050+aggregate
+    target=4050-(4050-detail)%4
+    for _ in range((target-detail)//4):
+        for kind,value in [
+            ("gp0_unai_handled",0x600000ff),
+            ("unai_sample_delta",0),
+            ("unai_store_count",0),
+            ("unai_same_store_count",0)
+        ]:
+            rows.append(dict(kind=kind,value=value,
+                             seq=len(rows)+1,cycle=0,frame=0))
+    aggregate=len(rows)-target+3
+    total=target+aggregate
     for kind,value in [
-        ("lane_detail_events",4050),
+        ("lane_detail_events",target),
         ("lane_aggregate_events",aggregate),
         ("lane_total_events",total)]:
         rows.append(dict(kind=kind,value=value,seq=len(rows)+1,
@@ -126,7 +133,8 @@ class V93AggregateAudit(unittest.TestCase):
     def test_valid_more_than_4096_global_events(self):
         p=summarize(encode(fixture()))
         self.assertGreater(p["merged_private_events"],4096)
-        self.assertEqual(p["detailed_renderer_lane_events"],4050)
+        self.assertGreaterEqual(p["detailed_renderer_lane_events"],4047)
+        self.assertLessEqual(p["detailed_renderer_lane_events"],4050)
         self.assertTrue(p["original_event_sequence_preserved"])
         self.assertFalse(p["genuine_retail_MAP02_verified"])
         self.assertFalse(p["HD_replacement_approved"])
