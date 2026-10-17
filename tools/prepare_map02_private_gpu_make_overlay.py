@@ -67,11 +67,11 @@ VH_MAP02_PRIVATE_GPU_DEFINES := {definitions}
 
 $(BUILD_DIR)/libgpu.o: $(VH_MAP02_PRIVATE_GPU_SRC)/{GENERATED_GPU}
 \t@mkdir -p $(dir $@)
-\t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_PRIVATE_GPU_DEFINES) -Iinclude -g -MMD -MP -c -o $@ $(VH_MAP02_PRIVATE_GPU_SRC)/{GENERATED_GPU}
+\t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_PRIVATE_GPU_DEFINES) -Iinclude -Isrc -g -MMD -MP -c -o $@ $(VH_MAP02_PRIVATE_GPU_SRC)/{GENERATED_GPU}
 
 $(BUILD_DIR)/pc_raster.o: $(VH_MAP02_PRIVATE_GPU_SRC)/{GENERATED_RASTER}
 \t@mkdir -p $(dir $@)
-\t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_PRIVATE_GPU_DEFINES) -Iinclude -g -MMD -MP -c -o $@ $(VH_MAP02_PRIVATE_GPU_SRC)/{GENERATED_RASTER}
+\t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_PRIVATE_GPU_DEFINES) -Iinclude -Isrc -g -MMD -MP -c -o $@ $(VH_MAP02_PRIVATE_GPU_SRC)/{GENERATED_RASTER}
 
 .PHONY: map02-private-gpu-objects
 map02-private-gpu-objects: $(BUILD_DIR)/libgpu.o $(BUILD_DIR)/pc_raster.o
