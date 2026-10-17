@@ -121,7 +121,11 @@ class IndependentJournalAuditTests(unittest.TestCase):
                 "rect": None, "dest": [0, 0], "rgb": [0, 0, 0],
                 "primitive_type": primitive_type, "semi": 0,
                 "window": [0, 0, 0, 0], "draw_mode": [0, 0, 0],
-                "upload": "", "ft4": None,
+                "upload": "", "ft4": (
+                    {"tpage":0, "clut":0,
+                     "xy":[0,0,1,0,0,1,1,1],
+                     "uv":[0,0,1,0,0,1,1,1]}
+                    if primitive_type == 2 else None),
             }
         (root / "gpu-native-events.jsonl").write_bytes(
             b"".join((json.dumps(event(i, "before" if i % 2 == 0 else "after"))
