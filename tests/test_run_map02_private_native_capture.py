@@ -176,6 +176,84 @@ class PrivateNativeLauncherTests(unittest.TestCase):
                               preflight_report=self.preflight,
                               executable=self.executable)
 
+    def test_pinned_procfs_fd_is_the_executed_original_file(self):
+        # Change the executable pathname to a *different* script just
+        # before Popen. The fd-pinned original still writes a complete
+        # synthetic native capture, but a changed path is never certified.
+        from tools import run_map02_private_native_capture as launcher
+        original_popen = launcher.subprocess.Popen
+        original_ino = self.executable.stat().st_ino
+        substitutions = []
+
+        def switch_path_just_before_exec(args, **kwargs):
+            descriptor_path = kwargs.get("executable", "")
+            self.assertTrue(descriptor_path.startswith("/proc/self/fd/"))
+            self.assertEqual(len(kwargs.get("pass_fds", ())), 1)
+            descriptor = kwargs["pass_fds"][0]
+            self.assertEqual(descriptor_path, f"/proc/self/fd/{descriptor}")
+            pinned = os.fstat(descriptor)
+            self.assertEqual(pinned.st_ino, original_ino)
+            replacement = self.base / "replacement-executable"
+            replacement.write_text("#!/usr/bin/env python3\\nraise SystemExit(37)\\n")
+            replacement.chmod(0o700)
+            os.replace(replacement, self.executable)
+            substitutions.append(self.executable.stat().st_ino)
+            return original_popen(args, **kwargs)
+
+        with patch.object(launcher.subprocess, "Popen",
+                          side_effect=switch_path_just_before_exec):
+            result = self.run_synthetic()
+        self.assertEqual(len(substitutions), 1)
+        self.assertNotEqual(substitutions[0], original_ino)
+        self.assertTrue(result["process_started"])
+        self.assertEqual(result["process_exit_code"], 0)
+        self.assertEqual(result["failure_category"], "executable_changed")
+        self.assertFalse(result["capture_verified"])
+        # This native output was produced by the FD-pinned original
+        # synthetic script, not by the substituted exit-37 pathname.
+        self.assertTrue((self.capture_dir / "gpu-native-events.jsonl").is_file())
+        self.assertTrue((self.capture_dir / "dda-native-spans.jsonl").is_file())
+        self.assertFalse(result["retail_map02_verified"])
+
+    def test_pinned_binary_changed_after_preflight_never_starts_process(self):
+        from tools import run_map02_private_native_capture as launcher
+        original = launcher._open_pinned_executable
+
+        def replace_before_pin(path, config):
+            replacement = self.base / "post-preflight-binary"
+            replacement.write_text("#!/usr/bin/env python3\\nraise SystemExit(0)\\n")
+            replacement.chmod(0o700)
+            os.replace(replacement, path)
+            return original(path, config)
+
+        with patch.object(launcher, "_open_pinned_executable",
+                          side_effect=replace_before_pin):
+            result = self.run_synthetic()
+        self.assertFalse(result["process_started"])
+        self.assertIsNone(result["process_exit_code"])
+        self.assertEqual(result["failure_category"], "executable_changed")
+        self.assertFalse(result["capture_verified"])
+        self.assertEqual(list(self.capture_dir.iterdir()), [])
+        self.assertFalse(result["hd_replacement_authorized"])
+
+    def test_pinned_descriptor_is_closed_after_normal_launch(self):
+        from tools import run_map02_private_native_capture as launcher
+        original_popen = launcher.subprocess.Popen
+        passed_fds = []
+
+        def observe_fd(args, **kwargs):
+            passed_fds.extend(kwargs.get("pass_fds", ()))
+            return original_popen(args, **kwargs)
+
+        with patch.object(launcher.subprocess, "Popen",
+                          side_effect=observe_fd):
+            result = self.run_synthetic()
+        self.assertTrue(result["capture_verified"])
+        self.assertEqual(len(passed_fds), 1)
+        with self.assertRaises(OSError):
+            os.fstat(passed_fds[0])
+        self.assertTrue(self.replay()["raw_evidence_matches_original_receipt"])
+
     def test_private_receipts_publish_complete_bytes_without_pending_files(self):
         result = self.run_synthetic()
         self.assertTrue(result["capture_verified"])
