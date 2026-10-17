@@ -152,9 +152,14 @@ python3 -m tools.check_map02_cycle_make_plan \
   /private/map02/cycle-build
 
 # Only after the audit succeeds AND your own game inputs are installed:
-cd /private/map02/VandalHearts-PcPort/platform/pc
-make -f Makefile -f /private/map02/cycle-build/map02_cycle.mk \
-  link BUILD_DIR=build-map02-cycle REGION=us NO_WEBP=1 NO_HDVIDEO=1
+python3 -m tools.build_map02_cycle_pc_local \
+  /private/map02/VandalHearts-PcPort \
+  /private/map02/cycle-build
+
+# Advanced equivalent (if diagnosing local build failures manually):
+# cd /private/map02/VandalHearts-PcPort/platform/pc
+# make -j1 -f Makefile -f /private/map02/cycle-build/map02_cycle.mk \
+#   link BUILD_DIR=build-map02-cycle REGION=us NO_WEBP=1 NO_HDVIDEO=1
 ```
 
 Запуск полной `make link` требует оригинального пользователя US-образа,
@@ -322,3 +327,30 @@ SHA-256 **каждого** файла приватного набора с не�
 игровые данные и не является доказательством исполнения MAP02.
 Локальная `make link` всё ещё требует пользовательский оригинальный
 образ и зависимости для всех генераторов исходного PC-порта.
+
+## Строгая локальная полная сборка ELF
+
+`python3 -m tools.build_map02_cycle_pc_local` выполняет сухую
+проверку входных SHA-256 и полного графа GNU Make **перед любой
+компиляцией**. Он отказывается перезаписывать ранее созданный бинарник
+`build-map02-cycle/vandalhearts_pc`, вызывает `make -j1 link`
+(без конкурирующих операций перестройки staging-заголовков) и после
+компиляции проверяет, что результат является полноценным исполняемым
+ELF со всеми требуемыми экспортами оригинального CD/GPU-кода и
+наблюдателей. Входные файлы перепроверяются после сборки.
+
+Скрипт печатает только SHA-256 исполняемого файла, отпечаток команды
+линковки и безопасные флаги готовности. Содержимое EXE, игрового BIN,
+байты VRAM, исходные адреса или полные журналы компилятора не
+публикуются. В случае ошибки компилятора диагностический вывод
+подавляется, чтобы приватные пути и данные не попадали в общий чат
+или публичный CI. Для локального исследования ошибок опытный
+разработчик может вручную выполнять приведённую выше команду
+`make` в своём закрытом окружении.
+
+**Сборка ещё не равна запуску игры:** даже успешно созданный полный
+ELF не доказывает чтение настоящих 12 секторов MAP02, создание сцены,
+соответствие оригинальному PlayStation и корректность HD. В GitHub
+CI тестируется только сухой граф `make -nB` и искусственные ответы
+компилятора; оригинальные игровые данные и настоящая полная
+компиляция остаются локальными.
