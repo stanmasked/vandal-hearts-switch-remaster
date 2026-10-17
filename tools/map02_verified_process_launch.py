@@ -114,6 +114,52 @@ def _open_pinned_cycle_exec_fd(binary, expected_sha256, planned_stat):
         raise
 
 
+def _stable_owned_cycle_image(path):
+    """Bind the private disc-image pathname to one stable, twice-hashed inode.
+
+    The child still opens the original pathname, so the final verification
+    must also compare this identity after it exits. This does not prove
+    consumption of any particular sector by the child.
+    """
+    path = Path(path)
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except OSError:
+        raise ValueError("private MAP02 game-image input unavailable") from None
+    try:
+        before = os.fstat(fd)
+        if (not stat.S_ISREG(before.st_mode)
+                or before.st_uid != os.geteuid() or before.st_nlink != 1
+                or before.st_mode & 0o077 or before.st_size <= 0):
+            raise ValueError("private MAP02 game-image input is not exclusively owned")
+
+        def digest_pass():
+            digest = hashlib.sha256()
+            for offset in range(0, before.st_size, 1 << 20):
+                count = min(1 << 20, before.st_size - offset)
+                block = os.pread(fd, count, offset)
+                if len(block) != count:
+                    raise ValueError("private MAP02 game-image input short read")
+                digest.update(block)
+            return digest.hexdigest()
+
+        first = digest_pass()
+        if _executable_identity(os.fstat(fd)) != _executable_identity(before):
+            raise ValueError("private MAP02 game-image changed during hashing")
+        second = digest_pass()
+        if first != second:
+            raise ValueError("private MAP02 game-image bytes changed between read passes")
+        if (_executable_identity(os.fstat(fd)) != _executable_identity(before)
+                or _executable_identity(os.stat(path, follow_symlinks=False))
+                != _executable_identity(before)):
+            raise ValueError("private MAP02 game-image pathname changed during hashing")
+        return _executable_identity(before), first
+    except OSError:
+        raise ValueError("private MAP02 game-image verification unavailable") from None
+    finally:
+        os.close(fd)
+
+
 def _fingerprint_kernel_exe(pid):
     """Read kernel procfs link for our live child. Fail closed if unavailable."""
     path = f"/proc/{pid}/exe"
@@ -228,6 +274,13 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
     # undocumented switches; a strict cycle launch must not accept it.
     if cycle is not None and arguments:
         raise ValueError("source-bound cycle launch forbids forwarded executable arguments")
+    game_image = Path(owned_game).absolute()
+    # The strict cycle uses the same complete game-image inode/bytes proof
+    # before the child and after it exits. Legacy no-cycle behavior is kept.
+    game_proof = (_stable_owned_cycle_image(game_image)
+                  if cycle is not None else None)
+    image_digest = (game_proof[1] if game_proof is not None
+                    else _sha_file(owned_game, private=True))
     binary = Path(pc_binary).absolute()
     if binary.is_symlink() or not binary.is_file():
         raise ValueError("PC binary missing or linked")
@@ -242,7 +295,7 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
     if (verify_pinned_upstream(upstream) !=
             plan["pinned_upstream_source_identity_sha256"] or
             executable_digest(binary) != plan["pc_executable_sha256"] or
-            _sha_file(owned_game, private=True) != plan["owned_game_image_sha256"]):
+            image_digest != plan["owned_game_image_sha256"]):
         raise ValueError("original PC source, binary or game input differs from plan")
     if cycle is not None:
         # A complete source-pinned CD/GPU capture needs an actual linked ELF,
@@ -265,9 +318,12 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
           krom_source is not None):
         raise ValueError("build receipt options require --cycle-dir")
 
-    game_image = Path(owned_game).absolute()
-    game_stat = os.stat(game_image)
-    expected_game_fd = (game_stat.st_dev, game_stat.st_ino, game_stat.st_size)
+    if game_proof is not None:
+        identity, _ = game_proof
+        expected_game_fd = (identity[0], identity[1], identity[5])
+    else:
+        game_stat = os.stat(game_image)
+        expected_game_fd = (game_stat.st_dev, game_stat.st_ino, game_stat.st_size)
     frame = plan["target_gpu_draw_frame"]
     # Legacy observation preserves caller settings except capture overrides.
     # The source-bound cycle uses an allowlist, not an incomplete denylist.
@@ -371,6 +427,10 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
             process.wait()
         raise
     if cycle is not None:
+        # Even a same-byte replacement of the private game-image pathname
+        # is not the same file observed by the running child.
+        if _stable_owned_cycle_image(game_image) != game_proof:
+            raise ValueError("private MAP02 game-image identity changed during run")
         # Equal bytes on a replacement inode are not the same source-bound
         # executable. A pathname substitution during the child is refused.
         try:
@@ -382,7 +442,8 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
         if not same_path_inode:
             raise ValueError("source-bound MAP02 executable pathname replaced during run")
     if (executable_digest(binary) != plan["pc_executable_sha256"] or
-            _sha_file(owned_game, private=True) != plan["owned_game_image_sha256"] or
+            (game_proof[1] if game_proof is not None
+             else _sha_file(owned_game, private=True)) != plan["owned_game_image_sha256"] or
             verify_pinned_upstream(upstream) !=
             plan["pinned_upstream_source_identity_sha256"] or
             private_file(handoff, PLAN, max_bytes=4096) != plan_raw):
