@@ -192,8 +192,14 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
     arguments = tuple(arguments)
     if any(type(arg) is not str or not arg or "\x00" in arg for arg in arguments):
         raise ValueError("invalid PC-port executable argument")
+    # In source-bound cycle mode, do not inherit caller-controlled game
+    # overrides or loader startup hooks. An ELF pathname/hash match does not
+    # authenticate arbitrary LD_PRELOAD/LD_AUDIT code within that process.
+    # Preserve normal display/audio/toolchain variables for the PC backend.
     env = {key: value for key, value in os.environ.items()
-           if not key.startswith("VH_MAP02_")}
+           if not key.startswith("VH_MAP02_") and
+           (cycle is None or not key.startswith(
+               ("VH_", "LD_", "DYLD_", "PYTHON")))}
     env.update({
         "VH_DISC_IMAGE": str(game_image),
         "VH_MAP02_GPU_CAPTURE_DIR": str(native),
@@ -205,6 +211,10 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
         "VH_MAP02_PROBE_Y": str(y),
     })
     if cycle is not None:
+        # Explicit original-region and source path are from the pinned
+        # checkout, not from any inherited executable/region override.
+        env["VH_REGION"] = "us"
+        env["VH_PSX_EXE"] = str(Path(upstream).absolute() / "SLUS_004.47")
         # Exact-source HD detection otherwise auto-enables installed packs,
         # while an explicit VH_HD_PACK / VH_HD_VIDEOS override bypasses
         # the pack toggle. Empty values prevent the original ini loader
