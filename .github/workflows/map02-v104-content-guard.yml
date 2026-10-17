@@ -152,6 +152,8 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v112_unchanged_sample_runs.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v113_vblank_outcome_transitions.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v114_vblank_readback_coverage.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v115_sample_value_identity.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v115_identity_runtime.py' -v
       - name: Patch pinned upstream with Unai post-dispatch observer
         shell: bash
         run: |
