@@ -1,5 +1,8 @@
 #include "vh80_native_timeline.h"
-#define VH80_CAPACITY VH80_CAPACITY_DETAIL
+#define VH80_CAPACITY 4096u
+#if VH80_CAPACITY != VH80_CAPACITY_DETAIL
+#error "legacy v80 detailed lane must remain exactly 4096 entries"
+#endif
 static vh80_event ring[VH80_CAPACITY];
 static vh80_event aggregate[VH80_CAPACITY_AGGREGATE];
 /* Reconstruct globally ordered, contiguous seq at immutable export time. */
