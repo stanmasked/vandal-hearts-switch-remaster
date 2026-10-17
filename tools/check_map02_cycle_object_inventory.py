@@ -26,6 +26,7 @@ KNOWN_ASSET_IMPORTS = {
     "src/maps/map_32.o": '#include "assets/801009bc.inc"',
 }
 MIN_BACKEND = 30
+BIOS_FONT_OBJECT = 'pc_kanji_font.o'
 REQUIRED = {
     "src/core/cd.o", "libcd.o", "libgpu.o", "pc_raster.o",
     "map02_cycle_order.o", "map02_cd_read_probe.o",
@@ -47,7 +48,7 @@ def audit_objects(upstream, bundle, *, make="make"):
     # inventories. It does not compile, read retail content, or invoke link.
     listing_target = (
         "map02-private-object-inventory:;@printf '%s\\n' "
-        "'$(VH_MAP02_PUBLIC_CODE_OBJS)' '$(BACKEND_OBJS)'"
+        "'$(VH_MAP02_PUBLIC_CODE_OBJS)' '$(VH_MAP02_PUBLIC_BACKEND_OBJS)'"
     )
     result = subprocess.run(
         [make, "-s", "-f", "Makefile", "-f",
@@ -111,6 +112,16 @@ def audit_objects(upstream, bundle, *, make="make"):
     for asset_object in excluded:
         if asset_object in names or (obj_root / asset_object).exists():
             raise ValueError("retail-asset-dependent original source must remain uncompiled")
+    bios_source = pc / "src/pc_kanji_font.c"
+    bios_object = obj_root / BIOS_FONT_OBJECT
+    original_make = (pc / "Makefile").read_text(encoding="utf-8")
+    if ("src/pc_kanji_font.c:" not in original_make or
+            "tools/gen_kanji_font.py" not in original_make):
+        raise ValueError("original KROMDAT BIOS font generator dependency changed")
+    if (bios_source.exists() or bios_source.is_symlink() or
+            bios_object.exists() or bios_object.is_symlink() or
+            BIOS_FONT_OBJECT in names):
+        raise ValueError("private KROMDAT-derived backend cannot be compiled in public mode")
     if not REQUIRED.issubset(names) or not SUPPORT_OBJS.issubset(names):
         raise ValueError("original CD/GPU/VRAM capture objects missing from full compile")
     actual = {
@@ -130,6 +141,7 @@ def audit_objects(upstream, bundle, *, make="make"):
     return {
         "schema": "vh.map02.public-pc-asset-free-code-objects.v1",
         "original_asset_bound_translation_units_excluded": sorted(excluded),
+        "private_bios_derived_backend_objects_excluded": [BIOS_FONT_OBJECT],
         "original_game_translation_units_compiled": len(game),
         "native_backend_and_observer_objects_compiled": len(backend),
         "source_pinned_build_inputs_rechecked": True,
