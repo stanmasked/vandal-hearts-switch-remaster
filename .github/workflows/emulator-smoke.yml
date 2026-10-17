@@ -14,6 +14,8 @@ on:
       - 'tools/capture_nexium_scene_audio.sh'
       - 'tests/test_analyze_nexium_scene_audio.py'
       - 'tools/analyze_nexium_transition_timing.py'
+      - 'tools/audit_switch_guest_scene_trace.py'
+      - 'tests/test_audit_switch_guest_scene_trace.py'
       - 'tests/test_analyze_nexium_transition_timing.py'
 
 permissions:
@@ -65,7 +67,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: vandal-hearts-tactical-with-native-music
-          run-id: 39034607288
+          run-id: 39048418666
           github-token: ${{ github.token }}
           path: nros
 
@@ -74,9 +76,9 @@ jobs:
         run: |
           set -euo pipefail
           python3 tools/verify_switch_integrated_nro_preflight.py nros \
-            --git-sha 63c718679715adc809a3feb8845a15a37e645488 \
-            --run-id 39034607288 --artifact-id 12101269376 \
-            --expected-nro-sha256 8068eeef36cc1b3751bb4a9d320de5477c85687af018f1323dbba0b33d26b7ad \
+            --git-sha b55746adeff67edb352eb5ba969032e9f1762c64 \
+            --run-id 39048418666 --artifact-id 12106314855 \
+            --expected-nro-sha256 3b6b704c7528c3bbc74b46a0b2d2355bc09743fa68cd18a3631f0f12e0f5d173 \
             | tee integrated-nro-preflight.json
           echo "Candidate: pinned integrated libnx/audout NRO (not proof of audible sound)" >> "$GITHUB_STEP_SUMMARY"
 
@@ -455,7 +457,7 @@ jobs:
           report={
               "schema":"vh-nexium-pcm-monitor/v1",
               "hardware_status":"HARDWARE NOT TESTED",
-              "source_nro_sha256":"8068eeef36cc1b3751bb4a9d320de5477c85687af018f1323dbba0b33d26b7ad",
+              "source_nro_sha256":"3b6b704c7528c3bbc74b46a0b2d2355bc09743fa68cd18a3631f0f12e0f5d173",
               "recording":"virtual PulseAudio null-sink monitor; not audible playback",
               "sample_format":"s16le stereo 48000Hz",
               "raw_bytes":len(data),
@@ -559,6 +561,18 @@ jobs:
           (root/"scene-visual-report.json").write_text(json.dumps(summary,indent=2)+"\n")
           print(json.dumps(summary,indent=2))
           PY
+
+      - name: Audit optional guest-internal trace after clean-app exit attempt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_switch_guest_scene_trace.py \
+            runtime-evidence/nexium-scenes-run.log \
+            --output runtime-evidence/guest-scene-trace-audit.json
+          python3 -m json.tool runtime-evidence/guest-scene-trace-audit.json > /dev/null
+          # A host emulator may not expose libnx stderr. Distinguish
+          # NOT_OBSERVED from a successful guest timeline; don't fail
+          # working graphics/PCM checks solely for absent log transport.
 
       - name: Record audio capture boundary
         if: always()
