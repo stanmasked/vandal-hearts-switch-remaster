@@ -19,7 +19,7 @@ from tools.check_map02_cycle_elf import audit_cycle_elf
 BINARY_NAME = "vandalhearts_pc"
 
 
-def build_full_pc(upstream, bundle, *, timeout=1200, make="make"):
+def build_full_pc(upstream, bundle, *, timeout=1200, make="make", report_dir=None):
     timeout = int(timeout)
     if not 30 <= timeout <= 7200:
         raise ValueError("full PC link timeout must be between 30 and 7200 seconds")
@@ -61,7 +61,7 @@ def build_full_pc(upstream, bundle, *, timeout=1200, make="make"):
             if not chunk:
                 break
             h.update(chunk)
-    return {
+    result = {
         "schema": "vh.map02.private-full-pc-elf-build.v1",
         "pc_executable_sha256": h.hexdigest(),
         "source_bound_make_command_sha256":
@@ -74,6 +74,12 @@ def build_full_pc(upstream, bundle, *, timeout=1200, make="make"):
         "physical_ps1_equivalence_proven": False,
         "hd_substitution_enabled": False,
     }
+    if report_dir is not None:
+        from tools.map02_cycle_build_provenance import create_build_receipt
+        receipt = create_build_receipt(
+            report_dir, target, upstream, bundle, build_result=result)
+        result.update(receipt)
+    return result
 
 
 def main():
@@ -81,11 +87,14 @@ def main():
     p.add_argument("pinned_original_pc_checkout", type=Path)
     p.add_argument("private_prepared_bundle", type=Path)
     p.add_argument("--timeout", type=int, default=1200)
+    p.add_argument("--report-dir", required=True, type=Path,
+                   help="new empty owned 0700 directory for private ELF build receipt")
     a = p.parse_args()
     try:
         result = build_full_pc(a.pinned_original_pc_checkout,
                                a.private_prepared_bundle,
-                               timeout=a.timeout)
+                               timeout=a.timeout,
+                               report_dir=a.report_dir)
     except (OSError, ValueError) as exc:
         p.error(str(exc))
     print(json.dumps(result, indent=2, sort_keys=True))
