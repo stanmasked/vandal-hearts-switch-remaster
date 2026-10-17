@@ -66,6 +66,23 @@ python3 -m tools.audit_map02_independent_dda_journals /private/dda-capture \
   > /private/dda-journal-audit.json
 ```
 
+For stronger **structural** cross-checking, use the same private directory
+containing the native GPU capture (including full VRAM snapshot files):
+
+```sh
+python3 -m tools.audit_map02_independent_dda_journals /private/dda-capture \
+  --native-frame 411 > /private/dda-gpu-cross-check.json
+```
+
+The strict frame option first calls the existing source-pinned native GPU
+capture validator on its **actual before/after VRAM snapshots**. It then
+requires that each supplied DDA record uses this DrawOTag frame, references
+a draw-primitive ordinal present in the bounded GPU event stream, and (for
+entered spans, which record a type) matches the native GPU packet type.
+If the GPU recorder hits its 64-record cap, the strict cross-check refuses
+to claim sufficient ordinal visibility. Neither mode proves capture
+origin, an unmodified game binary, or visual MAP02 equivalence.
+
 The audit separately validates `dda-native-spans.jsonl` and
 `dda-rejected-edge-candidates.jsonl`; rejects malformed CRLF records,
 duplicate fields, noncanonical/saturated journals and symlinked inputs;
