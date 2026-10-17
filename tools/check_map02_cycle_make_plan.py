@@ -106,6 +106,11 @@ def preflight(upstream, output):
         if path.is_symlink() or not path.is_file() or (
                 sha(path.read_bytes()) != originals[relative]):
             raise ValueError("original pinned PC source changed: " + relative)
+        pinned = next((blob for rel, blob, _ in SOURCE_MAP.values()
+                       if rel == relative), None)
+        if pinned is None or git_blob_sha1(path.read_bytes()) != pinned:
+            raise ValueError("original PC source no longer matches pinned Git blob: " +
+                             relative)
     return output / "map02_cycle.mk"
 
 
@@ -167,7 +172,7 @@ def audit(upstream, output, *, make="make"):
     overlay = preflight(upstream, output)
     pc = Path(upstream).absolute() / "platform/pc"
     result = subprocess.run(
-        [make, "-n", "-f", "Makefile", "-f", str(overlay),
+        [make, "-nB", "-f", "Makefile", "-f", str(overlay),
          "link", "BUILD_DIR=" + BUILD, "REGION=us",
          "NO_WEBP=1", "NO_HDVIDEO=1"],
         cwd=pc, capture_output=True, text=True, timeout=120, check=False)
