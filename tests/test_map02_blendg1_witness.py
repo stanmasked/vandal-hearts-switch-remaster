@@ -70,6 +70,20 @@ class BlendG1WitnessTests(unittest.TestCase):
             with self.subTest(rows=rows), self.assertRaises(ValueError):
                 compare_blendg1_witnesses(rows, [witness(p)])
 
+    def test_rejects_step_gaps_mixed_frames_coordinates_and_backward_draws(self):
+        p0 = pixel(0, 1, 0)
+        p1 = pixel(1, 0, 0, semi=0)
+        for rows in (
+            [dict(p0, step=1)],
+            [p0, dict(p1, step=2)],
+            [p0, dict(p1, frame=8)],
+            [p0, dict(p1, x=21)],
+            [dict(p0, primitive_ordinal=4),
+             dict(p1, primitive_ordinal=3)],
+        ):
+            with self.subTest(rows=rows), self.assertRaises(ValueError):
+                compare_blendg1_witnesses(rows, [witness(p0)])
+
     def test_legacy_semi_needs_no_blendg1(self):
         rows = [pixel(0, 0, 2), pixel(1, 1, 3)]
         result = compare_blendg1_witnesses(rows, [witness(rows[1])])
