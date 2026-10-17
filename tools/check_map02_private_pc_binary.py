@@ -88,6 +88,8 @@ def inspect_binary(path, *, nm="nm"):
             match = _SYM.fullmatch(line.strip())
             if match:
                 defined.add(match.group(2))
+        if not defined:
+            raise ValueError("native ELF symbol table unavailable or stripped")
         matching = REQUIRED_SYMBOLS & defined
         if (len(matching) != len(REQUIRED_SYMBOLS) or
                 not coordinate_selectors):
