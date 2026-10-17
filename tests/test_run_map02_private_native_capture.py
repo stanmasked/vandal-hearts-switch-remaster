@@ -6,8 +6,9 @@ from pathlib import Path
 import stat
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from tools.run_map02_private_native_capture import capture
+from tools.run_map02_private_native_capture import capture, _private_create
 from tools.verify_map02_private_capture_receipt import replay_receipt
 
 
@@ -174,6 +175,66 @@ class PrivateNativeLauncherTests(unittest.TestCase):
         return replay_receipt(self.capture_dir, receipt_file=self.summary,
                               preflight_report=self.preflight,
                               executable=self.executable)
+
+    def test_private_receipts_publish_complete_bytes_without_pending_files(self):
+        result = self.run_synthetic()
+        self.assertTrue(result["capture_verified"])
+        for destination in (self.preflight, self.summary):
+            raw = destination.read_bytes()
+            self.assertTrue(raw.endswith(b"\\n"))
+            self.assertEqual(json.loads(raw), json.loads(destination.read_text()))
+            self.assertEqual(stat.S_IMODE(destination.stat().st_mode), 0o600)
+        self.assertEqual(list(self.base.glob(".*.pending")), [])
+        with self.assertRaises(FileExistsError):
+            _private_create(self.summary, {"should": "not replace"})
+        self.assertEqual(json.loads(self.summary.read_bytes())["capture_verified"], True)
+
+    def test_private_receipt_failed_partial_json_write_never_becomes_visible(self):
+        from tools import run_map02_private_native_capture as launcher
+        target = self.base / "failed.json"
+
+        def partial_then_fail(obj, stream, **kwargs):
+            stream.write('{"incomplete": ')
+            raise OSError("synthetic short write")
+
+        with patch.object(launcher.json, "dump", side_effect=partial_then_fail):
+            with self.assertRaisesRegex(OSError, "synthetic short write"):
+                _private_create(target, {"incomplete": False})
+        self.assertFalse(target.exists())
+        self.assertEqual(list(self.base.glob(".*.pending")), [])
+
+    def test_private_receipt_post_link_fsync_failure_rolls_back(self):
+        from tools import run_map02_private_native_capture as launcher
+        target = self.base / "not-published.json"
+        original_fsync = launcher.os.fsync
+        calls = [0]
+
+        def fail_final_dir_fsync(fd):
+            calls[0] += 1
+            if calls[0] == 3:
+                raise OSError("synthetic final directory fsync failure")
+            return original_fsync(fd)
+
+        with patch.object(launcher.os, "fsync", side_effect=fail_final_dir_fsync):
+            with self.assertRaisesRegex(OSError, "final directory fsync failure"):
+                _private_create(target, {"valid": True})
+        self.assertGreaterEqual(calls[0], 3)
+        self.assertFalse(target.exists())
+        self.assertEqual(list(self.base.glob(".*.pending")), [])
+
+    def test_private_receipt_existing_destination_race_is_fail_closed(self):
+        from tools import run_map02_private_native_capture as launcher
+        target = self.base / "raced.json"
+
+        def create_rival_file(temporary, destination, **kwargs):
+            Path(destination).write_bytes(b"EXISTING PRIVATE RECEIPT")
+            raise FileExistsError("exclusive link refused")
+
+        with patch.object(launcher.os, "link", side_effect=create_rival_file):
+            with self.assertRaisesRegex(FileExistsError, "exclusive link refused"):
+                _private_create(target, {"secret": "should never replace"})
+        self.assertEqual(target.read_bytes(), b"EXISTING PRIVATE RECEIPT")
+        self.assertEqual(list(self.base.glob(".*.pending")), [])
 
     def test_private_replay_rejects_forged_interprimitive_vram_gap(self):
         result = self.run_synthetic("--two-draws")
