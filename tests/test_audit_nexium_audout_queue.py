@@ -6,7 +6,9 @@ import unittest
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from audit_nexium_audout_queue import HEADER, read_telemetry, bind_original_sd
+from audit_nexium_audout_queue import (
+    HEADER, read_telemetry, bind_original_sd, bind_export_receipt
+)
 
 def make_rows():
     windows = []
@@ -124,6 +126,23 @@ class TestAudoutSdAudit(unittest.TestCase):
             capture.write_bytes(capture.read_bytes().replace(b"\n", b"\r\n"))
             with self.assertRaises(ValueError):
                 read_telemetry(capture)
+
+    def test_guest_export_receipt_binds_file_size(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "export-result.txt"
+            path.write_bytes(b"export_status=0\npath_present=1\nfile_size=101\n")
+            result = bind_export_receipt(path, 101)
+            self.assertEqual(result["guest_export_receipt"],
+                             "GUEST_WRITER_SUCCEEDED_AND_STAT_VISIBLE")
+            for forged in [
+                b"export_status=-6\npath_present=0\nfile_size=0\n",
+                b"export_status=0\npath_present=1\nfile_size=100\n",
+                b"export_status=0\npath_present=1\nfile_size=101\nextra=1\n",
+                b"export_status=0\r\npath_present=1\r\nfile_size=101\r\n",
+            ]:
+                path.write_bytes(forged)
+                with self.assertRaises(ValueError):
+                    bind_export_receipt(path, 101)
 
 if __name__ == "__main__":
     unittest.main()
