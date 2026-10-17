@@ -74,6 +74,26 @@ int vh_audio_output_verify_transport_health(
     return health->timing_fault ? 1 : 0;
 }
 
+int vh_audio_output_verify_timing_injection(
+    const VhAudioTimingFaultInjection *injection,
+    const VhAudioTransportTimingHealth *health,
+    const VhAudioOutputRecovery *recovery) {
+    if (!injection || !health || !recovery ||
+        injection->armed>1u || injection->injected>1u ||
+        (injection->armed && injection->injected) ||
+        vh_audio_output_verify_transport_health(health,recovery)<0)
+        return -1;
+    /* A requested bad clock is consumed ONLY on an exact PCM return.
+     * The rejected timing result must therefore be visible as a
+     * successfully submitted page with a sticky diagnostic fault. */
+    if (injection->injected) {
+        if (!health->timing_fault || !health->delivered_without_timing)
+            return -1;
+        return 2;
+    }
+    return injection->armed ? 1 : 0;
+}
+
 uint64_t vh_audio_output_ticks_to_us(uint64_t ticks,
                                      uint64_t tick_frequency) {
     if (!tick_frequency) return 0;
