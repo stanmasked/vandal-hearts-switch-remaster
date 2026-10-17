@@ -359,6 +359,30 @@ static void test_seq_reuses_naturally_released_slot_without_stale_owner(void) {
     assert(spu.voice[7].adsr.phase==VH_ADSR_ATTACK);
 }
 
+
+static void test_repeated_adsr_release_and_slot_reuse(void) {
+    setup();
+    /* Hold nineteen slots while the remaining slot repeatedly expires. */
+    for(unsigned slot=0;slot<VH_NATIVE_MUSIC_VOICES;slot++)
+        assert(vh_native_spu_note_on(&spu,slot,sample,64u,0,64,4096u,
+                                     0x000fu,0x0000u,1.0f,1.0f)==0);
+    for(unsigned cycle=0;cycle<128u;cycle++) {
+        const unsigned slot=cycle%VH_NATIVE_MUSIC_VOICES;
+        vh_native_spu_note_off(&spu,slot);
+        assert(spu.voice[slot].adsr.phase==VH_ADSR_RELEASE);
+        assert(vh_native_spu_voice_active(&spu,slot));
+        vh_native_spu_render(&spu,pcm,512u);
+        assert(!vh_native_spu_voice_active(&spu,slot));
+        for(unsigned other=0;other<VH_NATIVE_MUSIC_VOICES;other++)
+            if(other!=slot) assert(vh_native_spu_voice_active(&spu,other));
+        assert(vh_native_spu_allocate_slot(&spu)==(int)slot);
+        assert(vh_native_spu_note_on(&spu,slot,sample,64u,0,64,4096u,
+                                     0x000fu,0x0000u,1.0f,1.0f)==0);
+        assert(spu.voice[slot].adsr.phase==VH_ADSR_ATTACK);
+        assert(spu.voice[slot].adsr.level==0);
+    }
+}
+
 int main(void) {
     test_validation_and_source_immutability();
     test_512_block_controls_and_ring_pressure();
@@ -370,6 +394,7 @@ int main(void) {
     test_natural_adsr_release_reuses_free_slot();
     test_invalid_switch_preserves_twenty_voices();
     test_seq_reuses_naturally_released_slot_without_stale_owner();
+    test_repeated_adsr_release_and_slot_reuse();
     puts("native pQES SEQ -> 20-voice SPU -> PCM ring: PASS");
     return 0;
 }
