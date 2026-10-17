@@ -41,6 +41,9 @@ def fixture(root):
     (native / STAGED_LOG).write_bytes(_line(blend))
     pixel_meta = {
         "schema": PIXEL_SCHEMA,
+        "source_frame": 7, "gpu_draw_frame": 7,
+        "overdraw_manifest_sha256": "a" * 64,
+        "native_events_sha256": "b" * 64,
         "putpixel_events_sha256": hashlib.sha256(pixel_raw).hexdigest(),
     }
     (source / PIXEL_MANIFEST).write_bytes(_line(pixel_meta))
