@@ -39,6 +39,23 @@ REQUIRED_COPY_OBJECTS = (
     ("libgpu.c", "libgpu.o"),
     ("pc_raster.c", "pc_raster.o"),
 )
+# GNU Make reads MAKEFILES and command-line options from its inherited
+# environment before the explicitly specified -f files. Never allow caller
+# flags to inject other Makefiles, jobs, eval expressions or overrides into
+# either the local retail build or its public dry-run proof.
+INHERITED_MAKE_CONTROLS = (
+    "MAKEFILES", "MAKEFLAGS", "GNUMAKEFLAGS", "MFLAGS", "MAKEOVERRIDES",
+    "MAKELEVEL",
+)
+
+
+def clean_make_environment():
+    env = os.environ.copy()
+    for name in INHERITED_MAKE_CONTROLS:
+        env.pop(name, None)
+    return env
+
+
 MACROS = (
     "-DVH_MAP02_CYCLE_ORDER", "-DVH_MAP02_CD_READ_PROBE",
     "-DVH_MAP02_GPU_CAPTURE", "-DVH_MAP02_POSIX_CAPTURE_WINDOWS",
@@ -209,7 +226,8 @@ def audit(upstream, output, *, make="make"):
         [make, "-nB", "-f", "Makefile", "-f", str(overlay),
          "link", "BUILD_DIR=" + BUILD, "REGION=us",
          "NO_WEBP=1", "NO_HDVIDEO=1"],
-        cwd=pc, capture_output=True, text=True, timeout=120, check=False)
+        cwd=pc, env=clean_make_environment(), capture_output=True,
+        text=True, timeout=120, check=False)
     if result.returncode:
         # GNU Make diagnostic output may contain owned BIOS/EXE locations,
         # generated data paths or environment overrides. It is intentionally
