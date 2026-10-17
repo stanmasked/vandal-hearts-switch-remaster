@@ -25,14 +25,23 @@ def compare_blendg1_witnesses(putpixel_rows, witness_rows):
         raise ValueError("witness streams must be lists")
     # The verifier normally authenticates these upstream, but keep this
     # standalone comparator fail-closed for synthetic tests and direct callers.
-    last_step = -1
-    for p in putpixel_rows:
+    last_ordinal = -1
+    last_frame = None
+    coordinate = None
+    for expected_step, p in enumerate(putpixel_rows):
         if not isinstance(p, dict) or p.get("stage") != "native_putpixel":
             raise ValueError("invalid PutPixel witness")
         step = _uint(p, "step", 63)
-        if step <= last_step:
-            raise ValueError("PutPixel steps duplicated or out of order")
-        last_step = step
+        if step != expected_step:
+            raise ValueError("PutPixel steps are missing, duplicated or reordered")
+        frame = _uint(p, "frame", 2**32 - 1)
+        ordinal = _uint(p, "primitive_ordinal", 2**32 - 1)
+        xy = (_uint(p, "x", 1023), _uint(p, "y", 511))
+        if (last_frame is not None and frame != last_frame) or (
+                last_ordinal > ordinal) or (
+                coordinate is not None and coordinate != xy):
+            raise ValueError("mixed frame, coordinate or nonmonotonic draw ordinal")
+        last_frame, last_ordinal, coordinate = frame, ordinal, xy
         for key, upper in (("frame", 2**32 - 1),
                            ("primitive_ordinal", 2**32 - 1),
                            ("primitive_type", 255),
