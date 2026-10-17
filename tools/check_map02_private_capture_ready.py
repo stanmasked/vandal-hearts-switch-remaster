@@ -26,6 +26,7 @@ from tools.verify_map02_frame_bundle import (
 )
 from tools.verify_map02_native_gpu_capture import (
     LOG as NATIVE_LOG, MAX_RECORDS, private_file, validate_meta,
+    verify_capture_receipt,
 )
 from tools.verify_map02_putpixel_scope import FIELDS, SCHEMA as PIXEL_SCHEMA
 
@@ -144,6 +145,8 @@ def inspect_staged_capture(source_dir, native_dir):
     native_rows = _jsonl(native_raw, "native GPU", max_rows=MAX_RECORDS)
     if len(native_rows) % 2 or len(native_rows) == MAX_RECORDS:
         raise ValueError("native GPU events incomplete or at truncation cap")
+    capture_receipt = verify_capture_receipt(
+        native, target_frame=gpu_frame, events=native_rows)
     pairs = []
     for i in range(0, len(native_rows), 2):
         before, after = native_rows[i:i + 2]
@@ -206,6 +209,9 @@ def inspect_staged_capture(source_dir, native_dir):
         "gpu_draw_frame": gpu_frame,
         "source_ft4_submissions": len(events),
         "native_draw_pairs": len(native_draws),
+        "native_capture_receipt_checked": capture_receipt["capture_receipt_supplied"],
+        "native_hook_loss_not_detected": capture_receipt[
+            "capture_window_closed_without_detected_loss"],
         "independently_sampled_draw_edges": len(edges),
         "verified_structure_putpixel_events": len(pixels),
         "verified_structure_blendg1_events": len(blends),
