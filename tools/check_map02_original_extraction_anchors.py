@@ -91,9 +91,12 @@ def compare_data_ranges(exe_path, elf_path):
                 info = _read_at(elf, entsize, shoff + i * entsize)
                 if len(info) != entsize:
                     raise ValueError("original ELF section headers are incomplete")
-                _, typ, _, address, offset, size = struct.unpack_from(
+                _, typ, flags, address, offset, size = struct.unpack_from(
                     "<IIIIII", info)
-                if typ == 1 and size > 0:
+                # Only file-backed, loaded ELF sections can authenticate
+                # original MIPS runtime data. Debug/metadata PROGBITS
+                # sections are not valid source-image address evidence.
+                if typ == 1 and (flags & 0x2) and size > 0:
                     if offset + size > elf_size:
                         raise ValueError("original ELF PROGBITS outside file")
                     sections.append((address, address + size, offset))
