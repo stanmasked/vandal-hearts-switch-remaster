@@ -7,13 +7,14 @@ leave their private directories. A successful software replay checks a
 """
 import argparse
 import hashlib
+import hmac
 import json
 import os
 from pathlib import Path
 import stat
 import subprocess
 
-from tools.verify_map02_frame_bundle import fields, number, parse_json, sha_check
+from tools.verify_map02_frame_bundle import fields, number, parse_json
 from tools.verify_map02_native_gpu_capture import LOG, private_file
 from tools.verify_map02_putpixel_scope import PIXEL_LOG
 from tools.verify_map02_putpixel_multi_scope import (
@@ -75,9 +76,7 @@ def publish_multi_manifest(source_dir, native_dir, *, compiler="gcc"):
         raise ValueError("in-memory receipt digest differs after replay")
     current = _input_bytes(source_dir, native_dir)
     for label, expected in input_hashes.items():
-        sha_check(bytes.fromhex(current[label]), _sha(bytes.fromhex(expected)),
-                  label + " changed while being verified")
-        if current[label] != expected:
+        if not hmac.compare_digest(current[label], expected):
             raise ValueError(label + ": input mutated during verification")
 
     # Exclusive creation: fail closed on existing file/symlink, never
