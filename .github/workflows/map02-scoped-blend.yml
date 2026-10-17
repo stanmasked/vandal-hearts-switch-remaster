@@ -24,6 +24,8 @@ on:
       - 'tools/verify_map02_native_gpu_windows.py'
       - 'tests/test_verify_map02_native_gpu_windows.py'
       - 'tools/verify_map02_source_native_windows.py'
+      - 'tools/verify_map02_window_scoped_join.py'
+      - 'tools/check_map02_joint_window_scoped_runtime.py'
       - 'tools/publish_map02_native_window_source_witness.py'
       - 'tests/test_map02_source_native_windows.py'
       - 'tools/publish_map02_vram_edges_witness.py'
@@ -73,6 +75,8 @@ on:
       - 'tools/verify_map02_native_gpu_windows.py'
       - 'tests/test_verify_map02_native_gpu_windows.py'
       - 'tools/verify_map02_source_native_windows.py'
+      - 'tools/verify_map02_window_scoped_join.py'
+      - 'tools/check_map02_joint_window_scoped_runtime.py'
       - 'tools/publish_map02_native_window_source_witness.py'
       - 'tests/test_map02_source_native_windows.py'
       - 'tools/publish_map02_vram_edges_witness.py'
@@ -163,3 +167,5 @@ jobs:
         run: python3 -m tools.check_map02_original_gpu_recorder_runtime upstream-pc
       - name: Stress original DrawOTag with overlapping STP and draw-mode switches
         run: python3 -m tools.check_map02_original_drawotag_complex upstream-pc
+      - name: Execute original DrawOTag with GPU windows and pixel+BlendG1+VRAM edges together
+        run: python3 -m tools.check_map02_joint_window_scoped_runtime upstream-pc
