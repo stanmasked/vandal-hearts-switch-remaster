@@ -1339,3 +1339,38 @@ switch page (and vice versa). Invalid last-class values and a nonzero
 class in empty runs fail closed. These checks are tested by the
 host regression and PCM UBSan, without changing real audio service
 timing or any PCM data.
+
+
+### Same-page DSP budget vs audout wait correlation (native Switch probe)
+
+After the last-rendered-page auditing was verified, the hardware
+results now also distinguish two types of **joint events on one
+successfully returned logical PCM page**: a SEQ/SPU/resample DSP
+duration exceeding its nominal block budget *and* a blocking audout
+wait exceeding either 2x or 4x the duration of its own output page.
+The first results screen shows the joint-event counts separately
+for ordinary pages (N) and the first rendered page after a synthetic
+scene switch (S). These are inclusive thresholds: >4x is a subset
+of >2x. Neither a long backend wait nor a coinciding compute
+overrun demonstrates an audible drop or establishes causality.
+
+Each returned logical page contributes exactly one joint sample;
+audout retry attempts are not treated as separate PCM pages. A
+terminally failed rendered page contributes nothing to the joint
+counts. The portable joint verifier cross-checks returned-page
+totals against scene groups, DSP-budget overruns against the DSP
+accumulator (subtracting the known final undelivered page, if any),
+and >2x/>4x counts against the exact audout wait bins minus their
+terminally failed logical pages. Contradictory joint-event counts,
+category shifts, mismatched totals and counter overflows fail closed.
+The NRO's FULL PCM-accounting status now also depends on this
+cross-audit. No PCM contents, proprietary music, controller history
+or audio timestamps are retained.
+
+A generated regression creates overlapping and nonoverlapping DSP
+and backend events in both categories, including a final
+undelivered >4x scene-boundary page and an independent normal-page
+failure. It also tests compensated counter corruption and atomic
+overflow handling. Both Make host test targets and PCM CI with
+UndefinedBehaviorSanitizer run the new regression. Physical Switch
+listening is still required to establish any audible outcome.

@@ -18,6 +18,7 @@
 #include "vh_audio_input_poll.h"
 #include "vh_audio_report_pages.h"
 #include "vh_audio_compute_timing.h"
+#include "vh_audio_compute_wait_join.h"
 #include "vh_native_seq.h"
 #include "vh_native_spu.h"
 
@@ -194,6 +195,7 @@ typedef struct {
     const VhAudioInputPoll *poll;
     const VhAudioMarkButtons *buttons;
     const VhAudioComputeTiming *compute;
+    const VhAudioComputeWaitJoin *compute_wait;
     int compute_evidence;
     uint64_t tick_frequency;
     unsigned played, switched, user_files;
@@ -250,6 +252,12 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
         printf("DSP scene audit=%s; switch renders=%llu\n",
                r->compute_evidence==0 ? "VALID" : "INVALID",
                (unsigned long long)r->compute->first_after_switch.rendered_pages);
+        printf("Both DSP>budget and audout>2x N/S=%llu/%llu\n",
+               (unsigned long long)r->compute_wait->ordinary.both_over_2x,
+               (unsigned long long)r->compute_wait->first_after_switch.both_over_2x);
+        printf("Both DSP>budget and audout>4x N/S=%llu/%llu\n",
+               (unsigned long long)r->compute_wait->ordinary.both_over_4x,
+               (unsigned long long)r->compute_wait->first_after_switch.both_over_4x);
         printf("Wait bins: <=1x <=2x <=4x >4x\n");
         printf("Normal: %llu %llu %llu %llu\n",
                (unsigned long long)n->wait_le_page,
@@ -392,6 +400,7 @@ int main(int argc, char **argv) {
     const uint64_t block_budget_ticks =
         tick_frequency * VH_AUDIO_BLOCK_FRAMES / VH_AUDIO_SAMPLE_RATE;
     VhAudioComputeTiming compute={0};
+    VhAudioComputeWaitJoin compute_wait={0};
     unsigned played_blocks = 0;
     unsigned fixture_b = 0, completed_switches = 0;
     int result = 0;
@@ -458,6 +467,15 @@ int main(int argc, char **argv) {
                 &seam_stats,out_48000,count,(int)switched_this_block,
                 &before_submit,&output.timing,tick_frequency)) {
             result=11;
+            break;
+        }
+        /* Correlation uses only delivered logical PCM pages;
+         * unsuccessful retries do not create separate samples. */
+        if (vh_audio_compute_wait_record(
+                &compute_wait,switched_this_block,
+                (unsigned)(elapsed_ticks>block_budget_ticks),
+                seam_stats.last_wait_band)) {
+            result=17;
             break;
         }
         const uint64_t calls_this_page=
@@ -563,7 +581,9 @@ int main(int argc, char **argv) {
         user_files ? 0u : SYNTHETIC_SCENE_BLOCKS,
         result==0 && played_blocks==MAX_PROBE_BLOCKS);
     const int compute_evidence=vh_audio_compute_verify(
-        &compute,played_blocks,completed_switches);
+        &compute,played_blocks,completed_switches) ||
+        vh_audio_compute_wait_verify(&compute_wait,&compute,
+            &output.scene_waits,played_blocks,completed_switches);
     const int seam_evidence=vh_audio_output_verify_pcm_seams(
         &seam_stats,&output.scene_waits,played_blocks);
     const int listen_evidence=vh_audio_listening_verify(
@@ -582,7 +602,8 @@ int main(int argc, char **argv) {
         .output=&output,.recovery=&recovery,.seams=&seam_stats,
         .marks=&listening_marks,.poll=&input_poll,
         .buttons=&mark_buttons,
-        .compute=&compute,.compute_evidence=compute_evidence,
+        .compute=&compute,.compute_wait=&compute_wait,
+        .compute_evidence=compute_evidence,
         .tick_frequency=tick_frequency,
         .played=played_blocks,.switched=completed_switches,
         .user_files=(unsigned)user_files,.result=result,

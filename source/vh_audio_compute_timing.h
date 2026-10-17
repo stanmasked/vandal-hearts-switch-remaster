@@ -16,6 +16,7 @@ typedef struct {
     uint64_t rendered_pages, total_ticks, max_ticks, over_budget;
     VhAudioComputeBucket ordinary, first_after_switch;
     unsigned last_after_switch; /* class of the final rendered page */
+    unsigned last_over_budget; /* boolean for the last rendered page */
 } VhAudioComputeTiming;
 
 /* Increment the overall accumulator and exactly one category.
@@ -44,6 +45,7 @@ static inline int vh_audio_compute_record(
     if (elapsed>b->max_ticks) b->max_ticks=elapsed;
     b->over_budget+=slow;
     s->last_after_switch=first_after_switch;
+    s->last_over_budget=(unsigned)slow;
     return 0;
 }
 
@@ -63,8 +65,9 @@ static inline int vh_audio_compute_bucket_valid(
 static inline int vh_audio_compute_verify(
     const VhAudioComputeTiming *s, uint64_t returned_pages,
     uint64_t returned_switch_pages) {
-    if (!s || s->last_after_switch>1u ||
-        (!s->rendered_pages && s->last_after_switch) ||
+    if (!s || s->last_after_switch>1u || s->last_over_budget>1u ||
+        (!s->rendered_pages &&
+         (s->last_after_switch || s->last_over_budget)) ||
         returned_switch_pages>returned_pages ||
         s->rendered_pages<returned_pages ||
         s->rendered_pages-returned_pages>1u ||
@@ -85,6 +88,9 @@ static inline int vh_audio_compute_verify(
         s->max_ticks!=(s->ordinary.max_ticks>s->first_after_switch.max_ticks
             ? s->ordinary.max_ticks : s->first_after_switch.max_ticks))
         return -1;
+    if (s->last_over_budget &&
+        !(s->last_after_switch ? s->first_after_switch.over_budget :
+                                   s->ordinary.over_budget)) return -1;
     const uint64_t ordinary_returned=returned_pages-returned_switch_pages;
     if (s->ordinary.rendered_pages<ordinary_returned ||
         s->first_after_switch.rendered_pages<returned_switch_pages ||
