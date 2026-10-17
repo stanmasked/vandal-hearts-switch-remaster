@@ -137,6 +137,17 @@ class TestSceneSoak(unittest.TestCase):
         with self.assertRaises(TraceError):
             self.audit()
 
+    def test_silent_monitor_tail_after_shutdown_is_not_field_silence(self):
+        # Host parec outlives guest Plus shutdown. It is incorrect to
+        # sample a midpoint in this post-exit, all-zero recording tail.
+        file = self.root / "soak-monitor-s16le-48k.pcm"
+        with file.open("ab") as stream:
+            stream.write(bytes(6*48000*4))
+        report, _ = self.audit()
+        self.assertEqual(report["result"],
+                         "TEN_GUEST_SCENE_TRANSITIONS_DUAL_TRANSPORT_VERIFIED")
+        self.assertGreater(report["pcm_duration_seconds"], 45)
+
     def test_clipped_pcm_rejected_even_if_guest_trace_matches(self):
         with (self.root/"soak-monitor-s16le-48k.pcm").open("r+b") as file:
             file.seek(48000*4*4)
