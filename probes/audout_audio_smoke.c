@@ -19,6 +19,7 @@
 #include "vh_audio_report_pages.h"
 #include "vh_audio_compute_timing.h"
 #include "vh_audio_compute_wait_join.h"
+#include "vh_audio_page_telemetry.h"
 #include "vh_native_seq.h"
 #include "vh_native_spu.h"
 
@@ -492,23 +493,19 @@ int main(int argc, char **argv) {
             result=11;
             break;
         }
-        /* Correlation uses only delivered logical PCM pages;
-         * unsuccessful retries do not create separate samples. */
-        if (vh_audio_compute_wait_record(
-                &compute_wait,switched_this_block,
-                (unsigned)(elapsed_ticks>block_budget_ticks),
-                seam_stats.last_wait_band)) {
-            result=17;
-            break;
-        }
+        /* The joint DSP/wait counters and the 32-page listening
+         * ring must commit together, for ONE returned PCM page.
+         * A ring failure never leaves phantom DSP/wait observations.
+         */
         const uint64_t calls_this_page=
             output.timing.calls-before_submit.calls;
-        if (vh_audio_listening_observe(
-                &listening_marks,seam_stats.last_wait_band,
-                switched_this_block,(unsigned)(calls_this_page>1u),
+        if (vh_audio_page_telemetry_record(
+                &compute_wait,&listening_marks,
+                seam_stats.last_wait_band,switched_this_block,
+                (unsigned)(calls_this_page>1u),
                 seam_stats.last_abs_step,
                 (unsigned)(elapsed_ticks>block_budget_ticks))) {
-            result=12;
+            result=17;
             break;
         }
         ++played_blocks;

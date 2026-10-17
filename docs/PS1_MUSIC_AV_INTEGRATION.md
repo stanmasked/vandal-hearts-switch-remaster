@@ -1460,3 +1460,35 @@ new window events at every 31/32-page lookback boundary and across
 repeated ring wraps, including DSP and wait events straddling
 pages 31–33. No PCM, input trace or copyrighted assets are
 recorded or exported.
+
+
+### Atomic returned-page joint telemetry and 32-page A/B ring
+
+The native audout probe previously wrote two separate diagnostic
+accumulators in order: the returned-page DSP/audout joint histogram
+and the 32-page A/B listening ring. A corrupt ring entry or counter
+overflow could cause the listening recorder to reject its update
+AFTER the joint histogram had already incremented. Although the
+final audit detected the difference, the in-memory diagnostics
+were unnecessarily left inconsistent.
+
+The new portable \`vh_audio_page_telemetry_record\` requires the
+pre-update returned-page clocks and exact DSP/long-wait totals to
+agree. It stages the small joint histogram, then attempts the
+already-atomic listening ring observation, and publishes the staged
+histogram only after the ring succeeds. On any error both objects
+remain unchanged. No large ring copy, PCM data, time-series export
+or extra audout callback is introduced.
+
+A dedicated synthetic host regression exercises more than three
+ring turns (100 returned pages), missing/duplicate counters,
+illegal wait bands, categories, retry and DSP flags, a malformed
+ring slot, joint histogram overflow, saturated listening-window
+totals and success after restoring the original metadata. The
+test is included in \`make test\` and \`make test-audio-stream\`,
+and run separately under UndefinedBehaviorSanitizer by PCM CI.
+
+The fix does not change the music/render/audio service order or
+demonstrate sound quality. Physical Nintendo Switch observation
+is still required. It only prevents a failed recorder from
+creating a phantom DSP/audout event or inconsistent A/B ring.
