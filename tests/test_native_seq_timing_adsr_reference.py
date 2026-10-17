@@ -32,6 +32,8 @@ VOICE_CASES = {
     "long_release": (0x000F, 0x0018, 0x0800, 0, 56, 256, 2),
     "linear_release": (0x000F, 0x0000, 0x0800, 0, 56, 128, 2),
     "exp_release": (0x000F, 0x0030, 0x0800, 0, 56, 256, 2),
+    "slow_attack": (0x7E0F, 0x0000, 0x0800, 0, 56, 256, 256),
+    "fast_exp_attack": (0x800F, 0x0000, 0x0800, 0, 56, 64, 64),
 }
 
 
