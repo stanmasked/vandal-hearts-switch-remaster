@@ -5,6 +5,7 @@ fixture. We actually compile a native ELF and read /proc/<child>/exe to
 prove the OS launches the prepared executable instead of a claimed pathname.
 """
 import json
+import os
 from pathlib import Path
 import subprocess
 import unittest
@@ -236,8 +237,10 @@ int main(int argc, char **argv) {
         cycle.mkdir(mode=0o700)
         original_popen = subprocess.Popen
         forwarded = []
+        environments = []
 
         def observed_popen(*args, **kwargs):
+            environments.append(dict(kwargs["env"]))
             forwarded.append(kwargs["env"].get("VH_MAP02_CYCLE_OUTPUT_DIR"))
             return original_popen(*args, **kwargs)
 
@@ -250,13 +253,34 @@ int main(int argc, char **argv) {
             with patch(
                     "tools.verify_map02_cycle_cd_gpu_join._cycle_receipt",
                     return_value=(b"synthetic-only", "b" * 64)) as receipt:
-                with patch("tools.map02_verified_process_launch.subprocess.Popen",
-                           side_effect=observed_popen):
-                    result = launch_observed_pc(
-                        self.handoff, self.native, self.scoped,
-                        self.binary, self.owned, upstream=self.upstream,
-                        x=10, y=20, timeout=8, cycle_dir=cycle)
+                with patch.dict(os.environ, {
+                        "VH_HD_PACK": "/untrusted/hd-backgrounds",
+                        "VH_HD_VIDEOS": "/untrusted/hd-video",
+                        "VH_HDPACK": "1",
+                        "VH_LANG": "test-language",
+                        "VH_LANGPACK": "/untrusted/localized",
+                        "VH_INTERNAL_SCALE": "4",
+                        "VH_ACCURATE": "0",
+                        "VH_RASTER_THREADS": "8",
+                        "VH_MAP02_PROBE_FRAME": "999",
+                }):
+                    with patch("tools.map02_verified_process_launch.subprocess.Popen",
+                               side_effect=observed_popen):
+                        result = launch_observed_pc(
+                            self.handoff, self.native, self.scoped,
+                            self.binary, self.owned, upstream=self.upstream,
+                            x=10, y=20, timeout=8, cycle_dir=cycle)
         structural.assert_called_once_with(self.binary)
+        self.assertEqual(len(environments), 1)
+        child_env = environments[0]
+        for name, expected in (
+                ("VH_HDPACK", "0"), ("VH_HD_PACK", ""),
+                ("VH_HD_VIDEOS", ""), ("VH_LANG", ""),
+                ("VH_LANGPACK", ""), ("VH_INTERNAL_SCALE", "1"),
+                ("VH_ACCURATE", "1"), ("VH_RASTER_THREADS", "1"),
+                ("VH_MAP02_PROBE_FRAME", "7")):
+            with self.subTest(variable=name):
+                self.assertEqual(child_env.get(name), expected)
         self.assertTrue(result["kernel_executable_hash_matched"])
         self.assertEqual(forwarded, [str(cycle)])
         receipt.assert_called_once()
