@@ -71,6 +71,8 @@ on:
       - 'tests/test_map02_v109_gp0_class_vblank_stores.py'
       - 'tools/summarize_map02_v110_class_boundary_checkpoints.py'
       - 'tests/test_map02_v110_class_boundary_checkpoints.py'
+      - 'tools/summarize_map02_v111_sample_store_divergence.py'
+      - 'tests/test_map02_v111_sample_store_divergence.py'
       - 'tools/map02_v80_native_timeline.*'
       - 'tools/map02_v81_event_jsonl.*'
       - 'tools/verify_map02_v82_native_trace.py'
@@ -130,6 +132,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v108_vblank_store_buckets.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v109_gp0_class_vblank_stores.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v110_class_boundary_checkpoints.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v111_sample_store_divergence.py' -v
       - name: Patch pinned upstream with Unai post-dispatch observer
         shell: bash
         run: |
@@ -265,6 +268,7 @@ jobs:
           from remaster.tools.summarize_map02_v108_vblank_store_buckets import summarize as v108_buckets
           from remaster.tools.summarize_map02_v109_gp0_class_vblank_stores import summarize as v109_classes
           from remaster.tools.summarize_map02_v110_class_boundary_checkpoints import summarize as v110_boundary
+          from remaster.tools.summarize_map02_v111_sample_store_divergence import summarize as v111_divergence
           log=Path("proof/private/v104-runtime.log").read_text()
           head=re.findall(r'VH83_UNAI_DISPATCH_PASS handled=(\d+)',log)
           tail=re.findall(r'VH82_PRIVATE_EXPORT_PASS vblanks=(\d+) gp1_mmio=(\d+) entries=(\d+) bytes=(\d+) drops=(\d+)',log)
@@ -502,6 +506,19 @@ jobs:
           assert checkpoints["HD_replacement_approved"] is False
           Path("proof/public/v110-boundary-class-summary.json").write_text(
               json.dumps(checkpoints,sort_keys=True)+"\n")
+          visibility=v111_divergence(path.read_bytes())
+          assert visibility["vblank_edges"]==4
+          assert visibility["sampled_vram_locations_per_handler"]==24
+          assert sum(r["handlers"] for r in visibility["overall_case_totals"].values())==observed
+          for metric in ("native_store_attempts","same_value_native_stores",
+                         "changed_value_native_stores","changed_sample_points"):
+              assert sum(r[metric] for r in visibility["overall_case_totals"].values())==ordinal["totals"][metric]
+          assert visibility["zero_sample_delta_does_not_mean_no_VRAM_writes"] is True
+          assert visibility["instrumented_sites_cover_all_vram_writes"] is False
+          assert visibility["cpu_cycle_accurate_gpu_timing_verified"] is False
+          assert visibility["HD_replacement_approved"] is False
+          Path("proof/public/v111-sample-store-divergence.json").write_text(
+              json.dumps(visibility,sort_keys=True)+"\n")
           assert evidence["vblank_edges"]==vblanks and evidence["gp1_mmio"]==gp1
           assert evidence["events"]==entries and evidence["bytes"]==size
           assert evidence["original_retail_MAP02_verified"] is False
