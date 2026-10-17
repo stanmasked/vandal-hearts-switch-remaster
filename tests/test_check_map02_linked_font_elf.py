@@ -1,9 +1,12 @@
 """Tests for exact original glyph bytes in host ELF."""
+import hashlib
+import os
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 import subprocess
 import tempfile
-from tools.check_map02_linked_font_elf import check_linked_font_bytes
+from tools.check_map02_linked_font_elf import check_linked_font_bytes, stable_owned_elf_sha256
 from tools.check_map02_linked_font_elf import FONT_BYTES
 
 class FontLinkedTests(unittest.TestCase):
@@ -23,6 +26,46 @@ class FontLinkedTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.tmp.cleanup()
+
+    def test_stable_no_follow_digest_matches_original_elf(self):
+        self.assertEqual(stable_owned_elf_sha256(self.binary),
+                         hashlib.sha256(self.binary.read_bytes()).hexdigest())
+
+    def test_stable_digest_rejects_symlink_and_hardlink(self):
+        symlink = self.root / "digest-symlink"
+        symlink.symlink_to(self.binary)
+        with self.assertRaisesRegex(ValueError, "symlinked"):
+            stable_owned_elf_sha256(symlink)
+        shared = self.root / "digest-shared"
+        original = self.root / "digest-source"
+        original.write_bytes(self.binary.read_bytes())
+        original.chmod(0o700)
+        shared.hardlink_to(original)
+        with self.assertRaisesRegex(ValueError, "not owned executable"):
+            stable_owned_elf_sha256(shared)
+
+    def test_stable_digest_rejects_same_byte_inode_swap_mid_hash(self):
+        binary = self.root / "digest-replaced"
+        binary.write_bytes(self.binary.read_bytes())
+        binary.chmod(0o700)
+        kept = self.root / "digest-original"
+        actual_pread = os.pread
+        swapped = [False]
+
+        def replace_after_open(fd, size, offset):
+            data = actual_pread(fd, size, offset)
+            if not swapped[0]:
+                swapped[0] = True
+                binary.rename(kept)
+                binary.write_bytes(kept.read_bytes())
+                binary.chmod(0o700)
+            return data
+
+        with patch("tools.check_map02_linked_font_elf.os.pread",
+                   side_effect=replace_after_open):
+            with self.assertRaisesRegex(ValueError, "changed during hashing"):
+                stable_owned_elf_sha256(binary)
+        self.assertTrue(swapped[0])
 
     def test_actual_loaded_font_bytes_match(self):
         result = check_linked_font_bytes(self.binary, self.expected)
