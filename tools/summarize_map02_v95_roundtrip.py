@@ -17,10 +17,15 @@ def summarize(raw:bytes):
     preceding=summarize_v94(raw)
     proof=validate(raw)
     rows=[json.loads(line) for line in raw.decode("ascii").splitlines()]
-    tail=rows[-len(KINDS):]
+    positions=[i for i,row in enumerate(rows) if row["kind"]==KINDS[0]]
+    if len(positions)!=1:
+        raise Refused("missing or duplicate v95 first round")
+    start=positions[0]
+    tail=rows[start:start+len(KINDS)]
     if len(tail)!=len(KINDS) or tuple(row["kind"] for row in tail)!=KINDS:
-        raise Refused("missing, duplicated or misordered v95 incremental serialization suffix")
-    if any(row["kind"] in KINDS for row in rows[:-len(KINDS)]):
+        raise Refused("missing, duplicated or misordered v95 incremental serialization group")
+    if any(row["kind"] in KINDS for i,row in enumerate(rows)
+           if not start<=i<start+len(KINDS)):
         raise Refused("duplicated or misplaced v95 roundtrip counter")
     if tuple(row["value"] for row in tail)!=EXPECTED:
         raise Refused("native repeated serialization/snapshot counts disagree")
@@ -28,7 +33,7 @@ def summarize(raw:bytes):
         raise Refused("host-only cache operations fabricated MIPS/VBlank provenance")
     if tail[0]["seq"]!=preceding["final_private_journal_events"]+1:
         raise Refused("v95 rounds must start immediately after v94 snapshot check")
-    if len(rows)!=preceding["final_private_journal_events"]+len(KINDS):
+    if start+len(KINDS)!=preceding["final_private_journal_events"]+len(KINDS):
         raise Refused("unexpected records inserted during eight exclusive memory exports")
     if proof["vblank_edges"]!=4 or not preceding["native_stale_view_invalidation_observed"]:
         raise Refused("previous pinned emulator oracle or v94 snapshot proof invalid")
@@ -41,7 +46,7 @@ def summarize(raw:bytes):
         "native_stale_view_refusals":8,
         "native_cached_pointer_stable_reads":8,
         "v94_checkpoint_private_events":preceding["final_private_journal_events"],
-        "final_private_journal_events":len(rows),
+        "final_private_journal_events":start+len(KINDS),
         "first_oracle_emulator_vblank_edges":proof["vblank_edges"],
         "real_private_file_published_exclusively_once":True,
         "retail_MAP02_verified":False,
