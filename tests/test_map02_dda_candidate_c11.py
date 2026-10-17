@@ -33,11 +33,12 @@ END = r"""
 int main(int argc, char **argv) {
     RenderCtx rc = {0};
     DdaCtx cx = {&rc, 10, 15};
-    if (argc != 2 && !(argc == 3 && strcmp(argv[2], "fill") == 0)) return 2;
+    if (argc != 2 && !(argc == 3 && (strcmp(argv[2], "fill") == 0 || strcmp(argv[2], "single") == 0))) return 2;
     vh_pixel_sample_dir = argv[1];
 #if defined(VH_MAP02_DDA_REJECTED_EDGES_TRACE)
     vh_pixel_sample_y = 9;
     VH_Map02RejectedEdges(&cx, 9, 10, 20, 4);
+    if (argc == 3 && strcmp(argv[2], "single") == 0) return 0;
     vh_pixel_sample_y = 16;
     VH_Map02RejectedEdges(&cx, 16, 10, 20, 5);
     VH_Map02RejectedEdges(&cx, 16, 10, 20, 6);
@@ -96,9 +97,19 @@ class CandidateC11Tests(unittest.TestCase):
                 if enabled:
                     self.assertTrue(journal.exists())
                     records = validate(journal.read_bytes())
-                    envelope = audit(root)
-                    self.assertEqual(envelope["files"][CANDIDATE_FILE]["event_count"], 4)
+                    # This purpose-built four-branch fixture switches
+                    # the selected Y halfway through one synthetic process;
+                    # a genuine single-sample capture must NOT accept it.
+                    with self.assertRaisesRegex(ValueError, "mixed DDA capture"):
+                        audit(root)
+                    single_dir = root / "single"
+                    single_dir.mkdir()
+                    subprocess.run([str(target), str(single_dir), "single"],
+                                   check=True, capture_output=True, text=True)
+                    envelope = audit(single_dir)
+                    self.assertEqual(envelope["files"][CANDIDATE_FILE]["event_count"], 1)
                     self.assertIsNone(envelope["files"][SPAN_FILE]["event_count"])
+                    self.assertTrue(envelope["single_sample_envelope_consistent"])
                     self.assertFalse(envelope["rejected_triangle_pixel_coverage_verified"])
                     self.assertEqual([row["reason"] for row in records], [4, 5, 6, 7])
                     self.assertEqual([row["y"] for row in records], [9, 16, 16, 9])
