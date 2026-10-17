@@ -1,0 +1,32 @@
+name: MAP02 v127 real MIPS VBlank zero one two DMA gap profiles
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v127-variable-real-vblank.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/make_map02_v127_variable_vblank_exe.py'
+      - 'tools/apply_map02_v127_pcsx_rearmed.py'
+      - 'tools/summarize_map02_v127_vblank_profiles.py'
+      - 'tests/test_map02_v127_vblank_profiles.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-authored-real-vblank-gap-matrix:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate four native GPU DMA/VBlank gap cases and preservation
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_map02_v127_vblank_profiles.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v126_genuine_vblank_dma.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v125_variable_dma.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v124_one_list_five_draws.py' -v
