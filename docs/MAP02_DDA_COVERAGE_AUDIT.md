@@ -223,10 +223,15 @@ For native GPU `LoadImage` commands, the verifier now also fingerprints
 each **actually saved post-upload binary payload**. It records
 `upload_payload_sha256_list_sha256` over the ordered payload SHA-256
 digests, plus `load_pairs_with_verified_payload` and
-`load_pairs_without_payload`. The latter is important: the original
-instrumented recorder deliberately omits some larger uploads, so a
-missing payload is **unobserved, not an empty/verified upload**. A
-successful private receipt replay detects even equal-length modifications
+`load_pairs_without_payload`. The source-pinned C hook **must** write
+a post-upload payload for positive `LoadImage` rectangles where **both**
+width and height are at most 128; the validator now refuses a missing
+payload for these bounded transfers. For dimensions outside that range
+the recorder deliberately omits the upload even when the product
+`width × height` is small (e.g. 129×1). Such an omitted payload is
+**unobserved, not empty/verified**. An invented payload filename outside
+those limits is rejected as well. A successful private receipt replay
+detects even equal-length modifications
 to a saved upload payload while GPU event JSON and VRAM snapshots remain
 unchanged. These fields carry no game bytes or original image pixels.
 
