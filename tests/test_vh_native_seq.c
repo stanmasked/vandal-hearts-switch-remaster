@@ -908,10 +908,27 @@ static void test_full_pcm_ring_scene_switch_backpressure(void) {
 
     /* Drain exactly one page. Construct an independent reference block
      * with the same preserved wet history and fresh music scheduler. */
-    assert(vh_audio_stream_read(&pressure_expected_ring,pcm,512u)==512u);
-    memcpy(pressure_expected_pcm,pcm,sizeof pressure_expected_pcm);
-    assert(vh_audio_stream_read(&ring,pcm,512u)==512u);
-    assert(memcmp(pcm,pressure_expected_pcm,sizeof pressure_expected_pcm)==0);
+    const unsigned drains[]={255u,256u,1u};
+    unsigned drained=0u;
+    for(unsigned i=0u;i<3u;i++) {
+        const unsigned count=drains[i];
+        assert(vh_audio_stream_read(&pressure_expected_ring,
+                                    pressure_expected_pcm,count)==count);
+        assert(vh_audio_stream_read(&ring,pcm,count)==count);
+        assert(memcmp(pcm,pressure_expected_pcm,
+                      count*VH_AUDIO_CHANNELS*sizeof(int16_t))==0);
+        drained+=count;
+        assert(vh_audio_stream_queued(&ring)==
+               VH_AUDIO_RING_FRAMES-drained);
+        assert(memcmp(&ring,&pressure_expected_ring,sizeof ring)==0);
+        if(drained<512u) {
+            assert(vh_native_seq_pump(&seq,&ring)==0);
+            assert(memcmp(&seq,&pressure_before_seq,sizeof seq)==0);
+            assert(memcmp(&spu,&pressure_before_spu,sizeof spu)==0);
+            assert(log_state.calls==calls_before);
+        }
+    }
+    assert(drained==512u);
     memcpy(&pressure_reference_spu,&spu,sizeof spu);
     memcpy(&pressure_reference_seq,&seq,sizeof seq);
     pressure_reference_seq.spu=&pressure_reference_spu;
