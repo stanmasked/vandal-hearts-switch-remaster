@@ -65,6 +65,8 @@ on:
       - 'tools/apply_map02_v104_pcsx_rearmed.py'
       - 'tools/summarize_map02_v104_content_guard.py'
       - 'tests/test_map02_v104_content_guard.py'
+      - 'tools/summarize_map02_v108_vblank_store_buckets.py'
+      - 'tests/test_map02_v108_vblank_store_buckets.py'
       - 'tools/map02_v80_native_timeline.*'
       - 'tools/map02_v81_event_jsonl.*'
       - 'tools/verify_map02_v82_native_trace.py'
@@ -121,6 +123,7 @@ jobs:
             esac
             python3 -m unittest discover -s remaster/tests -p "$pattern" -v
           done
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v108_vblank_store_buckets.py' -v
       - name: Patch pinned upstream with Unai post-dispatch observer
         shell: bash
         run: |
@@ -228,6 +231,7 @@ jobs:
           grep -F 'VH92_PRESSURE_PASS attempts=' proof/private/v104-runtime.log
           python3 - <<'PY'
           import re
+          import json
           from pathlib import Path
           from remaster.tools.verify_map02_v82_native_trace import validate
           from remaster.tools.summarize_map02_v83_unai_vblank import summarize
@@ -252,6 +256,7 @@ jobs:
           from remaster.tools.summarize_map02_v102_anchored_paths import summarize as anchored
           from remaster.tools.summarize_map02_v103_inode_guard import summarize as safe_inode
           from remaster.tools.summarize_map02_v104_content_guard import summarize as content_guard
+          from remaster.tools.summarize_map02_v108_vblank_store_buckets import summarize as v108_buckets
           log=Path("proof/private/v104-runtime.log").read_text()
           head=re.findall(r'VH83_UNAI_DISPATCH_PASS handled=(\d+)',log)
           tail=re.findall(r'VH82_PRIVATE_EXPORT_PASS vblanks=(\d+) gp1_mmio=(\d+) entries=(\d+) bytes=(\d+) drops=(\d+)',log)
@@ -454,6 +459,20 @@ jobs:
           assert after_sync["final_private_journal_events"]==safeguarded["final_private_journal_events"]+3
           assert after_sync["retail_MAP02_verified"] is False
           assert after_sync["HD_replacement_approved"] is False
+          # v108 derives only ordinal event ordering; GPU callbacks have no CPU cycles.
+          ordinal=v108_buckets(path.read_bytes())
+          assert ordinal["vblank_edges"]==4
+          assert ordinal["totals"]["unai_handlers"]==observed
+          assert ordinal["totals"]["native_store_attempts"]==native["native_store_attempts"]
+          assert ordinal["totals"]["same_value_native_stores"]==native["native_stores_writing_previous_value"]
+          assert ordinal["totals"]["changed_value_native_stores"]==native["native_stores_writing_new_value"]
+          assert ordinal["totals"]["changed_sample_points"]==pixels["changed_sample_points"]
+          assert ordinal["totals"]["gp1_mmio_inputs"]==gp1
+          assert ordinal["totals"]["gpu_dma2_start_inputs"]==evidence["gpu_dma2_start"]
+          assert ordinal["vblank_cpu_cycle_accurate_gpu_completion"] is False
+          assert ordinal["HD_replacement_approved"] is False
+          Path("proof/public/v108-vblank-store-summary.json").write_text(
+              json.dumps(ordinal,sort_keys=True)+"\n")
           assert evidence["vblank_edges"]==vblanks and evidence["gp1_mmio"]==gp1
           assert evidence["events"]==entries and evidence["bytes"]==size
           assert evidence["original_retail_MAP02_verified"] is False
