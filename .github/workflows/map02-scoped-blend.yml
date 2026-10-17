@@ -41,6 +41,8 @@ on:
       - 'tools/check_map02_original_cd_runtime.py'
       - 'tests/test_instrument_map02_cd_read.py'
       - 'tools/verify_map02_original_cd_read.py'
+      - 'tools/publish_map02_cd_bound_witness.py'
+      - 'tests/test_publish_map02_cd_bound_witness.py'
       - 'tests/test_verify_map02_original_cd_read.py'
       - 'tests/test_map02_original_cd_stage.py'
       - 'tests/test_check_map02_owned_disc_extent.py'
@@ -111,6 +113,8 @@ on:
       - 'tools/check_map02_original_cd_runtime.py'
       - 'tests/test_instrument_map02_cd_read.py'
       - 'tools/verify_map02_original_cd_read.py'
+      - 'tools/publish_map02_cd_bound_witness.py'
+      - 'tests/test_publish_map02_cd_bound_witness.py'
       - 'tests/test_verify_map02_original_cd_read.py'
       - 'tests/test_map02_original_cd_stage.py'
       - 'tests/test_check_map02_owned_disc_extent.py'
@@ -184,7 +188,8 @@ jobs:
             tests.test_check_map02_owned_disc_extent \
             tests.test_instrument_map02_cd_read \
             tests.test_verify_map02_original_cd_read \
-            tests.test_map02_original_cd_stage
+            tests.test_map02_original_cd_stage \
+            tests.test_publish_map02_cd_bound_witness
       - name: Checkout pinned public original PC raster source
         uses: actions/checkout@v4
         with:
