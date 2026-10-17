@@ -2,6 +2,8 @@
 """Regression tests for integrated-NRO preflight (synthetic headers only)."""
 from __future__ import annotations
 import hashlib
+import json
+import subprocess
 from pathlib import Path
 import struct
 import sys
@@ -71,6 +73,31 @@ class TestIntegratedNroPreflight(unittest.TestCase):
         with self.assertRaises(gate.PreflightError):
             gate.check(self.root, **self.params)
 
+    def test_cli_success_and_bad_hash_exit_codes(self):
+        args = [
+            sys.executable,
+            str(ROOT / "tools" / "verify_switch_integrated_nro_preflight.py"),
+            str(self.root),
+            "--git-sha", SHA, "--run-id", "39022002964",
+            "--artifact-id", "12097456224",
+            "--expected-nro-sha256", self.digest,
+        ]
+        good = subprocess.run(args, capture_output=True, text=True, check=False)
+        self.assertEqual(good.returncode, 0, good.stderr)
+        self.assertEqual(json.loads(good.stdout)["result"], "READY_FOR_SD_TRANSFER_REVIEW")
+        args[-1] = "0" * 64
+        bad = subprocess.run(args, capture_output=True, text=True, check=False)
+        self.assertEqual(bad.returncode, 2, bad.stderr)
+        self.assertEqual(json.loads(bad.stdout)["result"], "STOP_INVALID_PREFLIGHT")
+
+    def test_symlink_nro_rejected(self):
+        nro = self.root / gate.EXPECTED_NRO
+        target = self.root / "actual.bin"
+        nro.rename(target)
+        nro.symlink_to(target)
+        with self.assertRaises(gate.PreflightError):
+            gate.check(self.root, **self.params)
+
     def test_competing_nro_rejected(self):
         (self.root / "audout-audio-switch-probe.nro").write_bytes(b"unrelated")
         with self.assertRaises(gate.PreflightError):
@@ -86,7 +113,7 @@ class TestIntegratedNroPreflight(unittest.TestCase):
         (self.root / gate.EXPECTED_NRO).write_bytes(data)
         digest = hashlib.sha256(data).hexdigest()
         self.hashfile.write_text(digest + "  build/vandal-hearts-prototype.nro\n")
-        with self.assertRaises(Exception):
+        with self.assertRaises(gate.bundle.BundleError):
             gate.check(self.root, **dict(self.params, expected_sha256=digest))
 
 if __name__ == "__main__":
