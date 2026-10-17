@@ -386,23 +386,32 @@ int main(int argc, char **argv) {
         const VhAudoutQueueExportResult audout_saved=
             vh_switch_game_audio_queue_export(
                 audout_path,sizeof audout_path);
-        if(audout_saved!=VH_AUDOUT_QUEUE_EXPORT_OK) {
-            fprintf(stderr,"audout queue telemetry SD export failed: %d\n",
-                    (int)audout_saved);
-            /* NeXium may hide guest stderr: save a separate bounded,
-             * exclusive failure receipt AFTER joining the audio worker.
-             * Never synthesize an audout CSV when export fails. */
-            const int failure_fd=open(
-                "sdmc:/switch/vandal-hearts-remake/audio-audout-export-failure.txt",
-                O_WRONLY|O_CREAT|O_EXCL,0600);
-            if(failure_fd>=0) {
-                char message[96];
-                const int n=snprintf(message,sizeof message,
-                    "audout_export_status=%d\n", (int)audout_saved);
-                if(n>0 && (size_t)n<sizeof message)
-                    (void)write(failure_fd,message,(size_t)n);
-                (void)close(failure_fd);
-            }
+        /* Always record the API result as a distinct, bounded guest
+         * receipt. This probes same-process visibility: the native
+         * exporter can report success while NeXium's host SD mirror
+         * has no matching file. Neither case proves audible output.
+         * Never fabricate the missing CSV. */
+        struct stat audout_stat;
+        const int audout_seen=audout_saved==VH_AUDOUT_QUEUE_EXPORT_OK
+            && stat(audout_path,&audout_stat)==0
+            && S_ISREG(audout_stat.st_mode);
+        const int receipt_fd=open(
+            "sdmc:/switch/vandal-hearts-remake/audio-audout-export-result.txt",
+            O_WRONLY|O_CREAT|O_EXCL,0600);
+        if(receipt_fd>=0) {
+            char message[160];
+            const int n=snprintf(message,sizeof message,
+                "export_status=%d\npath_present=%u\nfile_size=%llu\n",
+                (int)audout_saved,audout_seen?1u:0u,
+                audout_seen ? (unsigned long long)audout_stat.st_size:0ull);
+            if(n>0 && (size_t)n<sizeof message)
+                (void)write(receipt_fd,message,(size_t)n);
+            (void)close(receipt_fd);
+        }
+        if(audout_saved!=VH_AUDOUT_QUEUE_EXPORT_OK || !audout_seen) {
+            fprintf(stderr,
+                "audout queue telemetry SD export failed: %d, path_present=%d\n",
+                (int)audout_saved,audout_seen);
             export_status=2;
         }
         if (resume_message_enabled)
