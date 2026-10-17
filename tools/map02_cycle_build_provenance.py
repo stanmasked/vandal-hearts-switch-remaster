@@ -18,9 +18,10 @@ from tools.check_map02_cycle_make_plan import (
     audit, preflight, BUILD,
 )
 from tools.check_map02_cycle_elf import audit_cycle_elf
+from tools.check_map02_linked_font_elf import stable_owned_elf_sha256
 from tools.check_map02_original_font_c import verify_linked_original_font
 from tools.check_map02_private_pc_inputs import verify_private_pc_inputs
-from tools.map02_local_capture_handoff import _sha_file, verify_pinned_upstream
+from tools.map02_local_capture_handoff import verify_pinned_upstream
 from tools.publish_map02_blendg1_witness import _private_directory
 from tools.verify_map02_native_gpu_capture import private_file
 from tools.verify_map02_frame_bundle import fields, parse_json
@@ -94,7 +95,7 @@ def create_build_receipt(report_dir, pc_binary, upstream, bundle,
         max_bytes=8192)
     record = _checks({
         "schema": SCHEMA,
-        "pc_executable_sha256": _sha_file(binary),
+        "pc_executable_sha256": stable_owned_elf_sha256(binary),
         "source_bound_make_command_sha256":
             planned["full_game_link_command_sha256"],
         "private_build_inputs_sha256": sha(manifest_bytes),
@@ -164,7 +165,7 @@ def verify_build_receipt(report_dir, pc_binary, upstream, bundle,
         _private_directory(bundle), "map02_cycle_build_inputs.json",
         max_bytes=8192)
     actual = {
-        "pc_executable_sha256": _sha_file(binary),
+        "pc_executable_sha256": stable_owned_elf_sha256(binary),
         "source_bound_make_command_sha256":
             planned["full_game_link_command_sha256"],
         "private_build_inputs_sha256": sha(manifest_bytes),
