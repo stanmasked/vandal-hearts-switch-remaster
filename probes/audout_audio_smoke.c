@@ -168,7 +168,7 @@ typedef struct {
     VhAudioSubmitTiming timing;
     VhAudioSceneWaits scene_waits;
     VhAudioPageLease lease;
-    unsigned timing_fault; /* sticky diagnostic error; never a transport failure */
+    VhAudioTransportTimingHealth transport_health;
     int initialized;
     int started;
 } NativeOutput;
@@ -252,7 +252,7 @@ static int native_submit(void *opaque,const int16_t *pcm,size_t frames) {
      * Mark telemetry invalid, then abort analysis on the producer thread
      * without a transport recovery attempt for this delivered PCM. */
     return vh_audio_output_transport_outcome(
-               accepted,timing_result,&dev->timing_fault);
+               accepted,timing_result,&dev->transport_health);
 }
 
 /* Each report screen is deliberately short enough for a single
@@ -298,10 +298,11 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
                                                        "INVALID");
         printf("Pages %u/%u, fixture switches=%u\n",
                r->played,MAX_PROBE_BLOCKS,r->switched);
-        printf("Backend=%llu failed=%llu timing=%s\n",
+        printf("Backend=%llu fail=%llu untimed=%llu timing=%s\n",
                (unsigned long long)r->output->timing.calls,
                (unsigned long long)r->output->timing.failed_submissions,
-               r->output->timing_fault ? "INVALID" : "VALID");
+               (unsigned long long)r->output->transport_health.delivered_without_timing,
+               r->output->transport_health.timing_fault ? "INVALID" : "VALID");
         printf("Peak wait=%llu us; >page calls=%llu\n",
                (unsigned long long)vh_audio_output_ticks_to_us(
                    r->output->timing.max_ticks,hz),
@@ -624,7 +625,7 @@ int main(int argc, char **argv) {
         const VhAudioSubmitTiming before_submit=output.timing;
         const int submit_result=vh_audio_output_submit_recover(
             &ops,&recovery,out_48000,count);
-        if (output.timing_fault) {
+        if (output.transport_health.timing_fault) {
             /* No retry here: if the service already returned the exact
              * page, submit_result==0 correctly means delivered. The
              * telemetry is incomplete, so fail evidence instead of
@@ -881,10 +882,10 @@ int main(int argc, char **argv) {
         focus_events.returned_pages!=played_blocks ||
         focus_events.failed_logical_submissions!=failed_logical_pages;
     if (manual_evidence && result==0) result=23;
-    if (output.timing_fault && result==0) result=28;
+    if (output.transport_health.timing_fault && result==0) result=28;
     if ((focus_evidence || focus_record_errors) && result==0) result=24;
     const unsigned verdict=(focus_evidence || focus_record_errors ||
-                            output.timing_fault)
+                            output.transport_health.timing_fault)
         ? VH_AUDIO_REPORT_INVALID
         : vh_audio_report_focus_evidence(
             &focus_events,&manual_resume,run_evidence,seam_evidence,
