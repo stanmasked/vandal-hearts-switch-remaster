@@ -1859,3 +1859,41 @@ a failed raw service submission or a completed scene-switch
 count must instead produce INVALID integrity. This exercises
 synthetic cue boundary bookkeeping, not original copyrighted
 SEQ/VAB music or real physical Switch audio.
+
+
+### Decoded PS1-format VH/VB and SEQ through native audout telemetry
+
+A new independent, portable integration regression
+\`tests/test_vh_decoded_vab_audout.c\` produces two small **synthetic
+but format-valid PS1 VH/VB banks**, decodes their VAG ADPCM via
+\`vh_native_vab_load\`, uses the production VAB resolver and
+\`vh_native_seq_advance_block\` to drive SPU/STUDIO_C, then
+resamples 44.1 to 48 kHz and calls the same
+\`vh_audio_output_submit_recover\` and atomic
+\`vh_audio_returned_page_telemetry_record\` functions as the
+Switch audout proof.
+
+Four eight-page scenes alternate decoded sample banks. Before
+each actual \`vh_native_seq_switch_scene\`, the preceding audout
+page must already have been returned. Focus/sleep service
+reopen cannot submit a page or alter the 48-kHz resampler clock,
+PCM seam accumulators, joint DSP/wait counts or the A/B ring.
+Scene switching must detach all borrowed PCM voice pointers
+from the previous bank and preserve the reverb history. The
+next note must resolve to the new bank, not the old arena.
+
+Each bank-change first page and one ordinary page gets an
+intentional failed raw call, followed by a retry of the SAME
+rendered PCM; neither SEQ/SPU nor the resampler may advance
+during retry. Every returned page reconciles wait category,
+ring scene/retry metadata, DSP overlap and PCM16 seam. An
+additional terminally undelivered page after the 32 fully
+returned pages increments only the failed logical-page wait
+bucket. The audit must report INCOMPLETE without modifying
+the final previously returned PCM seam, 32-slot ring or DSP
+joint accumulator.
+
+This connects actual format decoders to the audout path with
+copyright-free synthetic fixtures; it does NOT load, distribute
+or claim to have tested original Vandal Hearts game music,
+and it does not validate libnx hardware acoustics.
