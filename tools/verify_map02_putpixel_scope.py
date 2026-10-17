@@ -180,6 +180,9 @@ def verify_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
     scoped_source_bit15_only = scoped_source_color_only = 0
     scoped_source_color_and_bit15 = 0
     scoped_source_transient_draws = 0
+    source_blend_abr_calls = [0, 0, 0, 0]
+    source_blend_accurate_calls = source_blend_legacy_calls = 0
+    source_draws_with_multiple_blends = 0
     for ordinal, (before_event, after_event) in enumerate(native_draws):
         before_raw = private_file(native_dir, before_event["snapshot"], expected=VRAM_BYTES)
         after_raw = private_file(native_dir, after_event["snapshot"], expected=VRAM_BYTES)
@@ -192,7 +195,15 @@ def verify_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
                 matched_pixel_calls += len(group)
                 source_draws_with_calls += 1
                 local_changed_calls = 0
+                local_blend_calls = 0
                 for call in group:
+                    if call["semi"]:
+                        # Count only calls whose ordinal is proven to
+                        # match a source MAP02 FT4, not unrelated draws.
+                        source_blend_abr_calls[call["abr"]] += 1
+                        source_blend_accurate_calls += bool(call["accurate"])
+                        source_blend_legacy_calls += not call["accurate"]
+                        local_blend_calls += 1
                     pre, post = call["before"], call["after"]
                     if pre == post:
                         scoped_source_noop_calls += 1
@@ -212,6 +223,8 @@ def verify_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
                 # primitive's full VRAM snapshots will miss this activity.
                 if before_val == after_val and local_changed_calls:
                     scoped_source_transient_draws += 1
+                if local_blend_calls >= 2:
+                    source_draws_with_multiple_blends += 1
         elif ordinal in source_ordinals and before_val != after_val:
             # This source-keyed FT4 did change a pixel, but there is no
             # captured PutPixel call that explains its effect.
@@ -235,6 +248,10 @@ def verify_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
 
     if accurate_blend_checked + legacy_blend_checked != requests:
         raise ValueError("source-pinned PC blend mode accounting mismatch")
+    if (sum(source_blend_abr_calls) !=
+            source_blend_accurate_calls + source_blend_legacy_calls or
+            sum(source_blend_abr_calls) > requests):
+        raise ValueError("source-keyed FT4 semi-blend accounting mismatch")
     if sampled_source_changed_draws != (
             sampled_bit15_only + sampled_color_only + sampled_color_and_bit15):
         raise ValueError("sampled FT4 word-change classification mismatch")
@@ -266,6 +283,18 @@ def verify_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
             scoped_source_color_and_bit15,
         "source_ft4_scoped_transient_draws_invisible_to_vram_delta":
             scoped_source_transient_draws,
+        "source_ft4_scoped_semitransparent_blend_calls":
+            sum(source_blend_abr_calls),
+        "source_ft4_scoped_semi_blend_abr0_calls": source_blend_abr_calls[0],
+        "source_ft4_scoped_semi_blend_abr1_calls": source_blend_abr_calls[1],
+        "source_ft4_scoped_semi_blend_abr2_calls": source_blend_abr_calls[2],
+        "source_ft4_scoped_semi_blend_abr3_calls": source_blend_abr_calls[3],
+        "source_ft4_scoped_accurate_semi_blend_calls":
+            source_blend_accurate_calls,
+        "source_ft4_scoped_legacy_semi_blend_calls":
+            source_blend_legacy_calls,
+        "source_ft4_scoped_draws_with_multiple_semi_blends":
+            source_draws_with_multiple_blends,
         "source_ft4_sampled_first_changed_pre_equals_last_changed_post": (
             sampled_first_changed_pre == sampled_last_changed_post
             if sampled_first_changed_pre is not None else None),
