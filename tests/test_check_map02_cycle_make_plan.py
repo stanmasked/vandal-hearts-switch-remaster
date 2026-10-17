@@ -92,7 +92,7 @@ class CycleMakePlanTests(unittest.TestCase):
 
     def test_missing_original_and_observer_objects_rejected(self):
         for name in ("src/core/graphics.o", "generated_data.o",
-                     "map02_cycle_order.o", "map02_vram_edges.o"):
+                     "pc_kanji_font.o", "map02_cycle_order.o", "map02_vram_edges.o"):
             with self.subTest(missing=name):
                 changed = valid_dry_run(self.output).replace(
                     check.BUILD + "/" + name + " ", "")
