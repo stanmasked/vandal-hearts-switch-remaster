@@ -22,7 +22,9 @@ static void VH_Map02RejectedEdges(const DdaCtx *cx, int y,
     VH_PixelSampleInit();
     if (cx->rc->target != 0 || !vh_pixel_sample_active ||
         !vh_sample_scope_active || y != vh_pixel_sample_y ||
-        vh_rejected_edge_count >= 64u) return;
+        vh_rejected_edge_count >= 64u ||
+        ((reason == 4 || reason == 7) ? y >= cx->clipT :
+         (reason == 5 || reason == 6) ? y <= cx->clipB : 1)) return;
     n = snprintf(path, sizeof path, "%s/dda-rejected-edge-candidates.jsonl",
                  vh_pixel_sample_dir);
     if (n < 0 || (size_t)n >= sizeof path) return;
