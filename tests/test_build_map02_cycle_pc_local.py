@@ -66,12 +66,13 @@ class PrivateFullPcBuildTests(unittest.TestCase):
         return SimpleNamespace(returncode=0)
 
     def test_local_game_build_drops_inherited_makefile_and_eval_options(self):
-        from tools.check_map02_cycle_make_plan import INHERITED_MAKE_CONTROLS
-        inherited = {name: "injected-" + name for name in
-                     INHERITED_MAKE_CONTROLS}
+        from tools.check_map02_cycle_make_plan import (
+            INHERITED_MAKE_CONTROLS, INHERITED_PYTHON_CONTROLS)
+        controls = INHERITED_MAKE_CONTROLS + INHERITED_PYTHON_CONTROLS
+        inherited = {name: "injected-" + name for name in controls}
 
         def verify_make_environment(command, **kwargs):
-            for key in INHERITED_MAKE_CONTROLS:
+            for key in controls:
                 self.assertNotIn(key, kwargs["env"])
             return self.build_fake(command, **kwargs)
 
