@@ -492,6 +492,16 @@ jobs:
           assert gpu_classes["HD_replacement_approved"] is False
           Path("proof/public/v109-gp0-class-summary.json").write_text(
               json.dumps(gpu_classes,sort_keys=True)+"\n")
+          checkpoints=v110_boundary(path.read_bytes())
+          assert checkpoints["vblank_edges"]==4
+          assert checkpoints["observed_unai_handlers"]==observed
+          assert sum(row["adjacent_handler_pairs"] for row in checkpoints["intra_interval_transitions"])+checkpoints["handler_pairs_crossing_one_or_more_vblank_edges"]==max(observed-1,0)
+          latest=checkpoints["snapshots_before_vblank"][-1]["cumulative_by_class"]
+          assert sum(r["native_store_attempts"] for r in latest.values())==ordinal["totals"]["native_store_attempts"]-ordinal["buckets"][-1]["native_store_attempts"]
+          assert checkpoints["exact_gpu_cpu_timing_verified"] is False
+          assert checkpoints["HD_replacement_approved"] is False
+          Path("proof/public/v110-boundary-class-summary.json").write_text(
+              json.dumps(checkpoints,sort_keys=True)+"\n")
           assert evidence["vblank_edges"]==vblanks and evidence["gp1_mmio"]==gp1
           assert evidence["events"]==entries and evidence["bytes"]==size
           assert evidence["original_retail_MAP02_verified"] is False
