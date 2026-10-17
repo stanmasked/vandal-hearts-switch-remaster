@@ -34,6 +34,10 @@ int vh81_format_jsonl(char *output,size_t capacity) {
         else if(e->kind==VH87_MASK_UPLOAD_SAME) kind="gpulib_mask_upload_same_count";
         else if(e->kind==VH87_WRAP_STORES) kind="gpulib_wrap_store_count";
         else if(e->kind==VH87_WRAP_SAME) kind="gpulib_wrap_same_count";
+        else if(e->kind==VH88_ASYNC_QUEUED) kind="async_dma_queued";
+        else if(e->kind==VH88_ASYNC_COMPLETED) kind="async_dma_completed";
+        else if(e->kind==VH88_ASYNC_STORES) kind="async_dma_store_count";
+        else if(e->kind==VH88_ASYNC_SAME) kind="async_dma_same_count";
         else return -1;
         if(used>=capacity) return -1;
         /* GPU DMA2 is an address, NOT an executed GP0 command. */
