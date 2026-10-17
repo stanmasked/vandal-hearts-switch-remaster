@@ -67,6 +67,33 @@ class FontLinkedTests(unittest.TestCase):
                 stable_owned_elf_sha256(binary)
         self.assertTrue(swapped[0])
 
+    def test_second_digest_pass_detects_changed_bytes_with_same_metadata(self):
+        # The file on disk is untouched; only the second read returns a
+        # different byte. No inode/mtime/ctime check can detect this fixture.
+        original_pread = os.pread
+        reads = [0]
+
+        def modified_second_pass(fd, size, offset):
+            data = original_pread(fd, size, offset)
+            reads[0] += 1
+            if reads[0] == 2:
+                return bytes([data[0] ^ 1]) + data[1:]
+            return data
+
+        with patch("tools.check_map02_linked_font_elf.os.pread",
+                   side_effect=modified_second_pass):
+            with self.assertRaisesRegex(ValueError, "bytes changed between read passes"):
+                stable_owned_elf_sha256(self.binary)
+        self.assertEqual(reads[0], 2)
+        self.assertEqual(stable_owned_elf_sha256(self.binary),
+                         hashlib.sha256(self.binary.read_bytes()).hexdigest())
+
+    def test_private_digest_short_read_fails_closed(self):
+        with patch("tools.check_map02_linked_font_elf.os.pread",
+                   return_value=b""):
+            with self.assertRaisesRegex(ValueError, "short read"):
+                stable_owned_elf_sha256(self.binary)
+
     def test_actual_loaded_font_bytes_match(self):
         result = check_linked_font_bytes(self.binary, self.expected)
         self.assertTrue(result["linked_original_us_font_bytes_match"])
