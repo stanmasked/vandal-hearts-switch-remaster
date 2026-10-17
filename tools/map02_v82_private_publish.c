@@ -248,6 +248,9 @@ int vh101_verify_private_commit(const char *path,const char *bytes,size_t size){
     if(dirfd<0)goto finish;
     if(VH101_FAIL(1) || fstat(dirfd,&dir_stat)<0 ||
        !S_ISDIR(dir_stat.st_mode))goto finish;
+    /* A final file with a leftover .tmp (or linked-to-stage inode)
+     * remains ambiguous: a re-open must not certify it as complete. */
+    if(vh99_private_state(path)!=1)goto finish;
     fd=open(path,O_RDONLY|O_NOFOLLOW);
     if(fd<0)goto finish;
     if(fstat(fd,&initial)<0 || !S_ISREG(initial.st_mode) ||
