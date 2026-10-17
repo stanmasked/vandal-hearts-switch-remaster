@@ -54,6 +54,8 @@ class PrivateGpuMakeOverlayTests(unittest.TestCase):
         self.assertIn("$(error MAP02 private GPU requires isolated BUILD_DIR=", result)
         self.assertIn("$(error MAP02 private GPU instrumentation supports pinned US", result)
         self.assertIn("map02-private-gpu-objects:", result)
+        self.assertIn("map02-private-pc-link: link", result)
+        self.assertIn("link: objs", result)
         self.assertIn("pc_raster.private.c", result)
         self.assertIn("libgpu.private.c", result)
         for flag in builder.FLAGS:
@@ -67,6 +69,16 @@ class PrivateGpuMakeOverlayTests(unittest.TestCase):
         (pc / "src").mkdir()
         original = (
             "REGION ?= us\nBUILD_DIR ?= build\n"
+            "BACKEND_OBJS := $(BUILD_DIR)/libgpu.o $(BUILD_DIR)/pc_raster.o\n"
+            "GAME_O_FILES := $(BUILD_DIR)/mock-game.o\n"
+            "DATA_OBJS := $(BUILD_DIR)/mock-data.o\n"
+            "objs: $(GAME_O_FILES) $(BACKEND_OBJS) $(DATA_OBJS)\n"
+            "link: $(DATA_OBJS)\n"
+            "\t@echo LINK_WITH $(GAME_O_FILES) $(BACKEND_OBJS) $(DATA_OBJS)\n"
+            "$(BUILD_DIR)/mock-game.o: src/mock-game.c\n"
+            "\t$(CC) -c -o $@ $<\n"
+            "$(BUILD_DIR)/mock-data.o: src/mock-data.c\n"
+            "\t$(CC) -c -o $@ $<\n"
             "CC := cc\nM32 := -m64\nSAN :=\nPORT_WARN := -Wall\n"
             "$(BUILD_DIR)/libgpu.o: src/libgpu.c\n"
             "\t$(CC) -c -o $@ $<\n"
@@ -74,7 +86,7 @@ class PrivateGpuMakeOverlayTests(unittest.TestCase):
             "\t$(CC) -c -o $@ $<\n"
         )
         (pc / "Makefile").write_text(original)
-        for name in ("libgpu.c", "pc_raster.c"):
+        for name in ("libgpu.c", "pc_raster.c", "mock-game.c", "mock-data.c"):
             (pc / "src" / name).write_text("int baseline_" + name.split(".")[0] + ";\n")
         self.destination.mkdir()
         for name in (builder.GENERATED_GPU, builder.GENERATED_RASTER):
@@ -99,6 +111,23 @@ class PrivateGpuMakeOverlayTests(unittest.TestCase):
         self.assertIn("-DVH_MAP02_DDA_SPAN_TRACE", good.stdout)
         self.assertEqual(good.stdout.count("-Iinclude -Isrc"), 2)
         self.assertNotIn(" -c -o build-map02-fixture/libgpu.o src/libgpu.c", good.stdout)
+        # The new full-link entry point must first build *all* original
+        # game/backend/data objects, then invoke upstream's link recipe.
+        full = subprocess.run(
+            arguments + ["REGION=us", "BUILD_DIR=build-map02-fixture",
+                         "map02-private-pc-link"],
+            cwd=pc, capture_output=True, text=True, timeout=20,
+            check=False)
+        self.assertEqual(full.returncode, 0, full.stderr)
+        self.assertIn("src/mock-game.c", full.stdout)
+        self.assertIn("src/mock-data.c", full.stdout)
+        self.assertIn(str(self.destination / builder.GENERATED_GPU), full.stdout)
+        self.assertIn(str(self.destination / builder.GENERATED_RASTER), full.stdout)
+        self.assertIn("LINK_WITH build-map02-fixture/mock-game.o", full.stdout)
+        self.assertLess(full.stdout.index(str(self.destination / builder.GENERATED_GPU)),
+                        full.stdout.index("LINK_WITH"))
+        self.assertLess(full.stdout.index("src/mock-data.c"),
+                        full.stdout.index("LINK_WITH"))
         baseline = invoke("us", "build")
         self.assertNotEqual(baseline.returncode, 0)
         self.assertIn("requires isolated BUILD_DIR", baseline.stderr)
