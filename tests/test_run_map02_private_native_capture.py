@@ -194,7 +194,7 @@ class PrivateNativeLauncherTests(unittest.TestCase):
             pinned = os.fstat(descriptor)
             self.assertEqual(pinned.st_ino, original_ino)
             replacement = self.base / "replacement-executable"
-            replacement.write_text("#!/usr/bin/env python3\\nraise SystemExit(37)\\n")
+            replacement.write_text("#!/usr/bin/env python3\nraise SystemExit(37)\n")
             replacement.chmod(0o700)
             os.replace(replacement, self.executable)
             substitutions.append(self.executable.stat().st_ino)
@@ -221,7 +221,7 @@ class PrivateNativeLauncherTests(unittest.TestCase):
 
         def replace_before_pin(path, config):
             replacement = self.base / "post-preflight-binary"
-            replacement.write_text("#!/usr/bin/env python3\\nraise SystemExit(0)\\n")
+            replacement.write_text("#!/usr/bin/env python3\nraise SystemExit(0)\n")
             replacement.chmod(0o700)
             os.replace(replacement, path)
             return original(path, config)
