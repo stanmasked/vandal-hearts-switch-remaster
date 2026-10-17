@@ -274,6 +274,14 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
             plan["pinned_upstream_source_identity_sha256"] or
             private_file(handoff, PLAN, max_bytes=4096) != plan_raw):
         raise ValueError("original PC executable, owned input or plan changed during run")
+    if cycle is not None:
+        # Re-audit AFTER the actual child exits. A same-owner edit of
+        # the receipt, source bundle or Make graph during execution must
+        # not turn a pre-run check into a false final process receipt.
+        after_build = verify_build_receipt(
+            build_receipt_dir, binary, upstream, build_bundle_dir)
+        if after_build != verified_build:
+            raise ValueError("MAP02 source-bound PC build receipt changed during run")
     checked = verify_window_scoped_join(native, scoped, target_frame=frame)
     if checked["capture_session_linked"] is not True:
         raise ValueError("original GPU/scoped process session not linked")
