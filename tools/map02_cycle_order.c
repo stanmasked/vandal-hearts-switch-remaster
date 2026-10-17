@@ -97,7 +97,7 @@ int vh_map02_cycle_format_jsonl(char *out, size_t capacity) {
 static void publish_if_requested(void) {
     const char *directory = getenv("VH_MAP02_CYCLE_OUTPUT_DIR");
     char data[512];
-    int dfd = -1, fd = -1, n, ok = 0;
+    int dfd = -1, fd = -1, n, ok = 0, created = 0;
     struct stat st;
     ssize_t written;
     if (!directory || !*directory) return;
@@ -110,6 +110,7 @@ static void publish_if_requested(void) {
     fd = openat(dfd, OUTPUT_NAME,
                 O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0600);
     if (fd < 0) goto done;
+    created = 1;
     written = write(fd, data, (size_t)n);
     if (written != n || fsync(fd)) goto done;
     if (close(fd)) { fd = -1; goto done; }
@@ -119,10 +120,8 @@ static void publish_if_requested(void) {
 done:
     if (fd >= 0) (void)close(fd);
     if (!ok) {
-        /* Never remove somebody else's pre-existing file on EEXIST. */
-        if (dfd >= 0 && written != -2) {
-            /* Only unlink if this invocation actually created the file. */
-        }
+        /* Never unlink a pre-existing file: created is set only after O_EXCL. */
+        if (dfd >= 0 && created) (void)unlinkat(dfd, OUTPUT_NAME, 0);
         observed.failed = 1;
     }
     if (dfd >= 0) (void)close(dfd);
