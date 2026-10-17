@@ -173,6 +173,22 @@ if [[ -f "$SOAK_SD_DIR/audio-audout-clock-export-result.txt" &&
     "$output/soak-audout-clock-export-result.txt"
 fi
 
+# Stage274: slow-call absolute timestamps are a separate guest SD series.
+# Do not fill a missing original with inferred stage273 seconds.
+find "$SOAK_SD_DIR" -maxdepth 1 -type f -name 'audio-audout-slow-*.csv' \
+  -print | sort > "$output/soak-audout-slow-locations.txt"
+mapfile -t slow_captures < "$output/soak-audout-slow-locations.txt"
+if (( ${#slow_captures[@]} == 1 )) && \
+   [[ ! -e "$output/soak-audout-slow-unverified.csv" ]]; then
+  cp --no-clobber -- "${slow_captures[0]}" \
+    "$output/soak-audout-slow-unverified.csv"
+fi
+if [[ -f "$SOAK_SD_DIR/audio-audout-slow-export-result.txt" &&
+      ! -L "$SOAK_SD_DIR/audio-audout-slow-export-result.txt" ]]; then
+  cp --no-clobber -- "$SOAK_SD_DIR/audio-audout-slow-export-result.txt" \
+    "$output/soak-audout-slow-export-result.txt"
+fi
+
 # Names and sizes are diagnostic only. They never satisfy the audit.
 find "$SOAK_SD_DIR" -maxdepth 1 -type f \
   -printf '%f,%s\n' | LC_ALL=C sort > "$output/soak-sd-directory-inventory.csv"
