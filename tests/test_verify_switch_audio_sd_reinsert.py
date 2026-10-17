@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import unittest
@@ -105,6 +106,38 @@ class SDReinsertTests(unittest.TestCase):
         self.gate.sd_file.unlink()
         with self.assertRaisesRegex(transfer.TransferError, "missing"):
             self.verify()
+
+    def test_custom_safe_sd_install_path_from_stage218_plan_supported(self):
+        relative = "switch/alternate/vandal-hearts-prototype.nro"
+        custom = self.gate.sd_root / relative
+        self.gate.sd_file.unlink()
+        self.gate.plan.unlink()
+        transfer.create_plan(self.gate.gh.folder, self.gate.sd_root,
+                             self.gate.plan, relative)
+        custom.parent.mkdir(parents=True)
+        shutil.copyfile(self.gate.gh.folder / self.gate.gh.nro, custom)
+        report = self.record()
+        self.assertEqual(report["result"], "PRE_REMOUNT_SD_READBACK_RECORDED")
+        after = self.verify()
+        self.assertEqual(after["installed_nro_sha256"],
+                         bundle.digest_file(custom)[1])
+        self.assertEqual(
+            reinsert.read_baseline(self.baseline, self.saved_hash)
+            ["sd_destination_relative"], relative)
+
+    def test_rehashed_baseline_with_unsafe_sd_path_rejected(self):
+        self.record()
+        original = reinsert.read_baseline(self.baseline, self.saved_hash)
+        for relative in ("../vandal-hearts-prototype.nro",
+                         "/tmp/vandal-hearts-prototype.nro",
+                         "switch\\vandal-hearts-prototype.nro"):
+            changed = {**original, "sd_destination_relative": relative}
+            self.baseline.write_bytes(reinsert.baseline_bytes(changed))
+            with self.subTest(path=relative), self.assertRaisesRegex(
+                    reinsert.ReinsertError, "invalid SD NRO destination"):
+                reinsert.read_baseline(
+                    self.baseline, bundle.digest_file(self.baseline)[1])
+        self.baseline.write_bytes(reinsert.baseline_bytes(original))
 
     def test_wrong_baseline_digest_rejected(self):
         self.record()
