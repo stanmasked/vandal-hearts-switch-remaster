@@ -4,7 +4,10 @@
 /* Opt-in bounded observer: input submissions and emulator VBlank only.
  * NOT native GP0 consumption, GPU completion, VRAM writes, or retail MAP02. */
 enum { VH80_VBLANK=1, VH80_GP1_MMIO=2, VH80_GPU_DMA2=3, VH83_GP0_UNAI_HANDLED=4, VH84_UNAI_SAMPLE_DELTA=5, VH85_UNAI_STORE_COUNT=6, VH85_UNAI_SAME_STORE_COUNT=7,
-  VH86_A0_STORES=8, VH86_A0_SAME=9, VH86_COPY_STORES=10, VH86_COPY_SAME=11 };
+  VH86_A0_STORES=8, VH86_A0_SAME=9, VH86_COPY_STORES=10, VH86_COPY_SAME=11,
+  VH87_OVERLAP_STORES=12, VH87_OVERLAP_SAME=13,
+  VH87_MASK_UPLOAD_STORES=14, VH87_MASK_UPLOAD_SAME=15,
+  VH87_WRAP_STORES=16, VH87_WRAP_SAME=17 };
 typedef struct {
     uint32_t sequence, kind, value, cycle, frame;
 } vh80_event;
