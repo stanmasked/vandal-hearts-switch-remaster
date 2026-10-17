@@ -97,7 +97,10 @@ for i, phase in enumerate(("before", "after"),
         "snapshot": f"gpu-{i:04d}-vram.bin",
         "rect": None, "dest": [0, 0], "rgb": [0, 0, 0],
         "primitive_type": 2, "semi": 0, "window": [0, 0, 0, 0],
-        "draw_mode": [0, 0, 0], "upload": "", "ft4": None,
+        "draw_mode": [0, 0, 0], "upload": "",
+        "ft4": {"tpage":0, "clut":0,
+                 "xy":[0,0,1,0,0,1,1,1],
+                 "uv":[0,0,1,0,0,1,1,1]},
     }
     with (root / "gpu-native-events.jsonl").open("a") as log:
         log.write(json.dumps(event) + "\n")
