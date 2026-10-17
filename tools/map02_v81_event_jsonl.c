@@ -81,6 +81,17 @@ int vh81_format_jsonl(char *output,size_t capacity) {
         else if(e->kind==VH91_R2_SYNC_COPY) kind="cycle2_sync_copy";
         else if(e->kind==VH91_R1_SYNC_SAME) kind="cycle1_sync_same";
         else if(e->kind==VH91_R2_SYNC_SAME) kind="cycle2_sync_same";
+        else if(e->kind==VH92_TRIED) kind="pressure_tried";
+        else if(e->kind==VH92_ACCEPTED) kind="pressure_accepted";
+        else if(e->kind==VH92_IDLE_FALLBACK) kind="pressure_idle_fallback";
+        else if(e->kind==VH92_FULL_FALLBACK) kind="pressure_full_fallback";
+        else if(e->kind==VH92_PEAK_WORDS) kind="pressure_peak_words";
+        else if(e->kind==VH92_WORKER_DONE) kind="pressure_worker_completed";
+        else if(e->kind==VH92_WORKER_STORES) kind="pressure_worker_stores";
+        else if(e->kind==VH92_SYNC_STORES) kind="pressure_sync_stores";
+        else if(e->kind==VH92_PENDING) kind="pressure_pending_words";
+        else if(e->kind==VH92_WORKER_SAME) kind="pressure_worker_same";
+        else if(e->kind==VH92_SYNC_SAME) kind="pressure_sync_same";
         else return -1;
         if(used>=capacity) return -1;
         /* GPU DMA2 is an address, NOT an executed GP0 command. */
