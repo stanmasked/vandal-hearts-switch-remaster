@@ -31,10 +31,17 @@ class VerifiedProcessLaunchTests(unittest.TestCase):
         self.native = fixture.windows
         self.scoped = fixture.scoped
         code = """#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
 int main(int argc, char **argv) {
+    FILE *disc;
     (void)argv;
     if (argc > 1) return 2;
-    sleep(1); /* real procfs inspection requires a live process */
+    if (getenv("VH_TEST_SKIP_DISC_FD")) { sleep(1); return 0; }
+    disc = fopen(getenv("VH_DISC_IMAGE"), "rb");
+    if (!disc) return 3;
+    sleep(1); /* real procfs inspection requires a live descriptor */
+    if (fclose(disc) != 0) return 4;
     return 0;
 }
 """
@@ -71,6 +78,7 @@ int main(int argc, char **argv) {
     def test_genuine_child_elf_checked_against_prepared_binary(self):
         result = self.run_capture()
         self.assertTrue(result["kernel_executable_hash_matched"])
+        self.assertTrue(result["game_image_fd_observed"])
         self.assertFalse(result["game_image_consumption_proven"])
         self.assertFalse(result["original_gameplay_authenticated"])
         receipt = self.handoff / RECEIPT
@@ -81,6 +89,8 @@ int main(int argc, char **argv) {
                                      "gpu-local-capture-plan.json").read_bytes())[
                                          "pc_executable_sha256"])
         self.assertEqual(data["capture_session_sha256"], "b" * 64)
+        self.assertTrue(data["game_image_fd_observed"])
+        self.assertEqual(data["kernel_game_image_inode"], self.owned.stat().st_ino)
         self.assertEqual(self.audit()["private_process_receipt_sha256"],
                          result["private_process_receipt_sha256"])
         self.join.assert_called()
@@ -91,6 +101,12 @@ int main(int argc, char **argv) {
         self.binary.write_bytes(self.binary.read_bytes() + b" appended")
         with self.assertRaisesRegex(ValueError, "differs from plan"):
             self.run_capture()
+        self.assertFalse((self.handoff / RECEIPT).exists())
+
+    def test_refuses_process_that_never_opened_planned_image(self):
+        with patch.dict("os.environ", {"VH_TEST_SKIP_DISC_FD": "1"}):
+            with self.assertRaisesRegex(ValueError, "never opened"):
+                self.run_capture()
         self.assertFalse((self.handoff / RECEIPT).exists())
 
     def test_fails_closed_on_unknown_nonzero_exit(self):
@@ -128,6 +144,8 @@ int main(int argc, char **argv) {
         original = json.loads(receipt.read_bytes())
         for change in (
             {"game_image_consumption_proven": True},
+            {"game_image_fd_observed": False},
+            {"kernel_game_image_inode": True},
             {"retail_gameplay_authenticated": True},
             {"kernel_executable_matched_plan": False},
             {"observed_pid": True},
