@@ -88,6 +88,8 @@ def verify_session(directory, *, native_frame, preflight_report, executable):
             checked["native_gpu_binding"]["upload_payload_sha256_list_sha256"],
         "load_pairs_with_verified_payload":
             checked["native_gpu_binding"]["load_pairs_with_verified_payload"],
+        "load_pairs_with_verified_vram_effect":
+            checked["native_gpu_binding"]["load_pairs_with_verified_vram_effect"],
         "load_pairs_without_payload":
             checked["native_gpu_binding"]["load_pairs_without_payload"],
         "native_gpu_pairs_verified":
