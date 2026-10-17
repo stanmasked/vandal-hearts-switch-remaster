@@ -7,7 +7,7 @@ import argparse
 import json
 from pathlib import Path
 
-KINDS={"vblank","gp1_mmio","gpu_dma2_start","gp0_unai_handled"}
+KINDS={"vblank","gp1_mmio","gpu_dma2_start","gp0_unai_handled","unai_sample_delta"}
 FIELDS={"kind","seq","value","cycle","frame"}
 
 class Refused(ValueError):pass
@@ -22,6 +22,7 @@ def validate(content: bytes):
     edges=[]
     gp1=0
     prev_seq=0
+    prev_kind=None
     result=[]
     for index,line in enumerate(strings,1):
         try:
@@ -43,6 +44,9 @@ def validate(content: bytes):
         else:
             if item["frame"]!=0:raise Refused("GPU submission asserted frame identity")
             if item["kind"]=="gp1_mmio":gp1+=1
+            if item["kind"]=="unai_sample_delta":
+                if prev_kind!="gp0_unai_handled" or item["cycle"]!=0 or item["value"]>24:
+                    raise Refused("invalid paired Unai sample comparison")
             if item["kind"]=="gp0_unai_handled" and item["cycle"]!=0:
                 raise Refused("renderer GPU handler has no observed CPU cycle")
             if item["kind"]=="gp0_unai_handled" and not (
@@ -56,6 +60,7 @@ def validate(content: bytes):
             if item["kind"]=="gpu_dma2_start" and item["value"]>0x1fffff:
                 raise Refused("DMA2 start outside PSX RAM")
         result.append(item)
+        prev_kind=item["kind"]
     if len(edges)!=4 or gp1<2:raise Refused("missing VBlank or GP1 evidence")
     if result[0]["kind"]=="vblank" and result[0]["frame"]==0:
         # Frame zero is permissible; avoid conflating with unknown GP1 frames.
@@ -64,6 +69,8 @@ def validate(content: bytes):
             "events":len(result),"vblank_edges":len(edges),"gp1_mmio":gp1,
             "gpu_dma2_start":sum(e["kind"]=="gpu_dma2_start" for e in result),
             "gp0_unai_handled":sum(e["kind"]=="gp0_unai_handled" for e in result),
+            "unai_sample_delta":sum(e["kind"]=="unai_sample_delta" for e in result),
+            "sampled_pixels_changed":sum(e["value"] for e in result if e["kind"]=="unai_sample_delta"),
             "bytes":len(content),"original_retail_MAP02_verified":False,
             "HD_replacement_approved":False}
 
