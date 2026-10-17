@@ -47,11 +47,20 @@ INHERITED_MAKE_CONTROLS = (
     "MAKEFILES", "MAKEFLAGS", "GNUMAKEFLAGS", "MFLAGS", "MAKEOVERRIDES",
     "MAKELEVEL",
 )
+# The pinned upstream Makefile calls Python for generated data and the original
+# executable's metadata. A caller-controlled Python startup/import path could
+# execute unrelated code with access to user-owned retail inputs before any
+# source-bound observer runs. Strip Python interpreter overrides in addition
+# to Make's own injected flags, while retaining the system's toolchain PATH.
+INHERITED_PYTHON_CONTROLS = (
+    "PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "PYTHONINSPECT",
+    "PYTHONUSERBASE", "PYTHONWARNINGS", "PYTHONBREAKPOINT",
+)
 
 
 def clean_make_environment():
     env = os.environ.copy()
-    for name in INHERITED_MAKE_CONTROLS:
+    for name in INHERITED_MAKE_CONTROLS + INHERITED_PYTHON_CONTROLS:
         env.pop(name, None)
     return env
 
