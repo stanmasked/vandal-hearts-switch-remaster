@@ -32,10 +32,16 @@ def build_full_pc(upstream, bundle, *, timeout=1200, make="make", report_dir=Non
     original_inputs = verify_private_pc_inputs(upstream, krom_source=krom_source)
     pc = upstream / "platform/pc"
     build_dir = pc / BUILD
-    if (build_dir.is_symlink() or (build_dir.exists() and
-            (not build_dir.is_dir() or
-             build_dir.stat().st_uid != os.geteuid()))):
+    if build_dir.is_symlink():
         raise ValueError("private MAP02 build directory linked or not owner-controlled")
+    if not build_dir.exists():
+        # Prevent world-readable compilation objects and retail-derived data
+        # from ever landing in a freshly created default-mode Make directory.
+        build_dir.mkdir(mode=0o700)
+    info = build_dir.stat()
+    if (not build_dir.is_dir() or info.st_uid != os.geteuid()
+            or stat.S_IMODE(info.st_mode) != 0o700):
+        raise ValueError("private MAP02 build directory must be owner 0700")
     target = build_dir / BINARY_NAME
     # Fail BEFORE any compiler invocation if this is a prior binary, a
     # symlink or a wrong symlink target. Do not unlink somebody else's file.
