@@ -19,9 +19,12 @@ CORE = """void LoadCdFile(s32 cdfIdx, s32 showLoadingScreen) {
    gCdLoader.sector = gCdFiles[cdfIdx].startingSector;
 }
 void ContinueLoadingCdFile(void) {
+    case 7:
        } else {
           gCdLoader.state = 99;
        }
+       break;
+    case 8:
        break;
 }
 """
