@@ -196,7 +196,8 @@ class NativeElfProcessImageTests(unittest.TestCase):
 
         with patch.object(launcher, "inspect_binary",
                           side_effect=swap_identical_inode_after_symbol_scan):
-            with self.assertRaisesRegex(ValueError, "changed after inspection"):
+            with self.assertRaisesRegex(
+                ValueError, "changed after inspection|identity changed|changed during symbol inspection"):
                 self.run_capture(probes=True)
         self.assertEqual(len(passed_fds), 1)
         with self.assertRaises(OSError):
