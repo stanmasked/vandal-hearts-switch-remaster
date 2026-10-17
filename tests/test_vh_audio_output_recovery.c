@@ -432,9 +432,125 @@ static void test_failed_stop_page_lease_with_real_recovery(void) {
     assert(recovered==24u && manual_stops==12u);
 }
 
+
+/* Host-only exit/reopen fault injection. A wrong audout descriptor
+ * leaves the PCM page held through THREE failed stops: the recovery
+ * helper, final teardown and HOME/resume. No operation may overwrite
+ * or replay the page until stop drains the descriptor. After reopening
+ * it must be submitted exactly once, without another SEQ/SPU tick. */
+static void test_shutdown_resume_inflight_descriptor_lifetime(void) {
+    for(unsigned k=0u;k<128u;k++) {
+        sample[k]=(int16_t)((int)k*71-5000);
+        alternate_sample[k]=(int16_t)((int)k*89-7000);
+    }
+    vh_native_spu_reset(&spu);
+    assert(vh_native_spu_set_reverb(&spu,1,.5f)==0);
+    vh_audio_resample_reset(&resampler);
+    assert(vh_native_seq_init(&seq,song,sizeof song,
+                              &spu,resolve,sample,0u)==0);
+    unsigned resume_path=0u,close_path=0u;
+    for(unsigned iteration=0u;iteration<48u;iteration++) {
+        assert(vh_native_seq_advance_block(&seq)>=0);
+        vh_native_spu_render(&spu,src,512u);
+        const size_t frames=vh_audio_resample_process(
+                       &resampler,src,512u,dst,640u);
+        assert(frames>=555u && frames<=559u);
+        const uint64_t pcm_hash=hash_page(dst,frames);
+        const VhNativeSeq before_seq=seq;
+        const VhNativeSpu before_spu=spu;
+        const VhAudioResample before_rate=resampler;
+        LeasedDevice dev={
+            .pcm=dst,.frames=frames,.pcm_hash=pcm_hash,
+            .opened=1u,.playing=1u,
+            .wrong_returns_left=1u,.failed_stops_left=3u
+        };
+        VhAudioOutputRecovery stats={0};
+        const VhAudioOutputOps callbacks={
+            &dev,leased_submit,leased_stop,leased_close,
+            leased_open,leased_start
+        };
+        /* Backend claims success but releases a FOREIGN descriptor.
+         * Recovery's first audoutStopAudioOut also fails. */
+        assert(vh_audio_output_submit_recover(
+                         &callbacks,&stats,dst,frames)==-1);
+        assert(dev.calls==1u && dev.stops==1u && !dev.closes);
+        assert(dev.lease.in_flight==&dev.descriptor);
+        assert(stats.submit_failures==1u);
+        assert(stats.pages_submitted==0u &&
+               stats.restart_attempts==0u);
+        const int16_t *next=(iteration&1u) ? sample : alternate_sample;
+
+        /* Exit teardown must not call close or unlock after a second
+         * failed audout stop. Forced HOME/resume must also fail safely. */
+        assert(vh_audio_output_stop_close(&callbacks)==-1);
+        assert(dev.stops==2u && !dev.closes && dev.playing);
+        assert(vh_audio_output_resume_recover(
+                         &callbacks,&stats,1)==-1);
+        assert(dev.stops==3u && !dev.closes && dev.playing);
+        assert(stats.resume_restarts==0u &&
+               stats.resume_recoveries==0u);
+        assert(dev.lease.in_flight==&dev.descriptor);
+        assert(leased_submit(&dev,dst,frames)==-1);
+        assert(dev.calls==1u);
+        assert(switch_when_page_free(&dev.lease,next)==-1);
+        assert(memcmp(&seq,&before_seq,sizeof seq)==0);
+        assert(memcmp(&spu,&before_spu,sizeof spu)==0);
+        assert(memcmp(&resampler,&before_rate,sizeof resampler)==0);
+        assert(hash_page(dst,frames)==pcm_hash);
+
+        if(iteration&1u) {
+            /* A clean teardown finally drains the outstanding page.
+             * A new session then safely resumes without a write. */
+            assert(vh_audio_output_stop_close(&callbacks)==0);
+            assert(dev.stops==4u && dev.closes==1u);
+            assert(vh_audio_page_lease_ready(&dev.lease));
+            assert(leased_open(&dev)==0 && leased_start(&dev)==0);
+            ++close_path;
+        } else {
+            /* The recovery API must not silently submit old PCM:
+             * it only opens and starts a new audout session. */
+            assert(vh_audio_output_resume_recover(
+                         &callbacks,&stats,1)==0);
+            assert(dev.stops==4u && dev.closes==1u);
+            assert(stats.resume_restarts==1u &&
+                   stats.resume_recoveries==1u);
+            assert(stats.pages_submitted==0u);
+            assert(vh_audio_page_lease_ready(&dev.lease));
+            ++resume_path;
+        }
+        assert(dev.calls==1u && dev.returned==0u);
+        assert(hash_page(dst,frames)==pcm_hash);
+        assert(memcmp(&seq,&before_seq,sizeof seq)==0);
+        assert(memcmp(&spu,&before_spu,sizeof spu)==0);
+        assert(memcmp(&resampler,&before_rate,sizeof resampler)==0);
+        /* One retry of the PRE-RENDERED page, same pointer and samples.
+         * The music clock is exactly where it was at the first attempt. */
+        assert(vh_audio_output_submit_recover(
+                         &callbacks,&stats,dst,frames)==0);
+        assert(dev.calls==2u && dev.returned==1u);
+        assert(stats.pages_submitted==1u &&
+               stats.frames_submitted==frames);
+        assert(stats.submit_failures==1u &&
+               stats.restart_attempts==0u);
+        assert(vh_audio_page_lease_ready(&dev.lease));
+        assert(hash_page(dst,frames)==pcm_hash);
+        assert(memcmp(&seq,&before_seq,sizeof seq)==0);
+        assert(memcmp(&spu,&before_spu,sizeof spu)==0);
+        assert(memcmp(&resampler,&before_rate,sizeof resampler)==0);
+        assert(vh_audio_output_stop_close(&callbacks)==0);
+        assert(!dev.opened && !dev.playing);
+        assert(switch_when_page_free(&dev.lease,next)==0);
+        assert(seq.context==next && seq.blocks_advanced==0u);
+        assert(spu.frames_rendered==0u);
+        assert(resampler.input_frames==before_rate.input_frames);
+    }
+    assert(resume_path==24u && close_path==24u);
+}
+
 int main(void) {
     test_audout_inflight_page_lease_scene_lifetime();
     test_failed_stop_page_lease_with_real_recovery();
+    test_shutdown_resume_inflight_descriptor_lifetime();
     Mock device={.opened=1,.playing=1,
                  .checksum=UINT64_C(1469598103934665603)};
     VhAudioOutputOps ops=callbacks(&device);
