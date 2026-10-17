@@ -38,7 +38,7 @@ def audit_objects(upstream, bundle, *, make="make"):
     # This target only expands GNU Make's own *complete* object variable
     # inventories. It does not compile, read retail content, or invoke link.
     listing_target = (
-        "map02-private-object-inventory:;@printf '%s\n' "
+        "map02-private-object-inventory:;@printf '%s\\n' "
         "'$(GAME_O_FILES)' '$(BACKEND_OBJS)'"
     )
     result = subprocess.run(
