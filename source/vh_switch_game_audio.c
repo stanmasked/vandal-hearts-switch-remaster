@@ -12,6 +12,7 @@
 #include "vh_audio_resample.h"
 #include "vh_audio_output_recovery.h"
 #include "vh_audio_buffer_lease.h"
+#include "vh_audout_queue_telemetry.h"
 #include "vh_audio_output_ramp.h"
 #include "vh_audio_output_edges.h"
 #include "vh_game_music_banks.h"
@@ -45,6 +46,8 @@ static atomic_uint published_abandoned_sessions;
 /* Two producer threads reserve immutable slots, then release-publish.
  * No heap, locks or file I/O in this path. */
 static VhAudioSceneTrace scene_trace;
+/* Audout worker is the sole writer. Main reads after thread join. */
+static VhAudoutQueueTelemetry audout_telemetry;
 static atomic_ullong scene_trace_latest_ticket; /* serial << 32 | scene */
 static unsigned main_scene_serial; /* game thread only */
 static uint64_t scene_trace_now_ns(void) {
@@ -150,9 +153,25 @@ static int output_submit(void *opaque, const int16_t *stereo,
     s->buffer->next = NULL;
     s->buffer->data_offset = 0;
     s->buffer->data_size = frames * 2u * sizeof(int16_t);
+    /* Query service-reported queue length periodically BEFORE submit.
+     * This call can fail on firmware without the 4.0.0+ command; a
+     * telemetry failure must never alter playback/recovery semantics.
+     * Neither the pre-submit count nor lease ownership proves the
+     * real-time playback queue depth while PlayBuffer is blocking. */
+    int queue_status=-1;
+    u32 queue_count=0;
+    if(vh_audout_queue_probe_due(&audout_telemetry)) {
+        queue_status=R_SUCCEEDED(
+            audoutGetAudioOutBufferCount(&queue_count)) ? 1 : 0;
+    }
     AudioOutBuffer *released = NULL;
-    if (R_FAILED(audoutPlayBuffer(s->buffer,&released))) return -1;
-    return vh_audio_buffer_lease_release(&s->lease,released);
+    const uint64_t begin_ns=scene_trace_now_ns();
+    const Result played=audoutPlayBuffer(s->buffer,&released);
+    const int returned=R_SUCCEEDED(played) &&
+        vh_audio_buffer_lease_release(&s->lease,released)==0;
+    vh_audout_queue_record(&audout_telemetry,begin_ns,
+        scene_trace_now_ns(),returned,queue_status,queue_count);
+    return returned ? 0 : -1;
 }
 
 static int output_stop(void *opaque) {
@@ -516,6 +535,7 @@ int vh_switch_game_audio_start(unsigned initial_scene) {
     if (thread_started || initial_scene > VH_GAME_MUSIC_HERO_SELECTED)
         return -1;
     vh_audio_scene_trace_init(&scene_trace);
+    vh_audout_queue_reset(&audout_telemetry);
     main_scene_serial=0u;
     atomic_store_explicit(&scene_trace_latest_ticket,
                           (uint64_t)initial_scene,memory_order_release);
@@ -582,6 +602,11 @@ int vh_switch_game_audio_trace_render(VhCanvas *canvas,
     if(thread_started) return -1;
     return vh_audio_scene_optical_draw(canvas,&scene_trace,
                                         black,white,marker);
+}
+
+int vh_switch_game_audio_queue_dump(FILE *stream) {
+    if (!stream || thread_started) return -1;
+    return vh_audout_queue_write_csv(&audout_telemetry,stream);
 }
 
 int vh_switch_game_audio_trace_dump(FILE *stream) {
