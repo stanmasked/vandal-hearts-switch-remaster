@@ -49,3 +49,24 @@ the user's legally obtained game content, independently source-keyed
 real MAP02 VRAM evidence, PS1 hardware comparison, and privacy-reviewed
 capture. The headless synthetic test establishes software behavior
 in the original PC GPU path, **not** any of those later milestones.
+
+## Confirmed CI runtime checkpoints
+
+The [first passing joint-original-GPU run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38986959881)
+at commit `f86ba322` confirmed that all three modes execute the real
+DrawOTag and rasterizer without an original game asset. An earlier run
+failed on an omitted headless helper (`PC_CpuCount`), which was supplied
+only in the isolated fixture; the actual original GPU TUs remain
+unmodified outside of opt-in generated source copies.
+
+The [native VRAM parity run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38987063349)
+at commit `31081f28` also **passed**. The headless program now hashes the
+complete 1024×512×16-bit native VRAM with FNV-1a and compares it across
+**ordinary**, **scoped** and **private staged** binaries. This verifies
+that, for the synthetic DR_MODE → semi F4 → semi FT4 sequence, the
+observer and optional file publication do **not change any native VRAM
+byte**. Only a digest is emitted, never the raw framebuffer.
+
+These two green checks directly verify the original code's behavior
+for these controlled inputs. They do not authenticate MAP02 gameplay,
+PS1 hardware blending, or independent original-console VRAM snapshots.
