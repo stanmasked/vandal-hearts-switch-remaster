@@ -382,3 +382,7 @@ python3 tests/test_switch_audio_long_cohort.py
 ## Этап №228 — проверка преемственности контрольных точек
 
 Добавлен [этап №228](SWITCH_AUDIO_STAGE228_CHECKPOINT_CONTINUITY.md): `tools/verify_switch_audio_checkpoint_continuity.py` принимает **независимо сохранённые** SHA-256 старой и новой контрольных точек, HEAD и точные количества записей. Он читает старый JSON без требования восстанавливать прежнюю папку целиком, затем полностью воспроизводит **новую удлинённую цепочку** со всеми оригинальными ZIP/CSV/NRO и требует побайтовой эквивалентности всех старых записей как её префикса. Можно потребовать явный рост `--require-growth`. 17 синтетических регрессий включены в обе host-цели Makefile. `HARDWARE NOT TESTED` сохраняется.
+
+## Этап №229 — отдельная CI-квитанция исходной NRO-сборки
+
+Workflow [Switch toolchain readiness](../.github/workflows/switch-toolchain.yml) теперь публикует рядом с `vandal-hearts-prototype.nro` автоматически проверенную `vandal-hearts-prototype.build.json`: полный Git SHA, ветку, CI run/attempt и SHA-256 **самого NRO**. См. [руководство №229](SWITCH_AUDIO_STAGE229_CI_BUILD_RECEIPT.md) и [инструмент локальной проверки](../tools/switch_audio_ci_build_receipt.py). Существующие проверки архива №216 и HTTPS-подтверждение GitHub №217 дополнительно сверяют квитанцию со структурой ZIP, фактическим бинарником и независимыми данными запуска. Старые NRO-only артефакты продолжают читаться с явной меткой `ABSENT_LEGACY_ARTIFACT`. Это не цифровая подпись и не аппаратное испытание: `HARDWARE NOT TESTED` остаётся без настоящих логов Switch.
