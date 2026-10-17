@@ -238,6 +238,53 @@ jobs:
           print("Pinned source, font hash and disc boot identifiers match the local preflight.")
           PY
 
+      - name: Build pinned two-word GPU and native DDA objects through original PC Make
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd remaster
+            python3 -m unittest discover -s tests -p 'test_prepare_map02_private_gpu_make_overlay.py' -v
+          )
+          PYTHONPATH=remaster python3 -m tools.prepare_map02_private_gpu_make_overlay \
+            upstream --output-dir /tmp/vh-map02-pinned-private-make \
+            > /tmp/vh-map02-private-make.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          x = json.loads(Path("/tmp/vh-map02-private-make.json").read_text())
+          assert x["source_pinned"]
+          assert x["native_gpu_two_word_and_dda_in_same_make_objects"]
+          assert len(x["required_compiler_defines"]) == 6
+          assert len(x["required_native_symbols"]) == 6
+          assert not x["game_assets_included"] and not x["retail_map02_gameplay_captured"]
+          assert not x["hd_replacement_authorized"]
+          PY
+          (
+            cd upstream/platform/pc
+            make -f Makefile -f /tmp/vh-map02-pinned-private-make/map02_private_gpu.mk \
+              BUILD_DIR=build-map02-private-ci map02-private-gpu-objects
+            test -s build-map02-private-ci/libgpu.o
+            test -s build-map02-private-ci/pc_raster.o
+            for symbol in VH_CaptureEvent VH_Map02PixelScopeSet \
+              VH_Map02PixelScopeClear VH_PixelSampleRecord \
+              VH_Map02SkipAt VH_Map02SpanObserve; do
+              nm -a build-map02-private-ci/libgpu.o \
+                build-map02-private-ci/pc_raster.o | grep -F "$symbol"
+            done
+            strings build-map02-private-ci/pc_raster.o | grep -F VH_MAP02_PUTPIXEL_X2
+            strings build-map02-private-ci/pc_raster.o | grep -F VH_MAP02_PUTPIXEL_Y2
+            ld -r -o build-map02-private-ci/gpu-two-word-dda.o \
+              build-map02-private-ci/libgpu.o build-map02-private-ci/pc_raster.o
+            test -s build-map02-private-ci/gpu-two-word-dda.o
+            if make -f Makefile -f /tmp/vh-map02-pinned-private-make/map02_private_gpu.mk \
+              BUILD_DIR=build map02-private-gpu-objects > /tmp/vh-map02-unsafe-make.log 2>&1; then
+              echo "Unsafe reuse of baseline PC build directory allowed" >&2
+              exit 1
+            fi
+          )
+          test -z "$(cd upstream && git status --porcelain -- platform/pc/src/libgpu.c platform/pc/src/pc_raster.c)"
+
       - name: Run patch generator regression tests
         working-directory: remaster
         run: python3 -m unittest discover -s tests -p 'test_make_map02_trace_patch.py' -v
@@ -549,53 +596,6 @@ jobs:
             nm build/map02-multiscope-gpu/combined.capture.o | grep VH_CaptureEvent
             if nm -a build/map02-multiscope-gpu/combined.baseline.o | grep -Eq 'VH_Map02PixelScope|VH_PixelSampleRecord|VH_CaptureEvent'; then
               echo "Two-coordinate observer leaked into baseline GPU build" >&2
-              exit 1
-            fi
-          )
-          test -z "$(cd upstream && git status --porcelain -- platform/pc/src/libgpu.c platform/pc/src/pc_raster.c)"
-
-      - name: Build pinned two-word GPU and native DDA objects through original PC Make
-        shell: bash
-        run: |
-          set -euo pipefail
-          (
-            cd remaster
-            python3 -m unittest discover -s tests -p 'test_prepare_map02_private_gpu_make_overlay.py' -v
-          )
-          PYTHONPATH=remaster python3 -m tools.prepare_map02_private_gpu_make_overlay \
-            upstream --output-dir /tmp/vh-map02-pinned-private-make \
-            > /tmp/vh-map02-private-make.json
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          x = json.loads(Path("/tmp/vh-map02-private-make.json").read_text())
-          assert x["source_pinned"]
-          assert x["native_gpu_two_word_and_dda_in_same_make_objects"]
-          assert len(x["required_compiler_defines"]) == 6
-          assert len(x["required_native_symbols"]) == 6
-          assert not x["game_assets_included"] and not x["retail_map02_gameplay_captured"]
-          assert not x["hd_replacement_authorized"]
-          PY
-          (
-            cd upstream/platform/pc
-            make -f Makefile -f /tmp/vh-map02-pinned-private-make/map02_private_gpu.mk \
-              BUILD_DIR=build-map02-private-ci map02-private-gpu-objects
-            test -s build-map02-private-ci/libgpu.o
-            test -s build-map02-private-ci/pc_raster.o
-            for symbol in VH_CaptureEvent VH_Map02PixelScopeSet \
-              VH_Map02PixelScopeClear VH_PixelSampleRecord \
-              VH_Map02SkipAt VH_Map02SpanObserve; do
-              nm -a build-map02-private-ci/libgpu.o \
-                build-map02-private-ci/pc_raster.o | grep -F "$symbol"
-            done
-            strings build-map02-private-ci/pc_raster.o | grep -F VH_MAP02_PUTPIXEL_X2
-            strings build-map02-private-ci/pc_raster.o | grep -F VH_MAP02_PUTPIXEL_Y2
-            ld -r -o build-map02-private-ci/gpu-two-word-dda.o \
-              build-map02-private-ci/libgpu.o build-map02-private-ci/pc_raster.o
-            test -s build-map02-private-ci/gpu-two-word-dda.o
-            if make -f Makefile -f /tmp/vh-map02-pinned-private-make/map02_private_gpu.mk \
-              BUILD_DIR=build map02-private-gpu-objects > /tmp/vh-map02-unsafe-make.log 2>&1; then
-              echo "Unsafe reuse of baseline PC build directory allowed" >&2
               exit 1
             fi
           )
