@@ -359,3 +359,23 @@ $(BUILD)/libnx-ps1-music-av-zl.nro: $(BUILD)/libnx-ps1-music-av-zl.elf $(BUILD)/
 
 ps1-music-av-zl-probe: $(BUILD)/libnx-ps1-music-av-zl.nro
 	python3 tests/check_nro.py $<
+
+# A separate CI-only guest device lifecycle test. After returned PCM
+# exercise serialized stop/start then forced stop/close/open/start,
+# verifying that the NEXT service descriptor returns after each action.
+.PHONY: ps1-music-av-resume-probe
+
+$(BUILD)/libnx-ps1-music-av-resume.elf: $(PS1_MUSIC_AV_SOURCES) \
+	source/vh_audio_output_recovery.h source/game_renderer.h \
+	source/game_state.h | $(BUILD)
+	$(CC) $(CFLAGS) -std=c11 -DVH_AUDIO_GUEST_RESUME_AUTOTEST=1 -Isource \
+		$(LDFLAGS) $(PS1_MUSIC_AV_SOURCES) -o $@ $(LDLIBS) -lm
+
+$(BUILD)/libnx-ps1-music-av-resume.nacp: | $(BUILD)
+	$(NACPTOOL) --create "Vandal Hearts AV Resume Guest" "$(APP_AUTHOR)" "$(APP_VERSION)" $@
+
+$(BUILD)/libnx-ps1-music-av-resume.nro: $(BUILD)/libnx-ps1-music-av-resume.elf $(BUILD)/libnx-ps1-music-av-resume.nacp
+	$(ELF2NRO) $< $@ --nacp=$(BUILD)/libnx-ps1-music-av-resume.nacp
+
+ps1-music-av-resume-probe: $(BUILD)/libnx-ps1-music-av-resume.nro
+	python3 tests/check_nro.py $<
