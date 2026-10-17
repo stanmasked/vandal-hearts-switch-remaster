@@ -1,0 +1,150 @@
+"""Real Linux child-executable observation tests; synthetic executable/assets.
+
+Only the subsequent original GPU witness verification is mocked in this unit
+fixture. We actually compile a native ELF and read /proc/<child>/exe to
+prove the OS launches the prepared executable instead of a claimed pathname.
+"""
+import json
+from pathlib import Path
+import subprocess
+import unittest
+from unittest.mock import patch
+
+from tests.test_map02_local_capture_handoff import LocalMap02CaptureHandoffTests
+from tools.map02_verified_process_launch import (
+    RECEIPT, launch_observed_pc, verify_observed_process,
+    _validate_receipt,
+)
+
+
+class VerifiedProcessLaunchTests(unittest.TestCase):
+    def setUp(self):
+        fixture = LocalMap02CaptureHandoffTests(
+            methodName="test_prelaunch_plan_and_verified_handoff_are_private_and_bound")
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        self.fixture = fixture
+        self.handoff = fixture.handoff
+        self.binary = fixture.binary
+        self.owned = fixture.game
+        self.upstream = fixture.upstream
+        self.native = fixture.windows
+        self.scoped = fixture.scoped
+        code = """#include <unistd.h>
+int main(int argc, char **argv) {
+    (void)argv;
+    if (argc > 1) return 2;
+    sleep(1); /* real procfs inspection requires a live process */
+    return 0;
+}
+"""
+        source = self.binary.with_suffix(".c")
+        source.write_text(code)
+        subprocess.run(["cc", "-std=c99", "-Wall", "-Wextra", "-Werror",
+                        str(source), "-o", str(self.binary)],
+                       check=True, capture_output=True, text=True)
+        self.binary.chmod(0o700)
+        self.checked = {
+            "capture_session_linked": True,
+            "capture_session_sha256": "b" * 64,
+            "all_native_window_file_bytes_sha256": "c" * 64,
+            "global_draw_ordinals_checked": 2,
+        }
+        self.join_patch = patch(
+            "tools.map02_verified_process_launch.verify_window_scoped_join",
+            return_value=self.checked)
+        self.join = self.join_patch.start()
+        self.addCleanup(self.join_patch.stop)
+        fixture.prepare()
+
+    def run(self, *args):
+        return launch_observed_pc(
+            self.handoff, self.native, self.scoped, self.binary,
+            self.owned, upstream=self.upstream,
+            x=10, y=20, timeout=8, arguments=args)
+
+    def audit(self):
+        return verify_observed_process(
+            self.handoff, self.native, self.scoped, self.binary,
+            self.owned, upstream=self.upstream)
+
+    def test_genuine_child_elf_checked_against_prepared_binary(self):
+        result = self.run()
+        self.assertTrue(result["kernel_executable_hash_matched"])
+        self.assertFalse(result["game_image_consumption_proven"])
+        self.assertFalse(result["original_gameplay_authenticated"])
+        receipt = self.handoff / RECEIPT
+        self.assertEqual(receipt.stat().st_mode & 0o777, 0o600)
+        data = json.loads(receipt.read_bytes())
+        self.assertEqual(data["kernel_observed_executable_sha256"],
+                         json.loads((self.handoff /
+                                     "gpu-local-capture-plan.json").read_bytes())[
+                                         "pc_executable_sha256"])
+        self.assertEqual(data["capture_session_sha256"], "b" * 64)
+        self.assertEqual(self.audit()["private_process_receipt_sha256"],
+                         result["private_process_receipt_sha256"])
+        self.join.assert_called()
+        with self.assertRaisesRegex(ValueError, "already exists"):
+            self.run()
+
+    def test_rejects_replacement_before_exec(self):
+        self.binary.write_bytes(self.binary.read_bytes() + b" appended")
+        with self.assertRaisesRegex(ValueError, "differs from plan"):
+            self.run()
+        self.assertFalse((self.handoff / RECEIPT).exists())
+
+    def test_fails_closed_on_unknown_nonzero_exit(self):
+        with self.assertRaisesRegex(ValueError, "exited unsuccessfully"):
+            self.run("unexpected")
+        self.assertFalse((self.handoff / RECEIPT).exists())
+        self.assertEqual(list(self.native.iterdir()), [])
+        self.assertEqual(list(self.scoped.iterdir()), [])
+
+    def test_refuses_wrong_sample_coordinate_and_source_mutation(self):
+        with self.assertRaises(ValueError):
+            launch_observed_pc(
+                self.handoff, self.native, self.scoped,
+                self.binary, self.owned, upstream=self.upstream,
+                x=1024, y=0, timeout=10)
+        raster = self.upstream / "platform/pc/src/pc_raster.c"
+        raster.write_bytes(raster.read_bytes() + b" tampered")
+        with self.assertRaisesRegex(ValueError, "differs from pinned"):
+            self.run()
+
+    def test_audit_rejects_changed_process_nonce_or_binary(self):
+        self.run()
+        original = dict(self.checked)
+        self.checked["capture_session_sha256"] = "f" * 64
+        with self.assertRaisesRegex(ValueError, "receipt differs"):
+            self.audit()
+        self.checked.update(original)
+        self.binary.write_bytes(self.binary.read_bytes() + b" changed")
+        with self.assertRaisesRegex(ValueError, "differs from local capture plan"):
+            self.audit()
+
+    def test_mutated_receipt_and_synthetic_false_attestation_rejected(self):
+        self.run()
+        receipt = self.handoff / RECEIPT
+        original = json.loads(receipt.read_bytes())
+        for change in (
+            {"game_image_consumption_proven": True},
+            {"retail_gameplay_authenticated": True},
+            {"kernel_executable_matched_plan": False},
+            {"observed_pid": True},
+            {"capture_session_sha256": "not-valid"},
+        ):
+            tampered = dict(original, **change)
+            receipt.write_text(json.dumps(tampered) + "\n")
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                self.audit()
+        self.assertRaises(ValueError, _validate_receipt, {"schema": "fake"})
+
+    def test_refuses_nonempty_capture_directory_before_exec(self):
+        (self.native / "previous-run").write_text("no")
+        with self.assertRaisesRegex(ValueError, "must start empty"):
+            self.run()
+        self.assertFalse((self.handoff / RECEIPT).exists())
+
+
+if __name__ == "__main__":
+    unittest.main()
