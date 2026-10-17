@@ -133,6 +133,74 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"expected integer"):
             verify_capture(self.root,target_frame=12)
 
+    def move_fixture(self, rect, dest, before, after):
+        self.events = [
+            self.make(0, "before", "move", "", rect=rect),
+            self.make(1, "after", "move", "", rect=rect),
+        ]
+        for event in self.events:
+            event["dest"] = dest[:]
+        self.save()
+        (self.root / "gpu-0000-vram.bin").write_bytes(before)
+        (self.root / "gpu-0001-vram.bin").write_bytes(after)
+        return verify_capture(self.root, target_frame=12)
+
+    def test_moveimage_forward_horizontal_overlap_not_memmove(self):
+        before = bytearray(VRAM_BYTES)
+        before[:8] = b"\x11\x00\x22\x00\x33\x00\x44\x00"
+        after = bytearray(before)
+        after[:8] = b"\x11\x00" * 4
+        result = self.move_fixture([0, 0, 3, 1], [1, 0], before, after)
+        self.assertEqual(result["move_image_pairs"], 1)
+        self.assertEqual(result["move_pairs_with_verified_vram_effect"], 1)
+        self.assertEqual(result["changed_transfer_vram_words"], 3)
+        wrong_memmove = bytearray(before)
+        wrong_memmove[:8] = b"\x11\x00\x11\x00\x22\x00\x33\x00"
+        (self.root / "gpu-0001-vram.bin").write_bytes(wrong_memmove)
+        with self.assertRaisesRegex(ValueError, "MoveImage post-VRAM differs"):
+            verify_capture(self.root, target_frame=12)
+
+    def test_moveimage_downward_overlap_reads_mutable_rows(self):
+        before = bytearray(VRAM_BYTES)
+        for y, value in enumerate((1, 2, 3, 4)):
+            before[y*1024*2:y*1024*2+2] = bytes((value, 0))
+        after = bytearray(before)
+        for y in (1, 2, 3):
+            after[y*1024*2:y*1024*2+2] = b"\x01\x00"
+        result = self.move_fixture([0, 0, 1, 3], [0, 1], before, after)
+        self.assertEqual(result["move_pairs_with_verified_vram_effect"], 1)
+
+    def test_moveimage_negative_source_and_destination_are_clipped(self):
+        before = bytearray(VRAM_BYTES)
+        before[:6] = b"\x11\x00\x22\x00\x33\x00"
+        after = bytearray(before)
+        after[:6] = b"\x11\x00" * 3
+        self.assertEqual(self.move_fixture([-1, 0, 3, 1], [0, 0],
+                                            before, after)[
+            "move_pairs_with_verified_vram_effect"], 1)
+        # Nonoverlapping x/y bounds: only one word at the bottom-right
+        # destination exists. Every other byte must stay unchanged.
+        rect = [0, 0, 2, 2]
+        after = bytearray(before)
+        after[-2:] = b"\x11\x00"
+        self.assertEqual(self.move_fixture(rect, [1023, 511],
+                                            before, after)[
+            "move_pairs_with_verified_vram_effect"], 1)
+        after[-4:-2] = b"\x42\x00"
+        (self.root / "gpu-0001-vram.bin").write_bytes(after)
+        with self.assertRaisesRegex(ValueError, "MoveImage post-VRAM differs"):
+            verify_capture(self.root, target_frame=12)
+
+    def test_moveimage_huge_offscreen_or_negative_rect_is_noop(self):
+        before = bytearray(VRAM_BYTES)
+        before[:2] = b"\x10\x01"
+        self.assertEqual(self.move_fixture([32000, 31000, 32767, 32767],
+                                            [32000, 31000], before, before)[
+            "move_pairs_with_verified_vram_effect"], 1)
+        self.assertEqual(self.move_fixture([0, 0, -2, 2],
+                                            [10, 10], before, before)[
+            "move_pairs_with_verified_vram_effect"], 1)
+
     def test_load_image_payload_name_and_length(self):
         payload=b"\x1f\x00"
         self.events=self.events[:2]
