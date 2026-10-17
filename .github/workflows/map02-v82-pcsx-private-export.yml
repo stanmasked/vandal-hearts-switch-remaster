@@ -1,0 +1,129 @@
+name: MAP02 v82 pinned PCSX native private event export
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v82-pcsx-private-export.yml'
+      - 'tools/apply_map02_v82_pcsx_rearmed.py'
+      - 'tools/map02_v82_private_publish.*'
+      - 'tools/verify_map02_v82_native_trace.py'
+      - 'tests/test_map02_v82_native_publish.py'
+      - 'tools/map02_v81_event_jsonl.*'
+      - 'tools/map02_v80_native_timeline.*'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pinned-pcsx-native-export:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: remaster
+          persist-credentials: false
+      - name: Unit tests for private journal safety
+        env:
+          CC: ${{ matrix.cc }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v80_native_observer.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v81_event_jsonl.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v82_native_publish.py' -v
+      - name: Retrieve exact pinned upstream without retail content
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init -q upstream-pcsx
+          git -C upstream-pcsx remote add origin https://github.com/notaz/pcsx_rearmed.git
+          git -C upstream-pcsx fetch -q --depth=1 origin 8b6c163575e6ce9a0537553e0d4ed4225315955e
+          git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
+          test "$(git -C upstream-pcsx rev-parse HEAD)" = 8b6c163575e6ce9a0537553e0d4ed4225315955e
+          python3 -m remaster.tools.apply_map02_v82_pcsx_rearmed upstream-pcsx
+          git -C upstream-pcsx diff --check
+          grep -F 'vh82_publish_private(dest' upstream-pcsx/frontend/main.c
+          grep -F 'VH80_VBLANK' upstream-pcsx/libpcsxcore/psxcounters.c
+      - name: Build actual instrumented PCSX emulator
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libsdl1.2-dev libpng-dev zlib1g-dev
+          git -C upstream-pcsx submodule update --init --recursive --depth=1
+          mkdir -p proof/public
+          (
+            cd upstream-pcsx
+            CC="$CC" ./configure --platform=generic --gpu=unai --disable-dynarec --sound-drivers=sdl
+            make -j2 VH_MAP02_V66_PCSX_PROBE=1 CC="$CC" > ../proof/v82-build-private.log 2>&1
+            test -s pcsx
+            nm pcsx | grep -w vh80_record
+            nm pcsx | grep -w vh81_format_jsonl
+            nm pcsx | grep -w vh82_publish_private
+          ) || { tail -n 110 proof/v82-build-private.log; exit 1; }
+          echo 'Pinned diagnostic PCSX build linked native v80/v81/v82 observer objects' > proof/public/build-summary.txt
+      - name: Run synthetic MIPS scene across original emulator VBlank and verify private readback
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m remaster.tools.make_map02_v78_vblank_mips_exe --output proof/V82_SYNTHETIC_VBLANK.EXE
+          test "$(stat -c %s proof/V82_SYNTHETIC_VBLANK.EXE)" -eq 10240
+          mkdir -m 700 -p proof/private
+          mkdir -m 700 -p proof/v82-home
+          export VH_MAP02_V82_PRIVATE_PATH="$PWD/proof/private/V82_NATIVE_EVENTS.jsonl"
+          test ! -e "$VH_MAP02_V82_PRIVATE_PATH"
+          timeout 75s env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v82-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread --vh82-private-export-smoke \
+            proof/V82_SYNTHETIC_VBLANK.EXE > proof/private/v82-runtime.log 2>&1 || {
+              tail -n 110 proof/private/v82-runtime.log
+              exit 1
+            }
+          grep -F 'VH78_VBLANK_VRAM_PASS vblanks=4 phases=4 samples=2380' proof/private/v82-runtime.log
+          grep -F 'VH82_PRIVATE_EXPORT_PASS vblanks=4 ' proof/private/v82-runtime.log
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          from remaster.tools.verify_map02_v82_native_trace import validate
+          log=Path("proof/private/v82-runtime.log").read_text()
+          matches=re.findall(r'VH82_PRIVATE_EXPORT_PASS vblanks=(\d+) gp1_mmio=(\d+) entries=(\d+) bytes=(\d+) drops=(\d+)',log)
+          assert len(matches)==1,matches
+          vb,gp1,entries,count,drops=map(int,matches[0])
+          assert vb==4 and gp1>=2 and drops==0
+          private=Path("proof/private/V82_NATIVE_EVENTS.jsonl")
+          assert private.stat().st_mode & 0o777 == 0o600
+          result=validate(private.read_bytes())
+          assert result["events"]==entries and result["bytes"]==count
+          assert result["vblank_edges"]==vb and result["gp1_mmio"]==gp1
+          assert not result["original_retail_MAP02_verified"]
+          assert not result["HD_replacement_approved"]
+          Path("proof/public/runtime-summary.txt").write_text(
+              "V82 pinned PCSX: synthetic VBlank events=4, pixel samples=2380; "+
+              f"private JSONL readback valid, entries={entries}, bytes={count}, drops=0\n"+
+              "Original retail MAP02 not verified; HD disabled.\n")
+          PY
+          # Repeat must fail closed without modifying published private JSONL.
+          sha256sum "$VH_MAP02_V82_PRIVATE_PATH" > proof/private/v82-original.sha256
+          if timeout 75s env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+             HOME="$PWD/proof/v82-home" \
+             ./upstream-pcsx/pcsx -novid -nodrc -nothread --vh82-private-export-smoke \
+             proof/V82_SYNTHETIC_VBLANK.EXE > proof/private/v82-refusal.log 2>&1; then
+            echo 'ERROR existing final file was overwritten'
+            exit 1
+          fi
+          grep -F 'VH82_PRIVATE_PUBLISH_REFUSED' proof/private/v82-refusal.log
+          sha256sum -c proof/private/v82-original.sha256
+          test ! -e "$VH_MAP02_V82_PRIVATE_PATH.tmp"
+          echo 'Existing private capture refused without replacing byte-exact evidence' >> proof/public/runtime-summary.txt
+      - name: Upload aggregate status only (never raw GPU traces)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-v82-${{ matrix.cc }}-public-status
+          path: proof/public/
+          if-no-files-found: warn

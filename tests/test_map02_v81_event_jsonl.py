@@ -17,9 +17,12 @@ class V81Jsonl(unittest.TestCase):
         if not cc: raise unittest.SkipTest("C compiler unavailable")
         cls.temp=tempfile.TemporaryDirectory()
         path=Path(cls.temp.name)/"libvh81.so"
+        for version in (80,81):
+            shutil.copyfile(ROOT/f"map02_v{version}_{'native_timeline' if version==80 else 'event_jsonl'}.h",
+                            Path(cls.temp.name)/f"vh{version}_{'native_timeline' if version==80 else 'event_jsonl'}.h")
         subprocess.run([cc,"-std=c11","-Wall","-Wextra","-Werror","-fPIC","-shared",
                         str(ROOT/"map02_v80_native_timeline.c"),
-                        str(ROOT/"map02_v81_event_jsonl.c"),"-o",str(path)],
+                        str(ROOT/"map02_v81_event_jsonl.c"),"-I",cls.temp.name,"-o",str(path)],
                        check=True,capture_output=True)
         cls.lib=ctypes.CDLL(str(path))
         cls.lib.vh80_record.argtypes=[ctypes.c_uint32]*4
