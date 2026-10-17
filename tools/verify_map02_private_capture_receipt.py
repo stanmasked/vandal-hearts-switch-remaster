@@ -73,6 +73,11 @@ RECEIPT_KEYS = frozenset((
     "verification", "failure_category", "retail_map02_verified",
     "hd_replacement_authorized",
 ))
+# The optional v2 receipt is emitted ONLY after requesting the strict live
+# ELF process-image gate. Older synthetic v1 receipts remain compatible.
+RECEIPT_KEYS_ELF = RECEIPT_KEYS | frozenset((
+    "native_elf_image_required", "native_elf_image_observed",
+))
 
 
 def replay_receipt(directory, *, receipt_file, preflight_report, executable):
@@ -84,9 +89,19 @@ def replay_receipt(directory, *, receipt_file, preflight_report, executable):
         receipt = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_pairs)
     except (UnicodeError, ValueError) as exc:
         raise ValueError("malformed original process receipt") from exc
-    if type(receipt) is not dict or receipt.keys() != RECEIPT_KEYS:
+    if type(receipt) is not dict:
         raise ValueError("wrong original process receipt schema")
-    if receipt["schema"] != "map02_private_native_process_receipt_v1":
+    schema = receipt.get("schema")
+    if schema == "map02_private_native_process_receipt_v1":
+        if receipt.keys() != RECEIPT_KEYS:
+            raise ValueError("wrong original process receipt schema")
+    elif schema == "map02_private_native_process_receipt_v2":
+        if receipt.keys() != RECEIPT_KEYS_ELF:
+            raise ValueError("wrong native ELF process receipt schema")
+        if (receipt["native_elf_image_required"] is not True
+                or receipt["native_elf_image_observed"] is not True):
+            raise ValueError("native ELF image was not observed during process launch")
+    else:
         raise ValueError("unsupported original receipt version")
     if (receipt["preflight_created"] is not True
             or receipt["process_started"] is not True
