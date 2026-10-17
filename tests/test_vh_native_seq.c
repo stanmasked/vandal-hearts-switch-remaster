@@ -35,6 +35,9 @@ static int resolve(void *ctx, unsigned program, unsigned note,
 }
 
 static VhSpuReverb expected_wet_tail;
+static VhSpuReverb zero_send_wet_tail;
+static VhNativeSpu dry_reference_spu;
+static int16_t dry_reference_pcm[VH_AUDIO_BLOCK_FRAMES * 2u];
 
 /* A synthetic tone that explicitly sends PCM to STUDIO_C. */
 static int resolve_with_reverb(void *ctx, unsigned program, unsigned note,
@@ -757,6 +760,98 @@ static void test_scene_switch_preserves_live_studio_c_tail(void) {
     assert(seq.note_ons==0u && seq.note_offs==0u);
 }
 
+
+static void test_new_scene_dry_and_wet_notes_mix_with_old_tail(void) {
+    /* Independently render the new scene's single dry note and advance
+     * a separate STUDIO_C processor, starting with the previous scene's
+     * actual history. Test both a voice with EON=0 and one with EON=1.
+     * No borrowed voice/PCM state from the previous scene may survive. */
+    static const uint8_t sustained_song[] = {
+        HEADER,0,0x90,60,100,
+        0x8fu,0x00u,0x80,60,0,
+        0,0xff,0x2f
+    };
+    const unsigned blocks_per_scene[]={24u,48u};
+    setup();
+    assert(vh_native_spu_set_reverb(&spu,1,0.75f)==0);
+    assert(vh_native_seq_init(&seq,sustained_song,sizeof sustained_song,
+                              &spu,resolve_with_reverb,&log_state,1)==0);
+    for(unsigned block=0u;block<16u;block++) {
+        assert(vh_native_seq_advance_block(&seq)>=0);
+        vh_native_spu_render(&spu,pcm,512u);
+    }
+    assert(seq.note_ons==1u && spu.voice[0].reverb_send);
+    memcpy(&expected_wet_tail,&spu.reverb,sizeof expected_wet_tail);
+    uint64_t inherited_wet_energy=0u;
+    uint64_t new_send_energy=0u;
+    for(unsigned scene=0u;scene<2u;scene++) {
+        const int send=scene==1u;
+        const VhSeqResolve resolver=send ? resolve_with_reverb : resolve;
+        assert(vh_native_seq_switch_scene(&seq,sustained_song,
+                          sizeof sustained_song,&spu,resolver,
+                          &log_state,1)==0);
+        assert(spu.reverb_enabled && spu.reverb_depth==0.75f);
+        assert(spu.frames_rendered==0u && spu.steal_index==0u);
+        assert(memcmp(&spu.reverb,&expected_wet_tail,
+                      sizeof expected_wet_tail)==0);
+        for(unsigned slot=0u;slot<VH_NATIVE_MUSIC_VOICES;slot++) {
+            assert(!vh_native_spu_voice_active(&spu,slot));
+            assert(spu.voice[slot].pcm==NULL);
+        }
+        vh_native_spu_reset(&dry_reference_spu);
+        assert(vh_native_spu_set_interpolation(&dry_reference_spu,
+                                                VH_SPU_GAUSSIAN)==0);
+        assert(vh_native_spu_note_on(&dry_reference_spu,0u,
+                    sample,64u,0,64,4096u,15u,0u,100.f/127.f,1.f)==0);
+        assert(vh_native_seq_advance_block(&seq)>0);
+        assert(seq.note_ons==1u && seq.note_offs==0u);
+        assert(seq.note_slot[0][60]==0 && seq.owner_note[0]==60);
+        assert(spu.voice[0].reverb_send==send);
+        if(send) memcpy(&zero_send_wet_tail,&expected_wet_tail,
+                        sizeof zero_send_wet_tail);
+        for(unsigned block=0u;block<blocks_per_scene[scene];block++) {
+            if(block) assert(vh_native_seq_advance_block(&seq)>=0);
+            assert(seq.playing && seq.note_ons==1u && seq.note_offs==0u);
+            vh_native_spu_render(&dry_reference_spu,dry_reference_pcm,512u);
+            vh_native_spu_render(&spu,pcm,512u);
+            for(unsigned frame=0u;frame<512u;frame++) {
+                const unsigned left=2u*frame, right=left+1u;
+                int wet_l=0,wet_r=0;
+                vh_spu_reverb_process(&expected_wet_tail,
+                         send ? (int)dry_reference_pcm[left] : 0,
+                         send ? (int)dry_reference_pcm[right] : 0,
+                         0.75f,&wet_l,&wet_r);
+                int mixed_l=(int)dry_reference_pcm[left]+wet_l;
+                int mixed_r=(int)dry_reference_pcm[right]+wet_r;
+                if(mixed_l>INT16_MAX) mixed_l=INT16_MAX;
+                if(mixed_l<INT16_MIN) mixed_l=INT16_MIN;
+                if(mixed_r>INT16_MAX) mixed_r=INT16_MAX;
+                if(mixed_r<INT16_MIN) mixed_r=INT16_MIN;
+                assert(pcm[left]==mixed_l && pcm[right]==mixed_r);
+                if(!send) {
+                    inherited_wet_energy+=(uint64_t)(wet_l<0?-wet_l:wet_l);
+                    inherited_wet_energy+=(uint64_t)(wet_r<0?-wet_r:wet_r);
+                } else {
+                    new_send_energy+=(uint64_t)(wet_l<0?-wet_l:wet_l);
+                    new_send_energy+=(uint64_t)(wet_r<0?-wet_r:wet_r);
+                    int ignored_l=0,ignored_r=0;
+                    vh_spu_reverb_process(&zero_send_wet_tail,
+                         0,0,0.75f,&ignored_l,&ignored_r);
+                }
+            }
+            assert(memcmp(&spu.reverb,&expected_wet_tail,
+                          sizeof expected_wet_tail)==0);
+            assert(spu.frames_rendered==(uint64_t)(block+1u)*512u);
+            assert(dry_reference_spu.frames_rendered==
+                                      (uint64_t)(block+1u)*512u);
+        }
+        if(send) assert(memcmp(&expected_wet_tail,&zero_send_wet_tail,
+                              sizeof expected_wet_tail)!=0);
+    }
+    assert(inherited_wet_energy>0u);
+    assert(new_send_energy>0u);
+}
+
 int main(void) {
     test_validation_and_source_immutability();
     test_512_block_controls_and_ring_pressure();
@@ -775,6 +870,7 @@ int main(void) {
     test_long_full_spu_ownership_soak();
     test_scene_switch_with_stealing_and_expired_releases();
     test_scene_switch_preserves_live_studio_c_tail();
+    test_new_scene_dry_and_wet_notes_mix_with_old_tail();
     puts("native pQES SEQ -> 20-voice SPU -> PCM ring: PASS");
     return 0;
 }
