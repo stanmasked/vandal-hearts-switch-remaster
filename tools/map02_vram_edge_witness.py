@@ -3,8 +3,7 @@
 Edges are sampled directly by the original OT walker. Comparison here does
 NOT authenticate a real MAP02 frame or independent PS1 hardware.
 """
-import json
-from tools.verify_map02_frame_bundle import number
+from tools.verify_map02_frame_bundle import number, parse_json
 from tools.verify_map02_blendg1_witness import complete_events
 
 MAX_EDGE_EVENTS = 8192
@@ -19,10 +18,7 @@ def parse_vram_edges(raw):
         raise ValueError("invalid native VRAM edge count/empty rows")
     rows = []
     for i, line in enumerate(lines):
-        try:
-            event = json.loads(line.decode("utf-8"))
-        except (UnicodeError, ValueError) as exc:
-            raise ValueError("invalid VRAM edge JSON") from exc
+        event = parse_json(line, "native VRAM edge")
         if type(event) is not dict or set(event) != {
             "stage", "frame", "primitive_ordinal", "primitive_type",
             "x", "y", "before", "after"
