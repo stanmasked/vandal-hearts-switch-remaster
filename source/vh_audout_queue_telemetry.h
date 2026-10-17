@@ -36,4 +36,6 @@ void vh_audout_queue_record(VhAudoutQueueTelemetry *t,
 /* Only after the audio owner has joined. Does not mutate t.
  * Includes a full-session TOTAL and chronological retained windows. */
 int vh_audout_queue_write_csv(const VhAudoutQueueTelemetry *t, FILE *out);
+/* Byte-exact independent reread of canonical CSV, including EOF. */
+int vh_audout_queue_verify_csv(const VhAudoutQueueTelemetry *t,FILE *in);
 #endif
