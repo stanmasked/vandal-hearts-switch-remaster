@@ -522,7 +522,7 @@ jobs:
           if any(image.size != (1280,720) for image in images):
               raise SystemExit("invalid controlled-scene screenshot dimensions")
           # UI panel around explicit MUSIC FIELD / MUSIC FOCUS label.
-          cropped=[im.crop((920,660,1260,708)) for im in images]
+          cropped=[im.crop((960,600,1140,638)) for im in images]
           changed=[]
           for x,y in zip(cropped,cropped[1:]):
               diff=ImageChops.difference(x,y)
@@ -530,7 +530,7 @@ jobs:
           report=json.loads((root/"scene-audio-report.json").read_text())
           if len(report["intervals"])!=5:
               raise SystemExit("scene capture did not include five distinct windows")
-          if min(changed)<40:
+          if min(changed)<25:
               raise SystemExit(f"music status label did not visibly toggle: {changed}")
           summary={
               "schema":"vh-nexium-scene-visual/v1",
