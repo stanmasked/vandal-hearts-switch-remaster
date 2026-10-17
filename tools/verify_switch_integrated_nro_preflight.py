@@ -25,9 +25,9 @@ class PreflightError(ValueError):
 
 def check(directory: Path, *, git_sha: str, run_id: int, artifact_id: int,
           artifact_name: str, expected_sha256: str) -> dict:
-    if not FULL_SHA.fullmatch(git_sha) or not isinstance(run_id, int) or run_id <= 0:
+    if not FULL_SHA.fullmatch(git_sha) or type(run_id) is not int or run_id <= 0:
         raise PreflightError("invalid pinned Git SHA or run ID")
-    if not isinstance(artifact_id, int) or artifact_id <= 0:
+    if type(artifact_id) is not int or artifact_id <= 0:
         raise PreflightError("invalid artifact ID")
     if artifact_name != EXPECTED_ARTIFACT:
         raise PreflightError("wrong workflow artifact name")
