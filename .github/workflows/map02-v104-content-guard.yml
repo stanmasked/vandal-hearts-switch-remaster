@@ -108,6 +108,10 @@ on:
       - 'tools/apply_map02_v120_pcsx_rearmed.py'
       - 'tools/summarize_map02_v120_real_gp0_return.py'
       - 'tests/test_map02_v120_real_gp0_return.py'
+      - 'tools/make_map02_v121_mips_gp0_return_exe.py'
+      - 'tools/apply_map02_v121_pcsx_rearmed.py'
+      - 'tools/summarize_map02_v121_mips_return.py'
+      - 'tests/test_map02_v121_mips_return.py'
       - 'tools/map02_v80_native_timeline.*'
       - 'tools/map02_v81_event_jsonl.*'
       - 'tools/verify_map02_v82_native_trace.py'
@@ -182,6 +186,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v119_five_native.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v119_quintuplet_runtime.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v120_real_gp0_return.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v121_mips_return.py' -v
       - name: Patch pinned upstream with Unai post-dispatch observer
         shell: bash
         run: |
@@ -192,7 +197,7 @@ jobs:
           git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
           git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
-          python3 -m remaster.tools.apply_map02_v120_pcsx_rearmed upstream-pcsx
+          python3 -m remaster.tools.apply_map02_v121_pcsx_rearmed upstream-pcsx
           git -C upstream-pcsx diff --check
           grep -F 'vh80_record(VH83_GP0_UNAI_HANDLED' upstream-pcsx/plugins/gpu_unai/gpulib_if.cpp
           grep -F 'VH83_UNAI_DISPATCH_PASS' upstream-pcsx/frontend/main.c
@@ -837,6 +842,42 @@ jobs:
           assert report["the_commands_were_not_executed_by_interpreted_mips"] is True
           assert report["HD_replacement_approved"] is False
           Path("proof/public/v120-real-gp0-return-summary.json").write_text(
+              json.dumps(report,sort_keys=True)+"\n")
+          PY
+      - name: Run separate interpreted MIPS GP0 A-B-C-D-A on real pinned Unai
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum -c proof/private/native.sha256
+          mkdir -m 700 -p proof/v121-home
+          python3 -m remaster.tools.make_map02_v121_mips_gp0_return_exe \
+            --output proof/private/V121_SYNTHETIC.EXE
+          test "$(stat -c %s proof/private/V121_SYNTHETIC.EXE)" -eq 6144
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v121-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh121-mips-gp0-return-smoke \
+            proof/private/V121_SYNTHETIC.EXE \
+            > proof/private/v121-runtime.log 2>&1 || {
+              tail -n 75 proof/private/v121-runtime.log
+              exit 1
+            }
+          grep -F 'VH121_MIPS_GP0_RETURN_PASS stages=6' proof/private/v121-runtime.log
+          sha256sum -c proof/private/native.sha256
+          test ! -e proof/private/V104_RENDERER_EVENTS.jsonl.tmp
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from remaster.tools.summarize_map02_v121_mips_return import summarize
+          report=summarize(Path("proof/private/v121-runtime.log").read_text())
+          assert report["cpu_stages"]==6
+          assert report["mips_gp0_rectangles"]==5
+          assert report["exact_four_back_returns"]==1
+          assert report["host_submitted_gpu_draw_commands_in_this_run"] is False
+          assert report["raw_pixel_values_and_hashes_exported"] is False
+          assert report["original_retail_MAP02_verified"] is False
+          Path("proof/public/v121-mips-gp0-return-summary.json").write_text(
               json.dumps(report,sort_keys=True)+"\n")
           PY
       - name: Publish aggregate status only, never private trace
