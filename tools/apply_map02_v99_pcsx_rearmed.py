@@ -132,8 +132,10 @@ def apply(root:Path):
         '\t\t}\n',
         "retain every earlier native GPU and four-emulator-VBlank oracle")
     src=once(src,
+        '            SysPrintf("VH98_RECOVERY_PASS old_refused=1 fresh_published=1 duplicate_refused=1 old_unchanged=1 temp_cleaned=1 prior_events=%u final_events=%u drops=0\\n",\n'
         '                before,vh80_count());\n'
         '        }\n',
+        '            SysPrintf("VH98_RECOVERY_PASS old_refused=1 fresh_published=1 duplicate_refused=1 old_unchanged=1 temp_cleaned=1 prior_events=%u final_events=%u drops=0\\n",\n'
         '                before,vh80_count());\n'
         '        }\n'+PROBE,
         "append host-only interrupted private stage proof after v98 before protected final export")
