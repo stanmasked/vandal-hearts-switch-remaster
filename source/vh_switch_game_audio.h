@@ -24,6 +24,9 @@ void vh_switch_game_audio_post_at(unsigned desired_scene,
  * has joined the producer thread. No filesystem I/O in audout paths.
  * CSV serial=0 means startup or unstable concurrent mailbox receipt. */
 int vh_switch_game_audio_trace_dump(FILE *stream);
+/* Guest-internal per-page audout measurements, separate from scene
+ * events; only callable after joining. No measured speaker underruns. */
+int vh_switch_game_audio_queue_dump(FILE *stream);
 /* Export numbered, readback-verified SD CSV ONLY after the audio
  * thread is joined. Return precise storage status to the main thread.
  * The output path is empty on error. Does not change audio clocks. */
