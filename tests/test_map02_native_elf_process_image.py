@@ -205,6 +205,29 @@ class NativeElfProcessImageTests(unittest.TestCase):
         self.assertFalse(self.host.receipt.exists())
         self.assertEqual(list(self.host.native.iterdir()), [])
 
+    def test_strict_probe_fd_closed_if_preflight_publication_fails(self):
+        self.build_elf(NATIVE_EMITTER + PROBE_MARKERS)
+        from tools import run_map02_private_native_capture as launcher
+        original_inspector = launcher.inspect_binary
+        seen = []
+
+        def inspect_and_remember(path, **kwargs):
+            seen.append(kwargs["pinned_fd"])
+            return original_inspector(path, **kwargs)
+
+        with patch.object(launcher, "inspect_binary",
+                          side_effect=inspect_and_remember), patch.object(
+                launcher, "_private_create",
+                side_effect=OSError("synthetic private directory fsync failure")):
+            with self.assertRaisesRegex(OSError, "fsync failure"):
+                self.run_capture(probes=True)
+        self.assertEqual(len(seen), 1)
+        with self.assertRaises(OSError):
+            os.fstat(seen[0])
+        self.assertFalse(self.host.preflight.exists())
+        self.assertFalse(self.host.receipt.exists())
+        self.assertEqual(list(self.host.native.iterdir()), [])
+
     def test_missing_probe_symbols_rejected_before_creating_receipts(self):
         self.build_elf()
         with self.assertRaisesRegex(ValueError, "probe evidence missing"):
