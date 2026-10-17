@@ -46,6 +46,8 @@ class IndependentJournalAuditTests(unittest.TestCase):
             self.assertEqual(result["shared_frame_ids"], [3])
             self.assertEqual(result["same_primitive_row_keys"], 0)
             self.assertTrue(result["single_sample_envelope_consistent"])
+            self.assertEqual(result["dda_observation_mode"], "both")
+            self.assertTrue(result["all_dda_journal_classes_observed"])
             for field in ("journal_origin_authenticated", "retail_map02_frame_verified",
                           "rejected_triangle_pixel_coverage_verified",
                           "hd_replacement_authorized"):
@@ -59,6 +61,8 @@ class IndependentJournalAuditTests(unittest.TestCase):
             self.assertEqual(result["files"][CANDIDATE_FILE]["event_count"], 1)
             self.assertIsNone(result["files"][SPAN_FILE]["event_count"])
             self.assertFalse(result["files"][SPAN_FILE]["present"])
+            self.assertEqual(result["dda_observation_mode"], "rejected_only")
+            self.assertFalse(result["all_dda_journal_classes_observed"])
             self.assertEqual(result["shared_frame_ids"], [])
 
     def test_span_only_is_missing_candidate_not_zero_rejection(self):
@@ -68,6 +72,8 @@ class IndependentJournalAuditTests(unittest.TestCase):
             result = audit(root)
             self.assertIsNone(result["files"][CANDIDATE_FILE]["event_count"])
             self.assertFalse(result["files"][CANDIDATE_FILE]["present"])
+            self.assertEqual(result["dda_observation_mode"], "entered_only")
+            self.assertFalse(result["all_dda_journal_classes_observed"])
 
     def test_conflicting_executed_and_rejected_same_primitive_row_is_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -134,6 +140,12 @@ class IndependentJournalAuditTests(unittest.TestCase):
             binding = report["native_gpu_binding"]
             self.assertTrue(binding["verified"])
             self.assertEqual(binding["frame"], 3)
+            self.assertEqual(binding["native_gpu_pairs_verified"], 2)
+            zero_sha = hashlib.sha256(bytes(VRAM_BYTES)).hexdigest()
+            self.assertEqual(
+                binding["vram_snapshot_sha256_list_sha256"],
+                hashlib.sha256((zero_sha * 4).encode("ascii")).hexdigest(),
+            )
             self.assertEqual(binding["draw_primitives_in_bounded_capture"], 2)
             self.assertEqual(binding["observed_dda_primitive_keys"], 2)
             self.assertFalse(report["journal_origin_authenticated"])
