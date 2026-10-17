@@ -110,7 +110,7 @@ class CycleMakePlanTests(unittest.TestCase):
     def test_privacy_and_digest_checks_fail_on_changed_generated_source(self):
         path = check.preflight(self.upstream, self.output)
         self.assertEqual(path, self.output / "map02_cycle.mk")
-        altered = self.output / "libgpu.c"
+        altered = self.output / "core_cd.c"
         altered.write_bytes(altered.read_bytes() + b"tamper")
         with self.assertRaisesRegex(ValueError, "bytes changed"):
             check.preflight(self.upstream, self.output)
@@ -121,7 +121,7 @@ class CycleMakePlanTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unapproved file"):
             check.preflight(self.upstream, self.output)
         (self.output / "accidental-asset.bin").unlink()
-        (self.output / "libgpu.c").chmod(0o644)
+        (self.output / "core_cd.c").chmod(0o644)
         with self.assertRaisesRegex(ValueError, "owner-only"):
             check.preflight(self.upstream, self.output)
 
