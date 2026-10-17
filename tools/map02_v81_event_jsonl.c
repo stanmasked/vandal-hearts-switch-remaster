@@ -111,6 +111,9 @@ int vh81_format_jsonl(char *output,size_t capacity) {
         else if(e->kind==VH95_MERGES) kind="append_exact_rebuilds";
         else if(e->kind==VH95_STALE_REFUSALS) kind="append_stale_refusals";
         else if(e->kind==VH95_STABLE_READS) kind="append_stable_reads";
+        else if(e->kind==VH96_DETAIL_REMAINING) kind="boundary_detail_remaining";
+        else if(e->kind==VH96_AGG_REMAINING) kind="boundary_aggregate_remaining";
+        else if(e->kind==VH96_SERIALIZED_TWICE) kind="boundary_identical_serializations";
         else return -1;
         if(used>=capacity) return -1;
         /* GPU DMA2 is an address, NOT an executed GP0 command. */
