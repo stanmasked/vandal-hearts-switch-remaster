@@ -44,6 +44,8 @@ class CycleBuildReceiptTests(unittest.TestCase):
                   return_value="b" * 64),
             patch("tools.check_map02_cycle_make_plan.preflight",
                   return_value=self.bundle / "map02_cycle.mk"),
+            patch("tools.map02_cycle_build_provenance.verify_private_pc_inputs",
+                  return_value={"private_build_inputs_binding_sha256": "9" * 64}),
         )
         for item in self.mocks:
             item.start()
@@ -54,6 +56,7 @@ class CycleBuildReceiptTests(unittest.TestCase):
                 self.binary.read_bytes()).hexdigest(),
             "source_bound_make_command_sha256": "a" * 64,
             "required_original_cycle_and_gpu_symbols": 19,
+            "private_retail_inputs_binding_sha256": "9" * 64,
         }
 
     def publish(self):
@@ -86,6 +89,15 @@ class CycleBuildReceiptTests(unittest.TestCase):
         self.binary.write_bytes(self.binary.read_bytes() + b" mutation")
         with self.assertRaisesRegex(ValueError, "executable/source differs"):
             self.verify()
+
+    def test_changed_owned_original_exe_or_font_identity_fails_closed(self):
+        self.publish()
+        with patch(
+                "tools.map02_cycle_build_provenance.verify_private_pc_inputs",
+                return_value={
+                    "private_build_inputs_binding_sha256": "f" * 64}):
+            with self.assertRaisesRegex(ValueError, "executable/source differs"):
+                self.verify()
 
     def test_manifest_change_fails_closed(self):
         self.publish()
