@@ -91,8 +91,12 @@ def preflight(environ, *, executable=None):
         raise ValueError("native capture directory must be owner-writable and private")
     if any(root.iterdir()):
         raise ValueError("native capture directory must be empty for a fresh session")
-    if len(os.fsencode(str(root))) + 1 + len(LONGEST_CAPTURE_FILENAME) + 1 > 1024:
-        raise ValueError("native capture path exceeds original C recorder buffer")
+    # Check the *literal environment values*, not only their normalized
+    # resolved directory: the C snprintf recorders use the supplied string.
+    # '/capture/././...' can be much longer than Path.resolve() suggests.
+    for key in DIR_KEYS:
+        if len(os.fsencode(environ[key])) + 1 + len(LONGEST_CAPTURE_FILENAME) + 1 > 1024:
+            raise ValueError("native capture path exceeds original C recorder buffer")
     gpu_frame = _decimal(environ, FRAME_KEYS[0], 0xffffffff)
     pixel_frame = _decimal(environ, FRAME_KEYS[1], 0xffffffff)
     if gpu_frame == 0 or pixel_frame != gpu_frame:
