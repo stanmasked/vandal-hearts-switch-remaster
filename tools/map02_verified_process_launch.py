@@ -30,12 +30,14 @@ from tools.verify_map02_native_gpu_capture import private_file
 from tools.verify_map02_window_scoped_join import verify_window_scoped_join
 
 RECEIPT = "gpu-local-executed-process.json"
-SCHEMA = "vh.map02.local-executed-process.v1"
+SCHEMA = "vh.map02.local-executed-process.v2"
 REQUIRED = (
     "schema", "gpu_draw_frame", "local_plan_sha256",
     "kernel_observed_executable_sha256", "kernel_executable_device",
     "kernel_executable_inode", "observed_pid",
     "pc_process_exit_code", "capture_session_sha256",
+    "game_image_fd_observed", "kernel_game_image_device",
+    "kernel_game_image_inode",
     "native_window_all_files_sha256",
     "selected_pixel_x", "selected_pixel_y",
     "kernel_executable_matched_plan", "same_process_gpu_scoped_nonce_checked",
@@ -70,12 +72,38 @@ def _fingerprint_kernel_exe(pid):
         os.close(fd)
 
 
+def _kernel_observes_game_fd(pid, expected):
+    """True iff the live child has a regular fd for the exact planned inode.
+
+    No payload bytes, raw path or fd link target are persisted or printed.
+    An open descriptor alone does not prove bytes were consumed by gameplay.
+    """
+    try:
+        descriptors = os.scandir(f"/proc/{pid}/fd")
+    except (FileNotFoundError, PermissionError, ProcessLookupError):
+        return False
+    with descriptors as listing:
+        for entry in listing:
+            if not entry.name.isdecimal():
+                continue
+            try:
+                observed = entry.stat(follow_symlinks=True)
+            except (FileNotFoundError, PermissionError, ProcessLookupError):
+                continue
+            if (stat.S_ISREG(observed.st_mode) and
+                    (observed.st_dev, observed.st_ino, observed.st_size) ==
+                    expected):
+                return True
+    return False
+
+
 def _validate_receipt(raw):
     record = raw if type(raw) is dict else parse_json(raw, RECEIPT)
     fields(record, REQUIRED, RECEIPT)
     if (record["schema"] != SCHEMA or
             record["kernel_executable_matched_plan"] is not True or
             record["same_process_gpu_scoped_nonce_checked"] is not True or
+            record["game_image_fd_observed"] is not True or
             record["game_image_consumption_proven"] is not False or
             record["retail_gameplay_authenticated"] is not False or
             record["physical_ps1_equivalence_proven"] is not False):
@@ -90,6 +118,8 @@ def _validate_receipt(raw):
         ("gpu_draw_frame", 1, 2**32 - 1),
         ("kernel_executable_device", 0, 2**64 - 1),
         ("kernel_executable_inode", 1, 2**64 - 1),
+        ("kernel_game_image_device", 0, 2**64 - 1),
+        ("kernel_game_image_inode", 1, 2**64 - 1),
         ("observed_pid", 1, 2**32 - 1),
         ("pc_process_exit_code", 0, 0),
         ("selected_pixel_x", 0, 1023),
@@ -129,6 +159,9 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
             _sha_file(binary) != plan["pc_executable_sha256"] or
             _sha_file(owned_game, private=True) != plan["owned_game_image_sha256"]):
         raise ValueError("original PC source, binary or game input differs from plan")
+    game_image = Path(owned_game).absolute()
+    game_stat = os.stat(game_image)
+    expected_game_fd = (game_stat.st_dev, game_stat.st_ino, game_stat.st_size)
     frame = plan["target_gpu_draw_frame"]
     arguments = tuple(arguments)
     if any(type(arg) is not str or not arg or "\x00" in arg for arg in arguments):
@@ -136,6 +169,7 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
     env = {key: value for key, value in os.environ.items()
            if not key.startswith("VH_MAP02_")}
     env.update({
+        "VH_DISC_IMAGE": str(game_image),
         "VH_MAP02_GPU_CAPTURE_DIR": str(native),
         "VH_MAP02_GPU_CAPTURE_FRAME": str(frame),
         "VH_MAP02_GPU_CAPTURE_WINDOW_COUNT": "2",
@@ -146,6 +180,7 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
     })
     process = None
     observed = None
+    game_fd_observed = False
     try:
         process = subprocess.Popen(
             [str(binary), *arguments], shell=False,
@@ -172,8 +207,21 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
             time.sleep(0.01)
         if observed is None:
             raise ValueError("kernel child executable identity was not confirmed")
-        if process.wait(timeout=timeout) != 0:
+        # Continue sampling the mounted image descriptor while the child
+        # executes its CD / game bootstrap and DrawOTag path. A launch which
+        # only matched the ELF but never opened the planned image is rejected.
+        # Poll is bounded by the user's timeout, not a fixed boot duration.
+        end = time.monotonic() + timeout
+        while process.poll() is None:
+            if _kernel_observes_game_fd(process.pid, expected_game_fd):
+                game_fd_observed = True
+            if time.monotonic() >= end:
+                raise ValueError("instrumented PC process timeout during disc observation")
+            time.sleep(0.02)
+        if process.returncode != 0:
             raise ValueError("instrumented PC-port process exited unsuccessfully")
+        if not game_fd_observed:
+            raise ValueError("process never opened the planned game-image file")
     except BaseException:
         if process is not None and process.poll() is None:
             process.kill()
@@ -197,6 +245,9 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
         "kernel_executable_inode": observed[1],
         "observed_pid": process.pid,
         "pc_process_exit_code": 0,
+        "game_image_fd_observed": True,
+        "kernel_game_image_device": expected_game_fd[0],
+        "kernel_game_image_inode": expected_game_fd[1],
         "capture_session_sha256": checked["capture_session_sha256"],
         "native_window_all_files_sha256":
             checked["all_native_window_file_bytes_sha256"],
@@ -213,6 +264,7 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
     return {
         "private_process_receipt_sha256": _sha(raw),
         "kernel_executable_hash_matched": True,
+        "game_image_fd_observed": True,
         "gpu_draws_checked": checked["global_draw_ordinals_checked"],
         "same_process_gpu_scoped_nonce_checked": True,
         "game_image_consumption_proven": False,
@@ -239,6 +291,10 @@ def verify_observed_process(handoff_dir, native_dir, scoped_dir, pc_binary,
             verify_pinned_upstream(upstream) !=
             plan["pinned_upstream_source_identity_sha256"]):
         raise ValueError("kernel process receipt differs from local capture plan")
+    game_stat = os.stat(Path(owned_game).absolute())
+    if (receipt["kernel_game_image_device"] != game_stat.st_dev or
+            receipt["kernel_game_image_inode"] != game_stat.st_ino):
+        raise ValueError("kernel-observed game image inode differs from current input")
     observed = verify_window_scoped_join(
         native, scoped, target_frame=receipt["gpu_draw_frame"])
     if (receipt["capture_session_sha256"] != observed["capture_session_sha256"] or
@@ -249,6 +305,7 @@ def verify_observed_process(handoff_dir, native_dir, scoped_dir, pc_binary,
         raise ValueError("process receipt modified during re-verification")
     return {"private_process_receipt_sha256": _sha(raw),
             "kernel_executable_hash_matched": True,
+            "game_image_fd_observed": True,
             "same_process_gpu_scoped_nonce_checked": True,
             "game_image_consumption_proven": False,
             "original_gameplay_authenticated": False}
