@@ -44,6 +44,8 @@ on:
       - 'tests/test_decode_nexium_guest_trace_frame.py'
       - 'tools/capture_nexium_scene_soak.sh'
       - 'tools/audit_nexium_audout_idle_control.py'
+      - 'tools/compare_nexium_idle_switch_pairs.py'
+      - 'tests/test_compare_nexium_idle_switch_pairs.py'
       - 'tests/test_audit_nexium_audout_idle_control.py'
       - 'tools/audit_nexium_scene_soak.py'
       - 'tests/test_audit_nexium_scene_soak.py'
@@ -94,6 +96,7 @@ jobs:
           python3 -m unittest discover -s tests -p "test_audit_nexium_guest_sd_handoff.py" -v
           bash -n tools/capture_nexium_scene_soak.sh
           python3 -m unittest discover -s tests -p "test_audit_nexium_audout_idle_control.py" -v
+          python3 -m unittest discover -s tests -p "test_compare_nexium_idle_switch_pairs.py" -v
           bash -n tools/capture_nexium_scene_audio.sh
           make verify-nro
 
