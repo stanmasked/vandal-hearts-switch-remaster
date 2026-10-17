@@ -79,7 +79,10 @@ def audit(directory: Path, *, native_frame=None):
         gpu_log = directory / NATIVE_GPU_LOG
         if gpu_log.is_symlink() or not gpu_log.is_file():
             raise ValueError("native GPU journal must be a regular file")
-        events = [json.loads(line) for line in gpu_log.read_bytes().splitlines()]
+        native_raw = gpu_log.read_bytes()
+        if hashlib.sha256(native_raw).hexdigest() != capture["native_gpu_events_sha256"]:
+            raise ValueError("native GPU event bytes changed since full VRAM validation")
+        events = [json.loads(line) for line in native_raw.splitlines()]
         draw_packets = [events[i] for i in range(0, len(events), 2)
                         if events[i]["operation"] == "draw"]
         for span in spans:
