@@ -51,6 +51,8 @@ int main(int argc, char **argv) {
     VH_Map02RejectedEdges(&cx, 9, 10, 20, 7);
     vh_sample_scope_active = 1;
     VH_Map02RejectedEdges(&cx, 10, 10, 20, 7);
+    VH_Map02RejectedEdges(&cx, 9, 10, 20, 5);
+    VH_Map02RejectedEdges(&cx, 9, 10, 20, 99);
 #endif
     return 0;
 }
