@@ -35,13 +35,10 @@ class V83Test(unittest.TestCase):
         self.assertFalse(r["original_retail_MAP02_verified"])
         self.assertFalse(r["HD_replacement_approved"])
     def test_refuse_unrecognized_renderer_command(self):
-        p=sample().replace(b"1610612991",b"") if False else sample()
-        p=p.replace(b'"value":3758096416',b'"value":268435456')
-        if p==sample():
-            p=p.replace(b'"value":1610612991',b'"value":268435456')
-        if p==sample():
-            import re
-            p=re.sub(rb'(\{"kind":"gp0_unai_handled","seq":3,"value":)\d+',rb'\g<1>268435456',p)
+        parsed=[json.loads(x) for x in sample().decode().splitlines()]
+        command=next(e for e in parsed if e["kind"]=="gp0_unai_handled")
+        command["value"]=0x10000000
+        p=("".join(json.dumps(e,separators=(",",":"))+"\\n" for e in parsed)).encode()
         with self.assertRaises(Refused):validate(p)
     def test_refuse_asserted_renderer_frame(self):
         p=sample().replace(b'"cycle":0,"frame":0',b'"cycle":0,"frame":12',1)
