@@ -219,6 +219,17 @@ chain helps detect later file changes against the recorded report; it
 still does not authenticate capture origin or establish GPU stream
 completeness.
 
+For native GPU `LoadImage` commands, the verifier now also fingerprints
+each **actually saved post-upload binary payload**. It records
+`upload_payload_sha256_list_sha256` over the ordered payload SHA-256
+digests, plus `load_pairs_with_verified_payload` and
+`load_pairs_without_payload`. The latter is important: the original
+instrumented recorder deliberately omits some larger uploads, so a
+missing payload is **unobserved, not an empty/verified upload**. A
+successful private receipt replay detects even equal-length modifications
+to a saved upload payload while GPU event JSON and VRAM snapshots remain
+unchanged. These fields carry no game bytes or original image pixels.
+
 **Important:** Hash agreement identifies the bytes inspected before and
 after the run, but cannot prove that those bytes were actually executed,
 that diagnostic callbacks were linked, or that retail MAP02 was rendered.
