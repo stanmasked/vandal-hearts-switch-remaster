@@ -163,7 +163,8 @@ class PrivateGpuMakeOverlayTests(unittest.TestCase):
     def test_synthetic_generation_keeps_original_inputs_unchanged(self):
         known, fake = self.fake_sources()
         before = {path: (self.upstream / path).read_bytes() for path in fake}
-        with (patch.object(builder, "git_blob_sha1",
+        with (patch.object(builder, "_require_pinned_clean_checkout"),
+              patch.object(builder, "git_blob_sha1",
                            side_effect=lambda b: known[b]),
               patch.object(builder, "multi_gpu", side_effect=lambda s: "GPU["+s+"]"),
               patch.object(builder, "multi_raster", side_effect=lambda s: "M["+s+"]"),
@@ -200,16 +201,51 @@ class PrivateGpuMakeOverlayTests(unittest.TestCase):
         # Treat modified bytes as a pinned blob for this negative unit:
         # proves semantic Make checks are independent from blob SHA.
         known[wrong] = builder.PINNED_BLOB_SHA1[builder.MAKE_REL]
-        with patch.object(builder, "git_blob_sha1",
-                          side_effect=lambda raw: known[raw]):
+        with (patch.object(builder, "_require_pinned_clean_checkout"),
+              patch.object(builder, "git_blob_sha1",
+                           side_effect=lambda raw: known[raw])):
             with self.assertRaisesRegex(ValueError, "full-link Make dependency"):
                 builder.prepare(self.upstream, self.destination)
         self.assertFalse(self.destination.exists())
 
+    def test_rejects_wrong_full_checkout_commit_without_exposing_paths(self):
+        self.fake_sources()
+        from types import SimpleNamespace
+        result = SimpleNamespace(returncode=0, stdout="0" * 40 + "\n")
+        with (patch.object(builder.shutil, "which", return_value="/usr/bin/git"),
+              patch.object(builder.subprocess, "run", return_value=result)):
+            with self.assertRaisesRegex(ValueError, "checkout HEAD differs") as caught:
+                builder.prepare(self.upstream, self.destination)
+        self.assertNotIn(str(self.upstream), str(caught.exception))
+        self.assertFalse(self.destination.exists())
+
+    def test_rejects_dirty_tracked_source_but_ignores_untracked_assets(self):
+        self.fake_sources()
+        from types import SimpleNamespace
+        ok = SimpleNamespace(returncode=0,
+                             stdout=builder.PINNED_UPSTREAM_REF + "\n")
+        changed = SimpleNamespace(returncode=0,
+                                  stdout=" M src/core/graphics.c\n")
+        with (patch.object(builder.shutil, "which", return_value="/usr/bin/git"),
+              patch.object(builder.subprocess, "run", side_effect=[ok, changed])):
+            with self.assertRaisesRegex(
+                    ValueError, "tracked source files modified") as caught:
+                builder.prepare(self.upstream, self.destination)
+        self.assertNotIn("graphics.c", str(caught.exception))
+        self.assertFalse(self.destination.exists())
+        with patch.object(builder.shutil, "which", return_value="/usr/bin/git"):
+            with patch.object(builder.subprocess, "run",
+                              side_effect=[ok, SimpleNamespace(returncode=0, stdout="")]):
+                # The pinned three-file SHA remains separately mandatory,
+                # even when the tracked tree is clean.
+                with self.assertRaisesRegex(ValueError, "Git blob differs"):
+                    builder.prepare(self.upstream, self.destination)
+
     def test_refuses_wrong_pinned_blob_and_does_not_publish_output(self):
         self.fake_sources()
-        with self.assertRaisesRegex(ValueError, "Git blob differs"):
-            builder.prepare(self.upstream, self.destination)
+        with patch.object(builder, "_require_pinned_clean_checkout"):
+            with self.assertRaisesRegex(ValueError, "Git blob differs"):
+                builder.prepare(self.upstream, self.destination)
         self.assertFalse(self.destination.exists())
 
     def test_refuses_generation_into_original_upstream_tree(self):
