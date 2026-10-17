@@ -38,3 +38,21 @@ To diagnose the queue export failure without treating missing guest stderr as a 
 The strict SD auditor now compares the untouched guest original with its separately copied CSV, rejects duplicate matching originals, symbolic links and hardlinks, and records the SHA-256 of identical bytes. The `--sd-root` and locations manifest are tied to the isolated NeXium directory. Host regressions and NRO build success do not by themselves prove guest queue export success.
 
 **Next:** inspect the first completed runtime capture that includes the failure receipt, fix the underlying exporter condition if necessary, then rerun the full independent queue gate. Do not label Stage 269 verified until the final NRO build **and** the NeXium queue-gate succeed for the same commit.
+
+## Diagnostic follow-up — post-join guest export receipt
+
+The earlier run did not contain an `audio-audout-queue-*.csv` in the NeXium host-mounted guest SD directory. Native/host CI success is insufficient; the completed stage-269 gate still requires the actual guest file.
+
+For the next capture, `source/main.c` writes a bounded `audio-audout-export-result.txt` *after the audio worker has joined*, separate from every optical/event witness. The receipt contains exactly:
+
+```text
+export_status=<signed enum result>
+path_present=<0 or 1>
+file_size=<decimal bytes observed by guest stat>
+```
+
+The receipt is generated even on an exporter-reported success, so missing original CSV can be distinguished from failure of guest-side visibility. NeXium capture now inventories the isolated guest SD directory and copies this guest-produced receipt separately. The auditor requires the literal success code `0`, `path_present=1`, and the exact same `file_size` as the original SD CSV, plus original/copy byte equality. Missing receipt, missing original, nonzero error, or mismatched size are hard failures; the system never fabricates missing PCM evidence.
+
+Neither a positive guest `stat` nor matching SD bytes proves survival of power loss, audible output, or device starvation/underrun timing. The original Stage 268 optical/SD evidence is not modified.
+
+**Acceptance remains pending** until a *single workflow run of a single commit* passes NRO build, optical/SD scene consistency, guest export receipt, and the continuous queue audit.
