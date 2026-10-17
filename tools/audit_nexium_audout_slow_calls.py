@@ -64,6 +64,15 @@ def parse_slow(raw: bytes, origin: int, latency: dict) -> list[dict]:
     bucket_expected=latency["per_second_call_bands"]
     actual=[{"ge40":0,"ge50":0,"max_duration_ns":0}
             for _ in range(len(bucket_expected))]
+    # A slow event's attempt index must belong to its particular
+    # second's complete sequential call range, not just the full session.
+    prior_attempts=[]
+    cumulative=0
+    for window in bucket_expected:
+        prior_attempts.append(cumulative)
+        cumulative+=window["attempts"]
+    if cumulative!=latency["attempts"]:
+        raise CorrelationError("bad latency window attempt accounting")
     calls=[]
     last_attempt=0
     last_begin=0
@@ -82,6 +91,11 @@ def parse_slow(raw: bytes, origin: int, latency: dict) -> list[dict]:
             raise CorrelationError("slow call begins outside audout windows")
         if bucket_expected[second]["second"]!=second:
             raise CorrelationError("incorrect audout bucket numbering")
+        if not (prior_attempts[second] < attempt <=
+                prior_attempts[second]+bucket_expected[second]["attempts"]):
+            raise CorrelationError("slow-call attempt index outside timestamped second")
+        if not returned and latency["failed_attempts"]==0:
+            raise CorrelationError("reported failed slow call contradicts zero failures")
         group=actual[second]
         group["ge40"]+=1
         group["ge50"]+=duration>=50_000_000
