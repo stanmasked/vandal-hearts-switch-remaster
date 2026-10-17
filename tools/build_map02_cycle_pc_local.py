@@ -128,8 +128,11 @@ def main():
                                timeout=a.timeout,
                                report_dir=a.report_dir,
                                krom_source=a.krom_source)
-    except (OSError, ValueError) as exc:
+    except ValueError as exc:
         p.error(str(exc))
+    except OSError:
+        # Native file errors may embed owned executable, BIOS or SDK paths.
+        p.error("private full PC build filesystem verification failed")
     print(json.dumps(result, indent=2, sort_keys=True))
 
 
