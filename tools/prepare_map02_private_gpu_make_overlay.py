@@ -62,6 +62,22 @@ endif
 ifeq ($(filter build-map02-%,$(BUILD_DIR)),)
 $(error MAP02 private GPU requires isolated BUILD_DIR=build-map02-NAME)
 endif
+# Make's % wildcard also accepts "../", shell metacharacters and spaces.
+# Validate BUILD_DIR using GNU Make string functions BEFORE recipe expansion;
+# generated source paths and build targets must not escape the checkout.
+VH_MAP02_PRIVATE_BUILD_CHARS := a b c d e f g h i j k l m n o p q r s t u v w x y z A B C D E F G H I J K L M N O P Q R S T U V W X Y Z 0 1 2 3 4 5 6 7 8 9 - _
+define vh_map02_private_strip_chars
+$(if $(strip $(2)),$(call vh_map02_private_strip_chars,$(subst $(firstword $(2)),,$(1)),$(wordlist 2,$(words $(2)),$(2))),$(1))
+endef
+ifneq ($(words $(BUILD_DIR)),1)
+$(error MAP02 private GPU BUILD_DIR contains whitespace)
+endif
+ifneq ($(strip $(call vh_map02_private_strip_chars,$(BUILD_DIR),$(VH_MAP02_PRIVATE_BUILD_CHARS))),)
+$(error MAP02 private GPU BUILD_DIR has unsafe characters)
+endif
+ifeq ($(BUILD_DIR),build-map02-)
+$(error MAP02 private GPU BUILD_DIR requires a nonempty suffix)
+endif
 VH_MAP02_PRIVATE_GPU_SRC := {root}
 VH_MAP02_PRIVATE_GPU_DEFINES := {definitions}
 
