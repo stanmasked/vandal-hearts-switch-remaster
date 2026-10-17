@@ -81,8 +81,18 @@ map02-private-gpu-objects: $(BUILD_DIR)/libgpu.o $(BUILD_DIR)/pc_raster.o
 def prepare(upstream: Path, output: Path):
     upstream = Path(upstream).resolve(strict=True)
     output = Path(output).absolute()
-    if not upstream.is_dir() or output == upstream or upstream in output.parents:
+    # Resolve the *parent* too: a symlinked parent must not silently
+    # redirect the generated C and Make overlay into the source checkout.
+    try:
+        real_parent = output.parent.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise ValueError("private output parent directory unavailable") from exc
+    canonical_output = real_parent / output.name
+    if (not upstream.is_dir() or canonical_output == upstream
+            or upstream in canonical_output.parents):
         raise ValueError("private overlay must be outside upstream checkout")
+    if real_parent != output.parent:
+        raise ValueError("private output parent cannot be a symlink alias")
     if output.is_symlink() or output.exists():
         raise ValueError("private output directory already exists")
     # Avoid using an arbitrary value from Make or the shell as generated code.
