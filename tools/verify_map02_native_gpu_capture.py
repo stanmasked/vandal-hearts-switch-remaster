@@ -18,6 +18,8 @@ from tools.verify_map02_vram_timeline import VRAM_BYTES
 LOG = "gpu-native-events.jsonl"
 MAX_RECORDS = 64
 MAX_EVENT_BYTES = 128 * 1024
+# Exact pinned platform/pc/include/PsyQ/libgpu.h PC_GPU_PRIM_POLY_FT4.
+PRIM_POLY_FT4 = 2
 VRAM_WIDTH = 1024
 VRAM_HEIGHT = 512
 
@@ -147,6 +149,8 @@ def validate_meta(event, step, target_frame):
         raise ValueError("VRAM snapshot name/index does not match event")
     number(event["primitive_type"],"primitive type",0,255)
     number(event["semi"],"semi",0,1)
+    if op!="draw" and event["primitive_type"] != 0:
+        raise ValueError("native transfer cannot claim a DrawOTag primitive type")
     for name,length,lo,hi in (
         ("dest",2,-32768,32767), ("rgb",3,0,255),
         ("window",4,0,31), ("draw_mode",3,0,65535)):
@@ -160,6 +164,10 @@ def validate_meta(event, step, target_frame):
         if rect is not None or event["upload"]:
             raise ValueError("DrawOTag primitive may not contain a transfer RECT/upload")
         q=event["ft4"]
+        # VH_CaptureEvent receives a POLY_FT4 pointer iff the packet
+        # type equals the source-pinned PC_GPU_PRIM_POLY_FT4 constant.
+        if (q is None) == (event["primitive_type"] == PRIM_POLY_FT4):
+            raise ValueError("FT4 payload presence disagrees with native primitive type")
         if q is not None:
             fields(q,("tpage","clut","xy","uv"),"FT4 packet")
             number(q["tpage"],"tpage",0,65535)
