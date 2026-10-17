@@ -477,6 +477,17 @@ jobs:
           assert ordinal["HD_replacement_approved"] is False
           Path("proof/public/v108-vblank-store-summary.json").write_text(
               json.dumps(ordinal,sort_keys=True)+"\n")
+          gpu_classes=v109_classes(path.read_bytes())
+          assert gpu_classes["vblank_edges"]==4
+          assert sum(c["handlers"] for c in gpu_classes["class_totals"].values())==observed
+          for metric in ("native_store_attempts","same_value_native_stores",
+                         "changed_value_native_stores","changed_sample_points"):
+              assert sum(c[metric] for c in gpu_classes["class_totals"].values())==ordinal["totals"][metric]
+          assert gpu_classes["class_totals"]["gpu_state"]["native_store_attempts"]==0
+          assert gpu_classes["physical_ps1_raster_timing_verified"] is False
+          assert gpu_classes["HD_replacement_approved"] is False
+          Path("proof/public/v109-gp0-class-summary.json").write_text(
+              json.dumps(gpu_classes,sort_keys=True)+"\\n")
           assert evidence["vblank_edges"]==vblanks and evidence["gp1_mmio"]==gp1
           assert evidence["events"]==entries and evidence["bytes"]==size
           assert evidence["original_retail_MAP02_verified"] is False
