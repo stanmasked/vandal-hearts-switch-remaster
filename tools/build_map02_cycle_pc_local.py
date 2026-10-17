@@ -31,7 +31,12 @@ def build_full_pc(upstream, bundle, *, timeout=1200, make="make", report_dir=Non
     from tools.check_map02_private_pc_inputs import verify_private_pc_inputs
     original_inputs = verify_private_pc_inputs(upstream, krom_source=krom_source)
     pc = upstream / "platform/pc"
-    target = pc / BUILD / BINARY_NAME
+    build_dir = pc / BUILD
+    if (build_dir.is_symlink() or (build_dir.exists() and
+            (not build_dir.is_dir() or
+             build_dir.stat().st_uid != os.geteuid()))):
+        raise ValueError("private MAP02 build directory linked or not owner-controlled")
+    target = build_dir / BINARY_NAME
     # Fail BEFORE any compiler invocation if this is a prior binary, a
     # symlink or a wrong symlink target. Do not unlink somebody else's file.
     if target.exists() or target.is_symlink():
