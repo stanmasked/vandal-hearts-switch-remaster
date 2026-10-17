@@ -1,4 +1,4 @@
-"""Synthetic staged pair -> PutPixel promotion -> BlendG1 witness chain.
+"""Synthetic staged triple -> PutPixel -> BlendG1 -> direct VRAM edge witness chain.
 
 The original-PC VRAM/GTE verifier is mocked ONLY in this isolated fixture:
 passing this test does not authenticate real original gameplay.
@@ -13,6 +13,8 @@ from unittest.mock import patch
 from tools.promote_map02_putpixel_stage import promote_staged_putpixel
 from tools.publish_map02_blendg1_witness import publish_blendg1_witness
 from tools.verify_map02_blendg1_witness import verify_blendg1_witness
+from tools.publish_map02_vram_edges_witness import publish_vram_edges
+from tools.verify_map02_vram_edges_witness import verify_vram_edges
 
 
 def as_lines(rows):
@@ -49,6 +51,15 @@ class PairedPublishChainTests(unittest.TestCase):
             pixels_raw, blend_raw = as_lines([p0, p1]), as_lines([blend])
             (native / "putpixel-native-events.pending.jsonl").write_bytes(pixels_raw)
             (native / "blendg1-native-events.pending.jsonl").write_bytes(blend_raw)
+            edges = [
+                {"stage": "native_vram_edge", "frame": 17,
+                 "primitive_ordinal": i, "primitive_type": ptype,
+                 "x": 10, "y": 20, "before": 31,
+                 "after": 16 if i == 2 else 31}
+                for i, ptype in enumerate((1, 2, 4))
+            ]
+            edge_raw = as_lines(edges)
+            (native / "vram-edges-native-events.pending.jsonl").write_bytes(edge_raw)
             source_manifest = {
                 "schema": "vh.map02.native-putpixel-ot.v1",
                 "source_frame": 17, "gpu_draw_frame": 17,
@@ -71,10 +82,16 @@ class PairedPublishChainTests(unittest.TestCase):
                 pixel_report = promote_staged_putpixel(source, native)
                 blend_report = publish_blendg1_witness(source, native)
                 final_report = verify_blendg1_witness(source, native)
+                edge_publish = publish_vram_edges(source, native)
+                edge_final = verify_vram_edges(source, native)
             self.assertEqual(pixel_report["verified_native_putpixel_calls"], 2)
             self.assertEqual(blend_report["blendg1_events"], 1)
             self.assertEqual(final_report["observed_blendg1_putpixel_pairs"], 1)
             self.assertEqual(final_report["upstream_putpixel_calls"], 2)
+            self.assertEqual(edge_publish["independently_sampled_draw_edges"], 3)
+            self.assertEqual(edge_final["unchanged_draws_without_selected_pixel_writes"], 2)
+            self.assertEqual(edge_final["matched_native_putpixel_events"], 2)
+            self.assertFalse(edge_final["original_gameplay_authenticated"])
             self.assertFalse(final_report["ps1_hardware_equivalence_proven"])
             self.assertFalse(final_report["original_gameplay_authenticated"])
             manifest = json.loads(
@@ -89,6 +106,14 @@ class PairedPublishChainTests(unittest.TestCase):
                 hashlib.sha256(
                     (native / "blendg1-native-events.jsonl").read_bytes()
                 ).hexdigest())
+            edge_manifest = json.loads(
+                (source / "gpu-vram-edges-witness.json").read_bytes())
+            self.assertEqual(edge_manifest["vram_edges_sha256"],
+                             hashlib.sha256(edge_raw).hexdigest())
+            self.assertEqual(edge_manifest["blendg1_manifest_sha256"],
+                             hashlib.sha256(
+                                 (source / "gpu-blendg1-witness.json").read_bytes()
+                             ).hexdigest())
 
 
 if __name__ == "__main__":
