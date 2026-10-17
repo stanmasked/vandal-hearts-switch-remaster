@@ -7,7 +7,9 @@ import argparse
 import json
 from pathlib import Path
 
-KINDS={"vblank","gp1_mmio","gpu_dma2_start","gp0_unai_handled","unai_sample_delta","unai_store_count","unai_same_store_count"}
+KINDS={"vblank","gp1_mmio","gpu_dma2_start","gp0_unai_handled","unai_sample_delta","unai_store_count","unai_same_store_count",
+       "gpulib_a0_store_count","gpulib_a0_same_count",
+       "gpulib_copy_store_count","gpulib_copy_same_count"}
 FIELDS={"kind","seq","value","cycle","frame"}
 
 class Refused(ValueError):pass
@@ -50,6 +52,9 @@ def validate(content: bytes):
             if item["kind"]=="unai_same_store_count" and (prev_kind!="unai_store_count" or
                 item["value"]>prev_value or item["cycle"]!=0):
                 raise Refused("impossible same-value native pixel-store count")
+            if item["kind"].startswith("gpulib_") and (item["cycle"]!=0 or
+                item["value"]==0xffffffff):
+                raise Refused("invalid aggregate gpulib store event")
             if item["kind"]=="gp1_mmio":gp1+=1
             if item["kind"]=="unai_sample_delta":
                 if prev_kind!="gp0_unai_handled" or item["cycle"]!=0 or item["value"]>24:
@@ -79,6 +84,8 @@ def validate(content: bytes):
             "gp0_unai_handled":sum(e["kind"]=="gp0_unai_handled" for e in result),
             "unai_sample_delta":sum(e["kind"]=="unai_sample_delta" for e in result),
             "sampled_pixels_changed":sum(e["value"] for e in result if e["kind"]=="unai_sample_delta"),
+            "gpulib_a0_stores":sum(e["value"] for e in result if e["kind"]=="gpulib_a0_store_count"),
+            "gpulib_copy_stores":sum(e["value"] for e in result if e["kind"]=="gpulib_copy_store_count"),
             "unai_store_count_events":sum(e["kind"]=="unai_store_count" for e in result),
             "unai_same_store_count_events":sum(e["kind"]=="unai_same_store_count" for e in result),
             "bytes":len(content),"original_retail_MAP02_verified":False,
