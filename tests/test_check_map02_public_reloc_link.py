@@ -1,0 +1,87 @@
+"""Host-toolchain regressions for asset-free MAP02 native partial-ELF link.
+
+Source fixtures are tiny, independent synthetic C snippets. These tests do
+NOT link actual game resources or claim to run original MAP02.
+"""
+from pathlib import Path
+import subprocess
+import tempfile
+import unittest
+
+from tools.check_map02_public_reloc_link import (
+    REQUIRED_SYMBOLS, inspect_relocatable,
+)
+
+
+class PublicRelocatableELFTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="vh-map02-reloc-")
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+    def compile(self, data, name="fixture", *, shared=False):
+        src = self.root / (name + ".c")
+        obj = self.root / (name + (".so" if shared else ".o"))
+        src.write_text(data, encoding="utf-8")
+        cmd = ["cc", "-std=c99", "-fPIC", str(src)]
+        if shared:
+            cmd += ["-shared"]
+        else:
+            cmd += ["-c"]
+        subprocess.run(
+            [*cmd, "-o", str(obj)], check=True, capture_output=True,
+            text=True, timeout=30)
+        return obj
+
+    def all_exports(self):
+        return "\n".join(
+            f"void {name}(void) {{}}" for name in REQUIRED_SYMBOLS)
+
+    def test_real_ld_r_proves_all_expected_exports_but_not_full_elf(self):
+        names = list(REQUIRED_SYMBOLS)
+        left = self.compile(
+            "\n".join(f"void {name}(void) {{}}" for name in names[:5]),
+            "cdside")
+        right = self.compile(
+            "\n".join(f"void {name}(void) {{}}" for name in names[5:]),
+            "gpuside")
+        combined = self.root / "combined.o"
+        subprocess.run(["ld", "-r", "-o", str(combined), str(left),
+                        str(right)], check=True, capture_output=True,
+                       text=True, timeout=30)
+        report = inspect_relocatable(combined)
+        self.assertEqual(report["original_cd_gpu_and_vram_exports_verified"],
+                         len(REQUIRED_SYMBOLS))
+        self.assertTrue(
+            report["ordinary_game_or_private_asset_symbols_may_be_unresolved"])
+
+    def test_missing_cd_gpu_or_capture_export_rejected(self):
+        missing = REQUIRED_SYMBOLS[-1]
+        obj = self.compile(
+            "\n".join(f"void {name}(void) {{}}"
+                      for name in REQUIRED_SYMBOLS if name != missing))
+        with self.assertRaisesRegex(ValueError, "export absent"):
+            inspect_relocatable(obj)
+
+    def test_unresolved_capture_hook_rejected_even_if_other_exports_present(self):
+        obj = self.compile(
+            self.all_exports() +
+            "\nextern void vh_map02_unresolved_callback(void);\n"
+            "void call_unverified_probe(void) { vh_map02_unresolved_callback(); }")
+        with self.assertRaisesRegex(ValueError, "unresolved MAP02 observer"):
+            inspect_relocatable(obj)
+
+    def test_complete_shared_object_cannot_impersonate_relocatable_evidence(self):
+        obj = self.compile(self.all_exports(), shared=True)
+        with self.assertRaisesRegex(ValueError, "relocatable ELF"):
+            inspect_relocatable(obj)
+
+    def test_non_elf_rejected(self):
+        invalid = self.root / "not-an-ELF"
+        invalid.write_bytes(b"invalid-original-code")
+        with self.assertRaisesRegex(ValueError, "relocatable ELF"):
+            inspect_relocatable(invalid)
+
+
+if __name__ == "__main__":
+    unittest.main()
