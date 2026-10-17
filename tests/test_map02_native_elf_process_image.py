@@ -176,6 +176,35 @@ class NativeElfProcessImageTests(unittest.TestCase):
         self.assertFalse(joined["retail_map02_gameplay_authenticated"])
         self.assertFalse(joined["native_process_to_log_causality_authenticated"])
 
+    def test_same_bytes_inode_swap_after_nm_cannot_launch_uninspected_elf(self):
+        self.build_elf(NATIVE_EMITTER + PROBE_MARKERS)
+        from tools import run_map02_private_native_capture as launcher
+        original_inspector = launcher.inspect_binary
+        passed_fds = []
+
+        def swap_identical_inode_after_symbol_scan(path, **kwargs):
+            pinned_fd = kwargs["pinned_fd"]
+            passed_fds.append(pinned_fd)
+            original_inode = os.fstat(pinned_fd).st_ino
+            checked = original_inspector(path, **kwargs)
+            replacement = self.host.executable.with_name("same-bytes-elf-swap")
+            replacement.write_bytes(self.host.executable.read_bytes())
+            replacement.chmod(0o700)
+            os.replace(replacement, self.host.executable)
+            self.assertNotEqual(self.host.executable.stat().st_ino, original_inode)
+            return checked
+
+        with patch.object(launcher, "inspect_binary",
+                          side_effect=swap_identical_inode_after_symbol_scan):
+            with self.assertRaisesRegex(ValueError, "changed after inspection"):
+                self.run_capture(probes=True)
+        self.assertEqual(len(passed_fds), 1)
+        with self.assertRaises(OSError):
+            os.fstat(passed_fds[0])
+        self.assertFalse(self.host.preflight.exists())
+        self.assertFalse(self.host.receipt.exists())
+        self.assertEqual(list(self.host.native.iterdir()), [])
+
     def test_missing_probe_symbols_rejected_before_creating_receipts(self):
         self.build_elf()
         with self.assertRaisesRegex(ValueError, "probe evidence missing"):
