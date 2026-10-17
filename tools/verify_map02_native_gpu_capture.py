@@ -22,6 +22,31 @@ VRAM_WIDTH = 1024
 VRAM_HEIGHT = 512
 
 
+def validate_clear_vram(before, after, rect, rgb):
+    """Verify pinned pc_raster.c FillRectRaw native BGR555 overwrite.
+
+    ClearImage calls FillRectRaw, which packs 8-bit RGB with >>3 (no
+    bit15, dither, blending, mask test, or drawing-area clipping).
+    Fill only the intersection with the 1024x512 native VRAM.
+    """
+    rx, ry, width, height = rect
+    red, green, blue = rgb
+    packed = ((blue >> 3) << 10) | ((green >> 3) << 5) | (red >> 3)
+    pixel = packed.to_bytes(2, "little")
+    x0 = max(0, rx)
+    y0 = max(0, ry)
+    x1 = min(VRAM_WIDTH, rx + width)
+    y1 = min(VRAM_HEIGHT, ry + height)
+    expected = bytearray(before)
+    if x0 < x1 and y0 < y1:
+        row = pixel * (x1 - x0)
+        for y in range(y0, y1):
+            offset = (y * VRAM_WIDTH + x0) * 2
+            expected[offset:offset + len(row)] = row
+    if expected != after:
+        raise ValueError("ClearImage post-VRAM differs from source BGR555 raw fill")
+
+
 def validate_move_vram(before, after, rect, dest):
     """Replay original PC MoveImage's forward in-place 16-bit VRAM writes.
 
@@ -179,6 +204,7 @@ def verify_capture(directory: Path, *, target_frame: int):
     upload_hashes=[]
     load_pairs_without_payload=0
     move_pairs_with_verified_vram_effect=0
+    clear_pairs_with_verified_vram_effect=0
     entered_target_draw_frame=False
     for i in range(0,len(events),2):
         before,after=events[i:i+2]
@@ -234,7 +260,9 @@ def verify_capture(directory: Path, *, target_frame: int):
                 moves+=1
                 move_pairs_with_verified_vram_effect+=1
             elif kind=="clear":
+                validate_clear_vram(a,b,after["rect"],after["rgb"])
                 clears+=1
+                clear_pairs_with_verified_vram_effect+=1
     return {
         "native_gpu_events_sha256":sha(log_raw),
         "vram_snapshot_sha256_list_sha256":sha("".join(snapshot_hashes).encode("ascii")),
@@ -251,6 +279,7 @@ def verify_capture(directory: Path, *, target_frame: int):
         "move_image_pairs":moves,
         "move_pairs_with_verified_vram_effect":move_pairs_with_verified_vram_effect,
         "clear_image_pairs":clears,
+        "clear_pairs_with_verified_vram_effect":clear_pairs_with_verified_vram_effect,
         "changed_vram_words_across_event_pairs":assignments,
         "changed_native_draw_vram_words":draw_changed_words,
         "changed_transfer_vram_words":transfer_changed_words,
