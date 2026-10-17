@@ -210,6 +210,15 @@ def verify_multi_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
     if source_semi != sum(source_abr) or source_calls != (
             source_changed_calls + source_noops) or source_semi > semi_total:
         raise ValueError("two-word source FT4 sample accounting mismatch")
+    if not (
+            source_ft4_draws_with_both_words_writes_but_only_one_net_delta
+            <= source_ft4_draws_with_both_words_changed_by_putpixel
+            <= source_ft4_draws_with_both_words_observed
+            <= len(source_ordinals)):
+        raise ValueError("two-word FT4 PutPixel overlap accounting mismatch")
+    if source_ft4_draws_changing_both_words > (
+            source_ft4_draws_with_both_words_changed_by_putpixel):
+        raise ValueError("both-word VRAM changes lack observed PutPixel writes")
     return {
         "two_word_manifest_sha256": sha(manifest_raw),
         "native_gpu_event_log_sha256": sha(gpu_raw),
