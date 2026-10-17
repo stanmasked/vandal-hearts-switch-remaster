@@ -46,6 +46,8 @@ on:
       - 'tools/check_map02_cycle_elf.py'
       - 'tools/check_map02_cycle_make_plan.py'
       - 'tests/test_check_map02_cycle_make_plan.py'
+      - 'tools/build_map02_cycle_pc_local.py'
+      - 'tests/test_build_map02_cycle_pc_local.py'
       - 'tests/test_check_map02_cycle_elf.py'
       - 'tests/test_verify_map02_cycle_cd_gpu_join.py'
       - 'docs/MAP02_SINGLE_PROCESS_CYCLE_ORDER.md'
@@ -132,6 +134,8 @@ on:
       - 'tools/check_map02_cycle_elf.py'
       - 'tools/check_map02_cycle_make_plan.py'
       - 'tests/test_check_map02_cycle_make_plan.py'
+      - 'tools/build_map02_cycle_pc_local.py'
+      - 'tests/test_build_map02_cycle_pc_local.py'
       - 'tests/test_check_map02_cycle_elf.py'
       - 'tests/test_verify_map02_cycle_cd_gpu_join.py'
       - 'docs/MAP02_SINGLE_PROCESS_CYCLE_ORDER.md'
@@ -220,6 +224,7 @@ jobs:
             tests.test_prepare_map02_cycle_build \
             tests.test_check_map02_cycle_elf \
             tests.test_check_map02_cycle_make_plan \
+            tests.test_build_map02_cycle_pc_local \
             tests.test_verify_map02_original_cd_read \
             tests.test_map02_original_cd_stage \
             tests.test_publish_map02_cd_bound_witness
