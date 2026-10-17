@@ -29,6 +29,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_audout_repeatability.py' -v
       - name: Stage 271 audout second-window maxima negative controls
         run: python3 -m unittest discover -s tests -p 'test_analyze_nexium_audout_window_maxima.py' -v
+      - name: Audout per-call latency histogram provenance regressions
+        run: python3 -m unittest discover -s tests -p 'test_audit_nexium_audout_latency.py' -v
       - name: Native C stereo PCM ring regression
         run: |
           mkdir -p build
