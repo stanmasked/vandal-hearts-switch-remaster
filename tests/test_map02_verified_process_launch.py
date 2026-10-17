@@ -224,12 +224,44 @@ int main(int argc, char **argv) {
         # become a new same-process MAP02 cycle success.
         with patch(
                 "tools.check_map02_cycle_elf.audit_cycle_elf",
-                return_value={"required_symbols_present": 19}):
+                return_value={"required_symbols_present": 19}), patch(
+                "tools.map02_cycle_build_provenance.verify_build_receipt",
+                return_value={"source_pinned_full_elf_bytes_checked": True}):
             with self.assertRaisesRegex(ValueError, "exactly one receipt"):
                 launch_observed_pc(
                     self.handoff, self.native, self.scoped,
                     self.binary, self.owned, upstream=self.upstream,
-                    x=10, y=20, timeout=8, cycle_dir=cycle)
+                    x=10, y=20, timeout=8, cycle_dir=cycle,
+                    build_receipt_dir=self.handoff.parent / "private-build-receipt",
+                    build_bundle_dir=self.handoff.parent / "private-build-bundle")
+        self.assertFalse((self.handoff / RECEIPT).exists())
+
+    def test_cycle_requires_a_build_receipt_and_source_bundle_before_exec(self):
+        cycle = self.handoff.parent / "cycle-no-build"
+        cycle.mkdir(mode=0o700)
+        with patch("tools.check_map02_cycle_elf.audit_cycle_elf",
+                   return_value={"required_symbols_present": 19}):
+            with self.assertRaisesRegex(ValueError, "requires both private build"):
+                launch_observed_pc(
+                    self.handoff, self.native, self.scoped, self.binary,
+                    self.owned, upstream=self.upstream, x=10, y=20,
+                    timeout=8, cycle_dir=cycle)
+        self.assertFalse((self.handoff / RECEIPT).exists())
+
+    def test_cycle_refuses_wrong_build_provenance_before_exec(self):
+        cycle = self.handoff.parent / "cycle-tampered-build"
+        cycle.mkdir(mode=0o700)
+        with patch("tools.check_map02_cycle_elf.audit_cycle_elf",
+                   return_value={"required_symbols_present": 19}), patch(
+                "tools.map02_cycle_build_provenance.verify_build_receipt",
+                side_effect=ValueError("original MAP02 executable/source differs")):
+            with self.assertRaisesRegex(ValueError, "executable/source differs"):
+                launch_observed_pc(
+                    self.handoff, self.native, self.scoped, self.binary,
+                    self.owned, upstream=self.upstream, x=10, y=20,
+                    timeout=8, cycle_dir=cycle,
+                    build_receipt_dir=self.handoff.parent / "receipt",
+                    build_bundle_dir=self.handoff.parent / "bundle")
         self.assertFalse((self.handoff / RECEIPT).exists())
 
     def test_cycle_directory_reaches_real_child_and_nonce_is_checked(self):
@@ -249,27 +281,31 @@ int main(int argc, char **argv) {
         # synthetic child is not linked to the original gameplay loader.
         with patch(
                 "tools.check_map02_cycle_elf.audit_cycle_elf",
-                return_value={"required_symbols_present": 19}) as structural:
-            with patch(
-                    "tools.verify_map02_cycle_cd_gpu_join._cycle_receipt",
-                    return_value=(b"synthetic-only", "b" * 64)) as receipt:
-                with patch.dict(os.environ, {
-                        "VH_HD_PACK": "/untrusted/hd-backgrounds",
-                        "VH_HD_VIDEOS": "/untrusted/hd-video",
-                        "VH_HDPACK": "1",
-                        "VH_LANG": "test-language",
-                        "VH_LANGPACK": "/untrusted/localized",
-                        "VH_INTERNAL_SCALE": "4",
-                        "VH_ACCURATE": "0",
-                        "VH_RASTER_THREADS": "8",
-                        "VH_MAP02_PROBE_FRAME": "999",
-                }):
-                    with patch("tools.map02_verified_process_launch.subprocess.Popen",
-                               side_effect=observed_popen):
-                        result = launch_observed_pc(
-                            self.handoff, self.native, self.scoped,
-                            self.binary, self.owned, upstream=self.upstream,
-                            x=10, y=20, timeout=8, cycle_dir=cycle)
+                return_value={"required_symbols_present": 19}) as structural, patch(
+                "tools.map02_cycle_build_provenance.verify_build_receipt",
+                return_value={"source_pinned_full_elf_bytes_checked": True}) as build_verified, patch(
+                "tools.verify_map02_cycle_cd_gpu_join._cycle_receipt",
+                return_value=(b"synthetic-only", "b" * 64)) as receipt:
+            with patch.dict(os.environ, {
+                    "VH_HD_PACK": "/untrusted/hd-backgrounds",
+                    "VH_HD_VIDEOS": "/untrusted/hd-video",
+                    "VH_HDPACK": "1",
+                    "VH_LANG": "test-language",
+                    "VH_LANGPACK": "/untrusted/localized",
+                    "VH_INTERNAL_SCALE": "4",
+                    "VH_ACCURATE": "0",
+                    "VH_RASTER_THREADS": "8",
+                    "VH_MAP02_PROBE_FRAME": "999",
+            }):
+                with patch("tools.map02_verified_process_launch.subprocess.Popen",
+                           side_effect=observed_popen):
+                    result = launch_observed_pc(
+                        self.handoff, self.native, self.scoped,
+                        self.binary, self.owned, upstream=self.upstream,
+                        x=10, y=20, timeout=8, cycle_dir=cycle,
+                        build_receipt_dir=self.handoff.parent / "private-build-receipt",
+                        build_bundle_dir=self.handoff.parent / "private-build-bundle")
+        build_verified.assert_called_once()
         structural.assert_called_once_with(self.binary)
         self.assertEqual(len(environments), 1)
         child_env = environments[0]
@@ -291,15 +327,18 @@ int main(int argc, char **argv) {
         cycle.mkdir(mode=0o700)
         with patch(
                 "tools.check_map02_cycle_elf.audit_cycle_elf",
-                return_value={"required_symbols_present": 19}):
-            with patch(
-                    "tools.verify_map02_cycle_cd_gpu_join._cycle_receipt",
-                    return_value=(b"synthetic-only", "f" * 64)):
-                with self.assertRaisesRegex(ValueError, "cycle nonce differs"):
-                    launch_observed_pc(
-                        self.handoff, self.native, self.scoped,
-                        self.binary, self.owned, upstream=self.upstream,
-                        x=10, y=20, timeout=8, cycle_dir=cycle)
+                return_value={"required_symbols_present": 19}), patch(
+                "tools.map02_cycle_build_provenance.verify_build_receipt",
+                return_value={"source_pinned_full_elf_bytes_checked": True}), patch(
+                "tools.verify_map02_cycle_cd_gpu_join._cycle_receipt",
+                return_value=(b"synthetic-only", "f" * 64)):
+            with self.assertRaisesRegex(ValueError, "cycle nonce differs"):
+                launch_observed_pc(
+                    self.handoff, self.native, self.scoped,
+                    self.binary, self.owned, upstream=self.upstream,
+                    x=10, y=20, timeout=8, cycle_dir=cycle,
+                    build_receipt_dir=self.handoff.parent / "private-build-receipt",
+                    build_bundle_dir=self.handoff.parent / "private-build-bundle")
         self.assertFalse((self.handoff / RECEIPT).exists())
 
     def test_rejects_uninstrumented_child_before_cycle_mode_exec(self):
