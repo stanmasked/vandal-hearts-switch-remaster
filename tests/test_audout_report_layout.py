@@ -77,6 +77,10 @@ def main() -> None:
     assert "vh_audio_timing_fault_arm(&output.timing_injection)" in src
     assert "vh_audio_timing_fault_frequency(" in src
     assert "result=31;" in src
+    # The ZL label must agree with returned descriptors and rejected timing.
+    assert "vh_audio_output_verify_timing_injection(" in src
+    assert "timing_evidence || injection_evidence<0" in src
+    assert "result=32;" in src
     assert count_lines(footer) >= 3
     print("audout report four-screen structure PASS")
 
