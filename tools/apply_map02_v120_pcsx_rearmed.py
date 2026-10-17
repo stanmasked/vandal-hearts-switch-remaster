@@ -98,7 +98,7 @@ def apply(root: Path):
         'SysPrintf("VH78_VBLANK_VRAM_PASS vblanks=4 phases=4 samples=2380 '
         'gpu_fifo_reset_kept_state=1 gpu_full_reset_cleared_state=1\\n");'
     )
-    source=once(source,anchor,FIXTURE+anchor,
+    source=once(source,anchor,FIXTURE.lstrip("\n")+anchor,
                 "native GP0 return only after canonical journal AND original export status")
     frontend.write_text(source)
     return dict(proof,
