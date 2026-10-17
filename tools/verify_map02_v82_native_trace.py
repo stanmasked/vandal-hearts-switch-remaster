@@ -7,7 +7,7 @@ import argparse
 import json
 from pathlib import Path
 
-KINDS={"vblank","gp1_mmio","gpu_dma2_start"}
+KINDS={"vblank","gp1_mmio","gpu_dma2_start","gp0_unai_handled"}
 FIELDS={"kind","seq","value","cycle","frame"}
 
 class Refused(ValueError):pass
@@ -43,6 +43,10 @@ def validate(content: bytes):
         else:
             if item["frame"]!=0:raise Refused("GPU submission asserted frame identity")
             if item["kind"]=="gp1_mmio":gp1+=1
+            if item["kind"]=="gp0_unai_handled" and not (
+                (item["value"]>>24)==2 or 0x20 <= (item["value"]>>24) <= 0x7f
+                or 0xe1 <= (item["value"]>>24) <= 0xe6):
+                raise Refused("unrecognized renderer-handled opcode")
             if item["kind"]=="gpu_dma2_start" and item["value"]>0x1fffff:
                 raise Refused("DMA2 start outside PSX RAM")
         result.append(item)
@@ -53,6 +57,7 @@ def validate(content: bytes):
     return {"classification":"emulator_observed_synthetic_input_only",
             "events":len(result),"vblank_edges":len(edges),"gp1_mmio":gp1,
             "gpu_dma2_start":sum(e["kind"]=="gpu_dma2_start" for e in result),
+            "gp0_unai_handled":sum(e["kind"]=="gp0_unai_handled" for e in result),
             "bytes":len(content),"original_retail_MAP02_verified":False,
             "HD_replacement_approved":False}
 
