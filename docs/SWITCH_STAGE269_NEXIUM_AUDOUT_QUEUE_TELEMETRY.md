@@ -56,3 +56,14 @@ The receipt is generated even on an exporter-reported success, so missing origin
 Neither a positive guest `stat` nor matching SD bytes proves survival of power loss, audible output, or device starvation/underrun timing. The original Stage 268 optical/SD evidence is not modified.
 
 **Acceptance remains pending** until a *single workflow run of a single commit* passes NRO build, optical/SD scene consistency, guest export receipt, and the continuous queue audit.
+
+
+## Root cause confirmed from archived emulator evidence
+
+The later [NeXium run 39064308239](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39064308239) preserved both a complete Stage 268 ten-scene report (53 scene events, 61.018 seconds of host PCM) and an empty audout-CVS source inventory. In the **same archived artifact**, `integrated-nro-preflight.json` identifies the launched binary as the older build of commit `5a50433fb52d905cee074de052820895566143bf`, downloaded from workflow run `39052705390`, artifact `12108202456`. It is **not** the audout-instrumented NRO compiled by its own run at commit `3ee66d1808cf...`. Therefore the missing guest export receipt in this run is an **expected property of testing the old NRO**; it is not evidence that the new exporter failed or returned success.
+
+The specific cause was `.github/workflows/emulator-smoke.yml`: its build job created a current `runtime-smoke-nro` artifact, but the emulator job **ignored it** and downloaded a hard-coded older `vandal-hearts-tactical-with-native-music` artifact. Host tests and the build job passed while the runtime job was executing unrelated bits. The earlier discussion of possible guest export failure must be read as an unproven hypothesis, now superseded by this concrete CI provenance defect.
+
+The workflow now downloads **`runtime-smoke-nro` from the same workflow run** with no external `run-id`. Before emulation, `tools/verify_switch_runtime_nro.py` checks the download against a manifest generated from the active build-job environment: exact Git SHA, workflow run ID and attempt, NRO name/size/SHA-256, and NRO0 structure. It rejects symlinks, hardlinks and extra artifact members. These checks establish same-run artifact byte consistency **within GitHub Actions**, not external attestation of trustworthy hardware or runtime behavior.
+
+The independently preserved optical scene trace and old-binary PCM evidence remain historically valid **for the old NRO only**. The newer audout telemetry still requires a complete same-run NeXium capture and its separate SD CSV/receipt audit. No Stage 269 queue measurements are claimed from the old-binary runs.
