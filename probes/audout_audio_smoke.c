@@ -169,6 +169,7 @@ typedef struct {
     VhAudioSceneWaits scene_waits;
     VhAudioPageLease lease;
     VhAudioTransportTimingHealth transport_health;
+    VhAudioTimingFaultInjection timing_injection;
     int initialized;
     int started;
 } NativeOutput;
@@ -245,8 +246,10 @@ static int native_submit(void *opaque,const int16_t *pcm,size_t frames) {
      * attempt retains its lease until recovery confirms audoutStop. */
     if (accepted && vh_audio_page_lease_return(&dev->lease,returned))
         return -1;
+    const uint64_t diagnostic_frequency=vh_audio_timing_fault_frequency(
+        &dev->timing_injection,accepted,armGetSystemTickFreq());
     const int timing_result=vh_audio_output_record_submit_timing(
-            &dev->timing,elapsed,armGetSystemTickFreq(),frames,accepted);
+            &dev->timing,elapsed,diagnostic_frequency,frames,accepted);
     /* A valid returned descriptor is already consumed by the device.
      * Timing overflow/invalid clock must NOT force a second submission.
      * Mark telemetry invalid, then abort analysis on the producer thread
@@ -307,8 +310,10 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
                (unsigned long long)vh_audio_output_ticks_to_us(
                    r->output->timing.max_ticks,hz),
                (unsigned long long)r->output->timing.waits_longer_than_page);
-        printf("Restarts=%u recovered=%u\n",
-               r->recovery->restart_attempts,r->recovery->recoveries);
+        printf("Restarts=%u recovered=%u ZL=%s\n",
+               r->recovery->restart_attempts,r->recovery->recoveries,
+               r->output->timing_injection.injected ? "INJECTED" :
+               r->output->timing_injection.armed ? "ARMED" : "OFF");
         printf("X stop/start %u/%u  Y reopen %u/%u\n",
                r->manual->quick_ok,r->manual->quick_attempts,
                r->manual->reopen_ok,r->manual->reopen_attempts);
@@ -694,6 +699,17 @@ int main(int argc, char **argv) {
          * Never do device work from a controller/app hook callback. */
         const uint64_t pressed=padGetButtonsDown(&pad);
         const uint64_t held=padGetButtons(&pad);
+        /* ZL requests a synthetic timing-only failure on the NEXT
+         * exact returned descriptor, never inside a controller hook.
+         * A real audout error or wrong descriptor cannot consume it.
+         * This controlled fail-closed probe must be run SEPARATELY
+         * from X/Y pause/reopen and A/B listening annotations. */
+        if ((pressed&HidNpadButton_ZL) &&
+            !(held&(HidNpadButton_X|HidNpadButton_Y)) &&
+            vh_audio_timing_fault_arm(&output.timing_injection)) {
+            result=30;
+            break;
+        }
         const unsigned manual_pressed=
             (pressed&HidNpadButton_X ? VH_AUDIO_MANUAL_X : 0u) |
             (pressed&HidNpadButton_Y ? VH_AUDIO_MANUAL_Y : 0u);
