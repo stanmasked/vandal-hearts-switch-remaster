@@ -68,6 +68,75 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
         self.assertNotIn("31978",summary)
         self.assertNotIn("xy",summary)
 
+    def test_adjacent_draw_pairs_have_exact_vram_continuity(self):
+        # The first captured draw may start with changes from an
+        # unobserved preceding frame. Two draws within target DrawOTag
+        # cannot have an unrecorded intervening native VRAM write.
+        extra = [dict(self.events[2]), dict(self.events[3])]
+        for step, event in enumerate(extra, start=4):
+            event["step"] = step
+            event["snapshot"] = f"gpu-{step:04d}-vram.bin"
+        self.events.extend(extra)
+        self.save()
+        (self.root / "gpu-0004-vram.bin").write_bytes(self.post)
+        (self.root / "gpu-0005-vram.bin").write_bytes(self.post)
+        report = verify_capture(self.root, target_frame=12)
+        self.assertEqual(report["draw_otag_primitive_pairs"], 2)
+        self.assertEqual(report["draw_boundary_vram_checks"], 1)
+        self.assertEqual(report["draw_boundary_gpu_state_checks"], 1)
+        # Keep the local before/after pair coherent; only the boundary
+        # between successive recorded DrawOTag primitives is forged.
+        mutated = bytearray(self.post)
+        mutated[8:10] = b"\x77\x00"
+        (self.root / "gpu-0004-vram.bin").write_bytes(mutated)
+        (self.root / "gpu-0005-vram.bin").write_bytes(mutated)
+        with self.assertRaisesRegex(ValueError, "discontinuous VRAM"):
+            verify_capture(self.root, target_frame=12)
+
+    def test_preframe_transfer_boundary_is_not_claimed_continuous(self):
+        # A whole *unrecorded* preceding DrawOTag may occur after the
+        # capture's last preframe transfer, before the target frame.
+        (self.root / "gpu-0002-vram.bin").write_bytes(self.post)
+        (self.root / "gpu-0003-vram.bin").write_bytes(self.post)
+        report = verify_capture(self.root, target_frame=12)
+        self.assertEqual(report["draw_boundary_vram_checks"], 0)
+
+    def test_non_dr_mode_draw_must_preserve_gpu_state(self):
+        self.events[3]["draw_mode"] = [9, 0, 0]
+        self.save()
+        with self.assertRaisesRegex(ValueError, "non-DR_MODE"):
+            verify_capture(self.root, target_frame=12)
+        self.events[3]["draw_mode"] = [5, 0, 0]
+        self.events[3]["window"] = [1, 0, 0, 0]
+        self.save()
+        with self.assertRaisesRegex(ValueError, "non-DR_MODE"):
+            verify_capture(self.root, target_frame=12)
+
+    def test_dr_mode_state_transition_to_following_ft4(self):
+        self.events = [
+            self.make(0, "before", "draw", ""),
+            self.make(1, "after", "draw", ""),
+            self.make(2, "before", "draw", "", ft4=dict(self.events[2]["ft4"])),
+            self.make(3, "after", "draw", "", ft4=dict(self.events[3]["ft4"])),
+        ]
+        for event in self.events[:2]:
+            event["primitive_type"] = 5  # PC_GPU_PRIM_DR_MODE
+        self.events[1]["draw_mode"] = [11, 1, 1]
+        self.events[1]["window"] = [2, 3, 4, 5]
+        for event in self.events[2:]:
+            event["draw_mode"] = [11, 1, 1]
+            event["window"] = [2, 3, 4, 5]
+        self.save()
+        for step in range(4):
+            (self.root / f"gpu-{step:04d}-vram.bin").write_bytes(self.pre)
+        result = verify_capture(self.root, target_frame=12)
+        self.assertEqual(result["draw_boundary_vram_checks"], 1)
+        self.assertEqual(result["draw_boundary_gpu_state_checks"], 1)
+        self.events[2]["window"] = [3, 3, 4, 5]
+        self.save()
+        with self.assertRaisesRegex(ValueError, "discontinuous GPU state"):
+            verify_capture(self.root, target_frame=12)
+
     def test_pinned_ft4_type_requires_real_packet_metadata(self):
         # Source C supplies an FT4 pointer iff the DrawOTag type is 2.
         self.events[2]["ft4"] = None
