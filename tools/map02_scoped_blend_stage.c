@@ -16,6 +16,13 @@
 #include "map02_capture_session.h"
 #define VH_SCOPED_SESSION "gpu-scoped-session.json"
 #endif
+#ifdef VH_MAP02_CD_READ_PROBE
+#ifndef VH_MAP02_CAPTURE_SESSION
+#error "MAP02 original CD witness requires shared process token"
+#endif
+#include "map02_cd_read_probe.h"
+#define VH_CD_READ_PENDING "map02-original-cd-read.pending.jsonl"
+#endif
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -132,17 +139,17 @@ static int create_checked_temp(int dirfd, VHStageFile *file, unsigned slot) {
 }
 
 static int stage(const char *private_directory, int paired) {
-    VHStageFile files[4];
+    VHStageFile files[5];
     struct stat directory_stat;
     int dirfd = -1, ok = 0;
     unsigned i, active = paired ? 2u : 1u;
 
     memset(files, 0, sizeof files);
-    files[0].fd = files[1].fd = files[2].fd = files[3].fd = -1;
+    files[0].fd = files[1].fd = files[2].fd = files[3].fd = files[4].fd = -1;
     files[0].final_name = VH_BLEND_PENDING;
     files[1].final_name = VH_PIXEL_PENDING;
     files[2].final_name = VH_EDGE_PENDING;
-    for (i = 0; i < 4u; ++i) files[i].capacity = VH_STAGE_LIMIT;
+    for (i = 0; i < 5u; ++i) files[i].capacity = VH_STAGE_LIMIT;
     if (!private_directory || !*private_directory ||
         !collect(&files[1], &files[0], paired)) return 0;
 #ifdef VH_MAP02_VRAM_EDGE_PROBE
@@ -179,6 +186,17 @@ static int stage(const char *private_directory, int paired) {
             first.frame, token);
         if (!append_line(&files[3], line, n)) goto done;
         active = 4u;
+    }
+#endif
+
+#ifdef VH_MAP02_CD_READ_PROBE
+    if (paired) {
+        char line[512];
+        int n = vh_map02_cd_probe_format_jsonl(line, sizeof line);
+        if (vh_map02_cd_probe_failed() || n <= 0) goto done;
+        files[4].final_name = VH_CD_READ_PENDING;
+        if (!append_line(&files[4], line, n)) goto done;
+        active = 5u;
     }
 #endif
 
