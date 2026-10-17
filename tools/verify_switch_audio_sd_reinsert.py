@@ -19,7 +19,7 @@ from datetime import datetime
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 
 import analyze_switch_audio_log as audio
@@ -115,7 +115,14 @@ def baseline_schema(record: object) -> dict:
                 "manifest_sha256", "transfer_plan_sha256"):
         require(isinstance(record[key], str) and SHA256.fullmatch(record[key]) is not None,
                 f"invalid baseline {key}")
-    require(record["sd_destination_relative"] == sd_transfer.DEFAULT_DESTINATION,
+    relative = record["sd_destination_relative"]
+    require(isinstance(relative, str) and relative and
+            "\\" not in relative and
+            all(part not in ("", ".", "..") for part in relative.split("/")),
+            "invalid SD NRO destination in baseline")
+    parsed = PurePosixPath(relative)
+    require(not parsed.is_absolute() and parsed.as_posix() == relative and
+            parsed.name == sd_transfer.NRO_FILENAME,
             "invalid SD NRO destination in baseline")
     value = record["checked_at_utc"]
     require(isinstance(value, str) and len(value) <= 40,
