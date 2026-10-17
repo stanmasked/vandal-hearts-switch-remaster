@@ -1961,3 +1961,28 @@ native audio NRO build. The reference is independent at the
 ADPCM *decode* stage, not a complete independently implemented
 SEQ/SPU/ADSR/resampler PS1 emulator, and the synthetic fixture
 does not prove original soundtrack matching.
+
+
+### Algorithmically independent Python wet-tail check at VH/VB scene boundaries
+
+The standalone Python STUDIO_C reference is now also driven by
+**independently decoded ADPCM PCM16** from the two exact synthetic
+VH/VB scene-switch banks. Four 3072-frame scenes alternate their
+decoded samples without resetting the wet-tail history on either
+the independent Python STUDIO_C model or the C implementation.
+Every stereo reverb output sample is compared exactly, and at
+each boundary the reference checks the prior scene's stored
+buffer, delay cursor and FIR phase against the native module.
+Nonzero accumulated history is required, ruling out trivial
+all-zero-state equivalence.
+
+Unlike the earlier C two-player PCM differential replay, the
+Python ADPCM and reverb algorithms do not call the native C
+codec/reverb routines to compute their expected outputs. These
+separate verifications still do NOT constitute an independent
+end-to-end implementation of SEQ scheduling, pitch, ADSR,
+voice mixing or 48-kHz resampling and do not certify original
+PlayStation hardware audio parity. No game assets or user music
+are accessed. The affected Python test files are now explicitly
+listed in PCM, native-audio and audout-NRO workflow path
+filters, so subsequent reference changes invoke CI.

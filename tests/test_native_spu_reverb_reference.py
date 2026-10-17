@@ -12,12 +12,18 @@ import ctypes
 import math
 import random
 import re
+import struct
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from tools.decode_spu_adpcm import decode_spu_blocks
+from test_native_vab_python_reference import make_scene_switch_bank
+
 WORK = 0x37F0
 TAPS = 39
 
@@ -222,6 +228,68 @@ class NativeStudioCReferenceTests(unittest.TestCase):
         self.assertTrue(heard_tail)
         self.assertEqual(ref.cursor, 48000//2 % WORK)
         self.assertEqual(native.cursor, ref.cursor)
+
+
+    def test_decoded_scene_bank_changes_keep_python_studio_c_wet_history(self):
+        """An algorithmically independent Python ADPCM decoder feeds an
+        independently implemented Python STUDIO_C reference. The C
+        reverberator receives precisely the same generated samples.
+
+        Scene changes intentionally do NOT reset either reverberator.
+        This covers the same two VH/VB fixture banks used by the C
+        audout integration, without invoking its SEQ engine or audout
+        callback, and compares every stereo wet PCM sample.
+        """
+        bank_pcm = []
+        for bank_index in (0, 1):
+            _, vb = make_scene_switch_bank(bank_index)
+            decoded = decode_spu_blocks(vb[16:48])
+            self.assertEqual(decoded.frames, 56)
+            self.assertEqual(decoded.loop_start_frame, 0)
+            self.assertEqual(decoded.loop_end_frame, 56)
+            bank_pcm.append(struct.unpack("<56h", decoded.pcm))
+        self.assertNotEqual(bank_pcm[0], bank_pcm[1])
+
+        reference = StudioC()
+        native = NativeReverb()
+        self.reset(ctypes.byref(native))
+        out_l, out_r = ctypes.c_int(), ctypes.c_int()
+        frames_per_scene = 3072
+        observed_nonzero_input = 0
+        for scene in range(4):
+            selected = bank_pcm[scene % 2]
+            if scene:
+                # Prove the previous scene's wet state is retained, not
+                # independently reset at the bank transition.
+                self.assertEqual(native.cursor, reference.cursor)
+                self.assertEqual(native.phase, reference.phase)
+                self.assertEqual(list(native.work), reference.work)
+                self.assertTrue(any(reference.work))
+            for frame in range(frames_per_scene):
+                left = selected[(frame * 7 + scene * 3) % 56]
+                right = -selected[(frame * 5 + scene * 11) % 56]
+                if left or right:
+                    observed_nonzero_input += 1
+                expected = reference.step(left, right, 0.5)
+                self.step_native(
+                    ctypes.byref(native), left, right, 0.5,
+                    ctypes.byref(out_l), ctypes.byref(out_r),
+                )
+                self.assertEqual(
+                    (out_l.value, out_r.value), expected,
+                    f"scene={scene}, frame={frame}",
+                )
+            self.assertEqual(native.cursor, reference.cursor)
+            self.assertEqual(native.phase, reference.phase)
+            self.assertEqual(native.in_cursor, reference.icur)
+            self.assertEqual(native.out_cursor, reference.ocur)
+            self.assertEqual(list(native.work), reference.work)
+            self.assertEqual(
+                reference.cursor,
+                ((scene + 1) * frames_per_scene // 2) % WORK,
+            )
+        self.assertGreater(observed_nonzero_input, 0)
+        self.assertTrue(any(reference.work))
 
 
 if __name__ == "__main__":
