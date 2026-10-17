@@ -1,4 +1,5 @@
 """A truly spawned *synthetic* process exercises private MAP02 launcher."""
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -199,6 +200,12 @@ class PrivateNativeLauncherTests(unittest.TestCase):
         self.assertTrue(report["raw_evidence_matches_original_receipt"])
         self.assertEqual(report["dda_observation_mode"], "entered_only")
         self.assertEqual(report["native_gpu_pairs_verified"], 1)
+        self.assertEqual(
+            report["native_gpu_event_log_sha256"],
+            hashlib.sha256(
+                (self.capture_dir / "gpu-native-events.jsonl").read_bytes()
+            ).hexdigest(),
+        )
         self.assertFalse(report["original_game_assets_authenticated"])
         self.assertFalse(report["hd_replacement_authorized"])
         self.assertNotIn(str(self.capture_dir), json.dumps(report))
