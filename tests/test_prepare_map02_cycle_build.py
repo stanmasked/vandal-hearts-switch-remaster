@@ -129,7 +129,7 @@ class SingleElfBuildOverlayTests(unittest.TestCase):
         self.assertIn("$(BUILD_DIR)/pc_raster.o:", text)
         self.assertIn("$(BUILD_DIR)/map02_scoped_blend_stage.o:", text)
         self.assertIn("$(BUILD_DIR)/map02_vram_edges.o:", text)
-        self.assertIn("-DVH_MAP02_STAGE_DEFS", text.replace("$(VH_MAP02_STAGE_DEFS)", "-DVH_MAP02_STAGE_DEFS"))
+        self.assertIn("$(VH_MAP02_STAGE_DEFS)", text)
 
 
 if __name__ == "__main__":
