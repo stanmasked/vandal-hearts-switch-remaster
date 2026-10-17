@@ -4,6 +4,7 @@ Does not run the game, create any capture files, or authenticate a binary.
 Reports only non-sensitive readiness fields; never echoes paths or sample X/Y.
 """
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -27,7 +28,39 @@ def _decimal(environ, key, upper):
     return number
 
 
-def preflight(environ):
+def _executable_fingerprint(path):
+    """Fingerprint a readable regular executable; do not infer its build origin."""
+    path = Path(path)
+    if path.is_symlink():
+        raise ValueError("executable cannot be a symlink")
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(path, flags)
+        with os.fdopen(fd, "rb") as handle:
+            before = os.fstat(handle.fileno())
+            if (not stat.S_ISREG(before.st_mode) or before.st_size <= 0
+                    or before.st_size > 1024 * 1024 * 1024
+                    or not before.st_mode & 0o111):
+                raise ValueError("executable must be a nonempty regular executable under 1 GiB")
+            digest = hashlib.sha256()
+            size = 0
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                size += len(chunk)
+                digest.update(chunk)
+            after = os.fstat(handle.fileno())
+            keys = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+            if (size != before.st_size
+                    or any(getattr(before, key) != getattr(after, key) for key in keys)):
+                raise ValueError("executable changed during SHA-256 calculation")
+            current = os.stat(path)
+            if any(getattr(before, key) != getattr(current, key) for key in keys):
+                raise ValueError("executable was replaced during SHA-256 calculation")
+        return {"executable_sha256": digest.hexdigest(), "executable_bytes": size}
+    except OSError as exc:
+        raise ValueError("cannot securely read the local executable") from exc
+
+
+def preflight(environ, *, executable=None):
     """Require synchronized native capture selectors and fresh private output."""
     if not hasattr(os, "getuid"):
         raise ValueError("private POSIX capture permissions cannot be checked")
@@ -66,8 +99,13 @@ def preflight(environ):
         raise ValueError("GPU and PutPixel target DrawOTag frames must match and be positive")
     _decimal(environ, X_KEY, 1023)
     _decimal(environ, Y_KEY, 511)
+    fingerprint = (_executable_fingerprint(executable)
+                   if executable is not None else
+                   {"executable_sha256": None, "executable_bytes": None})
     return {
         "schema": "map02_private_native_dda_preflight_v1",
+        "executable_fingerprinted": executable is not None,
+        **fingerprint,
         "capture_frame": gpu_frame,
         "private_empty_directory": True,
         "gpu_and_dda_directory_match": True,
@@ -81,8 +119,11 @@ def preflight(environ):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--executable", type=Path,
+                        help="Optionally record SHA-256 and size of the local instrumented binary")
+    args = parser.parse_args()
     try:
-        result = preflight(os.environ)
+        result = preflight(os.environ, executable=args.executable)
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
     print(json.dumps(result, sort_keys=True, indent=2))
