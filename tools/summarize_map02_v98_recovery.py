@@ -14,15 +14,20 @@ def summarize(raw:bytes):
     prior=summarize_v97(raw)
     report=validate(raw)
     events=[json.loads(l) for l in raw.decode("ascii").splitlines()]
-    final=events[-3:]
+    starts=[i for i,e in enumerate(events) if e["kind"]==KINDS[0]]
+    if len(starts)!=1:
+        raise Refused("missing/duplicate original private-recovery observation")
+    start=starts[0]
+    final=events[start:start+3]
     if len(final)!=3 or tuple(e["kind"] for e in final)!=KINDS:
-        raise Refused("missing/misordered native unique-private-recovery suffix")
-    if any(e["kind"] in KINDS for e in events[:-3]):
+        raise Refused("missing/misordered native unique-private-recovery checkpoint")
+    if any(e["kind"] in KINDS for i,e in enumerate(events)
+           if not start<=i<start+3):
         raise Refused("duplicate private-recovery evidence")
     if tuple(e["value"] for e in final)!=VALUES:
         raise Refused("old, fresh or duplicate-recovery publisher check failed")
     if final[0]["seq"]!=prior["final_private_journal_events"]+1 or \
-       len(events)!=prior["final_private_journal_events"]+3:
+       start+3!=prior["final_private_journal_events"]+3:
         raise Refused("v98 must follow v97 intact without resetting its four-VBlank oracle")
     if any(e["frame"] or e["cycle"] for e in final):
         raise Refused("host-only private publication fabricated emulator clock")
@@ -37,7 +42,7 @@ def summarize(raw:bytes):
         "private_recovery_marker_files_removed_in_host_smoke":True,
         "four_original_emulator_vblank_edges":4,
         "previous_checkpoint_events":prior["final_private_journal_events"],
-        "final_private_journal_events":len(events),
+        "final_private_journal_events":start+3,
         "retail_MAP02_verified":False,
         "physical_PS1_verified":False,
         "HD_replacement_approved":False,
