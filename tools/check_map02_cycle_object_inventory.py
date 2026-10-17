@@ -2,7 +2,7 @@
 """Audit the object files from an asset-free full original PC code compile.
 
 This intentionally verifies `make default`, NOT `make link`: the former
-compiles all original public game and PC-backend source but does not invoke
+compiles all asset-free public game and PC-backend source but does not invoke
 retail-data-segment generation. No original retail EXE, game BIN, compiled
 game executable or rendered MAP02 scene is needed or certified.
 """
@@ -17,6 +17,9 @@ from tools.check_map02_cycle_make_plan import BUILD, preflight
 from tools.prepare_map02_cycle_build import SUPPORT_FILES
 
 MIN_GAME = 80
+# Exact original text.c contains an extracted font table absent from public source.
+RETAIL_FONT_OBJECT = "src/core/text.o"
+RETAIL_FONT_INCLUDE = '#include "assets/801012e4.inc"'
 MIN_BACKEND = 30
 REQUIRED = {
     "src/core/cd.o", "libcd.o", "libgpu.o", "pc_raster.o",
@@ -84,8 +87,16 @@ def audit_objects(upstream, bundle, *, make="make"):
         for pattern in ("*.c", "*/*.c")
         for source in (upstream / "src").glob(pattern)
     }
-    if set(names[:len(game)]) != expected_source_objects:
-        raise ValueError("original public game C sources were not all compiled")
+    text_source = upstream / "src/core/text.c"
+    if (text_source.is_symlink() or not text_source.is_file() or
+            RETAIL_FONT_INCLUDE not in text_source.read_text(encoding="utf-8")):
+        raise ValueError("original retail font dependency changed")
+    if RETAIL_FONT_OBJECT not in expected_source_objects:
+        raise ValueError("original retail-font-blocked text.c unexpectedly absent")
+    if set(names[:len(game)]) != expected_source_objects - {RETAIL_FONT_OBJECT}:
+        raise ValueError("public original asset-free game sources were not all compiled")
+    if RETAIL_FONT_OBJECT in names or (obj_root / RETAIL_FONT_OBJECT).exists():
+        raise ValueError("retail-font-dependent original text.c must remain uncompiled")
     if not REQUIRED.issubset(names) or not SUPPORT_OBJS.issubset(names):
         raise ValueError("original CD/GPU/VRAM capture objects missing from full compile")
     actual = {
@@ -103,7 +114,8 @@ def audit_objects(upstream, bundle, *, make="make"):
     # all compiled objects, not only before GNU Make's inventory expansion.
     preflight(upstream, bundle)
     return {
-        "schema": "vh.map02.public-pc-all-original-code-objects.v1",
+        "schema": "vh.map02.public-pc-asset-free-code-objects.v1",
+        "original_asset_bound_translation_units_excluded": [RETAIL_FONT_OBJECT],
         "original_game_translation_units_compiled": len(game),
         "native_backend_and_observer_objects_compiled": len(backend),
         "source_pinned_build_inputs_rechecked": True,
