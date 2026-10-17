@@ -8,6 +8,7 @@ import unittest
 from tools.audit_map02_independent_dda_journals import (
     audit, SPAN_FILE, CANDIDATE_FILE,
 )
+from tools.verify_map02_vram_timeline import VRAM_BYTES
 
 SPAN = {
     "stage": "native_dda_span", "step": 0, "frame": 3,
@@ -88,6 +89,73 @@ class IndependentJournalAuditTests(unittest.TestCase):
                   *(dict(CANDIDATE, step=i) for i in range(64)))
             with self.assertRaises(ValueError):
                 audit(root)
+
+    def write_native_gpu(self, root, *, frame=3, primitive_type=2):
+        def event(index, phase):
+            return {
+                "stage": "native_vram", "step": index, "frame": frame,
+                "phase": phase, "operation": "draw",
+                "snapshot": f"gpu-{index:04d}-vram.bin",
+                "rect": None, "dest": [0, 0], "rgb": [0, 0, 0],
+                "primitive_type": primitive_type, "semi": 0,
+                "window": [0, 0, 0, 0], "draw_mode": [0, 0, 0],
+                "upload": "", "ft4": None,
+            }
+        (root / "gpu-native-events.jsonl").write_bytes(
+            b"".join((json.dumps(event(i, phase)) + "\n").encode()
+                     for i, phase in enumerate(("before", "after"))))
+        empty_vram = bytes(VRAM_BYTES)
+        (root / "gpu-0000-vram.bin").write_bytes(empty_vram)
+        (root / "gpu-0001-vram.bin").write_bytes(empty_vram)
+
+    def test_verified_gpu_frame_and_primitive_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write(root, SPAN_FILE, dict(SPAN, primitive_ordinal=0))
+            write(root, CANDIDATE_FILE, dict(CANDIDATE, primitive_ordinal=0))
+            self.write_native_gpu(root)
+            report = audit(root, native_frame=3)
+            binding = report["native_gpu_binding"]
+            self.assertTrue(binding["verified"])
+            self.assertEqual(binding["frame"], 3)
+            self.assertEqual(binding["draw_primitives_in_bounded_capture"], 1)
+            self.assertEqual(binding["observed_dda_primitive_keys"], 1)
+            self.assertFalse(report["journal_origin_authenticated"])
+            self.assertFalse(report["retail_map02_frame_verified"])
+            self.assertFalse(report["hd_replacement_authorized"])
+
+    def test_wrong_ordinal_type_and_frame_fail_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.write_native_gpu(root)
+            write(root, SPAN_FILE, SPAN)
+            write(root, CANDIDATE_FILE, CANDIDATE)
+            with self.assertRaisesRegex(ValueError, "ordinal"):
+                audit(root, native_frame=3)
+            write(root, SPAN_FILE, dict(SPAN, primitive_ordinal=0,
+                                        primitive_type=3))
+            write(root, CANDIDATE_FILE, dict(CANDIDATE, primitive_ordinal=0))
+            with self.assertRaisesRegex(ValueError, "type"):
+                audit(root, native_frame=3)
+            write(root, SPAN_FILE, dict(SPAN, primitive_ordinal=0, frame=4))
+            with self.assertRaisesRegex(ValueError, "frame"):
+                audit(root, native_frame=3)
+            with self.assertRaisesRegex(ValueError, "frame"):
+                audit(root, native_frame=2)
+
+    def test_missing_and_truncated_gpu_evidence_fail_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write(root, SPAN_FILE, dict(SPAN, primitive_ordinal=0))
+            with self.assertRaisesRegex(ValueError, "gpu-native-events"):
+                audit(root, native_frame=3)
+            self.write_native_gpu(root)
+            (root / "gpu-0001-vram.bin").write_bytes(b"\x00\x00")
+            with self.assertRaisesRegex(ValueError, "wrong file size"):
+                audit(root, native_frame=3)
+            self.write_native_gpu(root)
+            with self.assertRaises(ValueError):
+                audit(root, native_frame=True)
 
     def test_missing_and_symlinked_inputs_fail_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
