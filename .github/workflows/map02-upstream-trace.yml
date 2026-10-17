@@ -111,6 +111,7 @@ on:
       - 'tools/verify_map02_raster_skips.py'
       - 'tools/verify_map02_putpixel_scope.py'
       - 'tools/verify_map02_putpixel_multi_scope.py'
+      - 'tools/publish_map02_multi_capture_manifest.py'
       - 'tools/instrument_map02_multi_putpixel_scope.py'
       - 'tools/audit_map02_putpixel_samples.py'
       - 'tools/verify_map02_camera_capture.py'
@@ -134,6 +135,7 @@ on:
       - 'tests/test_verify_map02_raster_skips.py'
       - 'tests/test_verify_map02_putpixel_scope.py'
       - 'tests/test_verify_map02_putpixel_multi_scope.py'
+      - 'tests/test_publish_map02_multi_capture_manifest.py'
       - 'tests/test_instrument_map02_multi_putpixel_scope.py'
       - 'tests/test_instrument_map02_multi_putpixel_c11.py'
       - 'tests/test_audit_map02_putpixel_samples.py'
@@ -450,6 +452,7 @@ jobs:
             python3 -m unittest discover -s tests -p 'test_verify_map02_putpixel_scope.py' -v
             python3 -m unittest discover -s tests -p 'test_audit_map02_putpixel_samples.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_putpixel_multi_scope.py' -v
+            python3 -m unittest discover -s tests -p 'test_publish_map02_multi_capture_manifest.py' -v
             python3 -m unittest discover -s tests -p 'test_instrument_map02_multi_putpixel_scope.py' -v
             python3 -m unittest discover -s tests -p 'test_instrument_map02_multi_putpixel_c11.py' -v
           )
