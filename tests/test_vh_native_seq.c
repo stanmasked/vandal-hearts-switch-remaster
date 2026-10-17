@@ -447,6 +447,59 @@ static void test_immediate_same_note_retrigger_during_release(void) {
     assert(log_state.calls==2);
 }
 
+
+static void test_full_spu_retrigger_and_stale_note_off(void) {
+    /* All 20 voices are occupied. A released slot is still active,
+     * so new notes must steal slots and invalidate old note mappings. */
+    static const uint8_t song[] = {
+        HEADER,
+        0,0x90,40,100,
+        0,41,100,0,42,100,0,43,100,0,44,100,
+        0,45,100,0,46,100,0,47,100,0,48,100,0,49,100,
+        0,50,100,0,51,100,0,52,100,0,53,100,0,54,100,
+        0,55,100,0,56,100,0,57,100,0,58,100,0,59,100,
+        0,0x80,40,0,   /* slot 0 enters Release, but is still occupied */
+        0,0x90,60,110, /* full: steal slot 0 */
+        0,0x80,40,0,   /* stale Note Off must not stop note 60 */
+        0,0x90,61,100, /* full: steal slot 1 (formerly note 41) */
+        0,0x80,41,0,   /* stale Note Off must not stop note 61 */
+        0,0x90,60,105, /* retrigger 60: Release slot 0; steal slot 2 */
+        0,0x80,41,0,   /* stale Note Off must not stop note 60 */
+        0x81,0x70,0x90,62,100, /* after Release: reclaim slot 0 */
+        0x81,0x70,0xff,0x2f
+    };
+    setup();
+    assert(vh_native_seq_init(&seq,song,sizeof song,
+                              &spu,resolve,&log_state,1)==0);
+    assert(vh_native_seq_advance_block(&seq)>0);
+    assert(seq.note_ons==23 && seq.note_offs==2);
+    assert(seq.note_slot[0][40]==-1 && seq.note_slot[0][41]==-1);
+    assert(seq.note_slot[0][42]==-1);
+    assert(seq.note_slot[0][60]==2 && seq.note_slot[0][61]==1);
+    assert(seq.owner_ch[0]==-1 && seq.owner_note[0]==-1);
+    assert(seq.owner_ch[1]==0 && seq.owner_note[1]==61);
+    assert(seq.owner_ch[2]==0 && seq.owner_note[2]==60);
+    assert(spu.voice[0].adsr.phase==VH_ADSR_RELEASE);
+    for(unsigned slot=0;slot<VH_NATIVE_MUSIC_VOICES;slot++)
+        assert(vh_native_spu_voice_active(&spu,slot));
+
+    vh_native_spu_render(&spu,pcm,512u);
+    assert(!vh_native_spu_voice_active(&spu,0u));
+    for(unsigned slot=1;slot<VH_NATIVE_MUSIC_VOICES;slot++)
+        assert(vh_native_spu_voice_active(&spu,slot));
+    for(unsigned block=1u;block<22u;block++) {
+        assert(vh_native_seq_advance_block(&seq)>=0);
+        if(block<21u) vh_native_spu_render(&spu,pcm,512u);
+    }
+    assert(seq.note_ons==24 && seq.note_offs==2);
+    assert(seq.note_slot[0][62]==0);
+    assert(seq.owner_ch[0]==0 && seq.owner_note[0]==62);
+    assert(seq.note_slot[0][60]==2 && seq.note_slot[0][61]==1);
+    assert(spu.voice[0].adsr.phase==VH_ADSR_ATTACK);
+    assert(spu.voice[0].adsr.level==0);
+    assert(vh_native_spu_voice_active(&spu,0u));
+}
+
 int main(void) {
     test_validation_and_source_immutability();
     test_512_block_controls_and_ring_pressure();
@@ -461,6 +514,7 @@ int main(void) {
     test_repeated_adsr_release_and_slot_reuse();
     test_same_note_retrigger_after_release_reuses_slot();
     test_immediate_same_note_retrigger_during_release();
+    test_full_spu_retrigger_and_stale_note_off();
     puts("native pQES SEQ -> 20-voice SPU -> PCM ring: PASS");
     return 0;
 }
