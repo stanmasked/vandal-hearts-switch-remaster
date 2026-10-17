@@ -15,6 +15,13 @@ test -n "$icd"
 export VK_ICD_FILENAMES="$icd"
 pactl info >/dev/null
 pactl set-default-sink vh_nexium_capture
+# An isolated, runner-local emulated SD root is authoritative for this
+# session. It cannot pick up traces from previous CI runs or user data.
+# NeXium resolves guest sdmc:/ under NEXIUM_DATA_ROOT/sdmc.
+export NEXIUM_DATA_ROOT="${RUNNER_TEMP}/vh-nexium-stage266-${GITHUB_RUN_ID:-local}"
+export SCENE_SD_DIR="$NEXIUM_DATA_ROOT/sdmc/switch/vandal-hearts-remake"
+mkdir -p "$SCENE_SD_DIR"
+printf '%s\n' "$NEXIUM_DATA_ROOT" > "$output/guest-sd-root.txt"
 export SCENE_PCM="$output/nexium-scenes-s16le-48k.pcm"
 export SCENE_EVENTS="$output/scene-events.csv"
 export SCENE_LOG="$output/nexium-scenes-run.log"
@@ -84,3 +91,8 @@ trap - EXIT
 python3 tools/analyze_nexium_scene_audio.py "$SCENE_PCM" "$SCENE_EVENTS" \
   --output "$output/scene-audio-report.json"
 python3 -m json.tool "$output/scene-audio-report.json" > /dev/null
+# Keep the original guest-exported CSV in the isolated filesystem until
+# the workflow inspects it. Copy a single unmodified file into evidence;
+# zero/multiple matches must not silently become a passing guest trace.
+find "$SCENE_SD_DIR" -maxdepth 1 -type f -name 'audio-scene-trace-*.csv' \
+  -print | sort > "$output/guest-sd-csv-locations.txt"
