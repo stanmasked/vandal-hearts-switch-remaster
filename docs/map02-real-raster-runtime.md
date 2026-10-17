@@ -61,9 +61,12 @@ made the observed additive blend measurable. The
 [corrected ABR=1 runtime run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38986538352)
 completed successfully.
 
-The subsequent expanded fixture covers all four ABR modes. Until
-the CI log for its commit independently confirms success, do not
-describe that expanded check as passed.
+The [four-ABR runtime run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38986618911)
+at commit `99253bbf` **completed successfully**. In addition to the
+ordinary native raster pass, the scoped mode requires at least one
+observed original BlendG1 call for each ABR mode 0, 1, 2 and 3, and
+checks native VRAM before/after continuity, argument bit 15 and the
+source primitive ordinal for those synthetic draws.
 
 **Limits:** these runtime tests establish a meaningful native raster
 execution proof, not a playable port, authenticated MAP02 footage,
