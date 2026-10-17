@@ -143,6 +143,8 @@ def replay_receipt(directory, *, receipt_file, preflight_report, executable):
             current["vram_snapshot_sha256_list_sha256"],
         "dda_observation_mode": current["dda_observation_mode"],
         "raw_evidence_matches_original_receipt": True,
+        "native_elf_process_image_observed":
+            schema == "map02_private_native_process_receipt_v2",
         "original_game_assets_authenticated": False,
         "ps1_or_switch_rendering_verified": False,
         "hd_replacement_authorized": False,
