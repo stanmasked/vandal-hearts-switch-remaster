@@ -31,6 +31,9 @@ class SingleElfBuildOverlayTests(unittest.TestCase):
         source = self.upstream / "src/core/cd.c"
         source.write_text("void original(void) {}\n")
         self.source = source
+        self.font_generator = self.upstream / mod.FONT_GENERATOR
+        self.font_generator.parent.mkdir(parents=True, exist_ok=True)
+        self.font_generator.write_text("# synthetic pinned original font script\\n")
         self.output = self.root / "build-overlay"
         source_bytes = source.read_bytes()
         self.source_map = {
@@ -42,6 +45,8 @@ class SingleElfBuildOverlayTests(unittest.TestCase):
             patch.object(mod, "SOURCE_MAP", self.source_map),
             patch.object(mod, "MAKEFILE_SHA", git_blob_sha1(self.make.read_bytes())),
             patch.object(mod, "MAKE_ANCHORS", ("link: $(DATA_OBJS)",)),
+            patch.object(mod, "FONT_GENERATOR_BLOB_SHA1",
+                         git_blob_sha1(self.font_generator.read_bytes())),
         ]
         for p in self.patches:
             p.start()
@@ -82,6 +87,11 @@ class SingleElfBuildOverlayTests(unittest.TestCase):
             "map02_cycle_order.o",
             "map02_cd_read_probe.o",
             "map02_capture_session.o",
+            "map02_pinned_gen_kanji_font.py",
+            "VH_GENERATED_OUT=$@ python3",
+            "$(BUILD_DIR)/map02_pinned_kanji_font.c:",
+            "$(BUILD_DIR)/pc_kanji_font.o: $(BUILD_DIR)/map02_pinned_kanji_font.c",
+            "src/pc_kanji_font.c: $(VH_MAP02_CYCLE_ROOT)/",
         ):
             self.assertIn(symbol, overlay)
         self.assertFalse((self.upstream / "platform/pc/map02_cycle.mk").exists())
@@ -90,6 +100,10 @@ class SingleElfBuildOverlayTests(unittest.TestCase):
             (self.output / "map02_cycle_build_inputs.json").read_text())
         self.assertFalse(report["retail_gameplay_executed"])
         self.assertFalse(report["original_map02_rendering_proven"])
+        self.assertIn(mod.FONT_GENERATOR, report["original_source_sha256"])
+        self.assertEqual(
+            (self.output / mod.FONT_GENERATOR_SNAPSHOT).read_bytes(),
+            self.font_generator.read_bytes())
         for name, digest in report["generated_files_sha256"].items():
             file = self.output / name
             self.assertEqual(file.stat().st_mode & 0o777, 0o600)
@@ -106,6 +120,22 @@ class SingleElfBuildOverlayTests(unittest.TestCase):
         self.source.write_text("void original(void) {}\n")
         self.make.write_text("link: rogue\n")
         with self.assertRaisesRegex(ValueError, "Makefile differs"):
+            mod.prepare(self.upstream, self.output)
+        self.assertFalse(self.output.exists())
+
+    def test_original_font_script_drift_fails_before_private_bundle_exists(self):
+        self.font_generator.write_text("# changed original font generator\\n")
+        with self.assertRaisesRegex(ValueError, "font generator source drift"):
+            mod.prepare(self.upstream, self.output)
+        self.assertFalse(self.output.exists())
+
+    def test_original_font_script_symlink_never_copied(self):
+        data = self.font_generator.read_bytes()
+        saved = self.font_generator.with_name("source-script.py")
+        saved.write_bytes(data)
+        self.font_generator.unlink()
+        self.font_generator.symlink_to(saved)
+        with self.assertRaisesRegex(ValueError, "font generator missing or linked"):
             mod.prepare(self.upstream, self.output)
         self.assertFalse(self.output.exists())
 
@@ -136,6 +166,8 @@ class SingleElfBuildOverlayTests(unittest.TestCase):
         self.assertIn("$(BUILD_DIR)/map02_scoped_blend_stage.o:", text)
         self.assertIn("$(BUILD_DIR)/map02_vram_edges.o:", text)
         self.assertIn("$(VH_MAP02_STAGE_DEFS)", text)
+        self.assertNotIn("python3 tools/gen_kanji_font.py", text)
+        self.assertIn("VH_REGION=us VH_GENERATED_OUT=$@ python3", text)
 
 
 if __name__ == "__main__":
