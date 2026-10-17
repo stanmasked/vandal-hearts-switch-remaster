@@ -94,6 +94,8 @@ def verify_session(directory, *, native_frame, preflight_report, executable):
             checked["native_gpu_binding"]["load_pairs_without_payload"],
         "native_gpu_pairs_verified":
             checked["native_gpu_binding"]["native_gpu_pairs_verified"],
+        "move_pairs_with_verified_vram_effect":
+            checked["native_gpu_binding"]["move_pairs_with_verified_vram_effect"],
         "single_sample_envelope_consistent": checked["single_sample_envelope_consistent"],
         "executable_bytes_match_preflight": True,
         "executable_actually_launched_verified": False,
