@@ -1,0 +1,31 @@
+name: MAP02 v120 actual pinned Unai host-GP0 sampled VRAM return
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v120-host-gp0-return.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v120_pcsx_rearmed.py'
+      - 'tools/summarize_map02_v120_real_gp0_return.py'
+      - 'tests/test_map02_v120_real_gp0_return.py'
+      - 'tools/map02_v115_sample_identity.*'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  strict-real-gp0-return-fixture:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Regress native sampled GPU return evidence and privacy
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          for pattern in test_map02_v83_unai_dispatch.py test_map02_v84_unai_samples.py test_map02_v85_native_stores.py test_map02_v115_sample_value_identity.py test_map02_v115_identity_runtime.py test_map02_v116_sample_gap_identity.py test_map02_v116_gap_runtime.py test_map02_v117_aba_native.py test_map02_v117_triplet_runtime.py test_map02_v118_four_native.py test_map02_v118_quadruplet_runtime.py test_map02_v119_five_native.py test_map02_v119_quintuplet_runtime.py test_map02_v120_real_gp0_return.py; do
+            python3 -m unittest discover -s tests -p "$pattern" -v
+          done
