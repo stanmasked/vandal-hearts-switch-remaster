@@ -8,8 +8,11 @@ This checks selected original sections, not a complete matching decomp
 or the generated assets/*.inc text format. No private bytes are logged.
 """
 import argparse
+from contextlib import contextmanager
 import json
+import os
 from pathlib import Path
+import stat
 import struct
 
 LOAD_VRAM = 0x80010000
@@ -23,58 +26,93 @@ ANCHORS = (
 )
 
 
+def _identity(info):
+    return (info.st_dev, info.st_ino, info.st_uid, info.st_mode,
+            info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+@contextmanager
+def _stable_source(path, category):
+    """Keep one descriptor throughout each anchor comparison and audit its path."""
+    path = Path(path)
+    if path.is_symlink():
+        raise ValueError("linked original extraction input rejected: " + category)
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except OSError:
+        # Do not disclose caller-owned filesystem paths in audit errors.
+        raise ValueError("original extraction input unavailable: " + category) from None
+    with os.fdopen(fd, "rb") as stream:
+        info = os.fstat(stream.fileno())
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
+                or info.st_nlink != 1 or info.st_size <= 0):
+            raise ValueError("original extraction input metadata invalid: " + category)
+        identity = _identity(info)
+        yield stream, info.st_size
+        try:
+            after = os.stat(path, follow_symlinks=False)
+        except OSError:
+            raise ValueError("original extraction input changed: " + category) from None
+        if (_identity(after) != identity
+                or _identity(os.fstat(stream.fileno())) != identity
+                or not stat.S_ISREG(after.st_mode)):
+            raise ValueError("original extraction input changed: " + category)
+
+
+def _read_at(stream, length, offset):
+    # pread retains the descriptor and avoids path reopens or seek races.
+    return os.pread(stream.fileno(), length, offset)
+
+
 def compare_data_ranges(exe_path, elf_path):
-    """Return evidence metadata only. Refuse missing/misplaced ELF bytes."""
-    exe_path, elf_path = Path(exe_path), Path(elf_path)
-    with exe_path.open("rb") as stream:
-        header = stream.read(PSX_HEADER)
-    if len(header) != PSX_HEADER or header[:8] != b"PS-X EXE":
-        raise ValueError("original US EXE does not have a full PS-X header")
-    exe_load = int.from_bytes(header[0x18:0x1c], "little")
-    if exe_load != LOAD_VRAM:
-        raise ValueError("pinned US PS-X EXE has unexpected load VRAM")
-    with elf_path.open("rb") as stream:
-        elf_header = stream.read(52)
-    if (len(elf_header) < 52 or elf_header[:4] != b"\x7fELF"
-            or elf_header[4] != 1 or elf_header[5] != 1):
-        raise ValueError("extracted original MIPS ELF is not ELF32 little-endian")
-    if struct.unpack_from("<H", elf_header, 18)[0] != 8:
-        raise ValueError("extracted ELF machine is not original PS1 MIPS")
-    shoff = struct.unpack_from("<I", elf_header, 32)[0]
-    entsize, count = struct.unpack_from("<HH", elf_header, 46)
-    if shoff < 52 or entsize < 40 or not (1 <= count <= 512):
-        raise ValueError("original ELF has invalid section header table")
-    limit = elf_path.stat().st_size
-    if shoff + entsize * count > limit:
-        raise ValueError("original ELF section headers are truncated")
-    sections = []
-    with elf_path.open("rb") as stream:
-        stream.seek(shoff)
-        for _ in range(count):
-            info = stream.read(entsize)
-            if len(info) != entsize:
-                raise ValueError("original ELF section headers are incomplete")
-            _, typ, _, address, offset, size = struct.unpack_from(
-                "<IIIIII", info)
-            if typ == 1 and size > 0:
-                if offset + size > limit:
-                    raise ValueError("original ELF PROGBITS outside file")
-                sections.append((address, address + size, offset))
-    evidence = []
-    with exe_path.open("rb") as exe, elf_path.open("rb") as elf:
-        for key, address, length in ANCHORS:
-            matched = [(first, offset) for first, end, offset in sections
-                       if first <= address and address + length <= end]
-            if len(matched) != 1:
-                raise ValueError("original MIPS ELF missing unique data section: " + key)
-            first, offset = matched[0]
-            exe.seek(PSX_HEADER + address - LOAD_VRAM)
-            elf.seek(offset + address - first)
-            from_exe, from_elf = exe.read(length), elf.read(length)
-            if (len(from_exe) != length or len(from_elf) != length
-                    or from_exe != from_elf):
-                raise ValueError("extracted MIPS ELF differs from original PS-X data: " + key)
-            evidence.append(key)
+    """Check source-pinned anchor bytes through stable file descriptors only."""
+    with _stable_source(exe_path, "US PS-X EXE") as (exe, exe_size):
+        with _stable_source(elf_path, "MIPS ELF") as (elf, elf_size):
+            header = _read_at(exe, PSX_HEADER, 0)
+            if len(header) != PSX_HEADER or header[:8] != b"PS-X EXE":
+                raise ValueError("original US EXE does not have a full PS-X header")
+            exe_load = int.from_bytes(header[0x18:0x1c], "little")
+            if exe_load != LOAD_VRAM:
+                raise ValueError("pinned US PS-X EXE has unexpected load VRAM")
+            elf_header = _read_at(elf, 52, 0)
+            if (len(elf_header) < 52 or elf_header[:4] != b"\\x7fELF"
+                    or elf_header[4] != 1 or elf_header[5] != 1):
+                raise ValueError("extracted original MIPS ELF is not ELF32 little-endian")
+            if struct.unpack_from("<H", elf_header, 18)[0] != 8:
+                raise ValueError("extracted ELF machine is not original PS1 MIPS")
+            shoff = struct.unpack_from("<I", elf_header, 32)[0]
+            entsize, count = struct.unpack_from("<HH", elf_header, 46)
+            if shoff < 52 or entsize < 40 or not (1 <= count <= 512):
+                raise ValueError("original ELF has invalid section header table")
+            if shoff + entsize * count > elf_size:
+                raise ValueError("original ELF section headers are truncated")
+            sections = []
+            for i in range(count):
+                info = _read_at(elf, entsize, shoff + i * entsize)
+                if len(info) != entsize:
+                    raise ValueError("original ELF section headers are incomplete")
+                _, typ, _, address, offset, size = struct.unpack_from(
+                    "<IIIIII", info)
+                if typ == 1 and size > 0:
+                    if offset + size > elf_size:
+                        raise ValueError("original ELF PROGBITS outside file")
+                    sections.append((address, address + size, offset))
+            evidence = []
+            for key, address, length in ANCHORS:
+                matched = [(first, offset) for first, end, offset in sections
+                           if first <= address and address + length <= end]
+                if len(matched) != 1:
+                    raise ValueError("original MIPS ELF missing unique data section: " + key)
+                first, offset = matched[0]
+                source_offset = PSX_HEADER + address - LOAD_VRAM
+                if source_offset < PSX_HEADER or source_offset + length > exe_size:
+                    raise ValueError("original US PS-X data extends past executable")
+                from_exe = _read_at(exe, length, source_offset)
+                from_elf = _read_at(elf, length, offset + address - first)
+                if (len(from_exe) != length or len(from_elf) != length
+                        or from_exe != from_elf):
+                    raise ValueError("extracted MIPS ELF differs from original PS-X data: " + key)
+                evidence.append(key)
     return {
         "original_exe_and_mips_elf_data_anchors_match": True,
         "original_private_data_anchors_checked": evidence,
