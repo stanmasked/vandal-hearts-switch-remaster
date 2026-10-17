@@ -90,6 +90,19 @@ int main(void) {
     AddPrim(&ot[0], &first);
     AddPrim(&ot[0], &mode1);
     DrawOTag(ot);
+#ifdef VH_MAP02_VRAM_EDGE_PROBE
+    verify_edges_against_putpixel();
+    assert(vh_map02_edges_count() == 5);
+    {
+        VHMap02VramEdge clear_pixel;
+        /* Zero texel touches no native PutPixel: direct VRAM still unchanged. */
+        assert(vh_map02_edges_copy(3, &clear_pixel));
+        assert(clear_pixel.ordinal == 3);
+        assert(clear_pixel.before == clear_pixel.after);
+        assert(vh_map02_edges_copy(4, &clear_pixel));
+        assert(clear_pixel.after == 0x0010);
+    }
+#endif
     after = vram[10][10];
     assert(after == 0x0010); /* last STP=0 textured write is opaque */
 #ifdef VH_MAP02_SCOPED_BLEND_PROBE
