@@ -106,6 +106,7 @@ def verify_capture(directory: Path, *, target_frame: int):
     pairs=0;draws=loads=moves=clears=0
     assignments=0;draw_changed_words=transfer_changed_words=0
     snapshot_hashes=[]
+    entered_target_draw_frame=False
     for i in range(0,len(events),2):
         before,after=events[i:i+2]
         validate_meta(before,i,target_frame)
@@ -121,6 +122,14 @@ def verify_capture(directory: Path, *, target_frame: int):
         assignments+=changed
         pairs+=1
         kind=before["operation"]
+        # The actual C capture predicate records GPU transfers only while
+        # s_drawFrame + 1 == target_frame, and primitives only once
+        # s_drawFrame == target_frame. A transfer after a captured DrawOTag
+        # primitive would reverse those mutually exclusive frame phases.
+        if kind=="draw":
+            entered_target_draw_frame=True
+        elif entered_target_draw_frame:
+            raise ValueError("native GPU transfer appears after target DrawOTag began")
         if kind=="draw":
             draws+=1
             draw_changed_words+=changed
