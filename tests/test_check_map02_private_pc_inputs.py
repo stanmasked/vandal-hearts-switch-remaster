@@ -11,6 +11,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import tools.check_map02_private_pc_inputs as private_inputs
+
 from tools.check_map02_private_pc_inputs import (
     ASSETS, BIOS_SIZE, EXE, FONT_BIOS_OFFSET, FONT_LENGTH,
     verify_private_pc_inputs,
@@ -282,6 +284,66 @@ for name, offset, size in [
                    side_effect=replace_generator):
             with self.assertRaisesRegex(ValueError, "generator changed"):
                 check_original_includes(self.root)
+
+    def test_extracted_elf_changed_after_anchor_pass_is_rejected(self):
+        original_font = private_inputs._krom_font
+
+        def mutate_elf_during_font(path):
+            data = bytearray(self.elf.read_bytes())
+            # A padding byte outside all 1216 anchored bytes: the three
+            # anchor comparisons still pass but this ELF is NOT the one
+            # whose original SHA-256 was placed in the token set.
+            data[56] ^= 1
+            self.elf.write_bytes(data)
+            return original_font(path)
+
+        with patch.object(private_inputs, "_krom_font",
+                          side_effect=mutate_elf_during_font):
+            with self.assertRaisesRegex(ValueError, "private original input changed"):
+                verify_private_pc_inputs(self.root)
+
+    def test_identical_elf_inode_swap_after_anchor_pass_is_rejected(self):
+        original_font = private_inputs._krom_font
+
+        def swap_elf_during_font(path):
+            data = self.elf.read_bytes()
+            self.elf.unlink()
+            self.elf.write_bytes(data)
+            return original_font(path)
+
+        with patch.object(private_inputs, "_krom_font",
+                          side_effect=swap_elf_during_font):
+            with self.assertRaisesRegex(ValueError, "private original input changed"):
+                verify_private_pc_inputs(self.root)
+
+    def test_identical_include_inode_swap_after_regeneration_is_rejected(self):
+        original_font = private_inputs._krom_font
+        asset = self.root / "assets" / ASSETS[0]
+
+        def swap_include_during_font(path):
+            data = asset.read_bytes()
+            asset.unlink()
+            asset.write_bytes(data)
+            return original_font(path)
+
+        with patch.object(private_inputs, "_krom_font",
+                          side_effect=swap_include_during_font):
+            with self.assertRaisesRegex(ValueError, "private original input changed"):
+                verify_private_pc_inputs(self.root)
+
+    def test_identical_retail_exe_swap_after_regeneration_is_rejected(self):
+        original_font = private_inputs._krom_font
+
+        def swap_owned_exe_during_font(path):
+            data = self.exe.read_bytes()
+            self.exe.unlink()
+            self.exe.write_bytes(data)
+            return original_font(path)
+
+        with patch.object(private_inputs, "_krom_font",
+                          side_effect=swap_owned_exe_during_font):
+            with self.assertRaisesRegex(ValueError, "private original input changed"):
+                verify_private_pc_inputs(self.root)
 
     def test_generator_timeout_never_leaks_private_arguments(self):
         secret_path = str(self.exe)
