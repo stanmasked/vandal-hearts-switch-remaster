@@ -56,3 +56,42 @@ fail:
     if(owned) unlink(tmp);
     return ok;
 }
+
+/* A failed/restarted observation may only publish to a fresh pathname.
+ * Prior export must exist as a sole-owned 0600 regular file, and must
+ * retain its original identity and metadata across this function. This
+ * is NOT an atomic guard against arbitrary concurrent external writers.
+ * The v82 publisher still enforces O_EXCL temp and no-clobber hard link.
+ */
+int vh98_publish_recovery(const char *previous_path,const char *next_path,
+                          const char *bytes,size_t size) {
+    struct stat before, after, named;
+    int prev=-1, status=-1;
+    if(!previous_path || !next_path || !bytes || !size ||
+       previous_path[0]!='/' || next_path[0]!='/' ||
+       strcmp(previous_path,next_path)==0 ||
+       strstr(previous_path,"/../") || strstr(next_path,"/../") ||
+       strstr(previous_path,"/./") || strstr(next_path,"/./"))
+        return -1;
+    if(strnlen(previous_path,VH82_MAX_PATH)>=VH82_MAX_PATH ||
+       strnlen(next_path,VH82_MAX_PATH)>=VH82_MAX_PATH)
+        return -1;
+    prev=open(previous_path,O_RDONLY|O_NOFOLLOW);
+    if(prev<0)return -1;
+    if(fstat(prev,&before)<0 || !S_ISREG(before.st_mode) ||
+       (before.st_mode&0777)!=0600 || before.st_nlink!=1)
+        goto done;
+    /* Recovered target is never allowed to replace the previous file. */
+    if(vh82_publish_private(next_path,bytes,size)!=0)goto done;
+    if(fstat(prev,&after)<0 || lstat(previous_path,&named)<0 ||
+       before.st_dev!=after.st_dev || before.st_ino!=after.st_ino ||
+       before.st_size!=after.st_size ||
+       before.st_dev!=named.st_dev || before.st_ino!=named.st_ino ||
+       before.st_size!=named.st_size ||
+       (named.st_mode&0777)!=0600 || !S_ISREG(named.st_mode))
+        goto done;
+    status=0;
+done:
+    close(prev);
+    return status;
+}
