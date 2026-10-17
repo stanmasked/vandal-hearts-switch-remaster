@@ -37,8 +37,13 @@ def build_full_pc(upstream, bundle, *, timeout=1200, make="make", report_dir=Non
     if target.exists() or target.is_symlink():
         raise ValueError("private cycle executable already exists; no replacement allowed")
     font_output = pc / BUILD / "map02_pinned_kanji_font.c"
+    font_object = pc / BUILD / "pc_kanji_font.o"
     if font_output.exists() or font_output.is_symlink():
         raise ValueError("private generated KROM source already exists; no replacement allowed")
+    # An object with a future timestamp could otherwise bypass compilation
+    # of the new pinned font C even though its source file is freshly built.
+    if font_object.exists() or font_object.is_symlink():
+        raise ValueError("private KROM object already exists; no reuse allowed")
     command = [
         make, "-j1", "-f", "Makefile", "-f", str(bundle / "map02_cycle.mk"),
         "link", "BUILD_DIR=" + BUILD, "REGION=us",
