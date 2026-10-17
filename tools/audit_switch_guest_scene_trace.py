@@ -10,6 +10,7 @@ import argparse
 import csv
 import io
 import json
+import hashlib
 from pathlib import Path
 
 KINDS = ("INPUT", "POST", "ACCEPT", "SUBMIT_CALL",
@@ -125,13 +126,67 @@ def analyze(log: str) -> dict:
     })
     return result
 
+SD_HEADER = "index,event,serial,scene,monotonic_ns,dropped_total"
+
+def analyze_sd_csv(content: str) -> dict:
+    """Verify the EXACT bounded CSV emitted by the post-join guest exporter.
+
+    dropped_total is repeated on every data row so that partial captures
+    cannot be mistaken for complete input-to-audio timelines.
+    """
+    if len(content.encode("utf-8")) > 16384 or not content.isascii():
+        raise TraceError("SD scene CSV is not bounded ASCII")
+    lines = content.splitlines(keepends=True)
+    if len(lines) < 2 or len(lines) > 65 or lines[0] != SD_HEADER+"\\n":
+        raise TraceError("invalid SD scene CSV header or row count")
+    canonical = [HEADER]
+    dropped = None
+    for i, line in enumerate(lines[1:]):
+        if not line.endswith("\\n") or "\\r" in line:
+            raise TraceError("noncanonical SD scene CSV newline")
+        fields = line[:-1].split(",")
+        if len(fields) != 6 or fields[1] not in KINDS:
+            raise TraceError("invalid SD scene CSV row")
+        for field in (fields[0],fields[2],fields[3],fields[4],fields[5]):
+            if not field.isdecimal() or (len(field)>1 and field[0]=="0"):
+                raise TraceError("invalid or noncanonical SD scene integer")
+        index, serial, scene, timestamp, count = (
+            int(fields[j]) for j in (0,2,3,4,5))
+        if index != i or serial>0xffffffff or scene>2 or timestamp>0xffffffffffffffff:
+            raise TraceError("out of range SD scene event")
+        if dropped is None:
+            dropped = count
+        elif dropped != count:
+            raise TraceError("inconsistent dropped count across scene rows")
+        canonical.append(",".join(fields[:5]))
+    if dropped is None or dropped > 0xffffffff:
+        raise TraceError("invalid dropped counter")
+    envelope = ("\\n".join([BEGIN]+canonical+[f"{END}rows={len(lines)-1},dropped={dropped}"])+"\\n")
+    result = analyze(envelope)
+    result["source"] = "readback-verified guest SD CSV, after audio-worker join"
+    result["source_csv_sha256"] = hashlib.sha256(content.encode("ascii")).hexdigest()
+    result["sd_csv_rows"] = len(lines)-1
+    result["sd_csv_dropped_total"] = dropped
+    result["guest_stderr_required"] = False
+    result["power_loss_durability_proven"] = False
+    return result
+
 def main() -> int:
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("guest_log",type=Path)
+    parser.add_argument("guest_log",type=Path,nargs="?")
+    parser.add_argument("--sd-csv",type=Path,
+                        help="read actual guest SD CSV instead of host stderr")
     parser.add_argument("--output",type=Path)
     args=parser.parse_args()
     try:
-        report=analyze(args.guest_log.read_text(errors="replace"))
+        if args.sd_csv:
+            if args.guest_log or args.sd_csv.is_symlink():
+                raise TraceError("SD CSV must be a real file and the only input")
+            report=analyze_sd_csv(args.sd_csv.read_text(encoding="ascii"))
+        elif args.guest_log:
+            report=analyze(args.guest_log.read_text(errors="replace"))
+        else:
+            raise TraceError("must provide guest stderr or --sd-csv")
         text=json.dumps(report,indent=2)+"\n"
         if args.output:
             if args.output.exists() or args.output.is_symlink():
@@ -139,7 +194,7 @@ def main() -> int:
             args.output.write_text(text)
         else:
             print(text,end="")
-    except (TraceError,OSError) as exc:
+    except (TraceError,OSError,UnicodeError) as exc:
         print(json.dumps({"result":"INVALID_GUEST_TRACE","error":str(exc)}))
         return 2
     return 0
