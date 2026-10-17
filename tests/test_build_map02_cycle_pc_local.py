@@ -1,0 +1,112 @@
+"""The full game build runner is exercised with *mocked* make/link only.
+
+These tests do not create a real game binary or use any proprietary assets.
+"""
+from pathlib import Path
+import subprocess
+import tempfile
+import unittest
+from unittest.mock import patch
+from types import SimpleNamespace
+
+from tools.build_map02_cycle_pc_local import build_full_pc
+
+
+class PrivateFullPcBuildTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="vh-local-build-")
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        self.pc = root / "pinned-upstream/platform/pc"
+        self.pc.mkdir(parents=True)
+        self.upstream = self.pc.parent.parent
+        self.bundle = root / "private-bundle"
+        self.bundle.mkdir(mode=0o700)
+        (self.bundle / "map02_cycle.mk").write_text("private overlay\n")
+        self.exe = self.pc / "build-map02-cycle/vandalhearts_pc"
+        self.plan = {
+            "full_game_link_command_sha256": "a" * 64,
+        }
+        self.patches = [
+            patch("tools.build_map02_cycle_pc_local.audit",
+                  return_value=self.plan),
+            patch("tools.check_map02_cycle_make_plan.preflight",
+                  return_value=self.bundle / "map02_cycle.mk"),
+            patch("tools.build_map02_cycle_pc_local.audit_cycle_elf",
+                  return_value={"required_symbols_present": 19}),
+        ]
+        self.active = [p.start() for p in self.patches]
+        for p in self.patches:
+            self.addCleanup(p.stop)
+
+    def build_fake(self, command, *, cwd, capture_output, text, timeout, check):
+        self.assertEqual(cwd, self.pc)
+        self.assertEqual(command[1], "-j1")
+        self.assertIn("NO_HDVIDEO=1", command)
+        self.assertIn("NO_WEBP=1", command)
+        self.assertIn("BUILD_DIR=build-map02-cycle", command)
+        self.exe.parent.mkdir(parents=True, exist_ok=True)
+        self.exe.write_bytes(b"synthetic; not an ELF")
+        self.exe.chmod(0o700)
+        return SimpleNamespace(returncode=0)
+
+    def test_standalone_success_reporting_never_claims_runtime(self):
+        with patch("tools.build_map02_cycle_pc_local.subprocess.run",
+                   side_effect=self.build_fake):
+            result = build_full_pc(self.upstream, self.bundle)
+        self.assertTrue(result["full_elf_linked"])
+        self.assertFalse(result["actual_gameplay_executed"])
+        self.assertFalse(result["original_map02_rendering_proven"])
+        self.assertFalse(result["physical_ps1_equivalence_proven"])
+        self.assertFalse(result["hd_substitution_enabled"])
+        self.assertEqual(result["required_original_cycle_and_gpu_symbols"], 19)
+        self.assertEqual(len(result["pc_executable_sha256"]), 64)
+
+    def test_no_overwrite_even_when_prior_target_is_symlink(self):
+        self.exe.parent.mkdir(parents=True, exist_ok=True)
+        self.exe.symlink_to(self.bundle / "map02_cycle.mk")
+        with patch("tools.build_map02_cycle_pc_local.subprocess.run") as run:
+            with self.assertRaisesRegex(ValueError, "already exists"):
+                build_full_pc(self.upstream, self.bundle)
+        run.assert_not_called()
+
+    def test_no_overwrite_existing_file(self):
+        self.exe.parent.mkdir(parents=True, exist_ok=True)
+        self.exe.write_text("preserve")
+        with self.assertRaisesRegex(ValueError, "already exists"):
+            build_full_pc(self.upstream, self.bundle)
+        self.assertEqual(self.exe.read_text(), "preserve")
+
+    def test_compiler_failure_is_private_and_not_reported(self):
+        with patch("tools.build_map02_cycle_pc_local.subprocess.run",
+                   return_value=SimpleNamespace(returncode=1,
+                                                stderr="/private/secret-image.bin")):
+            with self.assertRaisesRegex(ValueError, "compiler output withheld") as raised:
+                build_full_pc(self.upstream, self.bundle)
+        self.assertNotIn("/private/secret-image.bin", str(raised.exception))
+
+    def test_missing_output_does_not_publish_success(self):
+        with patch("tools.build_map02_cycle_pc_local.subprocess.run",
+                   return_value=SimpleNamespace(returncode=0)):
+            with self.assertRaisesRegex(ValueError, "without an executable"):
+                build_full_pc(self.upstream, self.bundle)
+
+    def test_fail_closed_after_link_when_elf_audit_rejects_symbols(self):
+        self.active[2].side_effect = ValueError("required DrawOTag symbol missing")
+        with patch("tools.build_map02_cycle_pc_local.subprocess.run",
+                   side_effect=self.build_fake):
+            with self.assertRaisesRegex(ValueError, "DrawOTag"):
+                build_full_pc(self.upstream, self.bundle)
+
+    def test_bad_time_limits_and_changed_bundle_rejected_before_make(self):
+        with self.assertRaisesRegex(ValueError, "timeout"):
+            build_full_pc(self.upstream, self.bundle, timeout=4)
+        self.active[0].side_effect = ValueError("changed private build source")
+        with patch("tools.build_map02_cycle_pc_local.subprocess.run") as run:
+            with self.assertRaisesRegex(ValueError, "changed private"):
+                build_full_pc(self.upstream, self.bundle)
+        run.assert_not_called()
+
+
+if __name__ == "__main__":
+    unittest.main()
