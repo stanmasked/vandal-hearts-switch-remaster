@@ -90,6 +90,7 @@ int vh_map02_cycle_failed(void) {
 int vh_map02_cycle_format_jsonl(char *out, size_t capacity) {
     const char *token;
     char cd_receipt[512];
+    unsigned raw_crc32;
     int n;
     if (observed.failed || observed.step != 6 || !out || !capacity)
         return 0;
@@ -98,18 +99,20 @@ int vh_map02_cycle_format_jsonl(char *out, size_t capacity) {
      * one completed loader, and the ordered DrawOTag boundary. The CD
      * receipt is privately staged separately; never embed its raw values. */
     if (vh_map02_cd_probe_failed() ||
-        vh_map02_cd_probe_format_jsonl(cd_receipt, sizeof cd_receipt) <= 0)
+        vh_map02_cd_probe_format_jsonl(cd_receipt, sizeof cd_receipt) <= 0 ||
+        !vh_map02_cd_probe_raw_crc32(&raw_crc32))
         return 0;
     token = vh_map02_capture_session_token();
     if (!token || strlen(token) != 32u) return 0;
     n = snprintf(out, capacity,
-        "{\"schema\":\"vh.map02.cycle-order.v1\","
+        "{\"schema\":\"vh.map02.cycle-order.v2\","
         "\"capture_session\":\"%s\",\"gpu_draw_frame\":%u,"
+        "\"original_cd_raw_user_crc32\":\"%08x\","
         "\"ordered_source_hooks_observed\":true,"
         "\"cd_payload_verified_by_this_receipt\":false,"
         "\"original_map02_rendering_proven\":false,"
         "\"physical_ps1_equivalence_proven\":false}\n",
-        token, observed.frame);
+        token, observed.frame, raw_crc32);
     return n > 0 && (size_t)n < capacity ? n : 0;
 }
 /* Identity is checked both via the opened file descriptor and the
