@@ -82,3 +82,31 @@ python3 -m tools.verify_map02_vram_edges_witness \
 A passing hash chain is still not evidence of actual retail game
 provenance or physical PlayStation pixel equivalence. HD replacement
 remains disabled pending independent real MAP02 verification.
+
+
+## Verified integration checkpoint (17 October 2026)
+
+The [readiness test run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38991048927)
+at commit \`e8fb5e8d\` completed successfully:
+
+- **66/66 Python/C regressions**, including synthetic positive
+  read-only readiness and negative missing/linked VRAM snapshots,
+  transfer snapshot and upload file omission, incorrect source frame,
+  incomplete pending JSONL, broken SHA-256, source FT4 count exceeding
+  native draw-pair count and public-permission directories;
+- actual pinned original-PC \`libgpu.c\` / \`pc_raster.c\` compilation
+  and relocatable-link of all three GPU diagnostic variants;
+- original raster and DrawOTag execution with the baseline and
+  complex transparent/overdraw synthetic scenarios.
+
+The current preflight is intentionally strict: all referenced native
+snapshot names, including load/move/clear pairs, must resolve to regular
+full-size VRAM files. Any explicitly staged bounded upload must also
+be present with its declared rectangle extent. The gate reads only
+two bytes at the chosen coordinate from each full-size VRAM snapshot,
+not entire raw frames (except for the two separately SHA-checked
+original source-bundle files).
+
+**The test's game data are synthetic.** Success here does not claim
+a retail MAP02 capture, physical console accuracy or authenticated
+full-frame coverage; those all remain outstanding.
