@@ -52,6 +52,16 @@ def oracle_source(stops):
             SysPrintf("VH121_MIPS_SETUP_REFUSED\n");
             ClosePlugins();SysClose();menu_finish();plat_finish();return 37;
         }
+        /* GPUwriteData() buffers MIPS MMIO words. Drain only already
+         * CPU-authored SETUP commands before enabling sample observer;
+         * otherwise their delayed execution contaminates the A-B-C-D-A
+         * window. This host does not submit any new GPU draw commands. */
+        GPUFreeze_t setup_freeze={0};
+        uint16_t *setup_pixels=NULL;
+        if(GPU_freeze(1,&setup_freeze,&setup_pixels)!=1 || !setup_pixels){
+            SysPrintf("VH121_SETUP_DRAIN_REFUSED\n");
+            ClosePlugins();SysClose();menu_finish();plat_finish();return 37;
+        }
         /* Reset only the private diagnostic timeline, not GPU/CPU.
          * The original v82 journal exists only in the other run. */
         vh80_reset();
