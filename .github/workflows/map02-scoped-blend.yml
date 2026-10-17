@@ -36,6 +36,11 @@ on:
       - 'tests/test_map02_verified_process_launch.py'
       - 'tools/check_map02_owned_disc_extent.py'
       - 'tools/instrument_map02_cd_read.py'
+      - 'tools/instrument_map02_cycle_order.py'
+      - 'tools/map02_cycle_order.c'
+      - 'tools/map02_cycle_order.h'
+      - 'tests/test_map02_cycle_order.py'
+      - 'docs/MAP02_SINGLE_PROCESS_CYCLE_ORDER.md'
       - 'tools/map02_cd_read_probe.c'
       - 'tools/map02_cd_read_probe.h'
       - 'tools/check_map02_original_cd_runtime.py'
@@ -108,6 +113,11 @@ on:
       - 'tests/test_map02_verified_process_launch.py'
       - 'tools/check_map02_owned_disc_extent.py'
       - 'tools/instrument_map02_cd_read.py'
+      - 'tools/instrument_map02_cycle_order.py'
+      - 'tools/map02_cycle_order.c'
+      - 'tools/map02_cycle_order.h'
+      - 'tests/test_map02_cycle_order.py'
+      - 'docs/MAP02_SINGLE_PROCESS_CYCLE_ORDER.md'
       - 'tools/map02_cd_read_probe.c'
       - 'tools/map02_cd_read_probe.h'
       - 'tools/check_map02_original_cd_runtime.py'
@@ -187,6 +197,7 @@ jobs:
             tests.test_map02_verified_process_launch \
             tests.test_check_map02_owned_disc_extent \
             tests.test_instrument_map02_cd_read \
+            tests.test_map02_cycle_order \
             tests.test_verify_map02_original_cd_read \
             tests.test_map02_original_cd_stage \
             tests.test_publish_map02_cd_bound_witness
@@ -212,6 +223,14 @@ jobs:
             -o "${RUNNER_TEMP}/map02-cd-scoped-stage.o"
       - name: Run actual pinned original CdRead sector copy with synthetic MAP02 raw image
         run: python3 -m tools.check_map02_original_cd_runtime upstream-pc
+      - name: Generate source-pinned full-cycle order hooks without retail assets
+        run: |
+          python3 -m tools.instrument_map02_cycle_order upstream-pc "${RUNNER_TEMP}/map02-cycle-hooks"
+          test -s "${RUNNER_TEMP}/map02-cycle-hooks/core_cd.c"
+          test -s "${RUNNER_TEMP}/map02-cycle-hooks/libcd.c"
+          test -s "${RUNNER_TEMP}/map02-cycle-hooks/libgpu.c"
+          cc -std=gnu99 -Wall -Wextra -Werror -Itools -c \
+            tools/map02_cycle_order.c -o "${RUNNER_TEMP}/map02-cycle-order.o"
       - name: Fail closed on upstream rasterizer source drift
         run: |
           python3 -m tools.instrument_map02_scoped_blend \
