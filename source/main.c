@@ -346,18 +346,28 @@ int main(int argc, char **argv) {
     /* Wait for the audio producer only once during shutdown, never
      * during a gameplay/framebuffer frame.
      */
+    int export_status=0;
     if (audio_started) {
         appletUnhook(&focus_hook);
         vh_switch_game_audio_stop();
-        /* No trace formatting, stderr or SD I/O until audout worker
-         * has joined and stopped owning the PCM page. The guest log
-         * may be unavailable in some emulators; absence of output is
-         * not evidence that no events were recorded. */
+        /* All scene event slots are immutable after joining the audio
+         * producer. No SD I/O, malloc or CSV formatting was performed
+         * in the game or audio loops. Guest stderr can be absent in
+         * NeXium; SD CSV is the independent recovery channel. */
         (void)vh_switch_game_audio_trace_dump(stderr);
+        (void)mkdir("sdmc:/switch",0777);
+        (void)mkdir(VH_SCENE_TRACE_SD_DIRECTORY,0777);
+        char scene_path[VH_SCENE_TRACE_EXPORT_PATH_CAP];
+        const VhSceneExportResult saved=vh_switch_game_audio_trace_export(
+            scene_path,sizeof scene_path);
+        if(saved!=VH_SCENE_EXPORT_OK) {
+            fprintf(stderr,"audio scene trace SD export failed: %d\\n",
+                    (int)saved);
+            export_status=2;
+        }
         if (resume_message_enabled)
             (void)appletSetRestartMessageEnabled(false);
     }
-    int export_status=0;
     if (log_has_samples) {
         /* ONLY after joining the audio worker, commit a new numbered
          * CSV by closed-temp -> rename. Never truncate a prior report.
