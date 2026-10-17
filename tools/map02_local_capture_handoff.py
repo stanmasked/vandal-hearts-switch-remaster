@@ -159,7 +159,7 @@ def prepare_local_capture(handoff_dir, pc_binary, owned_game, *, frame):
 
 
 def _validated_handoff(raw):
-    record = parse_json(raw, HANDOFF)
+    record = raw if type(raw) is dict else parse_json(raw, HANDOFF)
     fields(record, (
         "schema", "gpu_draw_frame", *DIGESTS,
         "source_gte_gpu_witness_verified",
