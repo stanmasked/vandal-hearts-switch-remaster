@@ -59,6 +59,8 @@ def replay_receipt(directory, *, receipt_file, preflight_report, executable):
         "schema": "map02_private_capture_receipt_replay_v1",
         "original_receipt_sha256": hashlib.sha256(raw).hexdigest(),
         "frame": frame,
+        "native_gpu_event_log_sha256":
+            current["native_gpu_binding"]["gpu_events_sha256"],
         "native_gpu_pairs_verified": current["native_gpu_pairs_verified"],
         "draw_boundary_vram_checks": current["draw_boundary_vram_checks"],
         "draw_boundary_gpu_state_checks": current["draw_boundary_gpu_state_checks"],
