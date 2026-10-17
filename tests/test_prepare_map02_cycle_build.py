@@ -7,6 +7,7 @@ compiles all four REAL original CD/GPU/raster units in one relocatable blob.
 """
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -122,6 +123,47 @@ class SingleElfBuildOverlayTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Makefile differs"):
             mod.prepare(self.upstream, self.output)
         self.assertFalse(self.output.exists())
+
+    def test_real_make_uses_private_font_script_not_mutated_upstream(self):
+        # No owned retail KROM is needed: the generated C is synthetic.
+        # Actually invoke GNU Make to detect unexpected inherited recipes.
+        original = (
+            "import os\n"
+            "from pathlib import Path\n"
+            "Path(os.environ['VH_GENERATED_OUT']).write_text("
+            "'const unsigned char pc_kanji_charset2[] = {1};\\n')\n"
+        )
+        self.font_generator.write_text(original, encoding="utf-8")
+        (self.upstream / "platform/pc/tools").mkdir(parents=True, exist_ok=True)
+        self.make.write_text(
+            "GAME_ROOT := ../..\n"
+            "BACKEND_OBJS := $(BUILD_DIR)/pc_kanji_font.o\n"
+            "# GAME_C_FLAGS PORT_WARN\n"
+            "link: $(DATA_OBJS)\n"
+            "src/pc_kanji_font.c: tools/gen_kanji_font.py ; python3 $<\n"
+            "$(BUILD_DIR)/pc_kanji_font.o: src/pc_kanji_font.c\n"
+            "\t$(CC) -c $< -o $@\n", encoding="utf-8")
+        with patch.object(mod, "MAKEFILE_SHA",
+                          git_blob_sha1(self.make.read_bytes())), patch.object(
+                mod, "FONT_GENERATOR_BLOB_SHA1",
+                git_blob_sha1(self.font_generator.read_bytes())):
+            mod.prepare(self.upstream, self.output)
+        # Changing the original source after preparation must not affect the
+        # private executed snapshot (preflight would reject this mutation).
+        self.font_generator.write_text("raise SystemExit('wrong source')\n")
+        target = "build-map02-cycle/pc_kanji_font.o"
+        completed = subprocess.run(
+            ["make", "-f", "Makefile", "-f", str(self.output / "map02_cycle.mk"),
+             target, "BUILD_DIR=build-map02-cycle", "REGION=us"],
+            cwd=self.upstream / "platform/pc", capture_output=True,
+            text=True, timeout=30, check=False)
+        self.assertEqual(completed.returncode, 0, completed.stderr[-700:])
+        generated = self.upstream / "platform/pc/build-map02-cycle/map02_pinned_kanji_font.c"
+        self.assertTrue(generated.is_file())
+        self.assertEqual(generated.stat().st_mode & 0o777, 0o600)
+        self.assertTrue((self.upstream / "platform/pc" / target).is_file())
+        self.assertFalse(
+            (self.upstream / "platform/pc/src/pc_kanji_font.c").exists())
 
     def test_original_font_script_drift_fails_before_private_bundle_exists(self):
         self.font_generator.write_text("# changed original font generator\\n")
