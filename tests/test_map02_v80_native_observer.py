@@ -51,7 +51,7 @@ class V80Source(unittest.TestCase):
             self.assertEqual(lib.vh80_count(),3)
             self.assertEqual([(lib.vh80_events()[i].sequence,lib.vh80_events()[i].kind)
                               for i in range(3)],[(1,1),(2,2),(3,3)])
-            lib.vh80_record(99,0,0,0)
+            lib.vh80_record(999,0,0,0)
             self.assertEqual(lib.vh80_dropped(),1)
             for i in range(4093):lib.vh80_record(1,0,i,7)
             self.assertEqual(lib.vh80_count(),4096)
