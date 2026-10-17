@@ -5,6 +5,7 @@
 extern "C" {
 #endif
 #define VH115_SAMPLED_POINTS 24u
+#define VH116_MAX_VBLANK_GAP 4u
 typedef struct {
     uint32_t handlers;
     uint32_t vblank_edges;
@@ -15,6 +16,13 @@ typedef struct {
     uint32_t cross_vblank_equal_delta_different;
     uint32_t cross_vblank_different_delta;
 } vh115_metrics;
+/* Independent 0..4 VBlank-gap bins; preserves the original v115 ABI. */
+typedef struct {
+    uint32_t equal_count_identical[VH116_MAX_VBLANK_GAP+1u];
+    uint32_t equal_count_different[VH116_MAX_VBLANK_GAP+1u];
+    uint32_t different_count[VH116_MAX_VBLANK_GAP+1u];
+} vh116_gap_metrics;
+int vh116_get_gap_metrics(vh116_gap_metrics *out);
 void vh115_reset(void);
 void vh115_enable(int enabled);
 void vh115_vblank(void);
