@@ -9,7 +9,7 @@ int vh81_format_jsonl(char *output,size_t capacity) {
     unsigned int n=vh80_count(),prev=0,edges=0;
     size_t used=0;
     const vh80_event *events=vh80_events();
-    if(!output || capacity==0 || vh80_dropped()!=0 || n==0 || n>4096u) return -1;
+    if(!output || capacity==0 || vh80_dropped()!=0 || n==0 || n>VH80_TOTAL_CAPACITY) return -1;
     output[0]='\0';
     for(unsigned int i=0;i<n;i++) {
         const vh80_event *e=&events[i];
@@ -92,6 +92,9 @@ int vh81_format_jsonl(char *output,size_t capacity) {
         else if(e->kind==VH92_PENDING) kind="pressure_pending_words";
         else if(e->kind==VH92_WORKER_SAME) kind="pressure_worker_same";
         else if(e->kind==VH92_SYNC_SAME) kind="pressure_sync_same";
+        else if(e->kind==VH93_DETAIL_COUNT) kind="lane_detail_events";
+        else if(e->kind==VH93_AGG_COUNT) kind="lane_aggregate_events";
+        else if(e->kind==VH93_TOTAL_COUNT) kind="lane_total_events";
         else return -1;
         if(used>=capacity) return -1;
         /* GPU DMA2 is an address, NOT an executed GP0 command. */
