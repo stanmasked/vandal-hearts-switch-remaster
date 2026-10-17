@@ -23,6 +23,15 @@ def main() -> None:
     src = PROBE.read_text(encoding="utf-8")
     hdr = SOURCE.read_text(encoding="utf-8")
     assert "#define VH_AUDIO_REPORT_PAGE_COUNT 4u" in hdr
+    # A photo of any page identifies the checked-out source. The
+    # fourth page must also show the full Git hash and its dirty flag;
+    # no source tag means no silent "verified" provenance.
+    assert 'VH_AUDIO_BUILD_REV' in src
+    assert 'VH_AUDIO_BUILD_STATUS' in src
+    assert 'printf("VH audout / %.12s [%s]\\n"' in src
+    assert 'printf("Git source: %s [%s]\\n"' in src
+    assert '"UNKNOWN"' in src and '"NO-GIT"' in src
+
 
     start = src.index("static void vh_audio_show_report(")
     stop = src.index("\nint main(", start)
