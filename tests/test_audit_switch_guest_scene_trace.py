@@ -62,7 +62,7 @@ class TestGuestSceneTrace(unittest.TestCase):
         with self.assertRaises(TraceError):
             analyze(trace(self.rows).replace("rows=8","rows=9"))
         with self.assertRaises(TraceError):
-            analyze(trace(self.rows).replace("1,POST,1","1,OTHER,1"))
+            analyze(trace(self.rows).replace("4,POST,1","4,OTHER,1"))
         with self.assertRaises(TraceError):
             analyze(trace(self.rows).replace("dropped=0","dropped=-1"))
 
