@@ -15,7 +15,8 @@ from pathlib import Path
 import stat
 
 from tools.check_map02_original_extraction_anchors import compare_data_ranges
-from tools.check_map02_original_inc_provenance import check_original_includes
+from tools.check_map02_original_inc_provenance import (_original_blob_sha1,
+                                                      check_original_includes)
 
 EXE = "SLUS_004.47"
 US_EXE_MD5 = "596bb082a2de5f1fe977dd3d7e160b03"
@@ -24,6 +25,8 @@ FONT_LENGTH = 209 * 30
 FONT_BIOS_OFFSET = 0x66000
 BIOS_SIZE = 512 * 1024
 ASSETS = ("801012e4.inc", "801009bc.inc", "80100e9c.inc")
+FONT_GENERATOR = "platform/pc/tools/gen_kanji_font.py"
+FONT_GENERATOR_BLOB_SHA1 = "67cf3aebe3dfd46467483d3899d10f04d2fe0c18"
 
 
 def _checked_file(path, category, *, max_size=128 * 1024 * 1024):
@@ -94,6 +97,17 @@ def _krom_font(path):
     return _hash_file(path, "sha256")
 
 
+def _pinned_font_generator(path):
+    # A good KROM hash alone does not authenticate the Python source that
+    # the original full-game Makefile will execute over that private font.
+    path = _checked_file(path, "original pinned US font generator",
+                         max_size=128 * 1024)
+    content = path.read_bytes()
+    if _original_blob_sha1(content) != FONT_GENERATOR_BLOB_SHA1:
+        raise ValueError("original US font generator differs from pinned source")
+    return hashlib.sha256(content).hexdigest()
+
+
 def _input_identity(path, category):
     # Compare metadata at both boundaries, not just hashes. This detects
     # byte-identical inode swaps and in-place changes during the audit.
@@ -125,7 +139,14 @@ def verify_private_pc_inputs(upstream, *, krom_source=None):
         ("retail-us-exe", root / EXE, _original_exe),
         ("decomp-mips-elf", root / "build" / (EXE + ".elf"), _original_elf),
     ]
-    snapshots = []
+    # Source-provenance: the original Makefile's KROM-to-C generator is
+    # executable code with access to a user-owned ROM. Do not bless a local
+    # full-game build if that code differs from the pinned public checkout.
+    generator_path = root / FONT_GENERATOR
+    generator_digest, generator_identity = _audit_input(
+        generator_path, "original-font-generator", _pinned_font_generator)
+    snapshots = [("original-font-generator", generator_path,
+                  _pinned_font_generator, generator_digest, generator_identity)]
     tokens = []
     for category, path, verifier in paths:
         digest, identity = _audit_input(path, category, verifier)
@@ -158,8 +179,8 @@ def verify_private_pc_inputs(upstream, *, krom_source=None):
     # A successful check must describe ONE coherent set of inputs. In
     # particular, the ELF or an already-checked .inc must not be replaced
     # during the slow subprocess that regenerates the original includes.
-    # Repeat full format/hash checks on all six inputs AFTER the final
-    # generator/font checks, and reject even same-byte inode replacement.
+    # Repeat full format/hash checks on all six private inputs and the
+    # source-pinned font generator after all expensive checks are complete.
     for category, path, verifier, digest, identity in snapshots:
         if (_input_identity(path, category) != identity
                 or verifier(path) != digest
@@ -170,7 +191,8 @@ def verify_private_pc_inputs(upstream, *, krom_source=None):
     # Bind path/category identity, digest and pinned order, without outputting
     # individual source input digests or original asset contents.
     combined = hashlib.sha256(
-        json.dumps(tokens, separators=(",", ":"), sort_keys=False).encode()
+        json.dumps(tokens + [("original-font-generator", generator_digest)],
+                   separators=(",", ":"), sort_keys=False).encode()
     ).hexdigest()
     return {
         "schema": "vh.map02.private-retail-input-readiness.v1",
@@ -183,6 +205,7 @@ def verify_private_pc_inputs(upstream, *, krom_source=None):
         "original_resource_includes_present": len(ASSETS),
         "original_resource_includes_match_owned_us_exe": True,
         "us_ps1_font_charset_verified": True,
+        "pinned_original_font_generator_verified": True,
         "private_build_inputs_binding_sha256": combined,
         "full_pc_game_executable_linked": False,
         "actual_gameplay_executed": False,
