@@ -50,6 +50,55 @@ uint64_t vh_audio_timing_fault_frequency(
     return actual_frequency;
 }
 
+int vh_audio_submit_fault_arm(VhAudioSubmitFaultInjection *s) {
+    if (!s || s->armed || s->injected) return -1;
+    s->armed=1u;
+    return 0;
+}
+
+int vh_audio_submit_fault_consume(VhAudioSubmitFaultInjection *s) {
+    if (!s || s->armed!=1u || s->injected) return 0;
+    s->armed=0u;
+    s->injected=1u;
+    return 1;
+}
+
+/* The fake failure is a wrapper attempt, never audoutPlayBuffer. */
+int vh_audio_output_record_synthetic_submit_failure(
+    VhAudioSubmitTiming *timing, uint64_t frequency, size_t frames) {
+    if (!timing || timing->synthetic_failed_submissions==UINT64_MAX)
+        return -1;
+    VhAudioSubmitTiming next=*timing;
+    if (vh_audio_output_record_submit_timing(
+            &next,0u,frequency,frames,0))
+        return -1;
+    ++next.synthetic_failed_submissions;
+    *timing=next;
+    return 0;
+}
+
+int vh_audio_output_verify_submit_injection(
+    const VhAudioSubmitFaultInjection *s,
+    const VhAudioSubmitTiming *timing,
+    const VhAudioOutputRecovery *recovery) {
+    if (!s || !timing || !recovery || s->armed>1u ||
+        s->injected>1u || (s->armed && s->injected) ||
+        timing->synthetic_failed_submissions!=s->injected ||
+        timing->synthetic_failed_submissions>timing->failed_submissions ||
+        timing->synthetic_failed_submissions>timing->calls ||
+        timing->failed_submissions!=recovery->submit_failures)
+        return -1;
+    /* A consumed fake failure alone is not a recovered PCM page. */
+    if (s->injected) {
+        if (!recovery->restart_attempts || !recovery->recoveries ||
+            !recovery->pages_submitted ||
+            recovery->recoveries>recovery->restart_attempts)
+            return -1;
+        return 2;
+    }
+    return s->armed ? 1 : 0;
+}
+
 int vh_audio_output_transport_outcome(
     int descriptor_returned, int timing_result,
     VhAudioTransportTimingHealth *health) {
@@ -400,6 +449,7 @@ int vh_audio_output_verify_run(
         completed_fixture_switches!=expected_switches ||
         (!fixture_switch_period_pages && boundary->pages!=0u) ||
         recovery->pages_submitted!=completed_pages ||
+        timing->synthetic_failed_submissions>timing->failed_submissions ||
         recovery->submit_failures!=timing->failed_submissions ||
         recovery->recoveries>retry_pages ||
         recovery->recoveries>completed_pages ||
