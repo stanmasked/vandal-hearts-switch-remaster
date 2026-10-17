@@ -239,8 +239,17 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
         printf("DSP >budget=%llu; rendered=%llu\n",
                (unsigned long long)r->compute->over_budget,
                (unsigned long long)rendered);
-        printf("DSP page audit=%s\n",
-               r->compute_evidence==0 ? "VALID" : "INVALID");
+        printf("DSP overbudget normal/switch=%llu/%llu\n",
+               (unsigned long long)r->compute->ordinary.over_budget,
+               (unsigned long long)r->compute->first_after_switch.over_budget);
+        printf("DSP peak normal/switch=%llu/%llu us\n",
+               (unsigned long long)vh_audio_output_ticks_to_us(
+                   r->compute->ordinary.max_ticks,hz),
+               (unsigned long long)vh_audio_output_ticks_to_us(
+                   r->compute->first_after_switch.max_ticks,hz));
+        printf("DSP scene audit=%s; switch renders=%llu\n",
+               r->compute_evidence==0 ? "VALID" : "INVALID",
+               (unsigned long long)r->compute->first_after_switch.rendered_pages);
         printf("Wait bins: <=1x <=2x <=4x >4x\n");
         printf("Normal: %llu %llu %llu %llu\n",
                (unsigned long long)n->wait_le_page,
@@ -421,7 +430,8 @@ int main(int argc, char **argv) {
         }
         const uint64_t elapsed_ticks = armGetSystemTick() - tick_begin;
         if (vh_audio_compute_record(&compute,elapsed_ticks,
-                                    block_budget_ticks)) {
+                                    block_budget_ticks,
+                                    switched_this_block)) {
             result=16;
             break;
         }
@@ -553,7 +563,7 @@ int main(int argc, char **argv) {
         user_files ? 0u : SYNTHETIC_SCENE_BLOCKS,
         result==0 && played_blocks==MAX_PROBE_BLOCKS);
     const int compute_evidence=vh_audio_compute_verify(
-        &compute,played_blocks);
+        &compute,played_blocks,completed_switches);
     const int seam_evidence=vh_audio_output_verify_pcm_seams(
         &seam_stats,&output.scene_waits,played_blocks);
     const int listen_evidence=vh_audio_listening_verify(

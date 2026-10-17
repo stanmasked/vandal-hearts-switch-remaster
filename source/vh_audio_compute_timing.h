@@ -3,45 +3,92 @@
 #include <stdint.h>
 #include <limits.h>
 
-/* Native SEQ + SPU + sample-rate conversion wall-clock compute time.
- * This excludes the blocking audoutPlayBuffer and report redraws.
- * A successfully rendered page can remain undelivered after a failed
- * output submission. No music state or PCM buffers are retained.
+/* CPU time for SEQ + SPU + sample-rate conversion, not blocking
+ * audoutPlayBuffer or console updates. The synthetic scene-switch
+ * call belongs to its FIRST newly rendered page. Each failed final
+ * audout submission can leave one rendered-but-undelivered page.
  */
 typedef struct {
     uint64_t rendered_pages, total_ticks, max_ticks, over_budget;
+} VhAudioComputeBucket;
+
+typedef struct {
+    uint64_t rendered_pages, total_ticks, max_ticks, over_budget;
+    VhAudioComputeBucket ordinary, first_after_switch;
 } VhAudioComputeTiming;
 
-/* Exactly one observation for each newly synthesized PCM page,
- * before passing it to the audio service. Any error is non-mutating. */
+/* Increment the overall accumulator and exactly one category.
+ * The same budget classification is applied to both. Reject all
+ * invalid inputs and overflows before changing either bucket.
+ */
 static inline int vh_audio_compute_record(
-    VhAudioComputeTiming *s, uint64_t elapsed, uint64_t nominal) {
-    if (!s || !nominal || s->rendered_pages==UINT64_MAX ||
+    VhAudioComputeTiming *s, uint64_t elapsed, uint64_t nominal,
+    unsigned first_after_switch) {
+    if (!s || !nominal || first_after_switch>1u) return -1;
+    VhAudioComputeBucket *b=first_after_switch
+        ? &s->first_after_switch : &s->ordinary;
+    const uint64_t slow=(uint64_t)(elapsed>nominal);
+    if (s->rendered_pages==UINT64_MAX ||
+        b->rendered_pages==UINT64_MAX ||
         s->total_ticks>UINT64_MAX-elapsed ||
-        (elapsed>nominal && s->over_budget==UINT64_MAX))
-        return -1;
+        b->total_ticks>UINT64_MAX-elapsed ||
+        s->over_budget>UINT64_MAX-slow ||
+        b->over_budget>UINT64_MAX-slow) return -1;
     ++s->rendered_pages;
     s->total_ticks+=elapsed;
     if (elapsed>s->max_ticks) s->max_ticks=elapsed;
-    s->over_budget+=(unsigned)(elapsed>nominal);
+    s->over_budget+=slow;
+    ++b->rendered_pages;
+    b->total_ticks+=elapsed;
+    if (elapsed>b->max_ticks) b->max_ticks=elapsed;
+    b->over_budget+=slow;
     return 0;
 }
 
-/* A page may render, then fail or abort during its audout submission.
- * Therefore exactly delivered_pages or delivered_pages+1 pages
- * should have been synthesized; partial runs are not auto-invalid
- * merely because the final rendered page could not be delivered.
- * Any other mismatch prevents a FULL integrity verdict.
+static inline int vh_audio_compute_bucket_valid(
+    const VhAudioComputeBucket *b) {
+    return b->over_budget<=b->rendered_pages &&
+           b->max_ticks<=b->total_ticks &&
+           (b->rendered_pages || (!b->total_ticks && !b->max_ticks &&
+                                  !b->over_budget));
+}
+
+/* Correlate compute groups with actually returned ordinary and
+ * first-after-switch PCM pages. A failed final audio submission
+ * may leave at most ONE synthesized page without a return, in
+ * either group. No silent compensating category error is accepted.
  */
 static inline int vh_audio_compute_verify(
-    const VhAudioComputeTiming *s, uint64_t delivered_pages) {
-    if (!s || s->rendered_pages<delivered_pages ||
-        s->rendered_pages-delivered_pages>1u ||
-        s->over_budget>s->rendered_pages ||
-        s->max_ticks>s->total_ticks ||
-        (!s->rendered_pages && (s->total_ticks || s->max_ticks ||
-                                s->over_budget)))
+    const VhAudioComputeTiming *s, uint64_t returned_pages,
+    uint64_t returned_switch_pages) {
+    if (!s || returned_switch_pages>returned_pages ||
+        s->rendered_pages<returned_pages ||
+        s->rendered_pages-returned_pages>1u ||
+        !vh_audio_compute_bucket_valid(&s->ordinary) ||
+        !vh_audio_compute_bucket_valid(&s->first_after_switch) ||
+        s->ordinary.rendered_pages>UINT64_MAX-
+            s->first_after_switch.rendered_pages ||
+        s->ordinary.total_ticks>UINT64_MAX-
+            s->first_after_switch.total_ticks ||
+        s->ordinary.over_budget>UINT64_MAX-
+            s->first_after_switch.over_budget) return -1;
+    if (s->ordinary.rendered_pages+
+            s->first_after_switch.rendered_pages!=s->rendered_pages ||
+        s->ordinary.total_ticks+
+            s->first_after_switch.total_ticks!=s->total_ticks ||
+        s->ordinary.over_budget+
+            s->first_after_switch.over_budget!=s->over_budget ||
+        s->max_ticks!=(s->ordinary.max_ticks>s->first_after_switch.max_ticks
+            ? s->ordinary.max_ticks : s->first_after_switch.max_ticks))
         return -1;
-    return 0;
+    const uint64_t ordinary_returned=returned_pages-returned_switch_pages;
+    if (s->ordinary.rendered_pages<ordinary_returned ||
+        s->first_after_switch.rendered_pages<returned_switch_pages ||
+        s->ordinary.rendered_pages-ordinary_returned>1u ||
+        s->first_after_switch.rendered_pages-returned_switch_pages>1u)
+        return -1;
+    return (s->ordinary.rendered_pages-ordinary_returned)+
+           (s->first_after_switch.rendered_pages-returned_switch_pages)
+            ==s->rendered_pages-returned_pages ? 0 : -1;
 }
 #endif

@@ -1285,3 +1285,38 @@ submission, arithmetic saturation and tampered statistics. The PCM
 workflow additionally runs it with UBSan. This change adds only
 bounded in-memory diagnostic metadata. It does not speed up the
 audio engine or demonstrate glitch-free playback on physical Switch.
+
+
+### DSP compute cost separated by scene-boundary versus ordinary pages
+
+The portable audout compute telemetry now distinguishes ordinary
+SEQ/SPU/resampling blocks from the **first rendered block after a
+synthetic music-scene switch**. Previously, the global over-budget
+count and peak processing time could not show whether a spike
+belonged to the actual change-of-cue work or to routine rendering.
+
+The same sample clock remains in use: the elapsed wall-clock ticks
+include the scene-switch operation (if one occurs), SEQ advance, SPU
+render and rate conversion, and exclude blocking audout service waits.
+Both per-category buckets retain **rendered block count, total ticks,
+max compute ticks and count exceeding one nominal block budget**.
+The first results screen displays independent normal/switch overrun
+counts and peaks as well as the total DSP average/peak. In the
+user-owned SD-music mode the probe never triggers synthetic scene
+switches; the switch compute bucket therefore remains empty.
+
+Before claiming FULL PCM accounting, verification now enforces exact
+equality between the two compute buckets and their global totals,
+peaks and over-budget counters. It also correlates delivered scene
+boundary pages with the associated rendered category and accepts at
+most one final undelivered page across both categories, not one
+per category. Tampered category assignment, missing/extra pages
+and arithmetic saturation fail closed.
+
+Portable regression cases check strict budget threshold behavior,
+a final failed scene-boundary submission, a final failed ordinary
+submission, mismatched scene counts, contradictory bucket sums
+and no-mutation counter overflow. The existing CI UBSan exercise
+compiles and executes those checks. This improves diagnostic
+interpretability and integrity; it is not evidence of audible quality
+or proof that Switch audio compute meets its budget in practice.
