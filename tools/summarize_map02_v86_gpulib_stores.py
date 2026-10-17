@@ -19,14 +19,20 @@ KEYS=(
 def summarize(raw:bytes):
     inherited=summarize_v85(raw)
     rows=[json.loads(line) for line in raw.decode("ascii").splitlines()]
-    if len(rows)<4 or tuple(e["kind"] for e in rows[-4:])!=KEYS:
-        raise Refused("missing trailing ordered gpulib aggregate observations")
-    if any(e["kind"] in KEYS for e in rows[:-4]):
-        raise Refused("duplicate/misplaced gpulib events")
-    u,us,c,cs=(e["value"] for e in rows[-4:])
+    starts=[i for i,e in enumerate(rows) if e["kind"]==KEYS[0]]
+    if len(starts)!=1:
+        raise Refused("missing/duplicate first gpulib aggregate event")
+    start=starts[0]
+    observed=rows[start:start+4]
+    if len(observed)!=4 or tuple(e["kind"] for e in observed)!=KEYS:
+        raise Refused("misordered gpulib aggregate observations")
+    if any(e["kind"] in KEYS for i,e in enumerate(rows)
+           if not start<=i<start+4):
+        raise Refused("duplicate/misplaced gpulib aggregate events")
+    u,us,c,cs=(e["value"] for e in observed)
     if not (u>us>0 and c==32 and cs==16):
         raise Refused("signed fixture A0 or host copy counts do not match")
-    if any(e["cycle"]!=0 or e["frame"]!=0 for e in rows[-4:]):
+    if any(e["cycle"]!=0 or e["frame"]!=0 for e in observed):
         raise Refused("gpulib aggregate timestamp assertion")
     if not all(e["seq"]>max(x["seq"] for x in rows if x["kind"]=="vblank")
                for e in rows[-4:]):
