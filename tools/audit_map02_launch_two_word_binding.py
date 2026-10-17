@@ -19,10 +19,15 @@ from tools.verify_map02_putpixel_multi_scope import MANIFEST, sha, verify_multi_
 
 def audit_launch_two_word(capture_dir, source_dir, *,
                           launch_receipt, preflight_report, executable,
-                          compiler="gcc", require_native_elf_image=False):
+                          compiler="gcc", require_native_elf_image=False,
+                          require_native_probe_symbols=False):
     """Bind replayed launcher & source FT4 witnesses to identical native bytes."""
     if type(require_native_elf_image) is not bool:
         raise ValueError("native ELF join requirement must be boolean")
+    if type(require_native_probe_symbols) is not bool:
+        raise ValueError("native probe join requirement must be boolean")
+    if require_native_probe_symbols and not require_native_elf_image:
+        raise ValueError("native probe join requires strict ELF observation")
     capture_dir = Path(capture_dir).absolute()
     source_dir = Path(source_dir).absolute()
     if (capture_dir.is_symlink() or source_dir.is_symlink()
@@ -48,6 +53,9 @@ def audit_launch_two_word(capture_dir, source_dir, *,
     if (require_native_elf_image
             and launch.get("native_elf_process_image_observed") is not True):
         raise ValueError("native ELF image observation required for private join")
+    if (require_native_probe_symbols
+            and launch.get("native_probe_symbols_inspected") is not True):
+        raise ValueError("native GPU/FT4 probe inspection required for private join")
     # This independently repeats source->GTE->FT4/OT/native GPU full-VRAM
     # and both interleaved WritePixel histories.
     sampled = verify_multi_pixel_ot(source_dir, capture_dir,
@@ -90,6 +98,9 @@ def audit_launch_two_word(capture_dir, source_dir, *,
         "native_gpu_event_log_sha256": native_binding,
         "same_native_gpu_log_sha256_verified": True,
         "native_elf_image_required_for_join": require_native_elf_image,
+        "native_probe_symbols_required_for_join": require_native_probe_symbols,
+        "native_probe_symbols_inspected":
+            launch.get("native_probe_symbols_inspected") is True,
         "native_elf_process_image_observed":
             launch.get("native_elf_process_image_observed") is True,
         "private_dependency_inventory_stable_through_replays": True,
@@ -117,6 +128,8 @@ def main():
     parser.add_argument("--compiler", default="gcc")
     parser.add_argument("--require-native-elf-image", action="store_true",
                         help="Reject a joined witness without Linux kernel ELF observation")
+    parser.add_argument("--require-native-probe-symbols", action="store_true",
+                        help="Also require static GPU/FT4/two-word probe verification")
     args = parser.parse_args()
     try:
         report = audit_launch_two_word(
@@ -124,7 +137,8 @@ def main():
             launch_receipt=args.launch_receipt,
             preflight_report=args.preflight_report,
             executable=args.executable, compiler=args.compiler,
-            require_native_elf_image=args.require_native_elf_image)
+            require_native_elf_image=args.require_native_elf_image,
+            require_native_probe_symbols=args.require_native_probe_symbols)
     except (OSError, ValueError, KeyError, subprocess.TimeoutExpired) as exc:
         parser.error(str(exc))
     print(json.dumps(report, sort_keys=True, indent=2))
