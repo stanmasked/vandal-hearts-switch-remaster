@@ -72,6 +72,10 @@ def verify_native_windows(directory, *, target_frame):
             not status["recorded_window_closed_without_detected_loss"]):
         raise ValueError("GPU window capture incomplete, truncated or inconsistent")
 
+    expected_root_entries = {INDEX} | {
+        f"window-{i:03d}" for i in range(window_count)}
+    if {item.name for item in root.iterdir()} != expected_root_entries:
+        raise ValueError("unlisted native GPU window or unrelated capture files")
     total_draws = total_transfers = seen = 0
     last_vram = None
     logs_hash = hashlib.sha256()
@@ -88,6 +92,10 @@ def verify_native_windows(directory, *, target_frame):
         count = min(MAX_RECORDS, written - idx * MAX_RECORDS)
         if len(events) != count or count % 2:
             raise ValueError("missing, duplicated or reordered native GPU window events")
+        expected_files = {LOG} | {e.get("snapshot") for e in events}
+        expected_files |= {e.get("upload") for e in events if e.get("upload")}
+        if {item.name for item in window.iterdir()} != expected_files:
+            raise ValueError("unlisted or missing files in native GPU capture window")
         # The existing full 1-MiB VRAM auditor is reused, but its
         # missing-receipt result is deliberately not interpreted as a
         # complete original frame.
