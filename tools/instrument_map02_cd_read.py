@@ -62,8 +62,8 @@ def instrument_core_cd(source):
     # Anchor inside the particular original ContinueLoadingCdFile case 7;
     # other CD/core functions have identical "state=99; break" endings.
     loader = source.index('void ContinueLoadingCdFile(void) {')
-    start = source.index('    case 7:\n', loader)
-    end = source.index('    case 8:\n', start)
+    start = source.index('   case 7:\n', loader)
+    end = source.index('   case 8:\n', start)
     segment = source[start:end]
     anchor = '       } else {\n          gCdLoader.state = 99;\n       }\n       break;\n'
     replacement = ('       } else {\n          gCdLoader.state = 99;\n       }\n'
