@@ -43,9 +43,29 @@ jobs:
           export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
           make audout-audio-probe
           test -s build/audout-audio-switch-probe.nro
+      - name: Record exact native NRO SHA256 for operator
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s build/audout-audio-switch-probe.nro
+          sha256sum "build/audout-audio-switch-probe.nro" > "build/audout-native.sha256"
+          cat "build/audout-native.sha256"
+          {
+            echo "### Native libnx/audout NRO compiled"
+            echo "Git SHA: \`$GITHUB_SHA\`"
+            echo "Binary: \`build/audout-audio-switch-probe.nro\`"
+            echo "SHA256 (NRO bytes):"
+            echo "\`\`\`"
+            cat "build/audout-native.sha256"
+            echo "\`\`\`"
+            echo "Hardware status: HARDWARE NOT TESTED"
+            echo "No SDL2/OpenAL devkitPro package download is required."
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload native music NRO (user assets not included)
         uses: actions/upload-artifact@v4
         with:
           name: native-audout-music-nro
-          path: build/audout-audio-switch-probe.nro
+          path: |
+            build/audout-audio-switch-probe.nro
+            build/audout-native.sha256
           if-no-files-found: error
