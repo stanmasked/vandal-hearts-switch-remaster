@@ -109,8 +109,8 @@ def inspect_binary(path, *, nm="nm", pinned_fd=None):
             match = _SYM.fullmatch(line.strip())
             if match:
                 defined.add(match.group(2))
-        if not defined:
-            raise ValueError("native ELF symbol table unavailable or stripped")
+        # An intact ELF may define plenty of ordinary symbols but no
+        # VH_* probes. Distinguish that from a genuinely stripped table.
         matching = REQUIRED_SYMBOLS & defined
         if (len(matching) != len(REQUIRED_SYMBOLS) or
                 not coordinate_selectors):
