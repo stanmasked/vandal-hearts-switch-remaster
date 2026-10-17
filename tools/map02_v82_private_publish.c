@@ -78,13 +78,13 @@ static int vh102_maybe_swap(int phase){
 #endif
 
 int vh82_publish_private(const char *path,const char *bytes,size_t size) {
-    char tmp[VH82_MAX_PATH],parent[VH82_MAX_PATH];
+    char parent[VH82_MAX_PATH];
     char readback[4096];
     size_t at=0;
     int fd=-1,reader=-1,dirfd=-1,owned=0,linked=0,ok=-1;
     if(!path || !bytes || path[0]!='/' || !size || size>VH82_MAX_BYTES) return -1;
     size_t n=strnlen(path,VH82_MAX_PATH);
-    if(n==0 || n+5>=sizeof(tmp) || strstr(path,"/../") || strstr(path,"/./"))return -1;
+    if(n==0 || n+5>=VH82_MAX_PATH || strstr(path,"/../") || strstr(path,"/./"))return -1;
     const char *slash=strrchr(path,'/');
     if(!slash || !slash[1])return -1;
     size_t parent_len=(size_t)(slash-path);
@@ -95,8 +95,6 @@ int vh82_publish_private(const char *path,const char *bytes,size_t size) {
     struct stat directory;
     if(fstat(dirfd,&directory)<0 || !S_ISDIR(directory.st_mode))
         goto finish;
-    memcpy(tmp,path,n);
-    memcpy(tmp+n,".tmp",5);
     const char *base=slash+1;
     char stage[VH82_MAX_PATH];
     size_t base_len=strlen(base);
