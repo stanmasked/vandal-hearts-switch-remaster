@@ -852,6 +852,110 @@ static void test_new_scene_dry_and_wet_notes_mix_with_old_tail(void) {
     assert(new_send_energy>0u);
 }
 
+
+static VhNativeSpu pressure_reference_spu;
+static VhNativeSpu pressure_before_spu;
+static VhNativeSeq pressure_reference_seq;
+static VhNativeSeq pressure_before_seq;
+static VhAudioStream pressure_expected_ring;
+static int16_t pressure_padding[(VH_AUDIO_RING_FRAMES-1024u)*2u];
+static int16_t pressure_expected_pcm[VH_AUDIO_BLOCK_FRAMES*2u];
+
+static void test_full_pcm_ring_scene_switch_backpressure(void) {
+    /* Fill the transport with two genuine old-scene blocks and marked
+     * padding. The new SEQ must start at zero even though old PCM is
+     * still queued; a blocked pump may mutate neither scheduler nor DSP. */
+    setup();
+    assert(vh_native_spu_set_reverb(&spu,1,0.75f)==0);
+    assert(vh_native_seq_init(&seq,controls_song,sizeof controls_song,
+                    &spu,resolve_with_reverb,&log_state,1)==0);
+    for(unsigned i=0u;i<2u;i++)
+        assert(vh_native_seq_pump(&seq,&ring)==512);
+    assert(seq.note_ons==1u && seq.blocks_advanced==2u);
+    assert(spu.voice[0].active && spu.voice[0].reverb_send);
+    for(size_t i=0u;i<sizeof pressure_padding/sizeof pressure_padding[0];i++)
+        pressure_padding[i]=(int16_t)((int)(i%200u)-100);
+    assert(vh_audio_stream_write(&ring,pressure_padding,
+                        VH_AUDIO_RING_FRAMES-1024u)
+                        ==VH_AUDIO_RING_FRAMES-1024u);
+    assert(vh_audio_stream_queued(&ring)==VH_AUDIO_RING_FRAMES);
+    assert(ring.write_index==ring.read_index);
+    memcpy(&pressure_expected_ring,&ring,sizeof ring);
+    const uint64_t previous_reverb_frames=spu.frames_rendered;
+    const int previous_reverb_cursor=spu.reverb.cursor;
+
+    assert(vh_native_seq_switch_scene(&seq,running_song,sizeof running_song,
+                           &spu,resolve,&log_state,1)==0);
+    assert(vh_audio_stream_queued(&ring)==VH_AUDIO_RING_FRAMES);
+    assert(memcmp(&ring,&pressure_expected_ring,sizeof ring)==0);
+    assert(seq.blocks_advanced==0u && seq.note_ons==0u);
+    assert(seq.playing && seq.cycles_completed==0u);
+    assert(spu.frames_rendered==0u && spu.reverb.cursor==previous_reverb_cursor);
+    assert(previous_reverb_frames==1024u);
+    for(unsigned slot=0u;slot<VH_NATIVE_MUSIC_VOICES;slot++)
+        assert(!vh_native_spu_voice_active(&spu,slot));
+
+    memcpy(&pressure_before_seq,&seq,sizeof seq);
+    memcpy(&pressure_before_spu,&spu,sizeof spu);
+    const unsigned calls_before=log_state.calls;
+    for(unsigned attempt=0u;attempt<128u;attempt++) {
+        assert(vh_native_seq_pump(&seq,&ring)==0);
+        assert(memcmp(&seq,&pressure_before_seq,sizeof seq)==0);
+        assert(memcmp(&spu,&pressure_before_spu,sizeof spu)==0);
+        assert(memcmp(&ring,&pressure_expected_ring,sizeof ring)==0);
+        assert(log_state.calls==calls_before);
+    }
+
+    /* Drain exactly one page. Construct an independent reference block
+     * with the same preserved wet history and fresh music scheduler. */
+    assert(vh_audio_stream_read(&pressure_expected_ring,pcm,512u)==512u);
+    memcpy(pressure_expected_pcm,pcm,sizeof pressure_expected_pcm);
+    assert(vh_audio_stream_read(&ring,pcm,512u)==512u);
+    assert(memcmp(pcm,pressure_expected_pcm,sizeof pressure_expected_pcm)==0);
+    memcpy(&pressure_reference_spu,&spu,sizeof spu);
+    memcpy(&pressure_reference_seq,&seq,sizeof seq);
+    pressure_reference_seq.spu=&pressure_reference_spu;
+    ResolverLog reference_log=log_state;
+    pressure_reference_seq.context=&reference_log;
+    assert(vh_native_seq_advance_block(&pressure_reference_seq)>0);
+    vh_native_spu_render(&pressure_reference_spu,pressure_expected_pcm,512u);
+    assert(pressure_reference_seq.note_ons==2u);
+
+    assert(vh_native_seq_pump(&seq,&ring)==512);
+    assert(seq.blocks_advanced==1u && seq.note_ons==2u);
+    assert(seq.note_offs==1u && seq.playing);
+    assert(spu.frames_rendered==512u);
+    assert(seq.tempo==250000u);
+    assert(log_state.calls==calls_before+2u);
+    assert(vh_audio_stream_write(&pressure_expected_ring,
+                        pressure_expected_pcm,512u)==512u);
+    assert(memcmp(&ring,&pressure_expected_ring,sizeof ring)==0);
+    assert(vh_audio_stream_queued(&ring)==VH_AUDIO_RING_FRAMES);
+
+    /* Even after the resumed block filled the ring again, subsequent
+     * blocked attempts cannot dispatch the next SEQ event. */
+    memcpy(&pressure_before_seq,&seq,sizeof seq);
+    memcpy(&pressure_before_spu,&spu,sizeof spu);
+    for(unsigned i=0u;i<32u;i++) {
+        assert(vh_native_seq_pump(&seq,&ring)==0);
+        assert(memcmp(&seq,&pressure_before_seq,sizeof seq)==0);
+        assert(memcmp(&spu,&pressure_before_spu,sizeof spu)==0);
+    }
+
+    /* Compare the original queued PCM, the wraparound write and
+     * the new scene's output in exact FIFO order (8 x 512 frames). */
+    for(unsigned i=0u;i<8u;i++) {
+        assert(vh_audio_stream_read(&pressure_expected_ring,
+                        pressure_expected_pcm,512u)==512u);
+        assert(vh_audio_stream_read(&ring,pcm,512u)==512u);
+        assert(memcmp(pcm,pressure_expected_pcm,sizeof pressure_expected_pcm)==0);
+    }
+    assert(vh_audio_stream_queued(&ring)==0u);
+    assert(memcmp(&ring,&pressure_expected_ring,sizeof ring)==0);
+    assert(ring.overrun_frames==0u && ring.underrun_frames==0u);
+    assert(seq.blocks_advanced==1u && spu.frames_rendered==512u);
+}
+
 int main(void) {
     test_validation_and_source_immutability();
     test_512_block_controls_and_ring_pressure();
@@ -871,6 +975,7 @@ int main(void) {
     test_scene_switch_with_stealing_and_expired_releases();
     test_scene_switch_preserves_live_studio_c_tail();
     test_new_scene_dry_and_wet_notes_mix_with_old_tail();
+    test_full_pcm_ring_scene_switch_backpressure();
     puts("native pQES SEQ -> 20-voice SPU -> PCM ring: PASS");
     return 0;
 }
