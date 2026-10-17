@@ -69,8 +69,8 @@ This synthetic test is not a genuine source-port build or game rendering.
 In original `platform/pc/src/libgpu.c`, `DrawOTag` increments
 `s_drawFrame` at the start of each frame. Its OT walker resolves tokens
 and skips bucket nodes before handling real primitives. A private shim
-must therefore count **non-bucket primitive entries**, not raw OT walk
-steps, when supplying `primitive_ordinal`. It must explicitly bind
+must therefore count **native raster draw entries (F4/FT4/SPRT/TILE)**,
+not every non-bucket item or raw OT walk step, when supplying `primitive_ordinal`. It must explicitly bind
 the active frame and ordinal to the native raster call before opening
 the scoped PutPixel witness, and clear that context afterward.
 
@@ -89,8 +89,8 @@ The private test harness must call:
 ```c
 vh_map02_scope_reset();
 vh_map02_scope_begin_frame(frame, target_x, target_y);
-/* once per non-bucket DrawOTag primitive, in order starting at zero: */
-vh_map02_scope_begin_primitive(ordinal);
+/* once per native DRAW operation (F4/FT4/SPRT/TILE), starting at zero: */
+vh_map02_scope_begin_primitive(ordinal, primitive_type);
 /* native rasterization invokes begin / optional BlendG1 / end */
 vh_map02_scope_end_primitive();
 vh_map02_scope_end_frame();
@@ -157,15 +157,15 @@ events. All decimal strings are parsed strictly, with no sign or suffix.
 
 The patch reads actual `s_drawFrame` immediately after increment in
 `DrawOTag`; a primitive ordinal starts at zero and increases for
-**each non-bucket item in the original OT walker**, including GPU
-draw-mode commands. The observer opens the primitive before its switch
+**each native raster draw** (F4/FT4/SPRT/TILE) in the original OT walker.
+Bucket nodes, DR_MODE commands and unsupported packets do not advance it;
+this matches the native VRAM before/after draw-pair verifier. The observer opens the primitive before its switch
 dispatch and closes it after. Invalid token resolution or OT cycle
 limits abort the capture; a completed target frame is sealed **before**
 deferred HD workers begin. No raw pixel data are emitted.
 
 `tests/test_instrument_map02_drawotag_scope.py` uses a synthetic
-bucket/primitive chain to check frame binding, non-bucket ordinal
-tracking, invalid-token failure, strict opt-in configuration and
+bucket/primitive chain to check frame binding, raster-draw ordinal tracking, invalid-token failure, strict opt-in configuration and
 macro-on/off C compilation. Pinned upstream source-anchor
 compatibility is included in
 `.github/workflows/map02-scoped-blend.yml`.
@@ -179,7 +179,7 @@ beyond their test input, and no claim of physical PS1 accuracy follows.
 ## Private in-memory JSONL bridge
 
 The bounded sink now retains the **native primitive type** decoded by the
-original `DrawOTag` walker, in addition to the frame, non-bucket ordinal,
+original `DrawOTag` walker, in addition to the frame, draw-only ordinal,
 and local PutPixel step. Primitive types outside 0..255 cause a sticky
 capture failure; type and ordinal are independently checked again by the
 Python witness comparator.
@@ -437,3 +437,16 @@ hash binding and format compatibility, not game correctness. Together
 with the compiled C paired-stage test, it closes the
 C JSONL -> PutPixel -> BlendG1 formatting gap. It does **not**
 replace actual private source/VRAM witnesses or a native PC-port build.
+
+## 2026-10-17 ordinal correction
+
+The first scoped DrawOTag generator counted **all** non-bucket OT
+entries, including `DR_MODE`. The existing independent
+`verify_map02_putpixel_scope.py` indexes **only** native VRAM draw
+before/after pairs, which exclude DR_MODE. That mismatch could
+incorrectly reject real MAP02 events or associate events with the
+wrong primitive. The generator now opens/closes and increments
+the sink ordinal exclusively for F4, FT4, SPRT and TILE; an
+interleaved DR_MODE still updates the original GPU draw state normally,
+but cannot create a phantom pixel ordinal. Synthetic regressions
+explicitly cover a DR_MODE between two raster draws.
