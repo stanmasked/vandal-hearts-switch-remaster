@@ -100,6 +100,7 @@ def verify_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
     grouped = {}
     same_color = requests = opaque = bit15_rises = bit15_falls = 0
     accurate_blend_checked = legacy_blend_checked = 0
+    observed_accurate_mode = None
     for index, e in enumerate(rows):
         fields(e, FIELDS, f"scoped pixel {index}")
         if e["stage"] != "native_putpixel":
@@ -132,7 +133,14 @@ def verify_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
         number(e["abr"], "ABR", 0, 3)
         semi = number(e["semi"], "semi", 0, 1)
         number(e["textured"], "textured", 0, 1)
-        number(e["accurate"], "accurate mode", 0, 1)
+        accurate = number(e["accurate"], "accurate mode", 0, 1)
+        # AccurateEnabled caches VH_ACCURATE in a function-static int
+        # the first time it is called, so one native run cannot switch
+        # between legacy and accurate algorithms midway through a log.
+        if observed_accurate_mode is None:
+            observed_accurate_mode = accurate
+        elif observed_accurate_mode != accurate:
+            raise ValueError("inconsistent native AccurateEnabled mode in one PutPixel session")
         if semi == 0:
             if e["front"] != e["after"]:
                 raise ValueError("opaque PutPixel result differs from actual original copy")
@@ -268,6 +276,7 @@ def verify_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
         "accurate_pc_blend_results_checked": accurate_blend_checked,
         "legacy_pc_blend_results_checked": legacy_blend_checked,
         "source_pinned_pc_writepixel_effects_verified": True,
+        "single_runtime_accurate_mode_consistent": True,
         "opaque_copy_putpixel_calls": opaque,
         "observed_bit15_unset_to_set_calls": bit15_rises,
         "observed_bit15_set_to_unset_calls": bit15_falls,
