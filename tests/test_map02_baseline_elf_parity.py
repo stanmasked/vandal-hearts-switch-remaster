@@ -20,8 +20,8 @@ class BaselineElfParityTests(unittest.TestCase):
             for name in ("original_target", "other_target"):
                 source = root / (name + ".c")
                 source.write_text(
-                    f"extern int {name}(int);\\n"
-                    f"int shared_entry(int value) {{ return {name}(value) + 1; }}\\n",
+                    f"extern int {name}(int);\n"
+                    f"int shared_entry(int value) {{ return {name}(value) + 1; }}\n",
                     encoding="utf-8",
                 )
                 obj = root / (name + ".o")
