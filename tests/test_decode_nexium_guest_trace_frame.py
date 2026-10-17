@@ -80,7 +80,7 @@ class TestOpticalFrame(unittest.TestCase):
         with self.assertRaises(TraceError):
             analyze_image(synthetic_image(packet),require_four_scenes=True)
         wrong=list(rows_four_scenes())
-        wrong[10:15]=[(kind,2,3,ns) for kind,scene,serial,ns in wrong[10:15]]
+        wrong[10:15]=[(kind,1,3,ns) for kind,scene,serial,ns in wrong[10:15]]
         packet=encode_fixture(wrong)
         with self.assertRaises(TraceError):
             analyze_image(synthetic_image(packet),require_four_scenes=True)
