@@ -84,6 +84,10 @@ class PrivateNativeLauncherTests(unittest.TestCase):
         self.assertFalse(result["retail_map02_verified"])
         self.assertFalse(result["hd_replacement_authorized"])
         self.assertTrue(result["verification"]["native_gpu_binding"]["verified"])
+        self.assertEqual(result["verification"]["dda_observation_mode"], "entered_only")
+        self.assertFalse(result["verification"]["all_dda_journal_classes_observed"])
+        self.assertEqual(result["verification"]["native_gpu_pairs_verified"], 1)
+        self.assertEqual(len(result["verification"]["vram_snapshot_sha256_list_sha256"]), 64)
         for path in (self.preflight, self.summary):
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
         self.assertEqual(json.loads(self.summary.read_text())["capture_verified"], True)
