@@ -676,22 +676,14 @@ jobs:
             # retain exactly the same executable instructions as the span
             # overlay with candidate tracing disabled. Compare text sections,
             # not object file metadata (which contains source path details).
-            for pair in "span.baseline.o candidate.baseline.o" \
-                        "span.baseline.o candidate-clang.baseline.o"; do
-              read -r left right <<< "$pair"
-              if [[ "$right" == candidate-clang.baseline.o ]]; then
-                # Compilers need not generate identical instruction bytes.
-                continue
-              fi
-              objcopy --only-section=.text -O binary \
-                "build/map02-vertical-dda/$left" \
-                "build/map02-vertical-dda/left.text.bin"
-              objcopy --only-section=.text -O binary \
-                "build/map02-vertical-dda/$right" \
-                "build/map02-vertical-dda/right.text.bin"
-              cmp "build/map02-vertical-dda/left.text.bin" \
-                  "build/map02-vertical-dda/right.text.bin"
-            done
+            objcopy --only-section=.text -O binary \
+              build/map02-vertical-dda/span.baseline.o \
+              build/map02-vertical-dda/span-baseline.text.bin
+            objcopy --only-section=.text -O binary \
+              build/map02-vertical-dda/candidate.baseline.o \
+              build/map02-vertical-dda/candidate-baseline.text.bin
+            cmp build/map02-vertical-dda/span-baseline.text.bin \
+                build/map02-vertical-dda/candidate-baseline.text.bin
             nm --defined-only build/map02-vertical-dda/candidate-linked.diagnostic.o | grep VH_Map02RejectedEdges
             if nm --defined-only build/map02-vertical-dda/candidate-linked.baseline.o | grep -q VH_Map02RejectedEdges; then
               echo "Candidate observer leaked into baseline" >&2
