@@ -180,12 +180,48 @@ static void test_512_pcm_event_to_spu_fifo(void) {
     assert(seq.cycles_completed==1 && !seq.playing);
 }
 
+
+static void test_scene_switch_clears_release_and_reuses_slot(void) {
+    setup();
+    assert(vh_native_seq_init(&seq,controls_song,sizeof controls_song,
+                              &spu,resolve,&log_state,1)==0);
+    assert(vh_native_seq_advance_block(&seq)>0);
+    assert(seq.note_slot[0][60]==0);
+    assert(vh_native_spu_voice_active(&spu,0));
+
+    /* A failed switch must leave the current music and voice intact. */
+    assert(vh_native_seq_switch_scene(&seq,invalid_tempo,
+               sizeof invalid_tempo,&spu,resolve,&log_state,1)==-1);
+    assert(seq.playing && seq.note_slot[0][60]==0);
+    assert(vh_native_spu_voice_active(&spu,0));
+
+    /* Key-off alone retains the releasing voice until the envelope ends. */
+    vh_native_seq_stop(&seq);
+    assert(spu.voice[0].adsr.phase==VH_ADSR_RELEASE);
+    assert(vh_native_spu_voice_active(&spu,0));
+
+    /* Switching a track flushes the old release and resets ownership. */
+    assert(vh_native_seq_switch_scene(&seq,loop_song,sizeof loop_song,
+                                      &spu,resolve,&log_state,1)==0);
+    for(unsigned slot=0;slot<VH_NATIVE_MUSIC_VOICES;slot++) {
+        assert(!vh_native_spu_voice_active(&spu,slot));
+        assert(seq.owner_ch[slot]==-1 && seq.owner_note[slot]==-1);
+    }
+    assert(seq.note_slot[0][60]==-1);
+    assert(seq.playing && seq.blocks_advanced==0);
+    assert(vh_native_seq_advance_block(&seq)>0);
+    assert(seq.note_ons==1 && seq.note_offs==1);
+    assert(!seq.playing && seq.cycles_completed==1);
+    assert(log_state.calls==2);
+}
+
 int main(void) {
     test_validation_and_source_immutability();
     test_512_block_controls_and_ring_pressure();
     test_running_tempo_and_repeat_seam();
     test_voice_stealing_stale_note_off();
     test_512_pcm_event_to_spu_fifo();
+    test_scene_switch_clears_release_and_reuses_slot();
     puts("native pQES SEQ -> 20-voice SPU -> PCM ring: PASS");
     return 0;
 }
