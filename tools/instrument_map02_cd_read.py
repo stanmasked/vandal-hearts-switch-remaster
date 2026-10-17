@@ -51,7 +51,8 @@ def instrument_core_cd(source):
                   '#ifdef VH_MAP02_CD_READ_PROBE\n'
                   '#include "map02_cd_read_probe.h"\n#endif\n'
                   + anchor)
-    anchor = ('   gCdLoader.sectorsToRead = gCdFiles[cdfIdx].sectorCt;\n'\n              '   gCdLoader.sector = gCdFiles[cdfIdx].startingSector;\n')
+    anchor = ('   gCdLoader.sectorsToRead = gCdFiles[cdfIdx].sectorCt;\n'
+              '   gCdLoader.sector = gCdFiles[cdfIdx].startingSector;\n')
     source = once(source, anchor, anchor
                   + '#ifdef VH_MAP02_CD_READ_PROBE\n'
                   '   vh_map02_cd_loader_claim(cdfIdx, CDF_M_MAP02_PRS,\n'
