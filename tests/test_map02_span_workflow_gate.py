@@ -23,6 +23,8 @@ class SpanWorkflowGateTests(unittest.TestCase):
         self.assertIn('candidate-linked-clang.${mode}.o', text)
         self.assertIn('Publish source-pinned DDA candidate build evidence', text)
         self.assertIn('GITHUB_STEP_SUMMARY', text)
+        self.assertIn('test "$(git rev-parse HEAD)" = 14552fffa0e0b47e02b57592e274fc6e7a649923', text)
+        self.assertIn('sha256sum "build/map02-vertical-dda/$object"', text)
         self.assertIn('This is a compile/link check, NOT an original MAP02 gameplay capture.', text)
         self.assertIn('objcopy --only-section=.text -O binary', text)
         self.assertIn('cmp build/map02-vertical-dda/span-baseline.text.bin', text)
