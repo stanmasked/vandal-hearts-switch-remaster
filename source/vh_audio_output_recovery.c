@@ -18,8 +18,9 @@ int vh_audio_page_lease_return(VhAudioPageLease *lease,
     return 0;
 }
 
-int vh_audio_page_lease_stopped(VhAudioPageLease *lease) {
-    if (!lease) return -1;
+int vh_audio_page_lease_stopped(VhAudioPageLease *lease,
+                                 int stop_result) {
+    if (!lease || stop_result) return -1;
     /* Only the caller can confirm the backend stop succeeded. */
     lease->in_flight=NULL;
     return 0;
