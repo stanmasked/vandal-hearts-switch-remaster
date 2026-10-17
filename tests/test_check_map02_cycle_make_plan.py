@@ -143,6 +143,26 @@ class CycleMakePlanTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "bytes changed"):
             check.preflight(self.upstream, self.output)
 
+    def test_make_dry_run_drops_inherited_makefile_and_eval_options(self):
+        poisoned = {
+            "MAKEFILES": "/private/owned/override.mk",
+            "MAKEFLAGS": "--eval=include /private/owned/override.mk",
+            "GNUMAKEFLAGS": "-e",
+            "MFLAGS": "-i",
+            "MAKEOVERRIDES": "REGION=jp",
+            "MAKELEVEL": "99",
+        }
+        result = SimpleNamespace(returncode=2, stderr="not executed",
+                                 stdout="")
+        with patch.dict(check.os.environ, poisoned), patch.object(
+                check.subprocess, "run", return_value=result) as make_run:
+            with self.assertRaisesRegex(ValueError, "output withheld"):
+                check.audit(self.upstream, self.output)
+        env = make_run.call_args.kwargs["env"]
+        for name in check.INHERITED_MAKE_CONTROLS:
+            self.assertNotIn(name, env)
+        self.assertEqual(make_run.call_args.args[0][1:3], ["-nB", "-f"])
+
     def test_make_failure_hides_owned_exe_and_bios_paths(self):
         owned = str(self.upstream / "SLUS_004.47")
         with patch.object(check.subprocess, "run", return_value=SimpleNamespace(
