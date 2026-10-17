@@ -287,6 +287,7 @@ typedef struct {
     unsigned failed_opens_left, failed_starts_left;
     unsigned calls, stops, closes, opens, starts, returned;
     VhAudioTransportTimingHealth transport_health;
+    VhAudioTimingFaultInjection timing_injection;
     unsigned timing_fault_mode;
 } LeasedDevice;
 
@@ -379,6 +380,96 @@ static int leased_submit_with_timing_fault(
            !memcmp(&invalid,&before,sizeof invalid));
     return vh_audio_output_transport_outcome(sent==0,recorded,
                                               &dev->transport_health);
+}
+
+/* ZL-style fault injection must be consumed only by a valid returned
+ * descriptor. An erroneous one first triggers normal stop/reopen
+ * recovery; it cannot spoof the timing-only failure. */
+static int leased_submit_with_one_shot_bad_clock(
+    void *opaque, const int16_t *pcm, size_t frames) {
+    LeasedDevice *dev=opaque;
+    const int returned=leased_submit(opaque,pcm,frames)==0;
+    const uint64_t freq=vh_audio_timing_fault_frequency(
+                &dev->timing_injection,returned,UINT64_C(19200000));
+    VhAudioSubmitTiming telemetry={0};
+    const int recorded=vh_audio_output_record_submit_timing(
+                      &telemetry,200u,freq,frames,returned);
+    assert((freq==0u)==(recorded==-1));
+    return vh_audio_output_transport_outcome(
+                returned,recorded,&dev->transport_health);
+}
+
+static void test_one_shot_timing_injection_after_returned_pcm(void) {
+    VhAudioTimingFaultInjection probe={0};
+    assert(vh_audio_timing_fault_arm(NULL)==-1);
+    assert(vh_audio_timing_fault_arm(&probe)==0);
+    assert(probe.armed && !probe.injected);
+    assert(vh_audio_timing_fault_arm(&probe)==-1);
+    assert(vh_audio_timing_fault_frequency(
+                  &probe,0,UINT64_C(19200000))==UINT64_C(19200000));
+    assert(probe.armed && !probe.injected);
+    assert(vh_audio_timing_fault_frequency(
+                  &probe,1,UINT64_C(19200000))==0u);
+    assert(!probe.armed && probe.injected);
+    assert(vh_audio_timing_fault_frequency(
+                  &probe,1,UINT64_C(19200000))==UINT64_C(19200000));
+    assert(vh_audio_timing_fault_arm(&probe)==-1);
+    assert(vh_audio_timing_fault_frequency(
+                  NULL,1,UINT64_C(19200000))==UINT64_C(19200000));
+
+    for(unsigned i=0u;i<128u;i++)
+        sample[i]=(int16_t)((int)i*53-4000);
+    vh_native_spu_reset(&spu);
+    vh_audio_resample_reset(&resampler);
+    assert(vh_native_seq_init(&seq,song,sizeof song,
+                              &spu,resolve,sample,0u)==0);
+    unsigned recovered=0u,direct=0u;
+    for(unsigned i=0u;i<48u;i++) {
+        assert(vh_native_seq_advance_block(&seq)>=0);
+        vh_native_spu_render(&spu,src,512u);
+        const size_t frames=vh_audio_resample_process(
+                              &resampler,src,512u,dst,640u);
+        assert(frames>=555u && frames<=559u);
+        const uint64_t page_hash=hash_page(dst,frames);
+        const VhNativeSeq before_seq=seq;
+        const VhNativeSpu before_spu=spu;
+        const VhAudioResample before_resampler=resampler;
+        LeasedDevice dev={
+            .opened=1u,.playing=1u,.pcm=dst,.frames=frames,
+            .pcm_hash=page_hash,.wrong_returns_left=(unsigned)(i&1u)
+        };
+        assert(vh_audio_timing_fault_arm(&dev.timing_injection)==0);
+        VhAudioOutputRecovery stats={0};
+        const VhAudioOutputOps ops={
+            &dev,leased_submit_with_one_shot_bad_clock,
+            leased_stop,leased_close,leased_open,leased_start
+        };
+        assert(vh_audio_output_submit_recover(&ops,&stats,dst,frames)==0);
+        assert(!dev.timing_injection.armed && dev.timing_injection.injected);
+        assert(dev.transport_health.timing_fault==1u &&
+               dev.transport_health.delivered_without_timing==1u);
+        assert(vh_audio_output_verify_transport_health(
+                         &dev.transport_health,&stats)==1);
+        assert(stats.pages_submitted==1u &&
+               stats.frames_submitted==frames && dev.returned==1u);
+        if(i&1u) {
+            ++recovered;
+            assert(dev.calls==2u && dev.stops==1u &&
+                   dev.opens==1u && dev.closes==1u &&
+                   stats.submit_failures==1u && stats.recoveries==1u);
+        } else {
+            ++direct;
+            assert(dev.calls==1u && !dev.stops &&
+                   !stats.submit_failures && !stats.recoveries);
+        }
+        assert(vh_audio_page_lease_ready(&dev.lease));
+        assert(hash_page(dst,frames)==page_hash);
+        assert(!memcmp(&seq,&before_seq,sizeof seq));
+        assert(!memcmp(&spu,&before_spu,sizeof spu));
+        assert(!memcmp(&resampler,&before_resampler,sizeof resampler));
+        assert(vh_audio_output_stop_close(&ops)==0);
+    }
+    assert(direct==24u && recovered==24u);
 }
 
 static void test_timing_fault_never_replays_delivered_pcm(void) {
@@ -904,6 +995,7 @@ static void test_home_observer_vs_audout_lease_faults(void) {
 }
 
 int main(void) {
+    test_one_shot_timing_injection_after_returned_pcm();
     test_timing_fault_never_replays_delivered_pcm();
     test_home_observer_vs_audout_lease_faults();
     test_audout_inflight_page_lease_scene_lifetime();
