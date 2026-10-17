@@ -14,7 +14,7 @@ from pathlib import Path
 import stat
 import subprocess
 
-from tools.check_map02_cycle_make_plan import BUILD, audit
+from tools.check_map02_cycle_make_plan import BUILD, audit, clean_make_environment
 from tools.check_map02_cycle_elf import audit_cycle_elf
 from tools.check_map02_original_font_c import verify_generated_original_font
 
@@ -55,7 +55,7 @@ def build_full_pc(upstream, bundle, *, timeout=1200, make="make", report_dir=Non
         "NO_WEBP=1", "NO_HDVIDEO=1",
     ]
     # Use a validated source path only; never trust an inherited font override.
-    env = os.environ.copy()
+    env = clean_make_environment()
     env.pop("VH_KROM_SOURCE", None)
     env.pop("VH_ALLOW_UNVERIFIED_EXE", None)
     # Original generators consult these environment variables outside GNU
