@@ -501,13 +501,14 @@ static void test_fake_pre_service_submit_retries_same_pcm(void) {
                &overflow,UINT64_C(19200000),576u)==-1);
     assert(!memcmp(&overflow,&unchanged,sizeof overflow));
     VhAudioSubmitTiming empty={0};
+    const VhAudioSubmitTiming empty_snapshot=empty;
     assert(vh_audio_output_record_synthetic_submit_failure(
                NULL,UINT64_C(19200000),576u)==-1);
     assert(vh_audio_output_record_synthetic_submit_failure(
                &empty,0u,576u)==-1);
     assert(vh_audio_output_record_synthetic_submit_failure(
                &empty,UINT64_C(19200000),0u)==-1);
-    assert(!memcmp(&empty,&(VhAudioSubmitTiming){0},sizeof empty));
+    assert(!memcmp(&empty,&empty_snapshot,sizeof empty));
 
     /* A request with no subsequent submit must remain pending and
      * cannot be misreported as an exercised recovery. */
