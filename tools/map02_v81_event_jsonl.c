@@ -45,6 +45,20 @@ int vh81_format_jsonl(char *output,size_t capacity) {
         else if(e->kind==VH89_MASKED_COMPLETED) kind="async_copy_masked_completed";
         else if(e->kind==VH89_SYNC_STORES) kind="post_async_sync_copy_stores";
         else if(e->kind==VH89_SYNC_SAME) kind="post_async_sync_copy_same";
+        else if(e->kind==VH90_A0_QUEUED) kind="mixed_a0_queued";
+        else if(e->kind==VH90_A0_DONE) kind="mixed_a0_completed";
+        else if(e->kind==VH90_A0_STORES) kind="mixed_a0_store_count";
+        else if(e->kind==VH90_A0_SAME) kind="mixed_a0_same_count";
+        else if(e->kind==VH90_COPY_QUEUED) kind="mixed_copy_queued";
+        else if(e->kind==VH90_COPY_DONE) kind="mixed_copy_completed";
+        else if(e->kind==VH90_COPY_STORES) kind="mixed_copy_store_count";
+        else if(e->kind==VH90_COPY_SAME) kind="mixed_copy_same_count";
+        else if(e->kind==VH90_MASKED_COPIES) kind="mixed_masked_copies";
+        else if(e->kind==VH90_WORKER_STEPS) kind="mixed_worker_steps";
+        else if(e->kind==VH90_WORKER_ORDER) kind="mixed_worker_order";
+        else if(e->kind==VH90_SYNC_A0) kind="mixed_sync_a0_store_count";
+        else if(e->kind==VH90_SYNC_COPY) kind="mixed_sync_copy_store_count";
+        else if(e->kind==VH90_SYNC_SAME) kind="mixed_sync_copy_same_count";
         else return -1;
         if(used>=capacity) return -1;
         /* GPU DMA2 is an address, NOT an executed GP0 command. */
