@@ -59,6 +59,10 @@ def audit_cycle_elf(path):
     header = _run("readelf", binary)
     if not re.search(r"^\s*Type:\s+(EXEC|DYN)\s", header, re.M):
         raise ValueError("MAP02 cycle proof requires a fully linked ELF executable")
+    entry = re.search(r"^\s*Entry point address:\s*0x([0-9a-fA-F]+)\s*$",
+                      header, re.M)
+    if entry is None or int(entry.group(1), 16) == 0:
+        raise ValueError("MAP02 cycle ELF has no executable entry point")
     if not re.search(r"^\s*Machine:\s+.*(X86-64|80386|AArch64)", header, re.M):
         raise ValueError("unsupported MAP02 PC ELF architecture")
     symbols = set()
