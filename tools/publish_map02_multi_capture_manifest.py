@@ -55,7 +55,7 @@ def _capture_dependency_inventory(source_dir, native_dir):
                     digest.update(chunk)
                     size += len(chunk)
                 after = os.fstat(handle.fileno())
-            current = path.stat(follow_symlinks=False)
+            current = os.stat(path, follow_symlinks=False)
             keys = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
             if size != before.st_size or any(
                     getattr(before, key) != getattr(after, key)
