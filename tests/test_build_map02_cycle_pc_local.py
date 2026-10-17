@@ -139,6 +139,16 @@ class PrivateFullPcBuildTests(unittest.TestCase):
                 build_full_pc(self.upstream, self.bundle)
         run.assert_not_called()
 
+    def test_linked_build_directory_cannot_redirect_private_generated_font(self):
+        redirected = self.upstream.parent / "foreign-build-output"
+        redirected.mkdir()
+        self.exe.parent.symlink_to(redirected, target_is_directory=True)
+        with patch("tools.build_map02_cycle_pc_local.subprocess.run") as run:
+            with self.assertRaisesRegex(ValueError, "directory linked"):
+                build_full_pc(self.upstream, self.bundle)
+        run.assert_not_called()
+        self.assertFalse(any(redirected.iterdir()))
+
     def test_preexisting_font_object_or_symlink_prevents_stale_reuse(self):
         font_object = self.exe.parent / "pc_kanji_font.o"
         font_object.parent.mkdir(parents=True, exist_ok=True)
