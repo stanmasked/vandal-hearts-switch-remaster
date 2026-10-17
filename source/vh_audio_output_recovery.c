@@ -88,11 +88,18 @@ int vh_audio_output_verify_submit_injection(
         timing->synthetic_failed_submissions>timing->calls ||
         timing->failed_submissions!=recovery->submit_failures)
         return -1;
-    /* A consumed fake failure alone is not a recovered PCM page. */
+    /* A consumed fake failure alone is not a recovered PCM page.
+     * Independently reconcile ALL wrapper-level attempts: one accepted
+     * exact descriptor per successful logical page, every other attempt
+     * a reported failure (including the explicitly marked virtual one).
+     * A bad ZL clock must not be mistaken for a valid ZR recovery. */
     if (s->injected) {
         if (!recovery->restart_attempts || !recovery->recoveries ||
             !recovery->pages_submitted ||
-            recovery->recoveries>recovery->restart_attempts)
+            recovery->recoveries>recovery->restart_attempts ||
+            timing->calls<timing->failed_submissions ||
+            timing->calls-timing->failed_submissions!=
+                recovery->pages_submitted)
             return -1;
         return 2;
     }
