@@ -68,10 +68,12 @@ def verify_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
     if len(pairs) % 2:
         raise ValueError("unpaired native GPU event log")
 
-    # 'primitive_ordinal' is one-based? No: 0 for first non-bucket
-    # DrawOTag primitive, then 1, 2, ... for every subsequent primitive.
-    # GPU transfers do not increment this counter. Do not infer from raw
-    # array step, since transfer records can be interleaved in that array.
+    # primitive_ordinal is zero-based across NATIVE DRAW events only
+    # (F4, FT4, SPRT, TILE). The original OT walker also visits DR_MODE
+    # and possibly unrecognized packets; those have no native per-draw
+    # VRAM before/after pair and must NOT increment this ordinal.
+    # Transfer records are excluded here as well. Never infer ordinals
+    # from raw event-array step, which includes paired transfer records.
     native_draws = []
     source_ordinals = set()
     for i in range(0, len(pairs), 2):
