@@ -32,6 +32,8 @@ class CandidateJournalTests(unittest.TestCase):
             pack(dict(base, stage="executed_span")),
             pack(dict(base, unexpected=1)),
             pack(dict(base, x_bound=float("nan"))),
+            pack(dict(base, x_start=1 << 40)),
+            pack(dict(base, frame=1 << 40)),
             pack(base).replace(b"\n", b"\r\n"),
             pack(base)[:-1], b"", b"{}\n",
             b'{"step":0,"step":1}\n',
