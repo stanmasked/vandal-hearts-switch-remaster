@@ -1734,6 +1734,9 @@ static void test_long_eon_tempo_scene_switch_under_variable_pcm_load(void) {
         384u,0u,2048u,0u,512u,64u,640u,0u
     };
     setup();
+    vh_audio_stream_reset(&pressure_expected_ring);
+    memset(&seq,0,sizeof seq);
+    memset(&pressure_reference_seq,0,sizeof pressure_reference_seq);
     assert(vh_native_spu_set_reverb(&spu,1,0.75f)==0);
     vh_native_spu_reset(&dry_reference_spu);
     assert(vh_native_spu_set_interpolation(&dry_reference_spu,
