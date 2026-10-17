@@ -18,6 +18,9 @@ on:
       - 'tools/audit_nexium_guest_sd_handoff.py'
       - 'tools/decode_nexium_guest_trace_frame.py'
       - 'tests/test_decode_nexium_guest_trace_frame.py'
+      - 'tools/capture_nexium_scene_soak.sh'
+      - 'tools/audit_nexium_scene_soak.py'
+      - 'tests/test_audit_nexium_scene_soak.py'
       - 'source/vh_audio_scene_optical.c'
       - 'source/vh_audio_scene_optical.h'
       - 'tests/test_vh_audio_scene_optical.c'
@@ -110,6 +113,8 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m unittest discover -s tests -p "test_decode_nexium_guest_trace_frame.py" -v
+          bash -n tools/capture_nexium_scene_soak.sh
+          python3 -m unittest discover -s tests -p "test_audit_nexium_scene_soak.py" -v
 
       - name: Download NeXium nightly
         shell: bash
@@ -613,6 +618,25 @@ jobs:
             --evidence-dir runtime-evidence
           python3 -m json.tool runtime-evidence/guest-scene-sd-verdict.json > /dev/null
           echo "Verified guest SD CSV is separate from host PCM and cannot prove DAC output." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Capture ten additional A/B transitions in isolated NeXium
+        id: scene_soak_capture
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tools/capture_nexium_scene_soak.sh runtime-evidence/scene-soak
+
+      - name: Require long-run guest optical SD and PCM consistency
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_scene_soak.py \
+            --soak-dir runtime-evidence/scene-soak \
+            --sd-root "$RUNNER_TEMP/vh-nexium-stage268-\${GITHUB_RUN_ID}" \
+            --output runtime-evidence/scene-soak/soak-verification.json \
+            --optical-csv-output runtime-evidence/scene-soak/soak-guest-optical.csv
+          python3 -m json.tool runtime-evidence/scene-soak/soak-verification.json >/dev/null
+          echo "Ten scene transitions witnessed by guest framebuffer and independent guest SD CSV; guest timing is not DAC latency." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Record audio capture boundary
         if: always()
