@@ -97,6 +97,24 @@ class TestIdleControl(unittest.TestCase):
         with self.assertRaises(CorrelationError):
             self.check()
 
+    def test_reject_consistent_but_non_idle_guest_scene(self):
+        # Even if the live original and its captured copy are
+        # identically replaced, an INPUT / POST must be rejected.
+        forged=scene()
+        (self.sd/"audio-scene-trace-0000.csv").write_bytes(forged)
+        (self.evidence/"soak-sd-unverified.csv").write_bytes(forged)
+        with self.assertRaises(CorrelationError):
+            self.check()
+
+    def test_reject_consistently_rebound_startup_origin(self):
+        # A matching copy is not sufficient: the independent clock
+        # must still fall between startup SUBMIT_CALL/RELEASE_RETURN.
+        raw=idle_scene().replace(b"1120000000",b"1400000000")
+        (self.sd/"audio-scene-trace-0000.csv").write_bytes(raw)
+        (self.evidence/"soak-sd-unverified.csv").write_bytes(raw)
+        with self.assertRaises(CorrelationError):
+            self.check()
+
     def test_reject_original_guest_csv_mutation_and_alias(self):
         for kind,filename,copied,location,receipt,raw in self.items:
             with self.subTest(kind=kind):
