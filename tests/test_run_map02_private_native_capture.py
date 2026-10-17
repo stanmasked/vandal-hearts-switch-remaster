@@ -70,9 +70,27 @@ if "--with-move" in sys.argv:
         move_vram[:8] = (b"\x11\x00\x22\x00\x33\x00\x44\x00"
                          if phase == "before" else b"\x11\x00" * 4)
         (root / move["snapshot"]).write_bytes(move_vram)
+if "--with-clear" in sys.argv:
+    for i, phase in enumerate(("before", "after")):
+        clear = {
+            "stage": "native_vram", "step": i, "frame": frame - 1,
+            "phase": phase, "operation": "clear",
+            "snapshot": f"gpu-{i:04d}-vram.bin",
+            "rect": [0, 0, 2, 1], "dest": [0, 0],
+            "rgb": [248, 0, 0], "primitive_type": 0, "semi": 0,
+            "window": [0, 0, 0, 0], "draw_mode": [0, 0, 0],
+            "upload": "", "ft4": None,
+        }
+        with (root / "gpu-native-events.jsonl").open("a") as log:
+            log.write(json.dumps(clear) + "\n")
+        clear_vram = bytearray(1024 * 512 * 2)
+        if phase == "after":
+            clear_vram[:4] = b"\x1f\x00" * 2
+        (root / clear["snapshot"]).write_bytes(clear_vram)
 for i, phase in enumerate(("before", "after"),
                           start=2 if ("--with-load" in sys.argv
-                                      or "--with-move" in sys.argv) else 0):
+                                      or "--with-move" in sys.argv
+                                      or "--with-clear" in sys.argv) else 0):
     event = {
         "stage": "native_vram", "step": i, "frame": frame,
         "phase": phase, "operation": "draw",
@@ -200,6 +218,20 @@ class PrivateNativeLauncherTests(unittest.TestCase):
         corrupted[:8] = b"\x11\x00\x11\x00\x22\x00\x33\x00"
         post.write_bytes(corrupted)
         with self.assertRaisesRegex(ValueError, "MoveImage post-VRAM differs"):
+            self.replay()
+
+    def test_replay_detects_clearimage_bgr555_or_outside_vram_change(self):
+        result = self.run_synthetic("--with-clear")
+        self.assertTrue(result["capture_verified"])
+        self.assertEqual(result["verification"]["clear_pairs_with_verified_vram_effect"], 1)
+        original_replay = self.replay()
+        self.assertTrue(original_replay["raw_evidence_matches_original_receipt"])
+        self.assertEqual(original_replay["clear_pairs_with_verified_vram_effect"], 1)
+        post = self.capture_dir / "gpu-0001-vram.bin"
+        changed = bytearray(post.read_bytes())
+        changed[0] ^= 1
+        post.write_bytes(changed)
+        with self.assertRaisesRegex(ValueError, "ClearImage post-VRAM differs"):
             self.replay()
 
     def test_replay_refuses_modified_original_process_receipt(self):
