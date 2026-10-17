@@ -56,6 +56,8 @@ on:
       - 'tools/check_map02_original_inc_provenance.py'
       - 'tests/test_check_map02_private_pc_inputs.py'
       - 'tests/test_check_map02_original_font_c.py'
+      - 'tools/check_map02_linked_font_elf.py'
+      - 'tests/test_check_map02_linked_font_elf.py'
       - 'tests/test_check_map02_public_reloc_link.py'
       - 'tools/build_map02_cycle_pc_local.py'
       - 'tests/test_build_map02_cycle_pc_local.py'
@@ -157,6 +159,8 @@ on:
       - 'tools/check_map02_original_inc_provenance.py'
       - 'tests/test_check_map02_private_pc_inputs.py'
       - 'tests/test_check_map02_original_font_c.py'
+      - 'tools/check_map02_linked_font_elf.py'
+      - 'tests/test_check_map02_linked_font_elf.py'
       - 'tests/test_check_map02_public_reloc_link.py'
       - 'tools/build_map02_cycle_pc_local.py'
       - 'tests/test_build_map02_cycle_pc_local.py'
@@ -255,6 +259,7 @@ jobs:
             tests.test_check_map02_public_reloc_link \
             tests.test_check_map02_private_pc_inputs \
             tests.test_check_map02_original_font_c \
+            tests.test_check_map02_linked_font_elf \
             tests.test_build_map02_cycle_pc_local \
             tests.test_map02_cycle_build_provenance \
             tests.test_verify_map02_original_cd_read \
