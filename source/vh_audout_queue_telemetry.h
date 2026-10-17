@@ -13,6 +13,12 @@
 #define VH_AUDOUT_LT40_NS UINT64_C(40000000)
 #define VH_AUDOUT_LT50_NS UINT64_C(50000000)
 #define VH_AUDOUT_LATENCY_BANDS 4u
+/* No heap/IO/locks in audio owner. Overflow is explicit, never silent. */
+#define VH_AUDOUT_SLOW_CALL_CAP 128u
+typedef struct {
+    uint64_t attempt, begin_ns, end_ns;
+    unsigned returned;
+} VhAudoutSlowCall;
 typedef struct {
     uint64_t second;
     uint64_t attempts, returns, failures, max_call_ns;
@@ -27,6 +33,9 @@ typedef struct {
     uint64_t queue_ok, queue_errors, overwritten_windows, clock_errors;
     uint32_t queue_min, queue_max;
     VhAudoutQueueBucket bucket[VH_AUDOUT_QUEUE_BUCKETS];
+    uint32_t slow_count;
+    uint64_t slow_dropped;
+    VhAudoutSlowCall slow[VH_AUDOUT_SLOW_CALL_CAP];
 } VhAudoutQueueTelemetry;
 void vh_audout_queue_reset(VhAudoutQueueTelemetry *t);
 /* Probe ONLY before a normal audoutPlayBuffer; 1/16 calls. */
@@ -53,4 +62,8 @@ int vh_audout_latency_verify_csv(const VhAudoutQueueTelemetry *t,FILE *in);
  * source as scene INPUT events, never inferred from host PCM markers. */
 int vh_audout_clock_write_csv(const VhAudoutQueueTelemetry *t,FILE *out);
 int vh_audout_clock_verify_csv(const VhAudoutQueueTelemetry *t,FILE *in);
+/* Stage 274 separate exact absolute begin/end time trace of calls >=40ms.
+ * Only after worker join; bounded memory; overflow explicitly exported. */
+int vh_audout_slow_write_csv(const VhAudoutQueueTelemetry *t,FILE *out);
+int vh_audout_slow_verify_csv(const VhAudoutQueueTelemetry *t,FILE *in);
 #endif
