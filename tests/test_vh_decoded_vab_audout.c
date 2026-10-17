@@ -49,6 +49,7 @@ static void make_bank(unsigned b) {
     const size_t p=32u+7u*16u;
     h[p]=1;h[p+1]=127;h[p+4]=64;
     const size_t t=32u+128u*16u;
+    h[t+1]=4; /* Real tone send to STUDIO_C wet processing. */
     h[t+2]=127;h[t+3]=64;h[t+4]=60;
     h[t+6]=40;h[t+7]=100;h[t+16]=15;
     h[t+20]=7;h[t+22]=1;
@@ -152,6 +153,13 @@ static void verify_returned(
 int main(void) {
     make_bank(0u);make_bank(1u);
     assert(bank[0].samples[1].pcm!=bank[1].samples[1].pcm);
+    VhSeqTone tone0={0},tone1={0};
+    assert(vh_native_vab_resolve(&bank[0],7u,60u,110u,127u,64u,
+                                 &tone0)==0);
+    assert(vh_native_vab_resolve(&bank[1],7u,60u,110u,127u,64u,
+                                 &tone1)==0);
+    assert(tone0.reverb_send==1u && tone1.reverb_send==1u);
+    assert(tone0.pcm!=tone1.pcm);
     assert(memcmp(bank_pcm[0],bank_pcm[1],sizeof bank_pcm[0])!=0);
     vh_native_spu_reset(&spu);
     assert(vh_native_spu_set_reverb(&spu,1,0.5f)==0);

@@ -1928,3 +1928,36 @@ copyright-free synthetic VH/VB/SEQ fixtures. Existing separate
 Python differential unit tests cover narrower VAB resolution
 and STUDIO_C math; neither these host fixtures nor CI can
 prove audio accuracy against the original game or physical Switch.
+
+
+### Independent Python SPU-ADPCM oracle for decoded, reverb-enabled VH/VB bank switching
+
+The decoded synthetic VH/VB→SEQ→SPU→audout fixture previously
+checked wet-tail preservation while the chosen tone's VAB reverb
+send bit was not active. Its synthetic tone now explicitly sets
+VagAtr.mode bit 2, and the integrated C test asserts that the
+native VAB resolver returns \`reverb_send=1\` for both banks.
+The separate callback-free C PCM replay remains a service
+isolation comparison, not an independent codec reference.
+
+The already-installed \`tests/test_native_vab_python_reference.py\`
+now constructs **the exact two synthetic banks** used in the
+C scene-switch integration, independently in Python. Its
+\`tools.decode_spu_adpcm.decode_spu_blocks\` implementation
+decodes both 16-byte ADPCM blocks in each bank (56 signed 16-bit
+mono samples) separately from the native
+\`vh_native_vab_load\` / C ADPCM decoder. The full 56 decoded
+samples are compared individually, including both ends of the
+two-block predictor history, the loop-start and repeat-end
+metadata, and the resolver's decoded PCM pointer. A single
+changed ADPCM nibble is independently decoded both ways and
+must produce a detectably different result. The bank selection
+is then exercised for 16 alternating scenes without mutation
+of either bank's borrowed PCM arena.
+
+Python reference checks are already invoked by \`make test\`
+and \`make test-audio-stream\`, both part of core CI and the
+native audio NRO build. The reference is independent at the
+ADPCM *decode* stage, not a complete independently implemented
+SEQ/SPU/ADSR/resampler PS1 emulator, and the synthetic fixture
+does not prove original soundtrack matching.
