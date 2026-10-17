@@ -11,49 +11,92 @@
 #ifndef O_NOFOLLOW
 #error "v82 POSIX private publisher requires O_NOFOLLOW"
 #endif
+#ifndef O_DIRECTORY
+#error "v100 directory durability needs O_DIRECTORY"
+#endif
 #define VH82_MAX_PATH 4096u
 #define VH82_MAX_BYTES 524288u
 
+/* Directory-fsync evidence is an aggregate counter, never private bytes. */
+static unsigned int vh100_synced_directories;
+unsigned int vh100_directory_syncs(void){return vh100_synced_directories;}
+#ifdef VH100_FAULT_TEST
+/* Isolated native tests only; never compiled into pinned production PCSX. */
+static int vh100_test_fault;
+void vh100_test_fail_at(int phase){vh100_test_fault=phase;}
+#define VH100_FAIL(phase) (vh100_test_fault==(phase))
+#else
+#define VH100_FAIL(phase) (0)
+#endif
+
 int vh82_publish_private(const char *path,const char *bytes,size_t size) {
-    char tmp[VH82_MAX_PATH];
+    char tmp[VH82_MAX_PATH],parent[VH82_MAX_PATH];
     char readback[4096];
     size_t at=0;
-    int fd=-1,reader=-1,owned=0,ok=-1;
+    int fd=-1,reader=-1,dirfd=-1,owned=0,linked=0,ok=-1;
     if(!path || !bytes || path[0]!='/' || !size || size>VH82_MAX_BYTES) return -1;
     size_t n=strnlen(path,VH82_MAX_PATH);
-    if(n==0 || n+5>=sizeof(tmp) || strstr(path,"/../") || strstr(path,"/./")) return -1;
+    if(n==0 || n+5>=sizeof(tmp) || strstr(path,"/../") || strstr(path,"/./"))return -1;
+    const char *slash=strrchr(path,'/');
+    if(!slash || !slash[1])return -1;
+    size_t parent_len=(size_t)(slash-path);
+    if(parent_len==0){parent[0]='/';parent[1]='\0';}
+    else {memcpy(parent,path,parent_len);parent[parent_len]='\0';}
+    dirfd=open(parent,O_RDONLY|O_DIRECTORY|O_NOFOLLOW);
+    if(dirfd<0)return -1;
+    struct stat directory;
+    if(fstat(dirfd,&directory)<0 || !S_ISDIR(directory.st_mode))
+        goto finish;
     memcpy(tmp,path,n);
     memcpy(tmp+n,".tmp",5);
     fd=open(tmp,O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW,0600);
-    if(fd<0) return -1;
+    if(fd<0)goto finish;
     owned=1;
     while(at<size) {
         ssize_t wrote=write(fd,bytes+at,size-at);
-        if(wrote<=0) goto fail;
+        if(wrote<=0)goto finish;
         at+=(size_t)wrote;
     }
-    if(fsync(fd)<0) goto fail;
-    if(close(fd)<0) { fd=-1;goto fail; }
+    if(fsync(fd)<0)goto finish;
+    if(close(fd)<0){fd=-1;goto finish;}
     fd=-1;
     reader=open(tmp,O_RDONLY|O_NOFOLLOW);
-    if(reader<0) goto fail;
+    if(reader<0)goto finish;
     at=0;
     while(at<size) {
         size_t want=size-at<sizeof(readback)?size-at:sizeof(readback);
         ssize_t got=read(reader,readback,want);
-        if(got<=0 || memcmp(bytes+at,readback,(size_t)got)!=0) goto fail;
+        if(got<=0 || memcmp(bytes+at,readback,(size_t)got)!=0)goto finish;
         at+=(size_t)got;
     }
-    if(read(reader,readback,1)!=0) goto fail;
-    if(close(reader)<0) { reader=-1;goto fail; }
+    if(read(reader,readback,1)!=0)goto finish;
+    if(close(reader)<0){reader=-1;goto finish;}
     reader=-1;
-    /* Hard link is exclusive: unlike rename(), it cannot replace final. */
-    if(link(tmp,path)<0) goto fail;
+    /* Original no-replace hard link. Final can exist after a later failure;
+     * we intentionally NEVER roll it back or reuse its pathname. */
+    if(link(tmp,path)<0)goto finish;
+    linked=1;
+    /* fsync the PARENT DIRECTORY to persist the newly created final name,
+     * not just the content of the already-fsynced stage file. */
+    if(VH100_FAIL(1) || fsync(dirfd)<0)goto finish;
+    vh100_synced_directories++;
+    if(VH100_FAIL(2))goto finish;
+    /* Remove ONLY our owned temporary stage and persist that unlink. */
+    if(unlink(tmp)<0)goto finish;
+    owned=0;
+    if(VH100_FAIL(3) || fsync(dirfd)<0)goto finish;
+    vh100_synced_directories++;
     ok=0;
-fail:
-    if(fd>=0) close(fd);
-    if(reader>=0) close(reader);
-    if(owned) unlink(tmp);
+finish:
+    if(fd>=0)close(fd);
+    if(reader>=0)close(reader);
+    /* On pre-link failure, the old v82 rule cleans up our own temp.
+     * On any post-link error, retain a possibly committed final file.
+     * Never hide its ambiguous state or overwrite on a retry. */
+    if(owned && !linked){
+        if(unlink(tmp)==0)(void)fsync(dirfd);
+    }
+    if(dirfd>=0 && close(dirfd)<0)ok=-1;
     return ok;
 }
 
