@@ -210,7 +210,21 @@ def verify_capture(directory: Path, *, target_frame: int):
                 moves+=1
             elif kind=="clear":
                 clears+=1
+    # Legacy captures may lack the new terminal receipt. They remain
+    # analyzable but are NEVER treated as proven complete. If a receipt is
+    # supplied, it must agree with every observed native GPU event and cap.
+    status_path = directory / STATUS
+    if status_path.exists() or status_path.is_symlink():
+        status_report = verify_capture_receipt(
+            directory, target_frame=target_frame, events=events)
+    else:
+        status_report = {
+            "capture_receipt_supplied": False,
+            "capture_window_closed_without_detected_loss": False,
+            "full_original_gameplay_frame_proven": False,
+        }
     return {
+        **status_report,
         "native_gpu_events_sha256":sha(log_raw),
         "vram_snapshot_sha256_list_sha256":sha("".join(snapshot_hashes).encode("ascii")),
         "frame":target_frame,
