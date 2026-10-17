@@ -121,12 +121,18 @@ def check_original_includes(upstream, *, timeout=20):
         snapshot, snapshot_hash, exe_identity = _snapshot_exe(exe, private)
         generated = private / "generated"
         generated.mkdir(mode=0o700)
-        proc = subprocess.run(
-            [sys.executable, "-I", str(pinned_copy), str(snapshot), str(generated)],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            timeout=timeout, check=False,
-            env={"PATH": os.defpath, "PYTHONDONTWRITEBYTECODE": "1"},
-        )
+        try:
+            proc = subprocess.run(
+                [sys.executable, "-I", str(pinned_copy), str(snapshot), str(generated)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                timeout=timeout, check=False,
+                env={"PATH": os.defpath, "PYTHONDONTWRITEBYTECODE": "1"},
+            )
+        except subprocess.TimeoutExpired:
+            # TimeoutExpired.__str__ contains argv with private paths.
+            raise ValueError("original US include generation timed out") from None
+        except OSError:
+            raise ValueError("original US include generator could not launch") from None
         if proc.returncode:
             raise ValueError("original US include generator refused owned input")
         if {p.name for p in generated.iterdir()} != set(FILES):
@@ -171,8 +177,11 @@ def main():
     a = parser.parse_args()
     try:
         result = check_original_includes(a.private_pinned_original_checkout)
-    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+    except ValueError as exc:
         parser.error(str(exc))
+    except OSError:
+        # OSError may embed paths to user-owned copyrighted input files.
+        parser.error("original US include filesystem verification failed")
     print(json.dumps(result, sort_keys=True, indent=2))
 
 
