@@ -28,6 +28,8 @@ def compare_blendg1_witnesses(putpixel_rows, witness_rows):
     last_ordinal = -1
     last_frame = None
     coordinate = None
+    last_after = None
+    type_for_ordinal = {}
     for expected_step, p in enumerate(putpixel_rows):
         if not isinstance(p, dict) or p.get("stage") != "native_putpixel":
             raise ValueError("invalid PutPixel witness")
@@ -41,7 +43,16 @@ def compare_blendg1_witnesses(putpixel_rows, witness_rows):
                 last_ordinal > ordinal) or (
                 coordinate is not None and coordinate != xy):
             raise ValueError("mixed frame, coordinate or nonmonotonic draw ordinal")
+        if last_after is not None and _uint(p, "before", 65535) != last_after:
+            raise ValueError("native VRAM chain broken between PutPixel calls")
+        primitive_type = _uint(p, "primitive_type", 255)
+        if ordinal in type_for_ordinal:
+            if type_for_ordinal[ordinal] != primitive_type:
+                raise ValueError("primitive type changed inside one OT draw")
+        else:
+            type_for_ordinal[ordinal] = primitive_type
         last_frame, last_ordinal, coordinate = frame, ordinal, xy
+        last_after = _uint(p, "after", 65535)
         for key, upper in (("frame", 2**32 - 1),
                            ("primitive_ordinal", 2**32 - 1),
                            ("primitive_type", 255),
