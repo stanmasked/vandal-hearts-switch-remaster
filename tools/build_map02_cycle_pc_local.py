@@ -7,7 +7,6 @@ or written to the GitHub working tree by this script. This does not execute
 the game, authenticate a MAP02 frame, or enable HD substitution.
 """
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -16,6 +15,7 @@ import subprocess
 
 from tools.check_map02_cycle_make_plan import BUILD, audit, clean_make_environment
 from tools.check_map02_cycle_elf import audit_cycle_elf
+from tools.check_map02_linked_font_elf import stable_owned_elf_sha256
 from tools.check_map02_original_font_c import verify_linked_original_font
 
 BINARY_NAME = "vandalhearts_pc"
@@ -107,16 +107,10 @@ def build_full_pc(upstream, bundle, *, timeout=1200, make="make", report_dir=Non
     preflight(upstream, bundle)
     if verify_private_pc_inputs(upstream, krom_source=krom_source) != original_inputs:
         raise ValueError("private original US inputs changed during PC build")
-    with target.open("rb") as stream:
-        h = hashlib.sha256()
-        while True:
-            chunk = stream.read(1 << 20)
-            if not chunk:
-                break
-            h.update(chunk)
+    elf_digest = stable_owned_elf_sha256(target)
     result = {
         "schema": "vh.map02.private-full-pc-elf-build.v1",
-        "pc_executable_sha256": h.hexdigest(),
+        "pc_executable_sha256": elf_digest,
         "private_retail_inputs_binding_sha256":
             original_inputs["private_build_inputs_binding_sha256"],
         "source_bound_make_command_sha256":
