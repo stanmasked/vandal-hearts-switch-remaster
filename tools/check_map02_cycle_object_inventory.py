@@ -20,7 +20,7 @@ from tools.prepare_map02_cycle_build import SUPPORT_FILES
 MIN_GAME = 80
 # Known public source blockers are mandatory; any extra skip requires
 # an actual direct assets/ include in the *original* pinned source file.
-ASSET_INCLUDES = re.compile(r'^\\s*#\\s*include\\s*"assets/[^"]+"', re.M)
+ASSET_INCLUDES = re.compile(r'^\s*#\s*include\s*"assets/[^"]+"', re.M)
 KNOWN_ASSET_IMPORTS = {
     "src/core/text.o": '#include "assets/801012e4.inc"',
     "src/maps/map_32.o": '#include "assets/801009bc.inc"',
