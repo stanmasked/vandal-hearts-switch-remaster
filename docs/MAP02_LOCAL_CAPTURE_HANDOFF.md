@@ -21,12 +21,23 @@ mkdir -m 700 /private/map02/handoff
 python3 -m tools.map02_local_capture_handoff prepare \
   /private/map02/handoff \
   --pc-binary /private/map02/pc-port-instrumented \
+  --upstream-checkout /private/map02/VandalHearts-PcPort \
   --owned-game-image /private/map02/owned-game-image.bin \
   --frame 123
 ~~~
 
 Число 123 — **пример**, а не установленный номер MAP02; нужно
 использовать фактический номер выбранного вызова DrawOTag.
+
+Теперь проверяются **реальные байты пяти источников** из локального
+checkout, а не только название branch или строка commit: исходный
+`libgpu.c`, `pc_raster.c`, игровые `graphics.c` и
+`game_setup.c`, а также `platform/pc/Makefile`. Их Git blob
+SHA-1 обязаны совпасть с зафиксированным PC-портом. Результат
+дополнительно привязан к плану через SHA-256 всего набора.
+Проверка повторяется перед публикацией и при каждом последующем
+аудите. Любая подмена исходника или символьная ссылка вместо файла
+приводит к отказу.
 
 Подготовка эксклюзивно сохраняет файл
 \`gpu-local-capture-plan.json\` с правами 0600, SHA-256 локального
@@ -53,6 +64,7 @@ PutPixel/BlendG1 → VRAM-edges. Он должен завершиться при
 python3 -m tools.map02_local_capture_handoff seal \
   /private/map02/handoff \
   --pc-binary /private/map02/pc-port-instrumented \
+  --upstream-checkout /private/map02/VandalHearts-PcPort \
   --owned-game-image /private/map02/owned-game-image.bin \
   --source-bundle /private/map02/source-bundle \
   --native-windows /private/map02/native-windows \
@@ -61,6 +73,7 @@ python3 -m tools.map02_local_capture_handoff seal \
 python3 -m tools.map02_local_capture_handoff verify \
   /private/map02/handoff \
   --pc-binary /private/map02/pc-port-instrumented \
+  --upstream-checkout /private/map02/VandalHearts-PcPort \
   --owned-game-image /private/map02/owned-game-image.bin \
   --source-bundle /private/map02/source-bundle \
   --native-windows /private/map02/native-windows \
