@@ -39,3 +39,15 @@ The first CI-generated `pcm-monitor-report.json` mistakenly contained a literal 
 - Independently check that nonzero capture comes from the virtual sink connected to the NeXium process, not unrelated host system playback.
 - Allow manual listening to the WAV extraction only as a subjective emulator-host check. This cannot prove the original PS1 soundtrack.
 - Continue physical console acceptance protocol for actual music, controller behavior, HOME, sleep and SD persistence before ever replacing `HARDWARE NOT TESTED`.
+
+## Follow-up: corrected JSON and source attribution verified
+
+The follow-up [Actions run 39036800600](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39036800600) for code commit `f28f89ef0dbfe3d408ddf599f5d6d7f1224eb9dd` completed **successfully**; both jobs passed. The raw evidence archive `12102846108` was downloaded and checked independently:
+
+- ZIP CRC: clean, 19 members.
+- `pcm-monitor-report.json` parses as strict JSON **without any repair or trailing tokens**.
+- NeXium-specific PulseAudio sink input: observed, with `application.name = "ALSA plug-in [nexium]"`.
+- Raw recording: 8,657,264 bytes, 45.090 seconds, 4,328,632 interleaved sample values.
+- Independent sample analysis: 1,396,833 samples magnitude ≥ 256; peak 2,879; RMS 611.287. All match CI JSON.
+- The separate audio-launch exit status was **124** (time-boxed `timeout`), so do not call this a clean guest exit. Graphics/input tests passed separately.
+- Result remains `NONZERO_VIRTUAL_PCM_UNATTRIBUTED_TO_MUSIC` and `audible_music_confirmed=false`. Physical Switch status remains `HARDWARE NOT TESTED`.
