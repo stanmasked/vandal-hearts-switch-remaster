@@ -36,6 +36,8 @@ static VhAudioResample resampler;
  * appletMainLoop processes events; no audio callback or PCM mutation. */
 static VhAudioAppletEvents focus_events;
 static unsigned focus_record_errors;
+/* 0: unsupported applet context; 1: enabled; 2: request rejected. */
+static unsigned focus_notification_mode;
 static void audio_applet_hook(AppletHookType hook,void *param) {
     (void)param;
     unsigned event=0u;
@@ -300,6 +302,9 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
                r->focus->backgrounds,r->focus->returns,r->focus->resumes);
         printf("Focus events duplicate/error=%u/%u\n",
                r->focus->ignored_duplicates,r->focus_errors);
+        printf("HOME focus notify=%s\n",
+               focus_notification_mode==1u ? "ENABLED" :
+               focus_notification_mode==2u ? "UNAVAILABLE" : "APPLET MODE");
         printf("HOME observed, audible resume UNVERIFIED\n");
         const uint64_t rendered=r->compute->rendered_pages;
         const uint64_t total_us=vh_audio_output_ticks_to_us(
@@ -494,6 +499,15 @@ int main(int argc, char **argv) {
         return 2;
     }
 
+    /* Application launches may request HOME/sleep focus messages.
+     * The default applet mode does not guarantee these notifications:
+     * show the mode explicitly rather than inventing HOME attempts.
+     * Never alter suspend behavior in library-applet (hbmenu) mode. */
+    if(appletGetAppletType()==AppletType_Application) {
+        const Result focus_rc=appletSetFocusHandlingMode(
+                       AppletFocusHandlingMode_SuspendHomeSleepNotify);
+        focus_notification_mode=R_SUCCEEDED(focus_rc) ? 1u : 2u;
+    }
     /* Observe real HOME/sleep focus notifications, not just X/Y.
      * The hook never manipulates audout or renders PCM. */
     AppletHookCookie focus_cookie={0};
