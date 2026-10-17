@@ -214,3 +214,34 @@ int vh_audout_latency_verify_csv(const VhAudoutQueueTelemetry *t,FILE *in) {
     }
     return fgetc(in)==EOF && !ferror(in) ? 0 : -1;
 }
+
+
+/* Absolute guest clock anchor. Same armTicksToNs timestamp source as
+ * vh_audio_scene_trace.c events. Writer runs after audio owner join.
+ * Separate from both original queue and duration-band CSV schemas. */
+static int clock_row(char *dst,size_t cap,const VhAudoutQueueTelemetry *t) {
+    if(!t || !t->attempts || !t->origin_ns || !dst || !cap) return -1;
+    const int n=snprintf(dst,cap,
+        "vh-audout-guest-clock-origin/v1,%llu,%llu,%llu,%llu\n",
+        (unsigned long long)t->origin_ns,
+        (unsigned long long)t->attempts,
+        (unsigned long long)t->last_second,
+        (unsigned long long)t->clock_errors);
+    return n>0 && (size_t)n<cap ? n : -1;
+}
+static const char CLOCK_HEADER[]=
+    "schema,origin_ns,attempts,last_second,clock_errors\n";
+
+int vh_audout_clock_write_csv(const VhAudoutQueueTelemetry *t,FILE *out) {
+    char line[200];
+    if(!out || clock_row(line,sizeof line,t)<0 ||
+       fputs(CLOCK_HEADER,out)==EOF || fputs(line,out)==EOF) return -1;
+    return ferror(out) ? -1 : 1;
+}
+int vh_audout_clock_verify_csv(const VhAudoutQueueTelemetry *t,FILE *in) {
+    char line[200],expected[200];
+    if(!in || clock_row(expected,sizeof expected,t)<0) return -1;
+    if(!fgets(line,sizeof line,in) || strcmp(line,CLOCK_HEADER)!=0 ||
+       !fgets(line,sizeof line,in) || strcmp(line,expected)!=0) return -1;
+    return fgetc(in)==EOF && !ferror(in) ? 0 : -1;
+}
