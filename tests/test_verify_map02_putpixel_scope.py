@@ -273,6 +273,7 @@ class PixelToOriginalPrimitiveTests(unittest.TestCase):
         self.assertEqual(report["accurate_pc_blend_results_checked"], 1)
         self.assertEqual(report["legacy_pc_blend_results_checked"], 0)
         self.assertTrue(report["source_pinned_pc_writepixel_effects_verified"])
+        self.assertTrue(report["single_runtime_accurate_mode_consistent"])
         self.pixel_rows[0]["front"] = 0x0001
         self.save()
         with self.assertRaisesRegex(ValueError, "semi-transparent PutPixel"):
@@ -294,6 +295,7 @@ class PixelToOriginalPrimitiveTests(unittest.TestCase):
             self.row(1,2,0x001f,0x7c00,0x7c00),
         ]
         self.pixel_rows[0]["accurate"] = 0
+        self.pixel_rows[1]["accurate"] = 0
         self.save()
         report = verify_pixel_ot(self.root,self.native)
         self.assertEqual(report["legacy_pc_blend_results_checked"],1)
@@ -302,6 +304,15 @@ class PixelToOriginalPrimitiveTests(unittest.TestCase):
         self.save()
         with self.assertRaisesRegex(ValueError,"semi-transparent PutPixel"):
             verify_pixel_ot(self.root,self.native)
+
+    def test_mixed_runtime_accurate_mode_rejected_even_with_opaque_calls(self):
+        # AccurateEnabled() is process-static in pinned original raster.
+        # Recomputing the JSONL digest must not legitimize an impossible
+        # accurate/legacy algorithm change between consecutive calls.
+        self.pixel_rows[1]["accurate"] = 0
+        self.save()
+        with self.assertRaisesRegex(ValueError, "inconsistent native AccurateEnabled"):
+            verify_pixel_ot(self.root, self.native)
 
     def test_wrong_frame_scope_or_primitive_type_refused(self):
         self.pixel_rows[0]["frame"]=13
