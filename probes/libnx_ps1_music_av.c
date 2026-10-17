@@ -179,6 +179,12 @@ typedef struct {
     VhAudioSceneWaits scene_waits;
     VhAudioPageLease lease;
     VhAudioTransportTimingHealth transport_health;
+#if defined(VH_AUDIO_GUEST_ZL_AUTOTEST) || defined(VH_AUDIO_GUEST_ZR_AUTOTEST)
+    /* Count ACTUAL service entries independently of timing records:
+     * a deliberate bad clock leaves timing.calls unchanged even though
+     * audoutPlayBuffer physically ran and returned the descriptor. */
+    uint64_t service_calls;
+#endif
 #ifdef VH_AUDIO_GUEST_ZR_AUTOTEST
     VhAudioSubmitFaultInjection submit_injection;
 #endif
@@ -264,6 +270,12 @@ static int native_submit(void *opaque,const int16_t *pcm,size_t frames) {
      * the backing 4-KiB PCM page, even if the call itself succeeded.
      */
     const uint64_t start_ticks=armGetSystemTick();
+#if defined(VH_AUDIO_GUEST_ZL_AUTOTEST) || defined(VH_AUDIO_GUEST_ZR_AUTOTEST)
+    /* Instrument the actual guest libnx boundary, NOT our logical
+     * submit wrapper. The pre-service ZR rejection never gets here. */
+    if (dev->service_calls==UINT64_MAX) return -1;
+    ++dev->service_calls;
+#endif
     const Result result=audoutPlayBuffer(&dev->page,&released);
     const uint64_t elapsed=armGetSystemTick()-start_ticks;
     const int accepted=R_SUCCEEDED(result) &&
@@ -341,10 +353,12 @@ static void audio_worker(void *unused) {
         VhAudioSubmitTiming zl_before_timing={0};
         VhAudioTransportTimingHealth zl_before_health={0};
         uint64_t zl_before_pcm=0u;
+        uint64_t zl_before_service_calls=0u;
         if(guest_zl_trial) {
             zl_before_recovery=output_recovery;
             zl_before_timing=native_output.timing;
             zl_before_health=native_output.transport_health;
+            zl_before_service_calls=native_output.service_calls;
             zl_before_pcm=guest_zl_pcm_fingerprint(audio_page,count);
             guest_zl_seq_before=seq;
             memcpy(&guest_zl_spu_before,&synth,sizeof synth);
@@ -365,8 +379,10 @@ static void audio_worker(void *unused) {
             atomic_load(&guest_zr_witness)==0;
         VhAudioOutputRecovery before_recovery={0};
         uint64_t before_pcm=0u;
+        uint64_t before_service_calls=0u;
         if(guest_zr_trial) {
             before_recovery=output_recovery;
+            before_service_calls=native_output.service_calls;
             before_pcm=guest_pcm_fingerprint(audio_page,count);
             guest_zr_seq_before=seq;
             memcpy(&guest_zr_spu_before,&synth,sizeof synth);
@@ -389,6 +405,8 @@ static void audio_worker(void *unused) {
              * rejected clock, so cross-check logical page counters too. */
             const int valid=submit_result==0 &&
                 vh_audio_page_lease_ready(&native_output.lease) &&
+                zl_before_service_calls<UINT64_MAX &&
+                native_output.service_calls==zl_before_service_calls+1u &&
                 vh_audio_output_verify_timing_injection(
                     &native_output.timing_injection,
                     &native_output.transport_health,&output_recovery)==2 &&
@@ -429,6 +447,8 @@ static void audio_worker(void *unused) {
         if(guest_zr_trial) {
             const int valid=submit_result==0 &&
                 vh_audio_page_lease_ready(&native_output.lease) &&
+                before_service_calls<UINT64_MAX &&
+                native_output.service_calls==before_service_calls+1u &&
                 vh_audio_output_verify_submit_injection(
                     &native_output.submit_injection,&native_output.timing,
                     &output_recovery)==2 &&
@@ -508,6 +528,9 @@ static int start_native_audio(void) {
     memset(&native_output.timing,0,sizeof(native_output.timing));
     memset(&native_output.scene_waits,0,sizeof(native_output.scene_waits));
     memset(&native_output.transport_health,0,sizeof(native_output.transport_health));
+#if defined(VH_AUDIO_GUEST_ZL_AUTOTEST) || defined(VH_AUDIO_GUEST_ZR_AUTOTEST)
+    native_output.service_calls=0u;
+#endif
     Result result;
     atomic_store(&audio_stop, false);
     atomic_store(&audio_fault, 0);
