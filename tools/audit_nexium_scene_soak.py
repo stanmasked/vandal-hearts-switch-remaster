@@ -91,7 +91,13 @@ def settled_pcm_metrics(raw: bytes, markers: list[dict]) -> list[dict]:
                if index+1<len(markers) else whole_frames) - round(RATE*STABLE_END_GUARD_S)
         if end-begin < SAMPLE_FRAMES:
             raise TraceError(f"scene {index} has no full settled PCM interval")
-        start = begin+(end-begin-SAMPLE_FRAMES)//2
+        # Anchor the settled comparison to the first complete second
+        # after the fixed stabilization interval. The final state has
+        # no following input marker; the PCM monitor continues after
+        # diagnostic Plus exits the guest. Taking the *midpoint* of
+        # that unbounded tail would falsely classify post-exit monitor
+        # silence as silence in MUSIC FIELD.
+        start = begin
         summed = crossings = 0
         prev_l = prev_r = None
         for i in range(start,start+SAMPLE_FRAMES):
