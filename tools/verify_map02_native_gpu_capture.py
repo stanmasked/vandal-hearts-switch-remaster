@@ -18,6 +18,40 @@ from tools.verify_map02_vram_timeline import VRAM_BYTES
 LOG = "gpu-native-events.jsonl"
 MAX_RECORDS = 64
 MAX_EVENT_BYTES = 128 * 1024
+VRAM_WIDTH = 1024
+VRAM_HEIGHT = 512
+
+
+def validate_bounded_load_vram(before, after, payload, rect):
+    """Mirror the pinned original PC LoadImage rectangle clip + BGR555 copy.
+
+    Source: platform/pc/src/libgpu.c at upstream 14552fff. This checker
+    uses the post-LanguagePatch raw source words saved by the C recorder,
+    not a recreated texture or a projected/HD framebuffer.
+    """
+    rx, ry, width, height = rect
+    if not (1 <= width <= 128 and 1 <= height <= 128):
+        raise ValueError("bounded LoadImage validation requires source hook dimensions")
+    if len(payload) != 2 * width * height:
+        raise ValueError("bounded LoadImage payload size disagrees with RECT")
+    # Exact original loop: x0=max(-rect.x,0), x1=min(w,VRAM_W-rect.x)
+    # and the analogous y limits. Entire outside-VRAM copy is a no-op.
+    x0 = max(-rx, 0)
+    y0 = max(-ry, 0)
+    x1 = min(width, VRAM_WIDTH - rx)
+    y1 = min(height, VRAM_HEIGHT - ry)
+    expected = bytearray(before)
+    if x0 < x1 and y0 < y1:
+        row_size = (x1 - x0) * 2
+        for y in range(y0, y1):
+            source_offset = (y * width + x0) * 2
+            dest_offset = ((ry + y) * VRAM_WIDTH + (rx + x0)) * 2
+            expected[dest_offset:dest_offset + row_size] = (
+                payload[source_offset:source_offset + row_size]
+            )
+    if expected != after:
+        raise ValueError("bounded LoadImage post-VRAM differs from native source pixel copy")
+
 
 
 def private_file(root: Path, name: str, *, expected=None, max_bytes=None):
@@ -155,9 +189,9 @@ def verify_capture(directory: Path, *, target_frame: int):
                 if expected_payload:
                     if not upload:
                         raise ValueError("bounded LoadImage missing mandatory upload payload")
-                    upload_hashes.append(sha(private_file(
-                        directory,upload,expected=rect[2]*rect[3]*2
-                    )))
+                    payload = private_file(directory,upload,expected=rect[2]*rect[3]*2)
+                    validate_bounded_load_vram(a, b, payload, rect)
+                    upload_hashes.append(sha(payload))
                 else:
                     if upload:
                         raise ValueError("out-of-range LoadImage cannot have recorded upload payload")
@@ -173,6 +207,7 @@ def verify_capture(directory: Path, *, target_frame: int):
             sha("".join(upload_hashes).encode("ascii")) if upload_hashes else None
         ),
         "load_pairs_with_verified_payload":len(upload_hashes),
+        "load_pairs_with_verified_vram_effect":len(upload_hashes),
         "load_pairs_without_payload":load_pairs_without_payload,
         "frame":target_frame,
         "native_gpu_pairs_verified":pairs,
