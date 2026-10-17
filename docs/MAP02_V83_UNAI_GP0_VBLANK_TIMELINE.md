@@ -11,8 +11,10 @@ the software GPU renderer handled a primitive. In the pinned Unai renderer,
 **after** the original renderer's command switch on the non-legacy path.
 
 Accepted event `gp0_unai_handled` records the 32-bit command header for
-commands known to have reached the Unai handler: fill 0x02; polygon, line,
-sprite and rectangle families 0x20–0x7f; state E1–E6. An incomplete
+commands known to have reached the Unai handler: fill 0x02; ranges
+0x20–0x43, 0x48–0x53, 0x58–0x6B, 0x70–0x7F; state E1–E6.
+The gaps 0x44–0x47, 0x54–0x57 and 0x6C–0x6F are excluded as
+unsupported by this pinned Unai switch. An incomplete
 packet that terminates before the switch does not qualify; GP0 A0 uploads,
 C0 reads and other gpulib-handled commands are deliberately excluded.
 
