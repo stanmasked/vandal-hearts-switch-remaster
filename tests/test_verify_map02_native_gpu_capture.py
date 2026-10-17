@@ -1,5 +1,6 @@
 """Synthetic checker for bounded native GPU command/VRAM capture files."""
 import json
+import hashlib
 from pathlib import Path
 import tempfile
 import unittest
@@ -54,6 +55,9 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
         self.assertEqual(result["clear_image_pairs"],1)
         self.assertEqual(result["changed_native_draw_vram_words"],1)
         self.assertEqual(result["changed_transfer_vram_words"],1)
+        self.assertIsNone(result["upload_payload_sha256_list_sha256"])
+        self.assertEqual(result["load_pairs_with_verified_payload"],0)
+        self.assertEqual(result["load_pairs_without_payload"],0)
         for flag in ("real_gameplay_authenticated","gpu_write_stream_complete",
                      "source_keyed_map02_faces_matched","ps1_hardware_pixels_verified",
                      "game_bytes_in_report"):
@@ -136,9 +140,50 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
         self.events[1]=self.make(1,"after","load","gpu-0001-upload.bin",rect=[0,0,1,1])
         self.save()
         (self.root/"gpu-0001-upload.bin").write_bytes(payload)
-        self.assertEqual(verify_capture(self.root,target_frame=12)["load_image_pairs"],1)
+        first=verify_capture(self.root,target_frame=12)
+        self.assertEqual(first["load_image_pairs"],1)
+        self.assertEqual(first["load_pairs_with_verified_payload"],1)
+        self.assertEqual(first["load_pairs_without_payload"],0)
+        self.assertEqual(first["upload_payload_sha256_list_sha256"],
+                         hashlib.sha256(hashlib.sha256(payload).hexdigest().encode("ascii")).hexdigest())
         (self.root/"gpu-0001-upload.bin").write_bytes(b"\x00")
         with self.assertRaisesRegex(ValueError,"wrong file size"):
+            verify_capture(self.root,target_frame=12)
+
+    def test_same_length_upload_mutation_changes_payload_fingerprint(self):
+        self.events=self.events[:2]
+        self.events[0]=self.make(0,"before","load","",rect=[0,0,1,1])
+        self.events[1]=self.make(1,"after","load","gpu-0001-upload.bin",rect=[0,0,1,1])
+        self.save()
+        path=self.root/"gpu-0001-upload.bin"
+        path.write_bytes(b"\x1f\x00")
+        first=verify_capture(self.root,target_frame=12)
+        path.write_bytes(b"\x1e\x00")  # same byte length, different evidence
+        second=verify_capture(self.root,target_frame=12)
+        self.assertNotEqual(first["upload_payload_sha256_list_sha256"],
+                            second["upload_payload_sha256_list_sha256"])
+        self.assertEqual(first["native_gpu_events_sha256"],
+                         second["native_gpu_events_sha256"])
+        self.assertEqual(first["vram_snapshot_sha256_list_sha256"],
+                         second["vram_snapshot_sha256_list_sha256"])
+
+    def test_unrecorded_load_payload_is_explicitly_unobserved(self):
+        self.events=self.events[:2]
+        self.events[0]=self.make(0,"before","load","",rect=[0,0,256,256])
+        self.events[1]=self.make(1,"after","load","",rect=[0,0,256,256])
+        self.save()
+        result=verify_capture(self.root,target_frame=12)
+        self.assertEqual(result["load_image_pairs"],1)
+        self.assertEqual(result["load_pairs_without_payload"],1)
+        self.assertEqual(result["load_pairs_with_verified_payload"],0)
+        self.assertIsNone(result["upload_payload_sha256_list_sha256"])
+
+    def test_before_load_cannot_claim_payload(self):
+        self.events=self.events[:2]
+        self.events[0]=self.make(0,"before","load","gpu-0000-upload.bin",rect=[0,0,1,1])
+        self.events[1]=self.make(1,"after","load","",rect=[0,0,1,1])
+        self.save()
+        with self.assertRaisesRegex(ValueError,"before event must not"):
             verify_capture(self.root,target_frame=12)
 
 if __name__=="__main__":
