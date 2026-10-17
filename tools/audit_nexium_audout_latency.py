@@ -101,7 +101,7 @@ def parse_latency(raw: bytes) -> dict:
             {"second":r["second"],"attempts":r["attempts"],
              "lt25ms":r["lt25ms"],"from25to40ms":r["from25to40ms"],
              "from40to50ms":r["from40to50ms"],"ge50ms":r["ge50ms"],
-             "max_call_us":r["max_call_us"]} for r in seconds
+             "failures":r["failures"],"max_call_us":r["max_call_us"]} for r in seconds
         ],
         "measures_every_individual_blocking_call":True,
         "physical_switch_tested":False,
@@ -165,6 +165,7 @@ def bind_guest_latency(source: Path, locations: Path,
     for queue_window,latency_window in zip(windows,report["per_second_call_bands"]):
         if (int(queue_window["second"])!=latency_window["second"]
                 or int(queue_window["attempts"])!=latency_window["attempts"]
+                or int(queue_window["failures"])!=latency_window["failures"]
                 or int(queue_window["max_call_us"])!=latency_window["max_call_us"]):
             raise ValueError("stage-269 and latency per-second timestamps/counts differ")
     report.update(receipt_report)
