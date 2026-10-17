@@ -36,10 +36,11 @@ def check(directory: Path, *, git_sha: str, run_id: int, artifact_id: int,
     if not directory.is_dir() or directory.is_symlink():
         raise PreflightError("artifact directory missing or symlinked")
     # Refuse ambiguous directories containing another NRO or hash receipt.
-    unexpected = sorted(p.name for p in directory.iterdir()
-                        if p.name not in (EXPECTED_NRO, EXPECTED_HASH_FILE)
-                        and (p.name.lower().endswith(".nro")
-                             or p.name.lower().endswith(".sha256")))
+    unexpected = sorted(p.relative_to(directory).as_posix()
+                        for p in directory.rglob("*")
+                        if p.relative_to(directory).as_posix()
+                        not in (EXPECTED_NRO, EXPECTED_HASH_FILE)
+                        and p.name.lower().endswith((".nro", ".sha256")))
     if unexpected:
         raise PreflightError("unexpected competing artifact member: " + unexpected[0])
     nro = directory / EXPECTED_NRO
