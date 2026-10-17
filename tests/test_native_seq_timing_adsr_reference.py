@@ -285,6 +285,96 @@ class NativeSeqAdsrDifferentialTests(unittest.TestCase):
                     )
                 self.assertEqual(cycles, expected_schedule["cycles_completed"])
 
+    def test_paced_ring_against_exact_fraction_event_clock(self):
+        """A full 4096-frame FIFO, repeated blocked writes and underruns
+        must NEVER advance SEQ time without an accepted 512-frame page.
+        Calculate expected event dispatch independently using Fraction,
+        and consumer queue accounting using integer frame counts.
+        """
+        requests = (0, 0, 32, 256, 0, 0, 0, 4096, 1, 511, 0, 64)
+        attempts = 1536
+        data = rapid_tempo_note_boundary_song()
+        with tempfile.TemporaryDirectory(prefix="vh-paced-seq-reference-") as tmp:
+            fixture = Path(tmp) / "paced.seq"
+            fixture.write_bytes(data)
+            rows = self.trace("paced", fixture, attempts)
+        self.assertEqual(len(rows), attempts)
+        produced = sum(int(row[2]) == 512 for row in rows)
+        self.assertGreater(produced, 500)
+        self.assertLess(produced, attempts)
+        scheduled = schedule_seq_audio_blocks(
+            parse_seq(data), repeat_count=0, max_frames=produced * 512,
+        )
+        self.assertTrue(scheduled["stopped_by_window"])
+        by_block = {}
+        for event in scheduled["events"]:
+            if event["frame"] == produced * 512:
+                self.assertTrue(event["truncated_by_window"])
+                continue
+            self.assertEqual(event["frame"] % 512, 0)
+            by_block.setdefault(event["frame"] // 512, []).append(event)
+
+        queued = 4096
+        missing = 0
+        blocks = on = off = cycles = dispatched = 0
+        held = set()
+        tempo = ((data[10] << 16) | (data[11] << 8) | data[12]) or 500000
+        stalls = underruns = 0
+        seen_tempos = {tempo}
+        for attempt, row in enumerate(rows):
+            self.assertEqual(row[0], "P")
+            wrote = 512 if queued <= 4096 - 512 else 0
+            if wrote:
+                for event in by_block.get(blocks, ()):
+                    dispatched += 1
+                    kind = event["type"]
+                    if kind == "note_on":
+                        key = (event["channel"], event["note"])
+                        if key in held:
+                            off += 1
+                        held.add(key)
+                        on += 1
+                    elif kind == "note_off":
+                        key = (event["channel"], event["note"])
+                        if key in held:
+                            held.remove(key)
+                            off += 1
+                    elif kind == "tempo":
+                        tempo = event["tempo_us_per_quarter"]
+                        seen_tempos.add(tempo)
+                    elif kind == "loop_boundary":
+                        cycles += 1
+                    else:
+                        self.fail(f"unexpected oracle event {kind}")
+                blocks += 1
+                queued += 512
+            else:
+                stalls += 1
+            request = requests[attempt % len(requests)]
+            taken = min(queued, request)
+            queued -= taken
+            missing += request - taken
+            if taken < request:
+                underruns += 1
+            expected = (
+                attempt, wrote, blocks, on, off, tempo, cycles, 1,
+                dispatched, queued, taken, missing, 0,
+            )
+            actual = tuple(map(int, row[1:]))
+            self.assertEqual(
+                actual, expected,
+                f"paced iteration {attempt}: {actual} != {expected}",
+            )
+        self.assertEqual(blocks, produced)
+        self.assertEqual(cycles, scheduled["cycles_completed"])
+        self.assertGreater(cycles, 20)
+        self.assertGreater(stalls, 100)
+        self.assertGreater(underruns, 10)
+        self.assertGreater(on, 100)
+        self.assertGreater(off, 100)
+        self.assertEqual(seen_tempos, {250000, 300000, 400000, 500000})
+
+
     def test_mutated_trace_is_detectable(self):
         rows = self.trace("voice")
         before = rows[0][:]
