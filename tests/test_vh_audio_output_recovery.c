@@ -193,7 +193,7 @@ static void test_audout_inflight_page_lease_scene_lifetime(void) {
     assert(vh_audio_page_lease_begin(&lease,NULL)==-1);
     assert(vh_audio_page_lease_return(&lease,&descriptor)==-1);
     assert(vh_audio_page_lease_return(NULL,&descriptor)==-1);
-    assert(vh_audio_page_lease_stopped(NULL)==-1);
+    assert(vh_audio_page_lease_stopped(NULL,0)==-1);
 
     for(unsigned i=0u;i<128u;i++) {
         sample[i]=(int16_t)((int)i*67-4400);
@@ -225,6 +225,8 @@ static void test_audout_inflight_page_lease_scene_lifetime(void) {
         assert(vh_audio_page_lease_begin(&lease,&foreign)==-1);
         assert(vh_audio_page_lease_return(&lease,NULL)==-1);
         assert(vh_audio_page_lease_return(&lease,&foreign)==-1);
+        assert(vh_audio_page_lease_stopped(&lease,-1)==-1);
+        assert(lease.in_flight==&descriptor);
         /* Both "bad descriptor" and "bad stop" paths must leave the
          * current voice bank, music clock and 48-kHz page untouched. */
         assert(switch_when_page_free(&lease,next)==-1);
@@ -243,7 +245,7 @@ static void test_audout_inflight_page_lease_scene_lifetime(void) {
             assert(switch_when_page_free(&lease,next)==-1);
             assert(stop(&backend)==0);
             assert(!backend.playing);
-            assert(vh_audio_page_lease_stopped(&lease)==0);
+            assert(vh_audio_page_lease_stopped(&lease,0)==0);
             stopped++;
         } else {
             assert(vh_audio_page_lease_return(&lease,&descriptor)==0);
@@ -263,7 +265,7 @@ static void test_audout_inflight_page_lease_scene_lifetime(void) {
         }
     }
     assert(released==64u && stopped==32u);
-    assert(vh_audio_page_lease_stopped(&lease)==0);
+    assert(vh_audio_page_lease_stopped(&lease,0)==0);
     assert(vh_audio_page_lease_ready(&lease));
 }
 
