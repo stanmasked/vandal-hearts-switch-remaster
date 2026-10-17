@@ -115,6 +115,20 @@ def replace_exact(source,old,new):
     return source.replace(old,new)
 
 
+def mutate_table(good,table_name,needle,replacement):
+    """Mutate *only* the extracted native declaration, not the oracle."""
+    pattern=(r"\bstatic\s+const\s+unsigned\s+"+
+             re.escape(table_name)+r"(?:\[\d+\])+\s*=\s*\{.*?\};")
+    matched=list(re.finditer(pattern,good,re.DOTALL))
+    if len(matched)!=1:
+        raise Refused(f"cannot isolate native table: {table_name}")
+    old=matched[0].group(0)
+    if needle not in old:
+        raise Refused(f"native mutation site missing: {table_name}")
+    new=old.replace(needle,replacement,1)
+    return good[:matched[0].start()]+new+good[matched[0].end():]
+
+
 def negative_cases(good):
     """Three compile-time bounds failures, four independent runtime failures."""
     cases={}
@@ -127,10 +141,11 @@ def negative_cases(good):
     cases["four_return_rows"]=(
         replace_exact(good,"return_gap[5]","return_gap[4]"),"compile")
     cases["wrong_fifth_boundary"]=(
-        replace_exact(good,"{4u,0u}", "{3u,0u}"),"runtime")
+        mutate_table(good,"vh129_boundary_targets",
+                     "{4u,0u}","{3u,0u}"),"runtime")
     cases["wrong_histogram"]=(
-        replace_exact(good,"{3u,0u,0u,0u,1u}",
-                           "{2u,0u,0u,0u,1u}"),"runtime")
+        mutate_table(good,"vh129_adjacent_histograms",
+                     "{3u,0u,0u,0u,1u}","{2u,0u,0u,0u,1u}"),"runtime")
     cases["wrong_expected_total"]=(
         replace_exact(good,
            "expected_total_edges[5]={4u,4u,4u,4u,4u}",
