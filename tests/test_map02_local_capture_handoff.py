@@ -15,7 +15,9 @@ from unittest.mock import patch
 from tools.map02_local_capture_handoff import (
     HANDOFF, PLAN, _validate_plan, _validated_handoff,
     prepare_local_capture, seal_local_capture, verify_local_capture,
+    SOURCE_BLOBS, verify_pinned_upstream,
 )
+from tools.prepare_map02_pcport import git_blob_sha1
 from tools.publish_map02_window_scoped_witness import MANIFEST as FINAL
 
 
@@ -36,6 +38,22 @@ class LocalMap02CaptureHandoffTests(unittest.TestCase):
             self.handoff, self.source, self.windows, self.scoped,
         ):
             directory.mkdir(mode=0o700)
+        self.upstream = root / "synthetic-pinned-original-pc-checkout"
+        fixture_blobs = {}
+        for relative in SOURCE_BLOBS:
+            original = b"synthetic pinned source test only " + relative.encode()
+            path = self.upstream / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(original)
+            fixture_blobs[relative] = git_blob_sha1(original)
+        # The real Git blob pin set remains checked in a separate CI step
+        # against the downloaded actual upstream checkout. This unit-only
+        # fixture explicitly substitutes synthetic blob identities.
+        original_patch = patch(
+            "tools.map02_local_capture_handoff.SOURCE_BLOBS",
+            fixture_blobs)
+        original_patch.start()
+        self.addCleanup(original_patch.stop)
         self.binary = root / "pc-original-test-binary"
         self.game = root / "owned-synthetic-game-image"
         self.binary.write_bytes(b"synthetic instrumented PC program, not executable")
@@ -57,21 +75,27 @@ class LocalMap02CaptureHandoffTests(unittest.TestCase):
         self.addCleanup(self.final_mock.stop)
 
     def prepare(self):
-        return prepare_local_capture(self.handoff, self.binary, self.game, frame=7)
+        return prepare_local_capture(
+            self.handoff, self.binary, self.game, frame=7,
+            upstream=self.upstream)
 
     def seal(self):
         return seal_local_capture(self.handoff, self.source, self.windows,
-                                  self.scoped, self.binary, self.game)
+                                  self.scoped, self.binary, self.game,
+                                  upstream=self.upstream)
 
     def verify(self):
         return verify_local_capture(self.handoff, self.source, self.windows,
-                                    self.scoped, self.binary, self.game)
+                                    self.scoped, self.binary, self.game,
+                                    upstream=self.upstream)
 
     def test_prelaunch_plan_and_verified_handoff_are_private_and_bound(self):
         before = self.prepare()
         self.assertFalse(before["capture_executed"])
         self.assertFalse(before["original_gameplay_authenticated"])
         plan = json.loads((self.handoff / PLAN).read_bytes())
+        self.assertEqual(plan["pinned_upstream_source_identity_sha256"],
+                         verify_pinned_upstream(self.upstream))
         self.assertEqual(plan["pc_executable_sha256"], digest(self.binary.read_bytes()))
         self.assertEqual(plan["owned_game_image_sha256"], digest(self.game.read_bytes()))
         self.assertEqual(stat.S_IMODE((self.handoff / PLAN).stat().st_mode), 0o600)
@@ -151,16 +175,36 @@ class LocalMap02CaptureHandoffTests(unittest.TestCase):
         link = self.handoff.parent / "game-link"
         link.symlink_to(self.game)
         with self.assertRaisesRegex(ValueError, "linked"):
-            prepare_local_capture(self.handoff, self.binary, link, frame=7)
+            prepare_local_capture(self.handoff, self.binary, link,
+                                  frame=7, upstream=self.upstream)
         self.handoff.chmod(0o755)
         with self.assertRaises(ValueError):
+            self.prepare()
+
+    def test_rejects_modified_pinned_original_gpu_source(self):
+        self.prepare()
+        raster = self.upstream / "platform/pc/src/pc_raster.c"
+        raster.write_bytes(raster.read_bytes() + b" injected")
+        with self.assertRaisesRegex(ValueError, "differs from pinned"):
+            self.seal()
+        self.assertFalse((self.handoff / HANDOFF).exists())
+
+    def test_rejects_pinned_original_gpu_source_symlink(self):
+        raster = self.upstream / "platform/pc/src/pc_raster.c"
+        contents = raster.read_bytes()
+        raster.unlink()
+        destination = self.upstream / "raster-backup.c"
+        destination.write_bytes(contents)
+        raster.symlink_to(destination)
+        with self.assertRaisesRegex(ValueError, "source missing or linked"):
             self.prepare()
 
     def test_source_directories_must_not_alias_or_be_public(self):
         self.prepare()
         with self.assertRaises(ValueError):
             seal_local_capture(self.handoff, self.handoff, self.windows,
-                               self.scoped, self.binary, self.game)
+                               self.scoped, self.binary, self.game,
+                               upstream=self.upstream)
         self.scoped.chmod(0o755)
         with self.assertRaises(ValueError):
             self.seal()
@@ -168,7 +212,7 @@ class LocalMap02CaptureHandoffTests(unittest.TestCase):
     def test_bad_frame_and_duplicate_keys_and_false_attestation_refused(self):
         with self.assertRaises(ValueError):
             prepare_local_capture(self.handoff, self.binary, self.game,
-                                  frame=0)
+                                  frame=0, upstream=self.upstream)
         self.prepare()
         path = self.handoff / PLAN
         raw = path.read_bytes()
