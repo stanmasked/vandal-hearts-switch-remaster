@@ -40,6 +40,8 @@ class CycleBuildReceiptTests(unittest.TestCase):
                   return_value=self.planned),
             patch("tools.map02_cycle_build_provenance.audit_cycle_elf",
                   return_value=self.symbols),
+            patch("tools.map02_cycle_build_provenance.verify_generated_original_font",
+                  return_value={"pinned_original_krom_font_c_identical": True}),
             patch("tools.map02_cycle_build_provenance.verify_pinned_upstream",
                   return_value="b" * 64),
             patch("tools.check_map02_cycle_make_plan.preflight",
