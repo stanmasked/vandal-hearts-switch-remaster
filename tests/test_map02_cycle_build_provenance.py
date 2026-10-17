@@ -5,7 +5,11 @@ used only to test binding and receipt integrity. No retail original ELF,
 disc image, user directories, or graphics are accessed.
 """
 import hashlib
+import io
+from contextlib import redirect_stderr
 import json
+import subprocess
+import tools.map02_cycle_build_provenance as provenance
 from pathlib import Path
 import tempfile
 import unittest
@@ -85,6 +89,25 @@ class CycleBuildReceiptTests(unittest.TestCase):
         self.assertTrue(self.verify()["source_pinned_full_elf_bytes_checked"])
         with self.assertRaisesRegex(ValueError, "must start empty"):
             self.publish()
+
+    def test_cli_redacts_private_original_path_on_io_and_timeout(self):
+        private_path = str(self.upstream / "SLUS_004.47")
+        command = ["verify-build", str(self.receipt_dir), str(self.binary),
+                   str(self.upstream), str(self.bundle)]
+        for fault in (OSError("input " + private_path),
+                      subprocess.TimeoutExpired(["python3", private_path], 5)):
+            with self.subTest(fault=type(fault).__name__):
+                output = io.StringIO()
+                with (
+                        patch("sys.argv", command),
+                        patch.object(provenance, "verify_build_receipt",
+                                     side_effect=fault),
+                        redirect_stderr(output)):
+                    with self.assertRaises(SystemExit) as thrown:
+                        provenance.main()
+                self.assertEqual(thrown.exception.code, 2)
+                self.assertIn("command verification failed", output.getvalue())
+                self.assertNotIn(private_path, output.getvalue())
 
     def test_altered_generated_krom_c_blocks_receipt_verification(self):
         self.publish()
