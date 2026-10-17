@@ -45,7 +45,11 @@ enum { VH80_VBLANK=1, VH80_GP1_MMIO=2, VH80_GPU_DMA2=3, VH83_GP0_UNAI_HANDLED=4,
   VH92_FULL_FALLBACK=68, VH92_PEAK_WORDS=69,
   VH92_WORKER_DONE=70, VH92_WORKER_STORES=71,
   VH92_SYNC_STORES=72, VH92_PENDING=73,
-  VH92_WORKER_SAME=74, VH92_SYNC_SAME=75 };
+  VH92_WORKER_SAME=74, VH92_SYNC_SAME=75,
+  VH93_DETAIL_COUNT=76, VH93_AGG_COUNT=77, VH93_TOTAL_COUNT=78 };
+#define VH80_CAPACITY_DETAIL 4096u
+#define VH80_CAPACITY_AGGREGATE 256u
+#define VH80_TOTAL_CAPACITY (VH80_CAPACITY_DETAIL+VH80_CAPACITY_AGGREGATE)
 typedef struct {
     uint32_t sequence, kind, value, cycle, frame;
 } vh80_event;
@@ -70,6 +74,8 @@ uint32_t vh86_store_count(uint32_t source);
 uint32_t vh86_same_store_count(uint32_t source);
 uint32_t vh86_write_overflow(void);
 unsigned int vh80_count(void);
+unsigned int vh80_detailed_count(void);
+unsigned int vh80_aggregate_count(void);
 unsigned int vh80_dropped(void);
 const vh80_event *vh80_events(void);
 #ifdef __cplusplus
