@@ -33,6 +33,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_audout_latency.py' -v
       - name: Guest clock to audout window cross-binding negative controls
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_audout_scene_correlation.py' -v
+      - name: Exact slow-call original guest SD tamper regressions
+        run: python3 -m unittest discover -s tests -p 'test_audit_nexium_audout_slow_calls.py' -v
       - name: Native C stereo PCM ring regression
         run: |
           mkdir -p build
