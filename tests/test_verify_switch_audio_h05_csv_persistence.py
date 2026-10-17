@@ -89,9 +89,7 @@ class OldCSVPersistenceTests(unittest.TestCase):
         self.assertEqual(result["baseline_sha256"],
                          bundle.digest_file(self.baseline)[1])
         self.assertEqual(
-            h05.read_baseline(self.baseline, self.pinned)["existing_csv_count"]
-            if "existing_csv_count" in h05.read_baseline(self.baseline, self.pinned)
-            else len(h05.read_baseline(self.baseline, self.pinned)["existing_csv"]), 2)
+            len(h05.read_baseline(self.baseline, self.pinned)["existing_csv"]), 2)
 
     def test_new_csv_already_present_before_old_snapshot_is_rejected(self):
         self.add_new()
@@ -134,6 +132,15 @@ class OldCSVPersistenceTests(unittest.TestCase):
                         self.fixture.audio_dir / self.new)
         with self.assertRaisesRegex(h05.PersistenceError,
                                     "NEW_CSV_IDENTICAL_TO_OLD_PAYLOAD"):
+            self.recheck()
+
+    def test_new_file_cannot_duplicate_another_preexisting_csv(self):
+        self.record()
+        shutil.copyfile(self.fixture.audio_dir / self.already,
+                        self.fixture.audio_dir / self.new)
+        with self.assertRaisesRegex(
+                h05.PersistenceError,
+                "NEW_CSV_DUPLICATES_PREEXISTING_CSV_PAYLOAD"):
             self.recheck()
 
     def test_new_file_must_be_completed_with_exit(self):
