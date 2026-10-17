@@ -29,6 +29,9 @@ def verify_gpu_objects(upstream, *, cc="cc", linker=None, nm="nm"):
     pc = upstream / "platform" / "pc"
     original_raster = pc / "src" / "pc_raster.c"
     original_walker = pc / "src" / "libgpu.c"
+    # Fail for absent upstream files before invoking source-anchor validation.
+    if not original_raster.is_file() or not original_walker.is_file():
+        raise FileNotFoundError("missing pinned original PC GPU translation unit")
     raster = patch_raster(original_raster.read_text(encoding="utf-8"))
     walker = patch_drawotag(original_walker.read_text(encoding="utf-8"))
     if linker is None:
