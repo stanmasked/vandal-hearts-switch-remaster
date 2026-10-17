@@ -258,6 +258,17 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
         printf("Both DSP>budget and audout>4x N/S=%llu/%llu\n",
                (unsigned long long)r->compute_wait->ordinary.both_over_4x,
                (unsigned long long)r->compute_wait->first_after_switch.both_over_4x);
+        printf("DSP overbudget by wait bin (<=1 1-2 2-4 >4):\n");
+        printf("Normal: %llu %llu %llu %llu\n",
+               (unsigned long long)r->compute_wait->ordinary.dsp_over_in_band[0],
+               (unsigned long long)r->compute_wait->ordinary.dsp_over_in_band[1],
+               (unsigned long long)r->compute_wait->ordinary.dsp_over_in_band[2],
+               (unsigned long long)r->compute_wait->ordinary.dsp_over_in_band[3]);
+        printf("Switch: %llu %llu %llu %llu\n",
+               (unsigned long long)r->compute_wait->first_after_switch.dsp_over_in_band[0],
+               (unsigned long long)r->compute_wait->first_after_switch.dsp_over_in_band[1],
+               (unsigned long long)r->compute_wait->first_after_switch.dsp_over_in_band[2],
+               (unsigned long long)r->compute_wait->first_after_switch.dsp_over_in_band[3]);
         printf("Wait bins: <=1x <=2x <=4x >4x\n");
         printf("Normal: %llu %llu %llu %llu\n",
                (unsigned long long)n->wait_le_page,

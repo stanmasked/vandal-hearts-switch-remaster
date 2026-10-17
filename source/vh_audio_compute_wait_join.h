@@ -14,6 +14,11 @@
 typedef struct {
     uint64_t returned, dsp_over, wait_over_2x, both_over_2x;
     uint64_t wait_over_4x, both_over_4x;
+    /* One returned logical page belongs to exactly one latency band.
+     * Per-band DSP joint counts make <=1x, 1..2x, 2..4x, >4x
+     * inspectable without retaining timestamps or PCM contents. */
+    uint64_t wait_band_pages[VH_AUDIO_WAIT_BANDS];
+    uint64_t dsp_over_in_band[VH_AUDIO_WAIT_BANDS];
 } VhAudioComputeWaitBucket;
 
 typedef struct {
@@ -40,13 +45,18 @@ static inline int vh_audio_compute_wait_record(
         b->wait_over_2x>UINT64_MAX-long2 ||
         b->both_over_2x>UINT64_MAX-both2 ||
         b->wait_over_4x>UINT64_MAX-long4 ||
-        b->both_over_4x>UINT64_MAX-both4) return -1;
+        b->both_over_4x>UINT64_MAX-both4 ||
+        b->wait_band_pages[wait_band]==UINT64_MAX ||
+        b->dsp_over_in_band[wait_band]>
+            UINT64_MAX-dsp_over_budget) return -1;
     ++b->returned;
     b->dsp_over+=dsp_over_budget;
     b->wait_over_2x+=long2;
     b->both_over_2x+=both2;
     b->wait_over_4x+=long4;
     b->both_over_4x+=both4;
+    ++b->wait_band_pages[wait_band];
+    b->dsp_over_in_band[wait_band]+=dsp_over_budget;
     return 0;
 }
 
@@ -102,6 +112,40 @@ static inline int vh_audio_compute_wait_bucket_verify(
                 ? returned-j->wait_over_4x : j->dsp_over) ||
         j->both_over_2x-j->both_over_4x>
             j->wait_over_2x-j->wait_over_4x)
+        return -1;
+    /* Cross-check every exclusive wait band against the original
+     * audout histogram MINUS its terminal failed logical pages.
+     * The DSP histogram is an independently accumulated refinement
+     * of both_over_2x / both_over_4x: their sums must agree exactly.
+     * Feasible alternative overlap distributions cannot be rejected
+     * without an independent per-page trace.
+     */
+    const uint64_t original[VH_AUDIO_WAIT_BANDS]={
+        wait->wait_le_page,wait->wait_le_2pages,
+        wait->wait_le_4pages,wait->wait_gt_4pages
+    };
+    uint64_t sum_returned=0u,sum_dsp=0u,sum_failures=0u,sum_wait=0u;
+    for (unsigned k=0u;k<VH_AUDIO_WAIT_BANDS;k++) {
+        const uint64_t failures=wait->failed_in_band[k];
+        const uint64_t band_returned=j->wait_band_pages[k];
+        const uint64_t band_dsp=j->dsp_over_in_band[k];
+        if (failures>original[k] ||
+            band_returned!=original[k]-failures ||
+            band_returned>returned-sum_returned ||
+            band_dsp>band_returned ||
+            band_dsp>j->dsp_over-sum_dsp ||
+            failures>wait->failed_pages-sum_failures ||
+            original[k]>wait->pages-sum_wait) return -1;
+        sum_returned+=band_returned;
+        sum_dsp+=band_dsp;
+        sum_failures+=failures;
+        sum_wait+=original[k];
+    }
+    if (sum_returned!=returned || sum_dsp!=j->dsp_over ||
+        sum_failures!=wait->failed_pages || sum_wait!=wait->pages ||
+        j->both_over_2x!=j->dsp_over_in_band[2]+
+                              j->dsp_over_in_band[3] ||
+        j->both_over_4x!=j->dsp_over_in_band[3])
         return -1;
     return 0;
 }

@@ -1392,3 +1392,41 @@ The regression asserts both properties explicitly. Joint counts
 are recorded once as pages are returned, but cannot be independently
 reconstructed from marginal totals alone. Neither coincidence nor
 its absence proves an acoustic defect or causal mechanism.
+
+
+### Four-bin returned-page DSP/wait histogram
+
+The earlier same-page counters showed DSP budget overruns coinciding
+with an audout wait exceeding **2x** or **4x** PCM-page duration.
+This hid the important converse: how many DSP overruns happened
+while audout returned within 1x or between 1x and 2x, where there
+was no severe service wait on that same page?
+
+The joint telemetry now stores a **four-band, exclusive histogram**
+for every successfully delivered PCM page: <=1x, 1..2x, 2..4x and
+>4x normal audout wait. For both ordinary and first-after-synthetic-
+scene-switch groups, it counts (a) all returned pages in each band
+and (b) just the pages whose *own* preceding SEQ/SPU/resample
+compute time exceeded its nominal block budget. The first console
+report displays the DSP-overbudget four-bin distribution separately
+for ordinary and scene-switch pages. The pre-existing >2x and >4x
+joint counters remain available.
+
+The verifier now directly matches each returned-page wait histogram
+bin with the original backend measurement **minus** terminally
+failed logical pages in precisely that bin. It also checks that the
+four DSP joint bins sum to the independent compute-over-budget total
+after subtracting the one permitted undelivered terminal page.
+Derived >2x and >4x threshold joint counts must equal the exact
+appropriate bin sums. Corrupting just one new counter, changing a
+band without updating its dependent totals or overflowing a counter
+causes the audit to fail rather than present FULL evidence.
+
+A coordinated *plausible* change of multiple joint bins cannot
+be disproved from aggregate backend and DSP marginals alone; the
+regression explicitly acknowledges this limitation. Synthetic
+tests cover all four wait bands, scene classification, 256 returned
+pages, a terminal failed scene page and nonmutating overflow
+guards. No raw PCM, human input history or copyrighted audio is
+recorded. Counts do not themselves prove a click, delay cause
+or glitch-free sound on physical Switch hardware.
