@@ -20,6 +20,7 @@ from tools.map02_blendg1_witness import compare_blendg1_witnesses
 HARNESS = r"""
 #include <assert.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 #include "PsyQ/libgpu.h"
 #include "pc_platform.h"
@@ -142,6 +143,17 @@ int main(void) {
     }
     assert(seen_f4 && seen_ft4);
 #endif
+    /* Hash the entire native 1 MiB VRAM to prove observer/no-observer
+     * code produces the SAME framebuffer. Only the digest is printed. */
+    {
+        size_t byte_count, i;
+        const unsigned char *bytes = PC_GpuVramBytes(&byte_count);
+        unsigned long long digest = 14695981039346656037ULL;
+        assert(byte_count == 1024u * 512u * 2u && bytes);
+        for (i = 0; i < byte_count; i++)
+            digest = (digest ^ bytes[i]) * 1099511628211ULL;
+        printf("%016llx\n", digest);
+    }
     return 0;
 }
 """
@@ -161,6 +173,7 @@ def run_original_ot(upstream, *, compiler="cc"):
         (root / "pc_raster.c").write_text(raster, encoding="utf-8")
         (root / "main.c").write_text(HARNESS, encoding="utf-8")
         results = []
+        ordinary_digest = None
         for mode, defines in (
             ("ordinary", []),
             ("scoped", ["-DVH_MAP02_SCOPED_BLEND_PROBE"]),
@@ -197,6 +210,13 @@ def run_original_ot(upstream, *, compiler="cc"):
                                       capture_output=True, text=True, timeout=30)
             if executed.returncode:
                 raise ValueError(mode + " original OT runtime: " + executed.stderr[-4000:])
+            digest = executed.stdout.strip()
+            if len(digest) != 16 or any(c not in "0123456789abcdef" for c in digest):
+                raise ValueError(mode + " missing native VRAM digest")
+            if ordinary_digest is None:
+                ordinary_digest = digest
+            elif digest != ordinary_digest:
+                raise ValueError(mode + " native VRAM changed under instrumentation")
             if mode == "staged":
                 pixel_file = out / "putpixel-native-events.pending.jsonl"
                 blend_file = out / "blendg1-native-events.pending.jsonl"
