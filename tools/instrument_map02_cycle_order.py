@@ -79,6 +79,9 @@ def patch_gpu(original):
 
 
 def generate(checkout: Path, output: Path):
+    # Check the provided path before resolve() erases the symlink itself.
+    if output.is_symlink():
+        raise ValueError("refusing symlinked output directory")
     checkout = checkout.resolve()
     output = output.resolve()
     if output == checkout or checkout in output.parents:
