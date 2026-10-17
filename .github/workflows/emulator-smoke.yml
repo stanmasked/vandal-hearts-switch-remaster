@@ -653,6 +653,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [[ -s runtime-evidence/scene-soak/soak-audout-export-failure.txt ]]; then
+            echo "Guest audout SD export failed with the following exact status:" >&2
+            cat runtime-evidence/scene-soak/soak-audout-export-failure.txt >&2
+            exit 1
+          fi
+          test -s runtime-evidence/scene-soak/soak-audout-sd-unverified.csv
           python3 tools/audit_nexium_audout_queue.py \
             --source runtime-evidence/scene-soak/soak-audout-sd-unverified.csv \
             --locations runtime-evidence/scene-soak/soak-audout-sd-locations.txt \
