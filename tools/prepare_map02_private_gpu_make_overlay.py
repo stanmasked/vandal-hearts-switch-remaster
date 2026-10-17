@@ -10,6 +10,8 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import shutil
+import subprocess
 
 from tools.prepare_map02_pcport import (
     PINNED_BLOB_SHA1, PINNED_UPSTREAM_REF, git_blob_sha1,
@@ -101,6 +103,35 @@ map02-private-pc-link: link
 """
 
 
+def _require_pinned_clean_checkout(upstream: Path):
+    """Refuse altered game/port source before preparing a full-link overlay.
+
+    The three GPU/Make blob hashes pin the instrumented source units,
+    while the full executable links many additional tracked game files.
+    Verify their Git checkout as well, ignoring user-owned untracked assets.
+    Never return private checkout paths or changed filenames.
+    """
+    git = shutil.which("git", path="/usr/bin:/bin")
+    if not git:
+        raise ValueError("pinned public PC Git inspector unavailable")
+    child_env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C"}
+    for args in (("rev-parse", "--verify", "HEAD"),
+                 ("status", "--porcelain=v1", "--untracked-files=no")):
+        try:
+            result = subprocess.run(
+                [git, *args], cwd=upstream, env=child_env,
+                capture_output=True, text=True, timeout=20, check=False)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ValueError("pinned public PC checkout inspection failed") from exc
+        if result.returncode != 0:
+            raise ValueError("pinned public PC checkout inspection failed")
+        if args[0] == "rev-parse":
+            if result.stdout.strip() != PINNED_UPSTREAM_REF:
+                raise ValueError("pinned public PC checkout HEAD differs")
+        elif result.stdout.strip():
+            raise ValueError("pinned public PC tracked source files modified")
+
+
 def prepare(upstream: Path, output: Path):
     upstream = Path(upstream).resolve(strict=True)
     output = Path(output).absolute()
@@ -118,6 +149,7 @@ def prepare(upstream: Path, output: Path):
         raise ValueError("private output parent cannot be a symlink alias")
     if output.is_symlink() or output.exists():
         raise ValueError("private output directory already exists")
+    _require_pinned_clean_checkout(upstream)
     # Avoid using an arbitrary value from Make or the shell as generated code.
     overlay = make_overlay(output)
     src = {}
