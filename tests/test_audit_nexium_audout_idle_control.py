@@ -67,7 +67,7 @@ class TestIdleControl(unittest.TestCase):
             writer.writerow([f"idle_{i}",i,1_000_000+i*960_000,1700000000+i*5_000])
         (self.evidence/"soak-events.csv").write_text(out.getvalue())
         for i in range(11):
-            (self.evidence/f"soak-scene-{i:02d}.png").write_bytes(b"PNG"+"X"*120)
+            (self.evidence/f"soak-scene-{i:02d}.png").write_bytes(b"PNG"+b"X"*120)
         self.preflight=self.root/"preflight.json"
         self.gitsha="a"*40
         self.preflight.write_text(json.dumps({
