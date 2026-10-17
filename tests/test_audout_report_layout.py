@@ -57,7 +57,7 @@ def main() -> None:
         assert rows >= 8, f"report page {i} unexpectedly empty ({rows} lines)"
         print(f"audout report page {i}/4: {rows} explicit lines")
     first, pcm, marks, home = pieces
-    for required in ("PCM accounting", "DSP avg/peak", "Backend=", "untimed=%llu", "timing=%s"):
+    for required in ("PCM accounting", "DSP avg/peak", "Backend=", "untimed=%llu", "timing=%s", "ZL=%s"):
         assert required in first
     for required in ("PCM SEAMS", "Failed logical pages", "Seam audit"):
         assert required in pcm
@@ -70,6 +70,13 @@ def main() -> None:
         assert required in home
         if required not in ("PCM accounting",):
             assert required not in first
+    # Physical ZL must only arm an on-device timing fault; the
+    # actual bad clock is injected by native_submit after a returned
+    # descriptor and remains visible as a failed telemetry trial.
+    assert "HidNpadButton_ZL" in src
+    assert "vh_audio_timing_fault_arm(&output.timing_injection)" in src
+    assert "vh_audio_timing_fault_frequency(" in src
+    assert "result=31;" in src
     assert count_lines(footer) >= 3
     print("audout report four-screen structure PASS")
 
