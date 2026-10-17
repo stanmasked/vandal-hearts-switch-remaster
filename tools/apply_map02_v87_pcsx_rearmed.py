@@ -36,10 +36,10 @@ PROBE=r'''
                 }
             }
             vh86_reset();
-            const uint32_t overlap_words[4]={
+            uint32_t overlap_words[4]={
                 0x80000000u,(160u<<16)|256u,
                 (160u<<16)|258u,(4u<<16)|4u};
-            GPU_writeDataMem((uint32_t*)overlap_words,4);
+            GPU_writeDataMem(overlap_words,4);
             if(GPU_freeze(1,&state,&vram)!=1 || !vram) {
                 SysPrintf("VH87_OVERLAP_FREEZE_REFUSED\n");
                 ClosePlugins();SysClose();menu_finish();plat_finish();return 13;
