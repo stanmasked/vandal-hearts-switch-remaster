@@ -105,8 +105,6 @@ class OutcomeTransitions(unittest.TestCase):
         self.assertEqual(report["observed_handler_pairs_per_edge"],[0,0,0,0])
         # Valid native callback groups also occur outside a VBlank bracket.
         outside=summarize(encode(redistribute()))
-        self.assertIsNone(outside["vblank_edge_witnesses"][0][
-            "next_handler_outcome"]) if False else None
         self.assertEqual(outside["observed_unai_handlers"],2)
 
     def test_nonqualifying_gpu_command_breaks_zero_delta_pairs_but_not_all_pairs(self):
