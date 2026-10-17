@@ -3,6 +3,32 @@
 
 #include <limits.h>
 
+int vh_audio_page_lease_begin(VhAudioPageLease *lease,
+                              const void *descriptor) {
+    if (!lease || !descriptor || lease->in_flight) return -1;
+    lease->in_flight=descriptor;
+    return 0;
+}
+
+int vh_audio_page_lease_return(VhAudioPageLease *lease,
+                               const void *returned_descriptor) {
+    if (!lease || !lease->in_flight ||
+        lease->in_flight != returned_descriptor) return -1;
+    lease->in_flight=NULL;
+    return 0;
+}
+
+int vh_audio_page_lease_stopped(VhAudioPageLease *lease) {
+    if (!lease) return -1;
+    /* Only the caller can confirm the backend stop succeeded. */
+    lease->in_flight=NULL;
+    return 0;
+}
+
+int vh_audio_page_lease_ready(const VhAudioPageLease *lease) {
+    return lease && !lease->in_flight;
+}
+
 uint64_t vh_audio_output_ticks_to_us(uint64_t ticks,
                                      uint64_t tick_frequency) {
     if (!tick_frequency) return 0;
