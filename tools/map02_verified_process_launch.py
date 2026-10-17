@@ -31,6 +31,18 @@ from tools.verify_map02_window_scoped_join import verify_window_scoped_join
 
 RECEIPT = "gpu-local-executed-process.json"
 SCHEMA = "vh.map02.local-executed-process.v2"
+
+# Source-bound cycle launch does not inherit arbitrary environment variables:
+# a prefix denylist misses loader/plugin controls such as GLIBC_TUNABLES,
+# GCONV_PATH, SDL_DYNAMIC_API, QT_PLUGIN_PATH and GIO_EXTRA_MODULES.
+# Pass only the ambient display/audio/session fields needed by the PC backend;
+# original game and capture settings are supplied explicitly below.
+_CYCLE_ALLOWED_INHERITED_ENV = frozenset({
+    "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE",
+    "LC_MESSAGES", "TZ", "DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY",
+    "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", "PULSE_SERVER",
+    "PIPEWIRE_REMOTE", "SDL_AUDIODRIVER", "SDL_VIDEODRIVER",
+})
 REQUIRED = (
     "schema", "gpu_draw_frame", "local_plan_sha256",
     "kernel_observed_executable_sha256", "kernel_executable_device",
@@ -153,6 +165,13 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
     x = number(x, "sample X", 0, 1023)
     y = number(y, "sample Y", 0, 511)
     timeout = number(timeout, "execution timeout seconds", 1, 86400)
+    arguments = tuple(arguments)
+    if any(type(arg) is not str or not arg or "\x00" in arg for arg in arguments):
+        raise ValueError("invalid PC-port executable argument")
+    # Forwarded argv can override the source-bound environment through
+    # undocumented switches; a strict cycle launch must not accept it.
+    if cycle is not None and arguments:
+        raise ValueError("source-bound cycle launch forbids forwarded executable arguments")
     binary = Path(pc_binary).absolute()
     if binary.is_symlink() or not binary.is_file():
         raise ValueError("PC binary missing or linked")
@@ -194,17 +213,11 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
     game_stat = os.stat(game_image)
     expected_game_fd = (game_stat.st_dev, game_stat.st_ino, game_stat.st_size)
     frame = plan["target_gpu_draw_frame"]
-    arguments = tuple(arguments)
-    if any(type(arg) is not str or not arg or "\x00" in arg for arg in arguments):
-        raise ValueError("invalid PC-port executable argument")
-    # In source-bound cycle mode, do not inherit caller-controlled game
-    # overrides or loader startup hooks. An ELF pathname/hash match does not
-    # authenticate arbitrary LD_PRELOAD/LD_AUDIT code within that process.
-    # Preserve normal display/audio/toolchain variables for the PC backend.
+    # Legacy observation preserves caller settings except capture overrides.
+    # The source-bound cycle uses an allowlist, not an incomplete denylist.
     env = {key: value for key, value in os.environ.items()
-           if not key.startswith("VH_MAP02_") and
-           (cycle is None or not key.startswith(
-               ("VH_", "LD_", "DYLD_", "PYTHON")))}
+           if (key in _CYCLE_ALLOWED_INHERITED_ENV if cycle is not None
+               else not key.startswith("VH_MAP02_"))}
     env.update({
         "VH_DISC_IMAGE": str(game_image),
         "VH_MAP02_GPU_CAPTURE_DIR": str(native),
