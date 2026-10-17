@@ -150,6 +150,10 @@ def verify_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
     sampled_first_changed_pre = None
     sampled_last_changed_post = None
     sampled_bit15_only = sampled_color_only = sampled_color_and_bit15 = 0
+    scoped_source_changed_calls = scoped_source_noop_calls = 0
+    scoped_source_bit15_only = scoped_source_color_only = 0
+    scoped_source_color_and_bit15 = 0
+    scoped_source_transient_draws = 0
     for ordinal, (before_event, after_event) in enumerate(native_draws):
         before_raw = private_file(native_dir, before_event["snapshot"], expected=VRAM_BYTES)
         after_raw = private_file(native_dir, after_event["snapshot"], expected=VRAM_BYTES)
@@ -161,6 +165,27 @@ def verify_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
             if ordinal in source_ordinals:
                 matched_pixel_calls += len(group)
                 source_draws_with_calls += 1
+                local_changed_calls = 0
+                for call in group:
+                    pre, post = call["before"], call["after"]
+                    if pre == post:
+                        scoped_source_noop_calls += 1
+                        continue
+                    local_changed_calls += 1
+                    scoped_source_changed_calls += 1
+                    color_changed = (pre & 0x7fff) != (post & 0x7fff)
+                    bit15_changed = bool((pre ^ post) & 0x8000)
+                    if color_changed and bit15_changed:
+                        scoped_source_color_and_bit15 += 1
+                    elif color_changed:
+                        scoped_source_color_only += 1
+                    else:
+                        scoped_source_bit15_only += 1
+                # Multiple observed native calls can change the selected
+                # word and then restore it *inside one primitive*. The
+                # primitive's full VRAM snapshots will miss this activity.
+                if before_val == after_val and local_changed_calls:
+                    scoped_source_transient_draws += 1
         elif ordinal in source_ordinals and before_val != after_val:
             # This source-keyed FT4 did change a pixel, but there is no
             # captured PutPixel call that explains its effect.
@@ -185,6 +210,11 @@ def verify_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
     if sampled_source_changed_draws != (
             sampled_bit15_only + sampled_color_only + sampled_color_and_bit15):
         raise ValueError("sampled FT4 word-change classification mismatch")
+    if (scoped_source_changed_calls !=
+            scoped_source_bit15_only + scoped_source_color_only +
+            scoped_source_color_and_bit15 or
+            matched_pixel_calls != scoped_source_changed_calls + scoped_source_noop_calls):
+        raise ValueError("scoped source FT4 PutPixel call accounting mismatch")
 
     return {
         "pixel_ot_manifest_sha256": digest(meta_raw),
@@ -200,6 +230,14 @@ def verify_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
         "source_ft4_sampled_bit15_only_changes": sampled_bit15_only,
         "source_ft4_sampled_color_only_changes": sampled_color_only,
         "source_ft4_sampled_color_and_bit15_changes": sampled_color_and_bit15,
+        "source_ft4_scoped_changed_putpixel_calls": scoped_source_changed_calls,
+        "source_ft4_scoped_unchanged_putpixel_calls": scoped_source_noop_calls,
+        "source_ft4_scoped_bit15_only_putpixel_calls": scoped_source_bit15_only,
+        "source_ft4_scoped_color_only_putpixel_calls": scoped_source_color_only,
+        "source_ft4_scoped_color_and_bit15_putpixel_calls":
+            scoped_source_color_and_bit15,
+        "source_ft4_scoped_transient_draws_invisible_to_vram_delta":
+            scoped_source_transient_draws,
         "source_ft4_sampled_first_changed_pre_equals_last_changed_post": (
             sampled_first_changed_pre == sampled_last_changed_post
             if sampled_first_changed_pre is not None else None),
