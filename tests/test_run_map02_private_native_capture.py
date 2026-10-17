@@ -34,7 +34,24 @@ span = {
     "clip_t": 10, "clip_b": 15
 }
 (root / "dda-native-spans.jsonl").write_text(json.dumps(span) + "\n")
-for i, phase in enumerate(("before", "after")):
+if "--with-load" in sys.argv:
+    (root / "gpu-0001-upload.bin").write_bytes(b"\x1f\x00")
+    for i, phase in enumerate(("before", "after")):
+        load = {
+            "stage": "native_vram", "step": i, "frame": frame - 1,
+            "phase": phase, "operation": "load",
+            "snapshot": f"gpu-{i:04d}-vram.bin",
+            "rect": [0, 0, 1, 1], "dest": [0, 0], "rgb": [0, 0, 0],
+            "primitive_type": 0, "semi": 0, "window": [0, 0, 0, 0],
+            "draw_mode": [0, 0, 0],
+            "upload": "gpu-0001-upload.bin" if phase == "after" else "",
+            "ft4": None
+        }
+        with (root / "gpu-native-events.jsonl").open("a") as log:
+            log.write(json.dumps(load) + "\n")
+        (root / load["snapshot"]).write_bytes(bytes(1024 * 512 * 2))
+for i, phase in enumerate(("before", "after"),
+                          start=2 if "--with-load" in sys.argv else 0):
     event = {
         "stage": "native_vram", "step": i, "frame": frame,
         "phase": phase, "operation": "draw",
@@ -128,6 +145,24 @@ class PrivateNativeLauncherTests(unittest.TestCase):
         span.write_bytes(changed_span)
         with self.assertRaisesRegex(ValueError, "no longer matches"):
             self.replay()
+
+    def test_replay_detects_mutated_loadimage_payload_without_vram_change(self):
+        result = self.run_synthetic("--with-load")
+        self.assertTrue(result["capture_verified"])
+        first = self.replay()
+        self.assertEqual(first["native_gpu_pairs_verified"], 2)
+        self.assertEqual(result["verification"]["load_pairs_with_verified_payload"], 1)
+        self.assertEqual(result["verification"]["load_pairs_without_payload"], 0)
+        self.assertEqual(len(result["verification"]["upload_payload_sha256_list_sha256"]), 64)
+        self.assertFalse(first["original_game_assets_authenticated"])
+        payload = self.capture_dir / "gpu-0001-upload.bin"
+        original = payload.read_bytes()
+        self.assertEqual(len(original), 2)
+        payload.write_bytes(b"\x1e\x00")  # same-size tampering
+        with self.assertRaisesRegex(ValueError, "no longer matches"):
+            self.replay()
+        payload.write_bytes(original)
+        self.assertTrue(self.replay()["raw_evidence_matches_original_receipt"])
 
     def test_replay_refuses_modified_original_process_receipt(self):
         self.run_synthetic()
