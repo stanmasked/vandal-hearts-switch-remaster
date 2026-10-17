@@ -52,7 +52,7 @@ def apply(root: Path):
                         "unmasked tile stores")
     inner_src=once(inner_src,'*pDst = ldata;','VH85_STORE16(pDst,ldata);',
                         "masked tile stores")
-    if re.search(r"\*pDst(?:\+\+)?\s*=",inner_src):
+    if re.search(r"(?m)^[ \t]*\*pDst(?:\+\+)?\s*=",inner_src):
         raise ValueError("unmonitored raw pDst pixel write remains in GPU inner templates")
     image_src=originals[image]
     for index in range(4):
