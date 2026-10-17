@@ -80,6 +80,16 @@ int main(int argc, char **argv) {
 '''
 
 
+PROBE_MARKERS = r"""
+void VH_CaptureEvent(void) {}
+void VH_Map02PixelScopeSet(void) {}
+void VH_Map02PixelScopeClear(void) {}
+void VH_PixelSampleRecord(void) {}
+const char *volatile map02_x2 = "VH_MAP02_PUTPIXEL_X2";
+const char *volatile map02_y2 = "VH_MAP02_PUTPIXEL_Y2";
+"""
+
+
 class NativeElfProcessImageTests(unittest.TestCase):
     def setUp(self):
         if os.name != "posix":
@@ -102,11 +112,12 @@ class NativeElfProcessImageTests(unittest.TestCase):
         with self.host.executable.open("rb") as f:
             self.assertEqual(f.read(4), b"\x7fELF")
 
-    def run_capture(self, *, strict=True):
+    def run_capture(self, *, strict=True, probes=False):
         return capture(
             self.host.executable, self.host.preflight, self.host.receipt,
             game_args=(str(self.host.template),), environ=self.host.env,
             timeout=10, require_native_elf_image=strict,
+            require_native_probe_symbols=probes,
         )
 
     def test_compiled_native_elf_is_verified_and_binds_two_word_gpu(self):
@@ -136,6 +147,84 @@ class NativeElfProcessImageTests(unittest.TestCase):
         public = json.dumps(result)
         self.assertNotIn(str(self.host.template), public)
         self.assertNotIn(str(self.host.native), public)
+
+    def test_native_probe_required_v3_elf_replays_full_two_word_source(self):
+        # Compile actual native ELF with all static probe *markers*, not
+        # a real instrumentation implementation. The source/VRAM verifier
+        # still replays the independent synthetic fixture end-to-end.
+        self.build_elf(NATIVE_EMITTER + PROBE_MARKERS)
+        result = self.run_capture(probes=True)
+        self.assertTrue(result["capture_verified"])
+        self.assertEqual(result["schema"], "map02_private_native_process_receipt_v3")
+        self.assertTrue(result["native_elf_image_observed"])
+        self.assertTrue(result["native_probe_symbols_required"])
+        self.assertTrue(result["native_probe_symbols_inspected"])
+        again = replay_receipt(
+            self.host.native, receipt_file=self.host.receipt,
+            preflight_report=self.host.preflight, executable=self.host.executable)
+        self.assertTrue(again["native_probe_symbols_inspected"])
+        joined = audit_launch_two_word(
+            self.host.native, self.host.source,
+            launch_receipt=self.host.receipt,
+            preflight_report=self.host.preflight,
+            executable=self.host.executable,
+            require_native_elf_image=True,
+            require_native_probe_symbols=True)
+        self.assertTrue(joined["same_native_gpu_log_sha256_verified"])
+        self.assertTrue(joined["native_probe_symbols_required_for_join"])
+        self.assertTrue(joined["native_probe_symbols_inspected"])
+        self.assertFalse(joined["retail_map02_gameplay_authenticated"])
+        self.assertFalse(joined["native_process_to_log_causality_authenticated"])
+
+    def test_missing_probe_symbols_rejected_before_creating_receipts(self):
+        self.build_elf()
+        with self.assertRaisesRegex(ValueError, "probe evidence missing"):
+            self.run_capture(probes=True)
+        self.assertFalse(self.host.preflight.exists())
+        self.assertFalse(self.host.receipt.exists())
+        self.assertEqual(list(self.host.native.iterdir()), [])
+
+    def test_stripped_probe_elf_rejected_before_launch(self):
+        self.build_elf(NATIVE_EMITTER + PROBE_MARKERS)
+        subprocess.run(["strip", "--strip-all", str(self.host.executable)],
+                       check=True, timeout=20)
+        with self.assertRaisesRegex(ValueError, "symbol table unavailable"):
+            self.run_capture(probes=True)
+        self.assertFalse(self.host.preflight.exists())
+        self.assertFalse(self.host.receipt.exists())
+        self.assertEqual(list(self.host.native.iterdir()), [])
+
+    def test_v2_elf_cannot_be_passed_as_probe_verified_v3(self):
+        self.build_elf()
+        result = self.run_capture()
+        self.assertTrue(result["capture_verified"])
+        with self.assertRaisesRegex(ValueError, "probe inspection required"):
+            audit_launch_two_word(
+                self.host.native, self.host.source,
+                launch_receipt=self.host.receipt,
+                preflight_report=self.host.preflight,
+                executable=self.host.executable,
+                require_native_elf_image=True,
+                require_native_probe_symbols=True)
+
+    def test_forged_v3_probe_boolean_refused_on_replay(self):
+        self.build_elf(NATIVE_EMITTER + PROBE_MARKERS)
+        result = self.run_capture(probes=True)
+        self.assertTrue(result["capture_verified"])
+        forged = json.loads(self.host.receipt.read_bytes())
+        forged["native_probe_symbols_inspected"] = False
+        self.host.receipt.write_text(json.dumps(forged), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "probe inspection was not completed"):
+            replay_receipt(self.host.native, receipt_file=self.host.receipt,
+                           preflight_report=self.host.preflight,
+                           executable=self.host.executable)
+
+    def test_native_probe_flag_requires_strict_elf_mode(self):
+        with self.assertRaisesRegex(ValueError, "require strict native ELF"):
+            self.run_capture(strict=False, probes=True)
+        self.assertFalse(self.host.preflight.exists())
+        self.assertFalse(self.host.receipt.exists())
+        self.assertEqual(list(self.host.native.iterdir()), [])
 
     def test_script_is_rejected_before_process_execution(self):
         result = self.run_capture()
