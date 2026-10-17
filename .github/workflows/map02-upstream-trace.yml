@@ -684,6 +684,15 @@ jobs:
               build/map02-vertical-dda/candidate-baseline.text.bin
             cmp build/map02-vertical-dda/span-baseline.text.bin \
                 build/map02-vertical-dda/candidate-baseline.text.bin
+            # Raw .text bytes alone miss ELF relocations: two equivalent
+            # instruction sequences can still refer to different targets.
+            # Compare source-pinned baseline relocation tables as well.
+            readelf -rW build/map02-vertical-dda/span.baseline.o \
+              > build/map02-vertical-dda/span-baseline.relocations.txt
+            readelf -rW build/map02-vertical-dda/candidate.baseline.o \
+              > build/map02-vertical-dda/candidate-baseline.relocations.txt
+            cmp build/map02-vertical-dda/span-baseline.relocations.txt \
+                build/map02-vertical-dda/candidate-baseline.relocations.txt
             nm --defined-only build/map02-vertical-dda/candidate-linked.diagnostic.o | grep VH_Map02RejectedEdges
             if nm --defined-only build/map02-vertical-dda/candidate-linked.baseline.o | grep -q VH_Map02RejectedEdges; then
               echo "Candidate observer leaked into baseline" >&2
