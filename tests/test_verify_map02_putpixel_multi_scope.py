@@ -98,7 +98,10 @@ class TwoWordPutPixelTests(unittest.TestCase):
         self.assertEqual(report["source_ft4_coordinate_pairs_with_multiple_blends"], 1)
         self.assertEqual(report["source_ft4_draws_with_both_words_observed"], 1)
         self.assertEqual(report["source_ft4_draws_with_interleaved_word_revisit"], 0)
-        self.rows[1]["front"] = 0x0001
+        # At 0x801f, red is already saturated (31/31). Adding
+        # another red unit would be a *valid* no-op under ABR1 and
+        # cannot prove tampering. Changing green must alter the blend.
+        self.rows[1]["front"] = 0x03e0
         self.save()
         with self.assertRaisesRegex(ValueError, "source-pinned PC WritePixel"):
             verify_multi_pixel_ot(self.source, self.native)
