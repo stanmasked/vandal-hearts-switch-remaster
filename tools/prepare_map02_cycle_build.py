@@ -92,11 +92,12 @@ VH_MAP02_CYCLE_INCLUDES := -I$(VH_MAP02_CYCLE_ROOT)
 VH_MAP02_CYCLE_SUPPORT := $(addprefix $(BUILD_DIR)/,map02_cycle_order.o map02_cd_read_probe.o map02_capture_session.o map02_scoped_blend_sink.o map02_scoped_blend_stage.o map02_vram_edges.o)
 BACKEND_OBJS += $(VH_MAP02_CYCLE_SUPPORT)
 link: $(VH_MAP02_CYCLE_SUPPORT)
-# Public original text.c requires an extracted private font glyph table
-# src/core/assets/801012e4.inc. Do not forge it or compile synthetic data.
-# This target deliberately skips ONLY that asset-bound translation unit.
-VH_MAP02_ASSET_BOUND_OBJECT := $(BUILD_DIR)/src/core/text.o
-VH_MAP02_PUBLIC_CODE_OBJS := $(filter-out $(VH_MAP02_ASSET_BOUND_OBJECT),$(GAME_O_FILES))
+# Some original public C files include retail-generated assets/*.inc.
+# Compile only code without such direct includes; never fabricate binary assets.
+# An independent Python verifier audits EVERY excluded original translation unit.
+VH_MAP02_ASSET_BOUND_SOURCES := $(shell grep -lE '^[[:space:]]*#[[:space:]]*include[[:space:]]*"assets/' $(GAME_ROOT)/src/*.c $(GAME_ROOT)/src/*/*.c)
+VH_MAP02_ASSET_BOUND_OBJECTS := $(patsubst $(GAME_ROOT)/src/%.c,$(BUILD_DIR)/src/%.o,$(VH_MAP02_ASSET_BOUND_SOURCES))
+VH_MAP02_PUBLIC_CODE_OBJS := $(filter-out $(VH_MAP02_ASSET_BOUND_OBJECTS),$(GAME_O_FILES))
 .PHONY: map02-public-code
 map02-public-code: $(VH_MAP02_PUBLIC_CODE_OBJS) $(BACKEND_OBJS)
 
