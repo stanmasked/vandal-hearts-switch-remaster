@@ -50,7 +50,7 @@ class GenuineVblankMipsDma(unittest.TestCase):
         self.assertEqual(chain_entries(0)[1][1]>>24,3)
         self.assertEqual(chain_entries(1)[1][1]>>24,6)
         self.assertEqual(chain_entries(2)[1][1]>>24,3)
-        self.assertEqual(chain_entries(2)[-2][1],0x600000ff)
+        self.assertEqual(dict(chain_entries(2))[0x204],0x600000ff)
         self.assertEqual(len(build()[1]),4)
 
     def test_native_waits_on_genuine_emulator_vblank_only(self):
