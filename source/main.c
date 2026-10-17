@@ -363,6 +363,13 @@ int main(int argc, char **argv) {
          * in the game or audio loops. Guest stderr can be absent in
          * NeXium; SD CSV is the independent recovery channel. */
         (void)vh_switch_game_audio_trace_dump(stderr);
+        /* Separate queue observations, not part of the 64-slot scene
+         * witness. Guest stderr visibility depends on the emulator. */
+        if(fputs("VH_AUDOUT_QUEUE_TELEMETRY_BEGIN\n",stderr)>=0) {
+            const int queue_rows=vh_switch_game_audio_queue_dump(stderr);
+            fprintf(stderr,"VH_AUDOUT_QUEUE_TELEMETRY_END,rows=%d\n",
+                    queue_rows);
+        }
         (void)mkdir("sdmc:/switch",0777);
         (void)mkdir(VH_SCENE_TRACE_SD_DIRECTORY,0777);
         char scene_path[VH_SCENE_TRACE_EXPORT_PATH_CAP];
