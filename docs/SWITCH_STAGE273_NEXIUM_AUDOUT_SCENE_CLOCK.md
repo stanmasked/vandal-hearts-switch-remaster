@@ -86,3 +86,55 @@ The validation gate is in
 tests is necessary for regression coverage, but is not a substitute
 for a live guest capture. Until that gate passes, the new clock-origin
 correlation is **implemented but not yet accepted in NeXium**.
+
+
+## First real NeXium guest-clock observation — run 39070903030
+
+The complete pinned NeXium [Actions run 39070903030](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39070903030), at commit
+\`909ea9a024f95c660c5f84e8667b30482b9572ed\`, succeeded.
+The current-run build NRO SHA-256 was
+\`8b18fbac476500ec7725a71cc974039d5947c36ec5eebd33d982ea66c6ab8601\`.
+The real original guest SD clock CSV (independently matched to its copy)
+contains \`origin_ns=104954218\`, 1,941 audout calls and 53 windows.
+The verified optical scene events independently bracket that origin:
+startup \`SUBMIT_CALL\` at 101,590,625 ns, guest audio origin at
+104,954,218 ns, and \`RELEASE_RETURN\` at 145,698,645 ns.
+
+Validated guest per-call latency counts:
+
+| Call duration band | Calls |
+| --- | ---: |
+| <25 ms | 722 |
+| 25–<40 ms | 1,199 |
+| 40–<50 ms | 19 |
+| ≥50 ms | 1 |
+| **Total** | **1,941** |
+
+The longest measured call lasted 50,481 μs. All 1,941 buffers were
+released without audout errors. Host virtual PCM capture lasted 61.397
+seconds and ten guest scene transitions were confirmed.
+
+The ten guest INPUT events correlate with audio second-window indexes
+**5, 10, 15, 19, 24, 29, 33, 38, 43, 47**. Their corresponding
+same-second count of calls lasting at least 40 ms was
+**0, 0, 1, 0, 0, 1, 0, 1, 0, 1**, respectively. The **only** call
+≥50 ms fell in second **38**, which also contains guest INPUT serial
+**8**. Its specific time or causal relation to the scene switch
+is **not measured**. One-second overlap is not input-to-DAC latency.
+
+The original guest SD latency CSV SHA-256 was
+\`67ec75e9b34b2c9a27a3474b36dba525f08c50a2a96f4a31f66f86f551e52e11\`,
+and clock-origin CSV SHA-256 was
+\`dc348b8f265c029015a4ac23adbef56f4b1930fa3f69c769f08029907d6b9c9a\`.
+The original CI preserved the verified temporal JSON as
+\`runtime-evidence/scene-soak/soak-audout-scene-correlation.json\`
+in the \`nexium-runtime-evidence\` artifact.
+
+**Acceptance scope:** the original run passed the stage-273 clock
+correlator. A further test committed afterwards added a stricter
+synthetic negative control explicitly checking the origin inside the
+startup SUBMIT_CALL/RELEASE_RETURN interval. The archival run was
+also manually checked against that stricter condition; a new full
+CI run after that commit is separately tracked. The older run's
+results must not be misrepresented as automatically exercising
+subsequently added code.
