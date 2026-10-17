@@ -882,10 +882,12 @@ int main(int argc, char **argv) {
         focus_events.returned_pages!=played_blocks ||
         focus_events.failed_logical_submissions!=failed_logical_pages;
     if (manual_evidence && result==0) result=23;
-    if (output.transport_health.timing_fault && result==0) result=28;
+    const int timing_evidence=vh_audio_output_verify_transport_health(
+                                      &output.transport_health,&recovery);
+    if (timing_evidence && result==0) result=28;
     if ((focus_evidence || focus_record_errors) && result==0) result=24;
     const unsigned verdict=(focus_evidence || focus_record_errors ||
-                            output.transport_health.timing_fault)
+                            timing_evidence)
         ? VH_AUDIO_REPORT_INVALID
         : vh_audio_report_focus_evidence(
             &focus_events,&manual_resume,run_evidence,seam_evidence,
