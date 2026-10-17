@@ -31,11 +31,16 @@ int vh_audio_page_lease_ready(const VhAudioPageLease *lease) {
 }
 
 int vh_audio_output_transport_outcome(
-    int descriptor_returned, int timing_result, unsigned *timing_fault) {
-    /* This flag is diagnostic only and cannot change whether the
-     * backend physically accepted and released its PCM descriptor. */
-    if(timing_result && timing_fault)
-        *timing_fault=1u;
+    int descriptor_returned, int timing_result,
+    VhAudioTransportTimingHealth *health) {
+    /* A rejected timing sample is NOT a rejected audout descriptor.
+     * Saturate the diagnostic count, never wrap or force a replay. */
+    if(timing_result && health) {
+        health->timing_fault=1u;
+        if(descriptor_returned &&
+           health->delivered_without_timing!=UINT64_MAX)
+            ++health->delivered_without_timing;
+    }
     return descriptor_returned ? 0 : -1;
 }
 
