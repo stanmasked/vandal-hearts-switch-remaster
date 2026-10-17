@@ -590,8 +590,14 @@ jobs:
           from tools.instrument_map02_dda_rejected_edges import instrument_rejected_edges
           original = Path("/tmp/vh-map02-native-span-overlay/pc_raster.span.c")
           candidate = original.with_name("pc_raster.candidate.c")
-          candidate.write_text(instrument_rejected_edges(original.read_text(encoding="utf-8")),
-                               encoding="utf-8")
+          generated = instrument_rejected_edges(original.read_text(encoding="utf-8"))
+          for reason in (4, 5, 6, 7):
+              observer = f"VH_Map02RejectedEdges(cx, y, left_x, right_x, {reason});"
+              assert generated.count(observer) == 1, f"missing or duplicate native candidate reason {reason}"
+              skip = f"VH_Map02SkipAt(vh_pixel_sample_x, y, {reason});"
+              assert generated.count(skip) == 1, f"original vertical event {reason} changed"
+          assert generated.count("static void VH_Map02RejectedEdges(") == 1
+          candidate.write_text(generated, encoding="utf-8")
           PY
           (
             cd upstream/platform/pc
