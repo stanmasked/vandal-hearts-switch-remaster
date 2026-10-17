@@ -13,7 +13,7 @@ AUDOUT_AUDIO_TARGET := audout-audio-switch-probe
 AUDOUT_BUILD_REV := $(shell git rev-parse --verify HEAD 2>/dev/null || printf UNKNOWN)
 # Explicitly distinguish a clean checkout from a modified or unpacked tree.
 # This is source provenance, not the SHA-256 of the resulting NRO.
-AUDOUT_BUILD_STATUS := $(shell if git rev-parse --is-inside-work-tree 2>/dev/null | grep -qx true; then if test -z "$(git status --porcelain --untracked-files=normal 2>/dev/null)"; then printf CLEAN; else printf MODIFIED; fi; else printf NO-GIT; fi)
+AUDOUT_BUILD_STATUS := $(shell if git rev-parse --is-inside-work-tree 2>/dev/null | grep -qx true; then if git status --porcelain --untracked-files=normal 2>/dev/null | grep -q .; then printf MODIFIED; else printf CLEAN; fi; else printf NO-GIT; fi)
 OPENAL_TARGET := openal-switch-probe
 SDL2_CONFIG ?= $(DEVKITPRO)/portlibs/switch/bin/sdl2-config
 BUILD      := build
