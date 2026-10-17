@@ -8,12 +8,13 @@
 #include <stdio.h>
 #include "vh_audio_listening_marks.h"
 
-enum { ORACLE_PAGES=4096, ORACLE_EVENTS=4 };
-enum { CUE=0, SLOW2=1, SLOW4=2, RETRY=3 };
+enum { ORACLE_PAGES=4096, ORACLE_EVENTS=7 };
+enum { CUE=0, SLOW2=1, SLOW4=2, RETRY=3,
+       DSP=4, DSP_BOTH2=5, DSP_BOTH4=6 };
 enum { A_MARK=0, B_CONTROL=1, ALL_PAGES=2 };
 
 typedef struct {
-    unsigned band, cue, retry;
+    unsigned band, cue, retry, dsp;
     uint32_t step;
 } OraclePage;
 
@@ -40,6 +41,9 @@ static void reference_window(size_t end, size_t length,
         if (p->band>=2u) events[SLOW2]=1u;
         if (p->band==3u) events[SLOW4]=1u;
         if (p->retry) events[RETRY]=1u;
+        if (p->dsp) events[DSP]=1u;
+        if (p->dsp && p->band>=2u) events[DSP_BOTH2]=1u;
+        if (p->dsp && p->band==3u) events[DSP_BOTH4]=1u;
         if (p->step>*peak) *peak=p->step;
     }
 }
@@ -65,16 +69,25 @@ static void compare_actual(const VhAudioListeningMarks *m,
     assert(m->marks_near_wait_over_2x==a->events[SLOW2]);
     assert(m->marks_near_wait_over_4x==a->events[SLOW4]);
     assert(m->marks_near_retry==a->events[RETRY]);
+    assert(m->marks_near_dsp_over==a->events[DSP]);
+    assert(m->marks_near_dsp_wait_over_2x==a->events[DSP_BOTH2]);
+    assert(m->marks_near_dsp_wait_over_4x==a->events[DSP_BOTH4]);
     assert(m->peak_seam_near_mark==a->peak);
     assert(m->controls_near_switch==b->events[CUE]);
     assert(m->controls_near_wait_over_2x==b->events[SLOW2]);
     assert(m->controls_near_wait_over_4x==b->events[SLOW4]);
     assert(m->controls_near_retry==b->events[RETRY]);
+    assert(m->controls_near_dsp_over==b->events[DSP]);
+    assert(m->controls_near_dsp_wait_over_2x==b->events[DSP_BOTH2]);
+    assert(m->controls_near_dsp_wait_over_4x==b->events[DSP_BOTH4]);
     assert(m->peak_seam_near_control==b->peak);
     assert(m->windows_near_switch==all->events[CUE]);
     assert(m->windows_near_wait_over_2x==all->events[SLOW2]);
     assert(m->windows_near_wait_over_4x==all->events[SLOW4]);
     assert(m->windows_near_retry==all->events[RETRY]);
+    assert(m->windows_near_dsp_over==all->events[DSP]);
+    assert(m->windows_near_dsp_wait_over_2x==all->events[DSP_BOTH2]);
+    assert(m->windows_near_dsp_wait_over_4x==all->events[DSP_BOTH4]);
 }
 
 static void verify_live_window(const VhAudioListeningMarks *m,
@@ -88,6 +101,9 @@ static void verify_live_window(const VhAudioListeningMarks *m,
     assert(actual.over_2x==events[SLOW2]);
     assert(actual.over_4x==events[SLOW4]);
     assert(actual.retry==events[RETRY]);
+    assert(actual.dsp_over==events[DSP]);
+    assert(actual.dsp_both2==events[DSP_BOTH2]);
+    assert(actual.dsp_both4==events[DSP_BOTH4]);
     assert(actual.peak_step==peak);
 }
 
@@ -95,6 +111,7 @@ int main(void) {
     VhAudioListeningMarks m={0};
     OracleStats expected[3]={{0}};
     uint32_t seed=UINT32_C(0x4C317EAD);
+    uint64_t dsp_pages=0u,both2_pages=0u,both4_pages=0u;
 
     for (size_t i=0;i<ORACLE_PAGES;i++) {
         seed=seed*UINT32_C(1664525)+UINT32_C(1013904223);
@@ -107,8 +124,17 @@ int main(void) {
         p->cue=(unsigned)(i==1u || (i>1u && i%149u==0u));
         p->retry=(unsigned)(i==33u || (i>0u && i%181u==17u));
         p->step=i==0u ? 0u : (seed>>8)&65535u;
+        p->dsp=(unsigned)(i==31u || i==33u || i%17u==5u);
         assert(vh_audio_listening_observe(
-            &m,p->band,p->cue,p->retry,p->step)==0);
+            &m,p->band,p->cue,p->retry,p->step,p->dsp)==0);
+        dsp_pages+=(uint64_t)p->dsp;
+        both2_pages+=(uint64_t)(p->dsp && p->band>=2u);
+        both4_pages+=(uint64_t)(p->dsp && p->band==3u);
+        assert(m.dsp_over_pages==dsp_pages);
+        assert(m.dsp_wait_over_2x_pages==both2_pages);
+        assert(m.dsp_wait_over_4x_pages==both4_pages);
+        assert(vh_audio_listening_verify_dsp_totals(
+            &m,dsp_pages,both2_pages,both4_pages)==0);
 
         unsigned events[ORACLE_EVENTS];
         uint32_t peak=0u;

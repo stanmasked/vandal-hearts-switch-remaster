@@ -1430,3 +1430,33 @@ pages, a terminal failed scene page and nonmutating overflow
 guards. No raw PCM, human input history or copyrighted audio is
 recorded. Counts do not themselves prove a click, delay cause
 or glitch-free sound on physical Switch hardware.
+
+
+### Manual A/B windows now include DSP and same-page audout co-occurrence
+
+The fixed 32-returned-page listening lookback now carries one
+bounded DSP overbudget bit per returned logical PCM page. The
+window independently reports (i) any overbudget computation,
+(ii) any page whose computation exceeded budget **and** its own
+audout wait exceeded 2x nominal PCM duration, and (iii) any
+such page with audout wait exceeding 4x. These are same-page
+co-occurrences; separate events on separate pages inside the
+same window do not count as a joint-page observation.
+
+Screen 3/3 now shows **A / B / all** lookback-window counts for
+each event. A is a user-selected possible anomaly, B is a
+user-selected normal-sounding control. These windows may overlap,
+and B is not an unbiased randomized control. Neither matching
+counters nor an A marker proves a physical glitch.
+
+The recorder validates the new DSP bit, subset relationships and
+64-bit counter overflows atomically before mutating its ring.
+It counts only returned logical audio pages; the exact per-page
+DSP / DSP+wait>2x / DSP+wait>4x totals must reconcile with the
+independent same-page joint audit before a FULL result is allowed.
+
+The independent 4096-page chronological oracle exercises the
+new window events at every 31/32-page lookback boundary and across
+repeated ring wraps, including DSP and wait events straddling
+pages 31–33. No PCM, input trace or copyrighted assets are
+recorded or exported.

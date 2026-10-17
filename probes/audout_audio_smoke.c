@@ -336,6 +336,18 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
                (unsigned long long)marks->marks_near_retry,
                (unsigned long long)marks->controls_near_retry,
                (unsigned long long)marks->windows_near_retry);
+        printf("DSP>budget: %llu / %llu / %llu\n",
+               (unsigned long long)marks->marks_near_dsp_over,
+               (unsigned long long)marks->controls_near_dsp_over,
+               (unsigned long long)marks->windows_near_dsp_over);
+        printf("DSP & wait>2x: %llu / %llu / %llu\n",
+               (unsigned long long)marks->marks_near_dsp_wait_over_2x,
+               (unsigned long long)marks->controls_near_dsp_wait_over_2x,
+               (unsigned long long)marks->windows_near_dsp_wait_over_2x);
+        printf("DSP & wait>4x: %llu / %llu / %llu\n",
+               (unsigned long long)marks->marks_near_dsp_wait_over_4x,
+               (unsigned long long)marks->controls_near_dsp_wait_over_4x,
+               (unsigned long long)marks->windows_near_dsp_wait_over_4x);
         printf("Peak PCM16 near A/B=%u/%u\n",
                marks->peak_seam_near_mark,
                marks->peak_seam_near_control);
@@ -494,7 +506,8 @@ int main(int argc, char **argv) {
         if (vh_audio_listening_observe(
                 &listening_marks,seam_stats.last_wait_band,
                 switched_this_block,(unsigned)(calls_this_page>1u),
-                seam_stats.last_abs_step)) {
+                seam_stats.last_abs_step,
+                (unsigned)(elapsed_ticks>block_budget_ticks))) {
             result=12;
             break;
         }
@@ -597,8 +610,19 @@ int main(int argc, char **argv) {
             &output.scene_waits,played_blocks,completed_switches);
     const int seam_evidence=vh_audio_output_verify_pcm_seams(
         &seam_stats,&output.scene_waits,played_blocks);
+    const uint64_t joint_dsp=
+        compute_wait.ordinary.dsp_over+
+        compute_wait.first_after_switch.dsp_over;
+    const uint64_t joint2=
+        compute_wait.ordinary.both_over_2x+
+        compute_wait.first_after_switch.both_over_2x;
+    const uint64_t joint4=
+        compute_wait.ordinary.both_over_4x+
+        compute_wait.first_after_switch.both_over_4x;
     const int listen_evidence=vh_audio_listening_verify(
-        &listening_marks,played_blocks);
+        &listening_marks,played_blocks) ||
+        vh_audio_listening_verify_dsp_totals(
+            &listening_marks,joint_dsp,joint2,joint4);
     const int poll_evidence=vh_audio_input_poll_verify(
         &input_poll,played_blocks) ||
         vh_audio_mark_buttons_verify(

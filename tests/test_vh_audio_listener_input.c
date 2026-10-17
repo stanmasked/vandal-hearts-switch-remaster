@@ -8,7 +8,7 @@
 #include "vh_audio_listener_input.h"
 
 static void page(VhAudioListeningMarks *m,unsigned band,unsigned sw) {
-    assert(vh_audio_listening_observe(m,band,sw,0u,120u)==0);
+    assert(vh_audio_listening_observe(m,band,sw,0u,120u,0u)==0);
 }
 static void consistent(const VhAudioListeningMarks *m,
                        const VhAudioMarkButtons *g) {
