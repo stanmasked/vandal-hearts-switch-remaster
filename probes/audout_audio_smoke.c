@@ -528,6 +528,8 @@ int main(int argc, char **argv) {
     printf("A = perceived audio defect; B = sounds normal (control).\n");
     printf("Release BOTH A/B between marks; held chords ignored.\n");
     printf("X: pause/start; Y: stop/reopen/start (after PCM return).\n");
+    printf("ZL: one-shot BAD CLOCK after next returned PCM; ends INVALID.\n");
+    printf("Run ZL separately from listening, X/Y and HOME trials.\n");
     printf("HOME is a separate physical-console test, not counted as X/Y.\n");
     printf("These are manual tags, never automatic glitch detection.\n");
     consoleUpdate(NULL);
@@ -856,6 +858,9 @@ int main(int argc, char **argv) {
      * applet exit: check page identity, fixture-switch cadence, raw
      * timing and logical-page accounting before claiming a full run.
      */
+    /* A late ZL request with no subsequent returned PCM is NOT a
+     * successfully exercised bad-clock test. No fabricated evidence. */
+    if(output.timing_injection.armed && result==0) result=31;
     const int run_evidence=vh_audio_output_verify_run(
         &output.scene_waits,&recovery,&output.timing,
         played_blocks,completed_switches,MAX_PROBE_BLOCKS,
