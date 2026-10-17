@@ -303,12 +303,20 @@ int main(int argc, char **argv) {
         if (buttons_down & HidNpadButton_B)     actions |= VH_INPUT_CANCEL;
         if (buttons_down & HidNpadButton_Plus)  actions |= VH_INPUT_QUIT;
 
+        /* Input receipt is recorded in the SAME guest monotonic clock
+         * as the audio worker, before game rules process this press.
+         * It does not timestamp the HID driver or emulated host key. */
+        const uint64_t input_observed_ns =
+            (buttons_down & (HidNpadButton_A | HidNpadButton_B))
+            ? armTicksToNs(armGetSystemTick()) : 0;
         const unsigned previous_music = vh_game_music_for_state(&state);
         if (vh_process_input(&state, actions, GRID_WIDTH, GRID_HEIGHT, MOVE_RANGE))
             break;
         const unsigned next_music = vh_game_music_for_state(&state);
         if (audio_started && previous_music != next_music)
-            vh_switch_game_audio_post(next_music);
+            vh_switch_game_audio_post_at(next_music,
+                input_observed_ns ? input_observed_ns
+                                  : armTicksToNs(armGetSystemTick()));
 
         u32 stride_bytes = 0;
         u32 *pixels = (u32 *)framebufferBegin(&fb, &stride_bytes);
@@ -341,6 +349,11 @@ int main(int argc, char **argv) {
     if (audio_started) {
         appletUnhook(&focus_hook);
         vh_switch_game_audio_stop();
+        /* No trace formatting, stderr or SD I/O until audout worker
+         * has joined and stopped owning the PCM page. The guest log
+         * may be unavailable in some emulators; absence of output is
+         * not evidence that no events were recorded. */
+        (void)vh_switch_game_audio_trace_dump(stderr);
         if (resume_message_enabled)
             (void)appletSetRestartMessageEnabled(false);
     }
