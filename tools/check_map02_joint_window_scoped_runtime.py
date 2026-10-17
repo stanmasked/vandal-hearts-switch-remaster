@@ -189,7 +189,7 @@ def check_joint_original_gpu(upstream, *, compiler="cc"):
             HARNESS_DRAWS.replace(
                 tail.replace("\\n", "\n"),
                 "    assert(vram[10][10] != 1);\n"
-                "    { FILE *disc = fopen(getenv(\\"VH_DISC_IMAGE\\"), \\"rb\\");\n"
+                "    { FILE *disc = fopen(getenv(\"VH_DISC_IMAGE\"), \"rb\");\n"
                 "      if (!disc) return 7;\n"
                 "      sleep(1);\n"
                 "      if (fclose(disc) != 0) return 8; }\n"
