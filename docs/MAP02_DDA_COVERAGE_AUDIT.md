@@ -257,6 +257,21 @@ offscreen rectangles must have the exact original no-op effect.
 This remains a source-pinned **PC GPU** verification, not a physical
 PlayStation hardware GPU comparison.
 
+The original `ClearImage` path uses `FillRectRaw` in the separately
+pinned `pc_raster.c`. The new source-specific verifier reconstructs
+its native **BGR555** fill as `((b>>3)<<10)|((g>>3)<<5)|(r>>3)`,
+leaving bit 15 clear and applying neither polygon dithering,
+semi-transparency, masking nor drawing-area clipping. It intersects
+the supplied RECT with the full 1024×512 VRAM dimensions, preserving
+every byte outside the rectangle. `clear_pairs_with_verified_vram_effect`
+reports native `ClearImage` pairs for which the **entire** post-operation
+1-MiB VRAM snapshot matches the expected overwrite. Test cases cover
+truncated 8-bit channels, RGB values within and across 5-bit buckets,
+negative XY and bottom-right clipping, zero/negative dimensions,
+offscreen no-ops and false changes outside the filled region. The
+original hardware PS1 ClearImage behavior is **not** inferred from
+this source-pinned PC-port check.
+
 **Important:** Hash agreement identifies the bytes inspected before and
 after the run, but cannot prove that those bytes were actually executed,
 that diagnostic callbacks were linked, or that retail MAP02 was rendered.
