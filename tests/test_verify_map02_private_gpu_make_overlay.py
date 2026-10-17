@@ -1,6 +1,7 @@
 """Asset-free independent replay of the privately generated pinned Make overlay."""
 import json
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -129,6 +130,43 @@ class PrivateOverlayReplayTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "tracked source"):
                 self.check()
 
+
+    def _swap_overlay_directory_preserving_bytes(self):
+        displaced = self.root / "displaced-overlay"
+        self.output.rename(displaced)
+        shutil.copytree(displaced, self.output)
+
+    def test_directory_replacement_during_generated_read_rejected(self):
+        original_reader = auditor._stable_regular_bytes
+        swapped = False
+
+        def reader(path, *, max_bytes, dir_fd=None):
+            nonlocal swapped
+            if dir_fd is not None and not swapped:
+                self._swap_overlay_directory_preserving_bytes()
+                swapped = True
+            return original_reader(path, max_bytes=max_bytes, dir_fd=dir_fd)
+
+        with patch.object(auditor, "_stable_regular_bytes", side_effect=reader):
+            with self.assertRaisesRegex(ValueError, "overlay directory changed"):
+                self.check()
+        self.assertTrue(swapped)
+
+    def test_directory_replacement_during_receipt_read_rejected(self):
+        original_reader = auditor._stable_regular_bytes
+        swapped = False
+
+        def reader(path, *, max_bytes, dir_fd=None):
+            nonlocal swapped
+            if Path(path) == self.receipt and not swapped:
+                self._swap_overlay_directory_preserving_bytes()
+                swapped = True
+            return original_reader(path, max_bytes=max_bytes, dir_fd=dir_fd)
+
+        with patch.object(auditor, "_stable_regular_bytes", side_effect=reader):
+            with self.assertRaisesRegex(ValueError, "overlay directory changed"):
+                self.check()
+        self.assertTrue(swapped)
 
 if __name__ == "__main__":
     unittest.main()

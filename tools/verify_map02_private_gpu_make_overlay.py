@@ -23,17 +23,17 @@ def _identity(st):
     return tuple(getattr(st, key) for key in IDENTITY_FIELDS)
 
 
-def _stable_regular_bytes(path, *, max_bytes):
+def _stable_regular_bytes(path, *, max_bytes, dir_fd=None):
     """Read one immutable regular inode; reject FIFO, symlink and replacement."""
     flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
              | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0))
-    fd = os.open(path, flags)
+    fd = os.open(path, flags, dir_fd=dir_fd)
     try:
         before = os.fstat(fd)
         if (not stat.S_ISREG(before.st_mode)
                 or before.st_size < 0 or before.st_size > max_bytes):
             raise ValueError("private Make witness must be a bounded regular file")
-        if _identity(os.stat(path, follow_symlinks=False)) != _identity(before):
+        if _identity(os.stat(path, dir_fd=dir_fd, follow_symlinks=False)) != _identity(before):
             raise ValueError("private Make witness changed before reading")
         chunks = []
         remaining = before.st_size
@@ -45,7 +45,7 @@ def _stable_regular_bytes(path, *, max_bytes):
             remaining -= len(part)
         if (os.read(fd, 1)
                 or _identity(os.fstat(fd)) != _identity(before)
-                or _identity(os.stat(path, follow_symlinks=False))
+                or _identity(os.stat(path, dir_fd=dir_fd, follow_symlinks=False))
                 != _identity(before)):
             raise ValueError("private Make witness changed during reading")
         return b"".join(chunks)
@@ -111,11 +111,6 @@ def replay(upstream, output, manifest):
                     sources[builder.RASTER_REL].decode("utf-8"))))).encode("utf-8"),
         builder.GENERATED_MAKE: builder.make_overlay(output).encode("utf-8"),
     }
-    if sorted(p.name for p in output.iterdir()) != sorted(generated):
-        raise ValueError("private Make output files differ from expected inventory")
-    for name, wanted in generated.items():
-        if _stable_regular_bytes(output / name, max_bytes=MAX_GENERATED_BYTES) != wanted:
-            raise ValueError("private Make generated file differs from pinned source")
     expected_report = {
         "schema": "vh.map02.private-native-two-word-dda-overlay.v1",
         "pinned_public_pc_commit": builder.PINNED_UPSTREAM_REF,
@@ -137,12 +132,36 @@ def replay(upstream, output, manifest):
         "native_process_to_gpu_log_causality_verified": False,
         "hd_replacement_authorized": False,
     }
-    receipt = json.loads(
-        _stable_regular_bytes(manifest, max_bytes=MAX_MANIFEST_BYTES),
-        object_pairs_hook=_unique_object,
-    )
-    if type(receipt) is not dict or receipt != expected_report:
-        raise ValueError("private Make preparation receipt differs from regenerated sources")
+    # Anchor every generated-file operation to the same opened directory;
+    # pathname-only checks can silently follow a swapped overlay directory.
+    directory_flags = (os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+                       | getattr(os, "O_NOFOLLOW", 0)
+                       | getattr(os, "O_CLOEXEC", 0))
+    directory_fd = os.open(output, directory_flags)
+    try:
+        directory_before = os.fstat(directory_fd)
+        if (not stat.S_ISDIR(directory_before.st_mode)
+                or _identity(os.stat(output, follow_symlinks=False))
+                != _identity(directory_before)):
+            raise ValueError("private Make overlay directory changed before reading")
+        if sorted(os.listdir(directory_fd)) != sorted(generated):
+            raise ValueError("private Make output files differ from expected inventory")
+        for name, wanted in generated.items():
+            if _stable_regular_bytes(name, max_bytes=MAX_GENERATED_BYTES,
+                                     dir_fd=directory_fd) != wanted:
+                raise ValueError("private Make generated file differs from pinned source")
+        receipt = json.loads(
+            _stable_regular_bytes(manifest, max_bytes=MAX_MANIFEST_BYTES),
+            object_pairs_hook=_unique_object,
+        )
+        if type(receipt) is not dict or receipt != expected_report:
+            raise ValueError("private Make preparation receipt differs from regenerated sources")
+        if (_identity(os.fstat(directory_fd)) != _identity(directory_before)
+                or _identity(os.stat(output, follow_symlinks=False))
+                != _identity(directory_before)):
+            raise ValueError("private Make overlay directory changed during replay")
+    finally:
+        os.close(directory_fd)
     return {
         "schema": "vh.map02.private-native-make-overlay-replay.v1",
         "pinned_public_pc_commit": builder.PINNED_UPSTREAM_REF,
