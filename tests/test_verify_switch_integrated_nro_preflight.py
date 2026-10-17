@@ -108,6 +108,20 @@ class TestIntegratedNroPreflight(unittest.TestCase):
         with self.assertRaises(gate.PreflightError):
             gate.check(self.root, **self.params)
 
+    def test_nested_competing_nro_rejected(self):
+        nested = self.root / "nested"
+        nested.mkdir()
+        (nested / "other.nro").write_bytes(b"unrelated")
+        with self.assertRaises(gate.PreflightError):
+            gate.check(self.root, **self.params)
+
+    def test_nested_competing_checksum_rejected(self):
+        nested = self.root / "nested"
+        nested.mkdir()
+        (nested / "other.sha256").write_text(self.digest)
+        with self.assertRaises(gate.PreflightError):
+            gate.check(self.root, **self.params)
+
     def test_truncated_nro_rejected(self):
         data = bytearray((self.root / gate.EXPECTED_NRO).read_bytes()[:0x40])
         (self.root / gate.EXPECTED_NRO).write_bytes(data)
