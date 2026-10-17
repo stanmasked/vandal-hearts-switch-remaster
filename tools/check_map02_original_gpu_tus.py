@@ -47,13 +47,15 @@ def verify_gpu_objects(upstream, *, cc="cc", linker=None, nm="nm"):
             "-Wno-unused-parameter", "-Wno-missing-field-initializers",
             "-DVH_REGION_US", "-I", str(pc / "include"),
             "-I", str(pc / "src"),
+            "-I", str(Path(__file__).resolve().parent),
         ]
         tools = Path(__file__).resolve().parent
         cases = (
             ("ordinary", []),
             ("scoped", ["-DVH_MAP02_SCOPED_BLEND_PROBE"]),
             ("private-posix", ["-DVH_MAP02_SCOPED_BLEND_PROBE",
-                               "-DVH_MAP02_POSIX_STAGE"]),
+                               "-DVH_MAP02_POSIX_STAGE",
+                               "-DVH_MAP02_VRAM_EDGE_PROBE"]),
         )
         checked = []
         for label, defines in cases:
@@ -73,6 +75,12 @@ def verify_gpu_objects(upstream, *, cc="cc", linker=None, nm="nm"):
                              "-o", str(sink)])
                 objects.append(sink)
             if label == "private-posix":
+                edges = case / "edges.o"
+                run_checked([cc, *common, *defines,
+                             "-I", str(tools), "-c",
+                             str(tools / "map02_vram_edges.c"),
+                             "-o", str(edges)])
+                objects.append(edges)
                 stage = case / "stage.o"
                 run_checked([cc, *common, *defines,
                              "-I", str(tools), "-c",
