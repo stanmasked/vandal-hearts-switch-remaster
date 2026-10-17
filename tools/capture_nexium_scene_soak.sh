@@ -141,6 +141,22 @@ if [[ -f "$SOAK_SD_DIR/audio-audout-export-result.txt" &&
   cp --no-clobber -- "$SOAK_SD_DIR/audio-audout-export-result.txt" \
     "$output/soak-audout-export-result.txt"
 fi
+# Stage 272: retain independent per-CALL latency histogram producer
+# evidence. Neither an old queue CSV nor a status receipt substitutes.
+find "$SOAK_SD_DIR" -maxdepth 1 -type f -name 'audio-audout-latency-*.csv' \
+  -print | sort > "$output/soak-audout-latency-locations.txt"
+mapfile -t latency_captures < "$output/soak-audout-latency-locations.txt"
+if (( ${#latency_captures[@]} == 1 )) && \
+   [[ ! -e "$output/soak-audout-latency-unverified.csv" ]]; then
+  cp --no-clobber -- "${latency_captures[0]}" \
+    "$output/soak-audout-latency-unverified.csv"
+fi
+if [[ -f "$SOAK_SD_DIR/audio-audout-latency-export-result.txt" &&
+      ! -L "$SOAK_SD_DIR/audio-audout-latency-export-result.txt" ]]; then
+  cp --no-clobber -- "$SOAK_SD_DIR/audio-audout-latency-export-result.txt" \
+    "$output/soak-audout-latency-export-result.txt"
+fi
+
 # Names and sizes are diagnostic only. They never satisfy the audit.
 find "$SOAK_SD_DIR" -maxdepth 1 -type f \
   -printf '%f,%s\n' | LC_ALL=C sort > "$output/soak-sd-directory-inventory.csv"
