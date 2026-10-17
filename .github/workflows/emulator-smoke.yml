@@ -34,6 +34,7 @@ jobs:
           export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
           export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$DEVKITPRO/portlibs/switch/bin:$PATH"
           make test
+          python3 -m unittest discover -s tests -p "test_analyze_nexium_pcm.py" -v
           make verify-nro
 
       - name: Upload NROs for emulator smoke test
@@ -465,6 +466,32 @@ jobs:
           output=Path("runtime-evidence/pcm-monitor-report.json")
           output.write_text(json.dumps(report,indent=2)+"\n")
           print(json.dumps(report,indent=2),flush=True)
+          PY
+          python3 tools/analyze_nexium_pcm.py \
+            runtime-evidence/nexium-monitor-s16le-48k.pcm \
+            --output runtime-evidence/pcm-quality-report.json
+          python3 -m json.tool runtime-evidence/pcm-quality-report.json > /dev/null
+
+      - name: Verify captured audio measurements
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          f=Path("runtime-evidence/pcm-quality-report.json")
+          if not f.is_file():
+              raise SystemExit("FAIL: missing audio quality report (capture step failed or skipped)")
+          report=json.loads(f.read_text(encoding="utf-8"))
+          if (report["observation"] != "NONZERO_MONITOR_PCM"
+              or min(report["rms_by_channel"]) <= 50
+              or report["duration_seconds"] < 30
+              or sum(report["full_scale_clipped_samples_by_channel"])):
+              raise SystemExit("FAIL: virtual PCM trace is silent, too short, or clipped")
+          if report["audible_music_confirmed"] or report["original_soundtrack_confirmed"]:
+              raise SystemExit("FAIL: virtual trace cannot claim audible or retail music")
+          print("Virtual NeXium PCM measurements consistent; not an audible test.")
           PY
 
       - name: Record audio capture boundary
