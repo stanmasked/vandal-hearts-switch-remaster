@@ -162,8 +162,11 @@ class WindowSourceWitnessTests(unittest.TestCase):
             verify_window_source_join(self.source, self.native)
 
     def test_two_source_faces_obey_relative_ot_depth_order(self):
+        # The first draw changes VRAM word 0. Isolate the second
+        # synthetic CLUT on a different row, so the source palette remains
+        # constant rather than weakening the real material-equivalence gate.
         second_packet = {
-            "tpage": 1, "clut": 0,
+            "tpage": 1, "clut": 64,
             "xy": [4, 4, 6, 4, 6, 6, 4, 6],
             "uv": [0, 0, 1, 0, 0, 1, 1, 1],
         }
@@ -175,7 +178,7 @@ class WindowSourceWitnessTests(unittest.TestCase):
         second = {
             "gte": {"perimeter_xy": [[4, 4], [6, 4], [4, 6], [6, 6]],
                     "raw_otz": 6},
-            "texture": dict(self.source_event["texture"], tpage=1),
+            "texture": dict(self.source_event["texture"], tpage=1, clut=64),
         }
         self.source_events = jsonline(self.source_event) + jsonline(second)
         (self.source / "gpu-events.jsonl").write_bytes(self.source_events)
