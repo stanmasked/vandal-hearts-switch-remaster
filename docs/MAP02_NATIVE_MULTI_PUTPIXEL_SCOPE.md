@@ -177,6 +177,32 @@ make -f Makefile -f /private/map02-pinned-gpu-make/map02_private_gpu.mk \
   BUILD_DIR=build-map02-private map02-private-gpu-objects
 ```
 
+Если приватные оригинальные ресурсы и все штатные зависимости
+PC-порта уже установлены локально, для полного линкования можно
+использовать отдельную опциональную цель (она **не запускается в CI**):
+
+```sh
+cd /private/VandalHearts-PcPort/platform/pc
+make -f Makefile -f /private/map02-pinned-gpu-make/map02_private_gpu.mk \
+  REGION=us BUILD_DIR=build-map02-private map02-private-pc-link
+```
+
+Она добавляет исходной цели `link` требование `objs`,
+чтобы до линковки гарантированно собрать все игровые,
+графические и генерируемые data-объекты. Штатное правило
+самой линковки остаётся оригинальным. Генератор дополнительно
+проверяет соответствие закреплённому Makefile этого графа
+зависимостей (`default -> GAME_O_FILES/BACKEND_OBJS`,
+`objs -> default/DATA_OBJS`, `link -> DATA_OBJS`).
+Тесты выполняют `make -n` с настоящей программой GNU Make
+на синтетическом малом checkout: видны все приватные и игровые
+объекты до строки линковки; при ошибочном регионе и пути
+сборки правила закрываются отказом.
+
+Это **инструкция для приватного запуска**, а не заявление,
+что собственные игровые ресурсы доступны в среде GitHub
+или что итоговый исполняемый файл уже создан.
+
 Генератор требует совпадения Git blob-хешей оригинальных
 `platform/pc/Makefile`, `platform/pc/src/libgpu.c` и
 `platform/pc/src/pc_raster.c` с закреплённым коммитом.
