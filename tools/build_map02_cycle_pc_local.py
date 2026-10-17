@@ -43,6 +43,10 @@ def build_full_pc(upstream, bundle, *, timeout=1200, make="make", report_dir=Non
     env = os.environ.copy()
     env.pop("VH_KROM_SOURCE", None)
     env.pop("VH_ALLOW_UNVERIFIED_EXE", None)
+    # Original generators consult these environment variables outside GNU
+    # Make as well: never accept stale region or an unrelated PS-X EXE.
+    env["VH_REGION"] = "us"
+    env["VH_PSX_EXE"] = str(upstream / "SLUS_004.47")
     if krom_source is not None:
         env["VH_KROM_SOURCE"] = str(Path(krom_source).absolute())
     try:
