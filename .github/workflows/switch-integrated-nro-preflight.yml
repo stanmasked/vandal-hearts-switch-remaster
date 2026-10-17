@@ -33,7 +33,18 @@ jobs:
           python-version: "3.11"
       - name: Execute offline NRO preflight regressions
         id: preflight
-        run: python3 -m unittest discover -s tests -p 'test_verify_switch_integrated_nro_preflight.py' -v
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 -m unittest discover -s tests -p 'test_verify_switch_integrated_nro_preflight.py' -v 2>&1 | tee preflight-regressions.log
+      - name: Upload preflight test log
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: integrated-nro-preflight-test-log
+          path: preflight-regressions.log
+          if-no-files-found: warn
+          retention-days: 14
       - name: Record hardware-test boundary
         if: ${{ always() }}
         env:
