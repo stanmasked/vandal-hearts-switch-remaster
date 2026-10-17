@@ -23,11 +23,16 @@ EXPECT=(16,8,12,4,8,4)
 def summarize(raw:bytes):
     prior=summarize_v86(raw)
     rows=[json.loads(line) for line in raw.decode("ascii").splitlines()]
-    if len(rows)<6 or tuple(e["kind"] for e in rows[-6:])!=EVENT_KINDS:
-        raise Refused("missing ordered v87 host-control tail")
-    if any(e["kind"] in EVENT_KINDS for e in rows[:-6]):
+    positions=[i for i,e in enumerate(rows) if e["kind"]==EVENT_KINDS[0]]
+    if len(positions)!=1:
+        raise Refused("missing/duplicate v87 host-control block")
+    start=positions[0]
+    tail=rows[start:start+6]
+    if len(tail)!=6 or tuple(e["kind"] for e in tail)!=EVENT_KINDS:
+        raise Refused("v87 host-control events out of order")
+    if any(e["kind"] in EVENT_KINDS for i,e in enumerate(rows)
+           if not start<=i<start+6):
         raise Refused("duplicate v87 host-control events")
-    tail=rows[-6:]
     actual=tuple(e["value"] for e in tail)
     if actual!=EXPECT:
         raise Refused("host overlap/mask/wrap assignment totals differ from readback oracle")
