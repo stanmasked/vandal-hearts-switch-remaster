@@ -38,6 +38,8 @@ VOICE_CASES = {
     "interrupt_exp_attack": (0xFE0F, 0x0030, 0x0800, 0, 56, 256, 2),
     "boundary_release": (0x000F, 0x0000, 0x0800, 0, 56, 64, 1),
     "boundary_exp_release": (0x800F, 0x0030, 0x0800, 0, 56, 128, 4),
+    "immediate_key_off": (0x7E0F, 0x0000, 0x0800, 0, 56, 32, 0),
+    "short_key_off": (0x000F, 0x0020, 0x0800, 0, 56, 32, 1),
 }
 
 
