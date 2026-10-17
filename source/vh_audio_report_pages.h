@@ -113,7 +113,9 @@ static inline int vh_audio_applet_page_returned(VhAudioAppletEvents *s) {
        (s->pending_return && s->first_pages_after_return==UINT_MAX))
         return -1;
     ++s->returned_pages;
-    if(!s->pending_return) return 0;
+    /* A callback may report background between returned pages.
+     * Pages returned while backgrounded do not confirm foreground. */
+    if(!s->pending_return || s->in_background) return 0;
     s->pending_return=0u;
     ++s->first_pages_after_return;
     return 1;
