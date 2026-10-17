@@ -58,6 +58,17 @@ class SingleElfBuildOverlayTests(unittest.TestCase):
             "$(BUILD_DIR)/src/core/cd.o:",
             "$(BUILD_DIR)/libcd.o:",
             "$(BUILD_DIR)/libgpu.o:",
+            "$(BUILD_DIR)/pc_raster.o:",
+            "VH_MAP02_GPU_DEFS :=",
+            "-DVH_MAP02_GPU_CAPTURE",
+            "-DVH_MAP02_POSIX_CAPTURE_WINDOWS",
+            "-DVH_MAP02_SCOPED_BLEND_PROBE",
+            "-DVH_MAP02_VRAM_EDGE_PROBE",
+            "-DVH_MAP02_CAPTURE_SESSION",
+            "-DVH_MAP02_POSIX_STAGE",
+            "map02_scoped_blend_sink.o",
+            "map02_scoped_blend_stage.o",
+            "map02_vram_edges.o",
             "-DVH_MAP02_CD_READ_PROBE",
             "-DVH_MAP02_CYCLE_ORDER",
             "-Iinclude -Isrc -g",
@@ -113,6 +124,12 @@ class SingleElfBuildOverlayTests(unittest.TestCase):
         self.assertNotIn("GAME_C_FLAGS +=", text)
         self.assertNotIn("PORT_WARN +=", text)
         self.assertNotIn("HD_MAP02", text)
+        self.assertIn("-DVH_MAP02_GPU_CAPTURE", text)
+        self.assertIn("-DVH_MAP02_SCOPED_BLEND_PROBE", text)
+        self.assertIn("$(BUILD_DIR)/pc_raster.o:", text)
+        self.assertIn("$(BUILD_DIR)/map02_scoped_blend_stage.o:", text)
+        self.assertIn("$(BUILD_DIR)/map02_vram_edges.o:", text)
+        self.assertIn("-DVH_MAP02_STAGE_DEFS", text.replace("$(VH_MAP02_STAGE_DEFS)", "-DVH_MAP02_STAGE_DEFS"))
 
 
 if __name__ == "__main__":
