@@ -1,4 +1,7 @@
 #include "vh_switch_game_audio.h"
+#include "vh_audio_scene_trace.h"
+
+#include <stdio.h>
 
 #include <switch.h>
 #include <stdatomic.h>
@@ -38,6 +41,19 @@ static atomic_uint published_resume_restarts;
 static atomic_uint published_resume_recoveries;
 static atomic_uint published_lease_mismatches;
 static atomic_uint published_abandoned_sessions;
+/* Two producer threads reserve immutable slots, then release-publish.
+ * No heap, locks or file I/O in this path. */
+static VhAudioSceneTrace scene_trace;
+static atomic_ullong scene_trace_latest_ticket; /* serial << 32 | scene */
+static unsigned main_scene_serial; /* game thread only */
+static uint64_t scene_trace_now_ns(void) {
+    return armTicksToNs(armGetSystemTick());
+}
+static void scene_trace_emit(VhAudioSceneTraceKind kind,
+                             unsigned serial, unsigned scene) {
+    (void)vh_audio_scene_trace_record(&scene_trace,kind,serial,scene,
+                                      scene_trace_now_ns());
+}
 static VhNativeSpu spu;
 static VhMusicScene director;
 static VhAudioResample rate_converter;
@@ -297,6 +313,8 @@ static void audio_worker(void *unused) {
      * so all early error exits can close output safely as well. */
 
     unsigned accepted = VH_GAME_MUSIC_SILENT;
+    unsigned pending_trace_serial = 0, pending_trace_scene = 0;
+    int pending_trace_page = 0;
     unsigned handled_resume =
         vh_game_music_mailbox_resume_serial(&mailbox);
     int pending_resume_reopen = 0;
@@ -352,7 +370,16 @@ static void audio_worker(void *unused) {
          * The audio thread alone owns scene fades and SPU state;
          * requests during a fade are retried on later audio blocks.
          */
-        const unsigned desired = vh_game_music_mailbox_read(&mailbox);
+        /* Stable ticket reads prevent attaching a newer button serial
+         * to an older mailbox value. Ambiguity falls back to serial 0. */
+        const uint64_t ticket_before=atomic_load_explicit(
+            &scene_trace_latest_ticket,memory_order_acquire);
+        const unsigned desired=vh_game_music_mailbox_read(&mailbox);
+        const uint64_t ticket_after=atomic_load_explicit(
+            &scene_trace_latest_ticket,memory_order_acquire);
+        const unsigned desired_serial=
+            ticket_before==ticket_after && (unsigned)ticket_after==desired
+            ? (unsigned)(ticket_after>>32) : 0u;
         if (desired != accepted) {
             VhMusicCue bank_cue = {0};
             const VhMusicCue *cue = NULL;
@@ -372,7 +399,13 @@ static void audio_worker(void *unused) {
             }
             const int change = vh_music_scene_request(
                 &director, cue, accepted ? 8u : 0u);
-            if (change == 0) accepted = desired;
+            if (change == 0) {
+                accepted = desired;
+                scene_trace_emit(VH_SCENE_TRACE_ACCEPT,desired_serial,desired);
+                pending_trace_serial=desired_serial;
+                pending_trace_scene=desired;
+                pending_trace_page=1;
+            }
             else if (change != -2) { state = -5; break; }
         }
         if (vh_music_scene_render(&director, pcm_44100) != 0) {
@@ -392,11 +425,25 @@ static void audio_worker(void *unused) {
          * retry exactly these samples. Never re-run scene/render or
          * resampler for the same page (that would skip musical time).
          * Bounded retries fail closed through the normal teardown. */
+        /* Single-page audout call can wait for a released descriptor.
+         * SUBMIT_CALL is not proof of audible start and RELEASE_RETURN
+         * means recovery/lease confirmation, not DAC/speaker playback. */
+        if (pending_trace_page)
+            scene_trace_emit(VH_SCENE_TRACE_SUBMIT_CALL,
+                             pending_trace_serial,pending_trace_scene);
         if (vh_audio_output_submit_recover(&recovery_ops,
                                            &recovery_stats,
-                                           pcm_48000_page, count)) {
-            state = -8;
+                                           pcm_48000_page,count)) {
+            if (pending_trace_page)
+                scene_trace_emit(VH_SCENE_TRACE_SUBMIT_ERROR,
+                                 pending_trace_serial,pending_trace_scene);
+            state=-8;
             break;
+        }
+        if (pending_trace_page) {
+            scene_trace_emit(VH_SCENE_TRACE_RELEASE_RETURN,
+                             pending_trace_serial,pending_trace_scene);
+            pending_trace_page=0;
         }
         /* Submission returned ownership of THIS exact 48-kHz page.
          * Store the terminal sample for optional normal-exit taper;
@@ -467,7 +514,11 @@ cleanup:
 int vh_switch_game_audio_start(unsigned initial_scene) {
     if (thread_started || initial_scene > VH_GAME_MUSIC_HERO_SELECTED)
         return -1;
-    vh_game_music_mailbox_init(&mailbox, initial_scene);
+    vh_audio_scene_trace_init(&scene_trace);
+    main_scene_serial=0u;
+    atomic_store_explicit(&scene_trace_latest_ticket,
+                          (uint64_t)initial_scene,memory_order_release);
+    vh_game_music_mailbox_init(&mailbox,initial_scene);
     atomic_store_explicit(&audio_status, 0, memory_order_release);
     atomic_store_explicit(&bank_warning_notes, 0u,
                           memory_order_release);
@@ -500,9 +551,31 @@ int vh_switch_game_audio_start(unsigned initial_scene) {
     return 0;
 }
 
+void vh_switch_game_audio_post_at(unsigned desired_scene,
+                                  uint64_t input_observed_ns) {
+    if (!thread_started || desired_scene>VH_GAME_MUSIC_HERO_SELECTED) return;
+    /* Single writer on main; latest desired scene wins in mailbox. */
+    const unsigned serial=++main_scene_serial;
+    (void)vh_audio_scene_trace_record(&scene_trace,
+                                      VH_SCENE_TRACE_INPUT,serial,
+                                      desired_scene,input_observed_ns);
+    scene_trace_emit(VH_SCENE_TRACE_POST,serial,desired_scene);
+    atomic_store_explicit(&scene_trace_latest_ticket,
+                          ((uint64_t)serial<<32)|desired_scene,
+                          memory_order_release);
+    vh_game_music_mailbox_post(&mailbox,desired_scene);
+}
 void vh_switch_game_audio_post(unsigned desired_scene) {
-    if (thread_started)
-        vh_game_music_mailbox_post(&mailbox, desired_scene);
+    vh_switch_game_audio_post_at(desired_scene,scene_trace_now_ns());
+}
+int vh_switch_game_audio_trace_dump(FILE *stream) {
+    if (!stream || thread_started) return -1;
+    if (fputs("VH_AUDIO_SCENE_TRACE_BEGIN\n",stream)<0) return -1;
+    const int rows=vh_audio_scene_trace_write_csv(&scene_trace,stream);
+    if (rows<0 || fprintf(stream,
+            "VH_AUDIO_SCENE_TRACE_END,rows=%d,dropped=%u\n",
+            rows,vh_audio_scene_trace_dropped(&scene_trace))<0) return -1;
+    return rows;
 }
 
 void vh_switch_game_audio_set_focus(int in_focus) {
