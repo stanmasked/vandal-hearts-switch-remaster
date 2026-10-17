@@ -14,6 +14,7 @@ import unittest
 from unittest.mock import patch
 
 from tools.publish_map02_cd_bound_witness import MANIFEST
+from tools.verify_map02_window_scoped_join import CD_READ
 from tools.verify_map02_cycle_cd_gpu_join import (
     CYCLE_RECEIPT, CYCLE_SCHEMA, SCHEMA, verify_cycle_cd_gpu_join,
 )
@@ -42,8 +43,18 @@ class CycleCdGpuJoinTests(unittest.TestCase):
         }, sort_keys=True) + "\n").encode()
         (self.source / MANIFEST).write_bytes(self.manifest_raw)
         (self.source / MANIFEST).chmod(0o600)
+        self.crc = "d31a04b7"  # synthetic-only CD checksum
+        self.cd_raw = (json.dumps({
+            "schema": "vh.map02.original-cd-read.v1",
+            "capture_session": self.nonce,
+            "raw_user_crc32": self.crc,
+            "returned_user_crc32": self.crc,
+        }, sort_keys=True) + "\n").encode()
+        (self.scoped / CD_READ).write_bytes(self.cd_raw)
+        (self.scoped / CD_READ).chmod(0o600)
         self.receipt = {
             "schema": CYCLE_SCHEMA,
+            "original_cd_raw_user_crc32": self.crc,
             "capture_session": self.nonce,
             "gpu_draw_frame": 7,
             "ordered_source_hooks_observed": True,
@@ -101,6 +112,9 @@ class CycleCdGpuJoinTests(unittest.TestCase):
             {"capture_session": "abc"},
             {"capture_session": "AB" * 16},
             {"capture_session": 123},
+            {"original_cd_raw_user_crc32": "xyz"},
+            {"original_cd_raw_user_crc32": "D31A04B7"},
+            {"original_cd_raw_user_crc32": True},
             {"ordered_source_hooks_observed": False},
             {"ordered_source_hooks_observed": 1},
             {"cd_payload_verified_by_this_receipt": True},
@@ -162,6 +176,21 @@ class CycleCdGpuJoinTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "SHA differs"):
             self.check()
 
+    def test_mismatched_crc_is_rejected_before_original_disc_verification(self):
+        self.receipt["original_cd_raw_user_crc32"] = "0" * 8
+        self.write_cycle()
+        with self.assertRaisesRegex(ValueError, "CRC32.*differ"):
+            self.check()
+        self.mock.assert_not_called()
+
+    def test_original_cd_crc_mutation_during_expensive_audit_rejected(self):
+        def mutate(*args, **kwargs):
+            (self.scoped / CD_READ).write_bytes(self.cd_raw + b" ")
+            return {"private_map02_cd_final_sha256": sha(self.manifest_raw)}
+        self.mock.side_effect = mutate
+        with self.assertRaisesRegex(ValueError, "changed during verification"):
+            self.check()
+
     def test_changed_cycle_during_expensive_original_verification_rejected(self):
         def mutate(*args, **kwargs):
             path = self.cycle / CYCLE_RECEIPT
@@ -195,6 +224,7 @@ class CycleCdGpuSyntheticIntegrationTests(unittest.TestCase):
         event = {
             "schema": CYCLE_SCHEMA,
             "capture_session": fixture.cd_receipt["capture_session"],
+            "original_cd_raw_user_crc32": fixture.cd_receipt["raw_user_crc32"],
             "gpu_draw_frame": 7,
             "ordered_source_hooks_observed": True,
             "cd_payload_verified_by_this_receipt": False,
