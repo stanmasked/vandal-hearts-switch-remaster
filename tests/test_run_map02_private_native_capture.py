@@ -409,6 +409,21 @@ class PrivateNativeLauncherTests(unittest.TestCase):
         backup.rename(self.preflight)
         self.assertTrue(self.replay()["raw_evidence_matches_original_receipt"])
 
+    def test_replay_rejects_fifo_substitution_without_blocking(self):
+        self.assertTrue(self.run_synthetic()["capture_verified"])
+        for victim in (self.summary, self.preflight):
+            with self.subTest(kind=victim.name):
+                original = victim.read_bytes()
+                victim.unlink()
+                os.mkfifo(victim, 0o600)
+                # This must raise without trying to read the unconnected
+                # named pipe and hanging the CI worker.
+                with self.assertRaisesRegex(ValueError, "regular file"):
+                    self.replay()
+                victim.unlink()
+                victim.write_bytes(original)
+        self.assertTrue(self.replay()["raw_evidence_matches_original_receipt"])
+
     def test_replay_refuses_modified_original_process_receipt(self):
         self.run_synthetic()
         original = json.loads(self.summary.read_text())
