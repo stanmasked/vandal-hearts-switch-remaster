@@ -1,0 +1,105 @@
+name: NeXium independently accepted slow-call run comparison
+
+on:
+  push:
+    branches:
+      - test/cdxa-extract-decode-pipeline
+    paths:
+      - .github/workflows/nexium-slow-runs-comparison.yml
+  workflow_dispatch:
+    inputs:
+      first_run:
+        description: First successful original-SD-audited NeXium Actions run ID
+        type: string
+        required: true
+        default: '39072903722'
+      second_run:
+        description: Second successful same-NRO NeXium Actions run ID
+        type: string
+        required: true
+        default: '39073836066'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  compare-verified-guest-runs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout current audout comparators
+        uses: actions/checkout@v4
+
+      - name: Validate original workflow runs and download evidence
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FIRST_RUN: ${{ inputs.first_run || '39072903722' }}
+          SECOND_RUN: ${{ inputs.second_run || '39073836066' }}
+        run: |
+          set -euo pipefail
+          [[ "$FIRST_RUN" =~ ^[0-9]{8,15}$ ]] || exit 2
+          [[ "$SECOND_RUN" =~ ^[0-9]{8,15}$ ]] || exit 2
+          [[ "$FIRST_RUN" != "$SECOND_RUN" ]] || exit 2
+          for item in "one:$FIRST_RUN" "two:$SECOND_RUN"; do
+            label="${item%%:*}"
+            run_id="${item#*:}"
+            run_conclusion="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" --jq '.conclusion')"
+            [[ "$run_conclusion" == "success" ]] || {
+              echo "Run ${run_id} is not completed successfully: ${run_conclusion}" >&2
+              exit 2
+            }
+            mkdir -p "$RUNNER_TEMP/${label}"
+            gh run download "$run_id" --repo "$GITHUB_REPOSITORY" --name nexium-runtime-evidence --dir "$RUNNER_TEMP/${label}"
+            test -s "$RUNNER_TEMP/${label}/integrated-nro-preflight.json"
+            test -s "$RUNNER_TEMP/${label}/runtime-evidence/scene-soak/soak-audout-exact-slow-verification.json"
+          done
+          # Deterministic re-packaging changes ZIP container bytes, NOT
+          # original guest source CSV bytes or the independently audited hash.
+          python3 - "$RUNNER_TEMP" <<'PY'
+          import pathlib,sys,zipfile
+          base=pathlib.Path(sys.argv[1])
+          for label in ("one","two"):
+              root=base/label
+              paths=sorted(root.rglob("*"))
+              if len(paths)>400 or any(path.is_symlink() for path in paths):
+                  raise SystemExit("unsafe/oversized extracted artifact")
+              with zipfile.ZipFile(base/(label+".zip"),"w",compression=zipfile.ZIP_DEFLATED) as out:
+                  for path in paths:
+                      if path.is_file():
+                          out.write(path,path.relative_to(root).as_posix())
+          PY
+          mkdir -p cross-run-evidence
+          printf '%s\n%s\n' "$FIRST_RUN" "$SECOND_RUN" > cross-run-evidence/source-run-ids.txt
+
+      - name: Reverify both exact slow-call archives independently
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/compare_nexium_verified_slow_runs.py --archive "$RUNNER_TEMP/one.zip" --archive "$RUNNER_TEMP/two.zip" --output cross-run-evidence/verified-guest-slow-runs.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path("cross-run-evidence/verified-guest-slow-runs.json").read_text())
+          submitted=[int(line) for line in Path("cross-run-evidence/source-run-ids.txt").read_text().splitlines()]
+          assert report["result"]=="MULTIRUN_EXACT_SLOW_CALLS_ARCHIVES_REVERIFIED"
+          assert report["distinct_archive_run_ids"]==2
+          assert sorted(x["run_id"] for x in report["runs"])==sorted(submitted)
+          assert report["original_transient_guest_sd_reopened_now"] is False
+          assert report["speaker_or_hardware_observations"] is False
+          print("Confirmed earlier original-SD workflow audits:",[r["run_id"] for r in report["runs"]])
+          PY
+          sha256sum "$RUNNER_TEMP/one.zip" "$RUNNER_TEMP/two.zip" > cross-run-evidence/repacked-artifacts.sha256
+          echo "Two prior original-SD-audited NeXium runs compared from the same repository." >> "$GITHUB_STEP_SUMMARY"
+          echo "The earlier workflows audited live guest SD; original SD is NOT reopened by this comparison." >> "$GITHUB_STEP_SUMMARY"
+          echo "No Switch speaker, DAC or scene-causality claim is made." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preserve reproducible run comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexium-verified-slow-run-comparison
+          path: cross-run-evidence/
+          if-no-files-found: warn
+          retention-days: 30
