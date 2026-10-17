@@ -5,6 +5,7 @@ This records process completion and checks the same private binary and GPU
 journals after exit. It does NOT attest retail MAP02 or approve HD assets.
 """
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -77,6 +78,57 @@ def _private_create(path, obj):
             os.close(dirfd)
 
 
+_PINNED_KEYS = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+
+
+def _opened_executable_identity(path, fd):
+    """Bind the opened executable to the current no-follow pathname."""
+    saved = os.fstat(fd)
+    actual = os.stat(path, follow_symlinks=False)
+    if (not stat.S_ISREG(saved.st_mode) or not saved.st_mode & 0o111
+            or not 0 < saved.st_size <= 1024 * 1024 * 1024
+            or not stat.S_ISREG(actual.st_mode)
+            or any(getattr(saved, field) != getattr(actual, field)
+                   for field in _PINNED_KEYS)):
+        raise ValueError("pinned executable file identity changed")
+    return tuple(getattr(saved, field) for field in _PINNED_KEYS)
+
+
+def _open_pinned_executable(path, config):
+    """Open and verify the exact Linux file descriptor used for exec.
+
+    No pathname is re-resolved by the child at exec time. The descriptor is
+    deliberately inherited through pass_fds and closed by the parent after
+    the subprocess completes; this works with both ELF and shebang scripts.
+    """
+    if sys.platform != "linux" or not os.path.isdir("/proc/self/fd"):
+        raise ValueError("pinned launch requires Linux procfs descriptors")
+    flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+             | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0))
+    fd = os.open(path, flags)
+    try:
+        identity = _opened_executable_identity(path, fd)
+        digest = hashlib.sha256()
+        count = 0
+        while True:
+            part = os.read(fd, 1024 * 1024)
+            if not part:
+                break
+            count += len(part)
+            digest.update(part)
+        if (count != identity[2]
+                or digest.hexdigest() != config["executable_sha256"]
+                or count != config["executable_bytes"]):
+            raise ValueError("pinned executable differs from preflight fingerprint")
+        if _opened_executable_identity(path, fd) != identity:
+            raise ValueError("pinned executable changed while hashing")
+        os.lseek(fd, 0, os.SEEK_SET)
+        return fd, identity
+    except BaseException:
+        os.close(fd)
+        raise
+
+
 def capture(executable, preflight_report, summary_report, *,
             game_args=(), environ=None, timeout=None):
     """Synchronous controlled launcher. Returns an unprivileged receipt dict.
@@ -129,47 +181,61 @@ def capture(executable, preflight_report, summary_report, *,
         "retail_map02_verified": False,
         "hd_replacement_authorized": False,
     }
+    pinned_fd = None
+    pinned_identity = None
     try:
-        # Do not use a shell, capture the process' private output or expose
-        # a game-supplied path/argument in reports. This program is a local
-        # diagnostic launcher, not a sandbox for untrusted executables.
-        proc = subprocess.Popen(
-            [str(executable), *game_args],
-            cwd=executable.parent,
-            env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            shell=False,
-        )
-        receipt["process_started"] = True
-        try:
-            receipt["process_exit_code"] = proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            proc.terminate()
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait()
-            receipt["failure_category"] = "process_timeout"
-        except KeyboardInterrupt:
-            proc.terminate()
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait()
-            receipt["failure_category"] = "process_interrupted"
-    except OSError:
-        receipt["failure_category"] = "process_launch_failed"
-    try:
-        after = _executable_fingerprint(executable)
-        if after["executable_sha256"] != config["executable_sha256"]:
-            receipt["failure_category"] = "executable_changed"
-        elif after["executable_bytes"] != config["executable_bytes"]:
-            receipt["failure_category"] = "executable_changed"
-    except ValueError:
+        pinned_fd, pinned_identity = _open_pinned_executable(executable, config)
+    except (OSError, ValueError):
         receipt["failure_category"] = "executable_changed"
+    if pinned_fd is not None:
+        try:
+            # The original pathname remains argv[0] for ELF programs, but
+            # Linux exec resolves ONLY the pre-checked fd. pass_fds also
+            # supports #!/usr/bin/env script fixtures without /dev/fd leaks
+            # into unrelated child processes.
+            proc = subprocess.Popen(
+                [str(executable), *game_args],
+                executable=f"/proc/self/fd/{pinned_fd}",
+                pass_fds=(pinned_fd,),
+                cwd=executable.parent,
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                shell=False,
+            )
+            receipt["process_started"] = True
+            try:
+                receipt["process_exit_code"] = proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+                receipt["failure_category"] = "process_timeout"
+            except KeyboardInterrupt:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+                receipt["failure_category"] = "process_interrupted"
+        except OSError:
+            receipt["failure_category"] = "process_launch_failed"
+        finally:
+            try:
+                if _opened_executable_identity(executable, pinned_fd) != pinned_identity:
+                    receipt["failure_category"] = "executable_changed"
+                after = _executable_fingerprint(executable)
+                if (after["executable_sha256"] != config["executable_sha256"]
+                        or after["executable_bytes"] != config["executable_bytes"]):
+                    receipt["failure_category"] = "executable_changed"
+            except (OSError, ValueError):
+                receipt["failure_category"] = "executable_changed"
+            finally:
+                os.close(pinned_fd)
     if (receipt["process_started"] and receipt["process_exit_code"] == 0
             and receipt["failure_category"] is None):
         try:
