@@ -71,6 +71,8 @@ on:
       - 'tests/test_map02_v109_gp0_class_vblank_stores.py'
       - 'tools/summarize_map02_v110_class_boundary_checkpoints.py'
       - 'tests/test_map02_v110_class_boundary_checkpoints.py'
+      - 'tools/summarize_map02_v111_sample_store_divergence.py'
+      - 'tests/test_map02_v111_sample_store_divergence.py'
       - 'tools/map02_v80_native_timeline.*'
       - 'tools/map02_v81_event_jsonl.*'
       - 'tools/verify_map02_v82_native_trace.py'
