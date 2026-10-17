@@ -13,15 +13,20 @@ def summarize(raw:bytes):
     previous=summarize_v101(raw)
     valid=validate(raw)
     rows=[json.loads(line) for line in raw.decode("ascii").splitlines()]
-    tail=rows[-3:]
+    starts=[i for i,row in enumerate(rows) if row["kind"]==KINDS[0]]
+    if len(starts)!=1:
+        raise Refused("missing or duplicate v102 first anchored evidence")
+    start=starts[0]
+    tail=rows[start:start+3]
     if len(tail)!=3 or tuple(row["kind"] for row in tail)!=KINDS:
-        raise Refused("missing/out-of-order v102 anchored directory suffix")
-    if any(row["kind"] in KINDS for row in rows[:-3]):
+        raise Refused("missing/out-of-order v102 anchored directory checkpoint")
+    if any(row["kind"] in KINDS for i,row in enumerate(rows)
+           if not start<=i<start+3):
         raise Refused("duplicated or misplaced anchored private evidence")
     if tuple(row["value"] for row in tail)!=(2,12,1):
         raise Refused("private file publication not tied to original directory")
     if tail[0]["seq"]!=previous["final_private_journal_events"]+1 or \
-       len(rows)!=previous["final_private_journal_events"]+3:
+       start+3!=previous["final_private_journal_events"]+3:
         raise Refused("missing original v101 exact private-file checkpoint")
     if any(row["frame"] or row["cycle"] for row in tail):
         raise Refused("host directory checks asserted unobserved emulator time")
@@ -37,7 +42,7 @@ def summarize(raw:bytes):
         "original_private_export_still_uses_exclusive_publisher":True,
         "original_emulator_vblank_edges":4,
         "previous_checkpoint_events":previous["final_private_journal_events"],
-        "final_private_journal_events":len(rows),
+        "final_private_journal_events":start+3,
         "retail_MAP02_verified":False,
         "physical_PS1_verified":False,
         "HD_replacement_approved":False,
