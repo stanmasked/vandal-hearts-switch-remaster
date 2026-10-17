@@ -175,7 +175,20 @@ def inspect_staged_capture(source_dir, native_dir):
     native_draws = [(a, b) for a, b in pairs if a["operation"] == "draw"]
     if not native_draws or len(native_draws) != len(edges):
         raise ValueError("independent DrawOTag edges differ from native draw-pair count")
+    if len(events) > len(native_draws):
+        raise ValueError("source-keyed FT4 submissions exceed captured native draws")
     x, y = edges[0]["x"], edges[0]["y"]
+    # Every snapshot referenced by transfer AND draw pairs must exist, be
+    # regular and be full-size. Read only the selected native word.
+    for before, after in pairs:
+        _snapshot_word(native, before["snapshot"], x, y)
+        _snapshot_word(native, after["snapshot"], x, y)
+        if before["operation"] == "load" and after["upload"]:
+            rect = after["rect"]
+            area = rect[2] * rect[3]
+            if not 0 < area <= 16384:
+                raise ValueError("invalid source VRAM upload extent")
+            private_file(native, after["upload"], expected=area * 2)
     for ordinal, (pair, edge) in enumerate(zip(native_draws, edges)):
         before, after = pair
         if (before["primitive_type"] != edge["primitive_type"] or
