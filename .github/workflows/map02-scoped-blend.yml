@@ -36,6 +36,37 @@ on:
       - 'tests/test_map02_verified_process_launch.py'
       - 'tools/check_map02_owned_disc_extent.py'
       - 'tools/instrument_map02_cd_read.py'
+      - 'tools/instrument_map02_cycle_order.py'
+      - 'tools/map02_cycle_order.c'
+      - 'tools/map02_cycle_order.h'
+      - 'tests/test_map02_cycle_order.py'
+      - 'tests/test_instrument_map02_cycle_order.py'
+      - 'tools/verify_map02_cycle_cd_gpu_join.py'
+      - 'tools/prepare_map02_cycle_build.py'
+      - 'tests/test_prepare_map02_cycle_build.py'
+      - 'tools/check_map02_cycle_elf.py'
+      - 'tools/check_map02_cycle_make_plan.py'
+      - 'tests/test_check_map02_cycle_make_plan.py'
+      - 'tools/check_map02_cycle_object_inventory.py'
+      - 'tests/test_check_map02_cycle_object_inventory.py'
+      - 'tools/check_map02_public_reloc_link.py'
+      - 'tools/check_map02_private_pc_inputs.py'
+      - 'tools/check_map02_original_font_c.py'
+      - 'tools/check_map02_original_extraction_anchors.py'
+      - 'tools/check_map02_original_inc_provenance.py'
+      - 'tests/test_check_map02_private_pc_inputs.py'
+      - 'tests/test_check_map02_original_font_c.py'
+      - 'tools/check_map02_linked_font_elf.py'
+      - 'tests/test_check_map02_linked_font_elf.py'
+      - 'tests/test_check_map02_public_reloc_link.py'
+      - 'tools/build_map02_cycle_pc_local.py'
+      - 'tests/test_build_map02_cycle_pc_local.py'
+      - 'tools/map02_cycle_build_provenance.py'
+      - 'tests/test_map02_cycle_build_provenance.py'
+      - 'tests/test_check_map02_cycle_elf.py'
+      - 'tests/test_verify_map02_cycle_cd_gpu_join.py'
+      - 'docs/MAP02_SINGLE_PROCESS_CYCLE_ORDER.md'
+      - 'docs/MAP02_VERIFIED_PROCESS_LAUNCH.md'
       - 'tools/map02_cd_read_probe.c'
       - 'tools/map02_cd_read_probe.h'
       - 'tools/check_map02_original_cd_runtime.py'
@@ -108,6 +139,37 @@ on:
       - 'tests/test_map02_verified_process_launch.py'
       - 'tools/check_map02_owned_disc_extent.py'
       - 'tools/instrument_map02_cd_read.py'
+      - 'tools/instrument_map02_cycle_order.py'
+      - 'tools/map02_cycle_order.c'
+      - 'tools/map02_cycle_order.h'
+      - 'tests/test_map02_cycle_order.py'
+      - 'tests/test_instrument_map02_cycle_order.py'
+      - 'tools/verify_map02_cycle_cd_gpu_join.py'
+      - 'tools/prepare_map02_cycle_build.py'
+      - 'tests/test_prepare_map02_cycle_build.py'
+      - 'tools/check_map02_cycle_elf.py'
+      - 'tools/check_map02_cycle_make_plan.py'
+      - 'tests/test_check_map02_cycle_make_plan.py'
+      - 'tools/check_map02_cycle_object_inventory.py'
+      - 'tests/test_check_map02_cycle_object_inventory.py'
+      - 'tools/check_map02_public_reloc_link.py'
+      - 'tools/check_map02_private_pc_inputs.py'
+      - 'tools/check_map02_original_font_c.py'
+      - 'tools/check_map02_original_extraction_anchors.py'
+      - 'tools/check_map02_original_inc_provenance.py'
+      - 'tests/test_check_map02_private_pc_inputs.py'
+      - 'tests/test_check_map02_original_font_c.py'
+      - 'tools/check_map02_linked_font_elf.py'
+      - 'tests/test_check_map02_linked_font_elf.py'
+      - 'tests/test_check_map02_public_reloc_link.py'
+      - 'tools/build_map02_cycle_pc_local.py'
+      - 'tests/test_build_map02_cycle_pc_local.py'
+      - 'tools/map02_cycle_build_provenance.py'
+      - 'tests/test_map02_cycle_build_provenance.py'
+      - 'tests/test_check_map02_cycle_elf.py'
+      - 'tests/test_verify_map02_cycle_cd_gpu_join.py'
+      - 'docs/MAP02_SINGLE_PROCESS_CYCLE_ORDER.md'
+      - 'docs/MAP02_VERIFIED_PROCESS_LAUNCH.md'
       - 'tools/map02_cd_read_probe.c'
       - 'tools/map02_cd_read_probe.h'
       - 'tools/check_map02_original_cd_runtime.py'
@@ -187,6 +249,19 @@ jobs:
             tests.test_map02_verified_process_launch \
             tests.test_check_map02_owned_disc_extent \
             tests.test_instrument_map02_cd_read \
+            tests.test_map02_cycle_order \
+            tests.test_instrument_map02_cycle_order \
+            tests.test_verify_map02_cycle_cd_gpu_join \
+            tests.test_prepare_map02_cycle_build \
+            tests.test_check_map02_cycle_elf \
+            tests.test_check_map02_cycle_make_plan \
+            tests.test_check_map02_cycle_object_inventory \
+            tests.test_check_map02_public_reloc_link \
+            tests.test_check_map02_private_pc_inputs \
+            tests.test_check_map02_original_font_c \
+            tests.test_check_map02_linked_font_elf \
+            tests.test_build_map02_cycle_pc_local \
+            tests.test_map02_cycle_build_provenance \
             tests.test_verify_map02_original_cd_read \
             tests.test_map02_original_cd_stage \
             tests.test_publish_map02_cd_bound_witness
@@ -203,6 +278,25 @@ jobs:
       - name: Confirm original PC GPU/GTE source blobs against pinned reference
         run: |
           python3 -c 'from pathlib import Path; from tools.map02_local_capture_handoff import verify_pinned_upstream; verify_pinned_upstream(Path("upstream-pc")); print("Pinned original PC GPU/GTE/Makefile blobs verified")'
+      - name: Verify source-pinned US include and KROM font generator identities
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from tools.check_map02_original_inc_provenance import (
+              GENERATOR, GENERATOR_BLOB_SHA1, _original_blob_sha1)
+          from tools.check_map02_private_pc_inputs import (
+              FONT_GENERATOR, FONT_GENERATOR_BLOB_SHA1)
+          root = Path("upstream-pc")
+          for path, expected in (
+              (GENERATOR, GENERATOR_BLOB_SHA1),
+              (FONT_GENERATOR, FONT_GENERATOR_BLOB_SHA1),
+          ):
+              source = root / path
+              if (source.is_symlink() or not source.is_file()
+                      or _original_blob_sha1(source.read_bytes()) != expected):
+                  raise SystemExit("source-pinned original US generator drift")
+          print("Original public US resource and KROM generator blobs verified")
+          PY
       - name: Compile private original CD-read atomic stage alongside scoped GPU writers
         run: |
           cc -std=gnu99 -Wall -Wextra -Werror \
@@ -212,6 +306,80 @@ jobs:
             -o "${RUNNER_TEMP}/map02-cd-scoped-stage.o"
       - name: Run actual pinned original CdRead sector copy with synthetic MAP02 raw image
         run: python3 -m tools.check_map02_original_cd_runtime upstream-pc
+      - name: Generate source-pinned full-cycle order hooks without retail assets
+        run: |
+          python3 -m tools.instrument_map02_cycle_order upstream-pc "${RUNNER_TEMP}/map02-cycle-hooks"
+          test -s "${RUNNER_TEMP}/map02-cycle-hooks/core_cd.c"
+          test -s "${RUNNER_TEMP}/map02-cycle-hooks/libcd.c"
+          test -s "${RUNNER_TEMP}/map02-cycle-hooks/libgpu.c"
+          test -s "${RUNNER_TEMP}/map02-cycle-hooks/pc_raster.c"
+          cc -std=gnu99 -Wall -Wextra -Werror -Itools -c \
+            tools/map02_cycle_order.c -o "${RUNNER_TEMP}/map02-cycle-order.o"
+      - name: Compile original CD loader and full scoped native GPU into one diagnostic object
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libsdl2-dev libopenal-dev
+          python3 -m tools.prepare_map02_cycle_build upstream-pc "${RUNNER_TEMP}/map02-cycle-private-build"
+          python3 -m tools.check_map02_cycle_make_plan upstream-pc "${RUNNER_TEMP}/map02-cycle-private-build"
+          (
+            cd upstream-pc/platform/pc
+            make -f Makefile -f "${RUNNER_TEMP}/map02-cycle-private-build/map02_cycle.mk" \
+              -j2 BUILD_DIR=build-map02-cycle REGION=us NO_WEBP=1 NO_HDVIDEO=1 \
+              build-map02-cycle/src/core/cd.o \
+              build-map02-cycle/libcd.o \
+              build-map02-cycle/libgpu.o \
+              build-map02-cycle/pc_raster.o \
+              build-map02-cycle/map02_cycle_order.o \
+              build-map02-cycle/map02_cd_read_probe.o \
+              build-map02-cycle/map02_capture_session.o \
+              build-map02-cycle/map02_scoped_blend_sink.o \
+              build-map02-cycle/map02_scoped_blend_stage.o \
+              build-map02-cycle/map02_vram_edges.o
+            ld -r \
+              build-map02-cycle/src/core/cd.o \
+              build-map02-cycle/libcd.o \
+              build-map02-cycle/libgpu.o \
+              build-map02-cycle/pc_raster.o \
+              build-map02-cycle/map02_cycle_order.o \
+              build-map02-cycle/map02_cd_read_probe.o \
+              build-map02-cycle/map02_capture_session.o \
+              build-map02-cycle/map02_scoped_blend_sink.o \
+              build-map02-cycle/map02_scoped_blend_stage.o \
+              build-map02-cycle/map02_vram_edges.o \
+              -o "${RUNNER_TEMP}/map02-cycle-three-original-units.o"
+            for symbol in LoadCdFile ContinueLoadingCdFile CdRead DrawOTag \
+                vh_map02_cycle_load vh_map02_cycle_draw_start \
+                vh_map02_stage_private_pair vh_map02_scope_begin_frame \
+                vh_map02_edges_begin_frame; do
+              nm -g --defined-only "${RUNNER_TEMP}/map02-cycle-three-original-units.o" \
+                | awk '{ print $NF }' | grep -Fx "${symbol}"
+            done
+            if nm -u "${RUNNER_TEMP}/map02-cycle-three-original-units.o" \
+                 | grep -E ' U vh_map02_'; then
+              echo "Unresolved MAP02 same-ELF observer references" >&2
+              exit 1
+            fi
+          )
+          echo "Original CD loader and full native GPU/VRAM/scoped capture compile together."
+          echo "This is NOT a full retail executable or proof of MAP02 rendering."
+      - name: Compile original public game/backend source except verified retail assets include dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd upstream-pc/platform/pc
+            make -j1 -f Makefile -f "${RUNNER_TEMP}/map02-cycle-private-build/map02_cycle.mk" \
+              map02-public-code BUILD_DIR=build-map02-cycle REGION=us NO_WEBP=1 NO_HDVIDEO=1
+          )
+          python3 -m tools.check_map02_cycle_object_inventory \
+            upstream-pc "${RUNNER_TEMP}/map02-cycle-private-build"
+          python3 -m tools.check_map02_public_reloc_link \
+            upstream-pc "${RUNNER_TEMP}/map02-cycle-private-build" \
+            "${RUNNER_TEMP}/map02-public-code-reloc"
+          echo "Asset-free original game/backend objects joined in one relocatable ELF."
+          echo "NOT a retail executable or authentic MAP02 gameplay."
       - name: Fail closed on upstream rasterizer source drift
         run: |
           python3 -m tools.instrument_map02_scoped_blend \

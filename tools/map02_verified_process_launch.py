@@ -31,6 +31,18 @@ from tools.verify_map02_window_scoped_join import verify_window_scoped_join
 
 RECEIPT = "gpu-local-executed-process.json"
 SCHEMA = "vh.map02.local-executed-process.v2"
+
+# Source-bound cycle launch does not inherit arbitrary environment variables:
+# a prefix denylist misses loader/plugin controls such as GLIBC_TUNABLES,
+# GCONV_PATH, SDL_DYNAMIC_API, QT_PLUGIN_PATH and GIO_EXTRA_MODULES.
+# Pass only the ambient display/audio/session fields needed by the PC backend;
+# original game and capture settings are supplied explicitly below.
+_CYCLE_ALLOWED_INHERITED_ENV = frozenset({
+    "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE",
+    "LC_MESSAGES", "TZ", "DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY",
+    "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", "PULSE_SERVER",
+    "PIPEWIRE_REMOTE", "SDL_AUDIODRIVER", "SDL_VIDEODRIVER",
+})
 REQUIRED = (
     "schema", "gpu_draw_frame", "local_plan_sha256",
     "kernel_observed_executable_sha256", "kernel_executable_device",
@@ -44,6 +56,62 @@ REQUIRED = (
     "game_image_consumption_proven", "retail_gameplay_authenticated",
     "physical_ps1_equivalence_proven",
 )
+
+
+def _executable_identity(info):
+    """Metadata for the exact source-bound ELF inode, not merely its hash."""
+    return (info.st_dev, info.st_ino, info.st_uid, info.st_mode,
+            info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+def _open_pinned_cycle_exec_fd(binary, expected_sha256, planned_stat):
+    """Keep the verified ELF inode open until execve, avoiding a pathname race.
+
+    Hash twice on the actual descriptor that Linux will execute. The caller
+    passes this descriptor through Popen(pass_fds) to /proc/self/fd/N and
+    closes it immediately after Popen finishes the exec handoff.
+    """
+    from tools.check_map02_linked_font_elf import MAX_ELF
+    try:
+        fd = os.open(binary, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except OSError:
+        raise ValueError("source-bound MAP02 executable could not be opened") from None
+    try:
+        before = os.fstat(fd)
+        if (not stat.S_ISREG(before.st_mode)
+                or before.st_uid != os.geteuid() or before.st_nlink != 1
+                or not (before.st_mode & stat.S_IXUSR)
+                or not 0 < before.st_size <= MAX_ELF
+                or _executable_identity(before) != _executable_identity(planned_stat)):
+            raise ValueError("source-bound MAP02 executable inode changed before exec")
+
+        def digest_pass():
+            sha = hashlib.sha256()
+            for offset in range(0, before.st_size, 1 << 20):
+                length = min(1 << 20, before.st_size - offset)
+                block = os.pread(fd, length, offset)
+                if len(block) != length:
+                    raise ValueError("source-bound MAP02 executable short read")
+                sha.update(block)
+            return sha.hexdigest()
+
+        first = digest_pass()
+        if _executable_identity(os.fstat(fd)) != _executable_identity(before):
+            raise ValueError("source-bound MAP02 executable changed during fd verification")
+        second = digest_pass()
+        if first != second or first != expected_sha256:
+            raise ValueError("source-bound MAP02 executable fd digest differs from plan")
+        if (_executable_identity(os.fstat(fd)) != _executable_identity(before)
+                or _executable_identity(os.stat(binary, follow_symlinks=False))
+                != _executable_identity(before)):
+            raise ValueError("source-bound MAP02 executable path changed before exec")
+        return fd
+    except OSError:
+        os.close(fd)
+        raise ValueError("source-bound MAP02 executable fd verification unavailable") from None
+    except BaseException:
+        os.close(fd)
+        raise
 
 
 def _fingerprint_kernel_exe(pid):
@@ -131,16 +199,21 @@ def _validate_receipt(raw):
 
 def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
                        owned_game, *, upstream, x, y, timeout=900,
-                       arguments=()):
+                       arguments=(), cycle_dir=None,
+                       build_receipt_dir=None, build_bundle_dir=None,
+                       krom_source=None):
     """Run the given PC binary directly; never run a shell or create game data."""
     if not sys.platform.startswith("linux") or not Path("/proc/self/exe").exists():
         raise ValueError("observed executable launch requires Linux /proc")
     handoff, native, scoped = (_private_directory(p) for p in
                                (handoff_dir, native_dir, scoped_dir))
-    if len({p.resolve() for p in (handoff, native, scoped)}) != 3:
+    cycle = _private_directory(cycle_dir) if cycle_dir is not None else None
+    checked_dirs = (handoff, native, scoped) + ((cycle,) if cycle is not None else ())
+    if len({p.resolve() for p in checked_dirs}) != len(checked_dirs):
         raise ValueError("execution evidence folders must be distinct")
-    if any(any(p.iterdir()) for p in (native, scoped)):
-        raise ValueError("native GPU and scoped capture folders must start empty")
+    if any(any(p.iterdir()) for p in (native, scoped) +
+           ((cycle,) if cycle is not None else ())):
+        raise ValueError("native GPU, scoped and cycle capture folders must start empty")
     if (handoff / RECEIPT).exists() or (handoff / RECEIPT).is_symlink():
         raise ValueError("local execution receipt already exists")
     plan_raw = private_file(handoff, PLAN, max_bytes=4096)
@@ -148,26 +221,59 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
     x = number(x, "sample X", 0, 1023)
     y = number(y, "sample Y", 0, 511)
     timeout = number(timeout, "execution timeout seconds", 1, 86400)
+    arguments = tuple(arguments)
+    if any(type(arg) is not str or not arg or "\x00" in arg for arg in arguments):
+        raise ValueError("invalid PC-port executable argument")
+    # Forwarded argv can override the source-bound environment through
+    # undocumented switches; a strict cycle launch must not accept it.
+    if cycle is not None and arguments:
+        raise ValueError("source-bound cycle launch forbids forwarded executable arguments")
     binary = Path(pc_binary).absolute()
     if binary.is_symlink() or not binary.is_file():
         raise ValueError("PC binary missing or linked")
     info = os.stat(binary)
     if not stat.S_ISREG(info.st_mode) or not (info.st_mode & stat.S_IXUSR):
         raise ValueError("PC binary is not owner-executable")
+    if cycle is not None:
+        from tools.check_map02_linked_font_elf import stable_owned_elf_sha256
+        executable_digest = stable_owned_elf_sha256
+    else:
+        executable_digest = _sha_file
     if (verify_pinned_upstream(upstream) !=
             plan["pinned_upstream_source_identity_sha256"] or
-            _sha_file(binary) != plan["pc_executable_sha256"] or
+            executable_digest(binary) != plan["pc_executable_sha256"] or
             _sha_file(owned_game, private=True) != plan["owned_game_image_sha256"]):
         raise ValueError("original PC source, binary or game input differs from plan")
+    if cycle is not None:
+        # A complete source-pinned CD/GPU capture needs an actual linked ELF,
+        # not a minimal synthetic child or an ld -r partial object.
+        from tools.check_map02_cycle_elf import audit_cycle_elf
+        audit_cycle_elf(binary)
+        # An exported symbol is not source/build provenance. For strong
+        # opt-in CD -> GPU cycle claims, require the private full-link
+        # receipt from the local builder AND independently re-audit its
+        # pinned Make graph and actual ELF bytes before any exec.
+        if build_receipt_dir is None or build_bundle_dir is None:
+            raise ValueError("cycle launch requires both private build receipt and source bundle")
+        from tools.map02_cycle_build_provenance import verify_build_receipt
+        verified_build = verify_build_receipt(
+            build_receipt_dir, binary, upstream, build_bundle_dir,
+            krom_source=krom_source)
+        if verified_build["source_pinned_full_elf_bytes_checked"] is not True:
+            raise ValueError("source-pinned original MAP02 ELF could not be confirmed")
+    elif (build_receipt_dir is not None or build_bundle_dir is not None or
+          krom_source is not None):
+        raise ValueError("build receipt options require --cycle-dir")
+
     game_image = Path(owned_game).absolute()
     game_stat = os.stat(game_image)
     expected_game_fd = (game_stat.st_dev, game_stat.st_ino, game_stat.st_size)
     frame = plan["target_gpu_draw_frame"]
-    arguments = tuple(arguments)
-    if any(type(arg) is not str or not arg or "\x00" in arg for arg in arguments):
-        raise ValueError("invalid PC-port executable argument")
+    # Legacy observation preserves caller settings except capture overrides.
+    # The source-bound cycle uses an allowlist, not an incomplete denylist.
     env = {key: value for key, value in os.environ.items()
-           if not key.startswith("VH_MAP02_")}
+           if (key in _CYCLE_ALLOWED_INHERITED_ENV if cycle is not None
+               else not key.startswith("VH_MAP02_"))}
     env.update({
         "VH_DISC_IMAGE": str(game_image),
         "VH_MAP02_GPU_CAPTURE_DIR": str(native),
@@ -178,15 +284,52 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
         "VH_MAP02_PROBE_X": str(x),
         "VH_MAP02_PROBE_Y": str(y),
     })
+    if cycle is not None:
+        # Explicit original-region and source path are from the pinned
+        # checkout, not from any inherited executable/region override.
+        env["VH_REGION"] = "us"
+        env["VH_PSX_EXE"] = str(Path(upstream).absolute() / "SLUS_004.47")
+        # Exact-source HD detection otherwise auto-enables installed packs,
+        # while an explicit VH_HD_PACK / VH_HD_VIDEOS override bypasses
+        # the pack toggle. Empty values prevent the original ini loader
+        # from restoring an incompatible local preference.
+        env.update({
+            "VH_HDPACK": "0",
+            "VH_HD_PACK": "",
+            "VH_HD_VIDEOS": "",
+            "VH_LANG": "",
+            "VH_LANGPACK": "",
+            "VH_INTERNAL_SCALE": "1",
+            "VH_ACCURATE": "1",
+            "VH_RASTER_THREADS": "1",
+        })
+        # The inherited VH_MAP02_* environment was cleared above: opt-in
+        # directories must only come from validated launcher arguments.
+        env["VH_MAP02_CYCLE_OUTPUT_DIR"] = str(cycle)
     process = None
     observed = None
     game_fd_observed = False
     try:
-        process = subprocess.Popen(
-            [str(binary), *arguments], shell=False,
-            env=env, stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            close_fds=True)
+        exec_fd = None
+        extra_exec_args = {}
+        if cycle is not None:
+            # The kernel executes this exact verified inode even if its
+            # pathname is swapped between the audit and subprocess.Popen.
+            exec_fd = _open_pinned_cycle_exec_fd(
+                binary, plan["pc_executable_sha256"], info)
+            extra_exec_args = {
+                "executable": f"/proc/self/fd/{exec_fd}",
+                "pass_fds": (exec_fd,),
+            }
+        try:
+            process = subprocess.Popen(
+                [str(binary), *arguments], shell=False,
+                env=env, stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                close_fds=True, **extra_exec_args)
+        finally:
+            if exec_fd is not None:
+                os.close(exec_fd)
         # A very short-lived program may exit before /proc can be sampled.
         # This must fail closed; it is NOT reason to synthesize an observation.
         deadline = time.monotonic() + min(5, timeout)
@@ -227,15 +370,42 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
             process.kill()
             process.wait()
         raise
-    if (_sha_file(binary) != plan["pc_executable_sha256"] or
+    if cycle is not None:
+        # Equal bytes on a replacement inode are not the same source-bound
+        # executable. A pathname substitution during the child is refused.
+        try:
+            same_path_inode = (_executable_identity(
+                os.stat(binary, follow_symlinks=False)) ==
+                _executable_identity(info))
+        except OSError:
+            same_path_inode = False
+        if not same_path_inode:
+            raise ValueError("source-bound MAP02 executable pathname replaced during run")
+    if (executable_digest(binary) != plan["pc_executable_sha256"] or
             _sha_file(owned_game, private=True) != plan["owned_game_image_sha256"] or
             verify_pinned_upstream(upstream) !=
             plan["pinned_upstream_source_identity_sha256"] or
             private_file(handoff, PLAN, max_bytes=4096) != plan_raw):
         raise ValueError("original PC executable, owned input or plan changed during run")
+    if cycle is not None:
+        # Re-audit AFTER the actual child exits. A same-owner edit of
+        # the receipt, source bundle or Make graph during execution must
+        # not turn a pre-run check into a false final process receipt.
+        after_build = verify_build_receipt(
+            build_receipt_dir, binary, upstream, build_bundle_dir,
+            krom_source=krom_source)
+        if after_build != verified_build:
+            raise ValueError("MAP02 source-bound PC build receipt changed during run")
     checked = verify_window_scoped_join(native, scoped, target_frame=frame)
     if checked["capture_session_linked"] is not True:
         raise ValueError("original GPU/scoped process session not linked")
+    if cycle is not None:
+        # Imported lazily: cycle's independent final verifier also imports
+        # this process launcher through the original CD/GPU witness chain.
+        from tools.verify_map02_cycle_cd_gpu_join import _cycle_receipt
+        _, nonce_digest = _cycle_receipt(cycle, frame)
+        if nonce_digest != checked["capture_session_sha256"]:
+            raise ValueError("single-process cycle nonce differs from GPU/scoped witness")
     receipt = _validate_receipt({
         "schema": SCHEMA,
         "gpu_draw_frame": frame,
@@ -323,6 +493,14 @@ def main():
     p.add_argument("--x", type=int)
     p.add_argument("--y", type=int)
     p.add_argument("--timeout", type=int, default=900)
+    p.add_argument("--cycle-dir", type=Path,
+                   help="optional private empty 0700 directory for in-process CD->GPU order")
+    p.add_argument("--build-receipt-dir", type=Path,
+                   help="private local full-ELF build receipt directory")
+    p.add_argument("--build-bundle-dir", type=Path,
+                   help="source-pinned private diagnostic Make overlay bundle")
+    p.add_argument("--krom-source", type=Path,
+                   help="original user-owned PsyQ KROMDAT.BIN or PS1 BIOS")
     a, forwarded = p.parse_known_args()
     if forwarded and forwarded[0] == "--":
         forwarded = forwarded[1:]
@@ -334,16 +512,28 @@ def main():
                 a.private_handoff_dir, a.private_native_windows,
                 a.private_scoped_capture, a.pc_binary, a.owned_game_image,
                 upstream=a.upstream_checkout, x=a.x, y=a.y,
-                timeout=a.timeout, arguments=forwarded)
+                timeout=a.timeout, arguments=forwarded,
+                cycle_dir=a.cycle_dir,
+                build_receipt_dir=a.build_receipt_dir,
+                build_bundle_dir=a.build_bundle_dir,
+                krom_source=a.krom_source)
         else:
+            if (a.cycle_dir is not None or a.build_receipt_dir is not None or
+                    a.build_bundle_dir is not None or
+                    a.krom_source is not None):
+                raise ValueError("verify original cycle via separate private witness verifier")
             if forwarded:
                 raise ValueError("verify does not accept executable arguments")
             result = verify_observed_process(
                 a.private_handoff_dir, a.private_native_windows,
                 a.private_scoped_capture, a.pc_binary, a.owned_game_image,
                 upstream=a.upstream_checkout)
-    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+    except ValueError as exc:
         p.error(str(exc))
+    except (OSError, subprocess.TimeoutExpired):
+        # Native launch failures can expose a private executable, disc or
+        # SDK filename via OSError.filename or TimeoutExpired.cmd/output.
+        p.error("private MAP02 process launch filesystem or execution unavailable")
     print(json.dumps(result, sort_keys=True, indent=2))
 
 

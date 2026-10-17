@@ -14,6 +14,13 @@ static struct {
     int observing;
 } state;
 
+static int overlaps_map02_extent(int lba, int sectors) {
+    int64_t start = (int64_t)lba;
+    int64_t end = start + (int64_t)sectors;
+    return sectors > 0 && end > MAP02_LBA &&
+           start < MAP02_LBA + MAP02_SECTORS;
+}
+
 static uint32_t crc32_append(uint32_t crc, const unsigned char *data,
                              size_t size) {
     size_t i;
@@ -33,8 +40,7 @@ void vh_map02_cd_loader_claim(int cdf, int target_cdf, int lba, int sectors) {
 }
 
 void vh_map02_cd_read_start(int lba, int sectors) {
-    if (lba + sectors <= MAP02_LBA ||
-            lba >= MAP02_LBA + MAP02_SECTORS) return;
+    if (!overlaps_map02_extent(lba, sectors)) return;
     if (!state.claimed || state.started++ || lba != MAP02_LBA ||
             sectors != MAP02_SECTORS || state.finished)
         state.failed = 1;
