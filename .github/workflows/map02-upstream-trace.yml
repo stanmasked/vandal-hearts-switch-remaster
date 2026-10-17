@@ -654,6 +654,9 @@ jobs:
                 -o "build/map02-vertical-dda/candidate-linked.${mode}.o"
               # Independent syntax/semantic compile with Clang of the identical
               # source-pinned candidate overlay, in both flag configurations.
+              clang "${flags[@]}" "${extra[@]}" "${span_extra[@]}" \
+                -c /tmp/vh-map02-native-span-overlay/pc_raster.span.c \
+                -o "build/map02-vertical-dda/span-clang.${mode}.o"
               clang "${flags[@]}" "${extra[@]}" "${span_extra[@]}" "${candidate_extra[@]}" \
                 -c /tmp/vh-map02-native-span-overlay/pc_raster.candidate.c \
                 -o "build/map02-vertical-dda/candidate-clang.${mode}.o"
@@ -693,6 +696,21 @@ jobs:
               > build/map02-vertical-dda/candidate-baseline.relocations.txt
             cmp build/map02-vertical-dda/span-baseline.relocations.txt \
                 build/map02-vertical-dda/candidate-baseline.relocations.txt
+            # The same fail-closed baseline parity check for Clang.
+            objcopy --only-section=.text -O binary \
+              build/map02-vertical-dda/span-clang.baseline.o \
+              build/map02-vertical-dda/span-clang-baseline.text.bin
+            objcopy --only-section=.text -O binary \
+              build/map02-vertical-dda/candidate-clang.baseline.o \
+              build/map02-vertical-dda/candidate-clang-baseline.text.bin
+            cmp build/map02-vertical-dda/span-clang-baseline.text.bin \
+                build/map02-vertical-dda/candidate-clang-baseline.text.bin
+            readelf -rW build/map02-vertical-dda/span-clang.baseline.o \
+              > build/map02-vertical-dda/span-clang-baseline.relocations.txt
+            readelf -rW build/map02-vertical-dda/candidate-clang.baseline.o \
+              > build/map02-vertical-dda/candidate-clang-baseline.relocations.txt
+            cmp build/map02-vertical-dda/span-clang-baseline.relocations.txt \
+                build/map02-vertical-dda/candidate-clang-baseline.relocations.txt
             nm --defined-only build/map02-vertical-dda/candidate-linked.diagnostic.o | grep VH_Map02RejectedEdges
             if nm --defined-only build/map02-vertical-dda/candidate-linked.baseline.o | grep -q VH_Map02RejectedEdges; then
               echo "Candidate observer leaked into baseline" >&2
