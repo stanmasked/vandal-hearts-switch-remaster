@@ -4,6 +4,7 @@
  */
 #include "map02_vram_edges.h"
 #include <string.h>
+#include <stdio.h>
 
 static VHMap02VramEdge edges[VH_MAP02_MAX_DRAW_EDGES];
 static VHMap02VramEdge pending;
@@ -70,4 +71,19 @@ int vh_map02_edges_copy(unsigned index, VHMap02VramEdge *out) {
     if (failed || !sealed || !out || index >= count) return 0;
     *out = edges[index];
     return 1;
+}
+
+int vh_map02_edges_format_jsonl(unsigned index, char *dst, unsigned capacity) {
+    VHMap02VramEdge event;
+    int n;
+    if (!dst || !capacity || !vh_map02_edges_copy(index, &event))
+        return 0;
+    n = snprintf(dst, capacity,
+        "{\"stage\":\"native_vram_edge\",\"frame\":%u,"
+        "\"primitive_ordinal\":%u,\"primitive_type\":%u,"
+        "\"x\":%d,\"y\":%d,\"before\":%u,\"after\":%u}\n",
+        event.frame, event.ordinal, event.primitive_type,
+        event.x, event.y, (unsigned)event.before, (unsigned)event.after);
+    if (n < 1 || (unsigned)n >= capacity) return 0;
+    return n;
 }
