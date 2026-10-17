@@ -588,6 +588,94 @@ static void test_long_full_spu_ownership_soak(void) {
     assert(spu.frames_rendered==seq.blocks_advanced*512u);
 }
 
+
+static void test_scene_switch_with_stealing_and_expired_releases(void) {
+    /* Cycle generated songs that fill all 20 slots, steal two voices,
+     * reject stale Note Offs and let five genuine releases expire.
+     * The following scene must discard the remaining 15 active voices. */
+    uint8_t song[160u];
+    const uint8_t header[]={HEADER};
+    memcpy(song,header,sizeof header);
+    size_t n=sizeof header;
+    for(unsigned note=40u;note<60u;note++) {
+        song[n++]=0u; song[n++]=0x90u;
+        song[n++]=(uint8_t)note; song[n++]=100u;
+    }
+    for(unsigned note=60u;note<62u;note++) {
+        song[n++]=0u; song[n++]=0x90u;
+        song[n++]=(uint8_t)note; song[n++]=110u;
+    }
+    for(unsigned note=40u;note<42u;note++) {
+        song[n++]=0u; song[n++]=0x80u;
+        song[n++]=(uint8_t)note; song[n++]=0u;
+    }
+    for(unsigned note=42u;note<60u;note+=4u) {
+        song[n++]=0u; song[n++]=0x80u;
+        song[n++]=(uint8_t)note; song[n++]=0u;
+    }
+    song[n++]=0x81u; song[n++]=0x70u;
+    song[n++]=0xffu; song[n++]=0x2fu;
+    assert(n<=sizeof song);
+    setup();
+    memset(&seq,0,sizeof seq);
+    for(unsigned iteration=0u;iteration<64u;iteration++) {
+        assert(vh_native_seq_switch_scene(&seq,song,n,&spu,
+                                          resolve,&log_state,1)==0);
+        assert(seq.playing && seq.blocks_advanced==0u);
+        assert(seq.note_ons==0u && seq.note_offs==0u);
+        assert(spu.frames_rendered==0u && spu.steal_index==0u);
+        for(unsigned slot=0u;slot<VH_NATIVE_MUSIC_VOICES;slot++) {
+            assert(!vh_native_spu_voice_active(&spu,slot));
+            assert(seq.owner_ch[slot]==-1 && seq.owner_note[slot]==-1);
+        }
+        assert(vh_native_seq_advance_block(&seq)>0);
+        assert(seq.note_ons==22u && seq.note_offs==5u);
+        assert(seq.dispatched_events==29u);
+        assert(spu.steal_index==2u);
+        assert(log_state.calls==(iteration+1u)*22u);
+        for(unsigned note=40u;note<62u;note++) {
+            int expected;
+            if(note>=60u) expected=(int)(note-60u);
+            else if(note<42u || (note-42u)%4u==0u) expected=-1;
+            else expected=(int)(note-40u);
+            assert(seq.note_slot[0][note]==expected);
+        }
+        for(unsigned slot=0u;slot<VH_NATIVE_MUSIC_VOICES;slot++) {
+            const int released=(slot>=2u && (slot-2u)%4u==0u);
+            const int owner=slot==0u ? 60 :
+                            (slot==1u ? 61 : (released ? -1 : (int)(40u+slot)));
+            assert(seq.owner_ch[slot]==(owner==-1 ? -1 : 0));
+            assert(seq.owner_note[slot]==owner);
+            assert(vh_native_spu_voice_active(&spu,slot));
+            if(released) assert(spu.voice[slot].adsr.phase==VH_ADSR_RELEASE);
+        }
+        vh_native_spu_render(&spu,pcm,512u);
+        for(unsigned slot=0u;slot<VH_NATIVE_MUSIC_VOICES;slot++) {
+            const int released=(slot>=2u && (slot-2u)%4u==0u);
+            assert(vh_native_spu_voice_active(&spu,slot)==!released);
+        }
+        assert(vh_native_spu_allocate_slot(&spu)==2);
+        assert(spu.frames_rendered==512u);
+        if(iteration%8u==7u) {
+            const VhNativeSeq before=seq;
+            VhNativeVoice voices[VH_NATIVE_MUSIC_VOICES];
+            memcpy(voices,spu.voice,sizeof voices);
+            assert(vh_native_seq_switch_scene(&seq,invalid_tempo,
+                    sizeof invalid_tempo,&spu,resolve,&log_state,1)==-1);
+            assert(memcmp(&before,&seq,sizeof seq)==0);
+            assert(memcmp(voices,spu.voice,sizeof voices)==0);
+            assert(spu.frames_rendered==512u);
+        }
+    }
+    /* Final scene switch must also clear every remaining active voice. */
+    assert(vh_native_seq_switch_scene(&seq,controls_song,
+            sizeof controls_song,&spu,resolve,&log_state,1)==0);
+    for(unsigned slot=0u;slot<VH_NATIVE_MUSIC_VOICES;slot++)
+        assert(!vh_native_spu_voice_active(&spu,slot));
+    assert(vh_native_seq_advance_block(&seq)>0);
+    assert(seq.note_ons==1u && seq.note_slot[0][60]==0);
+}
+
 int main(void) {
     test_validation_and_source_immutability();
     test_512_block_controls_and_ring_pressure();
@@ -604,6 +692,7 @@ int main(void) {
     test_immediate_same_note_retrigger_during_release();
     test_full_spu_retrigger_and_stale_note_off();
     test_long_full_spu_ownership_soak();
+    test_scene_switch_with_stealing_and_expired_releases();
     puts("native pQES SEQ -> 20-voice SPU -> PCM ring: PASS");
     return 0;
 }
