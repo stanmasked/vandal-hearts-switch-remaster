@@ -32,6 +32,16 @@ typedef struct {
     uint32_t different_from_both[VH116_MAX_VBLANK_GAP+1u];
 } vh117_triplet_metrics;
 int vh117_get_triplet_metrics(vh117_triplet_metrics *out);
+/* Four consecutive observed callbacks: D vs C, B and A, in that order.
+   No pixel values or hashes leave the native process. */
+typedef struct {
+    uint32_t consecutive_quadruplets;
+    uint32_t same_as_previous[VH116_MAX_VBLANK_GAP+1u];
+    uint32_t returned_to_two_back[VH116_MAX_VBLANK_GAP+1u];
+    uint32_t returned_to_three_back[VH116_MAX_VBLANK_GAP+1u];
+    uint32_t different_from_all_three[VH116_MAX_VBLANK_GAP+1u];
+} vh118_quadruplet_metrics;
+int vh118_get_quadruplet_metrics(vh118_quadruplet_metrics *out);
 void vh115_reset(void);
 void vh115_enable(int enabled);
 void vh115_vblank(void);
