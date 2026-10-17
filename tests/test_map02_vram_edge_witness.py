@@ -72,6 +72,8 @@ class VramEdgeWitnessTests(unittest.TestCase):
             line(dict(edges[0], before=True)),
             line(dict(edges[0], arbitrary=1)),
             line(dict(edges[0], stage="native_putpixel")),
+            line(edges[0]).replace(b'"before":1', b'"before":1,"before":1'),
+            line(edges[0]).replace(b'"before":1', b'"before":NaN'),
         )
         for item in bad:
             with self.subTest(item=item[:60]), self.assertRaises(ValueError):
