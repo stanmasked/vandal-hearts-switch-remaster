@@ -850,7 +850,7 @@ jobs:
               "physical_switch_tested":False,
           }
           (control/"idle-optical-verification.json").write_text(
-              json.dumps(evidence,indent=2,sort_keys=True)+"\\n")
+              json.dumps(evidence,indent=2,sort_keys=True)+chr(10))
           print(json.dumps(evidence,sort_keys=True))
           PY
           python3 - <<'PY'
