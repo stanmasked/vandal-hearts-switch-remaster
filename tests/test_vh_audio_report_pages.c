@@ -198,7 +198,73 @@ static void test_home_first_page_budget_bands(void) {
            e.budgeted_first_pages==10u && vh_audio_applet_verify(&e)==0);
 }
 
+/* A failed logical audout submit must not consume an observed return,
+ * create a zero-latency sample, or advance delivered-page counters.
+ * Retried PCM is counted only after its exact descriptor returns. */
+static void test_home_pending_across_failed_submit(void) {
+    VhAudioAppletEvents e={0};
+    assert(vh_audio_applet_submit_failed(NULL)==-1);
+    assert(vh_audio_applet_submit_failed(&e)==0);
+    assert(e.failed_logical_submissions==1u &&
+           !e.failures_while_pending && !e.returned_pages);
+    assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_BACKGROUND,100u)==0);
+    assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_FOREGROUND,1000u)==0);
+    const VhAudioAppletEvents pending=e;
+    assert(vh_audio_applet_submit_failed(&e)==0);
+    assert(vh_audio_applet_submit_failed(&e)==0);
+    assert(e.failed_logical_submissions==3u &&
+           e.failures_while_pending==2u);
+    assert(e.pending_return==pending.pending_return &&
+           e.timestamp_pending==pending.timestamp_pending &&
+           e.foreground_tick==pending.foreground_tick);
+    assert(e.first_pages_after_return==0u && e.returned_pages==0u);
+    assert(e.timed_first_pages==0u && e.budgeted_first_pages==0u);
+    assert(vh_audio_applet_verify(&e)==0);
+    VhAudioManualResume manual={0};
+    assert(vh_audio_report_focus_evidence(&e,&manual,1,0,0,0,0)
+           ==VH_AUDIO_REPORT_INCOMPLETE);
+
+    assert(vh_audio_applet_page_returned_budget_at(&e,1500u,200u)==1);
+    assert(e.first_pages_after_return==1u &&
+           e.timed_first_pages==1u && e.budgeted_first_pages==1u);
+    assert(e.page_budget_bands[2]==1u && e.total_page_gap_ticks==500u);
+    assert(e.failed_logical_submissions==3u &&
+           e.failures_while_pending==2u &&
+           !e.pending_return && vh_audio_applet_verify(&e)==0);
+
+    /* Overflow on either counter is a rejected transaction with
+     * no partial changes, including the pending timestamp. */
+    assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_BACKGROUND,2000u)==0);
+    assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_FOREGROUND,3000u)==0);
+    VhAudioAppletEvents bad=e;
+    bad.failed_logical_submissions=UINT_MAX;
+    VhAudioAppletEvents original=bad;
+    assert(vh_audio_applet_submit_failed(&bad)==-1);
+    assert(!memcmp(&bad,&original,sizeof bad));
+    bad=e;
+    bad.failures_while_pending=UINT_MAX;
+    original=bad;
+    assert(vh_audio_applet_submit_failed(&bad)==-1);
+    assert(!memcmp(&bad,&original,sizeof bad));
+    bad=e;
+    bad.failures_while_pending=bad.failed_logical_submissions+1u;
+    assert(vh_audio_applet_verify(&bad)==-1);
+
+    /* A failure observed while backgrounded is not an acknowledged
+     * foreground page, but still counts against the pending return. */
+    assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_BACKGROUND,3100u)==0);
+    assert(vh_audio_applet_submit_failed(&e)==0);
+    assert(e.failures_while_pending==3u);
+    assert(vh_audio_applet_page_returned_budget_at(&e,3200u,200u)==0);
+    assert(e.pending_return && e.first_pages_after_return==1u);
+    assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_FOREGROUND,3500u)==0);
+    assert(e.coalesced_returns==1u && vh_audio_applet_verify(&e)==0);
+    assert(vh_audio_applet_page_returned_budget_at(&e,3650u,200u)==1);
+    assert(e.first_pages_after_return==2u && vh_audio_applet_verify(&e)==0);
+}
+
 int main(void) {
+    test_home_pending_across_failed_submit();
     test_home_first_page_budget_bands();
     test_first_pcm_after_home_tick_lag();
     unsigned page=0u;
