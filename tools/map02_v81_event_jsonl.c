@@ -21,6 +21,7 @@ int vh81_format_jsonl(char *output,size_t capacity) {
         else if(e->kind==VH80_GP1_MMIO) kind="gp1_mmio";
         else if(e->kind==VH80_GPU_DMA2) kind="gpu_dma2_start";
         else if(e->kind==VH83_GP0_UNAI_HANDLED) kind="gp0_unai_handled";
+        else if(e->kind==VH84_UNAI_SAMPLE_DELTA) kind="unai_sample_delta";
         else return -1;
         if(used>=capacity) return -1;
         /* GPU DMA2 is an address, NOT an executed GP0 command. */
