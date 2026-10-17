@@ -375,6 +375,118 @@ class NativeSeqAdsrDifferentialTests(unittest.TestCase):
         self.assertEqual(seen_tempos, {250000, 300000, 400000, 500000})
 
 
+    def test_paced_scene_switch_against_independent_fraction_epochs(self):
+        """Scene changes must reset event time and voice ownership, but
+        must NOT flush pending PCM or the STUDIO_C wet processor.
+        Python independently reconstructs the full-ring consumer timeline,
+        and generates a separate Fraction-based schedule for each epoch.
+        """
+        attempts = 1536
+        switch_points = (241, 503, 761, 1019, 1277)
+        bounds = (0, *switch_points, attempts)
+        requests = (0, 0, 32, 256, 0, 0, 0, 4096, 1, 511, 0, 64)
+        songs = (rapid_tempo_note_boundary_song(), changed_tempo_song())
+        with tempfile.TemporaryDirectory(prefix="vh-paced-scenes-") as tmp:
+            first = Path(tmp) / "rapid.seq"
+            second = Path(tmp) / "tempo.seq"
+            first.write_bytes(songs[0])
+            second.write_bytes(songs[1])
+            rows = self.trace("paced-switch", first, second, attempts)
+
+        self.assertEqual(len(rows), attempts)
+        by_epoch = []
+        for epoch, (start, end) in enumerate(zip(bounds, bounds[1:])):
+            segment = rows[start:end]
+            self.assertEqual(len(segment), end - start)
+            accepted = sum(int(row[3]) == 512 for row in segment)
+            self.assertGreater(accepted, 0)
+            schedule = schedule_seq_audio_blocks(
+                parse_seq(songs[epoch % 2]), repeat_count=0,
+                max_frames=accepted * 512,
+            )
+            self.assertTrue(schedule["stopped_by_window"])
+            events = {}
+            for item in schedule["events"]:
+                if item["frame"] == accepted * 512:
+                    self.assertTrue(item["truncated_by_window"])
+                    continue
+                events.setdefault(item["frame"] // 512, []).append(item)
+            by_epoch.append((events, schedule["cycles_completed"]))
+
+        queued, missing = 4096, 0
+        blocks = on = off = cycles = dispatched = 0
+        held = set()
+        epoch = 0
+        tempo = ((songs[0][10] << 16) |
+                 (songs[0][11] << 8) | songs[0][12]) or 500000
+        seen = {tempo}
+        stalls = underruns = switched_while_queued = 0
+        total_on = total_off = 0
+        for attempt, row in enumerate(rows):
+            self.assertEqual(row[0], "Q")
+            if attempt in switch_points:
+                if queued:
+                    switched_while_queued += 1
+                epoch += 1
+                blocks = on = off = cycles = dispatched = 0
+                held.clear()
+                data = songs[epoch % 2]
+                tempo = ((data[10] << 16) |
+                         (data[11] << 8) | data[12]) or 500000
+                seen.add(tempo)
+            wrote = 512 if queued <= 4096 - 512 else 0
+            if wrote:
+                for event in by_epoch[epoch][0].get(blocks, ()):
+                    dispatched += 1
+                    kind = event["type"]
+                    if kind == "note_on":
+                        key = (event["channel"], event["note"])
+                        if key in held:
+                            off += 1
+                        held.add(key)
+                        on += 1
+                        total_on += 1
+                    elif kind == "note_off":
+                        key = (event["channel"], event["note"])
+                        if key in held:
+                            held.remove(key)
+                            off += 1
+                            total_off += 1
+                    elif kind == "tempo":
+                        tempo = event["tempo_us_per_quarter"]
+                        seen.add(tempo)
+                    elif kind == "loop_boundary":
+                        cycles += 1
+                    else:
+                        self.fail(f"unexpected event in epoch {epoch}: {kind}")
+                blocks += 1
+                queued += 512
+            else:
+                stalls += 1
+            requested = requests[attempt % len(requests)]
+            taken = min(queued, requested)
+            queued -= taken
+            missing += requested - taken
+            if taken < requested:
+                underruns += 1
+            expected = (
+                attempt, epoch, wrote, blocks, on, off, tempo, cycles, 1,
+                dispatched, queued, taken, missing, 0,
+            )
+            observed = tuple(map(int, row[1:]))
+            self.assertEqual(observed, expected,
+                             f"scene epoch {epoch}, request {attempt}")
+            if attempt + 1 in bounds[1:]:
+                self.assertEqual(cycles, by_epoch[epoch][1])
+        self.assertEqual(epoch, 5)
+        self.assertEqual(switched_while_queued, len(switch_points))
+        self.assertGreater(stalls, 100)
+        self.assertGreater(underruns, 10)
+        self.assertGreater(total_on, 100)
+        self.assertGreater(total_off, 100)
+        self.assertEqual(seen, {250000, 300000, 500000, 400000})
+
+
     def test_mutated_trace_is_detectable(self):
         rows = self.trace("voice")
         before = rows[0][:]
