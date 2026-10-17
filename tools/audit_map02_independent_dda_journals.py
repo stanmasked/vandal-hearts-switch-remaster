@@ -92,6 +92,7 @@ def audit(directory: Path, *, native_frame=None):
         "load_pairs_without_payload": None,
         "native_gpu_pairs_verified": None,
         "move_pairs_with_verified_vram_effect": None,
+        "clear_pairs_with_verified_vram_effect": None,
         "draw_primitives_in_bounded_capture": None,
         "observed_dda_primitive_keys": None,
     }
@@ -145,6 +146,7 @@ def audit(directory: Path, *, native_frame=None):
             "load_pairs_without_payload": capture["load_pairs_without_payload"],
             "native_gpu_pairs_verified": capture["native_gpu_pairs_verified"],
             "move_pairs_with_verified_vram_effect": capture["move_pairs_with_verified_vram_effect"],
+            "clear_pairs_with_verified_vram_effect": capture["clear_pairs_with_verified_vram_effect"],
             "draw_primitives_in_bounded_capture": len(draw_packets),
             "observed_dda_primitive_keys": len({
                 x.primitive_ordinal for x in spans
