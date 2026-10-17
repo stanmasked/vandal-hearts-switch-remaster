@@ -14,6 +14,8 @@ import os
 from pathlib import Path
 import stat
 
+from tools.check_map02_original_extraction_anchors import compare_data_ranges
+
 EXE = "SLUS_004.47"
 US_EXE_MD5 = "596bb082a2de5f1fe977dd3d7e160b03"
 US_FONT_SHA256 = "19b1dd839020e62a8a0f6dfc673c320da36105d9bc9bbce876aa151b7bd927a7"
@@ -104,6 +106,13 @@ def verify_private_pc_inputs(upstream, *, krom_source=None):
         ("retail-us-exe", _original_exe(root / EXE)),
         ("decomp-mips-elf", _original_elf(root / "build" / (EXE + ".elf"))),
     ]
+    # Compare selected source-pinned, non-proprietary-offset anchor *locations*
+    # byte for byte across the user's original EXE and extracted MIPS ELF.
+    # The raw compared bytes never leave the local verifier.
+    anchors = compare_data_ranges(root / EXE,
+                                  root / "build" / (EXE + ".elf"))
+    if anchors["original_exe_and_mips_elf_data_anchors_match"] is not True:
+        raise ValueError("retail decomp data anchors not verified")
     for filename in ASSETS:
         tokens.append(("asset-" + filename,
                        _asset_file(root / "assets" / filename, filename)))
@@ -118,6 +127,9 @@ def verify_private_pc_inputs(upstream, *, krom_source=None):
         "private_original_input_categories_checked": len(tokens),
         "original_us_exe_matches_pinned_hash": True,
         "matching_decomp_mips_elf_present": True,
+        "original_exe_and_mips_elf_data_anchors_match": True,
+        "original_private_data_bytes_compared":
+            anchors["original_private_data_bytes_compared"],
         "original_resource_includes_present": len(ASSETS),
         "us_ps1_font_charset_verified": True,
         "private_build_inputs_binding_sha256": combined,
