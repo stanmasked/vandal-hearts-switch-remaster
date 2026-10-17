@@ -59,15 +59,21 @@ def instrument_core_cd(source):
                   '       gCdFiles[cdfIdx].startingSector, gCdFiles[cdfIdx].sectorCt);\n'
                   '#endif\n')
     # The only terminal state transition for a non-VAB file is under case 7.
+    # Anchor inside the particular original ContinueLoadingCdFile case 7;
+    # other CD/core functions have identical "state=99; break" endings.
+    loader = source.index('void ContinueLoadingCdFile(void) {')
+    start = source.index('    case 7:\n', loader)
+    end = source.index('    case 8:\n', start)
+    segment = source[start:end]
     anchor = '       } else {\n          gCdLoader.state = 99;\n       }\n       break;\n'
-    source = once(source, anchor,
-                  '       } else {\n          gCdLoader.state = 99;\n       }\n'
-                  '#ifdef VH_MAP02_CD_READ_PROBE\n'
-                  '       vh_map02_cd_loader_complete(gCdLoader.cdf,\n'
-                  '           CDF_M_MAP02_PRS, gCdLoader.state);\n'
-                  '#endif\n'
-                  '       break;\n')
-    return source
+    replacement = ('       } else {\n          gCdLoader.state = 99;\n       }\n'
+                   '#ifdef VH_MAP02_CD_READ_PROBE\n'
+                   '       vh_map02_cd_loader_complete(gCdLoader.cdf,\n'
+                   '           CDF_M_MAP02_PRS, gCdLoader.state);\n'
+                   '#endif\n'
+                   '       break;\n')
+    segment = once(segment, anchor, replacement)
+    return source[:start] + segment + source[end:]
 
 
 def main():
