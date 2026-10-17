@@ -57,7 +57,7 @@ def main() -> None:
         assert rows >= 8, f"report page {i} unexpectedly empty ({rows} lines)"
         print(f"audout report page {i}/4: {rows} explicit lines")
     first, pcm, marks, home = pieces
-    for required in ("PCM accounting", "DSP avg/peak", "Backend=", "untimed=%llu", "timing=%s", "ZL=%s"):
+    for required in ("PCM accounting", "DSP avg/peak", "Calls=", "fake=%llu", "untimed=%llu", "timing=%s", "ZL=%s", "ZR=%s"):
         assert required in first
     for required in ("PCM SEAMS", "Failed logical pages", "Seam audit"):
         assert required in pcm
@@ -81,6 +81,18 @@ def main() -> None:
     assert "vh_audio_output_verify_timing_injection(" in src
     assert "timing_evidence || injection_evidence<0" in src
     assert "result=32;" in src
+    # The physical ZR control rejects a synthetic wrapper-level submit
+    # BEFORE leasing PCM or calling the real audout service. The existing
+    # recovery path retries exactly the already-rendered PCM page.
+    assert "HidNpadButton_ZR" in src
+    assert "vh_audio_submit_fault_arm(&output.submit_injection)" in src
+    assert "vh_audio_output_record_synthetic_submit_failure(" in src
+    assert "vh_audio_submit_fault_consume(&dev->submit_injection)" in src
+    assert "vh_audio_output_verify_submit_injection(" in src
+    assert "submit_injection_evidence<0" in src
+    assert "result=33;" in src
+    assert "result=34;" in src
+    assert "result=35;" in src
     assert count_lines(footer) >= 3
     print("audout report four-screen structure PASS")
 
