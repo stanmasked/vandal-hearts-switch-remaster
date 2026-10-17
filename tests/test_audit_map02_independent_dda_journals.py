@@ -19,8 +19,8 @@ SPAN = {
 }
 CANDIDATE = {
     "stage": "rejected_edge_candidate", "step": 0, "frame": 3,
-    "primitive_ordinal": 9, "reason": 4, "y": 9,
-    "x_start": 10, "x_bound": 20, "clip_t": 10, "clip_b": 15,
+    "primitive_ordinal": 10, "reason": 4, "y": 12,
+    "x_start": 10, "x_bound": 20, "clip_t": 13, "clip_b": 15,
 }
 
 
@@ -45,6 +45,7 @@ class IndependentJournalAuditTests(unittest.TestCase):
                              hashlib.sha256(candidate_data).hexdigest())
             self.assertEqual(result["shared_frame_ids"], [3])
             self.assertEqual(result["same_primitive_row_keys"], 0)
+            self.assertTrue(result["single_sample_envelope_consistent"])
             for field in ("journal_origin_authenticated", "retail_map02_frame_verified",
                           "rejected_triangle_pixel_coverage_verified",
                           "hd_replacement_authorized"):
@@ -68,14 +69,28 @@ class IndependentJournalAuditTests(unittest.TestCase):
             self.assertIsNone(result["files"][CANDIDATE_FILE]["event_count"])
             self.assertFalse(result["files"][CANDIDATE_FILE]["present"])
 
-    def test_same_row_key_does_not_infer_executed_rejected_span(self):
+    def test_conflicting_executed_and_rejected_same_primitive_row_is_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             write(root, SPAN_FILE, SPAN)
-            write(root, CANDIDATE_FILE, dict(CANDIDATE, y=12, clip_t=13))
-            result = audit(root)
-            self.assertEqual(result["same_primitive_row_keys"], 1)
-            self.assertFalse(result["rejected_triangle_pixel_coverage_verified"])
+            write(root, CANDIDATE_FILE, dict(CANDIDATE, primitive_ordinal=9))
+            with self.assertRaisesRegex(ValueError, "entered and vertically rejected"):
+                audit(root)
+
+    def test_reject_mixed_frame_y_and_clip_window_in_joint_bundle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write(root, SPAN_FILE, SPAN)
+            write(root, CANDIDATE_FILE, dict(CANDIDATE, y=9, clip_t=10))
+            with self.assertRaisesRegex(ValueError, "mixed DDA capture"):
+                audit(root)
+            write(root, CANDIDATE_FILE, dict(CANDIDATE, frame=4))
+            with self.assertRaisesRegex(ValueError, "mixed DDA capture"):
+                audit(root)
+            write(root, CANDIDATE_FILE, CANDIDATE,
+                  dict(CANDIDATE, step=1, clip_t=14))
+            with self.assertRaisesRegex(ValueError, "conflicting DDA clip window"):
+                audit(root)
 
     def test_corruption_and_64_row_saturation_fail_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -91,7 +106,7 @@ class IndependentJournalAuditTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 audit(root)
 
-    def write_native_gpu(self, root, *, frame=3, primitive_type=2):
+    def write_native_gpu(self, root, *, frame=3, primitive_type=2, draw_pairs=1):
         def event(index, phase):
             return {
                 "stage": "native_vram", "step": index, "frame": frame,
@@ -103,24 +118,24 @@ class IndependentJournalAuditTests(unittest.TestCase):
                 "upload": "", "ft4": None,
             }
         (root / "gpu-native-events.jsonl").write_bytes(
-            b"".join((json.dumps(event(i, phase)) + "\n").encode()
-                     for i, phase in enumerate(("before", "after"))))
+            b"".join((json.dumps(event(i, "before" if i % 2 == 0 else "after"))
+                      + "\n").encode() for i in range(2 * draw_pairs)))
         empty_vram = bytes(VRAM_BYTES)
-        (root / "gpu-0000-vram.bin").write_bytes(empty_vram)
-        (root / "gpu-0001-vram.bin").write_bytes(empty_vram)
+        for i in range(2 * draw_pairs):
+            (root / f"gpu-{i:04d}-vram.bin").write_bytes(empty_vram)
 
     def test_verified_gpu_frame_and_primitive_identity(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             write(root, SPAN_FILE, dict(SPAN, primitive_ordinal=0))
-            write(root, CANDIDATE_FILE, dict(CANDIDATE, primitive_ordinal=0))
-            self.write_native_gpu(root)
+            write(root, CANDIDATE_FILE, dict(CANDIDATE, primitive_ordinal=1))
+            self.write_native_gpu(root, draw_pairs=2)
             report = audit(root, native_frame=3)
             binding = report["native_gpu_binding"]
             self.assertTrue(binding["verified"])
             self.assertEqual(binding["frame"], 3)
-            self.assertEqual(binding["draw_primitives_in_bounded_capture"], 1)
-            self.assertEqual(binding["observed_dda_primitive_keys"], 1)
+            self.assertEqual(binding["draw_primitives_in_bounded_capture"], 2)
+            self.assertEqual(binding["observed_dda_primitive_keys"], 2)
             self.assertFalse(report["journal_origin_authenticated"])
             self.assertFalse(report["retail_map02_frame_verified"])
             self.assertFalse(report["hd_replacement_authorized"])
@@ -128,14 +143,14 @@ class IndependentJournalAuditTests(unittest.TestCase):
     def test_wrong_ordinal_type_and_frame_fail_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            self.write_native_gpu(root)
+            self.write_native_gpu(root, draw_pairs=2)
             write(root, SPAN_FILE, SPAN)
             write(root, CANDIDATE_FILE, CANDIDATE)
             with self.assertRaisesRegex(ValueError, "ordinal"):
                 audit(root, native_frame=3)
             write(root, SPAN_FILE, dict(SPAN, primitive_ordinal=0,
                                         primitive_type=3))
-            write(root, CANDIDATE_FILE, dict(CANDIDATE, primitive_ordinal=0))
+            write(root, CANDIDATE_FILE, dict(CANDIDATE, primitive_ordinal=1))
             with self.assertRaisesRegex(ValueError, "type"):
                 audit(root, native_frame=3)
             write(root, SPAN_FILE, dict(SPAN, primitive_ordinal=0, frame=4))
