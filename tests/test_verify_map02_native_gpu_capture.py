@@ -68,6 +68,27 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
         self.assertNotIn("31978",summary)
         self.assertNotIn("xy",summary)
 
+    def test_pinned_ft4_type_requires_real_packet_metadata(self):
+        # Source C supplies an FT4 pointer iff the DrawOTag type is 2.
+        self.events[2]["ft4"] = None
+        self.save()
+        with self.assertRaisesRegex(ValueError, "FT4 payload presence"):
+            verify_capture(self.root, target_frame=12)
+        self.events[2]["ft4"] = dict(self.events[3]["ft4"])
+        self.events[2]["primitive_type"] = 4
+        self.events[3]["primitive_type"] = 4
+        self.save()
+        with self.assertRaisesRegex(ValueError, "FT4 payload presence"):
+            verify_capture(self.root, target_frame=12)
+
+    def test_gpu_transfer_type_must_be_zero(self):
+        # Generated original transfer hooks explicitly pass type=0.
+        self.events[0]["primitive_type"] = 2
+        self.events[1]["primitive_type"] = 2
+        self.save()
+        with self.assertRaisesRegex(ValueError, "native transfer cannot claim"):
+            verify_capture(self.root, target_frame=12)
+
     def test_mixed_frames_wrong_snapshot_and_missing_pair(self):
         self.events[2]["frame"]=11
         self.save()
