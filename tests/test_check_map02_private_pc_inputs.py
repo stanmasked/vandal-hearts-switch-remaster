@@ -398,9 +398,9 @@ for name, offset, size in [
 
     def test_private_input_cli_oserror_redacts_owned_path(self):
         output = io.StringIO()
-        with patch("sys.argv", ["private-inputs", str(self.root)]), \\
+        with patch("sys.argv", ["private-inputs", str(self.root)]), \
                 patch.object(private_inputs, "verify_private_pc_inputs",
-                             side_effect=OSError("private: " + str(self.exe))), \\
+                             side_effect=OSError("private: " + str(self.exe))), \
                 redirect_stderr(output):
             with self.assertRaises(SystemExit) as ex:
                 private_inputs.main()
@@ -410,9 +410,9 @@ for name, offset, size in [
 
     def test_original_anchor_cli_oserror_redacts_owned_path(self):
         output = io.StringIO()
-        with patch("sys.argv", ["extract-anchors", str(self.exe), str(self.elf)]), \\
+        with patch("sys.argv", ["extract-anchors", str(self.exe), str(self.elf)]), \
                 patch.object(anchor_inputs, "compare_data_ranges",
-                             side_effect=OSError("private: " + str(self.elf))), \\
+                             side_effect=OSError("private: " + str(self.elf))), \
                 redirect_stderr(output):
             with self.assertRaises(SystemExit) as ex:
                 anchor_inputs.main()
