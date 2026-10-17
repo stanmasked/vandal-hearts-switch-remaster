@@ -178,6 +178,42 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
         self.assertEqual(result["load_pairs_with_verified_payload"],0)
         self.assertIsNone(result["upload_payload_sha256_list_sha256"])
 
+    def test_bounded_loadimage_missing_payload_is_not_merely_unobserved(self):
+        self.events=self.events[:2]
+        self.events[0]=self.make(0,"before","load","",rect=[0,0,1,1])
+        self.events[1]=self.make(1,"after","load","",rect=[0,0,1,1])
+        self.save()
+        with self.assertRaisesRegex(ValueError,"missing mandatory upload"):
+            verify_capture(self.root,target_frame=12)
+
+    def test_source_hook_dimension_bounds_are_not_just_area_bounds(self):
+        # 129*1 is < 16384 words but C deliberately does not
+        # capture it: its width exceeds the 128-word dimension cap.
+        self.events=self.events[:2]
+        self.events[0]=self.make(0,"before","load","",rect=[0,0,129,1])
+        self.events[1]=self.make(1,"after","load","",rect=[0,0,129,1])
+        self.save()
+        result=verify_capture(self.root,target_frame=12)
+        self.assertEqual(result["load_pairs_without_payload"],1)
+        self.assertIsNone(result["upload_payload_sha256_list_sha256"])
+        # A fabricated payload name cannot turn omitted source data
+        # into evidence of a real C recorder upload.
+        self.events[1]["upload"]="gpu-0001-upload.bin"
+        self.save()
+        (self.root/"gpu-0001-upload.bin").write_bytes(bytes(258))
+        with self.assertRaisesRegex(ValueError,"out-of-range LoadImage"):
+            verify_capture(self.root,target_frame=12)
+
+    def test_maximum_bounded_loadimage_payload_is_accepted(self):
+        self.events=self.events[:2]
+        self.events[0]=self.make(0,"before","load","",rect=[0,0,128,128])
+        self.events[1]=self.make(1,"after","load","gpu-0001-upload.bin",rect=[0,0,128,128])
+        self.save()
+        (self.root/"gpu-0001-upload.bin").write_bytes(bytes(128*128*2))
+        result=verify_capture(self.root,target_frame=12)
+        self.assertEqual(result["load_pairs_with_verified_payload"],1)
+        self.assertEqual(result["load_pairs_without_payload"],0)
+
     def test_before_load_cannot_claim_payload(self):
         self.events=self.events[:2]
         self.events[0]=self.make(0,"before","load","gpu-0000-upload.bin",rect=[0,0,1,1])
