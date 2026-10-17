@@ -86,6 +86,14 @@ class CycleBuildReceiptTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must start empty"):
             self.publish()
 
+    def test_altered_generated_krom_c_blocks_receipt_verification(self):
+        self.publish()
+        with patch(
+                "tools.map02_cycle_build_provenance.verify_generated_original_font",
+                side_effect=ValueError("generated private font C differs")):
+            with self.assertRaisesRegex(ValueError, "font C differs"):
+                self.verify()
+
     def test_changed_binary_fails_closed(self):
         self.publish()
         self.binary.write_bytes(self.binary.read_bytes() + b" mutation")
