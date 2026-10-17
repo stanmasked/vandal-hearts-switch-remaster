@@ -19,8 +19,8 @@ FIELDS=("cpu_stages","native_dma2_linked_list_dispatches",
         "observed_vblank_edges","native_sample_cache_erased")
 EXPECTED=(6,5,15,15,5,5,1,0,1)
 PATTERN=re.compile(
-    r"^VH123_MIPS_DMA2_RETURN_PASS stages=(\d+) dma2_blocks=(\d+) "
-    r"words=(\d+) native_unai=(\d+) readbacks=(\d+) four_back=(\d+) "
+    r"^VH123_MIPS_GPU_LIST_RETURN_PASS stages=(\d+) lists=(\d+) "
+    r"nodes=(\d+) words=(\d+) native_unai=(\d+) readbacks=(\d+) four_back=(\d+) "
     r"vblanks=(\d+) erased=(\d+)$",re.MULTILINE,
 )
 
