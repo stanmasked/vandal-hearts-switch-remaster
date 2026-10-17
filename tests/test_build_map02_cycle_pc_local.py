@@ -51,6 +51,8 @@ class PrivateFullPcBuildTests(unittest.TestCase):
         self.assertIn("BUILD_DIR=build-map02-cycle", command)
         self.assertNotIn("VH_ALLOW_UNVERIFIED_EXE", env)
         self.assertNotIn("VH_KROM_SOURCE", env)
+        self.assertEqual(env.get("VH_REGION"), "us")
+        self.assertEqual(env.get("VH_PSX_EXE"), str(self.upstream / "SLUS_004.47"))
         self.exe.parent.mkdir(parents=True, exist_ok=True)
         self.exe.write_bytes(b"synthetic; not an ELF")
         self.exe.chmod(0o700)
@@ -120,6 +122,27 @@ class PrivateFullPcBuildTests(unittest.TestCase):
                    side_effect=self.build_fake):
             with self.assertRaisesRegex(ValueError, "DrawOTag"):
                 build_full_pc(self.upstream, self.bundle)
+
+    def test_validated_explicit_krom_override_reaches_full_game_generator(self):
+        source = self.upstream / "private-owned-bios.bin"
+        source.write_bytes(b"synthetic")
+        # The actual resource validator is mocked in all build-driver
+        # tests. In production it rejects nonoriginal BIOS bytes here.
+        def fake_with_bios(command, *, cwd, env, capture_output,
+                           text, timeout, check):
+            self.assertEqual(env.get("VH_KROM_SOURCE"), str(source))
+            self.assertEqual(env.get("VH_REGION"), "us")
+            self.assertEqual(env.get("VH_PSX_EXE"),
+                             str(self.upstream / "SLUS_004.47"))
+            self.exe.parent.mkdir(parents=True, exist_ok=True)
+            self.exe.write_bytes(b"synthetic; not a game")
+            self.exe.chmod(0o700)
+            return SimpleNamespace(returncode=0)
+        with patch("tools.build_map02_cycle_pc_local.subprocess.run",
+                   side_effect=fake_with_bios):
+            result = build_full_pc(
+                self.upstream, self.bundle, krom_source=source)
+        self.assertFalse(result["actual_gameplay_executed"])
 
     def test_retail_input_changed_during_link_rejects_private_build(self):
         with patch("tools.check_map02_private_pc_inputs.verify_private_pc_inputs",
