@@ -11,6 +11,7 @@ from contextlib import redirect_stderr
 from pathlib import Path
 import tools.map02_verified_process_launch as launcher
 import subprocess
+import shutil
 import unittest
 from unittest.mock import patch
 
@@ -297,6 +298,23 @@ int main(int argc, char **argv) {
                 popen.assert_not_called()
         self.assertFalse((self.handoff / RECEIPT).exists())
 
+    def test_cycle_fd_rejects_inode_swapped_after_original_plan(self):
+        from tools.check_map02_linked_font_elf import stable_owned_elf_sha256
+        expected = stable_owned_elf_sha256(self.binary)
+        initial_stat = self.binary.stat()
+        saved = self.binary.with_suffix(".original-elf")
+        try:
+            self.binary.replace(saved)
+            shutil.copyfile(saved, self.binary)
+            self.binary.chmod(0o700)
+            with self.assertRaisesRegex(ValueError, "inode changed before exec"):
+                launcher._open_pinned_cycle_exec_fd(
+                    self.binary, expected, initial_stat)
+        finally:
+            if saved.exists():
+                self.binary.unlink(missing_ok=True)
+                saved.replace(self.binary)
+
     def test_cycle_pre_exec_rejects_unstable_elf_digest(self):
         cycle = self.handoff.parent / "cycle-unstable-pre-elf"
         cycle.mkdir(mode=0o700)
@@ -374,6 +392,11 @@ int main(int argc, char **argv) {
         def observed_popen(*args, **kwargs):
             environments.append(dict(kwargs["env"]))
             forwarded.append(kwargs["env"].get("VH_MAP02_CYCLE_OUTPUT_DIR"))
+            # The actual ELF is opened by /proc/self/fd, not by the mutable
+            # original pathname. Popen must inherit the pinned descriptor.
+            descriptor, = kwargs["pass_fds"]
+            self.assertEqual(kwargs["executable"], f"/proc/self/fd/{descriptor}")
+            self.assertEqual(os.fstat(descriptor).st_ino, self.binary.stat().st_ino)
             return original_popen(*args, **kwargs)
 
         # This test exercises only launcher wiring and nonce checking:
@@ -459,6 +482,48 @@ int main(int argc, char **argv) {
         self.assertEqual(forwarded, [str(cycle)])
         receipt.assert_called_once()
         self.assertTrue((self.handoff / RECEIPT).exists())
+
+    def test_cycle_rejects_identical_bytes_replacement_during_spawn(self):
+        cycle = self.handoff.parent / "cycle-inode-race"
+        cycle.mkdir(mode=0o700)
+        original_popen = subprocess.Popen
+        saved = self.binary.with_suffix(".original-elf")
+        forwarded_inode = []
+
+        def replace_path_before_exec(*args, **kwargs):
+            descriptor, = kwargs["pass_fds"]
+            self.assertEqual(kwargs["executable"], f"/proc/self/fd/{descriptor}")
+            expected_inode = os.fstat(descriptor).st_ino
+            self.binary.replace(saved)
+            # Identical executable bytes but a DIFFERENT inode. The child
+            # must be bound to the already-open descriptor, not this file.
+            shutil.copyfile(saved, self.binary)
+            self.binary.chmod(0o700)
+            self.assertNotEqual(self.binary.stat().st_ino, expected_inode)
+            forwarded_inode.append(expected_inode)
+            return original_popen(*args, **kwargs)
+
+        try:
+            with patch(
+                    "tools.check_map02_cycle_elf.audit_cycle_elf",
+                    return_value={"required_symbols_present": 19}), patch(
+                    "tools.map02_cycle_build_provenance.verify_build_receipt",
+                    return_value={"source_pinned_full_elf_bytes_checked": True}), patch(
+                    "tools.map02_verified_process_launch.subprocess.Popen",
+                    side_effect=replace_path_before_exec):
+                with self.assertRaisesRegex(ValueError, "pathname replaced during run"):
+                    launch_observed_pc(
+                        self.handoff, self.native, self.scoped,
+                        self.binary, self.owned, upstream=self.upstream,
+                        x=10, y=20, timeout=8, cycle_dir=cycle,
+                        build_receipt_dir=self.handoff.parent / "private-build-receipt",
+                        build_bundle_dir=self.handoff.parent / "private-build-bundle")
+        finally:
+            if saved.exists():
+                self.binary.unlink(missing_ok=True)
+                saved.replace(self.binary)
+        self.assertEqual(len(forwarded_inode), 1)
+        self.assertFalse((self.handoff / RECEIPT).exists())
 
     def test_cycle_fails_if_source_bound_build_receipt_changes_during_child(self):
         cycle = self.handoff.parent / "cycle-build-edited-in-run"
