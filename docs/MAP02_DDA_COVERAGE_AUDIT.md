@@ -183,7 +183,17 @@ configuration. The verification refuses preflight reports lacking a checked
 executable SHA-256, a modified binary, inconsistent target frame, missing
 VRAM evidence, contradictory DDA journal entries and incomplete capture
 records. It returns hashes and aggregated checks only; no pixel arrays,
-sample X/Y or private capture paths are included in the report.
+sample X/Y or private capture paths are included in the report. The
+`vram_snapshot_sha256_list_sha256` field commits to the ordered SHA-256
+fingerprints of **all validated native VRAM snapshots** (not just the GPU
+JSONL journal). `native_gpu_pairs_verified` reports the number of
+validated before/after operation pairs. The `dda_observation_mode` field
+distinguishes `entered_only`, `rejected_only` and `both`, and
+`all_dda_journal_classes_observed` remains false if one observer produced
+no journal. Missing means **unobserved, not zero GPU events**. The hash
+chain helps detect later file changes against the recorded report; it
+still does not authenticate capture origin or establish GPU stream
+completeness.
 
 **Important:** Hash agreement identifies the bytes inspected before and
 after the run, but cannot prove that those bytes were actually executed,
