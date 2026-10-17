@@ -79,7 +79,7 @@ def oracle_source(stops):
         if(exe) {
             if(fseek(exe,0x4c,SEEK_SET)==0 &&
                fread(tag,1,sizeof(tag),exe)==sizeof(tag) &&
-               memcmp(tag,"VH122SY!",sizeof(tag))==0)
+               memcmp(tag,"VH123SY!",sizeof(tag))==0)
                 verified_exe=1;
             fclose(exe);
         }
@@ -93,7 +93,7 @@ def oracle_source(stops):
         /* Actual interpreted CPU stage zero: GPU setup GP0 SW plus
          * DPCR channel-2 enable. No host-submitted GPU commands. */
         psxCpu->ExecuteBlock(&psxRegs,EXEC_CALLER_OTHER);
-        unsigned int off=0x11140u;
+        unsigned int off=0x11160u;
         uint32_t first=((uint32_t)ram[off]) |
             ((uint32_t)ram[off+1]<<8) |
             ((uint32_t)ram[off+2]<<16) |
@@ -126,7 +126,7 @@ def oracle_source(stops):
              * psxDma2() instrumentation must see exactly one
              * properly configured real mem->GPU transfer per phase. */
             psxCpu->ExecuteBlock(&psxRegs,EXEC_CALLER_OTHER);
-            unsigned int at=0x11140u+4u*(phase+1u);
+            unsigned int at=0x11160u+4u*(phase+1u);
             uint32_t marker=((uint32_t)ram[at]) |
                 ((uint32_t)ram[at+1]<<8) |
                 ((uint32_t)ram[at+2]<<16) |
