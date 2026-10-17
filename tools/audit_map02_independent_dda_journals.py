@@ -11,12 +11,13 @@ from pathlib import Path
 
 from tools.verify_map02_dda_native_spans import parse_native_spans
 from tools.verify_map02_dda_rejected_edges import validate as validate_candidates
+from tools.verify_map02_native_gpu_capture import verify_capture, LOG as NATIVE_GPU_LOG
 
 SPAN_FILE = "dda-native-spans.jsonl"
 CANDIDATE_FILE = "dda-rejected-edge-candidates.jsonl"
 
 
-def audit(directory: Path):
+def audit(directory: Path, *, native_frame=None):
     """Read available native journals without inventing missing observations."""
     directory = Path(directory)
     if not directory.is_dir() or directory.is_symlink():
@@ -54,11 +55,63 @@ def audit(directory: Path):
                       for x in candidates}
     span_frames = {x.frame for x in spans}
     candidate_frames = {x["frame"] for x in candidates}
+    gpu_binding = {
+        "requested": native_frame is not None,
+        "verified": False,
+        "frame": None,
+        "gpu_events_sha256": None,
+        "draw_primitives_in_bounded_capture": None,
+        "observed_dda_primitive_keys": None,
+    }
+    if native_frame is not None:
+        if type(native_frame) is not int or not 1 <= native_frame <= 0xffffffff:
+            raise ValueError("invalid requested native GPU frame")
+        # Validates full private 1-MiB VRAM snapshots and contiguous
+        # before/after GPU events before comparing any DDA identifiers.
+        capture = verify_capture(directory, target_frame=native_frame)
+        if capture["record_cap_reached"]:
+            raise ValueError("bounded native GPU capture saturated; ordinal scope unknown")
+        if any(x.frame != native_frame for x in spans) or any(
+                x["frame"] != native_frame for x in candidates):
+            raise ValueError("DDA journal frame disagrees with validated GPU capture")
+        gpu_log = directory / NATIVE_GPU_LOG
+        if gpu_log.is_symlink() or not gpu_log.is_file():
+            raise ValueError("native GPU journal must be a regular file")
+        events = [json.loads(line) for line in gpu_log.read_bytes().splitlines()]
+        draw_packets = [events[i] for i in range(0, len(events), 2)
+                        if events[i]["operation"] == "draw"]
+        for span in spans:
+            if span.primitive_ordinal >= len(draw_packets):
+                raise ValueError("executed DDA span ordinal absent from GPU event stream")
+            # Span includes primitive_type in its journal; the parser only
+            # exposes geometry, so re-read the strictly validated JSONL.
+            # Type matching is performed below against that input.
+        if inputs[SPAN_FILE]["present"]:
+            span_records = [json.loads(line) for line in
+                            (directory / SPAN_FILE).read_bytes().splitlines()]
+            for span_record in span_records:
+                native_type = draw_packets[span_record["primitive_ordinal"]]["primitive_type"]
+                if span_record["primitive_type"] != native_type:
+                    raise ValueError("entered span primitive type disagrees with GPU packet")
+        for candidate in candidates:
+            if candidate["primitive_ordinal"] >= len(draw_packets):
+                raise ValueError("rejected edge ordinal absent from GPU event stream")
+        gpu_binding = {
+            "requested": True,
+            "verified": True,
+            "frame": native_frame,
+            "gpu_events_sha256": capture["native_gpu_events_sha256"],
+            "draw_primitives_in_bounded_capture": len(draw_packets),
+            "observed_dda_primitive_keys": len({
+                x.primitive_ordinal for x in spans
+            } | {x["primitive_ordinal"] for x in candidates}),
+        }
     return {
         "schema": "map02_independent_dda_journal_audit_v1",
         "files": inputs,
         "shared_frame_ids": sorted(span_frames & candidate_frames),
         "same_primitive_row_keys": len(span_keys & candidate_keys),
+        "native_gpu_binding": gpu_binding,
         "notes": [
             "Missing journals mean missing observations, not zero GPU events.",
             "Same row keys do not establish shared rasterizer provenance.",
@@ -75,9 +128,10 @@ def audit(directory: Path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("journal_directory", type=Path)
+    parser.add_argument("--native-frame", type=int, help="Require full native VRAM evidence for this DrawOTag frame")
     args = parser.parse_args()
     try:
-        result = audit(args.journal_directory)
+        result = audit(args.journal_directory, native_frame=args.native_frame)
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
     print(json.dumps(result, sort_keys=True, indent=2))
