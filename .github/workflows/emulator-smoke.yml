@@ -15,6 +15,11 @@ on:
       - 'tests/test_analyze_nexium_scene_audio.py'
       - 'tools/analyze_nexium_transition_timing.py'
       - 'tools/audit_switch_guest_scene_trace.py'
+      - 'tools/audit_nexium_guest_sd_handoff.py'
+      - 'tests/test_audit_nexium_guest_sd_handoff.py'
+      - 'source/vh_audio_scene_trace_export.c'
+      - 'source/vh_audio_scene_trace_export.h'
+      - 'tests/test_vh_audio_scene_trace_export.c'
       - 'tests/test_audit_switch_guest_scene_trace.py'
       - 'tests/test_analyze_nexium_transition_timing.py'
 
@@ -44,6 +49,7 @@ jobs:
           python3 -m unittest discover -s tests -p "test_analyze_nexium_pcm.py" -v
           python3 -m unittest discover -s tests -p "test_analyze_nexium_scene_audio.py" -v
           python3 -m unittest discover -s tests -p "test_analyze_nexium_transition_timing.py" -v
+          python3 -m unittest discover -s tests -p "test_audit_nexium_guest_sd_handoff.py" -v
           bash -n tools/capture_nexium_scene_audio.sh
           make verify-nro
 
@@ -67,7 +73,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: vandal-hearts-tactical-with-native-music
-          run-id: 39048418666
+          run-id: 39050183383
           github-token: ${{ github.token }}
           path: nros
 
@@ -76,9 +82,9 @@ jobs:
         run: |
           set -euo pipefail
           python3 tools/verify_switch_integrated_nro_preflight.py nros \
-            --git-sha b55746adeff67edb352eb5ba969032e9f1762c64 \
-            --run-id 39048418666 --artifact-id 12106314855 \
-            --expected-nro-sha256 3b6b704c7528c3bbc74b46a0b2d2355bc09743fa68cd18a3631f0f12e0f5d173 \
+            --git-sha 02f5f51e4225b60659ec8409dcc0ab0dc5d62d39 \
+            --run-id 39050183383 --artifact-id 12106909905 \
+            --expected-nro-sha256 a5836de758498f29dacb0f2f9ffba6acf74ffb7b08f8f7e0bfd3ba91f298ca27 \
             | tee integrated-nro-preflight.json
           echo "Candidate: pinned integrated libnx/audout NRO (not proof of audible sound)" >> "$GITHUB_STEP_SUMMARY"
 
@@ -457,7 +463,7 @@ jobs:
           report={
               "schema":"vh-nexium-pcm-monitor/v1",
               "hardware_status":"HARDWARE NOT TESTED",
-              "source_nro_sha256":"3b6b704c7528c3bbc74b46a0b2d2355bc09743fa68cd18a3631f0f12e0f5d173",
+              "source_nro_sha256":"a5836de758498f29dacb0f2f9ffba6acf74ffb7b08f8f7e0bfd3ba91f298ca27",
               "recording":"virtual PulseAudio null-sink monitor; not audible playback",
               "sample_format":"s16le stereo 48000Hz",
               "raw_bytes":len(data),
@@ -573,6 +579,16 @@ jobs:
           # A host emulator may not expose libnx stderr. Distinguish
           # NOT_OBSERVED from a successful guest timeline; don't fail
           # working graphics/PCM checks solely for absent log transport.
+
+      - name: Require guest-origin SD CSV with four verified A/B scenes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_guest_sd_handoff.py \
+            --root-file runtime-evidence/guest-sd-root.txt \
+            --evidence-dir runtime-evidence
+          python3 -m json.tool runtime-evidence/guest-scene-sd-verdict.json > /dev/null
+          echo "Verified guest SD CSV is separate from host PCM and cannot prove DAC output." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Record audio capture boundary
         if: always()
