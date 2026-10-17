@@ -112,13 +112,56 @@ int vh_map02_cycle_format_jsonl(char *out, size_t capacity) {
         token, observed.frame);
     return n > 0 && (size_t)n < capacity ? n : 0;
 }
+/* Identity is checked both via the opened file descriptor and the
+ * directory entry: same-name substitution cannot satisfy this audit.
+ * No game data is written; only the bounded JSONL capture metadata. */
+static int same_inode(const struct stat *a, const struct stat *b) {
+    return a->st_dev == b->st_dev && a->st_ino == b->st_ino;
+}
+static int same_contents_metadata(const struct stat *a, const struct stat *b) {
+    return same_inode(a, b) && a->st_size == b->st_size &&
+           a->st_mtim.tv_sec == b->st_mtim.tv_sec &&
+           a->st_mtim.tv_nsec == b->st_mtim.tv_nsec &&
+           a->st_ctim.tv_sec == b->st_ctim.tv_sec &&
+           a->st_ctim.tv_nsec == b->st_ctim.tv_nsec;
+}
+static int verify_published_fd(int dfd, int fd, const char *data,
+                               size_t length, const struct stat *baseline) {
+    struct stat file, named, after;
+    char checked[512];
+    size_t done = 0;
+    if (length > sizeof checked ||
+        fstat(fd, &file) || !same_contents_metadata(&file, baseline) ||
+        !S_ISREG(file.st_mode) || file.st_uid != geteuid() ||
+        (file.st_mode & 0777) != 0600 || file.st_nlink != 1 ||
+        file.st_size != (off_t)length ||
+        fstatat(dfd, OUTPUT_NAME, &named, AT_SYMLINK_NOFOLLOW) ||
+        !same_contents_metadata(&file, &named) ||
+        !S_ISREG(named.st_mode))
+        return 0;
+    while (done < length) {
+        ssize_t n = pread(fd, checked + done, length - done, (off_t)done);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) return 0;
+        done += (size_t)n;
+    }
+    if (memcmp(data, checked, length) != 0 ||
+        fstat(fd, &after) || !same_contents_metadata(&file, &after) ||
+        fstatat(dfd, OUTPUT_NAME, &named, AT_SYMLINK_NOFOLLOW) ||
+        !same_contents_metadata(&file, &named))
+        return 0;
+    return 1;
+}
+
 /* Only an explicit, owned 0700 directory receives one exclusive 0600
- * receipt. No symlink following, fallback location, or replacement. */
+ * receipt. Open with O_RDWR so every byte is re-read after fsync; a second
+ * complete read after directory fsync catches post-write replacement.
+ * Never delete a foreign/replaced inode on cleanup. */
 static void publish_if_requested(void) {
     const char *directory = getenv("VH_MAP02_CYCLE_OUTPUT_DIR");
     char data[512];
     int dfd = -1, fd = -1, n, ok = 0, created = 0;
-    struct stat st;
+    struct stat st, baseline, named;
     ssize_t written;
     if (!directory || !*directory) return;
     n = vh_map02_cycle_format_jsonl(data, sizeof data);
@@ -128,20 +171,35 @@ static void publish_if_requested(void) {
     if (fstat(dfd, &st) || !S_ISDIR(st.st_mode) ||
         st.st_uid != geteuid() || (st.st_mode & 0777) != 0700) goto done;
     fd = openat(dfd, OUTPUT_NAME,
-                O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0600);
+                O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0600);
     if (fd < 0) goto done;
     created = 1;
+    if (fstat(fd, &baseline)) goto done;
     written = write(fd, data, (size_t)n);
     if (written != n || fsync(fd)) goto done;
+    /* Capture the metadata AFTER our own write. Subsequent in-place
+     * changes can no longer pass the before/after metadata checks. */
+    if (fstat(fd, &baseline) ||
+        !verify_published_fd(dfd, fd, data, (size_t)n, &baseline) ||
+        fsync(dfd) ||
+        !verify_published_fd(dfd, fd, data, (size_t)n, &baseline))
+        goto done;
     if (close(fd)) { fd = -1; goto done; }
     fd = -1;
-    if (fsync(dfd)) goto done;
+    if (fstatat(dfd, OUTPUT_NAME, &named, AT_SYMLINK_NOFOLLOW) ||
+        !same_contents_metadata(&baseline, &named))
+        goto done;
     ok = 1;
 done:
     if (fd >= 0) (void)close(fd);
     if (!ok) {
-        /* Never unlink a pre-existing file: created is set only after O_EXCL. */
-        if (dfd >= 0 && created) (void)unlinkat(dfd, OUTPUT_NAME, 0);
+        /* Cleanup must never remove a same-name symlink or replacement.
+         * A concurrent rename after this check remains a POSIX race;
+         * the independent verifier must re-open and audit final bytes. */
+        if (dfd >= 0 && created &&
+            !fstatat(dfd, OUTPUT_NAME, &named, AT_SYMLINK_NOFOLLOW) &&
+            same_inode(&baseline, &named) && S_ISREG(named.st_mode))
+            (void)unlinkat(dfd, OUTPUT_NAME, 0);
         observed.failed = 1;
     }
     if (dfd >= 0) (void)close(dfd);
