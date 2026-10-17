@@ -68,6 +68,18 @@ class PrivatePcProbeReadinessTests(unittest.TestCase):
         self.assertNotIn("VH_MAP02_PUTPIXEL_X2", result_text)
         self.assertNotIn("VH_PixelSampleRecord", result_text)
 
+    def test_inspector_reuses_caller_fd_without_closing_or_seeking(self):
+        self.compile()
+        fd = os.open(self.elf, os.O_RDONLY)
+        try:
+            os.lseek(fd, 13, os.SEEK_SET)
+            checked = inspect_binary(self.elf, pinned_fd=fd)
+            self.assertTrue(checked["required_probe_symbols_present"])
+            self.assertEqual(os.lseek(fd, 0, os.SEEK_CUR), 13)
+            self.assertEqual(os.fstat(fd).st_ino, self.elf.stat().st_ino)
+        finally:
+            os.close(fd)
+
     def test_missing_original_gpu_event_symbol_rejected(self):
         self.compile(ELF_C.replace("void VH_CaptureEvent(void) {}", "")
                      .replace("    VH_CaptureEvent();", ""))
