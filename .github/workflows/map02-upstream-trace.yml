@@ -86,6 +86,7 @@ on:
       - 'tools/verify_map02_native_overdraw.py'
       - 'tools/instrument_map02_native_putpixel.py'
       - 'tools/verify_map02_native_putpixel.py'
+      - 'tools/map02_pc_writepixel_reference.py'
       - 'tools/instrument_map02_putpixel_scope.py'
       - 'tools/instrument_map02_raster_skips.py'
       - 'tools/instrument_map02_vertical_dda.py'
@@ -122,6 +123,7 @@ on:
       - 'tests/test_verify_map02_native_overdraw.py'
       - 'tests/test_instrument_map02_native_putpixel.py'
       - 'tests/test_verify_map02_native_putpixel.py'
+      - 'tests/test_map02_pc_writepixel_reference.py'
       - 'tests/test_instrument_map02_putpixel_scope.py'
       - 'tests/test_instrument_map02_raster_skips.py'
       - 'tests/test_instrument_map02_vertical_dda.py'
@@ -389,6 +391,7 @@ jobs:
             cd remaster
             python3 -m unittest discover -s tests -p 'test_instrument_map02_native_putpixel.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_native_putpixel.py' -v
+            python3 -m unittest discover -s tests -p 'test_map02_pc_writepixel_reference.py' -v
           )
           mkdir -p /tmp/vh-map02-native-pixel
           PYTHONPATH=remaster python3 -m tools.instrument_map02_native_putpixel \
