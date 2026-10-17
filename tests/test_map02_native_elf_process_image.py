@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 import test_map02_launch_two_word_process_integration as fixture_module
 from tools.run_map02_private_native_capture import capture
+from tools.audit_map02_launch_two_word_binding import audit_launch_two_word
 from tools.verify_map02_private_capture_receipt import replay_receipt
 
 NATIVE_EMITTER = r'''
@@ -121,8 +122,13 @@ class NativeElfProcessImageTests(unittest.TestCase):
             self.host.native, receipt_file=self.host.receipt,
             preflight_report=self.host.preflight, executable=self.host.executable)
         self.assertTrue(checked["raw_evidence_matches_original_receipt"])
-        joined = self.host.cross_audit()
+        joined = audit_launch_two_word(
+            self.host.native, self.host.source, launch_receipt=self.host.receipt,
+            preflight_report=self.host.preflight, executable=self.host.executable,
+            require_native_elf_image=True)
         self.assertTrue(joined["same_native_gpu_log_sha256_verified"])
+        self.assertTrue(joined["native_elf_process_image_observed"])
+        self.assertTrue(joined["native_elf_image_required_for_join"])
         self.assertEqual(joined["source_keyed_ft4_draws_checked"], 2)
         self.assertFalse(joined["native_process_to_log_causality_authenticated"])
         self.assertFalse(joined["retail_map02_gameplay_authenticated"])
@@ -143,6 +149,18 @@ class NativeElfProcessImageTests(unittest.TestCase):
                 self.host.native, receipt_file=self.host.receipt,
                 preflight_report=self.host.preflight,
                 executable=self.host.executable)
+
+    def test_legacy_synthetic_process_is_rejected_by_strict_join(self):
+        # A complete synthetic v1 capture remains valid for legacy audits,
+        # but cannot satisfy the native Linux ELF process gate.
+        ordinary = self.host.spawn()
+        self.assertTrue(ordinary["capture_verified"])
+        self.assertTrue(self.host.cross_audit()["same_native_gpu_log_sha256_verified"])
+        with self.assertRaisesRegex(ValueError, "native ELF image observation required"):
+            audit_launch_two_word(
+                self.host.native, self.host.source, launch_receipt=self.host.receipt,
+                preflight_report=self.host.preflight, executable=self.host.executable,
+                require_native_elf_image=True)
 
     def test_observation_failure_is_not_promoted_to_verified_capture(self):
         self.build_elf()
