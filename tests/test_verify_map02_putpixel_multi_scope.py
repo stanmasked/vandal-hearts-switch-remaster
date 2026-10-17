@@ -130,6 +130,29 @@ class TwoWordPutPixelTests(unittest.TestCase):
         self.assertEqual(report["source_ft4_draws_with_interleaved_word_revisit"],1)
         self.assertEqual(report["source_ft4_same_value_putpixel_calls"],2)
 
+    def test_same_ft4_semitransparent_blends_at_both_sampled_words(self):
+        # Accurate BlendG1 ABR1: textured A retains bit15, while
+        # untextured B clears it. Both retain their original PC after
+        # words from the real native per-FT4 snapshot.
+        self.rows = [
+            self.base.row(0,1,0,0x001f,0x801f,semi=1),
+            self.base.row(1,1,0,0x03e0,0x03e0,semi=1),
+            self.base.row(2,2,0x801f,0x7c00,0x7c00),
+        ]
+        self.rows[1]["x"], self.rows[1]["y"] = self.coord_b
+        self.rows[1]["textured"] = 0
+        self.save()
+        report = verify_multi_pixel_ot(self.source, self.native)
+        self.assertEqual(report["source_keyed_ft4_semitransparent_calls"],2)
+        self.assertEqual(report["source_ft4_abr1_calls"],2)
+        self.assertEqual(report["source_ft4_draws_with_both_words_observed"],1)
+        self.assertEqual(report["source_ft4_draws_with_both_words_semitransparent"],1)
+        self.assertEqual(report["source_ft4_draws_changing_both_sampled_words"],1)
+        self.rows[1]["textured"] = 1
+        self.save()
+        with self.assertRaisesRegex(ValueError,"source-pinned PC WritePixel"):
+            verify_multi_pixel_ot(self.source, self.native)
+
     def test_duplicate_step_and_backward_ordinal_rejected(self):
         self.rows[1]["step"] = 0
         self.save()
