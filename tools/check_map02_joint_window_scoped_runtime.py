@@ -18,6 +18,10 @@ from tools.instrument_map02_gpu_native_events import instrument as native_probe
 from tools.instrument_map02_drawotag_scope import instrument as scoped_probe
 from tools.instrument_map02_scoped_blend import instrument as raster_probe
 from tools.verify_map02_window_scoped_join import verify_window_scoped_join
+from tools.map02_local_capture_handoff import prepare_local_capture
+from tools.map02_verified_process_launch import (
+    launch_observed_pc, verify_observed_process,
+)
 
 
 HARNESS_DRAWS = HARNESS[:HARNESS.index("int main(void) {")] + r"""
@@ -172,6 +176,51 @@ def check_joint_original_gpu(upstream, *, compiler="cc"):
             else:
                 raise ValueError(
                     "two independent original GPU process captures were joined")
+        # Exercise the REAL pinned original PC GPU with a launcher that
+        # observes Linux /proc/PID/exe while the child process is alive.
+        # This extra one-second sleep is synthetic test scaffolding only.
+        # An uninstrumented or substituted process cannot gain a receipt.
+        held = root / "harness-observed.c"
+        tail = "    assert(vram[10][10] != 1);\\n    return 0;"
+        if tail.replace("\\n", "\n") not in HARNESS_DRAWS:
+            raise ValueError("real original GPU harness terminator changed")
+        held.write_text(
+            "#include <unistd.h>\n" +
+            HARNESS_DRAWS.replace(
+                tail.replace("\\n", "\n"),
+                "    assert(vram[10][10] != 1);\n    sleep(1);\n    return 0;"),
+            encoding="utf-8")
+        held_exe = root / "original-gpu-kernel-observed"
+        held_build = [
+            str(held) if arg == str(root / "harness.c") else
+            str(held_exe) if arg == str(executable) else arg
+            for arg in args
+        ]
+        built = subprocess.run(
+            held_build, capture_output=True, text=True, timeout=120)
+        if built.returncode:
+            raise ValueError("original GPU kernel-observed build: "
+                             + built.stderr[-3000:])
+        owned_synthetic = root / "fake-owned-game-image"
+        owned_synthetic.write_bytes(b"asset-free CI fixture; NOT retail game")
+        owned_synthetic.chmod(0o600)
+        handoff = root / "local-handoff"
+        held_native = root / "kernel-observed-windows"
+        held_scoped = root / "kernel-observed-scoped"
+        for private_dir in (handoff, held_native, held_scoped):
+            private_dir.mkdir(mode=0o700)
+        prepare_local_capture(
+            handoff, held_exe, owned_synthetic, frame=1, upstream=upstream)
+        observed_run = launch_observed_pc(
+            handoff, held_native, held_scoped, held_exe,
+            owned_synthetic, upstream=upstream, x=10, y=10, timeout=15)
+        observed_recheck = verify_observed_process(
+            handoff, held_native, held_scoped,
+            held_exe, owned_synthetic, upstream=upstream)
+        if (not observed_run["kernel_executable_hash_matched"] or
+                observed_run["private_process_receipt_sha256"] !=
+                observed_recheck["private_process_receipt_sha256"]):
+            raise ValueError("original GPU process executable audit mismatch")
         # Mutating just the scoped receipt must be detected even though
         # PutPixel/BlendG1/native VRAM still match all original GPU bytes.
         session_file = scoped_dir / "gpu-scoped-session.json"
