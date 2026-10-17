@@ -95,3 +95,70 @@ done:
     close(prev);
     return status;
 }
+
+/* Interrupted v82 publication leaves <final>.tmp, not <final>.
+ * Distinguish a crash before the exclusive hard link from one after it.
+ * Never use partial staged bytes as completed, and never unlink a stage
+ * of unknown ownership. All calls assume an exclusively controlled
+ * private directory; metadata checks cannot stop outside TOCTOU writers.
+ */
+static int vh99_private_path_ok(const char *path) {
+    if(!path || path[0]!='/')return 0;
+    size_t n=strnlen(path,VH82_MAX_PATH);
+    if(n==0 || n+5>=VH82_MAX_PATH ||
+       strstr(path,"/../") || strstr(path,"/./") ||
+       (n>=3 && strcmp(path+n-3,"/..")==0) ||
+       (n>=2 && strcmp(path+n-2,"/.")==0))
+        return 0;
+    return 1;
+}
+static int vh99_lstat_expected(const char *path,struct stat *s){
+    if(lstat(path,s)==0){
+        if(!S_ISREG(s->st_mode) || (s->st_mode&0777)!=0600 ||
+           s->st_nlink!=1)return -1;
+        return 1;
+    }
+    return errno==ENOENT?0:-1;
+}
+int vh99_private_state(const char *final_path){
+    char tmp[VH82_MAX_PATH];
+    struct stat final_stat,tmp_stat;
+    if(!vh99_private_path_ok(final_path))return -1;
+    size_t n=strlen(final_path);
+    memcpy(tmp,final_path,n);
+    memcpy(tmp+n,".tmp",5);
+    int f=vh99_lstat_expected(final_path,&final_stat);
+    int t=vh99_lstat_expected(tmp,&tmp_stat);
+    if(f<0 || t<0)return -1;
+    return f+(t*2);
+}
+int vh99_publish_after_interruption(const char *abandoned_final,
+                                   const char *fresh_final,
+                                   const char *bytes,size_t size){
+    char abandoned_tmp[VH82_MAX_PATH];
+    struct stat before,after;
+    if(!vh99_private_path_ok(abandoned_final) ||
+       !vh99_private_path_ok(fresh_final) || !bytes ||
+       !size || size>VH82_MAX_BYTES ||
+       strcmp(abandoned_final,fresh_final)==0)
+        return -1;
+    /* The submitted stage must be incomplete and the target truly unused.
+     * Refuse any pre-existing completed file, bad mode, or symlink. */
+    if(vh99_private_state(abandoned_final)!=2 ||
+       vh99_private_state(fresh_final)!=0)return -1;
+    size_t n=strlen(abandoned_final);
+    memcpy(abandoned_tmp,abandoned_final,n);
+    memcpy(abandoned_tmp+n,".tmp",5);
+    if(lstat(abandoned_tmp,&before)!=0 || !S_ISREG(before.st_mode) ||
+       (before.st_mode&0777)!=0600 || before.st_nlink!=1)return -1;
+    if(vh82_publish_private(fresh_final,bytes,size)!=0)return -1;
+    /* Confirm abandoned staged bytes still belong to the same inode.
+     * A malicious external concurrent writer is outside this guarantee. */
+    if(lstat(abandoned_tmp,&after)!=0 ||
+       before.st_dev!=after.st_dev || before.st_ino!=after.st_ino ||
+       before.st_size!=after.st_size || before.st_nlink!=after.st_nlink ||
+       before.st_mode!=after.st_mode ||
+       vh99_private_state(abandoned_final)!=2 ||
+       vh99_private_state(fresh_final)!=1)return -1;
+    return 0;
+}
