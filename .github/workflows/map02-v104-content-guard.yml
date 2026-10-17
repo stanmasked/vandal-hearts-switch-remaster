@@ -523,6 +523,19 @@ jobs:
           assert visibility["HD_replacement_approved"] is False
           Path("proof/public/v111-sample-store-divergence.json").write_text(
               json.dumps(visibility,sort_keys=True)+"\n")
+          write_runs=v112_runs(path.read_bytes())
+          eligible=visibility["overall_case_totals"]["unchanged_sample_with_instrumented_stores"]
+          assert write_runs["vblank_edges"]==4
+          assert write_runs["observed_unai_handlers"]==observed
+          assert write_runs["qualifying_unai_handlers"]==eligible["handlers"]
+          for metric in ("native_store_attempts","same_value_native_stores","changed_value_native_stores"):
+              assert write_runs["total_qualifying_native_stores"][metric]==eligible[metric]
+          assert write_runs["zero_sample_delta_is_not_whole_VRAM_unchanged"] is True
+          assert write_runs["crossing_vblank_does_not_establish_VRAM_persistence"] is True
+          assert write_runs["physical_ps1_vblank_verified"] is False
+          assert write_runs["HD_replacement_approved"] is False
+          Path("proof/public/v112-unchanged-sample-runs.json").write_text(
+              json.dumps(write_runs,sort_keys=True)+"\n")
           assert evidence["vblank_edges"]==vblanks and evidence["gp1_mmio"]==gp1
           assert evidence["events"]==entries and evidence["bytes"]==size
           assert evidence["original_retail_MAP02_verified"] is False
