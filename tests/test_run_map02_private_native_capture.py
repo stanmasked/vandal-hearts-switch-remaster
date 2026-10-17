@@ -181,7 +181,7 @@ class PrivateNativeLauncherTests(unittest.TestCase):
         self.assertTrue(result["capture_verified"])
         for destination in (self.preflight, self.summary):
             raw = destination.read_bytes()
-            self.assertTrue(raw.endswith(b"\\n"))
+            self.assertTrue(raw.endswith(b"\n"))
             self.assertEqual(json.loads(raw), json.loads(destination.read_text()))
             self.assertEqual(stat.S_IMODE(destination.stat().st_mode), 0o600)
         self.assertEqual(list(self.base.glob(".*.pending")), [])
