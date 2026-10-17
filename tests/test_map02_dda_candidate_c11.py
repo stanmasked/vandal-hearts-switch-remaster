@@ -87,9 +87,10 @@ class CandidateC11Tests(unittest.TestCase):
                                check=True, capture_output=True, text=True)
                 subprocess.run([str(target), str(root)], check=True,
                                capture_output=True, text=True)
-                invalid = subprocess.run([str(target), str(root), "invalid"],
-                                         capture_output=True, text=True)
-                self.assertEqual(invalid.returncode, 2)
+                for invalid_arg in ("invalid", "f", ""):
+                    invalid = subprocess.run([str(target), str(root), invalid_arg],
+                                             capture_output=True, text=True)
+                    self.assertEqual(invalid.returncode, 2)
                 journal = root / "dda-rejected-edge-candidates.jsonl"
                 if enabled:
                     self.assertTrue(journal.exists())
