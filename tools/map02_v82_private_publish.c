@@ -229,6 +229,49 @@ finish:
     return ok;
 }
 
+/* v105: recovery must not bless an old same-inode object after an in-place
+ * rewrite, even when its size, owner and hard-link count remain unchanged.
+ * Metadata is a detectable-change guard, not a cryptographic snapshot of
+ * arbitrarily racing/unprivileged writers or coarse timestamp filesystems. */
+static int vh105_same_metadata(const struct stat *a,const struct stat *b){
+    return a->st_dev==b->st_dev && a->st_ino==b->st_ino &&
+           a->st_size==b->st_size && a->st_mode==b->st_mode &&
+           a->st_nlink==b->st_nlink &&
+           a->st_mtim.tv_sec==b->st_mtim.tv_sec &&
+           a->st_mtim.tv_nsec==b->st_mtim.tv_nsec &&
+           a->st_ctim.tv_sec==b->st_ctim.tv_sec &&
+           a->st_ctim.tv_nsec==b->st_ctim.tv_nsec;
+}
+#ifdef VH100_FAULT_TEST
+/* Isolated native fault injection; not linked into pinned production PCSX.
+ * 1 = mutate the previous committed file during v98 recovery,
+ * 2 = mutate the abandoned .tmp during v99 recovery. */
+static int vh105_change_phase;
+void vh105_test_change_during_recovery(int phase){vh105_change_phase=phase;}
+static int vh105_maybe_change(int phase,const char *name,
+                             const struct stat *original){
+    if(vh105_change_phase!=phase)return 0;
+    vh105_change_phase=0;
+    int writer=open(name,O_RDWR|O_NOFOLLOW);
+    if(writer<0)return -1;
+    struct stat actual;
+    unsigned char byte=0;
+    int ok=0;
+    if(fstat(writer,&actual)<0 || !S_ISREG(actual.st_mode) ||
+       actual.st_dev!=original->st_dev || actual.st_ino!=original->st_ino ||
+       actual.st_size<=0 || pread(writer,&byte,1,0)!=1)
+        ok=-1;
+    if(ok==0){
+        byte^=0x5au;
+        if(pwrite(writer,&byte,1,0)!=1 || fsync(writer)<0)ok=-1;
+    }
+    if(close(writer)<0)ok=-1;
+    return ok;
+}
+#else
+#define vh105_maybe_change(phase,name,original) (0)
+#endif
+
 /* A failed/restarted observation may only publish to a fresh pathname.
  * Prior export must exist as a sole-owned 0600 regular file, and must
  * retain its original identity and metadata across this function. This
@@ -255,11 +298,12 @@ int vh98_publish_recovery(const char *previous_path,const char *next_path,
         goto done;
     /* Recovered target is never allowed to replace the previous file. */
     if(vh82_publish_private(next_path,bytes,size)!=0)goto done;
-    if(fstat(prev,&after)<0 || lstat(previous_path,&named)<0 ||
-       before.st_dev!=after.st_dev || before.st_ino!=after.st_ino ||
-       before.st_size!=after.st_size ||
-       before.st_dev!=named.st_dev || before.st_ino!=named.st_ino ||
-       before.st_size!=named.st_size ||
+    /* The new file may already be committed on failure. Never roll it
+     * back, reuse its name, or claim that the old bytes stayed untouched. */
+    if(vh105_maybe_change(1,previous_path,&before)<0 ||
+       fstat(prev,&after)<0 || lstat(previous_path,&named)<0 ||
+       !vh105_same_metadata(&before,&after) ||
+       !vh105_same_metadata(&before,&named) ||
        (named.st_mode&0777)!=0600 || !S_ISREG(named.st_mode))
         goto done;
     status=0;
@@ -324,12 +368,11 @@ int vh99_publish_after_interruption(const char *abandoned_final,
     if(lstat(abandoned_tmp,&before)!=0 || !S_ISREG(before.st_mode) ||
        (before.st_mode&0777)!=0600 || before.st_nlink!=1)return -1;
     if(vh82_publish_private(fresh_final,bytes,size)!=0)return -1;
-    /* Confirm abandoned staged bytes still belong to the same inode.
-     * A malicious external concurrent writer is outside this guarantee. */
-    if(lstat(abandoned_tmp,&after)!=0 ||
-       before.st_dev!=after.st_dev || before.st_ino!=after.st_ino ||
-       before.st_size!=after.st_size || before.st_nlink!=after.st_nlink ||
-       before.st_mode!=after.st_mode ||
+    /* Preserve old abandoned-stage identity AND high-resolution change
+     * timestamps. Refusal keeps both names; never clean unknown data. */
+    if(vh105_maybe_change(2,abandoned_tmp,&before)<0 ||
+       lstat(abandoned_tmp,&after)!=0 ||
+       !vh105_same_metadata(&before,&after) ||
        vh99_private_state(abandoned_final)!=2 ||
        vh99_private_state(fresh_final)!=1)return -1;
     return 0;

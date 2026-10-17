@@ -37,6 +37,10 @@ int vh103_test_replace_final(const char *original,const char *replacement,
  * (1) after first read, (2) after file fsync, (3) after parent fsync.
  * A nonzero phase is consumed once; never compiled into pinned PCSX. */
 int vh104_test_mutate_bytes(const char *path,int phase);
+/* Inject a single-byte, same-inode write after publishing the new file:
+ * phase 1: old completed recovery source, phase 2: abandoned .tmp.
+ * The hook is isolated from normal builds. */
+void vh105_test_change_during_recovery(int phase);
 #endif
 /* An existing private file must be immutable. Only a DISTINCT unused path
  * may receive a recovered observer lifetime; never rename/replace old. */
