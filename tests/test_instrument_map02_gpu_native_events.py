@@ -57,6 +57,15 @@ class NativeGpuProbeTests(unittest.TestCase):
         self.assertIn('fwrite(vram, 1u, bytes, file)',rendered)
         self.assertIn('ft4',rendered)
 
+    def test_native_loadimage_upload_limit_is_per_dimension(self):
+        # Keep the offline validator's mandatory-payload rule aligned
+        # with the actual source-pinned C observer's after-hook.
+        rendered=instrument(minimal_source())
+        self.assertIn('rect->w > 0 && rect->h > 0 && rect->w <= 128 && rect->h <= 128',rendered)
+        self.assertIn('(size_t)rect->w*(size_t)rect->h : 0u',rendered)
+        self.assertIn('if (upload && upload_words > 0u && upload_words <= 16384u)',rendered)
+        self.assertIn('fwrite(upload, sizeof(unsigned short), upload_words, file)',rendered)
+
     def test_injection_is_fail_closed_and_unique(self):
         once=instrument(minimal_source())
         with self.assertRaisesRegex(ValueError,'already instrumented'):
