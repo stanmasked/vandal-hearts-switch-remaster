@@ -128,6 +128,39 @@ python3 -m tools.audit_map02_independent_dda_journals /private/dda-capture \
   --native-frame 411 > /private/dda-gpu-cross-check.json
 ```
 
+### Optional synchronous capture launcher
+
+Once you have built the **opt-in native PC-port executable** with
+matching GPU capture, pixel-scope and both DDA observers, the following
+local-only launcher performs a fresh preflight, launches the user-supplied
+binary exactly once, then validates the captured private GPU/VRAM/DDA
+journals when the process exits successfully:
+
+```sh
+python3 -m tools.run_map02_private_native_capture \
+  --executable /absolute/path/to/your/instrumented-pcport \
+  --preflight-report "${HOME}/map02-launch-preflight.json" \
+  --summary-report "${HOME}/map02-launch-summary.json"
+```
+
+Use the **same exported environment variables** and an empty private
+capture directory as in the previous section. The two receipt files must
+not already exist and must be outside the capture directory. Both are
+created with owner-only permissions and never overwritten. Any executable
+arguments (including game resource selectors) may follow `--`; they
+are passed directly to the process without a shell and are never saved
+in the report. The launcher discards process stdout/stderr rather than
+uploading or echoing copyrighted game data. It records launch status,
+exit code, executable SHA-256 and verified journal hashes. On errors it
+preserves private files for local diagnosis and returns nonzero.
+
+The process **is actually spawned** by the launcher when preflight
+succeeds. This narrows the origin gap compared with an offline hash-only
+check, but still does not prove that a particular game scene was rendered,
+which game resources were loaded, or physical PS1/Switch fidelity. The
+native recorder must be fully linked in the local program: CI checks
+compilation of the original PC GPU, not a retail-game run. Neither the
+launcher nor its reports enable HD replacement.
 ### Verify the captured session against the preflight binary
 
 After a locally instrumented game has produced a private capture, compare
