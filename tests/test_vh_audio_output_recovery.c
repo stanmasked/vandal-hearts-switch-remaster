@@ -173,7 +173,102 @@ static int resolve(void *ctx,unsigned program,unsigned note,
     out->reverb_send=1;
     return 0;
 }
+
+/* Mirrors the native producer's serialized gate: do not reinitialize
+ * borrowed VAB/SEQ voice memory until audout has returned the page, or
+ * until a successful backend stop has explicitly drained the lease. */
+static int switch_when_page_free(VhAudioPageLease *lease,
+                                 const int16_t *new_pcm) {
+    if (!vh_audio_page_lease_ready(lease)) return -1;
+    return vh_native_seq_switch_scene(&seq,song,sizeof song,&spu,
+                                      resolve,(void *)new_pcm,0u);
+}
+
+static void test_audout_inflight_page_lease_scene_lifetime(void) {
+    VhAudioPageLease lease={0};
+    int descriptor=0,foreign=0;
+    assert(vh_audio_page_lease_ready(&lease));
+    assert(!vh_audio_page_lease_ready(NULL));
+    assert(vh_audio_page_lease_begin(NULL,&descriptor)==-1);
+    assert(vh_audio_page_lease_begin(&lease,NULL)==-1);
+    assert(vh_audio_page_lease_return(&lease,&descriptor)==-1);
+    assert(vh_audio_page_lease_return(NULL,&descriptor)==-1);
+    assert(vh_audio_page_lease_stopped(NULL)==-1);
+
+    for(unsigned i=0u;i<128u;i++) {
+        sample[i]=(int16_t)((int)i*67-4400);
+        alternate_sample[i]=(int16_t)((int)i*93-6000);
+    }
+    vh_native_spu_reset(&spu);
+    assert(vh_native_spu_set_reverb(&spu,1,.5f)==0);
+    vh_audio_resample_reset(&resampler);
+    assert(vh_native_seq_init(&seq,song,sizeof song,
+                              &spu,resolve,sample,0u)==0);
+    const int16_t *current=sample;
+    unsigned released=0u,stopped=0u;
+    for(unsigned iteration=0u;iteration<96u;iteration++) {
+        assert(vh_audio_page_lease_ready(&lease));
+        assert(vh_native_seq_advance_block(&seq)>=0);
+        vh_native_spu_render(&spu,src,512u);
+        const size_t frames=vh_audio_resample_process(
+                         &resampler,src,512u,dst,640u);
+        assert(frames>=555u && frames<=559u);
+        const uint64_t page_hash=hash_page(dst,frames);
+        const VhNativeSeq before=seq;
+        const uint64_t spu_frames=spu.frames_rendered;
+        const uint64_t clock=resampler.input_frames;
+        const int16_t *next=(iteration&1u) ? sample : alternate_sample;
+        assert(vh_audio_page_lease_begin(&lease,&descriptor)==0);
+        assert(!vh_audio_page_lease_ready(&lease));
+        assert(lease.in_flight==&descriptor);
+        assert(vh_audio_page_lease_begin(&lease,&descriptor)==-1);
+        assert(vh_audio_page_lease_begin(&lease,&foreign)==-1);
+        assert(vh_audio_page_lease_return(&lease,NULL)==-1);
+        assert(vh_audio_page_lease_return(&lease,&foreign)==-1);
+        /* Both "bad descriptor" and "bad stop" paths must leave the
+         * current voice bank, music clock and 48-kHz page untouched. */
+        assert(switch_when_page_free(&lease,next)==-1);
+        assert(!memcmp(&seq,&before,sizeof seq));
+        assert(spu.frames_rendered==spu_frames);
+        assert(resampler.input_frames==clock);
+        assert(seq.context==current);
+        assert(hash_page(dst,frames)==page_hash);
+        if(iteration%3u==0u) {
+            /* A failed backend stop is NOT permission to free the old
+             * buffer. The successful stop below is the only way out. */
+            Mock backend={.opened=1u,.playing=1u,.fail_stops_left=1u};
+            assert(stop(&backend)==-1);
+            assert(backend.playing);
+            assert(!vh_audio_page_lease_ready(&lease));
+            assert(switch_when_page_free(&lease,next)==-1);
+            assert(stop(&backend)==0);
+            assert(!backend.playing);
+            assert(vh_audio_page_lease_stopped(&lease)==0);
+            stopped++;
+        } else {
+            assert(vh_audio_page_lease_return(&lease,&descriptor)==0);
+            assert(vh_audio_page_lease_return(&lease,&descriptor)==-1);
+            released++;
+        }
+        assert(vh_audio_page_lease_ready(&lease));
+        assert(hash_page(dst,frames)==page_hash);
+        assert(switch_when_page_free(&lease,next)==0);
+        current=next;
+        assert(seq.context==current && seq.blocks_advanced==0u);
+        assert(spu.frames_rendered==0u);
+        assert(resampler.input_frames==clock);
+        for(unsigned slot=0u;slot<VH_NATIVE_MUSIC_VOICES;slot++) {
+            assert(!spu.voice[slot].active);
+            assert(spu.voice[slot].pcm==NULL);
+        }
+    }
+    assert(released==64u && stopped==32u);
+    assert(vh_audio_page_lease_stopped(&lease)==0);
+    assert(vh_audio_page_lease_ready(&lease));
+}
+
 int main(void) {
+    test_audout_inflight_page_lease_scene_lifetime();
     Mock device={.opened=1,.playing=1,
                  .checksum=UINT64_C(1469598103934665603)};
     VhAudioOutputOps ops=callbacks(&device);
