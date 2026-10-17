@@ -17,6 +17,9 @@ from tools.check_map02_private_pc_inputs import (
 from tools.check_map02_original_extraction_anchors import (
     ANCHORS, LOAD_VRAM, PSX_HEADER, compare_data_ranges,
 )
+from tools.check_map02_original_inc_provenance import (
+    _original_blob_sha1, check_original_includes,
+)
 
 
 class PrivateOriginalRetailBuildInputsTests(unittest.TestCase):
@@ -55,8 +58,35 @@ class PrivateOriginalRetailBuildInputsTests(unittest.TestCase):
         self.elf.write_bytes(elf)
         folder = self.root / "assets"
         folder.mkdir()
-        for i, name in enumerate(ASSETS):
-            (folder / name).write_bytes(b"synthetic asset " + bytes([i]))
+        # Synthetic generator shares the same CLI contract as the pinned
+        # public original tool. Only its fixture hash is mocked, NEVER in
+        # production: the real tool requires the pinned source Git blob.
+        generator = self.root / "platform/pc/tools/gen_psx_includes.py"
+        generator.parent.mkdir(parents=True)
+        source = """#!/usr/bin/env python3
+import pathlib, sys
+source = pathlib.Path(sys.argv[1]).read_bytes()
+dest = pathlib.Path(sys.argv[2])
+dest.mkdir(parents=True, exist_ok=True)
+for name, offset, size in [
+    ("801009bc.inc", 0x0f11bc, 304 * 4),
+    ("80100e9c.inc", 0x0f169c, 304),
+    ("801012e4.inc", 0x0f1ae4, 128 * 9)]:
+    raw = source[offset:offset+size]
+    (dest / name).write_text(raw.hex() + "\\n", encoding="utf-8")
+"""
+        generator.write_text(source, encoding="utf-8")
+        self.generator_hash = patch(
+            "tools.check_map02_original_inc_provenance.GENERATOR_BLOB_SHA1",
+            _original_blob_sha1(generator.read_bytes()))
+        self.generator_hash.start()
+        self.addCleanup(self.generator_hash.stop)
+        import subprocess
+        subprocess.run(
+            [__import__("sys").executable, "-I",
+             str(generator), str(self.exe), str(folder)],
+            check=True, capture_output=True, timeout=15)
+        self.generator = generator
         self.krom = self.root / "external/psy-q/3.6/PSYQ/BIN/KROMDAT.BIN"
         self.krom.parent.mkdir(parents=True)
         self.glyph = bytes([i % 251 for i in range(FONT_LENGTH)])
@@ -162,13 +192,27 @@ class PrivateOriginalRetailBuildInputsTests(unittest.TestCase):
             result["private_build_inputs_binding_sha256"],
             verify_private_pc_inputs(self.root)["private_build_inputs_binding_sha256"])
 
-    def test_one_asset_byte_changes_combined_private_digest(self):
+    def test_asset_file_changed_in_place_is_rejected_not_merely_rehashed(self):
         first = verify_private_pc_inputs(self.root)
+        self.assertTrue(first["original_resource_includes_match_owned_us_exe"])
         asset = self.root / "assets" / ASSETS[-1]
         asset.write_bytes(asset.read_bytes() + b"changed")
-        again = verify_private_pc_inputs(self.root)
-        self.assertNotEqual(first["private_build_inputs_binding_sha256"],
-                            again["private_build_inputs_binding_sha256"])
+        with self.assertRaisesRegex(ValueError, "include differs"):
+            verify_private_pc_inputs(self.root)
+
+    def test_exact_original_generator_byte_identity_required(self):
+        self.assertEqual(check_original_includes(self.root)[
+            "asset_includes_regenerated_and_identical"], 3)
+        self.generator.write_text(self.generator.read_text() + "# tamper\\n")
+        with self.assertRaisesRegex(ValueError, "differs from pinned source"):
+            verify_private_pc_inputs(self.root)
+
+    def test_rejects_altered_map32_include_with_same_length(self):
+        path = self.root / "assets" / ASSETS[1]
+        old = path.read_bytes()
+        path.write_bytes(bytes([old[0] ^ 1]) + old[1:])
+        with self.assertRaisesRegex(ValueError, "include differs"):
+            verify_private_pc_inputs(self.root)
 
     def test_no_private_paths_or_bytes_in_error_messages(self):
         self.elf.unlink()
