@@ -75,7 +75,12 @@ void vh_map02_cycle_draw_start(unsigned frame) {
     transition(4, 5);
     observed.frame = frame;
 }
-int vh_map02_cycle_failed(void) { return observed.failed; }
+int vh_map02_cycle_failed(void) {
+    char cd_receipt[512];
+    return observed.failed || vh_map02_cd_probe_failed() ||
+           (observed.step == 6 &&
+            vh_map02_cd_probe_format_jsonl(cd_receipt, sizeof cd_receipt) <= 0);
+}
 int vh_map02_cycle_format_jsonl(char *out, size_t capacity) {
     const char *token;
     char cd_receipt[512];
