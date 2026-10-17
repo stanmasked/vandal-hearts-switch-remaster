@@ -1,0 +1,24 @@
+name: MAP02 v81 event JSONL formatter
+on:
+  pull_request:
+    paths:
+      - 'tools/map02_v81_event_jsonl.*'
+      - 'tools/apply_map02_v81_pcsx_rearmed.py'
+      - 'tests/test_map02_v81_event_jsonl.py'
+      - '.github/workflows/map02-v81-event-jsonl.yml'
+  workflow_dispatch:
+jobs:
+  jsonl:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: C-backed synthetic regression tests
+        run: python -m unittest discover -s tests -p 'test_map02_v81_event_jsonl.py' -v
+        env:
+          CC: ${{ matrix.compiler }}
