@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from tools.audit_map02_independent_dda_journals import (
     audit, SPAN_FILE, CANDIDATE_FILE,
@@ -156,6 +157,28 @@ class IndependentJournalAuditTests(unittest.TestCase):
             self.write_native_gpu(root)
             with self.assertRaises(ValueError):
                 audit(root, native_frame=True)
+
+    def test_native_gpu_log_mutated_after_vram_check_is_rejected(self):
+        from tools.verify_map02_native_gpu_capture import verify_capture
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write(root, SPAN_FILE, dict(SPAN, primitive_ordinal=0))
+            self.write_native_gpu(root)
+
+            def mutate_after_validation(directory, *, target_frame):
+                report = verify_capture(directory, target_frame=target_frame)
+                log = root / "gpu-native-events.jsonl"
+                original = log.read_bytes()
+                changed = original.replace(b'"primitive_type": 2',
+                                           b'"primitive_type": 3', 1)
+                self.assertNotEqual(original, changed)
+                log.write_bytes(changed)
+                return report
+
+            with patch("tools.audit_map02_independent_dda_journals.verify_capture",
+                       side_effect=mutate_after_validation):
+                with self.assertRaisesRegex(ValueError, "bytes changed"):
+                    audit(root, native_frame=3)
 
     def test_missing_and_symlinked_inputs_fail_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
