@@ -4,6 +4,8 @@ No real Vandal Hearts EXE, game asset or BIOS is bundled or accessed.
 Real known original hashes are deliberately mocked ONLY inside this file.
 """
 import hashlib
+import io
+from contextlib import redirect_stderr
 import os
 import struct
 import subprocess
@@ -12,6 +14,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import tools.check_map02_original_extraction_anchors as anchor_inputs
 import tools.check_map02_private_pc_inputs as private_inputs
 
 from tools.check_map02_private_pc_inputs import (
@@ -392,6 +395,30 @@ for name, offset, size in [
                           side_effect=swap_owned_exe_during_font):
             with self.assertRaisesRegex(ValueError, "private original input changed"):
                 verify_private_pc_inputs(self.root)
+
+    def test_private_input_cli_oserror_redacts_owned_path(self):
+        output = io.StringIO()
+        with patch("sys.argv", ["private-inputs", str(self.root)]), \\
+                patch.object(private_inputs, "verify_private_pc_inputs",
+                             side_effect=OSError("private: " + str(self.exe))), \\
+                redirect_stderr(output):
+            with self.assertRaises(SystemExit) as ex:
+                private_inputs.main()
+        self.assertEqual(ex.exception.code, 2)
+        self.assertIn("filesystem verification failed", output.getvalue())
+        self.assertNotIn(str(self.root), output.getvalue())
+
+    def test_original_anchor_cli_oserror_redacts_owned_path(self):
+        output = io.StringIO()
+        with patch("sys.argv", ["extract-anchors", str(self.exe), str(self.elf)]), \\
+                patch.object(anchor_inputs, "compare_data_ranges",
+                             side_effect=OSError("private: " + str(self.elf))), \\
+                redirect_stderr(output):
+            with self.assertRaises(SystemExit) as ex:
+                anchor_inputs.main()
+        self.assertEqual(ex.exception.code, 2)
+        self.assertIn("filesystem verification failed", output.getvalue())
+        self.assertNotIn(str(self.root), output.getvalue())
 
     def test_generator_timeout_never_leaks_private_arguments(self):
         secret_path = str(self.exe)
