@@ -12,6 +12,7 @@
 #include "platform_input.h"
 #include "software_renderer.h"
 #include "vh_switch_game_audio.h"
+#include "vh_audio_scene_optical.h"
 
 #define FB_WIDTH 1280
 #define FB_HEIGHT 720
@@ -259,6 +260,7 @@ int main(int argc, char **argv) {
     }
     u32 frame_tick = 0;
     int audio_diagnostics_visible = 0;
+    int optical_receipt_requested = 0; /* held X while pressing Plus */
     int log_active = 0, log_has_samples = 0;
     const uint64_t session_start_tick=armGetSystemTick();
     vh_audio_diag_journal_reset(&hardware_audio_log);
@@ -272,6 +274,12 @@ int main(int argc, char **argv) {
                 appletGetFocusState() == AppletFocusState_InFocus);
         padUpdate(&pad);
         const u64 buttons_down = padGetButtonsDown(&pad);
+        /* Opt-in diagnostic only. A normal Plus exit is unchanged.
+         * Rendering occurs after joining audout and SD export, not
+         * in any game/audio callback. */
+        if ((buttons_down & HidNpadButton_Plus) &&
+            (padGetButtons(&pad) & HidNpadButton_X))
+            optical_receipt_requested = 1;
         if (buttons_down & HidNpadButton_Minus)
             audio_diagnostics_visible = !audio_diagnostics_visible;
         const uint64_t elapsed_ms=armTicksToNs(
@@ -394,6 +402,27 @@ int main(int argc, char **argv) {
                 fprintf(stderr,"audio diagnostics export failed: %d\n",
                         (int)result);
                 export_status=2;
+            }
+        }
+    }
+    if(audio_started && optical_receipt_requested) {
+        u32 stride_bytes=0;
+        u32 *pixels=(u32 *)framebufferBegin(&fb,&stride_bytes);
+        if(pixels) {
+            VhCanvas canvas={(uint32_t *)pixels,
+                             stride_bytes/sizeof(u32),FB_WIDTH,FB_HEIGHT};
+            /* Marker is pure magenta to make host screenshot detection
+             * independent of the placement of NeXium's native panels.
+             * This is a trace byte transport, not audible evidence. */
+            const int rendered=vh_switch_game_audio_trace_render(
+                &canvas,RGBA8_MAXALPHA(0,0,0),
+                RGBA8_MAXALPHA(255,255,255),
+                RGBA8_MAXALPHA(255,0,255));
+            framebufferEnd(&fb);
+            if(rendered>=0) {
+                /* Keep the immutable receipt visible for the emulator
+                 * screenshot. Only diagnostic Plus+X incurs the delay. */
+                svcSleepThread(UINT64_C(5000000000));
             }
         }
     }
