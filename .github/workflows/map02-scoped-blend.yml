@@ -195,6 +195,13 @@ jobs:
       - name: Confirm original PC GPU/GTE source blobs against pinned reference
         run: |
           python3 -c 'from pathlib import Path; from tools.map02_local_capture_handoff import verify_pinned_upstream; verify_pinned_upstream(Path("upstream-pc")); print("Pinned original PC GPU/GTE/Makefile blobs verified")'
+      - name: Compile private original CD-read atomic stage alongside scoped GPU writers
+        run: |
+          cc -std=gnu99 -Wall -Wextra -Werror \
+            -DVH_MAP02_CAPTURE_SESSION -DVH_MAP02_VRAM_EDGE_PROBE \
+            -DVH_MAP02_CD_READ_PROBE -Itools \
+            -c tools/map02_scoped_blend_stage.c \
+            -o "${RUNNER_TEMP}/map02-cd-scoped-stage.o"
       - name: Run actual pinned original CdRead sector copy with synthetic MAP02 raw image
         run: python3 -m tools.check_map02_original_cd_runtime upstream-pc
       - name: Fail closed on upstream rasterizer source drift
