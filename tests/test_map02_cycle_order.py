@@ -116,7 +116,10 @@ int fsync(int fd) {
             close(target);
         }
     }
-    if (!injected && fault && root && fstat(fd, &st) == 0 &&
+    if (!injected && fault && root &&
+        (!strcmp(fault, "flip") || !strcmp(fault, "replace") ||
+         !strcmp(fault, "replace-identical")) &&
+        fstat(fd, &st) == 0 &&
         S_ISREG(st.st_mode) && st.st_size > 100) {
         injected = 1;
         if (!strcmp(fault, "flip")) {
