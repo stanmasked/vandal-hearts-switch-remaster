@@ -24,6 +24,18 @@ The tool opens the input with no-symlink protection and performs two bounded com
 
 Public CI never obtains the user's retail executable. Instead, it uses the already source-authored 10,240-byte v129 EXE, verifying three candidate DMA2 MADR/BCR stores, six CHCR stores (including three literal linked-list values), and separate GP0 command sites. Tests also reject malformed headers, owner/mode/link violations, symlinks, truncated binaries, unrecognized MMIO addresses, register clobbers and control-flow misclassification.
 
+## Same-binary synthetic static/runtime binding
+
+The pinned GCC/Clang PCSX ReARMed workflow also runs the **v131 static
+candidate inventory on the exact v129 synthetic EXE that is then passed
+to each of the five real-VBlank emulator runs**. The generated EXE is
+restricted to mode 0600; its SHA-256 is recorded only in a private CI
+file and rechecked before and after each of the five native processes.
+The aggregate public v129 report records only that both bounded audits
+succeeded; it does not contain the EXE hash, raw MIPS words or VRAM data.
+This tightens the synthetic regression without confusing its generated
+EXE with user-owned retail gameplay or validating retail MAP02.
+
 ## Explicit evidence limits
 
 The static inventory cannot assert that the original user-owned EXE is the correct region/version, that any instruction executed, that any executable refers to MAP02, that any VRAM pixels match, or that a frame runs on original hardware. Connecting it to the separate original CD/GPU branch requires independent provenance checks and private runtime evidence, not matching public counts.
