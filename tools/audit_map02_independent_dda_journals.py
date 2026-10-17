@@ -23,6 +23,7 @@ def audit(directory: Path, *, native_frame=None):
     if not directory.is_dir() or directory.is_symlink():
         raise ValueError("journal directory is missing or is a symlink")
     inputs = {}
+    validated_raw = {}
     for filename, parser in (
         (SPAN_FILE, parse_native_spans),
         (CANDIDATE_FILE, validate_candidates),
@@ -37,6 +38,7 @@ def audit(directory: Path, *, native_frame=None):
             raise ValueError("journal must be a regular file")
         raw = path.read_bytes()
         records = parser(raw)  # fail closed on malformed, saturated journals
+        validated_raw[filename] = raw
         inputs[filename] = {
             "present": True,
             "event_count": len(records),
@@ -87,8 +89,10 @@ def audit(directory: Path, *, native_frame=None):
             # exposes geometry, so re-read the strictly validated JSONL.
             # Type matching is performed below against that input.
         if inputs[SPAN_FILE]["present"]:
+            # Reuse the exact bytes hashed and validated above, rather
+            # than re-opening a mutable journal between validation and join.
             span_records = [json.loads(line) for line in
-                            (directory / SPAN_FILE).read_bytes().splitlines()]
+                            validated_raw[SPAN_FILE].splitlines()]
             for span_record in span_records:
                 native_type = draw_packets[span_record["primitive_ordinal"]]["primitive_type"]
                 if span_record["primitive_type"] != native_type:
