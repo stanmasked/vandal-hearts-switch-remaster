@@ -110,7 +110,12 @@ int main(int argc, char **argv) {
         self.assertFalse((self.handoff / RECEIPT).exists())
 
     def test_fails_closed_on_unknown_nonzero_exit(self):
-        with self.assertRaisesRegex(ValueError, "exited unsuccessfully"):
+        # A very short-lived child may exit before Linux /proc observation
+        # records its executable. Both outcomes are correct fail-closed
+        # rejections; neither may publish a process evidence receipt.
+        with self.assertRaisesRegex(
+                ValueError,
+                "exited unsuccessfully|kernel child executable identity was not confirmed"):
             self.run_capture("unexpected")
         self.assertFalse((self.handoff / RECEIPT).exists())
         self.assertEqual(list(self.native.iterdir()), [])
