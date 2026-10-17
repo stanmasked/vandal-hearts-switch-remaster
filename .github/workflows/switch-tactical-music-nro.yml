@@ -47,9 +47,29 @@ jobs:
           export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
           make verify-nro
           test -s build/vandal-hearts-prototype.nro
+      - name: Record exact native NRO SHA256 for operator
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s build/vandal-hearts-prototype.nro
+          sha256sum "build/vandal-hearts-prototype.nro" > "build/tactical-native.sha256"
+          cat "build/tactical-native.sha256"
+          {
+            echo "### Native libnx/audout NRO compiled"
+            echo "Git SHA: \`$GITHUB_SHA\`"
+            echo "Binary: \`build/vandal-hearts-prototype.nro\`"
+            echo "SHA256 (NRO bytes):"
+            echo "\`\`\`"
+            cat "build/tactical-native.sha256"
+            echo "\`\`\`"
+            echo "Hardware status: HARDWARE NOT TESTED"
+            echo "No SDL2/OpenAL devkitPro package download is required."
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload integrated tactical NRO
         uses: actions/upload-artifact@v4
         with:
           name: vandal-hearts-tactical-with-native-music
-          path: build/vandal-hearts-prototype.nro
+          path: |
+            build/vandal-hearts-prototype.nro
+            build/tactical-native.sha256
           if-no-files-found: error
