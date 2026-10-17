@@ -44,6 +44,16 @@ int vh_audio_output_transport_outcome(
     return descriptor_returned ? 0 : -1;
 }
 
+int vh_audio_output_verify_transport_health(
+    const VhAudioTransportTimingHealth *health,
+    const VhAudioOutputRecovery *recovery) {
+    if(!health || !recovery || health->timing_fault>1u ||
+       (health->delivered_without_timing && !health->timing_fault) ||
+       health->delivered_without_timing>recovery->pages_submitted)
+        return -1;
+    return health->timing_fault ? 1 : 0;
+}
+
 uint64_t vh_audio_output_ticks_to_us(uint64_t ticks,
                                      uint64_t tick_frequency) {
     if (!tick_frequency) return 0;
