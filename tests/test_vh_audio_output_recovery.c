@@ -286,7 +286,8 @@ typedef struct {
     unsigned wrong_returns_left, failed_stops_left;
     unsigned failed_opens_left, failed_starts_left;
     unsigned calls, stops, closes, opens, starts, returned;
-    unsigned timing_fault;
+    VhAudioTransportTimingHealth transport_health;
+    unsigned timing_fault_mode;
 } LeasedDevice;
 
 static int leased_submit(void *opaque,const int16_t *pcm,size_t frames) {
@@ -364,14 +365,20 @@ static int leased_submit_with_timing_fault(
     void *opaque, const int16_t *pcm, size_t frames) {
     LeasedDevice *dev=opaque;
     const int sent=leased_submit(opaque,pcm,frames);
+    /* Three independent reasons to reject optional timing: a
+     * missing clock, saturated call count, or saturated tick sum. */
     VhAudioSubmitTiming invalid={0};
-    /* Real audout may return the correct PCM descriptor even when
-     * its timestamp/frequency is unavailable to diagnostics. */
+    const unsigned mode=dev->timing_fault_mode%3u;
+    const uint64_t hz=mode ? UINT64_C(19200000) : 0u;
+    if(mode==1u) invalid.calls=UINT64_MAX;
+    if(mode==2u) invalid.total_ticks=UINT64_MAX;
+    const VhAudioSubmitTiming before=invalid;
     const int recorded=vh_audio_output_record_submit_timing(
-                           &invalid,200u,0u,frames,sent==0);
-    assert(recorded==-1 && invalid.calls==0u);
+                           &invalid,200u,hz,frames,sent==0);
+    assert(recorded==-1 &&
+           !memcmp(&invalid,&before,sizeof invalid));
     return vh_audio_output_transport_outcome(sent==0,recorded,
-                                              &dev->timing_fault);
+                                              &dev->transport_health);
 }
 
 static void test_timing_fault_never_replays_delivered_pcm(void) {
@@ -395,7 +402,8 @@ static void test_timing_fault_never_replays_delivered_pcm(void) {
         LeasedDevice dev={
             .opened=1u,.playing=1u,.pcm=dst,.frames=frames,
             .pcm_hash=page_hash,
-            .wrong_returns_left=(unsigned)(iteration&1u)
+            .wrong_returns_left=(unsigned)(iteration&1u),
+            .timing_fault_mode=iteration%3u
         };
         VhAudioOutputRecovery counters={0};
         const VhAudioOutputOps callbacks={
@@ -404,7 +412,8 @@ static void test_timing_fault_never_replays_delivered_pcm(void) {
         };
         assert(vh_audio_output_submit_recover(
                             &callbacks,&counters,dst,frames)==0);
-        assert(dev.timing_fault==1u);
+        assert(dev.transport_health.timing_fault==1u);
+        assert(dev.transport_health.delivered_without_timing==1u);
         assert(counters.pages_submitted==1u &&
                counters.frames_submitted==frames);
         assert(dev.returned==1u &&
@@ -434,18 +443,30 @@ static void test_timing_fault_never_replays_delivered_pcm(void) {
     }
     assert(direct==24u && backend_retry==24u);
 
-    /* The outcome is driven ONLY by delivered transport, regardless
-     * of bad telemetry. A fault remains a saturated 1-bit marker. */
-    unsigned fault=0u;
-    assert(vh_audio_output_transport_outcome(1,-1,&fault)==0 &&
-           fault==1u);
-    assert(vh_audio_output_transport_outcome(1,-1,&fault)==0 &&
-           fault==1u);
-    assert(vh_audio_output_transport_outcome(0,-1,&fault)==-1 &&
-           fault==1u);
-    fault=0u;
-    assert(vh_audio_output_transport_outcome(1,0,&fault)==0 &&
-           fault==0u);
+    /* The outcome is driven ONLY by descriptor transport. An invalid
+     * observation counts a returned page once; a foreign descriptor
+     * never contributes to the returned-without-timing accumulator. */
+    VhAudioTransportTimingHealth health={0};
+    assert(vh_audio_output_transport_outcome(0,-1,&health)==-1);
+    assert(health.timing_fault==1u && !health.delivered_without_timing);
+    assert(vh_audio_output_transport_outcome(1,-1,&health)==0);
+    assert(vh_audio_output_transport_outcome(1,-1,&health)==0);
+    assert(health.timing_fault==1u &&
+           health.delivered_without_timing==2u);
+    assert(vh_audio_output_transport_outcome(0,-1,&health)==-1 &&
+           health.delivered_without_timing==2u);
+    assert(vh_audio_output_transport_outcome(1,0,&health)==0 &&
+           health.delivered_without_timing==2u);
+    health=(VhAudioTransportTimingHealth){0};
+    assert(vh_audio_output_transport_outcome(1,0,&health)==0 &&
+           health.timing_fault==0u &&
+           health.delivered_without_timing==0u);
+    health.delivered_without_timing=UINT64_MAX;
+    assert(vh_audio_output_transport_outcome(1,-1,&health)==0);
+    assert(health.timing_fault==1u &&
+           health.delivered_without_timing==UINT64_MAX);
+    assert(vh_audio_output_transport_outcome(0,-1,NULL)==-1);
+    assert(vh_audio_output_transport_outcome(1,-1,NULL)==0);
 }
 
 static void test_failed_stop_page_lease_with_real_recovery(void) {
