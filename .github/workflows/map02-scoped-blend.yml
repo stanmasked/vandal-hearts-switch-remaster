@@ -44,6 +44,8 @@ on:
       - 'tools/prepare_map02_cycle_build.py'
       - 'tests/test_prepare_map02_cycle_build.py'
       - 'tools/check_map02_cycle_elf.py'
+      - 'tools/check_map02_cycle_make_plan.py'
+      - 'tests/test_check_map02_cycle_make_plan.py'
       - 'tests/test_check_map02_cycle_elf.py'
       - 'tests/test_verify_map02_cycle_cd_gpu_join.py'
       - 'docs/MAP02_SINGLE_PROCESS_CYCLE_ORDER.md'
@@ -128,6 +130,8 @@ on:
       - 'tools/prepare_map02_cycle_build.py'
       - 'tests/test_prepare_map02_cycle_build.py'
       - 'tools/check_map02_cycle_elf.py'
+      - 'tools/check_map02_cycle_make_plan.py'
+      - 'tests/test_check_map02_cycle_make_plan.py'
       - 'tests/test_check_map02_cycle_elf.py'
       - 'tests/test_verify_map02_cycle_cd_gpu_join.py'
       - 'docs/MAP02_SINGLE_PROCESS_CYCLE_ORDER.md'
@@ -215,6 +219,7 @@ jobs:
             tests.test_verify_map02_cycle_cd_gpu_join \
             tests.test_prepare_map02_cycle_build \
             tests.test_check_map02_cycle_elf \
+            tests.test_check_map02_cycle_make_plan \
             tests.test_verify_map02_original_cd_read \
             tests.test_map02_original_cd_stage \
             tests.test_publish_map02_cd_bound_witness
@@ -256,6 +261,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends libsdl2-dev libopenal-dev
           python3 -m tools.prepare_map02_cycle_build upstream-pc "${RUNNER_TEMP}/map02-cycle-private-build"
+          python3 -m tools.check_map02_cycle_make_plan upstream-pc "${RUNNER_TEMP}/map02-cycle-private-build"
           (
             cd upstream-pc/platform/pc
             make -f Makefile -f "${RUNNER_TEMP}/map02-cycle-private-build/map02_cycle.mk" \
