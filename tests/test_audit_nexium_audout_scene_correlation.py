@@ -18,7 +18,7 @@ from audit_nexium_audout_scene_correlation import (
 from test_audit_nexium_audout_latency import make_csv
 
 
-def clock(origin=1_000_000_000, attempts=1908):
+def clock(origin=1_130_000_000, attempts=1908):
     return (CLOCK_HEADER+
             f"{CLOCK_SCHEMA},{origin},{attempts},52,0\n").encode("ascii")
 
@@ -58,6 +58,12 @@ class GuestTimeCorrelationTests(unittest.TestCase):
         self.assertFalse(report["individual_slow_call_start_time_known"])
         self.assertFalse(report["host_pcm_clock_alignment_proven"])
         self.assertFalse(report["audible_underruns_measured"])
+
+    def test_first_call_origin_must_be_within_startup_submit_return(self):
+        with self.assertRaises(CorrelationError):
+            join(parse_clock(clock(origin=1_100_000_000)),scene(),make_csv())
+        with self.assertRaises(CorrelationError):
+            join(parse_clock(clock(origin=1_200_000_000)),scene(),make_csv())
 
     def test_one_event_precedes_audio_clock(self):
         with self.assertRaises(CorrelationError):
