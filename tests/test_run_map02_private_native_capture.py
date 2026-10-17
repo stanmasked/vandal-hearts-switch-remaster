@@ -105,6 +105,19 @@ for i, phase in enumerate(("before", "after"),
     with (root / "gpu-native-events.jsonl").open("a") as log:
         log.write(json.dumps(event) + "\n")
     (root / event["snapshot"]).write_bytes(bytes(1024 * 512 * 2))
+if "--two-draws" in sys.argv:
+    # Separate DrawOTag primitive pair in the same target frame.
+    # Reuse the preceding real synthetic post-VRAM without a hidden write.
+    first_draw_step = 2 if ("--with-load" in sys.argv
+                            or "--with-move" in sys.argv
+                            or "--with-clear" in sys.argv) else 0
+    for step, phase in ((first_draw_step + 2, "before"),
+                        (first_draw_step + 3, "after")):
+        additional = dict(event, step=step, phase=phase,
+                          snapshot=f"gpu-{step:04d}-vram.bin")
+        with (root / "gpu-native-events.jsonl").open("a") as log:
+            log.write(json.dumps(additional) + "\n")
+        (root / additional["snapshot"]).write_bytes(bytes(1024 * 512 * 2))
 '''
 
 
@@ -160,6 +173,25 @@ class PrivateNativeLauncherTests(unittest.TestCase):
         return replay_receipt(self.capture_dir, receipt_file=self.summary,
                               preflight_report=self.preflight,
                               executable=self.executable)
+
+    def test_private_replay_rejects_forged_interprimitive_vram_gap(self):
+        result = self.run_synthetic("--two-draws")
+        self.assertTrue(result["capture_verified"])
+        self.assertEqual(result["verification"]["draw_boundary_vram_checks"], 1)
+        self.assertEqual(result["verification"]["draw_boundary_gpu_state_checks"], 1)
+        fresh = self.replay()
+        self.assertEqual(fresh["draw_boundary_vram_checks"], 1)
+        self.assertTrue(fresh["raw_evidence_matches_original_receipt"])
+        # Forge a plausible but isolated second DrawOTag primitive pair.
+        # Its before and after bytes agree, so only inter-pair continuity
+        # can detect the unrecorded extra write.
+        for step in (2, 3):
+            snapshot = self.capture_dir / f"gpu-{step:04d}-vram.bin"
+            changed = bytearray(snapshot.read_bytes())
+            changed[6:8] = b"\xab\x01"
+            snapshot.write_bytes(changed)
+        with self.assertRaisesRegex(ValueError, "discontinuous VRAM"):
+            self.replay()
 
     def test_replay_detects_changed_vram_and_dda_logs(self):
         self.run_synthetic()
