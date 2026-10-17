@@ -68,9 +68,17 @@ jobs:
           # actually exists in the CI artifact's NRO data segment.
           source_revision="$(git rev-parse --verify HEAD)"
           LC_ALL=C grep -aFq "$source_revision" build/audout-audio-switch-probe.nro
+          # Pair the downloadable NRO with a byte-level checksum and
+          # exact source revision; neither requires proprietary music.
+          printf '%s\n' "$source_revision" > build/audout-source-commit.txt
+          (cd build && sha256sum audout-audio-switch-probe.nro > audout-audio-switch-probe.nro.sha256)
+          (cd build && sha256sum -c audout-audio-switch-probe.nro.sha256)
       - name: Upload native music NRO (user assets not included)
         uses: actions/upload-artifact@v4
         with:
           name: native-audout-music-nro
-          path: build/audout-audio-switch-probe.nro
+          path: |
+            build/audout-audio-switch-probe.nro
+            build/audout-audio-switch-probe.nro.sha256
+            build/audout-source-commit.txt
           if-no-files-found: error
