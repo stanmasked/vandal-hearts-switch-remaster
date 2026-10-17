@@ -70,6 +70,13 @@ class PixelToOriginalPrimitiveTests(unittest.TestCase):
         self.assertEqual(result["observed_native_putpixel_calls"],2)
         self.assertEqual(result["observed_bit15_unset_to_set_calls"],1)
         self.assertEqual(result["observed_bit15_set_to_unset_calls"],1)
+        self.assertEqual(result["source_ft4_sampled_changed_word_draws"],2)
+        self.assertEqual(result["source_ft4_sampled_bit15_only_changes"],0)
+        self.assertEqual(result["source_ft4_sampled_color_only_changes"],0)
+        self.assertEqual(result["source_ft4_sampled_color_and_bit15_changes"],2)
+        self.assertFalse(
+            result["source_ft4_sampled_first_changed_pre_equals_last_changed_post"])
+        self.assertFalse(result["source_ft4_sampled_endpoint_causality_verified"])
         self.assertTrue(result["pixel_to_primitive_frame_ordinal_matched"])
         self.assertTrue(result["native_vram_primitive_bounds_consistent"])
         for key in ("complete_original_pixel_stream_proven",
@@ -93,6 +100,83 @@ class PixelToOriginalPrimitiveTests(unittest.TestCase):
         result=verify_pixel_ot(self.root,self.native)
         self.assertEqual(result["actual_same_color_calls_invisible_to_vram_delta"],1)
         self.assertEqual(result["calls_attributed_to_source_keyed_ft4"],3)
+
+    def test_two_scoped_ft4_bit15_changes_cancel_at_temporal_endpoints(self):
+        # Two observed PutPixel calls (0 -> bit15 -> 0) leave the
+        # sampled VRAM word unchanged at the first PRE / final POST.
+        # Neither individual FT4 draw is itself a zero-change event.
+        original = bytes(self.base.base.bytes_before)
+        first = bytearray(original)
+        struct.pack_into("<H", first, (30*1024+30)*2, 0x8000)
+        self.base.base.override_snapshots = {
+            3: bytes(first), 4: bytes(first), 5: original,
+        }
+        self.pixel_rows = [
+            self.row(0,1,0,0x8000,0x8000),
+            self.row(1,2,0x8000,0,0),
+        ]
+        self.save()
+        result = verify_pixel_ot(self.root,self.native)
+        self.assertEqual(result["source_ft4_sampled_changed_word_draws"],2)
+        self.assertEqual(result["source_ft4_sampled_bit15_only_changes"],2)
+        self.assertEqual(result["source_ft4_sampled_color_only_changes"],0)
+        self.assertEqual(result["source_ft4_sampled_color_and_bit15_changes"],0)
+        self.assertTrue(
+            result["source_ft4_sampled_first_changed_pre_equals_last_changed_post"])
+        self.assertEqual(result["observed_bit15_unset_to_set_calls"],1)
+        self.assertEqual(result["observed_bit15_set_to_unset_calls"],1)
+        self.assertEqual(result["calls_attributed_to_source_keyed_ft4"],2)
+
+    def test_same_color_calls_do_not_claim_a_changed_ft4_word(self):
+        original = bytes(self.base.base.bytes_before)
+        self.base.base.override_snapshots = {3:original,4:original,5:original}
+        self.pixel_rows=[self.row(0,1,0,0,0),self.row(1,2,0,0,0)]
+        self.save()
+        result=verify_pixel_ot(self.root,self.native)
+        self.assertEqual(result["source_ft4_sampled_changed_word_draws"],0)
+        self.assertIsNone(
+            result["source_ft4_sampled_first_changed_pre_equals_last_changed_post"])
+        self.assertEqual(result["actual_same_color_calls_invisible_to_vram_delta"],2)
+        self.assertEqual(result["source_ft4_draws_without_observable_word_change"],2)
+
+    def test_dr_mode_cannot_emit_even_a_same_value_putpixel_call(self):
+        # The pinned DR_MODE dispatcher never enters WritePixel. Native
+        # VRAM snapshots alone would not detect this forged no-op call.
+        mode = self.base.base.event(6,"draw",None)
+        self.assertEqual(mode["primitive_type"],5)
+        self.base.base.entries.insert(2,mode)
+        self.base.base.override_snapshots = {
+            3:self.base.first, 4:self.base.first, 5:self.base.first,
+            6:self.base.first, 7:self.base.second,
+        }
+        self.pixel_rows = [
+            self.row(0,1,0,0x801f,0x801f),
+            self.row(1,2,0x801f,0x801f,0x801f),
+            self.row(2,3,0x801f,0x7c00,0x7c00),
+        ]
+        self.pixel_rows[1]["primitive_type"]=5
+        self.save()
+        with self.assertRaisesRegex(ValueError,"DR_MODE.*cannot call PutPixel"):
+            verify_pixel_ot(self.root,self.native)
+
+    def test_scoped_pixel_jsonl_rejects_rehashed_truncation_crlf_and_nul(self):
+        path=self.native/"putpixel-native-events.jsonl"
+        manifest=self.root/"gpu-putpixel-ot.json"
+        original=path.read_bytes()
+        self.assertTrue(original.endswith(b"\\n"))
+        for mutated in (
+            original[:-1],
+            original.replace(b"\\n",b"\\r\\n"),
+            original.replace(b"\\n",b"\\x00\\n",1),
+        ):
+            with self.subTest(tail=repr(mutated[-15:])):
+                self.save()
+                path.write_bytes(mutated)
+                m=json.loads(manifest.read_text())
+                m["putpixel_events_sha256"]=sha(mutated)
+                manifest.write_text(json.dumps(m,sort_keys=True))
+                with self.assertRaisesRegex(ValueError,"noncanonical scoped PutPixel"):
+                    verify_pixel_ot(self.root,self.native)
 
     def test_wrong_frame_scope_or_primitive_type_refused(self):
         self.pixel_rows[0]["frame"]=13
