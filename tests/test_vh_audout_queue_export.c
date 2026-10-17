@@ -1,0 +1,45 @@
+#define _POSIX_C_SOURCE 200809L
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include "vh_audout_queue_export.h"
+
+int main(void) {
+    char dir[]="/tmp/vh-audout-telemetry-XXXXXX";
+    assert(mkdtemp(dir));
+    VhAudoutQueueTelemetry t={0};
+    vh_audout_queue_record(&t,100,26000100,1,1,0);
+    vh_audout_queue_record(&t,1000000200,1025000200,0,0,0);
+    char first[VH_AUDOUT_QUEUE_EXPORT_PATH_CAP],second[VH_AUDOUT_QUEUE_EXPORT_PATH_CAP];
+    assert(vh_audout_queue_export(&t,dir,first,sizeof first)==0);
+    assert(strstr(first,"audio-audout-queue-0000.csv"));
+    FILE *f=fopen(first,"rb");
+    assert(f && vh_audout_queue_verify_csv(&t,f)==0);
+    fclose(f);
+    assert(vh_audout_queue_export(&t,dir,second,sizeof second)==0);
+    assert(strcmp(first,second)!=0);
+    assert(strstr(second,"audio-audout-queue-0001.csv"));
+    char temp[VH_AUDOUT_QUEUE_EXPORT_PATH_CAP];
+    snprintf(temp,sizeof temp,"%s/audio-audout-queue-0002.tmp",dir);
+    f=fopen(temp,"wb");
+    assert(f && fputs("unfinished",f)>0 && fclose(f)==0);
+    assert(vh_audout_queue_export(&t,dir,second,sizeof second)==0);
+    assert(strstr(second,"audio-audout-queue-0003.csv"));
+    f=fopen(first,"ab");
+    assert(f && fputc('X',f)!=EOF && fclose(f)==0);
+    f=fopen(first,"rb");
+    assert(f && vh_audout_queue_verify_csv(&t,f)==-1);
+    fclose(f);
+    assert(vh_audout_queue_export(&t,dir,second,2)==VH_AUDOUT_QUEUE_EXPORT_PATH);
+    assert(unlink(first)==0);
+    char path[VH_AUDOUT_QUEUE_EXPORT_PATH_CAP];
+    snprintf(path,sizeof path,"%s/audio-audout-queue-0001.csv",dir);
+    assert(unlink(path)==0);
+    snprintf(path,sizeof path,"%s/audio-audout-queue-0003.csv",dir);
+    assert(unlink(path)==0);
+    assert(unlink(temp)==0 && rmdir(dir)==0);
+    puts("audout telemetry exclusive staged SD/readback export PASS");
+    return 0;
+}
