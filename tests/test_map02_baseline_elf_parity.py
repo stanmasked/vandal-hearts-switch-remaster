@@ -25,7 +25,8 @@ class BaselineElfParityTests(unittest.TestCase):
                     encoding="utf-8",
                 )
                 obj = root / (name + ".o")
-                subprocess.run([cc, "-std=c11", "-O0", "-c", str(source),
+                subprocess.run([cc, "-std=c11", "-O0", "-Wall", "-Wextra",
+                                "-Werror", "-c", str(source),
                                 "-o", str(obj)], check=True, capture_output=True)
                 binary = root / (name + ".text")
                 subprocess.run([objcopy, "--only-section=.text", "-O", "binary",
