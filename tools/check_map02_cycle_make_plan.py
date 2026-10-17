@@ -186,7 +186,8 @@ def verify_dry_run(text, output):
             parsed.append([])
     font_gen = [fields for fields in parsed if
                 "VH_GENERATED_OUT=" + font_output in fields and
-                "python3" in fields and pinned_font in fields]
+                "VH_REGION=us" in fields and "python3" in fields and
+                fields[fields.index("python3") + 1:] == ["-I", pinned_font]]
     font_compile = [fields for fields in parsed if
                     "-c" in fields and font_output in fields and
                     "-o" in fields and
