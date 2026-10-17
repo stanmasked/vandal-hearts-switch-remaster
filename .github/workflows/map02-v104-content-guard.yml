@@ -850,15 +850,15 @@ jobs:
           set -euo pipefail
           sha256sum -c proof/private/native.sha256
           mkdir -m 700 -p proof/v121-home
-          python3 -m remaster.tools.make_map02_v121_mips_gp0_return_exe \\
+          python3 -m remaster.tools.make_map02_v121_mips_gp0_return_exe \
             --output proof/private/V121_SYNTHETIC.EXE
           test "$(stat -c %s proof/private/V121_SYNTHETIC.EXE)" -eq 6144
-          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \\
-            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \\
-            HOME="$PWD/proof/v121-home" \\
-            ./upstream-pcsx/pcsx -novid -nodrc -nothread \\
-            --vh121-mips-gp0-return-smoke \\
-            proof/private/V121_SYNTHETIC.EXE \\
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v121-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh121-mips-gp0-return-smoke \
+            proof/private/V121_SYNTHETIC.EXE \
             > proof/private/v121-runtime.log 2>&1 || {
               tail -n 75 proof/private/v121-runtime.log
               exit 1
@@ -878,7 +878,7 @@ jobs:
           assert report["raw_pixel_values_and_hashes_exported"] is False
           assert report["original_retail_MAP02_verified"] is False
           Path("proof/public/v121-mips-gp0-return-summary.json").write_text(
-              json.dumps(report,sort_keys=True)+"\\n")
+              json.dumps(report,sort_keys=True)+"\n")
           PY
       - name: Publish aggregate status only, never private trace
         if: always()
