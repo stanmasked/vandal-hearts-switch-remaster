@@ -7,6 +7,57 @@
 
 int main(void) {
     unsigned page=0u;
+    /* HOME/background and resume are observable lifecycle events,
+     * not a proof of audible output or service recovery. */
+    VhAudioAppletEvents focus={0};
+    assert(vh_audio_applet_verify(&focus)==0);
+    assert(vh_audio_applet_record(NULL,VH_AUDIO_APPLET_BACKGROUND)==-1);
+    assert(vh_audio_applet_record(&focus,99u)==-1);
+    assert(vh_audio_applet_record(&focus,VH_AUDIO_APPLET_FOREGROUND)==0);
+    assert(focus.ignored_duplicates==1u && focus.returns==0u);
+    assert(vh_audio_applet_record(&focus,VH_AUDIO_APPLET_BACKGROUND)==0);
+    assert(focus.backgrounds==1u && focus.in_background==1u);
+    assert(vh_audio_applet_record(&focus,VH_AUDIO_APPLET_BACKGROUND)==0);
+    assert(focus.ignored_duplicates==2u && focus.backgrounds==1u);
+    assert(vh_audio_applet_record(&focus,VH_AUDIO_APPLET_RESUME)==0);
+    assert(focus.resumes==1u && focus.returns==0u);
+    assert(vh_audio_applet_verify(&focus)==0);
+    assert(vh_audio_applet_record(&focus,VH_AUDIO_APPLET_FOREGROUND)==0);
+    assert(focus.returns==1u && !focus.in_background);
+    assert(vh_audio_applet_record(&focus,VH_AUDIO_APPLET_RESUME)==0);
+    assert(focus.resumes==2u && vh_audio_applet_verify(&focus)==0);
+    assert(vh_audio_applet_record(&focus,VH_AUDIO_APPLET_FOREGROUND)==0);
+    assert(focus.ignored_duplicates==3u);
+    assert(vh_audio_applet_record(&focus,VH_AUDIO_APPLET_BACKGROUND)==0);
+    assert(vh_audio_applet_record(&focus,VH_AUDIO_APPLET_FOREGROUND)==0);
+    assert(focus.backgrounds==2u && focus.returns==2u);
+    VhAudioAppletEvents invalid=focus;
+    invalid.returns=3u;
+    assert(vh_audio_applet_verify(&invalid)==-1);
+    invalid=focus;
+    invalid.in_background=1u;
+    assert(vh_audio_applet_verify(&invalid)==-1);
+    invalid=focus;
+    invalid.resumes=UINT_MAX;
+    assert(vh_audio_applet_record(&invalid,VH_AUDIO_APPLET_RESUME)==-1);
+    assert(invalid.resumes==UINT_MAX);
+    invalid=focus;
+    invalid.backgrounds=UINT_MAX;
+    assert(vh_audio_applet_record(&invalid,VH_AUDIO_APPLET_BACKGROUND)==-1);
+    assert(!invalid.in_background);
+    invalid=focus;
+    invalid.ignored_duplicates=UINT_MAX;
+    assert(vh_audio_applet_record(&invalid,VH_AUDIO_APPLET_FOREGROUND)==-1);
+    assert(invalid.ignored_duplicates==UINT_MAX);
+    invalid=focus;
+    invalid.in_background=1u;
+    invalid.returns=UINT_MAX;
+    assert(vh_audio_applet_record(&invalid,VH_AUDIO_APPLET_FOREGROUND)==-1);
+    assert(invalid.in_background==1u);
+    assert(vh_audio_applet_verify(NULL)==-1);
+    /* Successful host accounting is independent from HOME observation. */
+    assert(vh_audio_report_evidence(1,0,0,0,0)==VH_AUDIO_REPORT_FULL);
+
     assert(vh_audio_report_evidence(1,0,0,0,0)==VH_AUDIO_REPORT_FULL);
     assert(vh_audio_report_evidence(0,0,0,0,0)==VH_AUDIO_REPORT_INCOMPLETE);
     for (int bad=-1;bad<=2;bad++) {
