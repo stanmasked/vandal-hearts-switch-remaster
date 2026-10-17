@@ -72,6 +72,22 @@ def bind_original_sd(source: Path, locations: Path, sd_root: Path):
         "sd_copy_bytes": len(copy_raw),
     }
 
+def bind_export_receipt(receipt_path: Path, csv_length: int) -> dict:
+    """Require guest writer's exact independent post-join status receipt."""
+    raw = stable_guest_bytes(receipt_path)
+    expected = (
+        f"export_status=0\npath_present=1\nfile_size={csv_length}\n"
+    ).encode("ascii")
+    if raw != expected:
+        raise ValueError(
+            "guest audout export status/size not confirmed by receipt"
+        )
+    return {
+        "guest_export_receipt": "GUEST_WRITER_SUCCEEDED_AND_STAT_VISIBLE",
+        "guest_export_receipt_sha256": hashlib.sha256(raw).hexdigest(),
+    }
+
+
 def read_telemetry(path: Path) -> dict:
     return parse_telemetry(stable_guest_bytes(path))
 
@@ -149,12 +165,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--locations", type=Path, required=True)
+    parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--sd-root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     raw, binding = bind_original_sd(args.source, args.locations, args.sd_root)
+    receipt_binding = bind_export_receipt(args.receipt, len(raw))
     report = parse_telemetry(raw)
     report.update(binding)
+    report.update(receipt_binding)
     if args.output.exists():
         raise FileExistsError("refuse overwrite of telemetry audit")
     args.output.write_text(json.dumps(report, sort_keys=True, indent=2) + "\n",
