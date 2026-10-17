@@ -131,8 +131,10 @@ def main():
     try:
         result = compare_data_ranges(args.original_psx_executable,
                                      args.original_extracted_mips_elf)
-    except (OSError, ValueError) as exc:
+    except ValueError as exc:
         parser.error(str(exc))
+    except OSError:
+        parser.error("private original extraction filesystem verification failed")
     print(json.dumps(result, indent=2, sort_keys=True))
 
 
