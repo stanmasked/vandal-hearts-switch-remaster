@@ -9,6 +9,15 @@
 #include <stdio.h>
 #include <string.h>
 
+/* A source-revision label for screenshot provenance, not an NRO hash.
+ * Git-less/modified builds must be explicit rather than look verified. */
+#ifndef VH_AUDIO_BUILD_REV
+#define VH_AUDIO_BUILD_REV "UNKNOWN"
+#endif
+#ifndef VH_AUDIO_BUILD_STATUS
+#define VH_AUDIO_BUILD_STATUS "NO-GIT"
+#endif
+
 #include "vh_audio_assets.h"
 #include "vh_audio_resample.h"
 #include "vh_audio_output_recovery.h"
@@ -273,7 +282,8 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
     const VhAudioInputPoll *poll=r->poll;
     const uint64_t hz=r->tick_frequency;
     consoleClear();
-    printf("Vandal Hearts - native audout diagnostic\n");
+    printf("VH audout / %.12s [%s]\n",
+           VH_AUDIO_BUILD_REV,VH_AUDIO_BUILD_STATUS);
     if (page==0u) {
         printf("REPORT 1/4: DEVICE / SERVICE\n\n");
         printf("Source: %s\n",r->user_files ? "user SD music" : "generated fixture");
@@ -438,6 +448,8 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
         printf("Short taps missed; zero A != no glitches.\n");
     } else {
         printf("REPORT 4/4: HOME / RETURNED PCM\n\n");
+        printf("Git source: %s [%s]\n",
+               VH_AUDIO_BUILD_REV,VH_AUDIO_BUILD_STATUS);
         printf("Source: %s\n",r->user_files ? "user SD music" : "generated fixture");
         printf("Result=%d PCM accounting=%s\n",r->result,
                r->verdict==VH_AUDIO_REPORT_FULL ? "FULL" :
