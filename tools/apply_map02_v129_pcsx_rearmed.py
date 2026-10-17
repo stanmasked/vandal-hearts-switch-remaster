@@ -33,6 +33,11 @@ def oracle_source(stops,wait_pc):
         };"""
     src=once(src,old,new,
              "independent original v116 adjacent timing gap histogram")
+    # v128 declared exactly four entries. Extending initializers alone is UB:
+    # the fifth mode would index past the four-row array in native C.
+    src=once(src,"vh129_boundary_targets[4][2]",
+             "vh129_boundary_targets[5][2]",
+             "five allocated boundary rows, not only five initializer pairs")
     src=once(src,"expected_total_edges[4]={3u,3u,3u,3u}",
              "expected_total_edges[5]={4u,4u,4u,4u,4u}",
              "four consecutive original emulator VBlank callbacks")
@@ -43,6 +48,24 @@ def oracle_source(stops,wait_pc):
              "include fifth native adjacent gap histogram bin")
     src=once(src,"vh129_vblank_mode>3","vh129_vblank_mode>4",
              "require exactly five supported source-authored modes")
+    # Native compile-time bounds proof: this guards future matrix expansion
+    # even when a test misses a textual dimension or a compiler permits
+    # excess aggregate initializers with only a warning.
+    src=once(src,
+             "        unsigned char tag[8]={0};\\n",
+             "        typedef char vh129_boundary_rows_equal_five["
+             "(sizeof(vh129_boundary_targets)/"
+             "sizeof(vh129_boundary_targets[0])==5u)?1:-1];\\n"
+             "        typedef char vh129_boundary_cols_equal_two["
+             "(sizeof(vh129_boundary_targets[0])/"
+             "sizeof(vh129_boundary_targets[0][0])==2u)?1:-1];\\n"
+             "        typedef char vh129_histogram_rows_equal_five["
+             "(sizeof(vh129_adjacent_histograms)/"
+             "sizeof(vh129_adjacent_histograms[0])==5u)?1:-1];\\n"
+             "        typedef char vh129_return_rows_equal_five["
+             "(sizeof(return_gap)/sizeof(return_gap[0])==5u)?1:-1];\\n"
+             "        unsigned char tag[8]={0};\\n",
+             "native compiler checks exact five-row table bounds")
     # Preserve strict rejection. A refusal discloses only coarse counters,
     # distinguishing unsolicited callbacks from accepted MIPS wait edges.
     src=once(
