@@ -289,6 +289,8 @@ typedef struct {
     VhAudioTransportTimingHealth transport_health;
     VhAudioTimingFaultInjection timing_injection;
     unsigned timing_fault_mode;
+    VhAudioSubmitFaultInjection submit_injection;
+    VhAudioSubmitTiming submit_timing;
 } LeasedDevice;
 
 static int leased_submit(void *opaque,const int16_t *pcm,size_t frames) {
@@ -459,6 +461,147 @@ static void test_timing_injection_final_evidence(void) {
     health.delivered_without_timing=0u;
     assert(vh_audio_output_verify_timing_injection(
                &injection,&health,&recovery)==0);
+}
+
+/* Pre-service ZR fault is not a genuine audout call. It does not
+ * reserve the descriptor, but counts one virtual failed wrapper submit
+ * so retry/page accounting remains exact and independently labelled. */
+static int leased_submit_with_fake_pre_service_failure(
+    void *opaque, const int16_t *pcm, size_t frames) {
+    LeasedDevice *dev=opaque;
+    if (dev->submit_injection.armed) {
+        assert(vh_audio_page_lease_ready(&dev->lease));
+        assert(vh_audio_output_record_synthetic_submit_failure(
+                   &dev->submit_timing,UINT64_C(19200000),frames)==0);
+        assert(vh_audio_submit_fault_consume(&dev->submit_injection)==1);
+        return -1; /* NO leased_submit, no real backend call */
+    }
+    const int rc=leased_submit(opaque,pcm,frames);
+    assert(vh_audio_output_record_submit_timing(
+               &dev->submit_timing,200u,UINT64_C(19200000),
+               frames,rc==0)==0);
+    return rc;
+}
+
+static void test_fake_pre_service_submit_retries_same_pcm(void) {
+    VhAudioSubmitFaultInjection inj={0};
+    assert(vh_audio_submit_fault_arm(NULL)==-1);
+    assert(vh_audio_submit_fault_consume(NULL)==0);
+    assert(vh_audio_submit_fault_consume(&inj)==0);
+    assert(vh_audio_submit_fault_arm(&inj)==0);
+    assert(vh_audio_submit_fault_arm(&inj)==-1);
+    assert(vh_audio_submit_fault_consume(&inj)==1);
+    assert(vh_audio_submit_fault_consume(&inj)==0);
+    assert(vh_audio_submit_fault_arm(&inj)==-1);
+    assert(inj.injected==1u && !inj.armed);
+
+    VhAudioSubmitTiming overflow={.calls=UINT64_MAX};
+    const VhAudioSubmitTiming unchanged=overflow;
+    assert(vh_audio_output_record_synthetic_submit_failure(
+               &overflow,UINT64_C(19200000),576u)==-1);
+    assert(!memcmp(&overflow,&unchanged,sizeof overflow));
+    VhAudioSubmitTiming empty={0};
+    assert(vh_audio_output_record_synthetic_submit_failure(
+               NULL,UINT64_C(19200000),576u)==-1);
+    assert(vh_audio_output_record_synthetic_submit_failure(
+               &empty,0u,576u)==-1);
+    assert(vh_audio_output_record_synthetic_submit_failure(
+               &empty,UINT64_C(19200000),0u)==-1);
+    assert(!memcmp(&empty,&(VhAudioSubmitTiming){0},sizeof empty));
+
+    /* A request with no subsequent submit must remain pending and
+     * cannot be misreported as an exercised recovery. */
+    inj=(VhAudioSubmitFaultInjection){.armed=1u};
+    VhAudioOutputRecovery none={0};
+    assert(vh_audio_output_verify_submit_injection(
+               &inj,&empty,&none)==1);
+    assert(vh_audio_output_verify_submit_injection(
+               NULL,&empty,&none)==-1);
+    assert(vh_audio_output_verify_submit_injection(
+               &inj,NULL,&none)==-1);
+    assert(vh_audio_output_verify_submit_injection(
+               &inj,&empty,NULL)==-1);
+    inj.armed=2u;
+    assert(vh_audio_output_verify_submit_injection(
+               &inj,&empty,&none)==-1);
+
+    for(unsigned i=0u;i<128u;i++)
+        sample[i]=(int16_t)((int)i*53-4000);
+    vh_native_spu_reset(&spu);
+    vh_audio_resample_reset(&resampler);
+    assert(vh_native_seq_init(&seq,song,sizeof song,
+                              &spu,resolve,sample,0u)==0);
+    unsigned direct=0u,wrong_descriptor=0u;
+    for(unsigned iteration=0u;iteration<48u;iteration++) {
+        assert(vh_native_seq_advance_block(&seq)>=0);
+        vh_native_spu_render(&spu,src,512u);
+        const size_t frames=vh_audio_resample_process(
+                                  &resampler,src,512u,dst,640u);
+        assert(frames>=555u && frames<=559u);
+        const VhNativeSeq before_seq=seq;
+        const VhNativeSpu before_spu=spu;
+        const VhAudioResample before_rate=resampler;
+        const uint64_t fingerprint=hash_page(dst,frames);
+        LeasedDevice dev={
+            .opened=1u,.playing=1u,.pcm=dst,.frames=frames,
+            .pcm_hash=fingerprint,
+            .wrong_returns_left=(unsigned)(iteration&1u)
+        };
+        assert(vh_audio_submit_fault_arm(&dev.submit_injection)==0);
+        VhAudioOutputRecovery stats={0};
+        const VhAudioOutputOps ops={
+            &dev,leased_submit_with_fake_pre_service_failure,
+            leased_stop,leased_close,leased_open,leased_start
+        };
+        const VhAudioSubmitTiming before_timing=dev.submit_timing;
+        assert(vh_audio_output_submit_recover(
+                            &ops,&stats,dst,frames)==0);
+        assert(!dev.submit_injection.armed &&
+               dev.submit_injection.injected==1u);
+        assert(dev.returned==1u && dev.submit_timing.synthetic_failed_submissions==1u);
+        assert(vh_audio_output_verify_submit_injection(
+                            &dev.submit_injection,&dev.submit_timing,
+                            &stats)==2);
+        assert(stats.pages_submitted==1u && stats.frames_submitted==frames);
+        assert(stats.recoveries==1u);
+        assert(dev.submit_timing.calls==dev.calls+1u);
+        assert(vh_audio_page_lease_ready(&dev.lease));
+        assert(hash_page(dst,frames)==fingerprint);
+        assert(!memcmp(&seq,&before_seq,sizeof seq));
+        assert(!memcmp(&spu,&before_spu,sizeof spu));
+        assert(!memcmp(&resampler,&before_rate,sizeof resampler));
+        if(iteration&1u) {
+            ++wrong_descriptor;
+            assert(dev.calls==2u && stats.submit_failures==2u &&
+                   stats.restart_attempts==2u &&
+                   dev.submit_timing.failed_submissions==2u);
+        } else {
+            ++direct;
+            assert(dev.calls==1u && stats.submit_failures==1u &&
+                   stats.restart_attempts==1u &&
+                   dev.submit_timing.failed_submissions==1u);
+        }
+        /* The virtual failure and a genuine wrong-descriptor return
+         * remain visible as different events, but count as exactly one
+         * recovered logical page with no resampler or SEQ advance. */
+        VhAudioSceneWaits waits={0};
+        assert(vh_audio_output_record_scene_page(
+                   &waits,&before_timing,&dev.submit_timing,
+                   UINT64_C(19200000),frames,0,1)==0);
+        assert(vh_audio_output_verify_run(
+                   &waits,&stats,&dev.submit_timing,
+                   1u,0u,1u,0u,1)==1);
+        VhAudioSubmitTiming corrupt=dev.submit_timing;
+        ++corrupt.synthetic_failed_submissions;
+        assert(vh_audio_output_verify_submit_injection(
+                   &dev.submit_injection,&corrupt,&stats)==-1);
+        VhAudioOutputRecovery missing=stats;
+        missing.recoveries=0u;
+        assert(vh_audio_output_verify_submit_injection(
+                   &dev.submit_injection,&dev.submit_timing,&missing)==-1);
+        assert(vh_audio_output_stop_close(&ops)==0);
+    }
+    assert(direct==24u && wrong_descriptor==24u);
 }
 
 static void test_one_shot_timing_injection_after_returned_pcm(void) {
@@ -1057,6 +1200,7 @@ static void test_home_observer_vs_audout_lease_faults(void) {
 }
 
 int main(void) {
+    test_fake_pre_service_submit_retries_same_pcm();
     test_timing_injection_final_evidence();
     test_one_shot_timing_injection_after_returned_pcm();
     test_timing_fault_never_replays_delivered_pcm();
