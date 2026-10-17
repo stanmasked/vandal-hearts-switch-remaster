@@ -129,6 +129,7 @@ jobs:
           done
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v108_vblank_store_buckets.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v109_gp0_class_vblank_stores.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v110_class_boundary_checkpoints.py' -v
       - name: Patch pinned upstream with Unai post-dispatch observer
         shell: bash
         run: |
