@@ -15,6 +15,9 @@ class SpanWorkflowGateTests(unittest.TestCase):
         self.assertIn('"build/map02-vertical-dda/span-linked.${mode}.o"', text)
         self.assertIn('nm -a build/map02-vertical-dda/span-linked.diagnostic.o', text)
         self.assertIn('nm -a build/map02-vertical-dda/span-linked.baseline.o', text)
+        self.assertIn('pc_raster.candidate.c', text)
+        self.assertIn('candidate-linked.${mode}.o', text)
+        self.assertIn('VH_Map02RejectedEdges', text)
 
     def test_trigger_includes_observer_and_test(self):
         text = WORKFLOW.read_text(encoding="utf-8")
@@ -22,6 +25,10 @@ class SpanWorkflowGateTests(unittest.TestCase):
         pr_paths = text.split("  pull_request:\n    paths:", 1)[1].split("\njobs:", 1)[0]
         self.assertIn("'tools/instrument_map02_dda_span.py'", pr_paths)
         self.assertIn("'tests/test_instrument_map02_dda_span.py'", pr_paths)
+        for observed in ("tools/instrument_map02_dda_rejected_edges.py",
+                         "tests/test_map02_dda_candidate_c11.py",
+                         "tools/verify_map02_dda_rejected_edges.py"):
+            self.assertIn(repr(observed), pr_paths)
 
 if __name__ == "__main__":
     unittest.main()
