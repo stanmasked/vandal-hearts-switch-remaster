@@ -1,3 +1,4 @@
+#include <string.h>
 /* Portable three-screen Switch audio evidence report test.
  * Full PCM accounting must never be equated with audible quality.
  */
@@ -5,7 +6,89 @@
 #include <stdio.h>
 #include "vh_audio_report_pages.h"
 
+/* Deterministic clock-only test: event-to-returned-descriptor latency,
+ * NEVER time until speaker playback. Invalid clocks must not consume
+ * the pending foreground state or increment the returned page count. */
+static void test_first_pcm_after_home_tick_lag(void) {
+    VhAudioAppletEvents e={0};
+    assert(vh_audio_applet_record_at(NULL,VH_AUDIO_APPLET_RESUME,1u)==-1);
+    assert(vh_audio_applet_page_returned_at(NULL,1u)==-1);
+    assert(vh_audio_applet_page_returned_at(&e,50u)==0);
+    assert(e.returned_pages==1u && e.timed_first_pages==0u);
+    assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_BACKGROUND,100u)==0);
+    assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_FOREGROUND,1000u)==0);
+    assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_RESUME,1020u)==0);
+    assert(vh_audio_applet_verify(&e)==0 && e.timestamp_pending==1u);
+    assert(vh_audio_applet_page_returned_at(&e,1440u)==1);
+    assert(e.timed_first_pages==1u && e.first_pages_after_return==1u);
+    assert(e.total_page_gap_ticks==440u && e.max_page_gap_ticks==440u);
+    assert(!e.pending_return && !e.timestamp_pending);
+    assert(vh_audio_applet_page_returned_at(&e,1500u)==0);
+    assert(e.returned_pages==3u && e.total_page_gap_ticks==440u);
+    assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_BACKGROUND,2000u)==0);
+    assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_FOREGROUND,3000u)==0);
+    assert(vh_audio_applet_page_returned_at(&e,3800u)==1);
+    assert(e.timed_first_pages==2u && e.total_page_gap_ticks==1240u);
+    assert(e.max_page_gap_ticks==800u && vh_audio_applet_verify(&e)==0);
+
+    /* Several returns without a PCM descriptor use the LATEST
+     * recorded foreground tick, while older return is coalesced. */
+    assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_BACKGROUND,3900u)==0);
+    assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_FOREGROUND,4000u)==0);
+    assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_BACKGROUND,4200u)==0);
+    assert(vh_audio_applet_page_returned_at(&e,4250u)==0);
+    assert(e.pending_return==1u && e.timed_first_pages==2u);
+    assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_FOREGROUND,4500u)==0);
+    assert(e.coalesced_returns==1u && e.foreground_tick==4500u);
+    assert(vh_audio_applet_page_returned_at(&e,5000u)==1);
+    assert(e.timed_first_pages==3u && e.total_page_gap_ticks==1740u);
+    assert(e.max_page_gap_ticks==800u && vh_audio_applet_verify(&e)==0);
+
+    /* Untimed focus returns should count one observed page, but
+     * must not counterfeit a zero-tick latency measurement. */
+    assert(vh_audio_applet_record(&e,VH_AUDIO_APPLET_BACKGROUND)==0);
+    assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_FOREGROUND,0u)==0);
+    assert(!e.timestamp_pending);
+    assert(vh_audio_applet_page_returned_at(&e,6000u)==1);
+    assert(e.first_pages_after_return==4u && e.timed_first_pages==3u);
+    assert(e.total_page_gap_ticks==1740u && vh_audio_applet_verify(&e)==0);
+
+    assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_BACKGROUND,6500u)==0);
+    assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_FOREGROUND,7000u)==0);
+    VhAudioAppletEvents before=e;
+    assert(vh_audio_applet_page_returned_at(&e,6900u)==-1);
+    assert(!memcmp(&e,&before,sizeof e));
+    assert(vh_audio_applet_page_returned_at(&e,0u)==-1);
+    assert(!memcmp(&e,&before,sizeof e));
+    assert(vh_audio_applet_page_returned_at(&e,7001u)==1);
+    assert(e.total_page_gap_ticks==1741u && vh_audio_applet_verify(&e)==0);
+
+    VhAudioAppletEvents corrupted=e;
+    corrupted.total_page_gap_ticks=0u;
+    assert(vh_audio_applet_verify(&corrupted)==-1);
+    corrupted=e;
+    corrupted.timed_first_pages=e.first_pages_after_return+1u;
+    assert(vh_audio_applet_verify(&corrupted)==-1);
+    corrupted=e;
+    corrupted.timestamp_pending=1u;
+    assert(vh_audio_applet_verify(&corrupted)==-1);
+
+    assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_BACKGROUND,8000u)==0);
+    assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_FOREGROUND,9000u)==0);
+    corrupted=e;
+    corrupted.total_page_gap_ticks=UINT64_MAX;
+    before=corrupted;
+    assert(vh_audio_applet_page_returned_at(&corrupted,9001u)==-1);
+    assert(!memcmp(&corrupted,&before,sizeof corrupted));
+    corrupted=e;
+    corrupted.timed_first_pages=UINT_MAX;
+    before=corrupted;
+    assert(vh_audio_applet_page_returned_at(&corrupted,9001u)==-1);
+    assert(!memcmp(&corrupted,&before,sizeof corrupted));
+}
+
 int main(void) {
+    test_first_pcm_after_home_tick_lag();
     unsigned page=0u;
     /* HOME/background and resume are observable lifecycle events,
      * not a proof of audible output or service recovery. */
