@@ -12,6 +12,7 @@ import csv
 import hashlib
 import json
 import math
+import re
 from pathlib import Path
 import statistics
 import sys
@@ -31,7 +32,7 @@ EXPECTED_SCENES = tuple(2 if i % 2 else 1 for i in range(1, 11))
 STABLE_BEGIN_S = 1.35
 STABLE_END_GUARD_S = .50
 SAMPLE_FRAMES = RATE
-EXPECTED_NRO_SHA256 = "58a438082f282ba279044d2a25fc1369e8493571a67b2082da41e0d8c0405929"
+SHA256_HEX = re.compile(r"[0-9a-f]{64}\Z")
 
 
 def digest(raw: bytes) -> str:
@@ -42,6 +43,38 @@ def read_file(path: Path) -> bytes:
     if not path.is_file() or path.is_symlink():
         raise TraceError(f"not a regular evidence file: {path.name}")
     return path.read_bytes()
+
+
+def bind_current_run_nro(path: Path, *, sha: str, run_id: int,
+                         attempt: int) -> str:
+    """Read the real same-workflow NRO verifier, not a pinned historical hash."""
+    raw = read_file(path)
+    if len(raw) > 2048:
+        raise TraceError("NRO preflight is oversized")
+    try:
+        witness = json.loads(raw.decode("ascii"))
+    except (ValueError, UnicodeError) as exc:
+        raise TraceError("cannot parse current NRO preflight") from exc
+    if (not isinstance(witness, dict)
+        or set(witness) != {
+            "result", "nro_filename", "nro_sha256", "nro_bytes",
+            "git_sha", "run_id", "run_attempt", "scope",
+            "hardware_status"
+        }
+        or witness["result"] != "SAME_WORKFLOW_BUILD_ARTIFACT_HASH_AND_STRUCTURE_VERIFIED"
+        or witness["nro_filename"] != "vandal-hearts-prototype.nro"
+        or witness["git_sha"] != sha
+        or type(witness["run_id"]) is not int
+        or witness["run_id"] != run_id
+        or type(witness["run_attempt"]) is not int
+        or witness["run_attempt"] != attempt
+        or type(witness["nro_bytes"]) is not int
+        or witness["nro_bytes"] < 1024
+        or type(witness["nro_sha256"]) is not str
+        or not SHA256_HEX.fullmatch(witness["nro_sha256"])
+        or witness["hardware_status"] != "HARDWARE NOT TESTED"):
+        raise TraceError("NRO preflight does not identify the current workflow")
+    return witness["nro_sha256"]
 
 
 def load_markers(path: Path, pcm_bytes: int) -> list[dict]:
@@ -178,7 +211,9 @@ def guest_timing(guest: dict) -> dict:
     return {"serials":serials,"statistics":stats}
 
 
-def verify_run(root: Path,sd_root: Path,*,expected_sd_root: Path|None=None)->tuple[dict,str]:
+def verify_run(root: Path,sd_root: Path,*,nro_sha256: str,expected_sd_root: Path|None=None)->tuple[dict,str]:
+    if not SHA256_HEX.fullmatch(nro_sha256):
+        raise TraceError("missing current-run NRO digest")
     if not root.is_dir() or root.is_symlink():
         raise TraceError("scene-soak folder absent or symlinked")
     pcm=read_file(root/"soak-monitor-s16le-48k.pcm")
@@ -211,7 +246,8 @@ def verify_run(root: Path,sd_root: Path,*,expected_sd_root: Path|None=None)->tup
         "schema":SCHEMA,
         "result":"TEN_GUEST_SCENE_TRANSITIONS_DUAL_TRANSPORT_VERIFIED",
         "source":"real NeXium screenshot, separate guest SD CSV and virtual monitor PCM",
-        "guest_nro_sha256_pinned":EXPECTED_NRO_SHA256,
+        "guest_nro_sha256":nro_sha256,
+        "nro_provenance_scope":"CURRENT_GITHUB_WORKFLOW_MANIFEST_NOT_HARDWARE_ATTESTATION",
         "guest_scene_serial_count":SCENE_COUNT,
         "guest_event_rows":guest["event_rows"],
         "guest_trace_dropped":guest["dropped"],
@@ -243,6 +279,10 @@ def main()->int:
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--soak-dir",type=Path,required=True)
     parser.add_argument("--sd-root",type=Path,required=True)
+    parser.add_argument("--nro-preflight",type=Path,required=True)
+    parser.add_argument("--git-sha",required=True)
+    parser.add_argument("--run-id",type=int,required=True)
+    parser.add_argument("--run-attempt",type=int,required=True)
     parser.add_argument("--output",type=Path,required=True)
     parser.add_argument("--optical-csv-output",type=Path,required=True)
     args=parser.parse_args()
@@ -251,7 +291,10 @@ def main()->int:
         print("refuse overwrite of scene-soak evidence",file=sys.stderr)
         return 2
     try:
-        report,csv_text=verify_run(args.soak_dir,args.sd_root)
+        nro_sha = bind_current_run_nro(args.nro_preflight,
+              sha=args.git_sha, run_id=args.run_id, attempt=args.run_attempt)
+        report,csv_text=verify_run(args.soak_dir,args.sd_root,
+                                    nro_sha256=nro_sha)
         args.optical_csv_output.write_text(csv_text,encoding="ascii")
         args.output.write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
         print(json.dumps({"result":report["result"],
