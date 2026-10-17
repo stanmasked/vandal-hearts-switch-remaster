@@ -8,7 +8,6 @@ implementation, actual game execution, original image, or PS1 equivalence.
 Works with Linux ELF executables only, never relinkable .o files.
 """
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -39,10 +38,10 @@ SYMBOLS = (
 )
 
 def _run(exe, path):
+    command = (["readelf", "-h", str(path)] if exe == "readelf"
+               else ["nm", "-g", "--defined-only", "--", str(path)])
     result = subprocess.run(
-        [exe, "--" if exe == "nm" else "-h", str(path)]
-        if exe == "readelf" else
-        [exe, "-g", "--defined-only", "--", str(path)],
+        command,
         capture_output=True, text=True, timeout=30, check=False)
     if result.returncode:
         raise ValueError("MAP02 ELF introspection failed: " + exe)
