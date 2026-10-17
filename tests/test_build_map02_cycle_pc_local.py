@@ -134,6 +134,16 @@ class PrivateFullPcBuildTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "without an executable"):
                 build_full_pc(self.upstream, self.bundle)
 
+    def test_invalid_private_font_c_blocks_success_and_receipt(self):
+        with patch("tools.build_map02_cycle_pc_local.verify_generated_original_font",
+                   side_effect=ValueError("generated private font C differs")), patch(
+                "tools.build_map02_cycle_pc_local.subprocess.run",
+                side_effect=self.build_fake), patch(
+                "tools.map02_cycle_build_provenance.create_build_receipt") as publish:
+            with self.assertRaisesRegex(ValueError, "font C differs"):
+                build_full_pc(self.upstream, self.bundle)
+        publish.assert_not_called()
+
     def test_fail_closed_after_link_when_elf_audit_rejects_symbols(self):
         self.active[2].side_effect = ValueError("required DrawOTag symbol missing")
         with patch("tools.build_map02_cycle_pc_local.subprocess.run",
