@@ -75,7 +75,7 @@ def build_full_pc(upstream, bundle, *, timeout=1200, make="make", report_dir=Non
     result = {
         "schema": "vh.map02.private-full-pc-elf-build.v1",
         "pc_executable_sha256": h.hexdigest(),
-        "private_build_inputs_binding_sha256":
+        "private_retail_inputs_binding_sha256":
             original_inputs["private_build_inputs_binding_sha256"],
         "source_bound_make_command_sha256":
             planned["full_game_link_command_sha256"],
@@ -90,7 +90,8 @@ def build_full_pc(upstream, bundle, *, timeout=1200, make="make", report_dir=Non
     if report_dir is not None:
         from tools.map02_cycle_build_provenance import create_build_receipt
         receipt = create_build_receipt(
-            report_dir, target, upstream, bundle, build_result=result)
+            report_dir, target, upstream, bundle, build_result=result,
+            krom_source=krom_source)
         result.update(receipt)
     return result
 
