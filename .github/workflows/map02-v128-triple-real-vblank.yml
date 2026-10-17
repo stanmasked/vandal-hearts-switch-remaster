@@ -1,0 +1,32 @@
+name: MAP02 v128 three real VBlank edges with four different DMA gap placements
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - '.github/workflows/map02-v128-triple-real-vblank.yml'
+      - 'tools/make_map02_v128_triple_vblank_exe.py'
+      - 'tools/apply_map02_v128_pcsx_rearmed.py'
+      - 'tools/summarize_map02_v128_triple_vblank_profiles.py'
+      - 'tests/test_map02_v128_triple_vblank_profiles.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-authored-triple-vblank-splits:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate new three-edge splits and original v127/v126 modes
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_map02_v128_triple_vblank_profiles.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v127_vblank_profiles.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v126_genuine_vblank_dma.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v125_variable_dma.py' -v
