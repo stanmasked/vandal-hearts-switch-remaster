@@ -225,3 +225,31 @@ tests and Python tests use entirely synthetic, asset-free records
 and cannot authenticate original MAP02 gameplay. No physical PS1
 hardware comparison has been performed. HD replacement remains
 disabled pending original MAP02 confirmation.
+
+## Verified private triple-witness integration checkpoint
+
+The [55-test green CI run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38990282308)
+for commit \`04bf437b\` confirmed:
+
+- **55/55** regression tests (including direct-edge JSON strict parsing,
+  SHA-256 manifest publication/reverification and C three-file
+  exclusive-write rollback);
+- successful pinned original PC GPU source object compilation;
+- successful real rasterizer runtime for the normal and scoped modes;
+- successful original DrawOTag baseline and complex transparent/overdraw
+  runtimes in all three configurations;
+- SHA-bound publisher/validator integration in synthetic private
+  fixtures, with the original source-keyed verifier mocked **only in
+  explicitly marked unit tests**.
+
+The complex synthetic DrawOTag runtime independently checks
+VRAM-edge/PutPixel agreement, including zero-texel draws, and ensures
+the full native VRAM hash is unchanged across renderer configurations.
+The tests also reject duplicate JSON keys, nonstandard numeric
+constants, and replacement of the published VRAM-edge file.
+
+This verifies software integration and publication fail-closure; it is
+**not** evidence that actual retail MAP02 data were loaded, rendered or
+compared to a PlayStation console. Until original gameplay and
+provenance have been independently established, HD replacement remains
+disabled.
