@@ -71,7 +71,11 @@ class NativePutPixelAuditTests(unittest.TestCase):
         # submitted JSONL otherwise preserves all record ordering.
         self.assertEqual(verify_pixel_calls(self.root)[
             "semi_transparent_blend_requests"], 2)
-        self.rows[2]["front"] = 0x0001
+        # The background already has maximum red (0x001f).
+        # Adding only one red quantum would saturate to the *same*
+        # expected result and cannot serve as a negative ABR1 vector.
+        # Change the green channel instead; the output must differ.
+        self.rows[2]["front"] = 0x03e0
         self.save()
         with self.assertRaisesRegex(ValueError, "semi-transparent native WritePixel"):
             verify_pixel_calls(self.root)
