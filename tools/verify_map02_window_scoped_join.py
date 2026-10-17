@@ -29,6 +29,7 @@ PIXELS = "putpixel-native-events.pending.jsonl"
 BLENDS = "blendg1-native-events.pending.jsonl"
 EDGES = "vram-edges-native-events.pending.jsonl"
 SESSION = "gpu-scoped-session.json"
+CD_READ = "map02-original-cd-read.pending.jsonl"
 
 
 def verify_window_scoped_join(native_windows, scoped_capture, *,
@@ -59,6 +60,35 @@ def verify_window_scoped_join(native_windows, scoped_capture, *,
                 hashlib.sha256(token.encode("ascii")).hexdigest() !=
                 native_session_digest):
             raise ValueError("mixed-session native GPU and selected-pixel capture")
+    cd_read_raw = None
+    cd_file = scoped / CD_READ
+    if cd_file.exists() or cd_file.is_symlink():
+        if raw_session is None:
+            raise ValueError("original MAP02 CD evidence needs GPU process nonce")
+        expected_files.add(CD_READ)
+        cd_read_raw = private_file(scoped, CD_READ, max_bytes=2048)
+        cd = parse_json(cd_read_raw, CD_READ)
+        fields(cd, (
+            "schema", "capture_session", "source", "cdf", "lba",
+            "sectors", "bytes", "raw_user_crc32",
+            "returned_user_crc32", "loader_completed",
+        ), CD_READ)
+        if (cd["schema"] != "vh.map02.original-cd-read.v1" or
+                cd["source"] != "original-CdRead-and-ContinueLoadingCdFile" or
+                cd["capture_session"] != token or
+                cd["cdf"] != "CDF_M_MAP02_PRS" or
+                number(cd["lba"], "MAP02 original sector LBA", 0, 0x1bcc) != 0x1bcc or
+                number(cd["sectors"], "MAP02 sectors", 1, 12) != 12 or
+                number(cd["bytes"], "MAP02 returned bytes", 1, 24576) != 24576 or
+                cd["loader_completed"] is not True):
+            raise ValueError("original MAP02 CdRead session or original loader state mismatch")
+        for key in ("raw_user_crc32", "returned_user_crc32"):
+            word = cd[key]
+            if (type(word) is not str or len(word) != 8 or
+                    any(c not in "0123456789abcdef" for c in word)):
+                raise ValueError("invalid original MAP02 CdRead checksum")
+        if cd["raw_user_crc32"] != cd["returned_user_crc32"]:
+            raise ValueError("original MAP02 CdRead transfer modified source data")
     if {p.name for p in scoped.iterdir()} != expected_files:
         raise ValueError("scoped witness contains unlisted/mixed-session files")
     pixels = complete_events(pixels_raw, "same-run PutPixel")
@@ -118,6 +148,9 @@ def verify_window_scoped_join(native_windows, scoped_capture, *,
     if raw_session is not None and private_file(
             scoped, SESSION, max_bytes=4096) != raw_session:
         raise ValueError("scoped session receipt changed during verification")
+    if cd_read_raw is not None and private_file(
+            scoped, CD_READ, max_bytes=2048) != cd_read_raw:
+        raise ValueError("MAP02 original CD receipt changed during GPU scoped audit")
     sourced = None
     if source_dir is not None:
         sourced = verify_published_window_source_witness(
@@ -150,6 +183,10 @@ def verify_window_scoped_join(native_windows, scoped_capture, *,
         "blendg1_staged_sha256": hashlib.sha256(blends_raw).hexdigest(),
         "direct_vram_edges_staged_sha256":
             hashlib.sha256(edges_raw).hexdigest(),
+        "original_map02_cd_read_receipt_present": cd_read_raw is not None,
+        "original_map02_cd_read_receipt_sha256": (
+            hashlib.sha256(cd_read_raw).hexdigest()
+            if cd_read_raw is not None else None),
         "capture_session_linked": raw_session is not None,
         "capture_session_sha256": native_session_digest,
         "source_gte_subsequence_verified": sourced is not None,
