@@ -104,6 +104,7 @@ on:
       - 'tools/verify_map02_private_capture_session.py'
       - 'tests/test_verify_map02_private_capture_session.py'
       - 'tools/run_map02_private_native_capture.py'
+      - 'tools/verify_map02_private_capture_receipt.py'
       - 'tests/test_run_map02_private_native_capture.py'
       - 'tests/test_map02_dda_span_c11.py'
       - 'tools/verify_map02_raster_skips.py'
