@@ -139,6 +139,41 @@ int main(int argc, char **argv) {
                 self.audit()
         self.assertRaises(ValueError, _validate_receipt, {"schema": "fake"})
 
+    def test_final_map02_handoff_binds_live_kernel_execution_receipt(self):
+        self.run_capture()
+        # Only the expensive source GTE witness is mocked in this unit test.
+        # Its synthetic final record must refer to the same in-process nonce.
+        final = self.fixture.source / "gpu-native-window-scoped-source-witness.json"
+        source = json.loads(final.read_bytes())
+        source["capture_session_sha256"] = "b" * 64
+        raw = (json.dumps(source, sort_keys=True) + "\n").encode()
+        final.write_bytes(raw)
+        self.fixture.verified.return_value = {
+            "private_witness_sha256": __import__("hashlib").sha256(raw).hexdigest(),
+            "global_draw_ordinals_checked": 2,
+        }
+        sealed = self.fixture.seal()
+        self.assertTrue(sealed["live_kernel_executable_observed"])
+        handoff = json.loads(
+            (self.handoff / "gpu-local-capture-handoff.json").read_bytes())
+        self.assertEqual(handoff["schema"], "vh.map02.local-capture-handoff.v2")
+        self.assertTrue(handoff["live_kernel_executable_observed"])
+        receipt = (self.handoff / RECEIPT).read_bytes()
+        self.assertEqual(
+            handoff["observed_execution_receipt_sha256"],
+            __import__("hashlib").sha256(receipt).hexdigest())
+        self.assertTrue(self.fixture.verify()["live_kernel_executable_observed"])
+        self.assertFalse(handoff["owned_game_binary_executed_proven"])
+
+    def test_final_handoff_rejects_live_process_nonce_not_matching_source_gte(self):
+        self.run_capture()
+        # The synthetic GTE source witness still refers to "a"*64, while
+        # the real child session fixture has "b"*64.
+        with self.assertRaisesRegex(ValueError, "GPU session differ"):
+            self.fixture.seal()
+        self.assertFalse(
+            (self.handoff / "gpu-local-capture-handoff.json").exists())
+
     def test_refuses_nonempty_capture_directory_before_exec(self):
         (self.native / "previous-run").write_text("no")
         with self.assertRaisesRegex(ValueError, "must start empty"):
