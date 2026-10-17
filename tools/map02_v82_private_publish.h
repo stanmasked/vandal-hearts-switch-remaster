@@ -17,6 +17,8 @@ unsigned int vh102_parent_identity_checks(void);
 unsigned int vh102_anchored_publishes(void);
 /* Successful parent-path component walks rejecting symlinks at every level. */
 unsigned int vh103_safe_parent_walks(void);
+/* Successful second complete reads of the committed file after data/dir fsync. */
+unsigned int vh104_second_pass_reads(void);
 #ifdef VH100_FAULT_TEST
 /* Test-only fault gates at each post-link publish durability boundary. */
 void vh100_test_fail_at(int phase);
@@ -31,6 +33,10 @@ int vh102_test_parent_redirect(const char *parent,const char *moved,
  * (1) between fstatat and openat or (2) between readback and final fstatat. */
 int vh103_test_replace_final(const char *original,const char *replacement,
                              const char *backup,int phase);
+/* Native isolated fault injection: same-inode, same-size byte rewrite
+ * (1) after first read, (2) after file fsync, (3) after parent fsync.
+ * A nonzero phase is consumed once; never compiled into pinned PCSX. */
+int vh104_test_mutate_bytes(const char *path,int phase);
 #endif
 /* An existing private file must be immutable. Only a DISTINCT unused path
  * may receive a recovered observer lifetime; never rename/replace old. */
