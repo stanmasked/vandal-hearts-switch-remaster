@@ -43,12 +43,20 @@ def capture(executable, preflight_report, summary_report, *,
     if (preflight_report.is_symlink() or summary_report.is_symlink()
             or preflight_report.exists() or summary_report.exists()):
         raise ValueError("capture receipts already exist; refusing overwrite")
+    # Resolve both *parent paths* to prevent a symlink alias from writing
+    # the preflight JSON into the recorder's otherwise empty directory.
     for key in DIR_KEYS:
-        root = Path(env.get(key, "")).absolute()
-        if preflight_report == root or summary_report == root:
-            raise ValueError("capture receipts cannot replace capture directory")
-        if root in preflight_report.parents or root in summary_report.parents:
-            raise ValueError("capture receipts must remain outside empty capture directory")
+        try:
+            root = Path(env.get(key, "")).resolve(strict=True)
+        except (OSError, RuntimeError) as exc:
+            raise ValueError("capture output directory does not exist") from exc
+        for receipt_path in (preflight_report, summary_report):
+            try:
+                destination = receipt_path.parent.resolve(strict=True) / receipt_path.name
+            except (OSError, RuntimeError) as exc:
+                raise ValueError("capture receipt parent is unavailable") from exc
+            if destination == root or root in destination.parents:
+                raise ValueError("capture receipts must remain outside empty capture directory")
     if timeout is not None and (type(timeout) not in (int, float)
                                 or not 0 < timeout <= 86400):
         raise ValueError("invalid capture timeout")
