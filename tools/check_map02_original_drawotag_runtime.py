@@ -159,7 +159,8 @@ int main(void) {
 """
 
 
-def run_original_ot(upstream, *, compiler="cc"):
+def run_original_ot(upstream, *, compiler="cc", harness=HARNESS,
+                    expected_ordinals=frozenset((0, 1)), minimum_blends=2):
     base = Path(upstream).resolve() / "platform" / "pc"
     source = base / "src"
     if not (source / "libgpu.c").is_file() or not (source / "pc_raster.c").is_file():
@@ -171,7 +172,7 @@ def run_original_ot(upstream, *, compiler="cc"):
         root = Path(temp)
         (root / "libgpu.c").write_text(walker, encoding="utf-8")
         (root / "pc_raster.c").write_text(raster, encoding="utf-8")
-        (root / "main.c").write_text(HARNESS, encoding="utf-8")
+        (root / "main.c").write_text(harness, encoding="utf-8")
         results = []
         ordinary_digest = None
         for mode, defines in (
@@ -223,8 +224,8 @@ def run_original_ot(upstream, *, compiler="cc"):
                 pixels = [json.loads(row) for row in pixel_file.read_text().splitlines()]
                 blends = [json.loads(row) for row in blend_file.read_text().splitlines()]
                 report = compare_blendg1_witnesses(pixels, blends)
-                if (report["observed_blendg1_putpixel_pairs"] < 2 or
-                        {p["primitive_ordinal"] for p in pixels} != {0, 1}):
+                if (report["observed_blendg1_putpixel_pairs"] < minimum_blends or
+                        {p["primitive_ordinal"] for p in pixels} != set(expected_ordinals)):
                     raise ValueError("staged actual DrawOTag witnesses do not match")
             results.append(mode)
         return tuple(results)
