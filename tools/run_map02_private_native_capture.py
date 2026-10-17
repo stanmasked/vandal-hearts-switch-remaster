@@ -18,6 +18,7 @@ from tools.preflight_map02_private_dda_capture import (
     preflight, _executable_fingerprint, DIR_KEYS,
 )
 from tools.verify_map02_private_capture_session import verify_session
+from tools.map02_linux_elf_process_image import require_elf_image, observe_live_elf_image
 
 
 def _private_create(path, obj):
@@ -156,13 +157,16 @@ def _validate_launch_environment(environ):
 
 
 def capture(executable, preflight_report, summary_report, *,
-            game_args=(), environ=None, timeout=None):
+            game_args=(), environ=None, timeout=None,
+            require_native_elf_image=False):
     """Synchronous controlled launcher. Returns an unprivileged receipt dict.
 
     The launcher does not identify an installed original game nor prove
     which native libraries it used. No stdout, stderr, textures or pixels
     are copied to the report or GitHub.
     """
+    if type(require_native_elf_image) is not bool:
+        raise ValueError("strict native ELF mode must be boolean")
     env = dict(os.environ if environ is None else environ)
     _validate_launch_environment(env)
     executable = Path(executable).absolute()
@@ -196,7 +200,9 @@ def capture(executable, preflight_report, summary_report, *,
     config = preflight(env, executable=executable)
     _private_create(preflight_report, config)
     receipt = {
-        "schema": "map02_private_native_process_receipt_v1",
+        "schema": ("map02_private_native_process_receipt_v2"
+                   if require_native_elf_image else
+                   "map02_private_native_process_receipt_v1"),
         "capture_frame": config["capture_frame"],
         "executable_sha256": config["executable_sha256"],
         "preflight_created": True,
@@ -208,6 +214,9 @@ def capture(executable, preflight_report, summary_report, *,
         "retail_map02_verified": False,
         "hd_replacement_authorized": False,
     }
+    if require_native_elf_image:
+        receipt["native_elf_image_required"] = True
+        receipt["native_elf_image_observed"] = False
     pinned_fd = None
     pinned_identity = None
     try:
@@ -216,12 +225,18 @@ def capture(executable, preflight_report, summary_report, *,
         receipt["failure_category"] = "executable_changed"
     if pinned_fd is not None:
         try:
+            if require_native_elf_image:
+                try:
+                    require_elf_image(pinned_fd)
+                except ValueError:
+                    receipt["failure_category"] = "native_elf_required"
             # The original pathname remains argv[0] for ELF programs, but
             # Linux exec resolves ONLY the pre-checked fd. pass_fds also
             # supports #!/usr/bin/env script fixtures without /dev/fd leaks
             # into unrelated child processes.
-            proc = subprocess.Popen(
-                [str(executable), *game_args],
+            if receipt["failure_category"] is None:
+                proc = subprocess.Popen(
+                    [str(executable), *game_args],
                 executable=f"/proc/self/fd/{pinned_fd}",
                 pass_fds=(pinned_fd,),
                 cwd=executable.parent,
@@ -230,7 +245,13 @@ def capture(executable, preflight_report, summary_report, *,
                 stderr=subprocess.DEVNULL,
                 shell=False,
             )
-            receipt["process_started"] = True
+                receipt["process_started"] = True
+                if require_native_elf_image:
+                    try:
+                        observe_live_elf_image(proc.pid, pinned_fd)
+                        receipt["native_elf_image_observed"] = True
+                    except ValueError:
+                        receipt["failure_category"] = "native_elf_image_unverified"
             try:
                 receipt["process_exit_code"] = proc.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
@@ -285,12 +306,15 @@ def main():
     parser.add_argument("--preflight-report", type=Path, required=True)
     parser.add_argument("--summary-report", type=Path, required=True)
     parser.add_argument("--timeout-seconds", type=int, default=None)
+    parser.add_argument("--require-native-elf-image", action="store_true",
+                        help="Require kernel /proc process executable to match pinned Linux ELF")
     parser.add_argument("game_args", nargs="*")
     args = parser.parse_args()
     try:
         result = capture(args.executable, args.preflight_report,
                          args.summary_report, game_args=args.game_args,
-                         timeout=args.timeout_seconds)
+                         timeout=args.timeout_seconds,
+                         require_native_elf_image=args.require_native_elf_image)
     except (ValueError, OSError) as exc:
         parser.error(str(exc))
     print(json.dumps(result, sort_keys=True, indent=2))
