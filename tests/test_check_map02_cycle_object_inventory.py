@@ -41,6 +41,8 @@ class OriginalCodeObjectInventoryTests(unittest.TestCase):
         self.source_root = self.upstream / "src"
         (self.source_root / "core").mkdir(parents=True)
         (self.source_root / "core/cd.c").write_text("/* fake only */")
+        (self.source_root / "core/text.c").write_text(
+            '#include "assets/801012e4.inc"\\n')
         for i in range(79):
             (self.source_root / f"game_{i:02d}.c").write_text("/* fake */")
         self.preflight = patch(
@@ -94,6 +96,11 @@ class OriginalCodeObjectInventoryTests(unittest.TestCase):
         (self.source_root / "game_02.c").write_text("/* fake */")
         (self.objroot / "generated_data.o").write_bytes(b"\x7fELF" + b"x" * 300)
         with self.assertRaisesRegex(ValueError, "unlisted or missing"):
+            self.verify()
+
+    def test_non_public_font_dependency_change_fails_closed(self):
+        (self.source_root / "core/text.c").write_text("/* changed */")
+        with self.assertRaisesRegex(ValueError, "retail font dependency changed"):
             self.verify()
 
     def test_path_escape_and_bad_inventory_shape_rejected(self):
