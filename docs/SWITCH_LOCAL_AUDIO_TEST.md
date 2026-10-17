@@ -41,11 +41,14 @@ Homebrew Menu, а не законченная игра. Без пользова�
 использует самостоятельно созданные синтетические SEQ/VH/VB; игровые
 ресурсы не требуются и не входят в сборку.
 
-1. Возьмите артефакт **`native-audout-music-nro`** из успешного workflow
-   [Switch libnx audout music NRO](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/workflows/switch-audout-nro.yml)
-   **для последнего коммита PR №7**, извлеките NRO и запустите обычным
-   способом в поддерживаемой homebrew-среде. Убедитесь, что это именно
-   `audout-audio-switch-probe.nro`, а не графический прототип.
+1. Возьмите артефакт **`native-audout-music-nro`** из
+   [успешной сборки audout для кода X/Y (коммит `f620773`)](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39058585481)
+   либо из более нового успешного запуска
+   [Switch libnx audout music NRO](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/workflows/switch-audout-nro.yml),
+   включающего те же изменения. Коммиты только с документацией
+   **не пересобирают NRO автоматически**. Извлеките файл
+   `audout-audio-switch-probe.nro` и запустите в поддерживаемой
+   homebrew-среде, не путая его с графическим прототипом.
 2. Для первого запуска **не кладите музыкальные файлы** в
    `sdmc:/switch/vandal-hearts-remake/audio/`: синтетический режим
    исключает влияние непроверенного оригинального банка.
