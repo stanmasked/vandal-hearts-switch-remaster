@@ -68,8 +68,13 @@ def instrument(source):
     """Patch verified exact source anchors; leave source intact on failure."""
     if not isinstance(source, str):
         raise ValueError("upstream source must be text")
-    if any(flag in source for flag in (
-            MACRO, "VH_MAP02_PIXEL_PROBE", "VH_MAP02_BLENDG1_PROBE")):
+    # A test harness may legitimately contain a preprocessor *reference*
+    # to our macro without being instrumented. Check the inserted source
+    # marker, not merely the presence of the macro's name.
+    if (("/* Private, nonrecursive, bounded callbacks." in source or
+         "int nativeTarget) {" in source or
+         "VH_MAP02_PIXEL_PROBE" in source or
+         "VH_MAP02_BLENDG1_PROBE" in source)):
         raise ValueError("source already instrumented; use pristine upstream")
     for anchor in (WRITE_SIGNATURE, PUT_SIGNATURE, HIRES,
                    NATIVE_ANCHOR, BLEND_CALL):
