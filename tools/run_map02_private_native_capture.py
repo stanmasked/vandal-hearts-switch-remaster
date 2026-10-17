@@ -19,6 +19,7 @@ from tools.preflight_map02_private_dda_capture import (
 )
 from tools.verify_map02_private_capture_session import verify_session
 from tools.map02_linux_elf_process_image import require_elf_image, observe_live_elf_image
+from tools.check_map02_private_pc_binary import inspect_binary
 
 
 def _private_create(path, obj):
@@ -158,7 +159,8 @@ def _validate_launch_environment(environ):
 
 def capture(executable, preflight_report, summary_report, *,
             game_args=(), environ=None, timeout=None,
-            require_native_elf_image=False):
+            require_native_elf_image=False,
+            require_native_probe_symbols=False):
     """Synchronous controlled launcher. Returns an unprivileged receipt dict.
 
     The launcher does not identify an installed original game nor prove
@@ -167,6 +169,10 @@ def capture(executable, preflight_report, summary_report, *,
     """
     if type(require_native_elf_image) is not bool:
         raise ValueError("strict native ELF mode must be boolean")
+    if type(require_native_probe_symbols) is not bool:
+        raise ValueError("native probe symbol requirement must be boolean")
+    if require_native_probe_symbols and not require_native_elf_image:
+        raise ValueError("native probe symbols require strict native ELF mode")
     env = dict(os.environ if environ is None else environ)
     _validate_launch_environment(env)
     executable = Path(executable).absolute()
@@ -198,9 +204,18 @@ def capture(executable, preflight_report, summary_report, *,
             type(arg) is not str or "\x00" in arg for arg in game_args):
         raise ValueError("game arguments must be plain strings")
     config = preflight(env, executable=executable)
+    # The optional production-oriented gate runs *before* any private
+    # receipt is published or child is started. No pathname, nm output,
+    # game bytes, or pixel selectors become public.
+    if require_native_probe_symbols:
+        checked = inspect_binary(executable)
+        if checked["executable_sha256"] != config["executable_sha256"]:
+            raise ValueError("native probe inspection and preflight ELF differ")
     _private_create(preflight_report, config)
     receipt = {
-        "schema": ("map02_private_native_process_receipt_v2"
+        "schema": ("map02_private_native_process_receipt_v3"
+                   if require_native_probe_symbols else
+                   "map02_private_native_process_receipt_v2"
                    if require_native_elf_image else
                    "map02_private_native_process_receipt_v1"),
         "capture_frame": config["capture_frame"],
@@ -217,6 +232,9 @@ def capture(executable, preflight_report, summary_report, *,
     if require_native_elf_image:
         receipt["native_elf_image_required"] = True
         receipt["native_elf_image_observed"] = False
+    if require_native_probe_symbols:
+        receipt["native_probe_symbols_required"] = True
+        receipt["native_probe_symbols_inspected"] = True
     pinned_fd = None
     pinned_identity = None
     try:
@@ -308,13 +326,16 @@ def main():
     parser.add_argument("--timeout-seconds", type=int, default=None)
     parser.add_argument("--require-native-elf-image", action="store_true",
                         help="Require kernel /proc process executable to match pinned Linux ELF")
+    parser.add_argument("--require-native-probe-symbols", action="store_true",
+                        help="Also require local static GPU/FT4/two-word ELF instrumentation")
     parser.add_argument("game_args", nargs="*")
     args = parser.parse_args()
     try:
         result = capture(args.executable, args.preflight_report,
                          args.summary_report, game_args=args.game_args,
                          timeout=args.timeout_seconds,
-                         require_native_elf_image=args.require_native_elf_image)
+                         require_native_elf_image=args.require_native_elf_image,
+                         require_native_probe_symbols=args.require_native_probe_symbols)
     except (ValueError, OSError) as exc:
         parser.error(str(exc))
     print(json.dumps(result, sort_keys=True, indent=2))
