@@ -54,6 +54,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_vh_
 	./$(BUILD)/test_vh_music_focus_resume
 	./$(BUILD)/test_vh_music_lifecycle_soak
 	./$(BUILD)/test_vh_game_music_banks
+	python3 tests/test_audit_switch_guest_scene_trace.py
 	python3 tests/test_analyze_switch_audio_log.py
 	python3 tests/test_verify_switch_audio_bundle.py
 	python3 tests/test_report_switch_audio_hardware.py
@@ -141,6 +142,7 @@ test-audio-stream: $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(B
 	./$(BUILD)/test_vh_music_focus_resume
 	./$(BUILD)/test_vh_music_lifecycle_soak
 	./$(BUILD)/test_vh_game_music_banks
+	python3 tests/test_audit_switch_guest_scene_trace.py
 	python3 tests/test_analyze_switch_audio_log.py
 	python3 tests/test_verify_switch_audio_bundle.py
 	python3 tests/test_report_switch_audio_hardware.py
