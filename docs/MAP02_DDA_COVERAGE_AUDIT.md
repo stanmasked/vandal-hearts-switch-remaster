@@ -56,6 +56,37 @@ those branches, but its X bounds are only **candidate edge snapshots**,
 not executed spans. They must never be supplied as if they were original
 executed spans to `map02_dda_span_join.reconcile`.
 
+## Preflight a fresh private capture
+
+Before launching the locally compiled **opt-in original PC GPU** with
+your own lawfully obtained game resources, prepare a new private output
+directory, e.g. `mkdir -m 700 /private/dda-capture`. Do not reuse a
+directory from any earlier run or publish native logs/VRAM snapshots.
+
+For a single chosen DrawOTag frame and VRAM pixel, configure the two
+recorders to target the **same** directory and frame:
+
+```sh
+export VH_MAP02_GPU_CAPTURE_DIR=/private/dda-capture
+export VH_MAP02_GPU_CAPTURE_FRAME=411
+export VH_MAP02_PUTPIXEL_DIR=/private/dda-capture
+export VH_MAP02_PUTPIXEL_FRAME=411
+export VH_MAP02_PUTPIXEL_X=30
+export VH_MAP02_PUTPIXEL_Y=30
+python3 -m tools.preflight_map02_private_dda_capture > /private/map02-private-preflight.json
+```
+
+Frame 411 and X/Y 30/30 are **illustrative only**, not measured MAP02
+values. The preflight refuses missing/out-of-range/non-decimal selectors,
+frame or output-directory disagreement, pre-existing files, symlinked
+directories, unsafe POSIX permissions, and paths too long for the C
+recorders' fixed file buffers. It does not create or modify the directory,
+run the executable, prove the binary contains diagnostic hooks, or read
+copyrighted game data. Output omits private path and sample X/Y.
+A successful preflight is **configuration readiness only**: to collect
+both journals the locally built binary must also contain matching
+opt-in native GPU, pixel-scope, DDA span and rejected-edge instrumentation.
+Do not enable any HD replacement based on this result.
 ## Independent journal intake (no inferred coverage)
 
 When an actual run produces one or both private journals, preserve the
