@@ -1,7 +1,13 @@
 #include "vh80_native_timeline.h"
 #define VH80_CAPACITY 4096u
+#if VH80_CAPACITY != VH80_CAPACITY_DETAIL
+#error "legacy v80 detailed lane must remain exactly 4096 entries"
+#endif
 static vh80_event ring[VH80_CAPACITY];
-static unsigned int count, dropped, sequence;
+static vh80_event aggregate[VH80_CAPACITY_AGGREGATE];
+/* Reconstruct globally ordered, contiguous seq at immutable export time. */
+static vh80_event ordered[VH80_TOTAL_CAPACITY];
+static unsigned int count, aggregate_count, dropped, sequence;
 static int vh84_sampling;
 static uint32_t vh86_stores[3],vh86_same[3],vh86_overflow;
 void vh86_reset(void){
@@ -34,16 +40,42 @@ unsigned int vh85_store_count(void){return vh85_stores;}
 unsigned int vh85_same_store_count(void){return vh85_same;}
 unsigned int vh85_write_overflow(void){return vh85_overflow;}
 
-void vh80_reset(void) { count=0;dropped=0;sequence=0;vh84_sampling=0;vh85_reset_command();vh86_reset(); }
+void vh80_reset(void) { count=0;aggregate_count=0;dropped=0;sequence=0;vh84_sampling=0;vh85_reset_command();vh86_reset(); }
 void vh84_set_sampling(int enabled) { vh84_sampling=!!enabled; }
 int vh84_sampling_enabled(void) { return vh84_sampling; }
 void vh80_record(uint32_t kind,uint32_t value,uint32_t cycle,uint32_t frame) {
-    if(kind<VH80_VBLANK || kind>VH92_SYNC_SAME) { dropped++;return; }
-    if(count>=VH80_CAPACITY || sequence==UINT32_MAX) { dropped++;return; }
-    vh80_event *e=&ring[count++];
+    if(kind<VH80_VBLANK || kind>VH93_TOTAL_COUNT) { dropped++;return; }
+    if(sequence==UINT32_MAX) { dropped++;return; }
+    /* Real per-command evidence (types 1..7) and stage aggregates
+     * (types 8..78) are physically independent bounded segments.
+     * Overflow is always refused: neither lane may displace the other. */
+    vh80_event *e;
+    if(kind<VH86_A0_STORES){
+        if(count>=VH80_CAPACITY) { dropped++;return; }
+        e=&ring[count++];
+    }else{
+        if(aggregate_count>=VH80_CAPACITY_AGGREGATE) { dropped++;return; }
+        e=&aggregate[aggregate_count++];
+    }
     e->sequence=++sequence;e->kind=kind;e->value=value;
     e->cycle=cycle;e->frame=frame;
 }
-unsigned int vh80_count(void) { return count; }
+unsigned int vh80_count(void) { return count+aggregate_count; }
+unsigned int vh80_detailed_count(void) { return count; }
+unsigned int vh80_aggregate_count(void) { return aggregate_count; }
 unsigned int vh80_dropped(void) { return dropped; }
-const vh80_event *vh80_events(void) { return ring; }
+const vh80_event *vh80_events(void) {
+    /* No worker writes to these lanes; caller snapshots after GPUfreeze.
+     * Two monotone substreams merge in O(n), preserving the original
+     * global sequence, VBlank order and private JSONL verifier ABI. */
+    unsigned int i=0,j=0,k=0;
+    while(i<count && j<aggregate_count){
+        if(ring[i].sequence<aggregate[j].sequence)
+            ordered[k++]=ring[i++];
+        else
+            ordered[k++]=aggregate[j++];
+    }
+    while(i<count)ordered[k++]=ring[i++];
+    while(j<aggregate_count)ordered[k++]=aggregate[j++];
+    return ordered;
+}
