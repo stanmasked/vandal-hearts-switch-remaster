@@ -268,6 +268,25 @@ jobs:
       - name: Confirm original PC GPU/GTE source blobs against pinned reference
         run: |
           python3 -c 'from pathlib import Path; from tools.map02_local_capture_handoff import verify_pinned_upstream; verify_pinned_upstream(Path("upstream-pc")); print("Pinned original PC GPU/GTE/Makefile blobs verified")'
+      - name: Verify source-pinned US include and KROM font generator identities
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from tools.check_map02_original_inc_provenance import (
+              GENERATOR, GENERATOR_BLOB_SHA1, _original_blob_sha1)
+          from tools.check_map02_private_pc_inputs import (
+              FONT_GENERATOR, FONT_GENERATOR_BLOB_SHA1)
+          root = Path("upstream-pc")
+          for path, expected in (
+              (GENERATOR, GENERATOR_BLOB_SHA1),
+              (FONT_GENERATOR, FONT_GENERATOR_BLOB_SHA1),
+          ):
+              source = root / path
+              if (source.is_symlink() or not source.is_file()
+                      or _original_blob_sha1(source.read_bytes()) != expected):
+                  raise SystemExit("source-pinned original US generator drift")
+          print("Original public US resource and KROM generator blobs verified")
+          PY
       - name: Compile private original CD-read atomic stage alongside scoped GPU writers
         run: |
           cc -std=gnu99 -Wall -Wextra -Werror \
