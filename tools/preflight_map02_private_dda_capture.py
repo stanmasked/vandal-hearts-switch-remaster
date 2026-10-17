@@ -35,7 +35,10 @@ def _executable_fingerprint(path):
     if path.is_symlink():
         raise ValueError("executable cannot be a symlink")
     try:
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        # Do not block if an executable pathname is swapped for a FIFO.
+        # O_NONBLOCK has no effect on normal executable regular files.
+        flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+                 | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0))
         fd = os.open(path, flags)
         with os.fdopen(fd, "rb") as handle:
             before = os.fstat(handle.fileno())
