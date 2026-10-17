@@ -100,3 +100,10 @@ VhAudoutQueueExportResult vh_audout_clock_export(
     return export_csv(t,directory,committed_path,capacity,
         "clock",vh_audout_clock_write_csv,vh_audout_clock_verify_csv);
 }
+
+VhAudoutQueueExportResult vh_audout_slow_export(
+    const VhAudoutQueueTelemetry *t,const char *directory,
+    char *committed_path,size_t capacity) {
+    return export_csv(t,directory,committed_path,capacity,
+        "slow",vh_audout_slow_write_csv,vh_audout_slow_verify_csv);
+}
