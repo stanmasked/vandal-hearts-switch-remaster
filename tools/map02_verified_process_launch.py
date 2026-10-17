@@ -433,8 +433,12 @@ def main():
                 a.private_handoff_dir, a.private_native_windows,
                 a.private_scoped_capture, a.pc_binary, a.owned_game_image,
                 upstream=a.upstream_checkout)
-    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+    except ValueError as exc:
         p.error(str(exc))
+    except (OSError, subprocess.TimeoutExpired):
+        # Native launch failures can expose a private executable, disc or
+        # SDK filename via OSError.filename or TimeoutExpired.cmd/output.
+        p.error("private MAP02 process launch filesystem or execution unavailable")
     print(json.dumps(result, sort_keys=True, indent=2))
 
 
