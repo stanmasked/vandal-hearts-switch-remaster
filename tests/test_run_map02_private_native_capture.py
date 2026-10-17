@@ -576,7 +576,7 @@ class PrivateNativeLauncherTests(unittest.TestCase):
 
     def test_malformed_launch_environment_rejected_before_preflight(self):
         for field, value in (("MALFORMED", 5), ("HAS_EQUALS=YES", "1"),
-                             ("HAS_NUL", "a\\x00b"), ("", "empty-key")):
+                             ("HAS_NUL", "a\x00b"), ("", "empty-key")):
             with self.subTest(field=field):
                 invalid = dict(self.env)
                 invalid[field] = value
