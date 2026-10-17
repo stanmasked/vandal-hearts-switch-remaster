@@ -7,6 +7,7 @@ on:
       - 'tools/check_map02_original_gpu_tus.py'
       - 'tools/check_map02_original_raster_runtime.py'
       - 'tools/check_map02_original_drawotag_runtime.py'
+      - 'tools/check_map02_original_drawotag_complex.py'
       - 'tests/test_check_map02_original_gpu_tus.py'
       - 'tools/map02_scoped_blend_sink.c'
       - 'tools/map02_scoped_blend_sink.h'
@@ -35,6 +36,7 @@ on:
       - 'tools/check_map02_original_gpu_tus.py'
       - 'tools/check_map02_original_raster_runtime.py'
       - 'tools/check_map02_original_drawotag_runtime.py'
+      - 'tools/check_map02_original_drawotag_complex.py'
       - 'tests/test_check_map02_original_gpu_tus.py'
       - 'tools/map02_scoped_blend_sink.c'
       - 'tools/map02_scoped_blend_sink.h'
@@ -109,3 +111,5 @@ jobs:
         run: python3 -m tools.check_map02_original_raster_runtime upstream-pc
       - name: Run actual original DrawOTag with synthetic DR_MODE F4 FT4
         run: python3 -m tools.check_map02_original_drawotag_runtime upstream-pc
+      - name: Stress original DrawOTag with overlapping STP and draw-mode switches
+        run: python3 -m tools.check_map02_original_drawotag_complex upstream-pc
