@@ -319,6 +319,45 @@ static void test_invalid_switch_preserves_twenty_voices(void) {
     }
 }
 
+
+static void test_seq_reuses_naturally_released_slot_without_stale_owner(void) {
+    uint8_t song[15u+20u*4u+4u+3u+4u+3u];
+    const uint8_t header[]={HEADER};
+    memcpy(song,header,sizeof header);
+    size_t n=sizeof header;
+    for(unsigned i=0;i<VH_NATIVE_MUSIC_VOICES;i++) {
+        song[n++]=0u; song[n++]=0x90u;
+        song[n++]=(uint8_t)(40u+i); song[n++]=100u;
+    }
+    song[n++]=0u; song[n++]=0x80u; song[n++]=47u; song[n++]=0u;
+    song[n++]=0x81u; song[n++]=0x70u; /* tick 240 */
+    song[n++]=0x90u; song[n++]=60u; song[n++]=110u;
+    song[n++]=0x81u; song[n++]=0x70u; /* tick 480 */
+    song[n++]=0xffu; song[n++]=0x2fu;
+    assert(n<=sizeof song);
+    setup();
+    assert(vh_native_seq_init(&seq,song,n,&spu,resolve,&log_state,1)==0);
+    assert(vh_native_seq_advance_block(&seq)>0);
+    assert(seq.note_ons==20 && seq.note_offs==1);
+    assert(seq.note_slot[0][47]==-1);
+    assert(spu.voice[7].adsr.phase==VH_ADSR_RELEASE);
+    /* The voice expires through rendering; other nineteen remain held. */
+    vh_native_spu_render(&spu,pcm,512u);
+    assert(!vh_native_spu_voice_active(&spu,7u));
+    for(unsigned i=0;i<VH_NATIVE_MUSIC_VOICES;i++)
+        if(i!=7u) assert(vh_native_spu_voice_active(&spu,i));
+    for(unsigned block=1u;block<22u;block++) {
+        assert(vh_native_seq_advance_block(&seq)>=0);
+        vh_native_spu_render(&spu,pcm,512u);
+    }
+    assert(seq.note_ons==21 && seq.note_offs==1);
+    assert(seq.note_slot[0][60]==7);
+    assert(seq.owner_ch[7]==0 && seq.owner_note[7]==60);
+    assert(seq.note_slot[0][47]==-1);
+    assert(vh_native_spu_voice_active(&spu,7u));
+    assert(spu.voice[7].adsr.phase==VH_ADSR_ATTACK);
+}
+
 int main(void) {
     test_validation_and_source_immutability();
     test_512_block_controls_and_ring_pressure();
@@ -329,6 +368,7 @@ int main(void) {
     test_repeated_scene_switch_with_twenty_live_voices();
     test_natural_adsr_release_reuses_free_slot();
     test_invalid_switch_preserves_twenty_voices();
+    test_seq_reuses_naturally_released_slot_without_stale_owner();
     puts("native pQES SEQ -> 20-voice SPU -> PCM ring: PASS");
     return 0;
 }
