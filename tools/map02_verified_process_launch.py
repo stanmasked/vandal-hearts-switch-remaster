@@ -159,9 +159,14 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
     info = os.stat(binary)
     if not stat.S_ISREG(info.st_mode) or not (info.st_mode & stat.S_IXUSR):
         raise ValueError("PC binary is not owner-executable")
+    if cycle is not None:
+        from tools.check_map02_linked_font_elf import stable_owned_elf_sha256
+        executable_digest = stable_owned_elf_sha256
+    else:
+        executable_digest = _sha_file
     if (verify_pinned_upstream(upstream) !=
             plan["pinned_upstream_source_identity_sha256"] or
-            _sha_file(binary) != plan["pc_executable_sha256"] or
+            executable_digest(binary) != plan["pc_executable_sha256"] or
             _sha_file(owned_game, private=True) != plan["owned_game_image_sha256"]):
         raise ValueError("original PC source, binary or game input differs from plan")
     if cycle is not None:
@@ -281,7 +286,7 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
             process.kill()
             process.wait()
         raise
-    if (_sha_file(binary) != plan["pc_executable_sha256"] or
+    if (executable_digest(binary) != plan["pc_executable_sha256"] or
             _sha_file(owned_game, private=True) != plan["owned_game_image_sha256"] or
             verify_pinned_upstream(upstream) !=
             plan["pinned_upstream_source_identity_sha256"] or
