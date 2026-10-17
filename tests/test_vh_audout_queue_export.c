@@ -53,6 +53,15 @@ int main(void) {
     assert(vh_audout_clock_export(&t,dir,second,sizeof second)==0);
     assert(strstr(second,"audio-audout-clock-0001.csv"));
     assert(unlink(second)==0 && unlink(clock)==0);
+    char slow[VH_AUDOUT_QUEUE_EXPORT_PATH_CAP];
+    assert(vh_audout_slow_export(&t,dir,slow,sizeof slow)==0);
+    assert(strstr(slow,"audio-audout-slow-0000.csv"));
+    f=fopen(slow,"rb");
+    assert(f && vh_audout_slow_verify_csv(&t,f)==0);
+    fclose(f);
+    assert(vh_audout_slow_export(&t,dir,second,sizeof second)==0);
+    assert(strstr(second,"audio-audout-slow-0001.csv"));
+    assert(unlink(second)==0 && unlink(slow)==0);
     assert(unlink(first)==0);
     char path[VH_AUDOUT_QUEUE_EXPORT_PATH_CAP];
     snprintf(path,sizeof path,"%s/audio-audout-queue-0001.csv",dir);
