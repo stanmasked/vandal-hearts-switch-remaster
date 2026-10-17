@@ -53,6 +53,12 @@ int main(int argc, char **argv) {
     VH_Map02RejectedEdges(&cx, 10, 10, 20, 7);
     VH_Map02RejectedEdges(&cx, 9, 10, 20, 5);
     VH_Map02RejectedEdges(&cx, 9, 10, 20, 99);
+    if (argc == 3) {
+        int i;
+        vh_pixel_sample_y = 9;
+        for (i = 0; i < 100; ++i)
+            VH_Map02RejectedEdges(&cx, 9, 10, 20, 7);
+    }
 #endif
     return 0;
 }
@@ -95,6 +101,14 @@ class CandidateC11Tests(unittest.TestCase):
                         validate(journal.read_bytes().replace(b'"reason":4', b'"reason":5', 1))
                     with self.assertRaises(ValueError):
                         validate(journal.read_bytes()[:-1])
+                    cap_dir = root / "cap"
+                    cap_dir.mkdir()
+                    subprocess.run([str(target), str(cap_dir), "fill"],
+                                   check=True, capture_output=True, text=True)
+                    capped = (cap_dir / journal.name).read_bytes()
+                    self.assertEqual(len(capped.splitlines()), 64)
+                    with self.assertRaisesRegex(ValueError, "truncation"):
+                        validate(capped)
                 else:
                     self.assertFalse(journal.exists())
             bad = subprocess.run(
