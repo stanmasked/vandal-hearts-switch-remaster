@@ -42,8 +42,8 @@ Homebrew Menu, а не законченная игра. Без пользова�
 ресурсы не требуются и не входят в сборку.
 
 1. Возьмите артефакт **`native-audout-music-nro`** из
-   [проверенной сборки с X/Y, HOME, задержками PCM и учётом неудачных отправок](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39065281189)
-   ([артефакт NRO №12113455446](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39065281189/artifacts/12113455446))
+   [проверенной сборки с четырьмя страницами отчёта, X/Y и HOME](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39066468948)
+   ([артефакт NRO №12113910633](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39066468948/artifacts/12113910633))
    либо из более нового успешного запуска
    [Switch libnx audout music NRO](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/workflows/switch-audout-nro.yml),
    содержащего эти же изменения. Коммиты только с документацией
