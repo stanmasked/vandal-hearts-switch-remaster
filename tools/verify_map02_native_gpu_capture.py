@@ -264,6 +264,13 @@ def verify_capture(directory: Path, *, target_frame: int):
                     before["window"] != after["window"]
                     or before["draw_mode"] != after["draw_mode"]):
                 raise ValueError("non-DR_MODE DrawOTag primitive modified GPU state")
+            # Pinned PC libgpu.c dispatches DR_MODE solely to update the
+            # persistent draw mode/texture window. It makes no raster or
+            # VRAM writes. A forged transition must not be counted as a
+            # pixel operation, even when the following FT4 starts with
+            # exactly that forged POST snapshot.
+            if before["primitive_type"] == 5 and changed:
+                raise ValueError("DR_MODE DrawOTag primitive modified VRAM")
             previous_draw_post=b
             previous_draw_gpu_state=(after["window"],after["draw_mode"])
             draws+=1
