@@ -298,6 +298,80 @@ int main(int argc, char **argv) {
                 popen.assert_not_called()
         self.assertFalse((self.handoff / RECEIPT).exists())
 
+    def test_cycle_image_rejects_same_byte_inode_swap_after_fd_observation(self):
+        cycle = self.handoff.parent / "cycle-image-inode-swap"
+        cycle.mkdir(mode=0o700)
+        old_image = self.owned.with_suffix(".saved-image")
+        original_probe = launcher._kernel_observes_game_fd
+        exchanged = []
+
+        def replace_image_after_kernel_observation(pid, expected):
+            observed = original_probe(pid, expected)
+            if observed and not exchanged:
+                self.owned.replace(old_image)
+                shutil.copyfile(old_image, self.owned)
+                self.owned.chmod(0o600)
+                self.assertNotEqual(self.owned.stat().st_ino, expected[1])
+                exchanged.append(True)
+            return observed
+
+        try:
+            with patch(
+                    "tools.check_map02_cycle_elf.audit_cycle_elf",
+                    return_value={"required_symbols_present": 19}), patch(
+                    "tools.map02_cycle_build_provenance.verify_build_receipt",
+                    return_value={"source_pinned_full_elf_bytes_checked": True}), patch(
+                    "tools.map02_verified_process_launch._kernel_observes_game_fd",
+                    side_effect=replace_image_after_kernel_observation):
+                with self.assertRaisesRegex(
+                        ValueError, "game-image identity changed during run"):
+                    launch_observed_pc(
+                        self.handoff, self.native, self.scoped,
+                        self.binary, self.owned, upstream=self.upstream,
+                        x=10, y=20, timeout=8, cycle_dir=cycle,
+                        build_receipt_dir=self.handoff.parent / "receipt",
+                        build_bundle_dir=self.handoff.parent / "bundle")
+        finally:
+            if old_image.exists():
+                self.owned.unlink(missing_ok=True)
+                old_image.replace(self.owned)
+        self.assertTrue(exchanged)
+        self.assertFalse((self.handoff / RECEIPT).exists())
+
+    def test_cycle_image_rejects_changed_second_read_without_metadata_change(self):
+        original_pread = os.pread
+        calls = []
+
+        def flip_second_pass(fd, length, offset):
+            block = original_pread(fd, length, offset)
+            calls.append(True)
+            if len(calls) == 2:
+                return bytes([block[0] ^ 1]) + block[1:]
+            return block
+
+        with patch("tools.map02_verified_process_launch.os.pread",
+                   side_effect=flip_second_pass):
+            with self.assertRaisesRegex(ValueError, "bytes changed between read passes"):
+                launcher._stable_owned_cycle_image(self.owned)
+        self.assertEqual(len(calls), 2)
+        self.assertFalse((self.handoff / RECEIPT).exists())
+
+    def test_cycle_image_rejects_private_file_hardlinks_and_symlinks(self):
+        owned_alias = self.owned.with_suffix(".alias")
+        os.link(self.owned, owned_alias)
+        try:
+            with self.assertRaisesRegex(ValueError, "not exclusively owned"):
+                launcher._stable_owned_cycle_image(self.owned)
+        finally:
+            owned_alias.unlink()
+        owned_alias.symlink_to(self.owned)
+        try:
+            with self.assertRaisesRegex(ValueError, "input unavailable"):
+                launcher._stable_owned_cycle_image(owned_alias)
+        finally:
+            owned_alias.unlink()
+        self.assertFalse((self.handoff / RECEIPT).exists())
+
     def test_cycle_fd_rejects_inode_swapped_after_original_plan(self):
         from tools.check_map02_linked_font_elf import stable_owned_elf_sha256
         expected = stable_owned_elf_sha256(self.binary)
