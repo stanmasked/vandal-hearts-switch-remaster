@@ -155,6 +155,34 @@ int vh_audio_output_verify_run(
     uint64_t expected_pages, uint64_t fixture_switch_period_pages,
     int finished_without_error);
 
+/* An audout descriptor may be backed by a reusable, caller-owned PCM page.
+ * Even a failed submit can leave that memory in use until the backend
+ * releases the EXACT descriptor or a successful stop drains the service.
+ * All calls belong on the same serialized producer thread; these functions
+ * are NOT locks. Zero-initialize before the first submission.
+ *
+ * While in_flight is non-NULL, do not rerender/overwrite its PCM storage,
+ * switch away from borrowed source banks, or close the output service.
+ */
+typedef struct {
+    const void *in_flight;
+} VhAudioPageLease;
+
+/* Reserve a descriptor before calling audoutPlayBuffer; reject a second
+ * submission while the first page might still be held by the service.
+ * Failure does not change state. */
+int vh_audio_page_lease_begin(VhAudioPageLease *lease,
+                              const void *descriptor);
+/* Only the identical descriptor returned by the service unlocks its page.
+ * A NULL or foreign pointer must leave the lease outstanding. */
+int vh_audio_page_lease_return(VhAudioPageLease *lease,
+                               const void *returned_descriptor);
+/* Clear a possibly outstanding descriptor ONLY after confirmed stop.
+ * The caller must not call this following a failed stop. */
+int vh_audio_page_lease_stopped(VhAudioPageLease *lease);
+/* True if it is safe to reuse PCM backing and change music scene. */
+int vh_audio_page_lease_ready(const VhAudioPageLease *lease);
+
 /* A single reusable audout PCM page is safe to overwrite only when
  * libnx reports that the identical AudioOutBuffer descriptor was released.
  * Call after a successful audoutPlayBuffer; another pointer (or NULL)
