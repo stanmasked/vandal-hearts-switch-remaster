@@ -127,6 +127,40 @@ class PixelToOriginalPrimitiveTests(unittest.TestCase):
         self.assertEqual(result["observed_bit15_set_to_unset_calls"],1)
         self.assertEqual(result["calls_attributed_to_source_keyed_ft4"],2)
 
+    def test_unmatched_ft4_can_change_sampled_word_between_matched_faces(self):
+        # Three native PutPixel calls, but only the first and last
+        # belong to the two source-keyed MAP02 FT4s. The intermediate
+        # DrawOTag FT4 is deliberately absent from the source bundle.
+        unrelated = self.base.base.event(6, "draw", {
+            "tpage": 3, "clut": 10,
+            "xy": [20,20,70,20,20,70,70,70],
+            "uv": [0,0,4,0,0,4,4,4],
+        })
+        self.base.base.entries.insert(2, unrelated)
+        original = bytes(self.base.base.bytes_before)
+        first = bytearray(original)
+        middle = bytearray(original)
+        struct.pack_into("<H", first, (30*1024+30)*2, 0x801f)
+        struct.pack_into("<H", middle, (30*1024+30)*2, 0x03e0)
+        self.base.base.override_snapshots = {
+            3:bytes(first), 4:bytes(first),
+            5:bytes(middle), 6:bytes(middle), 7:original,
+        }
+        self.pixel_rows = [
+            self.row(0,1,0,0x801f,0x801f),
+            self.row(1,2,0x801f,0x03e0,0x03e0),
+            self.row(2,3,0x03e0,0,0),
+        ]
+        self.save()
+        result = verify_pixel_ot(self.root,self.native)
+        self.assertEqual(result["native_drawotag_primitives_checked"],4)
+        self.assertEqual(result["observed_native_putpixel_calls"],3)
+        self.assertEqual(result["calls_attributed_to_source_keyed_ft4"],2)
+        self.assertEqual(result["source_ft4_sampled_changed_word_draws"],2)
+        self.assertTrue(
+            result["source_ft4_sampled_first_changed_pre_equals_last_changed_post"])
+        self.assertFalse(result["source_ft4_sampled_endpoint_causality_verified"])
+
     def test_same_color_calls_do_not_claim_a_changed_ft4_word(self):
         original = bytes(self.base.base.bytes_before)
         self.base.base.override_snapshots = {3:original,4:original,5:original}
