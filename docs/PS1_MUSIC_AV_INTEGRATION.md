@@ -1707,3 +1707,39 @@ scenario remains INCOMPLETE instead of falsely reporting FULL.
 The new test runs in both Make host suites and in PCM CI under
 UBSan. This is synthetic state-machine evidence only: physical
 Switch sleep/resume and audible quality are still unverified.
+
+
+### Retained descriptor ownership across immediate pause after retry recovery
+
+The host audout callback simulator now models a descriptor with a
+foreign pointer or NULL returned from an otherwise successful
+backend call as **still in flight**, not released. A subsequent
+submission is illegal until a *successful* \`stop\` drains or
+discards that descriptor. Failed stops preserve this in-flight
+state, and the test aborts if an unsafe submit/close is attempted.
+
+A two-page synthetic trace injects a foreign return and then a
+NULL return for the SAME immutable PCM buffer, each followed by a
+successful stop/close/reopen and re-submission. Once the correct
+descriptor returns, it counts as exactly ONE delivered page.
+The service is paused IMMEDIATELY, forcibly reopened despite a
+temporary open failure, then paused and quickly resumed again
+without any new PCM. Backend calls, accepted-page fingerprint,
+timing, page-wait bins and SEQ/SPU/resampler clocks remain
+unchanged across both pause/resume operations. A second, distinct
+page is then submitted and delivered once, and exact whole-run
+accounting is checked.
+
+A separate negative trace returns a foreign descriptor and then
+fails to stop the device. The descriptor remains outstanding;
+neither the retry path nor a failed forced resume may close,
+requeue or mark it as returned. Only an explicit successful stop
+releases the simulated ownership before reopening. No abandoned
+page is implicitly delivered and the incomplete-run audit is
+consistent with one failed raw submission.
+
+This is a STRICT host mock of a possible outstanding backend
+descriptor, NOT proof of libnx hardware queue ownership, stop
+drain semantics, HOME/sleep behavior or audible Switch quality.
+It adds no retained PCM dumps, new backend API calls or changes
+to physical music playback.

@@ -16,6 +16,10 @@ typedef struct {
     int fail_stop, fail_open, fail_start;
     unsigned fail_starts_left, fail_opens_left;
     unsigned mismatched_returns_left, null_returns_left;
+    /* Strict mock ownership: a foreign/NULL backend return leaves
+     * our descriptor in-flight. Only a SUCCESSFUL stop flushes it.
+     * No later submit is allowed until that ownership is cleared. */
+    unsigned pending_unreleased, flushed_unreleased;
     int owned_descriptor, foreign_descriptor;
     const int16_t *page_pointer;
     size_t page_frames;
@@ -34,6 +38,7 @@ static uint64_t hash_page(const int16_t *pcm, size_t frames) {
 static int submit(void *ctx,const int16_t *pcm,size_t frames) {
     Mock *m=ctx;
     assert(m->opened && m->playing && pcm && frames);
+    assert(m->pending_unreleased==0u);
     const uint64_t hash=hash_page(pcm,frames);
     if (!m->attempts_this_page) {
         m->page_pointer=pcm;
@@ -72,7 +77,10 @@ static int submit(void *ctx,const int16_t *pcm,size_t frames) {
         vh_audio_output_page_returned(&m->owned_descriptor,returned);
     assert(vh_audio_output_record_submit_timing(
         &m->timing,waited,19200000u,frames,returned_ours)==0);
-    if (!returned_ours) return -1;
+    if (!returned_ours) {
+        m->pending_unreleased=1u;
+        return -1;
+    }
     ++m->accepted;
     m->checksum=(m->checksum ^ hash)*UINT64_C(1099511628211);
     return 0;
@@ -81,12 +89,18 @@ static int stop(void *ctx) {
     Mock *m=ctx;
     ++m->stops;
     if (m->fail_stop) return -1;
+    /* A successful stop drains/discards any unreturned descriptor.
+     * An unsuccessful stop must NOT grant ownership to the caller. */
+    if (m->pending_unreleased) {
+        ++m->flushed_unreleased;
+        m->pending_unreleased=0u;
+    }
     m->playing=0;
     return 0;
 }
 static void close_device(void *ctx) {
     Mock *m=ctx;
-    assert(!m->playing);
+    assert(!m->playing && !m->pending_unreleased);
     ++m->closes;
     m->opened=0;
 }
@@ -125,6 +139,7 @@ static void begin_page(Mock *m,unsigned failures) {
     m->page_pointer=NULL;
     m->page_frames=0;
     m->page_hash=0;
+    assert(!m->pending_unreleased);
 }
 static const uint8_t song[]={
     'p','Q','E','S',0,0,0,0,1,0xe0,7,0xa1,0x20,0,0,
@@ -356,6 +371,8 @@ int main(void) {
         assert(wrong.submissions==2u && wrong.accepted==1u);
         assert(wrong.opens==1u && wrong.closes==1u &&
                wrong.stops==1u && wrong.starts==1u);
+        assert(wrong.pending_unreleased==0u &&
+               wrong.flushed_unreleased==1u);
         assert(hash_page(dst,32u)==original_hash);
         assert(wrong.page_pointer==dst && wrong.page_frames==32u);
         assert(wrong.page_hash==original_hash);
@@ -380,6 +397,9 @@ int main(void) {
     assert(no_return_stats.restart_attempts==
            VH_AUDIO_OUTPUT_RESTART_LIMIT);
     assert(never_returned.accepted==0u);
+    assert(never_returned.pending_unreleased==1u &&
+           never_returned.flushed_unreleased==
+           VH_AUDIO_OUTPUT_RESTART_LIMIT);
     assert(never_returned.submissions==VH_AUDIO_OUTPUT_RESTART_LIMIT+1u);
     assert(never_returned.timing.calls==never_returned.submissions);
     assert(never_returned.timing.failed_submissions==
@@ -739,6 +759,142 @@ int main(void) {
     assert(at_limit_stats.submit_failures==UINT_MAX);
     assert(at_limit_stats.restart_attempts==1u);
     assert(at_limit.submissions==1u && at_limit.stops==0u);
+
+    /* Two successive backend 'success' results release the WRONG
+     * descriptor (foreign, then NULL). Model the submitted buffer
+     * as still owned after both. Only a successful stop drains it.
+     * Immediately pause and resume after eventual valid delivery;
+     * no resume may retransmit that already delivered PCM page.
+     */
+    Mock ownership={.opened=1,.playing=1,
+                    .checksum=UINT64_C(1469598103934665603)};
+    VhAudioOutputOps ownership_ops=callbacks(&ownership);
+    VhAudioOutputRecovery ownership_stats={0};
+    VhAudioSceneWaits ownership_waits={0};
+    int16_t owned_pcm[16];
+    for(unsigned z=0u;z<16u;z++)
+        owned_pcm[z]=(int16_t)(2000+(int)z*117);
+    const uint64_t owned_hash=hash_page(owned_pcm,8u);
+    const uint64_t stable_spu=spu.frames_rendered;
+    const uint64_t stable_resample=resampler.input_frames;
+    const uint64_t stable_seq=seq.note_ons;
+    begin_page(&ownership,0u);
+    ownership.mismatched_returns_left=1u;
+    ownership.null_returns_left=1u;
+    const VhAudioSubmitTiming ownership_before={0};
+    assert(vh_audio_output_submit_recover(
+        &ownership_ops,&ownership_stats,owned_pcm,8u)==0);
+    assert(vh_audio_output_record_scene_page(
+        &ownership_waits,&ownership_before,&ownership.timing,
+        freq,8u,0,1)==0);
+    assert(ownership.submissions==3u && ownership.accepted==1u);
+    assert(ownership.flushed_unreleased==2u &&
+           ownership.pending_unreleased==0u);
+    assert(ownership_stats.pages_submitted==1u &&
+           ownership_stats.submit_failures==2u &&
+           ownership_stats.restart_attempts==2u &&
+           ownership_stats.recoveries==1u);
+    assert(ownership.page_pointer==owned_pcm &&
+           ownership.page_hash==owned_hash);
+    assert(hash_page(owned_pcm,8u)==owned_hash);
+
+    /* Pause immediately after the successful recovered submission
+     * and again straight after the first session resume. The page
+     * fingerprint, service calls and music clocks stay unchanged. */
+    const unsigned calls_before_pause=ownership.submissions;
+    const unsigned accepted_before_pause=ownership.accepted;
+    const uint64_t hash_before_pause=ownership.checksum;
+    const VhAudioSubmitTiming timing_before_pause=ownership.timing;
+    const VhAudioSceneWaits waits_before_pause=ownership_waits;
+    assert(ownership_ops.stop(ownership_ops.context)==0);
+    ownership.fail_opens_left=1u;
+    assert(vh_audio_output_resume_recover(
+        &ownership_ops,&ownership_stats,1)==0);
+    assert(ownership_ops.stop(ownership_ops.context)==0);
+    assert(vh_audio_output_resume_recover(
+        &ownership_ops,&ownership_stats,0)==0);
+    assert(ownership.submissions==calls_before_pause);
+    assert(ownership.accepted==accepted_before_pause);
+    assert(ownership.checksum==hash_before_pause);
+    assert(ownership.pending_unreleased==0u &&
+           ownership.flushed_unreleased==2u);
+    assert(!memcmp(&ownership.timing,&timing_before_pause,
+                   sizeof timing_before_pause));
+    assert(!memcmp(&ownership_waits,&waits_before_pause,
+                   sizeof waits_before_pause));
+    assert(ownership_stats.pages_submitted==1u &&
+           ownership_stats.frames_submitted==8u);
+    assert(spu.frames_rendered==stable_spu);
+    assert(resampler.input_frames==stable_resample);
+    assert(seq.note_ons==stable_seq);
+
+    /* Next explicitly produced page is different: it is delivered
+     * exactly once; previously delivered page cannot be replayed by
+     * focus/HOME restart. */
+    int16_t next_owned_pcm[16];
+    for(unsigned z=0u;z<16u;z++)
+        next_owned_pcm[z]=(int16_t)(-3000+(int)z*103);
+    const uint64_t second_hash=hash_page(next_owned_pcm,8u);
+    const VhAudioSubmitTiming second_before=ownership.timing;
+    begin_page(&ownership,0u);
+    assert(vh_audio_output_submit_recover(
+        &ownership_ops,&ownership_stats,next_owned_pcm,8u)==0);
+    assert(vh_audio_output_record_scene_page(
+        &ownership_waits,&second_before,&ownership.timing,
+        freq,8u,0,1)==0);
+    assert(ownership.submissions==4u && ownership.accepted==2u);
+    assert(ownership.checksum==
+           ((UINT64_C(1469598103934665603)^owned_hash)*
+             UINT64_C(1099511628211)^second_hash)*
+             UINT64_C(1099511628211));
+    assert(ownership_stats.pages_submitted==2u &&
+           ownership_stats.frames_submitted==16u);
+    assert(vh_audio_output_verify_run(
+        &ownership_waits,&ownership_stats,&ownership.timing,
+        2u,0u,2u,0u,1)==1);
+    assert(spu.frames_rendered==stable_spu);
+    assert(resampler.input_frames==stable_resample);
+    assert(seq.note_ons==stable_seq);
+
+    /* If the initial stop fails while the descriptor is not yet
+     * returned, it remains IN-FLIGHT and must not be closed or
+     * resubmitted. Recovery is possible only after an explicit
+     * successful drain, and never implicitly delivers a page. */
+    Mock stalled={.opened=1,.playing=1,.fail_stop=1};
+    VhAudioOutputOps stalled_ops=callbacks(&stalled);
+    VhAudioOutputRecovery stalled_stats={0};
+    VhAudioSceneWaits stalled_waits={0};
+    begin_page(&stalled,0u);
+    stalled.mismatched_returns_left=1u;
+    const VhAudioSubmitTiming stalled_before={0};
+    assert(vh_audio_output_submit_recover(
+        &stalled_ops,&stalled_stats,owned_pcm,8u)==-1);
+    assert(stalled.pending_unreleased==1u &&
+           stalled.flushed_unreleased==0u);
+    assert(stalled.submissions==1u && stalled.accepted==0u);
+    assert(stalled.stops==1u && stalled.closes==0u &&
+           stalled.opens==0u && stalled.starts==0u);
+    assert(vh_audio_output_record_scene_page(
+        &stalled_waits,&stalled_before,&stalled.timing,
+        freq,8u,0,0)==0);
+    assert(stalled_stats.pages_submitted==0u &&
+           stalled_stats.submit_failures==1u);
+    /* A second failed STOP must not grant ownership either. */
+    assert(vh_audio_output_resume_recover(
+        &stalled_ops,&stalled_stats,1)==-1);
+    assert(stalled.pending_unreleased==1u &&
+           stalled.closes==0u && stalled.submissions==1u);
+    stalled.fail_stop=0;
+    assert(stalled_ops.stop(stalled_ops.context)==0);
+    assert(stalled.pending_unreleased==0u &&
+           stalled.flushed_unreleased==1u);
+    assert(vh_audio_output_resume_recover(
+        &stalled_ops,&stalled_stats,1)==0);
+    assert(stalled.submissions==1u && stalled.accepted==0u);
+    assert(vh_audio_output_verify_run(
+        &stalled_waits,&stalled_stats,&stalled.timing,
+        0u,0u,1u,0u,0)==0);
+    assert(hash_page(owned_pcm,8u)==owned_hash);
     /* Combine bank switching and blocking audout page ownership.
      * Unlike the previous single-bank test, this one changes the
      * borrowed voice sample arena between 6 eight-block scenes.
