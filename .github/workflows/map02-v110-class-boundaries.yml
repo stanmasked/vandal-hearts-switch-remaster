@@ -1,0 +1,33 @@
+name: MAP02 v110 cumulative Unai GPU class boundaries and VBlank transitions
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v110-class-boundaries.yml'
+      - 'tools/summarize_map02_v110_class_boundary_checkpoints.py'
+      - 'tests/test_map02_v110_class_boundary_checkpoints.py'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/summarize_map02_v109_gp0_class_vblank_stores.py'
+      - 'tests/test_map02_v109_gp0_class_vblank_stores.py'
+      - 'tools/summarize_map02_v108_vblank_store_buckets.py'
+      - 'tests/test_map02_v108_vblank_store_buckets.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-gpu-boundary-continuity:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Native GP0/VBlank provenance regressions from v83 through v110
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          for pattern in test_map02_v83_unai_dispatch.py test_map02_v84_unai_samples.py test_map02_v85_native_stores.py test_map02_v108_vblank_store_buckets.py test_map02_v109_gp0_class_vblank_stores.py test_map02_v110_class_boundary_checkpoints.py; do
+            python3 -m unittest discover -s tests -p "$pattern" -v
+          done

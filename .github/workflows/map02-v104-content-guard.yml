@@ -69,6 +69,8 @@ on:
       - 'tests/test_map02_v108_vblank_store_buckets.py'
       - 'tools/summarize_map02_v109_gp0_class_vblank_stores.py'
       - 'tests/test_map02_v109_gp0_class_vblank_stores.py'
+      - 'tools/summarize_map02_v110_class_boundary_checkpoints.py'
+      - 'tests/test_map02_v110_class_boundary_checkpoints.py'
       - 'tools/map02_v80_native_timeline.*'
       - 'tools/map02_v81_event_jsonl.*'
       - 'tools/verify_map02_v82_native_trace.py'
@@ -127,6 +129,7 @@ jobs:
           done
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v108_vblank_store_buckets.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v109_gp0_class_vblank_stores.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v110_class_boundary_checkpoints.py' -v
       - name: Patch pinned upstream with Unai post-dispatch observer
         shell: bash
         run: |
@@ -261,6 +264,7 @@ jobs:
           from remaster.tools.summarize_map02_v104_content_guard import summarize as content_guard
           from remaster.tools.summarize_map02_v108_vblank_store_buckets import summarize as v108_buckets
           from remaster.tools.summarize_map02_v109_gp0_class_vblank_stores import summarize as v109_classes
+          from remaster.tools.summarize_map02_v110_class_boundary_checkpoints import summarize as v110_boundary
           log=Path("proof/private/v104-runtime.log").read_text()
           head=re.findall(r'VH83_UNAI_DISPATCH_PASS handled=(\d+)',log)
           tail=re.findall(r'VH82_PRIVATE_EXPORT_PASS vblanks=(\d+) gp1_mmio=(\d+) entries=(\d+) bytes=(\d+) drops=(\d+)',log)
@@ -488,6 +492,16 @@ jobs:
           assert gpu_classes["HD_replacement_approved"] is False
           Path("proof/public/v109-gp0-class-summary.json").write_text(
               json.dumps(gpu_classes,sort_keys=True)+"\n")
+          checkpoints=v110_boundary(path.read_bytes())
+          assert checkpoints["vblank_edges"]==4
+          assert checkpoints["observed_unai_handlers"]==observed
+          assert sum(row["adjacent_handler_pairs"] for row in checkpoints["intra_interval_transitions"])+checkpoints["handler_pairs_crossing_one_or_more_vblank_edges"]==max(observed-1,0)
+          latest=checkpoints["snapshots_before_vblank"][-1]["cumulative_by_class"]
+          assert sum(r["native_store_attempts"] for r in latest.values())==ordinal["totals"]["native_store_attempts"]-ordinal["buckets"][-1]["native_store_attempts"]
+          assert checkpoints["exact_gpu_cpu_timing_verified"] is False
+          assert checkpoints["HD_replacement_approved"] is False
+          Path("proof/public/v110-boundary-class-summary.json").write_text(
+              json.dumps(checkpoints,sort_keys=True)+"\n")
           assert evidence["vblank_edges"]==vblanks and evidence["gp1_mmio"]==gp1
           assert evidence["events"]==entries and evidence["bytes"]==size
           assert evidence["original_retail_MAP02_verified"] is False
