@@ -53,7 +53,7 @@ class FourPrivateWitness(unittest.TestCase):
     def test_five_handlers_have_two_four_handler_windows_both_crossing_two_vblanks(self):
         prior,events=five_handler_fixture()
         report=summarize(prior+quadruplets(
-            [EMPTY4[0],EMPTY4[0],(1,0,1,0),EMPTY4[0],EMPTY4[0]]),events)
+            [EMPTY4[0],EMPTY4[0],(1,0,0,1),EMPTY4[0],EMPTY4[0]]),events)
         self.assertEqual(report["native_four_callback_windows"],2)
         self.assertEqual(report["bins_by_vblank_edges_oldest_to_newest"][2][
             "same_as_previous"],1)
