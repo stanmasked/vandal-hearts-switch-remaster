@@ -283,6 +283,23 @@ for name, offset, size in [
             with self.assertRaisesRegex(ValueError, "generator changed"):
                 check_original_includes(self.root)
 
+    def test_generator_timeout_never_leaks_private_arguments(self):
+        secret_path = str(self.exe)
+        with patch("tools.check_map02_original_inc_provenance.subprocess.run",
+                   side_effect=subprocess.TimeoutExpired(
+                       ["python", secret_path], 0.01)):
+            with self.assertRaisesRegex(ValueError, "generation timed out") as ex:
+                check_original_includes(self.root)
+        self.assertNotIn(secret_path, str(ex.exception))
+        self.assertNotIn(str(self.root), str(ex.exception))
+
+    def test_generator_launch_error_never_leaks_private_path(self):
+        with patch("tools.check_map02_original_inc_provenance.subprocess.run",
+                   side_effect=OSError("unavailable: " + str(self.exe))):
+            with self.assertRaisesRegex(ValueError, "could not launch") as ex:
+                check_original_includes(self.root)
+        self.assertNotIn(str(self.root), str(ex.exception))
+
     def test_no_private_paths_or_bytes_in_error_messages(self):
         self.elf.unlink()
         with self.assertRaises(ValueError) as ex:
