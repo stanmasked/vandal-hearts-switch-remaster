@@ -78,10 +78,18 @@ class NativeOverdrawTests(unittest.TestCase):
             report["words_changed_by_two_or_more_ft4_inside_screen_aabb_proxy"],1)
         self.assertEqual(report["bit15_unset_to_set_word_changes"],1)
         self.assertEqual(report["bit15_set_to_unset_word_changes"],1)
+        self.assertEqual(report["source_ft4_bit15_only_word_changes"],0)
+        self.assertEqual(report["source_ft4_color_only_word_changes"],2)
+        self.assertEqual(report["source_ft4_color_and_bit15_word_changes"],2)
+        self.assertEqual(report["source_ft4_first_pre_equals_last_post_words"],0)
+        self.assertEqual(report["source_ft4_first_pre_differs_last_post_words"],3)
+        self.assertEqual(
+            report["source_ft4_repeatedly_changed_first_pre_equals_last_post_words"],0)
         self.assertEqual(report["source_ft4_pairs_without_observable_vram_changes"],0)
         for name in (
             "full_gpu_frame_authenticated",
             "intervening_write_then_restore_excluded",
+            "ft4_word_change_causality_or_coverage_verified",
             "ft4_actual_pixel_coverage_verified",
             "unchanged_pixel_proves_transparency_or_mask_reject",
             "stp_abr_mask_state_correctness_verified",
@@ -118,6 +126,13 @@ class NativeOverdrawTests(unittest.TestCase):
         self.assertEqual(report["changed_words_inside_ft4_screen_aabb_proxy"], 2)
         self.assertEqual(report["bit15_unset_to_set_word_changes"], 1)
         self.assertEqual(report["bit15_set_to_unset_word_changes"], 1)
+        self.assertEqual(report["source_ft4_bit15_only_word_changes"], 2)
+        self.assertEqual(report["source_ft4_color_only_word_changes"], 0)
+        self.assertEqual(report["source_ft4_color_and_bit15_word_changes"], 0)
+        self.assertEqual(report["source_ft4_first_pre_equals_last_post_words"], 1)
+        self.assertEqual(report["source_ft4_first_pre_differs_last_post_words"], 0)
+        self.assertEqual(
+            report["source_ft4_repeatedly_changed_first_pre_equals_last_post_words"], 1)
         self.assertTrue(report["consecutive_native_vram_boundaries_exact"])
         self.assertFalse(report["ft4_actual_pixel_coverage_verified"])
 
@@ -128,6 +143,15 @@ class NativeOverdrawTests(unittest.TestCase):
         report=verify_native_overdraw(self.source,self.native)
         self.assertEqual(report["source_ft4_pairs_without_observable_vram_changes"],1)
         self.assertEqual(report["vram_words_changed_by_two_or_more_source_ft4_draws"],0)
+        self.assertEqual(
+            report["source_ft4_first_pre_equals_last_post_words"] +
+            report["source_ft4_first_pre_differs_last_post_words"],
+            report["distinct_vram_words_changed_by_source_ft4"])
+        self.assertEqual(
+            report["source_ft4_bit15_only_word_changes"] +
+            report["source_ft4_color_only_word_changes"] +
+            report["source_ft4_color_and_bit15_word_changes"],
+            report["changed_vram_words_on_source_ft4_draws"])
         self.assertFalse(report["unchanged_pixel_proves_transparency_or_mask_reject"])
 
     def test_changed_unrelated_screen_location_is_counted_not_misattributed(self):
