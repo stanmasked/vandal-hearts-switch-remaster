@@ -313,7 +313,20 @@ int vh_audio_output_verify_run(
         recovery->recoveries>retry_pages ||
         recovery->recoveries>completed_pages ||
         recovery->restart_attempts<recovery->recoveries ||
-        timing->calls<logical_pages ||
+        retry_pages>timing->failed_submissions ||
+        /* Every raw audout call either failed or accepted exactly
+         * one logical PCM page. A >= check could silently accept
+         * extra unaccounted backend calls. Compare by subtraction
+         * to avoid overflowing completed_pages+failed_submissions. */
+        timing->calls<timing->failed_submissions ||
+        timing->calls-timing->failed_submissions!=completed_pages ||
+        timing->waits_longer_than_page>timing->calls ||
+        timing->max_ticks>timing->total_ticks ||
+        /* A raw service call cannot take more time than the whole
+         * logical PCM page (which includes the raw call and retries).
+         * Peak-page aggregates provide a strict upper bound. */
+        (timing->max_ticks>steady->peak_page_ticks &&
+         timing->max_ticks>boundary->peak_page_ticks) ||
         timing->total_ticks!=steady->total_ticks+boundary->total_ticks)
         return -1;
     return finished_without_error && completed_pages==expected_pages &&

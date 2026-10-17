@@ -1492,3 +1492,34 @@ The fix does not change the music/render/audio service order or
 demonstrate sound quality. Physical Nintendo Switch observation
 is still required. It only prevents a failed recorder from
 creating a phantom DSP/audout event or inconsistent A/B ring.
+
+
+### Exact raw audout call conservation in the final PCM run audit
+
+The final native audio run auditor previously accepted a raw backend
+service call count as long as it was **at least** the number of
+logical submitted PCM pages. That lower bound did not reject a
+stray unaccounted call. Each raw audout submission is either
+rejected (counted as one failed submission) or accepts exactly
+one logical returned PCM page; recoverable retry attempts do not
+advance SEQ/SPU clocks or create another returned page.
+
+The final validator now requires the exact equality
+
+    raw audout calls - failed submissions == returned PCM pages
+
+after an explicit underflow guard. This avoids 64-bit overflow,
+rejects phantom or missing raw calls, and still allows up to
+the configured bounded retries for a failed or recovered page.
+It independently verifies that long-wait raw call counts do not
+exceed raw calls, max raw call ticks do not exceed their total,
+and a raw call's maximum wait fits in the maximum wait of at least
+one logical PCM page.
+
+The existing host recovery regression adds cases for one extra
+raw call, one missing raw call, a saturated call counter,
+impossible long-call/peak metadata, a terminal failed page
+with unmatched raw calls, and recoverable/fully failed page
+examples. This tightens integrity checks **only**: no audout
+service behavior, sample generation, PCM or listening controls
+change. Passing the audit does not certify acoustic quality.

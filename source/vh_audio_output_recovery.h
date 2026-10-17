@@ -137,6 +137,11 @@ int vh_audio_output_verify_pcm_seams(
  *  1: full run reached expected_pages with all counters consistent
  *  0: internally consistent, but interrupted/failed/incomplete run
  * -1: contradictory or overflowing counters (never claim proof)
+ * Every timed backend invocation must be accounted for by EXACTLY one
+ * returned PCM page or one failed submission, including recovered
+ * retries and the final undelivered page. Peak/tick invariants also
+ * reject impossible backend latency metadata. Never infer audible
+ * quality from this integrity status.
  * Only accepted first-after-switch pages count as completed switches.
  * Pass fixture_switch_period_pages=0 for user-owned SD music, which
  * must never be automatically switched. Other values set the precise

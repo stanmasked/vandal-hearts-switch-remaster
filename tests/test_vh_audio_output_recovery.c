@@ -663,6 +663,39 @@ int main(void) {
     assert(vh_audio_output_verify_run(
         &measured_pages,&switch_stats,&altered_timing,
         48u,5u,48u,8u,1)==-1);
+    /* A hidden extra audout call used to pass the >=logical_pages
+     * guard: even if every page/wait sum is otherwise unchanged,
+     * raw calls MUST equal successful pages + failed submissions.
+     * This catches orphan calls without guessing audible effects.
+     */
+    altered_timing=switching.timing;
+    ++altered_timing.calls;
+    assert(vh_audio_output_verify_run(
+        &measured_pages,&switch_stats,&altered_timing,
+        48u,5u,48u,8u,1)==-1);
+    altered_timing=switching.timing;
+    --altered_timing.calls;
+    assert(vh_audio_output_verify_run(
+        &measured_pages,&switch_stats,&altered_timing,
+        48u,5u,48u,8u,1)==-1);
+    altered_timing=switching.timing;
+    altered_timing.calls=UINT64_MAX;
+    assert(vh_audio_output_verify_run(
+        &measured_pages,&switch_stats,&altered_timing,
+        48u,5u,48u,8u,1)==-1);
+    altered_timing=switching.timing;
+    altered_timing.waits_longer_than_page=altered_timing.calls+1u;
+    assert(vh_audio_output_verify_run(
+        &measured_pages,&switch_stats,&altered_timing,
+        48u,5u,48u,8u,1)==-1);
+    altered_timing=switching.timing;
+    const uint64_t boundary_peak=measured_pages.first_after_switch.peak_page_ticks;
+    const uint64_t ordinary_peak=measured_pages.ordinary.peak_page_ticks;
+    altered_timing.max_ticks=(boundary_peak>ordinary_peak
+                              ? boundary_peak : ordinary_peak)+1u;
+    assert(vh_audio_output_verify_run(
+        &measured_pages,&switch_stats,&altered_timing,
+        48u,5u,48u,8u,1)==-1);
     /* A failed logical page is accounted for without ever claiming
      * that the audio service returned a usable PCM page.
      */
@@ -680,6 +713,26 @@ int main(void) {
     assert(vh_audio_output_verify_run(
         &aborted,&aborted_recovery,&aborted_timing,
         0u,0u,48u,8u,0)==0);
+    /* Even a terminal failed page must count every failed call, and
+     * the page bucket cannot hide an additional service invocation. */
+    aborted_timing.calls=2u;
+    assert(vh_audio_output_verify_run(
+        &aborted,&aborted_recovery,&aborted_timing,
+        0u,0u,48u,8u,0)==-1);
+    aborted_timing.calls=1u;
+    /* A fully failed sequence can include multiple raw service
+     * failures on its one logical page (up to the retry cap). */
+    aborted_timing.calls=3u;
+    aborted_timing.failed_submissions=3u;
+    aborted_recovery.submit_failures=3u;
+    aborted.retried_pages=0u; /* not a valid record of 3 attempts */
+    assert(vh_audio_output_verify_run(
+        &aborted,&aborted_recovery,&aborted_timing,
+        0u,0u,48u,8u,0)==0);
+    aborted_timing=(VhAudioSubmitTiming){
+        .calls=1u,.total_ticks=100u,.max_ticks=100u,
+        .failed_submissions=1u};
+    aborted_recovery.submit_failures=1u;
     /* A user-owned bank is never automatically switched; the same
      * class of observations is valid only with zero boundary pages.
      */
