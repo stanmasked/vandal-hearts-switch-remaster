@@ -93,6 +93,8 @@ def audit(directory: Path, *, native_frame=None):
         "native_gpu_pairs_verified": None,
         "move_pairs_with_verified_vram_effect": None,
         "clear_pairs_with_verified_vram_effect": None,
+        "draw_boundary_vram_checks": None,
+        "draw_boundary_gpu_state_checks": None,
         "draw_primitives_in_bounded_capture": None,
         "observed_dda_primitive_keys": None,
     }
@@ -147,6 +149,8 @@ def audit(directory: Path, *, native_frame=None):
             "native_gpu_pairs_verified": capture["native_gpu_pairs_verified"],
             "move_pairs_with_verified_vram_effect": capture["move_pairs_with_verified_vram_effect"],
             "clear_pairs_with_verified_vram_effect": capture["clear_pairs_with_verified_vram_effect"],
+            "draw_boundary_vram_checks": capture["draw_boundary_vram_checks"],
+            "draw_boundary_gpu_state_checks": capture["draw_boundary_gpu_state_checks"],
             "draw_primitives_in_bounded_capture": len(draw_packets),
             "observed_dda_primitive_keys": len({
                 x.primitive_ordinal for x in spans
