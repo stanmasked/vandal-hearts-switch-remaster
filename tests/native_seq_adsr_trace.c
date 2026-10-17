@@ -72,6 +72,8 @@ static void test_voices(void) {
         {"fade",0x000fu,0x4000u,0x1000u,0,56,8u,8u},
         {"fast_attack",0x000fu,0x0000u,0x0800u,0,56,16u,16u},
         {"long_release",0x000fu,0x0018u,0x0800u,0,56,256u,2u},
+        {"linear_release",0x000fu,0x0000u,0x0800u,0,56,128u,2u},
+        {"exp_release",0x000fu,0x0030u,0x0800u,0,56,256u,2u},
     };
     for(size_t i=0u;i<sizeof cases/sizeof cases[0];i++) {
         const VoiceCase *v=&cases[i];
