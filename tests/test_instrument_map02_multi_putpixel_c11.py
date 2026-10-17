@@ -35,6 +35,23 @@ int main(void) {
 }
 '''
 
+CAP_DRIVER = r'''
+int main(void) {
+#if defined(VH_MAP02_MULTI_PUTPIXEL_SCOPE)
+    unsigned i;
+    VH_Map02PixelScopeSet(12, 1, 2);
+    for (i = 0; i < 70u; i++) {
+        if (i & 1u)
+            PutPixel(35, 35, (unsigned short)(i + 1u), 1, 0, 1);
+        else
+            PutPixel(30, 30, (unsigned short)(i + 1u), 1, 0, 1);
+    }
+    VH_Map02PixelScopeClear();
+#endif
+    return 0;
+}
+'''
+
 
 class NativeTwoWordExecutableTests(unittest.TestCase):
     @classmethod
@@ -98,6 +115,26 @@ class NativeTwoWordExecutableTests(unittest.TestCase):
         self.assertIsNone(self.run_capture("duplicates", x2="30", y2="30"))
         self.assertIsNone(self.run_capture("not_numeric", x2="abc"))
         self.assertIsNone(self.run_capture("out_of_bounds", x2="1024"))
+
+    def test_both_addresses_share_a_single_global_64_call_ceiling(self):
+        cap_source = self.root / "pc_raster.multiscope.cap.c"
+        cap_source.write_text(multi_raster(SOURCE) + CAP_DRIVER,
+                              encoding="utf-8")
+        subprocess.run(
+            [self.gcc, "-std=gnu11", "-Wall", "-Werror",
+             "-DVH_MAP02_MULTI_PUTPIXEL_SCOPE",
+             str(cap_source), "-o", str(self.binary)],
+            check=True, capture_output=True, text=True,
+        )
+        raw = self.run_capture("cap")
+        self.assertIsNotNone(raw)
+        events = [json.loads(line) for line in raw.splitlines()]
+        self.assertEqual(len(events), 64)
+        self.assertEqual([e["step"] for e in events], list(range(64)))
+        self.assertEqual({(e["x"], e["y"]) for e in events},
+                         {(30, 30), (35, 35)})
+        self.assertEqual(events[0]["before"], 0)
+        self.assertEqual(events[-1]["step"], 63)
 
     def test_normal_non_opt_in_binary_has_no_scope_symbols(self):
         obj = self.root / "normal-gpu.o"
