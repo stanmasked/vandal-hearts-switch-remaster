@@ -95,6 +95,19 @@ int vh_audio_output_verify_transport_health(
     const VhAudioTransportTimingHealth *health,
     const VhAudioOutputRecovery *recovery);
 
+/* Cross-check the ZL injector against real descriptor-return evidence.
+ *  0: not requested; 1: armed but no exact returned descriptor yet;
+ *  2: injected and at least one successfully returned page was recorded
+ *     without timing; -1: impossible/corrupt evidence.
+ * A genuine timing failure without ZL remains valid as an observation
+ * (and is still INVALID evidence under verify_transport_health).
+ * This function does not modify the service, PCM or counters.
+ */
+int vh_audio_output_verify_timing_injection(
+    const VhAudioTimingFaultInjection *injection,
+    const VhAudioTransportTimingHealth *health,
+    const VhAudioOutputRecovery *recovery);
+
 /* Saturating conversion for readable logs, never used for scheduling.
  * Returns UINT64_MAX on arithmetic overflow, 0 for invalid frequency.
  */
