@@ -65,6 +65,8 @@ static void audio_applet_hook(AppletHookType hook,void *param) {
 }
 /* Snapshot never appears in the device callback or PCM output path. */
 static VhNativeSpu manual_spu_snapshot;
+static VhNativeSeq inject_seq_snapshot;
+static VhAudioResample inject_resampler_snapshot;
 
 static uint8_t fixture_vh[32u + 128u*16u + 512u + 512u];
 static uint8_t fixture_vb[48];
@@ -170,6 +172,7 @@ typedef struct {
     VhAudioPageLease lease;
     VhAudioTransportTimingHealth transport_health;
     VhAudioTimingFaultInjection timing_injection;
+    VhAudioSubmitFaultInjection submit_injection;
     int initialized;
     int started;
 } NativeOutput;
@@ -231,6 +234,22 @@ static int native_submit(void *opaque,const int16_t *pcm,size_t frames) {
         frames>VH_AUDIO_RESAMPLE_MAX_FRAMES) return -1;
     /* Reserve BEFORE updating the descriptor: even its metadata must
      * stay unchanged if a previous attempt remains in flight. */
+    /* ZR is an explicitly FAKE failure of the wrapper before the
+     * service receives a descriptor. No PCM lease or audoutPlayBuffer
+     * call occurred. Count it separately from real backend calls, but
+     * include it in logical retry accounting at zero service wait. */
+    if (dev->submit_injection.armed) {
+        if (vh_audio_output_record_synthetic_submit_failure(
+                &dev->timing,armGetSystemTickFreq(),frames)) {
+            dev->transport_health.timing_fault=1u;
+            return -1; /* do not invent successful timing evidence */
+        }
+        if (vh_audio_submit_fault_consume(&dev->submit_injection)!=1) {
+            dev->transport_health.timing_fault=1u;
+            return -1;
+        }
+        return -1;
+    }
     if (vh_audio_page_lease_begin(&dev->lease,&dev->page))
         return -1;
     dev->page.data_size=frames*2u*sizeof(int16_t);
@@ -301,8 +320,9 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
                                                        "INVALID");
         printf("Pages %u/%u, fixture switches=%u\n",
                r->played,MAX_PROBE_BLOCKS,r->switched);
-        printf("Backend=%llu fail=%llu untimed=%llu timing=%s\n",
+        printf("Calls=%llu fake=%llu fail=%llu untimed=%llu timing=%s\n",
                (unsigned long long)r->output->timing.calls,
+               (unsigned long long)r->output->timing.synthetic_failed_submissions,
                (unsigned long long)r->output->timing.failed_submissions,
                (unsigned long long)r->output->transport_health.delivered_without_timing,
                r->output->transport_health.timing_fault ? "INVALID" : "VALID");
@@ -310,10 +330,12 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
                (unsigned long long)vh_audio_output_ticks_to_us(
                    r->output->timing.max_ticks,hz),
                (unsigned long long)r->output->timing.waits_longer_than_page);
-        printf("Restarts=%u recovered=%u ZL=%s\n",
+        printf("Restarts=%u rec=%u ZL=%s ZR=%s\n",
                r->recovery->restart_attempts,r->recovery->recoveries,
                r->output->timing_injection.injected ? "INJECTED" :
-               r->output->timing_injection.armed ? "ARMED" : "OFF");
+               r->output->timing_injection.armed ? "ARMED" : "OFF",
+               r->output->submit_injection.injected ? "INJECTED" :
+               r->output->submit_injection.armed ? "ARMED" : "OFF");
         printf("X stop/start %u/%u  Y reopen %u/%u\n",
                r->manual->quick_ok,r->manual->quick_attempts,
                r->manual->reopen_ok,r->manual->reopen_attempts);
@@ -529,7 +551,8 @@ int main(int argc, char **argv) {
     printf("Release BOTH A/B between marks; held chords ignored.\n");
     printf("X: pause/start; Y: stop/reopen/start (after PCM return).\n");
     printf("ZL: one-shot BAD CLOCK after next returned PCM; ends INVALID.\n");
-    printf("Run ZL separately from listening, X/Y and HOME trials.\n");
+    printf("ZR: skip one PRE-SERVICE submit, retry SAME PCM on reopen.\n");
+    printf("Run ZL/ZR separately from listening, X/Y and HOME.\n");
     printf("HOME is a separate physical-console test, not counted as X/Y.\n");
     printf("These are manual tags, never automatic glitch detection.\n");
     consoleUpdate(NULL);
@@ -630,8 +653,36 @@ int main(int argc, char **argv) {
          * restart. A failed output must not advance any music clock.
          */
         const VhAudioSubmitTiming before_submit=output.timing;
+        const VhAudioOutputRecovery recovery_before=recovery;
+        const int test_zr=output.submit_injection.armed!=0u;
+        uint64_t zr_hash=0u;
+        if (test_zr) {
+            zr_hash=pcm_page_fingerprint(out_48000,count);
+            /* The snapshots are used only around the injected retry:
+             * recovery may restart audout but never advance music. */
+            inject_seq_snapshot=seq;
+            inject_resampler_snapshot=resampler;
+            memcpy(&manual_spu_snapshot,&synth,sizeof synth);
+        }
         const int submit_result=vh_audio_output_submit_recover(
             &ops,&recovery,out_48000,count);
+        if (test_zr && submit_result==0 &&
+            (!output.submit_injection.injected ||
+             !vh_audio_page_lease_ready(&output.lease) ||
+             output.timing.synthetic_failed_submissions !=
+                 before_submit.synthetic_failed_submissions+1u ||
+             recovery.submit_failures<recovery_before.submit_failures+1u ||
+             recovery.restart_attempts<recovery_before.restart_attempts+1u ||
+             recovery.recoveries!=recovery_before.recoveries+1u ||
+             recovery.pages_submitted!=recovery_before.pages_submitted+1u ||
+             pcm_page_fingerprint(out_48000,count)!=zr_hash ||
+             memcmp(&seq,&inject_seq_snapshot,sizeof seq) ||
+             memcmp(&synth,&manual_spu_snapshot,sizeof synth) ||
+             memcmp(&resampler,&inject_resampler_snapshot,
+                    sizeof resampler))) {
+            result=34; /* fake failure altered PCM/music or hid restart */
+            break;
+        }
         if (output.transport_health.timing_fault) {
             /* No retry here: if the service already returned the exact
              * page, submit_result==0 correctly means delivered. The
@@ -706,12 +757,20 @@ int main(int argc, char **argv) {
          * A real audout error or wrong descriptor cannot consume it.
          * This controlled fail-closed probe must be run SEPARATELY
          * from X/Y pause/reopen and A/B listening annotations. */
-        if(pressed&HidNpadButton_ZL) {
-            /* Reject mixed controls rather than silently treating ZL
-             * as unused. A failed request is NOT an injected fault. */
+        if (pressed&(HidNpadButton_ZL|HidNpadButton_ZR)) {
+            /* ZL and ZR are mutually exclusive diagnostic sessions.
+             * Neither may be combined with X/Y/A/B or each other. */
             if ((held&(HidNpadButton_X|HidNpadButton_Y|
-                        HidNpadButton_A|HidNpadButton_B)) ||
-                vh_audio_timing_fault_arm(&output.timing_injection)) {
+                       HidNpadButton_A|HidNpadButton_B)) ||
+                (held&(HidNpadButton_ZL|HidNpadButton_ZR))==
+                    (HidNpadButton_ZL|HidNpadButton_ZR) ||
+                output.timing_injection.armed ||
+                output.timing_injection.injected ||
+                output.submit_injection.armed ||
+                output.submit_injection.injected ||
+                ((pressed&HidNpadButton_ZL)
+                  ? vh_audio_timing_fault_arm(&output.timing_injection)
+                  : vh_audio_submit_fault_arm(&output.submit_injection))) {
                 result=30;
                 break;
             }
@@ -865,6 +924,7 @@ int main(int argc, char **argv) {
     /* A late ZL request with no subsequent returned PCM is NOT a
      * successfully exercised bad-clock test. No fabricated evidence. */
     if(output.timing_injection.armed && result==0) result=31;
+    if(output.submit_injection.armed && result==0) result=33;
     const int run_evidence=vh_audio_output_verify_run(
         &output.scene_waits,&recovery,&output.timing,
         played_blocks,completed_switches,MAX_PROBE_BLOCKS,
@@ -915,10 +975,15 @@ int main(int argc, char **argv) {
     const int injection_evidence=vh_audio_output_verify_timing_injection(
         &output.timing_injection,&output.transport_health,&recovery);
     if (injection_evidence<0 && result==0) result=32;
+    const int submit_injection_evidence=
+        vh_audio_output_verify_submit_injection(
+            &output.submit_injection,&output.timing,&recovery);
+    if (submit_injection_evidence<0 && result==0) result=35;
     if (timing_evidence && result==0) result=28;
     if ((focus_evidence || focus_record_errors) && result==0) result=24;
     const unsigned verdict=(focus_evidence || focus_record_errors ||
-                            timing_evidence || injection_evidence<0)
+                            timing_evidence || injection_evidence<0 ||
+                            submit_injection_evidence<0)
         ? VH_AUDIO_REPORT_INVALID
         : vh_audio_report_focus_evidence(
             &focus_events,&manual_resume,run_evidence,seam_evidence,
