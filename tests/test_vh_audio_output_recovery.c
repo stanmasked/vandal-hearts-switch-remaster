@@ -399,6 +399,68 @@ static int leased_submit_with_one_shot_bad_clock(
                 returned,recorded,&dev->transport_health);
 }
 
+/* ZL is merely an on-console request: the final report must bind
+ * INJECTED to a genuinely returned page and rejected timing record.
+ * An absent ZL request must not conceal unrelated real timing errors.
+ */
+static void test_timing_injection_final_evidence(void) {
+    VhAudioTimingFaultInjection injection={0};
+    VhAudioTransportTimingHealth health={0};
+    VhAudioOutputRecovery recovery={.pages_submitted=1u};
+    assert(vh_audio_output_verify_timing_injection(
+               NULL,&health,&recovery)==-1);
+    assert(vh_audio_output_verify_timing_injection(
+               &injection,NULL,&recovery)==-1);
+    assert(vh_audio_output_verify_timing_injection(
+               &injection,&health,NULL)==-1);
+    assert(vh_audio_output_verify_timing_injection(
+               &injection,&health,&recovery)==0);
+    assert(vh_audio_timing_fault_arm(&injection)==0);
+    assert(vh_audio_output_verify_timing_injection(
+               &injection,&health,&recovery)==1);
+    assert(vh_audio_timing_fault_frequency(
+               &injection,0,UINT64_C(19200000))==UINT64_C(19200000));
+    assert(vh_audio_output_verify_timing_injection(
+               &injection,&health,&recovery)==1);
+    assert(vh_audio_timing_fault_frequency(
+               &injection,1,UINT64_C(19200000))==0u);
+    /* Malformed records cannot claim a verified injection. */
+    assert(vh_audio_output_verify_timing_injection(
+               &injection,&health,&recovery)==-1);
+    assert(vh_audio_output_transport_outcome(1,-1,&health)==0);
+    assert(vh_audio_output_verify_timing_injection(
+               &injection,&health,&recovery)==2);
+    health.delivered_without_timing=0u;
+    assert(vh_audio_output_verify_timing_injection(
+               &injection,&health,&recovery)==-1);
+    health.delivered_without_timing=2u;
+    assert(vh_audio_output_verify_timing_injection(
+               &injection,&health,&recovery)==-1);
+    health.delivered_without_timing=1u;
+    health.timing_fault=0u;
+    assert(vh_audio_output_verify_timing_injection(
+               &injection,&health,&recovery)==-1);
+    health.timing_fault=1u;
+    injection.armed=1u;
+    assert(vh_audio_output_verify_timing_injection(
+               &injection,&health,&recovery)==-1);
+    injection.armed=0u;
+    injection.injected=2u;
+    assert(vh_audio_output_verify_timing_injection(
+               &injection,&health,&recovery)==-1);
+    /* Real diagnostic faults can happen without any ZL injection. */
+    injection.injected=0u;
+    assert(vh_audio_output_verify_timing_injection(
+               &injection,&health,&recovery)==0);
+    injection.armed=1u;
+    assert(vh_audio_output_verify_timing_injection(
+               &injection,&health,&recovery)==1);
+    injection.armed=0u;
+    health.delivered_without_timing=0u;
+    assert(vh_audio_output_verify_timing_injection(
+               &injection,&health,&recovery)==0);
+}
+
 static void test_one_shot_timing_injection_after_returned_pcm(void) {
     VhAudioTimingFaultInjection probe={0};
     assert(vh_audio_timing_fault_arm(NULL)==-1);
@@ -995,6 +1057,7 @@ static void test_home_observer_vs_audout_lease_faults(void) {
 }
 
 int main(void) {
+    test_timing_injection_final_evidence();
     test_one_shot_timing_injection_after_returned_pcm();
     test_timing_fault_never_replays_delivered_pcm();
     test_home_observer_vs_audout_lease_faults();
