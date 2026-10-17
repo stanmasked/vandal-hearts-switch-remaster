@@ -30,6 +30,9 @@ int vh_switch_game_audio_trace_dump(FILE *stream);
 int vh_switch_game_audio_queue_dump(FILE *stream);
 VhAudoutQueueExportResult vh_switch_game_audio_queue_export(
     char *committed_path,size_t capacity);
+/* Separate per-call latency band CSV, only after worker join. */
+VhAudoutQueueExportResult vh_switch_game_audio_latency_export(
+    char *committed_path,size_t capacity);
 /* Export numbered, readback-verified SD CSV ONLY after the audio
  * thread is joined. Return precise storage status to the main thread.
  * The output path is empty on error. Does not change audio clocks. */
