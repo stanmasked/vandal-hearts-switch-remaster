@@ -37,7 +37,7 @@ class PrivateFullPcBuildTests(unittest.TestCase):
                   return_value=self.bundle / "map02_cycle.mk"),
             patch("tools.build_map02_cycle_pc_local.audit_cycle_elf",
                   return_value={"required_symbols_present": 19}),
-            patch("tools.build_map02_cycle_pc_local.verify_generated_original_font",
+            patch("tools.build_map02_cycle_pc_local.verify_linked_original_font",
                   return_value={"pinned_original_krom_font_c_identical": True}),
             patch("tools.check_map02_private_pc_inputs.verify_private_pc_inputs",
                   return_value={
@@ -226,7 +226,7 @@ class PrivateFullPcBuildTests(unittest.TestCase):
                 build_full_pc(self.upstream, self.bundle)
 
     def test_invalid_private_font_c_blocks_success_and_receipt(self):
-        with patch("tools.build_map02_cycle_pc_local.verify_generated_original_font",
+        with patch("tools.build_map02_cycle_pc_local.verify_linked_original_font",
                    side_effect=ValueError("generated private font C differs")), patch(
                 "tools.build_map02_cycle_pc_local.subprocess.run",
                 side_effect=self.build_fake), patch(
