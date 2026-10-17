@@ -14,6 +14,9 @@ static VhNativeSpu spu;
 static int16_t sample[128u];
 static int16_t buffer[128u*2u];
 static uint8_t song[4096u];
+static uint8_t alternate_song[4096u];
+static VhAudioStream switch_ring_snapshot;
+static VhSpuReverb switch_reverb_snapshot;
 static VhAudioStream paced_ring;
 static int16_t paced_pcm[VH_AUDIO_RING_FRAMES*2u];
 
@@ -34,6 +37,13 @@ static int resolve(void *ctx,unsigned program,unsigned note,
     out->gain_left=1.0f;
     out->gain_right=1.0f;
     return 0;
+}
+static int resolve_wet(void *ctx,unsigned program,unsigned note,
+                       unsigned velocity,unsigned volume,unsigned pan,
+                       VhSeqTone *out) {
+    const int rc=resolve(ctx,program,note,velocity,volume,pan,out);
+    if(!rc) out->reverb_send=1u;
+    return rc;
 }
 static void test_seq(const char *filename,unsigned repeats,unsigned blocks) {
     FILE *input=fopen(filename,"rb");
@@ -60,7 +70,8 @@ static void test_seq(const char *filename,unsigned repeats,unsigned blocks) {
     }
 }
 
-static void test_paced_seq(const char *filename,unsigned attempts) {
+static void test_paced_seq(const char *filename,unsigned attempts,
+                           const char *other_filename) {
     /* The Python Fraction oracle reconstructs music time from successful
      * PCM pages, despite deliberate backpressure and consumer underruns. */
     static const unsigned requests[]={
@@ -73,21 +84,56 @@ static void test_paced_seq(const char *filename,unsigned attempts) {
     assert(fgetc(input)==EOF && !ferror(input));
     assert(fclose(input)==0);
     assert(attempts>=1u && attempts<=2048u);
+    size_t alternate_bytes=0u;
+    if(other_filename) {
+        FILE *other=fopen(other_filename,"rb");
+        assert(other);
+        alternate_bytes=fread(alternate_song,1u,sizeof alternate_song,other);
+        assert(!ferror(other) && alternate_bytes>0u &&
+               alternate_bytes<sizeof alternate_song);
+        assert(fgetc(other)==EOF && !ferror(other));
+        assert(fclose(other)==0);
+    }
     vh_native_spu_reset(&spu);
+    if(other_filename)
+        assert(vh_native_spu_set_reverb(&spu,1,0.75f)==0);
     vh_audio_stream_reset(&paced_ring);
     assert(vh_audio_stream_write(&paced_ring,paced_pcm,
                                  VH_AUDIO_RING_FRAMES)==VH_AUDIO_RING_FRAMES);
+    const VhSeqResolve resolver=other_filename ? resolve_wet : resolve;
     assert(vh_native_seq_init(&seq,song,bytes,&spu,
-                              resolve,NULL,0u)==0);
+                              resolver,NULL,0u)==0);
+    unsigned epoch=0u;
     for(unsigned attempt=0u;attempt<attempts;attempt++) {
+        if(other_filename && (attempt==241u || attempt==503u ||
+                              attempt==761u || attempt==1019u ||
+                              attempt==1277u)) {
+            ++epoch;
+            memcpy(&switch_ring_snapshot,&paced_ring,
+                   sizeof switch_ring_snapshot);
+            memcpy(&switch_reverb_snapshot,&spu.reverb,
+                   sizeof switch_reverb_snapshot);
+            const uint8_t *next=(epoch&1u) ? alternate_song : song;
+            const size_t size=(epoch&1u) ? alternate_bytes : bytes;
+            assert(vh_native_seq_switch_scene(&seq,next,size,&spu,
+                                              resolve_wet,NULL,0u)==0);
+            assert(!memcmp(&switch_ring_snapshot,&paced_ring,
+                           sizeof switch_ring_snapshot));
+            assert(!memcmp(&switch_reverb_snapshot,&spu.reverb,
+                           sizeof switch_reverb_snapshot));
+            assert(spu.frames_rendered==0u && seq.blocks_advanced==0u);
+            assert(seq.note_ons==0u && seq.note_offs==0u);
+        }
         const int wrote=vh_native_seq_pump(&seq,&paced_ring);
         assert(wrote==0 || wrote==(int)VH_AUDIO_BLOCK_FRAMES);
         const size_t request=requests[attempt%
                             (sizeof requests/sizeof requests[0])];
         const size_t taken=request
             ? vh_audio_stream_read(&paced_ring,paced_pcm,request) : 0u;
-        printf("P,%u,%d,%llu,%llu,%llu,%u,%u,%u,%llu,%zu,%zu,%llu,%llu\n",
-               attempt,wrote,(unsigned long long)seq.blocks_advanced,
+        if(other_filename) printf("Q,%u,%u",attempt,epoch);
+        else printf("P,%u",attempt);
+        printf(",%d,%llu,%llu,%llu,%u,%u,%u,%llu,%zu,%zu,%llu,%llu\n",
+               wrote,(unsigned long long)seq.blocks_advanced,
                (unsigned long long)seq.note_ons,
                (unsigned long long)seq.note_offs,seq.tempo,
                seq.cycles_completed,(unsigned)seq.playing,
@@ -168,7 +214,14 @@ int main(int argc,char **argv) {
         char *end=NULL;
         const unsigned long attempts=strtoul(argv[3],&end,10);
         assert(end && !*end && attempts>=1u && attempts<=2048u);
-        test_paced_seq(argv[2],(unsigned)attempts);
+        test_paced_seq(argv[2],(unsigned)attempts,NULL);
+        return 0;
+    }
+    if(argc==5 && strcmp(argv[1],"paced-switch")==0) {
+        char *end=NULL;
+        const unsigned long attempts=strtoul(argv[4],&end,10);
+        assert(end && !*end && attempts>=1282u && attempts<=2048u);
+        test_paced_seq(argv[2],(unsigned)attempts,argv[3]);
         return 0;
     }
     fprintf(stderr,"usage: native_seq_adsr_trace voice | seq <file> <repeats> [blocks]\n");
