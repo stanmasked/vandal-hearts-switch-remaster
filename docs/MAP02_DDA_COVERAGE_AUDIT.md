@@ -243,6 +243,20 @@ a correct VRAM effect. A successful private receipt replay rejects an
 equal-length modified upload even when its JSON and VRAM evidence stays
 unchanged. Only hashes and counts, not game bytes or pixels, are reported.
 
+The pinned PC-port `MoveImage` path is now independently replayed as
+source-ordered **in-place** 16-bit VRAM writes. Every source and
+destination pixel must fall within 1024×512 VRAM, with original nested
+row/column iteration preserved. Forward copy intentionally propagates
+values when source and destination overlap; interpreting `MoveImage`
+as `memcpy` or `memmove` produces wrong evidence in these cases. The
+validator checks the **entire** post-operation snapshot, including
+unchanged pixels outside the destination. It reports
+`move_pairs_with_verified_vram_effect` in the native GPU audit,
+private capture report and receipt replay. Even negative and large
+offscreen rectangles must have the exact original no-op effect.
+This remains a source-pinned **PC GPU** verification, not a physical
+PlayStation hardware GPU comparison.
+
 **Important:** Hash agreement identifies the bytes inspected before and
 after the run, but cannot prove that those bytes were actually executed,
 that diagnostic callbacks were linked, or that retail MAP02 was rendered.
