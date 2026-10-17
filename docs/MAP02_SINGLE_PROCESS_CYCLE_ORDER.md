@@ -152,9 +152,11 @@ python3 -m tools.check_map02_cycle_make_plan \
   /private/map02/cycle-build
 
 # Only after the audit succeeds AND your own game inputs are installed:
+mkdir -m 700 /private/map02/full-pc-build-receipt
 python3 -m tools.build_map02_cycle_pc_local \
   /private/map02/VandalHearts-PcPort \
-  /private/map02/cycle-build
+  /private/map02/cycle-build \
+  --report-dir /private/map02/full-pc-build-receipt
 
 # Advanced equivalent (if diagnosing local build failures manually):
 # cd /private/map02/VandalHearts-PcPort/platform/pc
@@ -231,6 +233,8 @@ python3 -m tools.map02_verified_process_launch run \
   --owned-game-image /private/map02/owned-game-image.bin \
   --upstream-checkout /private/map02/VandalHearts-PcPort \
   --cycle-dir /private/map02/cycle \
+  --build-receipt-dir /private/map02/full-pc-build-receipt \
+  --build-bundle-dir /private/map02/cycle-build \
   --x 10 --y 20 --timeout 900
 ```
 
@@ -401,3 +405,41 @@ CI тестируется только сухой граф `make -nB` и иск�
 приватный журнал и проверяет точный SHA-256 при сопоставлении с
 исходными CD/GPU/GTE/Linux-свидетельствами. Ни одна из этих процедур
 сама по себе не доказывает изображение оригинальной сцены MAP02.
+
+## Обязательная привязка полного ELF к приватной квитанции сборки
+
+Перед настоящим `--cycle-dir`-запуском требуется полученная **после**
+локальной полной линковки приватная квитанция
+`map02-full-pc-build-receipt.json`. Команда
+`build_map02_cycle_pc_local --report-dir` создаёт её ровно один раз,
+исключительно в отдельном пустом каталоге `0700`; файл имеет права
+`0600` и не перезаписывается.
+
+Квитанция связывает SHA-256 фактического ELF с SHA-256 приватного
+манифеста исходников, закреплённым публичным PC-портом, отпечатком
+полного развёрнутого GNU Make link-командного графа и количеством
+ожидаемых экспортов CD/GPU/VRAM. Прямо перед
+`map02_verified_process_launch run --cycle-dir` независимый инструмент
+`map02_cycle_build_provenance.verify_build_receipt` повторно
+вычисляет все эти значения по самим файлам. Отсутствие
+`--build-receipt-dir` или `--build-bundle-dir`, изменение оригинального
+исходника или одного байта ELF **запрещает запуск**. Обычный
+нецикловой launcher и старые синтетические тесты работают отдельно.
+
+Проверка вручную после сборки:
+
+```sh
+python3 -m tools.map02_cycle_build_provenance \
+  /private/map02/full-pc-build-receipt \
+  /private/map02/VandalHearts-PcPort/platform/pc/build-map02-cycle/vandalhearts_pc \
+  /private/map02/VandalHearts-PcPort \
+  /private/map02/cycle-build
+```
+
+Это проверка происхождения **локальной сборки**, а не криптографическая
+аттестация работающей игры: даже совпадение всех хешей и имён
+символов не заменяет Linux `/proc`-наблюдение, проверку приватного
+CD-сектора и сопоставление реальных GPU/VRAM/GTE событий. В CI
+используются искусственные компиляторные результаты и подставные ELF,
+а не пользовательский игровой образ.
+
