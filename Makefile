@@ -10,6 +10,10 @@ SDL2_TEXTURE_TARGET := sdl2-texture-switch-probe
 
 SDL2_AUDIO_TARGET := sdl2-audio-switch-probe
 AUDOUT_AUDIO_TARGET := audout-audio-switch-probe
+AUDOUT_BUILD_REV := $(shell git rev-parse --verify HEAD 2>/dev/null || printf UNKNOWN)
+# Explicitly distinguish a clean checkout from a modified or unpacked tree.
+# This is source provenance, not the SHA-256 of the resulting NRO.
+AUDOUT_BUILD_STATUS := $(shell if git rev-parse --is-inside-work-tree 2>/dev/null | grep -qx true; then if test -z "$(git status --porcelain --untracked-files=normal 2>/dev/null)"; then printf CLEAN; else printf MODIFIED; fi; else printf NO-GIT; fi)
 OPENAL_TARGET := openal-switch-probe
 SDL2_CONFIG ?= $(DEVKITPRO)/portlibs/switch/bin/sdl2-config
 BUILD      := build
@@ -270,7 +274,7 @@ $(BUILD)/$(SDL2_AUDIO_TARGET).nro: $(BUILD)/$(SDL2_AUDIO_TARGET).elf $(BUILD)/$(
 	$(ELF2NRO) $< $@ --nacp=$(BUILD)/$(SDL2_AUDIO_TARGET).nacp
 
 $(BUILD)/$(AUDOUT_AUDIO_TARGET).elf: probes/audout_audio_smoke.c source/vh_audio_resample.c source/vh_audio_resample.h source/vh_audio_output_recovery.c source/vh_audio_output_recovery.h source/vh_audio_listening_marks.h source/vh_audio_mark_buttons.h source/vh_audio_listener_input.h source/vh_audio_input_poll.h source/vh_audio_compute_timing.h source/vh_audio_compute_wait_join.h source/vh_audio_page_telemetry.h source/vh_audio_report_pages.h source/vh_audio_assets.c source/vh_audio_assets.h source/vh_native_vab.c source/vh_native_vab.h source/vh_native_seq.c source/vh_native_seq.h source/vh_native_spu.c source/vh_spu_reverb.c source/vh_native_spu.h source/vh_spu_adpcm.c source/vh_spu_adpcm.h source/vh_spu_gaussian.c source/vh_spu_gaussian.h source/vh_audio_stream.c source/vh_audio_stream.h | $(BUILD)
-	$(CC) $(CFLAGS) -Isource $(LDFLAGS) probes/audout_audio_smoke.c source/vh_audio_resample.c source/vh_audio_output_recovery.c source/vh_audio_assets.c source/vh_native_vab.c source/vh_native_seq.c source/vh_native_spu.c source/vh_spu_reverb.c source/vh_spu_adpcm.c source/vh_spu_gaussian.c source/vh_audio_stream.c -o $@ $(LDLIBS) -lm
+	$(CC) $(CFLAGS) -DVH_AUDIO_BUILD_REV=\"$(AUDOUT_BUILD_REV)\" -DVH_AUDIO_BUILD_STATUS=\"$(AUDOUT_BUILD_STATUS)\" -Isource $(LDFLAGS) probes/audout_audio_smoke.c source/vh_audio_resample.c source/vh_audio_output_recovery.c source/vh_audio_assets.c source/vh_native_vab.c source/vh_native_seq.c source/vh_native_spu.c source/vh_spu_reverb.c source/vh_spu_adpcm.c source/vh_spu_gaussian.c source/vh_audio_stream.c -o $@ $(LDLIBS) -lm
 
 $(BUILD)/$(AUDOUT_AUDIO_TARGET).nacp: | $(BUILD)
 	$(NACPTOOL) --create "Vandal Hearts Native Audout Audio" "$(APP_AUTHOR)" "$(APP_VERSION)" $@
