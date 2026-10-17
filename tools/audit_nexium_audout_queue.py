@@ -2,7 +2,11 @@
 """Strict stage-269 guest SD audout telemetry audit; no audio-output claims."""
 import argparse
 import csv
+import hashlib
+import io
 import json
+import os
+import stat
 from pathlib import Path
 
 HEADER = [
@@ -12,9 +16,70 @@ HEADER = [
 ]
 NUMERIC = HEADER[1:]
 
+MAX_CSV_BYTES = 1024 * 1024
+
+def stable_guest_bytes(path: Path) -> bytes:
+    """Refuse symlinks, hardlinks, changed inode/size and oversized evidence."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags)
+    try:
+        before = os.fstat(fd)
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                or before.st_size <= 0 or before.st_size > MAX_CSV_BYTES):
+            raise ValueError("unsafe guest evidence file")
+        with os.fdopen(os.dup(fd), "rb") as stream:
+            raw = stream.read(MAX_CSV_BYTES + 1)
+        after = os.fstat(fd)
+    finally:
+        os.close(fd)
+    current = path.lstat()
+    identity = lambda st: (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns,
+                           st.st_ctime_ns)
+    if len(raw) != before.st_size or len(raw) > MAX_CSV_BYTES or (
+        identity(before) != identity(after)
+        or identity(before) != identity(current)
+    ):
+        raise ValueError("guest evidence changed during read")
+    return raw
+
+def bind_original_sd(source: Path, locations: Path, sd_root: Path):
+    """Check the actual isolated NeXium SD file, not just its copied CSV."""
+    if sd_root.is_symlink():
+        raise ValueError("refuse symlinked guest SD root")
+    sd_dir = sd_root / "sdmc" / "switch" / "vandal-hearts-remake"
+    if not sd_dir.is_dir() or sd_dir.is_symlink():
+        raise ValueError("missing or symlinked guest SD directory")
+    originals = sorted(sd_dir.glob("audio-audout-queue-*.csv"))
+    if len(originals) != 1:
+        raise ValueError("expected exactly one original guest audout CSV")
+    original = originals[0]
+    location_lines = locations.read_text(encoding="utf-8").splitlines()
+    if len(location_lines) != 1 or Path(location_lines[0]) != original:
+        raise ValueError("capture manifest does not identify original SD CSV")
+    if original.is_symlink() or source.is_symlink():
+        raise ValueError("symlinked SD evidence forbidden")
+    if not source.is_file() or original.resolve() == source.resolve():
+        raise ValueError("copied source must be independent regular file")
+    orig_raw = stable_guest_bytes(original)
+    copy_raw = stable_guest_bytes(source)
+    if orig_raw != copy_raw:
+        raise ValueError("guest SD source and copied telemetry differ")
+    return copy_raw, {
+        "sd_binding": "GUEST_ORIGINAL_AND_COPY_BYTE_IDENTICAL",
+        "sd_original_name": original.name,
+        "sd_original_sha256": hashlib.sha256(orig_raw).hexdigest(),
+        "sd_copy_sha256": hashlib.sha256(copy_raw).hexdigest(),
+        "sd_copy_bytes": len(copy_raw),
+    }
+
 def read_telemetry(path: Path) -> dict:
-    with path.open("r", encoding="ascii", newline="") as f:
-        rows = list(csv.reader(f, strict=True))
+    return parse_telemetry(stable_guest_bytes(path))
+
+def parse_telemetry(raw: bytes) -> dict:
+    if b"\r" in raw or not raw.endswith(b"\n"):
+        raise ValueError("noncanonical audout CSV line endings")
+    rows = list(csv.reader(io.StringIO(raw.decode("ascii"), newline=""),
+                           strict=True))
     if not rows or rows[0] != HEADER or len(rows) < 3:
         raise ValueError("invalid audout telemetry header/row count")
     if any(len(row) != len(HEADER) or any(not cell for cell in row)
@@ -83,9 +148,13 @@ def read_telemetry(path: Path) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, required=True)
+    parser.add_argument("--locations", type=Path, required=True)
+    parser.add_argument("--sd-root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    report = read_telemetry(args.source)
+    raw, binding = bind_original_sd(args.source, args.locations, args.sd_root)
+    report = parse_telemetry(raw)
+    report.update(binding)
     if args.output.exists():
         raise FileExistsError("refuse overwrite of telemetry audit")
     args.output.write_text(json.dumps(report, sort_keys=True, indent=2) + "\n",
