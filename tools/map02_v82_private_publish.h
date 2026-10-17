@@ -12,11 +12,19 @@ unsigned int vh100_directory_syncs(void);
 int vh101_verify_private_commit(const char *path,const char *bytes,size_t size);
 unsigned int vh101_verified_commits(void);
 unsigned int vh101_reopened_directory_syncs(void);
+/* Number of successful rooted-directory identity checks and publications. */
+unsigned int vh102_parent_identity_checks(void);
+unsigned int vh102_anchored_publishes(void);
 #ifdef VH100_FAULT_TEST
 /* Test-only fault gates at each post-link publish durability boundary. */
 void vh100_test_fail_at(int phase);
 /* Isolated post-commit verifier I/O failures; never in production PCSX. */
 void vh101_test_fail_at(int phase);
+/* Isolated native tests: deterministically rename parent and redirect path
+ * via symlink at stage (1), after final hard link (2), or after unlink (3).
+ * Never compiled in the real pinned PCSX runtime. */
+int vh102_test_parent_redirect(const char *parent,const char *moved,
+                               const char *target,int phase);
 #endif
 /* An existing private file must be immutable. Only a DISTINCT unused path
  * may receive a recovered observer lifetime; never rename/replace old. */
