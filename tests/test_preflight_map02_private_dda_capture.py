@@ -78,6 +78,12 @@ class NativeDdaCapturePreflightTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "nonempty"):
             preflight(self.env, executable=executable)
 
+    def test_fifo_executable_rejected_without_blocking(self):
+        executable = Path(self.temp.name) / "synthetic-named-pipe-executable"
+        os.mkfifo(executable, 0o700)
+        with self.assertRaisesRegex(ValueError, "regular executable"):
+            preflight(self.env, executable=executable)
+
     def test_conflicting_frame_and_capture_dirs(self):
         self.env["VH_MAP02_PUTPIXEL_FRAME"] = "412"
         with self.assertRaisesRegex(ValueError, "frames must match"):
