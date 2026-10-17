@@ -215,6 +215,8 @@ def prepare(upstream: Path, output: Path):
         "schema": "vh.map02.private-native-two-word-dda-overlay.v1",
         "pinned_public_pc_commit": PINNED_UPSTREAM_REF,
         "source_pinned": True,
+        "full_checkout_head_verified": True,
+        "full_tracked_checkout_clean": True,
         "original_checkout_modified": False,
         "native_gpu_two_word_and_dda_in_same_make_objects": True,
         "source_sha256": {p: hashlib.sha256(data).hexdigest()
