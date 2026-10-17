@@ -123,6 +123,23 @@ static void test_home_first_page_budget_bands(void) {
     assert(e.timed_first_pages==9u && e.budgeted_first_pages==8u);
     assert(vh_audio_applet_verify(&e)==0);
 
+    /* An untimed foreground superseding a timed pending return must
+     * never inherit the old callback tick or create false fast bins. */
+    VhAudioAppletEvents mixed={0};
+    assert(vh_audio_applet_record_at(&mixed,
+                    VH_AUDIO_APPLET_BACKGROUND,800u)==0);
+    assert(vh_audio_applet_record_at(&mixed,
+                    VH_AUDIO_APPLET_FOREGROUND,1000u)==0);
+    assert(mixed.timestamp_pending && mixed.foreground_tick==1000u);
+    assert(vh_audio_applet_record(&mixed,VH_AUDIO_APPLET_BACKGROUND)==0);
+    assert(vh_audio_applet_record(&mixed,VH_AUDIO_APPLET_FOREGROUND)==0);
+    assert(mixed.coalesced_returns==1u && mixed.pending_return==1u);
+    assert(!mixed.timestamp_pending && !mixed.foreground_tick);
+    assert(vh_audio_applet_page_returned_budget_at(&mixed,1500u,100u)==1);
+    assert(mixed.first_pages_after_return==1u &&
+           mixed.timed_first_pages==0u && mixed.budgeted_first_pages==0u);
+    assert(vh_audio_applet_verify(&mixed)==0);
+
     /* UINT64_MAX page budget must not overflow 2x or 4x; it is
      * interpreted as a huge budget and falls into <=1x. */
     assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_BACKGROUND,
