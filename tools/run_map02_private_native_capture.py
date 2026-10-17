@@ -8,8 +8,10 @@ import argparse
 import json
 import os
 from pathlib import Path
+import stat
 import subprocess
 import sys
+import tempfile
 
 from tools.preflight_map02_private_dda_capture import (
     preflight, _executable_fingerprint, DIR_KEYS,
@@ -18,12 +20,61 @@ from tools.verify_map02_private_capture_session import verify_session
 
 
 def _private_create(path, obj):
-    """Create once with permissions 0600; never overwrite an older receipt."""
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(path, flags, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as stream:
-        json.dump(obj, stream, sort_keys=True, indent=2)
-        stream.write("\n")
+    """Durably publish a complete 0600 JSON receipt; never expose a partial one.
+
+    An O_EXCL temporary file is fsynced *before* its final name is created.
+    Hard-linking is exclusive (existing files or symlinks are never replaced).
+    A failed write/link/fsync removes only files created by this invocation.
+    The private receipt directory must support same-directory hard links and
+    directory fsync; no best-effort downgrade is made for other filesystems.
+    """
+    path = Path(path)
+    if path.is_symlink() or path.exists():
+        raise FileExistsError("capture receipt already exists")
+    fd, temporary = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".pending", dir=path.parent)
+    published = False
+    temp_identity = os.fstat(fd)
+    dirfd = None
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(obj, stream, sort_keys=True, indent=2)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        if stat.S_IMODE(os.stat(temporary, follow_symlinks=False).st_mode) != 0o600:
+            raise ValueError("private receipt mode changed during publication")
+        # Same inode, two names: consumers cannot see partially written JSON.
+        os.link(temporary, path, follow_symlinks=False)
+        published = True
+        dirfd = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        os.fsync(dirfd)
+        os.unlink(temporary)
+        os.fsync(dirfd)
+        if (path.is_symlink() or
+                os.stat(path, follow_symlinks=False).st_ino != temp_identity.st_ino or
+                os.stat(path, follow_symlinks=False).st_dev != temp_identity.st_dev):
+            raise ValueError("private receipt inode changed before publication completed")
+    except BaseException:
+        # Never unlink an unrelated file that replaced the destination.
+        if published:
+            try:
+                saved = os.stat(path, follow_symlinks=False)
+                if (saved.st_dev, saved.st_ino) == (
+                        temp_identity.st_dev, temp_identity.st_ino):
+                    os.unlink(path)
+                    if dirfd is not None:
+                        os.fsync(dirfd)
+            except FileNotFoundError:
+                pass
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
+    finally:
+        if dirfd is not None:
+            os.close(dirfd)
 
 
 def capture(executable, preflight_report, summary_report, *,
