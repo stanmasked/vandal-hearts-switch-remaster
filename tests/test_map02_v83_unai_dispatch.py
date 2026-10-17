@@ -52,6 +52,13 @@ class V83Test(unittest.TestCase):
         command["value"]=0x10000000
         p=("".join(json.dumps(e,separators=(",",":"))+"\\n" for e in parsed)).encode()
         with self.assertRaises(Refused):validate(p)
+    def test_refuse_unimplemented_unai_opcode_gaps(self):
+        for command_byte in (0x44,0x47,0x54,0x57,0x6c,0x6f):
+            with self.subTest(command_byte=command_byte):
+                parsed=[json.loads(x) for x in sample().decode().splitlines()]
+                next(e for e in parsed if e["kind"]=="gp0_unai_handled")["value"]=command_byte<<24
+                raw=("".join(json.dumps(e,separators=(",",":"))+"\\n" for e in parsed)).encode()
+                with self.assertRaises(Refused):summarize(raw)
     def test_refuse_asserted_renderer_frame(self):
         p=sample().replace(b'"cycle":0,"frame":0',b'"cycle":0,"frame":12',1)
         with self.assertRaises(Refused):validate(p)
