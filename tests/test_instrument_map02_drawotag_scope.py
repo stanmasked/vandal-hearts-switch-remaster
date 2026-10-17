@@ -22,15 +22,20 @@ def source_fixture():
 #include <stdlib.h>
 #include <assert.h>
 #include "map02_scoped_blend_sink.h"
-typedef struct P_TAG { unsigned tag; } P_TAG;
-#define PC_GPU_PRIM_TYPE(p) ((unsigned)((p)->tag))
+typedef struct P_TAG { unsigned tag; unsigned type; } P_TAG;
+#define PC_GPU_PRIM_POLY_F4 1
+#define PC_GPU_PRIM_POLY_FT4 2
+#define PC_GPU_PRIM_SPRT 3
+#define PC_GPU_PRIM_TILE 4
+#define PC_GPU_PRIM_DR_MODE 5
+#define PC_GPU_PRIM_TYPE(p) ((int)((p)->type))
 static unsigned s_drawFrame = 0;
-static P_TAG slots[5];
+static P_TAG slots[6];
 static int invalid_walk;
 static unsigned visits;
 static void *PC_OtResolve(unsigned token, int *bucket) {
     if (invalid_walk && token == 3) return 0;
-    if (token == 0 || token > 4) return 0;
+    if (token == 0 || token > 5) return 0;
     *bucket = (token == 1 || token == 3);
     return &slots[token];
 }
@@ -45,12 +50,16 @@ static void TrcFrameEnd(void) {}
         if (cur == NULL) {
 """ + INVALID_TOKEN + r"""
 """ + PRIM + r"""
-            unsigned short word = (unsigned short)(visits + 1u);
-            vh_map02_probe_begin(4, 3, word, word, 0, 1, 1, 1);
-            vh_map02_probe_blendg1(4, 3, (unsigned short)(word | 0x8000),
-                                    word, word, 0, 1);
-            vh_map02_probe_end(4, 3, word);
-            visits++;
+            /* A DR_MODE node sits between both raster draws.
+             * It must not advance the witness ordinal or emit pixels. */
+            if (PC_GPU_PRIM_TYPE((P_TAG *)cur) != PC_GPU_PRIM_DR_MODE) {
+                unsigned short word = (unsigned short)(visits + 1u);
+                vh_map02_probe_begin(4, 3, word, word, 0, 1, 1, 1);
+                vh_map02_probe_blendg1(4, 3, (unsigned short)(word | 0x8000),
+                                        word, word, 0, 1);
+                vh_map02_probe_end(4, 3, word);
+                visits++;
+            }
 """ + PRIM_END + r"""
 """ + CYCLE + r"""
             break;
@@ -66,7 +75,11 @@ int main(void) {
     slots[1].tag = 2;
     slots[2].tag = 3;
     slots[3].tag = 4;
-    slots[4].tag = 0;
+    slots[4].tag = 5; /* DR_MODE: not a raster draw */
+    slots[5].tag = 0;
+    slots[2].type = PC_GPU_PRIM_POLY_F4;
+    slots[4].type = PC_GPU_PRIM_DR_MODE;
+    slots[5].type = PC_GPU_PRIM_POLY_FT4;
     invalid_walk = getenv("VH_MAP02_TEST_ABORT") != 0;
     DrawOTag((unsigned *)&root);
 #ifdef VH_MAP02_SCOPED_BLEND_PROBE
@@ -76,8 +89,8 @@ int main(void) {
     } else {
     assert(!vh_map02_scope_failed());
     assert(vh_map02_scope_count() == 2);
-    assert(vh_map02_scope_copy(0, &event) && event.ordinal == 0 && event.primitive_type == 3);
-    assert(vh_map02_scope_copy(1, &event) && event.ordinal == 1 && event.primitive_type == 0);
+    assert(vh_map02_scope_copy(0, &event) && event.ordinal == 0 && event.primitive_type == 1);
+    assert(vh_map02_scope_copy(1, &event) && event.ordinal == 1 && event.primitive_type == 2);
     }
 #else
     assert(visits == (invalid_walk ? 1u : 2u));
@@ -91,11 +104,13 @@ class DrawOTagScopeTests(unittest.TestCase):
         patched = instrument(source_fixture())
         self.assertIn("vh_map02_scope_begin_frame(", patched)
         self.assertIn("vh_map02_scope_begin_primitive(", patched)
-        self.assertIn("(unsigned)PC_GPU_PRIM_TYPE((P_TAG *)cur)", patched)
+        self.assertIn("int vh_scope_type = PC_GPU_PRIM_TYPE((P_TAG *)cur)", patched)
+        self.assertIn("if (vh_scope_is_draw) vh_scope_ordinal++", patched)
+        self.assertIn("vh_scope_active && vh_scope_is_draw", patched)
         self.assertIn("vh_map02_scope_end_primitive()", patched)
         self.assertIn("vh_map02_scope_end_frame()", patched)
         self.assertIn("#ifdef VH_MAP02_POSIX_STAGE", patched)
-        self.assertIn("vh_map02_stage_private_blendg1(private_dir)", patched)
+        self.assertIn("vh_map02_stage_private_pair(private_dir)", patched)
         self.assertEqual(patched.count("if (vh_scope_active) vh_map02_scope_abort();"), 2)
         self.assertIn("vh_scope_ordinal++", patched)
 
