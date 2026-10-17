@@ -4,6 +4,7 @@
 #include "vh_game_music_mailbox.h"
 #include "vh_audio_diagnostics.h"
 #include <stdint.h>
+#include <stdio.h>
 
 /* Main tactical NRO uses this separate libnx audout worker. The
  * framebuffer/input loop never blocks on audoutPlayBuffer.
@@ -11,6 +12,16 @@
  */
 int vh_switch_game_audio_start(unsigned initial_scene);
 void vh_switch_game_audio_post(unsigned desired_scene);
+/* Timestamp is the moment the game loop OBSERVED the A/B press,
+ * in the armGetSystemTick-derived monotonic ns domain. Not the HID
+ * sampling instant or DAC playback time. Records only on scene change.
+ */
+void vh_switch_game_audio_post_at(unsigned desired_scene,
+                                  uint64_t game_input_observed_ns);
+/* Print a bounded witness only after vh_switch_game_audio_stop()
+ * has joined the producer thread. No filesystem I/O in audout paths.
+ * CSV serial=0 means startup or unstable concurrent mailbox receipt. */
+int vh_switch_game_audio_trace_dump(FILE *stream);
 /* Forward libnx AppletHookType_OnFocusState/OnResume transitions
  * from the main thread. Does not wait for the audio worker.
  */
