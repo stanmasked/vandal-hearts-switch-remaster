@@ -33,6 +33,17 @@ int main(void) {
     assert(f && vh_audout_queue_verify_csv(&t,f)==-1);
     fclose(f);
     assert(vh_audout_queue_export(&t,dir,second,2)==VH_AUDOUT_QUEUE_EXPORT_PATH);
+    /* Separate latency CSV must never claim/replace queue series. */
+    char latency[VH_AUDOUT_QUEUE_EXPORT_PATH_CAP];
+    assert(vh_audout_latency_export(&t,dir,latency,sizeof latency)==0);
+    assert(strstr(latency,"audio-audout-latency-0000.csv"));
+    f=fopen(latency,"rb");
+    assert(f && vh_audout_latency_verify_csv(&t,f)==0);
+    fclose(f);
+    assert(vh_audout_latency_export(&t,dir,second,sizeof second)==0);
+    assert(strstr(second,"audio-audout-latency-0001.csv"));
+    assert(unlink(second)==0);
+    assert(unlink(latency)==0);
     assert(unlink(first)==0);
     char path[VH_AUDOUT_QUEUE_EXPORT_PATH_CAP];
     snprintf(path,sizeof path,"%s/audio-audout-queue-0001.csv",dir);
