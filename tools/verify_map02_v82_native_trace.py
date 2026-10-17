@@ -9,7 +9,10 @@ from pathlib import Path
 
 KINDS={"vblank","gp1_mmio","gpu_dma2_start","gp0_unai_handled","unai_sample_delta","unai_store_count","unai_same_store_count",
        "gpulib_a0_store_count","gpulib_a0_same_count",
-       "gpulib_copy_store_count","gpulib_copy_same_count"}
+       "gpulib_copy_store_count","gpulib_copy_same_count",
+       "gpulib_overlap_store_count","gpulib_overlap_same_count",
+       "gpulib_mask_upload_store_count","gpulib_mask_upload_same_count",
+       "gpulib_wrap_store_count","gpulib_wrap_same_count"}
 FIELDS={"kind","seq","value","cycle","frame"}
 
 class Refused(ValueError):pass
