@@ -10,7 +10,8 @@ import subprocess
 import tempfile
 import unittest
 
-from tools.check_map02_cycle_elf import SYMBOLS, audit_cycle_elf
+from tools.check_map02_cycle_elf import (
+    SYMBOLS, ORIGINAL_FONT_DATA_SYMBOLS, audit_cycle_elf)
 
 
 class OriginalCycleElfAuditTests(unittest.TestCase):
@@ -22,7 +23,8 @@ class OriginalCycleElfAuditTests(unittest.TestCase):
         source.write_text(
             "/* Synthetic names, NO original game/observer implementation */\n"
             + "\n".join("void " + sym + "(void) {}" for sym in SYMBOLS)
-            + "\nint main(void) { return 0; }\n", encoding="utf-8")
+            + "\nconst unsigned char pc_kanji_charset2[6270] = {1};\n"
+            + "int main(void) { return 0; }\n", encoding="utf-8")
         cls.executable = cls.root / "symbols-only"
         built = subprocess.run(
             ["cc", "-std=c99", "-Wall", "-Wextra", "-Werror",
@@ -44,6 +46,9 @@ class OriginalCycleElfAuditTests(unittest.TestCase):
     def test_full_executable_with_all_names_is_structurally_accepted_only(self):
         result = audit_cycle_elf(self.executable)
         self.assertEqual(result["required_symbols_present"], len(SYMBOLS))
+        self.assertEqual(
+            result["original_us_font_initialized_data_symbols_present"],
+            len(ORIGINAL_FONT_DATA_SYMBOLS))
         self.assertFalse(result["original_gameplay_authenticated"])
         self.assertFalse(result["original_map02_rendering_proven"])
         self.assertFalse(result["physical_ps1_equivalence_proven"])
@@ -83,6 +88,29 @@ class OriginalCycleElfAuditTests(unittest.TestCase):
                        check=True, capture_output=True, text=True, timeout=30)
         with self.assertRaisesRegex(ValueError, "ContinueLoadingCdFile"):
             audit_cycle_elf(without)
+
+    def test_full_elf_without_private_original_font_data_is_rejected(self):
+        missing = self.root / "no-font"
+        source = self.root / "no-font.c"
+        source.write_text(
+            "\n".join("void " + sym + "(void) {}" for sym in SYMBOLS)
+            + "\nint main(void) {return 0;}\n")
+        subprocess.run(["cc", str(source), "-o", str(missing)], check=True,
+                       capture_output=True, text=True, timeout=30)
+        with self.assertRaisesRegex(ValueError, "initialized original US font"):
+            audit_cycle_elf(missing)
+
+    def test_uninitialized_font_name_cannot_substitute_for_original_glyphs(self):
+        missing = self.root / "font-bss"
+        source = self.root / "font-bss.c"
+        source.write_text(
+            "\n".join("void " + sym + "(void) {}" for sym in SYMBOLS)
+            + "\nunsigned char pc_kanji_charset2[6270];\n"
+            + "int main(void) {return 0;}\n")
+        subprocess.run(["cc", str(source), "-o", str(missing)], check=True,
+                       capture_output=True, text=True, timeout=30)
+        with self.assertRaisesRegex(ValueError, "initialized original US font"):
+            audit_cycle_elf(missing)
 
     def test_symlink_and_non_executable_rejected(self):
         link = self.root / "linked"
