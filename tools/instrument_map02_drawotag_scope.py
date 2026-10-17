@@ -19,7 +19,13 @@ INVALID_TOKEN = "            break;\n        }\n        rawTagOfCur = ((P_TAG *)
 CYCLE = "        if (++walkSteps > 1000000UL) {"
 END = "    TrcFrameEnd();"
 
-DECLARATIONS = r"""#ifdef VH_MAP02_SCOPED_BLEND_PROBE
+DECLARATIONS = r"""#if defined(VH_MAP02_VRAM_EDGE_PROBE) && !defined(VH_MAP02_SCOPED_BLEND_PROBE)
+#error "VRAM edge sampling requires selected-frame DrawOTag scope"
+#endif
+#ifdef VH_MAP02_VRAM_EDGE_PROBE
+#include "map02_vram_edges.h"
+#endif
+#ifdef VH_MAP02_SCOPED_BLEND_PROBE
 /* Link to the bounded private sink, not to a public capture artifact. */
 extern void vh_map02_scope_reset(void);
 extern void vh_map02_scope_abort(void);
@@ -79,11 +85,21 @@ FRAME_NEW = r"""    s_drawFrame++;
         if (selection < 0) {
             vh_map02_scope_reset();
             vh_map02_scope_abort();
+#ifdef VH_MAP02_VRAM_EDGE_PROBE
+            vh_map02_edges_reset();
+            vh_map02_edges_abort();
+#endif
         } else if (selection > 0) {
             vh_map02_scope_reset();
             vh_scope_active = vh_map02_scope_begin_frame(
                 s_drawFrame, vh_scope_x, vh_scope_y);
             if (!vh_scope_active) vh_map02_scope_abort();
+#ifdef VH_MAP02_VRAM_EDGE_PROBE
+            vh_map02_edges_reset();
+            if (!vh_map02_edges_begin_frame(s_drawFrame,
+                                            vh_scope_x, vh_scope_y))
+                vh_map02_edges_abort();
+#endif
         }
     }
 #endif"""
@@ -102,9 +118,22 @@ PRIM_NEW = r"""        if (!isBucket) {
                 !vh_map02_scope_begin_primitive(
                     vh_scope_ordinal, (unsigned)vh_scope_type))
                 vh_map02_scope_abort();
+#ifdef VH_MAP02_VRAM_EDGE_PROBE
+            if (vh_scope_active && vh_scope_is_draw &&
+                !vh_map02_edges_begin_primitive(
+                    vh_scope_ordinal, (unsigned)vh_scope_type,
+                    PC_GpuVram()[vh_scope_y][vh_scope_x]))
+                vh_map02_edges_abort();
+#endif
             if (vh_scope_is_draw) vh_scope_ordinal++;
 #endif"""
 PRIM_END_NEW = r"""#ifdef VH_MAP02_SCOPED_BLEND_PROBE
+#ifdef VH_MAP02_VRAM_EDGE_PROBE
+            if (vh_scope_active && vh_scope_is_draw &&
+                !vh_map02_edges_end_primitive(
+                    PC_GpuVram()[vh_scope_y][vh_scope_x]))
+                vh_map02_edges_abort();
+#endif
             if (vh_scope_active && vh_scope_is_draw &&
                 !vh_map02_scope_end_primitive())
                 vh_map02_scope_abort();
@@ -113,6 +142,9 @@ PRIM_END_NEW = r"""#ifdef VH_MAP02_SCOPED_BLEND_PROBE
         nextTok = rawTagOfCur;"""
 INVALID_NEW = r"""#ifdef VH_MAP02_SCOPED_BLEND_PROBE
             if (vh_scope_active) vh_map02_scope_abort();
+#ifdef VH_MAP02_VRAM_EDGE_PROBE
+            if (vh_scope_active) vh_map02_edges_abort();
+#endif
 #endif
             break;
         }
@@ -120,12 +152,19 @@ INVALID_NEW = r"""#ifdef VH_MAP02_SCOPED_BLEND_PROBE
 CYCLE_NEW = r"""        if (++walkSteps > 1000000UL) {
 #ifdef VH_MAP02_SCOPED_BLEND_PROBE
             if (vh_scope_active) vh_map02_scope_abort();
+#ifdef VH_MAP02_VRAM_EDGE_PROBE
+            if (vh_scope_active) vh_map02_edges_abort();
+#endif
 #endif"""
 END_NEW = r"""#ifdef VH_MAP02_SCOPED_BLEND_PROBE
     /* Close before deferred hi-res workers run. Their pixels are excluded. */
     if (vh_scope_active) {
         if (!vh_map02_scope_end_frame())
             vh_map02_scope_abort();
+#ifdef VH_MAP02_VRAM_EDGE_PROBE
+        if (!vh_map02_edges_end_frame())
+            vh_map02_edges_abort();
+#endif
 #ifdef VH_MAP02_POSIX_STAGE
         else {
             const char *private_dir = getenv("VH_MAP02_PROBE_OUTPUT_DIR");
