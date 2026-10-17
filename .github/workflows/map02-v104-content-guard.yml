@@ -128,6 +128,10 @@ on:
       - 'tools/apply_map02_v125_pcsx_rearmed.py'
       - 'tools/summarize_map02_v125_variable_dma.py'
       - 'tests/test_map02_v125_variable_dma.py'
+      - 'tools/make_map02_v126_vblank_dma_exe.py'
+      - 'tools/apply_map02_v126_pcsx_rearmed.py'
+      - 'tools/summarize_map02_v126_genuine_vblank_dma.py'
+      - 'tests/test_map02_v126_genuine_vblank_dma.py'
       - 'tools/map02_v80_native_timeline.*'
       - 'tools/map02_v81_event_jsonl.*'
       - 'tools/verify_map02_v82_native_trace.py'
@@ -207,6 +211,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v123_gpu_linkedlist.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v124_one_list_five_draws.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v125_variable_dma.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v126_genuine_vblank_dma.py' -v
       - name: Patch pinned upstream with Unai post-dispatch observer
         shell: bash
         run: |
@@ -217,7 +222,7 @@ jobs:
           git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
           git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
-          python3 -m remaster.tools.apply_map02_v125_pcsx_rearmed upstream-pcsx
+          python3 -m remaster.tools.apply_map02_v126_pcsx_rearmed upstream-pcsx
           git -C upstream-pcsx diff --check
           grep -F 'vh80_record(VH83_GP0_UNAI_HANDLED' upstream-pcsx/plugins/gpu_unai/gpulib_if.cpp
           grep -F 'VH83_UNAI_DISPATCH_PASS' upstream-pcsx/frontend/main.c
@@ -1047,6 +1052,45 @@ jobs:
           assert report["gpu_draw_words_submitted_by_host"] is False
           assert report["HD_replacement_approved"] is False
           Path("proof/public/v125-variable-dma-summary.json").write_text(
+              json.dumps(report,sort_keys=True)+"\n")
+          PY
+      - name: Verify genuine psxRcntUpdate VBlank crossings between three MIPS DMA2 lists
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum -c proof/private/native.sha256
+          mkdir -m 700 -p proof/v126-home
+          python3 -m remaster.tools.make_map02_v126_vblank_dma_exe \
+            --output proof/private/V126_SYNTHETIC.EXE
+          test "$(stat -c %s proof/private/V126_SYNTHETIC.EXE)" -eq 10240
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v126-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh126-mips-vblank-dma-smoke \
+            proof/private/V126_SYNTHETIC.EXE \
+            > proof/private/v126-runtime.log 2>&1 || {
+              tail -n 100 proof/private/v126-runtime.log
+              exit 1
+            }
+          grep -F 'VH126_GENUINE_VBLANK_DMA_PASS stages=4' proof/private/v126-runtime.log
+          sha256sum -c proof/private/native.sha256
+          test ! -e proof/private/V104_RENDERER_EVENTS.jsonl.tmp
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from remaster.tools.summarize_map02_v126_genuine_vblank_dma import summarize
+          report=summarize(Path("proof/private/v126-runtime.log").read_text())
+          assert report["gpu_dma2_linked_list_transfers"]==3
+          assert report["native_gpu_chain_nodes_visited"]==10
+          assert report["gpu_command_words"]==15
+          assert report["ordered_intermediate_vram_checks"]==5
+          assert report["real_emulator_vblank_callbacks"]==2
+          assert report["sampled_vram_transition_gaps"]==[1,0,1,0]
+          assert report["native_four_back_return_in_gap2"]==1
+          assert report["no_host_forged_cycle_interrupt_or_vblank"] is True
+          assert report["HD_replacement_approved"] is False
+          Path("proof/public/v126-genuine-vblank-dma-summary.json").write_text(
               json.dumps(report,sort_keys=True)+"\n")
           PY
       - name: Publish aggregate status only, never private trace
