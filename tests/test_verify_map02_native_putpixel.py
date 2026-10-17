@@ -36,6 +36,9 @@ class NativePutPixelAuditTests(unittest.TestCase):
         self.assertEqual(r["native_putpixel_calls_observed"],5)
         self.assertEqual(r["opaque_copy_calls"],3)
         self.assertEqual(r["semi_transparent_blend_requests"],2)
+        self.assertEqual(r["accurate_pc_blend_results_checked"],1)
+        self.assertEqual(r["legacy_pc_blend_results_checked"],1)
+        self.assertTrue(r["original_pc_writepixel_effects_verified"])
         self.assertEqual(r["same_color_write_calls_invisible_to_vram_delta"],2)
         self.assertEqual(r["changed_word_write_calls"],3)
         self.assertEqual(r["bit15_unset_to_set_calls"],1)
@@ -57,6 +60,21 @@ class NativePutPixelAuditTests(unittest.TestCase):
         self.rows[1]["after"]=0x7c00
         self.save()
         with self.assertRaisesRegex(ValueError,"opaque native WritePixel"):
+            verify_pixel_calls(self.root)
+
+    def test_accurate_and_legacy_semitransparent_forgery_rejected(self):
+        # Both native source algorithms are replayed, even when the
+        # submitted JSONL otherwise preserves all record ordering.
+        self.assertEqual(verify_pixel_calls(self.root)[
+            "semi_transparent_blend_requests"], 2)
+        self.rows[2]["front"] = 0x0001
+        self.save()
+        with self.assertRaisesRegex(ValueError, "semi-transparent native WritePixel"):
+            verify_pixel_calls(self.root)
+        self.rows[2]["front"] = 0x801f
+        self.rows[4]["after"] = 0x801f
+        self.save()
+        with self.assertRaisesRegex(ValueError, "semi-transparent native WritePixel"):
             verify_pixel_calls(self.root)
 
     def test_duplicate_noncontiguous_and_mutated_numeric_fields(self):
