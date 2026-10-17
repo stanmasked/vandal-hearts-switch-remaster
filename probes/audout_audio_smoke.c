@@ -918,7 +918,7 @@ int main(int argc, char **argv) {
     if (injection_evidence<0 && result==0) result=32;
     if ((focus_evidence || focus_record_errors) && result==0) result=24;
     const unsigned verdict=(focus_evidence || focus_record_errors ||
-                            timing_evidence)
+                            timing_evidence || injection_evidence<0)
         ? VH_AUDIO_REPORT_INVALID
         : vh_audio_report_focus_evidence(
             &focus_events,&manual_resume,run_evidence,seam_evidence,
