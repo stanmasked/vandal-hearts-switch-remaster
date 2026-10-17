@@ -1215,7 +1215,28 @@ jobs:
           python3 -m remaster.tools.make_map02_v129_four_vblank_exe \
             --output proof/private/V129_SYNTHETIC.EXE
           test "$(stat -c %s proof/private/V129_SYNTHETIC.EXE)" -eq 10240
+          chmod 600 proof/private/V129_SYNTHETIC.EXE
+          sha256sum proof/private/V129_SYNTHETIC.EXE > proof/private/v131-same-exe.sha256
+          python3 -m remaster.tools.analyze_map02_v131_private_mips_mmio \
+            proof/private/V129_SYNTHETIC.EXE > proof/private/v131-static-candidates.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          static=json.loads(Path("proof/private/v131-static-candidates.json").read_text())
+          counts=static["candidate_sw_instruction_counts"]
+          if (counts["dma2_madr"]!=3 or counts["dma2_bcr"]!=3 or
+              counts["dma2_chcr"]!=6 or
+              counts["dma2_linked_list_chcr_literal"]!=3 or
+              counts["dma_dpcr"]!=1 or counts["gpu_gp0"]<1):
+              raise SystemExit("VH131_NATIVE_STATIC_SITE_COUNTS_REFUSED")
+          if (static["retail_map02_scene_identity_verified"] is not False or
+              static["nintendo_switch_hd_parity_verified"] is not False or
+              static["did_not_execute_mips"] is not True):
+              raise SystemExit("VH131_PRIVATE_STATIC_SCOPE_REFUSED")
+          print("VH131_NATIVE_STATIC_COUNTS_PASS dma2_stores=3 linked_literal=3")
+          PY
           for mode in 04 13 22 31 40; do
+            sha256sum -c proof/private/v131-same-exe.sha256
             mkdir -m 700 -p "proof/v129-home-$mode"
             timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
               SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
@@ -1230,6 +1251,7 @@ jobs:
             grep -F 'VH129_REAL_VBLANK_PROFILES_PASS mode=' \
               "proof/private/v129-$mode.log"
             sha256sum -c proof/private/native.sha256
+            sha256sum -c proof/private/v131-same-exe.sha256
             test ! -e proof/private/V104_RENDERER_EVENTS.jsonl.tmp
           done
           python3 - <<'PY'
@@ -1249,6 +1271,9 @@ jobs:
           assert report["no_host_injected_cycles_vblank_or_gpu_commands"] is True
           assert report["original_retail_MAP02_verified"] is False
           assert report["HD_replacement_approved"] is False
+          report["same_source_authored_exe_privately_hashed_before_after_each_mode"]=True
+          report["v131_static_dma_mmio_candidate_counts_checked"]=True
+          report["retail_map02_gpu_rendering_verified"]=False
           Path("proof/public/v129-four-real-vblank-profiles-summary.json").write_text(
               json.dumps(report,sort_keys=True)+"\n")
           PY
