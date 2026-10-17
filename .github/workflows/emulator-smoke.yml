@@ -19,6 +19,8 @@ on:
       - 'tests/test_vh_audout_queue_export.c'
       - 'tools/audit_nexium_audout_queue.py'
       - 'tools/audit_nexium_audout_repeatability.py'
+      - 'tools/analyze_nexium_audout_window_maxima.py'
+      - 'tests/test_analyze_nexium_audout_window_maxima.py'
       - 'tests/test_audit_nexium_audout_repeatability.py'
       - 'tools/verify_switch_runtime_nro.py'
       - 'tests/test_verify_switch_runtime_nro.py'
@@ -72,6 +74,7 @@ jobs:
           python3 -m unittest discover -s tests -p "test_analyze_nexium_scene_audio.py" -v
           python3 -m unittest discover -s tests -p "test_audit_nexium_audout_queue.py" -v
           python3 -m unittest discover -s tests -p "test_audit_nexium_audout_repeatability.py" -v
+          python3 -m unittest discover -s tests -p "test_analyze_nexium_audout_window_maxima.py" -v
           python3 -m unittest discover -s tests -p "test_verify_switch_runtime_nro.py" -v
           python3 -m unittest discover -s tests -p "test_analyze_nexium_transition_timing.py" -v
           python3 -m unittest discover -s tests -p "test_audit_nexium_guest_sd_handoff.py" -v
