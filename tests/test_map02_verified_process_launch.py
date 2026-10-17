@@ -305,7 +305,7 @@ int main(int argc, char **argv) {
                         x=10, y=20, timeout=8, cycle_dir=cycle,
                         build_receipt_dir=self.handoff.parent / "private-build-receipt",
                         build_bundle_dir=self.handoff.parent / "private-build-bundle")
-        build_verified.assert_called_once()
+        self.assertEqual(build_verified.call_count, 2)
         structural.assert_called_once_with(self.binary)
         self.assertEqual(len(environments), 1)
         child_env = environments[0]
@@ -321,6 +321,28 @@ int main(int argc, char **argv) {
         self.assertEqual(forwarded, [str(cycle)])
         receipt.assert_called_once()
         self.assertTrue((self.handoff / RECEIPT).exists())
+
+    def test_cycle_fails_if_source_bound_build_receipt_changes_during_child(self):
+        cycle = self.handoff.parent / "cycle-build-edited-in-run"
+        cycle.mkdir(mode=0o700)
+        with patch(
+                "tools.check_map02_cycle_elf.audit_cycle_elf",
+                return_value={"required_symbols_present": 19}), patch(
+                "tools.map02_cycle_build_provenance.verify_build_receipt",
+                side_effect=[
+                    {"source_pinned_full_elf_bytes_checked": True,
+                     "private_build_receipt_sha256": "a" * 64},
+                    {"source_pinned_full_elf_bytes_checked": True,
+                     "private_build_receipt_sha256": "b" * 64},
+                ]):
+            with self.assertRaisesRegex(ValueError, "changed during run"):
+                launch_observed_pc(
+                    self.handoff, self.native, self.scoped, self.binary,
+                    self.owned, upstream=self.upstream, x=10, y=20,
+                    timeout=8, cycle_dir=cycle,
+                    build_receipt_dir=self.handoff.parent / "receipt",
+                    build_bundle_dir=self.handoff.parent / "bundle")
+        self.assertFalse((self.handoff / RECEIPT).exists())
 
     def test_mismatched_cycle_nonce_rejects_kernel_receipt(self):
         cycle = self.handoff.parent / "cycle-wrong-nonce"
