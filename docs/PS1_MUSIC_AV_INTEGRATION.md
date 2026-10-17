@@ -1986,3 +1986,33 @@ PlayStation hardware audio parity. No game assets or user music
 are accessed. The affected Python test files are now explicitly
 listed in PCM, native-audio and audout-NRO workflow path
 filters, so subsequent reference changes invoke CI.
+
+
+### Independent Python SEQ event and ADSR/pitch clock differential
+
+\`tests/native_seq_adsr_trace.c\` is a bounded host-only trace
+harness that calls production native pQES SEQ 512-frame block
+processing and SPU voice rendering on synthetic test samples,
+without any music assets or Switch services. The Python
+\`tests/test_native_seq_timing_adsr_reference.py\` compiles the
+harness with UBSan and compares its event totals and retained
+tempo against the existing **Fraction-based Python SEQ block
+scheduler**. Synthetic fixtures cover a mid-block tempo change,
+finite two-cycle repetition, and timed note off/retrigger.
+No approximate or hardcoded 48-kHz output clock is used to
+decide whether a note is due at a 44.1-kHz block boundary.
+
+A separate set of native voice traces records ADSR phase, level,
+rate counter, 20.12-pitch sample cursor, loop flag and voice
+liveness at 128-sample intervals. Independent Python
+\`SpuEnvelope\` and \`SpuSampleCursor\` advance one sample
+at a time and must reproduce every native trace point. The
+fixtures include exponential release, slow attack/rate-counter
+quantization, a nonlooping one-shot, and sustain fade-to-off.
+The trace must detect an intentionally modified ADSR observation.
+
+This validates selected SEQ, ADSR and pitch/cursor state
+transitions in the PC-port-style software path; it is NOT an
+independent entire PlayStation console implementation or a
+hardware sound-quality judgment. All test inputs are synthetic,
+and the harness exports no game PCM or user data.

@@ -84,6 +84,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_vh_
 	python3 tests/test_native_spu_adpcm.py
 	python3 tests/test_native_vab_python_reference.py
 	python3 tests/test_native_spu_reverb_reference.py
+	python3 tests/test_native_seq_timing_adsr_reference.py
 
 test-audio-stream: $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(BUILD)/test_vh_native_seq $(BUILD)/test_vh_native_vab $(BUILD)/test_vh_audio_assets $(BUILD)/test_vh_audio_resample $(BUILD)/test_vh_spu_reverb $(BUILD)/test_vh_native_audio_soak $(BUILD)/test_vh_audio_output_recovery $(BUILD)/test_vh_audio_pcm_seams $(BUILD)/test_vh_audio_listening_marks $(BUILD)/test_vh_audio_listening_oracle $(BUILD)/test_vh_audio_input_poll $(BUILD)/test_vh_audio_mark_buttons $(BUILD)/test_vh_audio_listener_input $(BUILD)/test_vh_audio_compute_timing $(BUILD)/test_vh_audio_compute_wait_join $(BUILD)/test_vh_audio_page_telemetry $(BUILD)/test_vh_audio_resume_abort_telemetry $(BUILD)/test_vh_decoded_vab_audout $(BUILD)/test_vh_audio_report_pages $(BUILD)/vh_local_music_transition_probe
 	./$(BUILD)/test_vh_audio_stream
@@ -111,6 +112,7 @@ test-audio-stream: $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(B
 	python3 tests/test_native_spu_gaussian.py
 	python3 tests/test_native_vab_python_reference.py
 	python3 tests/test_native_spu_reverb_reference.py
+	python3 tests/test_native_seq_timing_adsr_reference.py
 	python3 -m unittest discover -s tests -p 'test_vh_local_music_transition_probe.py' -v
 test-local-music-transition: $(BUILD)/vh_local_music_transition_probe
 	python3 -m unittest discover -s tests -p 'test_vh_local_music_transition_probe.py' -v

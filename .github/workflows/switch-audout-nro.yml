@@ -15,6 +15,8 @@ on:
       - "tests/test_vh_decoded_vab_audout.c"
       - "tests/test_native_vab_python_reference.py"
       - "tests/test_native_spu_reverb_reference.py"
+      - "tests/test_native_seq_timing_adsr_reference.py"
+      - "tests/native_seq_adsr_trace.c"
       - "Makefile"
       - ".github/workflows/switch-audout-nro.yml"
   pull_request:
@@ -27,6 +29,8 @@ on:
       - "tests/test_vh_decoded_vab_audout.c"
       - "tests/test_native_vab_python_reference.py"
       - "tests/test_native_spu_reverb_reference.py"
+      - "tests/test_native_seq_timing_adsr_reference.py"
+      - "tests/native_seq_adsr_trace.c"
       - "Makefile"
       - ".github/workflows/switch-audout-nro.yml"
   workflow_dispatch:
