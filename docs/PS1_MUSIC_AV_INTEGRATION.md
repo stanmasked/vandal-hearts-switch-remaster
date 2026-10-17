@@ -1320,3 +1320,22 @@ and no-mutation counter overflow. The existing CI UBSan exercise
 compiles and executes those checks. This improves diagnostic
 interpretability and integrity; it is not evidence of audible quality
 or proof that Switch audio compute meets its budget in practice.
+
+
+#### Final-render ordering check
+
+The first scene-category host regression exposed a real auditing
+ambiguity: group totals alone could treat an earlier ordinary page
+as not yet returned even when the more recently rendered cue-boundary
+page had supposedly already returned. The native probe renders and
+submits a single synchronous PCM page at a time, so that sequence
+cannot occur.
+
+The accumulator now stores the one-bit class of the **last rendered
+page**. If the delivered-page count is short by one, the missing
+page must belong to that class, not merely to either plausible group.
+The verifier rejects a missing ordinary page followed by a delivered
+switch page (and vice versa). Invalid last-class values and a nonzero
+class in empty runs fail closed. These checks are tested by the
+host regression and PCM UBSan, without changing real audio service
+timing or any PCM data.

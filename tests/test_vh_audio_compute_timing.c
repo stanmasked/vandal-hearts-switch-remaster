@@ -12,6 +12,7 @@ int main(void) {
     assert(vh_audio_compute_record(&s,200u,200u,0u)==0);
     assert(vh_audio_compute_record(&s,201u,200u,1u)==0);
     assert(s.rendered_pages==3u && s.over_budget==1u);
+    assert(s.last_after_switch==1u);
     assert(s.total_ticks==501u && s.max_ticks==201u);
     assert(s.ordinary.rendered_pages==2u);
     assert(s.ordinary.total_ticks==300u);
@@ -23,6 +24,8 @@ int main(void) {
     assert(vh_audio_compute_verify(&s,3u,1u)==0);
     /* Last synthetic boundary page rendered but never returned. */
     assert(vh_audio_compute_verify(&s,2u,0u)==0);
+    /* Counters alone allow ordinary(undelivered) + boundary(delivered)
+     * here. The final rendered category rules out that chronology. */
     assert(vh_audio_compute_verify(&s,2u,1u)==-1);
     assert(vh_audio_compute_verify(&s,3u,0u)==-1);
     assert(vh_audio_compute_verify(&s,1u,0u)==-1);
@@ -40,6 +43,10 @@ int main(void) {
     assert(vh_audio_compute_verify(&bad,3u,1u)==-1);
     bad=s; bad.over_budget=bad.rendered_pages+1u;
     assert(vh_audio_compute_verify(&bad,3u,1u)==-1);
+    bad=s; bad.last_after_switch=2u;
+    assert(vh_audio_compute_verify(&bad,3u,1u)==-1);
+    bad=s; bad.last_after_switch=0u;
+    assert(vh_audio_compute_verify(&bad,2u,0u)==-1);
     bad=s; ++bad.first_after_switch.rendered_pages;
     assert(vh_audio_compute_verify(&bad,3u,1u)==-1);
     bad=s; ++bad.ordinary.total_ticks;
@@ -82,6 +89,10 @@ int main(void) {
     assert(vh_audio_compute_record(&ordinary_failed,210u,200u,0u)==0);
     assert(vh_audio_compute_verify(&ordinary_failed,0u,0u)==0);
     assert(vh_audio_compute_verify(&ordinary_failed,1u,0u)==0);
+    assert(ordinary_failed.last_after_switch==0u);
+    VhAudioComputeTiming no_pages={0};
+    no_pages.last_after_switch=1u;
+    assert(vh_audio_compute_verify(&no_pages,0u,0u)==-1);
 
     puts("audout DSP ordinary/switch compute budget split: PASS");
     return 0;

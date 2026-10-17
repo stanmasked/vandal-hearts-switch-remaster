@@ -15,6 +15,7 @@ typedef struct {
 typedef struct {
     uint64_t rendered_pages, total_ticks, max_ticks, over_budget;
     VhAudioComputeBucket ordinary, first_after_switch;
+    unsigned last_after_switch; /* class of the final rendered page */
 } VhAudioComputeTiming;
 
 /* Increment the overall accumulator and exactly one category.
@@ -42,6 +43,7 @@ static inline int vh_audio_compute_record(
     b->total_ticks+=elapsed;
     if (elapsed>b->max_ticks) b->max_ticks=elapsed;
     b->over_budget+=slow;
+    s->last_after_switch=first_after_switch;
     return 0;
 }
 
@@ -61,7 +63,9 @@ static inline int vh_audio_compute_bucket_valid(
 static inline int vh_audio_compute_verify(
     const VhAudioComputeTiming *s, uint64_t returned_pages,
     uint64_t returned_switch_pages) {
-    if (!s || returned_switch_pages>returned_pages ||
+    if (!s || s->last_after_switch>1u ||
+        (!s->rendered_pages && s->last_after_switch) ||
+        returned_switch_pages>returned_pages ||
         s->rendered_pages<returned_pages ||
         s->rendered_pages-returned_pages>1u ||
         !vh_audio_compute_bucket_valid(&s->ordinary) ||
@@ -87,8 +91,18 @@ static inline int vh_audio_compute_verify(
         s->ordinary.rendered_pages-ordinary_returned>1u ||
         s->first_after_switch.rendered_pages-returned_switch_pages>1u)
         return -1;
-    return (s->ordinary.rendered_pages-ordinary_returned)+
-           (s->first_after_switch.rendered_pages-returned_switch_pages)
-            ==s->rendered_pages-returned_pages ? 0 : -1;
+    const uint64_t missing_ordinary=
+        s->ordinary.rendered_pages-ordinary_returned;
+    const uint64_t missing_switch=
+        s->first_after_switch.rendered_pages-returned_switch_pages;
+    if (missing_ordinary+missing_switch!=
+        s->rendered_pages-returned_pages) return -1;
+    /* A terminally failed submission cannot prevent an earlier page
+     * from returning while a later rendered page is already delivered.
+     * The single outstanding page must belong to the last render. */
+    if (missing_ordinary+missing_switch==1u &&
+        s->last_after_switch!=(unsigned)(missing_switch==1u))
+        return -1;
+    return 0;
 }
 #endif
