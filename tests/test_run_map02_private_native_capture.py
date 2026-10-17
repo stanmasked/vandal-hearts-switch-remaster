@@ -556,6 +556,46 @@ class PrivateNativeLauncherTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "empty"):
             self.run_synthetic()
 
+    def test_dynamic_loader_and_interpreter_injection_env_rejected_before_launch(self):
+        # The executable FD is pinned, but LD_PRELOAD/LD_AUDIT and
+        # interpreter environment variables could still run injected code.
+        # No preflight/summary/VRAM bytes may be created on rejection.
+        for key in ("LD_PRELOAD", "LD_AUDIT", "LD_LIBRARY_PATH",
+                    "LD_DEBUG", "DYLD_INSERT_LIBRARIES", "PYTHONPATH",
+                    "PYTHONHOME", "PYTHONSTARTUP", "PYTHONINSPECT",
+                    "PYTHONBREAKPOINT", "BASH_ENV", "ENV", "GCONV_PATH",
+                    "GLIBC_TUNABLES"):
+            with self.subTest(key=key):
+                unsafe = dict(self.env, **{key: str(self.base / "private-code")})
+                with self.assertRaisesRegex(ValueError, "injection controls"):
+                    capture(self.executable, self.preflight, self.summary,
+                            environ=unsafe)
+                self.assertFalse(self.preflight.exists())
+                self.assertFalse(self.summary.exists())
+                self.assertEqual(list(self.capture_dir.iterdir()), [])
+
+    def test_malformed_launch_environment_rejected_before_preflight(self):
+        for field, value in (("MALFORMED", 5), ("HAS_EQUALS=YES", "1"),
+                             ("HAS_NUL", "a\\x00b"), ("", "empty-key")):
+            with self.subTest(field=field):
+                invalid = dict(self.env)
+                invalid[field] = value
+                with self.assertRaisesRegex(ValueError, "plain strings"):
+                    capture(self.executable, self.preflight, self.summary,
+                            environ=invalid)
+                self.assertFalse(self.preflight.exists())
+                self.assertFalse(self.summary.exists())
+        self.assertEqual(list(self.capture_dir.iterdir()), [])
+
+    def test_benign_display_and_locale_environment_allowed(self):
+        self.env["DISPLAY"] = ":42"
+        self.env["LANG"] = "C.UTF-8"
+        self.env["XDG_RUNTIME_DIR"] = str(self.base)
+        result = self.run_synthetic()
+        self.assertTrue(result["capture_verified"])
+        self.assertNotIn(":42", json.dumps(result))
+        self.assertNotIn(str(self.base), json.dumps(result))
+
     def test_bad_environment_or_receipt_inside_capture_never_launches(self):
         self.env["VH_MAP02_PUTPIXEL_FRAME"] = "4"
         with self.assertRaisesRegex(ValueError, "frames must match"):
