@@ -13,12 +13,18 @@ ROOT = Path(__file__).resolve().parents[1]
 
 HARNESS = r"""
 #include "map02_cycle_order.h"
+#include "map02_cd_read_probe.h"
 #include <stdio.h>
 #include <string.h>
+
 int main(int argc, char **argv) {
-    int n;
     char out[512];
+    unsigned char sectors[12u * 2048u], returned[12u * 2048u];
+    int n, i;
     if (argc != 2) return 2;
+    for (i = 0; i < (int)sizeof sectors; ++i)
+        sectors[i] = (unsigned char)(i ^ (i >> 8));
+    memcpy(returned, sectors, sizeof sectors);
     if (!strcmp(argv[1], "draw-early")) {
         vh_map02_cycle_draw_start(73);
         vh_map02_cycle_draw_finish(73, 1);
@@ -26,9 +32,34 @@ int main(int argc, char **argv) {
     vh_map02_cycle_load(42, 42, 0x1bcc, 12);
     if (!strcmp(argv[1], "duplicate-claim"))
         vh_map02_cycle_load(42, 42, 0x1bcc, 12);
+
+    if (strcmp(argv[1], "cd-missing-claim"))
+        vh_map02_cd_loader_claim(42, 42, 0x1bcc, 12);
+    if (!strcmp(argv[1], "cd-duplicate-claim"))
+        vh_map02_cd_loader_claim(42, 42, 0x1bcc, 12);
+
     if (strcmp(argv[1], "finish-first"))
         vh_map02_cycle_read_start(0x1bcc, 12);
+    if (strcmp(argv[1], "cd-missing-read")) {
+        vh_map02_cd_read_start(0x1bcc, 12);
+        for (i = 0; i < 12; ++i) {
+            if (!strcmp(argv[1], "cd-missing-sector") && i == 11)
+                continue;
+            vh_map02_cd_read_sector(
+                0x1bcc + i + (!strcmp(argv[1], "cd-wrong-sector") && i == 5),
+                sectors + (size_t)i * 2048u);
+        }
+        if (!strcmp(argv[1], "cd-tampered-transfer"))
+            returned[0] ^= 1u;
+        vh_map02_cd_read_finish(0x1bcc, 12, returned);
+    }
     vh_map02_cycle_read_finish(0x1bcc, 12);
+
+    if (strcmp(argv[1], "cd-missing-completion"))
+        vh_map02_cd_loader_complete(42, 42, 99);
+    if (!strcmp(argv[1], "cd-duplicate-completion"))
+        vh_map02_cd_loader_complete(42, 42, 99);
+
     if (strcmp(argv[1], "missing-completion"))
         vh_map02_cycle_loader_complete(42, 42, 99);
     if (!strcmp(argv[1], "duplicate-completion"))
@@ -58,6 +89,7 @@ class CycleOrderTests(unittest.TestCase):
             "cc", "-std=gnu99", "-Wall", "-Wextra", "-Werror",
             "-I", str(ROOT / "tools"), str(src),
             str(ROOT / "tools/map02_cycle_order.c"),
+            str(ROOT / "tools/map02_cd_read_probe.c"),
             str(ROOT / "tools/map02_capture_session.c"),
             "-o", str(cls.exe),
         ]
@@ -101,6 +133,26 @@ class CycleOrderTests(unittest.TestCase):
                 proc = self.run_mode(mode)
                 self.assertEqual(proc.returncode, 0, proc.stderr)
                 self.assertIn("receipt=0", proc.stdout)
+
+    def test_original_cd_crc_proof_is_mandatory_before_cycle_receipt(self):
+        for mode in ("cd-missing-claim", "cd-duplicate-claim",
+                     "cd-missing-read", "cd-missing-sector",
+                     "cd-wrong-sector", "cd-tampered-transfer",
+                     "cd-missing-completion", "cd-duplicate-completion"):
+            with self.subTest(mode=mode):
+                proc = self.run_mode(mode)
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                self.assertIn("receipt=0", proc.stdout)
+
+    def test_invalid_cd_state_never_publishes_on_disk(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "private"
+            out.mkdir(mode=0o700)
+            proc = self.run_mode("cd-tampered-transfer", directory=out)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("receipt=0", proc.stdout)
+            self.assertIn("failed=1", proc.stdout)
+            self.assertFalse((out / "map02-single-process-cycle.jsonl").exists())
 
     def test_private_exclusive_receipt_and_no_overwrite(self):
         with tempfile.TemporaryDirectory() as tmp:
