@@ -153,6 +153,9 @@ in the report. The launcher discards process stdout/stderr rather than
 uploading or echoing copyrighted game data. It records launch status,
 exit code, executable SHA-256 and verified journal hashes. On errors it
 preserves private files for local diagnosis and returns nonzero.
+If the local game may remain running, an optional `--timeout-seconds N` limit
+will terminate the launched process and produce an unverified failure
+receipt rather than misrepresenting a timed-out run as a complete capture.
 
 The process **is actually spawned** by the launcher when preflight
 succeeds. This narrows the origin gap compared with an offline hash-only
