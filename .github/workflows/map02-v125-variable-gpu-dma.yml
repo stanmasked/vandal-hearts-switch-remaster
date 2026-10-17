@@ -1,0 +1,32 @@
+name: MAP02 v125 interpreted MIPS variable GPU linked-list DMA
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v125-variable-gpu-dma.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/make_map02_v125_variable_gpu_dma_exe.py'
+      - 'tools/apply_map02_v125_pcsx_rearmed.py'
+      - 'tools/summarize_map02_v125_variable_dma.py'
+      - 'tests/test_map02_v125_variable_dma.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  variable-mips-dma-list-validation:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate changing DMA starts, payload lengths, ordered VRAM returns
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_map02_v125_variable_dma.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v124_one_list_five_draws.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v123_gpu_linkedlist.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v122_mips_dma2_return.py' -v
