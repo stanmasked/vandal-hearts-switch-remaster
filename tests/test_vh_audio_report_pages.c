@@ -481,22 +481,25 @@ int main(void) {
     assert(vh_audio_manual_select(4u,4u)==0u);
     assert(vh_audio_manual_select(VH_AUDIO_MANUAL_X,4u)==0u);
 
-    assert(vh_audio_report_navigate(&page,VH_AUDIO_REPORT_NEXT)==0);
-    assert(page==1u);
-    assert(vh_audio_report_navigate(&page,VH_AUDIO_REPORT_NEXT)==0);
-    assert(page==2u);
+    assert(VH_AUDIO_REPORT_PAGE_COUNT==4u);
+    /* Four distinct pages: device, PCM seams, listening, HOME. */
+    for(unsigned expected=1u;expected<VH_AUDIO_REPORT_PAGE_COUNT;
+        ++expected) {
+        assert(vh_audio_report_navigate(&page,VH_AUDIO_REPORT_NEXT)==0);
+        assert(page==expected);
+    }
     assert(vh_audio_report_navigate(&page,VH_AUDIO_REPORT_NEXT)==0);
     assert(page==0u);
     assert(vh_audio_report_navigate(&page,VH_AUDIO_REPORT_PREV)==0);
-    assert(page==2u);
+    assert(page==3u);
     assert(vh_audio_report_navigate(&page,VH_AUDIO_REPORT_PREV|
         VH_AUDIO_REPORT_NEXT)==0);
-    assert(page==2u);
+    assert(page==3u);
     assert(vh_audio_report_navigate(&page,VH_AUDIO_REPORT_QUIT|
         VH_AUDIO_REPORT_NEXT)==1);
-    assert(page==2u);
+    assert(page==3u);
     assert(vh_audio_report_navigate(&page,8u)==-1);
-    assert(page==2u);
+    assert(page==3u);
     assert(vh_audio_report_navigate(NULL,0u)==-1);
     page=VH_AUDIO_REPORT_PAGE_COUNT;
     assert(vh_audio_report_navigate(&page,VH_AUDIO_REPORT_NEXT)==-1);
