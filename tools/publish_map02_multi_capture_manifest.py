@@ -24,6 +24,52 @@ from tools.verify_map02_putpixel_multi_scope import (
 OVERDRAW_MANIFEST = "gpu-native-overdraw.json"
 
 
+def _capture_dependency_inventory(source_dir, native_dir):
+    """Fingerprint every flat private source/native file, not only 3 logs.
+
+    The full replay depends on original source/OT/GTE files, upload payloads
+    and 1 MiB VRAM snapshots as well as the JSONL files. A rehashed GPU log
+    alone cannot detect their replacement during replay. This is an in-memory
+    equality guard, not an identity proof or a public list of private files.
+    """
+    inventory = []
+    for role, directory in (("source", source_dir), ("native", native_dir)):
+        children = sorted(directory.iterdir(), key=lambda item: item.name)
+        if len(children) > 256:
+            raise ValueError("too many private capture dependency files")
+        for path in children:
+            if path.is_symlink() or not path.is_file():
+                raise ValueError("private capture dependencies must be regular, nonlinked files")
+            # After exclusive creation the exact new receipt is excluded
+            # from the input set, but it is checked bytewise below.
+            if role == "source" and path.name == MANIFEST:
+                continue
+            fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            with os.fdopen(fd, "rb") as handle:
+                before = os.fstat(handle.fileno())
+                if not stat.S_ISREG(before.st_mode) or before.st_size > 16 * 1024 * 1024:
+                    raise ValueError("private capture dependency is not a bounded regular file")
+                digest = hashlib.sha256()
+                size = 0
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+                    size += len(chunk)
+                after = os.fstat(handle.fileno())
+            current = path.stat(follow_symlinks=False)
+            keys = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+            if size != before.st_size or any(
+                    getattr(before, key) != getattr(after, key)
+                    or getattr(before, key) != getattr(current, key)
+                    for key in keys):
+                raise ValueError("private capture dependency changed while hashing")
+            inventory.append((role, path.name, digest.hexdigest(),
+                              before.st_dev, before.st_ino, before.st_size,
+                              before.st_mtime_ns, before.st_ctime_ns))
+    if not inventory:
+        raise ValueError("private capture dependency files are missing")
+    return tuple(inventory)
+
+
 def _sha(raw):
     return hashlib.sha256(raw).hexdigest()
 
@@ -48,6 +94,7 @@ def publish_multi_manifest(source_dir, native_dir, *, compiler="gcc"):
     target = source_dir / MANIFEST
     if target.exists() or target.is_symlink():
         raise ValueError("two-word receipt already exists; refusing overwrite")
+    dependencies_before = _capture_dependency_inventory(source_dir, native_dir)
 
     overdraw_raw = private_file(
         source_dir, OVERDRAW_MANIFEST, max_bytes=64*1024)
@@ -75,6 +122,8 @@ def publish_multi_manifest(source_dir, native_dir, *, compiler="gcc"):
     if verified["two_word_manifest_sha256"] != _sha(raw):
         raise ValueError("in-memory receipt digest differs after replay")
     current = _input_bytes(source_dir, native_dir)
+    if _capture_dependency_inventory(source_dir, native_dir) != dependencies_before:
+        raise ValueError("private capture dependencies mutated during verification")
     for label, expected in input_hashes.items():
         if not hmac.compare_digest(current[label], expected):
             raise ValueError(label + ": input mutated during verification")
@@ -96,6 +145,12 @@ def publish_multi_manifest(source_dir, native_dir, *, compiler="gcc"):
             os.fsync(directory_fd)
         finally:
             os.close(directory_fd)
+        # After fsync confirm neither the source/OT/GTE nor native VRAM
+        # dependencies changed before the receipt became durable.
+        if _capture_dependency_inventory(source_dir, native_dir) != dependencies_before:
+            raise ValueError("private capture dependencies mutated after receipt fsync")
+        if private_file(source_dir, MANIFEST, max_bytes=64*1024) != raw:
+            raise ValueError("private two-word receipt changed after fsync")
     except BaseException:
         target.unlink(missing_ok=True)
         raise
@@ -111,6 +166,8 @@ def publish_multi_manifest(source_dir, native_dir, *, compiler="gcc"):
         "source_keyed_ft4_draws_checked":
             verified["source_keyed_ft4_draws_checked"],
         "private_receipt_published": True,
+        "private_capture_dependencies_rechecked": True,
+        "private_capture_dependency_file_count": len(dependencies_before),
         "full_original_pc_replay_verified": True,
         "real_map02_gameplay_authenticated": False,
         "native_capture_process_identity_authenticated": False,
