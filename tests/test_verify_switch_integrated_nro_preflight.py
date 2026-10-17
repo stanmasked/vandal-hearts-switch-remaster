@@ -65,6 +65,11 @@ class TestIntegratedNroPreflight(unittest.TestCase):
         with self.assertRaises(gate.PreflightError):
             gate.check(self.root, **dict(self.params, run_id=0))
 
+    def test_boolean_run_and_artifact_ids_rejected(self):
+        for overrides in ({"run_id": True}, {"artifact_id": True}):
+            with self.subTest(overrides=overrides), self.assertRaises(gate.PreflightError):
+                gate.check(self.root, **dict(self.params, **overrides))
+
     def test_symlink_hash_rejected(self):
         self.hashfile.unlink()
         elsewhere = self.root / "other.txt"
