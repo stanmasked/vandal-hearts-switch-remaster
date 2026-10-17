@@ -20,6 +20,7 @@ on:
       - 'tools/verify_map02_native_gpu_capture.py'
       - 'tests/test_instrument_map02_gpu_native_events.py'
       - 'tests/test_verify_map02_gpu_capture_receipt.py'
+      - 'tools/check_map02_original_gpu_recorder_runtime.py'
       - 'tools/publish_map02_vram_edges_witness.py'
       - 'tools/verify_map02_vram_edges_witness.py'
       - 'tests/test_map02_vram_edge_witness.py'
@@ -63,6 +64,7 @@ on:
       - 'tools/verify_map02_native_gpu_capture.py'
       - 'tests/test_instrument_map02_gpu_native_events.py'
       - 'tests/test_verify_map02_gpu_capture_receipt.py'
+      - 'tools/check_map02_original_gpu_recorder_runtime.py'
       - 'tools/publish_map02_vram_edges_witness.py'
       - 'tools/verify_map02_vram_edges_witness.py'
       - 'tests/test_map02_vram_edge_witness.py'
@@ -145,5 +147,7 @@ jobs:
         run: python3 -m tools.check_map02_original_raster_runtime upstream-pc
       - name: Run actual original DrawOTag with synthetic DR_MODE F4 FT4
         run: python3 -m tools.check_map02_original_drawotag_runtime upstream-pc
+      - name: Execute original GPU recorder and reject 64-event overflow
+        run: python3 -m tools.check_map02_original_gpu_recorder_runtime upstream-pc
       - name: Stress original DrawOTag with overlapping STP and draw-mode switches
         run: python3 -m tools.check_map02_original_drawotag_complex upstream-pc
