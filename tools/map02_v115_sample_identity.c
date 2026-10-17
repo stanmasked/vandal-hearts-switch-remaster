@@ -8,14 +8,17 @@ static struct {
     uint16_t previous[VH115_SAMPLED_POINTS];
     uint16_t two_back[VH115_SAMPLED_POINTS];
     uint16_t three_back[VH115_SAMPLED_POINTS];
+    uint16_t four_back[VH115_SAMPLED_POINTS];
     uint32_t previous_delta,previous_epoch,epoch,have_previous;
     uint32_t two_back_epoch,have_two_back;
     uint32_t three_back_epoch,have_three_back;
+    uint32_t four_back_epoch,have_four_back;
     uint32_t enabled,invalid;
     vh115_metrics counts;
     vh116_gap_metrics gap_counts;
     vh117_triplet_metrics triplets;
     vh118_quadruplet_metrics quadruplets;
+    vh119_quintuplet_metrics quintuplets;
 } state;
 
 static void erase(void *ptr,size_t length){
@@ -51,6 +54,33 @@ void vh115_note(const uint16_t *post,uint32_t count,uint32_t delta){
         }
         const uint32_t gap=state.epoch-state.previous_epoch;
         uint32_t crossed=gap!=0;
+        if(state.have_four_back){
+            if(state.epoch<state.four_back_epoch ||
+               state.epoch-state.four_back_epoch>VH116_MAX_VBLANK_GAP ||
+               state.quintuplets.consecutive_quintuplets==UINT32_MAX){
+                state.invalid=1;return;
+            }
+            const uint32_t span=state.epoch-state.four_back_epoch;
+            uint32_t equals_previous=1,equals_two=1,equals_three=1,equals_four=1;
+            for(uint32_t i=0;i<VH115_SAMPLED_POINTS;i++){
+                equals_previous&=(uint32_t)(state.previous[i]==post[i]);
+                equals_two&=(uint32_t)(state.two_back[i]==post[i]);
+                equals_three&=(uint32_t)(state.three_back[i]==post[i]);
+                equals_four&=(uint32_t)(state.four_back[i]==post[i]);
+            }
+            uint32_t *target=(equals_previous
+                 ?&state.quintuplets.same_as_previous[span]
+                 :(equals_two
+                    ?&state.quintuplets.returned_to_two_back[span]
+                    :(equals_three
+                       ?&state.quintuplets.returned_to_three_back[span]
+                       :(equals_four
+                          ?&state.quintuplets.returned_to_four_back[span]
+                          :&state.quintuplets.different_from_all_four[span]))));
+            if(*target==UINT32_MAX){state.invalid=1;return;}
+            ++*target;
+            ++state.quintuplets.consecutive_quintuplets;
+        }
         if(state.have_three_back){
             if(state.epoch<state.three_back_epoch ||
                state.epoch-state.three_back_epoch>VH116_MAX_VBLANK_GAP ||
@@ -123,6 +153,11 @@ void vh115_note(const uint16_t *post,uint32_t count,uint32_t delta){
         ++*counter;
         ++*gap_counter;
         if(crossed)++*cross_counter;
+    }
+    if(state.have_three_back){
+        memcpy(state.four_back,state.three_back,sizeof(state.four_back));
+        state.four_back_epoch=state.three_back_epoch;
+        state.have_four_back=1;
     }
     if(state.have_two_back){
         memcpy(state.three_back,state.two_back,sizeof(state.three_back));
@@ -215,6 +250,25 @@ int vh118_get_quadruplet_metrics(vh118_quadruplet_metrics *out){
     *out=state.quadruplets;
     return 0;
 }
+int vh119_get_quintuplet_metrics(vh119_quintuplet_metrics *out){
+    vh115_metrics old;
+    vh118_quadruplet_metrics four;
+    if(!out || vh115_get_metrics(&old)!=0 ||
+       vh118_get_quadruplet_metrics(&four)!=0)return -1;
+    uint64_t counted=0;
+    for(uint32_t gap=0;gap<=VH116_MAX_VBLANK_GAP;gap++){
+        counted+=(uint64_t)state.quintuplets.same_as_previous[gap]+
+                 state.quintuplets.returned_to_two_back[gap]+
+                 state.quintuplets.returned_to_three_back[gap]+
+                 state.quintuplets.returned_to_four_back[gap]+
+                 state.quintuplets.different_from_all_four[gap];
+    }
+    if(counted!=state.quintuplets.consecutive_quintuplets ||
+       counted!=(old.handlers>=4u ? (uint64_t)old.handlers-4u : 0u) ||
+       counted>four.consecutive_quadruplets)return -1;
+    *out=state.quintuplets;
+    return 0;
+}
 int vh115_sample_cache_erased(void){
     const unsigned char *p=(const unsigned char *)state.previous;
     for(size_t i=0;i<sizeof(state.previous);i++)if(p[i])return 0;
@@ -222,5 +276,7 @@ int vh115_sample_cache_erased(void){
     for(size_t i=0;i<sizeof(state.two_back);i++)if(p[i])return 0;
     p=(const unsigned char *)state.three_back;
     for(size_t i=0;i<sizeof(state.three_back);i++)if(p[i])return 0;
+    p=(const unsigned char *)state.four_back;
+    for(size_t i=0;i<sizeof(state.four_back);i++)if(p[i])return 0;
     return 1;
 }
