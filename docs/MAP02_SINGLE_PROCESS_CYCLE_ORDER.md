@@ -157,6 +157,9 @@ python3 -m tools.build_map02_cycle_pc_local \
   /private/map02/VandalHearts-PcPort \
   /private/map02/cycle-build \
   --report-dir /private/map02/full-pc-build-receipt
+# Optional: when using your own 512-KiB PS1 BIOS instead of the
+# default external/psy-q/.../KROMDAT.BIN:
+#   --krom-source /private/map02/owned-ps1-bios.bin
 
 # Advanced equivalent (if diagnosing local build failures manually):
 # cd /private/map02/VandalHearts-PcPort/platform/pc
@@ -236,6 +239,8 @@ python3 -m tools.map02_verified_process_launch run \
   --build-receipt-dir /private/map02/full-pc-build-receipt \
   --build-bundle-dir /private/map02/cycle-build \
   --x 10 --y 20 --timeout 900
+# If the private full build used --krom-source, provide the
+# same --krom-source here to repeat original-font verification.
 ```
 
 Координаты 10,20 условные: действительный целевой пиксель необходимо
@@ -536,3 +541,57 @@ SHA-256 исходных `.o` и проверка закреплённых ис�
 `LoadCdFile()` с настоящим образом и не подтверждает
 рисование карты MAP02. После выполнения этого теста этап
 реального приватного `make link` остаётся отдельным.
+
+
+## Готовность подлинных пользовательских ресурсов перед полной сборкой
+
+Полный локальный `make link` теперь не начинается до проверки
+`tools.check_map02_private_pc_inputs`. Она использует строго
+`REGION=us`, а не принимает произвольный образ как проверенный US.
+Нужны файлы **только в локальном закреплённом оригинальном checkout**:
+
+- `SLUS_004.47` — PS-X EXE американского региона, с оригинальной
+  MD5 `596bb082a2de5f1fe977dd3d7e160b03`, подходящим
+  заголовком и размером загрузки.
+- `build/SLUS_004.47.elf` — настоящий извлечённый MIPS ELF
+  соответствующего matching-decomp (не заменяется тестовой заглушкой).
+- `assets/801012e4.inc`, `assets/801009bc.inc`,
+  `assets/80100e9c.inc` — извлечённые текстовые данные игры.
+- `external/psy-q/3.6/PSYQ/BIN/KROMDAT.BIN` либо собственный
+  PS1 BIOS объёмом 512 КиБ, который передаётся через
+  `--krom-source`. Для обоих вариантов сверяется SHA-256
+  **используемого US набора 209 глифов** с закреплённым
+  генератором `gen_kanji_font.py`.
+
+```sh
+python3 -m tools.check_map02_private_pc_inputs \
+  /private/map02/VandalHearts-PcPort
+# либо:
+python3 -m tools.check_map02_private_pc_inputs \
+  /private/map02/VandalHearts-PcPort \
+  --krom-source /private/map02/owned-ps1-bios.bin
+```
+
+Отчёт содержит **только категориальные признаки и один совместный
+SHA-256 частных входов**, но не файлы, пути, фрагменты игрового EXE,
+BIOS или содержимое ресурсных таблиц. В случае неполного или
+неверного входа сборка прерывается без запуска компилятора.
+Сборка выполняет вторую проверку после линковки: изменение хотя бы
+одного из входов в это время запрещает создание успешной квитанции.
+
+Совместный отпечаток `private_retail_inputs_binding_sha256`
+сохраняется в отдельной owner-only квитанции полного ELF. Перед и
+после `map02_verified_process_launch run --cycle-dir` исходные
+пользовательские ресурсы повторно проверяются, поэтому уже
+скомпилированный ELF нельзя объявить согласованным с другой
+таблицей, оригинальным EXE или PS1-шрифтом.
+
+**Границы:** извлечённый MIPS ELF сейчас проверяется как ELF/MIPS,
+но его содержимое не аттестовано по независимой контрольной сумме
+или provenance splat; наличие `assets/*.inc` не доказывает, что
+они извлечены именно из проверенного SLUS. Эти входы требуется
+сверить отдельным оригинальным matching-decomp пайплайном. Приватный
+CI использует только синтетические файлы со специально подменёнными
+контрольными суммами **в тестах**, не настоящую игру. Ни эта
+предпроверка, ни успешная локальная компиляция сама по себе
+не подтверждает отрисовку MAP02.
