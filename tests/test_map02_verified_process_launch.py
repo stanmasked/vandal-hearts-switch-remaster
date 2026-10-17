@@ -265,6 +265,38 @@ int main(int argc, char **argv) {
                     build_bundle_dir=self.handoff.parent / "private-build-bundle")
         self.assertFalse((self.handoff / RECEIPT).exists())
 
+    def test_source_bound_cycle_rejects_forwarded_argv_before_spawn(self):
+        cycle = self.handoff.parent / "cycle-untrusted-argv"
+        cycle.mkdir(mode=0o700)
+        with patch("tools.map02_verified_process_launch.subprocess.Popen") as popen:
+            with self.assertRaisesRegex(ValueError, "forbids forwarded executable arguments"):
+                launch_observed_pc(
+                    self.handoff, self.native, self.scoped,
+                    self.binary, self.owned, upstream=self.upstream,
+                    x=10, y=20, timeout=8, cycle_dir=cycle,
+                    arguments=("--hd-pack=/untrusted/resource",),
+                    build_receipt_dir=self.handoff.parent / "private-build-receipt",
+                    build_bundle_dir=self.handoff.parent / "private-build-bundle")
+        popen.assert_not_called()
+        self.assertFalse((self.handoff / RECEIPT).exists())
+
+    def test_source_bound_cycle_rejects_empty_or_nul_argument_before_spawn(self):
+        cycle = self.handoff.parent / "cycle-invalid-argv"
+        cycle.mkdir(mode=0o700)
+        for arguments in (("",), ("value\\x00other",)):
+            with self.subTest(arguments=arguments):
+                with patch("tools.map02_verified_process_launch.subprocess.Popen") as popen:
+                    with self.assertRaisesRegex(ValueError, "invalid PC-port executable argument"):
+                        launch_observed_pc(
+                            self.handoff, self.native, self.scoped,
+                            self.binary, self.owned, upstream=self.upstream,
+                            x=10, y=20, timeout=8, cycle_dir=cycle,
+                            arguments=arguments,
+                            build_receipt_dir=self.handoff.parent / "receipt",
+                            build_bundle_dir=self.handoff.parent / "bundle")
+                popen.assert_not_called()
+        self.assertFalse((self.handoff / RECEIPT).exists())
+
     def test_cycle_pre_exec_rejects_unstable_elf_digest(self):
         cycle = self.handoff.parent / "cycle-unstable-pre-elf"
         cycle.mkdir(mode=0o700)
@@ -374,6 +406,17 @@ int main(int argc, char **argv) {
                     "DYLD_INSERT_LIBRARIES": "/untrusted/plugin.dylib",
                     "PYTHONPATH": "/untrusted/python",
                     "PYTHONHOME": "/untrusted/python-home",
+                    "GLIBC_TUNABLES": "glibc.malloc.check=1",
+                    "GCONV_PATH": "/untrusted/charset-plugin",
+                    "SDL_DYNAMIC_API": "/untrusted/sdl.so",
+                    "QT_PLUGIN_PATH": "/untrusted/qt",
+                    "GIO_EXTRA_MODULES": "/untrusted/gio",
+                    "BASH_ENV": "/untrusted/shell-hooks",
+                    "ENV": "/untrusted/shell-env",
+                    "MESA_LOADER_DRIVER_OVERRIDE": "untrusted-driver",
+                    "DISPLAY": ":77",
+                    "XDG_RUNTIME_DIR": "/test/map02-xdg-runtime",
+                    "PULSE_SERVER": "unix:/test/map02-pulse",
             }):
                 with patch("tools.map02_verified_process_launch.subprocess.Popen",
                            side_effect=observed_popen):
@@ -398,9 +441,17 @@ int main(int argc, char **argv) {
         for variable in (
                 "VH_ALLOW_UNVERIFIED_EXE", "VH_KROM_SOURCE", "LD_PRELOAD",
                 "LD_AUDIT", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES",
-                "PYTHONPATH", "PYTHONHOME"):
+                "PYTHONPATH", "PYTHONHOME", "GLIBC_TUNABLES",
+                "GCONV_PATH", "SDL_DYNAMIC_API", "QT_PLUGIN_PATH",
+                "GIO_EXTRA_MODULES", "BASH_ENV", "ENV",
+                "MESA_LOADER_DRIVER_OVERRIDE"):
             with self.subTest(blocked_environment=variable):
                 self.assertNotIn(variable, child_env)
+        self.assertEqual(child_env.get("DISPLAY"), ":77")
+        self.assertEqual(child_env.get("XDG_RUNTIME_DIR"),
+                         "/test/map02-xdg-runtime")
+        self.assertEqual(child_env.get("PULSE_SERVER"),
+                         "unix:/test/map02-pulse")
         self.assertEqual(child_env.get("VH_REGION"), "us")
         self.assertEqual(child_env.get("VH_PSX_EXE"),
                          str(self.upstream / "SLUS_004.47"))
