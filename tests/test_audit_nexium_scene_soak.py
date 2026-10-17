@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import math
 from pathlib import Path
 import shutil
@@ -14,7 +15,9 @@ from PIL import Image,ImageDraw
 
 sys.path.insert(0,str(Path(__file__).resolve().parent.parent/"tools"))
 from decode_nexium_guest_trace_frame import encode_fixture,synthetic_image,decode_packet
-from audit_nexium_scene_soak import verify_run,TraceError
+from audit_nexium_scene_soak import verify_run,TraceError,bind_current_run_nro
+
+TEST_NRO_SHA = "ab" * 32
 
 
 def guest_rows(dropped=0,wrong_serial=None):
@@ -88,13 +91,15 @@ class TestSceneSoak(unittest.TestCase):
         (self.root/"soak-sd-root.txt").write_text(str(self.sd)+"\n")
 
     def audit(self):
-        return verify_run(self.root,self.sd,expected_sd_root=self.sd)
+        return verify_run(self.root,self.sd,nro_sha256=TEST_NRO_SHA,
+                          expected_sd_root=self.sd)
 
     def test_exact_ten_host_and_guest_scenes(self):
         result,encoded=self.audit()
         self.assertEqual(result["result"],
                          "TEN_GUEST_SCENE_TRANSITIONS_DUAL_TRANSPORT_VERIFIED")
         self.assertEqual(result["guest_event_rows"],53)
+        self.assertEqual(result["guest_nro_sha256"],TEST_NRO_SHA)
         self.assertEqual(result["guest_trace_dropped"],0)
         self.assertEqual(len(result["guest_internal_events"]),10)
         self.assertEqual(len(result["pcm_settled_1s_windows"]),11)
@@ -104,12 +109,43 @@ class TestSceneSoak(unittest.TestCase):
         self.assertFalse(result["no_audout_underruns_proven"])
         self.assertTrue(encoded.endswith("\n"))
 
+    def test_nro_provenance_requires_matching_current_workflow(self):
+        record = {
+            "result": "SAME_WORKFLOW_BUILD_ARTIFACT_HASH_AND_STRUCTURE_VERIFIED",
+            "nro_filename": "vandal-hearts-prototype.nro",
+            "nro_sha256": TEST_NRO_SHA,
+            "nro_bytes": 282680,
+            "git_sha": "a" * 40,
+            "run_id": 65001,
+            "run_attempt": 1,
+            "scope": "same-workflow traceability only",
+            "hardware_status": "HARDWARE NOT TESTED",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/"preflight.json"
+            def check(**updates):
+                doc={**record, **updates}
+                path.write_text(json.dumps(doc)+"\n",encoding="ascii")
+                return bind_current_run_nro(
+                    path,sha="a"*40,run_id=65001,attempt=1)
+            self.assertEqual(check(), TEST_NRO_SHA)
+            for change in (
+                {"git_sha": "b"*40}, {"run_id": 39052705390},
+                {"run_attempt": 2}, {"nro_sha256": "bad"},
+                {"hardware_status": "HARDWARE TESTED"},
+                {"result": "READY_FOR_SD_TRANSFER_REVIEW"},
+                {"nro_bytes": 0}, {"fake": "untrusted"},
+            ):
+                with self.assertRaises(TraceError):
+                    check(**change)
+
     def test_missing_sd_file_and_wrong_root_are_rejected(self):
         (self.sd/"sdmc/switch/vandal-hearts-remake/audio-scene-trace-0000.csv").unlink()
         with self.assertRaises(TraceError):
             self.audit()
         with self.assertRaises(TraceError):
-            verify_run(self.root,self.sd,expected_sd_root=self.sd.parent/"fake")
+            verify_run(self.root,self.sd,nro_sha256=TEST_NRO_SHA,
+                       expected_sd_root=self.sd.parent/"fake")
 
     def test_mismatched_sd_csv_is_rejected(self):
         p=self.sd/"sdmc/switch/vandal-hearts-remake/audio-scene-trace-0000.csv"
