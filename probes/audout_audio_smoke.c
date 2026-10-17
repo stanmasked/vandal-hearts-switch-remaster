@@ -910,6 +910,12 @@ int main(int argc, char **argv) {
     const int timing_evidence=vh_audio_output_verify_transport_health(
                                       &output.transport_health,&recovery);
     if (timing_evidence && result==0) result=28;
+    /* Reject a forged INJECTED label unless a returned PCM page
+     * also left a sticky, independently counted timing rejection.
+     * A genuine audout failure never consumes an armed ZL request. */
+    const int injection_evidence=vh_audio_output_verify_timing_injection(
+        &output.timing_injection,&output.transport_health,&recovery);
+    if (injection_evidence<0 && result==0) result=32;
     if ((focus_evidence || focus_record_errors) && result==0) result=24;
     const unsigned verdict=(focus_evidence || focus_record_errors ||
                             timing_evidence)
