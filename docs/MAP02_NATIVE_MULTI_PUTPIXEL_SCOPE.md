@@ -308,6 +308,36 @@ ELF, SHA-256, неизменность файловой идентичности
 флаги готовности и SHA-256 самого исполняемого файла —
 без приватных путей, символов в отчёте, координат и игровых данных.
 
+Для первого захвата можно **потребовать** эту проверку
+непосредственно до запуска, без отдельного ручного шага:
+
+```sh
+python3 -m tools.run_map02_private_native_capture \
+  --require-native-elf-image \
+  --require-native-probe-symbols \
+  --executable /private/VandalHearts-PcPort/game \
+  --preflight-report /private/map02-preflight.json \
+  --summary-report /private/map02-process-receipt.json \
+  --timeout-seconds 300
+```
+
+Такой запуск сначала сверяет ELF и диагностику `nm` с preflight
+**до публикации любой квитанции**, затем закрепляет уже проверенный
+SHA-256 бинарника и наблюдает `/proc/<pid>/exe`. Успешный
+локальный захват получает отдельную приватную квитанцию
+`map02_private_native_process_receipt_v3` с обязательными
+`native_probe_symbols_required=true` и
+`native_probe_symbols_inspected=true`. В повторной проверке
+квитанции ELF-инспектор запускается **ещё раз** и требует тот же
+SHA-256. Старые v1/v2 остаются совместимы, но **не могут**
+пройти новый флаг `--require-native-probe-symbols` при
+связывании источника, GPU и FT4.
+
+Для объединённого свидетеля используйте оба флага:
+`--require-native-elf-image --require-native-probe-symbols`
+в `tools.audit_map02_launch_two_word_binding`. При несовпадении
+режимов аудит отказывает, не подтверждая реальный кадр MAP02.
+
 **Это предварительная подсказка о наличии кода**, а не доказательство,
 что он исполнялся или был получен из закреплённых исходников.
 Строковые литералы и таблицу символов возможно подделать.
