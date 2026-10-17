@@ -55,7 +55,8 @@ class SingleElfBuildOverlayTests(unittest.TestCase):
         for symbol in (
             "BACKEND_OBJS += $(VH_MAP02_CYCLE_SUPPORT)",
             "link: $(VH_MAP02_CYCLE_SUPPORT)",
-            "VH_MAP02_ASSET_BOUND_OBJECT := $(BUILD_DIR)/src/core/text.o",
+            "VH_MAP02_ASSET_BOUND_SOURCES :=",
+            "VH_MAP02_ASSET_BOUND_OBJECTS :=",
             "VH_MAP02_PUBLIC_CODE_OBJS :=",
             "map02-public-code: $(VH_MAP02_PUBLIC_CODE_OBJS) $(BACKEND_OBJS)",
             "$(BUILD_DIR)/src/core/cd.o:",
