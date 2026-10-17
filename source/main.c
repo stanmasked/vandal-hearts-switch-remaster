@@ -361,7 +361,7 @@ int main(int argc, char **argv) {
         const VhSceneExportResult saved=vh_switch_game_audio_trace_export(
             scene_path,sizeof scene_path);
         if(saved!=VH_SCENE_EXPORT_OK) {
-            fprintf(stderr,"audio scene trace SD export failed: %d\\n",
+            fprintf(stderr,"audio scene trace SD export failed: %d\n",
                     (int)saved);
             export_status=2;
         }
