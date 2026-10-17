@@ -78,6 +78,21 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"incomplete"):
             verify_capture(self.root,target_frame=12)
 
+    def test_native_gpu_jsonl_requires_canonical_complete_binary_records(self):
+        journal = self.root / "gpu-native-events.jsonl"
+        original = journal.read_bytes()
+        self.assertTrue(original.endswith(b"\n"))
+        for corrupt in (original.rstrip(b"\n"),
+                        original.replace(b"\n", b"\r\n"),
+                        original.replace(b"\n", b"\x00\n", 1)):
+            with self.subTest(tail=repr(corrupt[-12:])):
+                journal.write_bytes(corrupt)
+                with self.assertRaisesRegex(ValueError, "noncanonical"):
+                    verify_capture(self.root, target_frame=12)
+        journal.write_bytes(original)
+        self.assertEqual(verify_capture(self.root, target_frame=12)[
+            "native_gpu_pairs_verified"], 2)
+
     def test_transfer_after_target_draw_is_not_a_valid_native_capture(self):
         # The original capture probes transfers at drawFrame + 1, but
         # primitives at drawFrame. Reversing the pairs is impossible for
