@@ -420,8 +420,9 @@ jobs:
               pactl list sink-inputs
             } >>runtime-evidence/pulse-sink-inputs.txt
           done
-          wait "$guest" || echo "Emulator exited (possibly timed out)" \
-            >> runtime-evidence/nexium-audio-run.log
+          guest_exit=0
+          wait "$guest" || guest_exit=$?
+          echo "$guest_exit" > runtime-evidence/nexium-audio-guest-exit-code.txt
           kill -INT "$recorder" 2>/dev/null || true
           wait "$recorder" 2>/dev/null || true
           python3 - <<'PY'
@@ -441,7 +442,7 @@ jobs:
           peak=max((abs(s) for s in pcm),default=0)
           rms=math.sqrt(sum(float(s)*s for s in pcm)/count) if count else 0.0
           sink_text=Path("runtime-evidence/pulse-sink-inputs.txt").read_text()
-          observed_sink_input="Sink Input #" in sink_text
+          observed_sink_input='application.name = "ALSA plug-in [nexium]"' in sink_text
           report={
               "schema":"vh-nexium-pcm-monitor/v1",
               "hardware_status":"HARDWARE NOT TESTED",
@@ -462,7 +463,7 @@ jobs:
               "notes":"Virtual sink data cannot prove sound was heard or that original game music was reproduced."
           }
           output=Path("runtime-evidence/pcm-monitor-report.json")
-          output.write_text(json.dumps(report,indent=2)+"\\n")
+          output.write_text(json.dumps(report,indent=2)+"\n")
           print(json.dumps(report,indent=2),flush=True)
           PY
 
