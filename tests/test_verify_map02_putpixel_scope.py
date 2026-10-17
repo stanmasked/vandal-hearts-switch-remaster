@@ -271,6 +271,35 @@ class PixelToOriginalPrimitiveTests(unittest.TestCase):
             result["source_ft4_sampled_first_changed_pre_equals_last_changed_post"])
         self.assertFalse(result["source_ft4_sampled_endpoint_causality_verified"])
 
+    def test_unmatched_semi_blend_is_not_counted_as_source_ft4(self):
+        unrelated = self.base.base.event(6, "draw", {
+            "tpage":3, "clut":10,
+            "xy":[1,1,5,1,1,5,5,5],
+            "uv":[0,0,4,0,0,4,4,4],
+        })
+        self.base.base.entries.insert(2,unrelated)
+        self.base.base.override_snapshots = {
+            3:self.base.first,4:self.base.first,
+            5:self.base.first,6:self.base.first,7:self.base.second,
+        }
+        # Original PC ABR1: BGR555 0x801f + transparent-front 0
+        # makes a legitimate same-value semi-transparent WritePixel.
+        self.pixel_rows = [
+            self.row(0,1,0,0x801f,0x801f),
+            self.row(1,2,0x801f,0,0x801f,semi=1),
+            self.row(2,3,0x801f,0x7c00,0x7c00),
+        ]
+        self.save()
+        report=verify_pixel_ot(self.root,self.native)
+        self.assertEqual(report["observed_native_putpixel_calls"],3)
+        self.assertEqual(report["semi_transparent_putpixel_requests"],1)
+        self.assertEqual(report["accurate_pc_blend_results_checked"],1)
+        self.assertEqual(report["source_ft4_scoped_semitransparent_blend_calls"],0)
+        self.assertEqual(report["source_ft4_scoped_accurate_semi_blend_calls"],0)
+        self.assertEqual(report["source_ft4_scoped_draws_with_multiple_semi_blends"],0)
+        self.assertEqual(report["calls_attributed_to_source_keyed_ft4"],2)
+        self.assertEqual(report["source_ft4_scoped_changed_putpixel_calls"],2)
+
     def test_same_color_calls_do_not_claim_a_changed_ft4_word(self):
         original = bytes(self.base.base.bytes_before)
         self.base.base.override_snapshots = {3:original,4:original,5:original}
