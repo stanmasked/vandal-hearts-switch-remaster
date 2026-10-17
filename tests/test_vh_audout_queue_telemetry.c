@@ -83,6 +83,26 @@ int main(void) {
     rewind(f);
     assert(vh_audout_queue_verify_csv(&q,f)==0);
     fclose(f);
+    /* Stage 273 clock anchor has the same absolute guest nanoseconds
+     * used at the first audout call; changing a byte fails reread. */
+    f=tmpfile();
+    assert(f && vh_audout_clock_write_csv(&q,f)==1);
+    rewind(f);
+    assert(fgets(line,sizeof line,f) &&
+        strstr(line,"schema,origin_ns,attempts,last_second,clock_errors"));
+    assert(fgets(line,sizeof line,f) &&
+        strstr(line,"vh-audout-guest-clock-origin/v1,2000000000,4,0,0"));
+    rewind(f);
+    assert(vh_audout_clock_verify_csv(&q,f)==0);
+    assert(!fseek(f,0,SEEK_END) && fputc('X',f)!=EOF);
+    rewind(f);
+    assert(vh_audout_clock_verify_csv(&q,f)==-1);
+    fclose(f);
+    VhAudoutQueueTelemetry empty;
+    vh_audout_queue_reset(&empty);
+    f=tmpfile();
+    assert(f && vh_audout_clock_write_csv(&empty,f)==-1);
+    fclose(f);
     puts("bounded audout full-session telemetry PASS");
     return 0;
 }
