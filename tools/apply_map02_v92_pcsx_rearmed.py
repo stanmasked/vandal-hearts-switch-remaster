@@ -76,15 +76,15 @@ PROBE=r'''
             GPU_writeData(0xe6000000u);
             /* Tiny fixed raster warmup, no unbounded per-command journal:
              * the previous v91 baseline is around 3940/4096 events.
-             * 16 primitives add at most the observed ~64 raster events.
+             * 8 primitives retain headroom in the bounded native ring.
              */
-            uint32_t warm[16*3];
-            for(unsigned int i=0;i<16;i++){
+            uint32_t warm[8*3];
+            for(unsigned int i=0;i<8;i++){
                 warm[3*i]=0x600000ffu;
                 warm[3*i+1]=(320u<<16)|520u;
                 warm[3*i+2]=(16u<<16)|16u;
             }
-            GPU_writeDataMem(warm,16*3);
+            GPU_writeDataMem(warm,8*3);
             vh88_async_reset();
             vh86_reset();
             vh92_pressure_reset();
