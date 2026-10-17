@@ -670,6 +670,9 @@ jobs:
           python3 tools/audit_nexium_scene_soak.py \
             --soak-dir runtime-evidence/scene-soak \
             --sd-root "$RUNNER_TEMP/vh-nexium-stage268-${GITHUB_RUN_ID}" \
+            --nro-preflight integrated-nro-preflight.json \
+            --git-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
             --output runtime-evidence/scene-soak/soak-verification.json \
             --optical-csv-output runtime-evidence/scene-soak/soak-guest-optical.csv
           python3 -m json.tool runtime-evidence/scene-soak/soak-verification.json >/dev/null
