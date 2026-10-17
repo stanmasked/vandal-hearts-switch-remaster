@@ -37,6 +37,8 @@ SECOND_COORDINATE = r'''
 
 
 def multi_raster(original):
+    if FLAG in original:
+        raise ValueError("two-word native raster observer already installed")
     src = scope_raster(original)
     src = one(src, "static int vh_pixel_sample_x, vh_pixel_sample_y;",
               "static int vh_pixel_sample_x, vh_pixel_sample_y;\n"
@@ -55,6 +57,8 @@ def multi_raster(original):
 
 
 def multi_gpu(original):
+    if FLAG in original:
+        raise ValueError("two-word native GPU scope already injected")
     src = scope_gpu(instrument_gpu_native(original))
     if src.count(SINGLE_FLAG) != 4:
         raise ValueError("unexpected native DrawOTag scope guard count")
