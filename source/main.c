@@ -443,6 +443,34 @@ int main(int argc, char **argv) {
                 (int)latency_saved,latency_seen);
             export_status=2;
         }
+        /* Independent guest-monotonic epoch for correlating audout
+         * seconds with INPUT/POST timestamps. Never host wall-clock. */
+        char clock_path[VH_AUDOUT_QUEUE_EXPORT_PATH_CAP];
+        const VhAudoutQueueExportResult clock_saved=
+            vh_switch_game_audio_clock_export(clock_path,sizeof clock_path);
+        struct stat clock_stat;
+        const int clock_seen=clock_saved==VH_AUDOUT_QUEUE_EXPORT_OK
+            && stat(clock_path,&clock_stat)==0
+            && S_ISREG(clock_stat.st_mode);
+        const int clock_receipt_fd=open(
+            "sdmc:/switch/vandal-hearts-remake/audio-audout-clock-export-result.txt",
+            O_WRONLY|O_CREAT|O_EXCL,0600);
+        if(clock_receipt_fd>=0) {
+            char message[160];
+            const int n=snprintf(message,sizeof message,
+                "export_status=%d\npath_present=%u\nfile_size=%llu\n",
+                (int)clock_saved,clock_seen?1u:0u,
+                clock_seen ? (unsigned long long)clock_stat.st_size:0ull);
+            if(n>0 && (size_t)n<sizeof message)
+                (void)write(clock_receipt_fd,message,(size_t)n);
+            (void)close(clock_receipt_fd);
+        }
+        if(clock_saved!=VH_AUDOUT_QUEUE_EXPORT_OK || !clock_seen) {
+            fprintf(stderr,
+                "audout guest clock origin SD export failed: %d, path_present=%d\n",
+                (int)clock_saved,clock_seen);
+            export_status=2;
+        }
         if (resume_message_enabled)
             (void)appletSetRestartMessageEnabled(false);
     }
