@@ -61,9 +61,11 @@ class OriginalCdReadReceiptTests(unittest.TestCase):
         self.addCleanup(mock.stop)
 
     def save(self):
-        (self.scoped / CD_READ).write_bytes(
+        receipt = self.scoped / CD_READ
+        receipt.write_bytes(
             (json.dumps(self.event, separators=(",", ":"), sort_keys=True)
              + "\n").encode())
+        receipt.chmod(0o600)
 
     def check(self):
         return verify_map02_original_cd_read(
