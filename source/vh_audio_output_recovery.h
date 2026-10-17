@@ -45,6 +45,21 @@ int vh_audio_output_record_submit_timing(
     VhAudioSubmitTiming *timing, uint64_t elapsed_ticks,
     uint64_t tick_frequency, size_t frames, int accepted);
 
+/* Keep audout transport separate from optional elapsed-time telemetry.
+ * Once the EXACT descriptor has returned, a failed timing accumulator
+ * must NEVER masquerade as a failed backend submit: a caller recovering
+ * that "failure" could replay a page already accepted by the device.
+ *
+ * timing_result is 0 for valid timing, nonzero for rejected timing.
+ * timing_fault is a sticky 0/1 diagnostic flag, not an attempt counter;
+ * no integer overflow is possible. The return value reflects only the
+ * backend transport result (0 delivered, -1 undelivered). Callers must
+ * abort further telemetry after observing timing_fault and mark evidence
+ * INVALID, but must not submit the delivered PCM page again.
+ */
+int vh_audio_output_transport_outcome(
+    int descriptor_returned, int timing_result, unsigned *timing_fault);
+
 /* Saturating conversion for readable logs, never used for scheduling.
  * Returns UINT64_MAX on arithmetic overflow, 0 for invalid frequency.
  */
