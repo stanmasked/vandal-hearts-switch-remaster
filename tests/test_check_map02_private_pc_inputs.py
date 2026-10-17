@@ -4,6 +4,7 @@ No real Vandal Hearts EXE, game asset or BIOS is bundled or accessed.
 Real known original hashes are deliberately mocked ONLY inside this file.
 """
 import hashlib
+import struct
 from pathlib import Path
 import tempfile
 import unittest
@@ -12,6 +13,9 @@ from unittest.mock import patch
 from tools.check_map02_private_pc_inputs import (
     ASSETS, BIOS_SIZE, EXE, FONT_BIOS_OFFSET, FONT_LENGTH,
     verify_private_pc_inputs,
+)
+from tools.check_map02_original_extraction_anchors import (
+    ANCHORS, LOAD_VRAM, PSX_HEADER, compare_data_ranges,
 )
 
 
@@ -22,13 +26,30 @@ class PrivateOriginalRetailBuildInputsTests(unittest.TestCase):
         self.root = Path(self.tmp.name) / "upstream"
         self.root.mkdir()
         self.exe = self.root / EXE
-        header = bytearray(0x800)
-        header[:8] = b"PS-X EXE"
-        header[0x1c:0x20] = (2048).to_bytes(4, "little")
-        self.exe.write_bytes(header + b"x" * 2048)
-        elf = bytearray(128)
-        elf[:6] = b"\x7fELF\x01\x01"
-        elf[18:20] = (8).to_bytes(2, "little")
+        # Explicit synthetic data at the three locations from the pinned
+        # original YAML. Checks use only an independent fake ELF fixture.
+        exe_size = max(PSX_HEADER + address - LOAD_VRAM + length
+                       for _, address, length in ANCHORS) + 16
+        executable = bytearray(exe_size)
+        executable[:8] = b"PS-X EXE"
+        struct.pack_into("<I", executable, 0x18, LOAD_VRAM)
+        struct.pack_into("<I", executable, 0x1c, exe_size - PSX_HEADER)
+        for j in range(PSX_HEADER, exe_size):
+            executable[j] = (j * 31 + 13) % 256
+        self.exe.write_bytes(executable)
+        elf = bytearray(256 + sum(length for _, _, length in ANCHORS))
+        elf[:6] = b"\\x7fELF\\x01\\x01"
+        struct.pack_into("<H", elf, 18, 8)   # ELF32 MIPS
+        struct.pack_into("<I", elf, 32, 64)  # section headers
+        struct.pack_into("<HH", elf, 46, 40, len(ANCHORS) + 1)
+        offset = 256
+        for i, (_, address, length) in enumerate(ANCHORS, 1):
+            section = 64 + i * 40
+            struct.pack_into("<IIIIIIIIII", elf, section,
+                             0, 1, 2, address, offset, length, 0, 0, 1, 0)
+            exe_off = PSX_HEADER + address - LOAD_VRAM
+            elf[offset:offset + length] = executable[exe_off:exe_off + length]
+            offset += length
         self.elf = self.root / "build" / (EXE + ".elf")
         self.elf.parent.mkdir()
         self.elf.write_bytes(elf)
@@ -72,6 +93,35 @@ class PrivateOriginalRetailBuildInputsTests(unittest.TestCase):
         self.exe.write_bytes(b"invalid-exe" + original[11:])
         with self.assertRaisesRegex(ValueError, "not a PS-X EXE"):
             verify_private_pc_inputs(self.root)
+
+    def test_three_original_map_and_font_ranges_are_byte_identical(self):
+        detail = compare_data_ranges(self.exe, self.elf)
+        self.assertEqual(detail["original_private_data_bytes_compared"], 1216)
+        self.assertTrue(detail["original_exe_and_mips_elf_data_anchors_match"])
+        self.assertFalse(detail["complete_matching_decomp_proven"])
+        report = verify_private_pc_inputs(self.root)
+        self.assertEqual(report["original_private_data_bytes_compared"], 1216)
+
+    def test_modified_extracted_map35_bytes_rejected_even_with_valid_elf_header(self):
+        changed = bytearray(self.elf.read_bytes())
+        # Section 2 is the MAP35 data range; its file offset is fixed by
+        # this synthetic fixture and independent of the original retail file.
+        section2_offset = struct.unpack_from("<I", changed, 64 + 2 * 40 + 16)[0]
+        changed[section2_offset] ^= 1
+        self.elf.write_bytes(changed)
+        with self.assertRaisesRegex(ValueError, "differs from original PS-X data"):
+            verify_private_pc_inputs(self.root)
+
+    def test_missing_or_duplicate_elf_data_section_fail_closed(self):
+        original = self.elf.read_bytes()
+        for section_id in (1, 2, 3):
+            with self.subTest(section_id=section_id):
+                modified = bytearray(original)
+                struct.pack_into("<I", modified, 64 + section_id * 40 + 4, 0)
+                self.elf.write_bytes(modified)
+                with self.assertRaisesRegex(ValueError, "missing unique data section"):
+                    verify_private_pc_inputs(self.root)
+        self.elf.write_bytes(original)
 
     def test_extracted_elf_wrong_machine_fails_closed(self):
         wrong = bytearray(self.elf.read_bytes())
