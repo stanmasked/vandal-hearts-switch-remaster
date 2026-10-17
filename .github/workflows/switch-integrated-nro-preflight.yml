@@ -1,0 +1,43 @@
+name: Switch integrated NRO preflight regressions
+
+on:
+  push:
+    branches:
+      - test/cdxa-extract-decode-pipeline
+    paths:
+      - "tools/verify_switch_integrated_nro_preflight.py"
+      - "tools/verify_switch_audio_bundle.py"
+      - "tools/analyze_switch_audio_log.py"
+      - "tests/test_verify_switch_integrated_nro_preflight.py"
+      - ".github/workflows/switch-integrated-nro-preflight.yml"
+  pull_request:
+    paths:
+      - "tools/verify_switch_integrated_nro_preflight.py"
+      - "tools/verify_switch_audio_bundle.py"
+      - "tools/analyze_switch_audio_log.py"
+      - "tests/test_verify_switch_integrated_nro_preflight.py"
+      - ".github/workflows/switch-integrated-nro-preflight.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Execute offline NRO preflight regressions
+        run: python3 -m unittest discover -s tests -p 'test_verify_switch_integrated_nro_preflight.py' -v
+      - name: Record hardware-test boundary
+        run: |
+          {
+            echo "### Integrated NRO preflight regressions"
+            echo "Run SHA: \`$GITHUB_SHA\`"
+            echo "Synthetic headers only; no commercial game data."
+            echo "Hardware status: HARDWARE NOT TESTED"
+          } >> "$GITHUB_STEP_SUMMARY"
