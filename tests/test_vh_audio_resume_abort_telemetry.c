@@ -455,6 +455,138 @@ int main(void) {
     assert(vh_audio_report_evidence(0,0,0,0,0)==
            VH_AUDIO_REPORT_INCOMPLETE);
 
+    /* Resume the SAME interrupted session with nine more returned
+     * pages, two labeled scene changes (index 4 and 8), and a
+     * recovered backend retry (index 6). The first missing page
+     * remains a terminal ordinary-page failure throughout. */
+    uint64_t scene_hash=empty.delivery_hash;
+    unsigned scene_index=0u,boundaries=0u;
+    for(unsigned page=1u;page<10u;page++) {
+        const unsigned scene_boundary=(unsigned)(page%4u==0u);
+        if(scene_boundary) {
+            ++scene_index;
+            ++boundaries;
+        }
+        int16_t pcm[FRAMES*2u];
+        for(unsigned k=0u;k<FRAMES*2u;k++)
+            pcm[k]=(int16_t)(-3600+(int)scene_index*3200+
+                             (int)page*113+(int)k*19);
+        const uint64_t hash=page_hash(pcm,FRAMES);
+        const VhAudioSubmitTiming before=empty.timing;
+        const uint64_t previous_frames=empty_recovery.frames_submitted;
+        const uint64_t previous_failures=empty_recovery.submit_failures;
+        new_page(&empty,(unsigned)(page==6u));
+        assert(vh_audio_output_submit_recover(
+            &empty_ops,&empty_recovery,pcm,FRAMES)==0);
+        assert(empty.page_addr==pcm && empty.page_hash==hash);
+        assert(empty.page_attempts==(page==6u ? 2u : 1u));
+        scene_hash=(scene_hash^hash)*FNV_PRIME;
+        assert(empty.delivery_hash==scene_hash);
+        assert(empty_recovery.frames_submitted==
+               previous_frames+FRAMES);
+        assert(empty_recovery.submit_failures==
+               previous_failures+(page==6u ? 1u : 0u));
+        assert(vh_audio_returned_page_telemetry_record(
+            &empty_waits,&empty_seams,&empty_joint,&empty_marks,
+            pcm,FRAMES,scene_boundary,&before,&empty.timing,
+            HZ,(unsigned)(page%3u==0u))==0);
+        assert(empty.delivered==page+1u);
+        assert(empty_recovery.pages_submitted==page+1u);
+        assert(empty_waits.ordinary.failed_pages==1u);
+        assert(empty_waits.first_after_switch.pages==boundaries);
+        assert(empty_joint.first_after_switch.returned==boundaries);
+        assert(empty_marks.recent[page].scene_boundary==scene_boundary);
+        assert(empty_marks.recent[page].retry==(unsigned)(page==6u));
+        assert(empty_marks.recent[page].dsp_over_budget==
+               (unsigned)(page%3u==0u));
+        assert(empty_marks.recent[page].wait_band==
+               empty_seams.last_wait_band);
+        assert(empty_marks.recent[page].seam_step==
+               empty_seams.last_abs_step);
+        assert(vh_audio_output_verify_pcm_seams(
+            &empty_seams,&empty_waits,page+1u)==0);
+        assert(vh_audio_last_returned_page_verify(
+            &empty_seams,&empty_marks,page+1u)==0);
+        assert(vh_audio_listening_verify(&empty_marks,page+1u)==0);
+        assert(vh_audio_listening_verify_dsp_totals(
+            &empty_marks,
+            empty_joint.ordinary.dsp_over+
+                empty_joint.first_after_switch.dsp_over,
+            empty_joint.ordinary.both_over_2x+
+                empty_joint.first_after_switch.both_over_2x,
+            empty_joint.ordinary.both_over_4x+
+                empty_joint.first_after_switch.both_over_4x)==0);
+        assert(vh_audio_output_verify_run(
+            &empty_waits,&empty_recovery,&empty.timing,
+            page+1u,boundaries,10u,4u,1)==0);
+        assert(vh_audio_report_evidence(0,0,0,0,0)==
+               VH_AUDIO_REPORT_INCOMPLETE);
+        if(scene_boundary) {
+            /* Reopen right after each cue change: no accepted
+             * audio, raw callback, PCM tail or prior failure may
+             * appear/disappear while the service resumes. */
+            const VhAudioSubmitTiming saved_timing=empty.timing;
+            const VhAudioSceneWaits saved_waits=empty_waits;
+            const VhAudioPcmSeams saved_seams=empty_seams;
+            const VhAudioComputeWaitJoin saved_joint=empty_joint;
+            const VhAudioListeningMarks saved_marks=empty_marks;
+            const uint64_t saved_hash=empty.delivery_hash;
+            const uint64_t saved_pages=empty_recovery.pages_submitted;
+            const unsigned saved_calls=empty.calls;
+            const unsigned saved_failures=empty_recovery.submit_failures;
+            assert(empty_ops.stop(empty_ops.context)==0);
+            assert(vh_audio_output_resume_recover(
+                &empty_ops,&empty_recovery,1)==0);
+            assert(empty.calls==saved_calls &&
+                   empty.delivery_hash==saved_hash);
+            assert(empty_recovery.pages_submitted==saved_pages &&
+                   empty_recovery.submit_failures==saved_failures);
+            assert(!memcmp(&empty.timing,&saved_timing,
+                           sizeof saved_timing));
+            assert(!memcmp(&empty_waits,&saved_waits,
+                           sizeof saved_waits));
+            assert(!memcmp(&empty_seams,&saved_seams,
+                           sizeof saved_seams));
+            assert(!memcmp(&empty_joint,&saved_joint,
+                           sizeof saved_joint));
+            assert(!memcmp(&empty_marks,&saved_marks,
+                           sizeof saved_marks));
+        }
+    }
+    assert(scene_index==2u && boundaries==2u);
+    assert(empty.delivered==10u && empty.calls==14u);
+    assert(empty_recovery.submit_failures==4u &&
+           empty_recovery.restart_attempts==3u &&
+           empty_recovery.recoveries==1u);
+    assert(empty_waits.ordinary.pages==9u &&
+           empty_waits.ordinary.failed_pages==1u &&
+           empty_waits.first_after_switch.pages==2u);
+    assert(empty_joint.ordinary.returned==8u &&
+           empty_joint.first_after_switch.returned==2u);
+    for(unsigned k=0u;k<10u;k++)
+        assert(empty_marks.recent[k].scene_boundary==
+               (unsigned)(k!=0u && k%4u==0u));
+    assert(page_hash(never_delivered,FRAMES)==abandoned_hash);
+    assert(vh_audio_output_verify_run(
+        &empty_waits,&empty_recovery,&empty.timing,
+        10u,2u,10u,4u,1)==0);
+    /* Historical failure erasure or switch-counter corruption
+     * must fail the original run audit, never become FULL. */
+    VhAudioSceneWaits bad_waits=empty_waits;
+    bad_waits.ordinary.failed_pages=0u;
+    assert(vh_audio_output_verify_run(
+        &bad_waits,&empty_recovery,&empty.timing,
+        10u,2u,10u,4u,1)==-1);
+    VhAudioOutputRecovery bad_recovery=empty_recovery;
+    --bad_recovery.submit_failures;
+    assert(vh_audio_output_verify_run(
+        &empty_waits,&bad_recovery,&empty.timing,
+        10u,2u,10u,4u,1)==-1);
+    assert(vh_audio_output_verify_run(
+        &empty_waits,&empty_recovery,&empty.timing,
+        10u,1u,10u,4u,1)==-1);
+    puts("audout recovered three-scene history and failure retention: PASS");
+
     /* FULL may be reported only for an independently reset session
      * which contains a genuinely delivered PCM page and NO failed
      * logical pages. This contrast prevents a false FULL caused by

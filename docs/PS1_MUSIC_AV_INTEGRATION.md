@@ -1832,3 +1832,30 @@ The test is already part of both Make host suites and the PCM
 CI UBSan stage; it requires no new external dependencies,
 game data, PCM recordings or calls to the real Switch audio
 service. This remains software accounting evidence only.
+
+
+### Three-scene synthetic PCM continuation with retained audout failures
+
+After a first entirely undelivered PCM page, failed shutdown
+attempts, successful service close/open and one newly accepted
+page, the integrated host test now delivers nine more distinct
+generated PCM pages in the **same run**. Two labeled synthetic
+scene switches occur at returned-page indices 4 and 8; a
+transient service submission failure on page index 6 retries
+the *identical* already-rendered buffer. Final totals: ten
+successfully returned pages, fourteen raw calls, four failed
+raw submissions and two completed synthetic scene switches,
+while the initial failed logical page remains in the ordinary
+wait histogram and the final status stays **INCOMPLETE**.
+
+For each page, the test verifies source-labeled scene categories,
+two independent returned-page DSP/wait accumulators, exact PCM16
+seam bands, the A/B ring last returned page and raw submission
+counts. Directly after each scene-switch page, an audout stop/
+reopen verifies all PCM histories, clocks, raw call timing,
+accepted checksum and preexisting failure statistics remain
+unchanged. Injected loss of a previously failed logical page,
+a failed raw service submission or a completed scene-switch
+count must instead produce INVALID integrity. This exercises
+synthetic cue boundary bookkeeping, not original copyrighted
+SEQ/VAB music or real physical Switch audio.
