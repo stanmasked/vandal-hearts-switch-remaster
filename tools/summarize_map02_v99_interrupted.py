@@ -13,15 +13,20 @@ def summarize(raw:bytes):
     previous=summarize_v98(raw)
     trace=validate(raw)
     events=[json.loads(x) for x in raw.decode("ascii").splitlines()]
-    tail=events[-3:]
+    positions=[i for i,e in enumerate(events) if e["kind"]==KINDS[0]]
+    if len(positions)!=1:
+        raise Refused("missing or duplicate v99 interrupted stage first event")
+    start=positions[0]
+    tail=events[start:start+3]
     if len(tail)!=3 or tuple(e["kind"] for e in tail)!=KINDS:
-        raise Refused("missing/misordered v99 interrupted private stage suffix")
-    if any(e["kind"] in KINDS for e in events[:-3]):
+        raise Refused("missing/misordered v99 interrupted private stage checkpoint")
+    if any(e["kind"] in KINDS for i,e in enumerate(events)
+           if not start<=i<start+3):
         raise Refused("duplicate or misplaced v99 interrupted stage observation")
     if tuple(e["value"] for e in tail)!=(1,1,1):
         raise Refused("incomplete .tmp refused/fresh recovery/immutability assertion failed")
     if tail[0]["seq"]!=previous["final_private_journal_events"]+1 or \
-       len(events)!=previous["final_private_journal_events"]+3:
+       start+3!=previous["final_private_journal_events"]+3:
         raise Refused("v99 resumed without original signed MIPS/v98 GPU oracle")
     if any(e["cycle"]!=0 or e["frame"]!=0 for e in tail):
         raise Refused("host private file operation cannot claim emulated CPU/frame")
@@ -37,7 +42,7 @@ def summarize(raw:bytes):
         "existing_v82_protected_final_export_still_required":True,
         "four_real_emulator_vblank_callbacks":4,
         "earlier_v98_checkpoint_entries":previous["final_private_journal_events"],
-        "final_private_journal_events":len(events),
+        "final_private_journal_events":start+3,
         "authentic_retail_MAP02_verified":False,
         "physical_PS1_verified":False,
         "HD_replacement_approved":False
