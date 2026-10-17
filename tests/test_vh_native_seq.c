@@ -421,6 +421,32 @@ static void test_same_note_retrigger_after_release_reuses_slot(void) {
     assert(log_state.calls==2);
 }
 
+
+static void test_immediate_same_note_retrigger_during_release(void) {
+    /* Two same-pitch Note Ons in the first scheduler block, with Note Off
+     * in between: a releasing voice must not own the newly triggered note. */
+    static const uint8_t song[]={
+        HEADER,
+        0,0x90,60,100,
+        0,0x80,60,0,
+        0,0x90,60,110,
+        0x81,0x70,0xff,0x2f
+    };
+    setup();
+    assert(vh_native_seq_init(&seq,song,sizeof song,
+                              &spu,resolve,&log_state,1)==0);
+    assert(vh_native_seq_advance_block(&seq)>0);
+    assert(seq.note_ons==2 && seq.note_offs==1);
+    /* Slot 0 is still in Release; next allocation takes free slot 1. */
+    assert(spu.voice[0].adsr.phase==VH_ADSR_RELEASE);
+    assert(seq.note_slot[0][60]==1);
+    assert(seq.owner_ch[1]==0 && seq.owner_note[1]==60);
+    assert(vh_native_spu_voice_active(&spu,1));
+    assert(spu.voice[1].adsr.phase==VH_ADSR_ATTACK);
+    assert(spu.voice[1].adsr.level==0);
+    assert(log_state.calls==2);
+}
+
 int main(void) {
     test_validation_and_source_immutability();
     test_512_block_controls_and_ring_pressure();
@@ -434,6 +460,7 @@ int main(void) {
     test_seq_reuses_naturally_released_slot_without_stale_owner();
     test_repeated_adsr_release_and_slot_reuse();
     test_same_note_retrigger_after_release_reuses_slot();
+    test_immediate_same_note_retrigger_during_release();
     puts("native pQES SEQ -> 20-voice SPU -> PCM ring: PASS");
     return 0;
 }
