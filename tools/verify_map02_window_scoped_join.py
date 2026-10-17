@@ -88,12 +88,23 @@ def verify_window_scoped_join(native_windows, scoped_capture, *,
     if ordinal != len(edges):
         raise ValueError("native GPU windows omit DrawOTag edge ordinals")
 
+    # A successful first check does not authorize returning old digests
+    # if any file changes while we read native snapshots or source GTE.
+    for name, first, maximum in (
+        (PIXELS, pixels_raw, 16 * 1024),
+        (BLENDS, blends_raw, 16 * 1024),
+        (EDGES, edges_raw, MAX_EDGE_BYTES),
+    ):
+        if private_file(scoped, name, max_bytes=maximum) != first:
+            raise ValueError("selected-pixel scoped evidence changed during join")
     sourced = None
     if source_dir is not None:
         sourced = verify_published_window_source_witness(
             source_dir, native, compiler=compiler)
         if sourced["native_window_file_tree_bound"] is not True:
             raise ValueError("source/GTE window witness not bound to GPU capture")
+    if verify_native_windows(native, target_frame=frame) != windows_report:
+        raise ValueError("native GPU capture changed during scoped join")
     return {
         "gpu_frame": frame,
         "global_draw_ordinals_checked": ordinal,
