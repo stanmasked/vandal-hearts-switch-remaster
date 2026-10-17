@@ -146,6 +146,9 @@ on:
       - 'tests/test_map02_v129_four_vblank_profiles.py'
       - 'tools/check_map02_v130_native_bounds.py'
       - 'tests/test_map02_v130_native_bounds.py'
+      - 'tools/analyze_map02_v131_private_mips_mmio.py'
+      - 'tests/test_map02_v131_private_mips_mmio.py'
+      - '.github/workflows/map02-v131-private-mips-mmio.yml'
       - '.github/workflows/map02-v130-native-bounds.yml'
       - '.github/workflows/map02-v129-four-real-vblank.yml'
       - '.github/workflows/map02-v128-triple-real-vblank.yml'
@@ -233,6 +236,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v128_triple_vblank_profiles.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v129_four_vblank_profiles.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v130_native_bounds.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v131_private_mips_mmio.py' -v
           python3 -m remaster.tools.check_map02_v130_native_bounds --cc "${{ matrix.cc }}"
       - name: Patch pinned upstream with Unai post-dispatch observer
         shell: bash
