@@ -911,6 +911,17 @@ jobs:
             sha256sum --check evidence/objects.sha256
           )
           test "$(wc -l < build/map02-vertical-dda/evidence/objects.sha256)" -eq 4
+          # The new same-Makefile GPU+dual-PutPixel+DDA composition gets
+          # its own independent checksum receipt, without uploading object
+          # binaries or game files. sha256sum --check verifies all 3 bytes.
+          (
+            cd build-map02-private-ci
+            sha256sum libgpu.o pc_raster.o gpu-two-word-dda.o \
+              > ../build/map02-vertical-dda/evidence/private-make-gpu-dda-objects.sha256
+            sha256sum --check \
+              ../build/map02-vertical-dda/evidence/private-make-gpu-dda-objects.sha256
+          )
+          test "$(wc -l < build/map02-vertical-dda/evidence/private-make-gpu-dda-objects.sha256)" -eq 3
 
       - name: Upload original GPU object evidence
         uses: actions/upload-artifact@v4
