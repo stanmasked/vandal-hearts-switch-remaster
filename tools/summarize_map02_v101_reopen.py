@@ -13,15 +13,20 @@ def summarize(raw:bytes):
     prev=summarize_v100(raw)
     trace=validate(raw)
     events=[json.loads(e) for e in raw.decode("ascii").splitlines()]
-    tail=events[-3:]
+    starts=[i for i,e in enumerate(events) if e["kind"]==KINDS[0]]
+    if len(starts)!=1:
+        raise Refused("missing or duplicate first v101 private reopen event")
+    start=starts[0]
+    tail=events[start:start+3]
     if len(tail)!=3 or tuple(e["kind"] for e in tail)!=KINDS:
-        raise Refused("missing/misordered v101 reopened private-file suffix")
-    if any(e["kind"] in KINDS for e in events[:-3]):
+        raise Refused("missing/misordered v101 reopened private-file checkpoint")
+    if any(e["kind"] in KINDS for i,e in enumerate(events)
+           if not start<=i<start+3):
         raise Refused("duplicate or misplaced v101 reopened-file observation")
     if tuple(e["value"] for e in tail)!=(4,4,1):
         raise Refused("missing reread, parent resync or wrong-byte refusal")
     if tail[0]["seq"]!=prev["final_private_journal_events"]+1 or \
-       len(events)!=prev["final_private_journal_events"]+3:
+       start+3!=prev["final_private_journal_events"]+3:
         raise Refused("missing native v100 directory durability checkpoint")
     if any(e["frame"]!=0 or e["cycle"]!=0 for e in tail):
         raise Refused("host POSIX fsync cannot claim emulator CPU/VBlank time")
@@ -38,7 +43,7 @@ def summarize(raw:bytes):
         "fault_injection_isolated_native_C_only":True,
         "power_loss_physically_tested":False,
         "previous_checkpoint_events":prev["final_private_journal_events"],
-        "final_private_journal_events":len(events),
+        "final_private_journal_events":start+3,
         "original_emulator_vblank_edges":4,
         "real_retail_MAP02_verified":False,
         "physical_PS1_verified":False,
