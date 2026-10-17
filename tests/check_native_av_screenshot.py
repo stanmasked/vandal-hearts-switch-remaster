@@ -64,6 +64,19 @@ def inspect_resume_marker(image: Image.Image) -> str:
     return "not_observed"
 
 
+def inspect_resume_retry_marker(image: Image.Image) -> str:
+    """Guest-only forced reopen with a virtual pre-service open failure."""
+    pixel=image.convert("RGB").getpixel((1180, 545))
+    r,g,b=pixel
+    if near(pixel,AUDIO_OK) or (g>=155 and g>r+70 and g>b+40):
+        return "confirmed"
+    if near(pixel,AUDIO_FAIL) or (r>=145 and r>g+40 and r>b+40):
+        return "error"
+    if r>180 and g>150 and b<160 and r>b+70:
+        return "pending"
+    return "not_observed"
+
+
 def inspect_images(first: Image.Image, second: Image.Image) -> dict:
     first = first.convert("RGB")
     second = second.convert("RGB")
@@ -158,7 +171,9 @@ def inspect_images(first: Image.Image, second: Image.Image) -> dict:
     # Use a bounded band away from the tile grid and emulator OSD.
     before = first.crop((70, 565, 870, 640))
     after = second.crop((70, 565, 870, 640))
-    changed = sum(1 for a,b in zip(before.getdata(), after.getdata())
+    flat_before = before.get_flattened_data() if hasattr(before,"get_flattened_data") else before.getdata()
+    flat_after = after.get_flattened_data() if hasattr(after,"get_flattened_data") else after.getdata()
+    changed = sum(1 for a,b in zip(flat_before, flat_after)
                   if max(abs(x-y) for x,y in zip(a,b)) > 20)
     if changed < 16:
         raise ValueError(f"framebuffer heartbeat did not advance: changed={changed}")
@@ -173,6 +188,7 @@ def inspect_images(first: Image.Image, second: Image.Image) -> dict:
         "guest_zr_recovery": zr_recovery,
         "guest_zl_invalid_clock_no_replay": inspect_zl_marker(first),
         "guest_resume_x_y_pcm_continuation": inspect_resume_marker(first),
+        "guest_resume_retry_after_fake_open_failure": inspect_resume_retry_marker(first),
         "guest_resume_is_not_home_event": True,
         "guest_zl_is_not_physical_button": True,
         "guest_zr_is_not_physical_button": True,
@@ -204,6 +220,8 @@ def main():
                         help="require two completed synthetic SEQ transitions")
     parser.add_argument("--require-guest-zl-no-replay", action="store_true",
                         help="require CI-only exact-return ZL invalid-clock witness")
+    parser.add_argument("--require-guest-resume-retry", action="store_true",
+                        help="require a CI-only retried guest reopen witness")
     parser.add_argument("--require-guest-resume-continuation", action="store_true",
                         help="CI-only X/Y stop/start and reopen with returned PCM")
     parser.add_argument("--require-guest-zr-recovery", action="store_true",
@@ -238,6 +256,12 @@ def main():
                 and report["synthetic_scene_switches"] != "not_applicable"):
             raise ValueError("unexpected synthetic scene-switch indicator: "
                              + report["synthetic_scene_switches"])
+        if args.require_guest_resume_retry:
+            with Image.open(args.after) as image_after:
+                later_retry=inspect_resume_retry_marker(image_after)
+            if (report["guest_resume_retry_after_fake_open_failure"] != "confirmed" or
+                    later_retry != "confirmed"):
+                raise ValueError("guest synthetic failed-open retry not confirmed")
         if args.require_guest_resume_continuation:
             with Image.open(args.after) as image_after:
                 later_resume=inspect_resume_marker(image_after)
