@@ -48,6 +48,8 @@ class OriginalCodeObjectInventoryTests(unittest.TestCase):
         (self.source_root / "maps").mkdir(parents=True)
         (self.source_root / "maps/map_32.c").write_text(
             '#include "assets/801009bc.inc"\n')
+        (self.source_root / "maps/map_35.c").write_text(
+            '#include "assets/80100e9c.inc"\n')
         for i in range(79):
             (self.source_root / f"game_{i:02d}.c").write_text("/* fake */")
         self.preflight = patch(
