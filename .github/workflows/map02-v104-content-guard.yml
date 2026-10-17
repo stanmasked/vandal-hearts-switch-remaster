@@ -268,6 +268,7 @@ jobs:
           from remaster.tools.summarize_map02_v108_vblank_store_buckets import summarize as v108_buckets
           from remaster.tools.summarize_map02_v109_gp0_class_vblank_stores import summarize as v109_classes
           from remaster.tools.summarize_map02_v110_class_boundary_checkpoints import summarize as v110_boundary
+          from remaster.tools.summarize_map02_v111_sample_store_divergence import summarize as v111_divergence
           log=Path("proof/private/v104-runtime.log").read_text()
           head=re.findall(r'VH83_UNAI_DISPATCH_PASS handled=(\d+)',log)
           tail=re.findall(r'VH82_PRIVATE_EXPORT_PASS vblanks=(\d+) gp1_mmio=(\d+) entries=(\d+) bytes=(\d+) drops=(\d+)',log)
