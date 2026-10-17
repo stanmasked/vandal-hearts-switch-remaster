@@ -324,6 +324,9 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
         printf("HOME banded/timed=%u/%u (unknown excluded)\n",
                r->focus->budgeted_first_pages,
                r->focus->timed_first_pages);
+        printf("Undelivered submits all/pending=%u/%u\n",
+               r->focus->failed_logical_submissions,
+               r->focus->failures_while_pending);
         printf("HOME focus notify=%s\n",
                focus_notification_mode==1u ? "ENABLED" :
                focus_notification_mode==2u ? "UNAVAILABLE" : "APPLET MODE");
@@ -604,6 +607,14 @@ int main(int argc, char **argv) {
                 result=9;
                 break;
             }
+            /* No returned descriptor or PCM telemetry on this path.
+             * Keep any observed HOME return pending until a later
+             * successful page, even if recovery needs explicit retry. */
+            if (vh_audio_applet_submit_failed(&focus_events)) {
+                ++focus_record_errors;
+                result=27;
+                break;
+            }
             result=7;
             break;
         }
@@ -829,8 +840,12 @@ int main(int argc, char **argv) {
     if ((run_evidence<0 || seam_evidence || listen_evidence ||
          poll_evidence || compute_evidence) && result==0) result=10;
     const int manual_evidence=vh_audio_manual_verify(&manual_resume);
+    const uint64_t failed_logical_pages=
+        output.scene_waits.ordinary.failed_pages+
+        output.scene_waits.first_after_switch.failed_pages;
     const int focus_evidence=vh_audio_applet_verify(&focus_events) ||
-        focus_events.returned_pages!=played_blocks;
+        focus_events.returned_pages!=played_blocks ||
+        focus_events.failed_logical_submissions!=failed_logical_pages;
     if (manual_evidence && result==0) result=23;
     if ((focus_evidence || focus_record_errors) && result==0) result=24;
     const unsigned verdict=(focus_evidence || focus_record_errors)
