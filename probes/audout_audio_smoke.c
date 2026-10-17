@@ -124,20 +124,23 @@ typedef struct {
     AudioOutBuffer page;
     VhAudioSubmitTiming timing;
     VhAudioSceneWaits scene_waits;
+    VhAudioPageLease lease;
     int initialized;
     int started;
 } NativeOutput;
 
 static void native_close(void *opaque) {
     NativeOutput *dev=opaque;
-    if (!dev->initialized) return;
+    if (!dev->initialized || !vh_audio_page_lease_ready(&dev->lease))
+        return;
     audoutExit();
     dev->initialized=0;
     dev->started=0;
 }
 static int native_open(void *opaque) {
     NativeOutput *dev=opaque;
-    if (dev->initialized || R_FAILED(audoutInitialize())) return -1;
+    if (dev->initialized || !vh_audio_page_lease_ready(&dev->lease) ||
+        R_FAILED(audoutInitialize())) return -1;
     dev->initialized=1;
     if (audoutGetSampleRate()!=VH_NATIVE_AUDOUT_RATE ||
         audoutGetChannelCount()!=2u ||
@@ -160,7 +163,10 @@ static int native_start(void *opaque) {
 static int native_stop(void *opaque) {
     NativeOutput *dev=opaque;
     if (!dev->started) return 0;
+    /* A failed stop MUST leave the lease outstanding; the service
+     * may still read the old 0x1000-byte PCM page. */
     if (R_FAILED(audoutStopAudioOut())) return -1;
+    if (vh_audio_page_lease_stopped(&dev->lease)) return -1;
     dev->started=0;
     return 0;
 }
@@ -170,6 +176,8 @@ static int native_submit(void *opaque,const int16_t *pcm,size_t frames) {
         pcm!=out_48000 || frames==0 ||
         frames>VH_AUDIO_RESAMPLE_MAX_FRAMES) return -1;
     dev->page.data_size=frames*2u*sizeof(int16_t);
+    if (vh_audio_page_lease_begin(&dev->lease,&dev->page))
+        return -1;
     AudioOutBuffer *returned=NULL;
     /* Measure actual blocking service time (one invocation, including
      * failed attempts), separately from the pre-render DSP budget. */
@@ -178,6 +186,10 @@ static int native_submit(void *opaque,const int16_t *pcm,size_t frames) {
     const uint64_t elapsed=armGetSystemTick()-before;
     const int accepted=R_SUCCEEDED(rc) &&
         vh_audio_output_page_returned(&dev->page,returned);
+    /* The exact returned descriptor releases this page. A failed
+     * attempt retains its lease until recovery confirms audoutStop. */
+    if (accepted && vh_audio_page_lease_return(&dev->lease,returned))
+        return -1;
     if (vh_audio_output_record_submit_timing(
             &dev->timing,elapsed,armGetSystemTickFreq(),frames,accepted))
         return -1;
@@ -439,6 +451,10 @@ int main(int argc, char **argv) {
          * before this loop iteration, and no old PCM page is queued.
          * Never switch a user-owned SD music set automatically.
          */
+        if (!vh_audio_page_lease_ready(&output.lease)) {
+            result=20; /* outstanding device page; cannot switch/render */
+            break;
+        }
         if (!user_files && played_blocks &&
             played_blocks%SYNTHETIC_SCENE_BLOCKS==0u) {
             const uint8_t *next=fixture_b ? fixture_seq : fixture_seq_b;
