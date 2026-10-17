@@ -45,9 +45,13 @@ SYMBOLS = (
 def _run(exe, path):
     command = (["readelf", "-h", str(path)] if exe == "readelf"
                else ["nm", "-g", "-S", "--defined-only", "--", str(path)])
-    result = subprocess.run(
-        command,
-        capture_output=True, text=True, timeout=30, check=False)
+    try:
+        result = subprocess.run(
+            command, capture_output=True, text=True, timeout=30, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        # Both exceptions can include the private executable's full pathname
+        # or captured output from native tools. Never propagate their text.
+        raise ValueError("MAP02 ELF introspection unavailable: " + exe) from None
     if result.returncode:
         raise ValueError("MAP02 ELF introspection failed: " + exe)
     return result.stdout
@@ -118,8 +122,10 @@ def main():
     args = p.parse_args()
     try:
         result = audit_cycle_elf(args.private_pc_executable)
-    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+    except ValueError as exc:
         p.error(str(exc))
+    except (OSError, subprocess.TimeoutExpired):
+        p.error("MAP02 private ELF filesystem introspection unavailable")
     print(json.dumps(result, sort_keys=True, indent=2))
 
 
