@@ -5,6 +5,7 @@ on:
     paths:
       - 'tools/instrument_map02_scoped_blend.py'
       - 'tools/check_map02_original_gpu_tus.py'
+      - 'tests/test_check_map02_original_gpu_tus.py'
       - 'tools/map02_scoped_blend_sink.c'
       - 'tools/map02_scoped_blend_sink.h'
       - 'tools/map02_scoped_blend_stage.c'
@@ -30,6 +31,7 @@ on:
     paths:
       - 'tools/instrument_map02_scoped_blend.py'
       - 'tools/check_map02_original_gpu_tus.py'
+      - 'tests/test_check_map02_original_gpu_tus.py'
       - 'tools/map02_scoped_blend_sink.c'
       - 'tools/map02_scoped_blend_sink.h'
       - 'tools/map02_scoped_blend_stage.c'
@@ -75,7 +77,8 @@ jobs:
             tests.test_map02_blendg1_complete_events \
             tests.test_map02_scoped_blend_stage \
             tests.test_promote_map02_putpixel_stage \
-            tests.test_map02_paired_publish_chain
+            tests.test_map02_paired_publish_chain \
+            tests.test_check_map02_original_gpu_tus
       - name: Checkout pinned public original PC raster source
         uses: actions/checkout@v4
         with:
