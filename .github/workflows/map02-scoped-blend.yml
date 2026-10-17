@@ -32,6 +32,8 @@ on:
       - 'tools/map02_capture_session.c'
       - 'tools/map02_local_capture_handoff.py'
       - 'tests/test_map02_local_capture_handoff.py'
+      - 'tools/map02_verified_process_launch.py'
+      - 'tests/test_map02_verified_process_launch.py'
       - 'tools/map02_capture_session.h'
       - 'tools/publish_map02_native_window_source_witness.py'
       - 'tests/test_map02_source_native_windows.py'
@@ -90,6 +92,8 @@ on:
       - 'tools/map02_capture_session.c'
       - 'tools/map02_local_capture_handoff.py'
       - 'tests/test_map02_local_capture_handoff.py'
+      - 'tools/map02_verified_process_launch.py'
+      - 'tests/test_map02_verified_process_launch.py'
       - 'tools/map02_capture_session.h'
       - 'tools/publish_map02_native_window_source_witness.py'
       - 'tests/test_map02_source_native_windows.py'
@@ -155,7 +159,8 @@ jobs:
             tests.test_map02_source_native_windows \
             tests.test_verify_map02_window_scoped_join \
             tests.test_publish_map02_window_scoped_witness \
-            tests.test_map02_local_capture_handoff
+            tests.test_map02_local_capture_handoff \
+            tests.test_map02_verified_process_launch
       - name: Checkout pinned public original PC raster source
         uses: actions/checkout@v4
         with:
