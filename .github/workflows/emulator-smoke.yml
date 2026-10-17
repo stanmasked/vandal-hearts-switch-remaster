@@ -655,6 +655,8 @@ jobs:
           set -euo pipefail
           python3 tools/audit_nexium_audout_queue.py \
             --source runtime-evidence/scene-soak/soak-audout-sd-unverified.csv \
+            --locations runtime-evidence/scene-soak/soak-audout-sd-locations.txt \
+            --sd-root "$RUNNER_TEMP/vh-nexium-stage268-${GITHUB_RUN_ID}" \
             --output runtime-evidence/scene-soak/soak-audout-verification.json
           python3 -m json.tool runtime-evidence/scene-soak/soak-audout-verification.json >/dev/null
           echo "Guest audout page/lease accounting checked across the soak. Queue counts are pre-submit samples, not device playback or audible underrun proof." >> "$GITHUB_STEP_SUMMARY"
