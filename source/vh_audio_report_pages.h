@@ -62,6 +62,9 @@ typedef struct {
      * Zero timestamp means unknown, not zero latency. */
     uint64_t foreground_tick, max_page_gap_ticks, total_page_gap_ticks;
     unsigned timestamp_pending, timed_first_pages;
+    /* Budget-normalized, disjoint first-return bands <=1x, (1,2]x,
+     * (2,4]x and >4x. Missing budgets remain unclassified, not 0x. */
+    unsigned budgeted_first_pages, page_budget_bands[4];
 } VhAudioAppletEvents;
 
 #define VH_AUDIO_APPLET_BACKGROUND 1u
@@ -147,17 +150,30 @@ static inline int vh_audio_applet_record_at(VhAudioAppletEvents *s,
  * Preflight clock regression and overflow BEFORE incrementing pages.
  * This is callback-to-page service latency, not proof of audible
  * output and not wall time spent while the console is asleep. */
-static inline int vh_audio_applet_page_returned_at(VhAudioAppletEvents *s,
-                                                    uint64_t tick) {
+static inline int vh_audio_applet_page_returned_budget_at(
+    VhAudioAppletEvents *s, uint64_t tick, uint64_t budget_ticks) {
     if(!s) return -1;
     const unsigned measure=s->pending_return && !s->in_background &&
                            s->timestamp_pending;
     uint64_t delta=0u;
+    unsigned band=0u;
     if(measure) {
         if(!tick || tick<s->foreground_tick ||
            s->timed_first_pages==UINT_MAX) return -1;
         delta=tick-s->foreground_tick;
         if(delta>UINT64_MAX-s->total_page_gap_ticks) return -1;
+        if(budget_ticks) {
+            /* Use division and remainder to avoid 2x/4x overflow on
+             * synthetic UINT64_MAX budgets. Inclusive upper bounds. */
+            const uint64_t multiple=delta/budget_ticks;
+            const uint64_t rem=delta%budget_ticks;
+            if(delta<=budget_ticks) band=0u;
+            else if(multiple<2u || (multiple==2u && !rem)) band=1u;
+            else if(multiple<4u || (multiple==4u && !rem)) band=2u;
+            else band=3u;
+            if(s->budgeted_first_pages==UINT_MAX ||
+               s->page_budget_bands[band]==UINT_MAX) return -1;
+        }
     }
     const int first=vh_audio_applet_page_returned(s);
     if(first<=0) return first;
@@ -165,8 +181,19 @@ static inline int vh_audio_applet_page_returned_at(VhAudioAppletEvents *s,
         s->total_page_gap_ticks+=delta;
         if(delta>s->max_page_gap_ticks) s->max_page_gap_ticks=delta;
         ++s->timed_first_pages;
+        if(budget_ticks) {
+            ++s->page_budget_bands[band];
+            ++s->budgeted_first_pages;
+        }
     }
     return first;
+}
+
+/* Calls without a known frame-time budget remain time-stamped but
+ * excluded from budget-normalized bins. */
+static inline int vh_audio_applet_page_returned_at(VhAudioAppletEvents *s,
+                                                    uint64_t tick) {
+    return vh_audio_applet_page_returned_budget_at(s,tick,0u);
 }
 
 /* Strong internal event-to-returned-page accounting, never a
@@ -181,6 +208,10 @@ static inline int vh_audio_applet_verify(const VhAudioAppletEvents *s) {
        s->timestamp_pending>1u ||
        (s->timestamp_pending && !s->pending_return) ||
        s->timed_first_pages>s->first_pages_after_return ||
+       s->budgeted_first_pages>s->timed_first_pages ||
+       (uint64_t)s->page_budget_bands[0]+s->page_budget_bands[1]+
+           s->page_budget_bands[2]+s->page_budget_bands[3] !=
+                                                  s->budgeted_first_pages ||
        s->max_page_gap_ticks>s->total_page_gap_ticks ||
        (!s->timed_first_pages &&
         (s->max_page_gap_ticks || s->total_page_gap_ticks)))
