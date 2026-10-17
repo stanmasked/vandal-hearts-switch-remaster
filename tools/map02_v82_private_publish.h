@@ -41,6 +41,11 @@ int vh104_test_mutate_bytes(const char *path,int phase);
  * phase 1: old completed recovery source, phase 2: abandoned .tmp.
  * The hook is isolated from normal builds. */
 void vh105_test_change_during_recovery(int phase);
+/* Isolated same-byte replacement of <final>.tmp by a foreign inode:
+ * 1 after stage fsync, 2 after readback, 3 just before hard link,
+ * 4 after hard link but before old stage unlink. */
+int vh107_test_replace_stage(const char *stage,const char *replacement,
+                             const char *backup,int phase);
 #endif
 /* An existing private file must be immutable. Only a DISTINCT unused path
  * may receive a recovered observer lifetime; never rename/replace old. */

@@ -139,11 +139,44 @@ static int vh102_maybe_swap(int phase){
 #define vh102_maybe_swap(phase) (0)
 #endif
 
+/* v107: original stage inode must survive every named read/link boundary.
+ * Fault hooks belong ONLY to isolated native tests. */
+static int vh105_same_metadata(const struct stat *a,const struct stat *b);
+#ifdef VH100_FAULT_TEST
+static char vh107_stage_path[VH82_MAX_PATH];
+static char vh107_stage_replacement[VH82_MAX_PATH];
+static char vh107_stage_backup[VH82_MAX_PATH];
+static int vh107_stage_phase;
+int vh107_test_replace_stage(const char *stage,const char *replacement,
+                             const char *backup,int phase){
+    if(!stage || !replacement || !backup || phase<1 || phase>4 ||
+       strnlen(stage,VH82_MAX_PATH)>=VH82_MAX_PATH ||
+       strnlen(replacement,VH82_MAX_PATH)>=VH82_MAX_PATH ||
+       strnlen(backup,VH82_MAX_PATH)>=VH82_MAX_PATH)return -1;
+    strcpy(vh107_stage_path,stage);
+    strcpy(vh107_stage_replacement,replacement);
+    strcpy(vh107_stage_backup,backup);
+    vh107_stage_phase=phase;
+    return 0;
+}
+static int vh107_maybe_replace_stage(int phase){
+    if(vh107_stage_phase!=phase)return 0;
+    vh107_stage_phase=0;
+    if(rename(vh107_stage_path,vh107_stage_backup)!=0)return -1;
+    if(rename(vh107_stage_replacement,vh107_stage_path)!=0)return -1;
+    return 0;
+}
+#else
+#define vh107_maybe_replace_stage(phase) (0)
+#endif
+
 int vh82_publish_private(const char *path,const char *bytes,size_t size) {
     char parent[VH82_MAX_PATH];
     char readback[4096];
     size_t at=0;
     int fd=-1,reader=-1,dirfd=-1,owned=0,linked=0,ok=-1;
+    int staged_identity_known=0;
+    struct stat stage_created,stage_written,stage_named,stage_reader,stage_final;
     if(!path || !bytes || path[0]!='/' || !size || size>VH82_MAX_BYTES) return -1;
     size_t n=strnlen(path,VH82_MAX_PATH);
     if(n==0 || n+5>=VH82_MAX_PATH || strstr(path,"/../") || strstr(path,"/./"))return -1;
@@ -167,16 +200,33 @@ int vh82_publish_private(const char *path,const char *bytes,size_t size) {
     fd=openat(dirfd,stage,O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW,0600);
     if(fd<0)goto finish;
     owned=1;
+    if(fstat(fd,&stage_created)<0 || !S_ISREG(stage_created.st_mode) ||
+       (stage_created.st_mode&0777)!=0600 || stage_created.st_nlink!=1)
+        goto finish;
+    staged_identity_known=1;
     while(at<size) {
         ssize_t wrote=write(fd,bytes+at,size-at);
         if(wrote<=0)goto finish;
         at+=(size_t)wrote;
     }
-    if(fsync(fd)<0)goto finish;
+    if(fsync(fd)<0 ||
+       fstat(fd,&stage_written)<0 ||
+       stage_written.st_dev!=stage_created.st_dev ||
+       stage_written.st_ino!=stage_created.st_ino ||
+       stage_written.st_size<0 || (size_t)stage_written.st_size!=size ||
+       stage_written.st_nlink!=1 ||
+       !S_ISREG(stage_written.st_mode) ||
+       (stage_written.st_mode&0777)!=0600)goto finish;
     if(close(fd)<0){fd=-1;goto finish;}
     fd=-1;
+    if(vh107_maybe_replace_stage(1)<0)goto finish;
     reader=openat(dirfd,stage,O_RDONLY|O_NOFOLLOW);
-    if(reader<0)goto finish;
+    if(reader<0 ||
+       fstat(reader,&stage_reader)<0 ||
+       fstatat(dirfd,stage,&stage_named,AT_SYMLINK_NOFOLLOW)<0 ||
+       !vh105_same_metadata(&stage_written,&stage_reader) ||
+       !vh105_same_metadata(&stage_written,&stage_named))
+        goto finish;
     at=0;
     while(at<size) {
         size_t want=size-at<sizeof(readback)?size-at:sizeof(readback);
@@ -184,23 +234,47 @@ int vh82_publish_private(const char *path,const char *bytes,size_t size) {
         if(got<=0 || memcmp(bytes+at,readback,(size_t)got)!=0)goto finish;
         at+=(size_t)got;
     }
-    if(read(reader,readback,1)!=0)goto finish;
+    if(read(reader,readback,1)!=0 ||
+       fstat(reader,&stage_reader)<0 ||
+       fstatat(dirfd,stage,&stage_named,AT_SYMLINK_NOFOLLOW)<0 ||
+       !vh105_same_metadata(&stage_written,&stage_reader) ||
+       !vh105_same_metadata(&stage_written,&stage_named))goto finish;
     if(close(reader)<0){reader=-1;goto finish;}
     reader=-1;
+    if(vh107_maybe_replace_stage(2)<0 ||
+       fstatat(dirfd,stage,&stage_named,AT_SYMLINK_NOFOLLOW)<0 ||
+       !vh105_same_metadata(&stage_written,&stage_named))goto finish;
     /* Original no-replace hard link. Final can exist after a later failure;
      * we intentionally NEVER roll it back or reuse its pathname. */
     if(vh102_maybe_swap(1)!=0 ||
        vh102_parent_matches(dirfd,parent)!=0 ||
+       vh107_maybe_replace_stage(3)<0 ||
        linkat(dirfd,stage,dirfd,base,0)<0)goto finish;
     linked=1;
+    /* linkat is no-clobber but can race a malicious stage-name replacement.
+     * Never certify a final name linked to a different inode. */
+    if(fstatat(dirfd,base,&stage_final,AT_SYMLINK_NOFOLLOW)<0 ||
+       !S_ISREG(stage_final.st_mode) ||
+       stage_final.st_dev!=stage_created.st_dev ||
+       stage_final.st_ino!=stage_created.st_ino ||
+       stage_final.st_size!=stage_written.st_size ||
+       (stage_final.st_mode&0777)!=0600)goto finish;
     if(vh102_maybe_swap(2)!=0 ||
        vh102_parent_matches(dirfd,parent)!=0)goto finish;
     /* fsync the PARENT DIRECTORY to persist the newly created final name,
      * not just the content of the already-fsynced stage file. */
     if(VH100_FAIL(1) || fsync(dirfd)<0)goto finish;
     vh100_synced_directories++;
-    if(VH100_FAIL(2))goto finish;
-    /* Remove ONLY our owned temporary stage and persist that unlink. */
+    if(VH100_FAIL(2) || vh107_maybe_replace_stage(4)<0)goto finish;
+    /* After final link, a foreign replacement .tmp is NOT ours to
+     * unlink. Refusal leaves the final link and all remaining names. */
+    if(fstatat(dirfd,stage,&stage_named,AT_SYMLINK_NOFOLLOW)<0 ||
+       !S_ISREG(stage_named.st_mode) ||
+       stage_named.st_dev!=stage_created.st_dev ||
+       stage_named.st_ino!=stage_created.st_ino ||
+       stage_named.st_nlink!=2 ||
+       stage_named.st_size!=stage_written.st_size ||
+       (stage_named.st_mode&0777)!=0600)goto finish;
     if(unlinkat(dirfd,stage,0)<0)goto finish;
     owned=0;
     if(vh102_maybe_swap(3)!=0 ||
@@ -219,10 +293,17 @@ finish:
     /* On pre-link failure, the old v82 rule cleans up our own temp.
      * On any post-link error, retain a possibly committed final file.
      * Never hide its ambiguous state or overwrite on a retry. */
-    if(owned && !linked){
-        /* Only the new stage in the originally opened directory; never
-         * a same-named object reached through a redirected pathname. */
-        if(unlinkat(dirfd,stage,0)==0)(void)fsync(dirfd);
+    if(owned && !linked && staged_identity_known){
+        /* On refusal, NEVER delete an inode planted at our former .tmp name.
+         * This check does not make unlinkat atomic against hostile writers
+         * swapping the path after fstatat; exclusive directory assumed. */
+        if(fstatat(dirfd,stage,&stage_named,AT_SYMLINK_NOFOLLOW)==0 &&
+           S_ISREG(stage_named.st_mode) && stage_named.st_nlink==1 &&
+           (stage_named.st_mode&0777)==0600 &&
+           stage_named.st_dev==stage_created.st_dev &&
+           stage_named.st_ino==stage_created.st_ino){
+            if(unlinkat(dirfd,stage,0)==0)(void)fsync(dirfd);
+        }
     }
     if(dirfd>=0 && close(dirfd)<0)ok=-1;
     if(ok==0)vh102_publishes++;
