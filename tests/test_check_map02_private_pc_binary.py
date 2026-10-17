@@ -143,6 +143,23 @@ class PrivatePcProbeReadinessTests(unittest.TestCase):
                 inspect_binary(self.elf)
         self.assertEqual(len(arguments_seen), 1)
 
+    def test_untrusted_path_cannot_select_fake_nm(self):
+        self.compile()
+        # A hostile shell environment could put a shim named "nm"
+        # before /usr/bin. It must never be invoked by the inspector.
+        shim_dir = self.root / "untrusted-path"
+        shim_dir.mkdir()
+        touched = self.root / "fake-nm-ran"
+        shim = shim_dir / "nm"
+        shim.write_text("#!/bin/sh\n" +
+                        "printf 'FAKE' > " + str(touched) + "\n" +
+                        "exit 0\n", encoding="utf-8")
+        shim.chmod(0o700)
+        with patch.dict(os.environ, {"PATH": str(shim_dir)}, clear=False):
+            result = inspect_binary(self.elf)
+        self.assertTrue(result["required_probe_symbols_present"])
+        self.assertFalse(touched.exists())
+
     def test_unavailable_symbol_inspector_fails_closed(self):
         self.compile()
         with self.assertRaisesRegex(ValueError, "nm unavailable"):
