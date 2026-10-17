@@ -18,6 +18,7 @@ from pathlib import Path, PurePosixPath
 
 import verify_switch_audio_bundle as bundle
 import analyze_switch_audio_log as audio
+import switch_audio_ci_build_receipt as ci_receipt
 
 REPOSITORY = "stanmasked/vandal-hearts-switch-remaster"
 BRANCH = "test/cdxa-extract-decode-pipeline"
@@ -115,6 +116,8 @@ def check_zip(zip_path: Path, artifact: dict, expected_nro_hash: str,
             require(0 < len(members) <= MAX_ENTRIES, "artifact ZIP has invalid entry count")
             seen = set()
             candidates = []
+            receipts = []
+            other_files = []
             for info in members:
                 name = info.filename
                 parsed = PurePosixPath(name)
@@ -134,7 +137,15 @@ def check_zip(zip_path: Path, artifact: dict, expected_nro_hash: str,
                 # GitHub Actions build/*.nro usually places files at ZIP root.
                 if name in (NRO_NAME, "build/" + NRO_NAME):
                     candidates.append(info)
+                elif name in (ci_receipt.RECEIPT_NAME,
+                              "build/" + ci_receipt.RECEIPT_NAME):
+                    receipts.append(info)
+                else:
+                    other_files.append(name)
             require(len(candidates) == 1, "archive must contain exactly one expected NRO")
+            require(not other_files,
+                    "unexpected non-NRO file in official artifact ZIP")
+            require(len(receipts) <= 1, "artifact ZIP contains multiple build receipts")
             info = candidates[0]
             require(0 < info.file_size <= MAX_NRO and
                     info.file_size == expected_nro_size,
@@ -149,11 +160,51 @@ def check_zip(zip_path: Path, artifact: dict, expected_nro_hash: str,
             require(total == expected_nro_size and
                     payload_hash.hexdigest() == expected_nro_hash,
                     "NRO bytes do not match the GitHub artifact ZIP")
+            receipt_record = None
+            if receipts:
+                receipt_info = receipts[0]
+                expected_receipt_name = (
+                    info.filename.removesuffix(NRO_NAME) + ci_receipt.RECEIPT_NAME
+                )
+                require(receipt_info.filename == expected_receipt_name,
+                        "CI receipt must be beside the NRO in the artifact ZIP")
+                require(0 < receipt_info.file_size <= ci_receipt.MAX_RECEIPT,
+                        "CI receipt exceeds permitted size")
+                with archive.open(receipt_info, "r") as record_stream:
+                    raw = record_stream.read(ci_receipt.MAX_RECEIPT + 1)
+                try:
+                    receipt_record = ci_receipt.parse(raw)
+                except (ci_receipt.ReceiptError, bundle.BundleError) as exc:
+                    raise ProvenanceError(f"invalid CI build receipt: {exc}") from exc
+                require(raw == ci_receipt.json_bytes(receipt_record),
+                        "noncanonical CI build receipt")
+                require(receipt_record["nro"]["size"] == total and
+                        receipt_record["nro"]["sha256"] == payload_hash.hexdigest(),
+                        "CI build receipt NRO fingerprint disagrees with artifact")
             return {"archive_sha256": archive_hash.hexdigest(),
                     "zip_entry": info.filename, "nro_sha256": payload_hash.hexdigest(),
-                    "nro_size": total}
+                    "nro_size": total,
+                    "ci_receipt_state": "VERIFIED_UNTRUSTED" if receipts else
+                                        "ABSENT_LEGACY_ARTIFACT",
+                    "ci_receipt": receipt_record}
     except (zipfile.BadZipFile, RuntimeError, EOFError, OSError) as exc:
         raise ProvenanceError(f"invalid or damaged artifact ZIP: {exc}") from exc
+
+
+def assert_receipt_run_identity(matched: dict, run: dict) -> None:
+    """Bind an embedded unsigned CI receipt to independent GitHub run metadata."""
+    record = matched["ci_receipt"]
+    if record is None:
+        return  # Old ZIP archives had only the NRO, keep explicit legacy status.
+    require(record["git_sha"] == run["head_sha"],
+            "embedded CI receipt commit does not match GitHub run")
+    require(record["head_branch"] == run["head_branch"],
+            "embedded CI receipt branch does not match GitHub run")
+    require(record["run_id"] == run["id"],
+            "embedded CI receipt run ID does not match GitHub run")
+    require(number(run.get("run_attempt")) and
+            record["run_attempt"] == run["run_attempt"],
+            "embedded CI receipt attempt does not match GitHub run attempt")
 
 
 def crosscheck(root: Path, archive: Path, run_json: Path, artifact_json: Path) -> dict:
@@ -168,6 +219,7 @@ def crosscheck(root: Path, archive: Path, run_json: Path, artifact_json: Path) -
             PurePosixPath(nro_file["path"]).name == NRO_NAME,
             "manifest NRO is not the primary tactical prototype")
     result = check_zip(archive, artifact, nro_file["sha256"], nro_file["size"])
+    assert_receipt_run_identity(result, run)
     return {
         "schema": REPORT_SCHEMA,
         "comparison": "CONSISTENT_WITH_PROVIDED_GITHUB_METADATA",
