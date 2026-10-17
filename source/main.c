@@ -387,6 +387,20 @@ int main(int argc, char **argv) {
         if(audout_saved!=VH_AUDOUT_QUEUE_EXPORT_OK) {
             fprintf(stderr,"audout queue telemetry SD export failed: %d\n",
                     (int)audout_saved);
+            /* NeXium may hide guest stderr: save a separate bounded,
+             * exclusive failure receipt AFTER joining the audio worker.
+             * Never synthesize an audout CSV when export fails. */
+            const int failure_fd=open(
+                "sdmc:/switch/vandal-hearts-remake/audio-audout-export-failure.txt",
+                O_WRONLY|O_CREAT|O_EXCL,0600);
+            if(failure_fd>=0) {
+                char message[96];
+                const int n=snprintf(message,sizeof message,
+                    "audout_export_status=%d\\n", (int)audout_saved);
+                if(n>0 && (size_t)n<sizeof message)
+                    (void)write(failure_fd,message,(size_t)n);
+                (void)close(failure_fd);
+            }
             export_status=2;
         }
         if (resume_message_enabled)
