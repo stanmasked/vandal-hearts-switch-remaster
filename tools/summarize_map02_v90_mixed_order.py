@@ -28,10 +28,15 @@ def summarize(raw:bytes):
     inherited=summarize_v89(raw)
     validate(raw)
     events=[json.loads(line) for line in raw.decode("ascii").splitlines()]
-    tail=events[-len(KINDS):]
+    starts=[i for i,e in enumerate(events) if e["kind"]==KINDS[0]]
+    if len(starts)!=1:
+        raise Refused("missing/duplicate mixed GPU audit start")
+    start=starts[0]
+    tail=events[start:start+len(KINDS)]
     if len(tail)!=len(KINDS) or tuple(e["kind"] for e in tail)!=KINDS:
-        raise Refused("missing or out-of-order mixed host GPU audit suffix")
-    if any(e["kind"] in KINDS for e in events[:-len(KINDS)]):
+        raise Refused("missing or out-of-order mixed host GPU audit block")
+    if any(e["kind"] in KINDS for i,e in enumerate(events)
+           if not start<=i<start+len(KINDS)):
         raise Refused("duplicate/misplaced mixed GPU audit records")
     got=tuple(e["value"] for e in tail)
     if got!=EXPECTED:
