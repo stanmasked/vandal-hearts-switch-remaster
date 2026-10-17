@@ -28,6 +28,7 @@ ANCHORS = {
     "clear_after": '    FillRectRaw(rect->x, rect->y, rect->w, rect->h, r, g, b);',
     "draw_before": '            switch (type) {',
     "draw_after": '            default:\n                break;\n            }\n        }\n        nextTok = rawTagOfCur;',
+    "frame_end": "    TrcFrameEnd();",
 }
 HELPERS = r'''
 #if defined(VH_MAP02_GPU_CAPTURE)
@@ -36,7 +37,11 @@ HELPERS = r'''
  * native pass is synchronous and the deferred HD worker pass isn't traced.
  * No output files are written by baseline (non-opt-in) builds. */
 #define VH_CAPTURE_LIMIT 64u
-static unsigned vh_capture_seq;
+/* Receipt counters are self-reported, not proof of genuine retail gameplay. */
+static unsigned vh_capture_seq, vh_capture_saved;
+static unsigned long vh_capture_seen, vh_capture_before, vh_capture_after;
+static unsigned long vh_capture_draw_before, vh_capture_transfer_before;
+static int vh_capture_receipt_written;
 static const char *vh_capture_dir;
 static unsigned long vh_capture_frame;
 static int vh_capture_init;
@@ -69,10 +74,23 @@ static void VH_CaptureEvent(const char *phase, const char *operation, int transf
     int n;
     unsigned seq;
     VH_CaptureInit();
-    if (!vh_capture_frame || vh_capture_seq >= VH_CAPTURE_LIMIT ||
+    if (!vh_capture_frame ||
         (transfer ? (unsigned long)s_drawFrame + 1ul != vh_capture_frame
                   : (unsigned long)s_drawFrame != vh_capture_frame))
         return;
+    if (vh_capture_seen < 0xffffffffUL) ++vh_capture_seen;
+    if (strcmp(phase, "before") == 0) {
+        if (vh_capture_before < 0xffffffffUL) ++vh_capture_before;
+        if (transfer) {
+            if (vh_capture_transfer_before < 0xffffffffUL)
+                ++vh_capture_transfer_before;
+        } else if (vh_capture_draw_before < 0xffffffffUL) {
+            ++vh_capture_draw_before;
+        }
+    } else if (vh_capture_after < 0xffffffffUL) {
+        ++vh_capture_after;
+    }
+    if (vh_capture_seq >= VH_CAPTURE_LIMIT) return;
     seq = vh_capture_seq++;
     n = snprintf(snapshot_name, sizeof snapshot_name, "gpu-%04u-vram.bin", seq);
     if (n < 0 || (size_t)n >= sizeof snapshot_name) return;
@@ -138,7 +156,48 @@ static void VH_CaptureEvent(const char *phase, const char *operation, int transf
     else
         fputs("null", log);
     fputs("}\n", log);
-    fclose(log);
+    if (ferror(log) == 0) {
+        if (fclose(log) == 0) ++vh_capture_saved;
+    } else {
+        (void)fclose(log);
+    }
+}
+/* Exclusive completion receipt; never overwrites existing status files.
+ * It detects source-hook loss, NOT provenance or full game frame coverage. */
+static void VH_CaptureFinish(unsigned frame, int walk_finished) {
+    char status_path[1024];
+    FILE *file;
+    int n, balanced;
+    VH_CaptureInit();
+    if (!vh_capture_frame || (unsigned long)frame != vh_capture_frame ||
+        vh_capture_receipt_written) return;
+    vh_capture_receipt_written = 1;
+    n = snprintf(status_path, sizeof status_path,
+                 "%s/gpu-native-capture-status.json", vh_capture_dir);
+    if (n < 0 || (size_t)n >= sizeof status_path) return;
+    file = fopen(status_path, "wx");
+    if (!file) return;
+    balanced = vh_capture_before == vh_capture_after &&
+               vh_capture_seen == vh_capture_before + vh_capture_after;
+    fprintf(file,
+      "{\"schema\":\"vh.map02.native-capture-status.v1\","
+      "\"gpu_draw_frame\":%u,\"observed_hooks\":%lu,"
+      "\"before_hooks\":%lu,\"after_hooks\":%lu,"
+      "\"draw_before_hooks\":%lu,\"transfer_before_hooks\":%lu,"
+      "\"indexed_hooks\":%u,\"written_hooks\":%u,"
+      "\"limit_reached\":%s,\"walk_finished\":%s,"
+      "\"hooks_balanced\":%s,"
+      "\"observed_window_closed_without_detected_loss\":%s}\n",
+      frame, vh_capture_seen, vh_capture_before, vh_capture_after,
+      vh_capture_draw_before, vh_capture_transfer_before,
+      vh_capture_seq, vh_capture_saved,
+      vh_capture_seq >= VH_CAPTURE_LIMIT ? "true" : "false",
+      walk_finished ? "true" : "false",
+      balanced ? "true" : "false",
+      (walk_finished && balanced && vh_capture_seen == vh_capture_seq &&
+       vh_capture_saved == vh_capture_seq &&
+       vh_capture_seq < VH_CAPTURE_LIMIT) ? "true" : "false");
+    (void)fclose(file);
 }
 #endif
 '''
@@ -183,19 +242,27 @@ def instrument(source):
          ANCHORS["clear_after"]+'\n#if defined(VH_MAP02_GPU_CAPTURE)\n'
          '    VH_CaptureEvent("after","clear",1,rect,NULL,0u,0,0,r,g,b,0,0,NULL);\n#endif',
          "post-ClearImage")
+    draw_only = ('type == PC_GPU_PRIM_POLY_F4 || type == PC_GPU_PRIM_POLY_FT4 || '
+                 'type == PC_GPU_PRIM_SPRT || type == PC_GPU_PRIM_TILE')
     source=replace_one(source,ANCHORS["draw_before"],
          '#if defined(VH_MAP02_GPU_CAPTURE)\n'
-         '            VH_CaptureEvent("before","draw",0,NULL,NULL,0u,0,0,0,0,0,'
+         '            if (' + draw_only + ')\n'
+         '                VH_CaptureEvent("before","draw",0,NULL,NULL,0u,0,0,0,0,0,'
          'type,semi,type == PC_GPU_PRIM_POLY_FT4 ? (POLY_FT4 *)cur : NULL);\n'
          '#endif\n'+ANCHORS["draw_before"],
          "DrawOTag before primitive")
     source=replace_one(source,ANCHORS["draw_after"],
          '            default:\n                break;\n            }\n'
          '#if defined(VH_MAP02_GPU_CAPTURE)\n'
-         '            VH_CaptureEvent("after","draw",0,NULL,NULL,0u,0,0,0,0,0,'
+         '            if (' + draw_only + ')\n'
+         '                VH_CaptureEvent("after","draw",0,NULL,NULL,0u,0,0,0,0,0,'
          'type,semi,type == PC_GPU_PRIM_POLY_FT4 ? (POLY_FT4 *)cur : NULL);\n'
          '#endif\n        }\n        nextTok = rawTagOfCur;',
          "DrawOTag after primitive")
+    source=replace_one(source,ANCHORS["frame_end"],
+         '#if defined(VH_MAP02_GPU_CAPTURE)\n'
+         '    VH_CaptureFinish(s_drawFrame, nextTok == 0);\n'
+         '#endif\n'+ANCHORS["frame_end"], "DrawOTag completion")
     return source
 
 def prepare(source_path, destination):
@@ -213,6 +280,7 @@ def prepare(source_path, destination):
         "transfer_hooks":["LoadImage","MoveImage","ClearImage"],
         "walk_hooks":["DrawOTag primitive before","DrawOTag primitive after"],
         "max_snapshot_records":64,
+        "completion_receipt":"gpu-native-capture-status.json",
         "original_gameplay_captured":False,
         "original_content_published":False,
     }
