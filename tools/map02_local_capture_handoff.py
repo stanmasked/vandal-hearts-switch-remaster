@@ -52,6 +52,9 @@ SOURCE_BLOBS = {
     **PINNED_BLOB_SHA1,
     "platform/pc/src/libgpu.c": PINNED_SOURCE,
     "platform/pc/src/pc_raster.c": "ba8a05d161ad778c0b75e452ff0a11ed163c65cd",
+    "platform/pc/src/libcd.c": "1300664537c49f33bbbace1fe0fb58d2463bd627",
+    "platform/pc/src/pc_bootstrap.c": "1020af186761cd323e88d94da21c8755a093cdd9",
+    "src/core/cd.c": "30d43504c8becadaca4c475abce9d40b0bc9dc2b",
 }
 DIGESTS = (
     "pinned_upstream_source_identity_sha256",
