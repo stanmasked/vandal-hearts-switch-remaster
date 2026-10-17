@@ -60,6 +60,7 @@ class SingleElfBuildOverlayTests(unittest.TestCase):
             "$(BUILD_DIR)/libgpu.o:",
             "-DVH_MAP02_CD_READ_PROBE",
             "-DVH_MAP02_CYCLE_ORDER",
+            "-Iinclude -Isrc -g",
             "VH_MAP02_CYCLE_ROOT :=",
             "map02_cycle_order.o",
             "map02_cd_read_probe.o",
