@@ -6,6 +6,8 @@ on:
       - test/cdxa-extract-decode-pipeline
     paths:
       - .github/workflows/nexium-idle-switch-repeatability.yml
+      - tools/analyze_nexium_idle_switch_variability.py
+      - tests/test_analyze_nexium_idle_switch_variability.py
   workflow_dispatch:
 
 permissions:
@@ -101,6 +103,21 @@ jobs:
           print(json.dumps({
               "pairs":len(report["pairs"]),"nro_sha256":report["nro_sha256"],
               "rates":report["rates"],"causal_inference":False},sort_keys=True))
+          PY
+          python3 tools/analyze_nexium_idle_switch_variability.py \
+            --verified-pairs verified-pairs/idle-vs-switch-seven-runs.json \
+            --output verified-pairs/paired-rate-variation.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path("verified-pairs/paired-rate-variation.json").read_text())
+          if (report["pair_count"]!=7 or
+                  report["result"]!="EXPLORATORY_PAIRED_NEXIUM_VARIABILITY_COMPUTED" or
+                  report["switching_order_randomized"] is not False or
+                  report["bootstrap_is_inferential_confidence_interval"] is not False or
+                  report["statistical_causal_music_claim"] is not False):
+              raise SystemExit("unverifiable paired sensitivity interpretation")
+          print("Pair-preserving noncausal variation bounds:",report["bands"])
           PY
           sha256sum "$RUNNER_TEMP/neXium-seven/"*.zip \
             > verified-pairs/repacked-source-archives.sha256
