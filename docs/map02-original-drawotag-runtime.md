@@ -70,3 +70,43 @@ byte**. Only a digest is emitted, never the raw framebuffer.
 These two green checks directly verify the original code's behavior
 for these controlled inputs. They do not authenticate MAP02 gameplay,
 PS1 hardware blending, or independent original-console VRAM snapshots.
+
+## Overdraw and texture transparency regression
+
+The extended headless scenario
+`tools/check_map02_original_drawotag_complex.py` compiles the same
+pinned original GPU source twice and runs three build modes: ordinary,
+scoped in-memory observation and private POSIX staging.
+
+Its synthetic OT walk is:
+
+```text
+DR_MODE ABR=1
+F4 semi (draw ordinal 0; ABR 1)
+DR_MODE ABR=3
+FT4 semi, STP=1 (ordinal 1; own tpage ABR 2)
+F4 semi (ordinal 2; inherited ABR 3)
+FT4 semi, texel 0000h (ordinal 3; no PutPixel event)
+FT4 semi, STP=0 (ordinal 4; opaque PutPixel, no BlendG1)
+```
+
+The original GPU switches modes between overlapping polygons,
+executes actual native texture fetches, and preserves PS1-style
+transparent and STP conditions. The test asserts absent PutPixel at
+ordinal 3, absence of BlendG1 at ordinal 4, proper blend ABRs and
+primitive kinds for earlier writes, and unchanged full native 1 MiB
+VRAM FNV-1a across all three executable configurations.
+
+The
+[complex DrawOTag CI run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38987272990)
+for `027e56a6` **completed successfully** (43 regression tests,
+pinned real PC GPU object linking, earlier runtime gates, and the new
+overdraw/STP regression).
+
+The strict Python witness comparator also now rejects a broken
+selected-pixel native VRAM chain (`next.before != previous.after`)
+and any change in packet type while `primitive_ordinal` remains the
+same. These are genuine constraints of a single synchronous DrawOTag
+native-VRAM walk; they are NOT assertions about VRAM transfers between
+different game frames. Neither condition establishes real MAP02
+content or equivalence to physical PlayStation graphics hardware.
