@@ -254,6 +254,7 @@ jobs:
           from pathlib import Path
           x = json.loads(Path("/tmp/vh-map02-private-make.json").read_text())
           assert x["source_pinned"]
+          assert x["full_checkout_head_verified"] and x["full_tracked_checkout_clean"]
           assert x["native_gpu_two_word_and_dda_in_same_make_objects"]
           assert len(x["required_compiler_defines"]) == 6
           assert len(x["required_native_symbols"]) == 6
