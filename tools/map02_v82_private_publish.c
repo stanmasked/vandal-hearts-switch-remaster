@@ -29,14 +29,62 @@ void vh100_test_fail_at(int phase){vh100_test_fault=phase;}
 #define VH100_FAIL(phase) (0)
 #endif
 
+
+/* Every mutating operation uses an already verified directory descriptor.
+ * Reopening the name is an identity check, never the authority for writes.
+ * Does not promise immunity to arbitrary concurrent directory replacements
+ * between checks; test-only races must fail closed whenever observed. */
+static unsigned int vh102_dir_checks, vh102_publishes;
+unsigned int vh102_parent_identity_checks(void){return vh102_dir_checks;}
+unsigned int vh102_anchored_publishes(void){return vh102_publishes;}
+static int vh102_parent_matches(int fd,const char *name){
+    struct stat anchored, current;
+    int reopened=open(name,O_RDONLY|O_DIRECTORY|O_NOFOLLOW);
+    if(reopened<0)return -1;
+    int ok=(fstat(fd,&anchored)==0 && fstat(reopened,&current)==0 &&
+            S_ISDIR(anchored.st_mode) && S_ISDIR(current.st_mode) &&
+            anchored.st_dev==current.st_dev &&
+            anchored.st_ino==current.st_ino);
+    if(close(reopened)<0)ok=0;
+    if(ok)vh102_dir_checks++;
+    return ok?0:-1;
+}
+#ifdef VH100_FAULT_TEST
+static char vh102_swap_parent[VH82_MAX_PATH];
+static char vh102_swap_moved[VH82_MAX_PATH];
+static char vh102_swap_target[VH82_MAX_PATH];
+static int vh102_swap_phase;
+int vh102_test_parent_redirect(const char *parent,const char *moved,
+                               const char *target,int phase){
+    if(!parent || !moved || !target || phase<1 || phase>3 ||
+       strlen(parent)>=sizeof(vh102_swap_parent) ||
+       strlen(moved)>=sizeof(vh102_swap_moved) ||
+       strlen(target)>=sizeof(vh102_swap_target))return -1;
+    strcpy(vh102_swap_parent,parent);
+    strcpy(vh102_swap_moved,moved);
+    strcpy(vh102_swap_target,target);
+    vh102_swap_phase=phase;
+    return 0;
+}
+static int vh102_maybe_swap(int phase){
+    if(vh102_swap_phase!=phase)return 0;
+    vh102_swap_phase=0;
+    if(rename(vh102_swap_parent,vh102_swap_moved)!=0)return -1;
+    if(symlink(vh102_swap_target,vh102_swap_parent)!=0)return -1;
+    return 0;
+}
+#else
+#define vh102_maybe_swap(phase) (0)
+#endif
+
 int vh82_publish_private(const char *path,const char *bytes,size_t size) {
-    char tmp[VH82_MAX_PATH],parent[VH82_MAX_PATH];
+    char parent[VH82_MAX_PATH];
     char readback[4096];
     size_t at=0;
     int fd=-1,reader=-1,dirfd=-1,owned=0,linked=0,ok=-1;
     if(!path || !bytes || path[0]!='/' || !size || size>VH82_MAX_BYTES) return -1;
     size_t n=strnlen(path,VH82_MAX_PATH);
-    if(n==0 || n+5>=sizeof(tmp) || strstr(path,"/../") || strstr(path,"/./"))return -1;
+    if(n==0 || n+5>=VH82_MAX_PATH || strstr(path,"/../") || strstr(path,"/./"))return -1;
     const char *slash=strrchr(path,'/');
     if(!slash || !slash[1])return -1;
     size_t parent_len=(size_t)(slash-path);
@@ -47,9 +95,14 @@ int vh82_publish_private(const char *path,const char *bytes,size_t size) {
     struct stat directory;
     if(fstat(dirfd,&directory)<0 || !S_ISDIR(directory.st_mode))
         goto finish;
-    memcpy(tmp,path,n);
-    memcpy(tmp+n,".tmp",5);
-    fd=open(tmp,O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW,0600);
+    const char *base=slash+1;
+    char stage[VH82_MAX_PATH];
+    size_t base_len=strlen(base);
+    if(base_len+5>=sizeof(stage) || vh102_parent_matches(dirfd,parent)!=0)
+        goto finish;
+    memcpy(stage,base,base_len);
+    memcpy(stage+base_len,".tmp",5);
+    fd=openat(dirfd,stage,O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW,0600);
     if(fd<0)goto finish;
     owned=1;
     while(at<size) {
@@ -60,7 +113,7 @@ int vh82_publish_private(const char *path,const char *bytes,size_t size) {
     if(fsync(fd)<0)goto finish;
     if(close(fd)<0){fd=-1;goto finish;}
     fd=-1;
-    reader=open(tmp,O_RDONLY|O_NOFOLLOW);
+    reader=openat(dirfd,stage,O_RDONLY|O_NOFOLLOW);
     if(reader<0)goto finish;
     at=0;
     while(at<size) {
@@ -74,22 +127,29 @@ int vh82_publish_private(const char *path,const char *bytes,size_t size) {
     reader=-1;
     /* Original no-replace hard link. Final can exist after a later failure;
      * we intentionally NEVER roll it back or reuse its pathname. */
-    if(link(tmp,path)<0)goto finish;
+    if(vh102_maybe_swap(1)!=0 ||
+       vh102_parent_matches(dirfd,parent)!=0 ||
+       linkat(dirfd,stage,dirfd,base,0)<0)goto finish;
     linked=1;
+    if(vh102_maybe_swap(2)!=0 ||
+       vh102_parent_matches(dirfd,parent)!=0)goto finish;
     /* fsync the PARENT DIRECTORY to persist the newly created final name,
      * not just the content of the already-fsynced stage file. */
     if(VH100_FAIL(1) || fsync(dirfd)<0)goto finish;
     vh100_synced_directories++;
     if(VH100_FAIL(2))goto finish;
     /* Remove ONLY our owned temporary stage and persist that unlink. */
-    if(unlink(tmp)<0)goto finish;
+    if(unlinkat(dirfd,stage,0)<0)goto finish;
     owned=0;
-    if(VH100_FAIL(3) || fsync(dirfd)<0)goto finish;
+    if(vh102_maybe_swap(3)!=0 ||
+       vh102_parent_matches(dirfd,parent)!=0 ||
+       VH100_FAIL(3) || fsync(dirfd)<0)goto finish;
     vh100_synced_directories++;
     /* The completed name is never trusted solely because link/fsync
      * succeeded: re-open BOTH file and parent, compare ALL bytes and
      * independently sync the committed file and directory again. */
-    if(vh101_verify_private_commit(path,bytes,size)!=0)goto finish;
+    if(vh102_parent_matches(dirfd,parent)!=0 ||
+       vh101_verify_private_commit(path,bytes,size)!=0)goto finish;
     ok=0;
 finish:
     if(fd>=0)close(fd);
@@ -98,9 +158,12 @@ finish:
      * On any post-link error, retain a possibly committed final file.
      * Never hide its ambiguous state or overwrite on a retry. */
     if(owned && !linked){
-        if(unlink(tmp)==0)(void)fsync(dirfd);
+        /* Only the new stage in the originally opened directory; never
+         * a same-named object reached through a redirected pathname. */
+        if(unlinkat(dirfd,stage,0)==0)(void)fsync(dirfd);
     }
     if(dirfd>=0 && close(dirfd)<0)ok=-1;
+    if(ok==0)vh102_publishes++;
     return ok;
 }
 
@@ -250,8 +313,20 @@ int vh101_verify_private_commit(const char *path,const char *bytes,size_t size){
        !S_ISDIR(dir_stat.st_mode))goto finish;
     /* A final file with a leftover .tmp (or linked-to-stage inode)
      * remains ambiguous: a re-open must not certify it as complete. */
-    if(vh99_private_state(path)!=1)goto finish;
-    fd=open(path,O_RDONLY|O_NOFOLLOW);
+    if(vh102_parent_matches(dirfd,parent)!=0)goto finish;
+    const char *base=slash+1;
+    char stage[VH82_MAX_PATH];
+    size_t base_len=strlen(base);
+    if(base_len+5>=sizeof(stage))goto finish;
+    memcpy(stage,base,base_len);
+    memcpy(stage+base_len,".tmp",5);
+    struct stat stage_stat;
+    if(fstatat(dirfd,stage,&stage_stat,AT_SYMLINK_NOFOLLOW)==0 ||
+       errno!=ENOENT)goto finish;
+    if(fstatat(dirfd,base,&named,AT_SYMLINK_NOFOLLOW)<0 ||
+       !S_ISREG(named.st_mode) || (named.st_mode&0777)!=0600 ||
+       named.st_nlink!=1)goto finish;
+    fd=openat(dirfd,base,O_RDONLY|O_NOFOLLOW);
     if(fd<0)goto finish;
     if(fstat(fd,&initial)<0 || !S_ISREG(initial.st_mode) ||
        (initial.st_mode&0777)!=0600 || initial.st_nlink!=1 ||
@@ -266,15 +341,20 @@ int vh101_verify_private_commit(const char *path,const char *bytes,size_t size){
     }
     if(read(fd,scratch,1)!=0)goto finish;
     if(VH101_FAIL(2) || fsync(fd)<0)goto finish;
-    if(VH101_FAIL(3) || fsync(dirfd)<0)goto finish;
+    if(vh102_parent_matches(dirfd,parent)!=0 ||
+       VH101_FAIL(3) || fsync(dirfd)<0)goto finish;
     vh101_parent_syncs++;
-    if(fstat(fd,&again)<0 || lstat(path,&named)<0 ||
+    if(vh102_parent_matches(dirfd,parent)!=0 ||
+       fstat(fd,&again)<0 ||
+       fstatat(dirfd,base,&named,AT_SYMLINK_NOFOLLOW)<0 ||
        named.st_dev!=initial.st_dev || named.st_ino!=initial.st_ino ||
        again.st_dev!=initial.st_dev || again.st_ino!=initial.st_ino ||
        again.st_size!=initial.st_size ||
        named.st_size!=initial.st_size || named.st_nlink!=1 ||
        !S_ISREG(named.st_mode) || (named.st_mode&0777)!=0600)
         goto finish;
+    if(fstatat(dirfd,stage,&stage_stat,AT_SYMLINK_NOFOLLOW)==0 ||
+       errno!=ENOENT)goto finish;
     ok=0;
 finish:
     if(fd>=0 && close(fd)<0)ok=-1;
