@@ -73,8 +73,15 @@ $(BUILD_DIR)/pc_raster.o: $(VH_MAP02_PRIVATE_GPU_SRC)/{GENERATED_RASTER}
 \t@mkdir -p $(dir $@)
 \t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_PRIVATE_GPU_DEFINES) -Iinclude -Isrc -g -MMD -MP -c -o $@ $(VH_MAP02_PRIVATE_GPU_SRC)/{GENERATED_RASTER}
 
-.PHONY: map02-private-gpu-objects
+# The upstream 'link' recipe names GAME_O_FILES and BACKEND_OBJS but
+# depends only on DATA_OBJS. On a clean checkout it can therefore reach
+# the linker with missing game/backend objects. For this opt-in overlay,
+# explicitly attach the upstream 'objs' prerequisite to link. Do not
+# replace the original link recipe or alter any normal build invocation.
+.PHONY: map02-private-gpu-objects map02-private-pc-link
 map02-private-gpu-objects: $(BUILD_DIR)/libgpu.o $(BUILD_DIR)/pc_raster.o
+link: objs
+map02-private-pc-link: link
 """
 
 
