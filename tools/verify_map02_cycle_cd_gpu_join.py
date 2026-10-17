@@ -80,6 +80,13 @@ def verify_cycle_cd_gpu_join(source, native, scoped, handoff, cycle, image,
     source, native, scoped, handoff, cycle = roots
     cycle_raw, cycle_session_sha256 = _cycle_receipt(cycle, frame)
     cycle_event = parse_json(cycle_raw[:-1], CYCLE_RECEIPT)
+    before = private_file(source, CD_GPU_MANIFEST, max_bytes=4096)
+    original = parse_json(before, CD_GPU_MANIFEST)
+    if (type(original) is not dict or
+            original.get("gpu_draw_frame") != frame or
+            original.get("capture_session_sha256") != cycle_session_sha256):
+        raise ValueError("original CD/GPU manifest and ordered cycle are not one session")
+
     # The cycle state machine exposes the CRC of the same original CdRead
     # observer it gated before DrawOTag. Compare with the separate native
     # CD receipt before accepting the expensive original disc/GPU process join.
@@ -95,12 +102,6 @@ def verify_cycle_cd_gpu_join(source, native, scoped, handoff, cycle, image,
             hashlib.sha256(cd_event["capture_session"].encode("utf-8")).hexdigest()
             != cycle_session_sha256):
         raise ValueError("ordered cycle CRC32 and original CdRead receipt differ")
-    before = private_file(source, CD_GPU_MANIFEST, max_bytes=4096)
-    original = parse_json(before, CD_GPU_MANIFEST)
-    if (type(original) is not dict or
-            original.get("gpu_draw_frame") != frame or
-            original.get("capture_session_sha256") != cycle_session_sha256):
-        raise ValueError("original CD/GPU manifest and ordered cycle are not one session")
 
     # This is intentionally the expensive FULL original source/CD/GPU/process
     # audit, not a mocked assertion or a trust-only schema comparison.
