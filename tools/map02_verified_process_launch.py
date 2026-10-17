@@ -188,6 +188,20 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
         "VH_MAP02_PROBE_Y": str(y),
     })
     if cycle is not None:
+        # Exact-source HD detection otherwise auto-enables installed packs,
+        # while an explicit VH_HD_PACK / VH_HD_VIDEOS override bypasses
+        # the pack toggle. Empty values prevent the original ini loader
+        # from restoring an incompatible local preference.
+        env.update({
+            "VH_HDPACK": "0",
+            "VH_HD_PACK": "",
+            "VH_HD_VIDEOS": "",
+            "VH_LANG": "",
+            "VH_LANGPACK": "",
+            "VH_INTERNAL_SCALE": "1",
+            "VH_ACCURATE": "1",
+            "VH_RASTER_THREADS": "1",
+        })
         # The inherited VH_MAP02_* environment was cleared above: opt-in
         # directories must only come from validated launcher arguments.
         env["VH_MAP02_CYCLE_OUTPUT_DIR"] = str(cycle)
