@@ -19,6 +19,25 @@ def near(color, expected, tolerance=25):
     return max(abs(a-b) for a,b in zip(color, expected)) <= tolerance
 
 
+def inspect_zr_marker(image: Image.Image) -> str:
+    """CI-only returned-PCM witness; deliberately not an audio claim."""
+    zr_pixel=image.convert('RGB').getpixel((1050, 455))
+    zr_red,zr_green,zr_blue=zr_pixel
+    if near(zr_pixel,AUDIO_OK) or (
+        zr_green>=155 and zr_green>zr_red+70 and zr_green>zr_blue+40
+    ):
+        zr_recovery="confirmed"
+    elif near(zr_pixel,AUDIO_FAIL) or (
+        zr_red>=145 and zr_red>zr_green+40 and zr_red>zr_blue+40
+    ):
+        zr_recovery="error"
+    elif zr_red>180 and zr_green>150 and zr_blue<160 and zr_red>zr_blue+70:
+        zr_recovery="pending"
+    else:
+        zr_recovery="not_observed"
+    return zr_recovery
+
+
 def inspect_images(first: Image.Image, second: Image.Image) -> dict:
     first = first.convert("RGB")
     second = second.convert("RGB")
@@ -98,6 +117,14 @@ def inspect_images(first: Image.Image, second: Image.Image) -> dict:
     else:
         synthetic_switches = "not_observed"
 
+    # FIFTH indicator is present ONLY in the separate CI-compiled ZR
+    # auto-injection NRO, not in the standard user-facing AV NRO.
+    # A confirmed green tile can only be published by the guest worker
+    # after an actual audout descriptor return, a virtual pre-service
+    # failure, and the SAME PCM/musical state surviving a restart.
+    # The indicator is a guest-software witness, NOT an audio recording.
+    zr_recovery=inspect_zr_marker(first)
+
     # Sample only the heartbeat; animated bar is separate from the cursor,
     # so its change demonstrates video-loop progress without emulated input.
     # Native framebuffer y=610 maps to about y=588 in a 1280x694
@@ -117,6 +144,8 @@ def inspect_images(first: Image.Image, second: Image.Image) -> dict:
         "audio_source": source,
         "audio_pipeline_progress": pipeline,
         "synthetic_scene_switches": synthetic_switches,
+        "guest_zr_recovery": zr_recovery,
+        "guest_zr_is_not_physical_button": True,
         "user_music_identity_verified": False,
         "audible_audio_verified": False,
         "actual_gameplay_verified": False,
@@ -143,6 +172,8 @@ def main():
     parser.add_argument("--require-synthetic-scene-switches",
                         action="store_true",
                         help="require two completed synthetic SEQ transitions")
+    parser.add_argument("--require-guest-zr-recovery", action="store_true",
+                        help="require CI-only guest auto-ZR returned-PCM witness")
     parser.add_argument("--require-no-synthetic-switches",
                         action="store_true",
                         help="require neutral scene indicator for user-owned music")
@@ -173,6 +204,14 @@ def main():
                 and report["synthetic_scene_switches"] != "not_applicable"):
             raise ValueError("unexpected synthetic scene-switch indicator: "
                              + report["synthetic_scene_switches"])
+        if args.require_guest_zr_recovery:
+            with Image.open(args.after) as image_after:
+                after_zr = inspect_zr_marker(image_after)
+            if (report["guest_zr_recovery"] != "confirmed" or
+                    after_zr != "confirmed" or
+                    report["audio_pipeline_progress"] != "buffers_returned" or
+                    report["audio_source"] != "synthetic"):
+                raise ValueError("guest ZR recovery not confirmed on both frames")
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
     print(json.dumps(report, indent=2))
