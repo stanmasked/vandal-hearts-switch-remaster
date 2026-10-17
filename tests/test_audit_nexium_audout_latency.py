@@ -1,5 +1,6 @@
 """Stage 272 synthetic controls; never substitute for actual NeXium SD."""
 import csv
+import hashlib
 import io
 import json
 import sys
@@ -9,6 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"tools"))
 from audit_nexium_audout_latency import HEADER,parse_latency,bind_guest_latency
+from audit_nexium_audout_queue import HEADER as QUEUE_HEADER
 
 def make_csv():
     rows=[HEADER,["TOTAL",-1,53*36,53*33,53,53,53,0,51000,0,0]]
@@ -38,6 +40,16 @@ class TestLatencyHistogram(unittest.TestCase):
             receipt=root/"receipt.txt"
             locations=root/"locations.txt"
             queue=root/"queue.json"
+            queue_csv=root/"queue.csv"
+            series=[QUEUE_HEADER,["TOTAL",-1,1908,1908,0,51000,120,0,0,0,0,0]]
+            for second in range(53):
+                probes=((second+1)*36+15)//16-(second*36+15)//16
+                series.append(["SECOND",second,36,36,0,51000,
+                               probes,0,0,0,0,0])
+            csv_file=io.StringIO(newline="")
+            csv.writer(csv_file,lineterminator="\n").writerows(series)
+            queue_csv.write_bytes(csv_file.getvalue().encode("ascii"))
+            queue_hash=hashlib.sha256(queue_csv.read_bytes()).hexdigest()
             raw=make_csv()
             original.write_bytes(raw)
             copied.write_bytes(raw)
@@ -50,11 +62,12 @@ class TestLatencyHistogram(unittest.TestCase):
                 "sd_binding":"GUEST_ORIGINAL_AND_COPY_BYTE_IDENTICAL",
                 "attempts":1908,"releases":1908,"failed_attempts":0,
                 "windows":53,"max_call_us":51000,
-                "sd_original_sha256":"b"*64,
+                "sd_original_sha256":queue_hash,
+                "sd_copy_sha256":queue_hash,
             })+"\n",encoding="ascii")
             def check():
                 return bind_guest_latency(copied,locations,receipt,
-                                          root/"guest",queue)
+                                          root/"guest",queue,queue_csv)
             report=check()
             self.assertEqual(report["attempts"],1908)
             self.assertEqual(report["ge50ms_calls"],53)
