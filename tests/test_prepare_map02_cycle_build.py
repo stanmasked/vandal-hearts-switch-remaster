@@ -89,7 +89,7 @@ class SingleElfBuildOverlayTests(unittest.TestCase):
             "map02_cd_read_probe.o",
             "map02_capture_session.o",
             "map02_pinned_gen_kanji_font.py",
-            "VH_GENERATED_OUT=$@ python3",
+            "VH_GENERATED_OUT=$@ python3 -I",
             "$(BUILD_DIR)/map02_pinned_kanji_font.c:",
             "$(BUILD_DIR)/pc_kanji_font.o: $(BUILD_DIR)/map02_pinned_kanji_font.c",
             "src/pc_kanji_font.c: $(VH_MAP02_CYCLE_ROOT)/",
@@ -215,7 +215,7 @@ class SingleElfBuildOverlayTests(unittest.TestCase):
         self.assertIn("$(BUILD_DIR)/map02_vram_edges.o:", text)
         self.assertIn("$(VH_MAP02_STAGE_DEFS)", text)
         self.assertNotIn("python3 tools/gen_kanji_font.py", text)
-        self.assertIn("VH_REGION=us VH_GENERATED_OUT=$@ python3", text)
+        self.assertIn("VH_REGION=us VH_GENERATED_OUT=$@ python3 -I", text)
 
 
 if __name__ == "__main__":
