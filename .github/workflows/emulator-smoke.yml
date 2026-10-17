@@ -10,6 +10,9 @@ on:
       - 'source/game_rules.h'
       - 'Makefile'
       - 'tests/check_nro.py'
+      - 'tools/analyze_nexium_scene_audio.py'
+      - 'tools/capture_nexium_scene_audio.sh'
+      - 'tests/test_analyze_nexium_scene_audio.py'
 
 permissions:
   contents: read
@@ -35,6 +38,8 @@ jobs:
           export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$DEVKITPRO/portlibs/switch/bin:$PATH"
           make test
           python3 -m unittest discover -s tests -p "test_analyze_nexium_pcm.py" -v
+          python3 -m unittest discover -s tests -p "test_analyze_nexium_scene_audio.py" -v
+          bash -n tools/capture_nexium_scene_audio.sh
           make verify-nro
 
       - name: Upload NROs for emulator smoke test
@@ -492,6 +497,50 @@ jobs:
           if report["audible_music_confirmed"] or report["original_soundtrack_confirmed"]:
               raise SystemExit("FAIL: virtual trace cannot claim audible or retail music")
           print("Virtual NeXium PCM measurements consistent; not an audible test.")
+          PY
+
+      - name: Capture A/B music-scene transitions in pinned NeXium NRO
+        id: scene_capture
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tools/capture_nexium_scene_audio.sh runtime-evidence
+          python3 -m json.tool runtime-evidence/scene-audio-report.json > /dev/null
+
+      - name: Verify observed framebuffer music labels and scene evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from PIL import Image, ImageChops
+          from pathlib import Path
+          from statistics import median
+          root=Path("runtime-evidence")
+          states=["field_initial","focus_1","field_1","focus_2","field_2"]
+          images=[Image.open(root/f"scene-{s}.png").convert("RGB") for s in states]
+          if any(image.size != (1280,720) for image in images):
+              raise SystemExit("invalid controlled-scene screenshot dimensions")
+          # UI panel around explicit MUSIC FIELD / MUSIC FOCUS label.
+          cropped=[im.crop((920,660,1260,708)) for im in images]
+          changed=[]
+          for x,y in zip(cropped,cropped[1:]):
+              diff=ImageChops.difference(x,y)
+              changed.append(sum(1 for r,g,b in diff.getdata() if max(r,g,b)>24))
+          report=json.loads((root/"scene-audio-report.json").read_text())
+          if len(report["intervals"])!=5:
+              raise SystemExit("scene capture did not include five distinct windows")
+          if min(changed)<40:
+              raise SystemExit(f"music status label did not visibly toggle: {changed}")
+          summary={
+              "schema":"vh-nexium-scene-visual/v1",
+              "music_ui_changed_pixel_counts":changed,
+              "pcm_evidence_result":report["result"],
+              "hardware_status":"HARDWARE NOT TESTED",
+              "audible_music_confirmed":False
+          }
+          (root/"scene-visual-report.json").write_text(json.dumps(summary,indent=2)+"\\n")
+          print(json.dumps(summary,indent=2))
           PY
 
       - name: Record audio capture boundary
