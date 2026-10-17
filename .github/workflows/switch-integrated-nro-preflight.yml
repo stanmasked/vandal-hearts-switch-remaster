@@ -32,12 +32,18 @@ jobs:
         with:
           python-version: "3.11"
       - name: Execute offline NRO preflight regressions
+        id: preflight
         run: python3 -m unittest discover -s tests -p 'test_verify_switch_integrated_nro_preflight.py' -v
       - name: Record hardware-test boundary
+        if: ${{ always() }}
+        env:
+          TEST_OUTCOME: ${{ steps.preflight.outcome }}
         run: |
           {
             echo "### Integrated NRO preflight regressions"
             echo "Run SHA: \`$GITHUB_SHA\`"
+            echo "Preflight test step: \`$TEST_OUTCOME\`"
             echo "Synthetic headers only; no commercial game data."
             echo "Hardware status: HARDWARE NOT TESTED"
+            echo "A successful host test does not attest Switch audio playback."
           } >> "$GITHUB_STEP_SUMMARY"
