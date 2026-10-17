@@ -12,7 +12,7 @@ PROBE=r'''
         if(vh91_cycles_smoke) {
             /* v78 4 VBlanks and 2380 original VRAM samples and all
              * v86-v90 host controls have passed before these two rounds.
-             * Max 96 extra warmed GP0 sprite handlers keeps v80
+             * Max 64 extra warmed GP0 sprite handlers keeps v80
              * ring within 4096 events, including v90's 3502 baseline. */
             unsigned int rounds[2][11]={{0}};
             for(unsigned int phase=0;phase<2;phase++) {
@@ -39,13 +39,13 @@ PROBE=r'''
                  * real asynchronous A0 queuing. Original gpulib may
                  * still take its synchronous fallback: never claim
                  * such an A0 was queued or executed in the worker. */
-                uint32_t warm[48*3];
-                for(unsigned int i=0;i<48;i++){
+                uint32_t warm[32*3];
+                for(unsigned int i=0;i<32;i++){
                     warm[3*i]=0x600000ffu;
                     warm[3*i+1]=(320u<<16)|520u;
                     warm[3*i+2]=(4u<<16)|4u;
                 }
-                GPU_writeDataMem(warm,48*3);
+                GPU_writeDataMem(warm,32*3);
                 uint32_t upload[7]={0xa0000000u,(y<<16)|560u,
                     (1u<<16)|8u,0,0,0,0};
                 uint32_t copy_red[4]={0x80000000u,(y<<16)|560u,
