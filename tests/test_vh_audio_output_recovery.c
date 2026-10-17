@@ -603,6 +603,142 @@ int main(void) {
         &fast_guard_ops,&fast_guard_stats,0)==-1);
     assert(fast_guard.starts==0u);
     assert(fast_guard_stats.resume_failures==UINT_MAX);
+
+    /* Interleave eight genuine returned logical pages with three
+     * simulated HOME/focus/failed-resume intervals. The strict
+     * backend history and cumulative PCM checksum must remain
+     * unchanged during ALL resumes, then advance exactly once on
+     * the next actually submitted page (with a failed/retried call
+     * on one page to prove retry does not duplicate delivery).
+     */
+    Mock handoff={.opened=1,.playing=1,
+                  .checksum=UINT64_C(1469598103934665603)};
+    VhAudioOutputOps handoff_ops=callbacks(&handoff);
+    VhAudioOutputRecovery handoff_stats={0};
+    VhAudioSceneWaits handoff_waits={0};
+    uint64_t wanted_hash=UINT64_C(1469598103934665603);
+    const uint64_t hold_spu=spu.frames_rendered;
+    const uint64_t hold_resampler=resampler.input_frames;
+    const uint64_t hold_seq=seq.note_ons;
+    for (unsigned k=0u;k<8u;k++) {
+        int16_t handoff_pcm[16];
+        for (unsigned z=0u;z<16u;z++)
+            handoff_pcm[z]=(int16_t)((int)k*701+(int)z*37-3000);
+        const VhAudioSubmitTiming page_before=handoff.timing;
+        begin_page(&handoff,k==4u ? 1u : 0u);
+        assert(vh_audio_output_submit_recover(
+            &handoff_ops,&handoff_stats,handoff_pcm,8u)==0);
+        assert(vh_audio_output_record_scene_page(
+            &handoff_waits,&page_before,&handoff.timing,
+            freq,8u,0,1)==0);
+        wanted_hash=(wanted_hash ^ hash_page(handoff_pcm,8u))*
+                    UINT64_C(1099511628211);
+        assert(handoff.checksum==wanted_hash);
+        assert(handoff.accepted==k+1u);
+        assert(handoff_stats.pages_submitted==k+1u);
+        assert(handoff_stats.frames_submitted==8u*(k+1u));
+        if (k==1u || k==3u || k==5u) {
+            /* Current descriptor was already returned; no restart
+             * may resubmit it during an ordinary resume. */
+            assert(handoff_ops.stop(handoff_ops.context)==0);
+            const VhAudioSubmitTiming before_resume=handoff.timing;
+            const VhAudioSceneWaits waits_before=handoff_waits;
+            const unsigned calls_before=handoff.submissions;
+            const unsigned accepted_before=handoff.accepted;
+            const uint64_t checksum_before=handoff.checksum;
+            const uint64_t pages_before=handoff_stats.pages_submitted;
+            const uint64_t frames_before=handoff_stats.frames_submitted;
+            if (k==1u) {
+                assert(vh_audio_output_resume_recover(
+                    &handoff_ops,&handoff_stats,0)==0);
+            } else if (k==3u) {
+                handoff.fail_opens_left=1u;
+                assert(vh_audio_output_resume_recover(
+                    &handoff_ops,&handoff_stats,1)==0);
+            } else {
+                handoff.fail_stop=1;
+                assert(vh_audio_output_resume_recover(
+                    &handoff_ops,&handoff_stats,1)==-1);
+                handoff.fail_stop=0;
+                assert(vh_audio_output_resume_recover(
+                    &handoff_ops,&handoff_stats,1)==0);
+            }
+            assert(handoff.opened && handoff.playing);
+            assert(handoff.submissions==calls_before);
+            assert(handoff.accepted==accepted_before);
+            assert(handoff.checksum==checksum_before);
+            assert(handoff_stats.pages_submitted==pages_before);
+            assert(handoff_stats.frames_submitted==frames_before);
+            assert(!memcmp(&handoff.timing,&before_resume,
+                           sizeof before_resume));
+            assert(!memcmp(&handoff_waits,&waits_before,
+                           sizeof waits_before));
+            assert(spu.frames_rendered==hold_spu);
+            assert(resampler.input_frames==hold_resampler);
+            assert(seq.note_ons==hold_seq);
+        }
+    }
+    assert(handoff.submissions==9u && handoff.accepted==8u);
+    assert(handoff_stats.submit_failures==1u);
+    assert(handoff_stats.restart_attempts==1u &&
+           handoff_stats.recoveries==1u);
+    assert(handoff_stats.resume_restarts==3u &&
+           handoff_stats.resume_recoveries==2u &&
+           handoff_stats.resume_failures==1u);
+    assert(vh_audio_output_verify_run(
+        &handoff_waits,&handoff_stats,&handoff.timing,
+        8u,0u,8u,0u,1)==1);
+
+    /* A saturated retry counter must fail BEFORE making a raw
+     * audout call, preserving all stats and PCM buffer data. */
+    for(unsigned k=0u;k<5u;k++) {
+        Mock guarded={.opened=1,.playing=1};
+        VhAudioOutputOps guarded_ops=callbacks(&guarded);
+        VhAudioOutputRecovery guarded_stats={
+            .pages_submitted=2u,.frames_submitted=16u
+        };
+        if (k==0u) guarded_stats.submit_failures=UINT_MAX;
+        if (k==1u) {
+            guarded_stats.submit_failures=UINT_MAX;
+            guarded_stats.restart_attempts=UINT_MAX;
+        }
+        if (k==2u) {
+            guarded_stats.submit_failures=UINT_MAX;
+            guarded_stats.restart_attempts=UINT_MAX;
+            guarded_stats.recoveries=UINT_MAX;
+        }
+        if (k==3u) {
+            guarded_stats.restart_attempts=1u;
+            guarded_stats.submit_failures=0u;
+        }
+        if (k==4u) {
+            guarded_stats.recoveries=1u;
+            guarded_stats.restart_attempts=0u;
+        }
+        int16_t unchanged_pcm[16]={1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16};
+        const uint64_t before_hash=hash_page(unchanged_pcm,8u);
+        const VhAudioOutputRecovery before=guarded_stats;
+        assert(vh_audio_output_submit_recover(
+            &guarded_ops,&guarded_stats,unchanged_pcm,8u)==-1);
+        assert(guarded.submissions==0u && guarded.starts==0u &&
+               guarded.opens==0u && guarded.stops==0u);
+        assert(!memcmp(&guarded_stats,&before,sizeof before));
+        assert(hash_page(unchanged_pcm,8u)==before_hash);
+    }
+    /* Boundary value: the first failed call is counted, but a
+     * saturated failure counter MUST block the retry callback. */
+    Mock at_limit={.opened=1,.playing=1};
+    VhAudioOutputOps at_limit_ops=callbacks(&at_limit);
+    VhAudioOutputRecovery at_limit_stats={
+        .submit_failures=UINT_MAX-1u,
+        .restart_attempts=1u,.recoveries=1u
+    };
+    begin_page(&at_limit,1u);
+    assert(vh_audio_output_submit_recover(
+        &at_limit_ops,&at_limit_stats,dst,8u)==-1);
+    assert(at_limit_stats.submit_failures==UINT_MAX);
+    assert(at_limit_stats.restart_attempts==1u);
+    assert(at_limit.submissions==1u && at_limit.stops==0u);
     /* Combine bank switching and blocking audout page ownership.
      * Unlike the previous single-bank test, this one changes the
      * borrowed voice sample arena between 6 eight-block scenes.

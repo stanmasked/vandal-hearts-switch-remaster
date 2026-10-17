@@ -356,7 +356,15 @@ int vh_audio_output_submit_recover(
         !ops->submit || !ops->stop || !ops->close ||
         !ops->open || !ops->start ||
         stats->pages_submitted == UINT64_MAX ||
-        stats->frames_submitted > UINT64_MAX - frames)
+        stats->frames_submitted > UINT64_MAX - frames ||
+        /* A submission can fail even when the backend eventually
+         * returns the descriptor. Refuse ANY new call if a counter
+         * needed to represent a retry is already saturated. */
+        stats->submit_failures==UINT_MAX ||
+        stats->restart_attempts==UINT_MAX ||
+        stats->recoveries==UINT_MAX ||
+        stats->recoveries>stats->restart_attempts ||
+        stats->restart_attempts>stats->submit_failures)
         return -1;
 
     if (ops->submit(ops->context, stereo, frames) == 0) {
@@ -372,6 +380,13 @@ int vh_audio_output_submit_recover(
          * Reuse the caller's page ONLY after stopping and closing
          * that session; never advance any musical clocks here.
          */
+        /* If the first failed attempt already saturated the error
+         * counter, do not restart into a callback whose outcome
+         * could not be counted. Earlier failures remain recorded. */
+        if (stats->submit_failures==UINT_MAX ||
+            stats->restart_attempts==UINT_MAX ||
+            stats->recoveries==UINT_MAX)
+            return -1;
         if (ops->stop(ops->context)) return -1;
         ops->close(ops->context);
         ++stats->restart_attempts;

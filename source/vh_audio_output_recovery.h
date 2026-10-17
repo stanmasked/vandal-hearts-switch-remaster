@@ -170,8 +170,11 @@ int vh_audio_output_page_returned(const void *submitted,
  *
  * Device callbacks must return 0 on success, and maintain their
  * backend open/playing flags so the caller can always clean up after
- * a failed restart. The device must drain/discard queued buffers
- * before the caller may reuse or free the backing PCM memory.
+ * a failed restart. The caller's page and music clock never advance
+ * on retry. Submit/restart/recovery counters are overflow-checked
+ * before a backend call could cause an uncounted raw attempt.
+ * The device must drain/discard queued buffers before the caller
+ * may reuse or free the backing PCM memory.
  */
 int vh_audio_output_submit_recover(
     const VhAudioOutputOps *ops, VhAudioOutputRecovery *stats,

@@ -1640,3 +1640,33 @@ and a poisoned resume-recovery count in an otherwise successful
 never change in ANY resume scenario. These are synthetic backend
 callbacks; no actual Nintendo Switch sleep/resume measurements
 have been performed.
+
+
+### No-duplicate PCM handoff across simulated HOME/focus pauses
+
+The portable audout recovery regression now submits eight distinct
+synthetic PCM16 stereo pages to a mock backend, checking every
+accepted logical page's cumulative FNV fingerprint and the exact
+scene-wait/raw-call accounting. It interleaves (a) fast focus resume,
+(b) forced HOME/sleep reinitialization after a transient failed
+open, and (c) a failed stop followed by successful force-reopen.
+During each pause/resume interval it compares the before/after
+raw submission count, accepted count, PCM fingerprint, native
+SEQ/SPU/resampler clocks, wait histograms and submitted page/frame
+statistics. They MUST all remain unchanged. One post-resume
+PCM page suffers a simulated first submission failure and is
+retried with its identical backing data: it still contributes only
+one delivered page. Final \`vh_audio_output_verify_run\` accepts
+the exact eight-page trace.
+
+The same code also now fail-closes saturated or already impossible
+raw submission/restart/recovery counters **before** contacting the
+audout backend. When the failure counter reaches UINT_MAX after
+a failed call, it refuses another retry callback instead of
+allowing an uncountable new attempt. Tests cover saturation,
+impossible relationships, unchanged input PCM and zero side
+effects on preflight rejection. These checks may conservatively
+reject near-saturated synthetic counters; they cannot establish
+actual battery, focus, HOME or sleep behavior on physical Switch.
+
+No original assets, audio captures, or user data are exported.
