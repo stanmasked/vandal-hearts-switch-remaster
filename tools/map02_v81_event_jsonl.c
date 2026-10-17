@@ -8,9 +8,12 @@
 int vh81_format_jsonl(char *output,size_t capacity) {
     unsigned int n=vh80_count(),prev=0,edges=0;
     size_t used=0;
-    const vh80_event *events=vh80_events();
-    if(!output || capacity==0 || vh80_dropped()!=0 || n==0 || n>VH80_TOTAL_CAPACITY) return -1;
-    output[0]='\0';
+    const vh80_event *events;
+    if(!output || capacity==0)return -1;
+    /* Clear prior longer JSONL, also for fail-closed export attempts. */
+    memset(output,0,capacity);
+    if(vh80_dropped()!=0 || n==0 || n>VH80_TOTAL_CAPACITY)return -1;
+    events=vh80_events();
     for(unsigned int i=0;i<n;i++) {
         const vh80_event *e=&events[i];
         const char *kind;
@@ -114,6 +117,9 @@ int vh81_format_jsonl(char *output,size_t capacity) {
         else if(e->kind==VH96_DETAIL_REMAINING) kind="boundary_detail_remaining";
         else if(e->kind==VH96_AGG_REMAINING) kind="boundary_aggregate_remaining";
         else if(e->kind==VH96_SERIALIZED_TWICE) kind="boundary_identical_serializations";
+        else if(e->kind==VH97_EPOCH) kind="reset_observer_epoch";
+        else if(e->kind==VH97_SCRUBBED) kind="reset_serializer_scrubbed_bytes";
+        else if(e->kind==VH97_REPLAY) kind="reset_stable_replays";
         else return -1;
         if(used>=capacity) return -1;
         /* GPU DMA2 is an address, NOT an executed GP0 command. */
