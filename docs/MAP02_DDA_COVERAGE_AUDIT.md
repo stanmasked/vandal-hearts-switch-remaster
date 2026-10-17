@@ -294,6 +294,25 @@ primitive pair only the original `DR_MODE` packet (source primitive type
 `5`) may change the recorded mode/window globals; normal FT4, SPRT,
 TILE and other packets must leave them unchanged.
 
+**Critical exception:** this cross-event continuity is deliberately
+**not** required between a preceding-frame `LoadImage`/`MoveImage`/
+`ClearImage` and the first target-frame draw. An unrecorded previous
+`DrawOTag` may legitimately have modified VRAM in between. Nor does
+the continuity rule prove that every retail packet was captured:
+the native recorder still has a strict 64-event cap and the private
+capture remains unauthenticated until a real MAP02 gameplay run.
+
+Native `DrawOTag` event metadata also follows the pinned
+`platform/pc/include/PsyQ/libgpu.h` and generated original C hook.
+The `POLY_FT4` primitive type is exactly `2`: each logged
+before/after draw event with that type **must include** the actual
+`ft4` tpage/CLUT/XY/UV packet, while other native primitive types
+must not claim `ft4` payloads. Load/Move/ClearImage transfer
+events must have primitive type `0`. Missing or fabricated packet
+metadata is rejected, not interpreted as absent geometry. This
+validates captured packet structure, **not** the correctness or origin
+of retail MAP02 vertices or textured pixels.
+
 ### Source-keyed FT4 temporal word-change accounting
 
 `tools/verify_map02_native_overdraw.py` revalidates the private
@@ -335,25 +354,6 @@ before/after VRAM change, including a forged change propagated
 consistently to the next FT4 snapshot. These gates validate supplied
 original-PC-format evidence, **not** authentic MAP02 gameplay,
 PlayStation hardware equivalence or the Switch HD replacement.
-
-**Critical exception:** this cross-event continuity is deliberately
-**not** required between a preceding-frame `LoadImage`/`MoveImage`/
-`ClearImage` and the first target-frame draw. An unrecorded previous
-`DrawOTag` may legitimately have modified VRAM in between. Nor does
-the continuity rule prove that every retail packet was captured:
-the native recorder still has a strict 64-event cap and the private
-capture remains unauthenticated until a real MAP02 gameplay run.
-
-Native `DrawOTag` event metadata also follows the pinned
-`platform/pc/include/PsyQ/libgpu.h` and generated original C hook.
-The `POLY_FT4` primitive type is exactly `2`: each logged
-before/after draw event with that type **must include** the actual
-`ft4` tpage/CLUT/XY/UV packet, while other native primitive types
-must not claim `ft4` payloads. Load/Move/ClearImage transfer
-events must have primitive type `0`. Missing or fabricated packet
-metadata is rejected, not interpreted as absent geometry. This
-validates captured packet structure, **not** the correctness or origin
-of retail MAP02 vertices or textured pixels.
 
 The strict frame option first calls the existing source-pinned native GPU
 capture validator on its **actual before/after VRAM snapshots**. It then
