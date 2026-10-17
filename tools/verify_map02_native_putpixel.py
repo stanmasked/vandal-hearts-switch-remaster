@@ -41,6 +41,7 @@ def verify_pixel_calls(directory):
     opaque_calls = blend_calls = accurate_calls = same_color_calls = 0
     changed_calls = bit15_rises = bit15_falls = gaps = 0
     accurate_blend_checked = legacy_blend_checked = 0
+    observed_accurate_mode = None
     prev_after = None
     for index, line in enumerate(rows):
         e = parse_json(line, f"pixel sample event {index}")
@@ -62,6 +63,12 @@ def verify_pixel_calls(directory):
         semi = number(e["semi"], "semi-transparency", 0, 1)
         number(e["textured"], "textured", 0, 1)
         accurate = number(e["accurate"], "PC accurate-mode flag", 0, 1)
+        # The pinned PC AccurateEnabled() caches VH_ACCURATE in a static
+        # local variable. It cannot change during one native capture.
+        if observed_accurate_mode is None:
+            observed_accurate_mode = accurate
+        elif observed_accurate_mode != accurate:
+            raise ValueError("inconsistent native AccurateEnabled mode in one PutPixel session")
 
         # The actual pinned original WritePixel always copies c directly
         # when semiTrans == 0. Reject the only outcome the source alone
@@ -98,6 +105,7 @@ def verify_pixel_calls(directory):
         "accurate_pc_blend_results_checked": accurate_blend_checked,
         "legacy_pc_blend_results_checked": legacy_blend_checked,
         "original_pc_writepixel_effects_verified": True,
+        "single_runtime_accurate_mode_consistent": True,
         "accurate_gpu_mode_calls": accurate_calls,
         "same_color_write_calls_invisible_to_vram_delta": same_color_calls,
         "changed_word_write_calls": changed_calls,
