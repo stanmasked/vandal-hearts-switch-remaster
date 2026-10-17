@@ -139,6 +139,21 @@ class PrivateFullPcBuildTests(unittest.TestCase):
                 build_full_pc(self.upstream, self.bundle)
         run.assert_not_called()
 
+    def test_preexisting_font_object_or_symlink_prevents_stale_reuse(self):
+        font_object = self.exe.parent / "pc_kanji_font.o"
+        font_object.parent.mkdir(parents=True, exist_ok=True)
+        font_object.write_bytes(b"old synthetic object with future timestamp")
+        with patch("tools.build_map02_cycle_pc_local.subprocess.run") as run:
+            with self.assertRaisesRegex(ValueError, "KROM object already exists"):
+                build_full_pc(self.upstream, self.bundle)
+        run.assert_not_called()
+        font_object.unlink()
+        font_object.symlink_to(self.bundle / "map02_cycle.mk")
+        with patch("tools.build_map02_cycle_pc_local.subprocess.run") as run:
+            with self.assertRaisesRegex(ValueError, "KROM object already exists"):
+                build_full_pc(self.upstream, self.bundle)
+        run.assert_not_called()
+
     def test_compiler_failure_is_private_and_not_reported(self):
         with patch("tools.build_map02_cycle_pc_local.subprocess.run",
                    return_value=SimpleNamespace(returncode=1,
