@@ -161,7 +161,7 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
 
     def test_clearimage_raw_bgr555_truncation_no_mask_bit(self):
         before = bytearray(VRAM_BYTES)
-        before[:6] = b"\\xff\\xff" * 3
+        before[:6] = b"\xff\xff" * 3
         after = bytearray(before)
         # r=255,g=127,b=8 => packed 0x05ff (bit15 remains clear).
         packed = ((8 >> 3) << 10) | ((127 >> 3) << 5) | (255 >> 3)
@@ -170,29 +170,29 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
                                     before, after)
         self.assertEqual(result["clear_image_pairs"], 1)
         self.assertEqual(result["clear_pairs_with_verified_vram_effect"], 1)
-        after[:4] = b"\\xff\\xff" * 2
+        after[:4] = b"\xff\xff" * 2
         (self.root / "gpu-0001-vram.bin").write_bytes(after)
         with self.assertRaisesRegex(ValueError, "ClearImage post-VRAM differs"):
             verify_capture(self.root, target_frame=12)
 
     def test_clearimage_negative_origin_clips_and_checks_outside(self):
         before = bytearray(VRAM_BYTES)
-        before[:8] = b"\\x11\\x80" * 4
+        before[:8] = b"\x11\x80" * 4
         after = bytearray(before)
         # [-1,-1,3,3] intersects at (0..1, 0..1); bit15 cleared.
         for y in (0, 1):
             start = y * 1024 * 2
-            after[start:start+4] = b"\\x1f\\x00" * 2
+            after[start:start+4] = b"\x1f\x00" * 2
         report = self.clear_fixture([-1,-1,3,3], [248,0,0], before, after)
         self.assertEqual(report["clear_pairs_with_verified_vram_effect"], 1)
-        after[-2:] = b"\\x42\\x00"
+        after[-2:] = b"\x42\x00"
         (self.root / "gpu-0001-vram.bin").write_bytes(after)
         with self.assertRaisesRegex(ValueError, "ClearImage post-VRAM differs"):
             verify_capture(self.root, target_frame=12)
 
     def test_clearimage_offscreen_and_zero_dimensions_do_not_change_vram(self):
         before = bytearray(VRAM_BYTES)
-        before[:2] = b"\\x99\\x7f"
+        before[:2] = b"\x99\x7f"
         for rect in ([32000, 31000, 32767, 32767],
                      [0, 0, 0, 3], [0, 0, 3, -2]):
             with self.subTest(rect=rect):
