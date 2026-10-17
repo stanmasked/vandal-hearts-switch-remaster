@@ -817,9 +817,13 @@ int main(int argc, char **argv) {
     if ((focus_evidence || focus_record_errors) && result==0) result=24;
     const unsigned verdict=(focus_evidence || focus_record_errors)
         ? VH_AUDIO_REPORT_INVALID
-        : vh_audio_report_manual_evidence(
-            &manual_resume,run_evidence,seam_evidence,listen_evidence,
-            poll_evidence,compute_evidence);
+        : vh_audio_report_focus_evidence(
+            &focus_events,&manual_resume,run_evidence,seam_evidence,
+            listen_evidence,poll_evidence,compute_evidence);
+    /* A fully accounted PCM run with an unresolved HOME/foreground
+     * transition cannot be passed off as completed device recovery. */
+    if(result==0 && verdict==VH_AUDIO_REPORT_INCOMPLETE)
+        result=26;
     const VhAudioProbeReport report={
         .output=&output,.manual=&manual_resume,
         .focus=&focus_events,.focus_errors=focus_record_errors,
