@@ -1,6 +1,10 @@
 """Asset-free MAP02 full-game GNU Make dry-run auditing regressions."""
+from contextlib import redirect_stderr
+import io
 from pathlib import Path
+import subprocess
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -132,6 +136,33 @@ class CycleMakePlanTests(unittest.TestCase):
         font.write_bytes(font.read_bytes() + b"# altered")
         with self.assertRaisesRegex(ValueError, "bytes changed"):
             check.preflight(self.upstream, self.output)
+
+    def test_make_failure_hides_owned_exe_and_bios_paths(self):
+        owned = str(self.upstream / "SLUS_004.47")
+        with patch.object(check.subprocess, "run", return_value=SimpleNamespace(
+                returncode=2, stderr="compiler: " + owned, stdout="")):
+            with self.assertRaisesRegex(ValueError, "output withheld") as error:
+                check.audit(self.upstream, self.output)
+        self.assertNotIn(owned, str(error.exception))
+
+    def test_make_plan_cli_redacts_io_and_timeout_private_paths(self):
+        private_path = str(self.upstream / "SLUS_004.47")
+        cmd = ["make-plan", str(self.upstream), str(self.output)]
+        failures = (
+            OSError(private_path),
+            subprocess.TimeoutExpired(["make", private_path], 120),
+        )
+        for failure in failures:
+            with self.subTest(fault=type(failure).__name__):
+                output = io.StringIO()
+                with (patch("sys.argv", cmd),
+                      patch.object(check, "audit", side_effect=failure),
+                      redirect_stderr(output)):
+                    with self.assertRaises(SystemExit) as result:
+                        check.main()
+                self.assertEqual(result.exception.code, 2)
+                self.assertIn("command verification failed", output.getvalue())
+                self.assertNotIn(private_path, output.getvalue())
 
     def test_missing_macro_and_hd_codec_libraries_rejected(self):
         cmd = valid_dry_run(self.output)
