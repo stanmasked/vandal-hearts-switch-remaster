@@ -54,12 +54,15 @@ class NativeV115Identity(unittest.TestCase):
         cls.temp=tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.temp.cleanup)
         output=Path(cls.temp.name)/"libvh115.so"
-        subprocess.run([
+        compile_result=subprocess.run([
             cc,"-std=c11","-Wall","-Wextra","-Werror",
             "-shared","-fPIC","-I",str(ROOT/"tools"),
             str(ROOT/"tools/map02_v115_sample_identity.c"),
             "-o",str(output)],
-            check=True,capture_output=True)
+            capture_output=True,text=True)
+        if compile_result.returncode:
+            raise AssertionError("v115 native C build failed: "+
+                                 compile_result.stderr)
         cls.lib=native(output)
 
     def setUp(self):
