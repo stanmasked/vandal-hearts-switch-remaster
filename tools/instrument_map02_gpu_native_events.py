@@ -36,6 +36,12 @@ HELPERS = r'''
 #include <sys/stat.h>
 #include <unistd.h>
 #endif
+#if defined(VH_MAP02_CAPTURE_SESSION)
+#if !defined(VH_MAP02_POSIX_CAPTURE_WINDOWS)
+#error "MAP02 capture sessions require bounded GPU windows"
+#endif
+#include "map02_capture_session.h"
+#endif
 /* The recorder is deliberately capped; it captures only when BOTH local
  * environment variables are explicit. It is single-threaded: DrawOTag's
  * native pass is synchronous and the deferred HD worker pass isn't traced.
@@ -225,8 +231,17 @@ static void VH_CaptureFinish(unsigned frame, int walk_finished) {
     vh_capture_receipt_written = 1;
 #if defined(VH_MAP02_POSIX_CAPTURE_WINDOWS)
     if (vh_capture_windows) {
+        char session_field[80] = "";
         unsigned expected_windows = (vh_capture_saved + VH_CAPTURE_LIMIT - 1u)
                                     / VH_CAPTURE_LIMIT;
+#if defined(VH_MAP02_CAPTURE_SESSION)
+        {
+            const char *token = vh_map02_capture_session_token();
+            if (!token || snprintf(session_field, sizeof session_field,
+                      ",\"capture_session\":\"%s\"", token) <= 0)
+                return;
+        }
+#endif
         unsigned maximum = 2u * VH_CAPTURE_LIMIT;
         n = snprintf(status_path, sizeof status_path, "%s/gpu-native-window-index.json",
                      vh_capture_dir);
@@ -245,7 +260,7 @@ static void VH_CaptureFinish(unsigned frame, int walk_finished) {
           "\"written_hooks\":%u,\"limit_reached\":%s,"
           "\"walk_finished\":%s,\"hooks_balanced\":%s,"
           "\"write_failed\":%s,"
-          "\"recorded_window_closed_without_detected_loss\":%s}\n",
+          "\"recorded_window_closed_without_detected_loss\":%s%s}\n",
           frame, expected_windows,
           vh_capture_seen, vh_capture_before, vh_capture_after,
           vh_capture_draw_before, vh_capture_transfer_before,
@@ -257,7 +272,8 @@ static void VH_CaptureFinish(unsigned frame, int walk_finished) {
           (walk_finished && balanced && !vh_capture_window_failed &&
            vh_capture_seen == vh_capture_seq &&
            vh_capture_saved == vh_capture_seq &&
-           vh_capture_seq < maximum) ? "true" : "false");
+           vh_capture_seq < maximum) ? "true" : "false",
+           session_field);
         (void)fclose(file);
         return;
     }
