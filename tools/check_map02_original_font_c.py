@@ -115,6 +115,41 @@ def verify_generated_original_font(upstream, bundle, *, krom_source=None):
     }
 
 
+
+def verify_linked_original_font(upstream, bundle, binary, *, krom_source=None):
+    """Bind the independently checked generated C to the actual linked ELF.
+
+    Neither the expected glyph bytes nor the ELF's extracted bytes leave this
+    process. The ELF inspector independently locates the genuine read-only,
+    allocated object symbol and verifies its bytes in a file-backed PT_LOAD.
+    """
+    verify_generated_original_font(upstream, bundle, krom_source=krom_source)
+    upstream = Path(upstream).absolute()
+    source = (Path(krom_source).absolute() if krom_source is not None else
+              upstream / "external/psy-q/3.6/PSYQ/BIN/KROMDAT.BIN")
+    blob, identity = _read_owned(
+        source, "owned KROM/BIOS", length_limit=BIOS_SIZE)
+    glyphs = blob[FONT_BIOS_OFFSET:FONT_BIOS_OFFSET + FONT_LENGTH] if (
+        len(blob) == BIOS_SIZE) else blob[:FONT_LENGTH]
+    if (len(glyphs) != FONT_LENGTH or
+            hashlib.sha256(glyphs).hexdigest() != US_FONT_SHA256):
+        raise ValueError("original US BIOS font charset differs from pinned source")
+    from tools.check_map02_linked_font_elf import check_linked_font_bytes
+    check_linked_font_bytes(binary, glyphs)
+    same, verified_identity = _read_owned(
+        source, "owned KROM/BIOS", length_limit=BIOS_SIZE)
+    if same != blob or verified_identity != identity:
+        raise ValueError("owned KROM changed during ELF comparison")
+    preflight(upstream, bundle)
+    return {
+        "schema": "vh.map02.original-us-linked-font-provenance.v1",
+        "linked_original_us_font_bytes_match": True,
+        "original_font_bytes_disclosed": False,
+        "actual_gameplay_executed": False,
+        "original_map02_rendering_proven": False,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("pinned_original_pc_checkout", type=Path)
