@@ -31,6 +31,18 @@ class FinalWindowScopedWitnessTests(unittest.TestCase):
         self.fixture = fixture
         self.native = fixture.native
         self.scoped = fixture.scoped
+        # Asset-free, deterministic fixture nonce only; real PC runtime
+        # obtains unpredictable fresh token from OS randomness.
+        token = "bc" * 16
+        index = self.native / "gpu-native-window-index.json"
+        meta = json.loads(index.read_bytes())
+        meta["capture_session"] = token
+        index.write_text(json.dumps(meta, sort_keys=True) + "\n")
+        (self.scoped / "gpu-scoped-session.json").write_text(
+            json.dumps({
+                "schema": "vh.map02.scoped-session.v1",
+                "gpu_draw_frame": 7, "capture_session": token,
+            }, sort_keys=True) + "\n")
         self.source = self.native.parent / "source"
         self.source.mkdir(mode=0o700)
         self.source_bytes = (
@@ -113,6 +125,21 @@ class FinalWindowScopedWitnessTests(unittest.TestCase):
         except ValueError:
             return False
         return True
+
+    def test_rejects_scoped_receipt_from_another_process(self):
+        session = self.scoped / "gpu-scoped-session.json"
+        meta = json.loads(session.read_bytes())
+        meta["capture_session"] = "de" * 16
+        session.write_text(json.dumps(meta) + "\n")
+        with self.assertRaisesRegex(ValueError, "mixed-session"):
+            self.publish()
+        self.assertFalse((self.source / MANIFEST).exists())
+
+    def test_rejects_missing_scoped_receipt(self):
+        (self.scoped / "gpu-scoped-session.json").unlink()
+        with self.assertRaises(ValueError):
+            self.publish()
+        self.assertFalse((self.source / MANIFEST).exists())
 
     def test_reverify_rejects_tampered_scoped_and_full_vram_snapshots(self):
         self.publish()
