@@ -11,7 +11,7 @@ PCSX VBlank callbacks (2,380 readback checks) remain unmodified. v86
 through v90 host-only GPU probes all finish before this v91 test begins.
 
 Each v91 cycle uses a separate initially zero destination row in
-synthetic VRAM, with only 48 warm-up sprites to keep the entire
+synthetic VRAM, with only 32 warm-up sprites to keep the entire
 historical v80 bounded event ring below its 4,096-entry limit:
 
 1. Enable the real `USE_ASYNC_GPU` thread using the pinned upstream
