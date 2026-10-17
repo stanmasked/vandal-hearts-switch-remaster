@@ -664,16 +664,16 @@ jobs:
                 "build/map02-vertical-dda/candidate-clang.${mode}.o" \
                 -o "build/map02-vertical-dda/candidate-linked-clang.${mode}.o"
               if [[ "$mode" == diagnostic ]]; then
-                nm -a "build/map02-vertical-dda/candidate-linked-clang.${mode}.o" |
+                nm --defined-only "build/map02-vertical-dda/candidate-linked-clang.${mode}.o" |
                   grep VH_Map02RejectedEdges
-              elif nm -a "build/map02-vertical-dda/candidate-clang.${mode}.o" |
+              elif nm --defined-only "build/map02-vertical-dda/candidate-linked-clang.${mode}.o" |
                    grep -q VH_Map02RejectedEdges; then
                 echo "Candidate observer leaked into Clang baseline" >&2
                 exit 1
               fi
             done
-            nm -a build/map02-vertical-dda/candidate-linked.diagnostic.o | grep VH_Map02RejectedEdges
-            if nm -a build/map02-vertical-dda/candidate-linked.baseline.o | grep -q VH_Map02RejectedEdges; then
+            nm --defined-only build/map02-vertical-dda/candidate-linked.diagnostic.o | grep VH_Map02RejectedEdges
+            if nm --defined-only build/map02-vertical-dda/candidate-linked.baseline.o | grep -q VH_Map02RejectedEdges; then
               echo "Candidate observer leaked into baseline" >&2
               exit 1
             fi
