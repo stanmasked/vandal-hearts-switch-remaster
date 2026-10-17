@@ -60,7 +60,7 @@ class WindowMaximaTests(unittest.TestCase):
 
     def test_empty_evidence_rejected(self):
         self.b.unlink()
-        with self.assertRaises(OSError):
+        with self.assertRaises(RepeatabilityError):
             analyze([self.a, self.b])
 
     def test_wrong_second_window_rejected(self):
