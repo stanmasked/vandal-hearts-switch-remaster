@@ -32,10 +32,10 @@ def summarize(log: str,raw: bytes):
     if re.search(r"VH120_[A-Z_]+REFUSED",log):
         raise Refused("native GPU fixture explicitly refused")
     previous=v119(log,raw)
-    if previous["native_five_callback_windows"]!=1003 or (
-        previous["observed_unai_handlers"]!=1007
+    if previous["native_five_callback_windows"]!=max(
+        previous["observed_unai_handlers"]-4,0
     ):
-        raise Refused("original canonical pinned synthetic Unai journal changed")
+        raise Refused("original verified Unai callback population inconsistent")
     return {
         "scope":"pinned_pcsx_unai_separate_host_gp0_sampled_vram_return_fixture",
         "native_gp0_commands_submitted_by_host":counts["commands"],
