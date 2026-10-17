@@ -77,6 +77,8 @@ on:
       - 'tests/test_map02_v112_unchanged_sample_runs.py'
       - 'tools/summarize_map02_v113_vblank_outcome_transitions.py'
       - 'tests/test_map02_v113_vblank_outcome_transitions.py'
+      - 'tools/summarize_map02_v114_vblank_readback_coverage.py'
+      - 'tests/test_map02_v114_vblank_readback_coverage.py'
       - 'tools/map02_v80_native_timeline.*'
       - 'tools/map02_v81_event_jsonl.*'
       - 'tools/verify_map02_v82_native_trace.py'
