@@ -8,7 +8,8 @@ def pixel(step, mode, abr, semi=1):
     return dict(stage="native_putpixel", step=step, frame=7,
                 primitive_ordinal=3, primitive_type=4, x=20, y=40,
                 accurate=mode, abr=abr, semi=semi,
-                before=0x001f, front=0x7c00,
+                before={0: 0x001f, 1: 0x03e0, 2: 0x7c00}.get(step, 0x001f),
+                front=0x7c00,
                 after=0x03e0 if semi else 0x7c00)
 
 
@@ -83,6 +84,21 @@ class BlendG1WitnessTests(unittest.TestCase):
         ):
             with self.subTest(rows=rows), self.assertRaises(ValueError):
                 compare_blendg1_witnesses(rows, [witness(p0)])
+
+    def test_rejects_discontinuous_native_vram_or_inconsistent_packet_type(self):
+        first = pixel(0, 1, 0)
+        second = pixel(1, 1, 3)
+        valid = [first, second]
+        self.assertEqual(
+            compare_blendg1_witnesses(valid, [witness(first), witness(second)])
+            ["observed_blendg1_putpixel_pairs"], 2)
+        for altered in (
+            dict(second, before=0x001f),
+            dict(second, primitive_type=2),
+        ):
+            rows = [first, altered]
+            with self.subTest(altered=altered), self.assertRaises(ValueError):
+                compare_blendg1_witnesses(rows, [witness(first), witness(altered)])
 
     def test_legacy_semi_needs_no_blendg1(self):
         rows = [pixel(0, 0, 2), pixel(1, 1, 3)]
