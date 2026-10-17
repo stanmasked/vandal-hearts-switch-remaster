@@ -160,13 +160,17 @@ def verify_multi_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
                 source_ft4_draws_with_both_words_observed += 1
                 if all(any(e["semi"] for e in group) for group in groups):
                     source_ft4_draws_with_both_words_semi += 1
-            # A,B,A is observable within one primitive, unlike A,A,B.
-            # No byte value or coordinate identity is returned publicly.
+            # A,B,A (also A,B,B,A) is observable inside one
+            # primitive, unlike A,A,B. Neither coordinate is reported.
             sequence = ordinal_word_sequence.get(ordinal, ())
-            if len(sequence) >= 3 and any(
-                    sequence[i] == sequence[i+2] != sequence[i+1]
-                    for i in range(len(sequence)-2)):
-                source_ft4_draws_with_word_revisit += 1
+            seen_words = set()
+            previous_word = None
+            for observed_word in sequence:
+                if observed_word in seen_words and observed_word != previous_word:
+                    source_ft4_draws_with_word_revisit += 1
+                    break
+                seen_words.add(observed_word)
+                previous_word = observed_word
         local_changed_coordinates = 0
         for coord in coordinates:
             address = coord[1]*1024 + coord[0]
