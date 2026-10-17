@@ -51,3 +51,24 @@ A preliminary independent autocorrelation of the RMS envelope shows high energy-
 - Nintendo Switch HOME, sleep, SD durability and actual audio remain **`HARDWARE NOT TESTED`**.
 
 Do not confuse this host audio trace with original CD/PS1 timings or the native Switch DAC.
+
+## Confirmed full CI and published evidence
+
+Follow-up workflow [39037532462](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39037532462) on exact code SHA `b7bc27287615846a711b1b4b89d413395aca474d` completed `success` in both jobs. The primary build-job log separately confirms `Ran 5 tests` and `OK` for `test_analyze_nexium_pcm.py`. The NeXium job completed graphics/input testing, virtual PCM capture, `python3 -m json.tool` validation and the strict `Verify captured audio measurements` step.
+
+The published evidence ZIP is artifact **`12102842650`** (`nexium-runtime-evidence`). It was downloaded and independently verified: all ZIP CRCs passed, `runtime-evidence/pcm-quality-report.json` parsed without modification, its recorded SHA-256 matched the *raw* `nexium-monitor-s16le-48k.pcm` member, and a separate local execution of the analyzer reconstructed the **entire JSON report**, including all 451 window RMS entries, byte for byte in data meaning.
+
+| New capture property | Value |
+| --- | --- |
+| Raw PCM SHA-256 | `b6a28499459381871247e51475e65b3063dca39e56356a38feadde0ce03e2113` |
+| Bytes / frames | 8,656,916 / 2,164,229 |
+| Duration | 45.088 s |
+| RMS left / right | 566.074 / 637.807 |
+| Peaks left / right | 2707 / 2879 |
+| Channel correlation | 0.7416 |
+| Clipped sample count | 0 / 0 |
+| 100-ms low-RMS windows | 8 of 451 |
+| Longest low-RMS streak | 0.800 s |
+| Observation | `NONZERO_MONITOR_PCM` |
+
+These measurements vary slightly between emulator runs (recording boundaries and timing are not deterministic), but both recordings show the same narrow class of results: nonzero distinct stereo channels, no observed full-scale clipping, and brief low-level windows. There is **still no controlled change of music scene, no proven original soundtrack and no physical audio playback**. Hardware status remains exactly `HARDWARE NOT TESTED`. The following documentation-only commit is not the SHA that was executed by CI.
