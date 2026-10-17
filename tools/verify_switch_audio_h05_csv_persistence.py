@@ -254,6 +254,9 @@ def recheck(source_bundle: Path, sd_root: Path, plan: Path,
                 f"PREEXISTING_CSV_CHANGED_OR_REMOVED: {name}")
     require(present[new_csv_name]["sha256"] != baseline["old_csv_sha256"],
             "NEW_CSV_IDENTICAL_TO_OLD_PAYLOAD")
+    require(all(present[new_csv_name]["sha256"] != file["sha256"]
+                for file in prior.values()),
+            "NEW_CSV_DUPLICATES_PREEXISTING_CSV_PAYLOAD")
     require(sha256(baseline_path.read_bytes()) == expected_sha256,
             "H05_BASELINE_CHANGED_DURING_RECHECK")
     added = [name for name in present if name not in prior]
