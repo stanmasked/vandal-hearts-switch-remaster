@@ -57,6 +57,29 @@ def audit(directory: Path, *, native_frame=None):
                       for x in candidates}
     span_frames = {x.frame for x in spans}
     candidate_frames = {x["frame"] for x in candidates}
+    # Both C observers sample the same configured Y in a single target
+    # DrawOTag frame. Independently valid files from different sample
+    # settings must never be treated as a joint capture.
+    sample_keys = {(x.frame, x.y) for x in spans} | {
+        (x["frame"], x["y"]) for x in candidates
+    }
+    if len(sample_keys) != 1:
+        raise ValueError("mixed DDA capture frame or selected sample Y")
+    # In one drawing area a single row cannot both enter dda_span and be
+    # rejected by the outer vertical clip for the same primitive.
+    if span_keys & candidate_keys:
+        raise ValueError("same DDA primitive row entered and vertically rejected")
+    clip_windows = {}
+    for frame, ordinal, top, bottom in (
+        [(x.frame, x.primitive_ordinal, x.clip_t, x.clip_b) for x in spans]
+        + [(x["frame"], x["primitive_ordinal"], x["clip_t"], x["clip_b"])
+           for x in candidates]
+    ):
+        key = (frame, ordinal)
+        window = (top, bottom)
+        if key in clip_windows and clip_windows[key] != window:
+            raise ValueError("conflicting DDA clip window within one primitive")
+        clip_windows[key] = window
     gpu_binding = {
         "requested": native_frame is not None,
         "verified": False,
@@ -118,6 +141,7 @@ def audit(directory: Path, *, native_frame=None):
         "files": inputs,
         "shared_frame_ids": sorted(span_frames & candidate_frames),
         "same_primitive_row_keys": len(span_keys & candidate_keys),
+        "single_sample_envelope_consistent": True,
         "native_gpu_binding": gpu_binding,
         "notes": [
             "Missing journals mean missing observations, not zero GPU events.",
