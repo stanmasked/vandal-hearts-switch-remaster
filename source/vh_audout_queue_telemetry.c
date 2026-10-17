@@ -85,3 +85,51 @@ int vh_audout_queue_write_csv(const VhAudoutQueueTelemetry *t,FILE *out) {
     }
     return ferror(out) ? -1 : rows;
 }
+
+
+/* The verifier independently formats each expected CSV row and rejects
+ * truncation, appended bytes and reordered windows. Called after the
+ * writer has been closed, never from the audio worker. */
+int vh_audout_queue_verify_csv(const VhAudoutQueueTelemetry *t,FILE *in) {
+    if(!t || !in) return -1;
+    char got[400],want[400];
+    static const char header[]=
+        "scope,second,attempts,returns,failures,max_call_us,"
+        "queue_ok,queue_errors,queue_min,queue_max,"
+        "overwritten_windows,clock_errors\n";
+    if(!fgets(got,sizeof got,in) || strcmp(got,header)!=0) return -1;
+    int n=snprintf(want,sizeof want,
+        "TOTAL,-1,%llu,%llu,%llu,%llu,%llu,%llu,%u,%u,%llu,%llu\n",
+        (unsigned long long)t->attempts,
+        (unsigned long long)t->returns,
+        (unsigned long long)t->failures,
+        (unsigned long long)(t->max_call_ns/UINT64_C(1000)),
+        (unsigned long long)t->queue_ok,
+        (unsigned long long)t->queue_errors,
+        t->queue_min,t->queue_max,
+        (unsigned long long)t->overwritten_windows,
+        (unsigned long long)t->clock_errors);
+    if(n<=0 || (size_t)n>=sizeof want ||
+       !fgets(got,sizeof got,in) || strcmp(got,want)!=0) return -1;
+    if(t->attempts) {
+        const uint64_t first=t->last_second>=VH_AUDOUT_QUEUE_BUCKETS-1u
+            ? t->last_second-(VH_AUDOUT_QUEUE_BUCKETS-1u):0u;
+        for(uint64_t second=first;second<=t->last_second;second++) {
+            const VhAudoutQueueBucket *b=
+                &t->bucket[second%VH_AUDOUT_QUEUE_BUCKETS];
+            if(!b->valid || b->second!=second) continue;
+            n=snprintf(want,sizeof want,
+                "SECOND,%llu,%llu,%llu,%llu,%llu,%u,%u,%u,%u,0,0\n",
+                (unsigned long long)second,
+                (unsigned long long)b->attempts,
+                (unsigned long long)b->returns,
+                (unsigned long long)b->failures,
+                (unsigned long long)(b->max_call_ns/UINT64_C(1000)),
+                b->queue_ok,b->queue_errors,b->queue_min,b->queue_max);
+            if(n<=0 || (size_t)n>=sizeof want ||
+               !fgets(got,sizeof got,in) || strcmp(got,want)!=0)
+                return -1;
+        }
+    }
+    return fgetc(in)==EOF && !ferror(in) ? 0 : -1;
+}
