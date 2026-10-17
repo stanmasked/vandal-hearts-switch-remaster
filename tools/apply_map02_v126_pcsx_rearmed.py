@@ -106,7 +106,8 @@ def oracle_source(stops,wait_pc):
             'real_vblanks=2 four_back_gap2=1 erased=1')
     src=once(src,original,status,
              "publish exclusively aggregate genuine two VBlank return witness")
-    return src.replace("VH126_WAIT_PC",f"0x{wait_pc:08x}u")
+    return (src.replace("psxRegs.pc=VH126_WAIT_PC;",f"psxRegs.pc=0x{wait_pc:08x}u;")
+               .replace("psxRegs.pc!=VH126_WAIT_PC)",f"psxRegs.pc!=0x{wait_pc:08x}u)"))
 
 
 def apply(root:Path):
