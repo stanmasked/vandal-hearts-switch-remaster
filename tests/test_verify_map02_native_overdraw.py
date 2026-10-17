@@ -94,6 +94,33 @@ class NativeOverdrawTests(unittest.TestCase):
         for secret in ("31978","tpage","clut","vertices","perimeter_xy","0x801f"):
             self.assertNotIn(secret,public)
 
+    def test_two_ft4_writes_that_cancel_are_still_two_observed_changes(self):
+        # Comparing only the beginning and end of the DrawOTag would
+        # miss these transient effects. Each FT4 has its own observed
+        # BEFORE/AFTER snapshot and the second restores the original word.
+        original = bytearray(self.base.bytes_before)
+        offset = 2 * (30 * 1024 + 30)
+        original_word = struct.unpack_from("<H", original, offset)[0]
+        first = bytearray(original)
+        write_word(first, 30, 30, original_word ^ 0x8000)
+        restored = bytearray(first)
+        write_word(restored, 30, 30, original_word)
+        self.assertEqual(restored, original)
+        self.base.override_snapshots = {
+            3: bytes(first), 4: bytes(first), 5: bytes(restored),
+        }
+        self.save()
+        report = verify_native_overdraw(self.source, self.native)
+        self.assertEqual(report["source_keyed_ft4_draw_pairs_checked"], 2)
+        self.assertEqual(report["changed_vram_words_on_source_ft4_draws"], 2)
+        self.assertEqual(report["distinct_vram_words_changed_by_source_ft4"], 1)
+        self.assertEqual(report["vram_words_changed_by_two_or_more_source_ft4_draws"], 1)
+        self.assertEqual(report["changed_words_inside_ft4_screen_aabb_proxy"], 2)
+        self.assertEqual(report["bit15_unset_to_set_word_changes"], 1)
+        self.assertEqual(report["bit15_set_to_unset_word_changes"], 1)
+        self.assertTrue(report["consecutive_native_vram_boundaries_exact"])
+        self.assertFalse(report["ft4_actual_pixel_coverage_verified"])
+
     def test_unchanged_draw_cannot_prove_transparency_or_gpu_mask(self):
         # Source face 0 processes an identical post-draw snapshot.
         self.base.override_snapshots[5]=self.first
