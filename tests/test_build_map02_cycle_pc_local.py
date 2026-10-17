@@ -60,6 +60,7 @@ class PrivateFullPcBuildTests(unittest.TestCase):
         self.assertEqual(env.get("VH_REGION"), "us")
         self.assertEqual(env.get("VH_PSX_EXE"), str(self.upstream / "SLUS_004.47"))
         self.exe.parent.mkdir(parents=True, exist_ok=True)
+        self.exe.parent.chmod(0o700)
         self.exe.write_bytes(b"synthetic; not an ELF")
         self.exe.chmod(0o700)
         return SimpleNamespace(returncode=0)
@@ -110,6 +111,7 @@ class PrivateFullPcBuildTests(unittest.TestCase):
 
     def test_no_overwrite_even_when_prior_target_is_symlink(self):
         self.exe.parent.mkdir(parents=True, exist_ok=True)
+        self.exe.parent.chmod(0o700)
         self.exe.symlink_to(self.bundle / "map02_cycle.mk")
         with patch("tools.build_map02_cycle_pc_local.subprocess.run") as run:
             with self.assertRaisesRegex(ValueError, "already exists"):
@@ -118,6 +120,7 @@ class PrivateFullPcBuildTests(unittest.TestCase):
 
     def test_no_overwrite_existing_file(self):
         self.exe.parent.mkdir(parents=True, exist_ok=True)
+        self.exe.parent.chmod(0o700)
         self.exe.write_text("preserve")
         with self.assertRaisesRegex(ValueError, "already exists"):
             build_full_pc(self.upstream, self.bundle)
@@ -142,6 +145,7 @@ class PrivateFullPcBuildTests(unittest.TestCase):
     def test_preexisting_generated_font_or_symlink_blocks_build(self):
         private_c = self.exe.parent / "map02_pinned_kanji_font.c"
         private_c.parent.mkdir(parents=True, exist_ok=True)
+        private_c.parent.chmod(0o700)
         private_c.write_bytes(b"synthetic-original-font-placeholder")
         with patch("tools.build_map02_cycle_pc_local.subprocess.run") as run:
             with self.assertRaisesRegex(ValueError, "generated KROM source already exists"):
@@ -151,6 +155,14 @@ class PrivateFullPcBuildTests(unittest.TestCase):
         private_c.symlink_to(self.bundle / "map02_cycle.mk")
         with patch("tools.build_map02_cycle_pc_local.subprocess.run") as run:
             with self.assertRaisesRegex(ValueError, "generated KROM source already exists"):
+                build_full_pc(self.upstream, self.bundle)
+        run.assert_not_called()
+
+    def test_existing_world_visible_build_directory_is_rejected(self):
+        self.exe.parent.mkdir(parents=True, exist_ok=True)
+        self.exe.parent.chmod(0o755)
+        with patch("tools.build_map02_cycle_pc_local.subprocess.run") as run:
+            with self.assertRaisesRegex(ValueError, "owner 0700"):
                 build_full_pc(self.upstream, self.bundle)
         run.assert_not_called()
 
@@ -167,6 +179,7 @@ class PrivateFullPcBuildTests(unittest.TestCase):
     def test_preexisting_font_object_or_symlink_prevents_stale_reuse(self):
         font_object = self.exe.parent / "pc_kanji_font.o"
         font_object.parent.mkdir(parents=True, exist_ok=True)
+        font_object.parent.chmod(0o700)
         font_object.write_bytes(b"old synthetic object with future timestamp")
         with patch("tools.build_map02_cycle_pc_local.subprocess.run") as run:
             with self.assertRaisesRegex(ValueError, "KROM object already exists"):
@@ -222,6 +235,7 @@ class PrivateFullPcBuildTests(unittest.TestCase):
             self.assertEqual(env.get("VH_PSX_EXE"),
                              str(self.upstream / "SLUS_004.47"))
             self.exe.parent.mkdir(parents=True, exist_ok=True)
+            self.exe.parent.chmod(0o700)
             self.exe.write_bytes(b"synthetic; not a game")
             self.exe.chmod(0o700)
             return SimpleNamespace(returncode=0)
