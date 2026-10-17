@@ -50,10 +50,10 @@ class TestNexiumPcm(unittest.TestCase):
         self.assertEqual(report["channel_correlation"], 1)
 
     def test_malformed_and_wrong_hash_rejected(self):
-        self.path.write_bytes(b"\\0\\0\\0")
+        self.path.write_bytes(bytes(3))
         with self.assertRaises(pcm.PcmFormatError):
             pcm.analyze(self.path)
-        self.path.write_bytes(b"\\0\\0\\0\\0")
+        self.path.write_bytes(bytes(4))
         with self.assertRaises(pcm.PcmFormatError):
             pcm.analyze(self.path, expected_sha256="a" * 64)
         self.path.write_bytes(b"")
@@ -62,7 +62,7 @@ class TestNexiumPcm(unittest.TestCase):
 
     def test_symlink_rejected(self):
         second = self.path.with_name("link.pcm")
-        self.path.write_bytes(b"\\0" * 4)
+        self.path.write_bytes(bytes(4))
         second.symlink_to(self.path)
         with self.assertRaises(pcm.PcmFormatError):
             pcm.analyze(second)
