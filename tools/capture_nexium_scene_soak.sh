@@ -157,6 +157,22 @@ if [[ -f "$SOAK_SD_DIR/audio-audout-latency-export-result.txt" &&
     "$output/soak-audout-latency-export-result.txt"
 fi
 
+# Stage 273 clock origin is recorded on the same guest monotonic axis as
+# optical/SD INPUT events, independently of host PCM or wall clock.
+find "$SOAK_SD_DIR" -maxdepth 1 -type f -name 'audio-audout-clock-*.csv' \
+  -print | sort > "$output/soak-audout-clock-locations.txt"
+mapfile -t clock_captures < "$output/soak-audout-clock-locations.txt"
+if (( ${#clock_captures[@]} == 1 )) && \
+   [[ ! -e "$output/soak-audout-clock-unverified.csv" ]]; then
+  cp --no-clobber -- "${clock_captures[0]}" \
+    "$output/soak-audout-clock-unverified.csv"
+fi
+if [[ -f "$SOAK_SD_DIR/audio-audout-clock-export-result.txt" &&
+      ! -L "$SOAK_SD_DIR/audio-audout-clock-export-result.txt" ]]; then
+  cp --no-clobber -- "$SOAK_SD_DIR/audio-audout-clock-export-result.txt" \
+    "$output/soak-audout-clock-export-result.txt"
+fi
+
 # Names and sizes are diagnostic only. They never satisfy the audit.
 find "$SOAK_SD_DIR" -maxdepth 1 -type f \
   -printf '%f,%s\n' | LC_ALL=C sort > "$output/soak-sd-directory-inventory.csv"
