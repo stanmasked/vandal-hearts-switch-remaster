@@ -653,15 +653,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -s runtime-evidence/scene-soak/soak-audout-export-failure.txt ]]; then
-            echo "Guest audout SD export failed with the following exact status:" >&2
-            cat runtime-evidence/scene-soak/soak-audout-export-failure.txt >&2
-            exit 1
+          if [[ -f runtime-evidence/scene-soak/soak-sd-directory-inventory.csv ]]; then
+            echo "Original guest SD directory inventory:"
+            cat runtime-evidence/scene-soak/soak-sd-directory-inventory.csv
+          fi
+          if [[ -s runtime-evidence/scene-soak/soak-audout-export-result.txt ]]; then
+            echo "Unverified guest audout export result:"
+            cat runtime-evidence/scene-soak/soak-audout-export-result.txt
+          else
+            echo "No guest audout export result receipt captured" >&2
           fi
           test -s runtime-evidence/scene-soak/soak-audout-sd-unverified.csv
+          test -s runtime-evidence/scene-soak/soak-audout-export-result.txt
           python3 tools/audit_nexium_audout_queue.py \
             --source runtime-evidence/scene-soak/soak-audout-sd-unverified.csv \
             --locations runtime-evidence/scene-soak/soak-audout-sd-locations.txt \
+            --receipt runtime-evidence/scene-soak/soak-audout-export-result.txt \
             --sd-root "$RUNNER_TEMP/vh-nexium-stage268-${GITHUB_RUN_ID}" \
             --output runtime-evidence/scene-soak/soak-audout-verification.json
           python3 -m json.tool runtime-evidence/scene-soak/soak-audout-verification.json >/dev/null
