@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 HARNESS = r"""
 #include "map02_cycle_order.h"
 #include "map02_cd_read_probe.h"
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -38,6 +39,14 @@ int main(int argc, char **argv) {
     vh_map02_cycle_load(42, 42, 0x1bcc, 12);
     if (!strcmp(argv[1], "duplicate-claim"))
         vh_map02_cycle_load(42, 42, 0x1bcc, 12);
+    if (!strcmp(argv[1], "overflow-unrelated-read")) {
+        vh_map02_cd_read_start(INT_MAX, INT_MAX);
+        vh_map02_cycle_read_start(INT_MAX, INT_MAX);
+    }
+    if (!strcmp(argv[1], "overflow-overlapping-read")) {
+        vh_map02_cd_read_start(0x1bcc, INT_MAX);
+        vh_map02_cycle_read_start(0x1bcc, INT_MAX);
+    }
 
     if (strcmp(argv[1], "cd-missing-read"))
         vh_map02_cd_read_start(0x1bcc, 12);
@@ -89,6 +98,7 @@ class CycleOrderTests(unittest.TestCase):
         cls.exe = root / "driver"
         command = [
             "cc", "-std=gnu99", "-Wall", "-Wextra", "-Werror",
+            "-fsanitize=undefined", "-fno-sanitize-recover=undefined",
             "-I", str(ROOT / "tools"), str(src),
             str(ROOT / "tools/map02_cycle_order.c"),
             str(ROOT / "tools/map02_cd_read_probe.c"),
@@ -135,6 +145,14 @@ class CycleOrderTests(unittest.TestCase):
                 proc = self.run_mode(mode)
                 self.assertEqual(proc.returncode, 0, proc.stderr)
                 self.assertIn("receipt=0", proc.stdout)
+
+    def test_overflow_safe_extent_filter_for_unrelated_and_malformed_reads(self):
+        unrelated = self.run_mode("overflow-unrelated-read")
+        self.assertEqual(unrelated.returncode, 0, unrelated.stderr)
+        self.assertIn("failed=0 receipt=1", unrelated.stdout)
+        malformed = self.run_mode("overflow-overlapping-read")
+        self.assertEqual(malformed.returncode, 0, malformed.stderr)
+        self.assertIn("failed=1 receipt=0", malformed.stdout)
 
     def test_original_cd_crc_proof_is_mandatory_before_cycle_receipt(self):
         for mode in ("cd-missing-claim", "cd-duplicate-claim",
