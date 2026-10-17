@@ -98,8 +98,12 @@ link: $(VH_MAP02_CYCLE_SUPPORT)
 VH_MAP02_ASSET_BOUND_SOURCES := $(shell grep -lE '^[[:space:]]*#[[:space:]]*include[[:space:]]*"assets/' $(GAME_ROOT)/src/*.c $(GAME_ROOT)/src/*/*.c)
 VH_MAP02_ASSET_BOUND_OBJECTS := $(patsubst $(GAME_ROOT)/src/%.c,$(BUILD_DIR)/src/%.o,$(VH_MAP02_ASSET_BOUND_SOURCES))
 VH_MAP02_PUBLIC_CODE_OBJS := $(filter-out $(VH_MAP02_ASSET_BOUND_OBJECTS),$(GAME_O_FILES))
+# The original pc_kanji_font.c is generated from user's Sony PsyQ
+# KROMDAT.BIN (not publicly tracked); do not synthesize this copyrighted font.
+VH_MAP02_BIOS_FONT_OBJECT := $(BUILD_DIR)/pc_kanji_font.o
+VH_MAP02_PUBLIC_BACKEND_OBJS := $(filter-out $(VH_MAP02_BIOS_FONT_OBJECT),$(BACKEND_OBJS))
 .PHONY: map02-public-code
-map02-public-code: $(VH_MAP02_PUBLIC_CODE_OBJS) $(BACKEND_OBJS)
+map02-public-code: $(VH_MAP02_PUBLIC_CODE_OBJS) $(VH_MAP02_PUBLIC_BACKEND_OBJS)
 
 $(BUILD_DIR)/src/core/cd.o: $(VH_MAP02_CYCLE_ROOT)/core_cd.c | stage
 \t@mkdir -p $(dir $@)
