@@ -151,6 +151,13 @@ class CycleMakePlanTests(unittest.TestCase):
             "MFLAGS": "-i",
             "MAKEOVERRIDES": "REGION=jp",
             "MAKELEVEL": "99",
+            "PYTHONPATH": "/private/owned/python",
+            "PYTHONHOME": "/private/owned/pythonhome",
+            "PYTHONSTARTUP": "/private/owned/startup.py",
+            "PYTHONINSPECT": "1",
+            "PYTHONUSERBASE": "/private/owned/site",
+            "PYTHONWARNINGS": "ignore",
+            "PYTHONBREAKPOINT": "/private/owned/breakpoint",
         }
         result = SimpleNamespace(returncode=2, stderr="not executed",
                                  stdout="")
@@ -159,7 +166,8 @@ class CycleMakePlanTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "output withheld"):
                 check.audit(self.upstream, self.output)
         env = make_run.call_args.kwargs["env"]
-        for name in check.INHERITED_MAKE_CONTROLS:
+        for name in (check.INHERITED_MAKE_CONTROLS +
+                     check.INHERITED_PYTHON_CONTROLS):
             self.assertNotIn(name, env)
         self.assertEqual(make_run.call_args.args[0][1:3], ["-nB", "-f"])
 
