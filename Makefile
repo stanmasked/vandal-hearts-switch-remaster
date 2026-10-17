@@ -379,3 +379,22 @@ $(BUILD)/libnx-ps1-music-av-resume.nro: $(BUILD)/libnx-ps1-music-av-resume.elf $
 
 ps1-music-av-resume-probe: $(BUILD)/libnx-ps1-music-av-resume.nro
 	python3 tests/check_nro.py $<
+
+# CI-only forced reopen with ONE synthetic pre-service open failure.
+# Verifies bounded second attempt AND subsequently returned PCM.
+.PHONY: ps1-music-av-resume-retry-probe
+
+$(BUILD)/libnx-ps1-music-av-resume-retry.elf: $(PS1_MUSIC_AV_SOURCES) \
+	source/vh_audio_output_recovery.h source/game_renderer.h \
+	source/game_state.h | $(BUILD)
+	$(CC) $(CFLAGS) -std=c11 -DVH_AUDIO_GUEST_RESUME_RETRY_AUTOTEST=1 -Isource \
+		$(LDFLAGS) $(PS1_MUSIC_AV_SOURCES) -o $@ $(LDLIBS) -lm
+
+$(BUILD)/libnx-ps1-music-av-resume-retry.nacp: | $(BUILD)
+	$(NACPTOOL) --create "Vandal Hearts AV Resume Retry" "$(APP_AUTHOR)" "$(APP_VERSION)" $@
+
+$(BUILD)/libnx-ps1-music-av-resume-retry.nro: $(BUILD)/libnx-ps1-music-av-resume-retry.elf $(BUILD)/libnx-ps1-music-av-resume-retry.nacp
+	$(ELF2NRO) $< $@ --nacp=$(BUILD)/libnx-ps1-music-av-resume-retry.nacp
+
+ps1-music-av-resume-retry-probe: $(BUILD)/libnx-ps1-music-av-resume-retry.nro
+	python3 tests/check_nro.py $<
