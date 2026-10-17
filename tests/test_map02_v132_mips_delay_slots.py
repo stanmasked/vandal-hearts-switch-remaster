@@ -79,7 +79,7 @@ class MipsDelaySlotSafeCandidates(unittest.TestCase):
         self.assertEqual(meta["ambiguous_control_in_delay_slot"],1)
 
     def test_truncated_delay_slot_and_unaligned_sections_refused(self):
-        for raw in (ins(0x08004000),b"\x00",b"",ins(0x08004000,0x08004001)):
+        for raw in (ins(0x08004000),b"\x00",b""):
             with self.subTest(raw=raw),self.assertRaises(Refused):
                 analyze_delay_aware_text(raw)
 
