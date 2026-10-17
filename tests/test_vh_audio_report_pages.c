@@ -113,6 +113,37 @@ int main(void) {
     assert(corrupt.in_background==1u && corrupt.returns==2u);
     /* HOME observation remains independent of audio report verdicts. */
     assert(vh_audio_report_evidence(1,0,0,0,0)==VH_AUDIO_REPORT_FULL);
+    /* Pending foreground with no returned descriptor is INCOMPLETE,
+     * not full audio evidence; invalid accounting is always INVALID. */
+    VhAudioManualResume focus_manual={0};
+    assert(vh_audio_report_focus_evidence(&pages,&focus_manual,
+                    1,0,0,0,0)==VH_AUDIO_REPORT_FULL);
+    VhAudioAppletEvents pending=pages;
+    assert(vh_audio_applet_record(&pending,
+                                 VH_AUDIO_APPLET_BACKGROUND)==0);
+    assert(vh_audio_applet_record(&pending,
+                                 VH_AUDIO_APPLET_FOREGROUND)==0);
+    assert(vh_audio_applet_verify(&pending)==0);
+    assert(vh_audio_report_focus_evidence(&pending,&focus_manual,
+                    1,0,0,0,0)==VH_AUDIO_REPORT_INCOMPLETE);
+    assert(vh_audio_report_focus_evidence(&pending,&focus_manual,
+                    0,0,0,0,0)==VH_AUDIO_REPORT_INCOMPLETE);
+    assert(vh_audio_applet_page_returned(&pending)==1);
+    assert(vh_audio_report_focus_evidence(&pending,&focus_manual,
+                    1,0,0,0,0)==VH_AUDIO_REPORT_FULL);
+    assert(vh_audio_applet_record(&pending,
+                                 VH_AUDIO_APPLET_BACKGROUND)==0);
+    assert(vh_audio_report_focus_evidence(&pending,&focus_manual,
+                    1,0,0,0,0)==VH_AUDIO_REPORT_INCOMPLETE);
+    pending.backgrounds=0u; /* impossible underflow/accounting */
+    assert(vh_audio_report_focus_evidence(&pending,&focus_manual,
+                    1,0,0,0,0)==VH_AUDIO_REPORT_INVALID);
+    assert(vh_audio_report_focus_evidence(NULL,&focus_manual,
+                    1,0,0,0,0)==VH_AUDIO_REPORT_INVALID);
+    assert(vh_audio_report_focus_evidence(&pages,NULL,
+                    1,0,0,0,0)==VH_AUDIO_REPORT_INVALID);
+    assert(vh_audio_report_focus_evidence(&pages,&focus_manual,
+                    1,1,0,0,0)==VH_AUDIO_REPORT_INVALID);
     assert(vh_audio_applet_verify(NULL)==-1);
     /* Successful host accounting is independent from HOME observation. */
     assert(vh_audio_report_evidence(1,0,0,0,0)==VH_AUDIO_REPORT_FULL);
