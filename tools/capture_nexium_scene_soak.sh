@@ -2,9 +2,9 @@
 # Stage 268: five A/B music cycles in a fresh pinned guest NRO.
 # No generated screenshot/PCM can satisfy the subsequent CI audit.
 set -euo pipefail
-: "\${NEXIUM_BIN:?Nexium executable required}"
-: "\${RUNNER_TEMP:?runner temporary directory required}"
-output="\${1:-runtime-evidence/scene-soak}"
+: "${NEXIUM_BIN:?Nexium executable required}"
+: "${RUNNER_TEMP:?runner temporary directory required}"
+output="${1:-runtime-evidence/scene-soak}"
 if [[ -e "$output/soak-events.csv" || -e "$output/soak-optical-trace.png" ]]; then
   echo "Refuse overwrite of an existing scene-soak capture" >&2
   exit 2
@@ -19,7 +19,7 @@ test -n "$icd"
 export VK_ICD_FILENAMES="$icd"
 pactl info >/dev/null
 pactl set-default-sink vh_nexium_capture
-export NEXIUM_DATA_ROOT="\${RUNNER_TEMP}/vh-nexium-stage268-\${GITHUB_RUN_ID:-local}"
+export NEXIUM_DATA_ROOT="${RUNNER_TEMP}/vh-nexium-stage268-${GITHUB_RUN_ID:-local}"
 export SOAK_SD_DIR="$NEXIUM_DATA_ROOT/sdmc/switch/vandal-hearts-remake"
 if [[ -e "$NEXIUM_DATA_ROOT" ]]; then
   echo "Refuse to reuse an existing isolated NeXium data directory" >&2
