@@ -70,3 +70,13 @@ python3 tools/verify_switch_audio_sd_transfer.py verify /path/to/evidence-bundle
 ```
 
 Файл `audio-evidence-manifest.json` в bundle должен заранее быть создан существующим `verify_switch_audio_bundle.py create` с **точным** проверенным SHA и run URL, а не с номером нового документационного коммита. Не смешивайте исходный интегрированный NRO, отдельную audout-пробу и NRO другой сборки. Успешный результат `DESTINATION_BYTES_MATCH_PLANNED_NRO` доказывает лишь равенство прочитанных файлов, **не** физическую SD, успешный запуск, слышимую музыку, HOME или сон. Финальное состояние до реальных испытаний — `HARDWARE NOT TESTED`.
+
+## Этап №254 — закреплён актуальный интегрированный NRO
+
+Повторная проверка GitHub API на 17 октября 2026 года подтвердила, что HEAD ветки `test/cdxa-extract-decode-pipeline` равен `9d4df04278646c61d4cdaa53efc5a9ebcfb6f19d`, то есть точному SHA успешно завершившегося [integrated-audio run 39027279627](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39027279627). Артефакт: `vandal-hearts-tactical-with-native-music`, ID `12099455328`, размер ZIP 113611 байт, не истёк. API digest ZIP: `sha256:f3d76a0bfda2755d4cc3b1536e83d8df3b6933cf62e4dc95eaab8b4c83ce821d`.
+
+Из первичного журнала build job `117380648876` получена строка контрольной суммы **самого NRO**: `8068eeef36cc1b3751bb4a9d320de5477c85687af018f1323dbba0b33d26b7ad  build/vandal-hearts-prototype.nro`. Структурная проверка сообщила размер файла `266296` байт и три сегмента в пределах файла. Эти сведения относятся только к NRO, созданному этим конкретным run; ZIP digest не является его заменой.
+
+Все три связанные сборки на SHA `9d4df042...` — integrated audio, native PCM transport и host SPU regressions — завершились `success`. Это подтверждает программный CI. Локальный ZIP не распаковывался в этой среде, файл NRO не копировался на SD и физическая консоль не запускалась. Поэтому нельзя заявлять о локальном повторном хешировании, SD-копировании или аппаратном звуке.
+
+**Перед ручной передачей:** скачать только artifact `12099455328` из run `39027279627`, сверить ZIP digest при наличии штатного локального средства, распаковать в пустую папку и запустить `verify_switch_integrated_nro_preflight.py` с независимым ожидаемым SHA-256 NRO из первичного CI журнала. Затем создать manifest bundle и использовать read-only протокол №218. Перенос и все испытания остаются ручными.
