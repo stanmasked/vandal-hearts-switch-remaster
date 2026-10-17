@@ -134,6 +134,21 @@ them, runs the reusable comparer and preserves the result. Its
 report states clearly that the original transient guest SD cannot
 be reopened during retrospective comparison; the original-SD status
 comes from each source workflow's previously completed audit.
-The first **two-run** comparison in Actions 39075889640 was
-successful. **Acceptance of the expanded four-run GitHub Actions
-comparison is separate** until that newer workflow finishes.
+The first **two-run** comparison in
+[Actions 39075889640](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39075889640)
+was successful. The **expanded four-run** workflow also **passed**
+in [Actions 39076105724](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39076105724).
+
+Its archived `verified-guest-slow-runs.json` reported
+`MULTIRUN_EXACT_SLOW_CALLS_ARCHIVES_REVERIFIED` for exactly
+39072903722, 39073836066, 39074970372 and 39075005998,
+all of one SHA-256-identical NRO. The workflow separately checked
+that each source Actions run concluded successfully, verified the
+required evidence files and prior Stage-274 original-SD verdicts,
+and archived an independently recomputed call/timing comparison.
+
+That comparison reopens the archive **copies**, not the original
+now-transient guest SD paths. Each original was checked by its
+respective pinned NeXium workflow. The multi-run verdict proves
+repeatable **evidence validation**, not a repeatable ≥50 ms call or
+an audible output result.
