@@ -66,7 +66,9 @@ def publish_blendg1_witness(source_dir, native_dir, *, compiler="gcc"):
     native_dir = _private_directory(native_dir)
     pixel_meta = private_file(source_dir, PIXEL_MANIFEST, max_bytes=64 * 1024)
     meta = parse_json(pixel_meta, PIXEL_MANIFEST)
-    fields(meta, ("schema", "putpixel_events_sha256"), PIXEL_MANIFEST)
+    fields(meta, ("schema", "source_frame", "gpu_draw_frame",
+                  "overdraw_manifest_sha256", "native_events_sha256",
+                  "putpixel_events_sha256"), PIXEL_MANIFEST)
     if meta["schema"] != PIXEL_SCHEMA:
         raise ValueError("wrong upstream PutPixel manifest schema")
 
