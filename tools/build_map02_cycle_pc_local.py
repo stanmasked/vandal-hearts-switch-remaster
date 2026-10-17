@@ -9,8 +9,8 @@ the game, authenticate a MAP02 frame, or enable HD substitution.
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
-import stat
 import subprocess
 
 from tools.check_map02_cycle_make_plan import BUILD, audit
@@ -19,12 +19,15 @@ from tools.check_map02_cycle_elf import audit_cycle_elf
 BINARY_NAME = "vandalhearts_pc"
 
 
-def build_full_pc(upstream, bundle, *, timeout=1200, make="make", report_dir=None):
+def build_full_pc(upstream, bundle, *, timeout=1200, make="make", report_dir=None,
+                  krom_source=None):
     timeout = int(timeout)
     if not 30 <= timeout <= 7200:
         raise ValueError("full PC link timeout must be between 30 and 7200 seconds")
     upstream, bundle = Path(upstream).absolute(), Path(bundle).absolute()
     planned = audit(upstream, bundle, make=make)
+    from tools.check_map02_private_pc_inputs import verify_private_pc_inputs
+    original_inputs = verify_private_pc_inputs(upstream, krom_source=krom_source)
     pc = upstream / "platform/pc"
     target = pc / BUILD / BINARY_NAME
     # Fail BEFORE any compiler invocation if this is a prior binary, a
@@ -36,9 +39,15 @@ def build_full_pc(upstream, bundle, *, timeout=1200, make="make", report_dir=Non
         "link", "BUILD_DIR=" + BUILD, "REGION=us",
         "NO_WEBP=1", "NO_HDVIDEO=1",
     ]
+    # Use a validated source path only; never trust an inherited font override.
+    env = os.environ.copy()
+    env.pop("VH_KROM_SOURCE", None)
+    env.pop("VH_ALLOW_UNVERIFIED_EXE", None)
+    if krom_source is not None:
+        env["VH_KROM_SOURCE"] = str(Path(krom_source).absolute())
     try:
         built = subprocess.run(
-            command, cwd=pc, capture_output=True, text=True,
+            command, cwd=pc, env=env, capture_output=True, text=True,
             timeout=timeout, check=False)
     except subprocess.TimeoutExpired as exc:
         raise ValueError("local source-pinned full PC link exceeded timeout") from exc
@@ -54,6 +63,8 @@ def build_full_pc(upstream, bundle, *, timeout=1200, make="make", report_dir=Non
     # Check that the generated overlay did not mutate during the build.
     from tools.check_map02_cycle_make_plan import preflight
     preflight(upstream, bundle)
+    if verify_private_pc_inputs(upstream, krom_source=krom_source) != original_inputs:
+        raise ValueError("private original US inputs changed during PC build")
     with target.open("rb") as stream:
         h = hashlib.sha256()
         while True:
@@ -64,6 +75,8 @@ def build_full_pc(upstream, bundle, *, timeout=1200, make="make", report_dir=Non
     result = {
         "schema": "vh.map02.private-full-pc-elf-build.v1",
         "pc_executable_sha256": h.hexdigest(),
+        "private_build_inputs_binding_sha256":
+            original_inputs["private_build_inputs_binding_sha256"],
         "source_bound_make_command_sha256":
             planned["full_game_link_command_sha256"],
         "required_original_cycle_and_gpu_symbols": verified[
@@ -87,6 +100,8 @@ def main():
     p.add_argument("pinned_original_pc_checkout", type=Path)
     p.add_argument("private_prepared_bundle", type=Path)
     p.add_argument("--timeout", type=int, default=1200)
+    p.add_argument("--krom-source", type=Path,
+                   help="private original PsyQ KROMDAT or owned PS1 BIOS path")
     p.add_argument("--report-dir", required=True, type=Path,
                    help="new empty owned 0700 directory for private ELF build receipt")
     a = p.parse_args()
@@ -94,7 +109,8 @@ def main():
         result = build_full_pc(a.pinned_original_pc_checkout,
                                a.private_prepared_bundle,
                                timeout=a.timeout,
-                               report_dir=a.report_dir)
+                               report_dir=a.report_dir,
+                               krom_source=a.krom_source)
     except (OSError, ValueError) as exc:
         p.error(str(exc))
     print(json.dumps(result, indent=2, sort_keys=True))
