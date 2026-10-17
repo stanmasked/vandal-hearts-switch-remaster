@@ -58,6 +58,10 @@ class FourGenuineVblankMatrix(unittest.TestCase):
             "vh115_get_metrics(&after_wait)",
             "vh116_get_gap_metrics(&gaps)",
             "quints.returned_to_four_back[return_gap[vh129_vblank_mode]]!=1u",
+            "VH129_EDGE_TOTAL_REFUSED phase=%u mode=%u",
+            "observed_delta=%u prewait_delta=%u accepted=%u expected=%u",
+            "before-initial_vblank,real_edges_seen",
+            "expected_total_edges[vh129_vblank_mode],target",
             "VH129_REAL_VBLANK_PROFILES_PASS mode=%u",
         ):
             with self.subTest(fragment=fragment):
