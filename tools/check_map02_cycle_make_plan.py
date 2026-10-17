@@ -19,7 +19,8 @@ import subprocess
 from tools.prepare_map02_pcport import (
     PINNED_BLOB_SHA1, git_blob_sha1,
 )
-from tools.prepare_map02_cycle_build import SOURCE_MAP, SUPPORT_FILES
+from tools.prepare_map02_cycle_build import (SOURCE_MAP, SUPPORT_FILES,
+    FONT_GENERATOR, FONT_GENERATOR_BLOB_SHA1, FONT_GENERATOR_SNAPSHOT)
 
 SCHEMA = "vh.map02.private-single-elf-build-inputs.v1"
 OUTPUT_NAME = "vandalhearts_pc"
@@ -86,7 +87,7 @@ def preflight(upstream, output):
             manifest.get("upstream_makefile_sha256") != sha(original_make)):
         raise ValueError("invalid prepared MAP02 build provenance")
     files = manifest.get("generated_files_sha256")
-    expected = set(SOURCE_MAP) | set(SUPPORT_FILES) | {"map02_cycle.mk"}
+    expected = set(SOURCE_MAP) | set(SUPPORT_FILES) | {"map02_cycle.mk", FONT_GENERATOR_SNAPSHOT}
     if type(files) is not dict or set(files) != expected:
         raise ValueError("prepared MAP02 bundle has missing or extra generated input")
     if set(p.name for p in output.iterdir()) != expected | {
@@ -98,19 +99,23 @@ def preflight(upstream, output):
                 sha(private_read(output, name)) != files[name]):
             raise ValueError("prepared MAP02 build input bytes changed: " + name)
     originals = manifest.get("original_source_sha256")
-    if type(originals) is not dict or set(originals) != {
-            item[0] for item in SOURCE_MAP.values()}:
+    if type(originals) is not dict or set(originals) != (
+            {item[0] for item in SOURCE_MAP.values()} | {FONT_GENERATOR}):
         raise ValueError("incorrect original PC source inventory")
     for relative in originals:
         path = upstream / relative
         if path.is_symlink() or not path.is_file() or (
                 sha(path.read_bytes()) != originals[relative]):
             raise ValueError("original pinned PC source changed: " + relative)
-        pinned = next((blob for rel, blob, _ in SOURCE_MAP.values()
-                       if rel == relative), None)
+        pinned = (FONT_GENERATOR_BLOB_SHA1 if relative == FONT_GENERATOR
+                  else next((blob for rel, blob, _ in SOURCE_MAP.values()
+                             if rel == relative), None))
         if pinned is None or git_blob_sha1(path.read_bytes()) != pinned:
             raise ValueError("original PC source no longer matches pinned Git blob: " +
                              relative)
+    if (sha(private_read(output, FONT_GENERATOR_SNAPSHOT)) !=
+            originals[FONT_GENERATOR]):
+        raise ValueError("original pinned font generator snapshot changed")
     return output / "map02_cycle.mk"
 
 
