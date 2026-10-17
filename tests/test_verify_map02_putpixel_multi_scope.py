@@ -57,6 +57,10 @@ class TwoWordPutPixelTests(unittest.TestCase):
         self.assertEqual(report["source_ft4_changed_putpixel_calls"], 3)
         self.assertEqual(report["source_ft4_changed_word_draw_coordinate_pairs"], 3)
         self.assertEqual(report["source_ft4_draw_coordinate_pairs_with_calls"], 3)
+        self.assertEqual(report["source_ft4_draws_with_both_words_observed"], 1)
+        self.assertEqual(report["source_ft4_draws_changing_both_sampled_words"], 1)
+        self.assertEqual(report["source_ft4_draws_with_both_words_semitransparent"], 0)
+        self.assertEqual(report["source_ft4_draws_with_interleaved_word_revisit"], 0)
         self.assertTrue(report["one_interleaved_global_putpixel_step_sequence"])
         self.assertTrue(report["two_coordinates_checked_against_same_native_drawotag_snapshots"])
         for field in (
@@ -89,10 +93,42 @@ class TwoWordPutPixelTests(unittest.TestCase):
         self.assertEqual(report["source_ft4_abr1_calls"], 2)
         self.assertEqual(report["source_ft4_same_value_putpixel_calls"], 1)
         self.assertEqual(report["source_ft4_coordinate_pairs_with_multiple_blends"], 1)
+        self.assertEqual(report["source_ft4_draws_with_both_words_observed"], 1)
+        self.assertEqual(report["source_ft4_draws_with_interleaved_word_revisit"], 0)
         self.rows[1]["front"] = 0x0001
         self.save()
         with self.assertRaisesRegex(ValueError, "source-pinned PC WritePixel"):
             verify_multi_pixel_ot(self.source, self.native)
+
+    def test_interleaved_a_b_a_and_a_b_b_a_revisit_in_same_ft4(self):
+        # One sourced FT4 writes A, then B, then legitimately revisits
+        # A with an opaque no-op; the final PRE/POST snapshots still
+        # only reveal one net change at each sampled coordinate.
+        self.rows = [
+            self.base.row(0, 1, 0, 0x801f, 0x801f),
+            self.base.row(1, 1, 0, 0x03e0, 0x03e0),
+            self.base.row(2, 1, 0x801f, 0x801f, 0x801f),
+            self.base.row(3, 2, 0x801f, 0x7c00, 0x7c00),
+        ]
+        self.rows[1]["x"], self.rows[1]["y"] = self.coord_b
+        self.save()
+        report = verify_multi_pixel_ot(self.source, self.native)
+        self.assertEqual(report["source_ft4_draws_with_interleaved_word_revisit"],1)
+        self.assertEqual(report["source_ft4_draws_with_both_words_observed"],1)
+        self.assertEqual(report["source_ft4_changed_putpixel_calls"],3)
+        self.assertEqual(report["source_ft4_same_value_putpixel_calls"],1)
+        self.assertEqual(report["source_ft4_draws_changing_both_sampled_words"],1)
+
+        # Add another no-op B in between. A,B,B,A must still count as a
+        # return, but the event log's global step sequence remains exact.
+        self.rows.insert(2,self.base.row(2,1,0x03e0,0x03e0,0x03e0))
+        self.rows[2]["x"], self.rows[2]["y"] = self.coord_b
+        for i, entry in enumerate(self.rows):
+            entry["step"] = i
+        self.save()
+        report = verify_multi_pixel_ot(self.source, self.native)
+        self.assertEqual(report["source_ft4_draws_with_interleaved_word_revisit"],1)
+        self.assertEqual(report["source_ft4_same_value_putpixel_calls"],2)
 
     def test_duplicate_step_and_backward_ordinal_rejected(self):
         self.rows[1]["step"] = 0
