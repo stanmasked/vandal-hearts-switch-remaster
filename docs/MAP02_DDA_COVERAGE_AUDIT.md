@@ -42,14 +42,41 @@ entry only, it records the actual arguments `x_start/x_bound` and
 drawing-area clip bounds into a bounded private JSONL journal when
 `VH_MAP02_DDA_SPAN_TRACE` and all four dependent flags are enabled.
 
-This is a source-transformation helper, **not yet wired into the upstream
-PC compile pipeline or Switch build**. The observed source must first
-be produced by the pinned source and existing observers. It does not
-log rows that were vertically rejected before `dda_span`; consequently,
-the current strict vertical-rejection join requires separately sourced
-row spans and does not automatically consume this new journal.
+This source transformation is now included in the **source-pinned
+original PC GPU compile/link CI**, including baseline instruction/relocation
+comparison and GCC/Clang opt-in checks. See [successful upstream run
+39025294123](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39025294123).
+That establishes that the instrumented original source **compiles and partially
+links**, not that it ran with retail MAP02 resources or that the Nintendo
+Switch display was verified. The original GPU sources remain untouched.
 
-Outstanding gates: native C compile of the generated source, actual
-instrumented execution, exact event/ordinal/row validation and secure
-private journal provenance. No retail MAP02 or physical PS1 equivalence
-is claimed.
+The recorder never logs rows rejected *before* `dda_span`. A second,
+opt-in native observer creates `dda-rejected-edge-candidates.jsonl` for
+those branches, but its X bounds are only **candidate edge snapshots**,
+not executed spans. They must never be supplied as if they were original
+executed spans to `map02_dda_span_join.reconcile`.
+
+## Independent journal intake (no inferred coverage)
+
+When an actual run produces one or both private journals, preserve the
+raw bytes and execute from the remaster repository root:
+
+```sh
+python3 -m tools.audit_map02_independent_dda_journals /private/dda-capture \
+  > /private/dda-journal-audit.json
+```
+
+The audit separately validates `dda-native-spans.jsonl` and
+`dda-rejected-edge-candidates.jsonl`; rejects malformed CRLF records,
+duplicate fields, noncanonical/saturated journals and symlinked inputs;
+and records SHA-256, counts, shared frame identifiers and shared
+primitive/row *keys*. A missing file is reported as **unobserved**, never
+as evidence of zero raster events. A shared key likewise is not a proof
+that the rejected row entered `dda_span` (it did not).
+
+The audit unconditionally reports `journal_origin_authenticated=false`,
+`retail_map02_frame_verified=false` and
+`hd_replacement_authorized=false`. A successful audit only supports
+structural checks on provided files. An independent capture origin and
+actual original MAP02 frame comparison remain mandatory; the HD
+replacement is still OFF.
