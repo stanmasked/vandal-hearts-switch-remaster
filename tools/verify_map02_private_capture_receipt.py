@@ -22,7 +22,11 @@ def _identity(path, *, max_bytes=None):
     path = Path(path)
     if path.is_symlink():
         raise ValueError("private replay input cannot be a symlink")
-    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    # Nonblocking open is essential: a malicious FIFO substituted for a
+    # private JSON file must fail as nonregular, not hang the audit.
+    flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+             | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0))
+    fd = os.open(path, flags)
     with os.fdopen(fd, "rb") as handle:
         before = os.fstat(handle.fileno())
         if not stat.S_ISREG(before.st_mode):
