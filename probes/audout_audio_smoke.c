@@ -32,6 +32,8 @@ static VhNativeVab synthetic_bank;
 static VhNativeSeq seq;
 static VhNativeSpu synth;
 static VhAudioResample resampler;
+/* Snapshot never appears in the device callback or PCM output path. */
+static VhNativeSpu manual_spu_snapshot;
 
 static uint8_t fixture_vh[32u + 128u*16u + 512u + 512u];
 static uint8_t fixture_vb[48];
@@ -222,11 +224,6 @@ static int native_submit(void *opaque,const int16_t *pcm,size_t frames) {
  * only after stopped audout and released SD music assets.
  */
 typedef struct {
-    unsigned quick_attempts,quick_ok,reopen_attempts,reopen_ok;
-    unsigned ignored_chords,unsafe_requests,state_mismatches;
-} VhAudioManualResume;
-
-typedef struct {
     const NativeOutput *output;
     const VhAudioManualResume *manual;
     const VhAudioOutputRecovery *recovery;
@@ -274,7 +271,8 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
         printf("X stop/start %u/%u  Y reopen %u/%u\n",
                r->manual->quick_ok,r->manual->quick_attempts,
                r->manual->reopen_ok,r->manual->reopen_attempts);
-        printf("X+Y ignored=%u, unsafe=%u, mismatch=%u\n",
+        printf("X/Y audit=%s ignored=%u unsafe=%u mismatch=%u\n",
+               vh_audio_manual_verify(r->manual)==0 ? "VALID" : "INVALID",
                r->manual->ignored_chords,r->manual->unsafe_requests,
                r->manual->state_mismatches);
         const uint64_t rendered=r->compute->rendered_pages;
@@ -572,12 +570,19 @@ int main(int argc, char **argv) {
          * Actual HOME/suspend is a separate uninstrumented scenario.
          * Never do device work from a controller/app hook callback. */
         const uint64_t pressed=padGetButtonsDown(&pad);
-        const uint64_t manual_buttons=pressed&
-                                    (HidNpadButton_X|HidNpadButton_Y);
-        if(manual_buttons==(HidNpadButton_X|HidNpadButton_Y)) {
+        const uint64_t held=padGetButtons(&pad);
+        const unsigned manual_pressed=
+            (pressed&HidNpadButton_X ? VH_AUDIO_MANUAL_X : 0u) |
+            (pressed&HidNpadButton_Y ? VH_AUDIO_MANUAL_Y : 0u);
+        const unsigned manual_held=
+            (held&HidNpadButton_X ? VH_AUDIO_MANUAL_X : 0u) |
+            (held&HidNpadButton_Y ? VH_AUDIO_MANUAL_Y : 0u);
+        const unsigned manual_action=vh_audio_manual_select(
+                                                 manual_pressed,manual_held);
+        if(manual_action==VH_AUDIO_MANUAL_IGNORE) {
             ++manual_resume.ignored_chords;
-        } else if(manual_buttons) {
-            const int reopen=(manual_buttons&HidNpadButton_Y)!=0;
+        } else if(manual_action) {
+            const int reopen=manual_action==VH_AUDIO_MANUAL_Y;
             if(reopen) ++manual_resume.reopen_attempts;
             else ++manual_resume.quick_attempts;
             if(!output.started ||
@@ -588,9 +593,8 @@ int main(int argc, char **argv) {
             }
             const VhNativeSeq before_seq=seq;
             const VhAudioResample before_resampler=resampler;
-            const uint64_t before_spu_frames=synth.frames_rendered;
-            const int before_wet_cursor=synth.reverb.cursor;
-            const unsigned before_wet_phase=synth.reverb.phase;
+            memcpy(&manual_spu_snapshot,&synth,sizeof synth);
+            const VhAudioOutputRecovery before_recovery=recovery;
             const uint64_t before_pcm=pcm_page_fingerprint(
                                                 out_48000,count);
             const uint64_t before_pages=recovery.pages_submitted;
@@ -608,13 +612,19 @@ int main(int argc, char **argv) {
                !vh_audio_page_lease_ready(&output.lease) ||
                memcmp(&seq,&before_seq,sizeof seq) ||
                memcmp(&resampler,&before_resampler,sizeof resampler) ||
-               synth.frames_rendered!=before_spu_frames ||
-               synth.reverb.cursor!=before_wet_cursor ||
-               synth.reverb.phase!=before_wet_phase ||
+               memcmp(&synth,&manual_spu_snapshot,sizeof synth) ||
                pcm_page_fingerprint(out_48000,count)!=before_pcm ||
                recovery.pages_submitted!=before_pages ||
                recovery.frames_submitted!=before_frames ||
-               output.timing.calls!=before_calls) {
+               output.timing.calls!=before_calls ||
+               recovery.submit_failures!=before_recovery.submit_failures ||
+               recovery.restart_attempts!=before_recovery.restart_attempts ||
+               recovery.recoveries!=before_recovery.recoveries ||
+               recovery.resume_failures!=before_recovery.resume_failures ||
+               recovery.resume_restarts!=before_recovery.resume_restarts+
+                                                (unsigned)reopen ||
+               recovery.resume_recoveries!=before_recovery.resume_recoveries+
+                                                (unsigned)reopen) {
                 ++manual_resume.state_mismatches;
                 result=22;
                 break;
@@ -624,7 +634,6 @@ int main(int argc, char **argv) {
         }
         /* Current HELD state prevents a B "normal" mark when A is
          * still down. Only a neutral sample can rearm the gate. */
-        const uint64_t held=padGetButtons(&pad);
         const unsigned ab=(held&HidNpadButton_A ? VH_AUDIO_MARK_A : 0u) |
                           (held&HidNpadButton_B ? VH_AUDIO_MARK_B : 0u);
         /* A tag and the accepted-button counters must commit
@@ -740,9 +749,11 @@ int main(int argc, char **argv) {
             listening_marks.control_marks);
     if ((run_evidence<0 || seam_evidence || listen_evidence ||
          poll_evidence || compute_evidence) && result==0) result=10;
-    const unsigned verdict=vh_audio_report_evidence(
-        run_evidence,seam_evidence,listen_evidence,poll_evidence,
-        compute_evidence);
+    const int manual_evidence=vh_audio_manual_verify(&manual_resume);
+    if (manual_evidence && result==0) result=23;
+    const unsigned verdict=vh_audio_report_manual_evidence(
+        &manual_resume,run_evidence,seam_evidence,listen_evidence,
+        poll_evidence,compute_evidence);
     const VhAudioProbeReport report={
         .output=&output,.manual=&manual_resume,.recovery=&recovery,.seams=&seam_stats,
         .marks=&listening_marks,.poll=&input_poll,
