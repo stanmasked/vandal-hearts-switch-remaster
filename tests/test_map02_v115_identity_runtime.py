@@ -70,8 +70,7 @@ class NativeIdentitySummary(unittest.TestCase):
         source=(ROOT/"tools/map02_v115_sample_identity.c").read_text()
         self.assertNotIn("printf(",source)
         self.assertNotIn("hash",source.lower())
-        self.assertIn("memcmp",source) if False else self.assertIn(
-            "state.previous[i]==post[i]",source)
+        self.assertIn("state.previous[i]==post[i]",source)
 
     def test_pinned_workflow_analyzes_native_log_not_only_jsonl_counts(self):
         flow=(ROOT/".github/workflows/map02-v104-content-guard.yml").read_text()
