@@ -1,7 +1,7 @@
 #ifndef VH_AUDIO_REPORT_PAGES_H
 #define VH_AUDIO_REPORT_PAGES_H
 
-/* Portable navigation and strict evidence labels for three fixed
+/* Portable navigation and strict evidence labels for four fixed
  * on-device report pages. UI only; never touches audio or PCM.
  * "FULL" means valid page accounting, never audible quality.
  */
@@ -245,7 +245,7 @@ static inline int vh_audio_applet_verify(const VhAudioAppletEvents *s) {
            s->coalesced_returns==s->pending_return ? 0 : -1;
 }
 
-#define VH_AUDIO_REPORT_PAGE_COUNT 3u
+#define VH_AUDIO_REPORT_PAGE_COUNT 4u
 #define VH_AUDIO_REPORT_PREV 1u
 #define VH_AUDIO_REPORT_NEXT 2u
 #define VH_AUDIO_REPORT_QUIT 4u
