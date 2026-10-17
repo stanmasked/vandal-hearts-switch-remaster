@@ -160,6 +160,32 @@ for name, offset, size in [
                     verify_private_pc_inputs(self.root)
         self.elf.write_bytes(original)
 
+    def test_original_elf_rejects_nonallocated_data_anchor(self):
+        changed = bytearray(self.elf.read_bytes())
+        # ELF32 sh_flags for the MAP32 section (section index 1).
+        struct.pack_into("<I", changed, 64 + 40 + 8, 0)
+        self.elf.write_bytes(changed)
+        with self.assertRaisesRegex(ValueError, "missing unique data section"):
+            compare_data_ranges(self.exe, self.elf)
+
+    def test_nonallocated_shadow_section_cannot_impersonate_original_data(self):
+        # Reuse the null section-header slot to introduce a byte-identical
+        # but non-allocated PROGBITS section at an original MIPS data address.
+        # A debug section is not a valid retail-runtime source mapping.
+        original = self.elf.read_bytes()
+        shadow = bytearray(original)
+        _, address, length = ANCHORS[0]
+        struct.pack_into("<IIIIIIIIII", shadow, 64, 0, 1, 0,
+                         address, 256, length, 0, 0, 1, 0)
+        self.elf.write_bytes(shadow)
+        self.assertTrue(compare_data_ranges(self.exe, self.elf)[
+            "original_exe_and_mips_elf_data_anchors_match"])
+        # Making the same section allocated makes the mapping ambiguous.
+        struct.pack_into("<I", shadow, 64 + 8, 2)
+        self.elf.write_bytes(shadow)
+        with self.assertRaisesRegex(ValueError, "missing unique data section"):
+            compare_data_ranges(self.exe, self.elf)
+
     def test_extracted_elf_wrong_machine_fails_closed(self):
         wrong = bytearray(self.elf.read_bytes())
         wrong[18:20] = (62).to_bytes(2, "little")
