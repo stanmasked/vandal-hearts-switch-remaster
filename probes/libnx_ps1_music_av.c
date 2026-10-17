@@ -157,6 +157,8 @@ typedef struct {
     AudioOutBuffer page;
     VhAudioSubmitTiming timing;
     VhAudioSceneWaits scene_waits;
+    VhAudioPageLease lease;
+    VhAudioTransportTimingHealth transport_health;
 #ifdef VH_AUDIO_GUEST_ZR_AUTOTEST
     VhAudioSubmitFaultInjection submit_injection;
 #endif
@@ -168,14 +170,18 @@ static VhAudioOutputRecovery output_recovery;
 
 static void native_close(void *opaque) {
     NativeOutput *dev=(NativeOutput *)opaque;
-    if (!dev->initialized) return;
+    /* Failed audoutStop retains ownership of the 4-KiB PCM page.
+     * Never tear down this service while that descriptor is leased. */
+    if (!dev->initialized || dev->started ||
+        !vh_audio_page_lease_ready(&dev->lease)) return;
     audoutExit();
     dev->initialized=0;
     dev->started=0;
 }
 static int native_open(void *opaque) {
     NativeOutput *dev=(NativeOutput *)opaque;
-    if (dev->initialized || R_FAILED(audoutInitialize())) return -1;
+    if (dev->initialized || !vh_audio_page_lease_ready(&dev->lease) ||
+        R_FAILED(audoutInitialize())) return -1;
     dev->initialized=1;
     if (audoutGetSampleRate()!=VH_NATIVE_AUDOUT_RATE ||
         audoutGetChannelCount()!=2 ||
@@ -191,21 +197,28 @@ static int native_open(void *opaque) {
 static int native_start(void *opaque) {
     NativeOutput *dev=(NativeOutput *)opaque;
     if (!dev->initialized || dev->started ||
+        !vh_audio_page_lease_ready(&dev->lease) ||
         R_FAILED(audoutStartAudioOut())) return -1;
     dev->started=1;
     return 0;
 }
 static int native_stop(void *opaque) {
     NativeOutput *dev=(NativeOutput *)opaque;
-    if (!dev->started) return 0;
-    if (R_FAILED(audoutStopAudioOut())) return -1;
+    if (!dev->started)
+        return vh_audio_page_lease_ready(&dev->lease) ? 0 : -1;
+    /* Only a confirmed audoutStop can release a mismatched/failed
+     * descriptor, after which its backing PCM may be reused. */
+    const Result rc=audoutStopAudioOut();
+    if (vh_audio_page_lease_stopped(&dev->lease,
+            R_SUCCEEDED(rc) ? 0 : -1)) return -1;
     dev->started=0;
     return 0;
 }
 static int native_submit(void *opaque,const int16_t *pcm,size_t frames) {
     NativeOutput *dev=(NativeOutput *)opaque;
     if (!dev->initialized || !dev->started || pcm!=audio_page ||
-        !frames || frames>VH_AUDIO_RESAMPLE_MAX_FRAMES) return -1;
+        !frames || frames>VH_AUDIO_RESAMPLE_MAX_FRAMES ||
+        !vh_audio_page_lease_ready(&dev->lease)) return -1;
 #ifdef VH_AUDIO_GUEST_ZR_AUTOTEST
     /* Exercise a REAL guest audout recovery without forging a service
      * call. The one rejected attempt occurs before audoutPlayBuffer;
@@ -218,6 +231,9 @@ static int native_submit(void *opaque,const int16_t *pcm,size_t frames) {
         return -1;
     }
 #endif
+    /* Lease before changing descriptor fields. A foreign return or
+     * service error holds the page until a successful stop. */
+    if (vh_audio_page_lease_begin(&dev->lease,&dev->page)) return -1;
     dev->page.data_size=frames*2u*sizeof(int16_t);
     AudioOutBuffer *released=NULL;
     /* Record raw blocking time for each libnx submission attempt.
@@ -229,10 +245,14 @@ static int native_submit(void *opaque,const int16_t *pcm,size_t frames) {
     const uint64_t elapsed=armGetSystemTick()-start_ticks;
     const int accepted=R_SUCCEEDED(result) &&
         vh_audio_output_page_returned(&dev->page,released);
-    if (vh_audio_output_record_submit_timing(
-            &dev->timing,elapsed,armGetSystemTickFreq(),frames,accepted))
+    if (accepted && vh_audio_page_lease_return(&dev->lease,released))
         return -1;
-    return accepted ? 0 : -1;
+    const int timing_rc=vh_audio_output_record_submit_timing(
+            &dev->timing,elapsed,armGetSystemTickFreq(),frames,accepted);
+    /* The exact PCM descriptor was ALREADY consumed by audout. Reject
+     * invalid timing evidence but never replay that accepted buffer. */
+    return vh_audio_output_transport_outcome(
+        accepted,timing_rc,&dev->transport_health);
 }
 static const VhAudioOutputOps output_ops={
     &native_output,native_submit,native_stop,
@@ -307,9 +327,17 @@ static void audio_worker(void *unused) {
 #endif
         const int submit_result=vh_audio_output_submit_recover(
             &output_ops,&output_recovery,audio_page,count);
+        if (native_output.transport_health.timing_fault) {
+            /* A returned descriptor with unmeasurable time is still
+             * delivered, not a trigger to resend its PCM. Do not
+             * accept unverifiable service timing in this guest run. */
+            atomic_store(&audio_fault,8);
+            break;
+        }
 #ifdef VH_AUDIO_GUEST_ZR_AUTOTEST
         if(guest_zr_trial) {
             const int valid=submit_result==0 &&
+                vh_audio_page_lease_ready(&native_output.lease) &&
                 vh_audio_output_verify_submit_injection(
                     &native_output.submit_injection,&native_output.timing,
                     &output_recovery)==2 &&
@@ -388,6 +416,7 @@ static int start_native_audio(void) {
     memset(&output_recovery,0,sizeof(output_recovery));
     memset(&native_output.timing,0,sizeof(native_output.timing));
     memset(&native_output.scene_waits,0,sizeof(native_output.scene_waits));
+    memset(&native_output.transport_health,0,sizeof(native_output.transport_health));
     Result result;
     atomic_store(&audio_stop, false);
     atomic_store(&audio_fault, 0);
@@ -425,7 +454,9 @@ static void stop_native_audio(void) {
     atomic_store(&audio_stop, true);
     (void)threadWaitForExit(&sound_thread);
     threadClose(&sound_thread);
-    (void)native_stop(&native_output);
+    /* If the device did not stop, keep the descriptor and 4 KiB PCM
+     * storage alive until process shutdown. close() refuses to run. */
+    if(native_stop(&native_output)) atomic_store(&audio_fault,9);
     native_close(&native_output);
 }
 
