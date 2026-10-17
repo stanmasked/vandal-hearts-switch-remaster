@@ -165,3 +165,63 @@ independently acquired physical PlayStation VRAM snapshots, not a
 genuine MAP02 frame, and not proof of original-console behavior.
 Private witness-file export and external original-game comparison
 remain separate, later validation stages.
+
+## Private SHA-256 witness for direct VRAM boundaries
+
+With both opt-in macros \`VH_MAP02_SCOPED_BLEND_PROBE\` and
+\`VH_MAP02_VRAM_EDGE_PROBE\`, plus \`VH_MAP02_POSIX_STAGE\` and an
+explicit \`VH_MAP02_PROBE_OUTPUT_DIR\` owned by the current user and
+permissioned \`0700\`, the original synchronous DrawOTag frame now
+stages **three related files** from the same selected frame:
+
+- \`putpixel-native-events.pending.jsonl\` (all observed pixel writes);
+- \`blendg1-native-events.pending.jsonl\` (real BlendG1 calls);
+- \`vram-edges-native-events.pending.jsonl\` (all native DRAW
+  boundaries, including primitives with no selected-pixel writes).
+
+The third buffer is separately bounded to **8192** draw edges and at
+most **2 MiB**, allocated only for the explicit private staging
+configuration. All three files are fully written, synced, reread and
+compared before the exclusive hard-link publication. If publication
+fails, newly linked filenames are rolled back without replacing
+existing data. A crash can nevertheless leave orphaned pending files:
+this process is not a crash-atomic multi-file transaction and **pending
+files are never trusted evidence**.
+
+The independent JSONL edge entry is a bounded object with stage
+\`native_vram_edge\`, frame, zero-based draw ordinal, primitive type,
+native X/Y, and 16-bit BGR555 before/after words. Every row is
+directly observed at the DrawOTag boundary; no edge is synthesized
+from PutPixel. A transparent polygon with no writes must have equal
+before/after values.
+
+After capturing real **private** original source-keyed GTE/DrawOTag/VRAM
+evidence, the verification/publication chain is:
+
+\`\`\`sh
+python3 -m tools.promote_map02_putpixel_stage \
+  /private/map02/source-bundle /private/map02/native-capture
+python3 -m tools.publish_map02_blendg1_witness \
+  /private/map02/source-bundle /private/map02/native-capture
+python3 -m tools.publish_map02_vram_edges_witness \
+  /private/map02/source-bundle /private/map02/native-capture
+python3 -m tools.verify_map02_vram_edges_witness \
+  /private/map02/source-bundle /private/map02/native-capture
+\`\`\`
+
+The VRAM-edge publisher **cannot skip** the existing full BlendG1
+verification (which rechecks PutPixel and the independent
+source-keyed original VRAM/OT chain). It then checks that every
+PutPixel lies within a sampled draw ordinal and that its first
+\`before\` and final \`after\` match the independent VRAM boundary
+words. Empty/transparent draws must preserve the sampled pixel.
+The edge manifest is installed *last* and binds the SHA-256 digests
+of the completed BlendG1 manifest, verified PutPixel log, verified
+BlendG1 log and independently staged VRAM-edge log.
+
+The final verifier repeats SHA-256 and source-keyed chain validation;
+none of these commands print raw pixels or upload private logs. C
+tests and Python tests use entirely synthetic, asset-free records
+and cannot authenticate original MAP02 gameplay. No physical PS1
+hardware comparison has been performed. HD replacement remains
+disabled pending original MAP02 confirmation.
