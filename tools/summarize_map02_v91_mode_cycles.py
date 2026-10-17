@@ -21,10 +21,15 @@ def summarize(raw: bytes):
     prior=summarize_v90(raw)
     validate(raw)
     events=[json.loads(line) for line in raw.decode("ascii").splitlines()]
-    tail=events[-22:]
+    positions=[i for i,e in enumerate(events) if e["kind"]==KINDS[0]]
+    if len(positions)!=1:
+        raise Refused("missing/duplicate first cycle metric")
+    start=positions[0]
+    tail=events[start:start+22]
     if len(tail)!=22 or tuple(x["kind"] for x in tail)!=KINDS:
         raise Refused("missing/misordered two independent GPU mode cycle observations")
-    if any(e["kind"] in KINDS for e in events[:-22]):
+    if any(e["kind"] in KINDS for i,e in enumerate(events)
+           if not start<=i<start+22):
         raise Refused("duplicate or misplaced cycle metric")
     v90_last=max(x["seq"] for x in events if x["kind"]=="mixed_sync_copy_same_count")
     if tail[0]["seq"]<=v90_last:
