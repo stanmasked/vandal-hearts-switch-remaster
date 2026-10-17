@@ -14,10 +14,15 @@ def summarize(raw:bytes):
     prev=summarize_v93(raw)
     report=validate(raw)
     events=[json.loads(line) for line in raw.decode("ascii").splitlines()]
-    tail=events[-3:]
+    positions=[i for i,e in enumerate(events) if e["kind"]==KINDS[0]]
+    if len(positions)!=1:
+        raise Refused("missing/duplicate first cached journal metric")
+    start=positions[0]
+    tail=events[start:start+3]
     if len(tail)!=3 or tuple(e["kind"] for e in tail)!=KINDS:
-        raise Refused("missing or out-of-order cached journal proof suffix")
-    if any(e["kind"] in KINDS for e in events[:-3]):
+        raise Refused("missing or out-of-order cached journal proof group")
+    if any(e["kind"] in KINDS for i,e in enumerate(events)
+           if not start<=i<start+3):
         raise Refused("duplicate/misplaced cached journal metric")
     if tuple(e["value"] for e in tail)!=VALUES:
         raise Refused("repeated cache reads or stale-view invalidation not proved")
@@ -26,8 +31,8 @@ def summarize(raw:bytes):
     if tail[0]["seq"]<=max(e["seq"] for e in events
                            if e["kind"]=="lane_total_events"):
         raise Refused("v94 cache probe occurred before validated v93 checkpoint")
-    if len(events)!=prev["merged_private_events"]+3:
-        raise Refused("new metrics must add exactly three global events")
+    if start+3!=prev["merged_private_events"]+3:
+        raise Refused("v94 must follow v93 immediately with exactly three observations")
     if not prev["original_event_sequence_preserved"] or report["events"]!=len(events):
         raise Refused("v93 native event order not preserved")
     return {
@@ -39,7 +44,7 @@ def summarize(raw:bytes):
         "exactly_one_merge_on_first_read_after_append":True,
         "private_serializer_performs_source_vs_view_integrity_check":True,
         "prior_checkpoint_native_events":prev["merged_private_events"],
-        "final_private_journal_events":len(events),
+        "final_private_journal_events":start+3,
         "original_four_emulator_VBlanks_preserved":report["vblank_edges"]==4,
         "retail_MAP02_verified":False,
         "physical_PlayStation_verified":False,
