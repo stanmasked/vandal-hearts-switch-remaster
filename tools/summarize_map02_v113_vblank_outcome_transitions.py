@@ -101,8 +101,9 @@ def summarize(raw: bytes):
         ]
         previous=prev110["intra_interval_transitions"][i]
         if bucket["observed_handlers"]!=sum(
-            x["handlers"] for x in prev111["per_vblank_class_cases"][i][
-                "classes"].values() for x in x.values()
+            counters["handlers"]
+            for class_cases in prev111["per_vblank_class_cases"][i]["classes"].values()
+            for counters in class_cases.values()
         ):
             raise Refused("observed handler count inconsistent with v111")
         if bucket["adjacent_pairs"]!=previous["adjacent_handler_pairs"]:
