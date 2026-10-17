@@ -108,6 +108,11 @@ PROBE=r'''
                     accepted,started,completed,stores,same);
                 ClosePlugins();SysClose();menu_finish();plat_finish();return 14;
             }
+            pl_rearmed_cbs.thread_rendering=0;
+            plugin_call_rearmed_cbs();
+            /* Shutdown can flush residual renderer commands. Record the
+             * synchronized aggregates only after that flush, otherwise
+             * Unai GP0 handler events could trail the audit suffix. */
             vh80_record(VH88_ASYNC_QUEUED,accepted,0,0);
             vh80_record(VH88_ASYNC_COMPLETED,completed,0,0);
             vh80_record(VH88_ASYNC_STORES,stores,0,0);
@@ -118,8 +123,6 @@ PROBE=r'''
             }
             SysPrintf("VH88_ASYNC_PASS queued=%u completed=%u stores=%u same=%u changed=%u\n",
                 accepted,completed,stores,same,stores-same);
-            pl_rearmed_cbs.thread_rendering=0;
-            plugin_call_rearmed_cbs();
         }
 '''
 
