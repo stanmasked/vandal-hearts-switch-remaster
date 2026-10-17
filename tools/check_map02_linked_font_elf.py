@@ -48,20 +48,33 @@ def stable_owned_elf_sha256(binary):
         identity = lambda st: (st.st_dev, st.st_ino, st.st_uid, st.st_mode,
                                st.st_nlink, st.st_size, st.st_mtime_ns,
                                st.st_ctime_ns)
-        checksum = hashlib.sha256()
-        for offset in range(0, before.st_size, 1 << 20):
-            length = min(1 << 20, before.st_size - offset)
-            chunk = os.pread(fd, length, offset)
-            if len(chunk) != length:
-                raise ValueError("private ELF digest short read")
-            checksum.update(chunk)
+        def hash_pass():
+            digest = hashlib.sha256()
+            for offset in range(0, before.st_size, 1 << 20):
+                length = min(1 << 20, before.st_size - offset)
+                block = os.pread(fd, length, offset)
+                if len(block) != length:
+                    raise ValueError("private ELF digest short read")
+                digest.update(block)
+            return digest.digest()
+
+        # Verify *both* passes on the same descriptor. Metadata-only checks
+        # cannot distinguish in-place changes with restored timestamps, and
+        # a one-pass hash may silently describe a mixture of two file versions.
+        first_digest = hash_pass()
+        if identity(os.fstat(fd)) != identity(before):
+            raise ValueError("private ELF digest input changed during hashing")
+        second_digest = hash_pass()
+        if first_digest != second_digest:
+            raise ValueError("private ELF digest bytes changed between read passes")
         try:
             named = os.stat(path, follow_symlinks=False)
         except OSError:
             raise ValueError("private ELF digest input replaced") from None
-        if identity(os.fstat(fd)) != identity(before) or identity(named) != identity(before):
+        if (identity(os.fstat(fd)) != identity(before)
+                or identity(named) != identity(before)):
             raise ValueError("private ELF digest input changed during hashing")
-        return checksum.hexdigest()
+        return first_digest.hex()
     finally:
         os.close(fd)
 
