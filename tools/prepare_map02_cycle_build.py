@@ -19,6 +19,8 @@ from tools.instrument_map02_cycle_order import (
 from tools.prepare_map02_pcport import PINNED_BLOB_SHA1, git_blob_sha1
 from tools.instrument_map02_cd_read import SOURCE_CD, SOURCE_LIBCD
 from tools.instrument_map02_gpu_native_events import PINNED_SOURCE
+from tools.check_map02_private_pc_inputs import (FONT_GENERATOR,
+    FONT_GENERATOR_BLOB_SHA1)
 
 SOURCE_MAP = {
     "core_cd.c": ("src/core/cd.c", SOURCE_CD, patch_core),
@@ -36,6 +38,7 @@ SUPPORT_FILES = (
     "map02_vram_edges.c", "map02_vram_edges.h",
 )
 MAKEFILE_SHA = PINNED_BLOB_SHA1["platform/pc/Makefile"]
+FONT_GENERATOR_SNAPSHOT = "map02_pinned_gen_kanji_font.py"
 MAKE_ANCHORS = (
     "$(BUILD_DIR)/libcd.o: src/libcd.c",
     "$(BUILD_DIR)/libgpu.o: src/libgpu.c",
@@ -89,6 +92,18 @@ VH_MAP02_CYCLE_DEFS := -DVH_MAP02_CYCLE_ORDER -DVH_MAP02_CD_READ_PROBE
 VH_MAP02_GPU_DEFS := -DVH_MAP02_CYCLE_ORDER -DVH_MAP02_GPU_CAPTURE -DVH_MAP02_POSIX_CAPTURE_WINDOWS -DVH_MAP02_SCOPED_BLEND_PROBE -DVH_MAP02_VRAM_EDGE_PROBE -DVH_MAP02_POSIX_STAGE -DVH_MAP02_CAPTURE_SESSION
 VH_MAP02_STAGE_DEFS := -DVH_MAP02_CD_READ_PROBE -DVH_MAP02_VRAM_EDGE_PROBE -DVH_MAP02_CAPTURE_SESSION
 VH_MAP02_CYCLE_INCLUDES := -I$(VH_MAP02_CYCLE_ROOT)
+# Only the source-pinned private snapshot is allowed to read owned KROM data.
+# This shadow target prevents GNU Make from invoking its inherited source
+# generator to write copyrighted data into the original checkout.
+src/pc_kanji_font.c: $(VH_MAP02_CYCLE_ROOT)/${FONT_GENERATOR_SNAPSHOT}
+\t@:
+$(BUILD_DIR)/map02_pinned_kanji_font.c: $(VH_MAP02_CYCLE_ROOT)/${FONT_GENERATOR_SNAPSHOT}
+\t@mkdir -p $(dir $@)
+\tVH_REGION=us VH_GENERATED_OUT=$@ python3 $(VH_MAP02_CYCLE_ROOT)/${FONT_GENERATOR_SNAPSHOT}
+# Inherited prerequisites remain, but this recipe NEVER reads src/pc_kanji_font.c.
+$(BUILD_DIR)/pc_kanji_font.o: $(BUILD_DIR)/map02_pinned_kanji_font.c
+\t@mkdir -p $(dir $@)
+\t$(CC) $(M32) $(SAN) $(PORT_WARN) -Iinclude -g -MMD -MP -c -o $@ $(BUILD_DIR)/map02_pinned_kanji_font.c
 VH_MAP02_CYCLE_SUPPORT := $(addprefix $(BUILD_DIR)/,map02_cycle_order.o map02_cd_read_probe.o map02_capture_session.o map02_scoped_blend_sink.o map02_scoped_blend_stage.o map02_vram_edges.o)
 BACKEND_OBJS += $(VH_MAP02_CYCLE_SUPPORT)
 link: $(VH_MAP02_CYCLE_SUPPORT)
@@ -174,6 +189,17 @@ def prepare(upstream: Path, output: Path, *, support=None):
             raise ValueError("original pinned source changed: " + relative)
         originals[relative] = _sha(data)
         rendered[target] = instrument(data.decode("utf-8")).encode("utf-8")
+    # Snapshot the exact original public KROM generator in the 0700 bundle.
+    # The original upstream Makefile is not modified or executed for this
+    # generator. Its private copy will receive the validated source ROM path.
+    generator_path = upstream / FONT_GENERATOR
+    if generator_path.is_symlink() or not generator_path.is_file():
+        raise ValueError("pinned original font generator missing or linked")
+    font_script = generator_path.read_bytes()
+    if git_blob_sha1(font_script) != FONT_GENERATOR_BLOB_SHA1:
+        raise ValueError("pinned original font generator source drift")
+    originals[FONT_GENERATOR] = _sha(font_script)
+    rendered[FONT_GENERATOR_SNAPSHOT] = font_script
     for name in SUPPORT_FILES:
         file = support / name
         if file.is_symlink() or not file.is_file():
