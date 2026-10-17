@@ -38,6 +38,19 @@ def inspect_zr_marker(image: Image.Image) -> str:
     return zr_recovery
 
 
+def inspect_zl_marker(image: Image.Image) -> str:
+    """CI-only exact-descriptor/bad-clock evidence, not audible output."""
+    pixel=image.convert("RGB").getpixel((1050, 500))
+    r,g,b=pixel
+    if near(pixel,AUDIO_OK) or (g>=155 and g>r+70 and g>b+40):
+        return "confirmed"
+    if near(pixel,AUDIO_FAIL) or (r>=145 and r>g+40 and r>b+40):
+        return "error"
+    if r>180 and g>150 and b<160 and r>b+70:
+        return "pending"
+    return "not_observed"
+
+
 def inspect_images(first: Image.Image, second: Image.Image) -> dict:
     first = first.convert("RGB")
     second = second.convert("RGB")
@@ -145,6 +158,8 @@ def inspect_images(first: Image.Image, second: Image.Image) -> dict:
         "audio_pipeline_progress": pipeline,
         "synthetic_scene_switches": synthetic_switches,
         "guest_zr_recovery": zr_recovery,
+        "guest_zl_invalid_clock_no_replay": inspect_zl_marker(first),
+        "guest_zl_is_not_physical_button": True,
         "guest_zr_is_not_physical_button": True,
         "user_music_identity_verified": False,
         "audible_audio_verified": False,
@@ -172,6 +187,8 @@ def main():
     parser.add_argument("--require-synthetic-scene-switches",
                         action="store_true",
                         help="require two completed synthetic SEQ transitions")
+    parser.add_argument("--require-guest-zl-no-replay", action="store_true",
+                        help="require CI-only exact-return ZL invalid-clock witness")
     parser.add_argument("--require-guest-zr-recovery", action="store_true",
                         help="require CI-only guest auto-ZR returned-PCM witness")
     parser.add_argument("--require-no-synthetic-switches",
@@ -204,6 +221,15 @@ def main():
                 and report["synthetic_scene_switches"] != "not_applicable"):
             raise ValueError("unexpected synthetic scene-switch indicator: "
                              + report["synthetic_scene_switches"])
+        if args.require_guest_zl_no_replay:
+            with Image.open(args.after) as image_after:
+                later_zl=inspect_zl_marker(image_after)
+            if (report["guest_zl_invalid_clock_no_replay"] != "confirmed" or
+                    later_zl != "confirmed" or
+                    report["audout_status"] != "unavailable_or_error" or
+                    report["audio_source"] != "synthetic" or
+                    report["audio_pipeline_progress"] != "inactive_or_error"):
+                raise ValueError("guest ZL invalid-clock no-replay not confirmed on both frames")
         if args.require_guest_zr_recovery:
             with Image.open(args.after) as image_after:
                 after_zr = inspect_zr_marker(image_after)
