@@ -161,12 +161,27 @@ Makefile не переписывается; `REGION=jp` и объединённ�
 
 В диагностический ELF должны попасть конкретные оригинальные функции
 `LoadCdFile`, `ContinueLoadingCdFile`, `CdRead` и `DrawOTag`,
-компилируемые с опциональными source-хуками, и единые объектные файлы
+компилируемые с опциональными source-хуками, единые объектные файлы
 `map02_cycle_order`, `map02_cd_read_probe`,
-`map02_capture_session`. Расширенный GPU/VRAM/BlendG1 захват из
-предыдущего этапа требует отдельной совместной интеграции; этот
-Makefile-overlay **ещё не гарантирует**, что такие дополнительные
-пиксельные наблюдатели включены.
+`map02_capture_session`, а также **тот же оригинальный**
+`pc_raster.c` с opt-in PutPixel/BlendG1-наблюдателем. Генератор
+теперь совместно внедряет native GPU recorder, scoped DrawOTag и VRAM edge
+hooks в `libgpu.c` и копирует stage/sink/edge-модули в приватную сборку.
+Отдельный `map02_scoped_blend_stage.c` компилируется с необходимыми
+`VH_MAP02_CD_READ_PROBE`, `VH_MAP02_VRAM_EDGE_PROBE` и
+`VH_MAP02_CAPTURE_SESSION` флагами для пяти связанных scoped-файлов.
+
+Для фактического захвата нужны заранее созданные **раздельные**
+приватные каталоги `0700` и явно согласованные переменные
+`VH_MAP02_GPU_CAPTURE_DIR`, `VH_MAP02_GPU_CAPTURE_FRAME`,
+`VH_MAP02_GPU_CAPTURE_WINDOW_COUNT=2`,
+`VH_MAP02_PROBE_FRAME`, `VH_MAP02_PROBE_X`,
+`VH_MAP02_PROBE_Y`, `VH_MAP02_PROBE_OUTPUT_DIR` и
+`VH_MAP02_CYCLE_OUTPUT_DIR`. Номер кадра должен быть одним и тем же
+в GPU, scoped и cycle настройках. Для штатного PIXEL/BlendG1
+теста требуются `VH_ACCURATE=1` и `VH_INTERNAL_SCALE=1`.
+Обычный запуск без этих переменных не создаёт подтверждённой MAP02
+квитанции.
 
 Генератор требует точных Git blob SHA-1 исходных единиц
 `src/core/cd.c`, `platform/pc/src/libcd.c`,
@@ -177,8 +192,10 @@ Makefile-overlay **ещё не гарантирует**, что такие до�
 вне исходного checkout.
 
 В GitHub Actions дополнительно собираются в один **перемещаемый объект**
-(`ld -r`) три подлинные оригинальные translation units и общие
-наблюдатели, после чего проверяются разрешённые символы.
+(`ld -r`) четыре подлинные оригинальные translation units — CD core,
+libcd, libgpu, pc_raster — и общие CD/GPU/VRAM/BlendG1-наблюдатели,
+после чего проверяются разрешённые символы и отсутствие оставшихся
+неразрешённых диагностических `vh_map02_*` ссылок.
 Это значительный шаг к настоящей единичной программе, но `ld -r`
 не создаёт исполняемый игровой ELF и не исполняет MAP02.
 Нельзя считать эту проверку подтверждением её отрисовки.
