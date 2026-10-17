@@ -302,6 +302,11 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
                r->focus->backgrounds,r->focus->returns,r->focus->resumes);
         printf("Focus events duplicate/error=%u/%u\n",
                r->focus->ignored_duplicates,r->focus_errors);
+        printf("First PCM after HOME=%u pending=%u merged=%u\n",
+               r->focus->first_pages_after_return,
+               r->focus->pending_return,r->focus->coalesced_returns);
+        printf("Audout returned pages observed=%u\n",
+               r->focus->returned_pages);
         printf("HOME focus notify=%s\n",
                focus_notification_mode==1u ? "ENABLED" :
                focus_notification_mode==2u ? "UNAVAILABLE" : "APPLET MODE");
@@ -599,6 +604,14 @@ int main(int argc, char **argv) {
         }
         ++played_blocks;
         completed_switches+=switched_this_block;
+        /* Commit the first returned descriptor after a real foreground
+         * notification. HOME events without this observation are NOT
+         * treated as proof of device playback or audible output. */
+        if(vh_audio_applet_page_returned(&focus_events)<0) {
+            ++focus_record_errors;
+            result=25;
+            break;
+        }
         /* Read A-button rising edge only after audout has returned
          * its PCM descriptor; do not touch SEQ, SPU or resampler. */
         padUpdate(&pad);
@@ -612,7 +625,8 @@ int main(int argc, char **argv) {
         /* Manual on-device pause/reopen probes run ONLY after the
          * previous audoutPlayBuffer returned the exact descriptor.
          * X: ordinary stop/start. Y: stop then forced reopen.
-         * Actual HOME/suspend is a separate uninstrumented scenario.
+         * Actual HOME/suspend remains observational; applet callback
+         * does not manipulate audout or attempt automatic recovery.
          * Never do device work from a controller/app hook callback. */
         const uint64_t pressed=padGetButtonsDown(&pad);
         const uint64_t held=padGetButtons(&pad);
@@ -797,7 +811,8 @@ int main(int argc, char **argv) {
     if ((run_evidence<0 || seam_evidence || listen_evidence ||
          poll_evidence || compute_evidence) && result==0) result=10;
     const int manual_evidence=vh_audio_manual_verify(&manual_resume);
-    const int focus_evidence=vh_audio_applet_verify(&focus_events);
+    const int focus_evidence=vh_audio_applet_verify(&focus_events) ||
+        focus_events.returned_pages!=played_blocks;
     if (manual_evidence && result==0) result=23;
     if ((focus_evidence || focus_record_errors) && result==0) result=24;
     const unsigned verdict=(focus_evidence || focus_record_errors)
