@@ -85,10 +85,13 @@ def oracle_source(stops):
                         SysPrintf("VH121_VRAM_REFUSED phase=%u\n",phase);
                         ClosePlugins();SysClose();menu_finish();plat_finish();return 37;
                     }
-            vh115_metrics metrics;
-            if(vh115_get_metrics(&metrics)!=0 ||
+            vh115_metrics metrics={0};
+            int metric_status=vh115_get_metrics(&metrics);
+            if(metric_status!=0 ||
                metrics.handlers!=phase+1u || metrics.vblank_edges!=0u){
-                SysPrintf("VH121_UNAI_COUNT_REFUSED phase=%u\n",phase);
+                SysPrintf("VH121_UNAI_COUNT_REFUSED phase=%u status=%d handlers=%u vblanks=%u sampling=%d timeline_entries=%u\n",
+                    phase,metric_status,metrics.handlers,
+                    metrics.vblank_edges,vh84_sampling_enabled(),vh80_count());
                 ClosePlugins();SysClose();menu_finish();plat_finish();return 37;
             }
             readbacks++;
