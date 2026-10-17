@@ -2,6 +2,8 @@
 #include <string.h>
 #include <stdio.h>
 #include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include "vh_audio_diag_journal.h"
 #include "vh_audio_diag_export.h"
@@ -396,7 +398,7 @@ int main(int argc, char **argv) {
             if(failure_fd>=0) {
                 char message[96];
                 const int n=snprintf(message,sizeof message,
-                    "audout_export_status=%d\\n", (int)audout_saved);
+                    "audout_export_status=%d\n", (int)audout_saved);
                 if(n>0 && (size_t)n<sizeof message)
                     (void)write(failure_fd,message,(size_t)n);
                 (void)close(failure_fd);
