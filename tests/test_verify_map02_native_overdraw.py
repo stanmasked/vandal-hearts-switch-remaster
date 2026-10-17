@@ -136,6 +136,37 @@ class NativeOverdrawTests(unittest.TestCase):
         self.assertTrue(report["consecutive_native_vram_boundaries_exact"])
         self.assertFalse(report["ft4_actual_pixel_coverage_verified"])
 
+    def test_unmatched_draw_between_ft4s_does_not_claim_sole_causality(self):
+        # An unrelated original DrawOTag packet changes the same word
+        # between two source-keyed FT4s. Their first PRE equals the last
+        # POST, but this is endpoint equality, not a two-FT4-only replay.
+        nonterrain = self.base.event(6, "draw", None)
+        nonterrain["primitive_type"] = 4  # non-FT4, non-DR_MODE packet
+        self.base.entries.insert(2, nonterrain)
+        original = bytearray(self.base.bytes_before)
+        first = bytearray(original)
+        write_word(first, 30, 30, 0x801f)
+        intermediate = bytearray(first)
+        write_word(intermediate, 30, 30, 0x03e0)
+        self.base.override_snapshots = {
+            3: bytes(first), 4: bytes(first),
+            5: bytes(intermediate), 6: bytes(intermediate),
+            7: bytes(original),
+        }
+        self.save()
+        report = verify_native_overdraw(self.source, self.native)
+        self.assertEqual(report["all_native_gpu_draw_pairs"], 4)
+        self.assertEqual(report["source_keyed_ft4_draw_pairs_checked"], 2)
+        self.assertEqual(report["changed_vram_words_on_source_ft4_draws"], 2)
+        self.assertEqual(report["source_ft4_first_pre_equals_last_post_words"], 1)
+        self.assertEqual(
+            report["source_ft4_repeatedly_changed_first_pre_equals_last_post_words"], 1)
+        self.assertEqual(report["source_ft4_color_only_word_changes"], 1)
+        self.assertEqual(report["source_ft4_color_and_bit15_word_changes"], 1)
+        self.assertEqual(report["bit15_unset_to_set_word_changes"], 1)
+        self.assertEqual(report["bit15_set_to_unset_word_changes"], 0)
+        self.assertFalse(report["ft4_word_change_causality_or_coverage_verified"])
+
     def test_unchanged_draw_cannot_prove_transparency_or_gpu_mask(self):
         # Source face 0 processes an identical post-draw snapshot.
         self.base.override_snapshots[5]=self.first
