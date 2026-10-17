@@ -34,6 +34,8 @@ class PrivateFullPcBuildTests(unittest.TestCase):
                   return_value=self.bundle / "map02_cycle.mk"),
             patch("tools.build_map02_cycle_pc_local.audit_cycle_elf",
                   return_value={"required_symbols_present": 19}),
+            patch("tools.build_map02_cycle_pc_local.verify_generated_original_font",
+                  return_value={"pinned_original_krom_font_c_identical": True}),
             patch("tools.check_map02_private_pc_inputs.verify_private_pc_inputs",
                   return_value={
                       "private_build_inputs_binding_sha256": "9" * 64,
