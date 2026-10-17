@@ -1,0 +1,149 @@
+"""Launch an opt-in local PC GPU/DDA capture without publishing game bytes.
+
+Only a user-supplied executable with their own game resources is launched.
+This records process completion and checks the same private binary and GPU
+journals after exit. It does NOT attest retail MAP02 or approve HD assets.
+"""
+import argparse
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+from tools.preflight_map02_private_dda_capture import (
+    preflight, _executable_fingerprint, DIR_KEYS,
+)
+from tools.verify_map02_private_capture_session import verify_session
+
+
+def _private_create(path, obj):
+    """Create once with permissions 0600; never overwrite an older receipt."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        json.dump(obj, stream, sort_keys=True, indent=2)
+        stream.write("\n")
+
+
+def capture(executable, preflight_report, summary_report, *,
+            game_args=(), environ=None, timeout=None):
+    """Synchronous controlled launcher. Returns an unprivileged receipt dict.
+
+    The launcher does not identify an installed original game nor prove
+    which native libraries it used. No stdout, stderr, textures or pixels
+    are copied to the report or GitHub.
+    """
+    env = dict(os.environ if environ is None else environ)
+    executable = Path(executable).absolute()
+    preflight_report = Path(preflight_report).absolute()
+    summary_report = Path(summary_report).absolute()
+    if preflight_report == summary_report:
+        raise ValueError("preflight and summary must be different files")
+    if (preflight_report.is_symlink() or summary_report.is_symlink()
+            or preflight_report.exists() or summary_report.exists()):
+        raise ValueError("capture receipts already exist; refusing overwrite")
+    for key in DIR_KEYS:
+        root = Path(env.get(key, "")).absolute()
+        if preflight_report == root or summary_report == root:
+            raise ValueError("capture receipts cannot replace capture directory")
+        if root in preflight_report.parents or root in summary_report.parents:
+            raise ValueError("capture receipts must remain outside empty capture directory")
+    if timeout is not None and (type(timeout) not in (int, float)
+                                or not 0 < timeout <= 86400):
+        raise ValueError("invalid capture timeout")
+    if not isinstance(game_args, (tuple, list)) or any(
+            type(arg) is not str or "\x00" in arg for arg in game_args):
+        raise ValueError("game arguments must be plain strings")
+    config = preflight(env, executable=executable)
+    _private_create(preflight_report, config)
+    receipt = {
+        "schema": "map02_private_native_process_receipt_v1",
+        "capture_frame": config["capture_frame"],
+        "executable_sha256": config["executable_sha256"],
+        "preflight_created": True,
+        "process_started": False,
+        "process_exit_code": None,
+        "capture_verified": False,
+        "verification": None,
+        "failure_category": None,
+        "retail_map02_verified": False,
+        "hd_replacement_authorized": False,
+    }
+    try:
+        # Do not use a shell, capture the process' private output or expose
+        # a game-supplied path/argument in reports. This program is a local
+        # diagnostic launcher, not a sandbox for untrusted executables.
+        proc = subprocess.Popen(
+            [str(executable), *game_args],
+            cwd=executable.parent,
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            shell=False,
+        )
+        receipt["process_started"] = True
+        try:
+            receipt["process_exit_code"] = proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+            receipt["failure_category"] = "process_timeout"
+        except KeyboardInterrupt:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+            receipt["failure_category"] = "process_interrupted"
+    except OSError:
+        receipt["failure_category"] = "process_launch_failed"
+    try:
+        after = _executable_fingerprint(executable)
+        if after["executable_sha256"] != config["executable_sha256"]:
+            receipt["failure_category"] = "executable_changed"
+        elif after["executable_bytes"] != config["executable_bytes"]:
+            receipt["failure_category"] = "executable_changed"
+    except ValueError:
+        receipt["failure_category"] = "executable_changed"
+    if (receipt["process_started"] and receipt["process_exit_code"] == 0
+            and receipt["failure_category"] is None):
+        try:
+            receipt["verification"] = verify_session(
+                env[DIR_KEYS[0]], native_frame=config["capture_frame"],
+                preflight_report=preflight_report, executable=executable,
+            )
+            receipt["capture_verified"] = True
+        except (ValueError, OSError):
+            receipt["failure_category"] = "incomplete_or_invalid_private_capture"
+    elif receipt["failure_category"] is None:
+        receipt["failure_category"] = "process_exit_nonzero"
+    _private_create(summary_report, receipt)
+    return receipt
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--executable", type=Path, required=True)
+    parser.add_argument("--preflight-report", type=Path, required=True)
+    parser.add_argument("--summary-report", type=Path, required=True)
+    parser.add_argument("--timeout-seconds", type=int, default=None)
+    parser.add_argument("game_args", nargs="*")
+    args = parser.parse_args()
+    try:
+        result = capture(args.executable, args.preflight_report,
+                         args.summary_report, game_args=args.game_args,
+                         timeout=args.timeout_seconds)
+    except (ValueError, OSError) as exc:
+        parser.error(str(exc))
+    print(json.dumps(result, sort_keys=True, indent=2))
+    return 0 if result["capture_verified"] else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
