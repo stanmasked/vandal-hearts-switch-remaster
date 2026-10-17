@@ -49,7 +49,10 @@ if "--with-load" in sys.argv:
         }
         with (root / "gpu-native-events.jsonl").open("a") as log:
             log.write(json.dumps(load) + "\n")
-        (root / load["snapshot"]).write_bytes(bytes(1024 * 512 * 2))
+        load_vram = bytearray(1024 * 512 * 2)
+        if phase == "after":
+            load_vram[:2] = b"\x1f\x00"
+        (root / load["snapshot"]).write_bytes(load_vram)
 for i, phase in enumerate(("before", "after"),
                           start=2 if "--with-load" in sys.argv else 0):
     event = {
@@ -152,6 +155,7 @@ class PrivateNativeLauncherTests(unittest.TestCase):
         first = self.replay()
         self.assertEqual(first["native_gpu_pairs_verified"], 2)
         self.assertEqual(result["verification"]["load_pairs_with_verified_payload"], 1)
+        self.assertEqual(result["verification"]["load_pairs_with_verified_vram_effect"], 1)
         self.assertEqual(result["verification"]["load_pairs_without_payload"], 0)
         self.assertEqual(len(result["verification"]["upload_payload_sha256_list_sha256"]), 64)
         self.assertFalse(first["original_game_assets_authenticated"])
@@ -159,7 +163,7 @@ class PrivateNativeLauncherTests(unittest.TestCase):
         original = payload.read_bytes()
         self.assertEqual(len(original), 2)
         payload.write_bytes(b"\x1e\x00")  # same-size tampering
-        with self.assertRaisesRegex(ValueError, "no longer matches"):
+        with self.assertRaisesRegex(ValueError, "post-VRAM differs"):
             self.replay()
         payload.write_bytes(original)
         self.assertTrue(self.replay()["raw_evidence_matches_original_receipt"])
