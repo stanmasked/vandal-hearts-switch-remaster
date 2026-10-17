@@ -13,16 +13,18 @@ static int exists(const char *p) {
     return errno==ENOENT ? 0 : -1;
 }
 static int make_path(char *out,size_t cap,const char *dir,
-                     unsigned slot,const char *ext) {
+                     unsigned slot,const char *ext,const char *stem) {
     const size_t n=strlen(dir);
     const int slash=dir[n-1]=='/' ? 0 : 1;
-    const int k=snprintf(out,cap,"%s%saudio-audout-queue-%04u.%s",
-                         dir,slash?"/":"",slot,ext);
+    const int k=snprintf(out,cap,"%s%saudio-audout-%s-%04u.%s",
+                         dir,slash?"/":"",stem,slot,ext);
     return k>0 && (size_t)k<cap;
 }
-VhAudoutQueueExportResult vh_audout_queue_export(
+typedef int (*VhWriter)(const VhAudoutQueueTelemetry *,FILE *);
+static VhAudoutQueueExportResult export_csv(
     const VhAudoutQueueTelemetry *t,const char *directory,
-    char *committed_path,size_t capacity) {
+    char *committed_path,size_t capacity,const char *stem,
+    VhWriter writer,VhWriter verify) {
     if(committed_path && capacity) committed_path[0]='\0';
     if(!t || !directory || !*directory || !committed_path || !capacity)
         return VH_AUDOUT_QUEUE_EXPORT_INVALID;
@@ -30,8 +32,8 @@ VhAudoutQueueExportResult vh_audout_queue_export(
     char temp[VH_AUDOUT_QUEUE_EXPORT_PATH_CAP];
     unsigned slot=0;
     for(;slot<VH_AUDOUT_QUEUE_EXPORT_SLOTS;slot++) {
-        if(!make_path(dest,sizeof dest,directory,slot,"csv") ||
-           !make_path(temp,sizeof temp,directory,slot,"tmp"))
+        if(!make_path(dest,sizeof dest,directory,slot,"csv",stem) ||
+           !make_path(temp,sizeof temp,directory,slot,"tmp",stem))
             return VH_AUDOUT_QUEUE_EXPORT_PATH;
         const int old=exists(dest),pending=exists(temp);
         if(old<0 || pending<0) return VH_AUDOUT_QUEUE_EXPORT_IO;
@@ -51,14 +53,14 @@ VhAudoutQueueExportResult vh_audout_queue_export(
         return VH_AUDOUT_QUEUE_EXPORT_OPEN;
     }
     VhAudoutQueueExportResult status=VH_AUDOUT_QUEUE_EXPORT_OK;
-    if(vh_audout_queue_write_csv(t,f)<0 || fflush(f)!=0)
+    if(writer(t,f)<0 || fflush(f)!=0)
         status=VH_AUDOUT_QUEUE_EXPORT_IO;
     if(fclose(f)!=0) status=VH_AUDOUT_QUEUE_EXPORT_IO;
     if(status==VH_AUDOUT_QUEUE_EXPORT_OK) {
         FILE *readback=fopen(temp,"rb");
         if(!readback) status=VH_AUDOUT_QUEUE_EXPORT_VERIFY;
         else {
-            if(vh_audout_queue_verify_csv(t,readback)!=0)
+            if(verify(t,readback)!=0)
                 status=VH_AUDOUT_QUEUE_EXPORT_VERIFY;
             if(fclose(readback)!=0)
                 status=VH_AUDOUT_QUEUE_EXPORT_VERIFY;
@@ -77,4 +79,17 @@ VhAudoutQueueExportResult vh_audout_queue_export(
     }
     memcpy(committed_path,dest,length);
     return VH_AUDOUT_QUEUE_EXPORT_OK;
+}
+
+VhAudoutQueueExportResult vh_audout_queue_export(
+    const VhAudoutQueueTelemetry *t,const char *directory,
+    char *committed_path,size_t capacity) {
+    return export_csv(t,directory,committed_path,capacity,
+        "queue",vh_audout_queue_write_csv,vh_audout_queue_verify_csv);
+}
+VhAudoutQueueExportResult vh_audout_latency_export(
+    const VhAudoutQueueTelemetry *t,const char *directory,
+    char *committed_path,size_t capacity) {
+    return export_csv(t,directory,committed_path,capacity,
+        "latency",vh_audout_latency_write_csv,vh_audout_latency_verify_csv);
 }
