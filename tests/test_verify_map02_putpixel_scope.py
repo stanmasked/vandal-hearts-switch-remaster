@@ -105,6 +105,10 @@ class PixelToOriginalPrimitiveTests(unittest.TestCase):
         result=verify_pixel_ot(self.root,self.native)
         self.assertEqual(result["actual_same_color_calls_invisible_to_vram_delta"],1)
         self.assertEqual(result["calls_attributed_to_source_keyed_ft4"],3)
+        self.assertEqual(result["source_ft4_scoped_changed_putpixel_calls"],2)
+        self.assertEqual(result["source_ft4_scoped_unchanged_putpixel_calls"],1)
+        self.assertEqual(
+            result["source_ft4_scoped_transient_draws_invisible_to_vram_delta"],0)
 
     def test_two_real_putpixel_changes_can_cancel_inside_one_ft4(self):
         # First MAP02-matched FT4 performs two observed writes at this
@@ -152,6 +156,10 @@ class PixelToOriginalPrimitiveTests(unittest.TestCase):
         result = verify_pixel_ot(self.root,self.native)
         self.assertEqual(result["source_ft4_sampled_changed_word_draws"],2)
         self.assertEqual(result["source_ft4_sampled_bit15_only_changes"],2)
+        self.assertEqual(result["source_ft4_scoped_changed_putpixel_calls"],2)
+        self.assertEqual(result["source_ft4_scoped_bit15_only_putpixel_calls"],2)
+        self.assertEqual(
+            result["source_ft4_scoped_transient_draws_invisible_to_vram_delta"],0)
         self.assertEqual(result["source_ft4_sampled_color_only_changes"],0)
         self.assertEqual(result["source_ft4_sampled_color_and_bit15_changes"],0)
         self.assertTrue(
@@ -189,6 +197,11 @@ class PixelToOriginalPrimitiveTests(unittest.TestCase):
         self.assertEqual(result["native_drawotag_primitives_checked"],4)
         self.assertEqual(result["observed_native_putpixel_calls"],3)
         self.assertEqual(result["calls_attributed_to_source_keyed_ft4"],2)
+        self.assertEqual(result["source_ft4_scoped_changed_putpixel_calls"],2)
+        self.assertEqual(result["source_ft4_scoped_unchanged_putpixel_calls"],0)
+        self.assertEqual(result["source_ft4_scoped_bit15_only_putpixel_calls"],0)
+        self.assertEqual(result["source_ft4_scoped_color_only_putpixel_calls"],1)
+        self.assertEqual(result["source_ft4_scoped_color_and_bit15_putpixel_calls"],1)
         self.assertEqual(result["source_ft4_sampled_changed_word_draws"],2)
         self.assertTrue(
             result["source_ft4_sampled_first_changed_pre_equals_last_changed_post"])
