@@ -42,3 +42,21 @@ A subsequent CI run `39048634327` on commit `f28bcdf13aaf771c8519a5d3a96552a5374
 `.github/workflows/emulator-smoke.yml` was updated to download the exact `39048418666` artifact, verify the new SHA-256, perform the established framebuffer and A/B music tests, and run the guest-trace auditor on the NeXium scene log. `tools/capture_nexium_scene_audio.sh` now requests Plus at the end of the fifth scene to attempt a clean guest exit/trace emission. Whether NeXium actually propagates `stderr` must be read from the new artifact; an absent trace is `GUEST_TRACE_NOT_OBSERVED` (not 0-ms input-to-audio latency).
 
 **Never upgrade to hardware acceptance** from guest-side events. Even a fully matched `INPUT→POST→ACCEPT→SUBMIT_CALL→RELEASE_RETURN` only establishes timing of observed internal operations. Actual DAC output, hardware buffer underruns, SD persistence, HOME/sleep and real sound remain **HARDWARE NOT TESTED**.
+
+## Actual NeXium results and identified evidence-transport blocker
+
+The current emulator workflow [39048953030](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39048953030) on workflow SHA `c93fdbf5a2c7010630e83eaa38c2368c68d4d79e` **completed SUCCESS** (build/test job and emulator job). Its guest binary was the separately pinned and hash-checked NRO from integrated build `39048418666`, not a hidden ad-hoc replacement.
+
+The original [NeXium runtime evidence artifact `12107261023`](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39048953030) was downloaded and checked independently. All **34 ZIP members passed CRC**. The archived scene-audio report records 42.661 s of 48-kHz stereo PCM, raw PCM SHA-256 `5d96d1d810c9d6b644e918b313eb7e3ac2a265035cb60296ee0147381a08d52f`, five non-silent intervals, median FIELD zero-crossings proxy **307.614 Hz**, median FOCUS **526.652 Hz** (ratio 1.7121), and `REPEATED_SCENE_CORRELATED_PCM_CHANGE`. The four independent visual label changes again count **[47,47,47,47]** pixels.
+
+**Crucial boundary:** the original `runtime-evidence/nexium-scenes-run.log` is **zero bytes**. The strict `guest-scene-trace-audit.json` reports `GUEST_TRACE_NOT_OBSERVED`, with null hardware latency. Pressing mapped Plus near the end did not make guest `fprintf(stderr)` observable to the runner. Thus the internal guest event timings are **NOT MEASURED** in this stage even though the NRO contains the trace formatter and CI is green. Do not infer a missing scene transition or zero response time from the absent guest log.
+
+The prior workflow [39048925368](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39048925368) without the final Plus change also completed successfully; the later run is the authoritative screenshot and audio comparison for this stage. A separate intermediate integrated NRO run `39048634327` failed a negative test fixture before compilation, and its corrected test version passed host CI; do not misstate that failed run as a compiled binary.
+
+### Stage 266: writable guest SD export with readback
+
+The **current upstream NeXium source** places `sdmc:/` beneath `nexium_common::paths::sdmc_dir()`. The default is the `sdmc` subdirectory of NeXium's configuration root. It supports the environment override `NEXIUM_DATA_ROOT`; host CI can set that variable to an isolated temporary directory and retrieve `$NEXIUM_DATA_ROOT/sdmc/switch/vandal-hearts-remake/` afterward. This mapping has been inspected in upstream NeXium code; **writing the actual CSV in this project is not yet implemented or tested**.
+
+Implement a separate bounded numbered scene-trace CSV exporter **after the audout worker joins**, using temporary write, close, readback verification and rename without overwriting prior captures (matching the existing hardened audio-diagnostics protocol). The NeXium workflow must collect that SD file and verify exact event/order/serial semantics before declaring any measured guest-origin delays. Any absence or corruption must be an explicit not-observed/failure verdict; never silently substitute host-side input events.
+
+The physical Switch remains **HARDWARE NOT TESTED**.
