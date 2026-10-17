@@ -53,8 +53,26 @@ if "--with-load" in sys.argv:
         if phase == "after":
             load_vram[:2] = b"\x1f\x00"
         (root / load["snapshot"]).write_bytes(load_vram)
+if "--with-move" in sys.argv:
+    for i, phase in enumerate(("before", "after")):
+        move = {
+            "stage": "native_vram", "step": i, "frame": frame - 1,
+            "phase": phase, "operation": "move",
+            "snapshot": f"gpu-{i:04d}-vram.bin",
+            "rect": [0, 0, 3, 1], "dest": [1, 0],
+            "rgb": [0, 0, 0], "primitive_type": 0, "semi": 0,
+            "window": [0, 0, 0, 0], "draw_mode": [0, 0, 0],
+            "upload": "", "ft4": None,
+        }
+        with (root / "gpu-native-events.jsonl").open("a") as log:
+            log.write(json.dumps(move) + "\n")
+        move_vram = bytearray(1024 * 512 * 2)
+        move_vram[:8] = (b"\x11\x00\x22\x00\x33\x00\x44\x00"
+                         if phase == "before" else b"\x11\x00" * 4)
+        (root / move["snapshot"]).write_bytes(move_vram)
 for i, phase in enumerate(("before", "after"),
-                          start=2 if "--with-load" in sys.argv else 0):
+                          start=2 if ("--with-load" in sys.argv
+                                      or "--with-move" in sys.argv) else 0):
     event = {
         "stage": "native_vram", "step": i, "frame": frame,
         "phase": phase, "operation": "draw",
@@ -167,6 +185,22 @@ class PrivateNativeLauncherTests(unittest.TestCase):
             self.replay()
         payload.write_bytes(original)
         self.assertTrue(self.replay()["raw_evidence_matches_original_receipt"])
+
+    def test_replay_detects_moveimage_overlap_violation(self):
+        result = self.run_synthetic("--with-move")
+        self.assertTrue(result["capture_verified"])
+        self.assertEqual(result["verification"]["move_pairs_with_verified_vram_effect"], 1)
+        initial = self.replay()
+        self.assertTrue(initial["raw_evidence_matches_original_receipt"])
+        self.assertEqual(initial["move_pairs_with_verified_vram_effect"], 1)
+        post = self.capture_dir / "gpu-0001-vram.bin"
+        corrupted = bytearray(post.read_bytes())
+        # Replace the source-ordered overlapping result with an
+        # incorrect memcpy-like snapshot that preserves file size.
+        corrupted[:8] = b"\x11\x00\x11\x00\x22\x00\x33\x00"
+        post.write_bytes(corrupted)
+        with self.assertRaisesRegex(ValueError, "MoveImage post-VRAM differs"):
+            self.replay()
 
     def test_replay_refuses_modified_original_process_receipt(self):
         self.run_synthetic()
