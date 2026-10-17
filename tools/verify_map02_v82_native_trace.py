@@ -43,6 +43,8 @@ def validate(content: bytes):
         else:
             if item["frame"]!=0:raise Refused("GPU submission asserted frame identity")
             if item["kind"]=="gp1_mmio":gp1+=1
+            if item["kind"]=="gp0_unai_handled" and item["cycle"]!=0:
+                raise Refused("renderer GPU handler has no observed CPU cycle")
             if item["kind"]=="gp0_unai_handled" and not (
                 (item["value"]>>24)==2 or 0x20 <= (item["value"]>>24) <= 0x7f
                 or 0xe1 <= (item["value"]>>24) <= 0xe6):
