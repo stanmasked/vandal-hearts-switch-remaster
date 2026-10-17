@@ -4,6 +4,11 @@
 set -euo pipefail
 : "${NEXIUM_BIN:?Nexium executable required}"
 : "${RUNNER_TEMP:?runner temporary directory required}"
+# Stage276 control mode: same original NRO, no scene-switch inputs.
+# Default remains byte-compatible with all previous interactive soaks.
+SOAK_MODE="${SOAK_MODE:-switch}"
+case "$SOAK_MODE" in switch|idle) ;; *) echo "Invalid SOAK_MODE" >&2; exit 2;; esac
+export SOAK_MODE
 output="${1:-runtime-evidence/scene-soak}"
 if [[ -e "$output/soak-events.csv" || -e "$output/soak-optical-trace.png" ]]; then
   echo "Refuse overwrite of an existing scene-soak capture" >&2
@@ -19,7 +24,11 @@ test -n "$icd"
 export VK_ICD_FILENAMES="$icd"
 pactl info >/dev/null
 pactl set-default-sink vh_nexium_capture
-export NEXIUM_DATA_ROOT="${RUNNER_TEMP}/vh-nexium-stage268-${GITHUB_RUN_ID:-local}"
+if [[ "$SOAK_MODE" == idle ]]; then
+  export NEXIUM_DATA_ROOT="${RUNNER_TEMP}/vh-nexium-idle276-${GITHUB_RUN_ID:-local}"
+else
+  export NEXIUM_DATA_ROOT="${RUNNER_TEMP}/vh-nexium-stage268-${GITHUB_RUN_ID:-local}"
+fi
 export SOAK_SD_DIR="$NEXIUM_DATA_ROOT/sdmc/switch/vandal-hearts-remake"
 if [[ -e "$NEXIUM_DATA_ROOT" ]]; then
   echo "Refuse to reuse an existing isolated NeXium data directory" >&2
@@ -80,28 +89,40 @@ timeout --kill-after=5s 110s xvfb-run -a -s '-screen 0 1280x720x24' bash -c '
   snapshot field_initial 0
   sleep 3.5
   for i in $(seq 1 10); do
-    if (( i % 2 == 1 )); then
-      key_press c
-      state="focus_$i"
+    if [ "$SOAK_MODE" = idle ]; then
+      # No A, B, or scene-changing key. Keep the same initial music
+      # playing for a full >=50s capture with comparable framebuffer
+      # snapshots, then use only Plus to stop and export guest SD.
+      snapshot "idle_$i" "$i"
+      sleep 5.0
     else
-      key_press x
-      state="field_$i"
+      if (( i % 2 == 1 )); then
+        key_press c
+        state="focus_$i"
+      else
+        key_press x
+        state="field_$i"
+      fi
+      snapshot "$state" "$i"
+      sleep 3.7
     fi
-    snapshot "$state" "$i"
-    sleep 3.7
   done
   # A one-shot host Plus press may last LESS than the guest HID poll
   # interval and be missed. Hold the real Plus key across many frames;
   # the original optical/SD/PCM auditors still reject missing proof.
-  xdotool keydown --window "$window" v
-  sleep 0.4
+  if [ "$SOAK_MODE" != idle ]; then
+    xdotool keydown --window "$window" v
+    sleep 0.4
+  fi
   xdotool keydown --window "$window" m
   sleep 0.25
   xdotool keyup --window "$window" m
   sleep 1.1
   import -window "$window" "$SOAK_DIR/soak-optical-trace.png"
   test -s "$SOAK_DIR/soak-optical-trace.png"
-  xdotool keyup --window "$window" v || true
+  if [ "$SOAK_MODE" != idle ]; then
+    xdotool keyup --window "$window" v || true
+  fi
   sleep 3
 ' > "$output/soak-runner.log" 2>&1
 cleanup
