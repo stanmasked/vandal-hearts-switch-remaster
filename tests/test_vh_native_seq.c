@@ -1564,6 +1564,142 @@ static void test_tempo_note_events_under_alternating_backpressure(void) {
     assert(!ring.overrun_frames);
 }
 
+
+static void test_full_pcm_queue_scene_switch_alternating_eon(void) {
+    /* Old PCM pages are immutable across scene changes. Each new note
+     * starts from a cleared voice, but the STUDIO_C tail and wet settings
+     * persist. A separate dry SPU and wet network form a sample-exact
+     * oracle for the newly appended block, with EON alternating. */
+    static const uint8_t sustained_song[] = {
+        HEADER,0,0x90,60,100,0x8fu,0x00u,0x80,60,0,
+        0,0xff,0x2f
+    };
+    setup();
+    assert(vh_native_spu_set_reverb(&spu,1,0.75f)==0);
+    assert(vh_native_seq_init(&seq,sustained_song,sizeof sustained_song,
+                              &spu,resolve_with_reverb,&log_state,1)==0);
+    for(unsigned i=0u;i<VH_AUDIO_RING_FRAMES/VH_AUDIO_BLOCK_FRAMES;i++)
+        assert(vh_native_seq_pump(&seq,&ring)==512);
+    assert(vh_audio_stream_queued(&ring)==VH_AUDIO_RING_FRAMES);
+    assert(seq.note_ons==1u && seq.note_offs==0u);
+    assert(spu.voice[0].reverb_send && spu.reverb.cursor>0);
+    memcpy(&pressure_expected_ring,&ring,sizeof ring);
+    memcpy(&expected_wet_tail,&spu.reverb,sizeof expected_wet_tail);
+    uint64_t heard_wet=0u;
+
+    for(unsigned iteration=0u;iteration<48u;iteration++) {
+        const int send=(iteration&1u)!=0u;
+        const VhSeqResolve resolver=send ? resolve_with_reverb : resolve;
+        assert(vh_native_seq_switch_scene(&seq,sustained_song,
+                    sizeof sustained_song,&spu,resolver,&log_state,1)==0);
+        assert(seq.blocks_advanced==0u && seq.note_ons==0u);
+        assert(seq.note_offs==0u && seq.playing);
+        assert(spu.frames_rendered==0u && spu.steal_index==0u);
+        assert(spu.reverb_enabled && spu.reverb_depth==0.75f);
+        assert(memcmp(&spu.reverb,&expected_wet_tail,
+                      sizeof expected_wet_tail)==0);
+        assert(memcmp(&ring,&pressure_expected_ring,sizeof ring)==0);
+        for(unsigned slot=0u;slot<VH_NATIVE_MUSIC_VOICES;slot++) {
+            assert(!vh_native_spu_voice_active(&spu,slot));
+            assert(spu.voice[slot].pcm==NULL);
+            assert(!spu.voice[slot].reverb_send);
+            assert(seq.owner_ch[slot]==-1 && seq.owner_note[slot]==-1);
+        }
+
+        memcpy(&pressure_before_seq,&seq,sizeof seq);
+        memcpy(&pressure_before_spu,&spu,sizeof spu);
+        assert(vh_native_seq_pump(&seq,&ring)==0);
+        assert(memcmp(&seq,&pressure_before_seq,sizeof seq)==0);
+        assert(memcmp(&spu,&pressure_before_spu,sizeof spu)==0);
+
+        /* Both partial reads must remain FIFO-exact; 511 free frames
+         * are insufficient to dispatch the scene's first Note On. */
+        const unsigned first=iteration%3u==0u ? 1u :
+                             (iteration%3u==1u ? 255u : 511u);
+        const unsigned parts[2]={first,512u-first};
+        for(unsigned part=0u;part<2u;part++) {
+            const unsigned frames=parts[part];
+            assert(vh_audio_stream_read(&pressure_expected_ring,
+                                        pressure_expected_pcm,frames)==frames);
+            assert(vh_audio_stream_read(&ring,pcm,frames)==frames);
+            assert(memcmp(pcm,pressure_expected_pcm,
+                          frames*2u*sizeof(int16_t))==0);
+            if(!part) {
+                assert(vh_native_seq_pump(&seq,&ring)==0);
+                assert(memcmp(&seq,&pressure_before_seq,sizeof seq)==0);
+                assert(memcmp(&spu,&pressure_before_spu,sizeof spu)==0);
+            }
+        }
+        assert(vh_audio_stream_queued(&ring)==
+               VH_AUDIO_RING_FRAMES-VH_AUDIO_BLOCK_FRAMES);
+        assert(memcmp(&ring,&pressure_expected_ring,sizeof ring)==0);
+
+        /* Compute the first new PCM page using separate dry synthesis
+         * and a wet processor inherited from the old scene. A second
+         * zero-send network tests that EON=0 never contributes send. */
+        vh_native_spu_reset(&dry_reference_spu);
+        assert(vh_native_spu_set_interpolation(&dry_reference_spu,
+                                                VH_SPU_GAUSSIAN)==0);
+        assert(vh_native_spu_note_on(&dry_reference_spu,0u,
+                      sample,64u,0,64,4096u,15u,0u,100.f/127.f,1.f)==0);
+        vh_native_spu_render(&dry_reference_spu,dry_reference_pcm,512u);
+        memcpy(&zero_send_wet_tail,&expected_wet_tail,
+               sizeof zero_send_wet_tail);
+        for(unsigned frame=0u;frame<512u;frame++) {
+            const unsigned left=frame*2u,right=left+1u;
+            const int dry_l=dry_reference_pcm[left];
+            const int dry_r=dry_reference_pcm[right];
+            int wet_l=0,wet_r=0,ignored_l=0,ignored_r=0;
+            vh_spu_reverb_process(&expected_wet_tail,
+                     send ? dry_l : 0,send ? dry_r : 0,
+                     0.75f,&wet_l,&wet_r);
+            vh_spu_reverb_process(&zero_send_wet_tail,0,0,0.75f,
+                                  &ignored_l,&ignored_r);
+            int mixed_l=dry_l+wet_l,mixed_r=dry_r+wet_r;
+            if(mixed_l>INT16_MAX) mixed_l=INT16_MAX;
+            if(mixed_l<INT16_MIN) mixed_l=INT16_MIN;
+            if(mixed_r>INT16_MAX) mixed_r=INT16_MAX;
+            if(mixed_r<INT16_MIN) mixed_r=INT16_MIN;
+            pressure_expected_pcm[left]=(int16_t)mixed_l;
+            pressure_expected_pcm[right]=(int16_t)mixed_r;
+            heard_wet+=(uint64_t)(wet_l<0 ? -wet_l : wet_l);
+            heard_wet+=(uint64_t)(wet_r<0 ? -wet_r : wet_r);
+        }
+        if(send) {
+            assert(memcmp(&expected_wet_tail,&zero_send_wet_tail,
+                          sizeof expected_wet_tail)!=0);
+        } else {
+            assert(memcmp(&expected_wet_tail,&zero_send_wet_tail,
+                          sizeof expected_wet_tail)==0);
+        }
+
+        const unsigned old_calls=log_state.calls;
+        assert(vh_native_seq_pump(&seq,&ring)==512);
+        assert(seq.blocks_advanced==1u && spu.frames_rendered==512u);
+        assert(seq.note_ons==1u && seq.note_offs==0u);
+        assert(seq.note_slot[0][60]==0 && seq.owner_note[0]==60);
+        assert(spu.voice[0].reverb_send==send);
+        assert(log_state.calls==old_calls+1u);
+        assert(memcmp(&spu.reverb,&expected_wet_tail,
+                      sizeof expected_wet_tail)==0);
+        assert(vh_audio_stream_write(&pressure_expected_ring,
+                           pressure_expected_pcm,512u)==512u);
+        assert(vh_audio_stream_queued(&ring)==VH_AUDIO_RING_FRAMES);
+        assert(memcmp(&ring,&pressure_expected_ring,sizeof ring)==0);
+        assert(!ring.overrun_frames && !ring.underrun_frames);
+    }
+    assert(heard_wet>0u);
+    for(unsigned i=0u;i<VH_AUDIO_RING_FRAMES/VH_AUDIO_BLOCK_FRAMES;i++) {
+        assert(vh_audio_stream_read(&pressure_expected_ring,
+                           pressure_expected_pcm,512u)==512u);
+        assert(vh_audio_stream_read(&ring,pcm,512u)==512u);
+        assert(memcmp(pcm,pressure_expected_pcm,
+                      sizeof pressure_expected_pcm)==0);
+    }
+    assert(vh_audio_stream_queued(&ring)==0u);
+    assert(memcmp(&ring,&pressure_expected_ring,sizeof ring)==0);
+}
+
 int main(void) {
     test_validation_and_source_immutability();
     test_512_block_controls_and_ring_pressure();
@@ -1589,6 +1725,7 @@ int main(void) {
     test_pcm_underrun_silence_without_seq_time_drift();
     test_variable_underrun_recovery_across_scene_switches();
     test_tempo_note_events_under_alternating_backpressure();
+    test_full_pcm_queue_scene_switch_alternating_eon();
     puts("native pQES SEQ -> 20-voice SPU -> PCM ring: PASS");
     return 0;
 }
