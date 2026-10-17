@@ -84,6 +84,9 @@ def verify_multi_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
     source_abr = [0, 0, 0, 0]
     source_changed_calls = source_transient_pairs = 0
     source_multi_blend_pairs = 0
+    # Sequence within a DrawOTag primitive, before grouping by coordinate:
+    # later tests distinguish A,B from A,B,A without exposing XY.
+    ordinal_word_sequence = {}
     for index, line in enumerate(lines):
         e = parse_json(line, f"multi pixel call {index}")
         fields(e, FIELDS, f"multi pixel call {index}")
@@ -124,6 +127,7 @@ def verify_multi_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
                                 textured, accurate) != e["after"]:
             raise ValueError("two-word PutPixel differs from source-pinned PC WritePixel")
         group = grouped.setdefault((ordinal, coordinate), [])
+        ordinal_word_sequence.setdefault(ordinal, []).append(coordinate)
         if group and group[-1]["after"] != e["before"]:
             raise ValueError("two-word PutPixel per-primitive word continuity broken")
         group.append(e)
@@ -141,11 +145,29 @@ def verify_multi_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
 
     source_changed_word_pairs = 0
     source_word_pairs_with_calls = 0
+    source_ft4_draws_with_both_words_observed = 0
+    source_ft4_draws_changing_both_words = 0
+    source_ft4_draws_with_both_words_semi = 0
+    source_ft4_draws_with_word_revisit = 0
     # Each GPU primitive snapshot is read once then checked at both words.
     # The native lower gate already checked full-VRAM adjacency and hashes.
     for ordinal, (pre, post) in enumerate(native_draws):
         before = private_file(native_dir, pre["snapshot"], expected=VRAM_BYTES)
         after = private_file(native_dir, post["snapshot"], expected=VRAM_BYTES)
+        if ordinal in source_ordinals:
+            groups = [grouped.get((ordinal, coord), ()) for coord in coordinates]
+            if all(groups):
+                source_ft4_draws_with_both_words_observed += 1
+                if all(any(e["semi"] for e in group) for group in groups):
+                    source_ft4_draws_with_both_words_semi += 1
+            # A,B,A is observable within one primitive, unlike A,A,B.
+            # No byte value or coordinate identity is returned publicly.
+            sequence = ordinal_word_sequence.get(ordinal, ())
+            if len(sequence) >= 3 and any(
+                    sequence[i] == sequence[i+2] != sequence[i+1]
+                    for i in range(len(sequence)-2)):
+                source_ft4_draws_with_word_revisit += 1
+        local_changed_coordinates = 0
         for coord in coordinates:
             address = coord[1]*1024 + coord[0]
             pre_value, post_value = word(before, address), word(after, address)
@@ -157,6 +179,7 @@ def verify_multi_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
                 continue
             if pre_value != post_value:
                 source_changed_word_pairs += 1
+                local_changed_coordinates += 1
                 if not group:
                     raise ValueError("source-keyed FT4 has unexplained sampled word change")
             if group:
@@ -167,6 +190,8 @@ def verify_multi_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
                     source_transient_pairs += 1
                 if blend_count >= 2:
                     source_multi_blend_pairs += 1
+        if ordinal in source_ordinals and local_changed_coordinates == 2:
+            source_ft4_draws_changing_both_words += 1
 
     if source_semi != sum(source_abr) or source_calls != (
             source_changed_calls + source_noops) or source_semi > semi_total:
@@ -194,6 +219,14 @@ def verify_multi_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
         "source_ft4_draw_coordinate_pairs_with_calls": source_word_pairs_with_calls,
         "source_ft4_transient_write_restore_pairs": source_transient_pairs,
         "source_ft4_coordinate_pairs_with_multiple_blends": source_multi_blend_pairs,
+        "source_ft4_draws_with_both_words_observed":
+            source_ft4_draws_with_both_words_observed,
+        "source_ft4_draws_changing_both_sampled_words":
+            source_ft4_draws_changing_both_words,
+        "source_ft4_draws_with_both_words_semitransparent":
+            source_ft4_draws_with_both_words_semi,
+        "source_ft4_draws_with_interleaved_word_revisit":
+            source_ft4_draws_with_word_revisit,
         "one_interleaved_global_putpixel_step_sequence": True,
         "two_coordinates_checked_against_same_native_drawotag_snapshots": True,
         "source_pinned_pc_writepixel_results_checked": True,
