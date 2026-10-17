@@ -62,9 +62,10 @@ FLAGS = ["-DVH_MAP02_GPU_CAPTURE", "-DVH_MAP02_PUTPIXEL_SCOPE",
 
 class CandidateC11Tests(unittest.TestCase):
     def test_compile_run_and_fail_closed(self):
-        cc = shutil.which(os.environ.get("CC", "")) or shutil.which("cc")
+        requested = os.environ.get("CC") or "cc"
+        cc = shutil.which(requested)
         if not cc:
-            self.skipTest("C compiler unavailable")
+            self.fail(f"required C compiler unavailable: {requested}")
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             source = root / "candidate.c"
