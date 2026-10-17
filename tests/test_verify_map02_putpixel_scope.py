@@ -271,6 +271,40 @@ class PixelToOriginalPrimitiveTests(unittest.TestCase):
             result["source_ft4_sampled_first_changed_pre_equals_last_changed_post"])
         self.assertFalse(result["source_ft4_sampled_endpoint_causality_verified"])
 
+    def test_source_ft4_repeated_legacy_semi_blends_do_not_mix_modes(self):
+        # Pinned legacy WritePixel: ABR0 halves 0x001f red to 0x000f;
+        # ABR3 adds one quarter of front red, yielding 0x0016.
+        # AccurateEnabled remains 0 throughout this same native stream.
+        original = bytes(self.base.base.bytes_before)
+        first = bytearray(original)
+        struct.pack_into("<H", first, (30*1024+30)*2, 0x0016)
+        self.base.base.override_snapshots = {
+            3:bytes(first),4:bytes(first),5:self.base.second,
+        }
+        self.pixel_rows = [
+            self.row(0,1,0,0x001f,0x000f,semi=1),
+            self.row(1,1,0x000f,0x001f,0x0016,semi=1),
+            self.row(2,2,0x0016,0x7c00,0x7c00),
+        ]
+        for row in self.pixel_rows:
+            row["accurate"]=0
+        self.pixel_rows[0]["abr"]=0
+        self.pixel_rows[1]["abr"]=3
+        self.save()
+        report=verify_pixel_ot(self.root,self.native)
+        self.assertEqual(report["accurate_pc_blend_results_checked"],0)
+        self.assertEqual(report["legacy_pc_blend_results_checked"],2)
+        self.assertEqual(report["source_ft4_scoped_legacy_semi_blend_calls"],2)
+        self.assertEqual(report["source_ft4_scoped_accurate_semi_blend_calls"],0)
+        self.assertEqual(report["source_ft4_scoped_semi_blend_abr0_calls"],1)
+        self.assertEqual(report["source_ft4_scoped_semi_blend_abr3_calls"],1)
+        self.assertEqual(report["source_ft4_scoped_draws_with_multiple_semi_blends"],1)
+        self.assertTrue(report["single_runtime_accurate_mode_consistent"])
+        self.pixel_rows[1]["after"]=0x0017
+        self.save()
+        with self.assertRaisesRegex(ValueError,"semi-transparent PutPixel"):
+            verify_pixel_ot(self.root,self.native)
+
     def test_unmatched_semi_blend_is_not_counted_as_source_ft4(self):
         unrelated = self.base.base.event(6, "draw", {
             "tpage":3, "clut":10,
