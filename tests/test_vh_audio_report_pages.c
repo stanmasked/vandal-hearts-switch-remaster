@@ -87,7 +87,102 @@ static void test_first_pcm_after_home_tick_lag(void) {
     assert(!memcmp(&corrupted,&before,sizeof corrupted));
 }
 
+/* Post-HOME callback-to-first-page intervals are grouped relative to
+ * one native audout page, NOT as a count of audible clicks. Boundaries
+ * are inclusive on <=1x/<=2x/<=4x and division is overflow-safe. */
+static void test_home_first_page_budget_bands(void) {
+    static const uint64_t delta[]={0u,100u,101u,200u,201u,400u,401u,900u};
+    VhAudioAppletEvents e={0};
+    for(unsigned i=0u;i<sizeof delta/sizeof delta[0];i++) {
+        const uint64_t start=1000u+(uint64_t)i*2000u;
+        assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_BACKGROUND,
+                                         start-20u)==0);
+        assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_FOREGROUND,
+                                         start)==0);
+        assert(vh_audio_applet_page_returned_budget_at(
+                                        &e,start+delta[i],100u)==1);
+        assert(e.budgeted_first_pages==i+1u);
+        assert(e.timed_first_pages==i+1u);
+        assert(vh_audio_applet_verify(&e)==0);
+    }
+    for(unsigned b=0u;b<4u;b++)
+        assert(e.page_budget_bands[b]==2u);
+    assert(e.first_pages_after_return==8u);
+    assert(e.max_page_gap_ticks==900u);
+    assert(e.total_page_gap_ticks==2303u);
+    assert(vh_audio_applet_page_returned_budget_at(&e,19999u,100u)==0);
+    assert(e.budgeted_first_pages==8u);
+
+    /* A valid timestamp without a known page budget is explicitly
+     * excluded from histogram, not put into the <=1x bucket. */
+    assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_BACKGROUND,
+                                     20000u)==0);
+    assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_FOREGROUND,
+                                     21000u)==0);
+    assert(vh_audio_applet_page_returned_budget_at(&e,21300u,0u)==1);
+    assert(e.timed_first_pages==9u && e.budgeted_first_pages==8u);
+    assert(vh_audio_applet_verify(&e)==0);
+
+    /* UINT64_MAX page budget must not overflow 2x or 4x; it is
+     * interpreted as a huge budget and falls into <=1x. */
+    assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_BACKGROUND,
+                                     22000u)==0);
+    assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_FOREGROUND,
+                                     23000u)==0);
+    assert(vh_audio_applet_page_returned_budget_at(
+                                     &e,23100u,UINT64_MAX)==1);
+    assert(e.budgeted_first_pages==9u &&
+           e.page_budget_bands[0]==3u && vh_audio_applet_verify(&e)==0);
+
+    /* Missing foreground timestamp is NOT a measured fast return. */
+    assert(vh_audio_applet_record(&e,VH_AUDIO_APPLET_BACKGROUND)==0);
+    assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_FOREGROUND,
+                                     0u)==0);
+    assert(vh_audio_applet_page_returned_budget_at(
+                                     &e,24000u,100u)==1);
+    assert(e.budgeted_first_pages==9u && e.timed_first_pages==10u);
+    assert(vh_audio_applet_verify(&e)==0);
+
+    assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_BACKGROUND,
+                                     25000u)==0);
+    assert(vh_audio_applet_record_at(&e,VH_AUDIO_APPLET_FOREGROUND,
+                                     26000u)==0);
+    VhAudioAppletEvents original=e;
+    assert(vh_audio_applet_page_returned_budget_at(
+                                     &e,25999u,100u)==-1);
+    assert(!memcmp(&e,&original,sizeof e));
+    assert(vh_audio_applet_page_returned_budget_at(
+                                     &e,0u,100u)==-1);
+    assert(!memcmp(&e,&original,sizeof e));
+    assert(vh_audio_applet_page_returned_budget_at(
+                                     NULL,26001u,100u)==-1);
+    assert(vh_audio_applet_verify(&e)==0);
+
+    VhAudioAppletEvents failed=e;
+    failed.page_budget_bands[0]=UINT_MAX;
+    original=failed;
+    assert(vh_audio_applet_page_returned_budget_at(
+                                     &failed,26001u,100u)==-1);
+    assert(!memcmp(&failed,&original,sizeof failed));
+    failed=e;
+    failed.budgeted_first_pages=UINT_MAX;
+    original=failed;
+    assert(vh_audio_applet_page_returned_budget_at(
+                                     &failed,26001u,100u)==-1);
+    assert(!memcmp(&failed,&original,sizeof failed));
+    failed=e;
+    failed.page_budget_bands[1]++;
+    assert(vh_audio_applet_verify(&failed)==-1);
+    failed=e;
+    failed.budgeted_first_pages++;
+    assert(vh_audio_applet_verify(&failed)==-1);
+    assert(vh_audio_applet_page_returned_budget_at(&e,26101u,100u)==1);
+    assert(e.page_budget_bands[1]==3u &&
+           e.budgeted_first_pages==10u && vh_audio_applet_verify(&e)==0);
+}
+
 int main(void) {
+    test_home_first_page_budget_bands();
     test_first_pcm_after_home_tick_lag();
     unsigned page=0u;
     /* HOME/background and resume are observable lifecycle events,
