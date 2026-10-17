@@ -13,6 +13,8 @@ on:
       - 'tools/analyze_nexium_scene_audio.py'
       - 'tools/capture_nexium_scene_audio.sh'
       - 'tests/test_analyze_nexium_scene_audio.py'
+      - 'tools/analyze_nexium_transition_timing.py'
+      - 'tests/test_analyze_nexium_transition_timing.py'
 
 permissions:
   contents: read
@@ -39,6 +41,7 @@ jobs:
           make test
           python3 -m unittest discover -s tests -p "test_analyze_nexium_pcm.py" -v
           python3 -m unittest discover -s tests -p "test_analyze_nexium_scene_audio.py" -v
+          python3 -m unittest discover -s tests -p "test_analyze_nexium_transition_timing.py" -v
           bash -n tools/capture_nexium_scene_audio.sh
           make verify-nro
 
@@ -506,6 +509,11 @@ jobs:
           set -euo pipefail
           bash tools/capture_nexium_scene_audio.sh runtime-evidence
           python3 -m json.tool runtime-evidence/scene-audio-report.json > /dev/null
+          python3 tools/analyze_nexium_transition_timing.py \
+            runtime-evidence/nexium-scenes-s16le-48k.pcm \
+            runtime-evidence/scene-events.csv \
+            --output runtime-evidence/scene-transition-observations.json
+          python3 -m json.tool runtime-evidence/scene-transition-observations.json > /dev/null
 
       - name: Verify observed framebuffer music labels and scene evidence
         shell: bash
@@ -530,6 +538,15 @@ jobs:
           report=json.loads((root/"scene-audio-report.json").read_text())
           if len(report["intervals"])!=5:
               raise SystemExit("scene capture did not include five distinct windows")
+          timing=json.loads((root/"scene-transition-observations.json").read_text())
+          if (timing["pcm_sha256"]!=report["pcm_sha256"]
+              or timing["timing_result"]!="HOST_RELATIVE_DETECTION_ONLY"
+              or len(timing["transitions"])!=4
+              or not all(t["stable_expected_scene_detected"] for t in timing["transitions"])):
+              raise SystemExit("repeated PCM transition could not be detected in host-relative windows")
+          if (timing["actual_input_to_audio_latency_ms"] is not None
+              or timing["hardware_status"]!="HARDWARE NOT TESTED"):
+              raise SystemExit("host audio timing cannot certify device latency")
           if min(changed)<25:
               raise SystemExit(f"music status label did not visibly toggle: {changed}")
           summary={
