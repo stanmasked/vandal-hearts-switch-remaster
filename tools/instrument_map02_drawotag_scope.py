@@ -142,7 +142,10 @@ END_NEW = r"""#ifdef VH_MAP02_SCOPED_BLEND_PROBE
 def instrument(source):
     if not isinstance(source, str):
         raise ValueError("original libgpu source must be text")
-    if MACRO in source:
+    # The synthetic harness uses #ifdef VH_MAP02_SCOPED_BLEND_PROBE
+    # in its own assertions. Only reject actual installed instrumentation.
+    if ("static int vh_map02_decimal(" in source or
+            "unsigned vh_scope_ordinal = 0;" in source):
         raise ValueError("libgpu source already instrumented")
     for anchor in (ENTRY, FRAME, WALK, PRIM, PRIM_END,
                    INVALID_TOKEN, CYCLE, END):
