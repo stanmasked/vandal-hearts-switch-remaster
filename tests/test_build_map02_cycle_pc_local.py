@@ -103,6 +103,21 @@ class PrivateFullPcBuildTests(unittest.TestCase):
             build_full_pc(self.upstream, self.bundle)
         self.assertEqual(self.exe.read_text(), "preserve")
 
+    def test_preexisting_generated_font_or_symlink_blocks_build(self):
+        private_c = self.exe.parent / "map02_pinned_kanji_font.c"
+        private_c.parent.mkdir(parents=True, exist_ok=True)
+        private_c.write_bytes(b"synthetic-original-font-placeholder")
+        with patch("tools.build_map02_cycle_pc_local.subprocess.run") as run:
+            with self.assertRaisesRegex(ValueError, "generated KROM source already exists"):
+                build_full_pc(self.upstream, self.bundle)
+        run.assert_not_called()
+        private_c.unlink()
+        private_c.symlink_to(self.bundle / "map02_cycle.mk")
+        with patch("tools.build_map02_cycle_pc_local.subprocess.run") as run:
+            with self.assertRaisesRegex(ValueError, "generated KROM source already exists"):
+                build_full_pc(self.upstream, self.bundle)
+        run.assert_not_called()
+
     def test_compiler_failure_is_private_and_not_reported(self):
         with patch("tools.build_map02_cycle_pc_local.subprocess.run",
                    return_value=SimpleNamespace(returncode=1,
