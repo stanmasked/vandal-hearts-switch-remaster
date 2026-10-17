@@ -116,3 +116,7 @@ python3 tools/report_switch_audio_acceptance_matrix.py switch-audio-real-run-219
 ```
 
 H01–H05 оцениваются по исходным CSV и заявлениям испытателя, H06 и H07 не засчитываются автоматически. `MANUAL_CONFIRMATION_REQUIRED` — не физический `PASS`; решение оформляет испытатель после независимой проверки.
+
+## Этап №232 — связь предзапускового NRO с реальными CSV
+
+Для доказуемой **согласованности исходных файлов** после испытаний добавлен [этап №232](SWITCH_AUDIO_STAGE232_DEVICE_EVIDENCE_BINDING.md) — `tools/link_switch_audio_device_evidence.py`. Он сопоставляет две host-квитанции №231 (с их независимо сохранёнными SHA-256), версию и номер GitHub Actions run, NRO в расширенном evidence bundle и настоящие CSV/карточки по аудиту №222. Поскольку после испытания bundle содержит новые CSV, SHA-256 всего манифеста **не обязан совпадать** с предзапусковым; сверяются сам NRO, Git-коммит, CI run и хеши первичных CSV. Противоречивые даты и результаты помечаются для расследования. Успех — только `READY_FOR_INDEPENDENT_MANUAL_REVIEW`, никогда аппаратный PASS; `HARDWARE NOT TESTED` остаётся.
