@@ -1,5 +1,6 @@
 """Preflight exercises fail-closed native MAP02 session isolation."""
 import json
+import hashlib
 import os
 from pathlib import Path
 import tempfile
@@ -35,6 +36,47 @@ class NativeDdaCapturePreflightTests(unittest.TestCase):
         self.assertNotIn(str(self.root), serial)
         self.assertNotIn('"30"', serial)
         self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_optional_executable_identity_is_read_only_and_not_attestation(self):
+        executable = Path(self.temp.name) / "pcport-game"
+        contents = b"test-native-pcport-binary\\x00" * 17
+        executable.write_bytes(contents)
+        executable.chmod(0o700)
+        first = preflight(self.env, executable=executable)
+        self.assertTrue(first["executable_fingerprinted"])
+        self.assertEqual(first["executable_sha256"], hashlib.sha256(contents).hexdigest())
+        self.assertEqual(first["executable_bytes"], len(contents))
+        self.assertFalse(first["binary_instrumentation_verified"])
+        self.assertFalse(first["gameplay_capture_verified"])
+        self.assertFalse(first["hd_replacement_authorized"])
+        self.assertEqual(list(self.root.iterdir()), [])
+        self.assertNotIn(str(executable), json.dumps(first))
+        executable.write_bytes(contents + b"changed")
+        second = preflight(self.env, executable=executable)
+        self.assertNotEqual(first["executable_sha256"], second["executable_sha256"])
+        no_executable = preflight(self.env)
+        self.assertFalse(no_executable["executable_fingerprinted"])
+        self.assertIsNone(no_executable["executable_sha256"])
+        self.assertIsNone(no_executable["executable_bytes"])
+
+    def test_executable_requires_regular_executable_not_a_symlink(self):
+        executable = Path(self.temp.name) / "pcport-game"
+        executable.write_bytes(b"native")
+        executable.chmod(0o600)
+        with self.assertRaisesRegex(ValueError, "regular executable"):
+            preflight(self.env, executable=executable)
+        executable.chmod(0o700)
+        link = Path(self.temp.name) / "linked-pcport"
+        link.symlink_to(executable)
+        with self.assertRaisesRegex(ValueError, "symlink"):
+            preflight(self.env, executable=link)
+        with self.assertRaises(ValueError):
+            preflight(self.env, executable=Path(self.temp.name) / "missing")
+        with self.assertRaises(ValueError):
+            preflight(self.env, executable=self.root)
+        executable.write_bytes(b"")
+        with self.assertRaisesRegex(ValueError, "nonempty"):
+            preflight(self.env, executable=executable)
 
     def test_conflicting_frame_and_capture_dirs(self):
         self.env["VH_MAP02_PUTPIXEL_FRAME"] = "412"
