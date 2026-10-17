@@ -19,6 +19,7 @@ from tools.verify_map02_source_native_ft4_join import (
     _source_signature, _native_signature,
 )
 from tools.verify_map02_native_overdraw import verify_native_overdraw
+from tools.map02_pc_writepixel_reference import expected_write_pixel
 
 SCHEMA = "vh.map02.native-putpixel-ot.v1"
 PIXEL_LOG = "putpixel-native-events.jsonl"
@@ -98,6 +99,7 @@ def verify_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
     last_ordinal = -1
     grouped = {}
     same_color = requests = opaque = bit15_rises = bit15_falls = 0
+    accurate_blend_checked = legacy_blend_checked = 0
     for index, e in enumerate(rows):
         fields(e, FIELDS, f"scoped pixel {index}")
         if e["stage"] != "native_putpixel":
@@ -131,8 +133,24 @@ def verify_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
         semi = number(e["semi"], "semi", 0, 1)
         number(e["textured"], "textured", 0, 1)
         number(e["accurate"], "accurate mode", 0, 1)
-        if semi == 0 and e["front"] != e["after"]:
-            raise ValueError("opaque PutPixel result differs from actual original copy")
+        if semi == 0:
+            if e["front"] != e["after"]:
+                raise ValueError("opaque PutPixel result differs from actual original copy")
+        else:
+            # The actual PC WritePixel uses packed 5-bit BlendG1 in
+            # accurate mode and clamp/truncate 8-bit arithmetic in the
+            # legacy renderer. Every semi-transparency request has a
+            # checkable outcome, even if its BGR555 value is unchanged.
+            expected = expected_write_pixel(
+                e["before"], e["front"], e["abr"], semi,
+                e["textured"], e["accurate"])
+            if e["after"] != expected:
+                raise ValueError(
+                    "semi-transparent PutPixel result differs from pinned PC blend")
+            if e["accurate"]:
+                accurate_blend_checked += 1
+            else:
+                legacy_blend_checked += 1
         group = grouped.setdefault(ordinal, [])
         if group and group[-1]["after"] != e["before"]:
             raise ValueError("within-primitive native pixel log continuity broken")
@@ -207,6 +225,8 @@ def verify_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
                 else:
                     sampled_bit15_only += 1
 
+    if accurate_blend_checked + legacy_blend_checked != requests:
+        raise ValueError("source-pinned PC blend mode accounting mismatch")
     if sampled_source_changed_draws != (
             sampled_bit15_only + sampled_color_only + sampled_color_and_bit15):
         raise ValueError("sampled FT4 word-change classification mismatch")
@@ -245,6 +265,9 @@ def verify_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
         "calls_attributed_to_source_keyed_ft4": matched_pixel_calls,
         "actual_same_color_calls_invisible_to_vram_delta": same_color,
         "semi_transparent_putpixel_requests": requests,
+        "accurate_pc_blend_results_checked": accurate_blend_checked,
+        "legacy_pc_blend_results_checked": legacy_blend_checked,
+        "source_pinned_pc_writepixel_effects_verified": True,
         "opaque_copy_putpixel_calls": opaque,
         "observed_bit15_unset_to_set_calls": bit15_rises,
         "observed_bit15_set_to_unset_calls": bit15_falls,
