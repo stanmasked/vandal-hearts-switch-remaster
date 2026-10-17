@@ -22,6 +22,38 @@ VRAM_WIDTH = 1024
 VRAM_HEIGHT = 512
 
 
+def validate_move_vram(before, after, rect, dest):
+    """Replay original PC MoveImage's forward in-place 16-bit VRAM writes.
+
+    The source implementation iterates j then i, and each read observes
+    earlier writes. A slice copy or memmove would be incorrect for overlap.
+    Skipped offscreen source/destination pixels must remain untouched.
+    """
+    rx, ry, width, height = rect
+    dx, dy = dest
+    # Only the i/j values with both source and destination inside VRAM can
+    # change memory. This range intersection is equivalent to the pinned
+    # C per-pixel bounds guards and avoids unbounded work on wild RECTs.
+    i0 = max(0, -rx, -dx)
+    i1 = min(width, VRAM_WIDTH - rx, VRAM_WIDTH - dx)
+    j0 = max(0, -ry, -dy)
+    j1 = min(height, VRAM_HEIGHT - ry, VRAM_HEIGHT - dy)
+    expected = bytearray(before)
+    if i0 < i1 and j0 < j1:
+        for j in range(j0, j1):
+            source_row = (ry + j) * VRAM_WIDTH
+            dest_row = (dy + j) * VRAM_WIDTH
+            for i in range(i0, i1):
+                source_offset = (source_row + rx + i) * 2
+                dest_offset = (dest_row + dx + i) * 2
+                # Read from current mutable memory, not the BEFORE bytes.
+                expected[dest_offset:dest_offset + 2] = (
+                    expected[source_offset:source_offset + 2]
+                )
+    if expected != after:
+        raise ValueError("MoveImage post-VRAM differs from source-ordered in-place copy")
+
+
 def validate_bounded_load_vram(before, after, payload, rect):
     """Mirror the pinned original PC LoadImage rectangle clip + BGR555 copy.
 
@@ -146,6 +178,7 @@ def verify_capture(directory: Path, *, target_frame: int):
     snapshot_hashes=[]
     upload_hashes=[]
     load_pairs_without_payload=0
+    move_pairs_with_verified_vram_effect=0
     entered_target_draw_frame=False
     for i in range(0,len(events),2):
         before,after=events[i:i+2]
@@ -197,7 +230,9 @@ def verify_capture(directory: Path, *, target_frame: int):
                         raise ValueError("out-of-range LoadImage cannot have recorded upload payload")
                     load_pairs_without_payload+=1
             elif kind=="move":
+                validate_move_vram(a,b,after["rect"],after["dest"])
                 moves+=1
+                move_pairs_with_verified_vram_effect+=1
             elif kind=="clear":
                 clears+=1
     return {
@@ -214,6 +249,7 @@ def verify_capture(directory: Path, *, target_frame: int):
         "draw_otag_primitive_pairs":draws,
         "load_image_pairs":loads,
         "move_image_pairs":moves,
+        "move_pairs_with_verified_vram_effect":move_pairs_with_verified_vram_effect,
         "clear_image_pairs":clears,
         "changed_vram_words_across_event_pairs":assignments,
         "changed_native_draw_vram_words":draw_changed_words,
