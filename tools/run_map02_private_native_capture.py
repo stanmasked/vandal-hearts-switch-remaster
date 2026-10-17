@@ -230,48 +230,48 @@ def capture(executable, preflight_report, summary_report, *,
                     require_elf_image(pinned_fd)
                 except ValueError:
                     receipt["failure_category"] = "native_elf_required"
-            # The original pathname remains argv[0] for ELF programs, but
-            # Linux exec resolves ONLY the pre-checked fd. pass_fds also
-            # supports #!/usr/bin/env script fixtures without /dev/fd leaks
-            # into unrelated child processes.
             if receipt["failure_category"] is None:
-                proc = subprocess.Popen(
-                    [str(executable), *game_args],
-                executable=f"/proc/self/fd/{pinned_fd}",
-                pass_fds=(pinned_fd,),
-                cwd=executable.parent,
-                env=env,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                shell=False,
-            )
-                receipt["process_started"] = True
-                if require_native_elf_image:
+                try:
+                    # Linux exec resolves the already-checked descriptor,
+                    # never the pathname. Synthetic shebang fixtures still
+                    # run when the strict ELF gate is not requested.
+                    proc = subprocess.Popen(
+                        [str(executable), *game_args],
+                        executable=f"/proc/self/fd/{pinned_fd}",
+                        pass_fds=(pinned_fd,),
+                        cwd=executable.parent,
+                        env=env,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        shell=False,
+                    )
+                    receipt["process_started"] = True
+                    if require_native_elf_image:
+                        try:
+                            observe_live_elf_image(proc.pid, pinned_fd)
+                            receipt["native_elf_image_observed"] = True
+                        except ValueError:
+                            receipt["failure_category"] = "native_elf_image_unverified"
                     try:
-                        observe_live_elf_image(proc.pid, pinned_fd)
-                        receipt["native_elf_image_observed"] = True
-                    except ValueError:
-                        receipt["failure_category"] = "native_elf_image_unverified"
-            try:
-                receipt["process_exit_code"] = proc.wait(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    proc.wait()
-                receipt["failure_category"] = "process_timeout"
-            except KeyboardInterrupt:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    proc.wait()
-                receipt["failure_category"] = "process_interrupted"
-        except OSError:
-            receipt["failure_category"] = "process_launch_failed"
+                        receipt["process_exit_code"] = proc.wait(timeout=timeout)
+                    except subprocess.TimeoutExpired:
+                        proc.terminate()
+                        try:
+                            proc.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            proc.kill()
+                            proc.wait()
+                        receipt["failure_category"] = "process_timeout"
+                    except KeyboardInterrupt:
+                        proc.terminate()
+                        try:
+                            proc.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            proc.kill()
+                            proc.wait()
+                        receipt["failure_category"] = "process_interrupted"
+                except OSError:
+                    receipt["failure_category"] = "process_launch_failed"
         finally:
             try:
                 if _opened_executable_identity(executable, pinned_fd) != pinned_identity:
