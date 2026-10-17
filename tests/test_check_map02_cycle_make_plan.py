@@ -36,7 +36,7 @@ def valid_dry_run(root):
         "cc -DVH_MAP02_SCOPED_BLEND_PROBE -c " +
         str(root / "pc_raster.c") + " -o " + build + "pc_raster.o",
         "VH_REGION=us VH_GENERATED_OUT=" + build +
-        "map02_pinned_kanji_font.c python3 " +
+        "map02_pinned_kanji_font.c python3 -I " +
         str(root / maker.FONT_GENERATOR_SNAPSHOT),
         "cc -m64 -c " + build + "map02_pinned_kanji_font.c -o " +
         build + "pc_kanji_font.o",
@@ -114,6 +114,12 @@ class CycleMakePlanTests(unittest.TestCase):
             check.verify_dry_run(
                 cmd.replace(str(self.output / "libcd.c"), "src/libcd.c"),
                 self.output)
+
+    def test_pinned_krom_generator_requires_isolated_python(self):
+        command = valid_dry_run(self.output)
+        with self.assertRaisesRegex(ValueError, "pinned KROM"):
+            check.verify_dry_run(
+                command.replace("python3 -I ", "python3 "), self.output)
 
     def test_mutable_original_krom_generator_is_rejected_in_make_plan(self):
         good = valid_dry_run(self.output)
