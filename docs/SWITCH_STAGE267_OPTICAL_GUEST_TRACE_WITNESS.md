@@ -86,3 +86,28 @@ NeXium's absence of guest SD output and stderr in earlier stages is
 not reinterpreted as a valid zero-duration event. If the optical
 decoder fails, a screenshot is only diagnostic evidence of failure,
 not a confirmed guest timeline. Hardware remains **HARDWARE NOT TESTED**.
+
+## End-to-end result — native guest event trace recovered
+
+The corrected [NeXium run 39053160279](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39053160279) **completed SUCCESS** on exact workflow code SHA `e3506b12b864bd6e4828828b8a9561f3444d7266`. Its build and emulator jobs passed, including all six optical-decoder negative/positive tests, the existing graphics/input probes, stereo PCM, two FIELD/FOCUS cycles and the actual screenshot-to-CSV gate. The guest NRO is still the separately pinned build SHA `5a50433fb52d905cee074de052820895566143bf` and SHA-256 `58a438082f282ba279044d2a25fc1369e8493571a67b2082da41e0d8c0405929`.
+
+Original runtime evidence was downloaded from GitHub Actions artifact **`12108642272`**, `nexium-runtime-evidence`, ZIP SHA-256 `0bafd5c3b20d2c9978668efdb503ddcf9ad26dbd2db28797fc8273a596e3beb3`. All ZIP CRC entries were valid. The evidence includes original `scene-optical-trace.png`, `guest-optical-trace.csv`, `guest-scene-trace.csv`, independent audio and visual screenshots, and machine reports.
+
+**Unexpected but verified additional result:** the isolated NeXium SD export succeeded **in this run too**, even though it was unavailable in Stage 266. The SD verdict is `FOUR_GUEST_SCENE_INTERNAL_PHASES_OBSERVED`, and the file is `audio-scene-trace-0000.csv`. The reason for this change of behavior has **not** been isolated. Do not attribute it to a particular NeXium filesystem fix or the X+Plus exit sequence without a controlled separate test. The stderr transport remained **`GUEST_TRACE_NOT_OBSERVED`**.
+
+An independent container-side decoder was written separately from the repository decoder and run against the published **real** 1280×720 screenshot, then compared **byte for byte** against both the optical-derived and SD-exported CSVs. Verified geometry: magenta border `(264,154)-(1032,612)`; exact 7,392-bit payload recovered; packet SHA-256 `eb00eb1e3be2e9916ddcec5f3a47afc0db737b7aeae0254e0bdb252c2bcc5c80`; CRC32 `d2e3bdbb` (computed and declared match); **23** events, **0** dropped, 3 startup events with serial 0; exact 726-byte canonical CSV SHA-256 `5f64dbbc5f2d93bdd8fb45fbfad2813ace473d36508839305c83162d99c4622d`. Both transmission paths yielded identical bytes.
+
+### Internal guest-observed timings (milliseconds)
+
+| Transition | INPUT→ACCEPT | INPUT→RELEASE_RETURN | SUBMIT_CALL→RELEASE_RETURN |
+| --- | ---: | ---: | ---: |
+| FOCUS 1 | 17.560 | 33.788 | 15.562 |
+| FIELD 1 | 13.556 | 48.880 | 34.933 |
+| FOCUS 2 | 32.092 | 64.547 | 32.127 |
+| FIELD 2 | 15.791 | 49.074 | 32.933 |
+
+All four serials have ordered `INPUT`, `POST`, `ACCEPT`, `SUBMIT_CALL` and `RELEASE_RETURN` events. These **are internal event intervals reported by guest software**, observed under emulator scheduling. They are neither host keyboard event-to-sample-onset latency nor real Switch hardware/DAC/speaker latency. The submitted buffer may hold audio generated before the scene change; `RELEASE_RETURN` is not playback-start time. There is no evidence here of physical undistorted music or absence of hardware underruns.
+
+The optical decoder's first successful run reused the strict SD-CSV parser and gave its nested auditor a misleading `source` label implying SD readback even when analyzing pixels. Follow-up code commit `bf8cfcac023ae7ca2169745c04d493ab5a9d18c5` explicitly labels the nested auditor as **framebuffer-derived**, leaving any independent SD verification to the separate SD verdict. The original archived evidence bytes have **not** been modified or rewritten.
+
+**Final Stage 267 conclusion: `GUEST_INTERNAL_AUDIO_SCENE_TIMESTAMPS_RECOVERED` in NeXium; physical Switch remains `HARDWARE NOT TESTED`.**
