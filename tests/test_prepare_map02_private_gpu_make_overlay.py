@@ -151,7 +151,17 @@ class PrivateGpuMakeOverlayTests(unittest.TestCase):
             with self.subTest(build=bad):
                 refused = invoke("us", bad)
                 self.assertNotEqual(refused.returncode, 0)
-                self.assertIn("MAP02 private GPU BUILD_DIR", refused.stderr)
+                # GNU Make may reject ':' or ';' while parsing its
+                # original rules before our overlay's error guards.
+                # Both are safe refusals: no compile/link is executed.
+                if bad in ("build-map02-evil;touchBAD", "build-map02-foo:bar"):
+                    self.assertTrue(
+                        "MAP02 private GPU BUILD_DIR" in refused.stderr
+                        or "missing separator" in refused.stderr
+                        or "target pattern contains no '%'" in refused.stderr,
+                        refused.stderr)
+                else:
+                    self.assertIn("MAP02 private GPU BUILD_DIR", refused.stderr)
                 self.assertNotIn("private_probe", refused.stdout)
 
     def test_bad_or_make_special_directory_rejected(self):
