@@ -34,8 +34,10 @@ class V82Publish(unittest.TestCase):
         if not cc:raise unittest.SkipTest("C compiler unavailable")
         cls.temp=tempfile.TemporaryDirectory()
         so=Path(cls.temp.name)/"v82.so"
+        shutil.copyfile(ROOT/"tools/map02_v82_private_publish.h",
+                        Path(cls.temp.name)/"vh82_private_publish.h")
         subprocess.run([cc,"-std=c11","-Wall","-Wextra","-Werror","-shared","-fPIC",
-                        str(ROOT/"tools/map02_v82_private_publish.c"),"-o",str(so)],
+                        str(ROOT/"tools/map02_v82_private_publish.c"),"-I",cls.temp.name,"-o",str(so)],
                        check=True,capture_output=True)
         cls.dll=ctypes.CDLL(str(so))
         cls.dll.vh82_publish_private.argtypes=[ctypes.c_char_p,ctypes.c_char_p,ctypes.c_size_t]
