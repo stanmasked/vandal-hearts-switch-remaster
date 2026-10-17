@@ -25,6 +25,8 @@ on:
       - 'tests/test_verify_map02_native_gpu_windows.py'
       - 'tools/verify_map02_source_native_windows.py'
       - 'tools/verify_map02_window_scoped_join.py'
+      - 'tools/publish_map02_window_scoped_witness.py'
+      - 'tests/test_publish_map02_window_scoped_witness.py'
       - 'tests/test_verify_map02_window_scoped_join.py'
       - 'tools/check_map02_joint_window_scoped_runtime.py'
       - 'tools/publish_map02_native_window_source_witness.py'
@@ -77,6 +79,8 @@ on:
       - 'tests/test_verify_map02_native_gpu_windows.py'
       - 'tools/verify_map02_source_native_windows.py'
       - 'tools/verify_map02_window_scoped_join.py'
+      - 'tools/publish_map02_window_scoped_witness.py'
+      - 'tests/test_publish_map02_window_scoped_witness.py'
       - 'tests/test_verify_map02_window_scoped_join.py'
       - 'tools/check_map02_joint_window_scoped_runtime.py'
       - 'tools/publish_map02_native_window_source_witness.py'
@@ -141,7 +145,8 @@ jobs:
             tests.test_verify_map02_gpu_capture_receipt \
             tests.test_verify_map02_native_gpu_windows \
             tests.test_map02_source_native_windows \
-            tests.test_verify_map02_window_scoped_join
+            tests.test_verify_map02_window_scoped_join \
+            tests.test_publish_map02_window_scoped_witness
       - name: Checkout pinned public original PC raster source
         uses: actions/checkout@v4
         with:
