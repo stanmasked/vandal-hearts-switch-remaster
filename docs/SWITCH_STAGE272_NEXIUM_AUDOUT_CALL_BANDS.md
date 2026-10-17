@@ -74,3 +74,26 @@ estimate missing counts, or label a synthetic fixture as NeXium.
 must pass NRO build, optical/SD scene witness, stage-269 original
 queue audit and the *new* stage-272 original-SD latency-band audit.
 Before that, this stage is implemented but emulator acceptance pending.
+
+
+## First full NeXium acceptance — run 39069701196
+
+[NeXium workflow run 39069701196](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39069701196) completed both the libnx NRO build and the pinned NeXium audio/optical/SD audit successfully. The same-run NRO at git commit \`57f3d725eaef07666d5b648569055fd75baa4ab1\` had SHA-256 \`86b3b8fe2eef0c30fa25218125de290f2b3078e3c675770f7493f81c1a9edb22\`.
+
+The archived original guest SD file \`audio-audout-latency-0000.csv\` measured **1,942 individual real audout API calls across 53 one-second windows**:
+
+| Nanosecond-qualified duration band | Count |
+| --- | ---: |
+| Under 25 ms | 741 |
+| 25–40 ms | 1,177 |
+| 40–50 ms | 22 |
+| 50 ms and longer | 2 |
+| **Total** | **1,942** |
+
+The two calls at or above 50 ms occurred in guest seconds **37** and **39**. The longest API call lasted **50,545 μs**. All 1,942 descriptors were returned as expected; no audout API-call failures, queue-query failures, dropped windows or reversed guest-clock records were detected. **The occurrence of 50 ms calls is not proof of audible underruns.**
+
+The guest-original latency CSV had length **1,996 bytes**, SHA-256 \`3300dc6dc3edecb2b7a32a4bae98c30dbc871ef96d8f50dd49c12bf7918f5875\`; the independent capture copy matched byte-for-byte. The guest export receipt reported status 0 and matching file size. The original Stage-269 queue CSV was also independently audited, SHA-256 \`74085a04b36faf5c3540fb98d6a5b8247c44980ff2aafaf98fad065eacd5c7fa\`; both audits agreed on 1,942 calls, 53 windows and the 50,545 μs maximum. The optical and guest scene SD CSVs matched for 53 scene events over 61.379 seconds of host virtual PCM.
+
+**Follow-up still pending** for commits after \`57f3d725\`: the auditor now also binds every latency window's attempts, failures and maximum against the independently verified Stage-269 CSV, rather than only comparing whole-run totals. Those stricter checks must pass a newer complete NeXium workflow before being marked accepted. The earlier full workflow remains a valid independent baseline for the old audit.
+
+Nothing about these observations establishes physical Nintendo Switch playback, speaker audibility, end-to-end latency or real audio underruns.
