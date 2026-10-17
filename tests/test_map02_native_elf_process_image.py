@@ -178,6 +178,41 @@ class NativeElfProcessImageTests(unittest.TestCase):
                 preflight_report=self.host.preflight,
                 executable=self.host.executable)
 
+    def test_kernel_reports_different_executable_inode_fail_closed(self):
+        # Run an actual compiled native ELF with valid fixture output.
+        # Alter only the observed /proc/PID/exe inode in the test-facing
+        # kernel stat response: the capture must not become verified.
+        from types import SimpleNamespace
+        from tools import map02_linux_elf_process_image as kernel
+        self.build_elf()
+        original = kernel.os.stat
+        proc_reads = [0]
+
+        def mismatched_image_stat(path, *args, **kwargs):
+            result = original(path, *args, **kwargs)
+            if (isinstance(path, str) and path.startswith("/proc/")
+                    and path.endswith("/exe")):
+                proc_reads[0] += 1
+                return SimpleNamespace(
+                    st_dev=result.st_dev, st_ino=result.st_ino + 1,
+                    st_mode=result.st_mode)
+            return result
+
+        with patch.object(kernel.os, "stat", side_effect=mismatched_image_stat):
+            result = self.run_capture()
+        self.assertEqual(proc_reads[0], 1)
+        self.assertTrue(result["process_started"])
+        self.assertEqual(result["process_exit_code"], 0)
+        self.assertFalse(result["native_elf_image_observed"])
+        self.assertFalse(result["capture_verified"])
+        self.assertEqual(result["failure_category"], "native_elf_image_unverified")
+        self.assertTrue((self.host.native / "gpu-native-events.jsonl").is_file())
+        with self.assertRaises(ValueError):
+            replay_receipt(
+                self.host.native, receipt_file=self.host.receipt,
+                preflight_report=self.host.preflight,
+                executable=self.host.executable)
+
     def test_forged_observation_false_is_rejected_during_replay(self):
         self.build_elf()
         result = self.run_capture()
