@@ -13,6 +13,7 @@
 #include "vh_audio_output_recovery.h"
 #include "vh_audio_buffer_lease.h"
 #include "vh_audout_queue_telemetry.h"
+#include "vh_audout_queue_export.h"
 #include "vh_audio_output_ramp.h"
 #include "vh_audio_output_edges.h"
 #include "vh_game_music_banks.h"
@@ -602,6 +603,14 @@ int vh_switch_game_audio_trace_render(VhCanvas *canvas,
     if(thread_started) return -1;
     return vh_audio_scene_optical_draw(canvas,&scene_trace,
                                         black,white,marker);
+}
+
+VhAudoutQueueExportResult vh_switch_game_audio_queue_export(
+    char *committed_path,size_t capacity) {
+    if(committed_path && capacity) committed_path[0]='\\0';
+    if(thread_started) return VH_AUDOUT_QUEUE_EXPORT_INVALID;
+    return vh_audout_queue_export(&audout_telemetry,
+        VH_SCENE_TRACE_SD_DIRECTORY,committed_path,capacity);
 }
 
 int vh_switch_game_audio_queue_dump(FILE *stream) {
