@@ -85,7 +85,12 @@ def verify_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
     if len(source_ordinals) != len(source):
         raise ValueError("unmatched source-keyed DrawOTag packets")
 
-    lines = pixel_raw.splitlines()
+    # The source-pinned binary-mode recorder terminates every JSONL
+    # event with exactly one LF. Do not accept truncated final records,
+    # CRLF or NUL even when a supplied SHA manifest was recomputed.
+    if not pixel_raw.endswith(b"\n") or b"\r" in pixel_raw or b"\x00" in pixel_raw:
+        raise ValueError("noncanonical scoped PutPixel JSONL line boundaries")
+    lines = pixel_raw.split(b"\n")[:-1]
     if not 1 <= len(lines) < MAX_CALLS or any(not line.strip() for line in lines):
         raise ValueError("scoped PutPixel recording empty or reached truncation cap")
     rows = [parse_json(line, f"scoped pixel {i}") for i, line in enumerate(lines)]
@@ -109,6 +114,11 @@ def verify_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
         native_type = native_draws[ordinal][0]["primitive_type"]
         if number(e["primitive_type"], "primitive type", 0, 255) != native_type:
             raise ValueError("PutPixel scoped primitive type disagrees with DrawOTag")
+        # The pinned libgpu.c DR_MODE branch only updates persistent
+        # texture/window state; it never invokes the raster PutPixel.
+        # A same-value call would evade a VRAM-only no-write check.
+        if native_type == 5:
+            raise ValueError("DR_MODE DrawOTag packet cannot call PutPixel")
         x = number(e["x"], "native pixel x", 0, 1023)
         y = number(e["y"], "native pixel y", 0, 511)
         if coord is None:
@@ -136,6 +146,10 @@ def verify_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
     addr = coord[1] * 1024 + coord[0]
     matched_pixel_calls = matched_source_draws = unchanged_source = 0
     source_draws_with_calls = 0
+    sampled_source_changed_draws = 0
+    sampled_first_changed_pre = None
+    sampled_last_changed_post = None
+    sampled_bit15_only = sampled_color_only = sampled_color_and_bit15 = 0
     for ordinal, (before_event, after_event) in enumerate(native_draws):
         before_raw = private_file(native_dir, before_event["snapshot"], expected=VRAM_BYTES)
         after_raw = private_file(native_dir, after_event["snapshot"], expected=VRAM_BYTES)
@@ -154,6 +168,23 @@ def verify_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
         if ordinal in source_ordinals:
             matched_source_draws += 1
             unchanged_source += before_val == after_val
+            if before_val != after_val:
+                sampled_source_changed_draws += 1
+                if sampled_first_changed_pre is None:
+                    sampled_first_changed_pre = before_val
+                sampled_last_changed_post = after_val
+                color_changed = (before_val & 0x7fff) != (after_val & 0x7fff)
+                bit15_changed = bool((before_val ^ after_val) & 0x8000)
+                if color_changed and bit15_changed:
+                    sampled_color_and_bit15 += 1
+                elif color_changed:
+                    sampled_color_only += 1
+                else:
+                    sampled_bit15_only += 1
+
+    if sampled_source_changed_draws != (
+            sampled_bit15_only + sampled_color_only + sampled_color_and_bit15):
+        raise ValueError("sampled FT4 word-change classification mismatch")
 
     return {
         "pixel_ot_manifest_sha256": digest(meta_raw),
@@ -165,6 +196,13 @@ def verify_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
         "source_keyed_ft4_draws_checked": matched_source_draws,
         "source_ft4_draws_with_scoped_calls": source_draws_with_calls,
         "source_ft4_draws_without_observable_word_change": unchanged_source,
+        "source_ft4_sampled_changed_word_draws": sampled_source_changed_draws,
+        "source_ft4_sampled_bit15_only_changes": sampled_bit15_only,
+        "source_ft4_sampled_color_only_changes": sampled_color_only,
+        "source_ft4_sampled_color_and_bit15_changes": sampled_color_and_bit15,
+        "source_ft4_sampled_first_changed_pre_equals_last_changed_post": (
+            sampled_first_changed_pre == sampled_last_changed_post
+            if sampled_first_changed_pre is not None else None),
         "observed_native_putpixel_calls": len(rows),
         "calls_attributed_to_source_keyed_ft4": matched_pixel_calls,
         "actual_same_color_calls_invisible_to_vram_delta": same_color,
@@ -176,6 +214,7 @@ def verify_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
         "pixel_to_primitive_frame_ordinal_matched": True,
         "complete_original_pixel_stream_proven": False,
         "no_missing_putpixel_calls_proven": False,
+        "source_ft4_sampled_endpoint_causality_verified": False,
         "missing_pixel_cause_identified": False,
         "physical_ps1_abr_mask_correctness_verified": False,
         "original_gameplay_authenticated": False,
