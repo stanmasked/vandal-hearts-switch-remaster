@@ -72,6 +72,12 @@ timeout --kill-after=5s 65s xvfb-run -a -s '-screen 0 1280x720x24' bash -c '
   sleep 7
   key_press x; snapshot field_2
   sleep 6
+  # Only AFTER collecting all five scene windows: NeXium maps M to
+  # Switch Plus. Allow graceful guest exit to publish its post-join
+  # trace. This is a best-effort log-transport attempt; absence of a
+  # guest stderr row must be reported as NOT_OBSERVED, not success.
+  xdotool key --window "$window" m || true
+  sleep 2
 ' > "$output/scene-runner.log" 2>&1
 cleanup
 trap - EXIT
