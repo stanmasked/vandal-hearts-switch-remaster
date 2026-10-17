@@ -94,14 +94,16 @@ def verify_generated_original_font(upstream, bundle, *, krom_source=None):
         raise ValueError("generated private font C differs from original US KROM")
     # Recheck both names after the independent comparison so a same-byte
     # replacement after the first read cannot silently pass.
-    for path, category, expected, maximum, mode in (
-        (source, "owned KROM/BIOS", source_identity, BIOS_SIZE, None),
-        (generated_path, "generated private font C",
+    for path, category, expected_bytes, expected_identity, maximum, mode in (
+        (source, "owned KROM/BIOS", blob, source_identity, BIOS_SIZE, None),
+        (generated_path, "generated private font C", generated,
          generated_identity, MAX_SOURCE, 0o600),
     ):
-        _, current = _read_owned(
+        # The second read verifies data AND metadata. Identity-only checks
+        # could miss same-inode writes on filesystems with weak timestamps.
+        fresh_bytes, current = _read_owned(
             path, category, length_limit=maximum, exact_mode=mode)
-        if current != expected:
+        if current != expected_identity or fresh_bytes != expected_bytes:
             raise ValueError("private original input changed: " + category)
     preflight(upstream, bundle)
     return {
