@@ -1,5 +1,6 @@
 #include "vh_switch_game_audio.h"
 #include "vh_audio_scene_trace.h"
+#include "vh_audio_scene_optical.h"
 
 #include <stdio.h>
 
@@ -574,6 +575,13 @@ VhSceneExportResult vh_switch_game_audio_trace_export(
     if(thread_started) return VH_SCENE_EXPORT_INVALID;
     return vh_audio_scene_trace_export(&scene_trace,
         VH_SCENE_TRACE_SD_DIRECTORY,NULL,committed_path,capacity);
+}
+
+int vh_switch_game_audio_trace_render(VhCanvas *canvas,
+    uint32_t black,uint32_t white,uint32_t marker) {
+    if(thread_started) return -1;
+    return vh_audio_scene_optical_draw(canvas,&scene_trace,
+                                        black,white,marker);
 }
 
 int vh_switch_game_audio_trace_dump(FILE *stream) {
