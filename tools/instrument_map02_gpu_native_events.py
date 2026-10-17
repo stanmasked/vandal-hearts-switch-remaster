@@ -97,12 +97,13 @@ static void VH_CaptureEvent(const char *phase, const char *operation, int transf
     FILE *file, *log;
     int n;
     unsigned seq, local_seq, max_events = VH_CAPTURE_LIMIT;
-    const char *directory = vh_capture_dir;
+    const char *directory;
 #if defined(VH_MAP02_POSIX_CAPTURE_WINDOWS)
     char window_dir[1024];
     unsigned window_number;
 #endif
     VH_CaptureInit();
+    directory = vh_capture_dir;
     if (!vh_capture_frame ||
         (transfer ? (unsigned long)s_drawFrame + 1ul != vh_capture_frame
                   : (unsigned long)s_drawFrame != vh_capture_frame))
