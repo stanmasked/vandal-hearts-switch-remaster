@@ -37,7 +37,7 @@ class TwoWordPrivateLauncherBindingTests(unittest.TestCase):
                 preflight_report=self.source / "fake-preflight.json",
                 executable=self.source / "fake-executable",
             )
-        self.assertEqual(mocked.call_count, 1)
+        self.assertEqual(mocked.call_count, 2)
         return report
 
     def test_same_native_gpu_log_frame_and_full_ft4_replay_accepted(self):
@@ -46,6 +46,8 @@ class TwoWordPrivateLauncherBindingTests(unittest.TestCase):
         self.assertEqual(report["native_gpu_frame"], 12)
         self.assertEqual(report["source_keyed_ft4_draws_checked"], 2)
         self.assertTrue(report["same_native_gpu_log_sha256_verified"])
+        self.assertTrue(report["private_dependency_inventory_stable_through_replays"])
+        self.assertTrue(report["original_launcher_receipt_replayed_twice"])
         self.assertTrue(report["preflight_executable_and_original_receipt_replayed"])
         self.assertTrue(report["source_gte_ft4_ot_vram_putpixel_replayed"])
         self.assertTrue(report["two_distinct_private_words_verified"])
@@ -101,6 +103,83 @@ class TwoWordPrivateLauncherBindingTests(unittest.TestCase):
             audit_launch_two_word(
                 self.native, alias, launch_receipt=self.source/"x",
                 preflight_report=self.source/"y", executable=self.source/"z")
+
+    def test_replay_receipt_change_between_independent_checks_is_rejected(self):
+        # Both independent code paths may accept a purported completed
+        # process, but a second receipt check must match EXACTLY.
+        original = dict(self.claimed_launch)
+        replacement = dict(original, original_receipt_sha256="b" * 64)
+        with patch("tools.audit_map02_launch_two_word_binding.replay_receipt",
+                   side_effect=[original, replacement]) as mocked:
+            with self.assertRaisesRegex(ValueError, "changed between independent replays"):
+                audit_launch_two_word(
+                    self.native, self.source, launch_receipt=self.source/"fake-receipt",
+                    preflight_report=self.source/"fake-preflight",
+                    executable=self.source/"fake-executable")
+        self.assertEqual(mocked.call_count, 2)
+
+    def test_native_vram_changed_after_two_word_replay_is_rejected(self):
+        # Replaying the original FT4 chain can succeed, and then a full
+        # native VRAM snapshot can be replaced without touching the
+        # GPU-event log SHA. The full source/native file inventory must
+        # detect this between the two verifier invocations.
+        from tools import audit_map02_launch_two_word_binding as binding
+        original = binding.verify_multi_pixel_ot
+        snapshot = self.native / "gpu-0003-vram.bin"
+
+        def mutate_after_valid_source(*args, **kwargs):
+            checked = original(*args, **kwargs)
+            raw = bytearray(snapshot.read_bytes())
+            raw[0] ^= 1
+            snapshot.write_bytes(raw)
+            return checked
+
+        with patch.object(binding, "verify_multi_pixel_ot",
+                          side_effect=mutate_after_valid_source), patch.object(
+                binding, "replay_receipt", return_value=dict(self.claimed_launch)):
+            with self.assertRaisesRegex(ValueError, "dependency changed between replays"):
+                audit_launch_two_word(
+                    self.native, self.source, launch_receipt=self.source/"receipt",
+                    preflight_report=self.source/"preflight",
+                    executable=self.source/"executable")
+
+    def test_source_ft4_changed_after_two_word_replay_is_rejected(self):
+        from tools import audit_map02_launch_two_word_binding as binding
+        original = binding.verify_multi_pixel_ot
+        source_log = self.source / "gpu-events.jsonl"
+
+        def mutate_after_valid_source(*args, **kwargs):
+            checked = original(*args, **kwargs)
+            source_log.write_bytes(source_log.read_bytes() + b" ")
+            return checked
+
+        with patch.object(binding, "verify_multi_pixel_ot",
+                          side_effect=mutate_after_valid_source), patch.object(
+                binding, "replay_receipt", return_value=dict(self.claimed_launch)):
+            with self.assertRaisesRegex(ValueError, "dependency changed between replays"):
+                audit_launch_two_word(
+                    self.native, self.source, launch_receipt=self.source/"receipt",
+                    preflight_report=self.source/"preflight",
+                    executable=self.source/"executable")
+
+    def test_two_word_manifest_replacement_after_validation_is_rejected(self):
+        from tools import audit_map02_launch_two_word_binding as binding
+        original = binding.verify_multi_pixel_ot
+        manifest = self.source / "gpu-putpixel-multi-ot.json"
+
+        def replace_after_replay(*args, **kwargs):
+            checked = original(*args, **kwargs)
+            manifest.write_bytes(manifest.read_bytes() + b" ")
+            return checked
+
+        with patch.object(binding, "verify_multi_pixel_ot",
+                          side_effect=replace_after_replay), patch.object(
+                binding, "replay_receipt", return_value=dict(self.claimed_launch)):
+            with self.assertRaisesRegex(ValueError, "two-word source receipt changed"):
+                audit_launch_two_word(
+                    self.native, self.source, launch_receipt=self.source/"receipt",
+                    preflight_report=self.source/"preflight",
+                    executable=self.source/"executable")
 
     def test_private_source_ft4_or_gpu_mutation_still_fails_validation(self):
         source_log = self.source / "gpu-events.jsonl"
