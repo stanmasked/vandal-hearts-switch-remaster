@@ -164,6 +164,30 @@ which game resources were loaded, or physical PS1/Switch fidelity. The
 native recorder must be fully linked in the local program: CI checks
 compilation of the original PC GPU, not a retail-game run. Neither the
 launcher nor its reports enable HD replacement.
+### Replay a completed private process receipt
+
+After a *completed, structurally validated* local launch, its private
+summary JSON can be replay-checked against the current raw data without
+starting the executable again:
+
+```sh
+python3 -m tools.verify_map02_private_capture_receipt "$capture_dir" \
+  --receipt-file "${HOME}/map02-launch-summary.json" \
+  --preflight-report "${HOME}/map02-launch-preflight.json" \
+  --executable /absolute/path/to/your/instrumented-pcport \
+  > "${HOME}/map02-replay-check.json"
+```
+
+The verifier requires the original process receipt to record an actually
+started process, exit code zero and a successful structural capture. It
+rechecks the same executable fingerprint, private native DDA journals,
+original PC GPU event log and **every 1-MiB VRAM before/after snapshot**.
+If any hash, event count, observation class or derived report has changed
+since the saved process receipt, replay fails. It also rejects a modified
+or malformed success receipt. This is a comparison to an **unsigned**
+local report: a coordinated rewrite of both report and data is not
+detectable, nor does it establish original MAP02 scene authenticity.
+
 ### Verify the captured session against the preflight binary
 
 After a locally instrumented game has produced a private capture, compare
