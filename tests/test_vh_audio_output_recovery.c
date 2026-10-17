@@ -605,6 +605,81 @@ static void test_fake_pre_service_submit_retries_same_pcm(void) {
     assert(direct==24u && wrong_descriptor==24u);
 }
 
+/* A successful fake pre-service stop may be followed by a REAL
+ * wrong-descriptor return. Refusing the subsequent stop leaves the
+ * descriptor leased; no retry, scene switch or PCM rewrite is safe.
+ * Only a later confirmed stop can release that borrowed memory. */
+static int leased_stop_fail_after_zr_mismatch(void *opaque) {
+    LeasedDevice *dev=opaque;
+    if(dev->stops==1u && !vh_audio_page_lease_ready(&dev->lease)) {
+        ++dev->stops;
+        assert(vh_audio_page_lease_stopped(&dev->lease,-1)==-1);
+        assert(dev->lease.in_flight==&dev->descriptor);
+        return -1;
+    }
+    return leased_stop(opaque);
+}
+
+static void test_fake_submit_then_failed_stop_preserves_lease(void) {
+    for(unsigned i=0u;i<128u;i++)
+        sample[i]=(int16_t)((int)i*59-4100);
+    vh_native_spu_reset(&spu);
+    vh_audio_resample_reset(&resampler);
+    assert(vh_native_seq_init(&seq,song,sizeof song,
+                              &spu,resolve,sample,0u)==0);
+    for(unsigned iteration=0u;iteration<24u;iteration++) {
+        assert(vh_native_seq_advance_block(&seq)>=0);
+        vh_native_spu_render(&spu,src,512u);
+        const size_t frames=vh_audio_resample_process(
+                                &resampler,src,512u,dst,640u);
+        assert(frames>=555u && frames<=559u);
+        const VhNativeSeq before_seq=seq;
+        const VhNativeSpu before_spu=spu;
+        const VhAudioResample before_rate=resampler;
+        const uint64_t fingerprint=hash_page(dst,frames);
+        LeasedDevice dev={
+            .opened=1u,.playing=1u,.pcm=dst,.frames=frames,
+            .pcm_hash=fingerprint,.wrong_returns_left=1u
+        };
+        assert(vh_audio_submit_fault_arm(&dev.submit_injection)==0);
+        VhAudioOutputRecovery stats={0};
+        const VhAudioOutputOps ops={
+            &dev,leased_submit_with_fake_pre_service_failure,
+            leased_stop_fail_after_zr_mismatch,leased_close,
+            leased_open,leased_start
+        };
+        assert(vh_audio_output_submit_recover(
+                          &ops,&stats,dst,frames)==-1);
+        /* Synthetic failure did not use the service. A subsequent
+         * real wrong descriptor kept the page leased when stop failed. */
+        assert(dev.submit_injection.injected==1u &&
+               !dev.submit_injection.armed);
+        assert(dev.calls==1u && dev.returned==0u &&
+               dev.stops==2u && dev.opens==1u && dev.closes==1u);
+        assert(stats.submit_failures==2u &&
+               stats.restart_attempts==1u &&
+               stats.recoveries==0u && stats.pages_submitted==0u);
+        assert(dev.submit_timing.calls==2u &&
+               dev.submit_timing.failed_submissions==2u &&
+               dev.submit_timing.synthetic_failed_submissions==1u);
+        assert(vh_audio_output_verify_submit_injection(
+                    &dev.submit_injection,&dev.submit_timing,&stats)==-1);
+        assert(dev.lease.in_flight==&dev.descriptor);
+        assert(!vh_audio_page_lease_ready(&dev.lease));
+        assert(leased_submit_with_fake_pre_service_failure(
+                    &dev,dst,frames)==-1);
+        assert(dev.calls==1u);
+        assert(hash_page(dst,frames)==fingerprint);
+        assert(!memcmp(&seq,&before_seq,sizeof seq));
+        assert(!memcmp(&spu,&before_spu,sizeof spu));
+        assert(!memcmp(&resampler,&before_rate,sizeof resampler));
+        /* Confirmed stop is the only permission to reuse/free PCM. */
+        assert(vh_audio_output_stop_close(&ops)==0);
+        assert(dev.stops==3u && dev.closes==2u);
+        assert(vh_audio_page_lease_ready(&dev.lease));
+    }
+}
+
 static void test_one_shot_timing_injection_after_returned_pcm(void) {
     VhAudioTimingFaultInjection probe={0};
     assert(vh_audio_timing_fault_arm(NULL)==-1);
@@ -1202,6 +1277,7 @@ static void test_home_observer_vs_audout_lease_faults(void) {
 
 int main(void) {
     test_fake_pre_service_submit_retries_same_pcm();
+    test_fake_submit_then_failed_stop_preserves_lease();
     test_timing_injection_final_evidence();
     test_one_shot_timing_injection_after_returned_pcm();
     test_timing_fault_never_replays_delivered_pcm();
