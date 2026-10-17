@@ -86,9 +86,11 @@ jobs:
           make ps1-music-av-probe
           make ps1-music-av-zr-probe
           make ps1-music-av-zl-probe
+          make ps1-music-av-resume-probe
           test -s build/libnx-ps1-music-av.nro
           test -s build/libnx-ps1-music-av-zr.nro
           test -s build/libnx-ps1-music-av-zl.nro
+          test -s build/libnx-ps1-music-av-resume.nro
 
       - name: Upload NRO without proprietary audio assets
         uses: actions/upload-artifact@v4
@@ -98,6 +100,7 @@ jobs:
             build/libnx-ps1-music-av.nro
             build/libnx-ps1-music-av-zr.nro
             build/libnx-ps1-music-av-zl.nro
+            build/libnx-ps1-music-av-resume.nro
           if-no-files-found: error
 
 
@@ -109,7 +112,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        sd_case: [empty, full, partial, zr, zl]
+        sd_case: [empty, full, partial, zr, zl, resume]
     steps:
       - uses: actions/checkout@v4
       - name: Download combined libnx AV NRO
@@ -127,7 +130,7 @@ jobs:
           sd_root="$RUNNER_TEMP/vh-neXium-$SD_CASE"
           mkdir -p "$sd_root"
           mode="$SD_CASE"
-          if [[ "$mode" == "zr" || "$mode" == "zl" ]]; then mode=empty; fi
+          if [[ "$mode" == "zr" || "$mode" == "zl" || "$mode" == "resume" ]]; then mode=empty; fi
           python3 -m tools.generate_ps1_music_sd_fixture "$sd_root" --mode "$mode" > runtime-evidence/sd-fixture-manifest.json
           echo "NEXIUM_DATA_ROOT=$sd_root" >> "$GITHUB_ENV"
 
@@ -171,6 +174,8 @@ jobs:
             export NRO="nros/libnx-ps1-music-av-zr.nro"
           elif [[ "${{ matrix.sd_case }}" == "zl" ]]; then
             export NRO="nros/libnx-ps1-music-av-zl.nro"
+          elif [[ "${{ matrix.sd_case }}" == "resume" ]]; then
+            export NRO="nros/libnx-ps1-music-av-resume.nro"
           fi
           export SHOT1="runtime-evidence/av-before.png"
           export SHOT2="runtime-evidence/av-after.png"
@@ -218,6 +223,11 @@ jobs:
               audout="unavailable_or_error"
               pipeline="inactive_or_error"
               ;;
+            resume)
+              source="synthetic"
+              audout="initialized"
+              pipeline="buffers_returned"
+              ;;
             partial)
               source="invalid_or_partial"
               audout="unavailable_or_error"
@@ -233,6 +243,10 @@ jobs:
           fi
           zr_gate=()
           zl_gate=()
+          resume_gate=()
+          if [[ "${{ matrix.sd_case }}" == "resume" ]]; then
+            resume_gate=(--require-guest-resume-continuation)
+          fi
           if [[ "${{ matrix.sd_case }}" == "zr" ]]; then
             zr_gate=(--require-guest-zr-recovery)
           elif [[ "${{ matrix.sd_case }}" == "zl" ]]; then
@@ -241,7 +255,7 @@ jobs:
           python3 tests/check_native_av_screenshot.py "$SHOT1" "$SHOT2" \
             --require-audio-source "$source" --require-audout-status "$audout" \
             --require-audio-pipeline "$pipeline" "${scene_switch_gate[@]}" \
-            "${zr_gate[@]}" "${zl_gate[@]}"
+            "${zr_gate[@]}" "${zl_gate[@]}" "${resume_gate[@]}"
 
       - name: Upload AV runtime evidence
         if: always()
