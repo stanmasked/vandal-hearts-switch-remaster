@@ -122,6 +122,16 @@ class TestIntegratedNroPreflight(unittest.TestCase):
         with self.assertRaises(gate.PreflightError):
             gate.check(self.root, **self.params)
 
+    def test_unexpected_plain_file_rejected(self):
+        (self.root / "unrelated.txt").write_text("other artifact")
+        with self.assertRaises(gate.PreflightError):
+            gate.check(self.root, **self.params)
+
+    def test_unexpected_empty_directory_rejected(self):
+        (self.root / "nested").mkdir()
+        with self.assertRaises(gate.PreflightError):
+            gate.check(self.root, **self.params)
+
     def test_truncated_nro_rejected(self):
         data = bytearray((self.root / gate.EXPECTED_NRO).read_bytes()[:0x40])
         (self.root / gate.EXPECTED_NRO).write_bytes(data)
