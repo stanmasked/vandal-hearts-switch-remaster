@@ -89,7 +89,19 @@ static inline int vh_audio_compute_wait_bucket_verify(
         j->both_over_4x>j->wait_over_4x ||
         j->wait_over_4x>j->wait_over_2x ||
         j->wait_over_2x>returned ||
-        j->dsp_over>returned)
+        j->dsp_over>returned ||
+        /* A set intersection cannot be smaller than the excess of
+         * DSP overruns over all pages outside the slow-wait set.
+         * The >2x-but-not->4x intersection also has a strict cap.
+         */
+        j->both_over_2x<j->dsp_over-
+            (j->dsp_over>returned-j->wait_over_2x
+                ? returned-j->wait_over_2x : j->dsp_over) ||
+        j->both_over_4x<j->dsp_over-
+            (j->dsp_over>returned-j->wait_over_4x
+                ? returned-j->wait_over_4x : j->dsp_over) ||
+        j->both_over_2x-j->both_over_4x>
+            j->wait_over_2x-j->wait_over_4x)
         return -1;
     return 0;
 }

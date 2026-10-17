@@ -1374,3 +1374,21 @@ failure. It also tests compensated counter corruption and atomic
 overflow handling. Both Make host test targets and PCM CI with
 UndefinedBehaviorSanitizer run the new regression. Physical Switch
 listening is still required to establish any audible outcome.
+
+
+#### Exact limits of joint-count validation
+
+The first joint-counter test accidentally expected an observed
+intersection shift from one to two DSP-overbudget/>4x audout pages
+to be rejected. That shift can still be consistent with the
+independent total DSP-overbudget count and audout wait histograms.
+Those aggregates cannot uniquely reconstruct per-page overlap.
+
+The verifier now checks the exact independent marginal totals,
+category/returned-page identity, subset constraints, and necessary
+lower bounds for set intersections. It rejects impossible overlaps
+without claiming that a plausible altered overlap is detectable.
+The regression asserts both properties explicitly. Joint counts
+are recorded once as pages are returned, but cannot be independently
+reconstructed from marginal totals alone. Neither coincidence nor
+its absence proves an acoustic defect or causal mechanism.

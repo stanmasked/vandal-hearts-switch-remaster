@@ -53,7 +53,16 @@ int main(void) {
     assert(vh_audio_compute_wait_verify(&j,&c,&waits,5u,1u)==-1);
 
     VhAudioComputeWaitJoin broken=j;
+    broken.ordinary.both_over_4x=
+        broken.ordinary.both_over_2x+1u;
+    assert(vh_audio_compute_wait_verify(&broken,&c,&waits,4u,1u)==-1);
+    /* A 1->2 overlap shift can match the same marginal totals.
+     * It cannot be disproved from aggregates alone. */
+    broken=j;
     ++broken.ordinary.both_over_4x;
+    assert(vh_audio_compute_wait_verify(&broken,&c,&waits,4u,1u)==0);
+    broken=j;
+    --broken.ordinary.both_over_2x;
     assert(vh_audio_compute_wait_verify(&broken,&c,&waits,4u,1u)==-1);
     broken=j; ++broken.ordinary.wait_over_2x;
     assert(vh_audio_compute_wait_verify(&broken,&c,&waits,4u,1u)==-1);
