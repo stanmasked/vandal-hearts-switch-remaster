@@ -973,6 +973,109 @@ static void test_full_pcm_ring_scene_switch_backpressure(void) {
     assert(seq.blocks_advanced==1u && spu.frames_rendered==512u);
 }
 
+
+static void test_repeated_scene_switch_with_full_pcm_fifo(void) {
+    /* Existing PCM belongs to the transport, not the current scene.
+     * Exercise 64 valid switches, 64 rejected switches and repeated
+     * blocked pumps without consuming or changing that queued audio.
+     * Once 512 frames are drained, only the final scene may dispatch. */
+    setup();
+    assert(vh_native_spu_set_reverb(&spu,1,0.75f)==0);
+    assert(vh_native_seq_init(&seq,controls_song,sizeof controls_song,
+                              &spu,resolve_with_reverb,&log_state,1)==0);
+    for(unsigned i=0u;i<2u;i++)
+        assert(vh_native_seq_pump(&seq,&ring)==512);
+    assert(seq.note_ons==1u && spu.voice[0].reverb_send);
+    assert(spu.frames_rendered==1024u);
+    for(size_t i=0u;i<sizeof pressure_padding/sizeof pressure_padding[0];i++)
+        pressure_padding[i]=(int16_t)((int)(i%307u)-153);
+    assert(vh_audio_stream_write(&ring,pressure_padding,
+               VH_AUDIO_RING_FRAMES-1024u)==VH_AUDIO_RING_FRAMES-1024u);
+    assert(vh_audio_stream_queued(&ring)==VH_AUDIO_RING_FRAMES);
+    memcpy(&pressure_expected_ring,&ring,sizeof ring);
+    memcpy(&pressure_reference_spu,&spu,sizeof spu);
+    const unsigned old_calls=log_state.calls;
+
+    for(unsigned iteration=0u;iteration<64u;iteration++) {
+        const int final_type=!!(iteration&1u);
+        const uint8_t *music=final_type ? controls_song : running_song;
+        const size_t bytes=final_type
+            ? sizeof controls_song : sizeof running_song;
+        const VhSeqResolve resolver=final_type ? resolve_with_reverb : resolve;
+        assert(vh_native_seq_switch_scene(&seq,music,bytes,
+                                      &spu,resolver,&log_state,1)==0);
+        assert(spu.frames_rendered==0u && spu.steal_index==0u);
+        assert(seq.blocks_advanced==0u && seq.note_ons==0u);
+        assert(seq.note_offs==0u && seq.playing);
+        assert(vh_audio_stream_queued(&ring)==VH_AUDIO_RING_FRAMES);
+        assert(memcmp(&ring,&pressure_expected_ring,sizeof ring)==0);
+        assert(memcmp(&spu.reverb,&pressure_reference_spu.reverb,
+                      sizeof spu.reverb)==0);
+        for(unsigned slot=0u;slot<VH_NATIVE_MUSIC_VOICES;slot++) {
+            assert(!vh_native_spu_voice_active(&spu,slot));
+            assert(spu.voice[slot].pcm==NULL);
+            assert(seq.owner_note[slot]==-1 && seq.owner_ch[slot]==-1);
+        }
+        memcpy(&pressure_before_seq,&seq,sizeof seq);
+        memcpy(&pressure_before_spu,&spu,sizeof spu);
+        const uint8_t *bad=final_type ? invalid_tempo : invalid_data;
+        const size_t bad_len=final_type
+            ? sizeof invalid_tempo : sizeof invalid_data;
+        assert(vh_native_seq_switch_scene(&seq,bad,bad_len,
+                             &spu,resolve,&log_state,1)==-1);
+        assert(memcmp(&seq,&pressure_before_seq,sizeof seq)==0);
+        assert(memcmp(&spu,&pressure_before_spu,sizeof spu)==0);
+        for(unsigned retry=0u;retry<8u;retry++) {
+            assert(vh_native_seq_pump(&seq,&ring)==0);
+            assert(memcmp(&seq,&pressure_before_seq,sizeof seq)==0);
+            assert(memcmp(&spu,&pressure_before_spu,sizeof spu)==0);
+        }
+        assert(log_state.calls==old_calls);
+        assert(memcmp(&ring,&pressure_expected_ring,sizeof ring)==0);
+    }
+
+    /* Final selected scene is controls_song with EON enabled, and only
+     * this scene may contribute the first new PCM page after backpressure. */
+    assert(seq.bytes==controls_song && seq.resolver==resolve_with_reverb);
+    assert(vh_audio_stream_read(&pressure_expected_ring,
+                       pressure_expected_pcm,512u)==512u);
+    assert(vh_audio_stream_read(&ring,pcm,512u)==512u);
+    assert(memcmp(pcm,pressure_expected_pcm,
+                  sizeof pressure_expected_pcm)==0);
+    memcpy(&pressure_reference_spu,&spu,sizeof spu);
+    memcpy(&pressure_reference_seq,&seq,sizeof seq);
+    pressure_reference_seq.spu=&pressure_reference_spu;
+    ResolverLog reference_log=log_state;
+    pressure_reference_seq.context=&reference_log;
+    assert(vh_native_seq_advance_block(&pressure_reference_seq)>0);
+    assert(pressure_reference_seq.note_ons==1u);
+    assert(pressure_reference_spu.voice[0].reverb_send);
+    vh_native_spu_render(&pressure_reference_spu,
+                         pressure_expected_pcm,512u);
+
+    assert(vh_native_seq_pump(&seq,&ring)==512);
+    assert(seq.note_ons==1u && seq.blocks_advanced==1u);
+    assert(seq.note_offs==0u && spu.frames_rendered==512u);
+    assert(spu.voice[0].reverb_send);
+    assert(log_state.calls==old_calls+1u);
+    assert(memcmp(&spu.reverb,&pressure_reference_spu.reverb,
+                  sizeof spu.reverb)==0);
+    assert(vh_audio_stream_write(&pressure_expected_ring,
+                             pressure_expected_pcm,512u)==512u);
+    assert(memcmp(&ring,&pressure_expected_ring,sizeof ring)==0);
+    assert(vh_native_seq_pump(&seq,&ring)==0);
+    for(unsigned i=0u;i<VH_AUDIO_RING_FRAMES/512u;i++) {
+        assert(vh_audio_stream_read(&pressure_expected_ring,
+                                   pressure_expected_pcm,512u)==512u);
+        assert(vh_audio_stream_read(&ring,pcm,512u)==512u);
+        assert(memcmp(pcm,pressure_expected_pcm,
+                      sizeof pressure_expected_pcm)==0);
+    }
+    assert(!vh_audio_stream_queued(&ring));
+    assert(memcmp(&ring,&pressure_expected_ring,sizeof ring)==0);
+    assert(!ring.underrun_frames && !ring.overrun_frames);
+}
+
 int main(void) {
     test_validation_and_source_immutability();
     test_512_block_controls_and_ring_pressure();
@@ -993,6 +1096,7 @@ int main(void) {
     test_scene_switch_preserves_live_studio_c_tail();
     test_new_scene_dry_and_wet_notes_mix_with_old_tail();
     test_full_pcm_ring_scene_switch_backpressure();
+    test_repeated_scene_switch_with_full_pcm_fifo();
     puts("native pQES SEQ -> 20-voice SPU -> PCM ring: PASS");
     return 0;
 }
