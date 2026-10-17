@@ -380,6 +380,15 @@ int main(int argc, char **argv) {
                     (int)saved);
             export_status=2;
         }
+        char audout_path[VH_AUDOUT_QUEUE_EXPORT_PATH_CAP];
+        const VhAudoutQueueExportResult audout_saved=
+            vh_switch_game_audio_queue_export(
+                audout_path,sizeof audout_path);
+        if(audout_saved!=VH_AUDOUT_QUEUE_EXPORT_OK) {
+            fprintf(stderr,"audout queue telemetry SD export failed: %d\n",
+                    (int)audout_saved);
+            export_status=2;
+        }
         if (resume_message_enabled)
             (void)appletSetRestartMessageEnabled(false);
     }
