@@ -83,6 +83,14 @@ class SyntheticMipsProgram(unittest.TestCase):
         self.assertNotIn("GPU_writeDataMem(",src)
         self.assertNotIn("GPU_writeData(",src)
         self.assertIn("apply_v120(root)",src)
+        # GP0 MMIO CPU SW uses GPUwriteData's native buffered FIFO:
+        # the MIPS setup must be flushed BEFORE enabling sample equality.
+        self.assertIn("GPU_freeze(1,&setup_freeze,&setup_pixels)",src)
+        self.assertLess(src.index("GPU_freeze(1,&setup_freeze,&setup_pixels)"),
+                        src.index("vh80_reset();"))
+        self.assertLess(src.index("vh80_reset();"),
+                        src.index("vh115_enable(1);"))
+        self.assertIn("VH121_SETUP_DRAIN_REFUSED",src)
 
     def test_aggregate_public_report_contains_no_mips_words_or_pixels(self):
         result=summarize(PASS)
