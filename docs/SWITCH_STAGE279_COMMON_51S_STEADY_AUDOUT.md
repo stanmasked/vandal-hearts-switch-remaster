@@ -31,7 +31,7 @@ independent first audout submit/return events in each run;
 these are equal *relative audio-service age* windows, not aligned
 physical DAC clocks.
 
-## Independent archive reanalysis (pending dedicated Stage279 CI gate)
+## Independent archive reanalysis (accepted in GitHub Actions 39080694548)
 
 The first separate byte reanalysis used the same eight GitHub Actions
 archives that passed [Stage278 independent archive CI
@@ -70,7 +70,7 @@ Then, for **each** of the two modes in each run, it independently:
 1. Parses and verifies the complete guest latency CSV and independent
    guest origin clock.
 2. Rechecks every individual ≥40 ms begin/end timestamp against
-   original minute-by-minute call ordering, per-second buckets
+   original second-by-second call ordering, per-second buckets
    and exact ≥50 ms classification.
 3. Requires all 51 selected second buckets 1–51, omitting both
    startup second 0 and nonshared trailing idle windows.
@@ -103,3 +103,41 @@ runner SD files *while the runs were live*; this retrospective tool
 can only reopen the archived source bytes and their earlier verdicts.
 No statistical confidence interval, randomized scene intervention or
 physical Switch audio result is claimed.
+
+## Completed Stage279 independent verification
+
+[GitHub Actions 39080694548](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39080694548)
+successfully checked **all eight source archives** and generated
+`steady-state-only-s1-to-s51.json` in the downloadable
+`nexium-verified-eight-idle-switch-pairs` artifact.
+
+The strictly revalidated result was
+`ORIGINAL_SD_BOUND_COMMON_51S_AUDOUT_REVERIFIED` and exactly
+15,039 idle versus 15,005 switch-side audout attempts.
+
+Whole-pair descriptive variability, with 16,384 reproducible
+entire-pair resamples, gave the following results per 1,000
+guest audout calls:
+
+| Duration threshold | Aggregate switch-minus-idle difference | Leave-one-pair-out range | Descriptive paired-resampling percentile range |
+| --- | ---: | ---: | ---: |
+| ≥40 ms | **+0.830** | +0.103 to +2.025 | −2.044 to +3.318 |
+| ≥50 ms | **−0.064** | −0.301 to +0.156 | −0.789 to +0.606 |
+
+Among the eight within-pair differences, five were positive for
+the ≥40 ms threshold and five were also positive for the ≥50 ms
+threshold (the identity of positive pairs need not be the same).
+Both paired-resampling sensitivity ranges cross zero. These are
+**descriptive**, not statistically valid randomized causal-effect
+confidence intervals. Each NeXium workflow used a fixed
+switch-then-idle capture order.
+
+The Stage279 report separately preserves the excluded second-0
+counts and first observed call. In run `39079372486` the original
+idle startup call had duration `380421511` ns; that event is
+explicitly excluded from these steady-state totals. It remains
+present in the immutable original source archive and prior
+Stage278 report.
+
+No new playable game level, physical Switch test, source-music
+fidelity validation or actual-audible-underrun measurement is implied.
