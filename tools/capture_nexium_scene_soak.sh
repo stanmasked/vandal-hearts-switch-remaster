@@ -128,3 +128,14 @@ if [[ -f "$SOAK_SD_DIR/audio-audout-export-failure.txt" ]]; then
   cp --no-clobber -- "$SOAK_SD_DIR/audio-audout-export-failure.txt" \
     "$output/soak-audout-export-failure.txt"
 fi
+
+# Always preserve the producer's own post-join export result; positive
+# and negative verdicts are kept distinct from the actual CSV bytes.
+if [[ -f "$SOAK_SD_DIR/audio-audout-export-result.txt" &&
+      ! -L "$SOAK_SD_DIR/audio-audout-export-result.txt" ]]; then
+  cp --no-clobber -- "$SOAK_SD_DIR/audio-audout-export-result.txt" \
+    "$output/soak-audout-export-result.txt"
+fi
+# Names and sizes are diagnostic only. They never satisfy the audit.
+find "$SOAK_SD_DIR" -maxdepth 1 -type f \
+  -printf '%f,%s\n' | LC_ALL=C sort > "$output/soak-sd-directory-inventory.csv"
