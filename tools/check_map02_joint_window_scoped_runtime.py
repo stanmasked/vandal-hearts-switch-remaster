@@ -185,10 +185,15 @@ def check_joint_original_gpu(upstream, *, compiler="cc"):
         if tail.replace("\\n", "\n") not in HARNESS_DRAWS:
             raise ValueError("real original GPU harness terminator changed")
         held.write_text(
-            "#include <unistd.h>\n" +
+            "#include <unistd.h>\n#include <stdio.h>\n#include <stdlib.h>\n" +
             HARNESS_DRAWS.replace(
                 tail.replace("\\n", "\n"),
-                "    assert(vram[10][10] != 1);\n    sleep(1);\n    return 0;"),
+                "    assert(vram[10][10] != 1);\n"
+                "    { FILE *disc = fopen(getenv(\\"VH_DISC_IMAGE\\"), \\"rb\\");\n"
+                "      if (!disc) return 7;\n"
+                "      sleep(1);\n"
+                "      if (fclose(disc) != 0) return 8; }\n"
+                "    return 0;"),
             encoding="utf-8")
         held_exe = root / "original-gpu-kernel-observed"
         held_build = [
