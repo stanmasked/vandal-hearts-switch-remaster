@@ -50,6 +50,15 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - name: Trust checked-out workspace inside devkitPro container
+        shell: bash
+        run: |
+          set -euo pipefail
+          # actions/checkout runs with runner ownership; the devkitPro
+          # container executes as a different user. Trust only this
+          # checkout path so Git revision and status can be audited.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          test "$(git rev-parse --verify HEAD)" = "$GITHUB_SHA"
       - name: Verify streaming host resampler
         shell: bash
         run: |
