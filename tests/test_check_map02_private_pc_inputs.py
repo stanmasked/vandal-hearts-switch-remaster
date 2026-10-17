@@ -94,6 +94,17 @@ for name, offset, size in [
              str(generator), str(self.exe), str(folder)],
             check=True, capture_output=True, timeout=15)
         self.generator = generator
+        # The production check pins the real, public upstream KROM-to-C
+        # generator. The fixture uses a synthetic source and test-only hash.
+        self.font_generator = self.root / private_inputs.FONT_GENERATOR
+        self.font_generator.write_text(
+            "#!/usr/bin/env python3\\n# synthetic font fixture\\n",
+            encoding="utf-8")
+        self.font_generator_hash = patch(
+            "tools.check_map02_private_pc_inputs.FONT_GENERATOR_BLOB_SHA1",
+            _original_blob_sha1(self.font_generator.read_bytes()))
+        self.font_generator_hash.start()
+        self.addCleanup(self.font_generator_hash.stop)
         self.krom = self.root / "external/psy-q/3.6/PSYQ/BIN/KROMDAT.BIN"
         self.krom.parent.mkdir(parents=True)
         self.glyph = bytes([i % 251 for i in range(FONT_LENGTH)])
@@ -445,6 +456,38 @@ for name, offset, size in [
         self.assertEqual(ex.exception.code, 2)
         self.assertIn("filesystem verification failed", output.getvalue())
         self.assertNotIn(str(self.root), output.getvalue())
+
+    def test_font_generator_is_bound_to_pinned_public_source(self):
+        result = verify_private_pc_inputs(self.root)
+        self.assertTrue(result["pinned_original_font_generator_verified"])
+        self.font_generator.write_text(
+            self.font_generator.read_text() + "# altered\\n",
+            encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "font generator differs from pinned source"):
+            verify_private_pc_inputs(self.root)
+
+    def test_symlinked_original_font_generator_rejected(self):
+        original = self.font_generator.read_bytes()
+        backup = self.font_generator.with_name("synthetic-font-generator-source")
+        backup.write_bytes(original)
+        self.font_generator.unlink()
+        self.font_generator.symlink_to(backup)
+        with self.assertRaisesRegex(ValueError, "missing or linked"):
+            verify_private_pc_inputs(self.root)
+
+    def test_identical_font_generator_inode_swap_during_font_audit_rejected(self):
+        original_font = private_inputs._krom_font
+
+        def replace_source_during_font_read(path):
+            original = self.font_generator.read_bytes()
+            self.font_generator.unlink()
+            self.font_generator.write_bytes(original)
+            return original_font(path)
+
+        with patch.object(private_inputs, "_krom_font",
+                          side_effect=replace_source_during_font_read):
+            with self.assertRaisesRegex(ValueError, "original-font-generator"):
+                verify_private_pc_inputs(self.root)
 
     def test_generator_timeout_never_leaks_private_arguments(self):
         secret_path = str(self.exe)
