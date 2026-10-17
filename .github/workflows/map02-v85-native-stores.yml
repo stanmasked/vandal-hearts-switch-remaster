@@ -1,0 +1,172 @@
+name: MAP02 v85 pinned Unai actual pixel-store attempts and same-value writes
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v85-unai-vram-samples.yml'
+      - 'tools/apply_map02_v85_pcsx_rearmed.py'
+      - 'tools/summarize_map02_v85_native_stores.py'
+      - 'tests/test_map02_v85_native_stores.py'
+      - 'tools/summarize_map02_v85_unai_samples.py'
+      - 'tests/test_map02_v85_unai_samples.py'
+      - 'tools/map02_v80_native_timeline.*'
+      - 'tools/map02_v81_event_jsonl.*'
+      - 'tools/verify_map02_v82_native_trace.py'
+      - 'tests/test_map02_v83_unai_dispatch.py'
+      - 'tools/summarize_map02_v83_unai_vblank.py'
+      - 'tools/apply_map02_v85_pcsx_rearmed.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pinned-unai-dispatch:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: remaster
+          persist-credentials: false
+      - name: Synthetic regression tests for v80-v83
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          for version in 80 81 82 83 84 85; do
+            case "$version" in
+              80) pattern='test_map02_v80_native_observer.py';;
+              81) pattern='test_map02_v81_event_jsonl.py';;
+              82) pattern='test_map02_v82_native_publish.py';;
+              83) pattern='test_map02_v83_unai_dispatch.py';;
+              84) pattern='test_map02_v85_unai_samples.py';;
+            esac
+            python3 -m unittest discover -s remaster/tests -p "$pattern" -v
+          done
+      - name: Patch pinned upstream with Unai post-dispatch observer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init -q upstream-pcsx
+          git -C upstream-pcsx remote add origin https://github.com/notaz/pcsx_rearmed.git
+          pin=8b6c163575e6ce9a0537553e0d4ed4225315955e
+          git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
+          git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
+          test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
+          python3 -m remaster.tools.apply_map02_v85_pcsx_rearmed upstream-pcsx
+          git -C upstream-pcsx diff --check
+          grep -F 'vh80_record(VH83_GP0_UNAI_HANDLED' upstream-pcsx/plugins/gpu_unai/gpulib_if.cpp
+          grep -F 'VH83_UNAI_DISPATCH_PASS' upstream-pcsx/frontend/main.c
+          grep -F 'VH84_UNAI_SAMPLES_PASS' upstream-pcsx/frontend/main.c
+      - name: Build actual Unai software renderer with C/C++ observability
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cc == 'clang' && 'clang++' || 'g++' }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libsdl1.2-dev libpng-dev zlib1g-dev
+          git -C upstream-pcsx submodule update --init --recursive --depth=1
+          mkdir -p proof/public
+          (
+            cd upstream-pcsx
+            CC="$CC" CXX="$CXX" ./configure --platform=generic --gpu=unai --disable-dynarec --sound-drivers=sdl
+            make -j2 VH_MAP02_V66_PCSX_PROBE=1 CC="$CC" CXX="$CXX" > ../proof/private-build.log 2>&1
+            test -s pcsx
+            nm pcsx | grep -w vh80_record
+            nm pcsx | grep -w vh81_format_jsonl
+            nm pcsx | grep -w vh82_publish_private
+          ) || { tail -n 100 proof/private-build.log; exit 1; }
+          echo 'Pinned Unai actual pixel store C/C++ instrumentation linked, synthetic-only' > proof/public/v85-build-summary.txt
+      - name: Real pinned emulator synthetic MIPS/VBlank/Unai GP0 post-handler trace
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -m 700 -p proof/private
+          mkdir -m 700 -p proof/v85-home
+          python3 -m remaster.tools.make_map02_v78_vblank_mips_exe --output proof/private/V85_SYNTHETIC.EXE
+          test "$(stat -c %s proof/private/V85_SYNTHETIC.EXE)" -eq 10240
+          export VH_MAP02_V82_PRIVATE_PATH="$PWD/proof/private/V85_RENDERER_EVENTS.jsonl"
+          test ! -e "$VH_MAP02_V82_PRIVATE_PATH"
+          timeout 75s env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v85-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread --vh85-unai-pixel-store-smoke \
+            proof/private/V85_SYNTHETIC.EXE > proof/private/v85-runtime.log 2>&1 || {
+              tail -n 110 proof/private/v85-runtime.log
+              exit 1
+            }
+          grep -F 'VH78_VBLANK_VRAM_PASS vblanks=4 phases=4 samples=2380' proof/private/v85-runtime.log
+          grep -F 'VH82_PRIVATE_EXPORT_PASS vblanks=4 ' proof/private/v85-runtime.log
+          grep -F 'VH83_UNAI_DISPATCH_PASS handled=' proof/private/v85-runtime.log
+          grep -F 'VH84_UNAI_SAMPLES_PASS comparisons=' proof/private/v85-runtime.log
+          grep -F 'VH85_UNAI_STORES_PASS attempts=' proof/private/v85-runtime.log
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          from remaster.tools.verify_map02_v82_native_trace import validate
+          from remaster.tools.summarize_map02_v83_unai_vblank import summarize
+          from remaster.tools.summarize_map02_v84_unai_samples import summarize as samples
+          from remaster.tools.summarize_map02_v85_native_stores import summarize as stores
+          log=Path("proof/private/v85-runtime.log").read_text()
+          head=re.findall(r'VH83_UNAI_DISPATCH_PASS handled=(\d+)',log)
+          tail=re.findall(r'VH82_PRIVATE_EXPORT_PASS vblanks=(\d+) gp1_mmio=(\d+) entries=(\d+) bytes=(\d+) drops=(\d+)',log)
+          assert len(head)==len(tail)==1
+          observed=int(head[0])
+          vblanks,gp1,entries,size,drops=map(int,tail[0])
+          assert observed>0 and vblanks==4 and gp1>=2 and drops==0
+          path=Path("proof/private/V85_RENDERER_EVENTS.jsonl")
+          assert path.stat().st_mode&0o777==0o600
+          evidence=validate(path.read_bytes())
+          assert evidence["gp0_unai_handled"]==observed
+          timing=summarize(path.read_bytes())
+          assert sum(e["unai_handler_events"] for e in timing["between_vblanks"])+timing["before_first_vblank"]+timing["after_last_vblank"]==observed
+          assert timing["original_retail_MAP02_verified"] is False
+          pixels=samples(path.read_bytes())
+          assert pixels["handler_comparisons"]==observed
+          assert pixels["changed_handlers"]>0 and pixels["unchanged_handlers"]>0
+          assert pixels["changed_sample_points"]>0
+          assert pixels["original_retail_MAP02_verified"] is False
+          native=stores(path.read_bytes())
+          assert native["gp0_handlers"]==observed
+          assert native["native_store_attempts"]>native["native_stores_writing_previous_value"]>0
+          assert native["native_stores_writing_new_value"]>0
+          assert native["original_retail_MAP02_verified"] is False
+          assert evidence["vblank_edges"]==vblanks and evidence["gp1_mmio"]==gp1
+          assert evidence["events"]==entries and evidence["bytes"]==size
+          assert evidence["original_retail_MAP02_verified"] is False
+          assert evidence["HD_replacement_approved"] is False
+          capture=re.findall(r"VH84_UNAI_SAMPLES_PASS comparisons=(\d+) changed_handlers=(\d+) unchanged_handlers=(\d+)",log)
+          assert len(capture)==1
+          assert list(map(int,capture[0]))==[observed,pixels["changed_handlers"],pixels["unchanged_handlers"]]
+          logged=re.findall(r"VH85_UNAI_STORES_PASS attempts=(\d+) same_value=(\d+) changed_value=(\d+) handlers=(\d+)",log)
+          assert len(logged)==1
+          assert list(map(int,logged[0]))==[
+              native["native_store_attempts"],native["native_stores_writing_previous_value"],
+              native["native_stores_writing_new_value"],observed]
+          Path("proof/public/v85-runtime-summary.txt").write_text(
+              "Real pinned PCSX Unai software renderer: synthetic 24-point VRAM comparisons.\n"+
+              f"VBlank=4, VRAM samples=2380, handled={observed}, drops=0, byte-exact private trace valid.\n"+
+              "Instrumented Unai native stores distinguish same-value vs changed-value assignments; other paths excluded.\n")
+          PY
+          sha256sum "$VH_MAP02_V82_PRIVATE_PATH" > proof/private/native.sha256
+          if timeout 75s env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v85-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread --vh83-unai-gp0-smoke \
+            proof/private/V85_SYNTHETIC.EXE > proof/private/duplicate.log 2>&1; then
+            echo 'ERROR duplicate native report was accepted'
+            exit 1
+          fi
+          grep -F 'VH82_PRIVATE_PUBLISH_REFUSED' proof/private/duplicate.log
+          sha256sum -c proof/private/native.sha256
+          test ! -e "$VH_MAP02_V82_PRIVATE_PATH.tmp"
+          echo 'Duplicate private path refused without overwriting events.' >> proof/public/v85-runtime-summary.txt
+      - name: Publish aggregate status only, never private trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-v85-${{ matrix.cc }}-status
+          path: proof/public/
+          if-no-files-found: warn
