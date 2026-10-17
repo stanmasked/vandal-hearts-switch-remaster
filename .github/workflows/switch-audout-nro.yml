@@ -12,6 +12,8 @@ on:
       - "tests/test_vh_audio_output_recovery.c"
       - "tests/test_vh_audio_report_pages.c"
       - "tests/test_audout_report_layout.py"
+      - "tests/check_audout_guest_frames.py"
+      - "tests/test_check_audout_guest_frames.py"
       - "tests/test_vh_audio_page_telemetry.c"
       - "tests/test_vh_audio_resume_abort_telemetry.c"
       - "tests/test_vh_decoded_vab_audout.c"
@@ -28,6 +30,8 @@ on:
       - "tests/test_vh_audio_output_recovery.c"
       - "tests/test_vh_audio_report_pages.c"
       - "tests/test_audout_report_layout.py"
+      - "tests/check_audout_guest_frames.py"
+      - "tests/test_check_audout_guest_frames.py"
       - "tests/test_vh_audio_page_telemetry.c"
       - "tests/test_vh_audio_resume_abort_telemetry.c"
       - "tests/test_vh_decoded_vab_audout.c"
@@ -91,3 +95,97 @@ jobs:
             build/audout-audio-switch-probe.nro.sha256
             build/audout-source-commit.txt
           if-no-files-found: error
+
+  nexium-guest:
+    name: NeXium audout NRO guest video-only smoke
+    runs-on: ubuntu-26.04
+    needs: audout-nro
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download matching audout NRO
+        uses: actions/download-artifact@v4
+        with:
+          name: native-audout-music-nro
+          path: nros
+      - name: Prepare isolated empty synthetic-mode virtual SD
+        shell: bash
+        run: |
+          set -euo pipefail
+          sd_root="$RUNNER_TEMP/audout-nexium-sd"
+          mkdir -p "$sd_root"
+          echo "NEXIUM_DATA_ROOT=$sd_root" >> "$GITHUB_ENV"
+          test -s nros/audout-audio-switch-probe.nro
+          (cd nros && sha256sum -c audout-audio-switch-probe.nro.sha256)
+          test "$(cat nros/audout-source-commit.txt)" = "$GITHUB_SHA"
+      - name: Install headless Vulkan and screenshot dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl jq xvfb xauth xdotool imagemagick python3-pil \
+            libgtk-3-0t64 libasound2t64 libudev1 libxkbcommon0 libxkbcommon-x11-0 \
+            libx11-xcb1 libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
+            libvulkan1 mesa-vulkan-drivers
+          python3 -m unittest discover -s tests -p 'test_check_audout_guest_frames.py' -v
+      - name: Install same NeXium nightly as existing native AV test
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_json="$(curl -fsSL --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/nexium-emu/nexium-nightly/releases/tags/nightly)"
+          asset_url="$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
+          test -n "$asset_url"
+          curl -fL --retry 3 "$asset_url" -o /tmp/vh-audout-nexium.tar.gz
+          mkdir -p /tmp/vh-audout-nexium
+          tar -xzf /tmp/vh-audout-nexium.tar.gz -C /tmp/vh-audout-nexium
+          emu_bin="$(find /tmp/vh-audout-nexium -type f -executable \\( -name 'nexium-gui' -o -name 'nexium' \\) -print -quit)"
+          test -n "$emu_bin"
+          echo "NEXIUM_BIN=$emu_bin" >> "$GITHUB_ENV"
+      - name: Observe console framebuffer without claiming audible sound
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime-evidence
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+          export NRO="nros/audout-audio-switch-probe.nro"
+          export SHOT1="runtime-evidence/audout-guest-before.png"
+          export SHOT2="runtime-evidence/audout-guest-after.png"
+          export LOG="runtime-evidence/nexium-audout.log"
+          timeout --kill-after=5s 85s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
+            set -euo pipefail
+            "$NEXIUM_BIN" "$NRO" >"$LOG" 2>&1 &
+            pid=$!
+            cleanup() {
+              kill -INT "$pid" 2>/dev/null || true
+              sleep 1
+              kill -KILL "$pid" 2>/dev/null || true
+              wait "$pid" 2>/dev/null || true
+            }
+            trap cleanup EXIT
+            sleep 28
+            kill -0 "$pid"
+            window="$(xdotool search --onlyvisible --name "NeXium" 2>/dev/null | tail -n 1 || true)"
+            test -n "$window"
+            timeout --kill-after=2s 10s import -window "$window" "$SHOT1"
+            sleep 9
+            kill -0 "$pid"
+            timeout --kill-after=2s 10s import -window "$window" "$SHOT2"
+            test -s "$SHOT1"
+            test -s "$SHOT2"
+          '
+          python3 tests/check_audout_guest_frames.py \
+            "$SHOT1" "$SHOT2" --json-out runtime-evidence/guest-video-witness.json
+          # Guest frame progress is NOT proof of accepted audout buffers.
+          # Real ZL/ZR button or HOME trials remain physical tests.
+      - name: Upload guest evidence (no PCM or user music)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audout-nexium-video-only-evidence
+          path: runtime-evidence/
+          if-no-files-found: warn
