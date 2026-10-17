@@ -9,6 +9,16 @@ on:
       - 'source/game_state.h'
       - 'source/game_rules.h'
       - 'Makefile'
+      - 'source/vh_switch_game_audio.c'
+      - 'source/vh_switch_game_audio.h'
+      - 'source/vh_audout_queue_telemetry.c'
+      - 'source/vh_audout_queue_telemetry.h'
+      - 'source/vh_audout_queue_export.c'
+      - 'source/vh_audout_queue_export.h'
+      - 'tests/test_vh_audout_queue_telemetry.c'
+      - 'tests/test_vh_audout_queue_export.c'
+      - 'tools/audit_nexium_audout_queue.py'
+      - 'tests/test_audit_nexium_audout_queue.py'
       - 'tests/check_nro.py'
       - 'tools/analyze_nexium_scene_audio.py'
       - 'tools/capture_nexium_scene_audio.sh'
@@ -56,6 +66,7 @@ jobs:
           make test
           python3 -m unittest discover -s tests -p "test_analyze_nexium_pcm.py" -v
           python3 -m unittest discover -s tests -p "test_analyze_nexium_scene_audio.py" -v
+          python3 -m unittest discover -s tests -p "test_audit_nexium_audout_queue.py" -v
           python3 -m unittest discover -s tests -p "test_analyze_nexium_transition_timing.py" -v
           python3 -m unittest discover -s tests -p "test_audit_nexium_guest_sd_handoff.py" -v
           bash -n tools/capture_nexium_scene_audio.sh
@@ -637,6 +648,16 @@ jobs:
             --optical-csv-output runtime-evidence/scene-soak/soak-guest-optical.csv
           python3 -m json.tool runtime-evidence/scene-soak/soak-verification.json >/dev/null
           echo "Ten scene transitions witnessed by guest framebuffer and independent guest SD CSV; guest timing is not DAC latency." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Require continuous audout guest SD accounting
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_audout_queue.py \
+            --source runtime-evidence/scene-soak/soak-audout-sd-unverified.csv \
+            --output runtime-evidence/scene-soak/soak-audout-verification.json
+          python3 -m json.tool runtime-evidence/scene-soak/soak-audout-verification.json >/dev/null
+          echo "Guest audout page/lease accounting checked across the soak. Queue counts are pre-submit samples, not device playback or audible underrun proof." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Record audio capture boundary
         if: always()
