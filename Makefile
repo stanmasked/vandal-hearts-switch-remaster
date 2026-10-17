@@ -340,3 +340,22 @@ $(BUILD)/libnx-ps1-music-av-zr.nro: $(BUILD)/libnx-ps1-music-av-zr.elf $(BUILD)/
 
 ps1-music-av-zr-probe: $(BUILD)/libnx-ps1-music-av-zr.nro
 	python3 tests/check_nro.py $<
+
+# An independent CI-only guest BAD-CLOCK probe: successful audout
+# descriptor return + rejected timing telemetry MUST NOT replay PCM.
+.PHONY: ps1-music-av-zl-probe
+
+$(BUILD)/libnx-ps1-music-av-zl.elf: $(PS1_MUSIC_AV_SOURCES) \
+	source/vh_audio_output_recovery.h source/game_renderer.h \
+	source/game_state.h | $(BUILD)
+	$(CC) $(CFLAGS) -std=c11 -DVH_AUDIO_GUEST_ZL_AUTOTEST=1 -Isource \
+		$(LDFLAGS) $(PS1_MUSIC_AV_SOURCES) -o $@ $(LDLIBS) -lm
+
+$(BUILD)/libnx-ps1-music-av-zl.nacp: | $(BUILD)
+	$(NACPTOOL) --create "Vandal Hearts AV ZL Guest Witness" "$(APP_AUTHOR)" "$(APP_VERSION)" $@
+
+$(BUILD)/libnx-ps1-music-av-zl.nro: $(BUILD)/libnx-ps1-music-av-zl.elf $(BUILD)/libnx-ps1-music-av-zl.nacp
+	$(ELF2NRO) $< $@ --nacp=$(BUILD)/libnx-ps1-music-av-zl.nacp
+
+ps1-music-av-zl-probe: $(BUILD)/libnx-ps1-music-av-zl.nro
+	python3 tests/check_nro.py $<
