@@ -320,3 +320,23 @@ $(BUILD)/libnx-ps1-music-av.nro: $(BUILD)/libnx-ps1-music-av.elf $(BUILD)/libnx-
 
 ps1-music-av-probe: $(BUILD)/libnx-ps1-music-av.nro
 	python3 tests/check_nro.py $<
+
+# Dedicated CI-only NeXium build: the normal AV NRO is unchanged.
+# Trigger exactly one synthetic ZR-style wrapper failure after real
+# guest audout returns, then prove recovery and immutable PS1 music state.
+.PHONY: ps1-music-av-zr-probe
+
+$(BUILD)/libnx-ps1-music-av-zr.elf: $(PS1_MUSIC_AV_SOURCES) \
+	source/vh_audio_output_recovery.h source/game_renderer.h \
+	source/game_state.h | $(BUILD)
+	$(CC) $(CFLAGS) -std=c11 -DVH_AUDIO_GUEST_ZR_AUTOTEST=1 -Isource \
+		$(LDFLAGS) $(PS1_MUSIC_AV_SOURCES) -o $@ $(LDLIBS) -lm
+
+$(BUILD)/libnx-ps1-music-av-zr.nacp: | $(BUILD)
+	$(NACPTOOL) --create "Vandal Hearts AV ZR Guest Witness" "$(APP_AUTHOR)" "$(APP_VERSION)" $@
+
+$(BUILD)/libnx-ps1-music-av-zr.nro: $(BUILD)/libnx-ps1-music-av-zr.elf $(BUILD)/libnx-ps1-music-av-zr.nacp
+	$(ELF2NRO) $< $@ --nacp=$(BUILD)/libnx-ps1-music-av-zr.nacp
+
+ps1-music-av-zr-probe: $(BUILD)/libnx-ps1-music-av-zr.nro
+	python3 tests/check_nro.py $<
