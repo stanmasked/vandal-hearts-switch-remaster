@@ -239,9 +239,10 @@ jobs:
           test -s "${RUNNER_TEMP}/map02-cycle-hooks/core_cd.c"
           test -s "${RUNNER_TEMP}/map02-cycle-hooks/libcd.c"
           test -s "${RUNNER_TEMP}/map02-cycle-hooks/libgpu.c"
+          test -s "${RUNNER_TEMP}/map02-cycle-hooks/pc_raster.c"
           cc -std=gnu99 -Wall -Wextra -Werror -Itools -c \
             tools/map02_cycle_order.c -o "${RUNNER_TEMP}/map02-cycle-order.o"
-      - name: Compile the three original CD and GPU units into one private diagnostic object
+      - name: Compile original CD loader and full scoped native GPU into one diagnostic object
         shell: bash
         run: |
           set -euo pipefail
@@ -255,29 +256,39 @@ jobs:
               build-map02-cycle/src/core/cd.o \
               build-map02-cycle/libcd.o \
               build-map02-cycle/libgpu.o \
+              build-map02-cycle/pc_raster.o \
               build-map02-cycle/map02_cycle_order.o \
               build-map02-cycle/map02_cd_read_probe.o \
-              build-map02-cycle/map02_capture_session.o
+              build-map02-cycle/map02_capture_session.o \
+              build-map02-cycle/map02_scoped_blend_sink.o \
+              build-map02-cycle/map02_scoped_blend_stage.o \
+              build-map02-cycle/map02_vram_edges.o
             ld -r \
               build-map02-cycle/src/core/cd.o \
               build-map02-cycle/libcd.o \
               build-map02-cycle/libgpu.o \
+              build-map02-cycle/pc_raster.o \
               build-map02-cycle/map02_cycle_order.o \
               build-map02-cycle/map02_cd_read_probe.o \
               build-map02-cycle/map02_capture_session.o \
+              build-map02-cycle/map02_scoped_blend_sink.o \
+              build-map02-cycle/map02_scoped_blend_stage.o \
+              build-map02-cycle/map02_vram_edges.o \
               -o "${RUNNER_TEMP}/map02-cycle-three-original-units.o"
             for symbol in LoadCdFile ContinueLoadingCdFile CdRead DrawOTag \
-                vh_map02_cycle_load vh_map02_cycle_draw_start; do
+                vh_map02_cycle_load vh_map02_cycle_draw_start \
+                vh_map02_stage_private_pair vh_map02_scope_begin_frame \
+                vh_map02_edges_begin_frame; do
               nm -g --defined-only "${RUNNER_TEMP}/map02-cycle-three-original-units.o" \
                 | awk '{ print $NF }' | grep -Fx "${symbol}"
             done
             if nm -u "${RUNNER_TEMP}/map02-cycle-three-original-units.o" \
-                 | grep -E ' U vh_map02_(cycle|cd_|capture_session)'; then
+                 | grep -E ' U vh_map02_'; then
               echo "Unresolved MAP02 same-ELF observer references" >&2
               exit 1
             fi
           )
-          echo "Original pinned CD loader, CdRead and DrawOTag compile together."
+          echo "Original CD loader and full native GPU/VRAM/scoped capture compile together."
           echo "This is NOT a full retail executable or proof of MAP02 rendering."
       - name: Fail closed on upstream rasterizer source drift
         run: |
