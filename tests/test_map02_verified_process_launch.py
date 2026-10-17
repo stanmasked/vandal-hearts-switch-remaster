@@ -283,7 +283,7 @@ int main(int argc, char **argv) {
     def test_source_bound_cycle_rejects_empty_or_nul_argument_before_spawn(self):
         cycle = self.handoff.parent / "cycle-invalid-argv"
         cycle.mkdir(mode=0o700)
-        for arguments in (("",), ("value\\x00other",)):
+        for arguments in (("",), ("value\x00other",)):
             with self.subTest(arguments=arguments):
                 with patch("tools.map02_verified_process_launch.subprocess.Popen") as popen:
                     with self.assertRaisesRegex(ValueError, "invalid PC-port executable argument"):
