@@ -143,6 +143,7 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
         first=verify_capture(self.root,target_frame=12)
         self.assertEqual(first["load_image_pairs"],1)
         self.assertEqual(first["load_pairs_with_verified_payload"],1)
+        self.assertEqual(first["load_pairs_with_verified_vram_effect"],1)
         self.assertEqual(first["load_pairs_without_payload"],0)
         self.assertEqual(first["upload_payload_sha256_list_sha256"],
                          hashlib.sha256(hashlib.sha256(payload).hexdigest().encode("ascii")).hexdigest())
@@ -158,14 +159,21 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
         path=self.root/"gpu-0001-upload.bin"
         path.write_bytes(b"\x1f\x00")
         first=verify_capture(self.root,target_frame=12)
-        path.write_bytes(b"\x1e\x00")  # same byte length, different evidence
+        path.write_bytes(b"\x1e\x00")  # same byte length, but stale post-VRAM
+        with self.assertRaisesRegex(ValueError, "post-VRAM differs"):
+            verify_capture(self.root,target_frame=12)
+        # Once the native AFTER snapshot reflects the changed source,
+        # the updated content is valid but carries a different fingerprint.
+        corrected=bytearray((self.root/"gpu-0001-vram.bin").read_bytes())
+        corrected[:2]=b"\x1e\x00"
+        (self.root/"gpu-0001-vram.bin").write_bytes(corrected)
         second=verify_capture(self.root,target_frame=12)
         self.assertNotEqual(first["upload_payload_sha256_list_sha256"],
                             second["upload_payload_sha256_list_sha256"])
         self.assertEqual(first["native_gpu_events_sha256"],
                          second["native_gpu_events_sha256"])
-        self.assertEqual(first["vram_snapshot_sha256_list_sha256"],
-                         second["vram_snapshot_sha256_list_sha256"])
+        self.assertNotEqual(first["vram_snapshot_sha256_list_sha256"],
+                            second["vram_snapshot_sha256_list_sha256"])
 
     def test_unrecorded_load_payload_is_explicitly_unobserved(self):
         self.events=self.events[:2]
@@ -209,10 +217,51 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
         self.events[0]=self.make(0,"before","load","",rect=[0,0,128,128])
         self.events[1]=self.make(1,"after","load","gpu-0001-upload.bin",rect=[0,0,128,128])
         self.save()
-        (self.root/"gpu-0001-upload.bin").write_bytes(bytes(128*128*2))
+        (self.root/"gpu-0001-upload.bin").write_bytes(
+            b"\x1f\x00" + bytes(128*128*2-2)
+        )
         result=verify_capture(self.root,target_frame=12)
         self.assertEqual(result["load_pairs_with_verified_payload"],1)
         self.assertEqual(result["load_pairs_without_payload"],0)
+
+    def test_bounded_loadimage_checks_every_pixel_and_unchanged_outside(self):
+        self.events=self.events[:2]
+        self.events[0]=self.make(0,"before","load","",rect=[1,1,2,2])
+        self.events[1]=self.make(1,"after","load","gpu-0001-upload.bin",rect=[1,1,2,2])
+        self.save()
+        payload=b"\x11\x00\x22\x00\x33\x00\x44\x00"
+        (self.root/"gpu-0001-upload.bin").write_bytes(payload)
+        before=self.pre
+        after=bytearray(before)
+        for row in range(2):
+            start=((1+row)*1024+1)*2
+            after[start:start+4]=payload[row*4:row*4+4]
+        (self.root/"gpu-0001-vram.bin").write_bytes(after)
+        self.assertEqual(verify_capture(self.root,target_frame=12)[
+            "load_pairs_with_verified_vram_effect"],1)
+        # A corrupted word far outside the load footprint must fail too.
+        after[-2:]=b"\x40\x00"
+        (self.root/"gpu-0001-vram.bin").write_bytes(after)
+        with self.assertRaisesRegex(ValueError,"post-VRAM differs"):
+            verify_capture(self.root,target_frame=12)
+
+    def test_negative_origin_clips_source_offsets_exactly(self):
+        self.events=self.events[:2]
+        rect=[-1,-1,2,2]
+        self.events[0]=self.make(0,"before","load","",rect=rect)
+        self.events[1]=self.make(1,"after","load","gpu-0001-upload.bin",rect=rect)
+        self.save()
+        payload=b"\x01\x00\x02\x00\x03\x00\x04\x00"
+        (self.root/"gpu-0001-upload.bin").write_bytes(payload)
+        post=bytearray(self.pre)
+        post[:2]=b"\x04\x00"  # only source (1,1) maps to VRAM (0,0)
+        (self.root/"gpu-0001-vram.bin").write_bytes(post)
+        self.assertEqual(verify_capture(self.root,target_frame=12)[
+            "load_pairs_with_verified_vram_effect"],1)
+        post[:2]=b"\x01\x00"  # wrong source offset despite correct pixel size
+        (self.root/"gpu-0001-vram.bin").write_bytes(post)
+        with self.assertRaisesRegex(ValueError,"post-VRAM differs"):
+            verify_capture(self.root,target_frame=12)
 
     def test_before_load_cannot_claim_payload(self):
         self.events=self.events[:2]
