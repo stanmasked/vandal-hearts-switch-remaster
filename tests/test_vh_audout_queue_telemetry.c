@@ -103,6 +103,37 @@ int main(void) {
     f=tmpfile();
     assert(f && vh_audout_clock_write_csv(&empty,f)==-1);
     fclose(f);
+    assert(q.slow_count==2 && q.slow_dropped==0);
+    assert(q.slow[0].attempt==3 && q.slow[1].attempt==4);
+    assert(q.slow[0].begin_ns==b0+UINT64_C(200000000));
+    assert(q.slow[0].end_ns-q.slow[0].begin_ns==VH_AUDOUT_LT40_NS);
+    assert(q.slow[1].end_ns-q.slow[1].begin_ns==VH_AUDOUT_LT50_NS);
+    f=tmpfile();
+    assert(f && vh_audout_slow_write_csv(&q,f)==2);
+    rewind(f);
+    assert(fgets(line,sizeof line,f) && strstr(line,"total_slow_calls"));
+    assert(fgets(line,sizeof line,f) && strstr(line,"TOTAL,-1,0,0,0,0,0,2,0"));
+    rewind(f);
+    assert(vh_audout_slow_verify_csv(&q,f)==0);
+    assert(!fseek(f,0,SEEK_END) && fputc('X',f)!=EOF);
+    rewind(f);
+    assert(vh_audout_slow_verify_csv(&q,f)==-1);
+    fclose(f);
+    VhAudoutQueueTelemetry overflow;
+    vh_audout_queue_reset(&overflow);
+    for(unsigned i=0;i<129;i++) {
+        const uint64_t start=b0+(uint64_t)i*UINT64_C(1000000);
+        vh_audout_queue_record(&overflow,start,start+VH_AUDOUT_LT50_NS,
+                               1,-1,0);
+    }
+    assert(overflow.slow_count==VH_AUDOUT_SLOW_CALL_CAP);
+    assert(overflow.slow_dropped==1);
+    assert(overflow.latency_bins[3]==129 && overflow.attempts==129);
+    f=tmpfile();
+    assert(f && vh_audout_slow_write_csv(&overflow,f)==128);
+    rewind(f);
+    assert(vh_audout_slow_verify_csv(&overflow,f)==0);
+    fclose(f);
     puts("bounded audout full-session telemetry PASS");
     return 0;
 }
