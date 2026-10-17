@@ -94,6 +94,23 @@ def _krom_font(path):
     return _hash_file(path, "sha256")
 
 
+def _input_identity(path, category):
+    # Compare metadata at both boundaries, not just hashes. This detects
+    # byte-identical inode swaps and in-place changes during the audit.
+    path = _checked_file(path, category)
+    st = path.stat()
+    return (st.st_dev, st.st_ino, st.st_uid, st.st_mode, st.st_nlink,
+            st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+
+
+def _audit_input(path, category, verifier):
+    first = _input_identity(path, category)
+    digest = verifier(path)
+    if _input_identity(path, category) != first:
+        raise ValueError("private original input changed during audit: " + category)
+    return digest, first
+
+
 def verify_private_pc_inputs(upstream, *, krom_source=None):
     upstream = Path(upstream).absolute()
     if upstream.is_symlink() or not upstream.is_dir():
@@ -103,10 +120,17 @@ def verify_private_pc_inputs(upstream, *, krom_source=None):
     root = upstream
     if krom_source is None:
         krom_source = (root / "external/psy-q/3.6/PSYQ/BIN/KROMDAT.BIN")
-    tokens = [
-        ("retail-us-exe", _original_exe(root / EXE)),
-        ("decomp-mips-elf", _original_elf(root / "build" / (EXE + ".elf"))),
+    root_identity = _input_identity(root / EXE, "US PS-X executable")
+    paths = [
+        ("retail-us-exe", root / EXE, _original_exe),
+        ("decomp-mips-elf", root / "build" / (EXE + ".elf"), _original_elf),
     ]
+    snapshots = []
+    tokens = []
+    for category, path, verifier in paths:
+        digest, identity = _audit_input(path, category, verifier)
+        tokens.append((category, digest))
+        snapshots.append((category, path, verifier, digest, identity))
     # Compare selected source-pinned, non-proprietary-offset anchor *locations*
     # byte for byte across the user's original EXE and extracted MIPS ELF.
     # The raw compared bytes never leave the local verifier.
@@ -120,9 +144,29 @@ def verify_private_pc_inputs(upstream, *, krom_source=None):
     if includes["asset_includes_regenerated_and_identical"] != len(ASSETS):
         raise ValueError("original US asset includes not fully authenticated")
     for filename in ASSETS:
-        tokens.append(("asset-" + filename,
-                       _asset_file(root / "assets" / filename, filename)))
-    tokens.append(("ps1-font", _krom_font(krom_source)))
+        category = "asset-" + filename
+        path = root / "assets" / filename
+        # Preserve the asset kind for existing category-specific failures.
+        verifier = lambda p, name=filename: _asset_file(p, name)
+        digest, identity = _audit_input(path, category, verifier)
+        tokens.append((category, digest))
+        snapshots.append((category, path, verifier, digest, identity))
+    digest, identity = _audit_input(krom_source, "ps1-font", _krom_font)
+    tokens.append(("ps1-font", digest))
+    snapshots.append(("ps1-font", krom_source, _krom_font, digest, identity))
+
+    # A successful check must describe ONE coherent set of inputs. In
+    # particular, the ELF or an already-checked .inc must not be replaced
+    # during the slow subprocess that regenerates the original includes.
+    # Repeat full format/hash checks on all six inputs AFTER the final
+    # generator/font checks, and reject even same-byte inode replacement.
+    for category, path, verifier, digest, identity in snapshots:
+        if (_input_identity(path, category) != identity
+                or verifier(path) != digest
+                or _input_identity(path, category) != identity):
+            raise ValueError("private original input changed during audit: " + category)
+    if _input_identity(root / EXE, "US PS-X executable") != root_identity:
+        raise ValueError("private original input changed during audit: retail-us-exe")
     # Bind path/category identity, digest and pinned order, without outputting
     # individual source input digests or original asset contents.
     combined = hashlib.sha256(
