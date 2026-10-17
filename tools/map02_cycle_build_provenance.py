@@ -18,6 +18,7 @@ from tools.check_map02_cycle_make_plan import (
     audit, preflight, BUILD,
 )
 from tools.check_map02_cycle_elf import audit_cycle_elf
+from tools.check_map02_private_pc_inputs import verify_private_pc_inputs
 from tools.map02_local_capture_handoff import _sha_file, verify_pinned_upstream
 from tools.publish_map02_blendg1_witness import _private_directory
 from tools.verify_map02_native_gpu_capture import private_file
@@ -30,6 +31,7 @@ KEYS = (
     "source_bound_make_command_sha256",
     "private_build_inputs_sha256",
     "pinned_original_source_sha256",
+    "private_retail_inputs_binding_sha256",
     "required_original_cycle_and_gpu_symbols",
     "full_elf_linked", "actual_gameplay_executed",
     "original_map02_rendering_proven",
@@ -52,7 +54,8 @@ def _checks(record):
             record["hd_substitution_enabled"] is not False):
         raise ValueError("unsupported or overstated private PC build receipt")
     for key in ("pc_executable_sha256", "source_bound_make_command_sha256",
-                "private_build_inputs_sha256", "pinned_original_source_sha256"):
+                "private_build_inputs_sha256", "pinned_original_source_sha256",
+                "private_retail_inputs_binding_sha256"):
         value = record[key]
         if type(value) is not str or len(value) != 64 or set(value) - HEX:
             raise ValueError("invalid private PC build SHA256: " + key)
@@ -71,7 +74,7 @@ def _safe_binary(binary, upstream):
 
 
 def create_build_receipt(report_dir, pc_binary, upstream, bundle,
-                         *, build_result):
+                         *, build_result, krom_source=None):
     root = _private_directory(report_dir)
     if any(root.iterdir()):
         raise ValueError("MAP02 build report directory must start empty")
@@ -94,6 +97,8 @@ def create_build_receipt(report_dir, pc_binary, upstream, bundle,
             planned["full_game_link_command_sha256"],
         "private_build_inputs_sha256": sha(manifest_bytes),
         "pinned_original_source_sha256": verify_pinned_upstream(upstream),
+        "private_retail_inputs_binding_sha256": verify_private_pc_inputs(
+            upstream, krom_source=krom_source)["private_build_inputs_binding_sha256"],
         "required_original_cycle_and_gpu_symbols":
             checked["required_symbols_present"],
         "full_elf_linked": True,
@@ -104,7 +109,8 @@ def create_build_receipt(report_dir, pc_binary, upstream, bundle,
     })
     for key in ("pc_executable_sha256",
                 "source_bound_make_command_sha256",
-                "required_original_cycle_and_gpu_symbols"):
+                "required_original_cycle_and_gpu_symbols",
+                "private_retail_inputs_binding_sha256"):
         if record[key] != build_result.get(key):
             raise ValueError("local full ELF build differs from build result: " + key)
     raw = (json.dumps(record, sort_keys=True, separators=(",", ":"))
@@ -135,7 +141,8 @@ def create_build_receipt(report_dir, pc_binary, upstream, bundle,
             "retail_gameplay_executed": False}
 
 
-def verify_build_receipt(report_dir, pc_binary, upstream, bundle):
+def verify_build_receipt(report_dir, pc_binary, upstream, bundle,
+                         *, krom_source=None):
     root = _private_directory(report_dir)
     if {entry.name for entry in root.iterdir()} != {NAME}:
         raise ValueError("private PC build report must contain exactly one receipt")
@@ -159,6 +166,8 @@ def verify_build_receipt(report_dir, pc_binary, upstream, bundle):
             planned["full_game_link_command_sha256"],
         "private_build_inputs_sha256": sha(manifest_bytes),
         "pinned_original_source_sha256": verify_pinned_upstream(upstream),
+        "private_retail_inputs_binding_sha256": verify_private_pc_inputs(
+            upstream, krom_source=krom_source)["private_build_inputs_binding_sha256"],
         "required_original_cycle_and_gpu_symbols":
             checked["required_symbols_present"],
     }
@@ -178,11 +187,14 @@ def main():
     p.add_argument("original_pc_executable", type=Path)
     p.add_argument("pinned_original_checkout", type=Path)
     p.add_argument("prepared_private_bundle", type=Path)
+    p.add_argument("--krom-source", type=Path,
+                   help="original private KROMDAT.BIN or owned PS1 BIOS")
     a = p.parse_args()
     try:
         result = verify_build_receipt(
             a.private_build_receipt_directory, a.original_pc_executable,
-            a.pinned_original_checkout, a.prepared_private_bundle)
+            a.pinned_original_checkout, a.prepared_private_bundle,
+            krom_source=a.krom_source)
     except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
         p.error(str(exc))
     print(json.dumps(result, indent=2, sort_keys=True))
