@@ -39,3 +39,20 @@ The tool reports `actual_input_to_audio_latency_ms: null`, `audio_underruns_not_
 - GitHub workflow `.github/workflows/emulator-smoke.yml` runs these tests as part of its build, calculates `runtime-evidence/scene-transition-observations.json` after the full NeXium A/B capture, and checks four classified events and safety fields. The source run is [39040155757](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39040155757), code SHA `8e2d628668f20301488f78515cee5f5297faf1f1`. Verify its final workflow status and independently rerun the analysis on the artifact before claiming end-to-end CI success.
 
 **Next accuracy prerequisite:** collect clock-aligned **guest input receipt, accepted scene cue, audout page queue/release and host monitor playback** events. Current file-size snapshots are insufficient for exact latency or true underrun detection. This should be instrumented in a bounded, nonblocking manner that never blocks the audio callback or injects console assets.
+
+## Actual new NeXium CI: complete and independently verified
+
+The experimental NeXium workflow [39040155757](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39040155757) **completed SUCCESS** on code SHA `8e2d628668f20301488f78515cee5f5297faf1f1`, with successful build/tests and runtime jobs. The primary job log explicitly reports the **five new `test_analyze_nexium_transition_timing.py` regressions passed**. The separate Host SPU run `39040155784` and Native PCM transport run `39040155703` also completed SUCCESS on this SHA.
+
+Published [NeXium runtime evidence artifact `12104255690`](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39040155757) was independently downloaded and inspected. All **33 ZIP members** passed CRC. Its actual scene PCM hash is `sha256:16d271396dbc2e57ff66fc32ac8cacbb4e7cf66f2235834e731bad7bc074abdb` (7,802,308 raw bytes, **40.637 s**). Scene evidence again reports `REPEATED_SCENE_CORRELATED_PCM_CHANGE`, focus/field ZCR proxy ratio **1.7527**, and visual label differences **[47, 47, 47, 47]** pixels. This recording is distinct from the two historical observations above.
+
+| New run transition | First confirmed analysis window begins | Three-window confirmation finishes | Longest low-RMS span |
+| --- | ---: | ---: | ---: |
+| FIELD → FOCUS 1 | 200 ms | 700 ms | 50 ms |
+| FOCUS → FIELD 1 | 0 ms | 500 ms | 20 ms |
+| FIELD → FOCUS 2 | 100 ms | 600 ms | 30 ms |
+| FOCUS → FIELD 2 | 0 ms | 500 ms | 30 ms |
+
+The stable-scene classification threshold (zero-crossing proxy) was **425.207 Hz** in this new recording. No transition-neighborhood samples met the full-scale clipping threshold. This does **not** constitute hardware latency or proof of no underruns.
+
+A separate local rerun of `tools/analyze_nexium_transition_timing.py` using the newly downloaded `nexium-scenes-s16le-48k.pcm` and `scene-events.csv` produced **exactly the same entire structured JSON** as `scene-transition-observations.json` from GitHub CI. This independently binds all reported figures to the actual recorded bytes. The run does not prove original Vandal Hearts music, physical speaker audio or actual device response times; **HARDWARE NOT TESTED** remains unchanged.
