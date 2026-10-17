@@ -163,6 +163,9 @@ jobs:
           ref: 14552fffa0e0b47e02b57592e274fc6e7a649923
           path: upstream-pc
           persist-credentials: false
+      - name: Confirm original PC GPU/GTE source blobs against pinned reference
+        run: |
+          python3 -c 'from pathlib import Path; from tools.map02_local_capture_handoff import verify_pinned_upstream; verify_pinned_upstream(Path("upstream-pc")); print("Pinned original PC GPU/GTE/Makefile blobs verified")'
       - name: Fail closed on upstream rasterizer source drift
         run: |
           python3 -m tools.instrument_map02_scoped_blend \
