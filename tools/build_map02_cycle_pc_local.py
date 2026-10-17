@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""Local-only full PC ELF build from the source-pinned MAP02 cycle Make overlay.
+
+The user's owned retail inputs and decompilation data are required locally.
+No game content, compiler log, executable or raw address is uploaded, printed
+or written to the GitHub working tree by this script. This does not execute
+the game, authenticate a MAP02 frame, or enable HD substitution.
+"""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import stat
+import subprocess
+
+from tools.check_map02_cycle_make_plan import BUILD, audit
+from tools.check_map02_cycle_elf import audit_cycle_elf
+
+BINARY_NAME = "vandalhearts_pc"
+
+
+def build_full_pc(upstream, bundle, *, timeout=1200, make="make"):
+    timeout = int(timeout)
+    if not 30 <= timeout <= 7200:
+        raise ValueError("full PC link timeout must be between 30 and 7200 seconds")
+    upstream, bundle = Path(upstream).absolute(), Path(bundle).absolute()
+    planned = audit(upstream, bundle, make=make)
+    pc = upstream / "platform/pc"
+    target = pc / BUILD / BINARY_NAME
+    # Fail BEFORE any compiler invocation if this is a prior binary, a
+    # symlink or a wrong symlink target. Do not unlink somebody else's file.
+    if target.exists() or target.is_symlink():
+        raise ValueError("private cycle executable already exists; no replacement allowed")
+    command = [
+        make, "-j1", "-f", "Makefile", "-f", str(bundle / "map02_cycle.mk"),
+        "link", "BUILD_DIR=" + BUILD, "REGION=us",
+        "NO_WEBP=1", "NO_HDVIDEO=1",
+    ]
+    try:
+        built = subprocess.run(
+            command, cwd=pc, capture_output=True, text=True,
+            timeout=timeout, check=False)
+    except subprocess.TimeoutExpired as exc:
+        raise ValueError("local source-pinned full PC link exceeded timeout") from exc
+    if built.returncode:
+        # Compiler stderr may contain paths to private image or EXE, so
+        # neither that text nor stdout is returned or logged by this tool.
+        raise ValueError("private full PC game link failed; compiler output withheld")
+    if target.is_symlink() or not target.is_file():
+        raise ValueError("full source-pinned PC link returned without an executable")
+    if not target.stat().st_mode & stat.S_IXUSR:
+        raise ValueError("built PC ELF does not have owner execute permission")
+    verified = audit_cycle_elf(target)
+    # Check that the generated overlay did not mutate during the build.
+    from tools.check_map02_cycle_make_plan import preflight
+    preflight(upstream, bundle)
+    with target.open("rb") as stream:
+        h = hashlib.sha256()
+        while True:
+            chunk = stream.read(1 << 20)
+            if not chunk:
+                break
+            h.update(chunk)
+    return {
+        "schema": "vh.map02.private-full-pc-elf-build.v1",
+        "pc_executable_sha256": h.hexdigest(),
+        "source_bound_make_command_sha256":
+            planned["full_game_link_command_sha256"],
+        "required_original_cycle_and_gpu_symbols": verified[
+            "required_symbols_present"],
+        "full_elf_linked": True,
+        "actual_gameplay_executed": False,
+        "original_map02_rendering_proven": False,
+        "physical_ps1_equivalence_proven": False,
+        "hd_substitution_enabled": False,
+    }
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("pinned_original_pc_checkout", type=Path)
+    p.add_argument("private_prepared_bundle", type=Path)
+    p.add_argument("--timeout", type=int, default=1200)
+    a = p.parse_args()
+    try:
+        result = build_full_pc(a.pinned_original_pc_checkout,
+                               a.private_prepared_bundle,
+                               timeout=a.timeout)
+    except (OSError, ValueError) as exc:
+        p.error(str(exc))
+    print(json.dumps(result, indent=2, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()
