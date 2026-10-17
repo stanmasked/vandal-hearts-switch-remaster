@@ -85,7 +85,7 @@ class NativeGP0ReturnFixture(unittest.TestCase):
         with self.assertRaises(Refused):
             summarize(PASS,raw)
         with self.assertRaises(Refused):
-            summarize(prior+PASS,raw.replace(b'"kind":"',b'"kind": "',1))
+            summarize(prior+PASS,raw+b'corrupted-trace')
 
     def test_public_report_excludes_raw_gpu_words_and_pixel_samples(self):
         prior,raw=private_baseline()
