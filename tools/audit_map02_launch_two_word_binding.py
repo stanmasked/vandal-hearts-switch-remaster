@@ -24,7 +24,9 @@ def audit_launch_two_word(capture_dir, source_dir, *,
     if (capture_dir.is_symlink() or source_dir.is_symlink()
             or not capture_dir.is_dir() or not source_dir.is_dir()):
         raise ValueError("private source or native capture directory unavailable or linked")
-    if capture_dir == source_dir:
+    # Different spellings (including a symlinked parent) must not allow
+    # reusing one physical directory for two separate provenance roles.
+    if capture_dir.samefile(source_dir):
         raise ValueError("source FT4 and captured native GPU directories must differ")
 
     # This independently rechecks the original preflight/executable SHA,
