@@ -276,6 +276,32 @@ this source-pinned PC-port check.
 after the run, but cannot prove that those bytes were actually executed,
 that diagnostic callbacks were linked, or that retail MAP02 was rendered.
 The tool never runs the game or enables HD replacement.
+### Adjacent native DrawOTag primitive continuity
+
+The source-pinned `DrawOTag` walker dispatches primitive packets
+sequentially in one native render pass. The opt-in C recorder samples
+full VRAM and GPU texture-window/draw-mode globals both **immediately
+before** and **immediately after** each visited packet. The strict
+validator now requires the *post* snapshot of each recorded target-frame
+primitive to equal the *pre* snapshot of its **next** recorded native
+primitive, byte for byte, and requires the same texture-window/draw-mode
+state across that boundary.
+
+The fields `draw_boundary_vram_checks` and
+`draw_boundary_gpu_state_checks` report the number of such validated
+adjacent boundaries, not a claim of complete scene capture. Inside a
+primitive pair only the original `DR_MODE` packet (source primitive type
+`5`) may change the recorded mode/window globals; normal FT4, SPRT,
+TILE and other packets must leave them unchanged.
+
+**Critical exception:** this cross-event continuity is deliberately
+**not** required between a preceding-frame `LoadImage`/`MoveImage`/
+`ClearImage` and the first target-frame draw. An unrecorded previous
+`DrawOTag` may legitimately have modified VRAM in between. Nor does
+the continuity rule prove that every retail packet was captured:
+the native recorder still has a strict 64-event cap and the private
+capture remains unauthenticated until a real MAP02 gameplay run.
+
 Native `DrawOTag` event metadata also follows the pinned
 `platform/pc/include/PsyQ/libgpu.h` and generated original C hook.
 The `POLY_FT4` primitive type is exactly `2`: each logged
