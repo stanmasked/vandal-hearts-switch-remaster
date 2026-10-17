@@ -60,20 +60,22 @@ executed spans to `map02_dda_span_join.reconcile`.
 
 Before launching the locally compiled **opt-in original PC GPU** with
 your own lawfully obtained game resources, prepare a new private output
-directory, e.g. `mkdir -m 700 /private/dda-capture`. Do not reuse a
+directory using `mktemp -d` in your home folder. Do not reuse a
 directory from any earlier run or publish native logs/VRAM snapshots.
 
 For a single chosen DrawOTag frame and VRAM pixel, configure the two
 recorders to target the **same** directory and frame:
 
 ```sh
-export VH_MAP02_GPU_CAPTURE_DIR=/private/dda-capture
+capture_dir="$(mktemp -d "${HOME}/map02-dda-XXXXXX")"
+chmod 700 "$capture_dir"
+export VH_MAP02_GPU_CAPTURE_DIR="$capture_dir"
 export VH_MAP02_GPU_CAPTURE_FRAME=411
-export VH_MAP02_PUTPIXEL_DIR=/private/dda-capture
+export VH_MAP02_PUTPIXEL_DIR="$capture_dir"
 export VH_MAP02_PUTPIXEL_FRAME=411
 export VH_MAP02_PUTPIXEL_X=30
 export VH_MAP02_PUTPIXEL_Y=30
-python3 -m tools.preflight_map02_private_dda_capture > /private/map02-private-preflight.json
+python3 -m tools.preflight_map02_private_dda_capture > "${HOME}/map02-private-preflight.json"
 ```
 
 Frame 411 and X/Y 30/30 are **illustrative only**, not measured MAP02
