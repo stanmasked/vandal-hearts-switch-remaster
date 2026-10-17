@@ -1,0 +1,32 @@
+name: MAP02 v113 native Unai sample-store outcome transitions around VBlank
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v113-vblank-outcome-transitions.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/summarize_map02_v113_vblank_outcome_transitions.py'
+      - 'tests/test_map02_v113_vblank_outcome_transitions.py'
+      - 'tools/summarize_map02_v112_unchanged_sample_runs.py'
+      - 'tools/summarize_map02_v111_sample_store_divergence.py'
+      - 'tools/summarize_map02_v110_class_boundary_checkpoints.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-outcome-transitions:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Unai callback/VBlank outcome transitions and native store evidence
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          for pattern in test_map02_v83_unai_dispatch.py test_map02_v84_unai_samples.py test_map02_v85_native_stores.py test_map02_v108_vblank_store_buckets.py test_map02_v109_gp0_class_vblank_stores.py test_map02_v110_class_boundary_checkpoints.py test_map02_v111_sample_store_divergence.py test_map02_v112_unchanged_sample_runs.py test_map02_v113_vblank_outcome_transitions.py; do
+            python3 -m unittest discover -s tests -p "$pattern" -v
+          done
