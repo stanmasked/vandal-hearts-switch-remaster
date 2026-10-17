@@ -109,7 +109,7 @@ class TestIdleControl(unittest.TestCase):
     def test_reject_consistently_rebound_startup_origin(self):
         # A matching copy is not sufficient: the independent clock
         # must still fall between startup SUBMIT_CALL/RELEASE_RETURN.
-        raw=idle_scene().replace(b"1120000000",b"1400000000")
+        raw=idle_scene().replace(b"1120000000",b"1140000000")
         (self.sd/"audio-scene-trace-0000.csv").write_bytes(raw)
         (self.evidence/"soak-sd-unverified.csv").write_bytes(raw)
         with self.assertRaises(CorrelationError):
