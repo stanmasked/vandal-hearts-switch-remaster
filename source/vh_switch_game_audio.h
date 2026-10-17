@@ -3,6 +3,7 @@
 
 #include "vh_game_music_mailbox.h"
 #include "vh_audio_scene_trace_export.h"
+#include "vh_audout_queue_export.h"
 #include "software_renderer.h"
 #include "vh_audio_diagnostics.h"
 #include <stdint.h>
@@ -27,6 +28,8 @@ int vh_switch_game_audio_trace_dump(FILE *stream);
 /* Guest-internal per-page audout measurements, separate from scene
  * events; only callable after joining. No measured speaker underruns. */
 int vh_switch_game_audio_queue_dump(FILE *stream);
+VhAudoutQueueExportResult vh_switch_game_audio_queue_export(
+    char *committed_path,size_t capacity);
 /* Export numbered, readback-verified SD CSV ONLY after the audio
  * thread is joined. Return precise storage status to the main thread.
  * The output path is empty on error. Does not change audio clocks. */
