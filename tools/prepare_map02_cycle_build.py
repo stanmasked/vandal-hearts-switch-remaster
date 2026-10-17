@@ -100,7 +100,7 @@ src/pc_kanji_font.c: $(VH_MAP02_CYCLE_ROOT)/{FONT_GENERATOR_SNAPSHOT}
 $(BUILD_DIR)/map02_pinned_kanji_font.c: $(VH_MAP02_CYCLE_ROOT)/{FONT_GENERATOR_SNAPSHOT}
 	@mkdir -p $(dir $@)
 	@test ! -e $@ && test ! -L $@ || (echo "MAP02 private generated font already exists" >&2; exit 1)
-	@umask 077; VH_REGION=us VH_GENERATED_OUT=$@ python3 $(VH_MAP02_CYCLE_ROOT)/{FONT_GENERATOR_SNAPSHOT}
+	@umask 077; VH_REGION=us VH_GENERATED_OUT=$@ python3 -I $(VH_MAP02_CYCLE_ROOT)/{FONT_GENERATOR_SNAPSHOT}
 # Inherited prerequisites remain, but this recipe NEVER reads src/pc_kanji_font.c.
 $(BUILD_DIR)/pc_kanji_font.o: $(BUILD_DIR)/map02_pinned_kanji_font.c
 	@mkdir -p $(dir $@)
