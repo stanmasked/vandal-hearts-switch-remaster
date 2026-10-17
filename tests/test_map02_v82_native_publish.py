@@ -101,6 +101,10 @@ class V82Trace(unittest.TestCase):
         self.assertIn("vh82_export_smoke",s)
         self.assertIn("VH78_VBLANK_VRAM_PASS",s)
         self.assertIn("vh82_publish_private(dest",s)
+        for token in ("VH82_CAPTURE_REFUSED", "VH82_PRIVATE_PUBLISH_REFUSED",
+                      "VH82_PRIVATE_EXPORT_PASS vblanks=%u gp1_mmio=%u entries=%u bytes=%d drops=0"):
+            self.assertIn(token + r"\n", s)
+            self.assertNotIn(token + "\n", s)
         self.assertIn("HD_replacement_approved=False",s)
 
 if __name__=="__main__":unittest.main()
