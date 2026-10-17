@@ -17,6 +17,7 @@ from tools.instrument_map02_gpu_native_events import instrument
 from tools.verify_map02_native_gpu_capture import (
     STATUS, LOG, verify_capture_receipt,
 )
+from tools.verify_map02_native_gpu_windows import verify_native_windows
 
 
 def execute_real_recorder(upstream, *, cc="cc"):
@@ -28,7 +29,8 @@ def execute_real_recorder(upstream, *, cc="cc"):
         root = Path(tmp)
         patched_path = root / "libgpu.c"
         patched_path.write_text(patched, encoding="utf-8")
-        for label, extra_draws in (("closed", 0), ("overflow", 32)):
+        for label, extra_draws in (
+                ("closed", 0), ("overflow", 32), ("windowed", 32)):
             fixture = HARNESS
             if extra_draws:
                 fixture = fixture.replace("    int u, v;",
@@ -49,7 +51,10 @@ def execute_real_recorder(upstream, *, cc="cc"):
                 cc, "-std=gnu99", "-Wall", "-Wextra", "-Werror",
                 "-Wno-unused-parameter", "-Wno-missing-field-initializers",
                 "-ffunction-sections", "-fdata-sections", "-DVH_REGION_US",
-                "-DVH_MAP02_GPU_CAPTURE", "-I", str(pc / "include"),
+                "-DVH_MAP02_GPU_CAPTURE",
+                *(["-DVH_MAP02_POSIX_CAPTURE_WINDOWS"] if
+                  label == "windowed" else []),
+                "-I", str(pc / "include"),
                 "-I", str(pc / "src"), str(patched_path), str(raster),
                 str(harness), "-Wl,--gc-sections", "-lm", "-pthread",
                 "-o", str(executable),
@@ -65,11 +70,22 @@ def execute_real_recorder(upstream, *, cc="cc"):
                        VH_MAP02_GPU_CAPTURE_DIR=str(private),
                        VH_MAP02_GPU_CAPTURE_FRAME="1",
                        VH_ACCURATE="1", VH_INTERNAL_SCALE="1")
+            if label == "windowed":
+                env["VH_MAP02_GPU_CAPTURE_WINDOW_COUNT"] = "2"
             executed = subprocess.run([str(executable)], env=env,
                                       text=True, capture_output=True, timeout=90)
             if executed.returncode:
                 raise ValueError("original GPU recorder runtime: "
                                  + executed.stderr[-3500:])
+            if label == "windowed":
+                result = verify_native_windows(private, target_frame=1)
+                if (result["recorded_windows"] != 2 or
+                        result["globally_ordered_native_gpu_events"] != 68 or
+                        result["native_draw_pairs"] != 34 or
+                        result["vram_bridge_checks"] != 33 or
+                        result["whole_original_gameplay_frame_proven"]):
+                    raise ValueError("native GPU windows did not preserve original OT")
+                continue
             status = json.loads((private / STATUS).read_bytes())
             events = [json.loads(row) for row in (private / LOG).read_bytes().splitlines()]
             if status["gpu_draw_frame"] != 1 or (
@@ -94,7 +110,7 @@ def execute_real_recorder(upstream, *, cc="cc"):
                                                events=events)
                 if not proof["capture_window_closed_without_detected_loss"]:
                     raise ValueError("closed synthetic frame failed recorder receipt")
-        return ("closed", "overflow-rejected")
+        return ("closed", "overflow-rejected", "two-windows-bridged")
 
 
 def main():
