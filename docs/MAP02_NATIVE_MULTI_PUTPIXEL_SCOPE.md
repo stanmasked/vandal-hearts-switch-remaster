@@ -198,6 +198,7 @@ python3 -m tools.audit_map02_launch_two_word_binding \
   --launch-receipt /private/map02-process-receipt.json \
   --preflight-report /private/map02-preflight.json \
   --executable /private/VandalHearts-PcPort/game \
+  --require-native-elf-image \
   > /private/map02-launch-two-word-join.json
 ```
 
@@ -321,6 +322,17 @@ DDA-фикстуру. Затем повторяет приватный ауди�
 Даже совпадение ядром наблюдённого исполняемого образа
 не доказывает, какие библиотеки, игровые ресурсы или
 GPU-журналы фактически сформировал процесс.
+
+Чтобы связанный частный захват обязательно прошёл именно
+нативный ELF-режим, укажите `--require-native-elf-image` **также**
+при вызове `tools.audit_map02_launch_two_word_binding`.
+Без этого флага прежние синтетические квитанции v1 допустимы
+для регрессионных тестов. С флагом они отклоняются ещё до
+исходного FT4/VRAM-аудита, если квитанция запуска не
+содержит проверенного наблюдения ELF-образа процесса.
+В отчёте отдельно отображаются
+`native_elf_image_required_for_join` и
+`native_elf_process_image_observed`, без PID и приватных путей.
 
 ### Проверка окружения запуска
 
