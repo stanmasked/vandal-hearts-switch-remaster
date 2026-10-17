@@ -84,6 +84,12 @@ def verify_session(directory, *, native_frame, preflight_report, executable):
         "all_dda_journal_classes_observed": checked["all_dda_journal_classes_observed"],
         "vram_snapshot_sha256_list_sha256":
             checked["native_gpu_binding"]["vram_snapshot_sha256_list_sha256"],
+        "upload_payload_sha256_list_sha256":
+            checked["native_gpu_binding"]["upload_payload_sha256_list_sha256"],
+        "load_pairs_with_verified_payload":
+            checked["native_gpu_binding"]["load_pairs_with_verified_payload"],
+        "load_pairs_without_payload":
+            checked["native_gpu_binding"]["load_pairs_without_payload"],
         "native_gpu_pairs_verified":
             checked["native_gpu_binding"]["native_gpu_pairs_verified"],
         "single_sample_envelope_consistent": checked["single_sample_envelope_consistent"],
