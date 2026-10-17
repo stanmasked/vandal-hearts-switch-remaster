@@ -34,12 +34,74 @@ void vh100_test_fail_at(int phase){vh100_test_fault=phase;}
  * Reopening the name is an identity check, never the authority for writes.
  * Does not promise immunity to arbitrary concurrent directory replacements
  * between checks; test-only races must fail closed whenever observed. */
+
+/* Start at / and open EACH intermediate component using dirfd. A symlink
+ * in /private/owner/.. is refused rather than only checking the leaf. */
+static unsigned int vh103_parent_walks;
+unsigned int vh103_safe_parent_walks(void){return vh103_parent_walks;}
+static int vh103_open_parent_safely(const char *absolute){
+    if(!absolute || absolute[0]!='/')return -1;
+    size_t n=strnlen(absolute,VH82_MAX_PATH);
+    if(n==0 || n>=VH82_MAX_PATH)return -1;
+    int fd=open("/",O_RDONLY|O_DIRECTORY|O_NOFOLLOW);
+    if(fd<0)return -1;
+    size_t offset=1;
+    while(offset<n){
+        if(absolute[offset]=='/'){close(fd);return -1;}
+        size_t end=offset;
+        while(end<n && absolute[end]!='/')end++;
+        size_t size=end-offset;
+        if(size==0 || size>255 ||
+           (size==1 && absolute[offset]=='.') ||
+           (size==2 && absolute[offset]=='.' &&
+            absolute[offset+1]=='.')){close(fd);return -1;}
+        char part[256];
+        memcpy(part,absolute+offset,size);
+        part[size]='\0';
+        int next=openat(fd,part,O_RDONLY|O_DIRECTORY|O_NOFOLLOW);
+        if(next<0){close(fd);return -1;}
+        if(close(fd)<0){close(next);return -1;}
+        fd=next;
+        offset=end+1;
+        if(end==n-1){close(fd);return -1;}
+    }
+    vh103_parent_walks++;
+    return fd;
+}
+#ifdef VH100_FAULT_TEST
+static char vh103_swap_final[VH82_MAX_PATH];
+static char vh103_swap_replacement[VH82_MAX_PATH];
+static char vh103_swap_backup[VH82_MAX_PATH];
+static int vh103_swap_phase;
+int vh103_test_replace_final(const char *original,const char *replacement,
+                             const char *backup,int phase){
+    if(!original || !replacement || !backup || phase<1 || phase>2 ||
+       strlen(original)>=sizeof(vh103_swap_final) ||
+       strlen(replacement)>=sizeof(vh103_swap_replacement) ||
+       strlen(backup)>=sizeof(vh103_swap_backup))return -1;
+    strcpy(vh103_swap_final,original);
+    strcpy(vh103_swap_replacement,replacement);
+    strcpy(vh103_swap_backup,backup);
+    vh103_swap_phase=phase;
+    return 0;
+}
+static int vh103_maybe_swap_final(int phase){
+    if(vh103_swap_phase!=phase)return 0;
+    vh103_swap_phase=0;
+    if(rename(vh103_swap_final,vh103_swap_backup)<0)return -1;
+    if(rename(vh103_swap_replacement,vh103_swap_final)<0)return -1;
+    return 0;
+}
+#else
+#define vh103_maybe_swap_final(phase) (0)
+#endif
+
 static unsigned int vh102_dir_checks, vh102_publishes;
 unsigned int vh102_parent_identity_checks(void){return vh102_dir_checks;}
 unsigned int vh102_anchored_publishes(void){return vh102_publishes;}
 static int vh102_parent_matches(int fd,const char *name){
     struct stat anchored, current;
-    int reopened=open(name,O_RDONLY|O_DIRECTORY|O_NOFOLLOW);
+    int reopened=vh103_open_parent_safely(name);
     if(reopened<0)return -1;
     int ok=(fstat(fd,&anchored)==0 && fstat(reopened,&current)==0 &&
             S_ISDIR(anchored.st_mode) && S_ISDIR(current.st_mode) &&
@@ -90,7 +152,7 @@ int vh82_publish_private(const char *path,const char *bytes,size_t size) {
     size_t parent_len=(size_t)(slash-path);
     if(parent_len==0){parent[0]='/';parent[1]='\0';}
     else {memcpy(parent,path,parent_len);parent[parent_len]='\0';}
-    dirfd=open(parent,O_RDONLY|O_DIRECTORY|O_NOFOLLOW);
+    dirfd=vh103_open_parent_safely(parent);
     if(dirfd<0)return -1;
     struct stat directory;
     if(fstat(dirfd,&directory)<0 || !S_ISDIR(directory.st_mode))
@@ -326,11 +388,15 @@ int vh101_verify_private_commit(const char *path,const char *bytes,size_t size){
     if(fstatat(dirfd,base,&named,AT_SYMLINK_NOFOLLOW)<0 ||
        !S_ISREG(named.st_mode) || (named.st_mode&0777)!=0600 ||
        named.st_nlink!=1)goto finish;
+    struct stat original_named=named;
+    if(vh103_maybe_swap_final(1)<0)goto finish;
     fd=openat(dirfd,base,O_RDONLY|O_NOFOLLOW);
     if(fd<0)goto finish;
     if(fstat(fd,&initial)<0 || !S_ISREG(initial.st_mode) ||
        (initial.st_mode&0777)!=0600 || initial.st_nlink!=1 ||
-       initial.st_size<0 || (size_t)initial.st_size!=size)goto finish;
+       initial.st_size<0 || (size_t)initial.st_size!=size ||
+       initial.st_dev!=original_named.st_dev ||
+       initial.st_ino!=original_named.st_ino)goto finish;
     size_t pos=0;
     while(pos<size){
         size_t want=size-pos<sizeof(scratch)?size-pos:sizeof(scratch);
@@ -340,6 +406,7 @@ int vh101_verify_private_commit(const char *path,const char *bytes,size_t size){
         pos+=(size_t)got;
     }
     if(read(fd,scratch,1)!=0)goto finish;
+    if(vh103_maybe_swap_final(2)<0)goto finish;
     if(VH101_FAIL(2) || fsync(fd)<0)goto finish;
     if(vh102_parent_matches(dirfd,parent)!=0 ||
        VH101_FAIL(3) || fsync(dirfd)<0)goto finish;
