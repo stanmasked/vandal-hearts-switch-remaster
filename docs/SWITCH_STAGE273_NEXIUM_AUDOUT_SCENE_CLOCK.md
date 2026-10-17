@@ -45,6 +45,12 @@ For each of exactly ten traced INPUT serials, the guest audio second is:
 second = floor((input_monotonic_ns - first_audout_call_origin_ns) / 1_000_000_000)
 \`\`\`
 
+The exported audio origin must ALSO fall between the guest's
+startup `SUBMIT_CALL` and `RELEASE_RETURN` timestamps (serial 0)
+from the independently verified optical/SD scene trace. This
+independently brackets the very first API invocation; merely
+substituting an arbitrary absolute timestamp cannot satisfy the audit.
+
 That second must be within the 50+ measured guest latency windows.
 The resulting report includes each serial, scene, absolute guest time,
 second index, offset within the second, number of actual calls ≥40 ms and
