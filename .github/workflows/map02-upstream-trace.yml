@@ -110,6 +110,8 @@ on:
       - 'tests/test_map02_dda_span_c11.py'
       - 'tools/verify_map02_raster_skips.py'
       - 'tools/verify_map02_putpixel_scope.py'
+      - 'tools/verify_map02_putpixel_multi_scope.py'
+      - 'tools/instrument_map02_multi_putpixel_scope.py'
       - 'tools/audit_map02_putpixel_samples.py'
       - 'tools/verify_map02_camera_capture.py'
       - 'tools/verify_map02_frame_bundle.py'
@@ -131,6 +133,8 @@ on:
       - 'tests/test_verify_map02_vertical_dda.py'
       - 'tests/test_verify_map02_raster_skips.py'
       - 'tests/test_verify_map02_putpixel_scope.py'
+      - 'tests/test_verify_map02_putpixel_multi_scope.py'
+      - 'tests/test_instrument_map02_multi_putpixel_scope.py'
       - 'tests/test_audit_map02_putpixel_samples.py'
       - 'tests/test_verify_map02_frame_bundle.py'
       - 'tests/test_verify_map02_vram_timeline.py'
@@ -444,6 +448,8 @@ jobs:
             python3 -m unittest discover -s tests -p 'test_instrument_map02_putpixel_scope.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_putpixel_scope.py' -v
             python3 -m unittest discover -s tests -p 'test_audit_map02_putpixel_samples.py' -v
+            python3 -m unittest discover -s tests -p 'test_verify_map02_putpixel_multi_scope.py' -v
+            python3 -m unittest discover -s tests -p 'test_instrument_map02_multi_putpixel_scope.py' -v
           )
           PYTHONPATH=remaster python3 -m tools.instrument_map02_putpixel_scope \
             upstream/platform/pc/src/libgpu.c \
@@ -457,6 +463,21 @@ jobs:
           assert m["exact_original_gpu_sources_pinned"]
           assert m["synchronized_native_gpu_capture_in_same_binary"]
           assert m["pixel_calls_record_cap"] == 64
+          assert not m["original_gameplay_captured"]
+          PY
+          PYTHONPATH=remaster python3 -m tools.instrument_map02_multi_putpixel_scope \
+            upstream/platform/pc/src/libgpu.c \
+            upstream/platform/pc/src/pc_raster.c \
+            --output-dir /tmp/map02-multiscope-gpu \
+            > /tmp/map02-multiscope-gpu.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path("/tmp/map02-multiscope-gpu.json").read_text())
+          assert m["exact_original_gpu_sources_pinned"]
+          assert m["single_shared_putpixel_event_stream"]
+          assert m["distinct_sample_coordinates_required"] == 2
+          assert m["total_pixel_calls_record_cap"] == 64
           assert not m["original_gameplay_captured"]
           PY
           (
@@ -491,6 +512,29 @@ jobs:
             nm build/map02-scoped-gpu/combined.capture.o | grep VH_CaptureEvent
             if nm -a build/map02-scoped-gpu/combined.baseline.o | grep -Eq 'VH_Map02PixelScope|VH_PixelSampleRecord|VH_CaptureEvent'; then
               echo "Opt-in GPU scope leaked into the ordinary non-instrumented build" >&2
+              exit 1
+            fi
+            mkdir -p build/map02-multiscope-gpu
+            for mode in capture baseline; do
+              multi_flags=()
+              if [[ "$mode" == capture ]]; then
+                multi_flags=(-DVH_MAP02_GPU_CAPTURE -DVH_MAP02_MULTI_PUTPIXEL_SCOPE)
+              fi
+              gcc "${common_flags[@]}" "${multi_flags[@]}" \
+                -c /tmp/map02-multiscope-gpu/libgpu.multiscope.c \
+                -o "build/map02-multiscope-gpu/libgpu.${mode}.o"
+              gcc "${common_flags[@]}" "${multi_flags[@]}" \
+                -c /tmp/map02-multiscope-gpu/pc_raster.multiscope.c \
+                -o "build/map02-multiscope-gpu/pc_raster.${mode}.o"
+              ld -r "build/map02-multiscope-gpu/libgpu.${mode}.o" \
+                "build/map02-multiscope-gpu/pc_raster.${mode}.o" \
+                -o "build/map02-multiscope-gpu/combined.${mode}.o"
+            done
+            nm build/map02-multiscope-gpu/combined.capture.o | grep VH_Map02PixelScopeSet
+            nm build/map02-multiscope-gpu/combined.capture.o | grep VH_PixelSampleRecord
+            nm build/map02-multiscope-gpu/combined.capture.o | grep VH_CaptureEvent
+            if nm -a build/map02-multiscope-gpu/combined.baseline.o | grep -Eq 'VH_Map02PixelScope|VH_PixelSampleRecord|VH_CaptureEvent'; then
+              echo "Two-coordinate observer leaked into baseline GPU build" >&2
               exit 1
             fi
           )
