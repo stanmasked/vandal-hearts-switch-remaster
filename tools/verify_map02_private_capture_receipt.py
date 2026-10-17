@@ -12,6 +12,7 @@ from pathlib import Path
 import stat
 
 from tools.verify_map02_private_capture_session import verify_session, _unique_pairs
+from tools.check_map02_private_pc_binary import inspect_binary
 
 def _identity(path, *, max_bytes=None):
     """Read a private file from a no-follow fd and freeze its filesystem identity.
@@ -78,6 +79,9 @@ RECEIPT_KEYS = frozenset((
 RECEIPT_KEYS_ELF = RECEIPT_KEYS | frozenset((
     "native_elf_image_required", "native_elf_image_observed",
 ))
+RECEIPT_KEYS_PROBES = RECEIPT_KEYS_ELF | frozenset((
+    "native_probe_symbols_required", "native_probe_symbols_inspected",
+))
 
 
 def replay_receipt(directory, *, receipt_file, preflight_report, executable):
@@ -95,12 +99,19 @@ def replay_receipt(directory, *, receipt_file, preflight_report, executable):
     if schema == "map02_private_native_process_receipt_v1":
         if receipt.keys() != RECEIPT_KEYS:
             raise ValueError("wrong original process receipt schema")
-    elif schema == "map02_private_native_process_receipt_v2":
-        if receipt.keys() != RECEIPT_KEYS_ELF:
+    elif schema in ("map02_private_native_process_receipt_v2",
+                    "map02_private_native_process_receipt_v3"):
+        expected = (RECEIPT_KEYS_PROBES
+                    if schema.endswith("_v3") else RECEIPT_KEYS_ELF)
+        if receipt.keys() != expected:
             raise ValueError("wrong native ELF process receipt schema")
         if (receipt["native_elf_image_required"] is not True
                 or receipt["native_elf_image_observed"] is not True):
             raise ValueError("native ELF image was not observed during process launch")
+        if schema.endswith("_v3") and (
+                receipt["native_probe_symbols_required"] is not True
+                or receipt["native_probe_symbols_inspected"] is not True):
+            raise ValueError("native GPU/FT4 probe inspection was not completed")
     else:
         raise ValueError("unsupported original receipt version")
     if (receipt["preflight_created"] is not True
@@ -122,6 +133,10 @@ def replay_receipt(directory, *, receipt_file, preflight_report, executable):
                              executable=executable)
     if current["executable_sha256"] != receipt["executable_sha256"]:
         raise ValueError("process receipt executable SHA-256 changed")
+    if schema == "map02_private_native_process_receipt_v3":
+        inspected = inspect_binary(executable)
+        if inspected["executable_sha256"] != receipt["executable_sha256"]:
+            raise ValueError("private native probe ELF fingerprint changed")
     if type(receipt["verification"]) is not dict or current != receipt["verification"]:
         raise ValueError("private GPU DDA VRAM evidence no longer matches process receipt")
     if _inputs(receipt_file, preflight_report, executable) != identities_before:
@@ -144,7 +159,10 @@ def replay_receipt(directory, *, receipt_file, preflight_report, executable):
         "dda_observation_mode": current["dda_observation_mode"],
         "raw_evidence_matches_original_receipt": True,
         "native_elf_process_image_observed":
-            schema == "map02_private_native_process_receipt_v2",
+            schema in ("map02_private_native_process_receipt_v2",
+                       "map02_private_native_process_receipt_v3"),
+        "native_probe_symbols_inspected":
+            schema == "map02_private_native_process_receipt_v3",
         "original_game_assets_authenticated": False,
         "ps1_or_switch_rendering_verified": False,
         "hd_replacement_authorized": False,
