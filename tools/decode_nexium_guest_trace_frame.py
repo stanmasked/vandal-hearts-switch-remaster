@@ -69,6 +69,11 @@ def decode_packet(p: bytes) -> dict:
         lines.append(f"{idx},{EVENTS[kind-1]},{serial},{scene},{ns},{dropped}")
     csv_content="\n".join(lines)+"\n"
     audit=analyze_sd_csv(csv_content)
+    # Reuse the strict canonical CSV parser without falsely claiming
+    # the optical channel was read back from a guest SD file.
+    # A separate CI comparison establishes SD provenance if available.
+    audit["source"]="reconstructed from CRC-verified guest framebuffer pixels"
+    audit["sd_readback_proven_by_optical_decode"]=False
     return {
         "schema":"vh-guest-optical-frame/v1",
         "transport":"post-join framebuffer pixel packet, not guest SD or stderr",
