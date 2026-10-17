@@ -60,6 +60,18 @@ class PrivateCapturePreflightTests(unittest.TestCase):
         b = dict(a, step=1, phase="after", snapshot="gpu-0001-vram.bin")
         self.native_events = encode(a) + encode(b)
         (self.native / "gpu-native-events.jsonl").write_bytes(self.native_events)
+        self.receipt = {
+            "schema": "vh.map02.native-capture-status.v1",
+            "gpu_draw_frame": 7, "observed_hooks": 2,
+            "before_hooks": 1, "after_hooks": 1,
+            "draw_before_hooks": 1, "transfer_before_hooks": 0,
+            "indexed_hooks": 2, "written_hooks": 2,
+            "limit_reached": False, "walk_finished": True,
+            "hooks_balanced": True,
+            "observed_window_closed_without_detected_loss": True,
+        }
+        self.native_file("gpu-native-capture-status.json",
+                         encode(self.receipt))
         self.pixel = {
             "stage": "native_putpixel", "step": 0, "frame": 7,
             "primitive_ordinal": 0, "primitive_type": 2,
@@ -116,6 +128,8 @@ class PrivateCapturePreflightTests(unittest.TestCase):
     def test_accepts_structurally_coherent_private_input_without_authenticating_it(self):
         result = self.run_preflight()
         self.assertTrue(result["structural_preflight_passed"])
+        self.assertTrue(result["native_capture_receipt_checked"])
+        self.assertTrue(result["native_hook_loss_not_detected"])
         self.assertEqual(result["source_frame"], 7)
         self.assertEqual(result["native_draw_pairs"], 1)
         self.assertEqual(result["independently_sampled_draw_edges"], 1)
@@ -172,6 +186,10 @@ class PrivateCapturePreflightTests(unittest.TestCase):
         newlog = self.native_events + encode(a) + encode(b)
         self.native_file("gpu-native-events.jsonl", newlog)
         self.pixel_manifest["native_events_sha256"] = digest(newlog)
+        self.receipt.update(observed_hooks=4, before_hooks=2, after_hooks=2,
+                            draw_before_hooks=2, indexed_hooks=4,
+                            written_hooks=4)
+        self.native_file("gpu-native-capture-status.json", encode(self.receipt))
         self.overdraw["native_events_sha256"] = digest(newlog)
         self.source_file("gpu-native-overdraw.json", self.overdraw)
         self.pixel_manifest["overdraw_manifest_sha256"] = digest(
@@ -190,6 +208,16 @@ class PrivateCapturePreflightTests(unittest.TestCase):
         self.bundle["pc_game_binary_sha256"] = "NOT A REAL SHA"
         self.source_file("bundle.json", self.bundle)
         with self.assertRaisesRegex(ValueError, "fingerprint"):
+            self.run_preflight()
+
+    def test_requires_complete_terminal_receipt_without_hook_loss(self):
+        (self.native / "gpu-native-capture-status.json").unlink()
+        with self.assertRaises(ValueError):
+            self.run_preflight()
+        self.receipt["limit_reached"] = True
+        self.receipt["observed_window_closed_without_detected_loss"] = False
+        self.native_file("gpu-native-capture-status.json", encode(self.receipt))
+        with self.assertRaisesRegex(ValueError, "incomplete"):
             self.run_preflight()
 
     def test_refuses_world_readable_or_symlinked_capture_directories(self):
@@ -223,6 +251,10 @@ class PrivateCapturePreflightTests(unittest.TestCase):
         staged = b"".join(map(encode, (move0, move1, draw0, draw1)))
         self.native_file("gpu-native-events.jsonl", staged)
         self.overdraw["native_events_sha256"] = digest(staged)
+        self.receipt.update(observed_hooks=4, before_hooks=2, after_hooks=2,
+                            transfer_before_hooks=1, draw_before_hooks=1,
+                            indexed_hooks=4, written_hooks=4)
+        self.native_file("gpu-native-capture-status.json", encode(self.receipt))
         self.source_file("gpu-native-overdraw.json", self.overdraw)
         self.pixel_manifest["native_events_sha256"] = digest(staged)
         self.pixel_manifest["overdraw_manifest_sha256"] = digest(
