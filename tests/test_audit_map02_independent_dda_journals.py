@@ -171,7 +171,7 @@ class IndependentJournalAuditTests(unittest.TestCase):
                 transfer = dict(event, step=index, frame=2,
                                 snapshot=f"gpu-{index:04d}-vram.bin",
                                 operation="clear", primitive_type=0,
-                                rect=[0, 0, 1, 1])
+                                rect=[0, 0, 1, 1], ft4=None)
                 transfers.append(transfer)
                 event["step"] = index + 2
                 event["snapshot"] = f"gpu-{index+2:04d}-vram.bin"
