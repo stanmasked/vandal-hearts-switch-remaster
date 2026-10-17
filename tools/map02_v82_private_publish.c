@@ -149,7 +149,7 @@ static char vh107_stage_backup[VH82_MAX_PATH];
 static int vh107_stage_phase;
 int vh107_test_replace_stage(const char *stage,const char *replacement,
                              const char *backup,int phase){
-    if(!stage || !replacement || !backup || phase<1 || phase>3 ||
+    if(!stage || !replacement || !backup || phase<1 || phase>4 ||
        strnlen(stage,VH82_MAX_PATH)>=VH82_MAX_PATH ||
        strnlen(replacement,VH82_MAX_PATH)>=VH82_MAX_PATH ||
        strnlen(backup,VH82_MAX_PATH)>=VH82_MAX_PATH)return -1;
@@ -265,8 +265,16 @@ int vh82_publish_private(const char *path,const char *bytes,size_t size) {
      * not just the content of the already-fsynced stage file. */
     if(VH100_FAIL(1) || fsync(dirfd)<0)goto finish;
     vh100_synced_directories++;
-    if(VH100_FAIL(2))goto finish;
-    /* Remove ONLY our owned temporary stage and persist that unlink. */
+    if(VH100_FAIL(2) || vh107_maybe_replace_stage(4)<0)goto finish;
+    /* After final link, a foreign replacement .tmp is NOT ours to
+     * unlink. Refusal leaves the final link and all remaining names. */
+    if(fstatat(dirfd,stage,&stage_named,AT_SYMLINK_NOFOLLOW)<0 ||
+       !S_ISREG(stage_named.st_mode) ||
+       stage_named.st_dev!=stage_created.st_dev ||
+       stage_named.st_ino!=stage_created.st_ino ||
+       stage_named.st_nlink!=2 ||
+       stage_named.st_size!=stage_written.st_size ||
+       (stage_named.st_mode&0777)!=0600)goto finish;
     if(unlinkat(dirfd,stage,0)<0)goto finish;
     owned=0;
     if(vh102_maybe_swap(3)!=0 ||
