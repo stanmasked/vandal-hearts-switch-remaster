@@ -45,8 +45,12 @@ def validate(raw):
         for key in FIELDS - {"stage"}:
             if type(row[key]) is not int:
                 raise ValueError(f"{key} must be an integer")
-        if row["step"] != index or row["frame"] < 1 or row["primitive_ordinal"] < 0:
+        if (row["step"] != index or not 1 <= row["frame"] <= 0xffffffff or
+                not 0 <= row["primitive_ordinal"] <= 0xffffffff):
             raise ValueError("invalid identity or event order")
+        if any(not -(1 << 31) <= row[key] < (1 << 31)
+               for key in ("y", "x_start", "x_bound", "clip_t", "clip_b")):
+            raise ValueError("coordinates exceed native signed-int range")
         if row["clip_t"] > row["clip_b"]:
             raise ValueError("invalid vertical clipping window")
         if row["reason"] in (4, 7):
