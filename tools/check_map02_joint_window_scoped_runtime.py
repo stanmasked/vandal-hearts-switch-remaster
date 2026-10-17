@@ -65,6 +65,10 @@ int main(void) {
      * Exactly 32 draws (64 event hooks) in window 000, 2 draws in 001.
      * Private pixel witness starts only after the 32 non-touching draws. */
     DrawOTag(ot);
+#ifdef VH_MAP02_VRAM_EDGE_PROBE
+    verify_edges_against_putpixel();
+    assert(vh_map02_edges_count() == 34);
+#endif
     assert(vram[10][10] != 1);
     return 0;
 }
