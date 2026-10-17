@@ -29,6 +29,122 @@ static void must_fail_unchanged(VhAudioComputeWaitJoin *j,
     assert(!memcmp(m,&before_m,sizeof *m));
 }
 
+
+
+/* Full four-view commit (wait pages, PCM seams, DSP/wait, A/B ring).
+ * Inject one failure in each producer AFTER the audio service has
+ * released the logical page; no partial telemetry may survive. */
+static void full_audit(const VhAudioSceneWaits *w,
+                       const VhAudioPcmSeams *s,
+                       const VhAudioComputeWaitJoin *j,
+                       const VhAudioListeningMarks *m) {
+    assert(vh_audio_output_verify_pcm_seams(
+        s,w,m->returned_pages)==0);
+    audit(j,m);
+    assert(w->ordinary.pages+w->first_after_switch.pages ==
+           m->returned_pages);
+}
+static void full_must_fail(VhAudioSceneWaits *w,VhAudioPcmSeams *s,
+                           VhAudioComputeWaitJoin *j,
+                           VhAudioListeningMarks *m,
+                           const int16_t *pcm,size_t frames,
+                           unsigned scene,
+                           const VhAudioSubmitTiming *before,
+                           const VhAudioSubmitTiming *after,
+                           uint64_t hz,unsigned dsp) {
+    const VhAudioSceneWaits ow=*w;
+    const VhAudioPcmSeams os=*s;
+    const VhAudioComputeWaitJoin oj=*j;
+    const VhAudioListeningMarks om=*m;
+    assert(vh_audio_returned_page_telemetry_record(
+        w,s,j,m,pcm,frames,scene,before,after,hz,dsp)==-1);
+    assert(!memcmp(w,&ow,sizeof *w));
+    assert(!memcmp(s,&os,sizeof *s));
+    assert(!memcmp(j,&oj,sizeof *j));
+    assert(!memcmp(m,&om,sizeof *m));
+}
+static void full_transaction_test(void) {
+    const uint64_t hz=19200000u;
+    const size_t frames=2u;
+    const int16_t pcm[4]={100,-100,200,-200};
+    VhAudioSceneWaits w={0};
+    VhAudioPcmSeams s={0};
+    VhAudioComputeWaitJoin j={0};
+    VhAudioListeningMarks m={0};
+    const VhAudioSubmitTiming first_before={0};
+    VhAudioSubmitTiming first_after={0};
+    assert(vh_audio_output_record_submit_timing(
+        &first_after,400u,hz,frames,1)==0);
+    full_must_fail(&w,&s,&j,&m,pcm,frames,1u,
+                   &first_before,&first_after,hz,0u);
+    full_must_fail(&w,&s,&j,&m,pcm,frames,2u,
+                   &first_before,&first_after,hz,0u);
+    full_must_fail(&w,&s,&j,&m,NULL,frames,0u,
+                   &first_before,&first_after,hz,0u);
+    full_must_fail(&w,&s,&j,&m,pcm,0u,0u,
+                   &first_before,&first_after,hz,0u);
+    full_must_fail(&w,&s,&j,&m,pcm,frames,0u,
+                   &first_before,&first_after,hz,2u);
+    full_must_fail(&w,&s,&j,&m,pcm,frames,0u,
+                   &first_before,&first_before,hz,0u);
+    assert(vh_audio_returned_page_telemetry_record(
+        &w,&s,&j,&m,pcm,frames,0u,
+        &first_before,&first_after,hz,0u)==0);
+    full_audit(&w,&s,&j,&m);
+    assert(m.returned_pages==1u && s.delivered_pages==1u);
+    assert(s.first_wait_band==0u && j.ordinary.returned==1u);
+
+    const VhAudioSubmitTiming next_before=first_after;
+    VhAudioSubmitTiming next_after=next_before;
+    assert(vh_audio_output_record_submit_timing(
+        &next_after,1200u,hz,frames,1)==0);
+    /* A scene page after the initial ordinary page is valid. */
+    assert(vh_audio_returned_page_telemetry_record(
+        &w,&s,&j,&m,pcm,frames,1u,
+        &next_before,&next_after,hz,1u)==0);
+    full_audit(&w,&s,&j,&m);
+    assert(s.delivered_pages==2u);
+    assert(w.first_after_switch.pages==1u &&
+           j.first_after_switch.wait_band_pages[1]==1u);
+
+    const VhAudioSubmitTiming third_before=next_after;
+    VhAudioSubmitTiming third_after=third_before;
+    assert(vh_audio_output_record_submit_timing(
+        &third_after,2300u,hz,frames,1)==0);
+    /* Stage 1 failure: scene wait histogram saturated. */
+    w.ordinary.pages=UINT64_MAX;
+    full_must_fail(&w,&s,&j,&m,pcm,frames,0u,
+                   &third_before,&third_after,hz,1u);
+    w.ordinary.pages=1u;
+
+    /* Stage 2 failure: candidate seam counter saturated. */
+    s.ordinary.count[2]=UINT64_MAX;
+    full_must_fail(&w,&s,&j,&m,pcm,frames,0u,
+                   &third_before,&third_after,hz,1u);
+    s.ordinary.count[2]=0u;
+
+    /* Stage 3 failure: DSP/wait histogram saturated. */
+    j.ordinary.wait_band_pages[2]=UINT64_MAX;
+    full_must_fail(&w,&s,&j,&m,pcm,frames,0u,
+                   &third_before,&third_after,hz,1u);
+    j.ordinary.wait_band_pages[2]=0u;
+
+    /* Stage 4 failure: bad DSP flag in 32-page A/B lookback. */
+    m.recent[1].dsp_over_budget=2u;
+    full_must_fail(&w,&s,&j,&m,pcm,frames,0u,
+                   &third_before,&third_after,hz,1u);
+    m.recent[1].dsp_over_budget=1u;
+    full_audit(&w,&s,&j,&m);
+
+    /* All failures were nonmutating; same page still succeeds. */
+    assert(vh_audio_returned_page_telemetry_record(
+        &w,&s,&j,&m,pcm,frames,0u,
+        &third_before,&third_after,hz,1u)==0);
+    full_audit(&w,&s,&j,&m);
+    assert(w.ordinary.pages==2u && m.returned_pages==3u &&
+           s.delivered_pages==3u && j.ordinary.returned==2u);
+}
+
 int main(void) {
     VhAudioComputeWaitJoin joint={0};
     VhAudioListeningMarks marks={0};
@@ -104,6 +220,7 @@ int main(void) {
         &joint,&marks,3u,0u,1u,210u,1u)==0);
     audit(&joint,&marks);
     assert(marks.returned_pages==101u);
+    full_transaction_test();
     puts("audout DSP/listening returned-page atomic transaction: PASS");
     return 0;
 }

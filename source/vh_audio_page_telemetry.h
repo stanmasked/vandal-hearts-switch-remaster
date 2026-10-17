@@ -52,4 +52,49 @@ static inline int vh_audio_page_telemetry_record(
     *joint=next;
     return 0;
 }
+
+/* Atomic transaction for ONE successfully returned logical PCM page:
+ * 1. Stage latency category and inter-page PCM16 seam counters.
+ * 2. Stage joint DSP/wait counters.
+ * 3. Record into the A/B ring (its own recorder validates before write).
+ * 4. Publish the three staged smaller objects without further failure.
+ *
+ * A malformed input or overflow in ANY one of the four systems must
+ * leave all four byte-for-byte unchanged. No PCM is stored or copied,
+ * no additional audio callbacks, allocations, locks or SD traffic.
+ * One owner thread guarantees there are no concurrent mutations.
+ *
+ * Terminal FAILED logical pages are not handled here: they must
+ * update only scene wait histograms using delivered=0.
+ */
+static inline int vh_audio_returned_page_telemetry_record(
+    VhAudioSceneWaits *waits, VhAudioPcmSeams *seams,
+    VhAudioComputeWaitJoin *joint, VhAudioListeningMarks *marks,
+    const int16_t *pcm, size_t frames, unsigned scene_boundary,
+    const VhAudioSubmitTiming *before, const VhAudioSubmitTiming *after,
+    uint64_t tick_frequency, unsigned dsp_over_budget) {
+    if (!waits || !seams || !joint || !marks || !pcm ||
+        !before || !after || scene_boundary>1u || dsp_over_budget>1u ||
+        after->calls<=before->calls)
+        return -1;
+    VhAudioSceneWaits next_waits=*waits;
+    VhAudioPcmSeams next_seams=*seams;
+    VhAudioComputeWaitJoin next_joint=*joint;
+    if (vh_audio_output_record_scene_page(
+            &next_waits,before,after,tick_frequency,frames,
+            (int)scene_boundary,1) ||
+        vh_audio_output_record_pcm_seam(
+            &next_seams,pcm,frames,(int)scene_boundary,
+            before,after,tick_frequency) ||
+        vh_audio_page_telemetry_record(
+            &next_joint,marks,next_seams.last_wait_band,
+            scene_boundary,
+            (unsigned)(after->calls-before->calls>1u),
+            next_seams.last_abs_step,dsp_over_budget))
+        return -1;
+    *waits=next_waits;
+    *seams=next_seams;
+    *joint=next_joint;
+    return 0;
+}
 #endif

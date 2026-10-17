@@ -442,6 +442,7 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -O2 -g -Isource \
             -fsanitize=undefined -fno-sanitize-recover=all \
             tests/test_vh_audio_page_telemetry.c \
+            source/vh_audio_output_recovery.c \
             -o /tmp/test_vh_audio_page_telemetry_ubsan
           /tmp/test_vh_audio_page_telemetry_ubsan
       - name: Validate same-page DSP/audout correlation under UBSan

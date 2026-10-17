@@ -1547,3 +1547,35 @@ the wrong aggregate type. A transient test-compilation error in
 the initial patch was corrected before this stage was accepted.
 Neither refinement changes retry behavior or makes audible
 quality assertions.
+
+
+### Full returned PCM-page diagnostic transaction
+
+A successfully released PCM page used to update its service-delay
+scene bucket, then the PCM16 seam histogram, then the DSP/audout
+same-page counters and the 32-page listener ring separately.
+The latter two were already atomic, but a seam failure could
+still leave an otherwise successful scene histogram update.
+These diagnostic counters would be rejected at final report
+validation, but unnecessary partial state remained.
+
+The native audout probe now commits ALL FOUR logical returned-page
+views through \`vh_audio_returned_page_telemetry_record\`.
+It first stages the small wait-category and seam accumulators,
+and then stages the DSP/wait histogram. Only after those records
+succeed does it call the listener recorder, whose own checks
+reject malformed ring data without mutating any state. It then
+commits the previously staged structures without further
+fallible operations. No music clocks, buffers or SD data are
+copied, and the order and number of audout callbacks are unchanged.
+
+A terminally failed page is a different case: only its failed
+logical page wait bucket is updated, with no PCM seam or
+returned-page DSP and A/B annotation. The portable transaction
+regression now injects a failure in each of the four recorders,
+asserts bytewise nonmutation of all four objects, and then
+successfully retries the same diagnostic page after restoring
+the original metadata. It runs in both Make host suites and
+under PCM CI UndefinedBehaviorSanitizer. These are internal
+metadata consistency guarantees; no physical-console acoustic
+quality is implied.

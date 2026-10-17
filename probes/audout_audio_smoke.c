@@ -474,38 +474,28 @@ int main(int argc, char **argv) {
         const VhAudioSubmitTiming before_submit=output.timing;
         const int submit_result=vh_audio_output_submit_recover(
             &ops,&recovery,out_48000,count);
-        if (vh_audio_output_record_scene_page(
-                &output.scene_waits,&before_submit,&output.timing,
-                tick_frequency,count,(int)switched_this_block,
-                submit_result==0)) {
-            result=9;
-            break;
-        }
         if (submit_result) {
+            /* A terminally undelivered logical page has no PCM seam,
+             * no A/B ring entry, and no returned-page joint event. */
+            if (vh_audio_output_record_scene_page(
+                    &output.scene_waits,&before_submit,&output.timing,
+                    tick_frequency,count,(int)switched_this_block,0)) {
+                result=9;
+                break;
+            }
             result=7;
             break;
         }
-        /* Audit only successfully released logical pages, not
-         * failed attempts or a freshly rendered, undelivered page. */
-        if (vh_audio_output_record_pcm_seam(
-                &seam_stats,out_48000,count,(int)switched_this_block,
-                &before_submit,&output.timing,tick_frequency)) {
-            result=11;
-            break;
-        }
-        /* The joint DSP/wait counters and the 32-page listening
-         * ring must commit together, for ONE returned PCM page.
-         * A ring failure never leaves phantom DSP/wait observations.
-         */
-        const uint64_t calls_this_page=
-            output.timing.calls-before_submit.calls;
-        if (vh_audio_page_telemetry_record(
+        /* One returned page updates four telemetry views as a single
+         * all-or-nothing transaction. Every later read sees identical
+         * page clocks; no additional audio or controller polling. */
+        if (vh_audio_returned_page_telemetry_record(
+                &output.scene_waits,&seam_stats,
                 &compute_wait,&listening_marks,
-                seam_stats.last_wait_band,switched_this_block,
-                (unsigned)(calls_this_page>1u),
-                seam_stats.last_abs_step,
+                out_48000,count,switched_this_block,
+                &before_submit,&output.timing,tick_frequency,
                 (unsigned)(elapsed_ticks>block_budget_ticks))) {
-            result=17;
+            result=18;
             break;
         }
         ++played_blocks;
