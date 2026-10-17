@@ -2,7 +2,7 @@
 """Generate a private opt-in GNU Make overlay for ONE original PC-port ELF.
 
 Never changes the pinned upstream source or its Makefile. The overlay compiles
-instrumented original core/cd.c, libcd.c and libgpu.c and links their observers
+instrumented original core/cd.c, libcd.c, libgpu.c and pc_raster.c and links their observers
 into a dedicated diagnostic game build. It does NOT supply copyrighted game
 assets, build an ELF on its own, or attest a retail gameplay cycle.
 """
@@ -14,7 +14,7 @@ import re
 import shutil
 
 from tools.instrument_map02_cycle_order import (
-    patch_core, patch_gpu, patch_libcd,
+    patch_core, patch_gpu, patch_libcd, patch_raster,
 )
 from tools.prepare_map02_pcport import PINNED_BLOB_SHA1, git_blob_sha1
 from tools.instrument_map02_cd_read import SOURCE_CD, SOURCE_LIBCD
@@ -24,16 +24,22 @@ SOURCE_MAP = {
     "core_cd.c": ("src/core/cd.c", SOURCE_CD, patch_core),
     "libcd.c": ("platform/pc/src/libcd.c", SOURCE_LIBCD, patch_libcd),
     "libgpu.c": ("platform/pc/src/libgpu.c", PINNED_SOURCE, patch_gpu),
+    "pc_raster.c": ("platform/pc/src/pc_raster.c",
+                    "ba8a05d161ad778c0b75e452ff0a11ed163c65cd", patch_raster),
 }
 SUPPORT_FILES = (
     "map02_cycle_order.c", "map02_cycle_order.h",
     "map02_cd_read_probe.c", "map02_cd_read_probe.h",
     "map02_capture_session.c", "map02_capture_session.h",
+    "map02_scoped_blend_sink.c", "map02_scoped_blend_sink.h",
+    "map02_scoped_blend_stage.c", "map02_scoped_blend_stage.h",
+    "map02_vram_edges.c", "map02_vram_edges.h",
 )
 MAKEFILE_SHA = PINNED_BLOB_SHA1["platform/pc/Makefile"]
 MAKE_ANCHORS = (
     "$(BUILD_DIR)/libcd.o: src/libcd.c",
     "$(BUILD_DIR)/libgpu.o: src/libgpu.c",
+    "$(BUILD_DIR)/pc_raster.o: src/pc_raster.c",
     "link: $(DATA_OBJS)",
     "$(BUILD_DIR)/src/%.o: $(SRC_DIR)/%.c | stage",
 )
@@ -80,8 +86,10 @@ ifneq ($(filter -DVH_MAP02_CYCLE_ORDER,$(GAME_C_FLAGS)),)
 $(error Do not set cycle instrumentation globally; per-object recipes own flags)
 endif
 VH_MAP02_CYCLE_DEFS := -DVH_MAP02_CYCLE_ORDER -DVH_MAP02_CD_READ_PROBE
+VH_MAP02_GPU_DEFS := -DVH_MAP02_CYCLE_ORDER -DVH_MAP02_GPU_CAPTURE -DVH_MAP02_POSIX_CAPTURE_WINDOWS -DVH_MAP02_SCOPED_BLEND_PROBE -DVH_MAP02_VRAM_EDGE_PROBE -DVH_MAP02_POSIX_STAGE -DVH_MAP02_CAPTURE_SESSION
+VH_MAP02_STAGE_DEFS := -DVH_MAP02_CD_READ_PROBE -DVH_MAP02_VRAM_EDGE_PROBE -DVH_MAP02_CAPTURE_SESSION
 VH_MAP02_CYCLE_INCLUDES := -I$(VH_MAP02_CYCLE_ROOT)
-VH_MAP02_CYCLE_SUPPORT := $(addprefix $(BUILD_DIR)/,map02_cycle_order.o map02_cd_read_probe.o map02_capture_session.o)
+VH_MAP02_CYCLE_SUPPORT := $(addprefix $(BUILD_DIR)/,map02_cycle_order.o map02_cd_read_probe.o map02_capture_session.o map02_scoped_blend_sink.o map02_scoped_blend_stage.o map02_vram_edges.o)
 BACKEND_OBJS += $(VH_MAP02_CYCLE_SUPPORT)
 link: $(VH_MAP02_CYCLE_SUPPORT)
 
@@ -95,7 +103,11 @@ $(BUILD_DIR)/libcd.o: $(VH_MAP02_CYCLE_ROOT)/libcd.c
 
 $(BUILD_DIR)/libgpu.o: $(VH_MAP02_CYCLE_ROOT)/libgpu.c
 \t@mkdir -p $(dir $@)
-\t$(CC) $(M32) $(SAN) $(PORT_WARN) -DVH_MAP02_CYCLE_ORDER $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -Isrc -g -MMD -MP -c -o $@ $(VH_MAP02_CYCLE_ROOT)/libgpu.c
+\t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_GPU_DEFS) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -Isrc -g -MMD -MP -c -o $@ $(VH_MAP02_CYCLE_ROOT)/libgpu.c
+
+$(BUILD_DIR)/pc_raster.o: $(VH_MAP02_CYCLE_ROOT)/pc_raster.c
+\t@mkdir -p $(dir $@)
+\t$(CC) $(M32) $(SAN) $(PORT_WARN) -DVH_MAP02_SCOPED_BLEND_PROBE $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -Isrc -g -MMD -MP -c -o $@ $(VH_MAP02_CYCLE_ROOT)/pc_raster.c
 
 $(BUILD_DIR)/map02_cycle_order.o: $(VH_MAP02_CYCLE_ROOT)/map02_cycle_order.c
 \t@mkdir -p $(dir $@)
@@ -106,6 +118,18 @@ $(BUILD_DIR)/map02_cd_read_probe.o: $(VH_MAP02_CYCLE_ROOT)/map02_cd_read_probe.c
 \t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -g -MMD -MP -c -o $@ $<
 
 $(BUILD_DIR)/map02_capture_session.o: $(VH_MAP02_CYCLE_ROOT)/map02_capture_session.c
+\t@mkdir -p $(dir $@)
+\t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -g -MMD -MP -c -o $@ $<
+
+$(BUILD_DIR)/map02_scoped_blend_sink.o: $(VH_MAP02_CYCLE_ROOT)/map02_scoped_blend_sink.c
+\t@mkdir -p $(dir $@)
+\t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -g -MMD -MP -c -o $@ $<
+
+$(BUILD_DIR)/map02_scoped_blend_stage.o: $(VH_MAP02_CYCLE_ROOT)/map02_scoped_blend_stage.c
+\t@mkdir -p $(dir $@)
+\t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_STAGE_DEFS) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -g -MMD -MP -c -o $@ $<
+
+$(BUILD_DIR)/map02_vram_edges.o: $(VH_MAP02_CYCLE_ROOT)/map02_vram_edges.c
 \t@mkdir -p $(dir $@)
 \t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -g -MMD -MP -c -o $@ $<
 """
