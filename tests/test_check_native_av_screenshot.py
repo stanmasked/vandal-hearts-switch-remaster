@@ -70,6 +70,53 @@ class NativeAVScreenshotTests(unittest.TestCase):
             self.assertNotEqual(denied.returncode, 0)
             self.assertIn("scene-switch marker not confirmed", denied.stderr)
 
+    def test_guest_x_y_resume_requires_real_pcm_after_each_roundtrip(self):
+        before,after=make_frames(synthetic_switches=AUDIO_OK)
+        before.putpixel((1050,545),AUDIO_OK)
+        after.putpixel((1050,545),AUDIO_OK)
+        report=inspect_images(before,after)
+        self.assertEqual(report["guest_resume_x_y_pcm_continuation"],"confirmed")
+        self.assertTrue(report["guest_resume_is_not_home_event"])
+        self.assertFalse(report["audible_audio_verified"])
+        with tempfile.TemporaryDirectory() as folder:
+            a=Path(folder)/"before.png"
+            b=Path(folder)/"after.png"
+            cmd=[sys.executable,"tests/check_native_av_screenshot.py",
+                 str(a),str(b),"--require-guest-resume-continuation",
+                 "--require-audio-source","synthetic",
+                 "--require-audout-status","initialized",
+                 "--require-audio-pipeline","buffers_returned"]
+            before.save(a)
+            after.save(b)
+            accepted=subprocess.run(cmd,capture_output=True,text=True)
+            self.assertEqual(accepted.returncode,0,accepted.stderr)
+            after.putpixel((1050,545),(255,219,102))
+            after.save(b)
+            denied=subprocess.run(cmd,capture_output=True,text=True)
+            self.assertNotEqual(denied.returncode,0)
+            self.assertIn("guest X/Y resume PCM continuation",denied.stderr)
+            before.putpixel((1050,545),AUDIO_FAIL)
+            before.save(a)
+            denied=subprocess.run(cmd,capture_output=True,text=True)
+            self.assertNotEqual(denied.returncode,0)
+
+    def test_guest_x_y_resume_does_not_accept_stalled_audout(self):
+        before,after=make_frames(pipeline=(255,219,102),
+                                 synthetic_switches=AUDIO_OK)
+        before.putpixel((1050,545),AUDIO_OK)
+        after.putpixel((1050,545),AUDIO_OK)
+        with tempfile.TemporaryDirectory() as folder:
+            a=Path(folder)/"before.png"
+            b=Path(folder)/"after.png"
+            before.save(a)
+            after.save(b)
+            denied=subprocess.run(
+                [sys.executable,"tests/check_native_av_screenshot.py",
+                 str(a),str(b),"--require-guest-resume-continuation"],
+                capture_output=True,text=True)
+            self.assertNotEqual(denied.returncode,0)
+            self.assertIn("guest X/Y resume PCM continuation",denied.stderr)
+
     def test_guest_auto_zl_rejected_clock_is_not_transport_failure(self):
         before,after=make_frames(audio=AUDIO_FAIL,pipeline=AUDIO_FAIL)
         before.putpixel((1050,500),AUDIO_OK)
