@@ -60,6 +60,8 @@ def replay_receipt(directory, *, receipt_file, preflight_report, executable):
         "original_receipt_sha256": hashlib.sha256(raw).hexdigest(),
         "frame": frame,
         "native_gpu_pairs_verified": current["native_gpu_pairs_verified"],
+        "move_pairs_with_verified_vram_effect":
+            current["move_pairs_with_verified_vram_effect"],
         "vram_snapshot_sha256_list_sha256":
             current["vram_snapshot_sha256_list_sha256"],
         "dda_observation_mode": current["dda_observation_mode"],
