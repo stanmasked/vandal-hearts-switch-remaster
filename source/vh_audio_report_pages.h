@@ -43,6 +43,7 @@ static inline int vh_audio_manual_verify(const VhAudioManualResume *m) {
 }
 
 #include <limits.h>
+#include <stdint.h>
 
 
 /* Platform-independent applet lifecycle observer. It records only event
@@ -57,6 +58,10 @@ typedef struct {
      * explicitly coalesced, never silently counted as observed audio. */
     unsigned pending_return, coalesced_returns;
     unsigned first_pages_after_return, returned_pages;
+    /* Same-clock interval from observed foreground to returned PCM.
+     * Zero timestamp means unknown, not zero latency. */
+    uint64_t foreground_tick, max_page_gap_ticks, total_page_gap_ticks;
+    unsigned timestamp_pending, timed_first_pages;
 } VhAudioAppletEvents;
 
 #define VH_AUDIO_APPLET_BACKGROUND 1u
@@ -117,8 +122,51 @@ static inline int vh_audio_applet_page_returned(VhAudioAppletEvents *s) {
      * Pages returned while backgrounded do not confirm foreground. */
     if(!s->pending_return || s->in_background) return 0;
     s->pending_return=0u;
+    s->timestamp_pending=0u;
     ++s->first_pages_after_return;
     return 1;
+}
+
+/* Timestamp-aware wrapper for libnx applet events. Other callers may
+ * use the untimed recorder; a return with no timestamp is excluded
+ * from latency statistics. Tick values must share the PCM clock. */
+static inline int vh_audio_applet_record_at(VhAudioAppletEvents *s,
+                                             unsigned event,
+                                             uint64_t tick) {
+    if(!s) return -1;
+    const unsigned before=s->returns;
+    if(vh_audio_applet_record(s,event)) return -1;
+    if(event==VH_AUDIO_APPLET_FOREGROUND && s->returns!=before) {
+        s->foreground_tick=tick;
+        s->timestamp_pending=tick!=0u;
+    }
+    return 0;
+}
+
+/* Measure only after a validated audout page and telemetry commit.
+ * Preflight clock regression and overflow BEFORE incrementing pages.
+ * This is callback-to-page service latency, not proof of audible
+ * output and not wall time spent while the console is asleep. */
+static inline int vh_audio_applet_page_returned_at(VhAudioAppletEvents *s,
+                                                    uint64_t tick) {
+    if(!s) return -1;
+    const unsigned measure=s->pending_return && !s->in_background &&
+                           s->timestamp_pending;
+    uint64_t delta=0u;
+    if(measure) {
+        if(!tick || tick<s->foreground_tick ||
+           s->timed_first_pages==UINT_MAX) return -1;
+        delta=tick-s->foreground_tick;
+        if(delta>UINT64_MAX-s->total_page_gap_ticks) return -1;
+    }
+    const int first=vh_audio_applet_page_returned(s);
+    if(first<=0) return first;
+    if(measure) {
+        s->total_page_gap_ticks+=delta;
+        if(delta>s->max_page_gap_ticks) s->max_page_gap_ticks=delta;
+        ++s->timed_first_pages;
+    }
+    return first;
 }
 
 /* Strong internal event-to-returned-page accounting, never a
@@ -129,7 +177,13 @@ static inline int vh_audio_applet_verify(const VhAudioAppletEvents *s) {
        s->backgrounds-s->returns!=s->in_background ||
        s->first_pages_after_return>s->returns ||
        s->first_pages_after_return>s->returned_pages ||
-       s->coalesced_returns>s->returns-s->first_pages_after_return)
+       s->coalesced_returns>s->returns-s->first_pages_after_return ||
+       s->timestamp_pending>1u ||
+       (s->timestamp_pending && !s->pending_return) ||
+       s->timed_first_pages>s->first_pages_after_return ||
+       s->max_page_gap_ticks>s->total_page_gap_ticks ||
+       (!s->timed_first_pages &&
+        (s->max_page_gap_ticks || s->total_page_gap_ticks)))
         return -1;
     return s->returns-s->first_pages_after_return-
            s->coalesced_returns==s->pending_return ? 0 : -1;
