@@ -24,6 +24,7 @@ ASSET_INCLUDES = re.compile(r'^\s*#\s*include\s*"assets/[^"]+"', re.M)
 KNOWN_ASSET_IMPORTS = {
     "src/core/text.o": '#include "assets/801012e4.inc"',
     "src/maps/map_32.o": '#include "assets/801009bc.inc"',
+    "src/maps/map_35.o": '#include "assets/80100e9c.inc"',
 }
 MIN_BACKEND = 30
 BIOS_FONT_OBJECT = 'pc_kanji_font.o'
