@@ -13,7 +13,10 @@ import json
 from pathlib import Path
 import sys
 
-from audit_nexium_audout_queue import stable_guest_bytes, bind_export_receipt
+from audit_nexium_audout_queue import (
+    stable_guest_bytes, bind_export_receipt, parse_telemetry,
+    HEADER as QUEUE_HEADER,
+)
 
 HEADER = [
     "scope", "second", "attempts", "lt25ms", "from25to40ms",
@@ -106,7 +109,8 @@ def parse_latency(raw: bytes) -> dict:
     }
 
 def bind_guest_latency(source: Path, locations: Path,
-                       receipt: Path, sd_root: Path, queue_report: Path) -> dict:
+                       receipt: Path, sd_root: Path, queue_report: Path,
+                       queue_csv: Path) -> dict:
     if sd_root.is_symlink() or not sd_root.is_dir():
         raise ValueError("missing or symlinked isolated SD root")
     directory=sd_root/"sdmc"/"switch"/"vandal-hearts-remake"
@@ -140,6 +144,29 @@ def bind_guest_latency(source: Path, locations: Path,
             or old.get("windows")!=report["windows"]
             or old.get("max_call_us")!=report["max_call_us"]):
         raise ValueError("latency histogram differs from existing guest queue audit")
+    # Cross-check EVERY second against the separately verified queue CSV,
+    # not only the session totals. Maxima share the same nanosecond timer
+    # and must be exactly equal after truncation to microseconds.
+    queue_bytes=stable_guest_bytes(queue_csv)
+    queue_parsed=parse_telemetry(queue_bytes)
+    queue_digest=hashlib.sha256(queue_bytes).hexdigest()
+    if (old.get("sd_copy_sha256")!=queue_digest
+            or old.get("sd_original_sha256")!=queue_digest
+            or queue_parsed["attempts"]!=report["attempts"]
+            or queue_parsed["windows"]!=report["windows"]):
+        raise ValueError("stage-269 copied CSV is not the audited queue evidence")
+    queue_rows=list(csv.DictReader(
+        io.StringIO(queue_bytes.decode("ascii"),newline=""),strict=True))
+    if not queue_rows or list(queue_rows[0])!=QUEUE_HEADER:
+        raise ValueError("stage-269 queue CSV columns differ")
+    windows=[row for row in queue_rows if row["scope"]=="SECOND"]
+    if len(windows)!=report["windows"]:
+        raise ValueError("stage-269 and latency second counts differ")
+    for queue_window,latency_window in zip(windows,report["per_second_call_bands"]):
+        if (int(queue_window["second"])!=latency_window["second"]
+                or int(queue_window["attempts"])!=latency_window["attempts"]
+                or int(queue_window["max_call_us"])!=latency_window["max_call_us"]):
+            raise ValueError("stage-269 and latency per-second timestamps/counts differ")
     report.update(receipt_report)
     report["guest_sd_original_name"]=path.name
     report["sd_binding"]="ORIGINAL_SD_AND_COPY_MATCHED"
@@ -152,14 +179,14 @@ def bind_guest_latency(source: Path, locations: Path,
 def main() -> int:
     p=argparse.ArgumentParser(description=__doc__)
     for name in ("source","locations","receipt","sd-root","queue-verification",
-                 "output"):
+                 "output","queue-csv"):
         p.add_argument("--"+name,type=Path,required=True)
     args=p.parse_args()
     try:
         if args.output.is_symlink() or args.output.exists():
             raise ValueError("refuse overwrite of prior audout latency verification")
         report=bind_guest_latency(args.source,args.locations,args.receipt,
-                                  args.sd_root,args.queue_verification)
+                                  args.sd_root,args.queue_verification,args.queue_csv)
         args.output.write_text(json.dumps(report,indent=2,sort_keys=True)+"\n",
                                encoding="utf-8")
         print(json.dumps({k:report[k] for k in (
