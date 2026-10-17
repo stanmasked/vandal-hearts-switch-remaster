@@ -128,7 +128,15 @@ Homebrew Menu, а не законченная игра. Без пользова�
    прослушивания A/B, (4) HOME и подтверждённые возвраты PCM.
    **LEFT/RIGHT** листают, **PLUS** завершает. Сфотографируйте все
    четыре страницы. На первой найдите `X stop/start ok/attempts`,
-   `Y reopen ok/attempts`, `unsafe`, `mismatch`. На четвёртой
+   `Y reopen ok/attempts`, `unsafe`, `mismatch` и `timing=VALID`.
+   Если `timing=INVALID`, приложение обнаружило невозможность
+   достоверно учесть время вызова `audoutPlayBuffer` (например,
+   недоступную частоту таймера или переполнение). **Это не ошибка
+   возврата PCM-дескриптора:** уже доставленная аудиостраница
+   не должна отправляться повторно. Программа прервёт диагностику
+   с кодом `Result=28` и `PCM accounting=INVALID`, не выдавая
+   недостоверные временные измерения за подтверждённый звук.
+   На четвёртой
    найдите `HOME bg/returns`, `First PCM after HOME`, `pending`,
    `HOME focus notify` и `Undelivered submits`. Норма для
    успешно выполненных команд — равные пары `ok/attempts`,
