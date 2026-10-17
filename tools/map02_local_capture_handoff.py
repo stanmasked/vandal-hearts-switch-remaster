@@ -38,7 +38,7 @@ from tools.verify_map02_native_gpu_capture import private_file
 PLAN = "gpu-local-capture-plan.json"
 HANDOFF = "gpu-local-capture-handoff.json"
 PLAN_SCHEMA = "vh.map02.local-capture-plan.v1"
-HANDOFF_SCHEMA = "vh.map02.local-capture-handoff.v1"
+HANDOFF_SCHEMA = "vh.map02.local-capture-handoff.v2"
 # The user must have enabled these for the final source-bound observer.
 REQUIRED_DIAGNOSTIC_MACROS = (
     "VH_MAP02_GPU_CAPTURE",
@@ -194,6 +194,8 @@ def _validated_handoff(raw):
         "schema", "gpu_draw_frame", *DIGESTS,
         "source_gte_gpu_witness_verified",
         "same_process_session_linked",
+        "live_kernel_executable_observed",
+        "observed_execution_receipt_sha256",
         "owned_game_binary_executed_proven",
         "original_gameplay_authenticated",
         "physical_ps1_equivalence_proven",
@@ -201,11 +203,19 @@ def _validated_handoff(raw):
     if (record["schema"] != HANDOFF_SCHEMA or
             record["source_gte_gpu_witness_verified"] is not True or
             record["same_process_session_linked"] is not True or
+            type(record["live_kernel_executable_observed"]) is not bool or
             record["owned_game_binary_executed_proven"] is not False or
             record["original_gameplay_authenticated"] is not False or
             record["physical_ps1_equivalence_proven"] is not False):
         raise ValueError("unsupported or overstated local capture handoff")
     number(record["gpu_draw_frame"], "handoff GPU frame", 1, 2**32 - 1)
+    observed_digest = record["observed_execution_receipt_sha256"]
+    if record["live_kernel_executable_observed"]:
+        if (type(observed_digest) is not str or len(observed_digest) != 64 or
+                any(c not in "0123456789abcdef" for c in observed_digest)):
+            raise ValueError("invalid live process witness SHA-256")
+    elif observed_digest is not None:
+        raise ValueError("unobserved local process cannot carry execution receipt")
     for name in DIGESTS:
         value = record[name]
         if (type(value) is not str or len(value) != 64 or
@@ -239,6 +249,24 @@ def _verified_handoff(handoff_dir, source_dir, native_dir, scoped_dir,
             final_record.get("capture_session_linked") is not True):
         raise ValueError("GPU frame or process session not bound in completed witness")
     session = final_record["capture_session_sha256"]
+    # Optional opt-in stronger path: the Linux launcher has already
+    # observed the live kernel executable and cross-verified native GPU
+    # windows/scoped nonce. A missing record remains an explicitly
+    # *unobserved*, hash-only legacy/manual handoff.
+    from tools.map02_verified_process_launch import (
+        RECEIPT as EXECUTION, verify_observed_process,
+    )
+    execution = directory / EXECUTION
+    execution_digest = None
+    if execution.is_symlink() or execution.exists():
+        process_report = verify_observed_process(
+            directory, native, scoped, pc_binary, owned_game, upstream=upstream)
+        execution_digest = process_report["private_process_receipt_sha256"]
+        receipt = parse_json(private_file(directory, EXECUTION, max_bytes=4096),
+                             EXECUTION)
+        if receipt["gpu_draw_frame"] != frame or (
+                receipt["capture_session_sha256"] != session):
+            raise ValueError("live process receipt and GTE-verified GPU session differ")
     record = _validated_handoff({
         "schema": HANDOFF_SCHEMA,
         "gpu_draw_frame": frame,
@@ -251,10 +279,16 @@ def _verified_handoff(handoff_dir, source_dir, native_dir, scoped_dir,
         "capture_session_sha256": session,
         "source_gte_gpu_witness_verified": True,
         "same_process_session_linked": True,
+        "live_kernel_executable_observed": execution_digest is not None,
+        "observed_execution_receipt_sha256": execution_digest,
         "owned_game_binary_executed_proven": False,
         "original_gameplay_authenticated": False,
         "physical_ps1_equivalence_proven": False,
     })
+    if (execution_digest is not None and
+            _sha(private_file(directory, EXECUTION, max_bytes=4096)) !=
+            execution_digest):
+        raise ValueError("observed process receipt changed during source handoff")
     if (private_file(directory, PLAN, max_bytes=4096) != plan_raw or
             private_file(source, FOUR_STREAM, max_bytes=4096) != raw_final or
             verify_pinned_upstream(upstream) !=
@@ -283,6 +317,8 @@ def seal_local_capture(handoff_dir, source_dir, native_dir, scoped_dir,
     return {"local_capture_handoff_sha256": _sha(raw),
             "gpu_draw_frame": record["gpu_draw_frame"],
             "source_gte_gpu_witness_verified": True,
+            "live_kernel_executable_observed":
+                record["live_kernel_executable_observed"],
             "gameplay_origin_authenticated": False,
             "gameplay_bytes_emitted": False}
 
@@ -300,6 +336,8 @@ def verify_local_capture(handoff_dir, source_dir, native_dir, scoped_dir,
     return {"local_capture_handoff_sha256": _sha(raw),
             "gpu_draw_frame": record["gpu_draw_frame"],
             "source_gte_gpu_witness_verified": True,
+            "live_kernel_executable_observed":
+                record["live_kernel_executable_observed"],
             "original_gameplay_authenticated": False,
             "physical_ps1_equivalence_proven": False}
 
