@@ -151,6 +151,29 @@ class TwoWordPutPixelTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "noncanonical two-word"):
             verify_multi_pixel_ot(self.source, self.native)
 
+    def test_interleaved_per_coordinate_hidden_gap_rejected(self):
+        # Global event step order can be correct while one individual
+        # word's WritePixel chain inside a primitive has an impossible gap.
+        self.rows.insert(2, self.base.row(2, 1, 0x1234, 0x801f, 0x801f))
+        self.rows[3]["step"] = 3
+        self.save()
+        with self.assertRaisesRegex(ValueError, "per-primitive word continuity broken"):
+            verify_multi_pixel_ot(self.source, self.native)
+
+    def test_rehashed_snapshot_bound_mismatch_rejected(self):
+        # A forged first call can obey the original opaque PC copy
+        # while disagreeing with the actual native PRE snapshot.
+        self.rows[0]["before"] = 0x0001
+        self.save()
+        with self.assertRaisesRegex(ValueError, "contradicts native primitive VRAM bounds"):
+            verify_multi_pixel_ot(self.source, self.native)
+
+    def test_frame_disagreement_rejected_before_vram_attribution(self):
+        self.rows[1]["frame"] = 13
+        self.save()
+        with self.assertRaisesRegex(ValueError, "another frame"):
+            verify_multi_pixel_ot(self.source, self.native)
+
     def test_global_shared_cap_rejected(self):
         # 64 total interleaved events is truncated, regardless of how
         # many belong to each coordinate; do not claim completeness.
