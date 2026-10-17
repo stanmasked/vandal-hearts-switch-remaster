@@ -29,19 +29,21 @@ int main(int argc, char **argv) {
         vh_map02_cycle_draw_start(73);
         vh_map02_cycle_draw_finish(73, 1);
     }
-    vh_map02_cycle_load(42, 42, 0x1bcc, 12);
-    if (!strcmp(argv[1], "duplicate-claim"))
-        vh_map02_cycle_load(42, 42, 0x1bcc, 12);
-
+    /* Match the pinned instrumented source's callback order:
+     * original CD probe hook precedes the cycle hook at each boundary. */
     if (strcmp(argv[1], "cd-missing-claim"))
         vh_map02_cd_loader_claim(42, 42, 0x1bcc, 12);
     if (!strcmp(argv[1], "cd-duplicate-claim"))
         vh_map02_cd_loader_claim(42, 42, 0x1bcc, 12);
+    vh_map02_cycle_load(42, 42, 0x1bcc, 12);
+    if (!strcmp(argv[1], "duplicate-claim"))
+        vh_map02_cycle_load(42, 42, 0x1bcc, 12);
 
+    if (strcmp(argv[1], "cd-missing-read"))
+        vh_map02_cd_read_start(0x1bcc, 12);
     if (strcmp(argv[1], "finish-first"))
         vh_map02_cycle_read_start(0x1bcc, 12);
     if (strcmp(argv[1], "cd-missing-read")) {
-        vh_map02_cd_read_start(0x1bcc, 12);
         for (i = 0; i < 12; ++i) {
             if (!strcmp(argv[1], "cd-missing-sector") && i == 11)
                 continue;
@@ -142,7 +144,7 @@ class CycleOrderTests(unittest.TestCase):
             with self.subTest(mode=mode):
                 proc = self.run_mode(mode)
                 self.assertEqual(proc.returncode, 0, proc.stderr)
-                self.assertIn("receipt=0", proc.stdout)
+                self.assertIn("failed=1 receipt=0", proc.stdout)
 
     def test_invalid_cd_state_never_publishes_on_disk(self):
         with tempfile.TemporaryDirectory() as tmp:
