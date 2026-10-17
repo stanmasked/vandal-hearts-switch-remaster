@@ -131,7 +131,10 @@ typedef struct {
 
 static void native_close(void *opaque) {
     NativeOutput *dev=opaque;
-    if (!dev->initialized || !vh_audio_page_lease_ready(&dev->lease))
+    /* Close only after a confirmed stop AND PCM descriptor release.
+     * A direct/misordered callback must never tear down active audout. */
+    if (!dev->initialized || dev->started ||
+        !vh_audio_page_lease_ready(&dev->lease))
         return;
     audoutExit();
     dev->initialized=0;
@@ -156,6 +159,7 @@ static int native_open(void *opaque) {
 static int native_start(void *opaque) {
     NativeOutput *dev=opaque;
     if (!dev->initialized || dev->started ||
+        !vh_audio_page_lease_ready(&dev->lease) ||
         R_FAILED(audoutStartAudioOut())) return -1;
     dev->started=1;
     return 0;
