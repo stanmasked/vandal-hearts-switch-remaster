@@ -472,7 +472,7 @@ jobs:
           assert ordinal["vblank_cpu_cycle_accurate_gpu_completion"] is False
           assert ordinal["HD_replacement_approved"] is False
           Path("proof/public/v108-vblank-store-summary.json").write_text(
-              json.dumps(ordinal,sort_keys=True)+"\\n")
+              json.dumps(ordinal,sort_keys=True)+"\n")
           assert evidence["vblank_edges"]==vblanks and evidence["gp1_mmio"]==gp1
           assert evidence["events"]==entries and evidence["bytes"]==size
           assert evidence["original_retail_MAP02_verified"] is False
