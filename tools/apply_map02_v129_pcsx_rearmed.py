@@ -52,19 +52,19 @@ def oracle_source(stops,wait_pc):
     # even when a test misses a textual dimension or a compiler permits
     # excess aggregate initializers with only a warning.
     src=once(src,
-             "        unsigned char tag[8]={0};\\n",
+             "        unsigned char tag[8]={0};\n",
              "        typedef char vh129_boundary_rows_equal_five["
              "(sizeof(vh129_boundary_targets)/"
-             "sizeof(vh129_boundary_targets[0])==5u)?1:-1];\\n"
+             "sizeof(vh129_boundary_targets[0])==5u)?1:-1];\n"
              "        typedef char vh129_boundary_cols_equal_two["
              "(sizeof(vh129_boundary_targets[0])/"
-             "sizeof(vh129_boundary_targets[0][0])==2u)?1:-1];\\n"
+             "sizeof(vh129_boundary_targets[0][0])==2u)?1:-1];\n"
              "        typedef char vh129_histogram_rows_equal_five["
              "(sizeof(vh129_adjacent_histograms)/"
-             "sizeof(vh129_adjacent_histograms[0])==5u)?1:-1];\\n"
+             "sizeof(vh129_adjacent_histograms[0])==5u)?1:-1];\n"
              "        typedef char vh129_return_rows_equal_five["
-             "(sizeof(return_gap)/sizeof(return_gap[0])==5u)?1:-1];\\n"
-             "        unsigned char tag[8]={0};\\n",
+             "(sizeof(return_gap)/sizeof(return_gap[0])==5u)?1:-1];\n"
+             "        unsigned char tag[8]={0};\n",
              "native compiler checks exact five-row table bounds")
     # Preserve strict rejection. A refusal discloses only coarse counters,
     # distinguishing unsolicited callbacks from accepted MIPS wait edges.
