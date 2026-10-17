@@ -134,6 +134,12 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
         self.assertEqual(result["draw_boundary_gpu_state_checks"], 1)
         self.events[2]["window"] = [3, 3, 4, 5]
         self.save()
+        # save() regenerates the default clear/draw VRAM snapshots.
+        # DR_MODE does not write VRAM; restore the deliberately uniform
+        # snapshots so this mutation isolates an illegal GPU state gap,
+        # not an unrelated DR_MODE VRAM-write violation.
+        for step in range(4):
+            (self.root / f"gpu-{step:04d}-vram.bin").write_bytes(self.pre)
         with self.assertRaisesRegex(ValueError, "discontinuous GPU state"):
             verify_capture(self.root, target_frame=12)
 
