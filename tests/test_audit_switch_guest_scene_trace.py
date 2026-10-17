@@ -5,7 +5,7 @@ from pathlib import Path
 import unittest
 
 sys.path.insert(0,str(Path(__file__).resolve().parent.parent/"tools"))
-from audit_switch_guest_scene_trace import analyze,TraceError
+from audit_switch_guest_scene_trace import analyze,analyze_sd_csv,TraceError
 
 def trace(rows, *, dropped=0):
     header="VH_AUDIO_SCENE_TRACE_BEGIN\nindex,event,serial,scene,monotonic_ns\n"
@@ -54,6 +54,51 @@ class TestGuestSceneTrace(unittest.TestCase):
         bad[4]=("POST",1,1,1000050000)
         with self.assertRaises(TraceError):
             analyze(trace(bad))
+
+    def sd_data(self,dropped=0):
+        header="index,event,serial,scene,monotonic_ns,dropped_total\\n"
+        return header+"".join(
+            f"{i},{event},{serial},{scene},{time},{dropped}\\n"
+            for i,(event,serial,scene,time) in enumerate(self.rows))
+
+    def test_real_sd_csv_internal_timing(self):
+        report=analyze_sd_csv(self.sd_data())
+        self.assertEqual(report["result"],"GUEST_INTERNAL_PHASES_OBSERVED")
+        self.assertEqual(report["sd_csv_dropped_total"],0)
+        self.assertEqual(report["sd_csv_rows"],8)
+        self.assertTrue(report["source_csv_sha256"])
+        self.assertFalse(report["guest_stderr_required"])
+        self.assertFalse(report["power_loss_durability_proven"])
+        self.assertIsNone(report["hardware_input_to_audio_latency_ms"])
+
+    def test_sd_overflow_is_partial(self):
+        result=analyze_sd_csv(self.sd_data(dropped=2))
+        self.assertEqual(result["result"],"GUEST_TRACE_PARTIAL")
+        self.assertEqual(result["sd_csv_dropped_total"],2)
+
+    def test_sd_corruption_and_truncation_rejected(self):
+        with self.assertRaises(TraceError):
+            analyze_sd_csv(self.sd_data()[:-2])
+        with self.assertRaises(TraceError):
+            analyze_sd_csv(self.sd_data().replace("4,POST,1","4,OTHER,1"))
+        with self.assertRaises(TraceError):
+            analyze_sd_csv(self.sd_data().replace("0,INPUT,1","1,INPUT,1"))
+
+    def test_sd_forged_dropped_and_extra_bytes_rejected(self):
+        with self.assertRaises(TraceError):
+            analyze_sd_csv(self.sd_data().replace(",0\\n",",1\\n",1))
+        with self.assertRaises(TraceError):
+            analyze_sd_csv(self.sd_data()+"UNEXPECTED")
+        with self.assertRaises(TraceError):
+            analyze_sd_csv(self.sd_data().replace("0,INPUT","00,INPUT"))
+
+    def test_sd_rejects_missing_and_malformed_header(self):
+        with self.assertRaises(TraceError):
+            analyze_sd_csv("")
+        with self.assertRaises(TraceError):
+            analyze_sd_csv(self.sd_data().replace("dropped_total","x"))
+        with self.assertRaises(TraceError):
+            analyze_sd_csv(self.sd_data().replace("0,INPUT","0,\\x00INPUT"))
 
     def test_duplicate_invalid_footer_and_missing_row_rejected(self):
         with self.assertRaises(TraceError):
