@@ -10,7 +10,7 @@ def make_rows():
     windows = []
     for second in range(55):
         attempts = 100
-        ok = 7 if second % 16 == 0 else 6
+        ok = 7 if second % 4 == 0 else 6
         windows.append(["SECOND", second, attempts, attempts, 0, 25000,
                         ok, 0, 0, 0, 0, 0])
     probes = sum(w[6] for w in windows)
