@@ -228,6 +228,46 @@ int main(int argc, char **argv) {
                 x=10, y=20, timeout=8, cycle_dir=cycle)
         self.assertFalse((self.handoff / RECEIPT).exists())
 
+    def test_cycle_directory_reaches_real_child_and_nonce_is_checked(self):
+        cycle = self.handoff.parent / "cycle-transport"
+        cycle.mkdir(mode=0o700)
+        original_popen = subprocess.Popen
+        forwarded = []
+
+        def observed_popen(*args, **kwargs):
+            forwarded.append(kwargs["env"].get("VH_MAP02_CYCLE_OUTPUT_DIR"))
+            return original_popen(*args, **kwargs)
+
+        # This test exercises only launcher wiring and nonce checking:
+        # the expensive cycle receipt is intentionally mocked. The actual
+        # synthetic child is not linked to the original gameplay loader.
+        with patch(
+                "tools.verify_map02_cycle_cd_gpu_join._cycle_receipt",
+                return_value=(b"synthetic-only", "b" * 64)) as receipt:
+            with patch("tools.map02_verified_process_launch.subprocess.Popen",
+                       side_effect=observed_popen):
+                result = launch_observed_pc(
+                    self.handoff, self.native, self.scoped,
+                    self.binary, self.owned, upstream=self.upstream,
+                    x=10, y=20, timeout=8, cycle_dir=cycle)
+        self.assertTrue(result["kernel_executable_hash_matched"])
+        self.assertEqual(forwarded, [str(cycle)])
+        receipt.assert_called_once()
+        self.assertTrue((self.handoff / RECEIPT).exists())
+
+    def test_mismatched_cycle_nonce_rejects_kernel_receipt(self):
+        cycle = self.handoff.parent / "cycle-wrong-nonce"
+        cycle.mkdir(mode=0o700)
+        with patch(
+                "tools.verify_map02_cycle_cd_gpu_join._cycle_receipt",
+                return_value=(b"synthetic-only", "f" * 64)):
+            with self.assertRaisesRegex(ValueError, "cycle nonce differs"):
+                launch_observed_pc(
+                    self.handoff, self.native, self.scoped,
+                    self.binary, self.owned, upstream=self.upstream,
+                    x=10, y=20, timeout=8, cycle_dir=cycle)
+        self.assertFalse((self.handoff / RECEIPT).exists())
+
     def test_refuses_nonempty_capture_directory_before_exec(self):
         (self.native / "previous-run").write_text("no")
         with self.assertRaisesRegex(ValueError, "must start empty"):
