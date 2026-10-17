@@ -25,6 +25,9 @@ VhAudoutQueueExportResult vh_audout_queue_export(
     const VhAudoutQueueTelemetry *t,const char *directory,
     char *committed_path,size_t capacity);
 /* Separate numbered latency-only CSV, never overwrites the queue CSV. */
+VhAudoutQueueExportResult vh_audout_clock_export(
+    const VhAudoutQueueTelemetry *t,const char *directory,
+    char *committed_path,size_t capacity);
 VhAudoutQueueExportResult vh_audout_latency_export(
     const VhAudoutQueueTelemetry *t,const char *directory,
     char *committed_path,size_t capacity);
