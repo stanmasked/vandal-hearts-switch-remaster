@@ -11,8 +11,10 @@ import json
 from pathlib import Path
 import subprocess
 
+from tools.publish_map02_multi_capture_manifest import _capture_dependency_inventory
+from tools.verify_map02_native_gpu_capture import private_file
 from tools.verify_map02_private_capture_receipt import replay_receipt
-from tools.verify_map02_putpixel_multi_scope import verify_multi_pixel_ot
+from tools.verify_map02_putpixel_multi_scope import MANIFEST, sha, verify_multi_pixel_ot
 
 
 def audit_launch_two_word(capture_dir, source_dir, *,
@@ -28,6 +30,13 @@ def audit_launch_two_word(capture_dir, source_dir, *,
     # reusing one physical directory for two separate provenance roles.
     if capture_dir.samefile(source_dir):
         raise ValueError("source FT4 and captured native GPU directories must differ")
+
+    # The same bounded private file inventory is checked at BOTH ends of
+    # the two independent replays. All source/OT/GTE files, native logs
+    # and full VRAM snapshots stay private; their individual hashes and
+    # filenames are never included in the public return value.
+    inventory_before = _capture_dependency_inventory(source_dir, capture_dir)
+    multi_manifest_before = private_file(source_dir, MANIFEST, max_bytes=64*1024)
 
     # This independently rechecks the original preflight/executable SHA,
     # full native DDA/VRAM evidence and the exact post-launch JSON receipt.
@@ -51,6 +60,21 @@ def audit_launch_two_word(capture_dir, source_dir, *,
         raise ValueError("launch and two-word FT4 native GPU log digests differ")
     if sampled["distinct_private_vram_words_verified"] != 2:
         raise ValueError("two-word native VRAM observation incomplete")
+    if sha(multi_manifest_before) != sampled["two_word_manifest_sha256"]:
+        raise ValueError("two-word receipt changed during initial source replay")
+
+    # Recheck the original process receipt at the end too: otherwise a
+    # modification of its preflight/executable or DDA/VRAM bytes between
+    # the two replays could go unobserved in the final public summary.
+    confirmed_launch = replay_receipt(
+        capture_dir, receipt_file=launch_receipt,
+        preflight_report=preflight_report, executable=executable)
+    if confirmed_launch != launch:
+        raise ValueError("private launcher receipt changed between independent replays")
+    if _capture_dependency_inventory(source_dir, capture_dir) != inventory_before:
+        raise ValueError("private MAP02 dependency changed between replays")
+    if private_file(source_dir, MANIFEST, max_bytes=64*1024) != multi_manifest_before:
+        raise ValueError("two-word source receipt changed between replays")
 
     return {
         "schema": "vh.map02.private-launch-two-word-join.v1",
@@ -60,6 +84,8 @@ def audit_launch_two_word(capture_dir, source_dir, *,
         "two_word_manifest_sha256": sampled["two_word_manifest_sha256"],
         "native_gpu_event_log_sha256": native_binding,
         "same_native_gpu_log_sha256_verified": True,
+        "private_dependency_inventory_stable_through_replays": True,
+        "original_launcher_receipt_replayed_twice": True,
         "preflight_executable_and_original_receipt_replayed": True,
         "source_gte_ft4_ot_vram_putpixel_replayed": True,
         "two_distinct_private_words_verified": True,
