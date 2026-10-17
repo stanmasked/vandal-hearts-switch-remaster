@@ -21,19 +21,25 @@ def summarize(raw:bytes):
     previous=summarize_v95(raw)
     validated=validate(raw)
     rows=[json.loads(line) for line in raw.decode("ascii").splitlines()]
-    tail=rows[-3:]
+    start_positions=[i for i,row in enumerate(rows) if row["kind"]==KINDS[0]]
+    if len(start_positions)!=1:
+        raise Refused("missing or duplicate first near-boundary capacity metric")
+    start=start_positions[0]
+    tail=rows[start:start+3]
     if len(tail)!=3 or tuple(row["kind"] for row in tail)!=KINDS:
-        raise Refused("missing/out-of-order native near-boundary capacity suffix")
-    if any(row["kind"] in KINDS for row in rows[:-3]):
+        raise Refused("missing/out-of-order native near-boundary capacity checkpoint")
+    if any(row["kind"] in KINDS for i,row in enumerate(rows)
+           if not start<=i<start+3):
         raise Refused("duplicate or misplaced native near-capacity metric")
+    checkpoint=rows[:start+3]
     if any(row["cycle"]!=0 or row["frame"]!=0 for row in tail):
         raise Refused("host-only capacity metrics cannot claim CPU/VBlank timestamps")
     if tail[0]["seq"]!=previous["final_private_journal_events"]+1:
         raise Refused("v96 capacity report must follow v95 snapshot checkpoint exactly")
-    if len(rows)!=previous["final_private_journal_events"]+3:
+    if len(checkpoint)!=previous["final_private_journal_events"]+3:
         raise Refused("unexpected records inserted around v96 capacity audit")
-    detail_used=sum(row["kind"] in DETAIL_TYPES for row in rows)
-    agg_used=len(rows)-detail_used
+    detail_used=sum(row["kind"] in DETAIL_TYPES for row in checkpoint)
+    agg_used=len(checkpoint)-detail_used
     expected_detail=DETAIL_CAPACITY-detail_used
     expected_agg=AGG_CAPACITY-agg_used
     if not (0<expected_detail<=256 and 0<expected_agg<AGG_CAPACITY):
@@ -52,7 +58,7 @@ def summarize(raw:bytes):
         "native_successful_replayed_serializations":2,
         "verified_prior_bytes_preserved_in_native_C":True,
         "preceding_snapshot_events":previous["final_private_journal_events"],
-        "private_events":len(rows),
+        "private_events":len(checkpoint),
         "native_overcapacity_must_fail_closed_in_isolated_C_tests":True,
         "real_retail_MAP02_verified":False,
         "physical_ps1_vblank_verified":False,
