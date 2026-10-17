@@ -38,7 +38,7 @@ class H05OperatorCardsTests(unittest.TestCase):
         self.entries = []
         for n, item in enumerate(manifest["sessions"], 1):
             ident = "test" + str(n)
-            session = operator_session(item["path"], ident, 25, 5, 3)
+            session = operator_session(item["path"], ident, 35, 5, 3)
             self.sessions.append(session)
             start = datetime(2026, 10, 17, n + 7, 0, tzinfo=timezone.utc)
             card = {
