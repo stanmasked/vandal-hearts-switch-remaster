@@ -12,6 +12,9 @@ PROBE=r'''
             static const char b[]="VH100 durable private B\n";
             const unsigned int events_before=vh80_count();
             const unsigned int sync_before=vh100_directory_syncs();
+            /* v99 just appended its own private metrics: refresh the
+             * invalidated merged view before integrity verification. */
+            (void)vh80_events();
             if(!private_path || strlen(private_path)>3970u ||
                vh80_dropped()!=0 || vh94_snapshot_check()!=0 ||
                vh80_aggregate_count()+3u>VH80_CAPACITY_AGGREGATE){
