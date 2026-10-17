@@ -1,10 +1,12 @@
 import csv
+import hashlib
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from audit_nexium_audout_queue import HEADER, read_telemetry
+from audit_nexium_audout_queue import HEADER, read_telemetry, bind_original_sd
 
 def make_rows():
     windows = []
@@ -69,6 +71,59 @@ class TestAudoutSdAudit(unittest.TestCase):
         rows = make_rows()
         rows[1][10] = 1
         self.assert_parses(rows, False)
+
+    def test_bind_captured_original_and_copy(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            sd = root / "guest" / "sdmc" / "switch" / "vandal-hearts-remake"
+            sd.mkdir(parents=True)
+            original = sd / "audio-audout-queue-0000.csv"
+            with original.open("w", newline="", encoding="ascii") as f:
+                csv.writer(f, lineterminator="\n").writerows(make_rows())
+            copy = root / "soak-audout-sd-unverified.csv"
+            shutil.copyfile(original, copy)
+            locations = root / "soak-audout-sd-locations.txt"
+            locations.write_text(str(original) + "\n", encoding="utf-8")
+            raw, binding = bind_original_sd(copy, locations, root / "guest")
+            self.assertEqual(raw, original.read_bytes())
+            self.assertEqual(binding["sd_copy_sha256"],
+                             hashlib.sha256(raw).hexdigest())
+            self.assertEqual(binding["sd_original_name"], original.name)
+            self.assertEqual(binding["sd_copy_bytes"], len(raw))
+            self.assertEqual(read_telemetry(original)["attempts"], 5500)
+            # Copied bytes cannot silently replace the guest original.
+            copy.write_bytes(raw[:-1] + b"X")
+            with self.assertRaises(ValueError):
+                bind_original_sd(copy, locations, root / "guest")
+            copy.write_bytes(raw)
+            locations.write_text(str(copy) + "\n", encoding="utf-8")
+            with self.assertRaises(ValueError):
+                bind_original_sd(copy, locations, root / "guest")
+            locations.write_text(str(original) + "\n", encoding="utf-8")
+            extra = sd / "audio-audout-queue-0001.csv"
+            shutil.copyfile(original, extra)
+            with self.assertRaises(ValueError):
+                bind_original_sd(copy, locations, root / "guest")
+            extra.unlink()
+            copy.unlink()
+            copy.symlink_to(original)
+            with self.assertRaises(ValueError):
+                bind_original_sd(copy, locations, root / "guest")
+
+    def test_reject_hardlink_or_noncanonical_bytes(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            capture = root / "capture.csv"
+            with capture.open("w", newline="", encoding="ascii") as f:
+                csv.writer(f, lineterminator="\n").writerows(make_rows())
+            alternate = root / "alias.csv"
+            alternate.hardlink_to(capture)
+            with self.assertRaises(ValueError):
+                read_telemetry(capture)
+            alternate.unlink()
+            capture.write_bytes(capture.read_bytes().replace(b"\n", b"\r\n"))
+            with self.assertRaises(ValueError):
+                read_telemetry(capture)
 
 if __name__ == "__main__":
     unittest.main()
