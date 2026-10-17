@@ -38,7 +38,12 @@ def verify_native_windows(directory, *, target_frame):
         "transfer_before_hooks", "indexed_hooks", "written_hooks",
         "limit_reached", "walk_finished", "hooks_balanced",
         "write_failed", "recorded_window_closed_without_detected_loss",
-    ), INDEX)
+    ), INDEX, optional=("capture_session",))
+    session = status.get("capture_session")
+    if session is not None:
+        if (type(session) is not str or len(session) != 32 or
+                any(c not in "0123456789abcdef" for c in session)):
+            raise ValueError("invalid in-process GPU capture session token")
     if status["schema"] != SCHEMA or number(
             status["gpu_draw_frame"], "GPU frame", 1, 2**32-1) != target_frame:
         raise ValueError("invalid native window schema/frame")
@@ -140,6 +145,9 @@ def verify_native_windows(directory, *, target_frame):
         "vram_bridge_checks": seen // 2 - 1,
         "native_window_event_logs_sha256": logs_hash.hexdigest(),
         "native_window_all_files_sha256": file_tree_hash.hexdigest(),
+        "capture_session_sha256": (
+            hashlib.sha256(session.encode("ascii")).hexdigest()
+            if session is not None else None),
         "recorded_window_closed_without_detected_loss": True,
         "whole_original_gameplay_frame_proven": False,
         "original_map02_authenticated": False,
