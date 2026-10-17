@@ -123,6 +123,9 @@ int vh81_format_jsonl(char *output,size_t capacity) {
         else if(e->kind==VH98_OLD_REFUSED) kind="recovery_old_path_refused";
         else if(e->kind==VH98_NEW_PUBLISHED) kind="recovery_new_path_published";
         else if(e->kind==VH98_REPLAY_REFUSED) kind="recovery_replay_refused";
+        else if(e->kind==VH99_STAGE_REFUSED) kind="interrupted_stage_refused";
+        else if(e->kind==VH99_FRESH_RECOVERED) kind="interrupted_fresh_published";
+        else if(e->kind==VH99_OLD_UNMODIFIED) kind="interrupted_stage_preserved";
         else return -1;
         if(used>=capacity) return -1;
         /* GPU DMA2 is an address, NOT an executed GP0 command. */
