@@ -38,6 +38,7 @@ void DrawOTag(unsigned int *p) {
             }
         }
         nextTok = rawTagOfCur;
+    TrcFrameEnd();
 }
 '''
 
@@ -57,7 +58,13 @@ class NativeGpuProbeTests(unittest.TestCase):
         self.assertIn('getenv("VH_MAP02_GPU_CAPTURE_FRAME")',rendered)
         self.assertIn('if (!vh_capture_frame',rendered)
         self.assertIn('PC_GpuVramBytes(&bytes)',rendered)
-        self.assertEqual(rendered.count('#if defined(VH_MAP02_GPU_CAPTURE)'),9)
+        self.assertEqual(rendered.count('#if defined(VH_MAP02_GPU_CAPTURE)'),10)
+        self.assertIn("if (type == PC_GPU_PRIM_POLY_F4 ||",rendered)
+        self.assertIn("type == PC_GPU_PRIM_TILE)",rendered)
+        self.assertIn("VH_CaptureFinish(s_drawFrame, nextTok == 0)",rendered)
+        self.assertIn("vh_capture_seen < 0xffffffffUL",rendered)
+        self.assertIn("gpu-native-capture-status.json",rendered)
+        self.assertIn("observed_window_closed_without_detected_loss",rendered)
         self.assertIn('fwrite(vram, 1u, bytes, file)',rendered)
         self.assertIn('ft4',rendered)
 
