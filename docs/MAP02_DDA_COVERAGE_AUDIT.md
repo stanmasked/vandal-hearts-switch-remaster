@@ -294,6 +294,48 @@ primitive pair only the original `DR_MODE` packet (source primitive type
 `5`) may change the recorded mode/window globals; normal FT4, SPRT,
 TILE and other packets must leave them unchanged.
 
+### Source-keyed FT4 temporal word-change accounting
+
+`tools/verify_map02_native_overdraw.py` revalidates the private
+source-to-native FT4 join, OT ordering, and full before/after native
+VRAM snapshots before counting any source-keyed FT4 changes. Each
+**observed changed 16-bit BGR555 word** is classified exactly once as:
+
+- `source_ft4_bit15_only_word_changes`: only bit 15 differs;
+- `source_ft4_color_only_word_changes`: only the lower 15 bits differ;
+- `source_ft4_color_and_bit15_word_changes`: both differ.
+
+These three event-level counts sum to
+`changed_vram_words_on_source_ft4_draws`. A word changed twice by
+two different source-keyed FT4s contributes **two event-level changes**
+but only **one distinct touched VRAM word**.
+
+For each touched word, the checker privately retains the value
+immediately before its **first** source-keyed FT4 change and the value
+immediately after its **last** source-keyed FT4 change. It publishes
+only aggregate counts:
+`source_ft4_first_pre_equals_last_post_words`,
+`source_ft4_first_pre_differs_last_post_words`, and
+`source_ft4_repeatedly_changed_first_pre_equals_last_post_words`.
+This detects cases where two observed changes cancel at these
+endpoints, even though a first-vs-last-snapshot-only comparison would
+miss both changes. It never publishes raw coordinates or color words.
+
+These endpoints do **not** establish a complete frame history.
+Unmatched DrawOTag primitives may also modify those words between
+the selected FT4 events; identical endpoints do not exclude unseen
+write-and-restore operations. Likewise, bit-15 changes are not proof
+of a physical PS1 mask/STP decision, and screen-space FT4 bounding
+boxes are only proxies, not precise raster coverage.
+
+The pinned native PC `DR_MODE` dispatch only updates persistent
+texture-window/draw-mode state. Unlike FT4 pixel draws, it cannot
+change native VRAM; the strict verifier now rejects any `DR_MODE`
+before/after VRAM change, including a forged change propagated
+consistently to the next FT4 snapshot. These gates validate supplied
+original-PC-format evidence, **not** authentic MAP02 gameplay,
+PlayStation hardware equivalence or the Switch HD replacement.
+
 **Critical exception:** this cross-event continuity is deliberately
 **not** required between a preceding-frame `LoadImage`/`MoveImage`/
 `ClearImage` and the first target-frame draw. An unrecorded previous
