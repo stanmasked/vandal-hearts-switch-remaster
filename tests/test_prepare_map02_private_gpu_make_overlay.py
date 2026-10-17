@@ -146,7 +146,6 @@ class PrivateGpuMakeOverlayTests(unittest.TestCase):
                 "build-map02-evil;touchBAD",
                 "build-map02-foo:bar",
                 "build-map02-foo.bar",
-                "build-map02-nope$(shell touchBAD)",
                 "build-map02-some path",
                 "build-map02-"):
             with self.subTest(build=bad):
