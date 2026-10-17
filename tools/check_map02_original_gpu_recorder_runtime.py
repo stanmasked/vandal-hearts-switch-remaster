@@ -85,6 +85,22 @@ def execute_real_recorder(upstream, *, cc="cc"):
                         result["vram_bridge_checks"] != 33 or
                         result["whole_original_gameplay_frame_proven"]):
                     raise ValueError("native GPU windows did not preserve original OT")
+                # Real-byte mutation at the first AFTER-64 event must break the
+                # bridge from window-000, without tampering with manifest counts.
+                boundary = private / "window-001" / "gpu-0000-vram.bin"
+                with boundary.open("r+b") as fh:
+                    initial = fh.read(1)
+                    if len(initial) != 1:
+                        raise ValueError("missing boundary VRAM byte")
+                    fh.seek(0)
+                    fh.write(bytes([initial[0] ^ 1]))
+                try:
+                    verify_native_windows(private, target_frame=1)
+                except ValueError as exc:
+                    if "continuity broken" not in str(exc):
+                        raise
+                else:
+                    raise ValueError("tampered original GPU VRAM bridge was accepted")
                 continue
             status = json.loads((private / STATUS).read_bytes())
             events = [json.loads(row) for row in (private / LOG).read_bytes().splitlines()]
