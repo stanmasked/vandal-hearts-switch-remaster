@@ -183,7 +183,7 @@ class V96PrivateProof(unittest.TestCase):
         src=(ROOT/"tools/apply_map02_v96_pcsx_rearmed.py").read_text()
         for part in (
             "apply_v95(root)","--vh96-boundary-smoke",
-            "vh80_aggregate_count()+3u",
+            "aggregates+3u",
             "memcmp(after_json,before_json",
             "vh94_snapshot_check()==0",
             "VH96_BOUNDARY_PASS",
