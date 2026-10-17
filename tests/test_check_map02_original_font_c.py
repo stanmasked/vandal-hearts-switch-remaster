@@ -107,6 +107,38 @@ class PrivateOriginalFontCProvenanceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "changed"):
                 self.check()
 
+    def test_second_read_rejects_same_metadata_but_modified_source_bytes(self):
+        real_read = font._read_owned
+        count = [0]
+
+        def mutate_second_read(path, category, **kwargs):
+            data, identity = real_read(path, category, **kwargs)
+            count[0] += 1
+            if count[0] == 3:
+                data = bytes([data[0] ^ 1]) + data[1:]
+            return data, identity
+
+        with patch.object(font, "_read_owned", side_effect=mutate_second_read):
+            with self.assertRaisesRegex(ValueError, "private original input changed"):
+                self.check()
+        self.assertEqual(count[0], 3)
+
+    def test_second_read_rejects_same_metadata_but_modified_generated_bytes(self):
+        real_read = font._read_owned
+        count = [0]
+
+        def mutate_second_read(path, category, **kwargs):
+            data, identity = real_read(path, category, **kwargs)
+            count[0] += 1
+            if count[0] == 4:
+                data = data[:-1] + b"X"
+            return data, identity
+
+        with patch.object(font, "_read_owned", side_effect=mutate_second_read):
+            with self.assertRaisesRegex(ValueError, "private original input changed"):
+                self.check()
+        self.assertEqual(count[0], 4)
+
     def test_owned_full_bios_charset_offset(self):
         bios = self.root / "synthetic-bios.bin"
         raw = bytearray(font.BIOS_SIZE)
