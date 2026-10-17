@@ -158,13 +158,24 @@ def verify_dry_run(text, output):
     # script; only the immutable 0600 bundle snapshot is accepted.
     pinned_font = str(output / FONT_GENERATOR_SNAPSHOT)
     font_output = BUILD + "/map02_pinned_kanji_font.c"
-    font_gen = [line for line in commands if
-                pinned_font in line and
-                "VH_GENERATED_OUT=" + font_output in line and
-                "python3 " in line]
-    font_compile = [line for line in commands if
-                    " -o " + BUILD + "/pc_kanji_font.o " in line and
-                    " -c " in line and font_output in line]
+    # Inspect token boundaries. GNU Make recipes often end with the -o
+    # filename (without a trailing blank), and substring matching would
+    # incorrectly reject that valid command.
+    parsed = []
+    for command in commands:
+        try:
+            parsed.append(shlex.split(command))
+        except ValueError:
+            parsed.append([])
+    font_gen = [fields for fields in parsed if
+                "VH_GENERATED_OUT=" + font_output in fields and
+                "python3" in fields and pinned_font in fields]
+    font_compile = [fields for fields in parsed if
+                    "-c" in fields and font_output in fields and
+                    "-o" in fields and
+                    fields.index("-o") + 1 < len(fields) and
+                    fields[fields.index("-o") + 1] ==
+                    BUILD + "/pc_kanji_font.o"]
     if len(font_gen) != 1 or len(font_compile) != 1:
         raise ValueError("private pinned KROM generator/compile plan missing")
     if any("python3 tools/gen_kanji_font.py" in line or
