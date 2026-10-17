@@ -831,6 +831,15 @@ jobs:
               "switch_slow_ge40ms_calls":b["slow_calls_captured"],
               "idle_slow_ge50ms_calls":a["slow_ge50ms_calls"],
               "switch_slow_ge50ms_calls":b["slow_ge50ms_count"],
+              "idle_ge40_per_1000_attempts":round(
+                  1000*a["slow_ge40ms_calls"]/a["guest_audout_attempts"],3),
+              "switch_ge40_per_1000_attempts":round(
+                  1000*b["slow_calls_captured"]/b["audout_attempts"],3),
+              "idle_ge50_per_1000_attempts":round(
+                  1000*a["slow_ge50ms_calls"]/a["guest_audout_attempts"],3),
+              "switch_ge50_per_1000_attempts":round(
+                  1000*b["slow_ge50ms_count"]/b["audout_attempts"],3),
+              "comparison_is_randomized":False,
               "scene_switching_causality_proven":False,
               "physical_hardware_tested":False,
               "audible_underruns_measured":False,
