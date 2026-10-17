@@ -23,6 +23,15 @@ typedef struct {
     uint32_t different_count[VH116_MAX_VBLANK_GAP+1u];
 } vh116_gap_metrics;
 int vh116_get_gap_metrics(vh116_gap_metrics *out);
+/* Three consecutive observed Unai callbacks, exact sampled post-values only.
+   Gap is the number of VBlank events between oldest and newest callback. */
+typedef struct {
+    uint32_t consecutive_triplets;
+    uint32_t same_as_previous[VH116_MAX_VBLANK_GAP+1u];
+    uint32_t returned_to_two_back[VH116_MAX_VBLANK_GAP+1u];
+    uint32_t different_from_both[VH116_MAX_VBLANK_GAP+1u];
+} vh117_triplet_metrics;
+int vh117_get_triplet_metrics(vh117_triplet_metrics *out);
 void vh115_reset(void);
 void vh115_enable(int enabled);
 void vh115_vblank(void);
