@@ -50,7 +50,8 @@ static void audio_applet_hook(AppletHookType hook,void *param) {
     } else if(hook==AppletHookType_OnResume) {
         event=VH_AUDIO_APPLET_RESUME;
     }
-    if(event && vh_audio_applet_record(&focus_events,event))
+    if(event && vh_audio_applet_record_at(
+                      &focus_events,event,armGetSystemTick()))
         ++focus_record_errors;
 }
 /* Snapshot never appears in the device callback or PCM output path. */
@@ -307,6 +308,14 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
                r->focus->pending_return,r->focus->coalesced_returns);
         printf("Audout returned pages observed=%u\n",
                r->focus->returned_pages);
+        printf("HOME timed returns=%u avg/peak=%llu/%llu us\n",
+               r->focus->timed_first_pages,
+               (unsigned long long)(r->focus->timed_first_pages
+                 ? vh_audio_output_ticks_to_us(
+                     r->focus->total_page_gap_ticks,hz)/
+                     r->focus->timed_first_pages : 0u),
+               (unsigned long long)vh_audio_output_ticks_to_us(
+                     r->focus->max_page_gap_ticks,hz));
         printf("HOME focus notify=%s\n",
                focus_notification_mode==1u ? "ENABLED" :
                focus_notification_mode==2u ? "UNAVAILABLE" : "APPLET MODE");
@@ -607,7 +616,8 @@ int main(int argc, char **argv) {
         /* Commit the first returned descriptor after a real foreground
          * notification. HOME events without this observation are NOT
          * treated as proof of device playback or audible output. */
-        if(vh_audio_applet_page_returned(&focus_events)<0) {
+        if(vh_audio_applet_page_returned_at(
+                   &focus_events,armGetSystemTick())<0) {
             ++focus_record_errors;
             result=25;
             break;
