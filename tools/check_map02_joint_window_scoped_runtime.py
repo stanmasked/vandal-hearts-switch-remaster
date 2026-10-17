@@ -98,13 +98,14 @@ def check_joint_original_gpu(upstream, *, compiler="cc"):
             "-ffunction-sections", "-fdata-sections", "-DVH_REGION_US",
             "-DVH_MAP02_GPU_CAPTURE", "-DVH_MAP02_POSIX_CAPTURE_WINDOWS",
             "-DVH_MAP02_SCOPED_BLEND_PROBE", "-DVH_MAP02_VRAM_EDGE_PROBE",
-            "-DVH_MAP02_POSIX_STAGE",
+            "-DVH_MAP02_POSIX_STAGE", "-DVH_MAP02_CAPTURE_SESSION",
             "-I", str(pc / "include"), "-I", str(pc / "src"),
             "-I", str(tools), str(root / "libgpu.c"),
             str(root / "pc_raster.c"), str(root / "harness.c"),
             str(tools / "map02_scoped_blend_sink.c"),
             str(tools / "map02_scoped_blend_stage.c"),
             str(tools / "map02_vram_edges.c"),
+            str(tools / "map02_capture_session.c"),
             "-Wl,--gc-sections", "-lm", "-pthread", "-o", str(executable),
         ]
         built = subprocess.run(args, capture_output=True, text=True,
@@ -134,8 +135,25 @@ def check_joint_original_gpu(upstream, *, compiler="cc"):
                 result["unchanged_draws_at_selected_pixel"] != 32 or
                 result["selected_pixel_putpixel_events"] < 2 or
                 result["selected_pixel_blendg1_events"] < 2 or
+                result["capture_session_linked"] is not True or
+                not result["capture_session_sha256"] or
                 result["source_gte_subsequence_verified"]):
             raise ValueError("combined GPU-scoped bridge missed a draw/pixel")
+        # Mutating just the scoped receipt must be detected even though
+        # PutPixel/BlendG1/native VRAM still match all original GPU bytes.
+        session_file = scoped_dir / "gpu-scoped-session.json"
+        clean_session = session_file.read_bytes()
+        foreign = json.loads(clean_session)
+        foreign["capture_session"] = "ba" * 16
+        session_file.write_text(json.dumps(foreign) + "\n")
+        try:
+            verify_window_scoped_join(native_dir, scoped_dir, target_frame=1)
+        except ValueError as error:
+            if "mixed-session" not in str(error):
+                raise
+        else:
+            raise ValueError("foreign GPU process session was accepted")
+        session_file.write_bytes(clean_session)
         # A syntactically valid, coherent C capture with a wrong selected
         # VRAM edge still must fail direct full-snapshot join.
         edge_file = scoped_dir / "vram-edges-native-events.pending.jsonl"
