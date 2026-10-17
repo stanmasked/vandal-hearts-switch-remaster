@@ -6,10 +6,13 @@
 /* Opt-in, process-local equality witness: no values or hashes are exported. */
 static struct {
     uint16_t previous[VH115_SAMPLED_POINTS];
+    uint16_t two_back[VH115_SAMPLED_POINTS];
     uint32_t previous_delta,previous_epoch,epoch,have_previous;
+    uint32_t two_back_epoch,have_two_back;
     uint32_t enabled,invalid;
     vh115_metrics counts;
     vh116_gap_metrics gap_counts;
+    vh117_triplet_metrics triplets;
 } state;
 
 static void erase(void *ptr,size_t length){
@@ -45,6 +48,27 @@ void vh115_note(const uint16_t *post,uint32_t count,uint32_t delta){
         }
         const uint32_t gap=state.epoch-state.previous_epoch;
         uint32_t crossed=gap!=0;
+        if(state.have_two_back){
+            if(state.epoch<state.two_back_epoch ||
+               state.epoch-state.two_back_epoch>VH116_MAX_VBLANK_GAP ||
+               state.triplets.consecutive_triplets==UINT32_MAX){
+                state.invalid=1;return;
+            }
+            const uint32_t span=state.epoch-state.two_back_epoch;
+            uint32_t same_previous=1,same_two_back=1;
+            for(uint32_t i=0;i<VH115_SAMPLED_POINTS;i++){
+                same_previous&=(uint32_t)(state.previous[i]==post[i]);
+                same_two_back&=(uint32_t)(state.two_back[i]==post[i]);
+            }
+            uint32_t *slot=(same_previous
+              ?&state.triplets.same_as_previous[span]
+              :(same_two_back
+                ?&state.triplets.returned_to_two_back[span]
+                :&state.triplets.different_from_both[span]));
+            if(*slot==UINT32_MAX){state.invalid=1;return;}
+            ++*slot;
+            ++state.triplets.consecutive_triplets;
+        }
         uint32_t identical=1;
         for(uint32_t i=0;i<VH115_SAMPLED_POINTS;i++){
             identical&=(uint32_t)(state.previous[i]==post[i]);
@@ -72,6 +96,11 @@ void vh115_note(const uint16_t *post,uint32_t count,uint32_t delta){
         ++*counter;
         ++*gap_counter;
         if(crossed)++*cross_counter;
+    }
+    if(state.have_previous){
+        memcpy(state.two_back,state.previous,sizeof(state.two_back));
+        state.two_back_epoch=state.previous_epoch;
+        state.have_two_back=1;
     }
     memcpy(state.previous,post,sizeof(state.previous));
     state.previous_delta=delta;
@@ -117,8 +146,29 @@ int vh116_get_gap_metrics(vh116_gap_metrics *out){
     *out=state.gap_counts;
     return 0;
 }
+int vh117_get_triplet_metrics(vh117_triplet_metrics *out){
+    vh115_metrics legacy;
+    vh116_gap_metrics gap_evidence;
+    if(!out || vh115_get_metrics(&legacy)!=0 ||
+       vh116_get_gap_metrics(&gap_evidence)!=0)return -1;
+    uint64_t totals=0,returns=0;
+    for(uint32_t k=0;k<=VH116_MAX_VBLANK_GAP;k++){
+        const uint32_t same=state.triplets.same_as_previous[k];
+        const uint32_t back=state.triplets.returned_to_two_back[k];
+        const uint32_t diff=state.triplets.different_from_both[k];
+        totals+=(uint64_t)same+back+diff;
+        returns+=back;
+    }
+    if(totals!=state.triplets.consecutive_triplets ||
+       totals!=(legacy.handlers>=2u ? (uint64_t)legacy.handlers-2u : 0u) ||
+       returns>totals)return -1;
+    *out=state.triplets;
+    return 0;
+}
 int vh115_sample_cache_erased(void){
     const unsigned char *p=(const unsigned char *)state.previous;
     for(size_t i=0;i<sizeof(state.previous);i++)if(p[i])return 0;
+    p=(const unsigned char *)state.two_back;
+    for(size_t i=0;i<sizeof(state.two_back);i++)if(p[i])return 0;
     return 1;
 }
