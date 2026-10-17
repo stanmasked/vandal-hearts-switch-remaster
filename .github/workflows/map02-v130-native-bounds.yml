@@ -1,0 +1,29 @@
+name: MAP02 v130 strict native bounds mutation matrix
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v130-native-bounds.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/check_map02_v130_native_bounds.py'
+      - 'tests/test_map02_v130_native_bounds.py'
+      - 'tools/apply_map02_v129_pcsx_rearmed.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compile-real-native-vblank-tables:
+    name: original native C rows, ${{ matrix.cc }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate native generated C tables and negative corruption matrix
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_map02_v130_native_bounds.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v129_four_vblank_profiles.py' -v
+          python3 -m tools.check_map02_v130_native_bounds --cc "${{ matrix.cc }}"
