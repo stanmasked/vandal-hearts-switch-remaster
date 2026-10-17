@@ -19,7 +19,8 @@ static int resolve(void *ctx,unsigned program,unsigned note,
                    unsigned velocity,unsigned volume,unsigned pan,
                    VhSeqTone *out) {
     (void)ctx;(void)volume;(void)pan;
-    if(program!=7u || note!=60u || !velocity) return -1;
+    /* Scheduler fixtures use program 0 implicitly; others set 7. */
+    if((program!=0u && program!=7u) || note!=60u || !velocity) return -1;
     memset(out,0,sizeof(*out));
     out->pcm=sample;
     out->frames=128u;
