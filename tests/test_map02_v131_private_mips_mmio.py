@@ -170,6 +170,19 @@ class PrivateRetailMipsMmioAudit(unittest.TestCase):
         self.assertIn("test_map02_v131_private_mips_mmio.py",base)
         self.assertIn("check_map02_v130_native_bounds",base)
         self.assertIn("for mode in 04 13 22 31 40; do",base)
+        for guard in (
+            "chmod 600 proof/private/V129_SYNTHETIC.EXE",
+            "v131-same-exe.sha256",
+            "v131-static-candidates.json",
+            'counts["dma2_linked_list_chcr_literal"]!=3',
+            "VH131_NATIVE_STATIC_COUNTS_PASS",
+            'report["same_source_authored_exe_privately_hashed_before_after_each_mode"]=True',
+            'report["v131_static_dma_mmio_candidate_counts_checked"]=True',
+            'report["retail_map02_gpu_rendering_verified"]=False',
+        ):
+            self.assertIn(guard,base)
+        self.assertGreaterEqual(base.count(
+            "sha256sum -c proof/private/v131-same-exe.sha256"),2)
 
 if __name__ == "__main__":
     unittest.main()
