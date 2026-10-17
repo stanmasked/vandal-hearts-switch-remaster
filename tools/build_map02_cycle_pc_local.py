@@ -42,6 +42,8 @@ def build_full_pc(upstream, bundle, *, timeout=1200, make="make", report_dir=Non
     if (not build_dir.is_dir() or info.st_uid != os.geteuid()
             or stat.S_IMODE(info.st_mode) != 0o700):
         raise ValueError("private MAP02 build directory must be owner 0700")
+    folder_identity = (info.st_dev, info.st_ino, info.st_uid,
+                       stat.S_IMODE(info.st_mode))
     target = build_dir / BINARY_NAME
     # Fail BEFORE any compiler invocation if this is a prior binary, a
     # symlink or a wrong symlink target. Do not unlink somebody else's file.
@@ -84,6 +86,14 @@ def build_full_pc(upstream, bundle, *, timeout=1200, make="make", report_dir=Non
         # Compiler stderr may contain paths to private image or EXE, so
         # neither that text nor stdout is returned or logged by this tool.
         raise ValueError("private full PC game link failed; compiler output withheld")
+    # A successful return is not sufficient if the original owned output
+    # directory was replaced while Make was compiling proprietary content.
+    if build_dir.is_symlink() or not build_dir.is_dir():
+        raise ValueError("private MAP02 build directory replaced during link")
+    new_info = build_dir.stat()
+    if (new_info.st_dev, new_info.st_ino, new_info.st_uid,
+            stat.S_IMODE(new_info.st_mode)) != folder_identity:
+        raise ValueError("private MAP02 build directory replaced during link")
     if target.is_symlink() or not target.is_file():
         raise ValueError("full source-pinned PC link returned without an executable")
     if not target.stat().st_mode & stat.S_IXUSR:
