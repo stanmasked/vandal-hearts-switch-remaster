@@ -414,6 +414,35 @@ int main(int argc, char **argv) {
                 (int)audout_saved,audout_seen);
             export_status=2;
         }
+        /* Stage 272 is a SEPARATE CSV: the original queue CSV schema
+         * and its receipt remain untouched. Only after audout join. */
+        char latency_path[VH_AUDOUT_QUEUE_EXPORT_PATH_CAP];
+        const VhAudoutQueueExportResult latency_saved=
+            vh_switch_game_audio_latency_export(
+                latency_path,sizeof latency_path);
+        struct stat latency_stat;
+        const int latency_seen=latency_saved==VH_AUDOUT_QUEUE_EXPORT_OK
+            && stat(latency_path,&latency_stat)==0
+            && S_ISREG(latency_stat.st_mode);
+        const int latency_receipt_fd=open(
+            "sdmc:/switch/vandal-hearts-remake/audio-audout-latency-export-result.txt",
+            O_WRONLY|O_CREAT|O_EXCL,0600);
+        if(latency_receipt_fd>=0) {
+            char message[160];
+            const int n=snprintf(message,sizeof message,
+                "export_status=%d\npath_present=%u\nfile_size=%llu\n",
+                (int)latency_saved,latency_seen?1u:0u,
+                latency_seen ? (unsigned long long)latency_stat.st_size:0ull);
+            if(n>0 && (size_t)n<sizeof message)
+                (void)write(latency_receipt_fd,message,(size_t)n);
+            (void)close(latency_receipt_fd);
+        }
+        if(latency_saved!=VH_AUDOUT_QUEUE_EXPORT_OK || !latency_seen) {
+            fprintf(stderr,
+                "audout latency histogram SD export failed: %d, path_present=%d\n",
+                (int)latency_saved,latency_seen);
+            export_status=2;
+        }
         if (resume_message_enabled)
             (void)appletSetRestartMessageEnabled(false);
     }
