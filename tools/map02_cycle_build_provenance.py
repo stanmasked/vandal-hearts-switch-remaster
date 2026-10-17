@@ -198,8 +198,11 @@ def main():
             a.private_build_receipt_directory, a.original_pc_executable,
             a.pinned_original_checkout, a.prepared_private_bundle,
             krom_source=a.krom_source)
-    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+    except ValueError as exc:
         p.error(str(exc))
+    except (OSError, subprocess.TimeoutExpired):
+        # OSError and TimeoutExpired can render user-owned argv/paths.
+        p.error("private PC build receipt filesystem or command verification failed")
     print(json.dumps(result, indent=2, sort_keys=True))
 
 
