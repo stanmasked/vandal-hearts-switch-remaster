@@ -500,6 +500,94 @@ static void test_full_spu_retrigger_and_stale_note_off(void) {
     assert(vh_native_spu_voice_active(&spu,0u));
 }
 
+
+static void test_long_full_spu_ownership_soak(void) {
+    /* 64 waves of 20 notes. Every later wave steals all 20 voices and
+     * dispatches stale Note Offs for the displaced wave. Check exact
+     * ownership after each wave, rather than only at the final EOT.
+     * Four disjoint pitch banks (40..119) are rotated deterministically. */
+    enum { WAVES=64, NOTES=20, BANKS=4 };
+    uint8_t song[15u+NOTES*4u+(WAVES-1u)*NOTES*8u+3u];
+    const uint8_t header[]={HEADER};
+    memcpy(song,header,sizeof header);
+    size_t n=sizeof header;
+    for(unsigned wave=0u;wave<WAVES;wave++) {
+        const unsigned base=40u+(wave%BANKS)*NOTES;
+        const unsigned previous=40u+((wave+BANKS-1u)%BANKS)*NOTES;
+        for(unsigned i=0u;i<NOTES;i++) {
+            song[n++]=(uint8_t)(wave && i==0u ? 32u : 0u);
+            song[n++]=0x90u;
+            song[n++]=(uint8_t)(base+i);
+            song[n++]=100u;
+            if(wave) {
+                song[n++]=0u;
+                song[n++]=0x80u;
+                song[n++]=(uint8_t)(previous+i);
+                song[n++]=0u;
+            }
+        }
+    }
+    song[n++]=32u; song[n++]=0xffu; song[n++]=0x2fu;
+    assert(n==sizeof song);
+    setup();
+    assert(vh_native_seq_init(&seq,song,n,&spu,
+                              resolve,&log_state,1)==0);
+    for(unsigned wave=0u;wave<WAVES;wave++) {
+        const unsigned base=40u+(wave%BANKS)*NOTES;
+        const uint64_t expected_ons=(uint64_t)(wave+1u)*NOTES;
+        unsigned attempts=0u;
+        do {
+            assert(++attempts<=8u);
+            assert(vh_native_seq_advance_block(&seq)>=0);
+            if(seq.note_ons==expected_ons) break;
+            assert(seq.note_ons<expected_ons);
+            vh_native_spu_render(&spu,pcm,512u);
+        } while(1);
+        assert(seq.playing && seq.cycles_completed==0);
+        assert(seq.note_ons==expected_ons && seq.note_offs==0);
+        assert(seq.dispatched_events==expected_ons+(uint64_t)wave*NOTES);
+        assert(log_state.calls==expected_ons);
+        assert(spu.steal_index==0u);
+        for(unsigned slot=0u;slot<NOTES;slot++) {
+            assert(vh_native_spu_voice_active(&spu,slot));
+            assert(seq.owner_ch[slot]==0);
+            assert(seq.owner_note[slot]==(int)(base+slot));
+            assert(spu.voice[slot].adsr.phase==VH_ADSR_ATTACK);
+            assert(spu.voice[slot].adsr.level==0);
+        }
+        for(unsigned note=40u;note<120u;note++) {
+            const int expected=(note>=base && note<base+NOTES)
+                ? (int)(note-base) : -1;
+            assert(seq.note_slot[0][note]==expected);
+        }
+        vh_native_spu_render(&spu,pcm,512u);
+        for(unsigned slot=0u;slot<NOTES;slot++)
+            assert(vh_native_spu_voice_active(&spu,slot));
+        assert(spu.frames_rendered==seq.blocks_advanced*512u);
+    }
+    unsigned attempts=0u;
+    while(seq.playing) {
+        assert(++attempts<=8u);
+        assert(vh_native_seq_advance_block(&seq)>=0);
+        if(!seq.playing) break;
+        vh_native_spu_render(&spu,pcm,512u);
+    }
+    assert(seq.cycles_completed==1u && seq.note_offs==NOTES);
+    assert(seq.note_ons==(uint64_t)WAVES*NOTES);
+    assert(seq.dispatched_events==(uint64_t)NOTES+
+                                  (uint64_t)(WAVES-1u)*NOTES*2u+1u);
+    for(unsigned slot=0u;slot<NOTES;slot++) {
+        assert(seq.owner_ch[slot]==-1 && seq.owner_note[slot]==-1);
+        assert(spu.voice[slot].adsr.phase==VH_ADSR_RELEASE);
+    }
+    for(unsigned note=40u;note<120u;note++)
+        assert(seq.note_slot[0][note]==-1);
+    vh_native_spu_render(&spu,pcm,512u);
+    for(unsigned slot=0u;slot<NOTES;slot++)
+        assert(!vh_native_spu_voice_active(&spu,slot));
+    assert(spu.frames_rendered==seq.blocks_advanced*512u);
+}
+
 int main(void) {
     test_validation_and_source_immutability();
     test_512_block_controls_and_ring_pressure();
@@ -515,6 +603,7 @@ int main(void) {
     test_same_note_retrigger_after_release_reuses_slot();
     test_immediate_same_note_retrigger_during_release();
     test_full_spu_retrigger_and_stale_note_off();
+    test_long_full_spu_ownership_soak();
     puts("native pQES SEQ -> 20-voice SPU -> PCM ring: PASS");
     return 0;
 }
