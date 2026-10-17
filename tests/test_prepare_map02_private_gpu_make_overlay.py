@@ -102,6 +102,14 @@ class PrivateGpuMakeOverlayTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "outside upstream"):
             builder.prepare(self.upstream, self.upstream / "generated")
 
+    def test_symlinked_output_parent_cannot_write_into_upstream(self):
+        self.fake_sources()
+        alias = self.root / "disguised-private-parent"
+        alias.symlink_to(self.upstream, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "outside upstream|symlink alias"):
+            builder.prepare(self.upstream, alias / "private-overlay")
+        self.assertFalse((self.upstream / "private-overlay").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
