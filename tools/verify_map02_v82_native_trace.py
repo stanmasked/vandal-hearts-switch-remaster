@@ -46,7 +46,11 @@ def validate(content: bytes):
             if item["kind"]=="gp0_unai_handled" and item["cycle"]!=0:
                 raise Refused("renderer GPU handler has no observed CPU cycle")
             if item["kind"]=="gp0_unai_handled" and not (
-                (item["value"]>>24)==2 or 0x20 <= (item["value"]>>24) <= 0x7f
+                (item["value"]>>24)==2
+                or 0x20 <= (item["value"]>>24) <= 0x43
+                or 0x48 <= (item["value"]>>24) <= 0x53
+                or 0x58 <= (item["value"]>>24) <= 0x6b
+                or 0x70 <= (item["value"]>>24) <= 0x7f
                 or 0xe1 <= (item["value"]>>24) <= 0xe6):
                 raise Refused("unrecognized renderer-handled opcode")
             if item["kind"]=="gpu_dma2_start" and item["value"]>0x1fffff:
