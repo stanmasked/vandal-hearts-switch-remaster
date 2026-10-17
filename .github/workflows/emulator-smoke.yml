@@ -18,6 +18,8 @@ on:
       - 'tests/test_vh_audout_queue_telemetry.c'
       - 'tests/test_vh_audout_queue_export.c'
       - 'tools/audit_nexium_audout_queue.py'
+      - 'tools/verify_switch_runtime_nro.py'
+      - 'tests/test_verify_switch_runtime_nro.py'
       - 'tests/test_audit_nexium_audout_queue.py'
       - 'tests/check_nro.py'
       - 'tools/analyze_nexium_scene_audio.py'
@@ -67,20 +69,46 @@ jobs:
           python3 -m unittest discover -s tests -p "test_analyze_nexium_pcm.py" -v
           python3 -m unittest discover -s tests -p "test_analyze_nexium_scene_audio.py" -v
           python3 -m unittest discover -s tests -p "test_audit_nexium_audout_queue.py" -v
+          python3 -m unittest discover -s tests -p "test_verify_switch_runtime_nro.py" -v
           python3 -m unittest discover -s tests -p "test_analyze_nexium_transition_timing.py" -v
           python3 -m unittest discover -s tests -p "test_audit_nexium_guest_sd_handoff.py" -v
           bash -n tools/capture_nexium_scene_audio.sh
           make verify-nro
 
+      - name: Bind NRO bytes to current source revision and workflow run
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          nro=Path("build/vandal-hearts-prototype.nro")
+          data=nro.read_bytes()
+          record={
+              "schema":"vh-switch-same-run-nro/v1",
+              "git_sha":os.environ["GITHUB_SHA"],
+              "run_id":int(os.environ["GITHUB_RUN_ID"]),
+              "run_attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "nro_name":nro.name,
+              "nro_bytes":len(data),
+              "nro_sha256":hashlib.sha256(data).hexdigest(),
+          }
+          Path("build/runtime-nro-manifest.json").write_text(
+              json.dumps(record,sort_keys=True)+"\n",encoding="ascii")
+          print(json.dumps(record,sort_keys=True))
+          PY
+
       - name: Upload NROs for emulator smoke test
         uses: actions/upload-artifact@v4
         with:
           name: runtime-smoke-nro
-          path: build/vandal-hearts-prototype.nro
+          path: |
+            build/vandal-hearts-prototype.nro
+            build/runtime-nro-manifest.json
           if-no-files-found: error
 
   run-in-emulator:
-    name: Launch pinned integrated audout NRO in NeXium
+    name: Launch current-workflow audout NRO in NeXium
     runs-on: ubuntu-26.04
     needs: build
     timeout-minutes: 15
@@ -88,24 +116,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Download pinned integrated audio NRO from verified CI run
+      - name: Download NRO built by current workflow run
         uses: actions/download-artifact@v4
         with:
-          name: vandal-hearts-tactical-with-native-music
-          run-id: 39052705390
-          github-token: ${{ github.token }}
+          name: runtime-smoke-nro
           path: nros
 
-      - name: Verify binary identity and artifact receipt before emulation
+      - name: Require NRO from current run, commit and attempt
         shell: bash
         run: |
           set -euo pipefail
-          python3 tools/verify_switch_integrated_nro_preflight.py nros \
-            --git-sha 5a50433fb52d905cee074de052820895566143bf \
-            --run-id 39052705390 --artifact-id 12108202456 \
-            --expected-nro-sha256 58a438082f282ba279044d2a25fc1369e8493571a67b2082da41e0d8c0405929 \
+          python3 tools/verify_switch_runtime_nro.py nros \
+            --git-sha "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
             | tee integrated-nro-preflight.json
-          echo "Candidate: pinned integrated libnx/audout NRO (not proof of audible sound)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Candidate: same-workflow libnx/audout NRO (not proof of audible sound)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install headless display and Vulkan runtime
         shell: bash
@@ -490,7 +516,7 @@ jobs:
           report={
               "schema":"vh-nexium-pcm-monitor/v1",
               "hardware_status":"HARDWARE NOT TESTED",
-              "source_nro_sha256":"58a438082f282ba279044d2a25fc1369e8493571a67b2082da41e0d8c0405929",
+              "source_nro_sha256":json.loads(Path("integrated-nro-preflight.json").read_text(encoding="utf-8"))["nro_sha256"],
               "recording":"virtual PulseAudio null-sink monitor; not audible playback",
               "sample_format":"s16le stereo 48000Hz",
               "raw_bytes":len(data),
