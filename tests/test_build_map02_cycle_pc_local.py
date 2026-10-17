@@ -158,6 +158,24 @@ class PrivateFullPcBuildTests(unittest.TestCase):
                 build_full_pc(self.upstream, self.bundle)
         run.assert_not_called()
 
+    def test_byte_identical_build_folder_inode_swap_after_make_is_rejected(self):
+        def swap_after_make(command, **kwargs):
+            result = self.build_fake(command, **kwargs)
+            original = self.exe.parent
+            saved = original.with_name("swapped-synthetic-build")
+            original.rename(saved)
+            original.mkdir(mode=0o700)
+            # The replacement contains an identical would-be successful ELF.
+            # Only the directory identity distinguishes this attack.
+            self.exe.write_bytes((saved / "vandalhearts_pc").read_bytes())
+            self.exe.chmod(0o700)
+            return result
+
+        with patch("tools.build_map02_cycle_pc_local.subprocess.run",
+                   side_effect=swap_after_make):
+            with self.assertRaisesRegex(ValueError, "replaced during link"):
+                build_full_pc(self.upstream, self.bundle)
+
     def test_existing_world_visible_build_directory_is_rejected(self):
         self.exe.parent.mkdir(parents=True, exist_ok=True)
         self.exe.parent.chmod(0o755)
