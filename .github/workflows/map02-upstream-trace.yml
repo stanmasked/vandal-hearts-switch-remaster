@@ -730,6 +730,26 @@ jobs:
           )
           test -z "$(cd upstream && git status --porcelain -- platform/pc/src/libgpu.c platform/pc/src/pc_raster.c)"
 
+      - name: Publish source-pinned DDA candidate build evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd upstream/platform/pc
+          test -s build/map02-vertical-dda/candidate-linked.diagnostic.o
+          test -s build/map02-vertical-dda/candidate-linked.baseline.o
+          test -s build/map02-vertical-dda/candidate-linked-clang.diagnostic.o
+          test -s build/map02-vertical-dda/candidate-linked-clang.baseline.o
+          {
+            echo "### Source-pinned original PC GPU — DDA candidate build"
+            echo "Pinned upstream: \`$(git rev-parse HEAD)\`"
+            echo "Remaster commit: \`$GITHUB_SHA\`"
+            echo "GCC: \`$(gcc -dumpfullversion -dumpversion)\`"
+            echo "Clang: \`$(clang -dumpversion)\`"
+            echo "GCC/Clang: diagnostic and baseline objects built and partially linked."
+            echo "GCC/Clang: baseline text, relocations and symbol isolation checked."
+            echo "This is a compile/link check, NOT an original MAP02 gameplay capture."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Verify pinned make-overlay diagnostic object compilation
         shell: bash
         run: |
