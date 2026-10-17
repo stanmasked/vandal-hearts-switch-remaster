@@ -79,11 +79,6 @@ def verify_window_scoped_join(native_windows, scoped_capture, *,
             if (pre_word != edge["before"] or post_word != edge["after"]):
                 raise ValueError("native full VRAM snapshot disagrees with direct DrawOTag edge")
             global_event_step = window_index * 64 + index
-            if global_event_step != 2 * len(draw_indices) and (
-                    window_index != 0 or index != 0):
-                # Transfers are legal; global event indices need not equal
-                # 2 * draw ordinal, but the index must increase monotonically.
-                pass
             if draw_indices and global_event_step <= draw_indices[-1]:
                 raise ValueError("global native DrawOTag event index did not increase")
             if window_index and index == 0:
