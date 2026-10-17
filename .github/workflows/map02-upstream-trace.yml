@@ -946,6 +946,21 @@ jobs:
               ../build/map02-vertical-dda/evidence/private-make-gpu-dda-objects.sha256
           )
           test "$(wc -l < build/map02-vertical-dda/evidence/private-make-gpu-dda-objects.sha256)" -eq 3
+          # The independent replay was executed both before and after Make.
+          # Publish only the bounded, path-free audit: never native game data.
+          cp /tmp/vh-map02-replayed-make-after.json \
+            build/map02-vertical-dda/evidence/private-make-gpu-dda-replay.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          evidence = json.loads(Path(
+              "build/map02-vertical-dda/evidence/private-make-gpu-dda-replay.json").read_text())
+          assert evidence["receipt_exactly_replayed"] is True
+          assert evidence["generated_files_checked"] == 3
+          assert evidence["private_game_assets_read"] is False
+          assert evidence["native_process_to_gpu_log_causality_verified"] is False
+          assert not any("path" in key or "directory" in key for key in evidence)
+          PY
 
       - name: Upload original GPU object evidence
         uses: actions/upload-artifact@v4
