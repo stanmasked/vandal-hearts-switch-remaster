@@ -1,0 +1,32 @@
+name: MAP02 v109 native GP0 class and VBlank store conservation
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v109-gp0-class-stores.yml'
+      - 'tools/summarize_map02_v109_gp0_class_vblank_stores.py'
+      - 'tests/test_map02_v109_gp0_class_vblank_stores.py'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/summarize_map02_v108_vblank_store_buckets.py'
+      - 'tests/test_map02_v108_vblank_store_buckets.py'
+      - 'tools/verify_map02_v82_native_trace.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  gp0-opcode-class-audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate native Unai sequence and class conservation
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          for pattern in test_map02_v83_unai_dispatch.py test_map02_v84_unai_samples.py test_map02_v85_native_stores.py test_map02_v108_vblank_store_buckets.py test_map02_v109_gp0_class_vblank_stores.py; do
+            python3 -m unittest discover -s tests -p "$pattern" -v
+          done
