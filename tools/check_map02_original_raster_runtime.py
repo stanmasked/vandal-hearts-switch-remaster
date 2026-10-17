@@ -46,47 +46,67 @@ int main(void) {
     RVert a = {9, 9, 0, 0}, b = {14, 9, 0, 0};
     RVert c = {9, 14, 0, 0}, d = {14, 14, 0, 0};
     unsigned short (*vram)[PC_GPU_VRAM_W] = PC_GpuVram();
-    /* ABR=1 saturates red: start LOW, not at the red 5-bit maximum. */
-    unsigned short before = 0x0001;
-    unsigned short after;
+    unsigned short mode_after[4];
+    unsigned abr;
     memset(&rc, 0, sizeof(rc));
     rc.clipW = PC_GPU_VRAM_W;
     rc.clipH = PC_GPU_VRAM_H;
     rc.scale = 1;
-    rc.target = 0; /* never sample the hi-res renderer */
-    vram[10][10] = before;
+    rc.target = 0; /* native VRAM only, no hi-res rendering */
 #ifdef VH_MAP02_SCOPED_BLEND_PROBE
     VHMap02BlendEvent witness;
-    unsigned i, blends = 0;
+    unsigned i, seen[4] = {0, 0, 0, 0};
+    unsigned short previous_after = 0;
+    int previous_ordinal = -1;
     assert(vh_map02_scope_begin_frame(1, 10, 10));
-    assert(vh_map02_scope_begin_primitive(0, PC_GPU_PRIM_POLY_F4));
 #endif
-    /* ORIGINAL FillQuad -> FillTriangleDDA -> PutPixel -> BlendG1 */
-    FillQuad(&rc, a, b, c, d, 200, 0, 0, 0, 0, 0, 1, 1);
-    after = vram[10][10];
-    assert(after != before);
+    for (abr = 0; abr < 4; abr++) {
+        /* Low red background avoids saturation hiding ABR=1 additions.
+         * ABR=2 yields zero, an observed DIFFERENCE rather than no write. */
+        unsigned short before = 0x0001;
+        vram[10][10] = before;
 #ifdef VH_MAP02_SCOPED_BLEND_PROBE
-    assert(vh_map02_scope_end_primitive());
+        assert(vh_map02_scope_begin_primitive(abr, PC_GPU_PRIM_POLY_F4));
+#endif
+        /* ORIGINAL FillQuad -> FillTriangleDDA -> PutPixel -> BlendG1 */
+        FillQuad(&rc, a, b, c, d, 200, 0, 0, 0, 0, 0, 1, (int)abr);
+        mode_after[abr] = vram[10][10];
+        assert(mode_after[abr] != before);
+#ifdef VH_MAP02_SCOPED_BLEND_PROBE
+        assert(vh_map02_scope_end_primitive());
+#endif
+    }
+#ifdef VH_MAP02_SCOPED_BLEND_PROBE
     assert(vh_map02_scope_end_frame());
     assert(!vh_map02_scope_failed());
-    assert(vh_map02_scope_count() > 0);
+    assert(vh_map02_scope_count() >= 4);
     for (i = 0; i < vh_map02_scope_count(); i++) {
+        unsigned ordinal;
         assert(vh_map02_scope_copy(i, &witness));
+        ordinal = witness.ordinal;
+        assert(ordinal < 4);
         assert(witness.frame == 1);
-        assert(witness.ordinal == 0);
         assert(witness.primitive_type == PC_GPU_PRIM_POLY_F4);
         assert(witness.x == 10 && witness.y == 10);
-        assert(witness.semi && witness.accurate);
-        assert(witness.has_blend);
+        assert(witness.semi && witness.accurate && witness.has_blend);
+        assert(witness.abr == (int)ordinal);
         assert(witness.blend_fg == (unsigned short)(witness.front | 0x8000u));
         assert(witness.blend_bg == witness.before);
         assert(witness.blend_result == witness.after);
-        if (i == 0) assert(witness.before == before);
-        if (i + 1u == vh_map02_scope_count())
-            assert(witness.after == after);
-        blends++;
+        if (previous_ordinal != (int)ordinal) {
+            assert(previous_ordinal + 1 == (int)ordinal);
+            if (previous_ordinal >= 0)
+                assert(previous_after == mode_after[previous_ordinal]);
+            assert(witness.before == 0x0001);
+        } else {
+            assert(witness.before == previous_after);
+        }
+        previous_after = witness.after;
+        previous_ordinal = (int)ordinal;
+        seen[ordinal]++;
     }
-    assert(blends >= 1);
+    assert(previous_ordinal == 3 && previous_after == mode_after[3]);
+    for (abr = 0; abr < 4; abr++) assert(seen[abr] >= 1u);
 #endif
     return 0;
 }
