@@ -314,6 +314,10 @@ int vh_audio_output_verify_run(
         recovery->recoveries>completed_pages ||
         recovery->restart_attempts<recovery->recoveries ||
         recovery->restart_attempts>recovery->submit_failures ||
+        /* Session restarts never return PCM pages. A recovery can
+         * occur only after one counted session restart, separately
+         * from a regular audout page-retry recovery. */
+        recovery->resume_recoveries>recovery->resume_restarts ||
         retry_pages>timing->failed_submissions ||
         /* Every page retried then delivered increments recoveries
          * exactly once. A retried page not recovered must be a
@@ -388,21 +392,30 @@ int vh_audio_output_resume_recover(
     const VhAudioOutputOps *ops, VhAudioOutputRecovery *stats,
     int force_reopen) {
     if (!ops || !stats || !ops->stop || !ops->close ||
-        !ops->open || !ops->start) return -1;
+        !ops->open || !ops->start ||
+        stats->resume_recoveries>stats->resume_restarts)
+        return -1;
 
-    /* Fast focus-only resume: preserve the already initialized
-     * session if audout can start it again without a fresh open. */
+    /* On a saturated counter, refuse to begin a callback which
+     * could require incrementing it afterwards. A rejected session
+     * must never silently wrap an unsigned diagnostic counter. */
     if (!force_reopen) {
+        if (stats->resume_failures==UINT_MAX) return -1;
+        /* The focus-only fast path does not open a new session and
+         * must preserve every submitted PCM/page/music counter. */
         if (!ops->start(ops->context)) return 0;
         ++stats->resume_failures;
     }
 
-    /* HOME/sleep may invalidate audout handles despite a successful
-     * stop. Force the old service to close before opening a fresh one
-     * after any explicit resume serial; never touch the music state.
-     */
+    /* HOME/sleep may invalidate audout handles. A stopped and
+     * closed session may be reopened at most RESTART_LIMIT times.
+     * Never touch music state or count a returned PCM page. */
     for (unsigned attempt=0;attempt<VH_AUDIO_OUTPUT_RESTART_LIMIT;
          ++attempt) {
+        if (stats->resume_restarts==UINT_MAX ||
+            stats->resume_failures==UINT_MAX ||
+            stats->resume_recoveries==UINT_MAX)
+            return -1;
         if (ops->stop(ops->context)) return -1;
         ops->close(ops->context);
         ++stats->resume_restarts;

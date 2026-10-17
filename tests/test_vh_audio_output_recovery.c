@@ -2,6 +2,7 @@
  * while retrying an immutable 48-kHz PCM page. Host only, no libnx.
  */
 #include <assert.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -13,6 +14,7 @@ typedef struct {
     unsigned opened, playing, failures_left, submissions, accepted;
     unsigned opens, closes, stops, starts, attempts_this_page;
     int fail_stop, fail_open, fail_start;
+    unsigned fail_starts_left, fail_opens_left;
     unsigned mismatched_returns_left, null_returns_left;
     int owned_descriptor, foreign_descriptor;
     const int16_t *page_pointer;
@@ -91,6 +93,10 @@ static void close_device(void *ctx) {
 static int open_device(void *ctx) {
     Mock *m=ctx;
     ++m->opens;
+    if (m->fail_opens_left) {
+        --m->fail_opens_left;
+        return -1;
+    }
     if (m->fail_open) return -1;
     m->opened=1;
     return 0;
@@ -98,6 +104,10 @@ static int open_device(void *ctx) {
 static int start(void *ctx) {
     Mock *m=ctx;
     ++m->starts;
+    if (m->fail_starts_left) {
+        --m->fail_starts_left;
+        return -1;
+    }
     if (m->fail_start) return -1;
     assert(m->opened && !m->playing);
     m->playing=1;
@@ -482,6 +492,117 @@ int main(void) {
     assert(spu.frames_rendered==old_clock);
     assert(resampler.input_frames==old_input);
     assert(seq.note_ons==old_notes);
+    /* Session-only fast focus path: exactly one start, no reopen
+     * or PCM submission, including with an already nonzero page
+     * count (user pauses after a successfully returned page). */
+    Mock fast_resume={.opened=1,.playing=0};
+    VhAudioOutputOps fast_ops=callbacks(&fast_resume);
+    VhAudioOutputRecovery fast_stats={
+        .pages_submitted=11u,.frames_submitted=6138u
+    };
+    assert(vh_audio_output_resume_recover(
+        &fast_ops,&fast_stats,0)==0);
+    assert(fast_resume.playing && fast_resume.starts==1u &&
+           fast_resume.opens==0u && fast_resume.stops==0u &&
+           fast_resume.submissions==0u);
+    assert(fast_stats.pages_submitted==11u &&
+           fast_stats.frames_submitted==6138u &&
+           fast_stats.resume_restarts==0u &&
+           fast_stats.resume_recoveries==0u &&
+           fast_stats.resume_failures==0u);
+
+    /* A transient fast-start failure must fall back to one bounded
+     * reopen and still NEVER submit a PCM page. */
+    Mock fallback={.opened=1,.playing=0,.fail_starts_left=1u};
+    VhAudioOutputOps fallback_ops=callbacks(&fallback);
+    VhAudioOutputRecovery fallback_stats={
+        .pages_submitted=7u,.frames_submitted=3900u
+    };
+    assert(vh_audio_output_resume_recover(
+        &fallback_ops,&fallback_stats,0)==0);
+    assert(fallback.starts==2u && fallback.opens==1u &&
+           fallback.stops==1u && fallback.closes==1u);
+    assert(fallback_stats.resume_failures==1u &&
+           fallback_stats.resume_restarts==1u &&
+           fallback_stats.resume_recoveries==1u);
+    assert(fallback_stats.pages_submitted==7u &&
+           fallback_stats.frames_submitted==3900u &&
+           fallback.submissions==0u);
+
+    /* HOME/sleep forced reopen: initial open may fail, the second
+     * restart can succeed, and neither touches the audio clock. */
+    Mock transient_open={.opened=1,.playing=0,.fail_opens_left=1u};
+    VhAudioOutputOps transient_ops=callbacks(&transient_open);
+    VhAudioOutputRecovery transient_stats={0};
+    assert(vh_audio_output_resume_recover(
+        &transient_ops,&transient_stats,1)==0);
+    assert(transient_open.opens==2u && transient_open.starts==1u &&
+           transient_open.stops==2u && transient_open.closes==2u);
+    assert(transient_stats.resume_failures==1u &&
+           transient_stats.resume_restarts==2u &&
+           transient_stats.resume_recoveries==1u &&
+           transient_stats.pages_submitted==0u);
+
+    for(unsigned scenario=0u;scenario<3u;scenario++) {
+        Mock dead={.opened=1,.playing=0};
+        VhAudioOutputOps dead_ops=callbacks(&dead);
+        VhAudioOutputRecovery dead_stats={
+            .pages_submitted=3u,.frames_submitted=1671u
+        };
+        dead.fail_stop=(scenario==0u);
+        dead.fail_open=(scenario==1u);
+        dead.fail_start=(scenario==2u);
+        assert(vh_audio_output_resume_recover(
+            &dead_ops,&dead_stats,1)==-1);
+        assert(dead.submissions==0u);
+        assert(dead_stats.pages_submitted==3u &&
+               dead_stats.frames_submitted==1671u &&
+               dead_stats.resume_recoveries==0u);
+        if (scenario==0u) {
+            assert(dead_stats.resume_restarts==0u &&
+                   dead_stats.resume_failures==0u);
+        } else {
+            assert(dead_stats.resume_restarts==
+                   VH_AUDIO_OUTPUT_RESTART_LIMIT);
+            assert(dead_stats.resume_failures==
+                   VH_AUDIO_OUTPUT_RESTART_LIMIT);
+        }
+    }
+
+    /* Pre-callback accounting failure means no backend action
+     * and no mutable stats (including pages) may change. */
+    for(unsigned scenario=0u;scenario<4u;scenario++) {
+        Mock guard={.opened=1,.playing=0};
+        VhAudioOutputOps guard_ops=callbacks(&guard);
+        VhAudioOutputRecovery guard_stats={
+            .pages_submitted=13u,.frames_submitted=7241u
+        };
+        unsigned forced=1u;
+        if (scenario==0u) guard_stats.resume_restarts=UINT_MAX;
+        if (scenario==1u) guard_stats.resume_failures=UINT_MAX;
+        if (scenario==2u) guard_stats.resume_recoveries=UINT_MAX;
+        if (scenario==3u) {
+            guard_stats.resume_recoveries=1u;
+            forced=0u; /* contradictory pre-existing counters */
+        }
+        const VhAudioOutputRecovery saved=guard_stats;
+        assert(vh_audio_output_resume_recover(
+            &guard_ops,&guard_stats,(int)forced)==-1);
+        assert(!memcmp(&guard_stats,&saved,sizeof saved));
+        assert(guard.opens==0u && guard.starts==0u &&
+               guard.stops==0u && guard.closes==0u &&
+               guard.submissions==0u);
+    }
+    /* Saturated fast-resume failure counter also fails before start. */
+    Mock fast_guard={.opened=1,.playing=0};
+    VhAudioOutputOps fast_guard_ops=callbacks(&fast_guard);
+    VhAudioOutputRecovery fast_guard_stats={
+        .resume_failures=UINT_MAX
+    };
+    assert(vh_audio_output_resume_recover(
+        &fast_guard_ops,&fast_guard_stats,0)==-1);
+    assert(fast_guard.starts==0u);
+    assert(fast_guard_stats.resume_failures==UINT_MAX);
     /* Combine bank switching and blocking audout page ownership.
      * Unlike the previous single-bank test, this one changes the
      * borrowed voice sample arena between 6 eight-block scenes.
@@ -609,6 +730,11 @@ int main(void) {
     assert(vh_audio_output_verify_run(
         &measured_pages,&switch_stats,&switching.timing,
         48u,5u,48u,8u,1)==1);
+    VhAudioOutputRecovery invalid_resume=switch_stats;
+    invalid_resume.resume_recoveries=1u; /* no restart observed */
+    assert(vh_audio_output_verify_run(
+        &measured_pages,&invalid_resume,&switching.timing,
+        48u,5u,48u,8u,1)==-1);
     assert(vh_audio_output_verify_run(
         &measured_pages,&switch_stats,&switching.timing,
         48u,5u,64u,8u,1)==0);

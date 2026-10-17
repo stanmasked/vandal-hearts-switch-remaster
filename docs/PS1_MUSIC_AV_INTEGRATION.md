@@ -1612,3 +1612,31 @@ and bytewise nonmutation when a subsequent page is attempted from
 an already inconsistent tail. It runs in the existing host and
 UBSan telemetry tests. These checks are software bookkeeping,
 not physical Switch audible-glitch measurements.
+
+
+### HOME/sleep audout resume accounting and bounded fault matrix
+
+The portable \`vh_audio_output_resume_recover\` helper (separate
+from raw audio page submit retry) now rejects invalid preexisting
+\`resume_recoveries > resume_restarts\` and guards each session
+restart/recovery/failure counter BEFORE invoking a backend callback
+that might require incrementing that unsigned field. An otherwise
+saturated counter cannot wrap and falsely make a restarted session
+appear unobserved. These checks do not touch music state, submitted
+PCM pages, sound data or service callback policy.
+
+The final audout evidence auditor now also rejects \`resume_recoveries
+> resume_restarts\` independently of successful PCM-page counts.
+A HOME/sleep resume never qualifies as a new returned PCM page.
+
+Host fault injection now exercises: existing-session quick
+focus-resume (one start with no reopened service); transient failed
+start followed by successful bounded close/open/start; forced
+HOME/sleep reinitialization with an initial open failure and
+successful second attempt; failing stop/open/start; saturated
+restart/failure/recovery counters; contradictory prior counters;
+and a poisoned resume-recovery count in an otherwise successful
+48-PCM-page run. The tests verify submitted PCM pages and frames
+never change in ANY resume scenario. These are synthetic backend
+callbacks; no actual Nintendo Switch sleep/resume measurements
+have been performed.

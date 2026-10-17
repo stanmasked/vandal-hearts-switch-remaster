@@ -182,8 +182,11 @@ int vh_audio_output_submit_recover(
  * stop/close any stale audout service, then open/start fresh.
  * Otherwise first try start() on the existing stopped session and
  * recreate it if the start fails. At most RESTART_LIMIT fresh
- * sessions are attempted. Return -1 after an exhausted/unsafe
- * stop; never change SEQ/SPU/PCM clocks or caller-owned music banks.
+ * sessions are attempted. Resume counters reject unsigned overflow
+ * before any callback that might require a new count; recovery counts
+ * may never exceed restart attempts. Return -1 after an exhausted/
+ * unsafe stop; never change SEQ/SPU/PCM clocks, already-submitted
+ * page/frames accounting, or caller-owned music banks.
  */
 int vh_audio_output_resume_recover(
     const VhAudioOutputOps *ops, VhAudioOutputRecovery *stats,
