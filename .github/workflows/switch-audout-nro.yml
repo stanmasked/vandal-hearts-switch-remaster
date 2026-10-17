@@ -10,12 +10,17 @@ on:
       - "probes/audout_audio_smoke.c"
       - "tests/test_vh_audio_resample.c"
       - "tests/test_vh_audio_output_recovery.c"
+      - "tests/test_vh_audio_page_telemetry.c"
+      - "tests/test_vh_audio_resume_abort_telemetry.c"
       - "Makefile"
       - ".github/workflows/switch-audout-nro.yml"
   pull_request:
     paths:
       - "source/vh_*"
       - "probes/audout_audio_smoke.c"
+      - "tests/test_vh_audio_output_recovery.c"
+      - "tests/test_vh_audio_page_telemetry.c"
+      - "tests/test_vh_audio_resume_abort_telemetry.c"
       - "Makefile"
       - ".github/workflows/switch-audout-nro.yml"
   workflow_dispatch:
