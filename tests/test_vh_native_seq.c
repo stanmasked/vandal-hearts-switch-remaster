@@ -308,8 +308,13 @@ static void test_invalid_switch_preserves_twenty_voices(void) {
     assert(vh_native_seq_advance_block(&seq)>0);
     assert(seq.note_ons==VH_NATIVE_MUSIC_VOICES && seq.playing);
     for(unsigned attempt=0;attempt<16u;attempt++) {
+        const VhNativeSeq before_seq=seq;
+        VhNativeVoice before_voices[VH_NATIVE_MUSIC_VOICES];
+        memcpy(before_voices,spu.voice,sizeof before_voices);
         assert(vh_native_seq_switch_scene(&seq,invalid_tempo,
                  sizeof invalid_tempo,&spu,resolve,&log_state,1)==-1);
+        assert(memcmp(&seq,&before_seq,sizeof seq)==0);
+        assert(memcmp(spu.voice,before_voices,sizeof before_voices)==0);
         assert(seq.playing && seq.note_ons==VH_NATIVE_MUSIC_VOICES);
         for(unsigned slot=0;slot<VH_NATIVE_MUSIC_VOICES;slot++) {
             assert(vh_native_spu_voice_active(&spu,slot));
