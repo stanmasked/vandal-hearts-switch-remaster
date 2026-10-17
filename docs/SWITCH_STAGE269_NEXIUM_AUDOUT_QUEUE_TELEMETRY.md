@@ -27,3 +27,14 @@ The existing stage-268 scene optical/SD dual-channel witness is preserved. The n
 ## Follow-up
 
 Inspect the completed final-commit NeXium run, preserve the original SD queue CSV and validator JSON from the published artifact, compare page accounting against the PCM capture duration and report the distribution of blocking waits and any real API errors. For any audible-underrun assertion, use explicit starvation or audible output evidence instead of inferring one from pre-submit queue snapshots.
+
+
+## First NeXium gate: incomplete evidence, not an audio verdict
+
+[Run 39062773722](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39062773722) successfully compiled its NRO and passed the separate ten-transition optical/SD/PCM scene auditor. The published `nexium-runtime-evidence` archive has an **empty** `soak-audout-sd-locations.txt`, no `soak-audout-sd-unverified.csv`, and the queue-accounting step failed on FileNotFoundError. Its original scene SD CSV exists. Thus **continuous audio-buffer measurements are NOT verified yet**; the independent 10-transition result is preserved.
+
+To diagnose the queue export failure without treating missing guest stderr as a result, subsequent versions preserve an exclusively created `audio-audout-export-failure.txt` with the exact guest exporter status when the CSV cannot be committed. The soak capture copies that receipt separately, and the CI gate prints the status before failing. This failure receipt cannot substitute for the missing CSV or satisfy the queue audit.
+
+The strict SD auditor now compares the untouched guest original with its separately copied CSV, rejects duplicate matching originals, symbolic links and hardlinks, and records the SHA-256 of identical bytes. The `--sd-root` and locations manifest are tied to the isolated NeXium directory. Host regressions and NRO build success do not by themselves prove guest queue export success.
+
+**Next:** inspect the first completed runtime capture that includes the failure receipt, fix the underlying exporter condition if necessary, then rerun the full independent queue gate. Do not label Stage 269 verified until the final NRO build **and** the NeXium queue-gate succeed for the same commit.
