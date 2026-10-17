@@ -73,6 +73,17 @@ inventory, documentation, build-system research, and reproducible test notes.
 Do not describe Switch support as working until it has been built and tested.
 
 
+## Physical Switch audout pause/resume diagnostic
+
+The native `audout-audio-switch-probe.nro` now supports **X** for a
+controlled stop/start and **Y** for stop/close/open/start, both only
+after a PCM page has been returned. It checks the SEQ/SPU clock, 44.1-to-48
+kHz resampler position, and the existing page's content without resubmitting
+it. A real **HOME/return** is a *separate*, not yet verified physical-console
+scenario. See [the Russian physical test protocol](docs/SWITCH_LOCAL_AUDIO_TEST.md#протокол-физической-проверки-audout--home-pr-7)
+for installation, A/B listening markers, on-screen evidence and limitations.
+GitHub Actions/NeXium do **not** prove audible Switch playback.
+
 ## Local Switch SEQ/VH/VB audio diagnostic
 
 The separate SDL2 Switch audio probe can now read a **user-supplied**
