@@ -735,6 +735,7 @@ jobs:
         run: |
           set -euo pipefail
           cd upstream/platform/pc
+          test "$(git rev-parse HEAD)" = 14552fffa0e0b47e02b57592e274fc6e7a649923
           test -s build/map02-vertical-dda/candidate-linked.diagnostic.o
           test -s build/map02-vertical-dda/candidate-linked.baseline.o
           test -s build/map02-vertical-dda/candidate-linked-clang.diagnostic.o
@@ -747,6 +748,11 @@ jobs:
             echo "Clang: \`$(clang -dumpversion)\`"
             echo "GCC/Clang: diagnostic and baseline objects built and partially linked."
             echo "GCC/Clang: baseline text, relocations and symbol isolation checked."
+            echo "#### SHA-256 of real linked candidate objects"
+            for object in candidate-linked.diagnostic.o candidate-linked.baseline.o \
+                          candidate-linked-clang.diagnostic.o candidate-linked-clang.baseline.o; do
+              sha256sum "build/map02-vertical-dda/$object"
+            done
             echo "This is a compile/link check, NOT an original MAP02 gameplay capture."
           } >> "$GITHUB_STEP_SUMMARY"
 
