@@ -9,7 +9,7 @@ fresh in-process nonce, then exclusively publish a private execution receipt.
 
 This is bounded OS process observation, not secure attestation: it does NOT
 prove executable bytes are immutable during execution, prevent another
-execve, identify loaded game assets, or demonstrate genuine retail MAP02.
+execve, prove that an opened image was read, or demonstrate genuine retail MAP02.
 """
 import argparse
 import hashlib
