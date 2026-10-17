@@ -49,6 +49,8 @@ on:
       - 'tests/test_check_map02_cycle_make_plan.py'
       - 'tools/check_map02_cycle_object_inventory.py'
       - 'tests/test_check_map02_cycle_object_inventory.py'
+      - 'tools/check_map02_public_reloc_link.py'
+      - 'tests/test_check_map02_public_reloc_link.py'
       - 'tools/build_map02_cycle_pc_local.py'
       - 'tests/test_build_map02_cycle_pc_local.py'
       - 'tools/map02_cycle_build_provenance.py'
@@ -142,6 +144,8 @@ on:
       - 'tests/test_check_map02_cycle_make_plan.py'
       - 'tools/check_map02_cycle_object_inventory.py'
       - 'tests/test_check_map02_cycle_object_inventory.py'
+      - 'tools/check_map02_public_reloc_link.py'
+      - 'tests/test_check_map02_public_reloc_link.py'
       - 'tools/build_map02_cycle_pc_local.py'
       - 'tests/test_build_map02_cycle_pc_local.py'
       - 'tools/map02_cycle_build_provenance.py'
@@ -236,6 +240,7 @@ jobs:
             tests.test_check_map02_cycle_elf \
             tests.test_check_map02_cycle_make_plan \
             tests.test_check_map02_cycle_object_inventory \
+            tests.test_check_map02_public_reloc_link \
             tests.test_build_map02_cycle_pc_local \
             tests.test_map02_cycle_build_provenance \
             tests.test_verify_map02_original_cd_read \
@@ -332,7 +337,11 @@ jobs:
           )
           python3 -m tools.check_map02_cycle_object_inventory \
             upstream-pc "${RUNNER_TEMP}/map02-cycle-private-build"
-          echo "All asset-free original game and PC backend objects compiled; generated retail assets and game ELF absent."
+          python3 -m tools.check_map02_public_reloc_link \
+            upstream-pc "${RUNNER_TEMP}/map02-cycle-private-build" \
+            "${RUNNER_TEMP}/map02-public-code-reloc"
+          echo "Asset-free original game/backend objects joined in one relocatable ELF."
+          echo "NOT a retail executable or authentic MAP02 gameplay."
       - name: Fail closed on upstream rasterizer source drift
         run: |
           python3 -m tools.instrument_map02_scoped_blend \
