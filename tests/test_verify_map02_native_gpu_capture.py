@@ -14,7 +14,8 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
         self.root=Path(self.tmp.name)
         self.data=bytearray(VRAM_BYTES)
         self.pre=self.data[:]
-        self.data[0]=31
+        # ClearImage RGB [160,0,0] packs as 0x0014, not 0x001f.
+        self.data[0]=160>>3
         self.data[1]=0
         self.mid=self.data[:]
         self.data[2]=255
@@ -53,6 +54,7 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
         self.assertEqual(result["native_gpu_pairs_verified"],2)
         self.assertEqual(result["draw_otag_primitive_pairs"],1)
         self.assertEqual(result["clear_image_pairs"],1)
+        self.assertEqual(result["clear_pairs_with_verified_vram_effect"],1)
         self.assertEqual(result["changed_native_draw_vram_words"],1)
         self.assertEqual(result["changed_transfer_vram_words"],1)
         self.assertIsNone(result["upload_payload_sha256_list_sha256"])
@@ -144,6 +146,77 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
         (self.root / "gpu-0000-vram.bin").write_bytes(before)
         (self.root / "gpu-0001-vram.bin").write_bytes(after)
         return verify_capture(self.root, target_frame=12)
+
+    def clear_fixture(self, rect, rgb, before, after):
+        self.events = [
+            self.make(0, "before", "clear", "", rect=rect),
+            self.make(1, "after", "clear", "", rect=rect),
+        ]
+        for event in self.events:
+            event["rgb"] = list(rgb)
+        self.save()
+        (self.root / "gpu-0000-vram.bin").write_bytes(before)
+        (self.root / "gpu-0001-vram.bin").write_bytes(after)
+        return verify_capture(self.root, target_frame=12)
+
+    def test_clearimage_raw_bgr555_truncation_no_mask_bit(self):
+        before = bytearray(VRAM_BYTES)
+        before[:6] = b"\\xff\\xff" * 3
+        after = bytearray(before)
+        # r=255,g=127,b=8 => packed 0x05ff (bit15 remains clear).
+        packed = ((8 >> 3) << 10) | ((127 >> 3) << 5) | (255 >> 3)
+        after[:4] = packed.to_bytes(2, "little") * 2
+        result = self.clear_fixture([0, 0, 2, 1], [255, 127, 8],
+                                    before, after)
+        self.assertEqual(result["clear_image_pairs"], 1)
+        self.assertEqual(result["clear_pairs_with_verified_vram_effect"], 1)
+        after[:4] = b"\\xff\\xff" * 2
+        (self.root / "gpu-0001-vram.bin").write_bytes(after)
+        with self.assertRaisesRegex(ValueError, "ClearImage post-VRAM differs"):
+            verify_capture(self.root, target_frame=12)
+
+    def test_clearimage_negative_origin_clips_and_checks_outside(self):
+        before = bytearray(VRAM_BYTES)
+        before[:8] = b"\\x11\\x80" * 4
+        after = bytearray(before)
+        # [-1,-1,3,3] intersects at (0..1, 0..1); bit15 cleared.
+        for y in (0, 1):
+            start = y * 1024 * 2
+            after[start:start+4] = b"\\x1f\\x00" * 2
+        report = self.clear_fixture([-1,-1,3,3], [248,0,0], before, after)
+        self.assertEqual(report["clear_pairs_with_verified_vram_effect"], 1)
+        after[-2:] = b"\\x42\\x00"
+        (self.root / "gpu-0001-vram.bin").write_bytes(after)
+        with self.assertRaisesRegex(ValueError, "ClearImage post-VRAM differs"):
+            verify_capture(self.root, target_frame=12)
+
+    def test_clearimage_offscreen_and_zero_dimensions_do_not_change_vram(self):
+        before = bytearray(VRAM_BYTES)
+        before[:2] = b"\\x99\\x7f"
+        for rect in ([32000, 31000, 32767, 32767],
+                     [0, 0, 0, 3], [0, 0, 3, -2]):
+            with self.subTest(rect=rect):
+                result = self.clear_fixture(rect, [255,255,255],
+                                            before, before)
+                self.assertEqual(result["clear_pairs_with_verified_vram_effect"], 1)
+
+    def test_clearimage_bottom_right_clipping_and_wrong_rgb(self):
+        before = bytearray(VRAM_BYTES)
+        after = bytearray(before)
+        # (1023,511) is the only on-screen word for 3x3 RECT.
+        packed = ((255 >> 3) << 10) | ((128 >> 3) << 5) | (8 >> 3)
+        after[-2:] = packed.to_bytes(2, "little")
+        self.clear_fixture([1023,511,3,3], [8,128,255], before, after)
+        self.events[0]["rgb"] = [8,129,255]
+        self.events[1]["rgb"] = [8,129,255]
+        self.save()
+        # A change that stays in the same 5-bit bucket is observationally
+        # indistinguishable. A change crossing the boundary must fail.
+        self.events[0]["rgb"] = [8,136,255]
+        self.events[1]["rgb"] = [8,136,255]
+        self.save()
+        with self.assertRaisesRegex(ValueError, "ClearImage post-VRAM differs"):
+            verify_capture(self.root, target_frame=12)
 
     def test_moveimage_forward_horizontal_overlap_not_memmove(self):
         before = bytearray(VRAM_BYTES)
