@@ -29,6 +29,8 @@ class MultiCaptureReceiptPublisherTests(unittest.TestCase):
         prior_pixel_sha = hashlib.sha256(pixel_path.read_bytes()).hexdigest()
         report = publish_multi_manifest(self.source, self.native)
         self.assertTrue(report["private_receipt_published"])
+        self.assertTrue(report["private_capture_dependencies_rechecked"])
+        self.assertGreater(report["private_capture_dependency_file_count"], 5)
         self.assertEqual(report["distinct_private_vram_words_verified"], 2)
         self.assertEqual(report["source_keyed_ft4_draws_checked"], 2)
         self.assertFalse(report["native_capture_process_identity_authenticated"])
@@ -95,6 +97,74 @@ class MultiCaptureReceiptPublisherTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "mutated during verification"):
                 publish_multi_manifest(self.source, self.native)
         self.assertEqual(count[0], 2)
+        self.assertFalse(self.target.exists())
+
+    def test_native_vram_snapshot_mutated_after_replay_refused(self):
+        # This full 1 MiB snapshot is not one of the three separately
+        # bound JSONL/manifest hashes. Mutation after valid replay must
+        # nevertheless prevent private receipt publication.
+        from tools import publish_map02_multi_capture_manifest as publisher
+        original = publisher.verify_multi_pixel_ot
+        snapshot = self.native / "gpu-0003-vram.bin"
+
+        def mutate_after_replay(*args, **kwargs):
+            result = original(*args, **kwargs)
+            raw = bytearray(snapshot.read_bytes())
+            raw[0] ^= 1
+            snapshot.write_bytes(raw)
+            return result
+
+        with patch.object(publisher, "verify_multi_pixel_ot",
+                          side_effect=mutate_after_replay):
+            with self.assertRaisesRegex(ValueError, "dependencies mutated"):
+                publish_multi_manifest(self.source, self.native)
+        self.assertFalse(self.target.exists())
+
+    def test_source_ft4_log_mutated_after_replay_refused(self):
+        from tools import publish_map02_multi_capture_manifest as publisher
+        original = publisher.verify_multi_pixel_ot
+        source_log = self.source / "gpu-events.jsonl"
+
+        def mutate_after_replay(*args, **kwargs):
+            result = original(*args, **kwargs)
+            source_log.write_bytes(source_log.read_bytes() + b" ")
+            return result
+
+        with patch.object(publisher, "verify_multi_pixel_ot",
+                          side_effect=mutate_after_replay):
+            with self.assertRaisesRegex(ValueError, "dependencies mutated"):
+                publish_multi_manifest(self.source, self.native)
+        self.assertFalse(self.target.exists())
+
+    def test_injected_post_fsync_dependency_change_rolls_back_receipt(self):
+        from tools import publish_map02_multi_capture_manifest as publisher
+        original = publisher._capture_dependency_inventory
+        count = [0]
+
+        def changed_after_fsync(*args):
+            result = original(*args)
+            count[0] += 1
+            if count[0] == 3:
+                return result + (("native", "unexpected", "0" * 64),)
+            return result
+
+        with patch.object(publisher, "_capture_dependency_inventory",
+                          side_effect=changed_after_fsync):
+            with self.assertRaisesRegex(ValueError, "mutated after receipt fsync"):
+                publish_multi_manifest(self.source, self.native)
+        self.assertEqual(count[0], 3)
+        self.assertFalse(self.target.exists())
+
+    def test_capture_dependency_symlink_and_subdirectory_refused(self):
+        linked = self.native / "snapshot-alias"
+        linked.symlink_to(self.native / "gpu-0003-vram.bin")
+        with self.assertRaisesRegex(ValueError, "regular, nonlinked"):
+            publish_multi_manifest(self.source, self.native)
+        linked.unlink()
+        nested = self.native / "unexpected-subdirectory"
+        nested.mkdir()
+        with self.assertRaisesRegex(ValueError, "regular, nonlinked"):
+            publish_multi_manifest(self.source, self.native)
         self.assertFalse(self.target.exists())
 
     def test_directory_symlink_and_receipt_symlink_refused(self):
