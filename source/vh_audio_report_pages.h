@@ -161,6 +161,23 @@ static inline unsigned vh_audio_report_manual_evidence(
     return vh_audio_report_evidence(run,seams,listening,input,compute);
 }
 
+/* An observed foreground return WITHOUT any subsequently returned
+ * audout descriptor is missing evidence. Do not upgrade such a session
+ * to FULL even if older PCM/page counters are internally consistent.
+ * This remains bookkeeping, not a test of audible playback. */
+static inline unsigned vh_audio_report_focus_evidence(
+    const VhAudioAppletEvents *focus, const VhAudioManualResume *manual,
+    int run, int seams, int listening, int input, int compute) {
+    if(vh_audio_applet_verify(focus))
+        return VH_AUDIO_REPORT_INVALID;
+    const unsigned verdict=vh_audio_report_manual_evidence(
+        manual,run,seams,listening,input,compute);
+    if(verdict==VH_AUDIO_REPORT_FULL &&
+       (focus->pending_return || focus->in_background))
+        return VH_AUDIO_REPORT_INCOMPLETE;
+    return verdict;
+}
+
 /* 0 means continue, 1 means user requested exit, -1 invalid input.
  * Both direction keys in one sample mean no page change; PLUS wins.
  * Reject unknown flags before modifying the current page.
