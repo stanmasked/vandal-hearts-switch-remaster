@@ -75,7 +75,9 @@ def fixture(run_id:int,nro:str="a"*64)->dict[str,bytes]:
         "guest_csv_sha256":digest(scene_raw),
     }
     preflight={"run_id":run_id,"run_attempt":1,
-               "nro_sha256":nro,"git_sha":f"synthetic-{run_id}"}
+               "result":"SAME_WORKFLOW_BUILD_ARTIFACT_HASH_AND_STRUCTURE_VERIFIED",
+               "hardware_status":"HARDWARE NOT TESTED",
+               "nro_sha256":nro,"git_sha":f"{run_id:040x}"}
     def data(obj):return (json.dumps(obj,sort_keys=True)+"\n").encode("ascii")
     return {
         "integrated-nro-preflight.json":data(preflight),
@@ -111,7 +113,7 @@ class VerifiedCrossRunTests(unittest.TestCase):
         report=compare_archives([self.one,self.two])
         self.assertEqual(report["result"],
             "MULTIRUN_EXACT_SLOW_CALLS_ARCHIVES_REVERIFIED")
-        self.assertEqual(report["independent_real_runs"],2)
+        self.assertEqual(report["distinct_archive_run_ids"],2)
         self.assertEqual(report["nro_sha256"],"a"*64)
         self.assertEqual([r["run_id"] for r in report["runs"]],[101,102])
         self.assertFalse(report["original_transient_guest_sd_reopened_now"])
