@@ -45,6 +45,8 @@ on:
       - 'tools/capture_nexium_scene_soak.sh'
       - 'tools/audit_nexium_audout_idle_control.py'
       - 'tools/compare_nexium_idle_switch_pairs.py'
+      - 'tools/analyze_nexium_idle_switch_variability.py'
+      - 'tests/test_analyze_nexium_idle_switch_variability.py'
       - 'tests/test_compare_nexium_idle_switch_pairs.py'
       - 'tests/test_audit_nexium_audout_idle_control.py'
       - 'tools/audit_nexium_scene_soak.py'
@@ -97,6 +99,7 @@ jobs:
           bash -n tools/capture_nexium_scene_soak.sh
           python3 -m unittest discover -s tests -p "test_audit_nexium_audout_idle_control.py" -v
           python3 -m unittest discover -s tests -p "test_compare_nexium_idle_switch_pairs.py" -v
+          python3 -m unittest discover -s tests -p "test_analyze_nexium_idle_switch_variability.py" -v
           bash -n tools/capture_nexium_scene_audio.sh
           make verify-nro
 
