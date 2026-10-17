@@ -19,6 +19,10 @@
 #include "vh_native_seq.h"
 #include "vh_native_spu.h"
 
+#if defined(VH_AUDIO_GUEST_ZL_AUTOTEST) && defined(VH_AUDIO_GUEST_ZR_AUTOTEST)
+#error Guest ZL and ZR experiments must never be combined
+#endif
+
 #define WIDTH 1280
 #define HEIGHT 720
 #define GRID_COLS 8
@@ -51,6 +55,22 @@ static VhNativeSeq guest_zr_seq_before;
 static VhNativeSpu guest_zr_spu_before;
 static VhAudioResample guest_zr_rate_before;
 static uint64_t guest_pcm_fingerprint(const int16_t *pcm,size_t frames) {
+    uint64_t hash=UINT64_C(1469598103934665603);
+    for(size_t i=0;i<frames*2u;i++) {
+        hash^=(uint16_t)pcm[i];
+        hash*=UINT64_C(1099511628211);
+    }
+    return hash;
+}
+#endif
+#ifdef VH_AUDIO_GUEST_ZL_AUTOTEST
+/* CI-only: 0 idle, 1 armed, 2 rejected diagnostic on a returned
+ * descriptor with ZERO retry, -1 contradictory guest evidence. */
+static atomic_int guest_zl_witness;
+static VhNativeSeq guest_zl_seq_before;
+static VhNativeSpu guest_zl_spu_before;
+static VhAudioResample guest_zl_rate_before;
+static uint64_t guest_zl_pcm_fingerprint(const int16_t *pcm,size_t frames) {
     uint64_t hash=UINT64_C(1469598103934665603);
     for(size_t i=0;i<frames*2u;i++) {
         hash^=(uint16_t)pcm[i];
@@ -162,6 +182,9 @@ typedef struct {
 #ifdef VH_AUDIO_GUEST_ZR_AUTOTEST
     VhAudioSubmitFaultInjection submit_injection;
 #endif
+#ifdef VH_AUDIO_GUEST_ZL_AUTOTEST
+    VhAudioTimingFaultInjection timing_injection;
+#endif
     int initialized;
     int started;
 } NativeOutput;
@@ -247,8 +270,13 @@ static int native_submit(void *opaque,const int16_t *pcm,size_t frames) {
         vh_audio_output_page_returned(&dev->page,released);
     if (accepted && vh_audio_page_lease_return(&dev->lease,released))
         return -1;
+    uint64_t diagnostic_frequency=armGetSystemTickFreq();
+#ifdef VH_AUDIO_GUEST_ZL_AUTOTEST
+    diagnostic_frequency=vh_audio_timing_fault_frequency(
+        &dev->timing_injection,accepted,diagnostic_frequency);
+#endif
     const int timing_rc=vh_audio_output_record_submit_timing(
-            &dev->timing,elapsed,armGetSystemTickFreq(),frames,accepted);
+            &dev->timing,elapsed,diagnostic_frequency,frames,accepted);
     /* The exact PCM descriptor was ALREADY consumed by audout. Reject
      * invalid timing evidence but never replay that accepted buffer. */
     return vh_audio_output_transport_outcome(
@@ -303,6 +331,32 @@ static void audio_worker(void *unused) {
          * synthesized while the backend is recovering.
          */
         const VhAudioSubmitTiming before_submit=native_output.timing;
+#ifdef VH_AUDIO_GUEST_ZL_AUTOTEST
+        /* Inject only after sixteen truly returned audio pages. Since
+         * ZL cannot create a transport failure, there MUST be precisely
+         * one new returned logical page and zero stop/restart/retries. */
+        const int guest_zl_trial=!using_user_files && rendered_blocks==16u &&
+            atomic_load(&guest_zl_witness)==0;
+        VhAudioOutputRecovery zl_before_recovery={0};
+        VhAudioSubmitTiming zl_before_timing={0};
+        VhAudioTransportTimingHealth zl_before_health={0};
+        uint64_t zl_before_pcm=0u;
+        if(guest_zl_trial) {
+            zl_before_recovery=output_recovery;
+            zl_before_timing=native_output.timing;
+            zl_before_health=native_output.transport_health;
+            zl_before_pcm=guest_zl_pcm_fingerprint(audio_page,count);
+            guest_zl_seq_before=seq;
+            memcpy(&guest_zl_spu_before,&synth,sizeof synth);
+            guest_zl_rate_before=resampler;
+            if(vh_audio_timing_fault_arm(&native_output.timing_injection)) {
+                atomic_store(&guest_zl_witness,-1);
+                atomic_store(&audio_fault,11);
+                break;
+            }
+            atomic_store(&guest_zl_witness,1);
+        }
+#endif
 #ifdef VH_AUDIO_GUEST_ZR_AUTOTEST
         /* Automatic, independent guest experiment. Exactly one armed
          * request after 16 REAL returned descriptors in synthetic mode.
@@ -327,6 +381,43 @@ static void audio_worker(void *unused) {
 #endif
         const int submit_result=vh_audio_output_submit_recover(
             &output_ops,&output_recovery,audio_page,count);
+#ifdef VH_AUDIO_GUEST_ZL_AUTOTEST
+        if(guest_zl_trial) {
+            /* Never allow a successfully returned descriptor with
+             * corrupt timing to trigger a duplicate audout submission.
+             * The raw timing counter cannot advance for this deliberately
+             * rejected clock, so cross-check logical page counters too. */
+            const int valid=submit_result==0 &&
+                vh_audio_page_lease_ready(&native_output.lease) &&
+                vh_audio_output_verify_timing_injection(
+                    &native_output.timing_injection,
+                    &native_output.transport_health,&output_recovery)==2 &&
+                output_recovery.pages_submitted==
+                    zl_before_recovery.pages_submitted+1u &&
+                output_recovery.frames_submitted==
+                    zl_before_recovery.frames_submitted+count &&
+                output_recovery.submit_failures==
+                    zl_before_recovery.submit_failures &&
+                output_recovery.restart_attempts==
+                    zl_before_recovery.restart_attempts &&
+                output_recovery.recoveries==zl_before_recovery.recoveries &&
+                native_output.timing.calls==zl_before_timing.calls &&
+                native_output.timing.failed_submissions==
+                    zl_before_timing.failed_submissions &&
+                native_output.transport_health.delivered_without_timing==
+                    zl_before_health.delivered_without_timing+1u &&
+                zl_before_pcm==guest_zl_pcm_fingerprint(audio_page,count) &&
+                !memcmp(&seq,&guest_zl_seq_before,sizeof seq) &&
+                !memcmp(&synth,&guest_zl_spu_before,sizeof synth) &&
+                !memcmp(&resampler,&guest_zl_rate_before,sizeof resampler);
+            atomic_store(&guest_zl_witness,valid ? 2 : -1);
+            /* End the CI-only test here rather than recording invalid
+             * timing as a normal scene page. Always show normal pipeline
+             * as halted and the independent ZL witness as confirmed. */
+            atomic_store(&audio_fault,valid ? 10 : 11);
+            break;
+        }
+#endif
         if (native_output.transport_health.timing_fault) {
             /* A returned descriptor with unmeasurable time is still
              * delivered, not a trigger to resend its PCM. Do not
@@ -431,6 +522,10 @@ static int start_native_audio(void) {
 #ifdef VH_AUDIO_GUEST_ZR_AUTOTEST
     atomic_store(&guest_zr_witness,0);
     native_output.submit_injection=(VhAudioSubmitFaultInjection){0};
+#endif
+#ifdef VH_AUDIO_GUEST_ZL_AUTOTEST
+    atomic_store(&guest_zl_witness,0);
+    native_output.timing_injection=(VhAudioTimingFaultInjection){0};
 #endif
     result = threadCreate(&sound_thread, audio_worker, NULL, NULL,
                           16 * 1024, 0x2c, -2);
@@ -539,6 +634,18 @@ static void paint(VhCanvas *canvas, const VhGameState *state,
         atomic_load(&audout_failed_returns)>=1u
         ? sound_ok : source_missing;
     vh_canvas_fill_rect(canvas,1000,455,130,24,zr_color);
+#endif
+#ifdef VH_AUDIO_GUEST_ZL_AUTOTEST
+    /* A GREEN tile is not healthy playback: it explicitly certifies
+     * fail-closed handling of an invalid clock AFTER an exact returned
+     * PCM descriptor. The ordinary service tile is RED by design. */
+    const int zl=atomic_load(&guest_zl_witness);
+    const uint32_t zl_color=zl<0 ? sound_fail :
+        zl==2 && atomic_load(&audio_fault)==10 &&
+        returned_buffers==16u &&
+        atomic_load(&audout_failed_returns)==0u
+        ? sound_ok : source_missing;
+    vh_canvas_fill_rect(canvas,1000,510,130,26,zl_color);
 #endif
     /* BLUE: peak sum of audout service waits on normal PCM pages.
      * LIGHT BLUE: the very first page after a synthetic SEQ switch.
