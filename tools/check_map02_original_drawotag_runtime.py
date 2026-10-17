@@ -16,6 +16,7 @@ import tempfile
 from tools.instrument_map02_drawotag_scope import instrument as patch_ot
 from tools.instrument_map02_scoped_blend import instrument as patch_raster
 from tools.map02_blendg1_witness import compare_blendg1_witnesses
+from tools.map02_vram_edge_witness import parse_and_compare_edges
 
 HARNESS = r"""
 #include <assert.h>
@@ -263,6 +264,12 @@ def run_original_ot(upstream, *, compiler="cc", harness=HARNESS,
             if mode == "staged":
                 pixel_file = out / "putpixel-native-events.pending.jsonl"
                 blend_file = out / "blendg1-native-events.pending.jsonl"
+                edge_file = out / "vram-edges-native-events.pending.jsonl"
+                edge_report = parse_and_compare_edges(
+                    pixel_file.read_bytes(), edge_file.read_bytes())
+                if edge_report["independently_sampled_draw_edges"] != (
+                        max(expected_ordinals) + 1):
+                    raise ValueError("independent staged VRAM edge count mismatch")
                 pixels = [json.loads(row) for row in pixel_file.read_text().splitlines()]
                 blends = [json.loads(row) for row in blend_file.read_text().splitlines()]
                 report = compare_blendg1_witnesses(pixels, blends)
