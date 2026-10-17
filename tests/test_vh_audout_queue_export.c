@@ -44,6 +44,15 @@ int main(void) {
     assert(strstr(second,"audio-audout-latency-0001.csv"));
     assert(unlink(second)==0);
     assert(unlink(latency)==0);
+    char clock[VH_AUDOUT_QUEUE_EXPORT_PATH_CAP];
+    assert(vh_audout_clock_export(&t,dir,clock,sizeof clock)==0);
+    assert(strstr(clock,"audio-audout-clock-0000.csv"));
+    f=fopen(clock,"rb");
+    assert(f && vh_audout_clock_verify_csv(&t,f)==0);
+    fclose(f);
+    assert(vh_audout_clock_export(&t,dir,second,sizeof second)==0);
+    assert(strstr(second,"audio-audout-clock-0001.csv"));
+    assert(unlink(second)==0 && unlink(clock)==0);
     assert(unlink(first)==0);
     char path[VH_AUDOUT_QUEUE_EXPORT_PATH_CAP];
     snprintf(path,sizeof path,"%s/audio-audout-queue-0001.csv",dir);
