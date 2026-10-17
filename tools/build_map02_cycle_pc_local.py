@@ -35,6 +35,9 @@ def build_full_pc(upstream, bundle, *, timeout=1200, make="make", report_dir=Non
     # symlink or a wrong symlink target. Do not unlink somebody else's file.
     if target.exists() or target.is_symlink():
         raise ValueError("private cycle executable already exists; no replacement allowed")
+    font_output = pc / BUILD / "map02_pinned_kanji_font.c"
+    if font_output.exists() or font_output.is_symlink():
+        raise ValueError("private generated KROM source already exists; no replacement allowed")
     command = [
         make, "-j1", "-f", "Makefile", "-f", str(bundle / "map02_cycle.mk"),
         "link", "BUILD_DIR=" + BUILD, "REGION=us",
