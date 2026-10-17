@@ -25,8 +25,18 @@ static VhNativeVab bank[2];
 static VhNativeSeq seq;
 static VhNativeSpu spu;
 static VhAudioResample resampler;
+/* The dry-service reference uses its OWN sequencer, mixer, wet-tail
+ * history and long-lived resampler. Only the read-only decoded VH/VB
+ * sample banks are shared; no audout callbacks touch this pipeline.
+ * This is a differential SERVICE-ISOLATION reference, not an
+ * independently implemented PS1 audio decoder. */
+static VhNativeSeq oracle_seq;
+static VhNativeSpu oracle_spu;
+static VhAudioResample oracle_resampler;
 static int16_t src[VH_AUDIO_BLOCK_FRAMES*2u];
 static int16_t dst[VH_AUDIO_RESAMPLE_MAX_FRAMES*2u];
+static int16_t oracle_src[VH_AUDIO_BLOCK_FRAMES*2u];
+static int16_t oracle_dst[VH_AUDIO_RESAMPLE_MAX_FRAMES*2u];
 static const uint8_t song[]={
     'p','Q','E','S',0,0,0,0,1,0xe0,7,0xa1,0x20,0,0,
     0,0xc0,7,0,0x90,60,110,0x81,0x70,0x80,60,0,
@@ -148,6 +158,12 @@ int main(void) {
     vh_audio_resample_reset(&resampler);
     assert(vh_native_seq_init(&seq,song,sizeof song,&spu,
                 vh_native_vab_resolve,&bank[0],0)==0);
+    vh_native_spu_reset(&oracle_spu);
+    assert(vh_native_spu_set_reverb(&oracle_spu,1,0.5f)==0);
+    vh_audio_resample_reset(&oracle_resampler);
+    assert(vh_native_seq_init(&oracle_seq,song,sizeof song,
+                &oracle_spu,vh_native_vab_resolve,&bank[0],0)==0);
+    assert(&oracle_spu!=&spu && &oracle_resampler!=&resampler);
     SimOut d={.open=1u,.playing=1u,.returned_hash=INIT_HASH};
     const VhAudioOutputOps ops={
         .context=&d,.submit=submit,.stop=stop,
@@ -159,7 +175,12 @@ int main(void) {
     VhAudioComputeWaitJoin joint={0};
     VhAudioListeningMarks marks={0};
     uint64_t accepted_hash=INIT_HASH,output_frames=0u;
+    uint64_t oracle_hash=INIT_HASH,oracle_frames=0u;
     uint64_t bank_hash[2]={0u,0u};
+    uint64_t oracle_bank_hash[2]={0u,0u};
+    unsigned oracle_boundary_checks=0u;
+    uint32_t max_oracle_scene_seam=0u;
+    int16_t oracle_last_l=0,oracle_last_r=0;
     uint64_t boundaries=0u;
 
     for(unsigned page=0u;page<TOTAL;page++) {
@@ -178,6 +199,10 @@ int main(void) {
             const uint64_t prior_resampled=resampler.input_frames;
             const int old_cursor=spu.reverb.cursor;
             const int16_t wet_tail=spu.reverb.work[0];
+            const int oracle_cursor=oracle_spu.reverb.cursor;
+            const int16_t oracle_tail=oracle_spu.reverb.work[0];
+            const uint64_t oracle_input=oracle_resampler.input_frames;
+            const uint64_t oracle_blocks=oracle_seq.blocks_advanced;
             assert(ops.stop(ops.context)==0);
             assert(vh_audio_output_resume_recover(
                 &ops,&recovery,1)==0);
@@ -187,9 +212,20 @@ int main(void) {
             assert(!memcmp(&joint,&saved_joint,sizeof saved_joint));
             assert(!memcmp(&marks,&saved_marks,sizeof saved_marks));
             assert(resampler.input_frames==prior_resampled);
+            assert(oracle_resampler.input_frames==oracle_input);
+            assert(oracle_seq.blocks_advanced==oracle_blocks);
             assert(vh_native_seq_switch_scene(
                 &seq,song,sizeof song,&spu,
                 vh_native_vab_resolve,&bank[scene%2u],0)==0);
+            /* No device callbacks are used by the dry oracle. A
+             * second independent state machine switches the SAME
+             * decoded bank and must preserve its wet reverb tail. */
+            assert(vh_native_seq_switch_scene(
+                &oracle_seq,song,sizeof song,&oracle_spu,
+                vh_native_vab_resolve,&bank[scene%2u],0)==0);
+            assert(oracle_spu.frames_rendered==0u);
+            assert(oracle_spu.reverb.cursor==oracle_cursor);
+            assert(oracle_spu.reverb.work[0]==oracle_tail);
             assert(spu.frames_rendered==0u);
             assert(spu.reverb.cursor==old_cursor);
             assert(spu.reverb.work[0]==wet_tail);
@@ -199,6 +235,9 @@ int main(void) {
             ++boundaries;
         }
         assert(vh_native_seq_advance_block(&seq)>=0);
+        assert(vh_native_seq_advance_block(&oracle_seq)>=0);
+        assert(oracle_seq.note_ons==seq.note_ons);
+        assert(oracle_seq.blocks_advanced==seq.blocks_advanced);
         if(page%BLOCKS==0u) {
             unsigned valid=0u;
             for(unsigned v=0u;v<VH_NATIVE_MUSIC_VOICES;v++) {
@@ -209,14 +248,45 @@ int main(void) {
                 }
             }
             assert(valid>0u);
+            for(unsigned v=0u;v<VH_NATIVE_MUSIC_VOICES;v++)
+                if(oracle_spu.voice[v].pcm)
+                    assert(oracle_spu.voice[v].pcm==
+                           bank[scene%2u].samples[1].pcm);
         }
         vh_native_spu_render(&spu,src,VH_AUDIO_BLOCK_FRAMES);
+        vh_native_spu_render(&oracle_spu,oracle_src,
+                             VH_AUDIO_BLOCK_FRAMES);
+        assert(memcmp(src,oracle_src,sizeof src)==0);
         const size_t frames=vh_audio_resample_process(
             &resampler,src,VH_AUDIO_BLOCK_FRAMES,
             dst,VH_AUDIO_RESAMPLE_MAX_FRAMES);
         assert(frames>=555u && frames<=559u);
+        const size_t reference_frames=vh_audio_resample_process(
+            &oracle_resampler,oracle_src,VH_AUDIO_BLOCK_FRAMES,
+            oracle_dst,VH_AUDIO_RESAMPLE_MAX_FRAMES);
+        assert(reference_frames==frames);
+        /* The acceptance/resend pipeline may not change a single
+         * stereo output sample relative to a callback-free render. */
+        assert(memcmp(dst,oracle_dst,frames*2u*sizeof(int16_t))==0);
         output_frames+=frames;
+        oracle_frames+=reference_frames;
         const uint64_t hash=hash_pcm(dst,frames);
+        const uint64_t ref_hash=hash_pcm(oracle_dst,reference_frames);
+        assert(hash==ref_hash);
+        oracle_hash=(oracle_hash^ref_hash)*HASH_MUL;
+        oracle_bank_hash[scene%2u]+=ref_hash;
+        if(boundary) {
+            const int32_t dl=(int32_t)oracle_dst[0]-oracle_last_l;
+            const int32_t dr=(int32_t)oracle_dst[1]-oracle_last_r;
+            const uint32_t jump_l=(uint32_t)(dl<0?-dl:dl);
+            const uint32_t jump_r=(uint32_t)(dr<0?-dr:dr);
+            const uint32_t jump=jump_l>jump_r?jump_l:jump_r;
+            assert(jump<=65535u);
+            if(jump>max_oracle_scene_seam) max_oracle_scene_seam=jump;
+            ++oracle_boundary_checks;
+        }
+        oracle_last_l=oracle_dst[2u*(reference_frames-1u)];
+        oracle_last_r=oracle_dst[2u*(reference_frames-1u)+1u];
         const uint64_t old_input=resampler.input_frames;
         const uint64_t old_frames=spu.frames_rendered;
         const uint64_t old_notes=seq.note_ons;
@@ -230,6 +300,7 @@ int main(void) {
         assert(d.tries_this_page==1u+fails && d.page_hash==hash);
         assert(d.page_addr==dst && d.page_frames==frames);
         assert(hash_pcm(dst,frames)==hash);
+        assert(memcmp(dst,oracle_dst,frames*2u*sizeof(int16_t))==0);
         assert(resampler.input_frames==old_input &&
                spu.frames_rendered==old_frames &&
                seq.note_ons==old_notes);
@@ -239,11 +310,15 @@ int main(void) {
         accepted_hash=(accepted_hash^hash)*HASH_MUL;
         bank_hash[scene%2u]+=hash;
         assert(d.returned_hash==accepted_hash);
+        assert(d.returned_hash==oracle_hash);
         assert(recovery.pages_submitted==page+1u);
         assert(marks.recent[page%VH_LISTEN_RECENT_PAGES]
             .scene_boundary==boundary);
         assert(marks.recent[page%VH_LISTEN_RECENT_PAGES]
             .retry==fails);
+        /* Boundary metadata is independently derived from the
+         * callback-free 48-kHz sample stream, including wet tails. */
+        if(boundary) assert(seams.last_abs_step<=65535u);
         verify_returned(&waits,&seams,&joint,&marks,page+1u,boundaries);
         assert(waits.first_after_switch.pages==boundaries);
         assert(vh_audio_output_verify_run(
@@ -252,6 +327,26 @@ int main(void) {
     }
     assert(boundaries==3u && d.accepted==TOTAL);
     assert(bank_hash[0]!=bank_hash[1]);
+    assert(bank_hash[0]==oracle_bank_hash[0] &&
+           bank_hash[1]==oracle_bank_hash[1]);
+    assert(oracle_frames==output_frames);
+    assert(oracle_hash==accepted_hash);
+    assert(oracle_boundary_checks==SCENES-1u);
+    assert(max_oracle_scene_seam<=65535u);
+    assert(oracle_resampler.input_frames==resampler.input_frames);
+    /* A controlled single-sample mutation must be detectable by
+     * direct comparison and per-page fingerprint. Restore the
+     * unaltered buffer before the terminal failure scenario. */
+    const int16_t sample_before=oracle_dst[3];
+    oracle_dst[3]=(int16_t)(sample_before^1);
+    assert(oracle_dst[3]!=dst[3]);
+    assert(memcmp(dst,oracle_dst,
+                  2u*VH_AUDIO_RESAMPLE_MAX_FRAMES*
+                  sizeof(int16_t))!=0);
+    oracle_dst[3]=sample_before;
+    assert(memcmp(dst,oracle_dst,
+                  2u*VH_AUDIO_RESAMPLE_MAX_FRAMES*
+                  sizeof(int16_t))==0);
     assert(recovery.recoveries==4u &&
            recovery.submit_failures==4u);
     assert(d.submitted==TOTAL+4u);
@@ -265,12 +360,23 @@ int main(void) {
      * page has no seam, no DSP returned event and no A/B ring entry.
      * The scene switches and prior accepted samples remain intact. */
     assert(vh_native_seq_advance_block(&seq)>=0);
+    assert(vh_native_seq_advance_block(&oracle_seq)>=0);
     vh_native_spu_render(&spu,src,VH_AUDIO_BLOCK_FRAMES);
+    vh_native_spu_render(&oracle_spu,oracle_src,
+                         VH_AUDIO_BLOCK_FRAMES);
+    assert(memcmp(src,oracle_src,sizeof src)==0);
     const size_t lost_frames=vh_audio_resample_process(
         &resampler,src,VH_AUDIO_BLOCK_FRAMES,
         dst,VH_AUDIO_RESAMPLE_MAX_FRAMES);
     assert(lost_frames>=555u && lost_frames<=559u);
+    const size_t lost_reference_frames=vh_audio_resample_process(
+        &oracle_resampler,oracle_src,VH_AUDIO_BLOCK_FRAMES,
+        oracle_dst,VH_AUDIO_RESAMPLE_MAX_FRAMES);
+    assert(lost_reference_frames==lost_frames);
+    assert(memcmp(dst,oracle_dst,
+                  lost_frames*2u*sizeof(int16_t))==0);
     const uint64_t final_hash=hash_pcm(dst,lost_frames);
+    const uint64_t oracle_hash_before_failure=oracle_hash;
     const VhAudioPcmSeams last_seams=seams;
     const VhAudioComputeWaitJoin last_joint=joint;
     const VhAudioListeningMarks last_marks=marks;
@@ -283,6 +389,7 @@ int main(void) {
         &waits,&failed_before,&d.timing,HZ,lost_frames,0,0)==0);
     assert(hash_pcm(dst,lost_frames)==final_hash);
     assert(d.accepted==TOTAL && d.returned_hash==accepted_hash);
+    assert(oracle_hash==oracle_hash_before_failure);
     assert(recovery.pages_submitted==TOTAL);
     assert(!memcmp(&seams,&last_seams,sizeof seams));
     assert(!memcmp(&joint,&last_joint,sizeof joint));

@@ -1897,3 +1897,34 @@ This connects actual format decoders to the audout path with
 copyright-free synthetic fixtures; it does NOT load, distribute
 or claim to have tested original Vandal Hearts game music,
 and it does not validate libnx hardware acoustics.
+
+
+### Independent callback-free PCM replay for decoded VH/VB scene transitions
+
+The decoded synthetic VH/VB/SEQ→SPU→44.1-to-48-kHz→audout
+integration test now also runs a SECOND, independent sequencer,
+SPU/reverb memory and resampler state. The reference uses the
+same immutable decoded bank input but never enters an audout
+callback or recovery path. At each of 32 pages and the 33rd
+terminally unreturned page, the two pipelines must produce
+exactly the same SPU stereo samples, output frame count and
+bit-identical 48-kHz PCM16. It also keeps independent per-bank
+page checksums, a full returned-page checksum, decoded-bank
+pointer checks and each first-after-switch PCM boundary step.
+
+The callback path intentionally inserts failed raw audout calls
+and reopens the device; the reference does NOT. Recovered
+submissions must use their original rendered PCM with zero
+resampling or SEQ/SPU advancement. A one-sample mutation is
+explicitly injected into the reference output after 32 pages:
+the bytewise comparison must detect it and then pass after the
+original sample is restored. This ensures the verification
+actually detects PCM changes rather than checking only counters.
+
+This is a **service-independent replay differential**, NOT an
+algorithmically independent PlayStation decoding oracle: both
+pipelines share the same native decoder code and format-valid,
+copyright-free synthetic VH/VB/SEQ fixtures. Existing separate
+Python differential unit tests cover narrower VAB resolution
+and STUDIO_C math; neither these host fixtures nor CI can
+prove audio accuracy against the original game or physical Switch.
