@@ -70,6 +70,8 @@ static void test_voices(void) {
         {"slow",0x7e0fu,0x0000u,0x4000u,0,56,8u,4u},
         {"one_shot",0x000fu,0x0000u,0x1800u,-1,-1,8u,8u},
         {"fade",0x000fu,0x4000u,0x1000u,0,56,8u,8u},
+        {"fast_attack",0x000fu,0x0000u,0x0800u,0,56,16u,16u},
+        {"long_release",0x000fu,0x0018u,0x0800u,0,56,256u,2u},
     };
     for(size_t i=0u;i<sizeof cases/sizeof cases[0];i++) {
         const VoiceCase *v=&cases[i];
