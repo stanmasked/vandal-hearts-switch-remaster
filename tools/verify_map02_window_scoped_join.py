@@ -18,7 +18,7 @@ from tools.map02_vram_edge_witness import (
     MAX_EDGE_BYTES, parse_and_compare_edges, parse_vram_edges,
 )
 from tools.verify_map02_blendg1_witness import complete_events
-from tools.verify_map02_frame_bundle import number, parse_json
+from tools.verify_map02_frame_bundle import fields, number, parse_json
 from tools.verify_map02_native_gpu_capture import LOG, private_file, VRAM_BYTES
 from tools.verify_map02_native_gpu_windows import verify_native_windows
 from tools.publish_map02_native_window_source_witness import (
@@ -28,6 +28,7 @@ from tools.publish_map02_native_window_source_witness import (
 PIXELS = "putpixel-native-events.pending.jsonl"
 BLENDS = "blendg1-native-events.pending.jsonl"
 EDGES = "vram-edges-native-events.pending.jsonl"
+SESSION = "gpu-scoped-session.json"
 
 
 def verify_window_scoped_join(native_windows, scoped_capture, *,
@@ -41,7 +42,24 @@ def verify_window_scoped_join(native_windows, scoped_capture, *,
     pixels_raw = private_file(scoped, PIXELS, max_bytes=16 * 1024)
     blends_raw = private_file(scoped, BLENDS, max_bytes=16 * 1024)
     edges_raw = private_file(scoped, EDGES, max_bytes=MAX_EDGE_BYTES)
-    if {p.name for p in scoped.iterdir()} != {PIXELS, BLENDS, EDGES}:
+    expected_files = {PIXELS, BLENDS, EDGES}
+    native_session_digest = windows_report["capture_session_sha256"]
+    raw_session = None
+    if native_session_digest is not None:
+        expected_files.add(SESSION)
+        raw_session = private_file(scoped, SESSION, max_bytes=4096)
+        session = parse_json(raw_session, SESSION)
+        fields(session, ("schema", "gpu_draw_frame", "capture_session"), SESSION)
+        token = session["capture_session"]
+        if (session["schema"] != "vh.map02.scoped-session.v1" or
+                number(session["gpu_draw_frame"], "scoped session frame",
+                       1, 2**32 - 1) != frame or
+                type(token) is not str or len(token) != 32 or
+                any(c not in "0123456789abcdef" for c in token) or
+                hashlib.sha256(token.encode("ascii")).hexdigest() !=
+                native_session_digest):
+            raise ValueError("mixed-session native GPU and selected-pixel capture")
+    if {p.name for p in scoped.iterdir()} != expected_files:
         raise ValueError("scoped witness contains unlisted/mixed-session files")
     pixels = complete_events(pixels_raw, "same-run PutPixel")
     blends = complete_events(blends_raw, "same-run BlendG1")
@@ -97,6 +115,9 @@ def verify_window_scoped_join(native_windows, scoped_capture, *,
     ):
         if private_file(scoped, name, max_bytes=maximum) != first:
             raise ValueError("selected-pixel scoped evidence changed during join")
+    if raw_session is not None and private_file(
+            scoped, SESSION, max_bytes=4096) != raw_session:
+        raise ValueError("scoped session receipt changed during verification")
     sourced = None
     if source_dir is not None:
         sourced = verify_published_window_source_witness(
@@ -129,6 +150,8 @@ def verify_window_scoped_join(native_windows, scoped_capture, *,
         "blendg1_staged_sha256": hashlib.sha256(blends_raw).hexdigest(),
         "direct_vram_edges_staged_sha256":
             hashlib.sha256(edges_raw).hexdigest(),
+        "capture_session_linked": raw_session is not None,
+        "capture_session_sha256": native_session_digest,
         "source_gte_subsequence_verified": sourced is not None,
         "source_window_witness_manifest_sha256": (
             sourced["window_source_witness_manifest_sha256"]
