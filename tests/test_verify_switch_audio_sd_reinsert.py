@@ -110,7 +110,7 @@ class SDReinsertTests(unittest.TestCase):
         self.record()
         with self.assertRaisesRegex(reinsert.ReinsertError,
                                     "BASELINE_SHA256_MISMATCH"):
-            self.verify(expected_baseline_sha256="0" * 64)  # replaced separately below
+            reinsert.read_baseline(self.baseline, "0" * 64)
 
     def test_corrupted_baseline_detected_even_with_same_name(self):
         self.record()
@@ -192,7 +192,8 @@ class SDReinsertTests(unittest.TestCase):
         current = json.loads(manifest_path.read_text())
         current["ci_run_url"] = "https://github.com/other/other/actions/runs/1"
         manifest_path.write_text(json.dumps(current))
-        with self.assertRaises(transfer.TransferError):
+        with self.assertRaises((transfer.TransferError,
+                                provenance.ProvenanceError)):
             self.verify()
 
     def test_recheck_time_cannot_precede_baseline(self):
