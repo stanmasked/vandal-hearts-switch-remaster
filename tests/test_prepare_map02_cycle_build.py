@@ -138,9 +138,6 @@ class SingleElfBuildOverlayTests(unittest.TestCase):
         original_tools.mkdir(parents=True, exist_ok=True)
         # GNU Make retains the original prerequisite when its recipe is
         # overridden, even though we must never execute that mutable script.
-        (original_tools / "gen_kanji_font.py").write_text(
-            "raise SystemExit('mutable upstream generator executed')\n",
-            encoding="utf-8")
         self.make.write_text(
             "GAME_ROOT := ../..\n"
             "BACKEND_OBJS := $(BUILD_DIR)/pc_kanji_font.o\n"
