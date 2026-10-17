@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 import subprocess
 import zlib
+import stat
 
 from tools.check_map02_owned_disc_extent import (
     SECTOR_RAW, USER_DATA_START, USER_DATA_BYTES, _raw_sector,
@@ -35,6 +36,8 @@ def verify_map02_original_cd_read(scoped_dir, native_dir, owned_image,
     if checked["original_map02_cd_read_receipt_present"] is not True:
         raise ValueError("missing actual original MAP02 CdRead and loader completion")
     scoped = _private_directory(scoped_dir)
+    if stat.S_IMODE((scoped / CD_READ).stat().st_mode) != 0o600:
+        raise ValueError("original MAP02 CD receipt must have private 0600 permissions")
     raw = private_file(scoped, CD_READ, max_bytes=2048)
     event = json.loads(raw)
     extent = verify_map02_disc_extent(owned_image, upstream)
