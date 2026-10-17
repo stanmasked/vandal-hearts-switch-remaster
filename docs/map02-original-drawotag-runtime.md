@@ -110,3 +110,58 @@ same. These are genuine constraints of a single synchronous DrawOTag
 native-VRAM walk; they are NOT assertions about VRAM transfers between
 different game frames. Neither condition establishes real MAP02
 content or equivalence to physical PlayStation graphics hardware.
+
+## Independent native VRAM snapshots at original draw boundaries
+
+The selected-frame opt-in generator now additionally supports
+`VH_MAP02_VRAM_EDGE_PROBE` alongside
+`VH_MAP02_SCOPED_BLEND_PROBE`. The helper
+`tools/map02_vram_edges.c/.h` is *independent of the PutPixel callbacks*.
+Immediately before and after **every native raster draw**
+(F4, FT4, SPRT or TILE), instrumented `libgpu.c` reads the selected
+pixel directly from `PC_GpuVram()[y][x]` and retains:
+
+`frame`, `primitive_ordinal`, `primitive_type`, `x/y`,
+`before`, `after`.
+
+This is bounded to 8192 draw boundaries in a frame. It fails closed
+on overflow, a malformed draw sequence, missing begin/end calls, or an
+aborted OT walk. No raw VRAM, source assets, snapshots, or event logs
+are emitted automatically. It uses an optional in-memory buffer and
+is never enabled in the ordinary renderer.
+
+The headless **staged** runtime now compiles this independent module
+and joins its sealed observations against the separately collected
+PutPixel buffer *only after the actual DrawOTag traversal ends*.
+For each primitive:
+
+- the first PutPixel `before` must equal the independently sampled
+  `before`;
+- subsequent writes must maintain pixel-word continuity, and the last
+  PutPixel `after` must equal the independently sampled `after`;
+- any primitive with no selected-pixel PutPixel observations must
+  have **identical independently read before/after VRAM words**.
+
+In particular, the complex test sees **five** native draw boundaries
+including the transparent FT4 at ordinal 3, for which no PutPixel
+occurs, and the STP=0 opaque FT4 at ordinal 4. Both the baseline and
+overdraw headless programs continue to compare the *entire native VRAM*
+digest against the ordinary and scoped builds.
+
+The standalone test `tests/test_map02_vram_edges.py` checks untouched
+primitives, ordinal/type validation, private buffer closure,
+overflows, and sticky failure semantics. Pinned original-GPU
+compilation now builds the edge module, and CI enforces the
+source+runtime integration.
+
+The [verified green run](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/38988416483)
+at commit `0e4cdd8b` reports **45/45 regression tests passed** and
+successful compilation and execution of the original GPU paths,
+including both independent-boundary runtime checks.
+
+**Scope:** these are independent *read sites* in the same original
+PC-port process and selected synthetic input. They are **not**
+independently acquired physical PlayStation VRAM snapshots, not a
+genuine MAP02 frame, and not proof of original-console behavior.
+Private witness-file export and external original-game comparison
+remain separate, later validation stages.
