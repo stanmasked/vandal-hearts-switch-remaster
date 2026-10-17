@@ -164,8 +164,8 @@ class CycleCdGpuJoinTests(unittest.TestCase):
 
     def test_changed_cycle_during_expensive_original_verification_rejected(self):
         def mutate(*args, **kwargs):
-            self.receipt["gpu_draw_frame"] = 8
-            self.write_cycle()
+            path = self.cycle / CYCLE_RECEIPT
+            path.write_bytes((json.dumps(self.receipt, sort_keys=False) + "\n").encode())
             return {"private_map02_cd_final_sha256": sha(self.manifest_raw)}
         self.mock.side_effect = mutate
         with self.assertRaisesRegex(ValueError, "changed during verification"):
