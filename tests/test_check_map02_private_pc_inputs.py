@@ -405,7 +405,7 @@ for name, offset, size in [
             with self.assertRaises(SystemExit) as ex:
                 private_inputs.main()
         self.assertEqual(ex.exception.code, 2)
-        self.assertIn("filesystem verification failed", output.getvalue())
+        self.assertIn("private original input verification failed", output.getvalue())
         self.assertNotIn(str(self.root), output.getvalue())
 
     def test_original_anchor_cli_oserror_redacts_owned_path(self):
