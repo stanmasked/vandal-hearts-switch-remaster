@@ -45,6 +45,26 @@ class FontLinkedTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "bytes differ"):
             check_linked_font_bytes(self.binary, changed)
 
+    def test_bss_symbol_cannot_claim_initialized_glyphs(self):
+        source = self.root / "bss.c"
+        source.write_text("unsigned char pc_kanji_charset2[6270];\n"
+                          "int main(void) {return 0;}\n")
+        executable = self.root / "bss-exe"
+        subprocess.run(["cc", str(source), "-o", str(executable)],
+                       check=True, capture_output=True, timeout=30)
+        with self.assertRaisesRegex(ValueError, "read-only loaded data"):
+            check_linked_font_bytes(executable, self.expected)
+
+    def test_shortened_initialized_font_is_rejected(self):
+        source = self.root / "short.c"
+        source.write_text("const unsigned char pc_kanji_charset2[6269] = {1};\n"
+                          "int main(void) {return 0;}\n")
+        executable = self.root / "short-exe"
+        subprocess.run(["cc", str(source), "-o", str(executable)],
+                       check=True, capture_output=True, timeout=30)
+        with self.assertRaisesRegex(ValueError, "size differs"):
+            check_linked_font_bytes(executable, self.expected)
+
     def test_length(self):
         self.assertEqual(FONT_BYTES, 6270)
 
