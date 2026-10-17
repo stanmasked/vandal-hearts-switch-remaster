@@ -133,6 +133,15 @@ class NativeDdaCapturePreflightTests(unittest.TestCase):
             preflight(dict(self.env, VH_MAP02_GPU_CAPTURE_DIR=str(item),
                            VH_MAP02_PUTPIXEL_DIR=str(item)))
 
+    def test_raw_env_directory_path_must_fit_fixed_c_buffer(self):
+        # Path.resolve() hides many "/." components; snprintf() does not.
+        long_alias = str(self.root) + "/." * 600
+        self.assertEqual(Path(long_alias).resolve(), self.root)
+        for key in ("VH_MAP02_GPU_CAPTURE_DIR", "VH_MAP02_PUTPIXEL_DIR"):
+            with self.subTest(key=key):
+                with self.assertRaisesRegex(ValueError, "recorder buffer"):
+                    preflight(dict(self.env, **{key: long_alias}))
+
     def test_absence_of_environment_vars(self):
         for key in tuple(self.env):
             with self.subTest(key=key):
