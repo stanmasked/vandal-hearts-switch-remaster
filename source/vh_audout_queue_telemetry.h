@@ -23,6 +23,7 @@ typedef struct {
 typedef struct {
     uint64_t origin_ns, last_second;
     uint64_t attempts, returns, failures, max_call_ns;
+    uint64_t latency_bins[VH_AUDOUT_LATENCY_BANDS];
     uint64_t queue_ok, queue_errors, overwritten_windows, clock_errors;
     uint32_t queue_min, queue_max;
     VhAudoutQueueBucket bucket[VH_AUDOUT_QUEUE_BUCKETS];
