@@ -347,9 +347,10 @@ static void test_seq_reuses_naturally_released_slot_without_stale_owner(void) {
     for(unsigned i=0;i<VH_NATIVE_MUSIC_VOICES;i++)
         if(i!=7u) assert(vh_native_spu_voice_active(&spu,i));
     for(unsigned block=1u;block<22u;block++) {
-        assert(vh_native_seq_advance_block(&seq)>=0);
         vh_native_spu_render(&spu,pcm,512u);
+        assert(vh_native_seq_advance_block(&seq)>=0);
     }
+    /* Inspect the new attack before PCM rendering can advance its phase. */
     assert(seq.note_ons==21 && seq.note_offs==1);
     assert(seq.note_slot[0][60]==7);
     assert(seq.owner_ch[7]==0 && seq.owner_note[7]==60);
