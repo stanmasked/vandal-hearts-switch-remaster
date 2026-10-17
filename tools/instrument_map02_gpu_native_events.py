@@ -5,8 +5,8 @@ Runtime capture works ONLY after the user explicitly sets both
 VH_MAP02_GPU_CAPTURE_DIR (an existing private directory) and
 VH_MAP02_GPU_CAPTURE_FRAME (positive DrawOTag frame number). It records
 bounded BEFORE/AFTER native BGR555 VRAM snapshots for actual GPU transfer
-calls and for *each* walked DrawOTag primitive (including SPRT, TILE,
-DR_MODE). This is command-order evidence, NOT a source-keyed MAP02 trace,
+calls and for each DRAW primitive (F4, FT4, SPRT, TILE) walked by
+DrawOTag; state-only DR_MODE packets never consume recorder slots. This is command-order evidence, NOT a source-keyed MAP02 trace,
 not a PS1 GPU command trace, and not a substitute for authenticated
 original game assets. It never alters the normal compiled GPU backend.
 """
