@@ -44,6 +44,21 @@ static atomic_uint audout_switch_page_peak_us;
 static atomic_uint audout_switch_pages_recorded;
 static atomic_uint audout_waits_longer_than_page;
 static atomic_uint audout_failed_returns;
+#ifdef VH_AUDIO_GUEST_ZR_AUTOTEST
+/* CI-only: 0 pending, 1 armed, 2 verified, -1 contradiction. */
+static atomic_int guest_zr_witness;
+static VhNativeSeq guest_zr_seq_before;
+static VhNativeSpu guest_zr_spu_before;
+static VhAudioResample guest_zr_rate_before;
+static uint64_t guest_pcm_fingerprint(const int16_t *pcm,size_t frames) {
+    uint64_t hash=UINT64_C(1469598103934665603);
+    for(size_t i=0;i<frames*2u;i++) {
+        hash^=(uint16_t)pcm[i];
+        hash*=UINT64_C(1099511628211);
+    }
+    return hash;
+}
+#endif
 static int audio_active;
 static int using_user_files;
 static int sdmc_mounted_here;
@@ -142,6 +157,9 @@ typedef struct {
     AudioOutBuffer page;
     VhAudioSubmitTiming timing;
     VhAudioSceneWaits scene_waits;
+#ifdef VH_AUDIO_GUEST_ZR_AUTOTEST
+    VhAudioSubmitFaultInjection submit_injection;
+#endif
     int initialized;
     int started;
 } NativeOutput;
@@ -188,6 +206,18 @@ static int native_submit(void *opaque,const int16_t *pcm,size_t frames) {
     NativeOutput *dev=(NativeOutput *)opaque;
     if (!dev->initialized || !dev->started || pcm!=audio_page ||
         !frames || frames>VH_AUDIO_RESAMPLE_MAX_FRAMES) return -1;
+#ifdef VH_AUDIO_GUEST_ZR_AUTOTEST
+    /* Exercise a REAL guest audout recovery without forging a service
+     * call. The one rejected attempt occurs before audoutPlayBuffer;
+     * it is distinctly labelled as synthetic in the shared accumulator. */
+    if(dev->submit_injection.armed) {
+        if(vh_audio_output_record_synthetic_submit_failure(
+               &dev->timing,armGetSystemTickFreq(),frames) ||
+           vh_audio_submit_fault_consume(&dev->submit_injection)!=1)
+            return -1;
+        return -1;
+    }
+#endif
     dev->page.data_size=frames*2u*sizeof(int16_t);
     AudioOutBuffer *released=NULL;
     /* Record raw blocking time for each libnx submission attempt.
@@ -253,8 +283,53 @@ static void audio_worker(void *unused) {
          * synthesized while the backend is recovering.
          */
         const VhAudioSubmitTiming before_submit=native_output.timing;
+#ifdef VH_AUDIO_GUEST_ZR_AUTOTEST
+        /* Automatic, independent guest experiment. Exactly one armed
+         * request after 16 REAL returned descriptors in synthetic mode.
+         * Normal user builds have no automatic fault injection. */
+        const int guest_zr_trial=!using_user_files && rendered_blocks==16u &&
+            atomic_load(&guest_zr_witness)==0;
+        VhAudioOutputRecovery before_recovery={0};
+        uint64_t before_pcm=0u;
+        if(guest_zr_trial) {
+            before_recovery=output_recovery;
+            before_pcm=guest_pcm_fingerprint(audio_page,count);
+            guest_zr_seq_before=seq;
+            memcpy(&guest_zr_spu_before,&synth,sizeof synth);
+            guest_zr_rate_before=resampler;
+            if(vh_audio_submit_fault_arm(&native_output.submit_injection)) {
+                atomic_store(&guest_zr_witness,-1);
+                atomic_store(&audio_fault,6);
+                break;
+            }
+            atomic_store(&guest_zr_witness,1);
+        }
+#endif
         const int submit_result=vh_audio_output_submit_recover(
             &output_ops,&output_recovery,audio_page,count);
+#ifdef VH_AUDIO_GUEST_ZR_AUTOTEST
+        if(guest_zr_trial) {
+            const int valid=submit_result==0 &&
+                vh_audio_output_verify_submit_injection(
+                    &native_output.submit_injection,&native_output.timing,
+                    &output_recovery)==2 &&
+                output_recovery.recoveries==before_recovery.recoveries+1u &&
+                output_recovery.pages_submitted==before_recovery.pages_submitted+1u &&
+                output_recovery.restart_attempts>=
+                    before_recovery.restart_attempts+1u &&
+                native_output.timing.synthetic_failed_submissions==
+                    before_submit.synthetic_failed_submissions+1u &&
+                before_pcm==guest_pcm_fingerprint(audio_page,count) &&
+                !memcmp(&seq,&guest_zr_seq_before,sizeof seq) &&
+                !memcmp(&synth,&guest_zr_spu_before,sizeof synth) &&
+                !memcmp(&resampler,&guest_zr_rate_before,sizeof resampler);
+            atomic_store(&guest_zr_witness,valid ? 2 : -1);
+            if(!valid) {
+                atomic_store(&audio_fault,7);
+                break;
+            }
+        }
+#endif
         /* Count a successful/failed logical PCM page exactly once,
          * regardless of the raw audoutPlayBuffer attempts inside
          * recovery. Only the very first page after a synthetic
@@ -324,6 +399,10 @@ static int start_native_audio(void) {
     atomic_store(&audout_switch_pages_recorded,0u);
     atomic_store(&audout_waits_longer_than_page,0u);
     atomic_store(&audout_failed_returns,0u);
+#ifdef VH_AUDIO_GUEST_ZR_AUTOTEST
+    atomic_store(&guest_zr_witness,0);
+    native_output.submit_injection=(VhAudioSubmitFaultInjection){0};
+#endif
     result = threadCreate(&sound_thread, audio_worker, NULL, NULL,
                           16 * 1024, 0x2c, -2);
     if (R_FAILED(result)) {
@@ -418,6 +497,18 @@ static void paint(VhCanvas *canvas, const VhGameState *state,
         (scene_switches >= 2u &&
          returned_buffers >= 128u) ? sound_ok : source_missing;
     vh_canvas_fill_rect(canvas,1000,325,130,18,switch_color);
+#ifdef VH_AUDIO_GUEST_ZR_AUTOTEST
+    /* CI-only guest witness: this distinct tile becomes GREEN only
+     * AFTER the real audout descriptor returns following one fake
+     * pre-service ZR failure, recovery and PCM/music-state checks.
+     * The pixel is proof of guest-software evidence, NOT sound. */
+    const int zr=atomic_load(&guest_zr_witness);
+    const uint32_t zr_color=zr<0 || !healthy ? sound_fail :
+        zr==2 && returned_buffers>=32u &&
+        atomic_load(&audout_failed_returns)>=1u
+        ? sound_ok : source_missing;
+    vh_canvas_fill_rect(canvas,1000,455,130,24,zr_color);
+#endif
     /* BLUE: peak sum of audout service waits on normal PCM pages.
      * LIGHT BLUE: the very first page after a synthetic SEQ switch.
      * Both gauges cap at four nominal source-block durations.
