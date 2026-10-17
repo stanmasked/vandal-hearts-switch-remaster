@@ -2,18 +2,17 @@ name: MAP02 v85 pinned Unai actual pixel-store attempts and same-value writes
 on:
   pull_request:
     paths:
-      - '.github/workflows/map02-v85-unai-vram-samples.yml'
+      - '.github/workflows/map02-v85-native-stores.yml'
       - 'tools/apply_map02_v85_pcsx_rearmed.py'
       - 'tools/summarize_map02_v85_native_stores.py'
       - 'tests/test_map02_v85_native_stores.py'
-      - 'tools/summarize_map02_v85_unai_samples.py'
-      - 'tests/test_map02_v85_unai_samples.py'
+      - 'tools/summarize_map02_v84_unai_samples.py'
+      - 'tests/test_map02_v84_unai_samples.py'
       - 'tools/map02_v80_native_timeline.*'
       - 'tools/map02_v81_event_jsonl.*'
       - 'tools/verify_map02_v82_native_trace.py'
       - 'tests/test_map02_v83_unai_dispatch.py'
       - 'tools/summarize_map02_v83_unai_vblank.py'
-      - 'tools/apply_map02_v85_pcsx_rearmed.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -30,7 +29,7 @@ jobs:
         with:
           path: remaster
           persist-credentials: false
-      - name: Synthetic regression tests for v80-v83
+      - name: Synthetic regression tests for v80-v85
         env:
           CC: ${{ matrix.cc }}
         run: |
@@ -41,7 +40,8 @@ jobs:
               81) pattern='test_map02_v81_event_jsonl.py';;
               82) pattern='test_map02_v82_native_publish.py';;
               83) pattern='test_map02_v83_unai_dispatch.py';;
-              84) pattern='test_map02_v85_unai_samples.py';;
+              84) pattern='test_map02_v84_unai_samples.py';;
+              85) pattern='test_map02_v85_native_stores.py';;
             esac
             python3 -m unittest discover -s remaster/tests -p "$pattern" -v
           done
