@@ -7,6 +7,7 @@ import tempfile
 import unittest
 
 from tools.run_map02_private_native_capture import capture
+from tools.verify_map02_private_capture_receipt import replay_receipt
 
 
 # No copyrighted game executable, assets or scenes are used by these tests.
@@ -95,6 +96,59 @@ class PrivateNativeLauncherTests(unittest.TestCase):
         self.assertNotIn(str(self.capture_dir), flat)
         self.assertNotIn(str(self.executable), flat)
         self.assertNotIn('"x_start"', flat)
+
+    def replay(self):
+        return replay_receipt(self.capture_dir, receipt_file=self.summary,
+                              preflight_report=self.preflight,
+                              executable=self.executable)
+
+    def test_replay_detects_changed_vram_and_dda_logs(self):
+        self.run_synthetic()
+        report = self.replay()
+        self.assertTrue(report["raw_evidence_matches_original_receipt"])
+        self.assertEqual(report["dda_observation_mode"], "entered_only")
+        self.assertEqual(report["native_gpu_pairs_verified"], 1)
+        self.assertFalse(report["original_game_assets_authenticated"])
+        self.assertFalse(report["hd_replacement_authorized"])
+        self.assertNotIn(str(self.capture_dir), json.dumps(report))
+
+        vram = self.capture_dir / "gpu-0001-vram.bin"
+        original_vram = vram.read_bytes()
+        changed = bytearray(original_vram)
+        changed[0] ^= 1
+        vram.write_bytes(changed)
+        with self.assertRaisesRegex(ValueError, "no longer matches"):
+            self.replay()
+        vram.write_bytes(original_vram)
+
+        span = self.capture_dir / "dda-native-spans.jsonl"
+        original_span = span.read_bytes()
+        changed_span = original_span.replace(b'"x_start": 10', b'"x_start": 11')
+        self.assertNotEqual(original_span, changed_span)
+        span.write_bytes(changed_span)
+        with self.assertRaisesRegex(ValueError, "no longer matches"):
+            self.replay()
+
+    def test_replay_refuses_modified_original_process_receipt(self):
+        self.run_synthetic()
+        original = json.loads(self.summary.read_text())
+        original["capture_verified"] = False
+        self.summary.write_text(json.dumps(original), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "did not have"):
+            self.replay()
+        original["capture_verified"] = True
+        original["verification"]["native_gpu_pairs_verified"] = 99
+        self.summary.write_text(json.dumps(original), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "no longer matches"):
+            self.replay()
+        self.summary.write_text('{"schema":1,"schema":2}', encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "malformed"):
+            self.replay()
+
+    def test_replay_requires_successful_executed_process(self):
+        self.run_synthetic("--exit-error")
+        with self.assertRaisesRegex(ValueError, "did not have"):
+            self.replay()
 
     def test_exit_nonzero_is_not_success_even_if_process_started(self):
         result = self.run_synthetic("--exit-error")
