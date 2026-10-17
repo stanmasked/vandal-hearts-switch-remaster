@@ -131,16 +131,19 @@ def _validate_receipt(raw):
 
 def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
                        owned_game, *, upstream, x, y, timeout=900,
-                       arguments=()):
+                       arguments=(), cycle_dir=None):
     """Run the given PC binary directly; never run a shell or create game data."""
     if not sys.platform.startswith("linux") or not Path("/proc/self/exe").exists():
         raise ValueError("observed executable launch requires Linux /proc")
     handoff, native, scoped = (_private_directory(p) for p in
                                (handoff_dir, native_dir, scoped_dir))
-    if len({p.resolve() for p in (handoff, native, scoped)}) != 3:
+    cycle = _private_directory(cycle_dir) if cycle_dir is not None else None
+    checked_dirs = (handoff, native, scoped) + ((cycle,) if cycle is not None else ())
+    if len({p.resolve() for p in checked_dirs}) != len(checked_dirs):
         raise ValueError("execution evidence folders must be distinct")
-    if any(any(p.iterdir()) for p in (native, scoped)):
-        raise ValueError("native GPU and scoped capture folders must start empty")
+    if any(any(p.iterdir()) for p in (native, scoped) +
+           ((cycle,) if cycle is not None else ())):
+        raise ValueError("native GPU, scoped and cycle capture folders must start empty")
     if (handoff / RECEIPT).exists() or (handoff / RECEIPT).is_symlink():
         raise ValueError("local execution receipt already exists")
     plan_raw = private_file(handoff, PLAN, max_bytes=4096)
@@ -178,6 +181,10 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
         "VH_MAP02_PROBE_X": str(x),
         "VH_MAP02_PROBE_Y": str(y),
     })
+    if cycle is not None:
+        # The inherited VH_MAP02_* environment was cleared above: opt-in
+        # directories must only come from validated launcher arguments.
+        env["VH_MAP02_CYCLE_OUTPUT_DIR"] = str(cycle)
     process = None
     observed = None
     game_fd_observed = False
@@ -236,6 +243,13 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
     checked = verify_window_scoped_join(native, scoped, target_frame=frame)
     if checked["capture_session_linked"] is not True:
         raise ValueError("original GPU/scoped process session not linked")
+    if cycle is not None:
+        # Imported lazily: cycle's independent final verifier also imports
+        # this process launcher through the original CD/GPU witness chain.
+        from tools.verify_map02_cycle_cd_gpu_join import _cycle_receipt
+        _, nonce_digest = _cycle_receipt(cycle, frame)
+        if nonce_digest != checked["capture_session_sha256"]:
+            raise ValueError("single-process cycle nonce differs from GPU/scoped witness")
     receipt = _validate_receipt({
         "schema": SCHEMA,
         "gpu_draw_frame": frame,
@@ -323,6 +337,8 @@ def main():
     p.add_argument("--x", type=int)
     p.add_argument("--y", type=int)
     p.add_argument("--timeout", type=int, default=900)
+    p.add_argument("--cycle-dir", type=Path,
+                   help="optional private empty 0700 directory for in-process CD->GPU order")
     a, forwarded = p.parse_known_args()
     if forwarded and forwarded[0] == "--":
         forwarded = forwarded[1:]
@@ -334,8 +350,11 @@ def main():
                 a.private_handoff_dir, a.private_native_windows,
                 a.private_scoped_capture, a.pc_binary, a.owned_game_image,
                 upstream=a.upstream_checkout, x=a.x, y=a.y,
-                timeout=a.timeout, arguments=forwarded)
+                timeout=a.timeout, arguments=forwarded,
+                cycle_dir=a.cycle_dir)
         else:
+            if a.cycle_dir is not None:
+                raise ValueError("verify cycle evidence through tools.verify_map02_cycle_cd_gpu_join")
             if forwarded:
                 raise ValueError("verify does not accept executable arguments")
             result = verify_observed_process(
