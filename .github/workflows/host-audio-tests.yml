@@ -33,6 +33,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_audout_latency.py' -v
       - name: Guest clock to audout window cross-binding negative controls
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_audout_scene_correlation.py' -v
+      - name: Matched steady-state guest seconds 1-51 regressions
+        run: python3 -m unittest discover -s tests -p 'test_analyze_nexium_steady_state.py' -v
       - name: Statistical sensitivity of complete paired NeXium audio sessions
         run: python3 -m unittest discover -s tests -p 'test_analyze_nexium_idle_switch_variability.py' -v
       - name: Multi-pair no-switch original-SD archive negative controls
