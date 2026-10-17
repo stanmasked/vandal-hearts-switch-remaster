@@ -48,8 +48,12 @@ def build_full_pc(upstream, bundle, *, timeout=1200, make="make", report_dir=Non
     # Make as well: never accept stale region or an unrelated PS-X EXE.
     env["VH_REGION"] = "us"
     env["VH_PSX_EXE"] = str(upstream / "SLUS_004.47")
-    if krom_source is not None:
-        env["VH_KROM_SOURCE"] = str(Path(krom_source).absolute())
+    # The private pinned script lives outside upstream and cannot infer the
+    # caller's owned KROM path from its own __file__. Set the validated source
+    # explicitly even when no --krom-source override was supplied.
+    env["VH_KROM_SOURCE"] = str(
+        Path(krom_source).absolute() if krom_source is not None else
+        upstream / "external/psy-q/3.6/PSYQ/BIN/KROMDAT.BIN")
     try:
         built = subprocess.run(
             command, cwd=pc, env=env, capture_output=True, text=True,
