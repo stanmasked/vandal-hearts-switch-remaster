@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build:
@@ -43,7 +44,7 @@ jobs:
           if-no-files-found: error
 
   run-in-emulator:
-    name: Launch NROs in NeXium
+    name: Launch pinned integrated audout NRO in NeXium
     runs-on: ubuntu-26.04
     needs: build
     timeout-minutes: 15
@@ -51,11 +52,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Download test NROs
+      - name: Download pinned integrated audio NRO from verified CI run
         uses: actions/download-artifact@v4
         with:
-          name: runtime-smoke-nro
+          name: vandal-hearts-tactical-with-native-music
+          run-id: 39034607288
+          github-token: ${{ github.token }}
           path: nros
+
+      - name: Verify binary identity and artifact receipt before emulation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/verify_switch_integrated_nro_preflight.py nros \
+            --git-sha 63c718679715adc809a3feb8845a15a37e645488 \
+            --run-id 39034607288 --artifact-id 12101269376 \
+            --expected-nro-sha256 8068eeef36cc1b3751bb4a9d320de5477c85687af018f1323dbba0b33d26b7ad \
+            | tee integrated-nro-preflight.json
+          echo "Candidate: pinned integrated libnx/audout NRO (not proof of audible sound)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install headless display and Vulkan runtime
         shell: bash
@@ -364,5 +378,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: nexium-runtime-evidence
-          path: runtime-evidence/
+          path: |
+            runtime-evidence/
+            integrated-nro-preflight.json
           if-no-files-found: warn
