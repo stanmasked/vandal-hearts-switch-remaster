@@ -349,6 +349,46 @@ void vh101_test_fail_at(int phase){vh101_test_fault=phase;}
 #define VH101_FAIL(phase) (0)
 #endif
 
+
+/* Full post-sync re-read detects content changed after the first read;
+ * ctime/mtime additionally detect many changed-and-restored attempts.
+ * No userspace protocol can prove immunity to malicious writers racing
+ * AFTER the last observation. The directory is exclusively owned. */
+static unsigned int vh104_second_reads;
+unsigned int vh104_second_pass_reads(void){return vh104_second_reads;}
+#ifdef VH100_FAULT_TEST
+static char vh104_fault_path[VH82_MAX_PATH];
+static int vh104_fault_phase;
+int vh104_test_mutate_bytes(const char *path,int phase){
+    if(!path || phase<1 || phase>3 ||
+       strnlen(path,sizeof(vh104_fault_path))>=sizeof(vh104_fault_path))
+        return -1;
+    strcpy(vh104_fault_path,path);
+    vh104_fault_phase=phase;
+    return 0;
+}
+static int vh104_maybe_mutate(int phase,int verified_fd){
+    if(vh104_fault_phase!=phase)return 0;
+    vh104_fault_phase=0;
+    int writable=open(vh104_fault_path,O_WRONLY|O_NOFOLLOW);
+    if(writable<0)return -1;
+    struct stat v,w;
+    int ok=0;
+    unsigned char first;
+    if(fstat(verified_fd,&v)<0 || fstat(writable,&w)<0 ||
+       v.st_dev!=w.st_dev || v.st_ino!=w.st_ino ||
+       v.st_size<=0 || pread(verified_fd,&first,1,0)!=1)ok=-1;
+    if(ok==0){
+        first^=0x5au;
+        if(pwrite(writable,&first,1,0)!=1 || fsync(writable)<0)ok=-1;
+    }
+    if(close(writable)<0)ok=-1;
+    return ok;
+}
+#else
+#define vh104_maybe_mutate(phase,verified_fd) (0)
+#endif
+
 /* Read-only revalidation of a completed private journal. The reopening
  * matters: do NOT assume that a successful write/fsync of a temporary
  * file proves the final name points at the same bytes on its own.
@@ -406,17 +446,38 @@ int vh101_verify_private_commit(const char *path,const char *bytes,size_t size){
         pos+=(size_t)got;
     }
     if(read(fd,scratch,1)!=0)goto finish;
-    if(vh103_maybe_swap_final(2)<0)goto finish;
+    if(vh103_maybe_swap_final(2)<0 ||
+       vh104_maybe_mutate(1,fd)<0)goto finish;
     if(VH101_FAIL(2) || fsync(fd)<0)goto finish;
-    if(vh102_parent_matches(dirfd,parent)!=0 ||
+    if(vh104_maybe_mutate(2,fd)<0 ||
+       vh102_parent_matches(dirfd,parent)!=0 ||
        VH101_FAIL(3) || fsync(dirfd)<0)goto finish;
     vh101_parent_syncs++;
+    if(vh104_maybe_mutate(3,fd)<0 ||
+       vh102_parent_matches(dirfd,parent)!=0)goto finish;
+    /* A second COMPLETE byte-by-byte read after file and directory fsync
+     * binds success to the bytes observed AFTER durability operations,
+     * not merely those observed before them. */
+    if(lseek(fd,0,SEEK_SET)<0)goto finish;
+    pos=0;
+    while(pos<size){
+        size_t want=size-pos<sizeof(scratch)?size-pos:sizeof(scratch);
+        ssize_t got=read(fd,scratch,want);
+        if(got<=0 || memcmp(bytes+pos,scratch,(size_t)got)!=0)
+            goto finish;
+        pos+=(size_t)got;
+    }
+    if(read(fd,scratch,1)!=0)goto finish;
     if(vh102_parent_matches(dirfd,parent)!=0 ||
        fstat(fd,&again)<0 ||
        fstatat(dirfd,base,&named,AT_SYMLINK_NOFOLLOW)<0 ||
        named.st_dev!=initial.st_dev || named.st_ino!=initial.st_ino ||
        again.st_dev!=initial.st_dev || again.st_ino!=initial.st_ino ||
        again.st_size!=initial.st_size ||
+       again.st_mtim.tv_sec!=initial.st_mtim.tv_sec ||
+       again.st_mtim.tv_nsec!=initial.st_mtim.tv_nsec ||
+       again.st_ctim.tv_sec!=initial.st_ctim.tv_sec ||
+       again.st_ctim.tv_nsec!=initial.st_ctim.tv_nsec ||
        named.st_size!=initial.st_size || named.st_nlink!=1 ||
        !S_ISREG(named.st_mode) || (named.st_mode&0777)!=0600)
         goto finish;
@@ -426,6 +487,6 @@ int vh101_verify_private_commit(const char *path,const char *bytes,size_t size){
 finish:
     if(fd>=0 && close(fd)<0)ok=-1;
     if(dirfd>=0 && close(dirfd)<0)ok=-1;
-    if(ok==0)vh101_commits++;
+    if(ok==0){vh101_commits++;vh104_second_reads++;}
     return ok;
 }

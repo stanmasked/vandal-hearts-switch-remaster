@@ -13,15 +13,20 @@ def summarize(raw:bytes):
     previous=summarize_v102(raw)
     validated=validate(raw)
     rows=[json.loads(line) for line in raw.decode("ascii").splitlines()]
-    tail=rows[-3:]
+    starts=[i for i,row in enumerate(rows) if row["kind"]==KINDS[0]]
+    if len(starts)!=1:
+        raise Refused("missing/duplicate first v103 path guard event")
+    start=starts[0]
+    tail=rows[start:start+3]
     if len(tail)!=3 or tuple(row["kind"] for row in tail)!=KINDS:
-        raise Refused("missing/misordered v103 safely resolved file identity suffix")
-    if any(row["kind"] in KINDS for row in rows[:-3]):
+        raise Refused("missing/misordered v103 safely resolved inode checkpoint")
+    if any(row["kind"] in KINDS for i,row in enumerate(rows)
+           if not start<=i<start+3):
         raise Refused("duplicate or interleaved v103 file guard evidence")
     if tuple(row["value"] for row in tail)!=(12,4,1):
         raise Refused("v103 component walk/verified inodes/symlink refusal mismatch")
     if tail[0]["seq"]!=previous["final_private_journal_events"]+1 or \
-       len(rows)!=previous["final_private_journal_events"]+3:
+       start+3!=previous["final_private_journal_events"]+3:
         raise Refused("v103 does not preserve pinned v102 MIPS/GPU checkpoint")
     if any(row["cycle"] or row["frame"] for row in tail):
         raise Refused("host path checks cannot claim real emulated VBlank time")
@@ -37,7 +42,7 @@ def summarize(raw:bytes):
         "only_owned_private_test_markers_removed":True,
         "original_four_emulator_vblanks":4,
         "previous_checkpoint_events":previous["final_private_journal_events"],
-        "final_private_journal_events":len(rows),
+        "final_private_journal_events":start+3,
         "real_retail_MAP02_verified":False,
         "physical_ps1_verified":False,
         "HD_replacement_approved":False,

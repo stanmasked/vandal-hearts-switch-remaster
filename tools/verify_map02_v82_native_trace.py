@@ -51,7 +51,9 @@ KINDS={"vblank","gp1_mmio","gpu_dma2_start","gp0_unai_handled","unai_sample_delt
        "anchored_private_commits","anchored_parent_identity_checks",
        "anchored_duplicate_refused",
        "safe_parent_component_walks","safe_final_inode_verified",
-       "safe_parent_symlink_refused"}
+       "safe_parent_symlink_refused",
+       "content_post_sync_rechecks","content_same_inode_change_refused",
+       "content_protected_publishes"}
 FIELDS={"kind","seq","value","cycle","frame"}
 
 class Refused(ValueError):pass
@@ -111,7 +113,8 @@ def validate(content: bytes):
                 item["kind"].startswith("durability_") or
                 item["kind"].startswith("reopened_") or
                 item["kind"].startswith("anchored_") or
-                item["kind"].startswith("safe_")) and (item["cycle"]!=0 or
+                item["kind"].startswith("safe_") or
+                item["kind"].startswith("content_")) and (item["cycle"]!=0 or
                 item["value"]==0xffffffff):
                 raise Refused("invalid aggregate gpulib store event")
             if item["kind"]=="gp1_mmio":gp1+=1
