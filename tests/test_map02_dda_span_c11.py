@@ -13,6 +13,7 @@ import unittest
 from tools.instrument_map02_dda_span import instrument_span
 from tools.instrument_map02_raster_skips import SPAN_ANCHOR
 from tools.verify_map02_dda_native_spans import parse_native_spans
+from tools.audit_map02_independent_dda_journals import audit, CANDIDATE_FILE, SPAN_FILE
 
 C_TEMPLATE = r'''
 #include <stdio.h>
@@ -78,6 +79,10 @@ class NativeSpanCompileTests(unittest.TestCase):
                 if enabled:
                     raw = log.read_bytes()
                     validated = parse_native_spans(raw)
+                    envelope = audit(root)
+                    self.assertEqual(envelope["files"][SPAN_FILE]["event_count"], 1)
+                    self.assertIsNone(envelope["files"][CANDIDATE_FILE]["event_count"])
+                    self.assertFalse(envelope["retail_map02_frame_verified"])
                     self.assertEqual(len(validated), 1)
                     self.assertEqual((validated[0].x_start, validated[0].x_bound), (10, 20))
                     rows = [json.loads(line) for line in raw.splitlines()]
