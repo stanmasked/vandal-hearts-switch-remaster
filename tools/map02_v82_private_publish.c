@@ -32,7 +32,8 @@ int vh82_publish_private(const char *path,const char *bytes,size_t size) {
         if(wrote<=0) goto fail;
         at+=(size_t)wrote;
     }
-    if(fsync(fd)<0 || close(fd)<0) { fd=-1;goto fail; }
+    if(fsync(fd)<0) goto fail;
+    if(close(fd)<0) { fd=-1;goto fail; }
     fd=-1;
     reader=open(tmp,O_RDONLY|O_NOFOLLOW);
     if(reader<0) goto fail;
@@ -43,7 +44,8 @@ int vh82_publish_private(const char *path,const char *bytes,size_t size) {
         if(got<=0 || memcmp(bytes+at,readback,(size_t)got)!=0) goto fail;
         at+=(size_t)got;
     }
-    if(read(reader,readback,1)!=0 || close(reader)<0) { reader=-1;goto fail; }
+    if(read(reader,readback,1)!=0) goto fail;
+    if(close(reader)<0) { reader=-1;goto fail; }
     reader=-1;
     /* Hard link is exclusive: unlike rename(), it cannot replace final. */
     if(link(tmp,path)<0) goto fail;
