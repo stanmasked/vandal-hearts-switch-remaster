@@ -3,6 +3,7 @@ import hashlib
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -12,8 +13,9 @@ from tools import prepare_map02_private_gpu_make_overlay as builder
 from tools import verify_map02_private_gpu_make_overlay as auditor
 
 
-@unittest.skipUnless(shutil.which("make") and shutil.which("gcc"),
-                     "GNU Make and GCC required")
+@unittest.skipUnless(sys.platform == "linux" and
+                     shutil.which("make") and shutil.which("gcc"),
+                     "Linux sealed memfd, GNU Make and GCC required")
 class SealedMakeOverlayTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="vh-map02-sealed-make-")
@@ -71,8 +73,15 @@ class SealedMakeOverlayTests(unittest.TestCase):
         self.assertFalse(result["compiler_execution_attested"])
         self.assertFalse(result["hd_replacement_authorized"])
         self.assertEqual(set(result["objects_sha256"]), {"libgpu.o", "pc_raster.o"})
-        for name in ("libgpu.o", "pc_raster.o"):
-            self.assertTrue((self.pc / "build-map02-sealed" / name).stat().st_size > 0)
+        for name, expected_symbol in (
+            ("libgpu.o", "vh_gpu_value"), ("pc_raster.o", "vh_raster_value")):
+            target = self.pc / "build-map02-sealed" / name
+            self.assertTrue(target.stat().st_size > 0)
+            symbols = subprocess.run(["nm", "--defined-only", str(target)],
+                                     capture_output=True, text=True, check=True)
+            self.assertIn(expected_symbol, symbols.stdout)
+            self.assertNotIn("old_gpu", symbols.stdout)
+            self.assertNotIn("old_raster", symbols.stdout)
         self.assertNotIn(str(self.upstream), str(result))
         self.assertNotIn(str(self.output), str(result))
 

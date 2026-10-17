@@ -172,9 +172,12 @@ python3 -m tools.prepare_map02_private_gpu_make_overlay \
   --output-dir /private/map02-pinned-gpu-make \
   > /private/map02-pinned-gpu-make-report.json
 
-cd /private/VandalHearts-PcPort/platform/pc
-make -f Makefile -f /private/map02-pinned-gpu-make/map02_private_gpu.mk \
-  BUILD_DIR=build-map02-private map02-private-gpu-objects
+python3 -m tools.build_map02_private_gpu_make_overlay \
+  /private/VandalHearts-PcPort \
+  --output-dir /private/map02-pinned-gpu-make \
+  --manifest /private/map02-pinned-gpu-make-report.json \
+  --build-dir build-map02-private \
+  > /private/map02-pinned-gpu-sealed-objects.json
 ```
 
 После генерации и **непосредственно перед приватной линковкой**
@@ -187,6 +190,25 @@ python3 -m tools.verify_map02_private_gpu_make_overlay \
   --manifest /private/map02-pinned-gpu-make-report.json \
   > /private/map02-pinned-gpu-make-audit.json
 ```
+
+В Linux для сборки **только двух диагностических объектов** теперь
+предпочтителен приведённый выше `build_map02_private_gpu_make_overlay`:
+он сначала выполняет независимый аудит, затем закрепляет точные байты
+оригинального Makefile, инструментированного Make-overlay и обоих C-файлов
+в четырёх анонимных `memfd` с `F_SEAL_WRITE/GROW/SHRINK/SEAL`.
+GNU Make получает именно эти четыре запечатанных дескриптора.
+При отсутствии Linux sealing или ошибке аудита небезопасного
+автоматического fallback к открытию путей нет. Сборка использует
+новый пустой изолированный `BUILD_DIR` и проверяет два объектных SHA-256;
+для полного локального запуска игры этот инструментарий не предназначен.
+
+Запечатываются **не все входы компилятора**: include-заголовки,
+другие исходники, зависимости и GCC не удостоверяются механизмом
+`memfd`. Не считайте успешную сборку аттестацией всего ELF,
+подтверждением происхождения игрового журнала или разрешением
+включить HD-графику. Ручной вызов `make -f Makefile -f ...` остаётся
+доступным, но не получает эту гарантию привязки байтов ко времени
+запуска компилятора.
 
 Инспектор **не исполняет игру и не запускает Make**. Он
 заново генерирует в памяти оба инструментированных исходника и

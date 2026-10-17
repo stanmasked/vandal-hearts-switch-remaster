@@ -60,6 +60,22 @@ class SpanWorkflowGateTests(unittest.TestCase):
                 self.assertIn("printf '%s" + chr(92) + "n'", line)
                 self.assertNotIn("printf '%s" + chr(92) * 2 + "n'", line)
 
+    def test_private_make_uses_sealed_descriptors_in_ci(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        private_build = text.split(
+            "      - name: Build pinned two-word GPU and native DDA objects through original PC Make", 1
+        )[1].split("      - name: Run patch generator regression tests", 1)[0]
+        self.assertIn("python3 -m tools.build_map02_private_gpu_make_overlay", private_build)
+        self.assertIn("test_build_map02_private_gpu_make_overlay.py", private_build)
+        self.assertIn('assert report["sealed_inputs"] == 4', private_build)
+        self.assertIn('assert not report["all_headers_sealed"]', private_build)
+        self.assertIn("--build-dir build-map02-private-ci", private_build)
+        self.assertNotIn("BUILD_DIR=build-map02-private-ci map02-private-gpu-objects",
+                         private_build)
+        pr_paths = text.split("  pull_request:\n    paths:", 1)[1].split("\njobs:", 1)[0]
+        self.assertIn("'tools/build_map02_private_gpu_make_overlay.py'", pr_paths)
+        self.assertIn("'tests/test_build_map02_private_gpu_make_overlay.py'", pr_paths)
+
     def test_trigger_includes_observer_and_test(self):
         text = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("  push:\n    branches:\n      - 'work/map02-dda-coverage-independent-audit'", text)
