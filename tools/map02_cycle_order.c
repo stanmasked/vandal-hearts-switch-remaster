@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -21,6 +22,13 @@ static struct {
     int step, failed;
     unsigned frame;
 } observed;
+
+static int overlaps_map02_extent(int lba, int sectors) {
+    int64_t start = (int64_t)lba;
+    int64_t end = start + (int64_t)sectors;
+    return sectors > 0 && end > MAP02_LBA &&
+           start < MAP02_LBA + MAP02_SECTORS;
+}
 
 static void transition(int expected, int next) {
     if (observed.step != expected) observed.failed = 1;
@@ -52,15 +60,13 @@ void vh_map02_cycle_load(int cdf, int target, int lba, int sectors) {
     transition(0, 1);
 }
 void vh_map02_cycle_read_start(int lba, int sectors) {
-    if (lba + sectors <= MAP02_LBA ||
-        lba >= MAP02_LBA + MAP02_SECTORS) return;
+    if (!overlaps_map02_extent(lba, sectors)) return;
     if (lba != MAP02_LBA || sectors != MAP02_SECTORS)
         observed.failed = 1;
     transition(1, 2);
 }
 void vh_map02_cycle_read_finish(int lba, int sectors) {
-    if (lba + sectors <= MAP02_LBA ||
-        lba >= MAP02_LBA + MAP02_SECTORS) return;
+    if (!overlaps_map02_extent(lba, sectors)) return;
     if (lba != MAP02_LBA || sectors != MAP02_SECTORS)
         observed.failed = 1;
     transition(2, 3);
