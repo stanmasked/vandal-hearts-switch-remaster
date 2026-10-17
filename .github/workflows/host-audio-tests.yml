@@ -144,6 +144,22 @@ jobs:
             source/vh_spu_gaussian.c source/vh_audio_resample.c \
             source/vh_audio_stream.c -lm -o build/test_vh_native_audio_soak
           ./build/test_vh_native_audio_soak
+      - name: audout recovery ZL/ZR native host regression
+        run: |
+          make build/test_vh_audio_output_recovery
+          ./build/test_vh_audio_output_recovery
+      - name: audout recovery ZL/ZR undefined-behavior sanitizer
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+            -fsanitize=undefined -fno-sanitize-recover=undefined \
+            -fno-omit-frame-pointer \
+            tests/test_vh_audio_output_recovery.c \
+            source/vh_audio_output_recovery.c source/vh_audio_resample.c \
+            source/vh_native_seq.c source/vh_native_spu.c \
+            source/vh_spu_reverb.c source/vh_spu_gaussian.c \
+            source/vh_audio_stream.c -lm \
+            -o build/test_vh_audio_output_recovery_ubsan
+          ./build/test_vh_audio_output_recovery_ubsan
       - name: Independent SEQ clock and ADSR native/Python differential under UBSan
         run: python3 tests/test_native_seq_timing_adsr_reference.py
       - name: Native SPU ADPCM versus Python differential test
