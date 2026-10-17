@@ -1523,3 +1523,27 @@ with unmatched raw calls, and recoverable/fully failed page
 examples. This tightens integrity checks **only**: no audout
 service behavior, sample generation, PCM or listening controls
 change. Passing the audit does not certify acoustic quality.
+
+
+### Recovered vs terminal retry-page conservation
+
+The exact backend-call audit also reconciles page-level retry labels
+with independent recovery callbacks. Every logical page with more
+than one raw service attempt either succeeds via a recorded
+recovery, or is an unrecovered terminal failed page. Therefore:
+
+    retried logical pages - recovered pages <= terminal failed pages
+
+and the successful recoveries can never exceed retried pages.
+Each service restart attempt also follows a failed submission, so
+restart attempts cannot exceed failed submissions.
+
+The new regression intentionally lowers the recovery counter in
+an otherwise complete 48-page run; this must fail instead of
+silently claiming FULL accounting. The terminal three-failure
+test now accurately marks its ONE failed page as retried and
+records the TWO restarts, rather than assigning a retry field to
+the wrong aggregate type. A transient test-compilation error in
+the initial patch was corrected before this stage was accepted.
+Neither refinement changes retry behavior or makes audible
+quality assertions.

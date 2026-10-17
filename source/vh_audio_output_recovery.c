@@ -313,7 +313,13 @@ int vh_audio_output_verify_run(
         recovery->recoveries>retry_pages ||
         recovery->recoveries>completed_pages ||
         recovery->restart_attempts<recovery->recoveries ||
+        recovery->restart_attempts>recovery->submit_failures ||
         retry_pages>timing->failed_submissions ||
+        /* Every page retried then delivered increments recoveries
+         * exactly once. A retried page not recovered must be a
+         * terminally failed logical page. This prevents concealed
+         * "missing recovery" counts even when raw calls balance. */
+        retry_pages-recovery->recoveries>failed_pages ||
         /* Every raw audout call either failed or accepted exactly
          * one logical PCM page. A >= check could silently accept
          * extra unaccounted backend calls. Compare by subtraction

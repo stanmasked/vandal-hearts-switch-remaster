@@ -654,6 +654,14 @@ int main(void) {
         &altered,&switch_stats,&switching.timing,
         48u,5u,48u,8u,1)==-1);
     VhAudioOutputRecovery altered_recovery=switch_stats;
+    assert(switch_stats.recoveries>0u);
+    --altered_recovery.recoveries;
+    /* A full successful run cannot hide a retried page whose
+     * recovery was omitted from the independent backend counters. */
+    assert(vh_audio_output_verify_run(
+        &measured_pages,&altered_recovery,&switching.timing,
+        48u,5u,48u,8u,1)==-1);
+    altered_recovery=switch_stats;
     altered_recovery.pages_submitted++;
     assert(vh_audio_output_verify_run(
         &measured_pages,&altered_recovery,&switching.timing,
@@ -725,7 +733,8 @@ int main(void) {
     aborted_timing.calls=3u;
     aborted_timing.failed_submissions=3u;
     aborted_recovery.submit_failures=3u;
-    aborted.retried_pages=0u; /* not a valid record of 3 attempts */
+    aborted_recovery.restart_attempts=2u;
+    aborted.ordinary.retried_pages=1u;
     assert(vh_audio_output_verify_run(
         &aborted,&aborted_recovery,&aborted_timing,
         0u,0u,48u,8u,0)==0);
@@ -733,6 +742,8 @@ int main(void) {
         .calls=1u,.total_ticks=100u,.max_ticks=100u,
         .failed_submissions=1u};
     aborted_recovery.submit_failures=1u;
+    aborted_recovery.restart_attempts=0u;
+    aborted.ordinary.retried_pages=0u;
     /* A user-owned bank is never automatically switched; the same
      * class of observations is valid only with zero boundary pages.
      */
