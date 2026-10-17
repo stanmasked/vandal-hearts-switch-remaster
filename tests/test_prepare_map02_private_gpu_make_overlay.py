@@ -5,6 +5,8 @@ Real pinned PC GPU/raster source composition is separately tested by CI.
 """
 import json
 from pathlib import Path
+import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -53,6 +55,52 @@ class PrivateGpuMakeOverlayTests(unittest.TestCase):
         self.assertIn("libgpu.private.c", result)
         for flag in builder.FLAGS:
             self.assertEqual(result.count(flag), 1)
+
+    def test_actual_make_dry_run_selects_both_private_compilers_and_rejects_baseline(self):
+        if not shutil.which("make"):
+            self.skipTest("GNU Make required")
+        pc = self.root / "public-pc" / "platform" / "pc"
+        pc.mkdir(parents=True)
+        (pc / "src").mkdir()
+        original = (
+            "REGION ?= us\\nBUILD_DIR ?= build\\n"
+            "CC := cc\\nM32 := -m64\\nSAN :=\\nPORT_WARN := -Wall\\n"
+            "$(BUILD_DIR)/libgpu.o: src/libgpu.c\\n"
+            "\\t$(CC) -c -o $@ $<\\n"
+            "$(BUILD_DIR)/pc_raster.o: src/pc_raster.c\\n"
+            "\\t$(CC) -c -o $@ $<\\n"
+        )
+        (pc / "Makefile").write_text(original)
+        for name in ("libgpu.c", "pc_raster.c"):
+            (pc / "src" / name).write_text("int baseline_" + name.split(".")[0] + ";\\n")
+        self.destination.mkdir()
+        for name in (builder.GENERATED_GPU, builder.GENERATED_RASTER):
+            (self.destination / name).write_text("int private_probe;\\n")
+        (self.destination / builder.GENERATED_MAKE).write_text(
+            builder.make_overlay(self.destination))
+        arguments = [
+            "make", "-n", "-f", "Makefile", "-f",
+            str(self.destination / builder.GENERATED_MAKE),
+        ]
+        def invoke(region, build):
+            return subprocess.run(
+                arguments + ["REGION=" + region, "BUILD_DIR=" + build,
+                             "map02-private-gpu-objects"],
+                cwd=pc, capture_output=True, text=True, timeout=20,
+                check=False)
+        good = invoke("us", "build-map02-fixture")
+        self.assertEqual(good.returncode, 0, good.stderr)
+        self.assertIn(str(self.destination / builder.GENERATED_GPU), good.stdout)
+        self.assertIn(str(self.destination / builder.GENERATED_RASTER), good.stdout)
+        self.assertIn("-DVH_MAP02_GPU_CAPTURE", good.stdout)
+        self.assertIn("-DVH_MAP02_DDA_SPAN_TRACE", good.stdout)
+        self.assertNotIn(" -c -o build-map02-fixture/libgpu.o src/libgpu.c", good.stdout)
+        baseline = invoke("us", "build")
+        self.assertNotEqual(baseline.returncode, 0)
+        self.assertIn("requires isolated BUILD_DIR", baseline.stderr)
+        wrong_region = invoke("jp", "build-map02-fixture")
+        self.assertNotEqual(wrong_region.returncode, 0)
+        self.assertIn("supports pinned US PC port only", wrong_region.stderr)
 
     def test_bad_or_make_special_directory_rejected(self):
         for name in ("x space", "x$(shell true)", "x:colon", "x;semi"):
