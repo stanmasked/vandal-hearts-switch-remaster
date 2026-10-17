@@ -154,7 +154,7 @@ class PrivateOriginalFontCProvenanceTests(unittest.TestCase):
         c_file.write_text(
             "const unsigned char pc_kanji_charset2[6270] = {"
             + ",".join(str(value) for value in self.glyphs)
-            + "};\\nint main(void) {return 0;}\\n")
+            + "};\nint main(void) {return 0;}\n")
         binary = self.root / "linked-synthetic-elf"
         subprocess.run(["cc", str(c_file), "-o", str(binary)],
                        check=True, capture_output=True, timeout=30)
