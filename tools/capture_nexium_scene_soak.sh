@@ -103,3 +103,10 @@ cleanup
 trap - EXIT
 find "$SOAK_SD_DIR" -maxdepth 1 -type f -name 'audio-scene-trace-*.csv' \
   -print | sort > "$output/soak-sd-locations.txt"
+# Store a clearly UNVERIFIED original guest SD candidate even when
+# the strict optical/PCM audit fails. The auditor still independently
+# rereads the original guest SD file and never treats this copy as proof.
+mapfile -t captures < "$output/soak-sd-locations.txt"
+if (( ${#captures[@]} == 1 )) && [[ ! -e "$output/soak-sd-unverified.csv" ]]; then
+  cp --no-clobber -- "${captures[0]}" "$output/soak-sd-unverified.csv"
+fi
