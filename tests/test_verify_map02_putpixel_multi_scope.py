@@ -1,0 +1,166 @@
+"""Asset-free, two-coordinate native DrawOTag/PutPixel provenance regressions."""
+import hashlib
+import json
+import unittest
+
+import test_verify_map02_putpixel_scope as original_fixture
+from tools.verify_map02_putpixel_multi_scope import verify_multi_pixel_ot
+
+
+def sha(raw):
+    return hashlib.sha256(raw).hexdigest()
+
+
+class TwoWordPutPixelTests(unittest.TestCase):
+    def setUp(self):
+        self.base = original_fixture.PixelToOriginalPrimitiveTests(
+            methodName="test_binds_same_coordinate_to_two_distinct_source_draws")
+        self.base.setUp()
+        self.addCleanup(self.base.doCleanups)
+        self.source, self.native = self.base.root, self.base.native
+        # Both native locations are already affected by first FT4 in the
+        # independently constructed source-keyed overdraw fixture.
+        self.coord_a = (30, 30)
+        self.coord_b = (35, 35)
+        self.rows = [
+            self.base.row(0, 1, 0, 0x801f, 0x801f),
+            self.base.row(1, 1, 0, 0x03e0, 0x03e0),
+            self.base.row(2, 2, 0x801f, 0x7c00, 0x7c00),
+        ]
+        self.rows[1]["x"], self.rows[1]["y"] = self.coord_b
+        self.save()
+
+    def save(self):
+        self.base.pixel_rows = self.rows
+        self.base.save()
+        raw = (self.native/"putpixel-native-events.jsonl").read_bytes()
+        meta = {
+            "schema": "vh.map02.native-putpixel-multi-ot.v1",
+            "source_frame": 411,
+            "gpu_draw_frame": 12,
+            "overdraw_manifest_sha256": sha(
+                (self.source/"gpu-native-overdraw.json").read_bytes()),
+            "native_events_sha256": sha(
+                (self.native/"gpu-native-events.jsonl").read_bytes()),
+            "putpixel_events_sha256": sha(raw),
+        }
+        (self.source/"gpu-putpixel-multi-ot.json").write_text(
+            json.dumps(meta, sort_keys=True))
+
+    def test_interleaved_two_coordinates_bound_to_same_drawotag(self):
+        report = verify_multi_pixel_ot(self.source, self.native)
+        self.assertEqual(report["distinct_private_vram_words_verified"], 2)
+        self.assertEqual(report["source_keyed_ft4_draws_checked"], 2)
+        self.assertEqual(report["native_drawotag_primitives_checked"], 3)
+        self.assertEqual(report["all_native_putpixel_calls_observed"], 3)
+        self.assertEqual(report["source_keyed_ft4_putpixel_calls"], 3)
+        self.assertEqual(report["source_ft4_changed_putpixel_calls"], 3)
+        self.assertEqual(report["source_ft4_changed_word_draw_coordinate_pairs"], 3)
+        self.assertEqual(report["source_ft4_draw_coordinate_pairs_with_calls"], 3)
+        self.assertTrue(report["one_interleaved_global_putpixel_step_sequence"])
+        self.assertTrue(report["two_coordinates_checked_against_same_native_drawotag_snapshots"])
+        for field in (
+            "native_capture_process_identity_authenticated",
+            "complete_original_putpixel_stream_proven",
+            "physical_ps1_pixel_equivalence_verified",
+            "real_map02_gameplay_authenticated",
+            "raw_pixel_coordinates_or_colors_emitted",
+        ):
+            self.assertFalse(report[field])
+        public = json.dumps(report)
+        for leaked in ('"x"', '"y"', '"before"', '"after"', '"front"',
+                       "0x801f", '"clut"', '"tpage"'):
+            self.assertNotIn(leaked, public)
+
+    def test_two_blends_and_same_value_write_in_one_primitive(self):
+        # Actual PC ABR1 on a textured pixel: 0+0x1f -> 0x801f;
+        # 0x801f+0 -> unchanged 0x801f, both calls still observable.
+        self.rows = [
+            self.base.row(0, 1, 0, 0x001f, 0x801f, semi=1),
+            self.base.row(1, 1, 0x801f, 0, 0x801f, semi=1),
+            self.base.row(2, 1, 0, 0x03e0, 0x03e0),
+            self.base.row(3, 2, 0x801f, 0x7c00, 0x7c00),
+        ]
+        self.rows[2]["x"], self.rows[2]["y"] = self.coord_b
+        self.save()
+        report = verify_multi_pixel_ot(self.source, self.native)
+        self.assertEqual(report["source_keyed_ft4_putpixel_calls"], 4)
+        self.assertEqual(report["source_keyed_ft4_semitransparent_calls"], 2)
+        self.assertEqual(report["source_ft4_abr1_calls"], 2)
+        self.assertEqual(report["source_ft4_same_value_putpixel_calls"], 1)
+        self.assertEqual(report["source_ft4_coordinate_pairs_with_multiple_blends"], 1)
+        self.rows[1]["front"] = 0x0001
+        self.save()
+        with self.assertRaisesRegex(ValueError, "source-pinned PC WritePixel"):
+            verify_multi_pixel_ot(self.source, self.native)
+
+    def test_duplicate_step_and_backward_ordinal_rejected(self):
+        self.rows[1]["step"] = 0
+        self.save()
+        with self.assertRaisesRegex(ValueError, "discontinuous global steps"):
+            verify_multi_pixel_ot(self.source, self.native)
+        self.rows[1]["step"] = 1
+        self.rows[0]["primitive_ordinal"] = 2
+        self.save()
+        with self.assertRaisesRegex(ValueError, "ordinal goes backward"):
+            verify_multi_pixel_ot(self.source, self.native)
+
+    def test_claiming_third_word_or_missing_second_rejected(self):
+        self.rows[1]["x"] = 31
+        self.rows[1]["y"] = 31
+        self.rows.insert(2, self.base.row(2, 1, 0, 0, 0))
+        self.rows[2]["x"], self.rows[2]["y"] = self.coord_b
+        self.rows[3]["step"] = 3
+        self.save()
+        with self.assertRaisesRegex(ValueError, "more than two"):
+            verify_multi_pixel_ot(self.source, self.native)
+        self.rows = [
+            self.base.row(0, 1, 0, 0x801f, 0x801f),
+            self.base.row(1, 2, 0x801f, 0x7c00, 0x7c00),
+        ]
+        self.save()
+        with self.assertRaisesRegex(ValueError, "exactly two distinct"):
+            verify_multi_pixel_ot(self.source, self.native)
+
+    def test_missing_call_for_changed_sample_and_noncanonical_log_rejected(self):
+        self.rows = [
+            self.base.row(0, 1, 0, 0x801f, 0x801f),
+            self.base.row(1, 2, 0x801f, 0x7c00, 0x7c00),
+            self.base.row(2, 2, 0x03e0, 0x03e0, 0x03e0),
+        ]
+        self.rows[2]["x"], self.rows[2]["y"] = self.coord_b
+        self.save()
+        # The second coordinate has a real native FT4 change at ordinal
+        # 1, but its only forged call has been moved to ordinal 2.
+        with self.assertRaisesRegex(ValueError, "unexplained sampled word"):
+            verify_multi_pixel_ot(self.source, self.native)
+        self.rows = [
+            self.base.row(0, 1, 0, 0x801f, 0x801f),
+            self.base.row(1, 1, 0, 0x03e0, 0x03e0),
+            self.base.row(2, 2, 0x801f, 0x7c00, 0x7c00),
+        ]
+        self.rows[1]["x"], self.rows[1]["y"] = self.coord_b
+        self.save()
+        pixel_path = self.native/"putpixel-native-events.jsonl"
+        modified = pixel_path.read_bytes()[:-1]
+        pixel_path.write_bytes(modified)
+        meta_path = self.source/"gpu-putpixel-multi-ot.json"
+        meta = json.loads(meta_path.read_text())
+        meta["putpixel_events_sha256"] = sha(modified)
+        meta_path.write_text(json.dumps(meta))
+        with self.assertRaisesRegex(ValueError, "noncanonical two-word"):
+            verify_multi_pixel_ot(self.source, self.native)
+
+    def test_global_shared_cap_rejected(self):
+        # 64 total interleaved events is truncated, regardless of how
+        # many belong to each coordinate; do not claim completeness.
+        self.rows = [self.base.row(i, 1, 0, 0, 0) for i in range(64)]
+        for index, item in enumerate(self.rows):
+            item["x"], item["y"] = self.coord_a if index % 2 == 0 else self.coord_b
+        self.save()
+        with self.assertRaisesRegex(ValueError, "truncation cap"):
+            verify_multi_pixel_ot(self.source, self.native)
+
+
+if __name__ == "__main__":
+    unittest.main()
