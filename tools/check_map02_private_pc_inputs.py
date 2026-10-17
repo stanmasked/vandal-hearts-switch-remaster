@@ -199,9 +199,10 @@ def main():
     try:
         result = verify_private_pc_inputs(
             args.pinned_original_pc_checkout, krom_source=args.krom_source)
-    except (OSError, ValueError) as exc:
-        # Messages mention categories only, not the path to any owned input.
+    except ValueError as exc:
         parser.error(str(exc))
+    except OSError:
+        parser.error("private original input verification failed")
     print(json.dumps(result, indent=2, sort_keys=True))
 
 
