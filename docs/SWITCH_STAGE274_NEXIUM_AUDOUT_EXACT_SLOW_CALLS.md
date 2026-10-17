@@ -90,3 +90,53 @@ capture are required before this stage is marked accepted. If that
 run fails, inspect its actual job logs and correct the implementation,
 rather than retrospectively inventing slow timestamps from Stage-273
 per-second aggregates.
+
+
+## First archived guest slow-call copy: NeXium run 39072563324
+
+A completed pinned [NeXium run 39072563324](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39072563324) at commit
+\`86fc583c4c8a70a44ec4d37fda332279beab6fc9\` (NRO SHA-256
+\`4be7635609589952363d3255e81537343a5893bff3611ecd30df48d39d6f35cb\`)
+successfully generated and archived \`soak-audout-slow-unverified.csv\`,
+a byte copy from the guest SD path, and its independent writer receipt.
+
+An independent offline audit of **that archived copy**, rather than
+a retroactive guess based on Stage 273 one-second maxima, found:
+
+- 1,915 actual \`audoutPlayBuffer\` calls over 53 guest seconds, all
+  returned, 0 API return failures;
+- 25 individually timestamped calls ≥40 ms, including **3** ≥50 ms,
+  with zero overflow/dropped slow-call records;
+- 25/25 individual observations agreed with their per-second ≥40/≥50
+  bins, per-second maximum duration (truncated to μs), and the
+  50,929 μs whole-session maximum;
+- Archived slow-call-copy SHA-256:
+  \`1eaafd07aec1f23ce06226104d48dbdc53184e4b438e6988973e33cecd7ef033\`.
+
+Actual guest INPUT timestamps permit the following narrow ordering,
+using a ±500 ms **slow-call start-time selection** window:
+
+| Guest scene INPUT serial | Observed slow calls near INPUT |
+| --- | --- |
+| 1 | one 48.615 ms call **began 228.487 ms after** INPUT |
+| 6 | 41.644 ms and 44.160 ms calls began **166.517 / 221.820 ms after** |
+| 7 | 48.754 ms call **completed before** INPUT |
+| 8 | 43.217 ms call **began 0.036 ms before and ended after** INPUT; 42.051 ms call began **157.510 ms after** |
+| 10 | 50.930 ms call **completed before** INPUT; 45.207 ms call began **87.367 ms after** |
+
+**Evidence boundary:** The archived guest-SD *copy* and verified
+Stage-272 histogram can be compared offline, but this particular
+offline reanalysis did not reopen the original transient runner SD
+file; it cannot independently certify that original. That stronger
+requirement is enforced only by the dedicated Stage-274 GitHub Actions
+\`audit_nexium_audout_slow_calls.py\` step on a newly running workflow.
+Do not call the archive-copy analysis the final original-SD
+acceptance. Also, a programmatic ordering comparison does not
+demonstrate scene-switch causality, DAC timing or audible underruns.
+
+The Stage-274 negative-control test previously contained a synthetic
+input timestamp at a ±500 ms selection boundary that included an
+additional legitimate slow call from an adjacent second. Corrected the
+*test-only* timestamp in commit \`aa04c510\`, without modifying runtime
+audio scheduling or production audit criteria. Full workflow results
+after this correction remain tracked separately.
