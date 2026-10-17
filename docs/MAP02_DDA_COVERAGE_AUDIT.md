@@ -67,6 +67,7 @@ For a single chosen DrawOTag frame and VRAM pixel, configure the two
 recorders to target the **same** directory and frame:
 
 ```sh
+umask 077
 capture_dir="$(mktemp -d "${HOME}/map02-dda-XXXXXX")"
 chmod 700 "$capture_dir"
 export VH_MAP02_GPU_CAPTURE_DIR="$capture_dir"
@@ -78,6 +79,22 @@ export VH_MAP02_PUTPIXEL_Y=30
 python3 -m tools.preflight_map02_private_dda_capture > "${HOME}/map02-private-preflight.json"
 ```
 
+Once a local *instrumented executable* exists, optionally fingerprint that
+exact file before launch:
+
+```sh
+python3 -m tools.preflight_map02_private_dda_capture \
+  --executable /absolute/path/to/your/instrumented-pcport \
+  > "${HOME}/map02-private-preflight.json"
+```
+
+Replace the executable path with the actual locally built native PC-port
+program. This additional read-only check records its byte length and SHA-256,
+rejecting symlinks, non-executable or changed binaries. **A SHA-256 does not
+prove which source files were compiled, that the instrumented callbacks
+exist, or that retail game resources were loaded.** Keep the fingerprint
+report private and recheck it against the executable actually launched.
+
 Frame 411 and X/Y 30/30 are **illustrative only**, not measured MAP02
 values. The preflight refuses missing/out-of-range/non-decimal selectors,
 frame or output-directory disagreement, pre-existing files, symlinked
@@ -85,6 +102,10 @@ directories, unsafe POSIX permissions, and paths too long for the C
 recorders' fixed file buffers. It does not create or modify the directory,
 run the executable, prove the binary contains diagnostic hooks, or read
 copyrighted game data. Output omits private path and sample X/Y.
+The path-length check uses the actual environment string received by the C
+recorder (not only the normalized directory path), preventing misleading
+success for aliases with many path components.
+
 A successful preflight is **configuration readiness only**: to collect
 both journals the locally built binary must also contain matching
 opt-in native GPU, pixel-scope, DDA span and rejected-edge instrumentation.
