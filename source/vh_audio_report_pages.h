@@ -52,6 +52,11 @@ static inline int vh_audio_manual_verify(const VhAudioManualResume *m) {
 typedef struct {
     unsigned backgrounds, returns, resumes, ignored_duplicates;
     unsigned in_background;
+    /* A foreground notice arms ONE page observation. Multiple
+     * foreground notices without an intervening returned page are
+     * explicitly coalesced, never silently counted as observed audio. */
+    unsigned pending_return, coalesced_returns;
+    unsigned first_pages_after_return, returned_pages;
 } VhAudioAppletEvents;
 
 #define VH_AUDIO_APPLET_BACKGROUND 1u
@@ -81,8 +86,12 @@ static inline int vh_audio_applet_record(VhAudioAppletEvents *s,
             ++s->ignored_duplicates;
             return 0;
         }
-        if(s->returns==UINT_MAX) return -1;
+        if(s->returns==UINT_MAX ||
+           (s->pending_return && s->coalesced_returns==UINT_MAX))
+            return -1;
         ++s->returns;
+        if(s->pending_return) ++s->coalesced_returns;
+        s->pending_return=1u;
         s->in_background=0u;
         return 0;
     }
@@ -94,11 +103,34 @@ static inline int vh_audio_applet_record(VhAudioAppletEvents *s,
     return -1;
 }
 
-/* Strong internal accounting, never a hardware-audio PASS. */
+/* Call once after the audout descriptor has been returned AND the
+ * returned-page telemetry transaction has committed. A focus notice
+ * alone never implies playback; this records the next observed PCM
+ * descriptor returned on the producer thread. Returns 1 only for
+ * that first page, 0 for other pages, -1 on invalid/overflow state. */
+static inline int vh_audio_applet_page_returned(VhAudioAppletEvents *s) {
+    if(!s || s->returned_pages==UINT_MAX ||
+       (s->pending_return && s->first_pages_after_return==UINT_MAX))
+        return -1;
+    ++s->returned_pages;
+    if(!s->pending_return) return 0;
+    s->pending_return=0u;
+    ++s->first_pages_after_return;
+    return 1;
+}
+
+/* Strong internal event-to-returned-page accounting, never a
+ * hardware-audio PASS. Subtractions avoid unsigned addition wrap. */
 static inline int vh_audio_applet_verify(const VhAudioAppletEvents *s) {
-    return s && s->in_background<=1u &&
-           s->returns<=s->backgrounds &&
-           s->backgrounds-s->returns==s->in_background ? 0 : -1;
+    if(!s || s->in_background>1u || s->pending_return>1u ||
+       s->returns>s->backgrounds ||
+       s->backgrounds-s->returns!=s->in_background ||
+       s->first_pages_after_return>s->returns ||
+       s->first_pages_after_return>s->returned_pages ||
+       s->coalesced_returns>s->returns-s->first_pages_after_return)
+        return -1;
+    return s->returns-s->first_pages_after_return-
+           s->coalesced_returns==s->pending_return ? 0 : -1;
 }
 
 #define VH_AUDIO_REPORT_PAGE_COUNT 3u
