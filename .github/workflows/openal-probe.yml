@@ -25,14 +25,28 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          for attempt in 1 2 3 4 5; do
-            if dkp-pacman -Sy --noconfirm switch-openal-soft; then break; fi
-            if [ "$attempt" -eq 5 ]; then exit 1; fi
-            echo "Package mirror unavailable; retrying ($attempt/5)" >&2
-            sleep $((attempt * 5))
+          install_log="/tmp/vh-switch-openal-soft-install.log"
+          installed=0
+          for attempt in 1 2; do
+            if dkp-pacman -Sy --noconfirm switch-openal-soft >"$install_log" 2>&1; then
+              cat "$install_log"
+              installed=1
+              break
+            fi
+            cat "$install_log"
+            # HTTP 403 is an external mirror authorization/CDN failure.
+            # Retrying it repeatedly only delays an actionable diagnosis.
+            if grep -Eq '403|Forbidden' "$install_log"; then break; fi
+            sleep "$attempt"
           done
+          if [ "$installed" -ne 1 ]; then
+            python3 tools/classify_switch_portlib_install.py \
+              --package switch-openal-soft --log "$install_log"
+            exit 1
+          fi
           export PATH="$DEVKITPRO/portlibs/switch/bin:$PATH"
-          command -v sdl2-config
+          # OpenAL does not require SDL2; validate the actual OpenAL header.
+          test -f "${DEVKITPRO:-/opt/devkitpro}/portlibs/switch/include/AL/al.h"
       - name: Build and validate OpenAL probe
         shell: bash
         run: |
