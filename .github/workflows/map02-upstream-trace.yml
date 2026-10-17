@@ -99,6 +99,8 @@ on:
       - 'tests/test_map02_span_workflow_gate.py'
       - 'tools/audit_map02_independent_dda_journals.py'
       - 'tests/test_audit_map02_independent_dda_journals.py'
+      - 'tools/preflight_map02_private_dda_capture.py'
+      - 'tests/test_preflight_map02_private_dda_capture.py'
       - 'tests/test_map02_dda_span_c11.py'
       - 'tools/verify_map02_raster_skips.py'
       - 'tools/verify_map02_putpixel_scope.py'
@@ -554,6 +556,7 @@ jobs:
             python3 -m unittest discover -s tests -p 'test_map02_dda_span_composition.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_dda_native_spans.py' -v
             python3 -m unittest discover -s tests -p 'test_audit_map02_independent_dda_journals.py' -v
+            python3 -m unittest discover -s tests -p 'test_preflight_map02_private_dda_capture.py' -v
             python3 -m unittest discover -s tests -p 'test_instrument_map02_vertical_dda.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_vertical_dda.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_raster_skips.py' -v
