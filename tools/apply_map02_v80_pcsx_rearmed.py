@@ -24,7 +24,7 @@ def apply(root: Path):
     h = once(h,
        '(void)vh66_pcsx_gp1_observe(value);',
        '(void)vh66_pcsx_gp1_observe(value);\n'
-       '\t\tvh80_record(VH80_GP1_MMIO,value,psxRegs.cycle,frame_counter);',
+       '\t\tvh80_record(VH80_GP1_MMIO,value,psxRegs.cycle,0);',
        "GP1 observed input word")
     # frame_counter is exposed by psxcounters.h in the pinned core.
     d = once(originals[dma],
@@ -34,7 +34,7 @@ def apply(root: Path):
     d = once(d,
        '(void)vh66_pcsx_dma2_observe((const unsigned char *)psxRegs.ptrs.psxM, madr & 0x1fffff);',
        '(void)vh66_pcsx_dma2_observe((const unsigned char *)psxRegs.ptrs.psxM, madr & 0x1fffff);\n'
-       '\t\t\tvh80_record(VH80_GPU_DMA2,madr & 0x1fffff,psxRegs.cycle,frame_counter);',
+       '\t\t\tvh80_record(VH80_GPU_DMA2,madr & 0x1fffff,psxRegs.cycle,0);',
        "GPU DMA2 start address (not GP0 command)")
     c = once(originals[counters],
        '/* Increments ONLY in the pinned original psxRcntUpdate()',
