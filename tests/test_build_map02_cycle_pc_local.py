@@ -64,6 +64,21 @@ class PrivateFullPcBuildTests(unittest.TestCase):
         self.exe.chmod(0o700)
         return SimpleNamespace(returncode=0)
 
+    def test_local_game_build_drops_inherited_makefile_and_eval_options(self):
+        from tools.check_map02_cycle_make_plan import INHERITED_MAKE_CONTROLS
+        inherited = {name: "injected-" + name for name in
+                     INHERITED_MAKE_CONTROLS}
+
+        def verify_make_environment(command, **kwargs):
+            for key in INHERITED_MAKE_CONTROLS:
+                self.assertNotIn(key, kwargs["env"])
+            return self.build_fake(command, **kwargs)
+
+        with patch.dict(local_build.os.environ, inherited), patch(
+                "tools.build_map02_cycle_pc_local.subprocess.run",
+                side_effect=verify_make_environment):
+            build_full_pc(self.upstream, self.bundle)
+
     def test_standalone_success_reporting_never_claims_runtime(self):
         with patch("tools.build_map02_cycle_pc_local.subprocess.run",
                    side_effect=self.build_fake):
