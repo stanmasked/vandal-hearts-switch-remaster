@@ -140,6 +140,20 @@ class PrivateGpuMakeOverlayTests(unittest.TestCase):
         wrong_region = invoke("jp", "build-map02-fixture")
         self.assertNotEqual(wrong_region.returncode, 0)
         self.assertIn("supports pinned US PC port only", wrong_region.stderr)
+        for bad in (
+                "build-map02-../../outside",
+                "build-map02-foo/bar",
+                "build-map02-evil;touchBAD",
+                "build-map02-foo:bar",
+                "build-map02-foo.bar",
+                "build-map02-nope$(shell touchBAD)",
+                "build-map02-some path",
+                "build-map02-"):
+            with self.subTest(build=bad):
+                refused = invoke("us", bad)
+                self.assertNotEqual(refused.returncode, 0)
+                self.assertIn("MAP02 private GPU BUILD_DIR", refused.stderr)
+                self.assertNotIn("private_probe", refused.stdout)
 
     def test_bad_or_make_special_directory_rejected(self):
         for name in ("x space", "x$(shell true)", "x:colon", "x;semi"):
