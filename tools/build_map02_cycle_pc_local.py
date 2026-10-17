@@ -16,6 +16,7 @@ import subprocess
 
 from tools.check_map02_cycle_make_plan import BUILD, audit
 from tools.check_map02_cycle_elf import audit_cycle_elf
+from tools.check_map02_original_font_c import verify_generated_original_font
 
 BINARY_NAME = "vandalhearts_pc"
 
@@ -71,6 +72,9 @@ def build_full_pc(upstream, bundle, *, timeout=1200, make="make", report_dir=Non
         raise ValueError("full source-pinned PC link returned without an executable")
     if not target.stat().st_mode & stat.S_IXUSR:
         raise ValueError("built PC ELF does not have owner execute permission")
+    # Reconstruct the exact 209-glyph output independently of the script that
+    # Make executed; reject altered, stale or symlinked generated private C.
+    verify_generated_original_font(upstream, bundle, krom_source=krom_source)
     verified = audit_cycle_elf(target)
     # Check that the generated overlay did not mutate during the build.
     from tools.check_map02_cycle_make_plan import preflight
