@@ -146,3 +146,7 @@ as a finished soundtrack or as proof of correct stream synchronization. A next
 step is to decode directly from raw 2352-byte sectors while preserving sector
 timestamps/order and to compare a representative sample against an independent
 decoder.
+
+## Stage 238: native libnx audio build and optional portlib mirror failures
+
+The optional SDL2/OpenAL build jobs currently encounter **HTTP 403 from devkitPro package mirrors before compilation**. This is an external dependency-install failure, not a demonstrated game-code failure; those workflows remain red when installation is blocked. Native `libnx/audout` and integrated tactical audio builds do **not** require installing those portlibs. They now publish the exact NRO SHA-256 next to each NRO. See [Stage 238 diagnostics](docs/SWITCH_STAGE238_NATIVE_AUDIO_CI_RECOVERY.md). **Physical Switch audio remains HARDWARE NOT TESTED.**
