@@ -155,7 +155,7 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
             event["window"] = [2, 3, 4, 5]
         self.save()
         forged = bytearray(self.pre)
-        forged[2:4] = b"\\x01\\x00"
+        forged[2:4] = b"\x01\x00"
         for step in range(4):
             raw = self.pre if step == 0 else forged
             (self.root / f"gpu-{step:04d}-vram.bin").write_bytes(raw)
