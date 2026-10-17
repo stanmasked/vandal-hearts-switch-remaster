@@ -3,7 +3,7 @@
 The source-pin tests below use deliberately tiny fake originals only to
 exercise transactional generation. The GitHub Actions integration step
 separately generates from the exact public, pinned original PC port and
-compiles all three REAL original translation units in one relocatable blob.
+compiles all four REAL original CD/GPU/raster units in one relocatable blob.
 """
 import hashlib
 import json
@@ -55,6 +55,9 @@ class SingleElfBuildOverlayTests(unittest.TestCase):
         for symbol in (
             "BACKEND_OBJS += $(VH_MAP02_CYCLE_SUPPORT)",
             "link: $(VH_MAP02_CYCLE_SUPPORT)",
+            "VH_MAP02_ASSET_BOUND_OBJECT := $(BUILD_DIR)/src/core/text.o",
+            "VH_MAP02_PUBLIC_CODE_OBJS :=",
+            "map02-public-code: $(VH_MAP02_PUBLIC_CODE_OBJS) $(BACKEND_OBJS)",
             "$(BUILD_DIR)/src/core/cd.o:",
             "$(BUILD_DIR)/libcd.o:",
             "$(BUILD_DIR)/libgpu.o:",
