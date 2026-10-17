@@ -106,7 +106,7 @@ class OwnedMap02DiscExtentTests(unittest.TestCase):
 
     def test_source_table_drift_must_not_change_original_map02_lba(self):
         self.assertEqual(extract_layout(self.source.read_text()), (0x1bcc, 0x0c))
-        with self.assertRaisesRegex(ValueError, "layout"):
+        with self.assertRaisesRegex(ValueError, "resource LBA/count"):
             extract_layout("[CDF_M_MAP02_PRS] = {0x1bcd, 0x0c, gScratch1_801317c0}")
         with self.assertRaisesRegex(ValueError, "anchor"):
             extract_layout("[CDF_NOT_MAP02] = {0x1bcc, 0x0c, 0}")
