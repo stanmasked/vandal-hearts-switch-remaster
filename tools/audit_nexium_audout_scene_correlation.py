@@ -124,6 +124,18 @@ def join(guest_origin: dict, scene_csv: bytes,
     """Pure analysis: deterministic second-window lookup, no I/O."""
     source=parse_latency(latency_raw)
     inputs=parse_scene_inputs(scene_csv)
+    # Initial SUBMIT_CALL wraps the first audoutPlayBuffer invocation.
+    # Its absolute guest event times independently bound the origin
+    # that the audio worker exported after joining.
+    initial=list(csv.DictReader(io.StringIO(
+        scene_csv.decode("ascii"),newline=""),strict=True))[:3]
+    if ([x["event"] for x in initial] !=
+            ["ACCEPT","SUBMIT_CALL","RELEASE_RETURN"]
+            or any(x["serial"]!="0" or x["scene"]!="1" for x in initial)
+            or not (integer(initial[1]["monotonic_ns"]) <=
+                    guest_origin["origin_ns"] <=
+                    integer(initial[2]["monotonic_ns"]))):
+        raise CorrelationError("first audout clock origin is outside startup submit/return interval")
     if (guest_origin["attempts"]!=source["attempts"]
             or guest_origin["last_second"]!=source["windows"]-1):
         raise CorrelationError("guest origin and audout windows disagree")
