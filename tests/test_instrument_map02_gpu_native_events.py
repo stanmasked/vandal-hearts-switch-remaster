@@ -47,6 +47,7 @@ class NativeGpuProbeTests(unittest.TestCase):
         self.assertEqual(rendered.count('VH_CaptureEvent("before"'),4)
         self.assertEqual(rendered.count('VH_CaptureEvent("after"'),4)
         self.assertIn('PC_GPU_PRIM_POLY_FT4 ? (POLY_FT4 *)cur',rendered)
+        self.assertEqual(rendered.count('type == PC_GPU_PRIM_POLY_FT4 ? (POLY_FT4 *)cur : NULL'),2)
         self.assertIn('s_drawModeTPage, s_drawModeAbr, s_drawModeDither',rendered)
         self.assertIn('vh_capture_seq >= VH_CAPTURE_LIMIT',rendered)
         self.assertIn('getenv("VH_MAP02_GPU_CAPTURE_DIR")',rendered)
