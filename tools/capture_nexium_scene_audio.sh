@@ -84,9 +84,14 @@ timeout --kill-after=5s 65s xvfb-run -a -s '-screen 0 1280x720x24' bash -c '
   # A normal Plus alone preserves immediate exit semantics. The
   # framebuffer receipt must be decoded from its actual CRC-protected
   # pixels; a generated fixture is never an acceptable CI substitute.
+  # A one-shot host Plus press may last LESS than the guest HID poll
+  # interval and be missed. Hold the real Plus key across many frames;
+  # the original optical/SD/PCM auditors still reject missing proof.
   xdotool keydown --window "$window" v
-  sleep 0.3
-  xdotool key --window "$window" m
+  sleep 0.4
+  xdotool keydown --window "$window" m
+  sleep 0.25
+  xdotool keyup --window "$window" m
   sleep 1.1
   import -window "$window" "$SCENE_DIR/scene-optical-trace.png"
   test -s "$SCENE_DIR/scene-optical-trace.png"
