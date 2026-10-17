@@ -163,11 +163,11 @@ class PixelToOriginalPrimitiveTests(unittest.TestCase):
         path=self.native/"putpixel-native-events.jsonl"
         manifest=self.root/"gpu-putpixel-ot.json"
         original=path.read_bytes()
-        self.assertTrue(original.endswith(b"\\n"))
+        self.assertTrue(original.endswith(b"\n"))
         for mutated in (
             original[:-1],
-            original.replace(b"\\n",b"\\r\\n"),
-            original.replace(b"\\n",b"\\x00\\n",1),
+            original.replace(b"\n",b"\r\n"),
+            original.replace(b"\n",b"\x00\n",1),
         ):
             with self.subTest(tail=repr(mutated[-15:])):
                 self.save()
