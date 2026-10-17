@@ -19,4 +19,6 @@ int vh_map02_edges_end_frame(void);
 unsigned vh_map02_edges_count(void);
 int vh_map02_edges_failed(void);
 int vh_map02_edges_copy(unsigned index, VHMap02VramEdge *out);
+/* Closed-frame, caller-owned JSONL; no disk I/O, zero on invalid/overflow. */
+int vh_map02_edges_format_jsonl(unsigned index, char *dst, unsigned capacity);
 #endif
