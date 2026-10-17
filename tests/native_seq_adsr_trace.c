@@ -14,6 +14,8 @@ static VhNativeSpu spu;
 static int16_t sample[128u];
 static int16_t buffer[128u*2u];
 static uint8_t song[4096u];
+static VhAudioStream paced_ring;
+static int16_t paced_pcm[VH_AUDIO_RING_FRAMES*2u];
 
 static int resolve(void *ctx,unsigned program,unsigned note,
                    unsigned velocity,unsigned volume,unsigned pan,
@@ -57,6 +59,45 @@ static void test_seq(const char *filename,unsigned repeats,unsigned blocks) {
         vh_native_spu_render(&spu,buffer,128u);
     }
 }
+
+static void test_paced_seq(const char *filename,unsigned attempts) {
+    /* The Python Fraction oracle reconstructs music time from successful
+     * PCM pages, despite deliberate backpressure and consumer underruns. */
+    static const unsigned requests[]={
+        0u,0u,32u,256u,0u,0u,0u,4096u,1u,511u,0u,64u
+    };
+    FILE *input=fopen(filename,"rb");
+    assert(input);
+    const size_t bytes=fread(song,1u,sizeof song,input);
+    assert(!ferror(input) && bytes>0u && bytes<sizeof song);
+    assert(fgetc(input)==EOF && !ferror(input));
+    assert(fclose(input)==0);
+    assert(attempts>=1u && attempts<=2048u);
+    vh_native_spu_reset(&spu);
+    vh_audio_stream_reset(&paced_ring);
+    assert(vh_audio_stream_write(&paced_ring,paced_pcm,
+                                 VH_AUDIO_RING_FRAMES)==VH_AUDIO_RING_FRAMES);
+    assert(vh_native_seq_init(&seq,song,bytes,&spu,
+                              resolve,NULL,0u)==0);
+    for(unsigned attempt=0u;attempt<attempts;attempt++) {
+        const int wrote=vh_native_seq_pump(&seq,&paced_ring);
+        assert(wrote==0 || wrote==(int)VH_AUDIO_BLOCK_FRAMES);
+        const size_t request=requests[attempt%
+                            (sizeof requests/sizeof requests[0])];
+        const size_t taken=request
+            ? vh_audio_stream_read(&paced_ring,paced_pcm,request) : 0u;
+        printf("P,%u,%d,%llu,%llu,%llu,%u,%u,%u,%llu,%zu,%zu,%llu,%llu\n",
+               attempt,wrote,(unsigned long long)seq.blocks_advanced,
+               (unsigned long long)seq.note_ons,
+               (unsigned long long)seq.note_offs,seq.tempo,
+               seq.cycles_completed,(unsigned)seq.playing,
+               (unsigned long long)seq.dispatched_events,
+               vh_audio_stream_queued(&paced_ring),taken,
+               (unsigned long long)paced_ring.underrun_frames,
+               (unsigned long long)paced_ring.overrun_frames);
+    }
+}
+
 typedef struct {
     const char *name;
     uint16_t adsr1,adsr2;
@@ -121,6 +162,13 @@ int main(int argc,char **argv) {
             blocks=(unsigned)requested;
         }
         test_seq(argv[2],(unsigned)repeats,blocks);
+        return 0;
+    }
+    if(argc==4 && strcmp(argv[1],"paced")==0) {
+        char *end=NULL;
+        const unsigned long attempts=strtoul(argv[3],&end,10);
+        assert(end && !*end && attempts>=1u && attempts<=2048u);
+        test_paced_seq(argv[2],(unsigned)attempts);
         return 0;
     }
     fprintf(stderr,"usage: native_seq_adsr_trace voice | seq <file> <repeats> [blocks]\n");
