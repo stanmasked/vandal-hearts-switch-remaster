@@ -175,9 +175,11 @@ static int native_submit(void *opaque,const int16_t *pcm,size_t frames) {
     if (!dev->initialized || !dev->started ||
         pcm!=out_48000 || frames==0 ||
         frames>VH_AUDIO_RESAMPLE_MAX_FRAMES) return -1;
-    dev->page.data_size=frames*2u*sizeof(int16_t);
+    /* Reserve BEFORE updating the descriptor: even its metadata must
+     * stay unchanged if a previous attempt remains in flight. */
     if (vh_audio_page_lease_begin(&dev->lease,&dev->page))
         return -1;
+    dev->page.data_size=frames*2u*sizeof(int16_t);
     AudioOutBuffer *returned=NULL;
     /* Measure actual blocking service time (one invocation, including
      * failed attempts), separately from the pre-render DSP budget. */
