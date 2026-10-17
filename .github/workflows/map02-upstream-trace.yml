@@ -135,6 +135,7 @@ on:
       - 'tests/test_verify_map02_putpixel_scope.py'
       - 'tests/test_verify_map02_putpixel_multi_scope.py'
       - 'tests/test_instrument_map02_multi_putpixel_scope.py'
+      - 'tests/test_instrument_map02_multi_putpixel_c11.py'
       - 'tests/test_audit_map02_putpixel_samples.py'
       - 'tests/test_verify_map02_frame_bundle.py'
       - 'tests/test_verify_map02_vram_timeline.py'
@@ -450,6 +451,7 @@ jobs:
             python3 -m unittest discover -s tests -p 'test_audit_map02_putpixel_samples.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_putpixel_multi_scope.py' -v
             python3 -m unittest discover -s tests -p 'test_instrument_map02_multi_putpixel_scope.py' -v
+            python3 -m unittest discover -s tests -p 'test_instrument_map02_multi_putpixel_c11.py' -v
           )
           PYTHONPATH=remaster python3 -m tools.instrument_map02_putpixel_scope \
             upstream/platform/pc/src/libgpu.c \
