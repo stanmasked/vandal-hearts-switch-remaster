@@ -613,6 +613,14 @@ VhAudoutQueueExportResult vh_switch_game_audio_queue_export(
         VH_SCENE_TRACE_SD_DIRECTORY,committed_path,capacity);
 }
 
+VhAudoutQueueExportResult vh_switch_game_audio_clock_export(
+    char *committed_path,size_t capacity) {
+    if(committed_path && capacity) committed_path[0]='\0';
+    if(thread_started) return VH_AUDOUT_QUEUE_EXPORT_INVALID;
+    return vh_audout_clock_export(&audout_telemetry,
+        VH_SCENE_TRACE_SD_DIRECTORY,committed_path,capacity);
+}
+
 VhAudoutQueueExportResult vh_switch_game_audio_latency_export(
     char *committed_path,size_t capacity) {
     if(committed_path && capacity) committed_path[0]='\0';
