@@ -121,3 +121,10 @@ if (( ${#queue_captures[@]} == 1 )) && \
   cp --no-clobber -- "${queue_captures[0]}" \
     "$output/soak-audout-sd-unverified.csv"
 fi
+
+# Distinct failure witness for an SD export that never published CSV.
+# Never replace a missing successful CSV with this status receipt.
+if [[ -f "$SOAK_SD_DIR/audio-audout-export-failure.txt" ]]; then
+  cp --no-clobber -- "$SOAK_SD_DIR/audio-audout-export-failure.txt" \
+    "$output/soak-audout-export-failure.txt"
+fi
