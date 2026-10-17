@@ -57,7 +57,7 @@ def main() -> None:
         assert rows >= 8, f"report page {i} unexpectedly empty ({rows} lines)"
         print(f"audout report page {i}/4: {rows} explicit lines")
     first, pcm, marks, home = pieces
-    for required in ("PCM accounting", "DSP avg/peak", "Backend=", "timing=%s"):
+    for required in ("PCM accounting", "DSP avg/peak", "Backend=", "untimed=%llu", "timing=%s"):
         assert required in first
     for required in ("PCM SEAMS", "Failed logical pages", "Seam audit"):
         assert required in pcm
