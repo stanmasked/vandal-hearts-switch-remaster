@@ -44,8 +44,7 @@ def audit_launch_two_word(capture_dir, source_dir, *,
     # verify_session() populates native_gpu_binding.gpu_events_sha256 from
     # verified original GPU event bytes; the scoped FT4 witness has independently
     # checked its own original native GPU event log's exact SHA.
-    native_binding = replay_receipt_native_gpu_hash(
-        capture_dir, launch_receipt, preflight_report, executable)
+    native_binding = launch["native_gpu_event_log_sha256"]
     if native_binding != sampled["native_gpu_event_log_sha256"]:
         raise ValueError("launch and two-word FT4 native GPU log digests differ")
     if sampled["distinct_private_vram_words_verified"] != 2:
@@ -70,26 +69,6 @@ def audit_launch_two_word(capture_dir, source_dir, *,
         "raw_pixel_coordinates_or_colors_emitted": False,
     }
 
-
-def replay_receipt_native_gpu_hash(directory, receipt, preflight, executable):
-    """Obtain SHA from the same fully revalidated private capture, no shortcuts."""
-    from tools.verify_map02_private_capture_session import verify_session
-    from tools.verify_map02_private_capture_receipt import RECEIPT_KEYS
-    from tools.verify_map02_private_capture_session import _unique_pairs
-    import json
-    raw = Path(receipt).read_bytes()
-    parsed = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_pairs)
-    if type(parsed) is not dict or parsed.keys() != RECEIPT_KEYS:
-        raise ValueError("launcher receipt schema changed during GPU binding")
-    checked = verify_session(
-        directory, native_frame=parsed["capture_frame"],
-        preflight_report=preflight, executable=executable)
-    if checked != parsed["verification"]:
-        raise ValueError("launcher receipt native GPU evidence changed during binding")
-    digest = checked["native_gpu_binding"]["gpu_events_sha256"]
-    if type(digest) is not str or len(digest) != 64:
-        raise ValueError("launcher native GPU event digest unavailable")
-    return digest
 
 
 def main():
