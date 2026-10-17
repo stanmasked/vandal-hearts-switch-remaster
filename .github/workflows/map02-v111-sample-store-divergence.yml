@@ -1,0 +1,32 @@
+name: MAP02 v111 observed VRAM samples versus native Unai pixel stores
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v111-sample-store-divergence.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/summarize_map02_v111_sample_store_divergence.py'
+      - 'tests/test_map02_v111_sample_store_divergence.py'
+      - 'tools/summarize_map02_v110_class_boundary_checkpoints.py'
+      - 'tools/summarize_map02_v109_gp0_class_vblank_stores.py'
+      - 'tools/summarize_map02_v108_vblank_store_buckets.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-native-readback-store-conservation:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Recheck native Unai event accounting, zero-delta stores and privacy
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          for pattern in test_map02_v83_unai_dispatch.py test_map02_v84_unai_samples.py test_map02_v85_native_stores.py test_map02_v108_vblank_store_buckets.py test_map02_v109_gp0_class_vblank_stores.py test_map02_v110_class_boundary_checkpoints.py test_map02_v111_sample_store_divergence.py; do
+            python3 -m unittest discover -s tests -p "$pattern" -v
+          done
