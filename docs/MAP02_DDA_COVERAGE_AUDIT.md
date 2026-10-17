@@ -128,6 +128,31 @@ python3 -m tools.audit_map02_independent_dda_journals /private/dda-capture \
   --native-frame 411 > /private/dda-gpu-cross-check.json
 ```
 
+### Verify the captured session against the preflight binary
+
+After a locally instrumented game has produced a private capture, compare
+the preflight file to the **same** executable path and validate the recorded
+GPU snapshots/DDA journal identities together:
+
+```sh
+python3 -m tools.verify_map02_private_capture_session "$capture_dir" \
+  --frame 411 \
+  --preflight-report "${HOME}/map02-private-preflight.json" \
+  --executable /absolute/path/to/your/instrumented-pcport \
+  > "${HOME}/map02-private-session-check.json"
+```
+
+All values are examples and must be replaced with your actual local
+configuration. The verification refuses preflight reports lacking a checked
+executable SHA-256, a modified binary, inconsistent target frame, missing
+VRAM evidence, contradictory DDA journal entries and incomplete capture
+records. It returns hashes and aggregated checks only; no pixel arrays,
+sample X/Y or private capture paths are included in the report.
+
+**Important:** Hash agreement identifies the bytes inspected before and
+after the run, but cannot prove that those bytes were actually executed,
+that diagnostic callbacks were linked, or that retail MAP02 was rendered.
+The tool never runs the game or enables HD replacement.
 The strict frame option first calls the existing source-pinned native GPU
 capture validator on its **actual before/after VRAM snapshots**. It then
 requires that each supplied DDA record uses this DrawOTag frame, references
