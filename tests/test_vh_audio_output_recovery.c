@@ -596,6 +596,16 @@ static void test_fake_pre_service_submit_retries_same_pcm(void) {
         ++corrupt.synthetic_failed_submissions;
         assert(vh_audio_output_verify_submit_injection(
                    &dev.submit_injection,&corrupt,&stats)==-1);
+        /* Even a labelled injected failure must not hide an extra,
+         * missing, or otherwise unaccounted wrapper-level submit. */
+        corrupt=dev.submit_timing;
+        ++corrupt.calls;
+        assert(vh_audio_output_verify_submit_injection(
+                   &dev.submit_injection,&corrupt,&stats)==-1);
+        corrupt=dev.submit_timing;
+        --corrupt.calls;
+        assert(vh_audio_output_verify_submit_injection(
+                   &dev.submit_injection,&corrupt,&stats)==-1);
         VhAudioOutputRecovery missing=stats;
         missing.recoveries=0u;
         assert(vh_audio_output_verify_submit_injection(
@@ -677,6 +687,26 @@ static void test_fake_submit_then_failed_stop_preserves_lease(void) {
         /* Confirmed stop is the only permission to reuse/free PCM. */
         assert(vh_audio_output_stop_close(&ops)==0);
         assert(dev.stops==3u && dev.closes==2u);
+        assert(vh_audio_page_lease_ready(&dev.lease));
+        /* Explicitly reopen and send the IMMUTABLE original page after
+         * the failed stop. A later successful logical submit must not
+         * retroactively upgrade the earlier failed ZR recovery proof. */
+        assert(leased_open(&dev)==0 && leased_start(&dev)==0);
+        assert(vh_audio_output_submit_recover(
+                          &ops,&stats,dst,frames)==0);
+        assert(dev.calls==2u && dev.returned==1u &&
+               stats.pages_submitted==1u && stats.recoveries==0u);
+        assert(dev.submit_timing.calls==3u &&
+               dev.submit_timing.failed_submissions==2u &&
+               dev.submit_timing.synthetic_failed_submissions==1u);
+        assert(vh_audio_output_verify_submit_injection(
+                    &dev.submit_injection,&dev.submit_timing,&stats)==-1);
+        assert(hash_page(dst,frames)==fingerprint);
+        assert(!memcmp(&seq,&before_seq,sizeof seq));
+        assert(!memcmp(&spu,&before_spu,sizeof spu));
+        assert(!memcmp(&resampler,&before_rate,sizeof resampler));
+        assert(vh_audio_output_stop_close(&ops)==0);
+        assert(dev.stops==4u && dev.closes==3u);
         assert(vh_audio_page_lease_ready(&dev.lease));
     }
 }
