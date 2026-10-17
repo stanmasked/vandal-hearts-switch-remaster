@@ -23,6 +23,8 @@ class OriginalCodeObjectInventoryTests(unittest.TestCase):
         self.upstream = root / "upstream"
         self.pc = self.upstream / "platform/pc"
         self.pc.mkdir(parents=True)
+        (self.pc / "Makefile").write_text(
+            "src/pc_kanji_font.c: tools/gen_kanji_font.py\\n")
         self.bundle = root / "bundle"
         self.bundle.mkdir(mode=0o700)
         self.game = ["src/core/cd.o"] + [
@@ -104,6 +106,17 @@ class OriginalCodeObjectInventoryTests(unittest.TestCase):
     def test_non_public_font_dependency_change_fails_closed(self):
         (self.source_root / "core/text.c").write_text("/* changed */")
         with self.assertRaisesRegex(ValueError, "known original retail asset dependency changed"):
+            self.verify()
+
+    def test_missing_private_bios_generator_or_fabricated_font_rejected(self):
+        (self.pc / "Makefile").write_text("src/pc_kanji_font.c: rogue.py\\n")
+        with self.assertRaisesRegex(ValueError, "KROMDAT BIOS font generator dependency changed"):
+            self.verify()
+        (self.pc / "Makefile").write_text(
+            "src/pc_kanji_font.c: tools/gen_kanji_font.py\\n")
+        forged = self.objroot / "pc_kanji_font.o"
+        forged.write_bytes(b"\\x7fELF" + b"x" * 300)
+        with self.assertRaisesRegex(ValueError, "private KROMDAT-derived backend"):
             self.verify()
 
     def test_path_escape_and_bad_inventory_shape_rejected(self):
