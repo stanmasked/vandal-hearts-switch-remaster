@@ -75,9 +75,29 @@ jobs:
           export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
           make verify-nro
 
+      - name: Generate and verify per-build audio receipt
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 tools/switch_audio_ci_build_receipt.py create \
+            build/vandal-hearts-prototype.nro \
+            --git-sha "$GITHUB_SHA" \
+            --branch "$GITHUB_REF_NAME" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --output build/vandal-hearts-prototype.build.json
+          python3 tools/switch_audio_ci_build_receipt.py verify \
+            build/vandal-hearts-prototype.nro \
+            --receipt build/vandal-hearts-prototype.build.json \
+            --expected-git-sha "$GITHUB_SHA" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-branch "$GITHUB_REF_NAME"
+
       - name: Upload NRO artifact
         uses: actions/upload-artifact@v4
         with:
           name: vandal-hearts-switch-prototype
-          path: build/*.nro
+          path: |
+            build/vandal-hearts-prototype.nro
+            build/vandal-hearts-prototype.build.json
           if-no-files-found: error
