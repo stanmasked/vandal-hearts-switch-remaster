@@ -11,6 +11,7 @@ import unittest
 
 from tools.instrument_map02_dda_rejected_edges import HELPER
 from tools.verify_map02_dda_rejected_edges import validate
+from tools.audit_map02_independent_dda_journals import audit, CANDIDATE_FILE, SPAN_FILE
 
 PREFIX = r"""
 #include <stdio.h>
@@ -95,6 +96,10 @@ class CandidateC11Tests(unittest.TestCase):
                 if enabled:
                     self.assertTrue(journal.exists())
                     records = validate(journal.read_bytes())
+                    envelope = audit(root)
+                    self.assertEqual(envelope["files"][CANDIDATE_FILE]["event_count"], 4)
+                    self.assertIsNone(envelope["files"][SPAN_FILE]["event_count"])
+                    self.assertFalse(envelope["rejected_triangle_pixel_coverage_verified"])
                     self.assertEqual([row["reason"] for row in records], [4, 5, 6, 7])
                     self.assertEqual([row["y"] for row in records], [9, 16, 16, 9])
                     self.assertEqual([row["step"] for row in records], [0, 1, 2, 3])
