@@ -146,6 +146,12 @@ python3 -m tools.prepare_map02_cycle_build \
   /private/map02/VandalHearts-PcPort \
   /private/map02/cycle-build
 
+# First: a full Make DAG dry-run, NO compilation, NO retail bytes read.
+python3 -m tools.check_map02_cycle_make_plan \
+  /private/map02/VandalHearts-PcPort \
+  /private/map02/cycle-build
+
+# Only after the audit succeeds AND your own game inputs are installed:
 cd /private/map02/VandalHearts-PcPort/platform/pc
 make -f Makefile -f /private/map02/cycle-build/map02_cycle.mk \
   link BUILD_DIR=build-map02-cycle REGION=us NO_WEBP=1 NO_HDVIDEO=1
@@ -297,3 +303,22 @@ VH_RASTER_THREADS=1
 структурная проверка ELF и окружение сами по себе этого не доказывают.
 Вмешательство игрока в игровые настройки после запуска проверкой
 окружения отдельно не отслеживается.
+
+## Дополнительный контроль полного графа GNU Make
+
+Поэтому `make -n` проверяет **полный граф сборки**: все объекты
+оригинального игрового кода, `generated_data.o`, четыре
+инструментированные translation units и общие шесть CD/GPU/VRAM модулей
+должны присутствовать в окончательной команде линковки. Проверяющий
+`tools.check_map02_cycle_make_plan` до сухого запуска повторно сверяет
+SHA-256 **каждого** файла приватного набора с неизменённым манифестом,
+соответствие закреплённых оригинальных C-источников и Makefile,
+владельца и права `0600` / `0700`. Подозрительные, лишние файлы или
+изменённые исходники вызывают отказ. Команда печатает только короткий
+результат со SHA-256 развёрнутой строки линковщика, а не игровые данные.
+
+Сухой запуск не создаёт `vandalhearts_pc`, не подтверждает доступность
+подлинного пользовательского SLUS-образа, не компилирует оригинальные
+игровые данные и не является доказательством исполнения MAP02.
+Локальная `make link` всё ещё требует пользовательский оригинальный
+образ и зависимости для всех генераторов исходного PC-порта.
