@@ -276,6 +276,17 @@ this source-pinned PC-port check.
 after the run, but cannot prove that those bytes were actually executed,
 that diagnostic callbacks were linked, or that retail MAP02 was rendered.
 The tool never runs the game or enables HD replacement.
+Native `DrawOTag` event metadata also follows the pinned
+`platform/pc/include/PsyQ/libgpu.h` and generated original C hook.
+The `POLY_FT4` primitive type is exactly `2`: each logged
+before/after draw event with that type **must include** the actual
+`ft4` tpage/CLUT/XY/UV packet, while other native primitive types
+must not claim `ft4` payloads. Load/Move/ClearImage transfer
+events must have primitive type `0`. Missing or fabricated packet
+metadata is rejected, not interpreted as absent geometry. This
+validates captured packet structure, **not** the correctness or origin
+of retail MAP02 vertices or textured pixels.
+
 The strict frame option first calls the existing source-pinned native GPU
 capture validator on its **actual before/after VRAM snapshots**. It then
 requires that each supplied DDA record uses this DrawOTag frame, references
