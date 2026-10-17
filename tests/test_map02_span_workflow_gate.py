@@ -21,6 +21,8 @@ class SpanWorkflowGateTests(unittest.TestCase):
         self.assertIn('candidate-clang.${mode}.o', text)
         self.assertIn('gpu-clang.${mode}.o', text)
         self.assertIn('candidate-linked-clang.${mode}.o', text)
+        self.assertIn('nm --defined-only "build/map02-vertical-dda/candidate-linked-clang.${mode}.o"', text)
+        self.assertIn('nm --defined-only build/map02-vertical-dda/candidate-linked.baseline.o', text)
         self.assertIn('Candidate observer leaked into Clang baseline', text)
 
     def test_trigger_includes_observer_and_test(self):
