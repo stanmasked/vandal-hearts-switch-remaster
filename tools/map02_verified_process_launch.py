@@ -58,6 +58,62 @@ REQUIRED = (
 )
 
 
+def _executable_identity(info):
+    """Metadata for the exact source-bound ELF inode, not merely its hash."""
+    return (info.st_dev, info.st_ino, info.st_uid, info.st_mode,
+            info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+def _open_pinned_cycle_exec_fd(binary, expected_sha256, planned_stat):
+    """Keep the verified ELF inode open until execve, avoiding a pathname race.
+
+    Hash twice on the actual descriptor that Linux will execute. The caller
+    passes this descriptor through Popen(pass_fds) to /proc/self/fd/N and
+    closes it immediately after Popen finishes the exec handoff.
+    """
+    from tools.check_map02_linked_font_elf import MAX_ELF
+    try:
+        fd = os.open(binary, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except OSError:
+        raise ValueError("source-bound MAP02 executable could not be opened") from None
+    try:
+        before = os.fstat(fd)
+        if (not stat.S_ISREG(before.st_mode)
+                or before.st_uid != os.geteuid() or before.st_nlink != 1
+                or not (before.st_mode & stat.S_IXUSR)
+                or not 0 < before.st_size <= MAX_ELF
+                or _executable_identity(before) != _executable_identity(planned_stat)):
+            raise ValueError("source-bound MAP02 executable inode changed before exec")
+
+        def digest_pass():
+            sha = hashlib.sha256()
+            for offset in range(0, before.st_size, 1 << 20):
+                length = min(1 << 20, before.st_size - offset)
+                block = os.pread(fd, length, offset)
+                if len(block) != length:
+                    raise ValueError("source-bound MAP02 executable short read")
+                sha.update(block)
+            return sha.hexdigest()
+
+        first = digest_pass()
+        if _executable_identity(os.fstat(fd)) != _executable_identity(before):
+            raise ValueError("source-bound MAP02 executable changed during fd verification")
+        second = digest_pass()
+        if first != second or first != expected_sha256:
+            raise ValueError("source-bound MAP02 executable fd digest differs from plan")
+        if (_executable_identity(os.fstat(fd)) != _executable_identity(before)
+                or _executable_identity(os.stat(binary, follow_symlinks=False))
+                != _executable_identity(before)):
+            raise ValueError("source-bound MAP02 executable path changed before exec")
+        return fd
+    except OSError:
+        os.close(fd)
+        raise ValueError("source-bound MAP02 executable fd verification unavailable") from None
+    except BaseException:
+        os.close(fd)
+        raise
+
+
 def _fingerprint_kernel_exe(pid):
     """Read kernel procfs link for our live child. Fail closed if unavailable."""
     path = f"/proc/{pid}/exe"
@@ -254,11 +310,26 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
     observed = None
     game_fd_observed = False
     try:
-        process = subprocess.Popen(
-            [str(binary), *arguments], shell=False,
-            env=env, stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            close_fds=True)
+        exec_fd = None
+        extra_exec_args = {}
+        if cycle is not None:
+            # The kernel executes this exact verified inode even if its
+            # pathname is swapped between the audit and subprocess.Popen.
+            exec_fd = _open_pinned_cycle_exec_fd(
+                binary, plan["pc_executable_sha256"], info)
+            extra_exec_args = {
+                "executable": f"/proc/self/fd/{exec_fd}",
+                "pass_fds": (exec_fd,),
+            }
+        try:
+            process = subprocess.Popen(
+                [str(binary), *arguments], shell=False,
+                env=env, stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                close_fds=True, **extra_exec_args)
+        finally:
+            if exec_fd is not None:
+                os.close(exec_fd)
         # A very short-lived program may exit before /proc can be sampled.
         # This must fail closed; it is NOT reason to synthesize an observation.
         deadline = time.monotonic() + min(5, timeout)
@@ -299,6 +370,17 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
             process.kill()
             process.wait()
         raise
+    if cycle is not None:
+        # Equal bytes on a replacement inode are not the same source-bound
+        # executable. A pathname substitution during the child is refused.
+        try:
+            same_path_inode = (_executable_identity(
+                os.stat(binary, follow_symlinks=False)) ==
+                _executable_identity(info))
+        except OSError:
+            same_path_inode = False
+        if not same_path_inode:
+            raise ValueError("source-bound MAP02 executable pathname replaced during run")
     if (executable_digest(binary) != plan["pc_executable_sha256"] or
             _sha_file(owned_game, private=True) != plan["owned_game_image_sha256"] or
             verify_pinned_upstream(upstream) !=
