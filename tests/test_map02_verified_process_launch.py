@@ -6,7 +6,10 @@ prove the OS launches the prepared executable instead of a claimed pathname.
 """
 import json
 import os
+import io
+from contextlib import redirect_stderr
 from pathlib import Path
+import tools.map02_verified_process_launch as launcher
 import subprocess
 import unittest
 from unittest.mock import patch
@@ -75,6 +78,32 @@ int main(int argc, char **argv) {
         return verify_observed_process(
             self.handoff, self.native, self.scoped, self.binary,
             self.owned, upstream=self.upstream)
+
+    def test_launcher_cli_withholds_private_path_from_native_failures(self):
+        private_path = str(self.binary)
+        args = [
+            "map02-process", "run", str(self.handoff), str(self.native),
+            str(self.scoped), "--pc-binary", private_path,
+            "--owned-game-image", str(self.owned),
+            "--upstream-checkout", str(self.upstream),
+            "--x", "10", "--y", "20",
+        ]
+        for error in (
+                OSError("cannot open private ELF " + private_path),
+                subprocess.TimeoutExpired(
+                    [private_path, "run"], 30,
+                    output=("private " + private_path).encode())):
+            with self.subTest(fault=type(error).__name__):
+                output = io.StringIO()
+                with (patch("sys.argv", args),
+                      patch.object(launcher, "launch_observed_pc",
+                                   side_effect=error),
+                      redirect_stderr(output)):
+                    with self.assertRaises(SystemExit) as caught:
+                        launcher.main()
+                self.assertEqual(caught.exception.code, 2)
+                self.assertIn("execution unavailable", output.getvalue())
+                self.assertNotIn(private_path, output.getvalue())
 
     def test_genuine_child_elf_checked_against_prepared_binary(self):
         result = self.run_capture()
