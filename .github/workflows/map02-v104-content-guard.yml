@@ -140,6 +140,11 @@ on:
       - 'tools/apply_map02_v128_pcsx_rearmed.py'
       - 'tools/summarize_map02_v128_triple_vblank_profiles.py'
       - 'tests/test_map02_v128_triple_vblank_profiles.py'
+      - 'tools/make_map02_v129_four_vblank_exe.py'
+      - 'tools/apply_map02_v129_pcsx_rearmed.py'
+      - 'tools/summarize_map02_v129_four_vblank_profiles.py'
+      - 'tests/test_map02_v129_four_vblank_profiles.py'
+      - '.github/workflows/map02-v129-four-real-vblank.yml'
       - '.github/workflows/map02-v128-triple-real-vblank.yml'
       - 'tools/map02_v80_native_timeline.*'
       - 'tools/map02_v81_event_jsonl.*'
@@ -223,6 +228,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v126_genuine_vblank_dma.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v127_vblank_profiles.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v128_triple_vblank_profiles.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v129_four_vblank_profiles.py' -v
       - name: Patch pinned upstream with Unai post-dispatch observer
         shell: bash
         run: |
@@ -233,7 +239,7 @@ jobs:
           git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
           git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
-          python3 -m remaster.tools.apply_map02_v128_pcsx_rearmed upstream-pcsx
+          python3 -m remaster.tools.apply_map02_v129_pcsx_rearmed upstream-pcsx
           git -C upstream-pcsx diff --check
           grep -F 'vh80_record(VH83_GP0_UNAI_HANDLED' upstream-pcsx/plugins/gpu_unai/gpulib_if.cpp
           grep -F 'VH83_UNAI_DISPATCH_PASS' upstream-pcsx/frontend/main.c
@@ -1190,6 +1196,51 @@ jobs:
           assert report["original_retail_MAP02_verified"] is False
           assert report["HD_replacement_approved"] is False
           Path("proof/public/v128-triple-real-vblank-profiles-summary.json").write_text(
+              json.dumps(report,sort_keys=True)+"\n")
+          PY
+      - name: Verify four genuine VBlank edges across five original MIPS DMA split timings
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum -c proof/private/native.sha256
+          python3 -m remaster.tools.make_map02_v129_four_vblank_exe \
+            --output proof/private/V129_SYNTHETIC.EXE
+          test "$(stat -c %s proof/private/V129_SYNTHETIC.EXE)" -eq 10240
+          for mode in 04 13 22 31 40; do
+            mkdir -m 700 -p "proof/v129-home-$mode"
+            timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+              SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+              HOME="$PWD/proof/v129-home-$mode" \
+              ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+              "--vh129-vblank-$mode" \
+              proof/private/V129_SYNTHETIC.EXE \
+              > "proof/private/v129-$mode.log" 2>&1 || {
+                tail -n 100 "proof/private/v129-$mode.log"
+                exit 1
+              }
+            grep -F 'VH129_REAL_VBLANK_PROFILES_PASS mode=' \
+              "proof/private/v129-$mode.log"
+            sha256sum -c proof/private/native.sha256
+            test ! -e proof/private/V104_RENDERER_EVENTS.jsonl.tmp
+          done
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from remaster.tools.summarize_map02_v129_four_vblank_profiles import summarize_all
+          modes=("04","13","22","31","40")
+          report=summarize_all([
+              Path(f"proof/private/v129-{mode}.log").read_text()
+              for mode in modes
+          ])
+          assert report["all_modes_verified"] is True
+          assert report["all_intervals_0_1_2_3_4_exercised"] is True
+          assert [p["mode"] for p in report["profiles"]]==list(modes)
+          assert [p["real_vblank_events"] for p in report["profiles"]]==[4]*5
+          assert [p["native_four_back_return_gap"] for p in report["profiles"]]==[4]*5
+          assert report["no_host_injected_cycles_vblank_or_gpu_commands"] is True
+          assert report["original_retail_MAP02_verified"] is False
+          assert report["HD_replacement_approved"] is False
+          Path("proof/public/v129-four-real-vblank-profiles-summary.json").write_text(
               json.dumps(report,sort_keys=True)+"\n")
           PY
       - name: Publish aggregate status only, never private trace
