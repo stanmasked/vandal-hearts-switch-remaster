@@ -40,6 +40,8 @@ static void full_audit(const VhAudioSceneWaits *w,
                        const VhAudioListeningMarks *m) {
     assert(vh_audio_output_verify_pcm_seams(
         s,w,m->returned_pages)==0);
+    assert(vh_audio_last_returned_page_verify(
+        s,m,m->returned_pages)==0);
     audit(j,m);
     assert(w->ordinary.pages+w->first_after_switch.pages ==
            m->returned_pages);
@@ -145,6 +147,113 @@ static void full_transaction_test(void) {
            s.delivered_pages==3u && j.ordinary.returned==2u);
 }
 
+
+/* Separately verify the last returned PCM page after ring wrap,
+ * and when a FINAL audout submission failed after earlier success.
+ * Aggregate histograms alone cannot prove the tail slot matches.
+ */
+static void last_returned_tail_test(void) {
+    const uint64_t hz=19200000u;
+    const size_t frames=2u;
+    const uint64_t waits[4]={400u,1200u,2000u,4000u};
+    VhAudioSceneWaits w={0};
+    VhAudioPcmSeams seams={0};
+    VhAudioComputeWaitJoin joint={0};
+    VhAudioListeningMarks marks={0};
+    VhAudioSubmitTiming timing={0};
+    assert(vh_audio_last_returned_page_verify(
+        &seams,&marks,0u)==0);
+    assert(vh_audio_last_returned_page_verify(
+        &seams,&marks,1u)==-1);
+    assert(vh_audio_last_returned_page_verify(
+        NULL,&marks,0u)==-1);
+    assert(vh_audio_last_returned_page_verify(
+        &seams,NULL,0u)==-1);
+
+    VhAudioPcmSeams broken_seams=seams;
+    broken_seams.last_l=1;
+    assert(vh_audio_last_returned_page_verify(
+        &broken_seams,&marks,0u)==-1);
+
+    for (unsigned i=0u;i<96u;i++) {
+        const VhAudioSubmitTiming before=timing;
+        const int16_t pcm[4]={
+            (int16_t)(100+(int)i*5), (int16_t)(-100-(int)i*5),
+            (int16_t)(200+(int)i*7), (int16_t)(-200-(int)i*7)
+        };
+        const unsigned scene=(unsigned)(i>0u && i%13u==0u);
+        const unsigned dsp=(unsigned)(i%7u==2u);
+        assert(vh_audio_output_record_submit_timing(
+            &timing,waits[i%4u],hz,frames,1)==0);
+        assert(vh_audio_returned_page_telemetry_record(
+            &w,&seams,&joint,&marks,pcm,frames,scene,
+            &before,&timing,hz,dsp)==0);
+        full_audit(&w,&seams,&joint,&marks);
+        assert(vh_audio_last_returned_page_verify(
+            &seams,&marks,i+1u)==0);
+        if (i==0u) {
+            assert(seams.last_abs_step==0u);
+            assert(seams.first_wait_band==0u);
+        }
+    }
+    assert(marks.returned_pages==96u);
+    const unsigned slot=(unsigned)(
+        (marks.returned_pages-1u)%VH_LISTEN_RECENT_PAGES);
+    const VhListenPage actual=marks.recent[slot];
+    assert(slot==31u);
+    assert(actual.wait_band==3u);
+
+    /* The final rendered page never returned: the wait bucket grows
+     * but neither the last seam nor listening ring may advance. */
+    const VhAudioSubmitTiming before_failed=timing;
+    assert(vh_audio_output_record_submit_timing(
+        &timing,1200u,hz,frames,0)==0);
+    assert(vh_audio_output_record_scene_page(
+        &w,&before_failed,&timing,hz,frames,0,0)==0);
+    assert(vh_audio_output_verify_pcm_seams(
+        &seams,&w,96u)==0);
+    assert(vh_audio_last_returned_page_verify(
+        &seams,&marks,96u)==0);
+    assert(!memcmp(&marks.recent[slot],&actual,sizeof actual));
+    assert(vh_audio_listening_verify(&marks,96u)==0);
+
+    /* Corrupt only the most recent A/B ring sample. Independent
+     * aggregate seam and DSP counts still pass, so the NEW tail
+     * cross-check must reject the mismatch. */
+    marks.recent[slot].wait_band=0u;
+    assert(vh_audio_listening_verify(&marks,96u)==0);
+    assert(vh_audio_output_verify_pcm_seams(&seams,&w,96u)==0);
+    assert(vh_audio_last_returned_page_verify(
+        &seams,&marks,96u)==-1);
+    marks.recent[slot]=actual;
+    marks.recent[slot].seam_step^=1u;
+    assert(vh_audio_last_returned_page_verify(
+        &seams,&marks,96u)==-1);
+    marks.recent[slot]=actual;
+    broken_seams=seams;
+    broken_seams.last_abs_step^=1u;
+    assert(vh_audio_last_returned_page_verify(
+        &broken_seams,&marks,96u)==-1);
+    broken_seams=seams;
+    broken_seams.last_wait_band=0u;
+    assert(vh_audio_last_returned_page_verify(
+        &broken_seams,&marks,96u)==-1);
+
+    /* Reject a new page when an earlier tail is corrupt, without
+     * publishing any of the four candidate recorders. */
+    marks.recent[slot].seam_step^=1u;
+    const VhAudioSubmitTiming bogus_before=timing;
+    VhAudioSubmitTiming bogus_after=bogus_before;
+    assert(vh_audio_output_record_submit_timing(
+        &bogus_after,400u,hz,frames,1)==0);
+    const int16_t last_pcm[4]={300,-300,400,-400};
+    full_must_fail(&w,&seams,&joint,&marks,last_pcm,frames,
+                   0u,&bogus_before,&bogus_after,hz,0u);
+    marks.recent[slot]=actual;
+    assert(vh_audio_last_returned_page_verify(
+        &seams,&marks,96u)==0);
+}
+
 int main(void) {
     VhAudioComputeWaitJoin joint={0};
     VhAudioListeningMarks marks={0};
@@ -221,6 +330,7 @@ int main(void) {
     audit(&joint,&marks);
     assert(marks.returned_pages==101u);
     full_transaction_test();
+    last_returned_tail_test();
     puts("audout DSP/listening returned-page atomic transaction: PASS");
     return 0;
 }

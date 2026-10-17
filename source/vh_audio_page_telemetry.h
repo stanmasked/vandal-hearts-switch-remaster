@@ -53,6 +53,49 @@ static inline int vh_audio_page_telemetry_record(
     return 0;
 }
 
+/* End-of-run and pre-commit cross-check for the most recent RETURNED
+ * PCM page. Final failed audout submissions are intentionally absent
+ * from BOTH objects: they may extend wait buckets, but never update
+ * the last PCM seam or the human listening ring.
+ *
+ * All operations are read-only. The ring may wrap every 32 pages;
+ * the tail is always at (returned_pages - 1) % 32. No PCM samples
+ * or input-event history are inspected, copied or retained.
+ */
+static inline int vh_audio_last_returned_page_verify(
+    const VhAudioPcmSeams *seams, const VhAudioListeningMarks *marks,
+    uint64_t expected_returned) {
+    if (!seams || !marks ||
+        seams->delivered_pages!=expected_returned ||
+        marks->returned_pages!=expected_returned ||
+        (seams->has_previous!=0 && seams->has_previous!=1))
+        return -1;
+    if (!expected_returned)
+        return (seams->has_previous || seams->last_wait_band ||
+            seams->first_wait_band || seams->last_abs_step ||
+            seams->last_l || seams->last_r) ? -1 : 0;
+
+    if (!seams->has_previous ||
+        seams->last_wait_band>=VH_AUDIO_WAIT_BANDS ||
+        seams->first_wait_band>=VH_AUDIO_WAIT_BANDS ||
+        seams->last_abs_step>65535u) return -1;
+    const unsigned slot=(unsigned)(
+        (expected_returned-1u)%VH_LISTEN_RECENT_PAGES);
+    const VhListenPage *tail=&marks->recent[slot];
+    if (tail->wait_band>=VH_AUDIO_WAIT_BANDS ||
+        tail->scene_boundary>1u || tail->retry>1u ||
+        tail->dsp_over_budget>1u || tail->seam_step>65535u ||
+        tail->wait_band!=seams->last_wait_band ||
+        tail->seam_step!=seams->last_abs_step)
+        return -1;
+    /* No previous tail exists on the first returned page. */
+    if (expected_returned==1u &&
+        (seams->last_abs_step!=0u ||
+         seams->last_wait_band!=seams->first_wait_band))
+        return -1;
+    return 0;
+}
+
 /* Atomic transaction for ONE successfully returned logical PCM page:
  * 1. Stage latency category and inter-page PCM16 seam counters.
  * 2. Stage joint DSP/wait counters.
@@ -75,7 +118,9 @@ static inline int vh_audio_returned_page_telemetry_record(
     uint64_t tick_frequency, unsigned dsp_over_budget) {
     if (!waits || !seams || !joint || !marks || !pcm ||
         !before || !after || scene_boundary>1u || dsp_over_budget>1u ||
-        after->calls<=before->calls)
+        after->calls<=before->calls ||
+        vh_audio_last_returned_page_verify(
+            seams,marks,seams->delivered_pages))
         return -1;
     VhAudioSceneWaits next_waits=*waits;
     VhAudioPcmSeams next_seams=*seams;

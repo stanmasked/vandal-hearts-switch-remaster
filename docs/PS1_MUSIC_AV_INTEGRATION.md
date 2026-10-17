@@ -1579,3 +1579,36 @@ the original metadata. It runs in both Make host suites and
 under PCM CI UndefinedBehaviorSanitizer. These are internal
 metadata consistency guarantees; no physical-console acoustic
 quality is implied.
+
+
+### Last returned PCM page vs A/B ring tail integrity on early exit
+
+After merging four returned-page diagnostic views into one atomic
+transaction, the final audit still only compared their aggregate page
+counts and latency histograms. The **most recent returned PCM page**
+could be mislabeled in the 32-slot listening ring without changing
+any totals: the ring's last wait band or PCM16 boundary step could
+disagree with the corresponding final PCM seam. Such a contradictory
+report must not be eligible for FULL integrity.
+
+The new read-only portable
+\`vh_audio_last_returned_page_verify\` compares the two page clocks,
+the exact ring tail slot at \`(returned_pages-1)%32\`, the last
+delivered page's normalized audout wait band and PCM16 inter-page
+step, and the zero-seam special case of the first successful page.
+An empty run must have no previous PCM metadata. It is checked
+both before accepting a subsequent returned page and during final
+validation. Report screen 2/3 now explicitly shows the tail audit.
+Contradictory tail metadata fails closed as part of the PCM seam
+audit, with no extra audio service operation or copied PCM data.
+
+Critically, terminally **failed audout submissions do not update the
+last-returned PCM seam or listener ring**: they only add a failed
+logical page to the audout wait histogram. The new 96-page synthetic
+regression crosses the 32-page ring wrap three times and tests a
+failed final submission, valid retained tail, targeted single-field
+corruption that leaves independent aggregate counts unchanged,
+and bytewise nonmutation when a subsequent page is attempted from
+an already inconsistent tail. It runs in the existing host and
+UBSan telemetry tests. These checks are software bookkeeping,
+not physical Switch audible-glitch measurements.

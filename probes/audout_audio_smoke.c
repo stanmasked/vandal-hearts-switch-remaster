@@ -200,7 +200,7 @@ typedef struct {
     int compute_evidence;
     uint64_t tick_frequency;
     unsigned played, switched, user_files;
-    int result, seam_evidence, listen_evidence, poll_evidence;
+    int result, seam_evidence, tail_evidence, listen_evidence, poll_evidence;
     unsigned verdict;
 } VhAudioProbeReport;
 
@@ -287,6 +287,8 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
         printf("Seam audit=%s; pages=%llu\n",
                r->seam_evidence ? "INVALID" : "VALID",
                (unsigned long long)pcm->delivered_pages);
+        printf("Last returned PCM / A-B ring=%s\n",
+               r->tail_evidence ? "INVALID" : "VALID");
         printf("Bins: <=1x <=2x <=4x >4x\n");
         printf("Normal seam counts: %llu %llu %llu %llu\n",
                (unsigned long long)pcm->ordinary.count[0],
@@ -595,8 +597,11 @@ int main(int argc, char **argv) {
         &compute,played_blocks,completed_switches) ||
         vh_audio_compute_wait_verify(&compute_wait,&compute,
             &output.scene_waits,played_blocks,completed_switches);
+    const int tail_evidence=vh_audio_last_returned_page_verify(
+        &seam_stats,&listening_marks,played_blocks);
     const int seam_evidence=vh_audio_output_verify_pcm_seams(
-        &seam_stats,&output.scene_waits,played_blocks);
+        &seam_stats,&output.scene_waits,played_blocks) ||
+        tail_evidence;
     const uint64_t joint_dsp=
         compute_wait.ordinary.dsp_over+
         compute_wait.first_after_switch.dsp_over;
@@ -629,7 +634,7 @@ int main(int argc, char **argv) {
         .tick_frequency=tick_frequency,
         .played=played_blocks,.switched=completed_switches,
         .user_files=(unsigned)user_files,.result=result,
-        .seam_evidence=seam_evidence,
+        .seam_evidence=seam_evidence,.tail_evidence=tail_evidence,
         .listen_evidence=listen_evidence,.poll_evidence=poll_evidence,
         .verdict=verdict
     };
