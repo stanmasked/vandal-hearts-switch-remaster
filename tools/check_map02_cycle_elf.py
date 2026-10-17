@@ -18,7 +18,7 @@ import subprocess
 # The original 209-glyph KROM-to-C source must be represented by a
 # file-backed initialized DATA symbol in the final ELF, not only in a
 # planned/compiled intermediate object or an uninitialized BSS placeholder.
-ORIGINAL_FONT_DATA_SYMBOLS = ("pc_kanji_charset2",)
+ORIGINAL_FONT_DATA_SYMBOLS = {"pc_kanji_charset2": 209 * 30}
 
 SYMBOLS = (
     "LoadCdFile",
@@ -44,7 +44,7 @@ SYMBOLS = (
 
 def _run(exe, path):
     command = (["readelf", "-h", str(path)] if exe == "readelf"
-               else ["nm", "-g", "--defined-only", "--", str(path)])
+               else ["nm", "-g", "-S", "--defined-only", "--", str(path)])
     result = subprocess.run(
         command,
         capture_output=True, text=True, timeout=30, check=False)
@@ -71,20 +71,25 @@ def audit_cycle_elf(path):
     if not re.search(r"^\s*Machine:\s+.*(X86-64|80386|AArch64)", header, re.M):
         raise ValueError("unsupported MAP02 PC ELF architecture")
     symbols = set()
-    initialized_data = set()
+    initialized_data = {}
     for line in _run("nm", binary).splitlines():
         parts = line.split()
         if len(parts) >= 3:
             if parts[-2] in ("T", "W"):
                 symbols.add(parts[-1])
-            elif parts[-2] in ("R", "D"):
-                initialized_data.add(parts[-1])
+            elif parts[-2] in ("R", "D") and len(parts) >= 4:
+                try:
+                    initialized_data[parts[-1]] = int(parts[-3], 16)
+                except ValueError:
+                    continue
     missing = sorted(set(SYMBOLS) - symbols)
     if missing:
         raise ValueError(
             "MAP02 original CD/GPU cycle ELF lacks required symbol(s): " +
             ", ".join(missing))
-    missing_font = sorted(set(ORIGINAL_FONT_DATA_SYMBOLS) - initialized_data)
+    missing_font = sorted(
+        name for name, size in ORIGINAL_FONT_DATA_SYMBOLS.items()
+        if initialized_data.get(name) != size)
     if missing_font:
         raise ValueError(
             "MAP02 PC executable lacks initialized original US font data: " +
