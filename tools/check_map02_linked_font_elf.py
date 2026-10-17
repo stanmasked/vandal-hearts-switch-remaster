@@ -5,6 +5,7 @@ A separate ELF32/ELF64 little-endian parser locates pc_kanji_charset2 in
 an initialized, allocated read-only section backed by a readable PT_LOAD.
 Only a Boolean is reported: never publish font contents or byte differences.
 """
+import hashlib
 import os
 from pathlib import Path
 import stat
@@ -19,6 +20,50 @@ MAX_TABLE = 32 * 1024 * 1024
 def _inside(offset, length, total):
     return (isinstance(offset, int) and isinstance(length, int)
             and 0 <= offset <= total and 0 <= length <= total - offset)
+
+
+
+def stable_owned_elf_sha256(binary):
+    """Hash the same nonlinked owned executable inode from start to finish.
+
+    Return only the full ELF hash. Never disclose private paths or binary data.
+    Compare the final pathname identity to the original open descriptor,
+    rejecting symlink/hardlink replacement and concurrent metadata mutation.
+    """
+    path = Path(binary)
+    if path.is_symlink():
+        raise ValueError("private ELF digest input symlinked")
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except OSError:
+        raise ValueError("private ELF digest input unavailable") from None
+    try:
+        before = os.fstat(fd)
+        if (not stat.S_ISREG(before.st_mode)
+                or before.st_uid != os.geteuid()
+                or before.st_nlink != 1
+                or not (before.st_mode & stat.S_IXUSR)
+                or not 0 < before.st_size <= MAX_ELF):
+            raise ValueError("private ELF digest input is not owned executable")
+        identity = lambda st: (st.st_dev, st.st_ino, st.st_uid, st.st_mode,
+                               st.st_nlink, st.st_size, st.st_mtime_ns,
+                               st.st_ctime_ns)
+        checksum = hashlib.sha256()
+        for offset in range(0, before.st_size, 1 << 20):
+            length = min(1 << 20, before.st_size - offset)
+            chunk = os.pread(fd, length, offset)
+            if len(chunk) != length:
+                raise ValueError("private ELF digest short read")
+            checksum.update(chunk)
+        try:
+            named = os.stat(path, follow_symlinks=False)
+        except OSError:
+            raise ValueError("private ELF digest input replaced") from None
+        if identity(os.fstat(fd)) != identity(before) or identity(named) != identity(before):
+            raise ValueError("private ELF digest input changed during hashing")
+        return checksum.hexdigest()
+    finally:
+        os.close(fd)
 
 
 def check_linked_font_bytes(binary, expected):
