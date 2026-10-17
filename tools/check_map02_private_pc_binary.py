@@ -68,13 +68,17 @@ def inspect_binary(path, *, nm="nm"):
                 or tuple(getattr(os.stat(path, follow_symlinks=False), k)
                          for k in identity_keys) != original_identity):
             raise ValueError("private ELF identity changed while inspecting")
-        # Never invoke the executable. nm reads ELF metadata only. No shell.
+        # Never invoke the executable. Inspect exactly the descriptor we
+        # SHA-checked: resolving its original pathname a second time would
+        # allow a substituted ELF to supply different symbol-table results.
+        # Linux procfs is required by require_elf_image() above.
         nm_path = shutil.which(nm)
         if not nm_path:
             raise ValueError("required native ELF symbol inspector nm unavailable")
         try:
             result = subprocess.run(
-                [nm_path, "-a", "--defined-only", str(path)],
+                [nm_path, "-a", "--defined-only", f"/proc/self/fd/{fd}"],
+                pass_fds=(fd,),
                 capture_output=True, text=True, encoding="utf-8",
                 errors="replace", timeout=20, check=False,
                 env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
