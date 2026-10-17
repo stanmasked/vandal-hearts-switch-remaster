@@ -177,9 +177,10 @@ int vh_audio_page_lease_begin(VhAudioPageLease *lease,
  * A NULL or foreign pointer must leave the lease outstanding. */
 int vh_audio_page_lease_return(VhAudioPageLease *lease,
                                const void *returned_descriptor);
-/* Clear a possibly outstanding descriptor ONLY after confirmed stop.
- * The caller must not call this following a failed stop. */
-int vh_audio_page_lease_stopped(VhAudioPageLease *lease);
+/* Clear a possibly outstanding descriptor only when the actual backend
+ * stop callback returned 0. Pass that same result unchanged; a failed
+ * stop may still own the PCM and must leave the lease untouched. */
+int vh_audio_page_lease_stopped(VhAudioPageLease *lease, int stop_result);
 /* True if it is safe to reuse PCM backing and change music scene. */
 int vh_audio_page_lease_ready(const VhAudioPageLease *lease);
 
