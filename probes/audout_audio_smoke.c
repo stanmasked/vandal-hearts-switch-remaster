@@ -298,10 +298,9 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
                                                        "INVALID");
         printf("Pages %u/%u, fixture switches=%u\n",
                r->played,MAX_PROBE_BLOCKS,r->switched);
-        printf("Backend calls=%llu  failed=%llu\n",
+        printf("Backend=%llu failed=%llu timing=%s\n",
                (unsigned long long)r->output->timing.calls,
-               (unsigned long long)r->output->timing.failed_submissions);
-        printf("Timing accumulator=%s\n",
+               (unsigned long long)r->output->timing.failed_submissions,
                r->output->timing_fault ? "INVALID" : "VALID");
         printf("Peak wait=%llu us; >page calls=%llu\n",
                (unsigned long long)vh_audio_output_ticks_to_us(
