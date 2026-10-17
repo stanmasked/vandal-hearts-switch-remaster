@@ -80,6 +80,8 @@ static void test_voices(void) {
         {"interrupt_exp_attack",0xfe0fu,0x0030u,0x0800u,0,56,256u,2u},
         {"boundary_release",0x000fu,0x0000u,0x0800u,0,56,64u,1u},
         {"boundary_exp_release",0x800fu,0x0030u,0x0800u,0,56,128u,4u},
+        {"immediate_key_off",0x7e0fu,0x0000u,0x0800u,0,56,32u,0u},
+        {"short_key_off",0x000fu,0x0020u,0x0800u,0,56,32u,1u},
     };
     for(size_t i=0u;i<sizeof cases/sizeof cases[0];i++) {
         const VoiceCase *v=&cases[i];
