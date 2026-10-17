@@ -162,11 +162,16 @@ static int native_start(void *opaque) {
 }
 static int native_stop(void *opaque) {
     NativeOutput *dev=opaque;
-    if (!dev->started) return 0;
-    /* A failed stop MUST leave the lease outstanding; the service
-     * may still read the old 0x1000-byte PCM page. */
-    if (R_FAILED(audoutStopAudioOut())) return -1;
-    if (vh_audio_page_lease_stopped(&dev->lease)) return -1;
+    /* A stopped service with an outstanding page is contradictory:
+     * never authorize closing or reusing its backing memory. */
+    if (!dev->started)
+        return vh_audio_page_lease_ready(&dev->lease) ? 0 : -1;
+    /* The exact service stop result controls the lease. A failed
+     * stop cannot authorize reuse, restart or a music scene switch. */
+    const Result rc=audoutStopAudioOut();
+    if (vh_audio_page_lease_stopped(&dev->lease,
+                                  R_SUCCEEDED(rc) ? 0 : -1))
+        return -1;
     dev->started=0;
     return 0;
 }
