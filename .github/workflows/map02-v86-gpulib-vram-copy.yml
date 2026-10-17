@@ -2,13 +2,12 @@ name: MAP02 v86 pinned gpulib A0 upload and host 80 copy stores
 on:
   pull_request:
     paths:
-      - '.github/workflows/map02-v86-native-stores.yml'
+      - '.github/workflows/map02-v86-gpulib-vram-copy.yml'
       - 'tools/apply_map02_v86_pcsx_rearmed.py'
       - 'tools/summarize_map02_v85_native_stores.py'
       - 'tests/test_map02_v85_native_stores.py'
       - 'tools/summarize_map02_v84_unai_samples.py'
       - 'tests/test_map02_v84_unai_samples.py'
-      - 'tools/apply_map02_v86_pcsx_rearmed.py'
       - 'tools/summarize_map02_v86_gpulib_stores.py'
       - 'tests/test_map02_v86_gpulib_stores.py'
       - 'tools/map02_v80_native_timeline.*'
