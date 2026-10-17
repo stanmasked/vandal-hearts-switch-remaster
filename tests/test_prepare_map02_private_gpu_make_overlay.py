@@ -63,19 +63,19 @@ class PrivateGpuMakeOverlayTests(unittest.TestCase):
         pc.mkdir(parents=True)
         (pc / "src").mkdir()
         original = (
-            "REGION ?= us\\nBUILD_DIR ?= build\\n"
-            "CC := cc\\nM32 := -m64\\nSAN :=\\nPORT_WARN := -Wall\\n"
-            "$(BUILD_DIR)/libgpu.o: src/libgpu.c\\n"
-            "\\t$(CC) -c -o $@ $<\\n"
-            "$(BUILD_DIR)/pc_raster.o: src/pc_raster.c\\n"
-            "\\t$(CC) -c -o $@ $<\\n"
+            "REGION ?= us\nBUILD_DIR ?= build\n"
+            "CC := cc\nM32 := -m64\nSAN :=\nPORT_WARN := -Wall\n"
+            "$(BUILD_DIR)/libgpu.o: src/libgpu.c\n"
+            "\t$(CC) -c -o $@ $<\n"
+            "$(BUILD_DIR)/pc_raster.o: src/pc_raster.c\n"
+            "\t$(CC) -c -o $@ $<\n"
         )
         (pc / "Makefile").write_text(original)
         for name in ("libgpu.c", "pc_raster.c"):
-            (pc / "src" / name).write_text("int baseline_" + name.split(".")[0] + ";\\n")
+            (pc / "src" / name).write_text("int baseline_" + name.split(".")[0] + ";\n")
         self.destination.mkdir()
         for name in (builder.GENERATED_GPU, builder.GENERATED_RASTER):
-            (self.destination / name).write_text("int private_probe;\\n")
+            (self.destination / name).write_text("int private_probe;\n")
         (self.destination / builder.GENERATED_MAKE).write_text(
             builder.make_overlay(self.destination))
         arguments = [
