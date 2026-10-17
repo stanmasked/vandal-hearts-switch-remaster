@@ -756,6 +756,34 @@ jobs:
             echo "This is a compile/link check, NOT an original MAP02 gameplay capture."
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Save reproducible original GPU object manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd upstream/platform/pc
+          mkdir -p build/map02-vertical-dda/evidence
+          test "$(git rev-parse HEAD)" = 14552fffa0e0b47e02b57592e274fc6e7a649923
+          git rev-parse HEAD > build/map02-vertical-dda/evidence/upstream-commit.txt
+          printf '%s\\n' "$GITHUB_SHA" > build/map02-vertical-dda/evidence/remaster-commit.txt
+          gcc --version | head -1 > build/map02-vertical-dda/evidence/gcc-version.txt
+          clang --version | head -1 > build/map02-vertical-dda/evidence/clang-version.txt
+          (
+            cd build/map02-vertical-dda
+            sha256sum candidate-linked.diagnostic.o candidate-linked.baseline.o \\
+                      candidate-linked-clang.diagnostic.o candidate-linked-clang.baseline.o \\
+              > evidence/objects.sha256
+            sha256sum --check evidence/objects.sha256
+          )
+          test "$(wc -l < build/map02-vertical-dda/evidence/objects.sha256)" -eq 4
+
+      - name: Upload original GPU object evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-original-gpu-candidate-evidence
+          path: upstream/platform/pc/build/map02-vertical-dda/evidence/
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Verify pinned make-overlay diagnostic object compilation
         shell: bash
         run: |
