@@ -20,6 +20,58 @@ import tempfile
 FILES = ("801009bc.inc", "80100e9c.inc", "801012e4.inc")
 GENERATOR = "platform/pc/tools/gen_psx_includes.py"
 GENERATOR_BLOB_SHA1 = "5d4093dbfdf9aeec6a2d29711eb7b7741b4d98ca"
+MAX_OWNED_EXE_BYTES = 8 * 1024 * 1024
+
+
+def _identity(info):
+    # Fail closed on replaced-but-identical inodes and in-place modification.
+    return (info.st_dev, info.st_ino, info.st_uid, info.st_mode,
+            info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+def _snapshot_exe(exe, private):
+    """Copy from an O_NOFOLLOW descriptor, not a mutable path for the child."""
+    output = private / "owned-us-exe.snapshot"
+    digest = hashlib.sha256()
+    try:
+        fd = os.open(exe, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        with os.fdopen(fd, "rb") as source:
+            initial = os.fstat(source.fileno())
+            if (not stat.S_ISREG(initial.st_mode)
+                    or initial.st_uid != os.geteuid()
+                    or initial.st_nlink != 1
+                    or not (0x800 < initial.st_size <= MAX_OWNED_EXE_BYTES)):
+                raise ValueError("original US executable snapshot metadata invalid")
+            with output.open("xb") as dest:
+                output.chmod(0o600)
+                while True:
+                    block = source.read(1024 * 1024)
+                    if not block:
+                        break
+                    digest.update(block)
+                    dest.write(block)
+            if _identity(os.fstat(source.fileno())) != _identity(initial):
+                raise ValueError("original US executable changed during snapshot")
+        if _identity(os.stat(exe, follow_symlinks=False)) != _identity(initial):
+            raise ValueError("original US executable changed during snapshot")
+    except OSError:
+        raise ValueError("original US executable cannot be safely snapshotted") from None
+    return output, digest.hexdigest(), _identity(initial)
+
+
+def _verify_exe_unchanged(exe, sha256, identity):
+    try:
+        if exe.is_symlink() or _identity(exe.stat()) != identity:
+            raise ValueError("original US executable changed during regeneration")
+        digest = hashlib.sha256()
+        with exe.open("rb") as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(block)
+        if digest.hexdigest() != sha256 or _identity(exe.stat()) != identity:
+            raise ValueError("original US executable changed during regeneration")
+    except OSError:
+        raise ValueError("original US executable changed during regeneration") from None
+
 
 
 def _original_blob_sha1(data):
@@ -35,6 +87,7 @@ def check_original_includes(upstream, *, timeout=20):
     generator = upstream / GENERATOR
     if generator.is_symlink() or not generator.is_file():
         raise ValueError("pinned original include generator missing or linked")
+    generator_identity = _identity(generator.stat())
     source = generator.read_bytes()
     if _original_blob_sha1(source) != GENERATOR_BLOB_SHA1:
         raise ValueError("original include generator differs from pinned source")
@@ -53,33 +106,54 @@ def check_original_includes(upstream, *, timeout=20):
         if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
                 or not (8 <= info.st_size <= 128 * 1024)):
             raise ValueError("original generated include metadata invalid: " + name)
-        original[name] = path.read_bytes()
+        original[name] = (path.read_bytes(), _identity(info))
+        if _identity(path.stat()) != original[name][1]:
+            raise ValueError("original include changed during initial read: " + name)
     with tempfile.TemporaryDirectory(prefix="vh-map02-checked-inc-") as dirname:
         private = Path(dirname)
         private.chmod(0o700)
-        # The generator is checked by git-blob digest BEFORE execution.
-        # Suppress both streams to avoid leaking private caller paths/data.
+        # Execute an exact byte snapshot of the pinned generator, never its
+        # replaceable checkout path. The owned EXE is likewise captured from
+        # one verified descriptor and never passed by live path to the child.
+        pinned_copy = private / "pinned-generator.py"
+        pinned_copy.write_bytes(source)
+        pinned_copy.chmod(0o600)
+        snapshot, snapshot_hash, exe_identity = _snapshot_exe(exe, private)
+        generated = private / "generated"
+        generated.mkdir(mode=0o700)
         proc = subprocess.run(
-            [sys.executable, "-I", str(generator), str(exe), str(private)],
-            capture_output=True, timeout=timeout, check=False,
+            [sys.executable, "-I", str(pinned_copy), str(snapshot), str(generated)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            timeout=timeout, check=False,
             env={"PATH": os.defpath, "PYTHONDONTWRITEBYTECODE": "1"},
         )
         if proc.returncode:
             raise ValueError("original US include generator refused owned input")
-        if {p.name for p in private.iterdir()} != set(FILES):
+        if {p.name for p in generated.iterdir()} != set(FILES):
             raise ValueError("original US generator did not produce three exact includes")
         for name in FILES:
-            path = private / name
-            if (path.is_symlink() or not path.is_file()
-                    or path.stat().st_size > 128 * 1024
-                    or path.read_bytes() != original[name]):
+            path = generated / name
+            if path.is_symlink() or not path.is_file():
+                raise ValueError("original generated include has invalid type: " + name)
+            info = path.stat()
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
+                    or info.st_nlink != 1
+                    or not (8 <= info.st_size <= 128 * 1024)
+                    or path.read_bytes() != original[name][0]):
                 raise ValueError("original generated include differs from owned US EXE: " + name)
-    # Verify original private include did not change while generator ran.
+        _verify_exe_unchanged(exe, snapshot_hash, exe_identity)
+    # Detect same-byte replacement as well as in-place content changes.
     for name in FILES:
         path = root / name
-        if path.is_symlink() or not path.is_file() or path.read_bytes() != original[name]:
+        if (path.is_symlink() or not path.is_file()
+                or _identity(path.stat()) != original[name][1]
+                or path.read_bytes() != original[name][0]
+                or _identity(path.stat()) != original[name][1]):
             raise ValueError("original include changed during regeneration: " + name)
-    if _original_blob_sha1(generator.read_bytes()) != GENERATOR_BLOB_SHA1:
+    if (generator.is_symlink()
+            or _identity(generator.stat()) != generator_identity
+            or _original_blob_sha1(generator.read_bytes()) != GENERATOR_BLOB_SHA1
+            or _identity(generator.stat()) != generator_identity):
         raise ValueError("original include generator changed during verification")
     return {
         "schema": "vh.map02.original-us-exe-generated-includes.v1",
