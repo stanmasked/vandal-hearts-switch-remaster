@@ -93,10 +93,11 @@ class NativeSpanCompileTests(unittest.TestCase):
                     for mutated in (
                         raw.replace(b'"x_bound":20', b'"x_bound":9'),
                         raw.replace(b'"frame":3', b'"frame":true'),
-                        raw.rstrip(b"\\n"),
+                        raw.rstrip(b"\n"),
                         raw.replace(b'"step":0', b'"step":1'),
                         raw + raw,
                     ):
+                        self.assertNotEqual(mutated, raw, "mutation did not change captured bytes")
                         with self.subTest(mutated=mutated[:100]):
                             with self.assertRaises(ValueError):
                                 parse_native_spans(mutated)
