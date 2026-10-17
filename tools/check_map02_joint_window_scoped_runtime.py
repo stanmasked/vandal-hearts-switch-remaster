@@ -139,6 +139,39 @@ def check_joint_original_gpu(upstream, *, compiler="cc"):
                 not result["capture_session_sha256"] or
                 result["source_gte_subsequence_verified"]):
             raise ValueError("combined GPU-scoped bridge missed a draw/pixel")
+        # Re-execute the exact same real original PC code in another OS
+        # process with identical synthetic geometry. It produces the same
+        # VRAM and packet order, but must NOT be joinable to the first run.
+        other_native = root / "native-second-process"
+        other_scoped = root / "scoped-second-process"
+        other_native.mkdir(mode=0o700)
+        other_scoped.mkdir(mode=0o700)
+        other_env = dict(
+            env, VH_MAP02_GPU_CAPTURE_DIR=str(other_native),
+            VH_MAP02_PROBE_OUTPUT_DIR=str(other_scoped))
+        second = subprocess.run(
+            [str(executable)], env=other_env,
+            capture_output=True, text=True, timeout=90)
+        if second.returncode:
+            raise ValueError("second original DrawOTag session failed: "
+                             + second.stderr[-3000:])
+        second_report = verify_window_scoped_join(
+            other_native, other_scoped, target_frame=1)
+        if (second_report["capture_session_sha256"] ==
+                result["capture_session_sha256"]):
+            raise ValueError("two original PC executions reused a capture session")
+        for wrong_native, wrong_scoped in (
+            (native_dir, other_scoped), (other_native, scoped_dir)
+        ):
+            try:
+                verify_window_scoped_join(
+                    wrong_native, wrong_scoped, target_frame=1)
+            except ValueError as error:
+                if "mixed-session" not in str(error):
+                    raise
+            else:
+                raise ValueError(
+                    "two independent original GPU process captures were joined")
         # Mutating just the scoped receipt must be detected even though
         # PutPixel/BlendG1/native VRAM still match all original GPU bytes.
         session_file = scoped_dir / "gpu-scoped-session.json"
