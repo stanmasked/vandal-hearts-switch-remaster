@@ -8,6 +8,7 @@
 #include <string.h>
 #include "vh_audio_output_recovery.h"
 #include "vh_audio_resample.h"
+#include "vh_audio_report_pages.h"
 #include "vh_native_seq.h"
 
 typedef struct {
@@ -657,7 +658,122 @@ static void test_repeated_home_resume_with_returned_pcm(void) {
            open_retry==24u && start_retry==24u);
 }
 
+
+/* End-to-end host mock: synthesize an actual 44.1k SEQ/SPU page,
+ * resample to 48k, observe HOME, then submit with a real page lease.
+ * Wrong returned descriptors and failed stops leave HOME pending;
+ * retrying the very SAME PCM bytes, without advancing any clocks,
+ * is the only path to a first-returned-page observation. */
+static void test_home_observer_vs_audout_lease_faults(void) {
+    for(unsigned i=0u;i<128u;i++) {
+        sample[i]=(int16_t)((int)i*67-5200);
+        alternate_sample[i]=(int16_t)((int)i*97-6500);
+    }
+    vh_native_spu_reset(&spu);
+    assert(vh_native_spu_set_reverb(&spu,1,.5f)==0);
+    vh_audio_resample_reset(&resampler);
+    assert(vh_native_seq_init(&seq,song,sizeof song,
+                              &spu,resolve,sample,0u)==0);
+    VhAudioAppletEvents observed={0};
+    const VhAudioManualResume no_manual={0};
+    const uint64_t hz=UINT64_C(19200000);
+    unsigned automatic_recoveries=0u,failed_stops=0u,clean_pages=0u;
+    for(unsigned epoch=0u;epoch<48u;epoch++) {
+        assert(vh_native_seq_advance_block(&seq)>=0);
+        vh_native_spu_render(&spu,src,512u);
+        const size_t frames=vh_audio_resample_process(
+                             &resampler,src,512u,dst,640u);
+        assert(frames>=555u && frames<=559u);
+        const VhNativeSeq saved_seq=seq;
+        const VhNativeSpu saved_spu=spu;
+        const VhAudioResample saved_rate=resampler;
+        const uint64_t fingerprint=hash_page(dst,frames);
+        const uint64_t budget=(uint64_t)frames*hz/48000u;
+        const uint64_t start=UINT64_C(1000000)+(uint64_t)epoch*
+                             UINT64_C(3000000);
+        assert(vh_audio_applet_record_at(&observed,
+                         VH_AUDIO_APPLET_BACKGROUND,start-500u)==0);
+        assert(vh_audio_applet_record_at(&observed,
+                         VH_AUDIO_APPLET_FOREGROUND,start)==0);
+        assert(observed.pending_return && vh_audio_applet_verify(&observed)==0);
+        LeasedDevice dev={
+            .opened=1u,.playing=1u,.pcm=dst,
+            .frames=frames,.pcm_hash=fingerprint,
+            .wrong_returns_left=(epoch%3u !=0u),
+            .failed_stops_left=(epoch%3u ==2u)
+        };
+        VhAudioOutputRecovery stats={0};
+        const VhAudioOutputOps ops={
+            &dev,leased_submit,leased_stop,leased_close,
+            leased_open,leased_start
+        };
+        const int submitted=vh_audio_output_submit_recover(
+                                      &ops,&stats,dst,frames);
+        if(epoch%3u==0u) {
+            ++clean_pages;
+            assert(submitted==0 && stats.submit_failures==0u);
+        } else if(epoch%3u==1u) {
+            ++automatic_recoveries;
+            assert(submitted==0 && stats.submit_failures==1u &&
+                   stats.recoveries==1u);
+        } else {
+            ++failed_stops;
+            assert(submitted==-1 && stats.submit_failures==1u &&
+                   !stats.pages_submitted && !dev.returned);
+            assert(dev.lease.in_flight==&dev.descriptor);
+            /* Device reported no page. It would be incorrect to call
+             * vh_audio_applet_page_returned here. */
+            assert(vh_audio_applet_submit_failed(&observed)==0);
+            assert(observed.pending_return && !observed.in_background);
+            assert(vh_audio_report_focus_evidence(&observed,&no_manual,
+                1,0,0,0,0)==VH_AUDIO_REPORT_INCOMPLETE);
+            assert(leased_submit(&dev,dst,frames)==-1);
+            assert(switch_when_page_free(&dev.lease,alternate_sample)==-1);
+            assert(vh_audio_output_stop_close(&ops)==0);
+            assert(vh_audio_page_lease_ready(&dev.lease));
+            assert(leased_open(&dev)==0 && leased_start(&dev)==0);
+            assert(vh_audio_output_submit_recover(&ops,&stats,dst,frames)==0);
+            assert(dev.calls==2u && dev.returned==1u);
+        }
+        assert(dev.returned==1u && stats.pages_submitted==1u);
+        assert(stats.frames_submitted==frames);
+        assert(vh_audio_page_lease_ready(&dev.lease));
+        assert(hash_page(dst,frames)==fingerprint);
+        assert(memcmp(&seq,&saved_seq,sizeof seq)==0);
+        assert(memcmp(&spu,&saved_spu,sizeof spu)==0);
+        assert(memcmp(&resampler,&saved_rate,sizeof resampler)==0);
+        /* Each group of six covers inclusive 1x, 2x, 4x and >4x
+         * elapsed times with the same native page budget. */
+        const unsigned multiple=epoch%6u+1u;
+        assert(vh_audio_applet_page_returned_budget_at(
+                         &observed,start+budget*multiple,budget)==1);
+        assert(observed.first_pages_after_return==epoch+1u &&
+               observed.returned_pages==epoch+1u &&
+               !observed.pending_return && vh_audio_applet_verify(&observed)==0);
+        assert(vh_audio_report_focus_evidence(&observed,&no_manual,
+                    1,0,0,0,0)==VH_AUDIO_REPORT_FULL);
+        assert(vh_audio_output_stop_close(&ops)==0);
+        const int16_t *next=epoch%2u ? sample : alternate_sample;
+        assert(switch_when_page_free(&dev.lease,next)==0);
+        assert(seq.context==next && seq.blocks_advanced==0u);
+        assert(spu.frames_rendered==0u);
+        assert(resampler.input_frames==saved_rate.input_frames);
+    }
+    assert(clean_pages==16u && automatic_recoveries==16u &&
+           failed_stops==16u);
+    assert(observed.failed_logical_submissions==16u &&
+           observed.failures_while_pending==16u);
+    assert(observed.timed_first_pages==48u &&
+           observed.budgeted_first_pages==48u);
+    assert(observed.page_budget_bands[0]==8u &&
+           observed.page_budget_bands[1]==8u &&
+           observed.page_budget_bands[2]==16u &&
+           observed.page_budget_bands[3]==16u);
+    assert(vh_audio_applet_verify(&observed)==0);
+}
+
 int main(void) {
+    test_home_observer_vs_audout_lease_faults();
     test_audout_inflight_page_lease_scene_lifetime();
     test_failed_stop_page_lease_with_real_recovery();
     test_shutdown_resume_inflight_descriptor_lifetime();
