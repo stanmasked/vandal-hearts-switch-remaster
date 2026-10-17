@@ -337,6 +337,78 @@ class PrivateNativeLauncherTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "ClearImage post-VRAM differs"):
             self.replay()
 
+    def test_replay_rejects_same_bytes_inode_swaps_of_all_external_inputs(self):
+        # Without path/inode stability, an attacker can substitute a
+        # byte-identical receipt, preflight or binary just after the GPU
+        # and DDA verification. A SHA-only recheck would miss that swap.
+        self.assertTrue(self.run_synthetic()["capture_verified"])
+        from tools import verify_map02_private_capture_receipt as verifier
+        original = verifier.verify_session
+        for path in (self.summary, self.preflight, self.executable):
+            with self.subTest(kind=path.name):
+                previous = path.stat()
+                raw = path.read_bytes()
+
+                def swap_after_valid_replay(*args, **kwargs):
+                    verified = original(*args, **kwargs)
+                    replacement = path.with_name(path.name + ".same-bytes-replacement")
+                    replacement.write_bytes(raw)
+                    replacement.chmod(stat.S_IMODE(previous.st_mode))
+                    os.replace(replacement, path)
+                    self.assertNotEqual(path.stat().st_ino, previous.st_ino)
+                    self.assertEqual(path.read_bytes(), raw)
+                    return verified
+
+                with patch.object(verifier, "verify_session",
+                                  side_effect=swap_after_valid_replay):
+                    with self.assertRaisesRegex(
+                            ValueError, "changed during replay"):
+                        self.replay()
+                # Even the untouched content remains independently valid,
+                # demonstrating the rejection is about a changed identity.
+                self.assertTrue(self.replay()["raw_evidence_matches_original_receipt"])
+
+    def test_replay_rejects_same_bytes_inplace_binary_rewrite_during_verification(self):
+        self.assertTrue(self.run_synthetic()["capture_verified"])
+        from tools import verify_map02_private_capture_receipt as verifier
+        original = verifier.verify_session
+        initial = self.executable.stat()
+        raw = self.executable.read_bytes()
+
+        def rewrite_after_valid_replay(*args, **kwargs):
+            verified = original(*args, **kwargs)
+            self.executable.write_bytes(raw)
+            # POSIX ctime must change even if the content and length do not.
+            self.assertEqual(self.executable.read_bytes(), raw)
+            return verified
+
+        with patch.object(verifier, "verify_session",
+                          side_effect=rewrite_after_valid_replay):
+            with self.assertRaisesRegex(ValueError, "changed during replay"):
+                self.replay()
+        self.assertEqual(self.executable.stat().st_ino, initial.st_ino)
+        self.assertTrue(self.replay()["raw_evidence_matches_original_receipt"])
+
+    def test_replay_rejects_preflight_symlink_injected_during_verification(self):
+        self.assertTrue(self.run_synthetic()["capture_verified"])
+        from tools import verify_map02_private_capture_receipt as verifier
+        original = verifier.verify_session
+        backup = self.base / "preflight-backup.json"
+
+        def link_after_valid_replay(*args, **kwargs):
+            verified = original(*args, **kwargs)
+            self.preflight.rename(backup)
+            self.preflight.symlink_to(backup)
+            return verified
+
+        with patch.object(verifier, "verify_session",
+                          side_effect=link_after_valid_replay):
+            with self.assertRaisesRegex(ValueError, "symlink"):
+                self.replay()
+        self.preflight.unlink()
+        backup.rename(self.preflight)
+        self.assertTrue(self.replay()["raw_evidence_matches_original_receipt"])
+
     def test_replay_refuses_modified_original_process_receipt(self):
         self.run_synthetic()
         original = json.loads(self.summary.read_text())
