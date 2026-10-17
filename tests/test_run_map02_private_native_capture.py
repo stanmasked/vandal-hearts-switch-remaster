@@ -124,6 +124,19 @@ class PrivateNativeLauncherTests(unittest.TestCase):
                     self.summary, environ=self.env)
         self.assertEqual(list(self.capture_dir.iterdir()), [])
 
+    def test_receipt_parent_symlink_must_not_point_into_capture(self):
+        alias = self.base / "capture-alias"
+        alias.symlink_to(self.capture_dir, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "outside empty capture"):
+            capture(self.executable, alias / "preflight.json",
+                    self.summary, environ=self.env)
+        with self.assertRaisesRegex(ValueError, "outside empty capture"):
+            capture(self.executable, self.preflight,
+                    alias / "summary.json", environ=self.env)
+        self.assertEqual(list(self.capture_dir.iterdir()), [])
+        self.assertFalse(self.preflight.exists())
+        self.assertFalse(self.summary.exists())
+
     def test_args_are_not_reported(self):
         result = self.run_synthetic("--private-game-asset-reference")
         self.assertTrue(result["capture_verified"])
