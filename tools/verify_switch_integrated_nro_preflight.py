@@ -35,14 +35,15 @@ def check(directory: Path, *, git_sha: str, run_id: int, artifact_id: int,
         raise PreflightError("expected NRO SHA-256 must be 64 lowercase hex digits")
     if not directory.is_dir() or directory.is_symlink():
         raise PreflightError("artifact directory missing or symlinked")
-    # Refuse ambiguous directories containing another NRO or hash receipt.
-    unexpected = sorted(p.relative_to(directory).as_posix()
-                        for p in directory.rglob("*")
-                        if p.relative_to(directory).as_posix()
-                        not in (EXPECTED_NRO, EXPECTED_HASH_FILE)
-                        and p.name.lower().endswith((".nro", ".sha256")))
+    # A CI artifact for this workflow contains exactly these two regular files.
+    # Reject nested entries and symlinks rather than silently ignoring them.
+    expected = {EXPECTED_NRO, EXPECTED_HASH_FILE}
+    observed = list(directory.iterdir())
+    unexpected = sorted(p.name for p in observed if p.name not in expected)
     if unexpected:
-        raise PreflightError("unexpected competing artifact member: " + unexpected[0])
+        raise PreflightError("unexpected artifact member: " + unexpected[0])
+    if any(p.is_symlink() or not p.is_file() for p in observed):
+        raise PreflightError("artifact members must be regular files")
     nro = directory / EXPECTED_NRO
     sha_file = directory / EXPECTED_HASH_FILE
     for path in (nro, sha_file):
