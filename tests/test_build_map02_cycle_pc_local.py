@@ -3,7 +3,10 @@
 These tests do not create a real game binary or use any proprietary assets.
 """
 from pathlib import Path
+from contextlib import redirect_stderr
+import io
 import subprocess
+import tools.build_map02_cycle_pc_local as local_build
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -104,6 +107,22 @@ class PrivateFullPcBuildTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "already exists"):
             build_full_pc(self.upstream, self.bundle)
         self.assertEqual(self.exe.read_text(), "preserve")
+
+    def test_cli_redacts_private_owned_paths_from_filesystem_errors(self):
+        private_path = str(self.upstream / "SLUS_004.47")
+        output = io.StringIO()
+        with (
+                patch("sys.argv", [
+                    "private-build", str(self.upstream), str(self.bundle),
+                    "--report-dir", str(self.upstream.parent / "receipt")]),
+                patch.object(local_build, "build_full_pc",
+                             side_effect=OSError("Cannot access " + private_path)),
+                redirect_stderr(output)):
+            with self.assertRaises(SystemExit) as thrown:
+                local_build.main()
+        self.assertEqual(thrown.exception.code, 2)
+        self.assertIn("filesystem verification failed", output.getvalue())
+        self.assertNotIn(private_path, output.getvalue())
 
     def test_preexisting_generated_font_or_symlink_blocks_build(self):
         private_c = self.exe.parent / "map02_pinned_kanji_font.c"
