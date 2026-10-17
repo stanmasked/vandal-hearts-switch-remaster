@@ -20,6 +20,8 @@ on:
       - 'tools/audit_nexium_audout_queue.py'
       - 'tools/audit_nexium_audout_latency.py'
       - 'tools/audit_nexium_audout_scene_correlation.py'
+      - 'tools/audit_nexium_audout_slow_calls.py'
+      - 'tests/test_audit_nexium_audout_slow_calls.py'
       - 'tests/test_audit_nexium_audout_scene_correlation.py'
       - 'tests/test_audit_nexium_audout_latency.py'
       - 'tools/audit_nexium_audout_repeatability.py'
@@ -79,6 +81,7 @@ jobs:
           python3 -m unittest discover -s tests -p "test_audit_nexium_audout_queue.py" -v
           python3 -m unittest discover -s tests -p "test_audit_nexium_audout_latency.py" -v
           python3 -m unittest discover -s tests -p "test_audit_nexium_audout_scene_correlation.py" -v
+          python3 -m unittest discover -s tests -p "test_audit_nexium_audout_slow_calls.py" -v
           python3 -m unittest discover -s tests -p "test_audit_nexium_audout_repeatability.py" -v
           python3 -m unittest discover -s tests -p "test_analyze_nexium_audout_window_maxima.py" -v
           python3 -m unittest discover -s tests -p "test_verify_switch_runtime_nro.py" -v
@@ -751,6 +754,30 @@ jobs:
             --output runtime-evidence/scene-soak/soak-audout-scene-correlation.json
           python3 -m json.tool runtime-evidence/scene-soak/soak-audout-scene-correlation.json >/dev/null
           echo "Scene INPUTs and audout calls co-occur on the guest clock; no causal or audible claims." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify exact guest slow-call timing relative to scene INPUT
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s runtime-evidence/scene-soak/soak-audout-slow-unverified.csv
+          test -s runtime-evidence/scene-soak/soak-audout-slow-export-result.txt
+          python3 tools/audit_nexium_audout_slow_calls.py \
+            --slow-csv runtime-evidence/scene-soak/soak-audout-slow-unverified.csv \
+            --slow-locations runtime-evidence/scene-soak/soak-audout-slow-locations.txt \
+            --slow-receipt runtime-evidence/scene-soak/soak-audout-slow-export-result.txt \
+            --clock-csv runtime-evidence/scene-soak/soak-audout-clock-unverified.csv \
+            --clock-locations runtime-evidence/scene-soak/soak-audout-clock-locations.txt \
+            --clock-receipt runtime-evidence/scene-soak/soak-audout-clock-export-result.txt \
+            --latency-csv runtime-evidence/scene-soak/soak-audout-latency-unverified.csv \
+            --latency-verification runtime-evidence/scene-soak/soak-audout-latency-verification.json \
+            --scene-csv runtime-evidence/scene-soak/soak-guest-optical.csv \
+            --scene-verification runtime-evidence/scene-soak/soak-verification.json \
+            --queue-verification runtime-evidence/scene-soak/soak-audout-verification.json \
+            --previous-correlation runtime-evidence/scene-soak/soak-audout-scene-correlation.json \
+            --sd-root "$RUNNER_TEMP/vh-nexium-stage268-${GITHUB_RUN_ID}" \
+            --output runtime-evidence/scene-soak/soak-audout-exact-slow-verification.json
+          python3 -m json.tool runtime-evidence/scene-soak/soak-audout-exact-slow-verification.json >/dev/null
+          echo "Actual >=40ms guest call begin/end ns recorded; temporal input ordering is not scene causality or audio output." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Record audio capture boundary
         if: always()
