@@ -30,6 +30,26 @@ int vh_audio_page_lease_ready(const VhAudioPageLease *lease) {
     return lease && !lease->in_flight;
 }
 
+int vh_audio_timing_fault_arm(VhAudioTimingFaultInjection *s) {
+    if(!s || s->armed || s->injected) return -1;
+    s->armed=1u;
+    return 0;
+}
+
+uint64_t vh_audio_timing_fault_frequency(
+    VhAudioTimingFaultInjection *s, int exact_returned,
+    uint64_t actual_frequency) {
+    /* An undelivered page cannot consume an intentional timing fault.
+     * Once a real descriptor is returned, zero Hz is injected only in
+     * the timing accumulator; the transport result remains untouched. */
+    if(s && s->armed && exact_returned) {
+        s->armed=0u;
+        s->injected=1u;
+        return 0u;
+    }
+    return actual_frequency;
+}
+
 int vh_audio_output_transport_outcome(
     int descriptor_returned, int timing_result,
     VhAudioTransportTimingHealth *health) {
