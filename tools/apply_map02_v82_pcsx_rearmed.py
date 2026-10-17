@@ -55,19 +55,16 @@ def apply(root: Path):
             }
             if(observed_edges!=4 || observed_gp1<2 || vh80_dropped()!=0 ||
                !dest || dest[0]!='/') {
-                SysPrintf("VH82_CAPTURE_REFUSED
-");
+                SysPrintf("VH82_CAPTURE_REFUSED\n");
                 ClosePlugins();SysClose();menu_finish();plat_finish();return 10;
             }
             int trace_bytes=vh81_format_jsonl(vh82_buffer,sizeof(vh82_buffer));
             if(trace_bytes<=0 ||
                vh82_publish_private(dest,vh82_buffer,(size_t)trace_bytes)!=0) {
-                SysPrintf("VH82_PRIVATE_PUBLISH_REFUSED
-");
+                SysPrintf("VH82_PRIVATE_PUBLISH_REFUSED\n");
                 ClosePlugins();SysClose();menu_finish();plat_finish();return 11;
             }
-            SysPrintf("VH82_PRIVATE_EXPORT_PASS vblanks=%u gp1_mmio=%u entries=%u bytes=%d drops=0
-",
+            SysPrintf("VH82_PRIVATE_EXPORT_PASS vblanks=%u gp1_mmio=%u entries=%u bytes=%d drops=0\n",
                 observed_edges,observed_gp1,vh80_count(),trace_bytes);
         }
 '''
