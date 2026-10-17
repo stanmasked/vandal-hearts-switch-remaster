@@ -234,11 +234,13 @@ class DeviceEvidenceLinkTests(unittest.TestCase):
         with self.assertRaises(bundle.BundleError):
             self.link()
 
-    def test_missing_observer_measurement_remains_inconclusive(self):
+    def test_unknown_audio_in_completed_operator_card_needs_investigation(self):
+        # A completed but unknown manual card is explicitly contradictory
+        # at stage 222 and must not be downgraded to a clean review.
         self.fx.fixture.record["sessions"][0]["music_audible"] = "UNKNOWN"
         self.fx.records[0]["music_audible"] = "UNKNOWN"
         self.rewrite()
-        self.assertEqual(self.link()["result"], "INCONCLUSIVE")
+        self.assertEqual(self.link()["result"], "INVESTIGATE")
 
     def test_optional_h06_remains_incomplete_not_auto_pass(self):
         self.assertEqual(self.link(require_h06=True)["result"], "INCONCLUSIVE")
