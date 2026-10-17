@@ -1670,3 +1670,40 @@ reject near-saturated synthetic counters; they cannot establish
 actual battery, focus, HOME or sleep behavior on physical Switch.
 
 No original assets, audio captures, or user data are exported.
+
+
+### Repeated HOME/focus resumes followed by terminal PCM-page failure
+
+A new independent, portable host regression
+\`tests/test_vh_audio_resume_abort_telemetry.c\` exercises the
+combined production \`vh_audio_output_submit_recover\`,
+\`vh_audio_output_resume_recover\`, returned-page
+\`vh_audio_returned_page_telemetry_record\` and terminal
+\`vh_audio_output_record_scene_page\` paths through a simulated
+audout backend. It sends **70 distinct copyright-free PCM16 pages**
+to the mock service and verifies every returned page's checksum,
+one-to-one delivered-page accounting, audout raw-call counts,
+PCM seam histogram, last-32-page A/B ring and last-returned PCM
+tail. Seventy pages cross the 32-page ring boundary twice.
+
+At six returned-page boundaries the test pauses and resumes the
+service, including fast focus-start, a forced reopen with one
+temporary open failure, a stop failure followed by a successful
+reopen and **two immediate repeated pause/resume cycles** before
+any new PCM submission. It snapshots per-page audio telemetry
+across each pause, proving that it cannot be mutated by session
+recovery or generate a duplicate delivered page. Two pages also
+require a raw submission retry using their exact original
+PCM buffer; neither is counted as two delivered pages.
+
+Next, an additional rendered page fails all three permitted audout
+submission attempts. Its backend wait histogram records exactly
+one terminally failed logical page, while the accepted-page checksum,
+last PCM seam, DSP/wait counters and A/B ring tail must remain
+identical to the preceding 70-page state. A subsequent forced
+session reopen likewise cannot deliver that abandoned PCM page
+implicitly. An independent zero-delivery + terminal-failure
+scenario remains INCOMPLETE instead of falsely reporting FULL.
+The new test runs in both Make host suites and in PCM CI under
+UBSan. This is synthetic state-machine evidence only: physical
+Switch sleep/resume and audible quality are still unverified.

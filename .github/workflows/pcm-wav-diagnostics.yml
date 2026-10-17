@@ -58,6 +58,7 @@ on:
       - 'source/vh_audio_compute_wait_join.h'
       - 'source/vh_audio_page_telemetry.h'
       - 'tests/test_vh_audio_page_telemetry.c'
+      - 'tests/test_vh_audio_resume_abort_telemetry.c'
       - 'tests/test_vh_audio_compute_wait_join.c'
       - 'tests/test_vh_audio_compute_timing.c'
       - 'tests/test_vh_audio_report_pages.c'
@@ -119,6 +120,7 @@ on:
       - 'source/vh_audio_compute_wait_join.h'
       - 'source/vh_audio_page_telemetry.h'
       - 'tests/test_vh_audio_page_telemetry.c'
+      - 'tests/test_vh_audio_resume_abort_telemetry.c'
       - 'tests/test_vh_audio_compute_wait_join.c'
       - 'tests/test_vh_audio_compute_timing.c'
       - 'tests/test_vh_audio_report_pages.c'
@@ -436,6 +438,15 @@ jobs:
             source/vh_spu_reverb.c source/vh_spu_gaussian.c \
             source/vh_audio_stream.c -lm -o /tmp/test_vh_audio_output_recovery
           /tmp/test_vh_audio_output_recovery
+      - name: Validate repeated pause/abort PCM history under UBSan
+        run: |
+          set -euo pipefail
+          cc -std=c11 -Wall -Wextra -Werror -O2 -g -Isource \
+            -fsanitize=undefined -fno-sanitize-recover=all \
+            tests/test_vh_audio_resume_abort_telemetry.c \
+            source/vh_audio_output_recovery.c \
+            -o /tmp/test_vh_audio_resume_abort_telemetry_ubsan
+          /tmp/test_vh_audio_resume_abort_telemetry_ubsan
       - name: Validate atomic returned-page DSP/listening metadata under UBSan
         run: |
           set -euo pipefail
