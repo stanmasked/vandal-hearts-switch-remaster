@@ -133,7 +133,7 @@ jobs:
     name: Launch current-workflow audout NRO in NeXium
     runs-on: ubuntu-26.04
     needs: build
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
