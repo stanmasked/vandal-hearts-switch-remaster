@@ -131,7 +131,8 @@ def _validate_receipt(raw):
 
 def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
                        owned_game, *, upstream, x, y, timeout=900,
-                       arguments=(), cycle_dir=None):
+                       arguments=(), cycle_dir=None,
+                       build_receipt_dir=None, build_bundle_dir=None):
     """Run the given PC binary directly; never run a shell or create game data."""
     if not sys.platform.startswith("linux") or not Path("/proc/self/exe").exists():
         raise ValueError("observed executable launch requires Linux /proc")
@@ -167,6 +168,19 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
         # not a minimal synthetic child or an ld -r partial object.
         from tools.check_map02_cycle_elf import audit_cycle_elf
         audit_cycle_elf(binary)
+        # An exported symbol is not source/build provenance. For strong
+        # opt-in CD -> GPU cycle claims, require the private full-link
+        # receipt from the local builder AND independently re-audit its
+        # pinned Make graph and actual ELF bytes before any exec.
+        if build_receipt_dir is None or build_bundle_dir is None:
+            raise ValueError("cycle launch requires both private build receipt and source bundle")
+        from tools.map02_cycle_build_provenance import verify_build_receipt
+        verified_build = verify_build_receipt(
+            build_receipt_dir, binary, upstream, build_bundle_dir)
+        if verified_build["source_pinned_full_elf_bytes_checked"] is not True:
+            raise ValueError("source-pinned original MAP02 ELF could not be confirmed")
+    elif build_receipt_dir is not None or build_bundle_dir is not None:
+        raise ValueError("build receipt options require --cycle-dir")
 
     game_image = Path(owned_game).absolute()
     game_stat = os.stat(game_image)
@@ -359,6 +373,10 @@ def main():
     p.add_argument("--timeout", type=int, default=900)
     p.add_argument("--cycle-dir", type=Path,
                    help="optional private empty 0700 directory for in-process CD->GPU order")
+    p.add_argument("--build-receipt-dir", type=Path,
+                   help="private local full-ELF build receipt directory")
+    p.add_argument("--build-bundle-dir", type=Path,
+                   help="source-pinned private diagnostic Make overlay bundle")
     a, forwarded = p.parse_known_args()
     if forwarded and forwarded[0] == "--":
         forwarded = forwarded[1:]
@@ -371,10 +389,13 @@ def main():
                 a.private_scoped_capture, a.pc_binary, a.owned_game_image,
                 upstream=a.upstream_checkout, x=a.x, y=a.y,
                 timeout=a.timeout, arguments=forwarded,
-                cycle_dir=a.cycle_dir)
+                cycle_dir=a.cycle_dir,
+                build_receipt_dir=a.build_receipt_dir,
+                build_bundle_dir=a.build_bundle_dir)
         else:
-            if a.cycle_dir is not None:
-                raise ValueError("verify cycle evidence through tools.verify_map02_cycle_cd_gpu_join")
+            if (a.cycle_dir is not None or a.build_receipt_dir is not None or
+                    a.build_bundle_dir is not None):
+                raise ValueError("verify original cycle via separate private witness verifier")
             if forwarded:
                 raise ValueError("verify does not accept executable arguments")
             result = verify_observed_process(
