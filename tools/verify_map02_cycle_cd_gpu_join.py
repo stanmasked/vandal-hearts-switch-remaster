@@ -44,7 +44,7 @@ def _cycle_receipt(directory, frame):
     if path.is_symlink() or stat.S_IMODE(path.stat().st_mode) != 0o600:
         raise ValueError("cycle receipt must be a private 0600 regular file")
     raw = private_file(root, CYCLE_RECEIPT, max_bytes=2048)
-    if not raw.endswith(b"\n") or raw.endswith(b"\n\n") or b"\r" in raw:
+    if raw.count(b"\n") != 1 or not raw.endswith(b"\n") or b"\r" in raw:
         raise ValueError("noncanonical cycle receipt JSONL")
     event = parse_json(raw[:-1], CYCLE_RECEIPT)
     fields(event, CYCLE_KEYS, CYCLE_RECEIPT)
