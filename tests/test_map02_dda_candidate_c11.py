@@ -2,7 +2,6 @@
 
 Synthetic executable only, not a pinned original-GPU build.
 """
-import json
 import shutil
 import os
 import subprocess
@@ -11,6 +10,7 @@ from pathlib import Path
 import unittest
 
 from tools.instrument_map02_dda_rejected_edges import HELPER
+from tools.verify_map02_dda_rejected_edges import validate
 
 PREFIX = r"""
 #include <stdio.h>
@@ -83,7 +83,7 @@ class CandidateC11Tests(unittest.TestCase):
                 journal = root / "dda-rejected-edge-candidates.jsonl"
                 if enabled:
                     self.assertTrue(journal.exists())
-                    records = [json.loads(line) for line in journal.read_text().splitlines()]
+                    records = validate(journal.read_bytes())
                     self.assertEqual([row["reason"] for row in records], [4, 5, 6, 7])
                     self.assertEqual([row["y"] for row in records], [9, 16, 16, 9])
                     self.assertEqual([row["step"] for row in records], [0, 1, 2, 3])
