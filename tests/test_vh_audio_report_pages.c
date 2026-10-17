@@ -54,6 +54,65 @@ int main(void) {
     invalid.returns=UINT_MAX;
     assert(vh_audio_applet_record(&invalid,VH_AUDIO_APPLET_FOREGROUND)==-1);
     assert(invalid.in_background==1u);
+    /* Correlate real foreground notifications with returned *PCM
+     * descriptors*, not merely a resume event or a rendered frame. */
+    VhAudioAppletEvents pages={0};
+    assert(vh_audio_applet_page_returned(NULL)==-1);
+    assert(vh_audio_applet_page_returned(&pages)==0);
+    assert(pages.returned_pages==1u && pages.first_pages_after_return==0u);
+    assert(vh_audio_applet_record(&pages,VH_AUDIO_APPLET_BACKGROUND)==0);
+    assert(vh_audio_applet_record(&pages,VH_AUDIO_APPLET_FOREGROUND)==0);
+    assert(pages.pending_return && pages.first_pages_after_return==0u);
+    assert(vh_audio_applet_record(&pages,VH_AUDIO_APPLET_RESUME)==0);
+    assert(pages.resumes==1u && pages.pending_return==1u);
+    assert(vh_audio_applet_verify(&pages)==0);
+    assert(vh_audio_applet_page_returned(&pages)==1);
+    assert(!pages.pending_return && pages.first_pages_after_return==1u);
+    assert(vh_audio_applet_page_returned(&pages)==0);
+    assert(pages.first_pages_after_return==1u);
+    assert(vh_audio_applet_record(&pages,VH_AUDIO_APPLET_BACKGROUND)==0);
+    assert(vh_audio_applet_record(&pages,VH_AUDIO_APPLET_FOREGROUND)==0);
+    assert(vh_audio_applet_record(&pages,VH_AUDIO_APPLET_BACKGROUND)==0);
+    /* A returned descriptor during background must not be mislabelled
+     * as foreground recovery even when an earlier return is pending. */
+    assert(vh_audio_applet_page_returned(&pages)==0);
+    assert(pages.pending_return && pages.first_pages_after_return==1u);
+    assert(vh_audio_applet_record(&pages,VH_AUDIO_APPLET_FOREGROUND)==0);
+    assert(pages.returns==3u && pages.coalesced_returns==1u);
+    assert(vh_audio_applet_verify(&pages)==0);
+    assert(vh_audio_applet_page_returned(&pages)==1);
+    assert(pages.returns==3u && pages.first_pages_after_return==2u &&
+           !pages.pending_return && pages.coalesced_returns==1u);
+    assert(vh_audio_applet_verify(&pages)==0);
+    VhAudioAppletEvents corrupt=pages;
+    corrupt.pending_return=1u;
+    assert(vh_audio_applet_verify(&corrupt)==-1);
+    corrupt=pages;
+    corrupt.coalesced_returns=0u;
+    assert(vh_audio_applet_verify(&corrupt)==-1);
+    corrupt=pages;
+    corrupt.first_pages_after_return=pages.returned_pages+1u;
+    assert(vh_audio_applet_verify(&corrupt)==-1);
+    corrupt=pages;
+    corrupt.pending_return=2u;
+    assert(vh_audio_applet_verify(&corrupt)==-1);
+    corrupt=pages;
+    corrupt.returned_pages=UINT_MAX;
+    assert(vh_audio_applet_page_returned(&corrupt)==-1);
+    assert(corrupt.returned_pages==UINT_MAX);
+    corrupt=pages;
+    corrupt.pending_return=1u;
+    corrupt.first_pages_after_return=UINT_MAX;
+    assert(vh_audio_applet_page_returned(&corrupt)==-1);
+    assert(corrupt.returned_pages==pages.returned_pages);
+    corrupt=(VhAudioAppletEvents){
+        .backgrounds=3u,.returns=2u,.in_background=1u,
+        .pending_return=1u,.coalesced_returns=UINT_MAX
+    };
+    assert(vh_audio_applet_record(&corrupt,VH_AUDIO_APPLET_FOREGROUND)==-1);
+    assert(corrupt.in_background==1u && corrupt.returns==2u);
+    /* HOME observation remains independent of audio report verdicts. */
+    assert(vh_audio_report_evidence(1,0,0,0,0)==VH_AUDIO_REPORT_FULL);
     assert(vh_audio_applet_verify(NULL)==-1);
     /* Successful host accounting is independent from HOME observation. */
     assert(vh_audio_report_evidence(1,0,0,0,0)==VH_AUDIO_REPORT_FULL);
