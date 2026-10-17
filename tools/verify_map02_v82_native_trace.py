@@ -24,7 +24,8 @@ KINDS={"vblank","gp1_mmio","gpu_dma2_start","gp0_unai_handled","unai_sample_delt
        "mixed_copy_store_count","mixed_copy_same_count","mixed_masked_copies",
        "mixed_worker_steps","mixed_worker_order",
        "mixed_sync_a0_store_count","mixed_sync_copy_store_count",
-       "mixed_sync_copy_same_count"}
+       "mixed_sync_copy_same_count",
+       "cycle1_a0_queued","cycle1_a0_done","cycle1_a0_stores","cycle1_copy_queued","cycle1_copy_done","cycle1_copy_stores","cycle1_copy_same","cycle1_masked_copy","cycle1_sync_a0","cycle1_sync_copy","cycle1_sync_same","cycle2_a0_queued","cycle2_a0_done","cycle2_a0_stores","cycle2_copy_queued","cycle2_copy_done","cycle2_copy_stores","cycle2_copy_same","cycle2_masked_copy","cycle2_sync_a0","cycle2_sync_copy","cycle2_sync_same"}
 FIELDS={"kind","seq","value","cycle","frame"}
 
 class Refused(ValueError):pass
@@ -70,7 +71,9 @@ def validate(content: bytes):
             if (item["kind"].startswith("gpulib_") or item["kind"].startswith("async_dma_") or
                 item["kind"].startswith("async_copy_") or
                 item["kind"].startswith("post_async_sync_") or
-                item["kind"].startswith("mixed_")) and (item["cycle"]!=0 or
+                item["kind"].startswith("mixed_") or
+                item["kind"].startswith("cycle1_") or
+                item["kind"].startswith("cycle2_")) and (item["cycle"]!=0 or
                 item["value"]==0xffffffff):
                 raise Refused("invalid aggregate gpulib store event")
             if item["kind"]=="gp1_mmio":gp1+=1
