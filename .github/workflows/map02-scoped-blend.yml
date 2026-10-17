@@ -245,6 +245,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libsdl2-dev libopenal-dev
           python3 -m tools.prepare_map02_cycle_build upstream-pc "${RUNNER_TEMP}/map02-cycle-private-build"
           (
             cd upstream-pc/platform/pc
