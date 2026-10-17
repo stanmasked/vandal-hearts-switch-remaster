@@ -568,6 +568,14 @@ void vh_switch_game_audio_post_at(unsigned desired_scene,
 void vh_switch_game_audio_post(unsigned desired_scene) {
     vh_switch_game_audio_post_at(desired_scene,scene_trace_now_ns());
 }
+VhSceneExportResult vh_switch_game_audio_trace_export(
+    char *committed_path, size_t capacity) {
+    if(committed_path && capacity) committed_path[0]='\0';
+    if(thread_started) return VH_SCENE_EXPORT_INVALID;
+    return vh_audio_scene_trace_export(&scene_trace,
+        VH_SCENE_TRACE_SD_DIRECTORY,NULL,committed_path,capacity);
+}
+
 int vh_switch_game_audio_trace_dump(FILE *stream) {
     if (!stream || thread_started) return -1;
     if (fputs("VH_AUDIO_SCENE_TRACE_BEGIN\n",stream)<0) return -1;
