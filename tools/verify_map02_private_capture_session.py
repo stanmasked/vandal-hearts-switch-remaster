@@ -94,6 +94,10 @@ def verify_session(directory, *, native_frame, preflight_report, executable):
             checked["native_gpu_binding"]["load_pairs_without_payload"],
         "native_gpu_pairs_verified":
             checked["native_gpu_binding"]["native_gpu_pairs_verified"],
+        "draw_boundary_vram_checks":
+            checked["native_gpu_binding"]["draw_boundary_vram_checks"],
+        "draw_boundary_gpu_state_checks":
+            checked["native_gpu_binding"]["draw_boundary_gpu_state_checks"],
         "move_pairs_with_verified_vram_effect":
             checked["native_gpu_binding"]["move_pairs_with_verified_vram_effect"],
         "clear_pairs_with_verified_vram_effect":
