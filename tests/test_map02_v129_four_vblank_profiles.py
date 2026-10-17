@@ -76,6 +76,28 @@ class FourGenuineVblankMatrix(unittest.TestCase):
         self.assertNotIn("GPU_writeDataMem(",src)
         self.assertNotRegex(src,r"(?m)^[ \t]*GPU_vBlank\s*\(")
 
+    def test_native_boundary_array_has_five_allocated_rows_not_only_five_initializers(self):
+        """Regression: old [4][2] silently ignored the fifth row in GCC."""
+        _,stops,_,_,wait_pc=build()
+        src=oracle_source(stops,wait_pc)
+        self.assertIn("vh129_boundary_targets[5][2]",src)
+        self.assertNotIn("vh129_boundary_targets[4][2]",src)
+        self.assertIn(
+            "sizeof(vh129_boundary_targets)/"
+            "sizeof(vh129_boundary_targets[0])==5u",src)
+        self.assertIn(
+            "sizeof(vh129_boundary_targets[0])/"
+            "sizeof(vh129_boundary_targets[0][0])==2u",src)
+        self.assertIn(
+            "sizeof(vh129_adjacent_histograms)/"
+            "sizeof(vh129_adjacent_histograms[0])==5u",src)
+        self.assertIn(
+            "sizeof(return_gap)/sizeof(return_gap[0])==5u",src)
+        self.assertIn("vh129_boundary_rows_equal_five",src)
+        self.assertIn("vh129_boundary_cols_equal_two",src)
+        self.assertIn("vh129_histogram_rows_equal_five",src)
+        self.assertIn("vh129_return_rows_equal_five",src)
+
     def test_exact_five_splits_and_upper_bound_four(self):
         self.assertEqual(PROFILES,((0,4),(1,3),(2,2),(3,1),(4,0)))
         self.assertEqual(SPLITS,("04","13","22","31","40"))
