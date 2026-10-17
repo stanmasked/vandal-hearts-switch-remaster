@@ -152,6 +152,47 @@ class IndependentJournalAuditTests(unittest.TestCase):
             self.assertFalse(report["retail_map02_frame_verified"])
             self.assertFalse(report["hd_replacement_authorized"])
 
+    def test_preframe_transfer_does_not_shift_draw_primitive_ordinal(self):
+        # The native GPU log may start with Load/Move/ClearImage on the
+        # preceding frame. The DDA primitive ordinal is counted only from
+        # DrawOTag's walked primitives, not all GPU operation pairs.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write(root, SPAN_FILE, dict(SPAN, primitive_ordinal=0))
+            self.write_native_gpu(root)
+            journal = root / "gpu-native-events.jsonl"
+            draws = [json.loads(line) for line in journal.read_bytes().splitlines()]
+            transfers = []
+            for index, event in enumerate(draws):
+                transfer = dict(event, step=index, frame=2,
+                                snapshot=f"gpu-{index:04d}-vram.bin",
+                                operation="clear", primitive_type=0,
+                                rect=[0, 0, 1, 1])
+                transfers.append(transfer)
+                event["step"] = index + 2
+                event["snapshot"] = f"gpu-{index+2:04d}-vram.bin"
+                (root / event["snapshot"]).write_bytes(bytes(VRAM_BYTES))
+            journal.write_bytes(b"".join(
+                (json.dumps(event, sort_keys=True) + "\n").encode()
+                for event in transfers + draws
+            ))
+            result = audit(root, native_frame=3)
+            self.assertEqual(result["native_gpu_binding"]["native_gpu_pairs_verified"], 2)
+            self.assertEqual(result["native_gpu_binding"]["draw_primitives_in_bounded_capture"], 1)
+            self.assertEqual(result["native_gpu_binding"]["observed_dda_primitive_keys"], 1)
+            # Reversing the order is impossible under the original
+            # instrumented frame selectors, even with valid JSON and VRAM.
+            reordered = draws + transfers
+            for i, event in enumerate(reordered):
+                event["step"] = i
+                event["snapshot"] = f"gpu-{i:04d}-vram.bin"
+            journal.write_bytes(b"".join(
+                (json.dumps(event, sort_keys=True) + "\n").encode()
+                for event in reordered
+            ))
+            with self.assertRaisesRegex(ValueError, "transfer appears after"):
+                audit(root, native_frame=3)
+
     def test_wrong_ordinal_type_and_frame_fail_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
