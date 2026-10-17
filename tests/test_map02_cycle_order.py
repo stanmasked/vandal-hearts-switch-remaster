@@ -87,6 +87,58 @@ int main(int argc, char **argv) {
 }
 """
 
+/* Synthetic LD_PRELOAD fault injection. Never touches the user's game. */
+FAULT_SHIM = r"""
+#define _GNU_SOURCE
+#include <dlfcn.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+int fsync(int fd) {
+    typedef int (*fsync_fn)(int);
+    static fsync_fn original;
+    static int injected;
+    struct stat st;
+    const char *fault = getenv("VH_MAP02_TEST_FAULT");
+    const char *root = getenv("VH_MAP02_CYCLE_OUTPUT_DIR");
+    if (!original) original = (fsync_fn)dlsym(RTLD_NEXT, "fsync");
+    if (!injected && fault && root && fstat(fd, &st) == 0 &&
+        S_ISREG(st.st_mode) && st.st_size > 100) {
+        injected = 1;
+        if (!strcmp(fault, "flip")) {
+            if (pwrite(fd, "!", 1, 0) != 1) return -1;
+        } else if (!strcmp(fault, "replace") ||
+                   !strcmp(fault, "replace-identical")) {
+            int dir = open(root, O_RDONLY | O_DIRECTORY);
+            int other = -1;
+            if (dir < 0) return -1;
+            other = openat(dir, "replacement-temp", O_CREAT | O_EXCL |
+                           O_RDWR, 0600);
+            if (other < 0) { close(dir); return -1; }
+            if (!strcmp(fault, "replace")) {
+                const char *foreign = "foreign-file-do-not-delete";
+                if (write(other, foreign, strlen(foreign)) !=
+                    (ssize_t)strlen(foreign)) return -1;
+            } else {
+                char buffer[512];
+                ssize_t count = pread(fd, buffer, sizeof buffer, 0);
+                if (count <= 0 || write(other, buffer, (size_t)count) != count)
+                    return -1;
+            }
+            if (close(other) || renameat(dir, "replacement-temp", dir,
+                        "map02-single-process-cycle.jsonl"))
+                return -1;
+            close(dir);
+        }
+    }
+    return original(fd);
+}
+"""
+
 
 class CycleOrderTests(unittest.TestCase):
     @classmethod
@@ -109,18 +161,32 @@ class CycleOrderTests(unittest.TestCase):
                                timeout=45)
         if built.returncode:
             raise AssertionError(built.stderr)
+        shim = root / "fault.c"
+        shim.write_text(FAULT_SHIM, encoding="utf-8")
+        cls.fault_library = root / "libmap02_fault.so"
+        shared = subprocess.run(
+            ["cc", "-std=gnu99", "-Wall", "-Wextra", "-Werror",
+             "-fPIC", "-shared", str(shim), "-ldl",
+             "-o", str(cls.fault_library)],
+            capture_output=True, text=True, timeout=45)
+        if shared.returncode:
+            raise AssertionError(shared.stderr)
 
     @classmethod
     def tearDownClass(cls):
         cls.temp.cleanup()
 
-    def run_mode(self, mode, *, frame="73", directory=None):
+    def run_mode(self, mode, *, frame="73", directory=None, fault=None):
         env = dict(os.environ)
         env["VH_MAP02_PROBE_FRAME"] = frame
         if directory is not None:
             env["VH_MAP02_CYCLE_OUTPUT_DIR"] = str(directory)
         else:
             env.pop("VH_MAP02_CYCLE_OUTPUT_DIR", None)
+        env.pop("VH_MAP02_TEST_FAULT", None)
+        if fault is not None:
+            env["VH_MAP02_TEST_FAULT"] = fault
+            env["LD_PRELOAD"] = str(self.fault_library)
         return subprocess.run([str(self.exe), mode], env=env,
                               capture_output=True, text=True, timeout=5)
 
@@ -186,6 +252,31 @@ class CycleOrderTests(unittest.TestCase):
             second = self.run_mode("good", directory=out)
             self.assertIn("failed=1 receipt=0", second.stdout)
             self.assertEqual(file.read_bytes(), previous)
+
+    def test_in_place_flip_after_file_fsync_rejects_publication(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "receipts"
+            root.mkdir(mode=0o700)
+            outcome = self.run_mode("good", directory=root, fault="flip")
+            self.assertEqual(outcome.returncode, 0, outcome.stderr)
+            self.assertIn("failed=1 receipt=0", outcome.stdout)
+            self.assertFalse((root / "map02-single-process-cycle.jsonl").exists())
+
+    def test_replaced_name_is_not_unlinked_on_failure(self):
+        for fault in ("replace", "replace-identical"):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp) / "receipts"
+                root.mkdir(mode=0o700)
+                outcome = self.run_mode("good", directory=root, fault=fault)
+                self.assertEqual(outcome.returncode, 0, outcome.stderr)
+                self.assertIn("failed=1 receipt=0", outcome.stdout)
+                swapped = root / "map02-single-process-cycle.jsonl"
+                self.assertTrue(swapped.is_file(), "foreign inode was unlinked")
+                if fault == "replace":
+                    self.assertEqual(swapped.read_bytes(),
+                                     b"foreign-file-do-not-delete")
+                else:
+                    self.assertIn(b"ordered_source_hooks_observed", swapped.read_bytes())
 
     def test_non_private_directory_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
