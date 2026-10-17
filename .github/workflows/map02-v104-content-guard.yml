@@ -105,6 +105,9 @@ on:
       - 'tools/summarize_map02_v119_quintuplet_runtime.py'
       - 'tests/test_map02_v119_five_native.py'
       - 'tests/test_map02_v119_quintuplet_runtime.py'
+      - 'tools/apply_map02_v120_pcsx_rearmed.py'
+      - 'tools/summarize_map02_v120_real_gp0_return.py'
+      - 'tests/test_map02_v120_real_gp0_return.py'
       - 'tools/map02_v80_native_timeline.*'
       - 'tools/map02_v81_event_jsonl.*'
       - 'tools/verify_map02_v82_native_trace.py'
@@ -178,6 +181,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v118_quadruplet_runtime.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v119_five_native.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v119_quintuplet_runtime.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v120_real_gp0_return.py' -v
       - name: Patch pinned upstream with Unai post-dispatch observer
         shell: bash
         run: |
@@ -188,7 +192,7 @@ jobs:
           git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
           git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
-          python3 -m remaster.tools.apply_map02_v119_pcsx_rearmed upstream-pcsx
+          python3 -m remaster.tools.apply_map02_v120_pcsx_rearmed upstream-pcsx
           git -C upstream-pcsx diff --check
           grep -F 'vh80_record(VH83_GP0_UNAI_HANDLED' upstream-pcsx/plugins/gpu_unai/gpulib_if.cpp
           grep -F 'VH83_UNAI_DISPATCH_PASS' upstream-pcsx/frontend/main.c
@@ -279,6 +283,7 @@ jobs:
           grep -F 'VH117_TRIPLETS_PASS triples=' proof/private/v104-runtime.log
           grep -F 'VH118_QUADRUPLETS_PASS quads=' proof/private/v104-runtime.log
           grep -F 'VH119_QUINTUPLETS_PASS quints=' proof/private/v104-runtime.log
+          grep -F 'VH120_GP0_RETURN_PASS commands=5' proof/private/v104-runtime.log
           grep -F 'VH86_GPULIB_PASS mips_a0_stores=' proof/private/v104-runtime.log
           grep -F 'VH87_GPULIB_PASS overlap_stores=' proof/private/v104-runtime.log
           grep -F 'VH88_ASYNC_PASS queued=' proof/private/v104-runtime.log
@@ -812,6 +817,26 @@ jobs:
           assert report["raw_pixel_values_or_hashes_exported"] is False
           assert report["HD_replacement_approved"] is False
           Path("proof/public/v119-quintuplet-summary.json").write_text(
+              json.dumps(report,sort_keys=True)+"\n")
+          PY
+      - name: Verify real Unai host-GP0 A-B-C-D-A sample restoration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from remaster.tools.summarize_map02_v120_real_gp0_return import summarize
+          report=summarize(
+              Path("proof/private/v104-runtime.log").read_text(),
+              Path("proof/private/V104_RENDERER_EVENTS.jsonl").read_bytes())
+          assert report["native_gp0_commands_submitted_by_host"]==5
+          assert report["exact_four_back_returns_observed"]==1
+          assert report["real_native_vram_freeze_readbacks"]==5
+          assert report["native_previous_value_buffers_erased"] is True
+          assert report["the_commands_were_not_executed_by_interpreted_mips"] is True
+          assert report["HD_replacement_approved"] is False
+          Path("proof/public/v120-real-gp0-return-summary.json").write_text(
               json.dumps(report,sort_keys=True)+"\n")
           PY
       - name: Publish aggregate status only, never private trace
