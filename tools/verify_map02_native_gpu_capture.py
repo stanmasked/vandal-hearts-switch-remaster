@@ -143,19 +143,24 @@ def verify_capture(directory: Path, *, target_frame: int):
             transfer_changed_words+=changed
             if kind=="load":
                 loads+=1
-                # Original C emits upload bytes only on the AFTER event.
-                # Omission can mean an intentionally unrecorded transfer;
-                # do not confuse this with a verified zero-byte upload.
+                # The pinned C hook passes src and rect->w*rect->h only
+                # when both dimensions are in 1..128 (not merely when
+                # area <= 16384). The recorder must persist the AFTER
+                # payload for each such positive bounded rectangle.
                 if before["upload"]:
                     raise ValueError("LoadImage before event must not claim an upload payload")
+                rect=after["rect"]
+                expected_payload=(1 <= rect[2] <= 128 and 1 <= rect[3] <= 128)
                 upload=after["upload"]
-                if upload:
-                    rect=after["rect"]
-                    area=rect[2]*rect[3]
-                    if not 0<area<=16384:
-                        raise ValueError("LoadImage payload exists for invalid/oversized rectangle")
-                    upload_hashes.append(sha(private_file(directory,upload,expected=area*2)))
+                if expected_payload:
+                    if not upload:
+                        raise ValueError("bounded LoadImage missing mandatory upload payload")
+                    upload_hashes.append(sha(private_file(
+                        directory,upload,expected=rect[2]*rect[3]*2
+                    )))
                 else:
+                    if upload:
+                        raise ValueError("out-of-range LoadImage cannot have recorded upload payload")
                     load_pairs_without_payload+=1
             elif kind=="move":
                 moves+=1
