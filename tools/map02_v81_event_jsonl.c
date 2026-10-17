@@ -28,6 +28,12 @@ int vh81_format_jsonl(char *output,size_t capacity) {
         else if(e->kind==VH86_A0_SAME) kind="gpulib_a0_same_count";
         else if(e->kind==VH86_COPY_STORES) kind="gpulib_copy_store_count";
         else if(e->kind==VH86_COPY_SAME) kind="gpulib_copy_same_count";
+        else if(e->kind==VH87_OVERLAP_STORES) kind="gpulib_overlap_store_count";
+        else if(e->kind==VH87_OVERLAP_SAME) kind="gpulib_overlap_same_count";
+        else if(e->kind==VH87_MASK_UPLOAD_STORES) kind="gpulib_mask_upload_store_count";
+        else if(e->kind==VH87_MASK_UPLOAD_SAME) kind="gpulib_mask_upload_same_count";
+        else if(e->kind==VH87_WRAP_STORES) kind="gpulib_wrap_store_count";
+        else if(e->kind==VH87_WRAP_SAME) kind="gpulib_wrap_same_count";
         else return -1;
         if(used>=capacity) return -1;
         /* GPU DMA2 is an address, NOT an executed GP0 command. */
