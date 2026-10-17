@@ -91,6 +91,10 @@ class CandidateC11Tests(unittest.TestCase):
                     self.assertTrue(all((row["y"] < row["clip_t"] if row["reason"] in (4, 7) else row["y"] > row["clip_b"]) for row in records))
                     self.assertEqual(len(records), 4)
                     self.assertEqual({row["stage"] for row in records}, {"rejected_edge_candidate"})
+                    with self.assertRaisesRegex(ValueError, "reason inconsistent"):
+                        validate(journal.read_bytes().replace(b'"reason":4', b'"reason":5', 1))
+                    with self.assertRaises(ValueError):
+                        validate(journal.read_bytes()[:-1])
                 else:
                     self.assertFalse(journal.exists())
             bad = subprocess.run(
