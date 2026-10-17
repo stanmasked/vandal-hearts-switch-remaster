@@ -43,6 +43,8 @@ on:
       - 'tools/decode_nexium_guest_trace_frame.py'
       - 'tests/test_decode_nexium_guest_trace_frame.py'
       - 'tools/capture_nexium_scene_soak.sh'
+      - 'tools/audit_nexium_audout_idle_control.py'
+      - 'tests/test_audit_nexium_audout_idle_control.py'
       - 'tools/audit_nexium_scene_soak.py'
       - 'tests/test_audit_nexium_scene_soak.py'
       - 'source/vh_audio_scene_optical.c'
@@ -90,6 +92,8 @@ jobs:
           python3 -m unittest discover -s tests -p "test_verify_switch_runtime_nro.py" -v
           python3 -m unittest discover -s tests -p "test_analyze_nexium_transition_timing.py" -v
           python3 -m unittest discover -s tests -p "test_audit_nexium_guest_sd_handoff.py" -v
+          bash -n tools/capture_nexium_scene_soak.sh
+          python3 -m unittest discover -s tests -p "test_audit_nexium_audout_idle_control.py" -v
           bash -n tools/capture_nexium_scene_audio.sh
           make verify-nro
 
@@ -781,6 +785,62 @@ jobs:
             --output runtime-evidence/scene-soak/soak-audout-exact-slow-verification.json
           python3 -m json.tool runtime-evidence/scene-soak/soak-audout-exact-slow-verification.json >/dev/null
           echo "Actual >=40ms guest call begin/end ns recorded; temporal input ordering is not scene causality or audio output." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Capture sustained no-switch audout control from identical NRO
+        id: idle_audio_control
+        shell: bash
+        env:
+          SOAK_MODE: idle
+        run: |
+          set -euo pipefail
+          bash tools/capture_nexium_scene_soak.sh runtime-evidence/idle-control
+          test -s runtime-evidence/idle-control/soak-audout-slow-unverified.csv
+          test -s runtime-evidence/idle-control/soak-sd-unverified.csv
+
+      - name: Verify zero-switch guest SD original and exact slow-call baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_audout_idle_control.py \
+            --sd-root "$RUNNER_TEMP/vh-nexium-idle276-${GITHUB_RUN_ID}" \
+            --evidence runtime-evidence/idle-control \
+            --preflight integrated-nro-preflight.json \
+            --git-sha "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --output runtime-evidence/idle-control/idle-audout-verification.json
+          python3 -m json.tool runtime-evidence/idle-control/idle-audout-verification.json >/dev/null
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          a=json.loads(Path("runtime-evidence/idle-control/idle-audout-verification.json").read_text())
+          b=json.loads(Path("runtime-evidence/scene-soak/soak-audout-exact-slow-verification.json").read_text())
+          if (a["nro_sha256"]!=b["nro_sha256"]
+                  or a["guest_scene_change_inputs"]!=0
+                  or a["guest_audio_second_windows"]<50
+                  or a["slow_records_dropped"]!=0):
+              raise SystemExit("Idle and switching traces cannot be compared")
+          comparison={
+              "schema":"vh-nexium-idle-versus-switch-same-nro/v1",
+              "result":"SAME_NRO_GUEST_IDLE_AND_SWITCH_MEASUREMENTS_VERIFIED",
+              "nro_sha256":a["nro_sha256"],
+              "idle_run_id":a["run_id"],
+              "guest_idle_audout_attempts":a["guest_audout_attempts"],
+              "guest_switch_audout_attempts":b["audout_attempts"],
+              "idle_slow_ge40ms_calls":a["slow_ge40ms_calls"],
+              "switch_slow_ge40ms_calls":b["slow_calls_captured"],
+              "idle_slow_ge50ms_calls":a["slow_ge50ms_calls"],
+              "switch_slow_ge50ms_calls":b["slow_ge50ms_count"],
+              "scene_switching_causality_proven":False,
+              "physical_hardware_tested":False,
+              "audible_underruns_measured":False,
+          }
+          output=Path("runtime-evidence/idle-control/idle-vs-switch.json")
+          output.write_text(json.dumps(comparison,indent=2,sort_keys=True)+"\n")
+          print(json.dumps(comparison,sort_keys=True))
+          PY
+          echo "Same-NRO idle control has zero guest scene changes and verified original guest SD." >> "$GITHUB_STEP_SUMMARY"
+          echo "Guest API-call duration comparisons do not prove scene causality or actual speaker underruns." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Record audio capture boundary
         if: always()
