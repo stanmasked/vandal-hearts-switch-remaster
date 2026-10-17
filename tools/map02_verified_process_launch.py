@@ -132,7 +132,8 @@ def _validate_receipt(raw):
 def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
                        owned_game, *, upstream, x, y, timeout=900,
                        arguments=(), cycle_dir=None,
-                       build_receipt_dir=None, build_bundle_dir=None):
+                       build_receipt_dir=None, build_bundle_dir=None,
+                       krom_source=None):
     """Run the given PC binary directly; never run a shell or create game data."""
     if not sys.platform.startswith("linux") or not Path("/proc/self/exe").exists():
         raise ValueError("observed executable launch requires Linux /proc")
@@ -176,10 +177,12 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
             raise ValueError("cycle launch requires both private build receipt and source bundle")
         from tools.map02_cycle_build_provenance import verify_build_receipt
         verified_build = verify_build_receipt(
-            build_receipt_dir, binary, upstream, build_bundle_dir)
+            build_receipt_dir, binary, upstream, build_bundle_dir,
+            krom_source=krom_source)
         if verified_build["source_pinned_full_elf_bytes_checked"] is not True:
             raise ValueError("source-pinned original MAP02 ELF could not be confirmed")
-    elif build_receipt_dir is not None or build_bundle_dir is not None:
+    elif (build_receipt_dir is not None or build_bundle_dir is not None or
+          krom_source is not None):
         raise ValueError("build receipt options require --cycle-dir")
 
     game_image = Path(owned_game).absolute()
@@ -279,7 +282,8 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
         # the receipt, source bundle or Make graph during execution must
         # not turn a pre-run check into a false final process receipt.
         after_build = verify_build_receipt(
-            build_receipt_dir, binary, upstream, build_bundle_dir)
+            build_receipt_dir, binary, upstream, build_bundle_dir,
+            krom_source=krom_source)
         if after_build != verified_build:
             raise ValueError("MAP02 source-bound PC build receipt changed during run")
     checked = verify_window_scoped_join(native, scoped, target_frame=frame)
@@ -385,6 +389,8 @@ def main():
                    help="private local full-ELF build receipt directory")
     p.add_argument("--build-bundle-dir", type=Path,
                    help="source-pinned private diagnostic Make overlay bundle")
+    p.add_argument("--krom-source", type=Path,
+                   help="original user-owned PsyQ KROMDAT.BIN or PS1 BIOS")
     a, forwarded = p.parse_known_args()
     if forwarded and forwarded[0] == "--":
         forwarded = forwarded[1:]
@@ -399,10 +405,12 @@ def main():
                 timeout=a.timeout, arguments=forwarded,
                 cycle_dir=a.cycle_dir,
                 build_receipt_dir=a.build_receipt_dir,
-                build_bundle_dir=a.build_bundle_dir)
+                build_bundle_dir=a.build_bundle_dir,
+                krom_source=a.krom_source)
         else:
             if (a.cycle_dir is not None or a.build_receipt_dir is not None or
-                    a.build_bundle_dir is not None):
+                    a.build_bundle_dir is not None or
+                    a.krom_source is not None):
                 raise ValueError("verify original cycle via separate private witness verifier")
             if forwarded:
                 raise ValueError("verify does not accept executable arguments")
