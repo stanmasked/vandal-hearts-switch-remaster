@@ -21,10 +21,15 @@ def summarize(raw:bytes):
     prev=summarize_v88(raw)
     validate(raw)
     events=[json.loads(line) for line in raw.decode("ascii").splitlines()]
-    tail=events[-7:]
+    starts=[i for i,e in enumerate(events) if e["kind"]==KINDS[0]]
+    if len(starts)!=1:
+        raise Refused("missing/duplicate v89 async-copy metric block")
+    start=starts[0]
+    tail=events[start:start+7]
     if len(tail)!=7 or tuple(e["kind"] for e in tail)!=KINDS:
-        raise Refused("missing complete v89 async-copy/mode-transition suffix")
-    if any(e["kind"] in KINDS for e in events[:-7]):
+        raise Refused("missing complete ordered v89 async-copy metrics")
+    if any(e["kind"] in KINDS for i,e in enumerate(events)
+           if not start<=i<start+7):
         raise Refused("duplicate or misplaced v89 copy metric")
     if tuple(e["value"] for e in tail)!=EXPECTED:
         raise Refused("GPU worker/sync mask+copy counters fail exact fixture")
