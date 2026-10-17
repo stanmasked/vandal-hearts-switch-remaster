@@ -1,0 +1,171 @@
+"""Synthetic SHA-bound source FT4 -> window witness regressions.
+
+Only verify_bundle (the expensive independently captured GTE source check)
+is mocked in this fixture. Actual window full-VRAM and texture/OT checks run.
+No synthetic result is evidence of authentic MAP02 gameplay.
+"""
+import hashlib
+import json
+from pathlib import Path
+import stat
+import tempfile
+import unittest
+from unittest.mock import patch
+
+from tests.test_verify_map02_native_gpu_windows import (
+    NativeGpuWindowEvidenceTests, jsonline,
+)
+from tools.verify_map02_source_native_windows import (
+    CLAIM, verify_window_source_join,
+)
+from tools.publish_map02_native_window_source_witness import (
+    MANIFEST, publish_window_source_witness,
+    verify_published_window_source_witness,
+)
+from tools.verify_map02_vram_timeline import VRAM_BYTES
+
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+class WindowSourceWitnessTests(unittest.TestCase):
+    def setUp(self):
+        # Reuse the actual byte-backed native-VRAM fixture, not mocked GPU
+        # records or invented window verifier return values.
+        fixture = NativeGpuWindowEvidenceTests(
+            methodName="test_small_one_window_is_not_mislabeled_as_complete_gameplay")
+        fixture.setUp()
+        self.addCleanup(fixture.tmp.cleanup)
+        self.fixture = fixture
+        self.native = fixture.root
+        self.source = self.native.parent / "source"
+        self.source.mkdir(mode=0o700)
+        self.window = fixture.window
+        first = fixture.events[0]
+        second = fixture.events[1]
+        self.source_event = {
+            "gte": {"perimeter_xy": [[0, 0], [2, 0], [0, 2], [2, 2]],
+                    "raw_otz": 6},
+            "texture": {
+                "tpage": 0, "clut": 0, "u": 0, "v": 0, "w": 1, "h": 1,
+                "mask_x": 0, "mask_y": 0,
+                "offset_x": 0, "offset_y": 0,
+            },
+        }
+        native_ft4 = {
+            "tpage": 0, "clut": 0,
+            "xy": [0, 0, 2, 0, 2, 2, 0, 2],
+            "uv": [0, 0, 1, 0, 0, 1, 1, 1],
+        }
+        for event in (first, second):
+            event["ft4"] = native_ft4
+            event["primitive_type"] = 2
+        self.save_native()
+        self.source_bundle = jsonline({"ot_size": 64})
+        self.source_events = jsonline(self.source_event)
+        (self.source / "bundle.json").write_bytes(self.source_bundle)
+        (self.source / "gpu-events.jsonl").write_bytes(self.source_events)
+        (self.source / "gpu-vram-le.bin").write_bytes(bytes(VRAM_BYTES))
+        self.claim = {
+            "schema": "vh.map02.native-window-source-claim.v1",
+            "source_frame": 7, "gpu_draw_frame": 7,
+            "source_bundle_manifest_sha256": sha(self.source_bundle),
+            "source_events_sha256": sha(self.source_events),
+            "native_window_index_sha256": sha(
+                (self.native / "gpu-native-window-index.json").read_bytes()),
+            "source_events_in_addprim_order": True,
+            "one_clear_otag_one_draw_otag": True,
+        }
+        self.save_claim()
+        self.mock_bundle = patch(
+            "tools.verify_map02_source_native_windows.verify_bundle",
+            return_value={"frame": 7, "submitted_faces_checked": 1})
+        self.checked_bundle = self.mock_bundle.start()
+        self.addCleanup(self.mock_bundle.stop)
+
+    def save_claim(self):
+        (self.source / CLAIM).write_bytes(jsonline(self.claim))
+
+    def save_native(self):
+        (self.window / "gpu-native-events.jsonl").write_bytes(
+            b"".join(map(jsonline, self.fixture.events)))
+
+    def test_exact_ft4_materials_and_relative_ot_source_join(self):
+        result = verify_window_source_join(self.source, self.native)
+        self.checked_bundle.assert_called()
+        self.assertTrue(result["original_gte_compiled_and_checked"])
+        self.assertEqual(result["source_ft4_exact_matches"], 1)
+        self.assertEqual(result["native_draw_pairs"], 2)
+        self.assertEqual(result["native_gpu_events"], 4)
+        self.assertGreaterEqual(result["source_texture_palette_words_checked"], 1)
+        self.assertFalse(result["source_addprim_chronology_authenticated"])
+        self.assertFalse(result["full_original_scene_authenticated"])
+
+    def test_publish_reverify_exclusive_sha_and_0600(self):
+        result = publish_window_source_witness(self.source, self.native)
+        self.assertEqual(result["verified_source_ft4_subsequence"], 1)
+        final = self.source / MANIFEST
+        self.assertEqual(stat.S_IMODE(final.stat().st_mode), 0o600)
+        report = verify_published_window_source_witness(
+            self.source, self.native)
+        self.assertTrue(report["native_window_file_tree_bound"])
+        self.assertFalse(report["full_original_scene_authenticated"])
+        manifest = json.loads(final.read_bytes())
+        self.assertEqual(
+            manifest["native_window_all_files_sha256"],
+            verify_window_source_join(self.source, self.native)[
+                "native_window_all_files_sha256"])
+        with self.assertRaises(ValueError):
+            publish_window_source_witness(self.source, self.native)
+
+    def test_cryptographic_claim_or_frame_mismatch_rejected(self):
+        for field, value in (
+            ("source_bundle_manifest_sha256", "0" * 64),
+            ("native_window_index_sha256", "0" * 64),
+            ("source_frame", 9),
+            ("gpu_draw_frame", 8),
+            ("source_events_in_addprim_order", False),
+            ("one_clear_otag_one_draw_otag", 1),
+        ):
+            old = self.claim[field]
+            self.claim[field] = value
+            self.save_claim()
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                verify_window_source_join(self.source, self.native)
+            self.claim[field] = old
+        self.save_claim()
+
+    def test_rejects_changed_original_gpu_ft4_packet(self):
+        first, second = self.fixture.events[:2]
+        for e in (first, second):
+            e["ft4"]["tpage"] = 1
+        self.save_native()
+        with self.assertRaisesRegex(ValueError, "absent or ambiguous"):
+            verify_window_source_join(self.source, self.native)
+
+    def test_rejects_modified_texture_vram_even_with_valid_window_structure(self):
+        path = self.window / "gpu-0000-vram.bin"
+        data = bytearray(path.read_bytes())
+        data[:2] = b"\x01\x00"  # source 4-bpp word was zero
+        path.write_bytes(data)
+        with self.assertRaisesRegex(ValueError, "texture/CLUT"):
+            verify_window_source_join(self.source, self.native)
+
+    def test_refuses_false_source_gte_and_postpublish_tampering(self):
+        self.checked_bundle.side_effect = ValueError("GTE source verification failed")
+        with self.assertRaisesRegex(ValueError, "GTE source"):
+            publish_window_source_witness(self.source, self.native)
+        self.assertFalse((self.source / MANIFEST).exists())
+        self.checked_bundle.side_effect = None
+        publish_window_source_witness(self.source, self.native)
+        path = self.window / "gpu-0003-vram.bin"
+        data = bytearray(path.read_bytes())
+        data[0] ^= 1
+        path.write_bytes(data)
+        with self.assertRaises(ValueError):
+            verify_published_window_source_witness(self.source, self.native)
+
+
+if __name__ == "__main__":
+    unittest.main()
