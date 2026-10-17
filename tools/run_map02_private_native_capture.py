@@ -129,6 +129,32 @@ def _open_pinned_executable(path, config):
         raise
 
 
+# The FD-pinned executable can still load different code through dynamic
+# loader or interpreter environment variables. Refuse inherited code-injection
+# controls for this intentionally strict private diagnostic launcher.
+# This is NOT a complete runtime sandbox or a proof of binary provenance.
+_BLOCKED_EXACT_ENV = frozenset((
+    "PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "PYTHONINSPECT",
+    "PYTHONBREAKPOINT", "BASH_ENV", "ENV", "GCONV_PATH",
+    "GLIBC_TUNABLES",
+))
+
+
+def _validate_launch_environment(environ):
+    """Fail before creating receipts if the child could load injected code."""
+    if type(environ) is not dict:
+        raise ValueError("private launch environment must be a string mapping")
+    for key, value in environ.items():
+        if (type(key) is not str or type(value) is not str
+                or not key or "=" in key or "\x00" in key or "\x00" in value):
+            raise ValueError("private launch environment requires plain strings")
+        if (key in _BLOCKED_EXACT_ENV or key.startswith("LD_")
+                or key.startswith("DYLD_")):
+            # Do not echo the key's value: it may contain user paths
+            # and private process configuration.
+            raise ValueError("private launch environment has injection controls")
+
+
 def capture(executable, preflight_report, summary_report, *,
             game_args=(), environ=None, timeout=None):
     """Synchronous controlled launcher. Returns an unprivileged receipt dict.
@@ -138,6 +164,7 @@ def capture(executable, preflight_report, summary_report, *,
     are copied to the report or GitHub.
     """
     env = dict(os.environ if environ is None else environ)
+    _validate_launch_environment(env)
     executable = Path(executable).absolute()
     preflight_report = Path(preflight_report).absolute()
     summary_report = Path(summary_report).absolute()
