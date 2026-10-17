@@ -16,11 +16,16 @@ KINDS=("async_dma_queued","async_dma_completed",
 def summarize(raw:bytes):
     prior=summarize_v87(raw)
     rows=[json.loads(line) for line in raw.decode("ascii").splitlines()]
-    if len(rows)<4 or tuple(e["kind"] for e in rows[-4:])!=KINDS:
+    positions=[i for i,e in enumerate(rows) if e["kind"]==KINDS[0]]
+    if len(positions)!=1:
+        raise Refused("missing/duplicate asynchronous GPU metric block")
+    start=positions[0]
+    group=rows[start:start+4]
+    if len(group)!=4 or tuple(e["kind"] for e in group)!=KINDS:
         raise Refused("missing or misordered post-sync async worker aggregates")
-    if any(e["kind"] in KINDS for e in rows[:-4]):
+    if any(e["kind"] in KINDS for i,e in enumerate(rows)
+           if not start<=i<start+4):
         raise Refused("duplicate asynchronous GPU metric events")
-    group=rows[-4:]
     queued,completed,stores,same=[e["value"] for e in group]
     if not (0<queued<=32 and completed==queued and
             stores==8*completed and 0<same<stores):
