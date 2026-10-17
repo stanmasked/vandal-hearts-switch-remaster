@@ -48,6 +48,9 @@ class PrivateGpuMakeOverlayTests(unittest.TestCase):
         self.assertIn("$(BUILD_DIR)/libgpu.o:", result)
         self.assertIn("$(BUILD_DIR)/pc_raster.o:", result)
         self.assertIn("$(M32) $(SAN) $(PORT_WARN)", result)
+        # Generated C lives outside platform/pc/src, so -Isrc must
+        # reproduce the original source-directory header lookup.
+        self.assertEqual(result.count("-Iinclude -Isrc"), 2)
         self.assertIn("$(error MAP02 private GPU requires isolated BUILD_DIR=", result)
         self.assertIn("$(error MAP02 private GPU instrumentation supports pinned US", result)
         self.assertIn("map02-private-gpu-objects:", result)
@@ -94,6 +97,7 @@ class PrivateGpuMakeOverlayTests(unittest.TestCase):
         self.assertIn(str(self.destination / builder.GENERATED_RASTER), good.stdout)
         self.assertIn("-DVH_MAP02_GPU_CAPTURE", good.stdout)
         self.assertIn("-DVH_MAP02_DDA_SPAN_TRACE", good.stdout)
+        self.assertEqual(good.stdout.count("-Iinclude -Isrc"), 2)
         self.assertNotIn(" -c -o build-map02-fixture/libgpu.o src/libgpu.c", good.stdout)
         baseline = invoke("us", "build")
         self.assertNotEqual(baseline.returncode, 0)
