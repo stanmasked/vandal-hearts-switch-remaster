@@ -1,6 +1,7 @@
 """Asset-free, two-coordinate native DrawOTag/PutPixel provenance regressions."""
 import hashlib
 import json
+import struct
 import unittest
 
 import test_verify_map02_putpixel_scope as original_fixture
@@ -59,6 +60,8 @@ class TwoWordPutPixelTests(unittest.TestCase):
         self.assertEqual(report["source_ft4_draw_coordinate_pairs_with_calls"], 3)
         self.assertEqual(report["source_ft4_draws_with_both_words_observed"], 1)
         self.assertEqual(report["source_ft4_draws_changing_both_sampled_words"], 1)
+        self.assertEqual(report["source_ft4_draws_with_both_words_changed_by_putpixel"], 1)
+        self.assertEqual(report["source_ft4_draws_with_both_words_changed_but_one_net_delta"], 0)
         self.assertEqual(report["source_ft4_draws_with_both_words_semitransparent"], 0)
         self.assertEqual(report["source_ft4_draws_with_interleaved_word_revisit"], 0)
         self.assertTrue(report["one_interleaved_global_putpixel_step_sequence"])
@@ -151,6 +154,45 @@ class TwoWordPutPixelTests(unittest.TestCase):
         self.rows[1]["textured"] = 1
         self.save()
         with self.assertRaisesRegex(ValueError,"source-pinned PC WritePixel"):
+            verify_multi_pixel_ot(self.source, self.native)
+
+    def test_one_ft4_writes_both_words_but_restores_one_before_snapshot(self):
+        # Same source-keyed FT4 makes real writes at A and B, then
+        # returns A to its PRE value. Per-draw GPU snapshots only see
+        # B change, so an ordinary delta comparison misses the A work.
+        original = bytes(self.base.base.base.bytes_before)
+        first = bytearray(original)
+        struct.pack_into("<H", first, (35*1024+35)*2, 0x03e0)
+        second = bytearray(first)
+        struct.pack_into("<H", second, (30*1024+30)*2, 0x7c00)
+        self.base.base.base.override_snapshots = {
+            3: bytes(first), 4: bytes(first), 5: bytes(second),
+        }
+        self.rows = [
+            self.base.row(0, 1, 0, 0x8000, 0x8000),
+            self.base.row(1, 1, 0, 0x03e0, 0x03e0),
+            self.base.row(2, 1, 0x8000, 0, 0),
+            self.base.row(3, 2, 0, 0x7c00, 0x7c00),
+        ]
+        self.rows[1]["x"], self.rows[1]["y"] = self.coord_b
+        self.save()
+        report = verify_multi_pixel_ot(self.source, self.native)
+        self.assertEqual(report["source_ft4_draws_with_both_words_observed"], 1)
+        self.assertEqual(report["source_ft4_draws_with_both_words_changed_by_putpixel"], 1)
+        self.assertEqual(report["source_ft4_draws_with_both_words_changed_but_one_net_delta"], 1)
+        self.assertEqual(report["source_ft4_draws_changing_both_sampled_words"], 0)
+        self.assertEqual(report["source_ft4_transient_write_restore_pairs"], 1)
+        self.assertEqual(report["source_ft4_draws_with_interleaved_word_revisit"], 1)
+        self.assertEqual(report["source_ft4_changed_putpixel_calls"], 4)
+        self.assertEqual(report["source_ft4_changed_word_draw_coordinate_pairs"], 2)
+        self.assertFalse(report["complete_original_putpixel_stream_proven"])
+
+        # A missing restoration changes the claimed final word while
+        # preserving the original VRAM snapshot; reject it.
+        self.rows[2]["after"] = 0x8000
+        self.rows[2]["front"] = 0x8000
+        self.save()
+        with self.assertRaisesRegex(ValueError, "contradicts native primitive VRAM bounds"):
             verify_multi_pixel_ot(self.source, self.native)
 
     def test_duplicate_step_and_backward_ordinal_rejected(self):
