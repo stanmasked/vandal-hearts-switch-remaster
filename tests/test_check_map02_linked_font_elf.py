@@ -101,8 +101,11 @@ class FontLinkedTests(unittest.TestCase):
             check_linked_font_bytes(binary, self.expected)
 
     def test_second_hardlink_is_not_owned_unshared_elf(self):
+        original_copy = self.root / "hardlink-target"
+        original_copy.write_bytes(self.binary.read_bytes())
+        original_copy.chmod(0o700)
         shared = self.root / "hardlinked-elf"
-        shared.hardlink_to(self.binary)
+        shared.hardlink_to(original_copy)
         with self.assertRaisesRegex(ValueError, "not an owned executable"):
             check_linked_font_bytes(shared, self.expected)
 
