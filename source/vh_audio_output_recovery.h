@@ -35,6 +35,10 @@ typedef struct {
 typedef struct {
     uint64_t calls, total_ticks, max_ticks;
     uint64_t waits_longer_than_page, failed_submissions;
+    /* Virtual submit failures deliberately injected BEFORE audout.
+     * Included in calls/failed_submissions to preserve page recovery
+     * accounting; not actual libnx service calls or wait measurements. */
+    uint64_t synthetic_failed_submissions;
 } VhAudioSubmitTiming;
 
 /* Reject invalid frame sizes, a zero frequency and counter overflow
@@ -84,6 +88,36 @@ int vh_audio_timing_fault_arm(VhAudioTimingFaultInjection *state);
 uint64_t vh_audio_timing_fault_frequency(
     VhAudioTimingFaultInjection *state, int exact_returned,
     uint64_t actual_frequency);
+
+/* Optional one-shot synthetic submit rejection for the ZR hardware
+ * test. Unlike a real failed audoutPlayBuffer, this fault happens before
+ * a buffer descriptor is leased or the service is called. The caller
+ * must use the existing bounded stop/reopen/retry of the SAME PCM page.
+ * No genuine audout error is forged; this is a wrapper-level test.
+ */
+typedef struct {
+    unsigned armed, injected;
+} VhAudioSubmitFaultInjection;
+
+int vh_audio_submit_fault_arm(VhAudioSubmitFaultInjection *state);
+int vh_audio_submit_fault_consume(VhAudioSubmitFaultInjection *state);
+
+/* Exactly one virtual failed submit for the injector: record a zero-
+ * duration attempt plus its explicit synthetic marker, atomically.
+ * A virtual failure must never be described as an audout service call.
+ * An invalid/overflowing accumulator is left byte-for-byte unchanged.
+ */
+int vh_audio_output_record_synthetic_submit_failure(
+    VhAudioSubmitTiming *timing, uint64_t frequency, size_t frames);
+
+/* 0 absent, 1 armed/unexercised, 2 injected AND recovered, -1 corrupt.
+ * Verifies the marker against real recovered page counters. Returns
+ * evidence status only, not audible/physical audout validation.
+ */
+int vh_audio_output_verify_submit_injection(
+    const VhAudioSubmitFaultInjection *state,
+    const VhAudioSubmitTiming *timing,
+    const VhAudioOutputRecovery *recovery);
 
 /* Final integrity check: the number of untimed returned PCM pages
  * cannot exceed the number of successful logical output pages.
