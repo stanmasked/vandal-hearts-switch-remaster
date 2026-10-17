@@ -46,7 +46,8 @@ enum { VH80_VBLANK=1, VH80_GP1_MMIO=2, VH80_GPU_DMA2=3, VH83_GP0_UNAI_HANDLED=4,
   VH92_WORKER_DONE=70, VH92_WORKER_STORES=71,
   VH92_SYNC_STORES=72, VH92_PENDING=73,
   VH92_WORKER_SAME=74, VH92_SYNC_SAME=75,
-  VH93_DETAIL_COUNT=76, VH93_AGG_COUNT=77, VH93_TOTAL_COUNT=78 };
+  VH93_DETAIL_COUNT=76, VH93_AGG_COUNT=77, VH93_TOTAL_COUNT=78,
+  VH94_CACHED_READS=79, VH94_INVALIDATED=80, VH94_VERIFIED_READS=81 };
 #define VH80_CAPACITY_DETAIL 4096u
 #define VH80_CAPACITY_AGGREGATE 256u
 #define VH80_TOTAL_CAPACITY (VH80_CAPACITY_DETAIL+VH80_CAPACITY_AGGREGATE)
@@ -78,6 +79,13 @@ unsigned int vh80_detailed_count(void);
 unsigned int vh80_aggregate_count(void);
 unsigned int vh80_dropped(void);
 const vh80_event *vh80_events(void);
+/* Zero-copy cached merged view. Rebuild ONLY after a successful append/reset.
+ * Explicit integrity check recomputes source/merge equality; no raw digest export.
+ * These functions must be called by the host AFTER native GPUfreeze. */
+unsigned int vh94_merge_runs(void);
+unsigned int vh94_cache_hits(void);
+unsigned int vh94_verify_runs(void);
+int vh94_snapshot_check(void);
 #ifdef __cplusplus
 }
 #endif

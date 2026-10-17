@@ -23,23 +23,30 @@ def summarize(raw:bytes):
     previous=summarize_v92(raw)
     report=validate(raw)
     rows=[json.loads(line) for line in raw.decode("ascii").splitlines()]
-    if len(rows)<3 or tuple(row["kind"] for row in rows[-3:])!=KINDS:
-        raise Refused("missing/out-of-order v93 separated lane suffix")
-    if any(row["kind"] in KINDS for row in rows[:-3]):
+    starts=[i for i,row in enumerate(rows) if row["kind"]==KINDS[0]]
+    if len(starts)!=1:
+        raise Refused("missing/duplicate v93 detailed lane metric")
+    start=starts[0]
+    group=rows[start:start+3]
+    if len(group)!=3 or tuple(row["kind"] for row in group)!=KINDS:
+        raise Refused("missing/out-of-order v93 separated lane proof")
+    if any(row["kind"] in KINDS for i,row in enumerate(rows)
+           if not start<=i<start+3):
         raise Refused("duplicate native lane counters")
-    detail,agg,total=(row["value"] for row in rows[-3:])
-    counted_detail=sum(row["kind"] in DETAIL_TYPES for row in rows)
-    counted_aggregate=len(rows)-counted_detail
+    checkpoint=rows[:start+3]
+    detail,agg,total=(row["value"] for row in group)
+    counted_detail=sum(row["kind"] in DETAIL_TYPES for row in checkpoint)
+    counted_aggregate=len(checkpoint)-counted_detail
     if detail!=counted_detail or agg!=counted_aggregate:
         raise Refused("reported lane capacity disagrees with actual native event types")
-    if total!=len(rows) or total!=detail+agg or total!=report["events"]:
+    if total!=len(checkpoint) or total!=detail+agg or report["events"]!=len(rows):
         raise Refused("globally ordered event count differs from independent lane totals")
     if not (0<detail<=DETAIL_CAPACITY and 3<=agg<=AGGREGATE_CAPACITY
             and DETAIL_CAPACITY<total<=DETAIL_CAPACITY+AGGREGATE_CAPACITY):
         raise Refused("v93 did not demonstrate legitimate combined >4096 events")
-    if any(row["cycle"]!=0 or row["frame"]!=0 for row in rows[-3:]):
+    if any(row["cycle"]!=0 or row["frame"]!=0 for row in group):
         raise Refused("host-only lane counters cannot claim MIPS CPU/frame ownership")
-    if rows[-3]["seq"]<=max(row["seq"] for row in rows
+    if group[0]["seq"]<=max(row["seq"] for row in rows
                             if row["kind"]=="pressure_sync_same"):
         raise Refused("v93 capacity audit preceded real v92 GPU queue drain")
     if not previous["all_host_16bit_assignments_verified"]:

@@ -95,6 +95,9 @@ int vh81_format_jsonl(char *output,size_t capacity) {
         else if(e->kind==VH93_DETAIL_COUNT) kind="lane_detail_events";
         else if(e->kind==VH93_AGG_COUNT) kind="lane_aggregate_events";
         else if(e->kind==VH93_TOTAL_COUNT) kind="lane_total_events";
+        else if(e->kind==VH94_CACHED_READS) kind="snapshot_cached_reads";
+        else if(e->kind==VH94_INVALIDATED) kind="snapshot_invalidation_proven";
+        else if(e->kind==VH94_VERIFIED_READS) kind="snapshot_verified_reads";
         else return -1;
         if(used>=capacity) return -1;
         /* GPU DMA2 is an address, NOT an executed GP0 command. */
@@ -107,6 +110,10 @@ int vh81_format_jsonl(char *output,size_t capacity) {
         }
         used+=(size_t)written;
     }
-    if(edges<2 || used>INT_MAX) { output[0]='\0';return -1; }
+    /* Recheck merged snapshot against BOTH immutable source lanes before
+     * allowing the private publisher to create an exclusive output. */
+    if(edges<2 || used>INT_MAX || vh94_snapshot_check()!=0) {
+        output[0]='\0';return -1;
+    }
     return (int)used;
 }
