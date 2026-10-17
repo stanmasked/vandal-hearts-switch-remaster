@@ -116,6 +116,10 @@ on:
       - 'tools/apply_map02_v122_pcsx_rearmed.py'
       - 'tools/summarize_map02_v122_mips_dma2_return.py'
       - 'tests/test_map02_v122_mips_dma2_return.py'
+      - 'tools/make_map02_v123_mips_dma2_linkedlist_exe.py'
+      - 'tools/apply_map02_v123_pcsx_rearmed.py'
+      - 'tools/summarize_map02_v123_mips_dma2_linkedlist.py'
+      - 'tests/test_map02_v123_gpu_linkedlist.py'
       - 'tools/map02_v80_native_timeline.*'
       - 'tools/map02_v81_event_jsonl.*'
       - 'tools/verify_map02_v82_native_trace.py'
@@ -192,6 +196,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v120_real_gp0_return.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v121_mips_return.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v122_mips_dma2_return.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v123_gpu_linkedlist.py' -v
       - name: Patch pinned upstream with Unai post-dispatch observer
         shell: bash
         run: |
@@ -202,7 +207,7 @@ jobs:
           git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
           git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
-          python3 -m remaster.tools.apply_map02_v122_pcsx_rearmed upstream-pcsx
+          python3 -m remaster.tools.apply_map02_v123_pcsx_rearmed upstream-pcsx
           git -C upstream-pcsx diff --check
           grep -F 'vh80_record(VH83_GP0_UNAI_HANDLED' upstream-pcsx/plugins/gpu_unai/gpulib_if.cpp
           grep -F 'VH83_UNAI_DISPATCH_PASS' upstream-pcsx/frontend/main.c
@@ -919,6 +924,43 @@ jobs:
           assert report["raw_gpu_commands_and_vram_pixels_exported"] is False
           assert report["HD_replacement_approved"] is False
           Path("proof/public/v122-mips-dma2-return-summary.json").write_text(
+              json.dumps(report,sort_keys=True)+"\n")
+          PY
+      - name: Verify interpreted MIPS GPU linked-list DMA2 three-node traversal and sample return
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum -c proof/private/native.sha256
+          mkdir -m 700 -p proof/v123-home
+          python3 -m remaster.tools.make_map02_v123_mips_dma2_linkedlist_exe \
+            --output proof/private/V123_SYNTHETIC.EXE
+          test "$(stat -c %s proof/private/V123_SYNTHETIC.EXE)" -eq 6144
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v123-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh123-mips-gpu-list-return-smoke \
+            proof/private/V123_SYNTHETIC.EXE \
+            > proof/private/v123-runtime.log 2>&1 || {
+              tail -n 100 proof/private/v123-runtime.log
+              exit 1
+            }
+          grep -F 'VH123_MIPS_GPU_LIST_RETURN_PASS stages=6' proof/private/v123-runtime.log
+          sha256sum -c proof/private/native.sha256
+          test ! -e proof/private/V104_RENDERER_EVENTS.jsonl.tmp
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from remaster.tools.summarize_map02_v123_mips_dma2_linkedlist import summarize
+          report=summarize(Path("proof/private/v123-runtime.log").read_text())
+          assert report["native_dma2_linked_list_dispatches"]==5
+          assert report["native_linked_list_nodes_visited"]==15
+          assert report["native_gp0_words_traversed"]==15
+          assert report["native_unai_post_handler_samples"]==5
+          assert report["exact_return_to_four_back"]==1
+          assert report["host_submitted_gp0_draw_commands_in_v123"] is False
+          assert report["HD_replacement_approved"] is False
+          Path("proof/public/v123-mips-gpu-linked-list-summary.json").write_text(
               json.dumps(report,sort_keys=True)+"\n")
           PY
       - name: Publish aggregate status only, never private trace
