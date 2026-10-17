@@ -203,11 +203,15 @@ class CrossCopyCheckpointTests(unittest.TestCase):
                          ["MISSING_IN_RECEIVED_COPY"])
 
     def test_valid_received_extension_is_not_mistaken_for_same_copy(self):
-        # Create a valid updated source history and clone it into received.
+        # Copy a valid extended history, then leave the source at its earlier
+        # independently pinned checkpoint: one entry vs two in the receiver.
         self.fixture.prepare_second()
         extended = self.fixture.append_second(self.source_head)
         shutil.rmtree(self.received)
         shutil.copytree(self.source, self.received)
+        (self.source / "chain" / "000002.json").unlink()
+        (self.source / "archives" / "second.zip").unlink()
+        (self.source / "receipts" / "second.json").unlink()
         self.received_head = extended["chain_head_sha256"]
         self.received_count = 2
         self.both()
@@ -230,7 +234,8 @@ class CrossCopyCheckpointTests(unittest.TestCase):
         # reread_and_replay rejects it when tied to actual source evidence.
         self.both()
         self.received_file.write_bytes(checkpoint.to_bytes(b))
-        with self.assertRaisesRegex(checkpoint.CheckpointError, "CHECKPOINT_REPORT_DRIFT"):
+        with self.assertRaisesRegex(
+                checkpoint.CheckpointError, "CHECKPOINT_ANCHOR_MISMATCH"):
             self.compare()
 
     def test_cli_checkpoint_compare_and_read_only_inputs(self):
