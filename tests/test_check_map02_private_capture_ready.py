@@ -202,6 +202,50 @@ class PrivateCapturePreflightTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             inspect_staged_capture(self.source, link)
 
+
+    def test_requires_transfer_snapshots_and_declared_upload_bytes(self):
+        (self.native / "gpu-0000-vram.bin").rename(
+            self.native / "gpu-0002-vram.bin")
+        (self.native / "gpu-0001-vram.bin").rename(
+            self.native / "gpu-0003-vram.bin")
+        draw0, draw1 = (json.loads(x) for x in self.native_events.splitlines())
+        draw0.update(step=2, snapshot="gpu-0002-vram.bin")
+        draw1.update(step=3, snapshot="gpu-0003-vram.bin")
+        move0 = dict(draw0, step=0, frame=6, phase="before",
+                     operation="load", snapshot="gpu-0000-vram.bin",
+                     rect=[0, 0, 1, 1], primitive_type=0, semi=0,
+                     upload="")
+        move1 = dict(move0, step=1, phase="after",
+                     snapshot="gpu-0001-vram.bin", upload="gpu-0001-upload.bin")
+        self.native_file("gpu-0000-vram.bin", bytes(VRAM_BYTES))
+        self.native_file("gpu-0001-vram.bin", bytes(VRAM_BYTES))
+        self.native_file("gpu-0001-upload.bin", b"\x01\x00")
+        staged = b"".join(map(encode, (move0, move1, draw0, draw1)))
+        self.native_file("gpu-native-events.jsonl", staged)
+        self.overdraw["native_events_sha256"] = digest(staged)
+        self.source_file("gpu-native-overdraw.json", self.overdraw)
+        self.pixel_manifest["native_events_sha256"] = digest(staged)
+        self.pixel_manifest["overdraw_manifest_sha256"] = digest(
+            (self.source / "gpu-native-overdraw.json").read_bytes())
+        self.source_file("gpu-putpixel-ot.json", self.pixel_manifest)
+        self.assertTrue(self.run_preflight()["structural_preflight_passed"])
+        (self.native / "gpu-0001-vram.bin").unlink()
+        with self.assertRaisesRegex(ValueError, "snapshot"):
+            self.run_preflight()
+        self.native_file("gpu-0001-vram.bin", bytes(VRAM_BYTES))
+        (self.native / "gpu-0001-upload.bin").unlink()
+        with self.assertRaises(ValueError):
+            self.run_preflight()
+
+    def test_rejects_source_submissions_more_numerous_than_draws(self):
+        events = self.events + self.events
+        self.source_file("gpu-native-overdraw.json", self.overdraw)
+        (self.source / "gpu-events.jsonl").write_bytes(events)
+        self.bundle["events_sha256"] = digest(events)
+        self.source_file("bundle.json", self.bundle)
+        with self.assertRaisesRegex(ValueError, "exceed captured native draws"):
+            self.run_preflight()
+
     def test_never_creates_a_manifest_or_promotes_pending_logs(self):
         before_source = set(self.source.iterdir())
         before_native = set(self.native.iterdir())
