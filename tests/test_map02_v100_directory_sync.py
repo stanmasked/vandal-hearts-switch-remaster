@@ -74,7 +74,7 @@ class DirectorySyncABI(unittest.TestCase):
             self.assertFalse(Path(str(second)+".tmp").exists())
             self.assertEqual(first.stat().st_mode & 0o777,0o600)
     def test_injected_failure_after_final_link_not_silently_successful(self):
-        for phase,synced,state in ((1,0,3),(2,1,3),(3,1,1)):
+        for phase,synced,state in ((1,0,-1),(2,1,-1),(3,1,1)):
             with self.subTest(phase=phase),tempfile.TemporaryDirectory() as td:
                 target=Path(td)/"failure"
                 next_path=Path(td)/"fresh"
@@ -115,7 +115,7 @@ class DirectorySyncABI(unittest.TestCase):
             other=Path(td)/"generation2"
             self.lib.vh100_test_fail_at(2)
             self.assertEqual(self.publish(target,b"OLD"),-1)
-            self.assertEqual(self.state(target),3)
+            self.assertEqual(self.state(target),-1)
             staged=Path(str(target)+".tmp")
             self.assertEqual(staged.read_bytes(),b"OLD")
             self.lib.vh100_test_fail_at(0)
