@@ -700,6 +700,23 @@ jobs:
           sha256sum -c proof/private/native.sha256
           test ! -e "$VH_MAP02_V82_PRIVATE_PATH.tmp"
           echo 'Duplicate private path refused without overwriting events.' >> proof/public/v104-runtime-summary.txt
+      - name: Reconcile actual native sample identity with canonical private JSONL
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from remaster.tools.summarize_map02_v115_identity_runtime import summarize
+          report=summarize(
+              Path("proof/private/v104-runtime.log").read_text(),
+              Path("proof/private/V104_RENDERER_EVENTS.jsonl").read_bytes())
+          assert report["actual_24_post_handler_16bit_values_compared_in_native_process"] is True
+          assert report["raw_values_or_pixel_hash_exported"] is False
+          assert report["HD_replacement_approved"] is False
+          Path("proof/public/v115-sample-identity-summary.json").write_text(
+              json.dumps(report,sort_keys=True)+"\n")
+          PY
       - name: Publish aggregate status only, never private trace
         if: always()
         uses: actions/upload-artifact@v4
