@@ -110,3 +110,14 @@ mapfile -t captures < "$output/soak-sd-locations.txt"
 if (( ${#captures[@]} == 1 )) && [[ ! -e "$output/soak-sd-unverified.csv" ]]; then
   cp --no-clobber -- "${captures[0]}" "$output/soak-sd-unverified.csv"
 fi
+
+# Independent guest-only audout evidence, not an optical trace.
+# Capture the original SD candidate without asserting validity here.
+find "$SOAK_SD_DIR" -maxdepth 1 -type f -name 'audio-audout-queue-*.csv' \
+  -print | sort > "$output/soak-audout-sd-locations.txt"
+mapfile -t queue_captures < "$output/soak-audout-sd-locations.txt"
+if (( ${#queue_captures[@]} == 1 )) && \
+   [[ ! -e "$output/soak-audout-sd-unverified.csv" ]]; then
+  cp --no-clobber -- "${queue_captures[0]}" \
+    "$output/soak-audout-sd-unverified.csv"
+fi
