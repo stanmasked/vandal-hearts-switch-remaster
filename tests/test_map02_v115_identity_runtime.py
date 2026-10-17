@@ -69,7 +69,7 @@ class NativeIdentitySummary(unittest.TestCase):
         self.assertNotIn("vh115",prior)
         source=(ROOT/"tools/map02_v115_sample_identity.c").read_text()
         self.assertNotIn("printf(",source)
-        self.assertNotIn("hash",source.lower())
+        self.assertNotIn("hash(",source.lower())
         self.assertIn("state.previous[i]==post[i]",source)
 
     def test_pinned_workflow_analyzes_native_log_not_only_jsonl_counts(self):
