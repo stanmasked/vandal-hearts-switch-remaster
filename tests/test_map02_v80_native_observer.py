@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Source and native C recorder regressions for v80 (synthetic events only)."""
 import ctypes
+import os
 import shutil
 import subprocess
 import sys
@@ -30,12 +31,13 @@ class V80Source(unittest.TestCase):
         self.assertIn("original_retail_MAP02_verified=False",s)
         self.assertIn("HD_replacement_approved=False",s)
     def test_native_recorder(self):
-        cc=shutil.which("cc")
+        cc=shutil.which(os.environ.get("CC","cc"))
         if not cc: self.skipTest("C compiler unavailable")
         with tempfile.TemporaryDirectory() as td:
             so=Path(td)/"libprobe.so"
+            shutil.copyfile(ROOT/"tools/map02_v80_native_timeline.h",Path(td)/"vh80_native_timeline.h")
             subprocess.run([cc,"-std=c11","-Wall","-Wextra","-Werror","-shared","-fPIC",
-                            str(ROOT/"tools/map02_v80_native_timeline.c"),"-o",str(so)],
+                            str(ROOT/"tools/map02_v80_native_timeline.c"),"-I",td,"-o",str(so)],
                            check=True,capture_output=True)
             lib=ctypes.CDLL(str(so))
             lib.vh80_reset()
