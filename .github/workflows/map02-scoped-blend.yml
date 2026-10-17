@@ -23,6 +23,9 @@ on:
       - 'tools/check_map02_original_gpu_recorder_runtime.py'
       - 'tools/verify_map02_native_gpu_windows.py'
       - 'tests/test_verify_map02_native_gpu_windows.py'
+      - 'tools/verify_map02_source_native_windows.py'
+      - 'tools/publish_map02_native_window_source_witness.py'
+      - 'tests/test_map02_source_native_windows.py'
       - 'tools/publish_map02_vram_edges_witness.py'
       - 'tools/verify_map02_vram_edges_witness.py'
       - 'tests/test_map02_vram_edge_witness.py'
@@ -69,6 +72,9 @@ on:
       - 'tools/check_map02_original_gpu_recorder_runtime.py'
       - 'tools/verify_map02_native_gpu_windows.py'
       - 'tests/test_verify_map02_native_gpu_windows.py'
+      - 'tools/verify_map02_source_native_windows.py'
+      - 'tools/publish_map02_native_window_source_witness.py'
+      - 'tests/test_map02_source_native_windows.py'
       - 'tools/publish_map02_vram_edges_witness.py'
       - 'tools/verify_map02_vram_edges_witness.py'
       - 'tests/test_map02_vram_edge_witness.py'
@@ -127,7 +133,8 @@ jobs:
             tests.test_check_map02_private_capture_ready \
             tests.test_instrument_map02_gpu_native_events \
             tests.test_verify_map02_gpu_capture_receipt \
-            tests.test_verify_map02_native_gpu_windows
+            tests.test_verify_map02_native_gpu_windows \
+            tests.test_map02_source_native_windows
       - name: Checkout pinned public original PC raster source
         uses: actions/checkout@v4
         with:
