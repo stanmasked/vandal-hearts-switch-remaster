@@ -8,9 +8,15 @@
  * are retained even when the oldest bucket is evicted. */
 #define VH_AUDOUT_QUEUE_BUCKETS 128u
 #define VH_AUDOUT_QUEUE_SAMPLE_EVERY 16u
+/* Inclusive lower bounds of latency bands (nanoseconds). */
+#define VH_AUDOUT_LT25_NS UINT64_C(25000000)
+#define VH_AUDOUT_LT40_NS UINT64_C(40000000)
+#define VH_AUDOUT_LT50_NS UINT64_C(50000000)
+#define VH_AUDOUT_LATENCY_BANDS 4u
 typedef struct {
     uint64_t second;
     uint64_t attempts, returns, failures, max_call_ns;
+    uint64_t latency_bins[VH_AUDOUT_LATENCY_BANDS];
     uint32_t queue_ok, queue_errors, queue_min, queue_max;
     int valid;
 } VhAudoutQueueBucket;
@@ -38,4 +44,8 @@ void vh_audout_queue_record(VhAudoutQueueTelemetry *t,
 int vh_audout_queue_write_csv(const VhAudoutQueueTelemetry *t, FILE *out);
 /* Byte-exact independent reread of canonical CSV, including EOF. */
 int vh_audout_queue_verify_csv(const VhAudoutQueueTelemetry *t,FILE *in);
+/* Separate v1 latency histogram transport: exact per-call band counters,
+ * per second plus total; the proven Stage-269 CSV stays byte-compatible. */
+int vh_audout_latency_write_csv(const VhAudoutQueueTelemetry *t,FILE *out);
+int vh_audout_latency_verify_csv(const VhAudoutQueueTelemetry *t,FILE *in);
 #endif
