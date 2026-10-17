@@ -221,11 +221,14 @@ int main(int argc, char **argv) {
         # The legacy synthetic child deliberately does not link cycle hooks.
         # Even when GPU verification is mocked successful, this cannot
         # become a new same-process MAP02 cycle success.
-        with self.assertRaisesRegex(ValueError, "exactly one receipt"):
-            launch_observed_pc(
-                self.handoff, self.native, self.scoped,
-                self.binary, self.owned, upstream=self.upstream,
-                x=10, y=20, timeout=8, cycle_dir=cycle)
+        with patch(
+                "tools.check_map02_cycle_elf.audit_cycle_elf",
+                return_value={"required_symbols_present": 19}):
+            with self.assertRaisesRegex(ValueError, "exactly one receipt"):
+                launch_observed_pc(
+                    self.handoff, self.native, self.scoped,
+                    self.binary, self.owned, upstream=self.upstream,
+                    x=10, y=20, timeout=8, cycle_dir=cycle)
         self.assertFalse((self.handoff / RECEIPT).exists())
 
     def test_cycle_directory_reaches_real_child_and_nonce_is_checked(self):
@@ -242,14 +245,18 @@ int main(int argc, char **argv) {
         # the expensive cycle receipt is intentionally mocked. The actual
         # synthetic child is not linked to the original gameplay loader.
         with patch(
-                "tools.verify_map02_cycle_cd_gpu_join._cycle_receipt",
-                return_value=(b"synthetic-only", "b" * 64)) as receipt:
-            with patch("tools.map02_verified_process_launch.subprocess.Popen",
-                       side_effect=observed_popen):
-                result = launch_observed_pc(
-                    self.handoff, self.native, self.scoped,
-                    self.binary, self.owned, upstream=self.upstream,
-                    x=10, y=20, timeout=8, cycle_dir=cycle)
+                "tools.check_map02_cycle_elf.audit_cycle_elf",
+                return_value={"required_symbols_present": 19}) as structural:
+            with patch(
+                    "tools.verify_map02_cycle_cd_gpu_join._cycle_receipt",
+                    return_value=(b"synthetic-only", "b" * 64)) as receipt:
+                with patch("tools.map02_verified_process_launch.subprocess.Popen",
+                           side_effect=observed_popen):
+                    result = launch_observed_pc(
+                        self.handoff, self.native, self.scoped,
+                        self.binary, self.owned, upstream=self.upstream,
+                        x=10, y=20, timeout=8, cycle_dir=cycle)
+        structural.assert_called_once_with(self.binary)
         self.assertTrue(result["kernel_executable_hash_matched"])
         self.assertEqual(forwarded, [str(cycle)])
         receipt.assert_called_once()
@@ -259,13 +266,28 @@ int main(int argc, char **argv) {
         cycle = self.handoff.parent / "cycle-wrong-nonce"
         cycle.mkdir(mode=0o700)
         with patch(
-                "tools.verify_map02_cycle_cd_gpu_join._cycle_receipt",
-                return_value=(b"synthetic-only", "f" * 64)):
-            with self.assertRaisesRegex(ValueError, "cycle nonce differs"):
-                launch_observed_pc(
-                    self.handoff, self.native, self.scoped,
-                    self.binary, self.owned, upstream=self.upstream,
-                    x=10, y=20, timeout=8, cycle_dir=cycle)
+                "tools.check_map02_cycle_elf.audit_cycle_elf",
+                return_value={"required_symbols_present": 19}):
+            with patch(
+                    "tools.verify_map02_cycle_cd_gpu_join._cycle_receipt",
+                    return_value=(b"synthetic-only", "f" * 64)):
+                with self.assertRaisesRegex(ValueError, "cycle nonce differs"):
+                    launch_observed_pc(
+                        self.handoff, self.native, self.scoped,
+                        self.binary, self.owned, upstream=self.upstream,
+                        x=10, y=20, timeout=8, cycle_dir=cycle)
+        self.assertFalse((self.handoff / RECEIPT).exists())
+
+    def test_rejects_uninstrumented_child_before_cycle_mode_exec(self):
+        cycle = self.handoff.parent / "cycle-structural"
+        cycle.mkdir(mode=0o700)
+        # This really executes nm/readelf on the synthetic owned ELF:
+        # a program that opens the correct disc is not the original cycle.
+        with self.assertRaisesRegex(ValueError, "lacks required symbol"):
+            launch_observed_pc(
+                self.handoff, self.native, self.scoped,
+                self.binary, self.owned, upstream=self.upstream,
+                x=10, y=20, timeout=8, cycle_dir=cycle)
         self.assertFalse((self.handoff / RECEIPT).exists())
 
     def test_refuses_nonempty_capture_directory_before_exec(self):
