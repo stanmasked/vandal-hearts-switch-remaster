@@ -657,8 +657,14 @@ jobs:
               clang "${flags[@]}" "${extra[@]}" "${span_extra[@]}" "${candidate_extra[@]}" \
                 -c /tmp/vh-map02-native-span-overlay/pc_raster.candidate.c \
                 -o "build/map02-vertical-dda/candidate-clang.${mode}.o"
+              clang "${flags[@]}" "${extra[@]}" \
+                -c /tmp/vh-map02-vertical-dda/libgpu.vertical.c \
+                -o "build/map02-vertical-dda/gpu-clang.${mode}.o"
+              ld -r "build/map02-vertical-dda/gpu-clang.${mode}.o" \
+                "build/map02-vertical-dda/candidate-clang.${mode}.o" \
+                -o "build/map02-vertical-dda/candidate-linked-clang.${mode}.o"
               if [[ "$mode" == diagnostic ]]; then
-                nm -a "build/map02-vertical-dda/candidate-clang.${mode}.o" |
+                nm -a "build/map02-vertical-dda/candidate-linked-clang.${mode}.o" |
                   grep VH_Map02RejectedEdges
               elif nm -a "build/map02-vertical-dda/candidate-clang.${mode}.o" |
                    grep -q VH_Map02RejectedEdges; then
