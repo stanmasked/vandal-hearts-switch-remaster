@@ -109,6 +109,30 @@ class FontLinkedTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not an owned executable"):
             check_linked_font_bytes(shared, self.expected)
 
+    def test_unsupported_elf_byte_order_rejected(self):
+        altered = self.root / "wrong-byte-order"
+        raw = bytearray(self.binary.read_bytes())
+        raw[5] = 2
+        altered.write_bytes(raw)
+        altered.chmod(0o700)
+        with self.assertRaisesRegex(ValueError, "unsupported original font ELF encoding"):
+            check_linked_font_bytes(altered, self.expected)
+
+    def test_out_of_bounds_section_header_table_rejected(self):
+        altered = self.root / "invalid-section-table"
+        raw = bytearray(self.binary.read_bytes())
+        if raw[4] != 2:
+            self.skipTest("64-bit ELF section table bounds regression")
+        raw[40:48] = ((1 << 64) - 1).to_bytes(8, "little")
+        altered.write_bytes(raw)
+        altered.chmod(0o700)
+        with self.assertRaisesRegex(ValueError, "invalid original font ELF headers"):
+            check_linked_font_bytes(altered, self.expected)
+
+    def test_wrong_expected_font_length_rejected_before_elf_read(self):
+        with self.assertRaisesRegex(ValueError, "comparison input"):
+            check_linked_font_bytes(self.binary, self.expected[:-1])
+
     def test_length(self):
         self.assertEqual(FONT_BYTES, 6270)
 
