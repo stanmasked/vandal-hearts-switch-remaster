@@ -31,10 +31,11 @@ static void VH_Map02RejectedEdges(const DdaCtx *cx, int y,
     n = fprintf(file,
         "{\"stage\":\"rejected_edge_candidate\",\"step\":%u,"
         "\"frame\":%u,\"primitive_ordinal\":%u,\"reason\":%d,"
-        "\"y\":%d,\"x_start\":%d,\"x_bound\":%d}\n",
+        "\"y\":%d,\"x_start\":%d,\"x_bound\":%d,"
+        "\"clip_t\":%d,\"clip_b\":%d}\n",
         vh_rejected_edge_count, vh_sample_scope_frame,
         vh_sample_scope_ordinal, reason, y,
-        dda_unfp(left_x), dda_unfp(right_x));
+        dda_unfp(left_x), dda_unfp(right_x), cx->clipT, cx->clipB);
     if (n < 0) { fclose(file); return; }
     if (fclose(file) != 0) return;
     vh_rejected_edge_count++;
