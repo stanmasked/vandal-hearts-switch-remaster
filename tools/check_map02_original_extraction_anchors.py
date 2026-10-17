@@ -75,7 +75,7 @@ def compare_data_ranges(exe_path, elf_path):
             if exe_load != LOAD_VRAM:
                 raise ValueError("pinned US PS-X EXE has unexpected load VRAM")
             elf_header = _read_at(elf, 52, 0)
-            if (len(elf_header) < 52 or elf_header[:4] != b"\\x7fELF"
+            if (len(elf_header) < 52 or elf_header[:4] != bytes.fromhex("7f454c46")
                     or elf_header[4] != 1 or elf_header[5] != 1):
                 raise ValueError("extracted original MIPS ELF is not ELF32 little-endian")
             if struct.unpack_from("<H", elf_header, 18)[0] != 8:
