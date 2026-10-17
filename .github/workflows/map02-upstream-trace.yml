@@ -732,6 +732,8 @@ jobs:
 
       - name: Publish source-pinned DDA candidate build evidence
         shell: bash
+        env:
+          REMASTER_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           cd upstream/platform/pc
@@ -743,7 +745,8 @@ jobs:
           {
             echo "### Source-pinned original PC GPU — DDA candidate build"
             echo "Pinned upstream: \`$(git rev-parse HEAD)\`"
-            echo "Remaster commit: \`$GITHUB_SHA\`"
+            echo "Checked-out remaster commit (PR merge revision): \`$GITHUB_SHA\`"
+            echo "Remaster source branch HEAD: \`$REMASTER_SOURCE_HEAD\`"
             echo "GCC: \`$(gcc -dumpfullversion -dumpversion)\`"
             echo "Clang: \`$(clang -dumpversion)\`"
             echo "GCC/Clang: diagnostic and baseline objects built and partially linked."
@@ -758,19 +761,24 @@ jobs:
 
       - name: Save reproducible original GPU object manifest
         shell: bash
+        env:
+          REMASTER_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           cd upstream/platform/pc
           mkdir -p build/map02-vertical-dda/evidence
           test "$(git rev-parse HEAD)" = 14552fffa0e0b47e02b57592e274fc6e7a649923
           git rev-parse HEAD > build/map02-vertical-dda/evidence/upstream-commit.txt
-          printf '%s\\n' "$GITHUB_SHA" > build/map02-vertical-dda/evidence/remaster-commit.txt
+          test -n "$REMASTER_SOURCE_HEAD"
+          test "$(git -C ../../../remaster rev-parse HEAD)" = "$GITHUB_SHA"
+          printf '%s\n' "$GITHUB_SHA" > build/map02-vertical-dda/evidence/remaster-commit.txt
+          printf '%s\n' "$REMASTER_SOURCE_HEAD" > build/map02-vertical-dda/evidence/remaster-source-head.txt
           gcc --version | head -1 > build/map02-vertical-dda/evidence/gcc-version.txt
           clang --version | head -1 > build/map02-vertical-dda/evidence/clang-version.txt
           (
             cd build/map02-vertical-dda
-            sha256sum candidate-linked.diagnostic.o candidate-linked.baseline.o \\
-                      candidate-linked-clang.diagnostic.o candidate-linked-clang.baseline.o \\
+            sha256sum candidate-linked.diagnostic.o candidate-linked.baseline.o \
+                      candidate-linked-clang.diagnostic.o candidate-linked-clang.baseline.o \
               > evidence/objects.sha256
             sha256sum --check evidence/objects.sha256
           )
