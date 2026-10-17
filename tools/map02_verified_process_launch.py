@@ -162,6 +162,12 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
             _sha_file(binary) != plan["pc_executable_sha256"] or
             _sha_file(owned_game, private=True) != plan["owned_game_image_sha256"]):
         raise ValueError("original PC source, binary or game input differs from plan")
+    if cycle is not None:
+        # A complete source-pinned CD/GPU capture needs an actual linked ELF,
+        # not a minimal synthetic child or an ld -r partial object.
+        from tools.check_map02_cycle_elf import audit_cycle_elf
+        audit_cycle_elf(binary)
+
     game_image = Path(owned_game).absolute()
     game_stat = os.stat(game_image)
     expected_game_fd = (game_stat.st_dev, game_stat.st_ino, game_stat.st_size)
