@@ -54,9 +54,13 @@ class NativeV115Identity(unittest.TestCase):
         cls.temp=tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.temp.cleanup)
         output=Path(cls.temp.name)/"libvh115.so"
+        # The upstream pinned checkout installs the observer header under
+        # its native include name. Mirror that exact installation in isolation.
+        shutil.copyfile(ROOT/"tools/map02_v115_sample_identity.h",
+                        Path(cls.temp.name)/"vh115_sample_identity.h")
         compile_result=subprocess.run([
             cc,"-std=c11","-Wall","-Wextra","-Werror",
-            "-shared","-fPIC","-I",str(ROOT/"tools"),
+            "-shared","-fPIC","-I",cls.temp.name,
             str(ROOT/"tools/map02_v115_sample_identity.c"),
             "-o",str(output)],
             capture_output=True,text=True)
