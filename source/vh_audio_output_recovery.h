@@ -68,6 +68,23 @@ int vh_audio_output_transport_outcome(
     int descriptor_returned, int timing_result,
     VhAudioTransportTimingHealth *health);
 
+/* Optional one-shot user-requested timing fault injection. This does
+ * not touch PCM, audout, or the genuine transport result. A ZL request
+ * arms a single synthetic zero-frequency timing observation for the
+ * NEXT exact returned descriptor. Real backend failures leave it armed.
+ * On a valid descriptor the injector consumes its request once; the
+ * producer must end with INVALID timing evidence (never replay PCM).
+ * A NULL pointer or repeat arm fails closed; no accidental injects.
+ */
+typedef struct {
+    unsigned armed, injected;
+} VhAudioTimingFaultInjection;
+
+int vh_audio_timing_fault_arm(VhAudioTimingFaultInjection *state);
+uint64_t vh_audio_timing_fault_frequency(
+    VhAudioTimingFaultInjection *state, int exact_returned,
+    uint64_t actual_frequency);
+
 /* Final integrity check: the number of untimed returned PCM pages
  * cannot exceed the number of successful logical output pages.
  * A nonzero count without the sticky fault flag is contradictory.
