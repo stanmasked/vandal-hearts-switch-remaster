@@ -59,6 +59,7 @@ HdRegion *HdFindTriRegion(int tp, int x0, int x1, int y0, int y1) {
     return NULL;
 }
 void PC_UpdateCamOsd(void) {}
+int PC_CpuCount(void) { return 1; } /* no worker pool in native 1x mode */
 void PC_GpuPresent(unsigned short *vram, int width, int height,
                    int x, int y, int w, int h) {
     (void)vram; (void)width; (void)height;
