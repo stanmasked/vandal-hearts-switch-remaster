@@ -84,7 +84,10 @@ def inspect_binary(path, *, nm="nm", pinned_fd=None):
         # SHA-checked: resolving its original pathname a second time would
         # allow a substituted ELF to supply different symbol-table results.
         # Linux procfs is required by require_elf_image() above.
-        nm_path = shutil.which(nm)
+        # PATH belongs to the caller and may contain a counterfeit nm
+        # that claims probe symbols exist. Resolve only from fixed Linux
+        # system tool directories; subprocess itself gets a clean env.
+        nm_path = shutil.which(nm, path="/usr/bin:/bin")
         if not nm_path:
             raise ValueError("required native ELF symbol inspector nm unavailable")
         try:
