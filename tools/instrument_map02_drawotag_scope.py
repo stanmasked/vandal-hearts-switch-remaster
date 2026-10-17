@@ -2,7 +2,7 @@
 """Generate opt-in DrawOTag frame/primitive provenance hooks in copied libgpu.c.
 
 Pairs with instrument_map02_scoped_blend.py on pristine upstream pc_raster.c.
-The frame and non-bucket ordinal come from the actual synchronous OT walker.
+The frame and DRAW-only ordinal come from the actual synchronous OT walker.
 A private sink records only one explicitly selected frame and XY coordinate.
 No original game resources or captures are bundled.
 """
@@ -89,15 +89,24 @@ FRAME_NEW = r"""    s_drawFrame++;
 #endif"""
 PRIM_NEW = r"""        if (!isBucket) {
 #ifdef VH_MAP02_SCOPED_BLEND_PROBE
-            if (vh_scope_active &&
+            /* The verified native-VRAM event stream counts only DRAW
+             * operations. DR_MODE and unknown packets must not advance
+             * the ordinal used by the independent VRAM snapshot join. */
+            int vh_scope_type = PC_GPU_PRIM_TYPE((P_TAG *)cur);
+            int vh_scope_is_draw =
+                vh_scope_type == PC_GPU_PRIM_POLY_F4 ||
+                vh_scope_type == PC_GPU_PRIM_POLY_FT4 ||
+                vh_scope_type == PC_GPU_PRIM_SPRT ||
+                vh_scope_type == PC_GPU_PRIM_TILE;
+            if (vh_scope_active && vh_scope_is_draw &&
                 !vh_map02_scope_begin_primitive(
-                    vh_scope_ordinal,
-                    (unsigned)PC_GPU_PRIM_TYPE((P_TAG *)cur)))
+                    vh_scope_ordinal, (unsigned)vh_scope_type))
                 vh_map02_scope_abort();
-            vh_scope_ordinal++;
+            if (vh_scope_is_draw) vh_scope_ordinal++;
 #endif"""
 PRIM_END_NEW = r"""#ifdef VH_MAP02_SCOPED_BLEND_PROBE
-            if (vh_scope_active && !vh_map02_scope_end_primitive())
+            if (vh_scope_active && vh_scope_is_draw &&
+                !vh_map02_scope_end_primitive())
                 vh_map02_scope_abort();
 #endif
         }
