@@ -15,6 +15,7 @@ from tools.verify_map02_dda_rejected_edges import validate
 PREFIX = r"""
 #include <stdio.h>
 #include <stddef.h>
+#include <string.h>
 typedef struct { int target; } RenderCtx;
 typedef struct { RenderCtx *rc; int clipT, clipB; } DdaCtx;
 typedef struct { int unused; } DdaPart;
@@ -31,9 +32,7 @@ END = r"""
 int main(int argc, char **argv) {
     RenderCtx rc = {0};
     DdaCtx cx = {&rc, 10, 15};
-    if (argc != 2 && !(argc == 3 && argv[2][0] == 'f' &&
-                       argv[2][1] == 'i' && argv[2][2] == 'l' &&
-                       argv[2][3] == 'l' && argv[2][4] == 0)) return 2;
+    if (argc != 2 && !(argc == 3 && strcmp(argv[2], "fill") == 0)) return 2;
     vh_pixel_sample_dir = argv[1];
 #if defined(VH_MAP02_DDA_REJECTED_EDGES_TRACE)
     vh_pixel_sample_y = 9;
