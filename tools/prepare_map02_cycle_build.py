@@ -95,15 +95,15 @@ VH_MAP02_CYCLE_INCLUDES := -I$(VH_MAP02_CYCLE_ROOT)
 # Only the source-pinned private snapshot is allowed to read owned KROM data.
 # This shadow target prevents GNU Make from invoking its inherited source
 # generator to write copyrighted data into the original checkout.
-src/pc_kanji_font.c: $(VH_MAP02_CYCLE_ROOT)/${FONT_GENERATOR_SNAPSHOT}
-\t@:
-$(BUILD_DIR)/map02_pinned_kanji_font.c: $(VH_MAP02_CYCLE_ROOT)/${FONT_GENERATOR_SNAPSHOT}
-\t@mkdir -p $(dir $@)
-\tVH_REGION=us VH_GENERATED_OUT=$@ python3 $(VH_MAP02_CYCLE_ROOT)/${FONT_GENERATOR_SNAPSHOT}
+src/pc_kanji_font.c: $(VH_MAP02_CYCLE_ROOT)/{FONT_GENERATOR_SNAPSHOT}
+	@:
+$(BUILD_DIR)/map02_pinned_kanji_font.c: $(VH_MAP02_CYCLE_ROOT)/{FONT_GENERATOR_SNAPSHOT}
+	@mkdir -p $(dir $@)
+	VH_REGION=us VH_GENERATED_OUT=$@ python3 $(VH_MAP02_CYCLE_ROOT)/{FONT_GENERATOR_SNAPSHOT}
 # Inherited prerequisites remain, but this recipe NEVER reads src/pc_kanji_font.c.
 $(BUILD_DIR)/pc_kanji_font.o: $(BUILD_DIR)/map02_pinned_kanji_font.c
-\t@mkdir -p $(dir $@)
-\t$(CC) $(M32) $(SAN) $(PORT_WARN) -Iinclude -g -MMD -MP -c -o $@ $(BUILD_DIR)/map02_pinned_kanji_font.c
+	@mkdir -p $(dir $@)
+	$(CC) $(M32) $(SAN) $(PORT_WARN) -Iinclude -g -MMD -MP -c -o $@ $(BUILD_DIR)/map02_pinned_kanji_font.c
 VH_MAP02_CYCLE_SUPPORT := $(addprefix $(BUILD_DIR)/,map02_cycle_order.o map02_cd_read_probe.o map02_capture_session.o map02_scoped_blend_sink.o map02_scoped_blend_stage.o map02_vram_edges.o)
 BACKEND_OBJS += $(VH_MAP02_CYCLE_SUPPORT)
 link: $(VH_MAP02_CYCLE_SUPPORT)
@@ -121,44 +121,44 @@ VH_MAP02_PUBLIC_BACKEND_OBJS := $(filter-out $(VH_MAP02_BIOS_FONT_OBJECT),$(BACK
 map02-public-code: $(VH_MAP02_PUBLIC_CODE_OBJS) $(VH_MAP02_PUBLIC_BACKEND_OBJS)
 
 $(BUILD_DIR)/src/core/cd.o: $(VH_MAP02_CYCLE_ROOT)/core_cd.c | stage
-\t@mkdir -p $(dir $@)
-\t$(CC) $(GAME_C_FLAGS) $(VH_MAP02_CYCLE_DEFS) $(VH_MAP02_CYCLE_INCLUDES) -MMD -MP -c -o $@ $(VH_MAP02_CYCLE_ROOT)/core_cd.c
+	@mkdir -p $(dir $@)
+	$(CC) $(GAME_C_FLAGS) $(VH_MAP02_CYCLE_DEFS) $(VH_MAP02_CYCLE_INCLUDES) -MMD -MP -c -o $@ $(VH_MAP02_CYCLE_ROOT)/core_cd.c
 
 $(BUILD_DIR)/libcd.o: $(VH_MAP02_CYCLE_ROOT)/libcd.c
-\t@mkdir -p $(dir $@)
-\t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_CYCLE_DEFS) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -Isrc -g -MMD -MP -c -o $@ $(VH_MAP02_CYCLE_ROOT)/libcd.c
+	@mkdir -p $(dir $@)
+	$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_CYCLE_DEFS) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -Isrc -g -MMD -MP -c -o $@ $(VH_MAP02_CYCLE_ROOT)/libcd.c
 
 $(BUILD_DIR)/libgpu.o: $(VH_MAP02_CYCLE_ROOT)/libgpu.c
-\t@mkdir -p $(dir $@)
-\t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_GPU_DEFS) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -Isrc -g -MMD -MP -c -o $@ $(VH_MAP02_CYCLE_ROOT)/libgpu.c
+	@mkdir -p $(dir $@)
+	$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_GPU_DEFS) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -Isrc -g -MMD -MP -c -o $@ $(VH_MAP02_CYCLE_ROOT)/libgpu.c
 
 $(BUILD_DIR)/pc_raster.o: $(VH_MAP02_CYCLE_ROOT)/pc_raster.c
-\t@mkdir -p $(dir $@)
-\t$(CC) $(M32) $(SAN) $(PORT_WARN) -DVH_MAP02_SCOPED_BLEND_PROBE $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -Isrc -g -MMD -MP -c -o $@ $(VH_MAP02_CYCLE_ROOT)/pc_raster.c
+	@mkdir -p $(dir $@)
+	$(CC) $(M32) $(SAN) $(PORT_WARN) -DVH_MAP02_SCOPED_BLEND_PROBE $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -Isrc -g -MMD -MP -c -o $@ $(VH_MAP02_CYCLE_ROOT)/pc_raster.c
 
 $(BUILD_DIR)/map02_cycle_order.o: $(VH_MAP02_CYCLE_ROOT)/map02_cycle_order.c
-\t@mkdir -p $(dir $@)
-\t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -g -MMD -MP -c -o $@ $<
+	@mkdir -p $(dir $@)
+	$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -g -MMD -MP -c -o $@ $<
 
 $(BUILD_DIR)/map02_cd_read_probe.o: $(VH_MAP02_CYCLE_ROOT)/map02_cd_read_probe.c
-\t@mkdir -p $(dir $@)
-\t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -g -MMD -MP -c -o $@ $<
+	@mkdir -p $(dir $@)
+	$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -g -MMD -MP -c -o $@ $<
 
 $(BUILD_DIR)/map02_capture_session.o: $(VH_MAP02_CYCLE_ROOT)/map02_capture_session.c
-\t@mkdir -p $(dir $@)
-\t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -g -MMD -MP -c -o $@ $<
+	@mkdir -p $(dir $@)
+	$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -g -MMD -MP -c -o $@ $<
 
 $(BUILD_DIR)/map02_scoped_blend_sink.o: $(VH_MAP02_CYCLE_ROOT)/map02_scoped_blend_sink.c
-\t@mkdir -p $(dir $@)
-\t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -g -MMD -MP -c -o $@ $<
+	@mkdir -p $(dir $@)
+	$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -g -MMD -MP -c -o $@ $<
 
 $(BUILD_DIR)/map02_scoped_blend_stage.o: $(VH_MAP02_CYCLE_ROOT)/map02_scoped_blend_stage.c
-\t@mkdir -p $(dir $@)
-\t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_STAGE_DEFS) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -g -MMD -MP -c -o $@ $<
+	@mkdir -p $(dir $@)
+	$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_STAGE_DEFS) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -g -MMD -MP -c -o $@ $<
 
 $(BUILD_DIR)/map02_vram_edges.o: $(VH_MAP02_CYCLE_ROOT)/map02_vram_edges.c
-\t@mkdir -p $(dir $@)
-\t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -g -MMD -MP -c -o $@ $<
+	@mkdir -p $(dir $@)
+	$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -g -MMD -MP -c -o $@ $<
 """
 
 
