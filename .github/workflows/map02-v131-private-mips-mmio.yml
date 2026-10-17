@@ -1,0 +1,73 @@
+name: MAP02 v131 privately owned PS-X EXE MIPS MMIO candidate audit
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v131-private-mips-mmio.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/analyze_map02_v131_private_mips_mmio.py'
+      - 'tests/test_map02_v131_private_mips_mmio.py'
+      - 'tools/make_map02_v129_four_vblank_exe.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-authored-private-psx-exe-audit:
+    name: private-safe MIPS MMIO parser regression (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate private-file guards and original synthetic GPU DMA writes
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_map02_v131_private_mips_mmio.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v130_native_bounds.py' -v
+      - name: Verify CLI path with only a privately generated asset-free EXE
+        run: |
+          set -euo pipefail
+          no_real_retail_input_in_ci=1
+          readonly no_real_retail_input_in_ci
+          test "$no_real_retail_input_in_ci" = 1
+          private_tmp="$(mktemp -d)"
+          chmod 700 "$private_tmp"
+          trap 'rm -rf "$private_tmp"' EXIT
+          python3 - "$private_tmp/synthetic.exe" <<'PY'
+          import os
+          import sys
+          from tools.make_map02_v129_four_vblank_exe import build
+          content,*_=build()
+          fd=os.open(sys.argv[1],os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+          try:
+              view=memoryview(content)
+              while view:
+                  written=os.write(fd,view)
+                  if written<=0: raise RuntimeError("private fixture short write")
+                  view=view[written:]
+              os.fsync(fd)
+          finally:
+              os.close(fd)
+          PY
+          python3 -m tools.analyze_map02_v131_private_mips_mmio \
+            "$private_tmp/synthetic.exe" > "$private_tmp/private_report.json"
+          python3 - "$private_tmp/private_report.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          record=json.loads(Path(sys.argv[1]).read_text())
+          counts=record["candidate_sw_instruction_counts"]
+          assert counts["dma2_madr"]==3
+          assert counts["dma2_bcr"]==3
+          assert counts["dma2_chcr"]==6
+          assert counts["dma2_linked_list_chcr_literal"]==3
+          assert record["did_not_execute_mips"] is True
+          assert record["retail_map02_scene_identity_verified"] is False
+          assert record["nintendo_switch_hd_parity_verified"] is False
+          print("VH131_PRIVATE_MMIO_SYNTHETIC_PASS candidate_dma2_starts=3 "
+                "observed_original_gameplay=0 private_game_content_exported=0")
+          PY
