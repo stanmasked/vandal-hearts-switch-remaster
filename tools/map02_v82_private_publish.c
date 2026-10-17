@@ -272,6 +272,31 @@ static int vh105_maybe_change(int phase,const char *name,
 #define vh105_maybe_change(phase,name,original) (0)
 #endif
 
+/* v106: source paths in v98/v99 get the SAME rooted no-symlink
+ * component walk as newly published paths. Always operate through the
+ * anchored directory fd; reopening a pathname only verifies identity.
+ * This is not an atomic defense against a hostile concurrent writer. */
+static int vh106_open_source_parent(const char *path,char *parent,
+                                    const char **leaf){
+    if(!path || path[0]!='/')return -1;
+    size_t n=strnlen(path,VH82_MAX_PATH);
+    if(!n || n+5>=VH82_MAX_PATH)return -1;
+    const char *slash=strrchr(path,'/');
+    if(!slash || !slash[1] ||
+       strcmp(slash+1,".")==0 || strcmp(slash+1,"..")==0)
+        return -1;
+    size_t length=(size_t)(slash-path);
+    if(length==0){parent[0]='/';parent[1]='\0';}
+    else {memcpy(parent,path,length);parent[length]='\0';}
+    int dirfd=vh103_open_parent_safely(parent);
+    if(dirfd<0)return -1;
+    if(vh102_parent_matches(dirfd,parent)!=0){
+        close(dirfd);return -1;
+    }
+    *leaf=slash+1;
+    return dirfd;
+}
+
 /* A failed/restarted observation may only publish to a fresh pathname.
  * Prior export must exist as a sole-owned 0600 regular file, and must
  * retain its original identity and metadata across this function. This
@@ -281,7 +306,9 @@ static int vh105_maybe_change(int phase,const char *name,
 int vh98_publish_recovery(const char *previous_path,const char *next_path,
                           const char *bytes,size_t size) {
     struct stat before, after, named;
-    int prev=-1, status=-1;
+    char old_parent[VH82_MAX_PATH];
+    const char *old_leaf=NULL;
+    int prev=-1,old_dirfd=-1,status=-1;
     if(!previous_path || !next_path || !bytes || !size ||
        previous_path[0]!='/' || next_path[0]!='/' ||
        strcmp(previous_path,next_path)==0 ||
@@ -291,24 +318,31 @@ int vh98_publish_recovery(const char *previous_path,const char *next_path,
     if(strnlen(previous_path,VH82_MAX_PATH)>=VH82_MAX_PATH ||
        strnlen(next_path,VH82_MAX_PATH)>=VH82_MAX_PATH)
         return -1;
-    prev=open(previous_path,O_RDONLY|O_NOFOLLOW);
-    if(prev<0)return -1;
-    if(fstat(prev,&before)<0 || !S_ISREG(before.st_mode) ||
-       (before.st_mode&0777)!=0600 || before.st_nlink!=1)
+    old_dirfd=vh106_open_source_parent(previous_path,old_parent,&old_leaf);
+    if(old_dirfd<0)return -1;
+    prev=openat(old_dirfd,old_leaf,O_RDONLY|O_NOFOLLOW);
+    if(prev<0)goto done;
+    if(fstat(prev,&before)<0 ||
+       fstatat(old_dirfd,old_leaf,&named,AT_SYMLINK_NOFOLLOW)<0 ||
+       !S_ISREG(before.st_mode) || (before.st_mode&0777)!=0600 ||
+       before.st_nlink!=1 || !vh105_same_metadata(&before,&named) ||
+       vh102_parent_matches(old_dirfd,old_parent)!=0)
         goto done;
     /* Recovered target is never allowed to replace the previous file. */
     if(vh82_publish_private(next_path,bytes,size)!=0)goto done;
-    /* The new file may already be committed on failure. Never roll it
-     * back, reuse its name, or claim that the old bytes stayed untouched. */
+    /* The newly linked name can exist after refusal. Preserve both names. */
     if(vh105_maybe_change(1,previous_path,&before)<0 ||
-       fstat(prev,&after)<0 || lstat(previous_path,&named)<0 ||
+       vh102_parent_matches(old_dirfd,old_parent)!=0 ||
+       fstat(prev,&after)<0 ||
+       fstatat(old_dirfd,old_leaf,&named,AT_SYMLINK_NOFOLLOW)<0 ||
        !vh105_same_metadata(&before,&after) ||
        !vh105_same_metadata(&before,&named) ||
        (named.st_mode&0777)!=0600 || !S_ISREG(named.st_mode))
         goto done;
     status=0;
 done:
-    close(prev);
+    if(prev>=0 && close(prev)<0)status=-1;
+    if(old_dirfd>=0 && close(old_dirfd)<0)status=-1;
     return status;
 }
 
@@ -328,8 +362,9 @@ static int vh99_private_path_ok(const char *path) {
         return 0;
     return 1;
 }
-static int vh99_lstat_expected(const char *path,struct stat *s){
-    if(lstat(path,s)==0){
+static int vh99_lstat_expected_at(int dirfd,const char *leaf,
+                                 struct stat *s){
+    if(fstatat(dirfd,leaf,s,AT_SYMLINK_NOFOLLOW)==0){
         if(!S_ISREG(s->st_mode) || (s->st_mode&0777)!=0600 ||
            s->st_nlink!=1)return -1;
         return 1;
@@ -337,45 +372,62 @@ static int vh99_lstat_expected(const char *path,struct stat *s){
     return errno==ENOENT?0:-1;
 }
 int vh99_private_state(const char *final_path){
-    char tmp[VH82_MAX_PATH];
+    char parent[VH82_MAX_PATH],stage[VH82_MAX_PATH];
+    const char *leaf=NULL;
     struct stat final_stat,tmp_stat;
     if(!vh99_private_path_ok(final_path))return -1;
-    size_t n=strlen(final_path);
-    memcpy(tmp,final_path,n);
-    memcpy(tmp+n,".tmp",5);
-    int f=vh99_lstat_expected(final_path,&final_stat);
-    int t=vh99_lstat_expected(tmp,&tmp_stat);
-    if(f<0 || t<0)return -1;
-    return f+(t*2);
+    int dirfd=vh106_open_source_parent(final_path,parent,&leaf);
+    if(dirfd<0)return -1;
+    size_t n=strlen(leaf);
+    memcpy(stage,leaf,n);
+    memcpy(stage+n,".tmp",5);
+    int f=vh99_lstat_expected_at(dirfd,leaf,&final_stat);
+    int t=vh99_lstat_expected_at(dirfd,stage,&tmp_stat);
+    int status=(f<0 || t<0 ||
+                vh102_parent_matches(dirfd,parent)!=0)?-1:f+(t*2);
+    if(close(dirfd)<0)status=-1;
+    return status;
 }
 int vh99_publish_after_interruption(const char *abandoned_final,
                                    const char *fresh_final,
                                    const char *bytes,size_t size){
-    char abandoned_tmp[VH82_MAX_PATH];
+    char abandoned_tmp[VH82_MAX_PATH],old_parent[VH82_MAX_PATH];
+    char stage[VH82_MAX_PATH];
+    const char *leaf=NULL;
     struct stat before,after;
+    int old_dirfd=-1,status=-1;
     if(!vh99_private_path_ok(abandoned_final) ||
        !vh99_private_path_ok(fresh_final) || !bytes ||
        !size || size>VH82_MAX_BYTES ||
        strcmp(abandoned_final,fresh_final)==0)
         return -1;
-    /* The submitted stage must be incomplete and the target truly unused.
-     * Refuse any pre-existing completed file, bad mode, or symlink. */
+    /* The submitted stage must be incomplete and the target truly unused. */
     if(vh99_private_state(abandoned_final)!=2 ||
        vh99_private_state(fresh_final)!=0)return -1;
-    size_t n=strlen(abandoned_final);
+    old_dirfd=vh106_open_source_parent(abandoned_final,old_parent,&leaf);
+    if(old_dirfd<0)return -1;
+    size_t n=strlen(abandoned_final),leaf_n=strlen(leaf);
     memcpy(abandoned_tmp,abandoned_final,n);
     memcpy(abandoned_tmp+n,".tmp",5);
-    if(lstat(abandoned_tmp,&before)!=0 || !S_ISREG(before.st_mode) ||
-       (before.st_mode&0777)!=0600 || before.st_nlink!=1)return -1;
-    if(vh82_publish_private(fresh_final,bytes,size)!=0)return -1;
-    /* Preserve old abandoned-stage identity AND high-resolution change
-     * timestamps. Refusal keeps both names; never clean unknown data. */
+    memcpy(stage,leaf,leaf_n);
+    memcpy(stage+leaf_n,".tmp",5);
+    if(fstatat(old_dirfd,stage,&before,AT_SYMLINK_NOFOLLOW)!=0 ||
+       !S_ISREG(before.st_mode) ||
+       (before.st_mode&0777)!=0600 || before.st_nlink!=1 ||
+       vh102_parent_matches(old_dirfd,old_parent)!=0)goto done;
+    if(vh82_publish_private(fresh_final,bytes,size)!=0)goto done;
+    /* Preserve stage identity and timestamps through original dirfd;
+     * the already published fresh name is NEVER rolled back on failure. */
     if(vh105_maybe_change(2,abandoned_tmp,&before)<0 ||
-       lstat(abandoned_tmp,&after)!=0 ||
+       vh102_parent_matches(old_dirfd,old_parent)!=0 ||
+       fstatat(old_dirfd,stage,&after,AT_SYMLINK_NOFOLLOW)!=0 ||
        !vh105_same_metadata(&before,&after) ||
        vh99_private_state(abandoned_final)!=2 ||
-       vh99_private_state(fresh_final)!=1)return -1;
-    return 0;
+       vh99_private_state(fresh_final)!=1)goto done;
+    status=0;
+done:
+    if(close(old_dirfd)<0)status=-1;
+    return status;
 }
 
 

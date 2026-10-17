@@ -1,0 +1,40 @@
+name: MAP02 v106 anchored recovery source paths and redirect refusal
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v106-recovery-paths.yml'
+      - 'tools/map02_v82_private_publish.c'
+      - 'tools/map02_v82_private_publish.h'
+      - 'tests/test_map02_v106_recovery_source_paths.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-recovery-source-paths:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Native v98-v106 exact source inode and no-follow regressions
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          for version in 98 99 100 101 102 103 104 105 106; do
+            case "$version" in
+              98) test_name=test_map02_v98_recovery.py;;
+              99) test_name=test_map02_v99_interrupted.py;;
+              100) test_name=test_map02_v100_directory_sync.py;;
+              101) test_name=test_map02_v101_reopen.py;;
+              102) test_name=test_map02_v102_anchored_paths.py;;
+              103) test_name=test_map02_v103_inode_guard.py;;
+              104) test_name=test_map02_v104_content_guard.py;;
+              105) test_name=test_map02_v105_recovery_metadata_guard.py;;
+              106) test_name=test_map02_v106_recovery_source_paths.py;;
+            esac
+            python3 -m unittest discover -s tests -p "$test_name" -v
+          done
