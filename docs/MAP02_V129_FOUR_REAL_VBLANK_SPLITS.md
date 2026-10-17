@@ -38,6 +38,31 @@ each isolated emulator run. Raw private logs, GPU data, EXE, VRAM pixels
 and hashes are never public CI artifacts; only a coarse JSON summary
 is exported.
 
+## Compiler discrepancy: fifth-row bounds regression
+
+The first real GCC pinned emulator run passed 04/13/22/31 but refused
+40 at \`VH129_EDGE_TOTAL_REFUSED phase=1\`; Clang passed all five.
+A repeat GCC run reproduced the same refusal. The native count-only
+diagnostic reported \`mode=4 observed_delta=3 prewait_delta=3 accepted=3
+expected=4 target=0\`, showing that the first boundary had accepted
+three actual callbacks rather than four.
+
+Inspection revealed a native C table bug: extending the four-entry
+v128 boundary initializer to five entries without changing the
+explicit declaration \`vh129_boundary_targets[4][2]\` caused the
+fifth mode to index past the allocated table. This is undefined
+behavior, so compiler-specific outcomes are unsurprising. This is
+a test-harness bounds defect, **not** evidence of an extra or forged
+PlayStation VBlank.
+
+The patch allocates \`vh129_boundary_targets[5][2]\` and adds C
+compile-time array extent checks for boundary rows and columns,
+histogram rows and return-gap rows. Independent source regressions
+assert the fifth row exists and cannot silently revert to four.
+The refusal paths, wait conditions, v126-v128 test modes and original
+synthetic MIPS/GPU bytecode remain unchanged. Full native CI on
+GCC and Clang must pass before declaring v129 verified.
+
 ## Scope
 
 This is a source-authored synthetic PS1 MIPS program running under a
