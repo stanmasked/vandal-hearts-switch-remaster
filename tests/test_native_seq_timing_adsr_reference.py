@@ -152,6 +152,75 @@ class NativeSeqAdsrDifferentialTests(unittest.TestCase):
                     self.assertEqual(observed, expected,
                                      (name, chunk, observed, expected))
 
+
+    def test_infinite_seq_clock_stays_on_fraction_reference_for_1536_blocks(self):
+        """Probe accumulating C double tick-budget drift against an
+        independently scheduled exact-rational Python clock, including
+        frequent FF2F budget resets and FF51 tempo changes. This is
+        strictly software PC-port block ordering, not PS1 hardware.
+        """
+        blocks = 1536  # 786432 frames: inside the 20s fixture safety cap
+        for title, generated in (
+            ("repeated", repeating_song()),
+            ("changing_tempo", changed_tempo_song()),
+        ):
+            with self.subTest(song=title), tempfile.TemporaryDirectory(
+                prefix="vh-long-seq-reference-"
+            ) as folder:
+                source = Path(folder) / "generated.seq"
+                source.write_bytes(generated)
+                expected_schedule = schedule_seq_audio_blocks(
+                    parse_seq(generated), repeat_count=0,
+                    max_frames=blocks * 512,
+                )
+                self.assertTrue(expected_schedule["stopped_by_window"])
+                # Ignore only the scheduler's synthetic window-terminator,
+                # which was never dispatched by the native infinite loop.
+                by_block = {}
+                for item in expected_schedule["events"]:
+                    if item["frame"] == blocks * 512:
+                        self.assertTrue(item["truncated_by_window"])
+                        continue
+                    self.assertEqual(item["frame"] % 512, 0)
+                    by_block.setdefault(item["frame"] // 512, []).append(item)
+
+                observed = self.trace("seq", source, 0, blocks)
+                self.assertEqual(len(observed), blocks)
+                on = off = cycles = dispatched = 0
+                held = set()
+                tempo = ((generated[10] << 16) |
+                         (generated[11] << 8) | generated[12]) or 500000
+                for block, row in enumerate(observed):
+                    self.assertEqual(row[:2], ["S", str(block)])
+                    for event in by_block.get(block, ()):
+                        dispatched += 1
+                        kind = event["type"]
+                        if kind == "note_on":
+                            key = (event["channel"], event["note"])
+                            if key in held:
+                                off += 1
+                            held.add(key)
+                            on += 1
+                        elif kind == "note_off":
+                            key = (event["channel"], event["note"])
+                            if key in held:
+                                off += 1
+                                held.remove(key)
+                        elif kind == "tempo":
+                            tempo = event["tempo_us_per_quarter"]
+                        elif kind == "loop_boundary":
+                            cycles += 1
+                        else:
+                            self.assertNotEqual(kind, "end_of_track")
+                    actual = tuple(map(int, row[2:]))
+                    expected = (on, off, tempo, cycles, 1, dispatched)
+                    self.assertEqual(actual, expected,
+                                     (title, block, actual, expected))
+                self.assertGreater(cycles, 100)
+                self.assertGreater(on, 100)
+                self.assertGreater(dispatched, 300)
+                self.assertEqual(cycles, expected_schedule["cycles_completed"])
+
     def test_mutated_trace_is_detectable(self):
         rows = self.trace("voice")
         before = rows[0][:]

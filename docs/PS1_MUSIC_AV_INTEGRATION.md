@@ -2016,3 +2016,27 @@ transitions in the PC-port-style software path; it is NOT an
 independent entire PlayStation console implementation or a
 hardware sound-quality judgment. All test inputs are synthetic,
 and the harness exports no game PCM or user data.
+
+
+### Long-run SEQ tick-budget drift checked against Fraction clock
+
+The portable native SEQ trace now supports an optional bounded number
+of 512-frame service blocks and the normal \`repeat_count=0\` infinite
+music setting. Its existing 12-block finite suite remains unchanged.
+A new host Python regression runs **1536 consecutive 512-frame music
+blocks** (786432 SPU input frames) for each of two deterministic
+copyright-free pQES fixtures, one with repeated notes/FF2F and one
+with an FF51 tempo change. On every one of the 3072 block boundaries,
+the native C11 SEQ scheduler's note on/off counts, current tempo,
+completed repeat cycles, playing flag and dispatched-event counts
+are compared against the *independently computed* Fraction-based
+Python \`schedule_seq_audio_blocks\` timeline.
+
+This catches long-run floating tick-budget drift, tempo-change
+boundary rounding and erroneous preservation of tick remainder
+at repeat seams that short 12-block tests could miss. The
+reference-generated hard-window terminator is excluded because
+the native infinite track is deliberately still playing.
+Generated SEQ files live only in test temporary directories.
+No copyrighted audio, original game music, or physical Switch
+playback claim is involved.
