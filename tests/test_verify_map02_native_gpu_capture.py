@@ -207,14 +207,19 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
         packed = ((255 >> 3) << 10) | ((128 >> 3) << 5) | (8 >> 3)
         after[-2:] = packed.to_bytes(2, "little")
         self.clear_fixture([1023,511,3,3], [8,128,255], before, after)
+        # Modify only JSON metadata; retain exactly the same VRAM files.
         self.events[0]["rgb"] = [8,129,255]
         self.events[1]["rgb"] = [8,129,255]
-        self.save()
-        # A change that stays in the same 5-bit bucket is observationally
-        # indistinguishable. A change crossing the boundary must fail.
+        journal=self.root/"gpu-native-events.jsonl"
+        journal.write_text("".join(json.dumps(e,sort_keys=True)+"\n"
+                                   for e in self.events))
+        self.assertEqual(verify_capture(self.root, target_frame=12)[
+            "clear_pairs_with_verified_vram_effect"], 1)
+        # A change crossing the 5-bit truncation boundary must fail.
         self.events[0]["rgb"] = [8,136,255]
         self.events[1]["rgb"] = [8,136,255]
-        self.save()
+        journal.write_text("".join(json.dumps(e,sort_keys=True)+"\n"
+                                   for e in self.events))
         with self.assertRaisesRegex(ValueError, "ClearImage post-VRAM differs"):
             verify_capture(self.root, target_frame=12)
 
