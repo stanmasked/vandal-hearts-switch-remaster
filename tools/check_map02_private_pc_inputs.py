@@ -15,6 +15,7 @@ from pathlib import Path
 import stat
 
 from tools.check_map02_original_extraction_anchors import compare_data_ranges
+from tools.check_map02_original_inc_provenance import check_original_includes
 
 EXE = "SLUS_004.47"
 US_EXE_MD5 = "596bb082a2de5f1fe977dd3d7e160b03"
@@ -113,6 +114,11 @@ def verify_private_pc_inputs(upstream, *, krom_source=None):
                                   root / "build" / (EXE + ".elf"))
     if anchors["original_exe_and_mips_elf_data_anchors_match"] is not True:
         raise ValueError("retail decomp data anchors not verified")
+    # Verify all three generated C initializer include FILE BYTES against
+    # the pinned original US EXE, not merely their presence or combined SHA.
+    includes = check_original_includes(root)
+    if includes["asset_includes_regenerated_and_identical"] != len(ASSETS):
+        raise ValueError("original US asset includes not fully authenticated")
     for filename in ASSETS:
         tokens.append(("asset-" + filename,
                        _asset_file(root / "assets" / filename, filename)))
@@ -131,6 +137,7 @@ def verify_private_pc_inputs(upstream, *, krom_source=None):
         "original_private_data_bytes_compared":
             anchors["original_private_data_bytes_compared"],
         "original_resource_includes_present": len(ASSETS),
+        "original_resource_includes_match_owned_us_exe": True,
         "us_ps1_font_charset_verified": True,
         "private_build_inputs_binding_sha256": combined,
         "full_pc_game_executable_linked": False,
