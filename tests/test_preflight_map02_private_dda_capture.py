@@ -104,6 +104,47 @@ class NativeDdaCapturePreflightTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     preflight(other)
 
+    def test_two_word_capture_requires_distinct_complete_bounded_coordinates(self):
+        # The two-word C recorder silently disables logging unless X2/Y2
+        # are both valid and differ from the first point. Fail *before*
+        # launching the private PC executable, without leaking positions.
+        selected = dict(self.env,
+                        VH_MAP02_PUTPIXEL_X2="35",
+                        VH_MAP02_PUTPIXEL_Y2="35")
+        ready = preflight(selected)
+        self.assertTrue(ready["sample_coordinate_in_vram"])
+        self.assertEqual(ready["schema"], "map02_private_native_dda_preflight_v1")
+        self.assertFalse(ready["gameplay_capture_verified"])
+        self.assertNotIn('"35"', json.dumps(ready))
+        self.assertEqual(list(self.root.iterdir()), [])
+
+        for missing in ("VH_MAP02_PUTPIXEL_X2", "VH_MAP02_PUTPIXEL_Y2"):
+            altered = dict(selected)
+            del altered[missing]
+            with self.subTest(missing=missing):
+                with self.assertRaisesRegex(ValueError, "ASCII decimal"):
+                    preflight(altered)
+        for key, value in (
+            ("VH_MAP02_PUTPIXEL_X2", "1024"),
+            ("VH_MAP02_PUTPIXEL_Y2", "512"),
+            ("VH_MAP02_PUTPIXEL_X2", "-1"),
+            ("VH_MAP02_PUTPIXEL_Y2", "3.0"),
+            ("VH_MAP02_PUTPIXEL_X2", ""),
+        ):
+            with self.subTest(key=key, value=value):
+                with self.assertRaises(ValueError):
+                    preflight(dict(selected, **{key: value}))
+        same = dict(selected,
+                    VH_MAP02_PUTPIXEL_X2="30",
+                    VH_MAP02_PUTPIXEL_Y2="30")
+        with self.assertRaisesRegex(ValueError, "must differ"):
+            preflight(same)
+        # Same X with different Y, or same Y with different X, is fine.
+        self.assertTrue(preflight(dict(
+            selected, VH_MAP02_PUTPIXEL_X2="30"))["sample_coordinate_in_vram"])
+        self.assertTrue(preflight(dict(
+            selected, VH_MAP02_PUTPIXEL_Y2="30"))["sample_coordinate_in_vram"])
+
     def test_must_not_use_existing_or_public_directory(self):
         file = self.root / "old-journal.jsonl"
         file.write_text("private\n", encoding="utf-8")
