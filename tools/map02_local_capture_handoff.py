@@ -22,7 +22,10 @@ from pathlib import Path
 import stat
 import subprocess
 
-from tools.prepare_map02_pcport import PINNED_UPSTREAM_REF
+from tools.prepare_map02_pcport import (
+    PINNED_UPSTREAM_REF, PINNED_BLOB_SHA1, git_blob_sha1,
+)
+from tools.instrument_map02_gpu_native_events import PINNED_SOURCE
 from tools.publish_map02_blendg1_witness import (
     _private_directory, _prepare_private_file,
 )
@@ -45,7 +48,13 @@ REQUIRED_DIAGNOSTIC_MACROS = (
     "VH_MAP02_POSIX_STAGE",
     "VH_MAP02_CAPTURE_SESSION",
 )
+SOURCE_BLOBS = {
+    **PINNED_BLOB_SHA1,
+    "platform/pc/src/libgpu.c": PINNED_SOURCE,
+    "platform/pc/src/pc_raster.c": "ba8a05d161ad778c0b75e452ff0a11ed163c65cd",
+}
 DIGESTS = (
+    "pinned_upstream_source_identity_sha256",
     "pc_executable_sha256", "owned_game_image_sha256",
     "plan_sha256", "source_gte_gpu_witness_sha256",
     "capture_session_sha256",
@@ -54,6 +63,24 @@ DIGESTS = (
 
 def _sha(raw):
     return hashlib.sha256(raw).hexdigest()
+
+
+def verify_pinned_upstream(checkout):
+    """Match actual original native/GTE Git blob bytes to pinned source."""
+    checkout = Path(checkout).absolute()
+    if checkout.is_symlink() or not checkout.is_dir():
+        raise ValueError("pinned original PC-port checkout missing or linked")
+    digest = hashlib.sha256()
+    for relative, expected in sorted(SOURCE_BLOBS.items()):
+        candidate = checkout / relative
+        if candidate.is_symlink() or not candidate.is_file():
+            raise ValueError("original PC-port source missing or linked: " + relative)
+        raw = candidate.read_bytes()
+        if git_blob_sha1(raw) != expected:
+            raise ValueError("original PC-port source differs from pinned: " + relative)
+        digest.update(relative.encode("utf-8") + b"\0")
+        digest.update(hashlib.sha256(raw).digest())
+    return digest.hexdigest()
 
 
 def _sha_file(path, *, private=False):
@@ -92,7 +119,8 @@ def _validate_plan(raw):
     plan = parse_json(raw, PLAN)
     fields(plan, (
         "schema", "pinned_original_pc_source_commit",
-        "target_gpu_draw_frame", "pc_executable_sha256",
+        "target_gpu_draw_frame", "pinned_upstream_source_identity_sha256",
+        "pc_executable_sha256",
         "owned_game_image_sha256", "diagnostic_compile_macros",
         "gameplay_origin_authenticated", "physical_ps1_equivalence_proven",
     ), PLAN)
@@ -104,7 +132,8 @@ def _validate_plan(raw):
             plan["physical_ps1_equivalence_proven"] is not False):
         raise ValueError("unsupported/overstated local MAP02 capture plan")
     number(plan["target_gpu_draw_frame"], "target GPU frame", 1, 2**32 - 1)
-    for key in ("pc_executable_sha256", "owned_game_image_sha256"):
+    for key in ("pinned_upstream_source_identity_sha256",
+                "pc_executable_sha256", "owned_game_image_sha256"):
         value = plan[key]
         if (type(value) is not str or len(value) != 64 or
                 any(c not in "0123456789abcdef" for c in value)):
@@ -112,10 +141,11 @@ def _validate_plan(raw):
     return plan
 
 
-def _plan_bytes(pc_binary, owned_game, frame):
+def _plan_bytes(pc_binary, owned_game, frame, upstream):
     plan = {
         "schema": PLAN_SCHEMA,
         "pinned_original_pc_source_commit": PINNED_UPSTREAM_REF,
+        "pinned_upstream_source_identity_sha256": verify_pinned_upstream(upstream),
         "target_gpu_draw_frame": number(frame, "GPU frame", 1, 2**32 - 1),
         "pc_executable_sha256": _sha_file(pc_binary),
         "owned_game_image_sha256": _sha_file(owned_game, private=True),
@@ -148,9 +178,9 @@ def _publish(root, name, raw):
             temporary.unlink(missing_ok=True)
 
 
-def prepare_local_capture(handoff_dir, pc_binary, owned_game, *, frame):
+def prepare_local_capture(handoff_dir, pc_binary, owned_game, *, frame, upstream):
     directory = _private_directory(handoff_dir)
-    raw = _plan_bytes(pc_binary, owned_game, frame)
+    raw = _plan_bytes(pc_binary, owned_game, frame, upstream)
     _validate_plan(raw)
     _publish(directory, PLAN, raw)
     return {"local_plan_sha256": _sha(raw), "capture_executed": False,
@@ -185,7 +215,7 @@ def _validated_handoff(raw):
 
 
 def _verified_handoff(handoff_dir, source_dir, native_dir, scoped_dir,
-                      pc_binary, owned_game, *, compiler):
+                      pc_binary, owned_game, *, upstream, compiler):
     directory = _private_directory(handoff_dir)
     source, native, scoped = (_private_directory(p)
                               for p in (source_dir, native_dir, scoped_dir))
@@ -193,7 +223,9 @@ def _verified_handoff(handoff_dir, source_dir, native_dir, scoped_dir,
         raise ValueError("local capture folders must be four separate private directories")
     plan_raw = private_file(directory, PLAN, max_bytes=4096)
     plan = _validate_plan(plan_raw)
-    if (_sha_file(pc_binary) != plan["pc_executable_sha256"] or
+    if (verify_pinned_upstream(upstream) !=
+            plan["pinned_upstream_source_identity_sha256"] or
+            _sha_file(pc_binary) != plan["pc_executable_sha256"] or
             _sha_file(owned_game, private=True) != plan["owned_game_image_sha256"]):
         raise ValueError("local PC executable or owned game input differs from pre-run plan")
     frame = plan["target_gpu_draw_frame"]
@@ -210,6 +242,8 @@ def _verified_handoff(handoff_dir, source_dir, native_dir, scoped_dir,
     record = _validated_handoff({
         "schema": HANDOFF_SCHEMA,
         "gpu_draw_frame": frame,
+        "pinned_upstream_source_identity_sha256":
+            plan["pinned_upstream_source_identity_sha256"],
         "pc_executable_sha256": plan["pc_executable_sha256"],
         "owned_game_image_sha256": plan["owned_game_image_sha256"],
         "plan_sha256": _sha(plan_raw),
@@ -223,6 +257,8 @@ def _verified_handoff(handoff_dir, source_dir, native_dir, scoped_dir,
     })
     if (private_file(directory, PLAN, max_bytes=4096) != plan_raw or
             private_file(source, FOUR_STREAM, max_bytes=4096) != raw_final or
+            verify_pinned_upstream(upstream) !=
+            plan["pinned_upstream_source_identity_sha256"] or
             _sha_file(pc_binary) != plan["pc_executable_sha256"] or
             _sha_file(owned_game, private=True) != plan["owned_game_image_sha256"]):
         raise ValueError("local capture evidence changed during handoff verification")
@@ -230,18 +266,18 @@ def _verified_handoff(handoff_dir, source_dir, native_dir, scoped_dir,
 
 
 def seal_local_capture(handoff_dir, source_dir, native_dir, scoped_dir,
-                       pc_binary, owned_game, *, compiler="gcc"):
+                       pc_binary, owned_game, *, upstream, compiler="gcc"):
     directory = _private_directory(handoff_dir)
     if (directory / HANDOFF).exists() or (directory / HANDOFF).is_symlink():
         raise ValueError("local capture handoff already exists")
     record = _verified_handoff(
         directory, source_dir, native_dir, scoped_dir, pc_binary,
-        owned_game, compiler=compiler)
+        owned_game, upstream=upstream, compiler=compiler)
     raw = (json.dumps(record, sort_keys=True, separators=(",", ":"))
            + "\n").encode("utf-8")
     if record != _verified_handoff(
             directory, source_dir, native_dir, scoped_dir,
-            pc_binary, owned_game, compiler=compiler):
+            pc_binary, owned_game, upstream=upstream, compiler=compiler):
         raise ValueError("local capture evidence changed before handoff publication")
     _publish(directory, HANDOFF, raw)
     return {"local_capture_handoff_sha256": _sha(raw),
@@ -252,13 +288,13 @@ def seal_local_capture(handoff_dir, source_dir, native_dir, scoped_dir,
 
 
 def verify_local_capture(handoff_dir, source_dir, native_dir, scoped_dir,
-                         pc_binary, owned_game, *, compiler="gcc"):
+                         pc_binary, owned_game, *, upstream, compiler="gcc"):
     directory = _private_directory(handoff_dir)
     raw = private_file(directory, HANDOFF, max_bytes=4096)
     record = _validated_handoff(raw)
     checked = _verified_handoff(
         directory, source_dir, native_dir, scoped_dir,
-        pc_binary, owned_game, compiler=compiler)
+        pc_binary, owned_game, upstream=upstream, compiler=compiler)
     if record != checked or private_file(directory, HANDOFF, max_bytes=4096) != raw:
         raise ValueError("local MAP02 handoff differs from verified captured evidence")
     return {"local_capture_handoff_sha256": _sha(raw),
@@ -274,6 +310,7 @@ def main():
     p.add_argument("private_handoff_dir", type=Path)
     p.add_argument("--pc-binary", type=Path, required=True)
     p.add_argument("--owned-game-image", type=Path, required=True)
+    p.add_argument("--upstream-checkout", type=Path, required=True)
     p.add_argument("--frame", type=int)
     p.add_argument("--source-bundle", type=Path)
     p.add_argument("--native-windows", type=Path)
@@ -286,7 +323,7 @@ def main():
                 raise ValueError("prepare needs explicit --frame")
             result = prepare_local_capture(
                 a.private_handoff_dir, a.pc_binary, a.owned_game_image,
-                frame=a.frame)
+                frame=a.frame, upstream=a.upstream_checkout)
         else:
             if not all((a.source_bundle, a.native_windows, a.scoped_capture)):
                 raise ValueError("seal/verify require source, windows and scoped directories")
@@ -294,7 +331,8 @@ def main():
             result = fn(
                 a.private_handoff_dir, a.source_bundle,
                 a.native_windows, a.scoped_capture,
-                a.pc_binary, a.owned_game_image, compiler=a.compiler)
+                a.pc_binary, a.owned_game_image,
+                upstream=a.upstream_checkout, compiler=a.compiler)
     except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
         p.error(str(exc))
     print(json.dumps(result, sort_keys=True, indent=2))
