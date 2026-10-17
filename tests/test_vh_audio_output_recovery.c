@@ -286,6 +286,7 @@ typedef struct {
     unsigned wrong_returns_left, failed_stops_left;
     unsigned failed_opens_left, failed_starts_left;
     unsigned calls, stops, closes, opens, starts, returned;
+    unsigned timing_fault;
 } LeasedDevice;
 
 static int leased_submit(void *opaque,const int16_t *pcm,size_t frames) {
@@ -356,6 +357,97 @@ static int leased_start(void *opaque) {
     d->playing=1u;
     return 0;
 }
+/* The backend has ALREADY returned the correct descriptor. Timing
+ * telemetry can still fail (zero tick frequency or overflow). Such
+ * diagnostic failure must never trigger transport stop/reopen/replay. */
+static int leased_submit_with_timing_fault(
+    void *opaque, const int16_t *pcm, size_t frames) {
+    LeasedDevice *dev=opaque;
+    const int sent=leased_submit(opaque,pcm,frames);
+    VhAudioSubmitTiming invalid={0};
+    /* Real audout may return the correct PCM descriptor even when
+     * its timestamp/frequency is unavailable to diagnostics. */
+    const int recorded=vh_audio_output_record_submit_timing(
+                           &invalid,200u,0u,frames,sent==0);
+    assert(recorded==-1 && invalid.calls==0u);
+    return vh_audio_output_transport_outcome(sent==0,recorded,
+                                              &dev->timing_fault);
+}
+
+static void test_timing_fault_never_replays_delivered_pcm(void) {
+    unsigned direct=0u,backend_retry=0u;
+    for(unsigned i=0u;i<128u;i++)
+        sample[i]=(int16_t)((int)i*67-4500);
+    vh_native_spu_reset(&spu);
+    vh_audio_resample_reset(&resampler);
+    assert(vh_native_seq_init(&seq,song,sizeof song,
+                              &spu,resolve,sample,0u)==0);
+    for(unsigned iteration=0u;iteration<48u;iteration++) {
+        assert(vh_native_seq_advance_block(&seq)>=0);
+        vh_native_spu_render(&spu,src,512u);
+        const size_t frames=vh_audio_resample_process(
+                              &resampler,src,512u,dst,640u);
+        assert(frames>=555u && frames<=559u);
+        const VhNativeSeq saved_seq=seq;
+        const VhNativeSpu saved_spu=spu;
+        const VhAudioResample saved_rate=resampler;
+        const uint64_t page_hash=hash_page(dst,frames);
+        LeasedDevice dev={
+            .opened=1u,.playing=1u,.pcm=dst,.frames=frames,
+            .pcm_hash=page_hash,
+            .wrong_returns_left=(unsigned)(iteration&1u)
+        };
+        VhAudioOutputRecovery counters={0};
+        const VhAudioOutputOps callbacks={
+            &dev,leased_submit_with_timing_fault,
+            leased_stop,leased_close,leased_open,leased_start
+        };
+        assert(vh_audio_output_submit_recover(
+                            &callbacks,&counters,dst,frames)==0);
+        assert(dev.timing_fault==1u);
+        assert(counters.pages_submitted==1u &&
+               counters.frames_submitted==frames);
+        assert(dev.returned==1u &&
+               vh_audio_page_lease_ready(&dev.lease));
+        if(iteration&1u) {
+            backend_retry++;
+            /* A real wrong-descriptor failure still needs exactly
+             * one stop/reopen and retry, not extra timing-fault retries. */
+            assert(dev.calls==2u && dev.stops==1u &&
+                   dev.closes==1u && dev.opens==1u && dev.starts==1u);
+            assert(counters.submit_failures==1u &&
+                   counters.restart_attempts==1u && counters.recoveries==1u);
+        } else {
+            direct++;
+            /* The accepted PCM remains exactly once, no recovery. */
+            assert(dev.calls==1u && dev.stops==0u &&
+                   dev.closes==0u && dev.opens==0u && dev.starts==0u);
+            assert(counters.submit_failures==0u &&
+                   counters.restart_attempts==0u && counters.recoveries==0u);
+        }
+        assert(hash_page(dst,frames)==page_hash);
+        assert(!memcmp(&seq,&saved_seq,sizeof seq));
+        assert(!memcmp(&spu,&saved_spu,sizeof spu));
+        assert(!memcmp(&resampler,&saved_rate,sizeof resampler));
+        assert(vh_audio_output_stop_close(&callbacks)==0);
+        assert(vh_audio_page_lease_ready(&dev.lease));
+    }
+    assert(direct==24u && backend_retry==24u);
+
+    /* The outcome is driven ONLY by delivered transport, regardless
+     * of bad telemetry. A fault remains a saturated 1-bit marker. */
+    unsigned fault=0u;
+    assert(vh_audio_output_transport_outcome(1,-1,&fault)==0 &&
+           fault==1u);
+    assert(vh_audio_output_transport_outcome(1,-1,&fault)==0 &&
+           fault==1u);
+    assert(vh_audio_output_transport_outcome(0,-1,&fault)==-1 &&
+           fault==1u);
+    fault=0u;
+    assert(vh_audio_output_transport_outcome(1,0,&fault)==0 &&
+           fault==0u);
+}
+
 static void test_failed_stop_page_lease_with_real_recovery(void) {
     for(unsigned i=0u;i<128u;i++) {
         sample[i]=(int16_t)((int)i*67-4400);
@@ -773,6 +865,7 @@ static void test_home_observer_vs_audout_lease_faults(void) {
 }
 
 int main(void) {
+    test_timing_fault_never_replays_delivered_pcm();
     test_home_observer_vs_audout_lease_faults();
     test_audout_inflight_page_lease_scene_lifetime();
     test_failed_stop_page_lease_with_real_recovery();
