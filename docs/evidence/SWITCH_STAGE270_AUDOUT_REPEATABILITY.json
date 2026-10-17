@@ -1,0 +1,47 @@
+{
+  "schema": "vh-nexium-audout-cross-run/v1",
+  "result": "SAME_NRO_GUEST_AUDOUT_REPEATABILITY_VERIFIED",
+  "run_count": 2,
+  "nro_sha256": "60dc486339331de6c5d24f6e2b049c8ba24ee095a8534746af9f42d18a8a1b91",
+  "attempts_min": 1925,
+  "attempts_max": 1930,
+  "max_call_us_min": 49765,
+  "max_call_us_max": 51692,
+  "runs": [
+    {
+      "run_id": 39065603152,
+      "git_sha": "3f157d8db352227512591f962a4b3710965abcdc",
+      "nro_sha256": "60dc486339331de6c5d24f6e2b049c8ba24ee095a8534746af9f42d18a8a1b91",
+      "scene_events": 53,
+      "pcm_duration_seconds": 60.903,
+      "windows": 53,
+      "attempts": 1930,
+      "releases": 1930,
+      "max_call_us": 49765,
+      "queue_probes_ok": 121,
+      "failures": 0,
+      "csv_sha256": "60e9c366bf93970c848f3bd65895cb92a800088530f5f34790ff8d7bdb42e1c6",
+      "csv_bytes": 2065
+    },
+    {
+      "run_id": 39065671551,
+      "git_sha": "cb60ac50fb22d98ea055da08844f124d93f89d10",
+      "nro_sha256": "60dc486339331de6c5d24f6e2b049c8ba24ee095a8534746af9f42d18a8a1b91",
+      "scene_events": 53,
+      "pcm_duration_seconds": 60.718,
+      "windows": 53,
+      "attempts": 1925,
+      "releases": 1925,
+      "max_call_us": 51692,
+      "queue_probes_ok": 121,
+      "failures": 0,
+      "csv_sha256": "cf4a06fa94051b04dc20b7cfc4570c52a4e8fc14948c05a45ba3eba55e5b4748",
+      "csv_bytes": 2065
+    }
+  ],
+  "source": "downloaded successful GitHub Actions evidence ZIPs; offline copy cross-check",
+  "original_virtual_sd_reopened_now": false,
+  "original_sd_copy_verification_completed_in_each_original_CI_run": true,
+  "actual_hardware_tested": false,
+  "audible_underruns_measured": false
+}
