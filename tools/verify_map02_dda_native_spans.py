@@ -22,7 +22,9 @@ def unique_pairs(pairs):
 def parse_native_spans(raw: bytes):
     if type(raw) is not bytes or len(raw) > 16384:
         raise ValueError("invalid or oversized journal")
-    lines = raw.splitlines()
+    if b"\r" in raw or b"\x00" in raw:
+        raise ValueError("noncanonical span journal line endings")
+    lines = raw.split(b"\n")[:-1]
     if not 1 <= len(lines) <= MAX_EVENTS or not raw.endswith(b"\n"):
         raise ValueError("empty, truncated or saturated journal")
     result = []
@@ -34,6 +36,8 @@ def parse_native_spans(raw: bytes):
         try:
             obj = json.loads(line, parse_constant=reject_constant, object_pairs_hook=unique_pairs)
         except (ValueError, UnicodeError) as exc:
+            if "duplicate JSON key" in str(exc):
+                raise ValueError("duplicate JSON key in span journal") from exc
             raise ValueError("invalid span JSONL") from exc
         if type(obj) is not dict or frozenset(obj) != EXPECTED:
             raise ValueError("unexpected span schema")
