@@ -65,6 +65,21 @@ class FontLinkedTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "size differs"):
             check_linked_font_bytes(executable, self.expected)
 
+    def test_stripped_symbol_table_cannot_claim_original_font(self):
+        stripped = self.root / "stripped-font"
+        stripped.write_bytes(self.binary.read_bytes())
+        stripped.chmod(0o700)
+        subprocess.run(["strip", "--strip-all", str(stripped)], check=True,
+                       capture_output=True, timeout=30)
+        with self.assertRaisesRegex(ValueError, "one initialized glyph"):
+            check_linked_font_bytes(stripped, self.expected)
+
+    def test_symlinked_linked_font_elf_rejected(self):
+        link = self.root / "symbolic-link"
+        link.symlink_to(self.binary)
+        with self.assertRaisesRegex(ValueError, "symlinked"):
+            check_linked_font_bytes(link, self.expected)
+
     def test_length(self):
         self.assertEqual(FONT_BYTES, 6270)
 
