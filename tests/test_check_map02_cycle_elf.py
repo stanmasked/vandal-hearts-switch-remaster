@@ -5,10 +5,15 @@ not a game, and not a claim of actual hooks being executed. The fixture
 proves only the scope and fail-closed behavior of the structural audit.
 """
 import os
+from contextlib import redirect_stderr
+import io
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
+
+import tools.check_map02_cycle_elf as elf
 
 from tools.check_map02_cycle_elf import (
     SYMBOLS, ORIGINAL_FONT_DATA_SYMBOLS, audit_cycle_elf)
@@ -52,6 +57,41 @@ class OriginalCycleElfAuditTests(unittest.TestCase):
         self.assertFalse(result["original_gameplay_authenticated"])
         self.assertFalse(result["original_map02_rendering_proven"])
         self.assertFalse(result["physical_ps1_equivalence_proven"])
+
+    def test_native_introspection_timeout_redacts_private_elf_path(self):
+        private = str(self.executable)
+        timeout = subprocess.TimeoutExpired(
+            ["readelf", "-h", private], 30, output=private.encode())
+        with patch.object(elf.subprocess, "run", side_effect=timeout):
+            with self.assertRaisesRegex(ValueError, "introspection unavailable") as caught:
+                audit_cycle_elf(self.executable)
+        self.assertNotIn(private, str(caught.exception))
+
+    def test_native_introspection_os_error_redacts_private_elf_path(self):
+        private = str(self.executable)
+        with patch.object(elf.subprocess, "run",
+                          side_effect=OSError("cannot open " + private)):
+            with self.assertRaisesRegex(ValueError, "introspection unavailable") as caught:
+                audit_cycle_elf(self.executable)
+        self.assertNotIn(private, str(caught.exception))
+
+    def test_cli_redacts_unexpected_private_executable_timeouts(self):
+        private = str(self.executable)
+        for failure in (
+            OSError("private executable " + private),
+            subprocess.TimeoutExpired(["nm", private], 30),
+        ):
+            with self.subTest(reason=type(failure).__name__):
+                stderr = io.StringIO()
+                with (patch("sys.argv", ["audit-cycle-elf", private]),
+                      patch.object(elf, "audit_cycle_elf", side_effect=failure),
+                      redirect_stderr(stderr)):
+                    with self.assertRaises(SystemExit) as caught:
+                        elf.main()
+                self.assertEqual(caught.exception.code, 2)
+                self.assertIn("filesystem introspection unavailable",
+                              stderr.getvalue())
+                self.assertNotIn(private, stderr.getvalue())
 
     def test_partial_link_cannot_pass_as_executable(self):
         self.object.chmod(0o700)
