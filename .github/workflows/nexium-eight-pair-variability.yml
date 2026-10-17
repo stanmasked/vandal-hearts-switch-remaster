@@ -5,7 +5,7 @@ on:
     branches:
       - test/cdxa-extract-decode-pipeline
     paths:
-      - .github/workflows/nexium-idle-switch-repeatability.yml
+      - .github/workflows/nexium-eight-pair-variability.yml
       - tools/analyze_nexium_idle_switch_variability.py
       - tests/test_analyze_nexium_idle_switch_variability.py
   workflow_dispatch:
