@@ -666,8 +666,9 @@ static void test_fake_submit_then_failed_stop_preserves_lease(void) {
                     &dev.submit_injection,&dev.submit_timing,&stats)==-1);
         assert(dev.lease.in_flight==&dev.descriptor);
         assert(!vh_audio_page_lease_ready(&dev.lease));
-        assert(leased_submit_with_fake_pre_service_failure(
-                    &dev,dst,frames)==-1);
+        /* A leased page cannot be resent, even by the raw backend.
+         * Do not let this negative check add a fabricated timed call. */
+        assert(leased_submit(&dev,dst,frames)==-1);
         assert(dev.calls==1u);
         assert(hash_page(dst,frames)==fingerprint);
         assert(!memcmp(&seq,&before_seq,sizeof seq));
