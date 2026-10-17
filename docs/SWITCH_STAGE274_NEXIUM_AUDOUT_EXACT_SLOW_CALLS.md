@@ -1,6 +1,6 @@
 # Switch Stage 274 — exact timestamped slow audout calls
 
-**Status: acceptance pending a full pinned NeXium workflow with the new CSV.**
+**Status: accepted in pinned NeXium workflow [39072903722](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39072903722) with live original guest SD audit.**
 **HARDWARE NOT TESTED. No audible/DAC underrun claims.**
 
 ## Motivation and implementation
@@ -140,3 +140,68 @@ additional legitimate slow call from an adjacent second. Corrected the
 *test-only* timestamp in commit \`aa04c510\`, without modifying runtime
 audio scheduling or production audit criteria. Full workflow results
 after this correction remain tracked separately.
+
+
+## Full original-SD acceptance and same-NRO two-run comparison
+
+The complete current-NRO [NeXium workflow 39072903722](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39072903722), commit
+\`e358f657ddd7b0759098e9adbf7eef30846ca736\`,
+successfully passed both **"Verify guest-clock-bound scene input and
+audout-second relation"** and **"Verify exact guest slow-call timing
+relative to scene INPUT"**. The independent Stage-274 auditor
+reopened the original isolated guest SD files *while the workflow
+was active*, validated their separately copied versions and writer
+receipts, and cross-checked the Stage-269/272/273 evidence. The
+host regressions also passed in [run 39072904079](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39072904079).
+This meets the original acceptance criterion; older archive-copy-only
+evidence must still be labeled appropriately.
+
+The validated same-run NRO SHA-256 was
+\`4be7635609589952363d3255e81537343a5893bff3611ecd30df48d39d6f35cb\`.
+From its original-SD-verified archive:
+
+- **1,942** attempted audout calls, all returned; **53** seconds;
+- **20** calls 40–<50 ms and **2** calls ≥50 ms; **22** exact
+  start/end timestamp records, **zero** overflow/drops;
+- maximum call **53,503 μs**; all 22 timestamps agree with
+  the Stage-272 independently audited second-by-second histogram;
+- guest-SD original/copy slow-call CSV SHA-256:
+  \`4e0dab47f81bd46a7dedb89327e90e34df02fc14f23943fe036c3eddf23a4935\`;
+- ten complete music scene INPUT events; within the defined ±500 ms
+  **slow-call START** window, calls ≥40 ms appeared near serials
+  1, 9 and 10. Each of those calls ended before the respective
+  INPUT; *none* of the two ≥50 ms calls began within that ±500 ms
+  window around any scene INPUT.
+
+For comparison, completed NeXium [run 39072563324](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39072563324),
+commit \`86fc583c\`, used the **identical SHA-256 NRO** and produced
+1,915 calls across 53 seconds. Its separately archived slow CSV had
+25 exact ≥40 ms records including 3 ≥50 ms calls, zero overflow,
+with 50,929 μs maximum. Offline byte inspection independently checked
+that the archive copy and the prior Stage-272 per-second histogram
+agreed. However that older workflow **did not execute the separate
+Stage-274 original-SD slow-call audit**, so it is copy-audited only,
+not an additional live original-SD acceptance.
+
+The two identical-NRO runs therefore observed:
+
+| Measure | 39072563324 (copy only) | 39072903722 (original-SD audited) |
+| --- | ---: | ---: |
+| Audout attempts | 1,915 | 1,942 |
+| Calls 40–<50 ms | 22 | 20 |
+| Calls ≥50 ms | 3 | 2 |
+| Slow-call records lost | 0 | 0 |
+| Maximum call, μs | 50,929 | 53,503 |
+| ≥50 ms calls whose start was ±500 ms of scene INPUT | 1 (serial 10) | 0 |
+
+The earlier ≥50 ms call ended 0.462 ms before INPUT serial 10.
+There is **no reproducible association of ≥50 ms calls with the
+same scene transition** across these two runs. This does not prove
+absence of scene-related scheduling effects, real device underruns
+or audible playback issues. The latest archive comparison **cannot**
+reopen the runner's now-ephemeral original guest SD; that stronger
+claim is based solely on the separately observed successful workflow
+step, not on retrospective archival inference.
+
+Current follow-up: compare two or more future fully original-SD
+accepted Stage-274 archives from the same NRO with the same rules.
