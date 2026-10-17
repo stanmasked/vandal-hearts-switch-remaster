@@ -109,7 +109,7 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
                                (handoff_dir, native_dir, scoped_dir))
     if len({p.resolve() for p in (handoff, native, scoped)}) != 3:
         raise ValueError("execution evidence folders must be distinct")
-    if any(p.iterdir() for p in (native, scoped)):
+    if any(any(p.iterdir()) for p in (native, scoped)):
         raise ValueError("native GPU and scoped capture folders must start empty")
     if (handoff / RECEIPT).exists() or (handoff / RECEIPT).is_symlink():
         raise ValueError("local execution receipt already exists")
