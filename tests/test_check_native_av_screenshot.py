@@ -70,6 +70,55 @@ class NativeAVScreenshotTests(unittest.TestCase):
             self.assertNotEqual(denied.returncode, 0)
             self.assertIn("scene-switch marker not confirmed", denied.stderr)
 
+    def test_guest_auto_zl_rejected_clock_is_not_transport_failure(self):
+        before,after=make_frames(audio=AUDIO_FAIL,pipeline=AUDIO_FAIL)
+        before.putpixel((1050,500),AUDIO_OK)
+        after.putpixel((1050,500),AUDIO_OK)
+        report=inspect_images(before,after)
+        self.assertEqual(report["guest_zl_invalid_clock_no_replay"],"confirmed")
+        self.assertTrue(report["guest_zl_is_not_physical_button"])
+        self.assertEqual(report["audout_status"],"unavailable_or_error")
+        self.assertFalse(report["audible_audio_verified"])
+        with tempfile.TemporaryDirectory() as folder:
+            first_path=Path(folder)/"before.png"
+            second_path=Path(folder)/"after.png"
+            cmd=[sys.executable,"tests/check_native_av_screenshot.py",
+                 str(first_path),str(second_path),
+                 "--require-guest-zl-no-replay",
+                 "--require-audio-source","synthetic",
+                 "--require-audout-status","unavailable_or_error",
+                 "--require-audio-pipeline","inactive_or_error"]
+            before.save(first_path)
+            after.save(second_path)
+            passed=subprocess.run(cmd,capture_output=True,text=True)
+            self.assertEqual(passed.returncode,0,passed.stderr)
+            after.putpixel((1050,500),(255,219,102))
+            after.save(second_path)
+            rejected=subprocess.run(cmd,capture_output=True,text=True)
+            self.assertNotEqual(rejected.returncode,0)
+            self.assertIn("guest ZL invalid-clock no-replay",rejected.stderr)
+            before.putpixel((1050,500),AUDIO_FAIL)
+            before.save(first_path)
+            rejected=subprocess.run(cmd,capture_output=True,text=True)
+            self.assertNotEqual(rejected.returncode,0)
+
+    def test_guest_zl_no_replay_does_not_accept_still_healthy_service(self):
+        before,after=make_frames(audio=AUDIO_OK)
+        before.putpixel((1050,500),AUDIO_OK)
+        after.putpixel((1050,500),AUDIO_OK)
+        with tempfile.TemporaryDirectory() as folder:
+            first_path=Path(folder)/"before.png"
+            second_path=Path(folder)/"after.png"
+            before.save(first_path)
+            after.save(second_path)
+            rejected=subprocess.run(
+                [sys.executable,"tests/check_native_av_screenshot.py",
+                 str(first_path),str(second_path),
+                 "--require-guest-zl-no-replay"],
+                capture_output=True,text=True)
+            self.assertNotEqual(rejected.returncode,0)
+            self.assertIn("guest ZL invalid-clock no-replay",rejected.stderr)
+
     def test_guest_auto_zr_marker_requires_both_verified_frames(self):
         first,second=make_frames()
         first.putpixel((1050,455),AUDIO_OK)
