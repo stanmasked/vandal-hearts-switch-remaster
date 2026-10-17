@@ -46,6 +46,9 @@ static unsigned vh_capture_seq, vh_capture_saved;
 static unsigned long vh_capture_seen, vh_capture_before, vh_capture_after;
 static unsigned long vh_capture_draw_before, vh_capture_transfer_before;
 static int vh_capture_receipt_written;
+static const char *vh_capture_dir;
+static unsigned long vh_capture_frame;
+static int vh_capture_init;
 #if defined(VH_MAP02_POSIX_CAPTURE_WINDOWS)
 static unsigned vh_capture_windows;
 static int vh_capture_window_failed;
@@ -56,9 +59,6 @@ static int VH_CapturePrivateRoot(void) {
            st.st_uid == geteuid();
 }
 #endif
-static const char *vh_capture_dir;
-static unsigned long vh_capture_frame;
-static int vh_capture_init;
 static void VH_CaptureInit(void) {
     const char *value;
     char *end = NULL;
@@ -222,6 +222,45 @@ static void VH_CaptureFinish(unsigned frame, int walk_finished) {
     if (!vh_capture_frame || (unsigned long)frame != vh_capture_frame ||
         vh_capture_receipt_written) return;
     vh_capture_receipt_written = 1;
+#if defined(VH_MAP02_POSIX_CAPTURE_WINDOWS)
+    if (vh_capture_windows) {
+        unsigned expected_windows = (vh_capture_saved + VH_CAPTURE_LIMIT - 1u)
+                                    / VH_CAPTURE_LIMIT;
+        unsigned maximum = 2u * VH_CAPTURE_LIMIT;
+        n = snprintf(status_path, sizeof status_path, "%s/gpu-native-window-index.json",
+                     vh_capture_dir);
+        if (n <= 0 || (size_t)n >= sizeof status_path) return;
+        file = fopen(status_path, "wx");
+        if (!file) return;
+        balanced = vh_capture_before == vh_capture_after &&
+                   vh_capture_seen == vh_capture_before + vh_capture_after;
+        fprintf(file,
+          "{\"schema\":\"vh.map02.native-windows.v1\","
+          "\"gpu_draw_frame\":%u,\"window_capacity_events\":64,"
+          "\"configured_windows\":2,\"windows_written\":%u,"
+          "\"observed_hooks\":%lu,\"before_hooks\":%lu,"
+          "\"after_hooks\":%lu,\"draw_before_hooks\":%lu,"
+          "\"transfer_before_hooks\":%lu,\"indexed_hooks\":%u,"
+          "\"written_hooks\":%u,\"limit_reached\":%s,"
+          "\"walk_finished\":%s,\"hooks_balanced\":%s,"
+          "\"write_failed\":%s,"
+          "\"recorded_window_closed_without_detected_loss\":%s}\n",
+          frame, expected_windows,
+          vh_capture_seen, vh_capture_before, vh_capture_after,
+          vh_capture_draw_before, vh_capture_transfer_before,
+          vh_capture_seq, vh_capture_saved,
+          vh_capture_seq >= maximum ? "true" : "false",
+          walk_finished ? "true" : "false",
+          balanced ? "true" : "false",
+          vh_capture_window_failed ? "true" : "false",
+          (walk_finished && balanced && !vh_capture_window_failed &&
+           vh_capture_seen == vh_capture_seq &&
+           vh_capture_saved == vh_capture_seq &&
+           vh_capture_seq < maximum) ? "true" : "false");
+        (void)fclose(file);
+        return;
+    }
+#endif
     n = snprintf(status_path, sizeof status_path,
                  "%s/gpu-native-capture-status.json", vh_capture_dir);
     if (n < 0 || (size_t)n >= sizeof status_path) return;
