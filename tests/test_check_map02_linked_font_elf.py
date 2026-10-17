@@ -1,1 +1,1 @@
-"""Synthetic linked-font ELF tests."""
+"""Test original glyphs."""
