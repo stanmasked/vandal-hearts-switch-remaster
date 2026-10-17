@@ -120,6 +120,10 @@ on:
       - 'tools/apply_map02_v123_pcsx_rearmed.py'
       - 'tools/summarize_map02_v123_mips_dma2_linkedlist.py'
       - 'tests/test_map02_v123_gpu_linkedlist.py'
+      - 'tools/make_map02_v124_mips_single_list_return_exe.py'
+      - 'tools/apply_map02_v124_pcsx_rearmed.py'
+      - 'tools/summarize_map02_v124_one_list_five_draws.py'
+      - 'tests/test_map02_v124_one_list_five_draws.py'
       - 'tools/map02_v80_native_timeline.*'
       - 'tools/map02_v81_event_jsonl.*'
       - 'tools/verify_map02_v82_native_trace.py'
@@ -197,6 +201,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v121_mips_return.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v122_mips_dma2_return.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v123_gpu_linkedlist.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v124_one_list_five_draws.py' -v
       - name: Patch pinned upstream with Unai post-dispatch observer
         shell: bash
         run: |
@@ -207,7 +212,7 @@ jobs:
           git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
           git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
-          python3 -m remaster.tools.apply_map02_v123_pcsx_rearmed upstream-pcsx
+          python3 -m remaster.tools.apply_map02_v124_pcsx_rearmed upstream-pcsx
           git -C upstream-pcsx diff --check
           grep -F 'vh80_record(VH83_GP0_UNAI_HANDLED' upstream-pcsx/plugins/gpu_unai/gpulib_if.cpp
           grep -F 'VH83_UNAI_DISPATCH_PASS' upstream-pcsx/frontend/main.c
@@ -961,6 +966,44 @@ jobs:
           assert report["host_submitted_gp0_draw_commands_in_v123"] is False
           assert report["HD_replacement_approved"] is False
           Path("proof/public/v123-mips-gpu-linked-list-summary.json").write_text(
+              json.dumps(report,sort_keys=True)+"\n")
+          PY
+      - name: Verify one MIPS GPU DMA2 linked list executes five ordered drawings
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum -c proof/private/native.sha256
+          mkdir -m 700 -p proof/v124-home
+          python3 -m remaster.tools.make_map02_v124_mips_single_list_return_exe \
+            --output proof/private/V124_SYNTHETIC.EXE
+          test "$(stat -c %s proof/private/V124_SYNTHETIC.EXE)" -eq 6144
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v124-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh124-mips-one-list-return-smoke \
+            proof/private/V124_SYNTHETIC.EXE \
+            > proof/private/v124-runtime.log 2>&1 || {
+              tail -n 100 proof/private/v124-runtime.log
+              exit 1
+            }
+          grep -F 'VH124_ONE_LIST_FIVE_GP0_PASS stages=2' proof/private/v124-runtime.log
+          sha256sum -c proof/private/native.sha256
+          test ! -e proof/private/V104_RENDERER_EVENTS.jsonl.tmp
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from remaster.tools.summarize_map02_v124_one_list_five_draws import summarize
+          report=summarize(Path("proof/private/v124-runtime.log").read_text())
+          assert report["linked_list_dma_dispatches"]==1
+          assert report["native_gpu_chain_nodes"]==7
+          assert report["gpu_command_words"]==15
+          assert report["native_unai_handlers"]==5
+          assert report["ordered_intermediate_vram_checks"]==5
+          assert report["exact_four_back_returns"]==1
+          assert report["host_submitted_gpu_draw_packets"] is False
+          assert report["HD_replacement_approved"] is False
+          Path("proof/public/v124-single-dma-five-gp0-summary.json").write_text(
               json.dumps(report,sort_keys=True)+"\n")
           PY
       - name: Publish aggregate status only, never private trace

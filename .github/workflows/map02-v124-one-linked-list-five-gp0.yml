@@ -1,0 +1,32 @@
+name: MAP02 v124 one interpreted GPU DMA linked list with five ordered GP0 draws
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v124-one-linked-list-five-gp0.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/make_map02_v124_mips_single_list_return_exe.py'
+      - 'tools/apply_map02_v124_pcsx_rearmed.py'
+      - 'tools/summarize_map02_v124_one_list_five_draws.py'
+      - 'tests/test_map02_v124_one_list_five_draws.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  one-mips-linked-list-five-ordered-gp0:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check MIPS-authored seven-node GPU list, order and native verification
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_map02_v124_one_list_five_draws.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v123_gpu_linkedlist.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v122_mips_dma2_return.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v121_mips_return.py' -v
