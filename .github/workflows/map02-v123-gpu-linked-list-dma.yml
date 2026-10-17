@@ -1,0 +1,32 @@
+name: MAP02 v123 MIPS GPU linked-list DMA2 three-node traversal
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v123-gpu-linked-list-dma.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/make_map02_v123_mips_dma2_linkedlist_exe.py'
+      - 'tools/apply_map02_v123_pcsx_rearmed.py'
+      - 'tools/summarize_map02_v123_mips_dma2_linkedlist.py'
+      - 'tests/test_map02_v123_gpu_linkedlist.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linked-list-mips-dma2-validation:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate MIPS three-node linked-list packet and private proof
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_map02_v123_gpu_linkedlist.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v122_mips_dma2_return.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v121_mips_return.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v120_real_gp0_return.py' -v
