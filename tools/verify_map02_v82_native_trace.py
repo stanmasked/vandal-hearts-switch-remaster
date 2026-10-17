@@ -14,7 +14,11 @@ KINDS={"vblank","gp1_mmio","gpu_dma2_start","gp0_unai_handled","unai_sample_delt
        "gpulib_mask_upload_store_count","gpulib_mask_upload_same_count",
        "gpulib_wrap_store_count","gpulib_wrap_same_count",
        "async_dma_queued","async_dma_completed",
-       "async_dma_store_count","async_dma_same_count"}
+       "async_dma_store_count","async_dma_same_count",
+       "async_copy_queued","async_copy_completed",
+       "async_copy_store_count","async_copy_same_count",
+       "async_copy_masked_completed",
+       "post_async_sync_copy_stores","post_async_sync_copy_same"}
 FIELDS={"kind","seq","value","cycle","frame"}
 
 class Refused(ValueError):pass
@@ -57,7 +61,9 @@ def validate(content: bytes):
             if item["kind"]=="unai_same_store_count" and (prev_kind!="unai_store_count" or
                 item["value"]>prev_value or item["cycle"]!=0):
                 raise Refused("impossible same-value native pixel-store count")
-            if (item["kind"].startswith("gpulib_") or item["kind"].startswith("async_dma_")) and (item["cycle"]!=0 or
+            if (item["kind"].startswith("gpulib_") or item["kind"].startswith("async_dma_") or
+                item["kind"].startswith("async_copy_") or
+                item["kind"].startswith("post_async_sync_")) and (item["cycle"]!=0 or
                 item["value"]==0xffffffff):
                 raise Refused("invalid aggregate gpulib store event")
             if item["kind"]=="gp1_mmio":gp1+=1
