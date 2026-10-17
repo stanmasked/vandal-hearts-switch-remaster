@@ -135,7 +135,7 @@ def check_original_cd_runtime(upstream, compiler="cc"):
         tools_dir = Path(__file__).resolve().parent
         build = subprocess.run(
             [compiler, "-std=gnu99", "-Wall", "-Wextra", "-Werror",
-             "-Wno-unused-parameter",
+             "-DVH_MAP02_CD_READ_PROBE", "-Wno-unused-parameter",
              "-I", str(tools_dir), str(harness),
              str(tools_dir / "map02_cd_read_probe.c"),
              str(tools_dir / "map02_capture_session.c"),
@@ -150,7 +150,8 @@ def check_original_cd_runtime(upstream, compiler="cc"):
                                   capture_output=True, text=True, timeout=30)
             if proc.returncode:
                 raise ValueError("original CdRead " + mode +
-                                 " failed: " + proc.stderr[-2000:])
+                                 " exit " + str(proc.returncode) +
+                                 ": " + proc.stderr[-2000:])
             if mode == "ok":
                 seen = json.loads(proc.stdout)
                 if (seen["lba"] != LBA or seen["sectors"] != SECTORS or
