@@ -42,6 +42,47 @@ int main(void) {
     assert(fgets(line,sizeof line,f) && strstr(line,"SECOND,129,1"));
     assert(fgetc(f)==EOF && !ferror(f));
     fclose(f);
+    /* Stage 272: test exact 25/40/50 ms boundaries in nanoseconds.
+     * The original queue CSV must still use its unchanged schema. */
+    VhAudoutQueueTelemetry q;
+    vh_audout_queue_reset(&q);
+    const uint64_t b0=UINT64_C(2000000000);
+    const uint64_t durations[]={
+        UINT64_C(24999999), UINT64_C(25000000),
+        UINT64_C(40000000), UINT64_C(50000000)
+    };
+    for(unsigned i=0;i<4;i++) {
+        const uint64_t begin=b0+(uint64_t)i*UINT64_C(100000000);
+        vh_audout_queue_record(&q,begin,begin+durations[i],1,-1,0);
+    }
+    assert(q.latency_bins[0]==1 && q.latency_bins[1]==1
+        && q.latency_bins[2]==1 && q.latency_bins[3]==1);
+    assert(q.bucket[0].latency_bins[0]==1 &&
+        q.bucket[0].latency_bins[3]==1 && q.attempts==4);
+    f=tmpfile();
+    assert(f && vh_audout_latency_write_csv(&q,f)==1);
+    assert(!fflush(f) && !fseek(f,0,SEEK_SET));
+    assert(fgets(line,sizeof line,f) &&
+        strstr(line,"lt25ms,from25to40ms,from40to50ms,ge50ms"));
+    assert(fgets(line,sizeof line,f) &&
+        strstr(line,"TOTAL,-1,4,1,1,1,1,0,50000,0,0"));
+    assert(fgets(line,sizeof line,f) &&
+        strstr(line,"SECOND,0,4,1,1,1,1,0,50000,0,0"));
+    assert(fgetc(f)==EOF && !ferror(f));
+    rewind(f);
+    assert(vh_audout_latency_verify_csv(&q,f)==0);
+    assert(!fseek(f,0,SEEK_END) && fputc('X',f)!=EOF);
+    rewind(f);
+    assert(vh_audout_latency_verify_csv(&q,f)==-1);
+    fclose(f);
+    f=tmpfile();
+    assert(f && vh_audout_queue_write_csv(&q,f)==1);
+    rewind(f);
+    assert(fgets(line,sizeof line,f) &&
+        strstr(line,"queue_ok,queue_errors,queue_min,queue_max"));
+    rewind(f);
+    assert(vh_audout_queue_verify_csv(&q,f)==0);
+    fclose(f);
     puts("bounded audout full-session telemetry PASS");
     return 0;
 }
