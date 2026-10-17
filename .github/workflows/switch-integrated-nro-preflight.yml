@@ -36,7 +36,21 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          python3 -m unittest discover -s tests -p 'test_verify_switch_integrated_nro_preflight.py' -v 2>&1 | tee preflight-regressions.log
+          python3 - <<'PY' 2>&1 | tee preflight-regressions.log
+          import sys
+          import unittest
+          suite = unittest.defaultTestLoader.discover(
+              start_dir="tests",
+              pattern="test_verify_switch_integrated_nro_preflight.py",
+          )
+          count = suite.countTestCases()
+          print(f"Discovered integrated NRO preflight tests: {count}", flush=True)
+          if count != 17:
+              print("FAIL: expected exactly 17 preflight regressions", file=sys.stderr)
+              sys.exit(2)
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          sys.exit(0 if result.wasSuccessful() else 1)
+          PY
       - name: Upload preflight test log
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
