@@ -83,6 +83,17 @@ If the GPU recorder hits its 64-record cap, the strict cross-check refuses
 to claim sufficient ordinal visibility. Neither mode proves capture
 origin, an unmodified game binary, or visual MAP02 equivalence.
 
+A **joint** audit now requires all records to belong to exactly one
+(frame, privately configured sampled Y) envelope. It rejects mixed-run
+journals, contradictory drawing-area clip windows for a primitive,
+and a primitive/row claimed both as a vertically rejected candidate
+and as an entered `dda_span`. These consistency checks are applied
+even without `--native-frame` and do not disclose the selected Y in
+the report. `single_sample_envelope_consistent=true` describes only
+internal agreement, **not** authenticated common origin or an actual
+retail MAP02 rendering. Capture each selected Y into its own empty
+private directory; do not append observations from separate sessions.
+
 The audit separately validates `dda-native-spans.jsonl` and
 `dda-rejected-edge-candidates.jsonl`; rejects malformed CRLF records,
 duplicate fields, noncanonical/saturated journals and symlinked inputs;
