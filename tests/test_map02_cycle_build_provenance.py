@@ -44,7 +44,7 @@ class CycleBuildReceiptTests(unittest.TestCase):
                   return_value=self.planned),
             patch("tools.map02_cycle_build_provenance.audit_cycle_elf",
                   return_value=self.symbols),
-            patch("tools.map02_cycle_build_provenance.verify_generated_original_font",
+            patch("tools.map02_cycle_build_provenance.verify_linked_original_font",
                   return_value={"pinned_original_krom_font_c_identical": True}),
             patch("tools.map02_cycle_build_provenance.verify_pinned_upstream",
                   return_value="b" * 64),
@@ -112,7 +112,7 @@ class CycleBuildReceiptTests(unittest.TestCase):
     def test_altered_generated_krom_c_blocks_receipt_verification(self):
         self.publish()
         with patch(
-                "tools.map02_cycle_build_provenance.verify_generated_original_font",
+                "tools.map02_cycle_build_provenance.verify_linked_original_font",
                 side_effect=ValueError("generated private font C differs")):
             with self.assertRaisesRegex(ValueError, "font C differs"):
                 self.verify()
