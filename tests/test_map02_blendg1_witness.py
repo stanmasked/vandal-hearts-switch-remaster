@@ -13,7 +13,9 @@ def pixel(step, mode, abr, semi=1):
 
 
 def witness(p):
-    return dict(stage="native_blendg1", putpixel_step=p["step"],\n                blend_fg=p["front"] | 0x8000, blend_bg=p["before"],\n                blend_result=p["after"],
+    return dict(stage="native_blendg1", putpixel_step=p["step"],
+                blend_fg=p["front"] | 0x8000, blend_bg=p["before"],
+                blend_result=p["after"],
                 **{k: p[k] for k in ("frame", "primitive_ordinal", "primitive_type", "x",
                                    "y", "accurate", "abr", "before",
                                    "front", "after")})
