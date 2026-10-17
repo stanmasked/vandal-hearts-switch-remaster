@@ -168,6 +168,7 @@ typedef struct {
     VhAudioSubmitTiming timing;
     VhAudioSceneWaits scene_waits;
     VhAudioPageLease lease;
+    unsigned timing_fault; /* sticky diagnostic error; never a transport failure */
     int initialized;
     int started;
 } NativeOutput;
@@ -244,10 +245,14 @@ static int native_submit(void *opaque,const int16_t *pcm,size_t frames) {
      * attempt retains its lease until recovery confirms audoutStop. */
     if (accepted && vh_audio_page_lease_return(&dev->lease,returned))
         return -1;
-    if (vh_audio_output_record_submit_timing(
-            &dev->timing,elapsed,armGetSystemTickFreq(),frames,accepted))
-        return -1;
-    return accepted ? 0 : -1;
+    const int timing_result=vh_audio_output_record_submit_timing(
+            &dev->timing,elapsed,armGetSystemTickFreq(),frames,accepted);
+    /* A valid returned descriptor is already consumed by the device.
+     * Timing overflow/invalid clock must NOT force a second submission.
+     * Mark telemetry invalid, then abort analysis on the producer thread
+     * without a transport recovery attempt for this delivered PCM. */
+    return vh_audio_output_transport_outcome(
+               accepted,timing_result,&dev->timing_fault);
 }
 
 /* Each report screen is deliberately short enough for a single
@@ -296,6 +301,8 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
         printf("Backend calls=%llu  failed=%llu\n",
                (unsigned long long)r->output->timing.calls,
                (unsigned long long)r->output->timing.failed_submissions);
+        printf("Timing accumulator=%s\n",
+               r->output->timing_fault ? "INVALID" : "VALID");
         printf("Peak wait=%llu us; >page calls=%llu\n",
                (unsigned long long)vh_audio_output_ticks_to_us(
                    r->output->timing.max_ticks,hz),
@@ -618,6 +625,14 @@ int main(int argc, char **argv) {
         const VhAudioSubmitTiming before_submit=output.timing;
         const int submit_result=vh_audio_output_submit_recover(
             &ops,&recovery,out_48000,count);
+        if (output.timing_fault) {
+            /* No retry here: if the service already returned the exact
+             * page, submit_result==0 correctly means delivered. The
+             * telemetry is incomplete, so fail evidence instead of
+             * calling audoutPlayBuffer again on the same PCM. */
+            result=28;
+            break;
+        }
         if (submit_result) {
             /* A terminally undelivered logical page has no PCM seam,
              * no A/B ring entry, and no returned-page joint event. */
@@ -867,8 +882,10 @@ int main(int argc, char **argv) {
         focus_events.returned_pages!=played_blocks ||
         focus_events.failed_logical_submissions!=failed_logical_pages;
     if (manual_evidence && result==0) result=23;
+    if (output.timing_fault && result==0) result=28;
     if ((focus_evidence || focus_record_errors) && result==0) result=24;
-    const unsigned verdict=(focus_evidence || focus_record_errors)
+    const unsigned verdict=(focus_evidence || focus_record_errors ||
+                            output.timing_fault)
         ? VH_AUDIO_REPORT_INVALID
         : vh_audio_report_focus_evidence(
             &focus_events,&manual_resume,run_evidence,seam_evidence,
