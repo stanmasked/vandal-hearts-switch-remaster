@@ -90,6 +90,17 @@ class TwoWordPrivateLauncherBindingTests(unittest.TestCase):
             audit_launch_two_word(
                 self.native, link, launch_receipt=self.source/"x",
                 preflight_report=self.source/"y", executable=self.source/"z")
+        parent_alias = self.native.parent / "native-parent-alias"
+        parent_alias.symlink_to(self.native.parent, target_is_directory=True)
+        self.addCleanup(parent_alias.unlink)
+        # The final directory itself is not a symlink, but an ancestor
+        # is. Lexically different paths still refer to one inode.
+        alias = parent_alias / self.native.name
+        self.assertFalse(alias.is_symlink())
+        with self.assertRaisesRegex(ValueError, "directories must differ"):
+            audit_launch_two_word(
+                self.native, alias, launch_receipt=self.source/"x",
+                preflight_report=self.source/"y", executable=self.source/"z")
 
     def test_private_source_ft4_or_gpu_mutation_still_fails_validation(self):
         source_log = self.source / "gpu-events.jsonl"
