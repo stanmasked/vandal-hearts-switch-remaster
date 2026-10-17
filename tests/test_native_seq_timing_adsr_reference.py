@@ -19,8 +19,9 @@ from tools.inspect_ps1_seq import parse_seq
 from tools.schedule_ps1_seq_blocks import schedule_seq_audio_blocks
 from tools.simulate_spu_voice import SpuEnvelope, SpuSampleCursor
 from test_schedule_ps1_seq_blocks import (
-    changed_tempo_song, repeating_song, stepped_song,
+    changed_tempo_song, repeating_song, stepped_song, vlq,
 )
+from test_seq_to_chord_schedule import hdr
 
 PHASE_CODES = {"off": 0, "attack": 1, "decay": 2, "sustain": 3, "release": 4}
 VOICE_CASES = {
@@ -41,6 +42,44 @@ VOICE_CASES = {
     "immediate_key_off": (0x7E0F, 0x0000, 0x0800, 0, 56, 32, 0),
     "short_key_off": (0x000F, 0x0020, 0x0800, 0, 56, 32, 1),
 }
+
+
+def rapid_tempo_note_boundary_song():
+    """All timing data is synthetic; FF51 and note edges straddle nearby
+    ticks (10/11/12 etc.). Loop seams retain tempo but reset tick budget.
+    Deliberately mix 250/300/400/500 ms quarters across repeating cycles.
+    """
+    events = [
+        (0, bytes([0x90, 60, 100])),
+        (10, bytes([0xFF, 0x51, 0x03, 0xD0, 0x90])),
+        (1, bytes([0x80, 60, 0])),
+        (1, bytes([0x90, 60, 110])),
+        (10, bytes([0xFF, 0x51, 0x04, 0x93, 0xE0])),
+        (1, bytes([0x80, 60, 0])),
+        (1, bytes([0x90, 60, 100])),
+        (8, bytes([0xFF, 0x51, 0x07, 0xA1, 0x20])),
+        (1, bytes([0x80, 60, 0])),
+        (1, bytes([0x90, 60, 110])),
+        (12, bytes([0xFF, 0x51, 0x06, 0x1A, 0x80])),
+        (1, bytes([0x80, 60, 0])),
+        (1, bytes([0x90, 60, 100])),
+        (10, bytes([0xFF, 0x51, 0x03, 0xD0, 0x90])),
+        (1, bytes([0x80, 60, 0])),
+        (1, bytes([0x90, 60, 110])),
+        (8, bytes([0xFF, 0x51, 0x07, 0xA1, 0x20])),
+        (1, bytes([0x80, 60, 0])),
+        (1, bytes([0x90, 60, 100])),
+        (10, bytes([0xFF, 0x51, 0x04, 0x93, 0xE0])),
+        (1, bytes([0x80, 60, 0])),
+        (1, bytes([0x90, 60, 110])),
+        (12, bytes([0xFF, 0x51, 0x06, 0x1A, 0x80])),
+        (1, bytes([0x80, 60, 0])),
+        (1, bytes([0x90, 60, 100])),
+        (16, bytes([0xFF, 0x51, 0x07, 0xA1, 0x20])),
+        (1, bytes([0x80, 60, 0])),
+        (1, bytes([0xFF, 0x2F])),
+    ]
+    return hdr() + b"".join(vlq(delta) + payload for delta, payload in events)
 
 
 class NativeSeqAdsrDifferentialTests(unittest.TestCase):
@@ -175,6 +214,7 @@ class NativeSeqAdsrDifferentialTests(unittest.TestCase):
         for title, generated in (
             ("repeated", repeating_song()),
             ("changing_tempo", changed_tempo_song()),
+            ("rapid_tempo_note_edges", rapid_tempo_note_boundary_song()),
         ):
             with self.subTest(song=title), tempfile.TemporaryDirectory(
                 prefix="vh-long-seq-reference-"
@@ -231,6 +271,18 @@ class NativeSeqAdsrDifferentialTests(unittest.TestCase):
                 self.assertGreater(cycles, 100)
                 self.assertGreater(on, 100)
                 self.assertGreater(dispatched, 300)
+                if title == "rapid_tempo_note_edges":
+                    self.assertGreater(on, 500)
+                    tempo_events = [
+                        item for item in expected_schedule["events"]
+                        if item["type"] == "tempo"
+                    ]
+                    self.assertGreater(len(tempo_events), 500)
+                    self.assertEqual(
+                        {item["tempo_us_per_quarter"]
+                         for item in tempo_events},
+                        {250000, 300000, 400000, 500000},
+                    )
                 self.assertEqual(cycles, expected_schedule["cycles_completed"])
 
     def test_mutated_trace_is_detectable(self):
