@@ -197,6 +197,37 @@ int main(int argc, char **argv) {
         self.assertFalse(
             (self.handoff / "gpu-local-capture-handoff.json").exists())
 
+    def test_opt_in_cycle_requires_private_empty_directory(self):
+        cycle = self.handoff.parent / "cycle-launch"
+        cycle.mkdir(mode=0o700)
+        (cycle / "old.jsonl").write_text("stale")
+        with self.assertRaisesRegex(ValueError, "folders must start empty"):
+            launch_observed_pc(
+                self.handoff, self.native, self.scoped,
+                self.binary, self.owned, upstream=self.upstream,
+                x=10, y=20, timeout=8, cycle_dir=cycle)
+        self.assertFalse((self.handoff / RECEIPT).exists())
+        (cycle / "old.jsonl").unlink()
+        cycle.chmod(0o755)
+        with self.assertRaisesRegex(ValueError, "private"):
+            launch_observed_pc(
+                self.handoff, self.native, self.scoped,
+                self.binary, self.owned, upstream=self.upstream,
+                x=10, y=20, timeout=8, cycle_dir=cycle)
+
+    def test_opt_in_cycle_cannot_accept_successful_gpu_without_cycle_receipt(self):
+        cycle = self.handoff.parent / "cycle-unobserved"
+        cycle.mkdir(mode=0o700)
+        # The legacy synthetic child deliberately does not link cycle hooks.
+        # Even when GPU verification is mocked successful, this cannot
+        # become a new same-process MAP02 cycle success.
+        with self.assertRaisesRegex(ValueError, "exactly one receipt"):
+            launch_observed_pc(
+                self.handoff, self.native, self.scoped,
+                self.binary, self.owned, upstream=self.upstream,
+                x=10, y=20, timeout=8, cycle_dir=cycle)
+        self.assertFalse((self.handoff / RECEIPT).exists())
+
     def test_refuses_nonempty_capture_directory_before_exec(self):
         (self.native / "previous-run").write_text("no")
         with self.assertRaisesRegex(ValueError, "must start empty"):
