@@ -42,16 +42,32 @@ def inspect_binary(path, *, nm="nm"):
         size = before["executable_bytes"]
         if size > 1024 * 1024 * 1024:
             raise ValueError("private executable exceeds limit")
-        payload = bytearray()
-        while len(payload) < size:
-            data = os.read(fd, min(1024 * 1024, size - len(payload)))
+        original_stat = os.fstat(fd)
+        identity_keys = ("st_dev", "st_ino", "st_size",
+                         "st_mtime_ns", "st_ctime_ns")
+        original_identity = tuple(getattr(original_stat, k) for k in identity_keys)
+        digest = hashlib.sha256()
+        observed = set()
+        overlap = b""
+        remaining = size
+        longest = max(len(item) for item in SECOND_COORDINATE_SELECTORS)
+        while remaining:
+            data = os.read(fd, min(1024 * 1024, remaining))
             if not data:
                 raise ValueError("private ELF changed while inspecting")
-            payload.extend(data)
-        if hashlib.sha256(payload).hexdigest() != before["executable_sha256"]:
+            digest.update(data)
+            together = overlap + data
+            observed.update(item for item in SECOND_COORDINATE_SELECTORS
+                            if item in together)
+            overlap = together[-(longest - 1):]
+            remaining -= len(data)
+        if digest.hexdigest() != before["executable_sha256"]:
             raise ValueError("private ELF SHA changed while inspecting")
-        coordinate_selectors = all(item in payload for item in SECOND_COORDINATE_SELECTORS)
-        del payload
+        coordinate_selectors = len(observed) == len(SECOND_COORDINATE_SELECTORS)
+        if (tuple(getattr(os.fstat(fd), k) for k in identity_keys) != original_identity
+                or tuple(getattr(os.stat(path, follow_symlinks=False), k)
+                         for k in identity_keys) != original_identity):
+            raise ValueError("private ELF identity changed while inspecting")
         # Never invoke the executable. nm reads ELF metadata only. No shell.
         nm_path = shutil.which(nm)
         if not nm_path:
@@ -79,7 +95,9 @@ def inspect_binary(path, *, nm="nm"):
         # One more exact SHA check catches pathname replacement by the time
         # nm ran. The actual launch has its own separate pinned FD check.
         after = _executable_fingerprint(path)
-        if after != before:
+        if (after != before
+                or tuple(getattr(os.stat(path, follow_symlinks=False), k)
+                         for k in identity_keys) != original_identity):
             raise ValueError("private ELF executable changed during symbol inspection")
         return {
             "schema": "vh.map02.private-pc-elf-static-readiness.v1",
