@@ -21,17 +21,27 @@ HARNESS = r"""
 #include <string.h>
 #include "map02_scoped_blend_sink.h"
 #include "map02_scoped_blend_stage.h"
+#ifdef VH_MAP02_VRAM_EDGE_PROBE
+#include "map02_vram_edges.h"
+#endif
 
 int main(int argc, char **argv) {
     int result;
     if (argc != 3) return 2;
     vh_map02_scope_reset();
+#ifdef VH_MAP02_VRAM_EDGE_PROBE
+    vh_map02_edges_reset();
+#endif
     if (strcmp(argv[2], "unselected") == 0) {
         assert(!vh_map02_stage_private_blendg1(argv[1]));
         return 0;
     }
     assert(vh_map02_scope_begin_frame(23, 9, 10));
     assert(vh_map02_scope_begin_primitive(0, 4));
+#ifdef VH_MAP02_VRAM_EDGE_PROBE
+    assert(vh_map02_edges_begin_frame(23, 9, 10));
+    assert(vh_map02_edges_begin_primitive(0, 4, 31));
+#endif
     vh_map02_probe_begin(9, 10, 31, 0x0234, 3, 1, 1, 1);
     vh_map02_probe_blendg1(9, 10, 0x8234, 31, 0x0473, 3, 1);
     vh_map02_probe_end(9, 10, 0x0473);
@@ -43,6 +53,10 @@ int main(int argc, char **argv) {
     vh_map02_probe_end(9, 10, 0x0020); /* opaque, no BlendG1 call */
     assert(vh_map02_scope_end_primitive());
     assert(vh_map02_scope_end_frame());
+#ifdef VH_MAP02_VRAM_EDGE_PROBE
+    assert(vh_map02_edges_end_primitive(0x0020));
+    assert(vh_map02_edges_end_frame());
+#endif
     if (strncmp(argv[2], "pair-", 5) == 0)
         result = vh_map02_stage_private_pair(argv[1]);
     else
@@ -144,6 +158,39 @@ class PrivateBlendStageTests(unittest.TestCase):
         self.assertFalse((self.private /
                           "blendg1-native-events.pending.jsonl").exists())
         self.assertFalse(list(self.private.glob(".*.tmp")))
+
+    def test_private_triple_stage_and_occupied_third_destination_rollback(self):
+        # Compile the SAME C producer with independent direct VRAM edges.
+        binary = self.root / "triple-test"
+        subprocess.run([
+            "cc", "-std=c99", "-Wall", "-Wextra", "-Werror",
+            "-DVH_MAP02_VRAM_EDGE_PROBE", "-I", str(ROOT / "tools"),
+            str(self.root / "main.c"),
+            str(ROOT / "tools/map02_scoped_blend_sink.c"),
+            str(ROOT / "tools/map02_scoped_blend_stage.c"),
+            str(ROOT / "tools/map02_vram_edges.c"),
+            "-o", str(binary),
+        ], check=True, capture_output=True, text=True)
+        subprocess.run([str(binary), str(self.private), "pair-publish"],
+                       check=True, capture_output=True, text=True)
+        edges = self.private / "vram-edges-native-events.pending.jsonl"
+        edge_rows = [json.loads(x) for x in edges.read_bytes().splitlines()]
+        self.assertEqual(len(edge_rows), 1)
+        self.assertEqual(edge_rows[0]["stage"], "native_vram_edge")
+        self.assertEqual((edge_rows[0]["before"], edge_rows[0]["after"]),
+                         (31, 0x0020))
+        self.assertEqual(stat.S_IMODE(edges.stat().st_mode), 0o600)
+        self.assertFalse(list(self.private.glob(".*.tmp")))
+
+        other = self.root / "collision"
+        other.mkdir(mode=0o700)
+        (other / edges.name).write_bytes(b"existing\n")
+        subprocess.run([str(binary), str(other), "pair-refuse"],
+                       check=True, capture_output=True, text=True)
+        self.assertEqual((other / edges.name).read_bytes(), b"existing\n")
+        self.assertFalse((other / "putpixel-native-events.pending.jsonl").exists())
+        self.assertFalse((other / "blendg1-native-events.pending.jsonl").exists())
+        self.assertFalse(list(other.glob(".*.tmp")))
 
     def test_unselected_incomplete_and_nonprivate_directories(self):
         self.run_stage("unselected")
