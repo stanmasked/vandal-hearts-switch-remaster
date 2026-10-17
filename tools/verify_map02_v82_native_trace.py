@@ -7,7 +7,7 @@ import argparse
 import json
 from pathlib import Path
 
-KINDS={"vblank","gp1_mmio","gpu_dma2_start","gp0_unai_handled","unai_sample_delta"}
+KINDS={"vblank","gp1_mmio","gpu_dma2_start","gp0_unai_handled","unai_sample_delta","unai_store_count","unai_same_store_count"}
 FIELDS={"kind","seq","value","cycle","frame"}
 
 class Refused(ValueError):pass
@@ -23,6 +23,7 @@ def validate(content: bytes):
     gp1=0
     prev_seq=0
     prev_kind=None
+    prev_value=None
     result=[]
     for index,line in enumerate(strings,1):
         try:
@@ -43,6 +44,12 @@ def validate(content: bytes):
             edges.append(item)
         else:
             if item["frame"]!=0:raise Refused("GPU submission asserted frame identity")
+            if item["kind"]=="unai_store_count" and (prev_kind!="unai_sample_delta" or
+                item["value"]==0xffffffff or item["cycle"]!=0):
+                raise Refused("bad actual Unai 16-bit store count")
+            if item["kind"]=="unai_same_store_count" and (prev_kind!="unai_store_count" or
+                item["value"]>prev_value or item["cycle"]!=0):
+                raise Refused("impossible same-value native pixel-store count")
             if item["kind"]=="gp1_mmio":gp1+=1
             if item["kind"]=="unai_sample_delta":
                 if prev_kind!="gp0_unai_handled" or item["cycle"]!=0 or item["value"]>24:
@@ -61,6 +68,7 @@ def validate(content: bytes):
                 raise Refused("DMA2 start outside PSX RAM")
         result.append(item)
         prev_kind=item["kind"]
+        prev_value=item["value"]
     if len(edges)!=4 or gp1<2:raise Refused("missing VBlank or GP1 evidence")
     if result[0]["kind"]=="vblank" and result[0]["frame"]==0:
         # Frame zero is permissible; avoid conflating with unknown GP1 frames.
@@ -71,6 +79,8 @@ def validate(content: bytes):
             "gp0_unai_handled":sum(e["kind"]=="gp0_unai_handled" for e in result),
             "unai_sample_delta":sum(e["kind"]=="unai_sample_delta" for e in result),
             "sampled_pixels_changed":sum(e["value"] for e in result if e["kind"]=="unai_sample_delta"),
+            "unai_store_count_events":sum(e["kind"]=="unai_store_count" for e in result),
+            "unai_same_store_count_events":sum(e["kind"]=="unai_same_store_count" for e in result),
             "bytes":len(content),"original_retail_MAP02_verified":False,
             "HD_replacement_approved":False}
 
