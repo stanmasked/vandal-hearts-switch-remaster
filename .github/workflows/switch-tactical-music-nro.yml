@@ -10,12 +10,18 @@ on:
       - "source/game_state.h"
       - "source/platform_input.h"
       - "tests/test_vh_game_music_mailbox.c"
+      - "tools/verify_switch_integrated_nro_preflight.py"
+      - "tests/test_verify_switch_integrated_nro_preflight.py"
+      - "tools/verify_switch_audio_bundle.py"
       - "Makefile"
       - ".github/workflows/switch-tactical-music-nro.yml"
   pull_request:
     paths:
       - "source/main.c"
       - "source/vh_*"
+      - "tools/verify_switch_integrated_nro_preflight.py"
+      - "tests/test_verify_switch_integrated_nro_preflight.py"
+      - "tools/verify_switch_audio_bundle.py"
       - "Makefile"
       - ".github/workflows/switch-tactical-music-nro.yml"
   workflow_dispatch:
