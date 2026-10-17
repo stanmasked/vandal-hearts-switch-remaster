@@ -40,6 +40,8 @@ on:
       - 'tools/map02_cycle_order.c'
       - 'tools/map02_cycle_order.h'
       - 'tests/test_map02_cycle_order.py'
+      - 'tools/verify_map02_cycle_cd_gpu_join.py'
+      - 'tests/test_verify_map02_cycle_cd_gpu_join.py'
       - 'docs/MAP02_SINGLE_PROCESS_CYCLE_ORDER.md'
       - 'tools/map02_cd_read_probe.c'
       - 'tools/map02_cd_read_probe.h'
@@ -117,6 +119,8 @@ on:
       - 'tools/map02_cycle_order.c'
       - 'tools/map02_cycle_order.h'
       - 'tests/test_map02_cycle_order.py'
+      - 'tools/verify_map02_cycle_cd_gpu_join.py'
+      - 'tests/test_verify_map02_cycle_cd_gpu_join.py'
       - 'docs/MAP02_SINGLE_PROCESS_CYCLE_ORDER.md'
       - 'tools/map02_cd_read_probe.c'
       - 'tools/map02_cd_read_probe.h'
@@ -198,6 +202,7 @@ jobs:
             tests.test_check_map02_owned_disc_extent \
             tests.test_instrument_map02_cd_read \
             tests.test_map02_cycle_order \
+            tests.test_verify_map02_cycle_cd_gpu_join \
             tests.test_verify_map02_original_cd_read \
             tests.test_map02_original_cd_stage \
             tests.test_publish_map02_cd_bound_witness
