@@ -230,10 +230,18 @@ payload for these bounded transfers. For dimensions outside that range
 the recorder deliberately omits the upload even when the product
 `width × height` is small (e.g. 129×1). Such an omitted payload is
 **unobserved, not empty/verified**. An invented payload filename outside
-those limits is rejected as well. A successful private receipt replay
-detects even equal-length modifications
-to a saved upload payload while GPU event JSON and VRAM snapshots remain
-unchanged. These fields carry no game bytes or original image pixels.
+those limits is rejected as well. More importantly, the verifier now
+reconstructs the **exact source-pinned 16-bit LoadImage copy** against
+the post-operation native VRAM snapshot for every observed bounded
+upload (including negative-XY and edge clipping). It checks the entire
+1-MiB post-VRAM snapshot, so an altered word *outside* the rectangle is
+also rejected. `load_pairs_with_verified_vram_effect` counts operations
+where both payload bytes and their clipped BGR555 result were verified.
+This is stronger than matching two independent hashes; it still does
+not authenticate game origin or prove that omitted large uploads had
+a correct VRAM effect. A successful private receipt replay rejects an
+equal-length modified upload even when its JSON and VRAM evidence stays
+unchanged. Only hashes and counts, not game bytes or pixels, are reported.
 
 **Important:** Hash agreement identifies the bytes inspected before and
 after the run, but cannot prove that those bytes were actually executed,
