@@ -145,6 +145,8 @@ class IndependentJournalAuditTests(unittest.TestCase):
             self.assertTrue(binding["verified"])
             self.assertEqual(binding["frame"], 3)
             self.assertEqual(binding["native_gpu_pairs_verified"], 2)
+            self.assertEqual(binding["draw_boundary_vram_checks"], 1)
+            self.assertEqual(binding["draw_boundary_gpu_state_checks"], 1)
             zero_sha = hashlib.sha256(bytes(VRAM_BYTES)).hexdigest()
             self.assertEqual(
                 binding["vram_snapshot_sha256_list_sha256"],
