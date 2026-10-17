@@ -91,12 +91,15 @@ def apply(root: Path):
     proof=apply_v119(root)
     frontend=root.resolve()/"frontend/main.c"
     source=frontend.read_text()
+    # The old VH82 export status *also* measures vh80_count() and is
+    # printed after v119 metrics. Do not disturb that published count:
+    # append fixture only before the final v78 success line.
     anchor=(
-        '            if(vh83_renderer_smoke)\n'
-        '                SysPrintf("VH83_UNAI_DISPATCH_PASS handled=%u\\n",observed_unai);'
+        'SysPrintf("VH78_VBLANK_VRAM_PASS vblanks=4 phases=4 samples=2380 '
+        'gpu_fifo_reset_kept_state=1 gpu_full_reset_cleared_state=1\\n");'
     )
     source=once(source,anchor,FIXTURE+anchor,
-                "additional native GP0 sampled-state return after original export")
+                "native GP0 return only after canonical journal AND original export status")
     frontend.write_text(source)
     return dict(proof,
         five_real_host_submitted_gp0_rectangles_executed_inside_pinned_unai=True,
