@@ -34,17 +34,23 @@ class PrivateFullPcBuildTests(unittest.TestCase):
                   return_value=self.bundle / "map02_cycle.mk"),
             patch("tools.build_map02_cycle_pc_local.audit_cycle_elf",
                   return_value={"required_symbols_present": 19}),
+            patch("tools.check_map02_private_pc_inputs.verify_private_pc_inputs",
+                  return_value={
+                      "private_build_inputs_binding_sha256": "9" * 64,
+                      "original_map02_rendering_proven": False}),
         ]
         self.active = [p.start() for p in self.patches]
         for p in self.patches:
             self.addCleanup(p.stop)
 
-    def build_fake(self, command, *, cwd, capture_output, text, timeout, check):
+    def build_fake(self, command, *, cwd, env, capture_output, text, timeout, check):
         self.assertEqual(cwd, self.pc)
         self.assertEqual(command[1], "-j1")
         self.assertIn("NO_HDVIDEO=1", command)
         self.assertIn("NO_WEBP=1", command)
         self.assertIn("BUILD_DIR=build-map02-cycle", command)
+        self.assertNotIn("VH_ALLOW_UNVERIFIED_EXE", env)
+        self.assertNotIn("VH_KROM_SOURCE", env)
         self.exe.parent.mkdir(parents=True, exist_ok=True)
         self.exe.write_bytes(b"synthetic; not an ELF")
         self.exe.chmod(0o700)
@@ -61,6 +67,7 @@ class PrivateFullPcBuildTests(unittest.TestCase):
         self.assertFalse(result["hd_substitution_enabled"])
         self.assertEqual(result["required_original_cycle_and_gpu_symbols"], 19)
         self.assertEqual(len(result["pc_executable_sha256"]), 64)
+        self.assertEqual(result["private_retail_inputs_binding_sha256"], "9" * 64)
 
     def test_optional_private_build_receipt_emitted_only_after_elf_audit(self):
         report_dir = self.upstream.parent / "build-receipt"
@@ -112,6 +119,16 @@ class PrivateFullPcBuildTests(unittest.TestCase):
         with patch("tools.build_map02_cycle_pc_local.subprocess.run",
                    side_effect=self.build_fake):
             with self.assertRaisesRegex(ValueError, "DrawOTag"):
+                build_full_pc(self.upstream, self.bundle)
+
+    def test_retail_input_changed_during_link_rejects_private_build(self):
+        with patch("tools.check_map02_private_pc_inputs.verify_private_pc_inputs",
+                   side_effect=[
+                       {"private_build_inputs_binding_sha256": "9" * 64},
+                       {"private_build_inputs_binding_sha256": "8" * 64},
+                   ]), patch("tools.build_map02_cycle_pc_local.subprocess.run",
+                             side_effect=self.build_fake):
+            with self.assertRaisesRegex(ValueError, "changed during PC build"):
                 build_full_pc(self.upstream, self.bundle)
 
     def test_bad_time_limits_and_changed_bundle_rejected_before_make(self):
