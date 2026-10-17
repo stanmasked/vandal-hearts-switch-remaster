@@ -250,6 +250,7 @@ jobs:
           grep -F 'VH83_UNAI_DISPATCH_PASS handled=' proof/private/v104-runtime.log
           grep -F 'VH84_UNAI_SAMPLES_PASS comparisons=' proof/private/v104-runtime.log
           grep -F 'VH85_UNAI_STORES_PASS attempts=' proof/private/v104-runtime.log
+          grep -F 'VH115_SAMPLE_IDENTITY_PASS handlers=' proof/private/v104-runtime.log
           grep -F 'VH86_GPULIB_PASS mips_a0_stores=' proof/private/v104-runtime.log
           grep -F 'VH87_GPULIB_PASS overlap_stores=' proof/private/v104-runtime.log
           grep -F 'VH88_ASYNC_PASS queued=' proof/private/v104-runtime.log
