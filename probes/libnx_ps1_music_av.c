@@ -20,9 +20,17 @@
 #include "vh_native_spu.h"
 
 #if (defined(VH_AUDIO_GUEST_ZL_AUTOTEST) && defined(VH_AUDIO_GUEST_ZR_AUTOTEST)) || \
-    (defined(VH_AUDIO_GUEST_ZL_AUTOTEST) && defined(VH_AUDIO_GUEST_RESUME_AUTOTEST)) || \
-    (defined(VH_AUDIO_GUEST_ZR_AUTOTEST) && defined(VH_AUDIO_GUEST_RESUME_AUTOTEST))
+    (defined(VH_AUDIO_GUEST_ZL_AUTOTEST) && (defined(VH_AUDIO_GUEST_RESUME_AUTOTEST) || defined(VH_AUDIO_GUEST_RESUME_RETRY_AUTOTEST))) || \
+    (defined(VH_AUDIO_GUEST_ZR_AUTOTEST) && (defined(VH_AUDIO_GUEST_RESUME_AUTOTEST) || defined(VH_AUDIO_GUEST_RESUME_RETRY_AUTOTEST))) || \
+    (defined(VH_AUDIO_GUEST_RESUME_AUTOTEST) && defined(VH_AUDIO_GUEST_RESUME_RETRY_AUTOTEST))
 #error Only one guest transport experiment may be enabled
+#endif
+#ifdef VH_AUDIO_GUEST_RESUME_RETRY_AUTOTEST
+#define VH_GUEST_RESUME_EXPECT_RESTARTS 2u
+#define VH_GUEST_RESUME_EXPECT_FAILURES 1u
+#else
+#define VH_GUEST_RESUME_EXPECT_RESTARTS 1u
+#define VH_GUEST_RESUME_EXPECT_FAILURES 0u
 #endif
 
 #define WIDTH 1280
@@ -81,7 +89,7 @@ static uint64_t guest_zl_pcm_fingerprint(const int16_t *pcm,size_t frames) {
     return hash;
 }
 #endif
-#ifdef VH_AUDIO_GUEST_RESUME_AUTOTEST
+#if defined(VH_AUDIO_GUEST_RESUME_AUTOTEST) || defined(VH_AUDIO_GUEST_RESUME_RETRY_AUTOTEST)
 /* CI-only manual-equivalent X/Y exercise; NEVER a real HOME event.
  * State: 0 pending, 1 quick resumed, 2 next PCM returned,
  * 3 reopen resumed, 4 post-reopen PCM returned, -1 contradiction. */
@@ -199,7 +207,7 @@ typedef struct {
     VhAudioPageLease lease;
     VhAudioTransportTimingHealth transport_health;
 #if defined(VH_AUDIO_GUEST_ZL_AUTOTEST) || defined(VH_AUDIO_GUEST_ZR_AUTOTEST) || \
-    defined(VH_AUDIO_GUEST_RESUME_AUTOTEST)
+    (defined(VH_AUDIO_GUEST_RESUME_AUTOTEST) || defined(VH_AUDIO_GUEST_RESUME_RETRY_AUTOTEST))
     /* Count ACTUAL service entries independently of timing records:
      * a deliberate bad clock leaves timing.calls unchanged even though
      * audoutPlayBuffer physically ran and returned the descriptor. */
@@ -210,6 +218,10 @@ typedef struct {
 #endif
 #ifdef VH_AUDIO_GUEST_ZL_AUTOTEST
     VhAudioTimingFaultInjection timing_injection;
+#endif
+#ifdef VH_AUDIO_GUEST_RESUME_RETRY_AUTOTEST
+    /* One wrapper-level open rejection before audoutInitialize. */
+    unsigned fail_next_open, failed_open_injections;
 #endif
     int initialized;
     int started;
@@ -229,8 +241,16 @@ static void native_close(void *opaque) {
 }
 static int native_open(void *opaque) {
     NativeOutput *dev=(NativeOutput *)opaque;
-    if (dev->initialized || !vh_audio_page_lease_ready(&dev->lease) ||
-        R_FAILED(audoutInitialize())) return -1;
+    if (dev->initialized || !vh_audio_page_lease_ready(&dev->lease))
+        return -1;
+#ifdef VH_AUDIO_GUEST_RESUME_RETRY_AUTOTEST
+    if (dev->fail_next_open) {
+        dev->fail_next_open=0u;
+        ++dev->failed_open_injections;
+        return -1; /* synthetic failure; no real audoutInitialize */
+    }
+#endif
+    if (R_FAILED(audoutInitialize())) return -1;
     dev->initialized=1;
     if (audoutGetSampleRate()!=VH_NATIVE_AUDOUT_RATE ||
         audoutGetChannelCount()!=2 ||
@@ -291,7 +311,7 @@ static int native_submit(void *opaque,const int16_t *pcm,size_t frames) {
      */
     const uint64_t start_ticks=armGetSystemTick();
 #if defined(VH_AUDIO_GUEST_ZL_AUTOTEST) || defined(VH_AUDIO_GUEST_ZR_AUTOTEST) || \
-    defined(VH_AUDIO_GUEST_RESUME_AUTOTEST)
+    (defined(VH_AUDIO_GUEST_RESUME_AUTOTEST) || defined(VH_AUDIO_GUEST_RESUME_RETRY_AUTOTEST))
     /* Instrument the actual guest libnx boundary, NOT our logical
      * submit wrapper. The pre-service ZR rejection never gets here. */
     if (dev->service_calls==UINT64_MAX) return -1;
@@ -324,7 +344,7 @@ static void audio_worker(void *unused) {
     (void)unused;
     unsigned rendered_blocks=0, fixture_b=0;
     while (!atomic_load(&audio_stop)) {
-#ifdef VH_AUDIO_GUEST_RESUME_AUTOTEST
+#if defined(VH_AUDIO_GUEST_RESUME_AUTOTEST) || defined(VH_AUDIO_GUEST_RESUME_RETRY_AUTOTEST)
         /* Run X-equivalent stop/start after exactly 16 real returned
          * buffers; later exercise Y-equivalent stop/close/open/start at
          * 32 returns. No controller or HOME event is fabricated. */
@@ -353,6 +373,10 @@ static void audio_worker(void *unused) {
                 !rec_before.submit_failures &&
                 !rec_before.restart_attempts;
             int action=-1;
+#ifdef VH_AUDIO_GUEST_RESUME_RETRY_AUTOTEST
+            if(prepared && reopen_trial && !native_output.failed_open_injections)
+                native_output.fail_next_open=1u;
+#endif
             if(prepared) {
                 if(quick_trial) {
                     if(!native_stop(&native_output))
@@ -369,10 +393,16 @@ static void audio_worker(void *unused) {
                  output_recovery.submit_failures==rec_before.submit_failures &&
                  output_recovery.restart_attempts==rec_before.restart_attempts &&
                  output_recovery.recoveries==rec_before.recoveries &&
-                 output_recovery.resume_restarts==rec_before.resume_restarts+1u &&
+                 output_recovery.resume_restarts==
+                     rec_before.resume_restarts+VH_GUEST_RESUME_EXPECT_RESTARTS &&
                  output_recovery.resume_recoveries==rec_before.resume_recoveries+1u &&
-                 output_recovery.resume_failures==rec_before.resume_failures);
+                 output_recovery.resume_failures==
+                     rec_before.resume_failures+VH_GUEST_RESUME_EXPECT_FAILURES);
             const int valid=prepared && action==0 && counters_ok &&
+#ifdef VH_AUDIO_GUEST_RESUME_RETRY_AUTOTEST
+                (!reopen_trial || (native_output.failed_open_injections==1u &&
+                                   native_output.fail_next_open==0u)) &&
+#endif
                 native_output.initialized && native_output.started &&
                 vh_audio_page_lease_ready(&native_output.lease) &&
                 native_output.service_calls==service_before &&
@@ -602,7 +632,7 @@ static void audio_worker(void *unused) {
             break;
         }
         atomic_fetch_add(&audout_buffers_completed, 1u);
-#ifdef VH_AUDIO_GUEST_RESUME_AUTOTEST
+#if defined(VH_AUDIO_GUEST_RESUME_AUTOTEST) || defined(VH_AUDIO_GUEST_RESUME_RETRY_AUTOTEST)
         /* Mark each action verified only AFTER the next real returned
          * PCM descriptor; a successful stop/start alone is insufficient. */
         if(rendered_blocks==16u &&
@@ -612,9 +642,12 @@ static void audio_worker(void *unused) {
         if(rendered_blocks==32u &&
            atomic_load(&guest_resume_witness)==3 &&
            output_recovery.pages_submitted==33u &&
-           output_recovery.resume_restarts==1u &&
+           output_recovery.resume_restarts==VH_GUEST_RESUME_EXPECT_RESTARTS &&
            output_recovery.resume_recoveries==1u &&
-           output_recovery.resume_failures==0u &&
+           output_recovery.resume_failures==VH_GUEST_RESUME_EXPECT_FAILURES &&
+#ifdef VH_AUDIO_GUEST_RESUME_RETRY_AUTOTEST
+           native_output.failed_open_injections==1u &&
+#endif
            native_output.service_calls==33u)
             atomic_store(&guest_resume_witness,4);
 #endif
@@ -635,7 +668,7 @@ static int start_native_audio(void) {
     memset(&native_output.scene_waits,0,sizeof(native_output.scene_waits));
     memset(&native_output.transport_health,0,sizeof(native_output.transport_health));
 #if defined(VH_AUDIO_GUEST_ZL_AUTOTEST) || defined(VH_AUDIO_GUEST_ZR_AUTOTEST) || \
-    defined(VH_AUDIO_GUEST_RESUME_AUTOTEST)
+    (defined(VH_AUDIO_GUEST_RESUME_AUTOTEST) || defined(VH_AUDIO_GUEST_RESUME_RETRY_AUTOTEST))
     native_output.service_calls=0u;
 #endif
     Result result;
@@ -657,8 +690,12 @@ static int start_native_audio(void) {
     atomic_store(&guest_zl_witness,0);
     native_output.timing_injection=(VhAudioTimingFaultInjection){0};
 #endif
-#ifdef VH_AUDIO_GUEST_RESUME_AUTOTEST
+#if defined(VH_AUDIO_GUEST_RESUME_AUTOTEST) || defined(VH_AUDIO_GUEST_RESUME_RETRY_AUTOTEST)
     atomic_store(&guest_resume_witness,0);
+#ifdef VH_AUDIO_GUEST_RESUME_RETRY_AUTOTEST
+    native_output.fail_next_open=0u;
+    native_output.failed_open_injections=0u;
+#endif
 #endif
     result = threadCreate(&sound_thread, audio_worker, NULL, NULL,
                           16 * 1024, 0x2c, -2);
@@ -780,7 +817,7 @@ static void paint(VhCanvas *canvas, const VhGameState *state,
         ? sound_ok : source_missing;
     vh_canvas_fill_rect(canvas,1000,510,130,26,zl_color);
 #endif
-#ifdef VH_AUDIO_GUEST_RESUME_AUTOTEST
+#if defined(VH_AUDIO_GUEST_RESUME_AUTOTEST) || defined(VH_AUDIO_GUEST_RESUME_RETRY_AUTOTEST)
     /* GREEN only after BOTH serial device operations and a subsequent
      * exact PCM return after each; not a real HOME/sleep notification. */
     const int resume=atomic_load(&guest_resume_witness);
@@ -789,6 +826,14 @@ static void paint(VhCanvas *canvas, const VhGameState *state,
         atomic_load(&audout_failed_returns)==0u
         ? sound_ok : source_missing;
     vh_canvas_fill_rect(canvas,1000,555,130,26,resume_color);
+#ifdef VH_AUDIO_GUEST_RESUME_RETRY_AUTOTEST
+    /* A separate marker distinguishes this failed first open from a
+     * clean X/Y roundtrip. The normal marker is also required. */
+    const uint32_t retry_color=resume==4 && healthy &&
+        returned_buffers>=33u ? sound_ok :
+        resume<0 || !healthy ? sound_fail : source_missing;
+    vh_canvas_fill_rect(canvas,1150,555,90,26,retry_color);
+#endif
 #endif
     /* BLUE: peak sum of audout service waits on normal PCM pages.
      * LIGHT BLUE: the very first page after a synthetic SEQ switch.
