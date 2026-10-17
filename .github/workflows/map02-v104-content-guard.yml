@@ -112,6 +112,10 @@ on:
       - 'tools/apply_map02_v121_pcsx_rearmed.py'
       - 'tools/summarize_map02_v121_mips_return.py'
       - 'tests/test_map02_v121_mips_return.py'
+      - 'tools/make_map02_v122_mips_dma2_gp0_exe.py'
+      - 'tools/apply_map02_v122_pcsx_rearmed.py'
+      - 'tools/summarize_map02_v122_mips_dma2_return.py'
+      - 'tests/test_map02_v122_mips_dma2_return.py'
       - 'tools/map02_v80_native_timeline.*'
       - 'tools/map02_v81_event_jsonl.*'
       - 'tools/verify_map02_v82_native_trace.py'
@@ -187,6 +191,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v119_quintuplet_runtime.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v120_real_gp0_return.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v121_mips_return.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v122_mips_dma2_return.py' -v
       - name: Patch pinned upstream with Unai post-dispatch observer
         shell: bash
         run: |
@@ -197,7 +202,7 @@ jobs:
           git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
           git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
-          python3 -m remaster.tools.apply_map02_v121_pcsx_rearmed upstream-pcsx
+          python3 -m remaster.tools.apply_map02_v122_pcsx_rearmed upstream-pcsx
           git -C upstream-pcsx diff --check
           grep -F 'vh80_record(VH83_GP0_UNAI_HANDLED' upstream-pcsx/plugins/gpu_unai/gpulib_if.cpp
           grep -F 'VH83_UNAI_DISPATCH_PASS' upstream-pcsx/frontend/main.c
@@ -878,6 +883,42 @@ jobs:
           assert report["raw_pixel_values_and_hashes_exported"] is False
           assert report["original_retail_MAP02_verified"] is False
           Path("proof/public/v121-mips-gp0-return-summary.json").write_text(
+              json.dumps(report,sort_keys=True)+"\n")
+          PY
+      - name: Verify original MIPS-authored GPU DMA2 block transfer and native VRAM return
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum -c proof/private/native.sha256
+          mkdir -m 700 -p proof/v122-home
+          python3 -m remaster.tools.make_map02_v122_mips_dma2_gp0_exe \
+            --output proof/private/V122_SYNTHETIC.EXE
+          test "$(stat -c %s proof/private/V122_SYNTHETIC.EXE)" -eq 6144
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v122-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh122-mips-dma2-return-smoke \
+            proof/private/V122_SYNTHETIC.EXE \
+            > proof/private/v122-runtime.log 2>&1 || {
+              tail -n 90 proof/private/v122-runtime.log
+              exit 1
+            }
+          grep -F 'VH122_MIPS_DMA2_RETURN_PASS stages=6' proof/private/v122-runtime.log
+          sha256sum -c proof/private/native.sha256
+          test ! -e proof/private/V104_RENDERER_EVENTS.jsonl.tmp
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from remaster.tools.summarize_map02_v122_mips_dma2_return import summarize
+          report=summarize(Path("proof/private/v122-runtime.log").read_text())
+          assert report["native_dma2_mem_to_gpu_blocks"]==5
+          assert report["gpu_packet_words_via_dma2"]==15
+          assert report["native_unai_post_handler_samples"]==5
+          assert report["exact_return_to_four_back"]==1
+          assert report["raw_gpu_commands_and_vram_pixels_exported"] is False
+          assert report["HD_replacement_approved"] is False
+          Path("proof/public/v122-mips-dma2-return-summary.json").write_text(
               json.dumps(report,sort_keys=True)+"\n")
           PY
       - name: Publish aggregate status only, never private trace
