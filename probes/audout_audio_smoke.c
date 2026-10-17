@@ -275,7 +275,7 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
     consoleClear();
     printf("Vandal Hearts - native audout diagnostic\n");
     if (page==0u) {
-        printf("REPORT 1/3: DEVICE / SERVICE\n\n");
+        printf("REPORT 1/4: DEVICE / SERVICE\n\n");
         printf("Source: %s\n",r->user_files ? "user SD music" : "generated fixture");
         printf("Result=%d  PCM accounting=%s\n",r->result,
                r->verdict==VH_AUDIO_REPORT_FULL ? "FULL" :
@@ -299,38 +299,6 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
                vh_audio_manual_verify(r->manual)==0 ? "VALID" : "INVALID",
                r->manual->ignored_chords,r->manual->unsafe_requests,
                r->manual->state_mismatches);
-        printf("HOME bg/returns=%u/%u OnResume=%u\n",
-               r->focus->backgrounds,r->focus->returns,r->focus->resumes);
-        printf("Focus events duplicate/error=%u/%u\n",
-               r->focus->ignored_duplicates,r->focus_errors);
-        printf("First PCM after HOME=%u pending=%u merged=%u\n",
-               r->focus->first_pages_after_return,
-               r->focus->pending_return,r->focus->coalesced_returns);
-        printf("Audout returned pages observed=%u\n",
-               r->focus->returned_pages);
-        printf("HOME timed returns=%u avg/peak=%llu/%llu us\n",
-               r->focus->timed_first_pages,
-               (unsigned long long)(r->focus->timed_first_pages
-                 ? vh_audio_output_ticks_to_us(
-                     r->focus->total_page_gap_ticks,hz)/
-                     r->focus->timed_first_pages : 0u),
-               (unsigned long long)vh_audio_output_ticks_to_us(
-                     r->focus->max_page_gap_ticks,hz));
-        printf("HOME lag bins <=1/2/4/>4x: %u/%u/%u/%u\n",
-               r->focus->page_budget_bands[0],
-               r->focus->page_budget_bands[1],
-               r->focus->page_budget_bands[2],
-               r->focus->page_budget_bands[3]);
-        printf("HOME banded/timed=%u/%u (unknown excluded)\n",
-               r->focus->budgeted_first_pages,
-               r->focus->timed_first_pages);
-        printf("Undelivered submits all/pending=%u/%u\n",
-               r->focus->failed_logical_submissions,
-               r->focus->failures_while_pending);
-        printf("HOME focus notify=%s\n",
-               focus_notification_mode==1u ? "ENABLED" :
-               focus_notification_mode==2u ? "UNAVAILABLE" : "APPLET MODE");
-        printf("HOME observed, audible resume UNVERIFIED\n");
         const uint64_t rendered=r->compute->rendered_pages;
         const uint64_t total_us=vh_audio_output_ticks_to_us(
             r->compute->total_ticks,hz);
@@ -382,7 +350,7 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
                (unsigned long long)s->wait_gt_4pages);
         printf("Service delay alone is NOT an audible glitch.\n");
     } else if (page==1u) {
-        printf("REPORT 2/3: PCM SEAMS / COUNTS\n\n");
+        printf("REPORT 2/4: PCM SEAMS / COUNTS\n\n");
         printf("Seam audit=%s; pages=%llu\n",
                r->seam_evidence ? "INVALID" : "VALID",
                (unsigned long long)pcm->delivered_pages);
@@ -415,8 +383,8 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
         printf("First delivered page wait bin: %u (0..3)\n",
                pcm->first_wait_band);
         printf("PCM boundary step is NOT proof of a click.\n");
-    } else {
-        printf("REPORT 3/3: HUMAN A / NORMAL B / ALL\n\n");
+    } else if (page==2u) {
+        printf("REPORT 3/4: HUMAN A / NORMAL B / ALL\n\n");
         printf("Windows: A=%llu B=%llu all=%llu\n",
                (unsigned long long)marks->manual_marks,
                (unsigned long long)marks->control_marks,
@@ -468,6 +436,46 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
         printf("Release both A/B before the next annotation.\n");
         printf("B control is not unbiased sampling.\n");
         printf("Short taps missed; zero A != no glitches.\n");
+    } else {
+        printf("REPORT 4/4: HOME / RETURNED PCM\n\n");
+        printf("Source: %s\n",r->user_files ? "user SD music" : "generated fixture");
+        printf("Result=%d PCM accounting=%s\n",r->result,
+               r->verdict==VH_AUDIO_REPORT_FULL ? "FULL" :
+               r->verdict==VH_AUDIO_REPORT_INCOMPLETE ? "INCOMPLETE" :
+                                                       "INVALID");
+        printf("HOME bg/returns=%u/%u OnResume=%u\n",
+               r->focus->backgrounds,r->focus->returns,r->focus->resumes);
+        printf("Focus events duplicate/error=%u/%u\n",
+               r->focus->ignored_duplicates,r->focus_errors);
+        printf("First PCM after HOME=%u pending=%u merged=%u\n",
+               r->focus->first_pages_after_return,
+               r->focus->pending_return,r->focus->coalesced_returns);
+        printf("Audout returned pages observed=%u\n",
+               r->focus->returned_pages);
+        printf("HOME timed returns=%u avg/peak=%llu/%llu us\n",
+               r->focus->timed_first_pages,
+               (unsigned long long)(r->focus->timed_first_pages
+                 ? vh_audio_output_ticks_to_us(
+                     r->focus->total_page_gap_ticks,hz)/
+                     r->focus->timed_first_pages : 0u),
+               (unsigned long long)vh_audio_output_ticks_to_us(
+                     r->focus->max_page_gap_ticks,hz));
+        printf("HOME lag bins <=1/2/4/>4x: %u/%u/%u/%u\n",
+               r->focus->page_budget_bands[0],
+               r->focus->page_budget_bands[1],
+               r->focus->page_budget_bands[2],
+               r->focus->page_budget_bands[3]);
+        printf("HOME banded/timed=%u/%u (unknown excluded)\n",
+               r->focus->budgeted_first_pages,
+               r->focus->timed_first_pages);
+        printf("Undelivered submits all/pending=%u/%u\n",
+               r->focus->failed_logical_submissions,
+               r->focus->failures_while_pending);
+        printf("HOME focus notify=%s\n",
+               focus_notification_mode==1u ? "ENABLED" :
+               focus_notification_mode==2u ? "UNAVAILABLE" : "APPLET MODE");
+        printf("HOME observed, audible resume UNVERIFIED\n");
+        printf("Returned PCM does NOT prove audible sound.\n");
     }
     printf("\nLEFT/RIGHT change page; PLUS exit.\n");
     printf("No audio recorded; inspect on real Switch.\n");
