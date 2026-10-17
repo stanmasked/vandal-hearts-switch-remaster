@@ -34,6 +34,15 @@ void vh_audout_queue_record(VhAudoutQueueTelemetry *t,
         : duration<VH_AUDOUT_LT50_NS ? 2u : 3u;
     ++t->latency_bins[band];
     ++b->latency_bins[band];
+    if(duration>=VH_AUDOUT_LT40_NS) {
+        if(t->slow_count<VH_AUDOUT_SLOW_CALL_CAP) {
+            VhAudoutSlowCall *entry=&t->slow[t->slow_count++];
+            entry->attempt=t->attempts+1u;
+            entry->begin_ns=begin_ns;
+            entry->end_ns=end_ns;
+            entry->returned=returned!=0;
+        } else if(t->slow_dropped<UINT64_MAX) ++t->slow_dropped;
+    }
     ++t->attempts; ++b->attempts;
     if(returned) {++t->returns;++b->returns;}
     else {++t->failures;++b->failures;}
@@ -243,5 +252,52 @@ int vh_audout_clock_verify_csv(const VhAudoutQueueTelemetry *t,FILE *in) {
     if(!in || clock_row(expected,sizeof expected,t)<0) return -1;
     if(!fgets(line,sizeof line,in) || strcmp(line,CLOCK_HEADER)!=0 ||
        !fgets(line,sizeof line,in) || strcmp(line,expected)!=0) return -1;
+    return fgetc(in)==EOF && !ferror(in) ? 0 : -1;
+}
+
+
+/* Stage274: original queue/latency/clock formats stay byte-for-byte
+ * unchanged; exact slow-call timestamps are a fourth separate CSV. */
+static const char SLOW_HEADER[]=
+    "scope,index,attempt,begin_ns,end_ns,duration_ns,returned,"
+    "total_slow_calls,dropped_slow_calls\n";
+
+static int slow_summary(char *dst,size_t cap,const VhAudoutQueueTelemetry *t) {
+    const uint64_t total=t->latency_bins[2]+t->latency_bins[3];
+    const int n=snprintf(dst,cap,"TOTAL,-1,0,0,0,0,0,%llu,%llu\n",
+        (unsigned long long)total,(unsigned long long)t->slow_dropped);
+    return n>0 && (size_t)n<cap ? n : -1;
+}
+static int slow_row(char *dst,size_t cap,unsigned index,
+                    const VhAudoutSlowCall *entry) {
+    const int n=snprintf(dst,cap,
+        "CALL,%u,%llu,%llu,%llu,%llu,%u,0,0\n",index,
+        (unsigned long long)entry->attempt,
+        (unsigned long long)entry->begin_ns,
+        (unsigned long long)entry->end_ns,
+        (unsigned long long)(entry->end_ns-entry->begin_ns),
+        entry->returned);
+    return n>0 && (size_t)n<cap ? n : -1;
+}
+int vh_audout_slow_write_csv(const VhAudoutQueueTelemetry *t,FILE *out) {
+    char line[240];
+    if(!t || !out || slow_summary(line,sizeof line,t)<0 ||
+       fputs(SLOW_HEADER,out)==EOF || fputs(line,out)==EOF) return -1;
+    for(unsigned i=0;i<t->slow_count;i++) {
+        if(slow_row(line,sizeof line,i,&t->slow[i])<0 ||
+           fputs(line,out)==EOF) return -1;
+    }
+    return ferror(out) ? -1 : (int)t->slow_count;
+}
+int vh_audout_slow_verify_csv(const VhAudoutQueueTelemetry *t,FILE *in) {
+    char got[240],want[240];
+    if(!t || !in || !fgets(got,sizeof got,in) ||
+       strcmp(got,SLOW_HEADER)!=0 ||
+       slow_summary(want,sizeof want,t)<0 ||
+       !fgets(got,sizeof got,in) || strcmp(got,want)!=0) return -1;
+    for(unsigned i=0;i<t->slow_count;i++) {
+        if(slow_row(want,sizeof want,i,&t->slow[i])<0 ||
+           !fgets(got,sizeof got,in) || strcmp(got,want)!=0) return -1;
+    }
     return fgetc(in)==EOF && !ferror(in) ? 0 : -1;
 }
