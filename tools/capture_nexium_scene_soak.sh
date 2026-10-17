@@ -90,9 +90,14 @@ timeout --kill-after=5s 110s xvfb-run -a -s '-screen 0 1280x720x24' bash -c '
     snapshot "$state" "$i"
     sleep 3.7
   done
+  # A one-shot host Plus press may last LESS than the guest HID poll
+  # interval and be missed. Hold the real Plus key across many frames;
+  # the original optical/SD/PCM auditors still reject missing proof.
   xdotool keydown --window "$window" v
-  sleep 0.3
-  xdotool key --window "$window" m
+  sleep 0.4
+  xdotool keydown --window "$window" m
+  sleep 0.25
+  xdotool keyup --window "$window" m
   sleep 1.1
   import -window "$window" "$SOAK_DIR/soak-optical-trace.png"
   test -s "$SOAK_DIR/soak-optical-trace.png"
