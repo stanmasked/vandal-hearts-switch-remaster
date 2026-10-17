@@ -141,7 +141,7 @@ jobs:
           curl -fL --retry 3 "$asset_url" -o /tmp/vh-audout-nexium.tar.gz
           mkdir -p /tmp/vh-audout-nexium
           tar -xzf /tmp/vh-audout-nexium.tar.gz -C /tmp/vh-audout-nexium
-          emu_bin="$(find /tmp/vh-audout-nexium -type f -executable \\( -name 'nexium-gui' -o -name 'nexium' \\) -print -quit)"
+          emu_bin="$(find /tmp/vh-audout-nexium -type f -executable \( -name 'nexium-gui' -o -name 'nexium' \) -print -quit)"
           test -n "$emu_bin"
           echo "NEXIUM_BIN=$emu_bin" >> "$GITHUB_ENV"
       - name: Observe console framebuffer without claiming audible sound
