@@ -2,6 +2,7 @@
 """v81 C exporter tests; source-authored events are NOT retail capture."""
 import ctypes
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -12,7 +13,7 @@ ROOT=Path(__file__).resolve().parents[1]/"tools"
 class V81Jsonl(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cc=shutil.which("cc")
+        cc=shutil.which(os.environ.get("CC","cc"))
         if not cc: raise unittest.SkipTest("C compiler unavailable")
         cls.temp=tempfile.TemporaryDirectory()
         path=Path(cls.temp.name)/"libvh81.so"
