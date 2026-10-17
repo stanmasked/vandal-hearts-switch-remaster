@@ -17,6 +17,7 @@ on:
       - 'tools/publish_map02_vram_edges_witness.py'
       - 'tools/verify_map02_vram_edges_witness.py'
       - 'tests/test_map02_vram_edge_witness.py'
+      - 'tests/test_publish_map02_vram_edges_witness.py'
       - 'tests/test_map02_vram_edges.py'
       - 'tools/map02_scoped_blend_stage.c'
       - 'tools/map02_scoped_blend_stage.h'
@@ -53,6 +54,7 @@ on:
       - 'tools/publish_map02_vram_edges_witness.py'
       - 'tools/verify_map02_vram_edges_witness.py'
       - 'tests/test_map02_vram_edge_witness.py'
+      - 'tests/test_publish_map02_vram_edges_witness.py'
       - 'tests/test_map02_vram_edges.py'
       - 'tools/map02_scoped_blend_stage.c'
       - 'tools/map02_scoped_blend_stage.h'
@@ -102,7 +104,8 @@ jobs:
             tests.test_map02_paired_publish_chain \
             tests.test_check_map02_original_gpu_tus \
             tests.test_map02_vram_edges \
-            tests.test_map02_vram_edge_witness
+            tests.test_map02_vram_edge_witness \
+            tests.test_publish_map02_vram_edges_witness
       - name: Checkout pinned public original PC raster source
         uses: actions/checkout@v4
         with:
