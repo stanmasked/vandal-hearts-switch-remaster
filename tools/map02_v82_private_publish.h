@@ -15,6 +15,8 @@ unsigned int vh101_reopened_directory_syncs(void);
 /* Number of successful rooted-directory identity checks and publications. */
 unsigned int vh102_parent_identity_checks(void);
 unsigned int vh102_anchored_publishes(void);
+/* Successful parent-path component walks rejecting symlinks at every level. */
+unsigned int vh103_safe_parent_walks(void);
 #ifdef VH100_FAULT_TEST
 /* Test-only fault gates at each post-link publish durability boundary. */
 void vh100_test_fail_at(int phase);
@@ -25,6 +27,10 @@ void vh101_test_fail_at(int phase);
  * Never compiled in the real pinned PCSX runtime. */
 int vh102_test_parent_redirect(const char *parent,const char *moved,
                                const char *target,int phase);
+/* Isolated native deterministic identical-byte final-inode replacement at
+ * (1) between fstatat and openat or (2) between readback and final fstatat. */
+int vh103_test_replace_final(const char *original,const char *replacement,
+                             const char *backup,int phase);
 #endif
 /* An existing private file must be immutable. Only a DISTINCT unused path
  * may receive a recovered observer lifetime; never rename/replace old. */
