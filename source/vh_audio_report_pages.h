@@ -42,6 +42,65 @@ static inline int vh_audio_manual_verify(const VhAudioManualResume *m) {
            m->reopen_ok==m->reopen_attempts ? 0 : -1;
 }
 
+#include <limits.h>
+
+
+/* Platform-independent applet lifecycle observer. It records only event
+ * order, NOT successful audio resume or sound. The applet hook may call
+ * this synchronously while appletMainLoop handles system messages.
+ * No PCM or audout service action is permitted in the callback. */
+typedef struct {
+    unsigned backgrounds, returns, resumes, ignored_duplicates;
+    unsigned in_background;
+} VhAudioAppletEvents;
+
+#define VH_AUDIO_APPLET_BACKGROUND 1u
+#define VH_AUDIO_APPLET_FOREGROUND 2u
+#define VH_AUDIO_APPLET_RESUME 3u
+
+/* Atomic on invalid enum/counter overflow. Ignore duplicate focus
+ * notifications; a return counts only after a recorded background.
+ * OnResume is a separate system message, not an assertion of recovery. */
+static inline int vh_audio_applet_record(VhAudioAppletEvents *s,
+                                         unsigned event) {
+    if(!s) return -1;
+    if(event==VH_AUDIO_APPLET_BACKGROUND) {
+        if(s->in_background) {
+            if(s->ignored_duplicates==UINT_MAX) return -1;
+            ++s->ignored_duplicates;
+            return 0;
+        }
+        if(s->backgrounds==UINT_MAX) return -1;
+        ++s->backgrounds;
+        s->in_background=1u;
+        return 0;
+    }
+    if(event==VH_AUDIO_APPLET_FOREGROUND) {
+        if(!s->in_background) {
+            if(s->ignored_duplicates==UINT_MAX) return -1;
+            ++s->ignored_duplicates;
+            return 0;
+        }
+        if(s->returns==UINT_MAX) return -1;
+        ++s->returns;
+        s->in_background=0u;
+        return 0;
+    }
+    if(event==VH_AUDIO_APPLET_RESUME) {
+        if(s->resumes==UINT_MAX) return -1;
+        ++s->resumes;
+        return 0;
+    }
+    return -1;
+}
+
+/* Strong internal accounting, never a hardware-audio PASS. */
+static inline int vh_audio_applet_verify(const VhAudioAppletEvents *s) {
+    return s && s->in_background<=1u &&
+           s->returns<=s->backgrounds &&
+           s->backgrounds-s->returns==s->in_background ? 0 : -1;
+}
+
 #define VH_AUDIO_REPORT_PAGE_COUNT 3u
 #define VH_AUDIO_REPORT_PREV 1u
 #define VH_AUDIO_REPORT_NEXT 2u
