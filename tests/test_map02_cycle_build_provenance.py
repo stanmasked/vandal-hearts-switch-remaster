@@ -74,6 +74,19 @@ class CycleBuildReceiptTests(unittest.TestCase):
         return verify_build_receipt(self.receipt_dir, self.binary,
                                     self.upstream, self.bundle)
 
+    def test_unstable_elf_digest_blocks_receipt_creation_and_verification(self):
+        with patch("tools.map02_cycle_build_provenance.stable_owned_elf_sha256",
+                   side_effect=ValueError("private ELF digest input changed during hashing")):
+            with self.assertRaisesRegex(ValueError, "changed during hashing"):
+                self.publish()
+        self.assertEqual(list(self.receipt_dir.iterdir()), [])
+
+        self.publish()
+        with patch("tools.map02_cycle_build_provenance.stable_owned_elf_sha256",
+                   side_effect=ValueError("private ELF digest input changed during hashing")):
+            with self.assertRaisesRegex(ValueError, "changed during hashing"):
+                self.verify()
+
     def test_exact_local_build_bytes_source_and_make_plan_join(self):
         created = self.publish()
         self.assertFalse(created["retail_gameplay_executed"])
