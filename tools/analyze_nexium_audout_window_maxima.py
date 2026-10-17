@@ -44,7 +44,7 @@ def individual_run(archive: Path) -> dict:
     parse_telemetry(csv_bytes)
     rows = list(csv.DictReader(io.StringIO(csv_bytes.decode("ascii"), newline=""),
                                strict=True))
-    if not rows or rows[0].keys() != dict.fromkeys(HEADER).keys():
+    if not rows or list(rows[0]) != HEADER:
         raise RepeatabilityError("unexpected canonical CSV column order")
     maxima = []
     windows = []
