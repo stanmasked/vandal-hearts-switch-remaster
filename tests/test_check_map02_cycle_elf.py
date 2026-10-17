@@ -62,6 +62,16 @@ class OriginalCycleElfAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "lacks required symbol"):
             audit_cycle_elf(simple)
 
+    def test_shared_library_cannot_impersonate_executable(self):
+        library = self.root / "lib-symbols.so"
+        source = self.root / "fixture.c"
+        subprocess.run(
+            ["cc", "-shared", "-fPIC", str(source), "-o", str(library)],
+            check=True, capture_output=True, text=True, timeout=30)
+        library.chmod(0o700)
+        with self.assertRaisesRegex(ValueError, "no executable entry point"):
+            audit_cycle_elf(library)
+
     def test_missing_even_one_required_original_hook_fails(self):
         without = self.root / "without-cd"
         source = self.root / "without-cd.c"
