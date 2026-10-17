@@ -59,6 +59,28 @@ int vh81_format_jsonl(char *output,size_t capacity) {
         else if(e->kind==VH90_SYNC_A0) kind="mixed_sync_a0_store_count";
         else if(e->kind==VH90_SYNC_COPY) kind="mixed_sync_copy_store_count";
         else if(e->kind==VH90_SYNC_SAME) kind="mixed_sync_copy_same_count";
+        else if(e->kind==VH91_R1_A0_QUEUED) kind="cycle1_a0_queued";
+        else if(e->kind==VH91_R2_A0_QUEUED) kind="cycle2_a0_queued";
+        else if(e->kind==VH91_R1_A0_DONE) kind="cycle1_a0_done";
+        else if(e->kind==VH91_R2_A0_DONE) kind="cycle2_a0_done";
+        else if(e->kind==VH91_R1_A0_STORES) kind="cycle1_a0_stores";
+        else if(e->kind==VH91_R2_A0_STORES) kind="cycle2_a0_stores";
+        else if(e->kind==VH91_R1_COPY_QUEUED) kind="cycle1_copy_queued";
+        else if(e->kind==VH91_R2_COPY_QUEUED) kind="cycle2_copy_queued";
+        else if(e->kind==VH91_R1_COPY_DONE) kind="cycle1_copy_done";
+        else if(e->kind==VH91_R2_COPY_DONE) kind="cycle2_copy_done";
+        else if(e->kind==VH91_R1_COPY_STORES) kind="cycle1_copy_stores";
+        else if(e->kind==VH91_R2_COPY_STORES) kind="cycle2_copy_stores";
+        else if(e->kind==VH91_R1_COPY_SAME) kind="cycle1_copy_same";
+        else if(e->kind==VH91_R2_COPY_SAME) kind="cycle2_copy_same";
+        else if(e->kind==VH91_R1_MASKED_COPY) kind="cycle1_masked_copy";
+        else if(e->kind==VH91_R2_MASKED_COPY) kind="cycle2_masked_copy";
+        else if(e->kind==VH91_R1_SYNC_A0) kind="cycle1_sync_a0";
+        else if(e->kind==VH91_R2_SYNC_A0) kind="cycle2_sync_a0";
+        else if(e->kind==VH91_R1_SYNC_COPY) kind="cycle1_sync_copy";
+        else if(e->kind==VH91_R2_SYNC_COPY) kind="cycle2_sync_copy";
+        else if(e->kind==VH91_R1_SYNC_SAME) kind="cycle1_sync_same";
+        else if(e->kind==VH91_R2_SYNC_SAME) kind="cycle2_sync_same";
         else return -1;
         if(used>=capacity) return -1;
         /* GPU DMA2 is an address, NOT an executed GP0 command. */
