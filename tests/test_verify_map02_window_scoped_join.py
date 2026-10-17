@@ -98,7 +98,10 @@ class WindowScopedJoinTests(unittest.TestCase):
     def test_source_claim_is_optional_but_requires_verified_sha_witness(self):
         with patch(
             "tools.verify_map02_window_scoped_join.verify_published_window_source_witness",
-            return_value={"native_window_file_tree_bound": True},
+            return_value={
+                "native_window_file_tree_bound": True,
+                "window_source_witness_manifest_sha256": "a" * 64,
+            },
         ) as verified:
             result = self.check(source_dir=Path("/private/source"))
             verified.assert_called_once()
