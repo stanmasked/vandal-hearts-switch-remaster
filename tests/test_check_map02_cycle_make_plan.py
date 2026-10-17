@@ -57,7 +57,7 @@ class CycleMakePlanTests(unittest.TestCase):
         self.font_generator.parent.mkdir(parents=True, exist_ok=True)
         self.font_generator.write_text("# synthetic font generator\\n")
         self.make = self.upstream / "platform/pc/Makefile"
-        self.make.parent.mkdir(parents=True)
+        self.make.parent.mkdir(parents=True, exist_ok=True)
         self.make.write_text("link: $(DATA_OBJS)\nBACKEND_OBJS GAME_C_FLAGS PORT_WARN\n")
         source_map = {
             "core_cd.c": ("src/core/cd.c", git_blob_sha1(file.read_bytes()),
