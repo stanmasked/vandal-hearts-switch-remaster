@@ -23,7 +23,8 @@ class RejectedCandidateTests(unittest.TestCase):
     def test_candidate_flag_is_strictly_opt_in(self):
         out = self.make()
         self.assertIn('#error "DDA rejected edges requires original native diagnostic chain"', out)
-        self.assertEqual(out.count("#if defined(VH_MAP02_DDA_REJECTED_EDGES_TRACE)"), 5)
+        self.assertEqual(out.count("#if defined(VH_MAP02_DDA_REJECTED_EDGES_TRACE)"), 6)
+        # Two helper-level guards (prerequisites + definition), four rejection sites.
         for reason in (4, 5, 6, 7):
             condition = "y < cx->clipT" if reason in (4, 7) else "y > cx->clipB"
             self.assertIn(
