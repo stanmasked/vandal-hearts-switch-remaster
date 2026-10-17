@@ -98,6 +98,19 @@ int vh81_format_jsonl(char *output,size_t capacity) {
         else if(e->kind==VH94_CACHED_READS) kind="snapshot_cached_reads";
         else if(e->kind==VH94_INVALIDATED) kind="snapshot_invalidation_proven";
         else if(e->kind==VH94_VERIFIED_READS) kind="snapshot_verified_reads";
+        else if(e->kind>=VH95_ROUND_1 && e->kind<=VH95_ROUND_8) {
+            static const char *const names[8]={
+                "append_round_1","append_round_2","append_round_3",
+                "append_round_4","append_round_5","append_round_6",
+                "append_round_7","append_round_8"
+            };
+            kind=names[e->kind-VH95_ROUND_1];
+        }
+        else if(e->kind==VH95_PREFIXES) kind="append_prefix_checks";
+        else if(e->kind==VH95_EXPORTS) kind="append_memory_exports";
+        else if(e->kind==VH95_MERGES) kind="append_exact_rebuilds";
+        else if(e->kind==VH95_STALE_REFUSALS) kind="append_stale_refusals";
+        else if(e->kind==VH95_STABLE_READS) kind="append_stable_reads";
         else return -1;
         if(used>=capacity) return -1;
         /* GPU DMA2 is an address, NOT an executed GP0 command. */
