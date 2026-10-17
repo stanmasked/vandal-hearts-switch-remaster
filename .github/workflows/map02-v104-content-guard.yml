@@ -540,6 +540,16 @@ jobs:
           assert write_runs["HD_replacement_approved"] is False
           Path("proof/public/v112-unchanged-sample-runs.json").write_text(
               json.dumps(write_runs,sort_keys=True)+"\n")
+          transitions=v113_transitions(path.read_bytes())
+          assert transitions["observed_emulator_vblank_edges"]==4
+          assert transitions["observed_unai_handlers"]==observed
+          assert sum(r["adjacent_pairs"] for r in transitions["within_vblank_intervals"])+transitions["adjacent_pairs_spanning_vblank"]==max(observed-1,0)
+          assert transitions["zero_sample_delta_store_pairs_per_edge"]==write_runs["vblank_edges_crossed_by_consecutive_qualifying_pairs"]
+          assert transitions["cross_vblank_pairs_do_not_prove_vram_persistence"] is True
+          assert transitions["observed_append_order_is_not_gpu_completion_timing"] is True
+          assert transitions["HD_replacement_approved"] is False
+          Path("proof/public/v113-vblank-outcome-transitions.json").write_text(
+              json.dumps(transitions,sort_keys=True)+"\n")
           assert evidence["vblank_edges"]==vblanks and evidence["gp1_mmio"]==gp1
           assert evidence["events"]==entries and evidence["bytes"]==size
           assert evidence["original_retail_MAP02_verified"] is False
