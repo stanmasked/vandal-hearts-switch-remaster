@@ -82,8 +82,8 @@ class FontLinkedTests(unittest.TestCase):
 
     def test_writable_initialized_font_must_not_impersonate_original(self):
         source = self.root / "writable.c"
-        source.write_text("unsigned char pc_kanji_charset2[6270] = {1};\\n"
-                          "int main(void) {return 0;}\\n")
+        source.write_text("unsigned char pc_kanji_charset2[6270] = {1};\n"
+                          "int main(void) {return 0;}\n")
         binary = self.root / "writable-elf"
         subprocess.run(["cc", str(source), "-o", str(binary)], check=True,
                        capture_output=True, timeout=30)
@@ -92,8 +92,8 @@ class FontLinkedTests(unittest.TestCase):
 
     def test_oversized_initialized_font_must_not_impersonate_original(self):
         source = self.root / "oversized.c"
-        source.write_text("const unsigned char pc_kanji_charset2[6271] = {1};\\n"
-                          "int main(void) {return 0;}\\n")
+        source.write_text("const unsigned char pc_kanji_charset2[6271] = {1};\n"
+                          "int main(void) {return 0;}\n")
         binary = self.root / "oversized-elf"
         subprocess.run(["cc", str(source), "-o", str(binary)], check=True,
                        capture_output=True, timeout=30)
