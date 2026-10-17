@@ -213,6 +213,10 @@ def verify_capture(directory: Path, *, target_frame: int):
     load_pairs_without_payload=0
     move_pairs_with_verified_vram_effect=0
     clear_pairs_with_verified_vram_effect=0
+    draw_boundary_vram_checks=0
+    draw_boundary_gpu_state_checks=0
+    previous_draw_post=None
+    previous_draw_gpu_state=None
     entered_target_draw_frame=False
     for i in range(0,len(events),2):
         before,after=events[i:i+2]
@@ -238,6 +242,30 @@ def verify_capture(directory: Path, *, target_frame: int):
         elif entered_target_draw_frame:
             raise ValueError("native GPU transfer appears after target DrawOTag began")
         if kind=="draw":
+            # A single source-pinned DrawOTag walk visits each primitive in
+            # sequence, without an unobserved native GPU command between
+            # its registered callbacks. The recorder samples its before/
+            # after VRAM immediately around each primitive's switch.
+            # Do NOT apply this across preframe transfers: an uncaptured
+            # earlier DrawOTag may modify VRAM between those calls.
+            if previous_draw_post is not None:
+                if a != previous_draw_post:
+                    raise ValueError("adjacent DrawOTag primitives have discontinuous VRAM")
+                draw_boundary_vram_checks+=1
+                state=(before["window"],before["draw_mode"])
+                if state != previous_draw_gpu_state:
+                    raise ValueError("adjacent DrawOTag primitives have discontinuous GPU state")
+                draw_boundary_gpu_state_checks+=1
+            # Only DR_MODE (source-pinned primitive type 5) can change
+            # the captured draw mode or texture-window globals during
+            # the native primitive dispatch. Ordinary FT4/TILE/etc must
+            # preserve them across the before/after snapshots.
+            if before["primitive_type"] != 5 and (
+                    before["window"] != after["window"]
+                    or before["draw_mode"] != after["draw_mode"]):
+                raise ValueError("non-DR_MODE DrawOTag primitive modified GPU state")
+            previous_draw_post=b
+            previous_draw_gpu_state=(after["window"],after["draw_mode"])
             draws+=1
             draw_changed_words+=changed
         else:
@@ -283,6 +311,8 @@ def verify_capture(directory: Path, *, target_frame: int):
         "frame":target_frame,
         "native_gpu_pairs_verified":pairs,
         "draw_otag_primitive_pairs":draws,
+        "draw_boundary_vram_checks":draw_boundary_vram_checks,
+        "draw_boundary_gpu_state_checks":draw_boundary_gpu_state_checks,
         "load_image_pairs":loads,
         "move_image_pairs":moves,
         "move_pairs_with_verified_vram_effect":move_pairs_with_verified_vram_effect,
