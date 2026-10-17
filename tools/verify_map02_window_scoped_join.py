@@ -103,6 +103,10 @@ def verify_window_scoped_join(native_windows, scoped_capture, *,
             source_dir, native, compiler=compiler)
         if sourced["native_window_file_tree_bound"] is not True:
             raise ValueError("source/GTE window witness not bound to GPU capture")
+        verified_sha = sourced.get("window_source_witness_manifest_sha256")
+        if (type(verified_sha) is not str or len(verified_sha) != 64 or
+                any(ch not in "0123456789abcdef" for ch in verified_sha)):
+            raise ValueError("source/GTE witness did not return a valid SHA-256")
     if verify_native_windows(native, target_frame=frame) != windows_report:
         raise ValueError("native GPU capture changed during scoped join")
     return {
@@ -126,6 +130,9 @@ def verify_window_scoped_join(native_windows, scoped_capture, *,
         "direct_vram_edges_staged_sha256":
             hashlib.sha256(edges_raw).hexdigest(),
         "source_gte_subsequence_verified": sourced is not None,
+        "source_window_witness_manifest_sha256": (
+            sourced["window_source_witness_manifest_sha256"]
+            if sourced is not None else None),
         "whole_original_gameplay_frame_proven": False,
         "physical_ps1_equivalence_proven": False,
         "private_game_bytes_emitted": False,
