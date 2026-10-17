@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'tools/instrument_map02_scoped_blend.py'
+      - 'tools/check_map02_original_gpu_tus.py'
       - 'tools/map02_scoped_blend_sink.c'
       - 'tools/map02_scoped_blend_sink.h'
       - 'tools/map02_scoped_blend_stage.c'
@@ -28,6 +29,7 @@ on:
   pull_request:
     paths:
       - 'tools/instrument_map02_scoped_blend.py'
+      - 'tools/check_map02_original_gpu_tus.py'
       - 'tools/map02_scoped_blend_sink.c'
       - 'tools/map02_scoped_blend_sink.h'
       - 'tools/map02_scoped_blend_stage.c'
@@ -91,3 +93,6 @@ jobs:
             upstream-pc/platform/pc/src/libgpu.c \
             "${RUNNER_TEMP}/libgpu.scoped-probe.c"
           test -s "${RUNNER_TEMP}/libgpu.scoped-probe.c"
+      - name: Compile and relocatable-link original PC GPU units (ordinary, scoped, staged)
+        run: |
+          python3 -m tools.check_map02_original_gpu_tus upstream-pc
