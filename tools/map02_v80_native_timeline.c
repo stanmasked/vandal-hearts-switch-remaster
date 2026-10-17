@@ -8,6 +8,8 @@ static vh80_event aggregate[VH80_CAPACITY_AGGREGATE];
 /* Reconstruct globally ordered, contiguous seq at immutable export time. */
 static vh80_event ordered[VH80_TOTAL_CAPACITY];
 static unsigned int count, aggregate_count, dropped, sequence;
+static unsigned int vh94_snapshot_valid,vh94_snapshot_seq;
+static unsigned int vh94_merges,vh94_hits,vh94_checks;
 static int vh84_sampling;
 static uint32_t vh86_stores[3],vh86_same[3],vh86_overflow;
 void vh86_reset(void){
@@ -40,11 +42,13 @@ unsigned int vh85_store_count(void){return vh85_stores;}
 unsigned int vh85_same_store_count(void){return vh85_same;}
 unsigned int vh85_write_overflow(void){return vh85_overflow;}
 
-void vh80_reset(void) { count=0;aggregate_count=0;dropped=0;sequence=0;vh84_sampling=0;vh85_reset_command();vh86_reset(); }
+void vh80_reset(void) { count=0;aggregate_count=0;dropped=0;sequence=0;
+  vh94_snapshot_valid=vh94_snapshot_seq=vh94_merges=vh94_hits=vh94_checks=0;
+  vh84_sampling=0;vh85_reset_command();vh86_reset(); }
 void vh84_set_sampling(int enabled) { vh84_sampling=!!enabled; }
 int vh84_sampling_enabled(void) { return vh84_sampling; }
 void vh80_record(uint32_t kind,uint32_t value,uint32_t cycle,uint32_t frame) {
-    if(kind<VH80_VBLANK || kind>VH93_TOTAL_COUNT) { dropped++;return; }
+    if(kind<VH80_VBLANK || kind>VH94_VERIFIED_READS) { dropped++;return; }
     if(sequence==UINT32_MAX) { dropped++;return; }
     /* Real per-command evidence (types 1..7) and stage aggregates
      * (types 8..78) are physically independent bounded segments.
@@ -57,6 +61,9 @@ void vh80_record(uint32_t kind,uint32_t value,uint32_t cycle,uint32_t frame) {
         if(aggregate_count>=VH80_CAPACITY_AGGREGATE) { dropped++;return; }
         e=&aggregate[aggregate_count++];
     }
+    /* Invalidate snapshot only on a successful event append. An
+     * invalid/over-capacity append sets dropped and fails publication. */
+    vh94_snapshot_valid=0;
     e->sequence=++sequence;e->kind=kind;e->value=value;
     e->cycle=cycle;e->frame=frame;
 }
@@ -66,8 +73,11 @@ unsigned int vh80_aggregate_count(void) { return aggregate_count; }
 unsigned int vh80_dropped(void) { return dropped; }
 const vh80_event *vh80_events(void) {
     /* No worker writes to these lanes; caller snapshots after GPUfreeze.
-     * Two monotone substreams merge in O(n), preserving the original
-     * global sequence, VBlank order and private JSONL verifier ABI. */
+     * Read cache hits O(1); first read after each mutation merges O(n). */
+    if(vh94_snapshot_valid && vh94_snapshot_seq==sequence){
+        vh94_hits++;
+        return ordered;
+    }
     unsigned int i=0,j=0,k=0;
     while(i<count && j<aggregate_count){
         if(ring[i].sequence<aggregate[j].sequence)
@@ -77,5 +87,40 @@ const vh80_event *vh80_events(void) {
     }
     while(i<count)ordered[k++]=ring[i++];
     while(j<aggregate_count)ordered[k++]=aggregate[j++];
+    vh94_snapshot_seq=sequence;
+    vh94_snapshot_valid=1;
+    vh94_merges++;
     return ordered;
+}
+
+/* Intentionally separate from vh80_events(): validating every read would
+ * scan O(n), undoing the constant-time cache benefit. Explicit verification
+ * is performed at privacy-export boundaries and opt-in smoke tests. */
+unsigned int vh94_merge_runs(void){return vh94_merges;}
+unsigned int vh94_cache_hits(void){return vh94_hits;}
+unsigned int vh94_verify_runs(void){return vh94_checks;}
+int vh94_snapshot_check(void){
+    if(!vh94_snapshot_valid || vh94_snapshot_seq!=sequence || dropped!=0)
+        return -1;
+    unsigned int i=0,j=0,k=0,n=count+aggregate_count;
+    while(k<n){
+        const vh80_event *source;
+        if(i<count && (j>=aggregate_count ||
+                        ring[i].sequence<aggregate[j].sequence))
+            source=&ring[i++];
+        else if(j<aggregate_count)
+            source=&aggregate[j++];
+        else return -1;
+        const vh80_event *cached=&ordered[k];
+        /* All five fixed ABI words are checked; snapshot tampering and
+         * changes in either source lane are both detected. */
+        if(cached->sequence!=source->sequence ||
+           cached->kind!=source->kind || cached->value!=source->value ||
+           cached->cycle!=source->cycle || cached->frame!=source->frame ||
+           cached->sequence!=k+1u) return -1;
+        k++;
+    }
+    if(i!=count || j!=aggregate_count)return -1;
+    vh94_checks++;
+    return 0;
 }
