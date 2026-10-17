@@ -79,6 +79,7 @@ def verify_native_windows(directory, *, target_frame):
     total_draws = total_transfers = seen = 0
     last_vram = None
     logs_hash = hashlib.sha256()
+    file_tree_hash = hashlib.sha256()
     for idx in range(window_count):
         window = _private_directory(root / f"window-{idx:03d}")
         if (window / STATUS).exists() or (window / STATUS).is_symlink():
@@ -96,6 +97,12 @@ def verify_native_windows(directory, *, target_frame):
         expected_files |= {e.get("upload") for e in events if e.get("upload")}
         if {item.name for item in window.iterdir()} != expected_files:
             raise ValueError("unlisted or missing files in native GPU capture window")
+        # Hash ALL published capture bytes, not only JSONL: unreferenced or
+        # replaced snapshots must never inherit the same source binding.
+        for name in sorted(expected_files):
+            data = private_file(window, name, max_bytes=VRAM_BYTES + 128 * 1024)
+            file_tree_hash.update(f"window-{idx:03d}/{name}\0".encode("ascii"))
+            file_tree_hash.update(hashlib.sha256(data).digest())
         # The existing full 1-MiB VRAM auditor is reused, but its
         # missing-receipt result is deliberately not interpreted as a
         # complete original frame.
@@ -132,6 +139,7 @@ def verify_native_windows(directory, *, target_frame):
         "native_transfer_pairs": total_transfers,
         "vram_bridge_checks": seen // 2 - 1,
         "native_window_event_logs_sha256": logs_hash.hexdigest(),
+        "native_window_all_files_sha256": file_tree_hash.hexdigest(),
         "recorded_window_closed_without_detected_loss": True,
         "whole_original_gameplay_frame_proven": False,
         "original_map02_authenticated": False,
