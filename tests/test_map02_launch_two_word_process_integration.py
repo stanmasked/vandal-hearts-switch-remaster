@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import tempfile
 import unittest
 
 import test_verify_map02_putpixel_multi_scope as fixture_module
@@ -60,7 +61,12 @@ class SpawnedTwoWordCrossAuditTests(unittest.TestCase):
         self.addCleanup(f.doCleanups)
         self.fixture = f
         self.source, self.template = f.source, f.native
-        root = self.source.parent
+        # Nested fixture classes can put self.source directly below
+        # /tmp. Never create fixed receipt/native paths at that parent:
+        # different unittest cases would collide and retain private bytes.
+        self.temp = tempfile.TemporaryDirectory(prefix="vh-map02-real-subprocess-")
+        self.addCleanup(self.temp.cleanup)
+        root = Path(self.temp.name)
         self.native = root / "fresh-spawned-native"
         self.native.mkdir(mode=0o700)
         self.native.chmod(0o700)
