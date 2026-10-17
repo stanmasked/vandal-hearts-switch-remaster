@@ -124,6 +124,19 @@ def prepare(upstream: Path, output: Path):
     if ("$(BUILD_DIR)/libgpu.o: src/libgpu.c" not in makefile or
             "$(BUILD_DIR)/pc_raster.o: src/pc_raster.c" not in makefile):
         raise ValueError("pinned backend Make recipes changed")
+    # The opt-in 'link: objs' overlay assumes the original target graph:
+    # 'objs' builds game/backends and generated-data objects, and the
+    # original 'link' recipe consumes all three object lists.
+    link_anchors = (
+        "default: $(GAME_O_FILES) $(BACKEND_OBJS)",
+        "objs: default $(DATA_OBJS)",
+        "link: $(DATA_OBJS)",
+        "$(GAME_O_FILES) $(BACKEND_OBJS) $(DATA_OBJS)",
+        "BACKEND_OBJS",
+        "libgpu.c pc_raster.c",
+    )
+    if not all(anchor in makefile for anchor in link_anchors):
+        raise ValueError("pinned original PC full-link Make dependency graph changed")
 
     gpu = multi_gpu(src[GPU_REL].decode("utf-8"))
     raster = instrument_span(instrument_vertical(
