@@ -42,6 +42,24 @@ class SpanWorkflowGateTests(unittest.TestCase):
         self.assertIn('nm --defined-only build/map02-vertical-dda/candidate-linked.baseline.o', text)
         self.assertIn('Candidate observer leaked into Clang baseline', text)
 
+    def test_evidence_manifest_is_executable_and_sha_provenance_is_unambiguous(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        manifest = text.split("      - name: Save reproducible original GPU object manifest", 1)[1].split(
+            "      - name: Upload original GPU object evidence", 1)[0]
+        self.assertIn("REMASTER_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}", manifest)
+        self.assertIn('test "$(git -C ../../../remaster rev-parse HEAD)" = "$GITHUB_SHA"', manifest)
+        self.assertIn("remaster-source-head.txt", manifest)
+        self.assertIn("remaster-commit.txt", manifest)
+        self.assertIn("sha256sum --check evidence/objects.sha256", manifest)
+        for line in manifest.splitlines():
+            if (line.strip().startswith("sha256sum candidate-linked.diagnostic.o") or
+                    line.strip().startswith("candidate-linked-clang.diagnostic.o")):
+                self.assertEqual(len(line) - len(line.rstrip(chr(92))), 1,
+                                 "Bash line continuation must be exactly one backslash")
+            if "printf '%s" in line:
+                self.assertIn("printf '%s" + chr(92) + "n'", line)
+                self.assertNotIn("printf '%s" + chr(92) * 2 + "n'", line)
+
     def test_trigger_includes_observer_and_test(self):
         text = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("  push:\n    branches:\n      - 'work/map02-dda-coverage-independent-audit'", text)
