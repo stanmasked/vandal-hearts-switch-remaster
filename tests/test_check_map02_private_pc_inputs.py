@@ -5,6 +5,7 @@ Real known original hashes are deliberately mocked ONLY inside this file.
 """
 import hashlib
 import struct
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -213,6 +214,74 @@ for name, offset, size in [
         path.write_bytes(bytes([old[0] ^ 1]) + old[1:])
         with self.assertRaisesRegex(ValueError, "include differs"):
             verify_private_pc_inputs(self.root)
+
+    def test_include_generator_executes_verified_private_source_and_exe_snapshots(self):
+        real_run = subprocess.run
+
+        def inspect_snapshots(argv, **kwargs):
+            self.assertEqual(argv[1], "-I")
+            script, exe_copy, output = map(Path, argv[2:5])
+            self.assertNotEqual(script, self.generator)
+            self.assertNotEqual(exe_copy, self.exe)
+            self.assertEqual(script.read_bytes(), self.generator.read_bytes())
+            self.assertEqual(exe_copy.read_bytes(), self.exe.read_bytes())
+            self.assertEqual(script.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(exe_copy.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(output.stat().st_mode & 0o777, 0o700)
+            self.assertTrue(all(str(p).startswith(str(script.parent))
+                                for p in (exe_copy, output)))
+            return real_run(argv, **kwargs)
+
+        with patch("tools.check_map02_original_inc_provenance.subprocess.run",
+                   side_effect=inspect_snapshots):
+            self.assertEqual(check_original_includes(self.root)[
+                "asset_includes_regenerated_and_identical"], 3)
+
+    def test_executable_replaced_during_generation_fails_even_if_include_bytes_match(self):
+        real_run = subprocess.run
+
+        def replace_exe(argv, **kwargs):
+            original = self.exe.read_bytes()
+            self.exe.unlink()
+            self.exe.write_bytes(original)
+            return real_run(argv, **kwargs)
+
+        with patch("tools.check_map02_original_inc_provenance.subprocess.run",
+                   side_effect=replace_exe):
+            with self.assertRaisesRegex(ValueError, "executable changed"):
+                check_original_includes(self.root)
+
+    def test_includes_replaced_with_identical_bytes_during_generation_fail(self):
+        real_run = subprocess.run
+        asset = self.root / "assets" / ASSETS[0]
+
+        def replace_asset(argv, **kwargs):
+            original = asset.read_bytes()
+            asset.unlink()
+            asset.write_bytes(original)
+            return real_run(argv, **kwargs)
+
+        with patch("tools.check_map02_original_inc_provenance.subprocess.run",
+                   side_effect=replace_asset):
+            with self.assertRaisesRegex(ValueError, "include changed"):
+                check_original_includes(self.root)
+
+    def test_generator_changed_during_generation_cannot_be_executed(self):
+        real_run = subprocess.run
+        verified_source = self.generator.read_bytes()
+
+        def replace_generator(argv, **kwargs):
+            self.generator.write_bytes(b"raise SystemExit('replaced')\\n")
+            # Child sees only the earlier SHA-verified script copy.
+            self.assertEqual(Path(argv[2]).read_bytes(), verified_source)
+            result = real_run(argv, **kwargs)
+            self.assertEqual(result.returncode, 0)
+            return result
+
+        with patch("tools.check_map02_original_inc_provenance.subprocess.run",
+                   side_effect=replace_generator):
+            with self.assertRaisesRegex(ValueError, "generator changed"):
+                check_original_includes(self.root)
 
     def test_no_private_paths_or_bytes_in_error_messages(self):
         self.elf.unlink()
