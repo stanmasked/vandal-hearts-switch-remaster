@@ -54,7 +54,8 @@ enum { VH80_VBLANK=1, VH80_GP1_MMIO=2, VH80_GPU_DMA2=3, VH83_GP0_UNAI_HANDLED=4,
   VH95_PREFIXES=90, VH95_EXPORTS=91, VH95_MERGES=92,
   VH95_STALE_REFUSALS=93, VH95_STABLE_READS=94,
   VH96_DETAIL_REMAINING=95, VH96_AGG_REMAINING=96,
-  VH96_SERIALIZED_TWICE=97 };
+  VH96_SERIALIZED_TWICE=97,
+  VH97_EPOCH=98, VH97_SCRUBBED=99, VH97_REPLAY=100 };
 #define VH80_CAPACITY_DETAIL 4096u
 #define VH80_CAPACITY_AGGREGATE 256u
 #define VH80_TOTAL_CAPACITY (VH80_CAPACITY_DETAIL+VH80_CAPACITY_AGGREGATE)
@@ -93,6 +94,10 @@ unsigned int vh94_merge_runs(void);
 unsigned int vh94_cache_hits(void);
 unsigned int vh94_verify_runs(void);
 int vh94_snapshot_check(void);
+/* Monotone observer lifetime identifier; reset scrubs both source lanes
+ * AND prior merged cache. Only invoke reset after GPU workers stop. */
+unsigned int vh97_reset_epoch(void);
+int vh97_buffers_erased(void);
 #ifdef __cplusplus
 }
 #endif

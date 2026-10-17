@@ -68,7 +68,7 @@ class V81Jsonl(unittest.TestCase):
         self.assertEqual(self.export(1000000)[0],-1)
     def test_invalid_kind_refused(self):
         self.valid()
-        self.record(99,0,0,0)
+        self.record(999,0,0,0)
         self.assertEqual(self.export()[0],-1)
     def test_deterministic_serialization(self):
         self.valid()
