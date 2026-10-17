@@ -18,6 +18,8 @@ class SpanWorkflowGateTests(unittest.TestCase):
         self.assertIn('pc_raster.candidate.c', text)
         self.assertIn('candidate-linked.${mode}.o', text)
         self.assertIn('VH_Map02RejectedEdges', text)
+        self.assertIn('candidate-clang.${mode}.o', text)
+        self.assertIn('Candidate observer leaked into Clang baseline', text)
 
     def test_trigger_includes_observer_and_test(self):
         text = WORKFLOW.read_text(encoding="utf-8")
