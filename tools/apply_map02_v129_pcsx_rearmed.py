@@ -43,6 +43,20 @@ def oracle_source(stops,wait_pc):
              "include fifth native adjacent gap histogram bin")
     src=once(src,"vh129_vblank_mode>3","vh129_vblank_mode>4",
              "require exactly five supported source-authored modes")
+    # Preserve strict rejection, but expose only coarse VBlank counters on
+    # unexpected events. This distinguishes an extra edge during the next
+    # CPU/DMA stage from the previous bounded MIPS wait loop.
+    src=once(src,
+        'SysPrintf("VH129_EDGE_TOTAL_REFUSED phase=%u\\n",phase);',
+        'SysPrintf("VH129_EDGE_TOTAL_REFUSED phase=%u mode=%u "
+'
+        '"observed_delta=%u prewait_delta=%u accepted=%u expected=%u "
+'
+        '"target=%u\\n",phase,vh129_vblank_mode,\n'
+        'vh78_vblank_observed_count-initial_vblank,\n'
+        'before-initial_vblank,real_edges_seen,\n'
+        'expected_total_edges[vh129_vblank_mode],target);',
+        "native coarse counters on unexpected extra or missing edge")
     if "VH128_" in src or "vh128_" in src or "VH128SY!" in src:
         raise ValueError("unfinished native four-edge witness substitution")
     return src
