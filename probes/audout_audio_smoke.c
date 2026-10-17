@@ -24,7 +24,7 @@
 #include "vh_native_spu.h"
 
 #define LOCAL_AUDIO_DIR "sdmc:/switch/vandal-hearts-remake/audio"
-#define MAX_PROBE_BLOCKS 1200u
+#define MAX_PROBE_BLOCKS 3600u
 #define SYNTHETIC_SCENE_BLOCKS 64u
 
 static VhAudioAssets user_assets;
@@ -44,6 +44,16 @@ static int16_t in_44100[VH_AUDIO_BLOCK_FRAMES * 2u];
  */
 static int16_t out_48000[0x1000u / sizeof(int16_t)]
     __attribute__((aligned(0x1000)));
+
+/* In-memory fingerprint only; no audio samples are exported. */
+static uint64_t pcm_page_fingerprint(const int16_t *page,size_t frames) {
+    uint64_t hash=UINT64_C(1469598103934665603);
+    for(size_t i=0u;i<frames*2u;i++) {
+        hash^=(uint16_t)page[i];
+        hash*=UINT64_C(1099511628211);
+    }
+    return hash;
+}
 
 static const uint8_t fixture_seq[] = {
     'p','Q','E','S',0,0,0,0, 0x01,0xe0,0x07,0xa1,0x20,0,0,
@@ -212,7 +222,13 @@ static int native_submit(void *opaque,const int16_t *pcm,size_t frames) {
  * only after stopped audout and released SD music assets.
  */
 typedef struct {
+    unsigned quick_attempts,quick_ok,reopen_attempts,reopen_ok;
+    unsigned ignored_chords,unsafe_requests,state_mismatches;
+} VhAudioManualResume;
+
+typedef struct {
     const NativeOutput *output;
+    const VhAudioManualResume *manual;
     const VhAudioOutputRecovery *recovery;
     const VhAudioPcmSeams *seams;
     const VhAudioListeningMarks *marks;
@@ -255,6 +271,12 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
                (unsigned long long)r->output->timing.waits_longer_than_page);
         printf("Restarts=%u recovered=%u\n",
                r->recovery->restart_attempts,r->recovery->recoveries);
+        printf("X stop/start %u/%u  Y reopen %u/%u\n",
+               r->manual->quick_ok,r->manual->quick_attempts,
+               r->manual->reopen_ok,r->manual->reopen_attempts);
+        printf("X+Y ignored=%u, unsafe=%u, mismatch=%u\n",
+               r->manual->ignored_chords,r->manual->unsafe_requests,
+               r->manual->state_mismatches);
         const uint64_t rendered=r->compute->rendered_pages;
         const uint64_t total_us=vh_audio_output_ticks_to_us(
             r->compute->total_ticks,hz);
@@ -419,6 +441,8 @@ int main(int argc, char **argv) {
                SYNTHETIC_SCENE_BLOCKS);
     printf("A = perceived audio defect; B = sounds normal (control).\n");
     printf("Release BOTH A/B between marks; held chords ignored.\n");
+    printf("X: pause/start; Y: stop/reopen/start (after PCM return).\n");
+    printf("HOME is a separate physical-console test, not counted as X/Y.\n");
     printf("These are manual tags, never automatic glitch detection.\n");
     consoleUpdate(NULL);
     padConfigureInput(1,HidNpadStyleSet_NpadStandard);
@@ -431,6 +455,7 @@ int main(int argc, char **argv) {
     VhAudioListeningMarks listening_marks={0};
     VhAudioMarkButtons mark_buttons={0};
     VhAudioInputPoll input_poll={0};
+    VhAudioManualResume manual_resume={0};
     const VhAudioOutputOps ops={
         &output,native_submit,native_stop,native_close,native_open,native_start
     };
@@ -541,6 +566,62 @@ int main(int argc, char **argv) {
             result=14;
             break;
         }
+        /* Manual on-device pause/reopen probes run ONLY after the
+         * previous audoutPlayBuffer returned the exact descriptor.
+         * X: ordinary stop/start. Y: stop then forced reopen.
+         * Actual HOME/suspend is a separate uninstrumented scenario.
+         * Never do device work from a controller/app hook callback. */
+        const uint64_t pressed=padGetButtonsDown(&pad);
+        const uint64_t manual_buttons=pressed&
+                                    (HidNpadButton_X|HidNpadButton_Y);
+        if(manual_buttons==(HidNpadButton_X|HidNpadButton_Y)) {
+            ++manual_resume.ignored_chords;
+        } else if(manual_buttons) {
+            const int reopen=(manual_buttons&HidNpadButton_Y)!=0;
+            if(reopen) ++manual_resume.reopen_attempts;
+            else ++manual_resume.quick_attempts;
+            if(!output.started ||
+               !vh_audio_page_lease_ready(&output.lease)) {
+                ++manual_resume.unsafe_requests;
+                result=20;
+                break;
+            }
+            const VhNativeSeq before_seq=seq;
+            const VhAudioResample before_resampler=resampler;
+            const uint64_t before_spu_frames=synth.frames_rendered;
+            const int before_wet_cursor=synth.reverb.cursor;
+            const unsigned before_wet_phase=synth.reverb.phase;
+            const uint64_t before_pcm=pcm_page_fingerprint(
+                                                out_48000,count);
+            const uint64_t before_pages=recovery.pages_submitted;
+            const uint64_t before_frames=recovery.frames_submitted;
+            const uint64_t before_calls=output.timing.calls;
+            /* Neither stop nor reopening may synthesize or re-submit
+             * a PCM page: the already returned page stays immutable. */
+            if(native_stop(&output) ||
+               vh_audio_output_resume_recover(&ops,&recovery,reopen)) {
+                ++manual_resume.unsafe_requests;
+                result=21;
+                break;
+            }
+            if(!output.started ||
+               !vh_audio_page_lease_ready(&output.lease) ||
+               memcmp(&seq,&before_seq,sizeof seq) ||
+               memcmp(&resampler,&before_resampler,sizeof resampler) ||
+               synth.frames_rendered!=before_spu_frames ||
+               synth.reverb.cursor!=before_wet_cursor ||
+               synth.reverb.phase!=before_wet_phase ||
+               pcm_page_fingerprint(out_48000,count)!=before_pcm ||
+               recovery.pages_submitted!=before_pages ||
+               recovery.frames_submitted!=before_frames ||
+               output.timing.calls!=before_calls) {
+                ++manual_resume.state_mismatches;
+                result=22;
+                break;
+            }
+            if(reopen) ++manual_resume.reopen_ok;
+            else ++manual_resume.quick_ok;
+        }
         /* Current HELD state prevents a B "normal" mark when A is
          * still down. Only a neutral sample can rearm the gate. */
         const uint64_t held=padGetButtons(&pad);
@@ -558,6 +639,10 @@ int main(int argc, char **argv) {
             printf("Blocks=%u fixture_switches=%u notes=%llu cycles=%u\n",
                    played_blocks,completed_switches,
                    (unsigned long long)seq.note_ons,seq.cycles_completed);
+            printf("Manual X stop/start=%u/%u Y reopen=%u/%u ignored=%u\n",
+                   manual_resume.quick_ok,manual_resume.quick_attempts,
+                   manual_resume.reopen_ok,manual_resume.reopen_attempts,
+                   manual_resume.ignored_chords);
             if (tick_frequency) {
                 const uint64_t avg_us=
                     vh_audio_output_ticks_to_us(
@@ -659,7 +744,7 @@ int main(int argc, char **argv) {
         run_evidence,seam_evidence,listen_evidence,poll_evidence,
         compute_evidence);
     const VhAudioProbeReport report={
-        .output=&output,.recovery=&recovery,.seams=&seam_stats,
+        .output=&output,.manual=&manual_resume,.recovery=&recovery,.seams=&seam_stats,
         .marks=&listening_marks,.poll=&input_poll,
         .buttons=&mark_buttons,
         .compute=&compute,.compute_wait=&compute_wait,
