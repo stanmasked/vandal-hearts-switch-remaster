@@ -57,7 +57,7 @@ int main(int argc, char **argv) {
         self.addCleanup(self.join_patch.stop)
         fixture.prepare()
 
-    def run(self, *args):
+    def run_capture(self, *args):
         return launch_observed_pc(
             self.handoff, self.native, self.scoped, self.binary,
             self.owned, upstream=self.upstream,
@@ -69,7 +69,7 @@ int main(int argc, char **argv) {
             self.owned, upstream=self.upstream)
 
     def test_genuine_child_elf_checked_against_prepared_binary(self):
-        result = self.run()
+        result = self.run_capture()
         self.assertTrue(result["kernel_executable_hash_matched"])
         self.assertFalse(result["game_image_consumption_proven"])
         self.assertFalse(result["original_gameplay_authenticated"])
@@ -85,17 +85,17 @@ int main(int argc, char **argv) {
                          result["private_process_receipt_sha256"])
         self.join.assert_called()
         with self.assertRaisesRegex(ValueError, "already exists"):
-            self.run()
+            self.run_capture()
 
     def test_rejects_replacement_before_exec(self):
         self.binary.write_bytes(self.binary.read_bytes() + b" appended")
         with self.assertRaisesRegex(ValueError, "differs from plan"):
-            self.run()
+            self.run_capture()
         self.assertFalse((self.handoff / RECEIPT).exists())
 
     def test_fails_closed_on_unknown_nonzero_exit(self):
         with self.assertRaisesRegex(ValueError, "exited unsuccessfully"):
-            self.run("unexpected")
+            self.run_capture("unexpected")
         self.assertFalse((self.handoff / RECEIPT).exists())
         self.assertEqual(list(self.native.iterdir()), [])
         self.assertEqual(list(self.scoped.iterdir()), [])
@@ -109,10 +109,10 @@ int main(int argc, char **argv) {
         raster = self.upstream / "platform/pc/src/pc_raster.c"
         raster.write_bytes(raster.read_bytes() + b" tampered")
         with self.assertRaisesRegex(ValueError, "differs from pinned"):
-            self.run()
+            self.run_capture()
 
     def test_audit_rejects_changed_process_nonce_or_binary(self):
-        self.run()
+        self.run_capture()
         original = dict(self.checked)
         self.checked["capture_session_sha256"] = "f" * 64
         with self.assertRaisesRegex(ValueError, "receipt differs"):
@@ -123,7 +123,7 @@ int main(int argc, char **argv) {
             self.audit()
 
     def test_mutated_receipt_and_synthetic_false_attestation_rejected(self):
-        self.run()
+        self.run_capture()
         receipt = self.handoff / RECEIPT
         original = json.loads(receipt.read_bytes())
         for change in (
@@ -142,7 +142,7 @@ int main(int argc, char **argv) {
     def test_refuses_nonempty_capture_directory_before_exec(self):
         (self.native / "previous-run").write_text("no")
         with self.assertRaisesRegex(ValueError, "must start empty"):
-            self.run()
+            self.run_capture()
         self.assertFalse((self.handoff / RECEIPT).exists())
 
 
