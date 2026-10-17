@@ -7,12 +7,15 @@
 static struct {
     uint16_t previous[VH115_SAMPLED_POINTS];
     uint16_t two_back[VH115_SAMPLED_POINTS];
+    uint16_t three_back[VH115_SAMPLED_POINTS];
     uint32_t previous_delta,previous_epoch,epoch,have_previous;
     uint32_t two_back_epoch,have_two_back;
+    uint32_t three_back_epoch,have_three_back;
     uint32_t enabled,invalid;
     vh115_metrics counts;
     vh116_gap_metrics gap_counts;
     vh117_triplet_metrics triplets;
+    vh118_quadruplet_metrics quadruplets;
 } state;
 
 static void erase(void *ptr,size_t length){
@@ -48,6 +51,30 @@ void vh115_note(const uint16_t *post,uint32_t count,uint32_t delta){
         }
         const uint32_t gap=state.epoch-state.previous_epoch;
         uint32_t crossed=gap!=0;
+        if(state.have_three_back){
+            if(state.epoch<state.three_back_epoch ||
+               state.epoch-state.three_back_epoch>VH116_MAX_VBLANK_GAP ||
+               state.quadruplets.consecutive_quadruplets==UINT32_MAX){
+                state.invalid=1;return;
+            }
+            const uint32_t span=state.epoch-state.three_back_epoch;
+            uint32_t equal_previous=1,equal_two=1,equal_three=1;
+            for(uint32_t i=0;i<VH115_SAMPLED_POINTS;i++){
+                equal_previous&=(uint32_t)(state.previous[i]==post[i]);
+                equal_two&=(uint32_t)(state.two_back[i]==post[i]);
+                equal_three&=(uint32_t)(state.three_back[i]==post[i]);
+            }
+            uint32_t *slot=(equal_previous
+                ?&state.quadruplets.same_as_previous[span]
+                :(equal_two
+                    ?&state.quadruplets.returned_to_two_back[span]
+                    :(equal_three
+                        ?&state.quadruplets.returned_to_three_back[span]
+                        :&state.quadruplets.different_from_all_three[span])));
+            if(*slot==UINT32_MAX){state.invalid=1;return;}
+            ++*slot;
+            ++state.quadruplets.consecutive_quadruplets;
+        }
         if(state.have_two_back){
             if(state.epoch<state.two_back_epoch ||
                state.epoch-state.two_back_epoch>VH116_MAX_VBLANK_GAP ||
@@ -96,6 +123,11 @@ void vh115_note(const uint16_t *post,uint32_t count,uint32_t delta){
         ++*counter;
         ++*gap_counter;
         if(crossed)++*cross_counter;
+    }
+    if(state.have_two_back){
+        memcpy(state.three_back,state.two_back,sizeof(state.three_back));
+        state.three_back_epoch=state.two_back_epoch;
+        state.have_three_back=1;
     }
     if(state.have_previous){
         memcpy(state.two_back,state.previous,sizeof(state.two_back));
@@ -165,10 +197,30 @@ int vh117_get_triplet_metrics(vh117_triplet_metrics *out){
     *out=state.triplets;
     return 0;
 }
+int vh118_get_quadruplet_metrics(vh118_quadruplet_metrics *out){
+    vh115_metrics old;
+    vh117_triplet_metrics triple;
+    if(!out || vh115_get_metrics(&old)!=0 ||
+       vh117_get_triplet_metrics(&triple)!=0)return -1;
+    uint64_t total=0;
+    for(uint32_t gap=0;gap<=VH116_MAX_VBLANK_GAP;gap++){
+        total+=(uint64_t)state.quadruplets.same_as_previous[gap]+
+               state.quadruplets.returned_to_two_back[gap]+
+               state.quadruplets.returned_to_three_back[gap]+
+               state.quadruplets.different_from_all_three[gap];
+    }
+    if(total!=state.quadruplets.consecutive_quadruplets ||
+       total!=(old.handlers>=3u ? (uint64_t)old.handlers-3u : 0u) ||
+       total>triple.consecutive_triplets)return -1;
+    *out=state.quadruplets;
+    return 0;
+}
 int vh115_sample_cache_erased(void){
     const unsigned char *p=(const unsigned char *)state.previous;
     for(size_t i=0;i<sizeof(state.previous);i++)if(p[i])return 0;
     p=(const unsigned char *)state.two_back;
     for(size_t i=0;i<sizeof(state.two_back);i++)if(p[i])return 0;
+    p=(const unsigned char *)state.three_back;
+    for(size_t i=0;i<sizeof(state.three_back);i++)if(p[i])return 0;
     return 1;
 }
