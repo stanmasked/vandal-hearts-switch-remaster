@@ -26,6 +26,11 @@ def reorder_polygon_readback_counts():
     first,second=polygons
     base[first+1]["value"]=1
     base[second+1]["value"]=2
+    # Both polygon callbacks must belong to the SAME v111 outcome class:
+    # nonzero sampled delta WITH native 16-bit store attempts. Without
+    # this, swapping deltas would legitimately alter older v111 summaries.
+    base[second+2]["value"]=2
+    base[second+3]["value"]=1
     other=[dict(item) for item in base]
     other[first+1]["value"]=2
     other[second+1]["value"]=1
