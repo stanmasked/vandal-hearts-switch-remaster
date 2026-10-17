@@ -98,7 +98,11 @@ def verify_capture(directory: Path, *, target_frame: int):
         raise ValueError("capture directory is missing or is a symlink")
     number(target_frame,"target DrawOTag frame",1,2**32-1)
     log_raw=private_file(directory,LOG,max_bytes=MAX_EVENT_BYTES)
-    lines=log_raw.splitlines()
+    # This binary-mode original observer always ends each JSON record in
+    # one LF. Do not normalize CRLF or accept an interrupted final line.
+    if not log_raw.endswith(b"\n") or b"\r" in log_raw or b"\x00" in log_raw:
+        raise ValueError("noncanonical native GPU JSONL line boundaries")
+    lines=log_raw.split(b"\n")[:-1]
     if (len(lines)<2 or len(lines)>MAX_RECORDS or len(lines)%2 or
             any(not line.strip() for line in lines)):
         raise ValueError("incomplete, blank or oversized native GPU event stream")
