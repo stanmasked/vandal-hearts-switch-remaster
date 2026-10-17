@@ -316,6 +316,14 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
                      r->focus->timed_first_pages : 0u),
                (unsigned long long)vh_audio_output_ticks_to_us(
                      r->focus->max_page_gap_ticks,hz));
+        printf("HOME lag bins <=1/2/4/>4x: %u/%u/%u/%u\n",
+               r->focus->page_budget_bands[0],
+               r->focus->page_budget_bands[1],
+               r->focus->page_budget_bands[2],
+               r->focus->page_budget_bands[3]);
+        printf("HOME banded/timed=%u/%u (unknown excluded)\n",
+               r->focus->budgeted_first_pages,
+               r->focus->timed_first_pages);
         printf("HOME focus notify=%s\n",
                focus_notification_mode==1u ? "ENABLED" :
                focus_notification_mode==2u ? "UNAVAILABLE" : "APPLET MODE");
@@ -616,8 +624,10 @@ int main(int argc, char **argv) {
         /* Commit the first returned descriptor after a real foreground
          * notification. HOME events without this observation are NOT
          * treated as proof of device playback or audible output. */
-        if(vh_audio_applet_page_returned_at(
-                   &focus_events,armGetSystemTick())<0) {
+        const uint64_t page_ticks=
+            (uint64_t)count*tick_frequency/VH_NATIVE_AUDOUT_RATE;
+        if(vh_audio_applet_page_returned_budget_at(
+                   &focus_events,armGetSystemTick(),page_ticks)<0) {
             ++focus_record_errors;
             result=25;
             break;
@@ -626,8 +636,6 @@ int main(int argc, char **argv) {
          * its PCM descriptor; do not touch SEQ, SPU or resampler. */
         padUpdate(&pad);
         const uint64_t sample_tick=armGetSystemTick();
-        const uint64_t page_ticks=
-            (uint64_t)count*tick_frequency/VH_NATIVE_AUDOUT_RATE;
         if (vh_audio_input_poll_record(&input_poll,sample_tick,page_ticks)) {
             result=14;
             break;
