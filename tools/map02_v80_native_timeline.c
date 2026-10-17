@@ -10,6 +10,23 @@ static vh80_event ordered[VH80_TOTAL_CAPACITY];
 static unsigned int count, aggregate_count, dropped, sequence;
 static unsigned int vh94_snapshot_valid,vh94_snapshot_seq;
 static unsigned int vh94_merges,vh94_hits,vh94_checks;
+static unsigned int vh97_epoch=1;
+/* Volatile byte writes erase former private event words from resident storage. */
+static void vh97_scrub(void *p,unsigned int n){
+  volatile unsigned char *b=(volatile unsigned char *)p;
+  while(n--)*b++=0;
+}
+unsigned int vh97_reset_epoch(void){return vh97_epoch;}
+int vh97_buffers_erased(void){
+  const unsigned char *blocks[]={
+      (const unsigned char *)ring,(const unsigned char *)aggregate,
+      (const unsigned char *)ordered};
+  const unsigned int sizes[]={sizeof(ring),sizeof(aggregate),sizeof(ordered)};
+  for(unsigned int k=0;k<3;k++)
+    for(unsigned int i=0;i<sizes[k];i++)
+      if(blocks[k][i]!=0)return 0;
+  return 1;
+}
 static int vh84_sampling;
 static uint32_t vh86_stores[3],vh86_same[3],vh86_overflow;
 void vh86_reset(void){
@@ -42,13 +59,22 @@ unsigned int vh85_store_count(void){return vh85_stores;}
 unsigned int vh85_same_store_count(void){return vh85_same;}
 unsigned int vh85_write_overflow(void){return vh85_overflow;}
 
-void vh80_reset(void) { count=0;aggregate_count=0;dropped=0;sequence=0;
+void vh80_reset(void) {
+  /* Only safe after draining GPU writers; refuse if epoch saturates. */
+  unsigned int exhausted=(vh97_epoch==UINT32_MAX);
+  if(!exhausted)vh97_epoch++;
+  vh97_scrub(ring,sizeof(ring));
+  vh97_scrub(aggregate,sizeof(aggregate));
+  vh97_scrub(ordered,sizeof(ordered));
+  count=aggregate_count=sequence=0;
+  dropped=exhausted;
   vh94_snapshot_valid=vh94_snapshot_seq=vh94_merges=vh94_hits=vh94_checks=0;
-  vh84_sampling=0;vh85_reset_command();vh86_reset(); }
+  vh84_sampling=0;vh85_reset_command();vh86_reset();
+}
 void vh84_set_sampling(int enabled) { vh84_sampling=!!enabled; }
 int vh84_sampling_enabled(void) { return vh84_sampling; }
 void vh80_record(uint32_t kind,uint32_t value,uint32_t cycle,uint32_t frame) {
-    if(kind<VH80_VBLANK || kind>VH96_SERIALIZED_TWICE) { dropped++;return; }
+    if(kind<VH80_VBLANK || kind>VH97_REPLAY) { dropped++;return; }
     if(sequence==UINT32_MAX) { dropped++;return; }
     /* Real per-command evidence (types 1..7) and stage aggregates
      * (types 8..78) are physically independent bounded segments.
