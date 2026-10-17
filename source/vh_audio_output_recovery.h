@@ -68,6 +68,16 @@ int vh_audio_output_transport_outcome(
     int descriptor_returned, int timing_result,
     VhAudioTransportTimingHealth *health);
 
+/* Final integrity check: the number of untimed returned PCM pages
+ * cannot exceed the number of successful logical output pages.
+ * A nonzero count without the sticky fault flag is contradictory.
+ * Return 0 for clean timing, 1 for rejected timing, -1 for impossible
+ * bookkeeping. Neither a 0 nor a 1 proves actual audible playback.
+ */
+int vh_audio_output_verify_transport_health(
+    const VhAudioTransportTimingHealth *health,
+    const VhAudioOutputRecovery *recovery);
+
 /* Saturating conversion for readable logs, never used for scheduling.
  * Returns UINT64_MAX on arithmetic overflow, 0 for invalid frequency.
  */
