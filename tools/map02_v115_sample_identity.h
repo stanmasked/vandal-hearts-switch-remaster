@@ -42,6 +42,17 @@ typedef struct {
     uint32_t different_from_all_three[VH116_MAX_VBLANK_GAP+1u];
 } vh118_quadruplet_metrics;
 int vh118_get_quadruplet_metrics(vh118_quadruplet_metrics *out);
+/* Exactly five consecutive observed callbacks: E compared with D,C,B,A.
+   Four bounded prior 24-value buffers, no value or fingerprint export. */
+typedef struct {
+    uint32_t consecutive_quintuplets;
+    uint32_t same_as_previous[VH116_MAX_VBLANK_GAP+1u];
+    uint32_t returned_to_two_back[VH116_MAX_VBLANK_GAP+1u];
+    uint32_t returned_to_three_back[VH116_MAX_VBLANK_GAP+1u];
+    uint32_t returned_to_four_back[VH116_MAX_VBLANK_GAP+1u];
+    uint32_t different_from_all_four[VH116_MAX_VBLANK_GAP+1u];
+} vh119_quintuplet_metrics;
+int vh119_get_quintuplet_metrics(vh119_quintuplet_metrics *out);
 void vh115_reset(void);
 void vh115_enable(int enabled);
 void vh115_vblank(void);
