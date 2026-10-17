@@ -31,7 +31,9 @@ END = r"""
 int main(int argc, char **argv) {
     RenderCtx rc = {0};
     DdaCtx cx = {&rc, 10, 15};
-    if (argc != 2) return 2;
+    if (argc != 2 && !(argc == 3 && argv[2][0] == 'f' &&
+                       argv[2][1] == 'i' && argv[2][2] == 'l' &&
+                       argv[2][3] == 'l' && argv[2][4] == 0)) return 2;
     vh_pixel_sample_dir = argv[1];
 #if defined(VH_MAP02_DDA_REJECTED_EDGES_TRACE)
     vh_pixel_sample_y = 9;
@@ -86,6 +88,9 @@ class CandidateC11Tests(unittest.TestCase):
                                check=True, capture_output=True, text=True)
                 subprocess.run([str(target), str(root)], check=True,
                                capture_output=True, text=True)
+                invalid = subprocess.run([str(target), str(root), "invalid"],
+                                         capture_output=True, text=True)
+                self.assertEqual(invalid.returncode, 2)
                 journal = root / "dda-rejected-edge-candidates.jsonl"
                 if enabled:
                     self.assertTrue(journal.exists())
