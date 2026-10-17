@@ -3,6 +3,7 @@
 
 #include "vh_game_music_mailbox.h"
 #include "vh_audio_scene_trace_export.h"
+#include "software_renderer.h"
 #include "vh_audio_diagnostics.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -28,6 +29,11 @@ int vh_switch_game_audio_trace_dump(FILE *stream);
  * The output path is empty on error. Does not change audio clocks. */
 VhSceneExportResult vh_switch_game_audio_trace_export(
     char *committed_path, size_t capacity);
+/* Experimental diagnostic-only framebuffer receipt. Must only be
+ * called after vh_switch_game_audio_stop() has joined the producer.
+ * No guest file system or stdout transport is required. */
+int vh_switch_game_audio_trace_render(VhCanvas *canvas,
+    uint32_t black,uint32_t white,uint32_t marker);
 /* Forward libnx AppletHookType_OnFocusState/OnResume transitions
  * from the main thread. Does not wait for the audio worker.
  */
