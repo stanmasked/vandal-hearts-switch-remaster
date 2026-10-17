@@ -64,6 +64,10 @@ jobs:
           export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
           make audout-audio-probe
           test -s build/audout-audio-switch-probe.nro
+          # Verify that the Git revision shown in console screenshots
+          # actually exists in the CI artifact's NRO data segment.
+          source_revision="$(git rev-parse --verify HEAD)"
+          LC_ALL=C grep -aFq "$source_revision" build/audout-audio-switch-probe.nro
       - name: Upload native music NRO (user assets not included)
         uses: actions/upload-artifact@v4
         with:
