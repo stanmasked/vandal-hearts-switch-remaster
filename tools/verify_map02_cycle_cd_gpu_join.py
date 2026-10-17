@@ -21,12 +21,14 @@ from tools.publish_map02_cd_bound_witness import (
 )
 from tools.verify_map02_frame_bundle import fields, number, parse_json
 from tools.verify_map02_native_gpu_capture import private_file
+from tools.verify_map02_window_scoped_join import CD_READ
 
 CYCLE_RECEIPT = "map02-single-process-cycle.jsonl"
-CYCLE_SCHEMA = "vh.map02.cycle-order.v1"
+CYCLE_SCHEMA = "vh.map02.cycle-order.v2"
 SCHEMA = "vh.map02.same-process-cycle-cd-gpu-join.v1"
 CYCLE_KEYS = (
     "schema", "capture_session", "gpu_draw_frame",
+    "original_cd_raw_user_crc32",
     "ordered_source_hooks_observed", "cd_payload_verified_by_this_receipt",
     "original_map02_rendering_proven", "physical_ps1_equivalence_proven",
 )
@@ -57,6 +59,10 @@ def _cycle_receipt(directory, frame):
     if number(event["gpu_draw_frame"], "cycle DrawOTag frame",
               1, 2**32-1) != frame:
         raise ValueError("single-process cycle and GPU frame mismatch")
+    checksum = event["original_cd_raw_user_crc32"]
+    if (type(checksum) is not str or len(checksum) != 8 or
+            any(ch not in "0123456789abcdef" for ch in checksum)):
+        raise ValueError("invalid same-process original CdRead CRC32")
     token = event["capture_session"]
     if (type(token) is not str or len(token) != 32 or
             any(c not in "0123456789abcdef" for c in token)):
@@ -73,6 +79,22 @@ def verify_cycle_cd_gpu_join(source, native, scoped, handoff, cycle, image,
         raise ValueError("source, GPU, scoped, process and cycle directories must differ")
     source, native, scoped, handoff, cycle = roots
     cycle_raw, cycle_session_sha256 = _cycle_receipt(cycle, frame)
+    cycle_event = parse_json(cycle_raw[:-1], CYCLE_RECEIPT)
+    # The cycle state machine exposes the CRC of the same original CdRead
+    # observer it gated before DrawOTag. Compare with the separate native
+    # CD receipt before accepting the expensive original disc/GPU process join.
+    cd_raw = private_file(scoped, CD_READ, max_bytes=2048)
+    cd_event = parse_json(cd_raw, CD_READ)
+    if (type(cd_event) is not dict or
+            cd_event.get("schema") != "vh.map02.original-cd-read.v1" or
+            cd_event.get("raw_user_crc32") !=
+            cycle_event["original_cd_raw_user_crc32"] or
+            cd_event.get("returned_user_crc32") !=
+            cycle_event["original_cd_raw_user_crc32"] or
+            type(cd_event.get("capture_session")) is not str or
+            hashlib.sha256(cd_event["capture_session"].encode("utf-8")).hexdigest()
+            != cycle_session_sha256):
+        raise ValueError("ordered cycle CRC32 and original CdRead receipt differ")
     before = private_file(source, CD_GPU_MANIFEST, max_bytes=4096)
     original = parse_json(before, CD_GPU_MANIFEST)
     if (type(original) is not dict or
@@ -88,6 +110,7 @@ def verify_cycle_cd_gpu_join(source, native, scoped, handoff, cycle, image,
     if verified["private_map02_cd_final_sha256"] != _sha(before):
         raise ValueError("original CD/GPU manifest SHA differs after re-verification")
     if (private_file(source, CD_GPU_MANIFEST, max_bytes=4096) != before or
+            private_file(scoped, CD_READ, max_bytes=2048) != cd_raw or
             _cycle_receipt(cycle, frame) !=
             (cycle_raw, cycle_session_sha256)):
         raise ValueError("cycle or original CD/GPU evidence changed during verification")
