@@ -211,9 +211,10 @@ def audit(upstream, output, *, make="make"):
          "NO_WEBP=1", "NO_HDVIDEO=1"],
         cwd=pc, capture_output=True, text=True, timeout=120, check=False)
     if result.returncode:
-        raise ValueError(
-            "full original PC Make dry-run failed (no game binary built): " +
-            result.stderr[-1200:])
+        # GNU Make diagnostic output may contain owned BIOS/EXE locations,
+        # generated data paths or environment overrides. It is intentionally
+        # withheld instead of being embedded in ValueError / CLI output.
+        raise ValueError("full original PC Make dry-run failed; output withheld")
     return verify_dry_run(result.stdout, Path(output).absolute())
 
 
@@ -225,9 +226,10 @@ def main():
     try:
         report = audit(args.pinned_original_pc_checkout,
                        args.prepared_private_bundle)
-    except (OSError, ValueError, json.JSONDecodeError,
-            subprocess.TimeoutExpired) as exc:
+    except (ValueError, json.JSONDecodeError) as exc:
         p.error(str(exc))
+    except (OSError, subprocess.TimeoutExpired):
+        p.error("private original Make plan filesystem or command verification failed")
     print(json.dumps(report, indent=2, sort_keys=True))
 
 
