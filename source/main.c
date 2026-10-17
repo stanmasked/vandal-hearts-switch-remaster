@@ -471,6 +471,33 @@ int main(int argc, char **argv) {
                 (int)clock_saved,clock_seen);
             export_status=2;
         }
+        /* Stage274 bounded timestamp evidence, after joining audio owner.
+         * Never overwrite the stage269/272/273 original guest SD CSVs. */
+        char slow_path[VH_AUDOUT_QUEUE_EXPORT_PATH_CAP];
+        const VhAudoutQueueExportResult slow_saved=
+            vh_switch_game_audio_slow_export(slow_path,sizeof slow_path);
+        struct stat slow_stat;
+        const int slow_seen=slow_saved==VH_AUDOUT_QUEUE_EXPORT_OK
+            && stat(slow_path,&slow_stat)==0 && S_ISREG(slow_stat.st_mode);
+        const int slow_receipt_fd=open(
+            "sdmc:/switch/vandal-hearts-remake/audio-audout-slow-export-result.txt",
+            O_WRONLY|O_CREAT|O_EXCL,0600);
+        if(slow_receipt_fd>=0) {
+            char message[160];
+            const int n=snprintf(message,sizeof message,
+                "export_status=%d\npath_present=%u\nfile_size=%llu\n",
+                (int)slow_saved,slow_seen?1u:0u,
+                slow_seen ? (unsigned long long)slow_stat.st_size:0ull);
+            if(n>0 && (size_t)n<sizeof message)
+                (void)write(slow_receipt_fd,message,(size_t)n);
+            (void)close(slow_receipt_fd);
+        }
+        if(slow_saved!=VH_AUDOUT_QUEUE_EXPORT_OK || !slow_seen) {
+            fprintf(stderr,
+                "audout slow-call SD export failed: %d, path_present=%d\n",
+                (int)slow_saved,slow_seen);
+            export_status=2;
+        }
         if (resume_message_enabled)
             (void)appletSetRestartMessageEnabled(false);
     }
