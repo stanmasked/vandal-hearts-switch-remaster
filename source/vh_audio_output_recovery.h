@@ -195,4 +195,16 @@ int vh_audio_output_resume_recover(
     const VhAudioOutputOps *ops, VhAudioOutputRecovery *stats,
     int force_reopen);
 
+/* Final teardown for synchronous audout and any outstanding PCM page.
+ * Never close a backend whose stop callback failed: its last
+ * AudioOutBuffer may still be owned by the service. The caller must
+ * keep that backing PCM page alive until process teardown or another
+ * confirmed stop. A clean stop always closes exactly once.
+ *
+ * No raw PCM submission, music advance, resume attempt or diagnostic
+ * counter mutation occurs here. Return 0 if stopped AND closed,
+ * -1 on invalid ops or failed stop, leaving close UNCALLED.
+ */
+int vh_audio_output_stop_close(const VhAudioOutputOps *ops);
+
 #endif

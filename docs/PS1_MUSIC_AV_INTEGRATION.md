@@ -1773,3 +1773,34 @@ must remain blocked throughout; no restart, descriptor flush or
 new PCM delivery may be claimed. The added checks are host-only
 synthetic fault injection; they do NOT establish the real libnx
 hardware stop/queue semantics.
+
+
+### Fail-closed final audout stop and service close on forced shutdown
+
+The native audout proof previously called \`audoutExit()\` even if
+\`audoutStopAudioOut()\` failed during final cleanup. Because
+\`audoutPlayBuffer\` can fail to return the identical descriptor,
+such unconditional closure was not justified by the existing
+conservative PCM backing-buffer ownership rule.
+
+The new portable \`vh_audio_output_stop_close\` calls \`stop\`
+and invokes \`close\` **only after confirmed success**. An
+invalid callback table or failed stop returns an error without
+calling close or altering music/page accounting. The Switch
+audout proof now uses this helper for both failed initialization
+cleanup and end-of-run cleanup, prints a concise warning if stop
+cannot be confirmed, and cannot report a clean FULL run after
+that failure. Its static 0x1000-byte PCM audio output buffer
+remains allocated for the lifetime of the NRO even if the
+service is left initialized until application termination.
+
+The 70-page integrated mock regression additionally attempts
+three *failed* final stops after a terminally undelivered page:
+all three must skip close and leave the last returned A/B tail,
+PCM seam, DSP/wait histograms, raw backend call count, accepted
+checksum and recovered page accounting unchanged. The fourth
+stop then succeeds, closes exactly once and likewise does not
+convert the failed page into a returned one. Separate mock
+tests cover invalid callbacks and repeated failed shutdowns.
+These are fail-closed software ownership invariants, not
+measurements of actual physical Switch buffer drain semantics.

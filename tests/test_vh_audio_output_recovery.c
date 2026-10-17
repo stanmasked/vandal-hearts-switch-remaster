@@ -1039,6 +1039,24 @@ int main(void) {
            resampler.input_frames==held_input &&
            seq.note_ons==held_notes);
 
+    /* Final cleanup cannot close until stop has truly released the
+     * descriptor. Even an already-recovered service obeys this. */
+    Mock teardown={.opened=1,.playing=1,.fail_stops_left=2u};
+    VhAudioOutputOps teardown_ops=callbacks(&teardown);
+    for(unsigned i=0u;i<2u;i++) {
+        assert(vh_audio_output_stop_close(&teardown_ops)==-1);
+        assert(teardown.stops==i+1u && teardown.closes==0u);
+        assert(teardown.opened && teardown.playing);
+    }
+    assert(vh_audio_output_stop_close(&teardown_ops)==0);
+    assert(teardown.stops==3u && teardown.closes==1u);
+    assert(!teardown.opened && !teardown.playing);
+    assert(vh_audio_output_stop_close(NULL)==-1);
+    const VhAudioOutputOps missing_stop={
+        NULL,NULL,NULL,NULL,NULL,NULL
+    };
+    assert(vh_audio_output_stop_close(&missing_stop)==-1);
+
     /* Repeatedly failing even AFTER a late stage retry is never
      * allowed to close an outstanding descriptor. If all calls to
      * resume stop continue to fail, no page can be marked returned;

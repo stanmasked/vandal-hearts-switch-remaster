@@ -413,8 +413,10 @@ int main(int argc, char **argv) {
     };
     if (native_open(&output) || native_start(&output)) {
         printf("audout initialization or format negotiation failed\n");
-        (void)native_stop(&output);
-        native_close(&output);
+        /* A failed stop leaves a possibly outstanding audout page.
+         * Never call audoutExit until the stop callback succeeded. */
+        if (vh_audio_output_stop_close(&ops))
+            printf("audout stop unconfirmed; close skipped\n");
         vh_audio_assets_close(&user_assets);
         consoleExit(NULL);
         return 2;
@@ -578,11 +580,15 @@ int main(int argc, char **argv) {
             consoleUpdate(NULL);
         }
     }
-    /* The blocking audoutPlayBuffer returned its buffer before we
-     * release bank PCM. No audio thread may outlive this cleanup.
+    /* A failed audoutPlayBuffer may have left its 0x1000-byte
+     * static output page in flight. Stop MUST succeed before
+     * closing the service; otherwise keep the page allocated and
+     * mark this run failed. No background audio worker is spawned.
      */
-    if (native_stop(&output)) result=7;
-    native_close(&output);
+    if (vh_audio_output_stop_close(&ops)) {
+        if (!result) result=7;
+        printf("audout stop unconfirmed; close skipped\n");
+    }
     vh_audio_assets_close(&user_assets);
     /* Printed proof must never be inferred merely from a clean
      * applet exit: check page identity, fixture-switch cadence, raw

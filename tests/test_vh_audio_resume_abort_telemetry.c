@@ -281,6 +281,63 @@ int main(void) {
     audit(&dev,&recovery,&waits,&seams,&joint,&marks,
           PAGES,PAGES+1u);
 
+    /* Forced shutdown while the last *attempted* PCM page was not
+     * delivered: failed stops must not close the service, release
+     * any descriptor, create returned-page metadata, or advance
+     * the previously accepted audio checksum. */
+    dev.failed_stops_left=3u;
+    const unsigned closes_before=dev.closes;
+    const unsigned stops_before=dev.stops;
+    const unsigned raw_before=dev.calls;
+    const unsigned delivered_before=dev.delivered;
+    const uint64_t checksum_before=dev.delivery_hash;
+    const VhAudioSubmitTiming timing_shutdown=dev.timing;
+    const VhAudioSceneWaits waits_shutdown=waits;
+    const VhAudioOutputRecovery recovery_shutdown=recovery;
+    const uint64_t rendered_shutdown=synthetic_music_frame;
+    for(unsigned i=0u;i<3u;i++) {
+        assert(vh_audio_output_stop_close(&ops)==-1);
+        assert(dev.failed_stops_left==2u-i);
+        assert(dev.stops==stops_before+i+1u);
+        assert(dev.closes==closes_before);
+        assert(dev.open && dev.playing);
+        assert(dev.calls==raw_before && dev.delivered==delivered_before);
+        assert(dev.delivery_hash==checksum_before);
+        assert(!memcmp(&dev.timing,&timing_shutdown,sizeof dev.timing));
+        assert(!memcmp(&waits,&waits_shutdown,sizeof waits));
+        assert(!memcmp(&recovery,&recovery_shutdown,sizeof recovery));
+        assert(!memcmp(&seams,&last_seams,sizeof seams));
+        assert(!memcmp(&joint,&last_joint,sizeof joint));
+        assert(!memcmp(&marks,&last_marks,sizeof marks));
+        assert(synthetic_music_frame==rendered_shutdown);
+        audit(&dev,&recovery,&waits,&seams,&joint,&marks,
+              PAGES,PAGES+1u);
+    }
+    /* Fourth stop actually succeeds: close exactly ONCE. Closing
+     * is a resource action only and can never retroactively count
+     * a failed audio page as returned. */
+    assert(vh_audio_output_stop_close(&ops)==0);
+    assert(dev.stops==stops_before+4u && dev.closes==closes_before+1u);
+    assert(!dev.open && !dev.playing);
+    assert(dev.calls==raw_before && dev.delivered==PAGES);
+    assert(dev.delivery_hash==last_hash);
+    assert(!memcmp(&dev.timing,&timing_shutdown,sizeof dev.timing));
+    assert(!memcmp(&waits,&waits_shutdown,sizeof waits));
+    assert(!memcmp(&recovery,&recovery_shutdown,sizeof recovery));
+    assert(!memcmp(&seams,&last_seams,sizeof seams));
+    assert(!memcmp(&joint,&last_joint,sizeof joint));
+    assert(!memcmp(&marks,&last_marks,sizeof marks));
+    audit(&dev,&recovery,&waits,&seams,&joint,&marks,
+          PAGES,PAGES+1u);
+    assert(vh_audio_output_stop_close(NULL)==-1);
+    VhAudioOutputOps invalid_stop=ops;
+    invalid_stop.stop=NULL;
+    assert(vh_audio_output_stop_close(&invalid_stop)==-1);
+    invalid_stop=ops;
+    invalid_stop.close=NULL;
+    assert(vh_audio_output_stop_close(&invalid_stop)==-1);
+    assert(dev.closes==closes_before+1u);
+
     /* Fresh session: zero successfully returned pages and one
      * terminal failure must still report incomplete, not FULL. */
     Device empty={.open=1u,.playing=1u,.delivery_hash=FNV_INIT};

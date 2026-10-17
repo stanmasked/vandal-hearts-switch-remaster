@@ -403,6 +403,13 @@ int vh_audio_output_submit_recover(
     return -1;
 }
 
+int vh_audio_output_stop_close(const VhAudioOutputOps *ops) {
+    if (!ops || !ops->stop || !ops->close) return -1;
+    if (ops->stop(ops->context)) return -1;
+    ops->close(ops->context);
+    return 0;
+}
+
 int vh_audio_output_resume_recover(
     const VhAudioOutputOps *ops, VhAudioOutputRecovery *stats,
     int force_reopen) {
