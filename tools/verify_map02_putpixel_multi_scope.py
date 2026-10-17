@@ -28,9 +28,18 @@ def sha(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
-def verify_multi_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
+def verify_multi_pixel_ot(source_dir, native_dir, *, compiler="gcc",
+                          manifest_bytes=None):
     source_dir, native_dir = Path(source_dir).absolute(), Path(native_dir).absolute()
-    manifest_raw = private_file(source_dir, MANIFEST, max_bytes=64*1024)
+    # The private publisher can validate an exact in-memory candidate
+    # BEFORE the file exists, avoiding transient, unverified evidence.
+    # The public CLI always reads the published file from disk.
+    if manifest_bytes is None:
+        manifest_raw = private_file(source_dir, MANIFEST, max_bytes=64*1024)
+    elif type(manifest_bytes) is bytes and 0 < len(manifest_bytes) <= 64*1024:
+        manifest_raw = manifest_bytes
+    else:
+        raise ValueError("invalid in-memory two-word manifest candidate")
     manifest = parse_json(manifest_raw, MANIFEST)
     fields(manifest, (
         "schema", "source_frame", "gpu_draw_frame",
