@@ -13,6 +13,10 @@ on:
       - 'tools/map02_scoped_blend_sink.h'
       - 'tools/map02_vram_edges.c'
       - 'tools/map02_vram_edges.h'
+      - 'tools/map02_vram_edge_witness.py'
+      - 'tools/publish_map02_vram_edges_witness.py'
+      - 'tools/verify_map02_vram_edges_witness.py'
+      - 'tests/test_map02_vram_edge_witness.py'
       - 'tests/test_map02_vram_edges.py'
       - 'tools/map02_scoped_blend_stage.c'
       - 'tools/map02_scoped_blend_stage.h'
@@ -45,6 +49,10 @@ on:
       - 'tools/map02_scoped_blend_sink.h'
       - 'tools/map02_vram_edges.c'
       - 'tools/map02_vram_edges.h'
+      - 'tools/map02_vram_edge_witness.py'
+      - 'tools/publish_map02_vram_edges_witness.py'
+      - 'tools/verify_map02_vram_edges_witness.py'
+      - 'tests/test_map02_vram_edge_witness.py'
       - 'tests/test_map02_vram_edges.py'
       - 'tools/map02_scoped_blend_stage.c'
       - 'tools/map02_scoped_blend_stage.h'
@@ -93,7 +101,8 @@ jobs:
             tests.test_promote_map02_putpixel_stage \
             tests.test_map02_paired_publish_chain \
             tests.test_check_map02_original_gpu_tus \
-            tests.test_map02_vram_edges
+            tests.test_map02_vram_edges \
+            tests.test_map02_vram_edge_witness
       - name: Checkout pinned public original PC raster source
         uses: actions/checkout@v4
         with:
