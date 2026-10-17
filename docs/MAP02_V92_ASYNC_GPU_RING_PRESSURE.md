@@ -36,7 +36,7 @@ fails because it cannot attest to the real worker path.
 After the original signed four *emulator* VBlank callbacks, 2,380
 MIPS synthetic oracle readbacks and all v86–v91 host controls,
 the test starts the genuine software GPU thread and submits just
-16 warm-up sprite commands (to limit the already dense journal).
+8 warm-up sprite commands (to limit the already dense journal).
 It then submits 16 identical green GP0(A0) transfers,
 each **256×32 16-bit pixels (4,096 data words)** to one
 previously empty rectangular region of VRAM. This yields a known
