@@ -137,6 +137,31 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "discontinuous GPU state"):
             verify_capture(self.root, target_frame=12)
 
+    def test_dr_mode_cannot_write_vram_even_if_next_ft4_sees_same_bytes(self):
+        # Source-pinned PC_GPU_PRIM_DR_MODE only changes persistent GPU
+        # state. Forge an internally continuous stream where it also
+        # changes a VRAM word; the next FT4 starts from that same value.
+        packet = dict(self.events[2]["ft4"])
+        self.events = [
+            self.make(0, "before", "draw", ""),
+            self.make(1, "after", "draw", ""),
+            self.make(2, "before", "draw", "", ft4=packet),
+            self.make(3, "after", "draw", "", ft4=packet),
+        ]
+        for event in self.events[:2]:
+            event["primitive_type"] = 5
+        for event in self.events[1:]:
+            event["draw_mode"] = [11, 1, 1]
+            event["window"] = [2, 3, 4, 5]
+        self.save()
+        forged = bytearray(self.pre)
+        forged[2:4] = b"\\x01\\x00"
+        for step in range(4):
+            raw = self.pre if step == 0 else forged
+            (self.root / f"gpu-{step:04d}-vram.bin").write_bytes(raw)
+        with self.assertRaisesRegex(ValueError, "DR_MODE.*modified VRAM"):
+            verify_capture(self.root, target_frame=12)
+
     def test_pinned_ft4_type_requires_real_packet_metadata(self):
         # Source C supplies an FT4 pointer iff the DrawOTag type is 2.
         self.events[2]["ft4"] = None
