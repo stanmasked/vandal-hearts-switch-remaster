@@ -176,6 +176,8 @@ class PrivateGpuMakeOverlayTests(unittest.TestCase):
                            side_effect=lambda s: "D["+s+"]")):
             out = builder.prepare(self.upstream, self.destination)
         self.assertTrue(out["source_pinned"])
+        self.assertTrue(out["full_checkout_head_verified"])
+        self.assertTrue(out["full_tracked_checkout_clean"])
         self.assertTrue(out["native_gpu_two_word_and_dda_in_same_make_objects"])
         self.assertFalse(out["game_assets_included"])
         self.assertFalse(out["retail_map02_gameplay_captured"])
