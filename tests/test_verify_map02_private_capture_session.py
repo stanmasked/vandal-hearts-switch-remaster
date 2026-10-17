@@ -68,6 +68,14 @@ class PrivateCaptureSessionTests(unittest.TestCase):
         self.assertEqual(result["frame"], 3)
         self.assertTrue(result["executable_bytes_match_preflight"])
         self.assertTrue(result["native_gpu_binding"]["verified"])
+        self.assertEqual(result["dda_observation_mode"], "entered_only")
+        self.assertFalse(result["all_dda_journal_classes_observed"])
+        self.assertEqual(result["native_gpu_pairs_verified"], 1)
+        zero_digest = hashlib.sha256(bytes(VRAM_BYTES)).hexdigest()
+        expected_chain = hashlib.sha256((zero_digest * 2).encode("ascii")).hexdigest()
+        self.assertEqual(result["vram_snapshot_sha256_list_sha256"], expected_chain)
+        self.assertEqual(result["native_gpu_binding"]["vram_snapshot_sha256_list_sha256"],
+                         expected_chain)
         self.assertEqual(result["executable_sha256"],
                          hashlib.sha256(self.binary.read_bytes()).hexdigest())
         self.assertIsNone(result["dda_journal_fingerprints"][
@@ -80,6 +88,18 @@ class PrivateCaptureSessionTests(unittest.TestCase):
         self.assertNotIn(str(self.root), text)
         self.assertNotIn(str(self.binary), text)
         self.assertNotIn('"x_start"', text)
+
+    def test_vram_snapshot_mutation_changes_evidence_chain(self):
+        first = self.verify()
+        snapshot = self.root / "gpu-0001-vram.bin"
+        raw = bytearray(snapshot.read_bytes())
+        raw[0] = 77
+        snapshot.write_bytes(raw)
+        second = self.verify()
+        self.assertNotEqual(first["vram_snapshot_sha256_list_sha256"],
+                            second["vram_snapshot_sha256_list_sha256"])
+        self.assertTrue(second["native_gpu_binding"]["verified"])
+        self.assertFalse(second["retail_map02_frame_verified"])
 
     def test_modified_executable_fails(self):
         self.binary.write_bytes(self.binary.read_bytes() + b"modified")
