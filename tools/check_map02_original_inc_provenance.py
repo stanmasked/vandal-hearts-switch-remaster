@@ -24,7 +24,7 @@ GENERATOR_BLOB_SHA1 = "5d4093dbfdf9aeec6a2d29711eb7b7741b4d98ca"
 
 def _original_blob_sha1(data):
     return hashlib.sha1(
-        ("blob %d\\0" % len(data)).encode("ascii") + data
+        b"blob " + str(len(data)).encode("ascii") + bytes([0]) + data
     ).hexdigest()
 
 
