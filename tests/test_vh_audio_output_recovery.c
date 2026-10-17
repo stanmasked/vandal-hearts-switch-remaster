@@ -414,6 +414,8 @@ static void test_timing_fault_never_replays_delivered_pcm(void) {
                             &callbacks,&counters,dst,frames)==0);
         assert(dev.transport_health.timing_fault==1u);
         assert(dev.transport_health.delivered_without_timing==1u);
+        assert(vh_audio_output_verify_transport_health(
+                   &dev.transport_health,&counters)==1);
         assert(counters.pages_submitted==1u &&
                counters.frames_submitted==frames);
         assert(dev.returned==1u &&
@@ -467,6 +469,22 @@ static void test_timing_fault_never_replays_delivered_pcm(void) {
            health.delivered_without_timing==UINT64_MAX);
     assert(vh_audio_output_transport_outcome(0,-1,NULL)==-1);
     assert(vh_audio_output_transport_outcome(1,-1,NULL)==0);
+
+    VhAudioOutputRecovery sample_stats={.pages_submitted=1u};
+    health=(VhAudioTransportTimingHealth){0};
+    assert(vh_audio_output_verify_transport_health(&health,&sample_stats)==0);
+    health.delivered_without_timing=1u;
+    assert(vh_audio_output_verify_transport_health(&health,&sample_stats)==-1);
+    health.timing_fault=1u;
+    assert(vh_audio_output_verify_transport_health(&health,&sample_stats)==1);
+    health.delivered_without_timing=2u;
+    assert(vh_audio_output_verify_transport_health(&health,&sample_stats)==-1);
+    health.delivered_without_timing=1u;
+    health.timing_fault=2u;
+    assert(vh_audio_output_verify_transport_health(&health,&sample_stats)==-1);
+    assert(vh_audio_output_verify_transport_health(NULL,&sample_stats)==-1);
+    assert(vh_audio_output_verify_transport_health(&health,NULL)==-1);
+
 }
 
 static void test_failed_stop_page_lease_with_real_recovery(void) {
