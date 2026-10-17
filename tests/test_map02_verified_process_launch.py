@@ -236,6 +236,45 @@ int main(int argc, char **argv) {
                     build_bundle_dir=self.handoff.parent / "private-build-bundle")
         self.assertFalse((self.handoff / RECEIPT).exists())
 
+    def test_cycle_pre_exec_rejects_unstable_elf_digest(self):
+        cycle = self.handoff.parent / "cycle-unstable-pre-elf"
+        cycle.mkdir(mode=0o700)
+        with patch(
+                "tools.check_map02_linked_font_elf.stable_owned_elf_sha256",
+                side_effect=ValueError("private ELF digest bytes changed between read passes")
+        ), patch("tools.map02_verified_process_launch.subprocess.Popen") as popen:
+            with self.assertRaisesRegex(ValueError, "bytes changed between read passes"):
+                launch_observed_pc(
+                    self.handoff, self.native, self.scoped,
+                    self.binary, self.owned, upstream=self.upstream,
+                    x=10, y=20, timeout=8, cycle_dir=cycle,
+                    build_receipt_dir=self.handoff.parent / "private-receipt",
+                    build_bundle_dir=self.handoff.parent / "private-bundle")
+        popen.assert_not_called()
+        self.assertFalse((self.handoff / RECEIPT).exists())
+
+    def test_cycle_post_exec_rejects_unstable_elf_digest(self):
+        cycle = self.handoff.parent / "cycle-unstable-post-elf"
+        cycle.mkdir(mode=0o700)
+        from tools.check_map02_linked_font_elf import stable_owned_elf_sha256
+        original_digest = stable_owned_elf_sha256(self.binary)
+        with patch(
+                "tools.check_map02_linked_font_elf.stable_owned_elf_sha256",
+                side_effect=[original_digest, ValueError(
+                    "private ELF digest bytes changed between read passes")]), patch(
+                "tools.check_map02_cycle_elf.audit_cycle_elf",
+                return_value={"required_symbols_present": 19}), patch(
+                "tools.map02_cycle_build_provenance.verify_build_receipt",
+                return_value={"source_pinned_full_elf_bytes_checked": True}):
+            with self.assertRaisesRegex(ValueError, "bytes changed between read passes"):
+                launch_observed_pc(
+                    self.handoff, self.native, self.scoped,
+                    self.binary, self.owned, upstream=self.upstream,
+                    x=10, y=20, timeout=8, cycle_dir=cycle,
+                    build_receipt_dir=self.handoff.parent / "private-receipt",
+                    build_bundle_dir=self.handoff.parent / "private-bundle")
+        self.assertFalse((self.handoff / RECEIPT).exists())
+
     def test_cycle_requires_a_build_receipt_and_source_bundle_before_exec(self):
         cycle = self.handoff.parent / "cycle-no-build"
         cycle.mkdir(mode=0o700)
