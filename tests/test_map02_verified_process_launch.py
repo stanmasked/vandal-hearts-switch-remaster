@@ -296,6 +296,16 @@ int main(int argc, char **argv) {
                     "VH_ACCURATE": "0",
                     "VH_RASTER_THREADS": "8",
                     "VH_MAP02_PROBE_FRAME": "999",
+                    "VH_ALLOW_UNVERIFIED_EXE": "1",
+                    "VH_PSX_EXE": "/untrusted/other-psx.exe",
+                    "VH_REGION": "jp",
+                    "VH_KROM_SOURCE": "/untrusted/other-font.bin",
+                    "LD_PRELOAD": "/untrusted/inject.so",
+                    "LD_AUDIT": "/untrusted/audit.so",
+                    "LD_LIBRARY_PATH": "/untrusted/libraries",
+                    "DYLD_INSERT_LIBRARIES": "/untrusted/plugin.dylib",
+                    "PYTHONPATH": "/untrusted/python",
+                    "PYTHONHOME": "/untrusted/python-home",
             }):
                 with patch("tools.map02_verified_process_launch.subprocess.Popen",
                            side_effect=observed_popen):
@@ -317,6 +327,15 @@ int main(int argc, char **argv) {
                 ("VH_MAP02_PROBE_FRAME", "7")):
             with self.subTest(variable=name):
                 self.assertEqual(child_env.get(name), expected)
+        for variable in (
+                "VH_ALLOW_UNVERIFIED_EXE", "VH_KROM_SOURCE", "LD_PRELOAD",
+                "LD_AUDIT", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES",
+                "PYTHONPATH", "PYTHONHOME"):
+            with self.subTest(blocked_environment=variable):
+                self.assertNotIn(variable, child_env)
+        self.assertEqual(child_env.get("VH_REGION"), "us")
+        self.assertEqual(child_env.get("VH_PSX_EXE"),
+                         str(self.upstream / "SLUS_004.47"))
         self.assertTrue(result["kernel_executable_hash_matched"])
         self.assertEqual(forwarded, [str(cycle)])
         receipt.assert_called_once()
