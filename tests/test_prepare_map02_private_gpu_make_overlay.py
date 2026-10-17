@@ -27,7 +27,13 @@ class PrivateGpuMakeOverlayTests(unittest.TestCase):
         fake = {
             builder.MAKE_REL:
                 ("\n".join(builder.REQUIRED_MAKE_ANCHORS) +
-                 "\n$(BUILD_DIR)/libgpu.o: src/libgpu.c\n"
+                 "\nBACKEND_SRCS := libgpu.c pc_raster.c\n"
+                 "BACKEND_OBJS := $(BUILD_DIR)/libgpu.o $(BUILD_DIR)/pc_raster.o\n"
+                 "default: $(GAME_O_FILES) $(BACKEND_OBJS)\n"
+                 "objs: default $(DATA_OBJS)\n"
+                 "link: $(DATA_OBJS)\n"
+                 "\t$(CC) $(GAME_O_FILES) $(BACKEND_OBJS) $(DATA_OBJS)\n"
+                 "$(BUILD_DIR)/libgpu.o: src/libgpu.c\n"
                  "$(BUILD_DIR)/pc_raster.o: src/pc_raster.c\n").encode(),
             builder.GPU_REL: b"gpu-fake-original",
             builder.RASTER_REL: b"raster-fake-original",
@@ -171,6 +177,21 @@ class PrivateGpuMakeOverlayTests(unittest.TestCase):
                           for path in fake}, before)
         with self.assertRaisesRegex(ValueError, "already exists"):
             builder.prepare(self.upstream, self.destination)
+
+    def test_refuses_pinned_makefile_with_wrong_full_link_graph(self):
+        known, fake = self.fake_sources()
+        original_make = fake[builder.MAKE_REL]
+        wrong = original_make.replace(b"objs: default $(DATA_OBJS)",
+                                      b"objs: default")
+        (self.upstream / builder.MAKE_REL).write_bytes(wrong)
+        # Treat modified bytes as a pinned blob for this negative unit:
+        # proves semantic Make checks are independent from blob SHA.
+        known[wrong] = builder.PINNED_BLOB_SHA1[builder.MAKE_REL]
+        with patch.object(builder, "git_blob_sha1",
+                          side_effect=lambda raw: known[raw]):
+            with self.assertRaisesRegex(ValueError, "full-link Make dependency"):
+                builder.prepare(self.upstream, self.destination)
+        self.assertFalse(self.destination.exists())
 
     def test_refuses_wrong_pinned_blob_and_does_not_publish_output(self):
         self.fake_sources()
