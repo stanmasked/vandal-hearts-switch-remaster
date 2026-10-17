@@ -56,9 +56,9 @@ class TestGuestSceneTrace(unittest.TestCase):
             analyze(trace(bad))
 
     def sd_data(self,dropped=0):
-        header="index,event,serial,scene,monotonic_ns,dropped_total\\n"
+        header="index,event,serial,scene,monotonic_ns,dropped_total\n"
         return header+"".join(
-            f"{i},{event},{serial},{scene},{time},{dropped}\\n"
+            f"{i},{event},{serial},{scene},{time},{dropped}\n"
             for i,(event,serial,scene,time) in enumerate(self.rows))
 
     def test_real_sd_csv_internal_timing(self):
@@ -86,7 +86,7 @@ class TestGuestSceneTrace(unittest.TestCase):
 
     def test_sd_forged_dropped_and_extra_bytes_rejected(self):
         with self.assertRaises(TraceError):
-            analyze_sd_csv(self.sd_data().replace(",0\\n",",1\\n",1))
+            analyze_sd_csv(self.sd_data().replace(",0\n",",1\n",1))
         with self.assertRaises(TraceError):
             analyze_sd_csv(self.sd_data()+"UNEXPECTED")
         with self.assertRaises(TraceError):
@@ -98,7 +98,7 @@ class TestGuestSceneTrace(unittest.TestCase):
         with self.assertRaises(TraceError):
             analyze_sd_csv(self.sd_data().replace("dropped_total","x"))
         with self.assertRaises(TraceError):
-            analyze_sd_csv(self.sd_data().replace("0,INPUT","0,\\x00INPUT"))
+            analyze_sd_csv(self.sd_data().replace("0,INPUT","0,\x00INPUT"))
 
     def test_duplicate_invalid_footer_and_missing_row_rejected(self):
         with self.assertRaises(TraceError):
