@@ -121,7 +121,9 @@ on:
       - 'tools/publish_map02_multi_capture_manifest.py'
       - 'tools/instrument_map02_multi_putpixel_scope.py'
       - 'tools/prepare_map02_private_gpu_make_overlay.py'
+      - 'tools/verify_map02_private_gpu_make_overlay.py'
       - 'tests/test_prepare_map02_private_gpu_make_overlay.py'
+      - 'tests/test_verify_map02_private_gpu_make_overlay.py'
       - 'tools/audit_map02_putpixel_samples.py'
       - 'tools/verify_map02_camera_capture.py'
       - 'tools/verify_map02_frame_bundle.py'
@@ -245,10 +247,15 @@ jobs:
           (
             cd remaster
             python3 -m unittest discover -s tests -p 'test_prepare_map02_private_gpu_make_overlay.py' -v
+            python3 -m unittest discover -s tests -p 'test_verify_map02_private_gpu_make_overlay.py' -v
           )
           PYTHONPATH=remaster python3 -m tools.prepare_map02_private_gpu_make_overlay \
             upstream --output-dir /tmp/vh-map02-pinned-private-make \
             > /tmp/vh-map02-private-make.json
+          PYTHONPATH=remaster python3 -m tools.verify_map02_private_gpu_make_overlay \
+            upstream --output-dir /tmp/vh-map02-pinned-private-make \
+            --manifest /tmp/vh-map02-private-make.json \
+            > /tmp/vh-map02-replayed-make-before.json
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -285,6 +292,22 @@ jobs:
             fi
           )
           test -z "$(cd upstream && git status --porcelain -- platform/pc/src/libgpu.c platform/pc/src/pc_raster.c)"
+          PYTHONPATH=remaster python3 -m tools.verify_map02_private_gpu_make_overlay \
+            upstream --output-dir /tmp/vh-map02-pinned-private-make \
+            --manifest /tmp/vh-map02-private-make.json \
+            > /tmp/vh-map02-replayed-make-after.json
+          cmp /tmp/vh-map02-replayed-make-before.json /tmp/vh-map02-replayed-make-after.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          evidence = json.loads(Path("/tmp/vh-map02-replayed-make-after.json").read_text())
+          assert evidence["receipt_exactly_replayed"]
+          assert evidence["generated_files_checked"] == 3
+          assert evidence["full_checkout_head_verified"] and evidence["full_tracked_checkout_clean"]
+          assert not evidence["private_game_assets_read"]
+          assert not evidence["private_game_executable_built"]
+          assert not evidence["hd_replacement_authorized"]
+          PY
 
       - name: Run patch generator regression tests
         working-directory: remaster
