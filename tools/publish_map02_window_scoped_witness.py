@@ -31,6 +31,7 @@ MANIFEST = "gpu-native-window-scoped-source-witness.json"
 DIGEST_FIELDS = (
     "source_window_witness_manifest_sha256",
     "all_native_window_file_bytes_sha256",
+    "capture_session_sha256",
     "putpixel_staged_sha256",
     "blendg1_staged_sha256",
     "direct_vram_edges_staged_sha256",
@@ -43,6 +44,7 @@ REQUIRED = (
     "unchanged_draws_at_selected_pixel",
     "selected_pixel_putpixel_events",
     "selected_pixel_blendg1_events", "source_gte_subsequence_verified",
+    "capture_session_linked",
     "whole_original_gameplay_frame_proven",
     "physical_ps1_equivalence_proven", *DIGEST_FIELDS,
 )
@@ -55,6 +57,8 @@ def _digest(blob):
 def _payload(report):
     if report.get("source_gte_subsequence_verified") is not True:
         raise ValueError("a fully verified original GTE source witness is mandatory")
+    if report.get("capture_session_linked") is not True:
+        raise ValueError("same-process GPU/scoped capture session receipt is mandatory")
     result = {key: report[key] for key in REQUIRED if key != "schema"}
     result["schema"] = SCHEMA
     return _validate(result)
@@ -66,6 +70,7 @@ def _validate(record):
     fields(record, REQUIRED, MANIFEST)
     if (record["schema"] != SCHEMA or
             record["source_gte_subsequence_verified"] is not True or
+            record["capture_session_linked"] is not True or
             record["whole_original_gameplay_frame_proven"] is not False or
             record["physical_ps1_equivalence_proven"] is not False):
         raise ValueError("unsupported or overstated MAP02 scoped witness")
