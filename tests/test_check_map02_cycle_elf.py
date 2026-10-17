@@ -100,6 +100,18 @@ class OriginalCycleElfAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "initialized original US font"):
             audit_cycle_elf(missing)
 
+    def test_truncated_initialized_glyph_symbol_is_rejected(self):
+        smaller = self.root / "font-truncated"
+        source = self.root / "font-truncated.c"
+        source.write_text(
+            "\n".join("void " + sym + "(void) {}" for sym in SYMBOLS)
+            + "\nconst unsigned char pc_kanji_charset2[6269] = {1};\n"
+            + "int main(void) {return 0;}\n")
+        subprocess.run(["cc", str(source), "-o", str(smaller)], check=True,
+                       capture_output=True, text=True, timeout=30)
+        with self.assertRaisesRegex(ValueError, "initialized original US font"):
+            audit_cycle_elf(smaller)
+
     def test_uninitialized_font_name_cannot_substitute_for_original_glyphs(self):
         missing = self.root / "font-bss"
         source = self.root / "font-bss.c"
