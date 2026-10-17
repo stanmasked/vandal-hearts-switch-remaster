@@ -106,6 +106,16 @@ int fsync(int fd) {
     const char *fault = getenv("VH_MAP02_TEST_FAULT");
     const char *root = getenv("VH_MAP02_CYCLE_OUTPUT_DIR");
     if (!original) original = (fsync_fn)dlsym(RTLD_NEXT, "fsync");
+    if (!injected && fault && root && !strcmp(fault, "late-flip") &&
+        fstat(fd, &st) == 0 && S_ISDIR(st.st_mode)) {
+        int target = openat(fd, "map02-single-process-cycle.jsonl",
+                            O_RDWR | O_NOFOLLOW);
+        if (target >= 0) {
+            injected = 1;
+            if (pwrite(target, "?", 1, 1) != 1) return -1;
+            close(target);
+        }
+    }
     if (!injected && fault && root && fstat(fd, &st) == 0 &&
         S_ISREG(st.st_mode) && st.st_size > 100) {
         injected = 1;
@@ -260,6 +270,15 @@ class CycleOrderTests(unittest.TestCase):
             outcome = self.run_mode("good", directory=root, fault="flip")
             self.assertEqual(outcome.returncode, 0, outcome.stderr)
             self.assertIn("failed=1 receipt=0", outcome.stdout)
+            self.assertFalse((root / "map02-single-process-cycle.jsonl").exists())
+
+    def test_second_read_rejects_edit_during_directory_fsync(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "receipts"
+            root.mkdir(mode=0o700)
+            result = self.run_mode("good", directory=root, fault="late-flip")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("failed=1 receipt=0", result.stdout)
             self.assertFalse((root / "map02-single-process-cycle.jsonl").exists())
 
     def test_replaced_name_is_not_unlinked_on_failure(self):
