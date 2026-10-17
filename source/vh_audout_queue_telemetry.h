@@ -49,4 +49,8 @@ int vh_audout_queue_verify_csv(const VhAudoutQueueTelemetry *t,FILE *in);
  * per second plus total; the proven Stage-269 CSV stays byte-compatible. */
 int vh_audout_latency_write_csv(const VhAudoutQueueTelemetry *t,FILE *out);
 int vh_audout_latency_verify_csv(const VhAudoutQueueTelemetry *t,FILE *in);
+/* Stage 273 separate absolute guest-clock anchor: same monotonic ns
+ * source as scene INPUT events, never inferred from host PCM markers. */
+int vh_audout_clock_write_csv(const VhAudoutQueueTelemetry *t,FILE *out);
+int vh_audout_clock_verify_csv(const VhAudoutQueueTelemetry *t,FILE *in);
 #endif
