@@ -62,6 +62,22 @@ class PrivateFullPcBuildTests(unittest.TestCase):
         self.assertEqual(result["required_original_cycle_and_gpu_symbols"], 19)
         self.assertEqual(len(result["pc_executable_sha256"]), 64)
 
+    def test_optional_private_build_receipt_emitted_only_after_elf_audit(self):
+        report_dir = self.upstream.parent / "build-receipt"
+        report_dir.mkdir(mode=0o700)
+        with patch("tools.build_map02_cycle_pc_local.subprocess.run",
+                   side_effect=self.build_fake), patch(
+                "tools.map02_cycle_build_provenance.create_build_receipt",
+                return_value={
+                    "private_build_receipt_sha256": "e" * 64,
+                    "retail_gameplay_executed": False,
+                }) as publisher:
+            result = build_full_pc(
+                self.upstream, self.bundle, report_dir=report_dir)
+        publisher.assert_called_once()
+        self.assertEqual(result["private_build_receipt_sha256"], "e" * 64)
+        self.assertFalse(result["retail_gameplay_executed"])
+
     def test_no_overwrite_even_when_prior_target_is_symlink(self):
         self.exe.parent.mkdir(parents=True, exist_ok=True)
         self.exe.symlink_to(self.bundle / "map02_cycle.mk")
