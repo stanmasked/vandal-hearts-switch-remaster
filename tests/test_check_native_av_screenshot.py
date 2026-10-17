@@ -70,6 +70,39 @@ class NativeAVScreenshotTests(unittest.TestCase):
             self.assertNotEqual(denied.returncode, 0)
             self.assertIn("scene-switch marker not confirmed", denied.stderr)
 
+    def test_guest_auto_zr_marker_requires_both_verified_frames(self):
+        first,second=make_frames()
+        first.putpixel((1050,455),AUDIO_OK)
+        second.putpixel((1050,455),AUDIO_OK)
+        observed=inspect_images(first,second)
+        self.assertEqual(observed["guest_zr_recovery"],"confirmed")
+        self.assertTrue(observed["guest_zr_is_not_physical_button"])
+        self.assertFalse(observed["audible_audio_verified"])
+        with tempfile.TemporaryDirectory() as folder:
+            first_path=Path(folder)/"before.png"
+            second_path=Path(folder)/"after.png"
+            args=[sys.executable,"tests/check_native_av_screenshot.py",
+                  str(first_path),str(second_path),
+                  "--require-guest-zr-recovery"]
+            first.save(first_path)
+            second.save(second_path)
+            success=subprocess.run(args,capture_output=True,text=True)
+            self.assertEqual(success.returncode,0,success.stderr)
+            second.putpixel((1050,455),(255,219,102))
+            second.save(second_path)
+            rejected=subprocess.run(args,capture_output=True,text=True)
+            self.assertNotEqual(rejected.returncode,0)
+            self.assertIn("guest ZR recovery not confirmed",rejected.stderr)
+            first.putpixel((1050,455),AUDIO_FAIL)
+            first.save(first_path)
+            rejected=subprocess.run(args,capture_output=True,text=True)
+            self.assertNotEqual(rejected.returncode,0)
+
+    def test_guest_auto_zr_missing_marker_does_not_claim_recovery(self):
+        first,second=make_frames()
+        self.assertNotEqual(inspect_images(first,second)["guest_zr_recovery"],
+                            "confirmed")
+
     def test_user_bank_never_reports_synthetic_switching(self):
         first, second = make_frames(
             source=AUDIO_OK, synthetic_switches=(83, 100, 119))
