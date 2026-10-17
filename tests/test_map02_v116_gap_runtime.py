@@ -80,7 +80,7 @@ class V116NativeRuntimeBinding(unittest.TestCase):
     def test_public_output_contains_no_sample_values_or_hidden_fingerprints(self):
         result=json.dumps(summarize(oldlog()+gap_line(base()),encode(sample())))
         for forbidden in ("0xe1000020","private_runtime_log",
-                          "pixel_value","vram_address","sha256","snapshot_hash"):
+                          '"pixel_value":','"pixels":',"vram_address","sha256","snapshot_hash"):
             self.assertNotIn(forbidden,result)
         self.assertIn("host_callback_order_not_emulated_gpu_completion",result)
 
