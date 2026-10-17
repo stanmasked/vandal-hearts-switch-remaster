@@ -21,6 +21,8 @@ on:
       - 'tools/audit_nexium_audout_latency.py'
       - 'tools/audit_nexium_audout_scene_correlation.py'
       - 'tools/audit_nexium_audout_slow_calls.py'
+      - 'tools/compare_nexium_verified_slow_runs.py'
+      - 'tests/test_compare_nexium_verified_slow_runs.py'
       - 'tests/test_audit_nexium_audout_slow_calls.py'
       - 'tests/test_audit_nexium_audout_scene_correlation.py'
       - 'tests/test_audit_nexium_audout_latency.py'
@@ -82,6 +84,7 @@ jobs:
           python3 -m unittest discover -s tests -p "test_audit_nexium_audout_latency.py" -v
           python3 -m unittest discover -s tests -p "test_audit_nexium_audout_scene_correlation.py" -v
           python3 -m unittest discover -s tests -p "test_audit_nexium_audout_slow_calls.py" -v
+          python3 -m unittest discover -s tests -p "test_compare_nexium_verified_slow_runs.py" -v
           python3 -m unittest discover -s tests -p "test_audit_nexium_audout_repeatability.py" -v
           python3 -m unittest discover -s tests -p "test_analyze_nexium_audout_window_maxima.py" -v
           python3 -m unittest discover -s tests -p "test_verify_switch_runtime_nro.py" -v
