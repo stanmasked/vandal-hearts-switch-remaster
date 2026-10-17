@@ -143,3 +143,30 @@ by the successful same-run Actions job, not by a self-attesting ZIP.
 
 A current native code change is not required: the identical NRO
 was reused. Stage276 only extends capture, verification and CI.
+
+## Independent framebuffer check from first accepted archive
+
+The eleven 1280×720 idle screenshots saved by run `39077499594`
+were also independently read with Pillow. A fixed rectangular
+**guest music-label panel** `(960,600,1140,638)` had **zero changed
+pixels** across all eleven idle snapshots. The full framebuffer
+**did** advance (thousands of other pixels changed). By contrast,
+the same music-label rectangle changed between the first and
+first-transition screenshot of the ten-switch capture.
+
+Subsequent workflow changes enforce this exact optical negative
+control automatically. Their GitHub CI acceptance is tracked
+separately from the already successful original-SD no-switch audit.
+The panel is an application-level visual receipt, **not** a
+measurement of audio fidelity or PCM output timing.
+
+## Relative-rate interpretation
+
+For the first paired observation, the fraction of ≥40 ms audout
+calls was almost the same when normalized by attempted calls:
+**14.429 per 1,000** during idle versus **14.639 per 1,000**
+with ten switches. In contrast, ≥50 ms calls were **2.186 per
+1,000** during idle versus **0.505 per 1,000** with switches.
+There were only six ≥50 ms calls across both sessions; do not
+infer a statistically significant difference or causal protective
+effect of switching from this small, nonrandomized sample.
