@@ -123,8 +123,11 @@ class NativeOverdrawTests(unittest.TestCase):
         write_word(pre,31,31,0x7fff)
         self.base.override_snapshots[4]=bytes(pre)
         self.save()
+        # The native DrawOTag verifier now rejects this boundary before
+        # the downstream overdraw audit gets to its own defensive check.
+        # Preserve strict failure instead of bypassing the native gate.
         with self.assertRaisesRegex(
-            ValueError,"unobserved VRAM difference between consecutive"
+            ValueError, "adjacent DrawOTag primitives have discontinuous VRAM"
         ):
             verify_native_overdraw(self.source,self.native)
 
