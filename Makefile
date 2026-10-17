@@ -66,6 +66,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_vh_
 	python3 tests/test_verify_switch_audio_h05_capture_binding.py
 	python3 tests/test_verify_switch_audio_h05_operator_binding.py
 	python3 tests/test_seal_switch_audio_h05_review.py
+	python3 tests/test_classify_switch_portlib_install.py
 	python3 tests/test_verify_switch_audio_live_preflight.py
 	python3 tests/test_verify_switch_audio_sd_transfer.py
 	python3 tests/test_assess_switch_audio_first_run.py
@@ -150,6 +151,7 @@ test-audio-stream: $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(B
 	python3 tests/test_verify_switch_audio_h05_capture_binding.py
 	python3 tests/test_verify_switch_audio_h05_operator_binding.py
 	python3 tests/test_seal_switch_audio_h05_review.py
+	python3 tests/test_classify_switch_portlib_install.py
 	python3 tests/test_verify_switch_audio_live_preflight.py
 	python3 tests/test_verify_switch_audio_sd_transfer.py
 	python3 tests/test_assess_switch_audio_first_run.py
