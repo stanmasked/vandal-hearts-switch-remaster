@@ -14,9 +14,7 @@ import subprocess
 
 from tools.verify_map02_frame_bundle import parse_json
 from tools.verify_map02_native_gpu_capture import private_file
-from tools.verify_map02_putpixel_scope import (
-    PIXEL_LOG, MAX_CALLS, verify_pixel_ot,
-)
+from tools.verify_map02_putpixel_scope import PIXEL_LOG, verify_pixel_ot
 
 MAX_SAMPLES = 8
 
