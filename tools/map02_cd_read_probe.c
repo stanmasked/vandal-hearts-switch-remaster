@@ -87,6 +87,16 @@ int vh_map02_cd_probe_failed(void) {
     return (int)state.failed;
 }
 
+int vh_map02_cd_probe_raw_crc32(unsigned *out) {
+    if (!out || state.failed || state.claimed != 1 || state.started != 1 ||
+        state.finished != 1 || state.completed != 1 ||
+        state.count != MAP02_SECTORS ||
+        state.raw_crc != state.transferred_crc)
+        return 0;
+    *out = state.raw_crc ^ 0xffffffffu;
+    return 1;
+}
+
 int vh_map02_cd_probe_format_jsonl(char *out, size_t capacity) {
     const char *session;
     int n;
