@@ -64,7 +64,7 @@ def inspect_relocatable(path):
         ["readelf", "-h", str(path)], capture_output=True,
         text=True, timeout=30, check=False)
     if header.returncode or not re.search(
-            r"^\\s*Type:\\s+REL\\s", header.stdout, re.M):
+            r"^\s*Type:\s+REL\s", header.stdout, re.M):
         raise ValueError("public code proof must be a relocatable ELF, not a game")
     exports = subprocess.run(
         ["nm", "-g", "--defined-only", str(path)],
@@ -80,7 +80,7 @@ def inspect_relocatable(path):
     ]
     if any(defined.count(name) != 1 for name in REQUIRED_SYMBOLS):
         raise ValueError("original CD/GPU or in-process observer export absent/duplicated")
-    if any(re.search(r"\\bU\\s+vh_map02_\\w+", line)
+    if any(re.search(r"\bU\s+vh_map02_\w+", line)
            for line in undefined.stdout.splitlines()):
         raise ValueError("combined original PC code has unresolved MAP02 observer hooks")
     return {
