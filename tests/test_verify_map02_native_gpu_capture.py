@@ -91,6 +91,31 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"wrong file size"):
             verify_capture(self.root,target_frame=12)
 
+    def test_optional_receipt_reconciles_exact_counts_and_rejects_false_claims(self):
+        baseline = verify_capture(self.root, target_frame=12)
+        self.assertFalse(baseline["capture_receipt_supplied"])
+        self.assertFalse(baseline["capture_window_closed_without_detected_loss"])
+        receipt = {
+            "schema": "vh.map02.native-capture-status.v1",
+            "gpu_draw_frame": 12, "observed_hooks": 4,
+            "before_hooks": 2, "after_hooks": 2,
+            "draw_before_hooks": 1, "transfer_before_hooks": 1,
+            "indexed_hooks": 4, "written_hooks": 4,
+            "limit_reached": False, "walk_finished": True,
+            "hooks_balanced": True,
+            "observed_window_closed_without_detected_loss": True,
+        }
+        path = self.root / "gpu-native-capture-status.json"
+        path.write_text(json.dumps(receipt))
+        result = verify_capture(self.root, target_frame=12)
+        self.assertTrue(result["capture_window_closed_without_detected_loss"])
+        self.assertFalse(result["full_original_gameplay_frame_proven"])
+        receipt["draw_before_hooks"] = 2
+        receipt["transfer_before_hooks"] = 0
+        path.write_text(json.dumps(receipt))
+        with self.assertRaisesRegex(ValueError, "count/log divergence"):
+            verify_capture(self.root, target_frame=12)
+
     def test_source_key_not_fabricated_and_invalid_packet_rejected(self):
         self.events[3]["ft4"]["xy"][0]=2
         self.save()
