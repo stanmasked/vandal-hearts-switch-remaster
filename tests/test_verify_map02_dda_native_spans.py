@@ -48,7 +48,7 @@ class SpanJournalTests(unittest.TestCase):
 
     def test_reject_crlf(self):
         with self.assertRaises(ValueError):
-            parse_native_spans(serialize(BASE).replace(b"\\n", b"\\r\\n"))
+            parse_native_spans(serialize(BASE).replace(b"\n", b"\r\n"))
 
     def test_reject_entered_row_outside_vertical_clip(self):
         for row in (dict(BASE, y=9), dict(BASE, y=16)):
