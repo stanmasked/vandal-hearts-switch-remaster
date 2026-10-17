@@ -554,6 +554,17 @@ jobs:
           assert transitions["HD_replacement_approved"] is False
           Path("proof/public/v113-vblank-outcome-transitions.json").write_text(
               json.dumps(transitions,sort_keys=True)+"\n")
+          readback_coverage=v114_coverage(path.read_bytes())
+          assert readback_coverage["emulator_vblank_edges"]==4
+          assert readback_coverage["observed_unai_handlers"]==observed
+          assert sum(b["observed_readbacks"] for b in readback_coverage["intervals"])==observed
+          assert sum(b["changed_sample_points"] for b in readback_coverage["intervals"])==pixels["changed_sample_points"]
+          assert readback_coverage["readback_pair_observed_vblank_edges"]==transitions["observed_handler_pairs_per_edge"]
+          assert readback_coverage["no_readback_is_not_proof_of_no_vram_changes"] is True
+          assert readback_coverage["same_delta_count_is_not_proof_of_same_pixel_values"] is True
+          assert readback_coverage["HD_replacement_approved"] is False
+          Path("proof/public/v114-vblank-readback-coverage.json").write_text(
+              json.dumps(readback_coverage,sort_keys=True)+"\n")
           assert evidence["vblank_edges"]==vblanks and evidence["gp1_mmio"]==gp1
           assert evidence["events"]==entries and evidence["bytes"]==size
           assert evidence["original_retail_MAP02_verified"] is False
