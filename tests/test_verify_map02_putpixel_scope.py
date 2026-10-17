@@ -262,6 +262,47 @@ class PixelToOriginalPrimitiveTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError,"noncanonical scoped PutPixel"):
                     verify_pixel_ot(self.root,self.native)
 
+    def test_accurate_semitransparent_pc_blend_and_tamper_rejected(self):
+        # Keep the native snapshots untouched and forge only the claimed
+        # input to WritePixel. The previously checked primitive endpoints
+        # remain coherent but the actual PC BlendG1 result must differ.
+        self.pixel_rows[0]["semi"] = 1
+        self.pixel_rows[0]["front"] = 0x001f
+        self.save()
+        report = verify_pixel_ot(self.root, self.native)
+        self.assertEqual(report["accurate_pc_blend_results_checked"], 1)
+        self.assertEqual(report["legacy_pc_blend_results_checked"], 0)
+        self.assertTrue(report["source_pinned_pc_writepixel_effects_verified"])
+        self.pixel_rows[0]["front"] = 0x0001
+        self.save()
+        with self.assertRaisesRegex(ValueError, "semi-transparent PutPixel"):
+            verify_pixel_ot(self.root, self.native)
+
+    def test_legacy_semitransparent_pc_blend_and_tamper_rejected(self):
+        # Legacy PackColor clears bit15 even when the input texel sets it.
+        original = bytes(self.base.base.bytes_before)
+        first = bytearray(original)
+        second = bytearray(first)
+        struct.pack_into("<H", first, (30*1024+30)*2, 0x001f)
+        second[:] = first
+        struct.pack_into("<H", second, (30*1024+30)*2, 0x7c00)
+        self.base.base.override_snapshots = {
+            3:bytes(first), 4:bytes(first), 5:bytes(second),
+        }
+        self.pixel_rows = [
+            self.row(0,1,0,0x801f,0x001f,semi=1),
+            self.row(1,2,0x001f,0x7c00,0x7c00),
+        ]
+        self.pixel_rows[0]["accurate"] = 0
+        self.save()
+        report = verify_pixel_ot(self.root,self.native)
+        self.assertEqual(report["legacy_pc_blend_results_checked"],1)
+        self.assertEqual(report["accurate_pc_blend_results_checked"],0)
+        self.pixel_rows[0]["after"] = 0x801f
+        self.save()
+        with self.assertRaisesRegex(ValueError,"semi-transparent PutPixel"):
+            verify_pixel_ot(self.root,self.native)
+
     def test_wrong_frame_scope_or_primitive_type_refused(self):
         self.pixel_rows[0]["frame"]=13
         self.save()
