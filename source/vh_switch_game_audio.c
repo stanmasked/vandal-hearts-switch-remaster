@@ -613,6 +613,14 @@ VhAudoutQueueExportResult vh_switch_game_audio_queue_export(
         VH_SCENE_TRACE_SD_DIRECTORY,committed_path,capacity);
 }
 
+VhAudoutQueueExportResult vh_switch_game_audio_latency_export(
+    char *committed_path,size_t capacity) {
+    if(committed_path && capacity) committed_path[0]='\0';
+    if(thread_started) return VH_AUDOUT_QUEUE_EXPORT_INVALID;
+    return vh_audout_latency_export(&audout_telemetry,
+        VH_SCENE_TRACE_SD_DIRECTORY,committed_path,capacity);
+}
+
 int vh_switch_game_audio_queue_dump(FILE *stream) {
     if (!stream || thread_started) return -1;
     return vh_audout_queue_write_csv(&audout_telemetry,stream);
