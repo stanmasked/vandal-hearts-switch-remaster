@@ -55,6 +55,8 @@ class NativeGP0ReturnFixture(unittest.TestCase):
         ):
             self.assertIn(token,source)
         self.assertIn("canonical private JSONL was published",source)
+        self.assertIn('SysPrintf("VH78_VBLANK_VRAM_PASS',source)
+        self.assertIn("original export status",source)
         self.assertIn("HOST-SUBMITTED GP0 fixture",source)
 
     def test_original_private_journal_cannot_be_reclassified_as_v120_fixture(self):
