@@ -14,7 +14,7 @@ typedef struct {
     unsigned opened, playing, failures_left, submissions, accepted;
     unsigned opens, closes, stops, starts, attempts_this_page;
     int fail_stop, fail_open, fail_start;
-    unsigned fail_starts_left, fail_opens_left;
+    unsigned fail_starts_left, fail_opens_left, fail_stops_left;
     unsigned mismatched_returns_left, null_returns_left;
     /* Strict mock ownership: a foreign/NULL backend return leaves
      * our descriptor in-flight. Only a SUCCESSFUL stop flushes it.
@@ -88,6 +88,10 @@ static int submit(void *ctx,const int16_t *pcm,size_t frames) {
 static int stop(void *ctx) {
     Mock *m=ctx;
     ++m->stops;
+    if (m->fail_stops_left) {
+        --m->fail_stops_left;
+        return -1;
+    }
     if (m->fail_stop) return -1;
     /* A successful stop drains/discards any unreturned descriptor.
      * An unsuccessful stop must NOT grant ownership to the caller. */
@@ -895,6 +899,175 @@ int main(void) {
         &stalled_waits,&stalled_stats,&stalled.timing,
         0u,0u,1u,0u,0)==0);
     assert(hash_page(owned_pcm,8u)==owned_hash);
+
+    /* Three failed stop attempts in a row: first inside failed page
+     * recovery, two more in forced HOME/session recovery. A backend
+     * "success" with foreign descriptor is STILL outstanding. Every
+     * attempted reopen must be blocked until stop succeeds. */
+    Mock held={.opened=1,.playing=1,
+               .checksum=UINT64_C(1469598103934665603)};
+    VhAudioOutputOps held_ops=callbacks(&held);
+    VhAudioOutputRecovery held_stats={0};
+    VhAudioSceneWaits held_waits={0};
+    int16_t held_first[16], held_rejected[16], held_next[16];
+    for(unsigned i=0u;i<16u;i++) {
+        held_first[i]=(int16_t)(1150+(int)i*101);
+        held_rejected[i]=(int16_t)(-2500+(int)i*79);
+        held_next[i]=(int16_t)(3200-(int)i*63);
+    }
+    const uint64_t held_first_hash=hash_page(held_first,8u);
+    const uint64_t held_next_hash=hash_page(held_next,8u);
+    const uint64_t held_clock=spu.frames_rendered;
+    const uint64_t held_input=resampler.input_frames;
+    const uint64_t held_notes=seq.note_ons;
+    begin_page(&held,0u);
+    const VhAudioSubmitTiming held_first_before=held.timing;
+    assert(vh_audio_output_submit_recover(
+        &held_ops,&held_stats,held_first,8u)==0);
+    assert(vh_audio_output_record_scene_page(
+        &held_waits,&held_first_before,&held.timing,freq,8u,0,1)==0);
+    assert(held.accepted==1u && held.submissions==1u);
+    const uint64_t held_checksum=held.checksum;
+    assert(held_checksum==
+           (UINT64_C(1469598103934665603)^held_first_hash)*
+            UINT64_C(1099511628211));
+
+    /* A foreign descriptor is not release. The next three stop
+     * callbacks ALL fail (one page retry + two forced resumes). */
+    begin_page(&held,0u);
+    held.mismatched_returns_left=1u;
+    held.fail_stops_left=3u;
+    const uint64_t rejected_hash=hash_page(held_rejected,8u);
+    const VhAudioSubmitTiming held_reject_before=held.timing;
+    assert(vh_audio_output_submit_recover(
+        &held_ops,&held_stats,held_rejected,8u)==-1);
+    assert(vh_audio_output_record_scene_page(
+        &held_waits,&held_reject_before,&held.timing,
+        freq,8u,0,0)==0);
+    assert(held.pending_unreleased==1u);
+    assert(held.fail_stops_left==2u);
+    assert(held.accepted==1u && held.submissions==2u);
+    assert(held.stops==1u && held.closes==0u);
+    assert(held_stats.pages_submitted==1u &&
+           held_stats.frames_submitted==8u &&
+           held_stats.submit_failures==1u &&
+           held_stats.restart_attempts==0u);
+    const VhAudioOutputRecovery held_pre_resume=held_stats;
+    const VhAudioSubmitTiming held_raw_before=held.timing;
+    const VhAudioSceneWaits held_page_before=held_waits;
+
+    for(unsigned attempt=0u;attempt<2u;attempt++) {
+        assert(vh_audio_output_resume_recover(
+            &held_ops,&held_stats,1)==-1);
+        assert(held.pending_unreleased==1u);
+        assert(held.fail_stops_left==1u-attempt);
+        assert(held.stops==2u+attempt);
+        assert(held.closes==0u && held.opens==0u &&
+               held.starts==0u && held.flushed_unreleased==0u);
+        assert(held.accepted==1u && held.submissions==2u);
+        assert(held.checksum==held_checksum);
+        assert(!memcmp(&held_stats,&held_pre_resume,
+                       sizeof held_pre_resume));
+        assert(!memcmp(&held.timing,&held_raw_before,
+                       sizeof held_raw_before));
+        assert(!memcmp(&held_waits,&held_page_before,
+                       sizeof held_page_before));
+        assert(hash_page(held_rejected,8u)==rejected_hash);
+        assert(spu.frames_rendered==held_clock &&
+               resampler.input_frames==held_input &&
+               seq.note_ons==held_notes);
+    }
+
+    /* The FOURTH stop now succeeds and is the ONLY event that can
+     * release the outstanding buffer. Reopening itself never
+     * requeues the previously failed page. */
+    assert(vh_audio_output_resume_recover(
+        &held_ops,&held_stats,1)==0);
+    assert(held.fail_stops_left==0u);
+    assert(held.stops==4u && held.closes==1u &&
+           held.opens==1u && held.starts==1u);
+    assert(held.pending_unreleased==0u &&
+           held.flushed_unreleased==1u);
+    assert(held.accepted==1u && held.submissions==2u);
+    assert(held.checksum==held_checksum);
+    assert(held_stats.resume_restarts==1u &&
+           held_stats.resume_recoveries==1u &&
+           held_stats.resume_failures==0u);
+    assert(held_stats.pages_submitted==1u &&
+           held_stats.frames_submitted==8u);
+    assert(!memcmp(&held.timing,&held_raw_before,
+                   sizeof held_raw_before));
+    assert(!memcmp(&held_waits,&held_page_before,
+                   sizeof held_page_before));
+
+    /* Pause and resume AGAIN before rendering the next page: no
+     * stale descriptor is submitted, regardless of focus mode. */
+    assert(held_ops.stop(held_ops.context)==0);
+    const unsigned held_raw_calls=held.submissions;
+    const uint64_t held_accepted_hash=held.checksum;
+    assert(vh_audio_output_resume_recover(
+        &held_ops,&held_stats,0)==0);
+    assert(held.submissions==held_raw_calls &&
+           held.accepted==1u &&
+           held.checksum==held_accepted_hash);
+    assert(held.pending_unreleased==0u &&
+           held.flushed_unreleased==1u);
+
+    /* A fresh, distinct PCM page may now be delivered exactly once
+     * without replaying the rejected or earlier returned page. */
+    begin_page(&held,0u);
+    const VhAudioSubmitTiming held_next_before=held.timing;
+    assert(vh_audio_output_submit_recover(
+        &held_ops,&held_stats,held_next,8u)==0);
+    assert(vh_audio_output_record_scene_page(
+        &held_waits,&held_next_before,&held.timing,freq,8u,0,1)==0);
+    assert(held.accepted==2u && held.submissions==3u);
+    assert(held.checksum==
+           (held_checksum^held_next_hash)*
+            UINT64_C(1099511628211));
+    assert(held_stats.pages_submitted==2u &&
+           held_stats.frames_submitted==16u);
+    assert(held_stats.submit_failures==1u &&
+           held_stats.restart_attempts==0u);
+    assert(held_waits.ordinary.pages==3u &&
+           held_waits.ordinary.failed_pages==1u);
+    assert(vh_audio_output_verify_run(
+        &held_waits,&held_stats,&held.timing,
+        2u,0u,3u,0u,0)==0);
+    assert(hash_page(held_rejected,8u)==rejected_hash);
+    assert(spu.frames_rendered==held_clock &&
+           resampler.input_frames==held_input &&
+           seq.note_ons==held_notes);
+
+    /* Repeatedly failing even AFTER a late stage retry is never
+     * allowed to close an outstanding descriptor. If all calls to
+     * resume stop continue to fail, no page can be marked returned;
+     * the underlying mock remains intentionally unrecovered. */
+    Mock persistent={.opened=1,.playing=1,
+                     .fail_stops_left=6u};
+    VhAudioOutputOps persist_ops=callbacks(&persistent);
+    VhAudioOutputRecovery persist_stats={0};
+    begin_page(&persistent,0u);
+    persistent.mismatched_returns_left=1u;
+    assert(vh_audio_output_submit_recover(
+        &persist_ops,&persist_stats,held_rejected,8u)==-1);
+    assert(persistent.pending_unreleased==1u);
+    for(unsigned i=0u;i<5u;i++) {
+        assert(vh_audio_output_resume_recover(
+            &persist_ops,&persist_stats,1)==-1);
+        assert(persistent.pending_unreleased==1u);
+        assert(persistent.submissions==1u &&
+               persistent.accepted==0u &&
+               persistent.closes==0u &&
+               persistent.opens==0u &&
+               persistent.starts==0u);
+        assert(persist_stats.pages_submitted==0u &&
+               persist_stats.resume_recoveries==0u &&
+               persist_stats.resume_restarts==0u);
+    }
+    assert(persistent.stops==6u);
+    assert(persistent.fail_stops_left==0u);
+    assert(persistent.flushed_unreleased==0u);
     /* Combine bank switching and blocking audout page ownership.
      * Unlike the previous single-bank test, this one changes the
      * borrowed voice sample arena between 6 eight-block scenes.

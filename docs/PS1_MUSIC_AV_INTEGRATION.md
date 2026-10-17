@@ -1743,3 +1743,33 @@ descriptor, NOT proof of libnx hardware queue ownership, stop
 drain semantics, HOME/sleep behavior or audible Switch quality.
 It adds no retained PCM dumps, new backend API calls or changes
 to physical music playback.
+
+
+### Three consecutive failed stop calls: in-flight PCM ownership remains locked
+
+The portable audout mock now permits a configurable count of
+consecutive \`stop()\` failures while an unreturned PCM descriptor
+remains in flight. The new regression delivers a first PCM page,
+submits a distinct second page whose backend returns the *wrong*
+descriptor, and injects THREE failed stop attempts: one inside
+the submit-retry helper, then two separate forced session-resume
+calls. Neither of those failures may close/open the device,
+release or retransmit the original PCM buffer, change its input
+checksum, add an accepted page or alter backend wait counters.
+
+The fourth stop succeeds and is the ONLY modeled event that
+releases the outstanding descriptor. A successful force reopen,
+followed by another immediate pause/focus resume, delivers no
+previously accepted or aborted PCM page. An entirely NEW page
+then advances the accepted checksum and delivered-page count
+once. The final audit reports **INCOMPLETE** with 2 accepted
+pages and one terminally failed logical page: this preserves the
+original failed event rather than incorrectly converting it into
+a successful delivery after reopening.
+
+A companion scenario injects SIX successive stop failures
+(one service retry, five forced resume calls). In-flight ownership
+must remain blocked throughout; no restart, descriptor flush or
+new PCM delivery may be claimed. The added checks are host-only
+synthetic fault injection; they do NOT establish the real libnx
+hardware stop/queue semantics.
