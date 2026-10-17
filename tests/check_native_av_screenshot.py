@@ -51,6 +51,19 @@ def inspect_zl_marker(image: Image.Image) -> str:
     return "not_observed"
 
 
+def inspect_resume_marker(image: Image.Image) -> str:
+    """CI-only serial X/Y device roundtrip with post-resume PCM returns."""
+    pixel=image.convert("RGB").getpixel((1050, 545))
+    r,g,b=pixel
+    if near(pixel,AUDIO_OK) or (g>=155 and g>r+70 and g>b+40):
+        return "confirmed"
+    if near(pixel,AUDIO_FAIL) or (r>=145 and r>g+40 and r>b+40):
+        return "error"
+    if r>180 and g>150 and b<160 and r>b+70:
+        return "pending"
+    return "not_observed"
+
+
 def inspect_images(first: Image.Image, second: Image.Image) -> dict:
     first = first.convert("RGB")
     second = second.convert("RGB")
@@ -159,6 +172,8 @@ def inspect_images(first: Image.Image, second: Image.Image) -> dict:
         "synthetic_scene_switches": synthetic_switches,
         "guest_zr_recovery": zr_recovery,
         "guest_zl_invalid_clock_no_replay": inspect_zl_marker(first),
+        "guest_resume_x_y_pcm_continuation": inspect_resume_marker(first),
+        "guest_resume_is_not_home_event": True,
         "guest_zl_is_not_physical_button": True,
         "guest_zr_is_not_physical_button": True,
         "user_music_identity_verified": False,
@@ -189,6 +204,8 @@ def main():
                         help="require two completed synthetic SEQ transitions")
     parser.add_argument("--require-guest-zl-no-replay", action="store_true",
                         help="require CI-only exact-return ZL invalid-clock witness")
+    parser.add_argument("--require-guest-resume-continuation", action="store_true",
+                        help="CI-only X/Y stop/start and reopen with returned PCM")
     parser.add_argument("--require-guest-zr-recovery", action="store_true",
                         help="require CI-only guest auto-ZR returned-PCM witness")
     parser.add_argument("--require-no-synthetic-switches",
@@ -221,6 +238,16 @@ def main():
                 and report["synthetic_scene_switches"] != "not_applicable"):
             raise ValueError("unexpected synthetic scene-switch indicator: "
                              + report["synthetic_scene_switches"])
+        if args.require_guest_resume_continuation:
+            with Image.open(args.after) as image_after:
+                later_resume=inspect_resume_marker(image_after)
+            if (report["guest_resume_x_y_pcm_continuation"] != "confirmed" or
+                    later_resume != "confirmed" or
+                    report["audout_status"] != "initialized" or
+                    report["audio_source"] != "synthetic" or
+                    report["audio_pipeline_progress"] != "buffers_returned" or
+                    report["synthetic_scene_switches"] != "confirmed"):
+                raise ValueError("guest X/Y resume PCM continuation not confirmed")
         if args.require_guest_zl_no_replay:
             with Image.open(args.after) as image_after:
                 later_zl=inspect_zl_marker(image_after)
