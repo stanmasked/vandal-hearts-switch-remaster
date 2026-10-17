@@ -12,6 +12,13 @@ class FontLinkedTests(unittest.TestCase):
         cls.tmp = tempfile.TemporaryDirectory(prefix='font-elf-test-')
         cls.root = Path(cls.tmp.name)
         cls.expected = bytes((i * 19 + 3) % 251 for i in range(FONT_BYTES))
+        source = cls.root / "fixture.c"
+        body = ",".join(str(byte) for byte in cls.expected)
+        source.write_text("const unsigned char pc_kanji_charset2[6270] = {" +
+                          body + "};\nint main(void) { return 0; }\n")
+        cls.binary = cls.root / "fixture"
+        subprocess.run(["cc", str(source), "-o", str(cls.binary)],
+                       check=True, capture_output=True, timeout=30)
 
     @classmethod
     def tearDownClass(cls):
