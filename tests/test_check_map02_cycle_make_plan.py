@@ -31,6 +31,11 @@ def valid_dry_run(root):
         str(root / "libgpu.c") + " -o " + build + "libgpu.o",
         "cc -DVH_MAP02_SCOPED_BLEND_PROBE -c " +
         str(root / "pc_raster.c") + " -o " + build + "pc_raster.o",
+        "VH_REGION=us VH_GENERATED_OUT=" + build +
+        "map02_pinned_kanji_font.c python3 " +
+        str(root / maker.FONT_GENERATOR_SNAPSHOT),
+        "cc -m64 -c " + build + "map02_pinned_kanji_font.c -o " +
+        build + "pc_kanji_font.o",
         "cc -m64 " + " ".join(build + x for x in original) +
         " -lSDL2 -lopenal -lGL -lm -lpthread -rdynamic -o " +
         build + "vandalhearts_pc",
@@ -48,6 +53,9 @@ class CycleMakePlanTests(unittest.TestCase):
         file = self.upstream / "src/core/cd.c"
         file.parent.mkdir(parents=True)
         file.write_text("void Original(void) {}\n")
+        self.font_generator = self.upstream / maker.FONT_GENERATOR
+        self.font_generator.parent.mkdir(parents=True, exist_ok=True)
+        self.font_generator.write_text("# synthetic font generator\\n")
         self.make = self.upstream / "platform/pc/Makefile"
         self.make.parent.mkdir(parents=True)
         self.make.write_text("link: $(DATA_OBJS)\nBACKEND_OBJS GAME_C_FLAGS PORT_WARN\n")
@@ -61,6 +69,10 @@ class CycleMakePlanTests(unittest.TestCase):
             patch.object(maker, "MAKEFILE_SHA",
                          git_blob_sha1(self.make.read_bytes())),
             patch.object(maker, "MAKE_ANCHORS", ("link: $(DATA_OBJS)",)),
+            patch.object(maker, "FONT_GENERATOR_BLOB_SHA1",
+                         git_blob_sha1(self.font_generator.read_bytes())),
+            patch.object(check, "FONT_GENERATOR_BLOB_SHA1",
+                         git_blob_sha1(self.font_generator.read_bytes())),
             patch.object(check, "PINNED_BLOB_SHA1",
                          {"platform/pc/Makefile":
                           git_blob_sha1(self.make.read_bytes())}),
@@ -76,6 +88,7 @@ class CycleMakePlanTests(unittest.TestCase):
         self.assertGreaterEqual(result["original_and_diagnostic_required_objects"], 14)
         self.assertFalse(result["fully_linked_executable_created"])
         self.assertFalse(result["original_map02_rendering_proven"])
+        self.assertTrue(result["private_pinned_font_generation_verified"])
 
     def test_missing_original_and_observer_objects_rejected(self):
         for name in ("src/core/graphics.o", "generated_data.o",
@@ -97,6 +110,28 @@ class CycleMakePlanTests(unittest.TestCase):
             check.verify_dry_run(
                 cmd.replace(str(self.output / "libcd.c"), "src/libcd.c"),
                 self.output)
+
+    def test_mutable_original_krom_generator_is_rejected_in_make_plan(self):
+        good = valid_dry_run(self.output)
+        pinned = str(self.output / maker.FONT_GENERATOR_SNAPSHOT)
+        with self.assertRaisesRegex(ValueError, "pinned KROM"):
+            check.verify_dry_run(
+                good.replace(pinned, "tools/gen_kanji_font.py"), self.output)
+        with self.assertRaisesRegex(ValueError, "pinned KROM"):
+            check.verify_dry_run(
+                good.replace("map02_pinned_kanji_font.c -o ",
+                             "src/pc_kanji_font.c -o "), self.output)
+        with self.assertRaisesRegex(ValueError, "unpinned KROM"):
+            check.verify_dry_run(
+                good + "python3 tools/gen_kanji_font.py\\n", self.output)
+
+    def test_private_font_generator_snapshot_is_checked_by_preflight(self):
+        font = self.output / maker.FONT_GENERATOR_SNAPSHOT
+        self.assertEqual(font.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(font.read_bytes(), self.font_generator.read_bytes())
+        font.write_bytes(font.read_bytes() + b"# altered")
+        with self.assertRaisesRegex(ValueError, "bytes changed"):
+            check.preflight(self.upstream, self.output)
 
     def test_missing_macro_and_hd_codec_libraries_rejected(self):
         cmd = valid_dry_run(self.output)
