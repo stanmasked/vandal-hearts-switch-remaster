@@ -811,6 +811,49 @@ jobs:
             --output runtime-evidence/idle-control/idle-audout-verification.json
           python3 -m json.tool runtime-evidence/idle-control/idle-audout-verification.json >/dev/null
           python3 - <<'PY'
+          # Independent optical negative control: same MUSIC label
+          # while the normal switch run actually changes that label.
+          import hashlib,json
+          from pathlib import Path
+          from PIL import Image,ImageChops
+          control=Path("runtime-evidence/idle-control")
+          switching=Path("runtime-evidence/scene-soak")
+          roi=(960,600,1140,638)
+          def picture(path):
+              if path.is_symlink():
+                  raise SystemExit("symlinked optical witness")
+              img=Image.open(path).convert("RGB")
+              if img.size!=(1280,720):
+                  raise SystemExit("unexpected guest framebuffer dimensions")
+              return img
+          stills=[picture(control/f"soak-scene-{i:02d}.png") for i in range(11)]
+          panels=[x.crop(roi) for x in stills]
+          if any(ImageChops.difference(panels[0],panel).getbbox()
+                 for panel in panels[1:]):
+              raise SystemExit("idle control changed guest MUSIC label")
+          if not any(ImageChops.difference(stills[0],x).getbbox()
+                     for x in stills[1:]):
+              raise SystemExit("idle control framebuffer not advancing")
+          switched=[picture(switching/f"soak-scene-{i:02d}.png")
+                    for i in (0,1)]
+          if not ImageChops.difference(
+              switched[0].crop(roi),switched[1].crop(roi)).getbbox():
+              raise SystemExit("switch comparison failed to change guest MUSIC label")
+          evidence={
+              "result":"IDLE_MUSIC_PANEL_STABLE_SWITCH_PANEL_CHANGED",
+              "idle_snapshots":len(stills),
+              "music_panel_rect":roi,
+              "idle_music_panel_sha256":hashlib.sha256(
+                  panels[0].tobytes()).hexdigest(),
+              "idle_framebuffer_advanced":True,
+              "switch_music_panel_changed":True,
+              "physical_switch_tested":False,
+          }
+          (control/"idle-optical-verification.json").write_text(
+              json.dumps(evidence,indent=2,sort_keys=True)+"\\n")
+          print(json.dumps(evidence,sort_keys=True))
+          PY
+          python3 - <<'PY'
           import json
           from pathlib import Path
           a=json.loads(Path("runtime-evidence/idle-control/idle-audout-verification.json").read_text())
