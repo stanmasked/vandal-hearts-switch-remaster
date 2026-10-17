@@ -92,7 +92,7 @@ class RealGpuLinkedListTest(unittest.TestCase):
         src=(ROOT/"tools/apply_map02_v123_pcsx_rearmed.py").read_text()
         required=(
             'case 0x01000401: // dma chain',
-            'void psxDma2(u32 madr, u32 bcr, u32 chcr)',
+            'unsigned int vh122_dma2_rejected;',
             'long GPUdmaChain(uint32_t *rambase, uint32_t start_addr,',
             'addr = LE32TOH(list[0]) & 0xffffff;',
             'const unsigned expected_addr[3]={0x12000u,0x12100u,0x12200u}',
@@ -101,6 +101,9 @@ class RealGpuLinkedListTest(unittest.TestCase):
             'vh123_nodes_seen++','vh123_words_seen+=(unsigned)len',
             'vh123_dma2_blocks++','vh123_dma2_rejected++',
             'Config.Cpu!=1','GPU_freeze(1,&setup_freeze,&setup_ptr)',
+            'memcmp(tag,"VH123SY!",sizeof(tag))',
+            'unsigned int off=0x11160u;',
+            'unsigned int at=0x11160u+4u*(phase+1u);',
             'psxCpu->ExecuteBlock(&psxRegs,EXEC_CALLER_OTHER)',
             'vh123_nodes_seen!=3u*(phase+1u)',
             'vh123_words_seen!=3u*(phase+1u)',
