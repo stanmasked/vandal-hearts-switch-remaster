@@ -131,6 +131,7 @@ def evaluate(root: Path, archive: Path, run_id: int, artifact_id: int,
                        Path(nro["path"]).name == provenance.NRO_NAME,
                        "manifest does not point to the primary tactical NRO")
     matched = provenance.check_zip(archive, artifact, nro["sha256"], nro["size"])
+    provenance.assert_receipt_run_identity(matched, run)
     return {
         "schema": "vh-switch-audio-live-preflight/v1",
         "result": "MATCHED_CURRENT_HEAD_AT_CHECK_TIME",
