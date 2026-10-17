@@ -102,6 +102,8 @@ def inspect_binary(path, *, nm="nm", pinned_fd=None):
             raise ValueError("native ELF symbol inspection unavailable") from exc
         if result.returncode != 0 or len(result.stdout) > 8 * 1024 * 1024:
             raise ValueError("native ELF symbol table unavailable or stripped")
+        if not result.stdout.strip():
+            raise ValueError("native ELF symbol table unavailable or stripped")
         defined = set()
         for line in result.stdout.splitlines():
             match = _SYM.fullmatch(line.strip())
