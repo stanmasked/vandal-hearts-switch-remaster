@@ -80,6 +80,12 @@ def verify_session(directory, *, native_frame, preflight_report, executable):
         "executable_bytes": fingerprint["executable_bytes"],
         "native_gpu_binding": checked["native_gpu_binding"],
         "dda_journal_fingerprints": checked["files"],
+        "dda_observation_mode": checked["dda_observation_mode"],
+        "all_dda_journal_classes_observed": checked["all_dda_journal_classes_observed"],
+        "vram_snapshot_sha256_list_sha256":
+            checked["native_gpu_binding"]["vram_snapshot_sha256_list_sha256"],
+        "native_gpu_pairs_verified":
+            checked["native_gpu_binding"]["native_gpu_pairs_verified"],
         "single_sample_envelope_consistent": checked["single_sample_envelope_consistent"],
         "executable_bytes_match_preflight": True,
         "executable_actually_launched_verified": False,
