@@ -13,6 +13,7 @@ import stat
 DIR_KEYS = ("VH_MAP02_GPU_CAPTURE_DIR", "VH_MAP02_PUTPIXEL_DIR")
 FRAME_KEYS = ("VH_MAP02_GPU_CAPTURE_FRAME", "VH_MAP02_PUTPIXEL_FRAME")
 X_KEY, Y_KEY = "VH_MAP02_PUTPIXEL_X", "VH_MAP02_PUTPIXEL_Y"
+X2_KEY, Y2_KEY = "VH_MAP02_PUTPIXEL_X2", "VH_MAP02_PUTPIXEL_Y2"
 # C instrumented recorders use a fixed 1024-byte stack path buffer.
 LONGEST_CAPTURE_FILENAME = "dda-rejected-edge-candidates.jsonl"
 
@@ -101,8 +102,16 @@ def preflight(environ, *, executable=None):
     pixel_frame = _decimal(environ, FRAME_KEYS[1], 0xffffffff)
     if gpu_frame == 0 or pixel_frame != gpu_frame:
         raise ValueError("GPU and PutPixel target DrawOTag frames must match and be positive")
-    _decimal(environ, X_KEY, 1023)
-    _decimal(environ, Y_KEY, 511)
+    primary = (_decimal(environ, X_KEY, 1023),
+               _decimal(environ, Y_KEY, 511))
+    # The synchronized two-word native observer requires both second
+    # coordinates or neither. A partial pair silently disables its
+    # recording in the original C recorder, so reject it before launch.
+    if X2_KEY in environ or Y2_KEY in environ:
+        secondary = (_decimal(environ, X2_KEY, 1023),
+                     _decimal(environ, Y2_KEY, 511))
+        if primary == secondary:
+            raise ValueError("native PutPixel sample coordinates must differ")
     fingerprint = (_executable_fingerprint(executable)
                    if executable is not None else
                    {"executable_sha256": None, "executable_bytes": None})
