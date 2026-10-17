@@ -54,7 +54,7 @@ class TestExactSlowCalls(unittest.TestCase):
         # Relative to synthetic INPUT, one call ends before and
         # one begins after the same time within a 500 ms range.
         inputs=[{"serial":1,"scene":2,
-                 "timestamp_ns":ORIGIN+7*1_000_000_000+600_000_000}]
+                 "timestamp_ns":ORIGIN+7*1_000_000_000+550_000_000}]
         observations=relate(calls,inputs*10)
         self.assertEqual(observations[0]["fully_ended_before_input"],1)
         self.assertEqual(observations[0]["began_after_input"],1)
