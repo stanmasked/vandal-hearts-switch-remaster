@@ -56,7 +56,7 @@ def multi_raster(original):
 
 def multi_gpu(original):
     src = scope_gpu(instrument_gpu_native(original))
-    if src.count(SINGLE_FLAG) != 5:
+    if src.count(SINGLE_FLAG) != 4:
         raise ValueError("unexpected native DrawOTag scope guard count")
     return src.replace(SINGLE_FLAG, FLAG)
 
