@@ -23,9 +23,9 @@ def _unique_pairs(pairs):
 def validate(raw):
     if not isinstance(raw, bytes) or not raw or len(raw) > MAX_BYTES:
         raise ValueError("empty, oversized or non-byte journal")
-    if not raw.endswith(b"\\n") or b"\\r" in raw or b"\\x00" in raw:
+    if not raw.endswith(b"\n") or b"\r" in raw or b"\x00" in raw:
         raise ValueError("noncanonical line endings")
-    lines = raw.split(b"\\n")[:-1]
+    lines = raw.split(b"\n")[:-1]
     if len(lines) > 63:
         raise ValueError("64 events may hide capture truncation")
     out = []
