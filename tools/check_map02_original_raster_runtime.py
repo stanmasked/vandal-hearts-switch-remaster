@@ -46,7 +46,8 @@ int main(void) {
     RVert a = {9, 9, 0, 0}, b = {14, 9, 0, 0};
     RVert c = {9, 14, 0, 0}, d = {14, 14, 0, 0};
     unsigned short (*vram)[PC_GPU_VRAM_W] = PC_GpuVram();
-    unsigned short before = 0x001f;
+    /* ABR=1 saturates red: start LOW, not at the red 5-bit maximum. */
+    unsigned short before = 0x0001;
     unsigned short after;
     memset(&rc, 0, sizeof(rc));
     rc.clipW = PC_GPU_VRAM_W;
