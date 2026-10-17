@@ -137,12 +137,12 @@ def analyze_sd_csv(content: str) -> dict:
     if len(content.encode("utf-8")) > 16384 or not content.isascii():
         raise TraceError("SD scene CSV is not bounded ASCII")
     lines = content.splitlines(keepends=True)
-    if len(lines) < 2 or len(lines) > 65 or lines[0] != SD_HEADER+"\\n":
+    if len(lines) < 2 or len(lines) > 65 or lines[0] != SD_HEADER+"\n":
         raise TraceError("invalid SD scene CSV header or row count")
     canonical = [HEADER]
     dropped = None
     for i, line in enumerate(lines[1:]):
-        if not line.endswith("\\n") or "\\r" in line:
+        if not line.endswith("\n") or "\r" in line:
             raise TraceError("noncanonical SD scene CSV newline")
         fields = line[:-1].split(",")
         if len(fields) != 6 or fields[1] not in KINDS:
@@ -161,7 +161,7 @@ def analyze_sd_csv(content: str) -> dict:
         canonical.append(",".join(fields[:5]))
     if dropped is None or dropped > 0xffffffff:
         raise TraceError("invalid dropped counter")
-    envelope = ("\\n".join([BEGIN]+canonical+[f"{END}rows={len(lines)-1},dropped={dropped}"])+"\\n")
+    envelope = ("\n".join([BEGIN]+canonical+[f"{END}rows={len(lines)-1},dropped={dropped}"])+"\n")
     result = analyze(envelope)
     result["source"] = "readback-verified guest SD CSV, after audio-worker join"
     result["source_csv_sha256"] = hashlib.sha256(content.encode("ascii")).hexdigest()
