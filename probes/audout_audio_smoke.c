@@ -32,6 +32,25 @@ static VhNativeVab synthetic_bank;
 static VhNativeSeq seq;
 static VhNativeSpu synth;
 static VhAudioResample resampler;
+/* The applet hook ONLY records lifecycle messages. It is invoked while
+ * appletMainLoop processes events; no audio callback or PCM mutation. */
+static VhAudioAppletEvents focus_events;
+static unsigned focus_record_errors;
+static void audio_applet_hook(AppletHookType hook,void *param) {
+    (void)param;
+    unsigned event=0u;
+    if(hook==AppletHookType_OnFocusState) {
+        const AppletFocusState state=appletGetFocusState();
+        if(state==AppletFocusState_Background)
+            event=VH_AUDIO_APPLET_BACKGROUND;
+        else if(state==AppletFocusState_InFocus)
+            event=VH_AUDIO_APPLET_FOREGROUND;
+    } else if(hook==AppletHookType_OnResume) {
+        event=VH_AUDIO_APPLET_RESUME;
+    }
+    if(event && vh_audio_applet_record(&focus_events,event))
+        ++focus_record_errors;
+}
 /* Snapshot never appears in the device callback or PCM output path. */
 static VhNativeSpu manual_spu_snapshot;
 
@@ -226,6 +245,8 @@ static int native_submit(void *opaque,const int16_t *pcm,size_t frames) {
 typedef struct {
     const NativeOutput *output;
     const VhAudioManualResume *manual;
+    const VhAudioAppletEvents *focus;
+    unsigned focus_errors;
     const VhAudioOutputRecovery *recovery;
     const VhAudioPcmSeams *seams;
     const VhAudioListeningMarks *marks;
@@ -275,6 +296,11 @@ static void vh_audio_show_report(const VhAudioProbeReport *r,
                vh_audio_manual_verify(r->manual)==0 ? "VALID" : "INVALID",
                r->manual->ignored_chords,r->manual->unsafe_requests,
                r->manual->state_mismatches);
+        printf("HOME bg/returns=%u/%u OnResume=%u\n",
+               r->focus->backgrounds,r->focus->returns,r->focus->resumes);
+        printf("Focus events duplicate/error=%u/%u\n",
+               r->focus->ignored_duplicates,r->focus_errors);
+        printf("HOME observed, audible resume UNVERIFIED\n");
         const uint64_t rendered=r->compute->rendered_pages;
         const uint64_t total_us=vh_audio_output_ticks_to_us(
             r->compute->total_ticks,hz);
@@ -467,6 +493,11 @@ int main(int argc, char **argv) {
         consoleExit(NULL);
         return 2;
     }
+
+    /* Observe real HOME/sleep focus notifications, not just X/Y.
+     * The hook never manipulates audout or renders PCM. */
+    AppletHookCookie focus_cookie={0};
+    appletHook(&focus_cookie,audio_applet_hook,NULL);
 
     /* System ticks measure SEQ + DSP + 48k conversion, excluding
      * audoutPlayBuffer wait and console updates. */
@@ -710,6 +741,8 @@ int main(int argc, char **argv) {
         if (!result) result=7;
         printf("audout stop unconfirmed; close skipped\n");
     }
+    /* Freeze the focus evidence before drawing immutable report pages. */
+    appletUnhook(&focus_cookie);
     vh_audio_assets_close(&user_assets);
     /* Printed proof must never be inferred merely from a clean
      * applet exit: check page identity, fixture-switch cadence, raw
@@ -750,12 +783,18 @@ int main(int argc, char **argv) {
     if ((run_evidence<0 || seam_evidence || listen_evidence ||
          poll_evidence || compute_evidence) && result==0) result=10;
     const int manual_evidence=vh_audio_manual_verify(&manual_resume);
+    const int focus_evidence=vh_audio_applet_verify(&focus_events);
     if (manual_evidence && result==0) result=23;
-    const unsigned verdict=vh_audio_report_manual_evidence(
-        &manual_resume,run_evidence,seam_evidence,listen_evidence,
-        poll_evidence,compute_evidence);
+    if ((focus_evidence || focus_record_errors) && result==0) result=24;
+    const unsigned verdict=(focus_evidence || focus_record_errors)
+        ? VH_AUDIO_REPORT_INVALID
+        : vh_audio_report_manual_evidence(
+            &manual_resume,run_evidence,seam_evidence,listen_evidence,
+            poll_evidence,compute_evidence);
     const VhAudioProbeReport report={
-        .output=&output,.manual=&manual_resume,.recovery=&recovery,.seams=&seam_stats,
+        .output=&output,.manual=&manual_resume,
+        .focus=&focus_events,.focus_errors=focus_record_errors,
+        .recovery=&recovery,.seams=&seam_stats,
         .marks=&listening_marks,.poll=&input_poll,
         .buttons=&mark_buttons,
         .compute=&compute,.compute_wait=&compute_wait,
