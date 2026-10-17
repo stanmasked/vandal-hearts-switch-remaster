@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from tools.check_map02_private_pc_binary import inspect_binary
 
@@ -94,6 +95,41 @@ class PrivatePcProbeReadinessTests(unittest.TestCase):
         link.symlink_to(self.elf)
         with self.assertRaisesRegex(ValueError, "symlink"):
             inspect_binary(link)
+
+    def test_nm_reads_pinned_fd_even_if_elf_path_replaced_before_nm(self):
+        self.compile()
+        old_bytes = self.elf.read_bytes()
+        old_stat = self.elf.stat()
+        replacement = self.root / "different-elf"
+        # Different valid native executable so nm itself could succeed
+        # even if it accidentally opened the replacement by path.
+        gcc = subprocess.run(
+            ["gcc", "-x", "c", "-", "-o", str(replacement)],
+            input="int main(void) { return 0; }", text=True,
+            capture_output=True, timeout=30, check=False)
+        self.assertEqual(gcc.returncode, 0, gcc.stderr)
+        replacement.chmod(0o700)
+        from tools import check_map02_private_pc_binary as inspector
+        native_run = inspector.subprocess.run
+        arguments_seen = []
+
+        def substitute_path_at_nm(args, **kwargs):
+            arguments_seen.append(list(args))
+            self.assertTrue(args[-1].startswith("/proc/self/fd/"))
+            self.assertEqual(len(kwargs.get("pass_fds", ())), 1)
+            fd = kwargs["pass_fds"][0]
+            self.assertEqual(args[-1], f"/proc/self/fd/{fd}")
+            self.assertEqual(os.fstat(fd).st_ino, old_stat.st_ino)
+            self.assertNotEqual(replacement.read_bytes(), old_bytes)
+            os.replace(replacement, self.elf)
+            self.assertNotEqual(self.elf.stat().st_ino, old_stat.st_ino)
+            return native_run(args, **kwargs)
+
+        with patch.object(inspector.subprocess, "run",
+                          side_effect=substitute_path_at_nm):
+            with self.assertRaisesRegex(ValueError, "executable changed"):
+                inspect_binary(self.elf)
+        self.assertEqual(len(arguments_seen), 1)
 
     def test_unavailable_symbol_inspector_fails_closed(self):
         self.compile()
