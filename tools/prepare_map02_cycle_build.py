@@ -91,11 +91,11 @@ $(BUILD_DIR)/src/core/cd.o: $(VH_MAP02_CYCLE_ROOT)/core_cd.c | stage
 
 $(BUILD_DIR)/libcd.o: $(VH_MAP02_CYCLE_ROOT)/libcd.c
 \t@mkdir -p $(dir $@)
-\t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_CYCLE_DEFS) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -g -MMD -MP -c -o $@ $(VH_MAP02_CYCLE_ROOT)/libcd.c
+\t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_CYCLE_DEFS) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -Isrc -g -MMD -MP -c -o $@ $(VH_MAP02_CYCLE_ROOT)/libcd.c
 
 $(BUILD_DIR)/libgpu.o: $(VH_MAP02_CYCLE_ROOT)/libgpu.c
 \t@mkdir -p $(dir $@)
-\t$(CC) $(M32) $(SAN) $(PORT_WARN) -DVH_MAP02_CYCLE_ORDER $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -g -MMD -MP -c -o $@ $(VH_MAP02_CYCLE_ROOT)/libgpu.c
+\t$(CC) $(M32) $(SAN) $(PORT_WARN) -DVH_MAP02_CYCLE_ORDER $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -Isrc -g -MMD -MP -c -o $@ $(VH_MAP02_CYCLE_ROOT)/libgpu.c
 
 $(BUILD_DIR)/map02_cycle_order.o: $(VH_MAP02_CYCLE_ROOT)/map02_cycle_order.c
 \t@mkdir -p $(dir $@)
