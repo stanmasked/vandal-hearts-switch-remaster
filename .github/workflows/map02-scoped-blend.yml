@@ -16,6 +16,10 @@ on:
       - 'tools/map02_vram_edge_witness.py'
       - 'tools/check_map02_private_capture_ready.py'
       - 'tests/test_check_map02_private_capture_ready.py'
+      - 'tools/instrument_map02_gpu_native_events.py'
+      - 'tools/verify_map02_native_gpu_capture.py'
+      - 'tests/test_instrument_map02_gpu_native_events.py'
+      - 'tests/test_verify_map02_gpu_capture_receipt.py'
       - 'tools/publish_map02_vram_edges_witness.py'
       - 'tools/verify_map02_vram_edges_witness.py'
       - 'tests/test_map02_vram_edge_witness.py'
@@ -55,6 +59,10 @@ on:
       - 'tools/map02_vram_edge_witness.py'
       - 'tools/check_map02_private_capture_ready.py'
       - 'tests/test_check_map02_private_capture_ready.py'
+      - 'tools/instrument_map02_gpu_native_events.py'
+      - 'tools/verify_map02_native_gpu_capture.py'
+      - 'tests/test_instrument_map02_gpu_native_events.py'
+      - 'tests/test_verify_map02_gpu_capture_receipt.py'
       - 'tools/publish_map02_vram_edges_witness.py'
       - 'tools/verify_map02_vram_edges_witness.py'
       - 'tests/test_map02_vram_edge_witness.py'
@@ -110,7 +118,9 @@ jobs:
             tests.test_map02_vram_edges \
             tests.test_map02_vram_edge_witness \
             tests.test_publish_map02_vram_edges_witness \
-            tests.test_check_map02_private_capture_ready
+            tests.test_check_map02_private_capture_ready \
+            tests.test_instrument_map02_gpu_native_events \
+            tests.test_verify_map02_gpu_capture_receipt
       - name: Checkout pinned public original PC raster source
         uses: actions/checkout@v4
         with:
