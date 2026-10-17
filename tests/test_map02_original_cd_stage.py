@@ -34,6 +34,10 @@ SOURCE = (
                     '#include "map02_cd_read_probe.h"')
     .replace('    if (strncmp(argv[2], "pair-", 5) == 0)',
              INJECTION + '\n    if (strncmp(argv[2], "pair-", 5) == 0)')
+    .replace('    return 3;\n}',
+             '    if (strcmp(argv[2], "pair-incomplete-cd") == 0) {\n'
+             '        assert(!result); return 0;\n'
+             '    }\n    return 3;\n}')
 )
 
 
