@@ -4,6 +4,7 @@ The harness emits calls itself: these tests do NOT execute original game
 LoadCdFile / ContinueLoadingCdFile / DrawOTag, nor prove a MAP02 render.
 """
 import os
+import zlib
 from pathlib import Path
 import subprocess
 import tempfile
@@ -208,6 +209,12 @@ class CycleOrderTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("failed=0 receipt=1", proc.stdout)
         self.assertIn('"gpu_draw_frame":73', proc.stdout)
+        self.assertIn('"schema":"vh.map02.cycle-order.v2"', proc.stdout)
+        expected_sector_data = bytes((i ^ (i >> 8)) & 255
+                                     for i in range(12 * 2048))
+        expected_crc = zlib.crc32(expected_sector_data)
+        self.assertIn('"original_cd_raw_user_crc32":"%08x"' % expected_crc,
+                      proc.stdout)
         self.assertIn('"original_map02_rendering_proven":false', proc.stdout)
 
     def test_missing_or_invalid_target_frame_rejected(self):
