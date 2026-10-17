@@ -138,6 +138,70 @@ class PixelToOriginalPrimitiveTests(unittest.TestCase):
         self.assertEqual(result["calls_attributed_to_source_keyed_ft4"],3)
         self.assertFalse(result["no_missing_putpixel_calls_proven"])
 
+    def test_source_ft4_two_accurate_semi_blends_same_word_abrs_1_and_2(self):
+        # The same source-matched primitive performs two real accurate
+        # BlendG1 calls. A BGR555 endpoint delta alone cannot reveal
+        # which ABR requests generated the intermediate 0x801f word.
+        original = bytes(self.base.base.bytes_before)
+        first = bytearray(original)
+        struct.pack_into("<H", first, (30*1024+30)*2, 0x801e)
+        self.base.base.override_snapshots = {
+            3:bytes(first), 4:bytes(first), 5:self.base.second,
+        }
+        self.pixel_rows = [
+            self.row(0,1,0,0x001f,0x801f,semi=1),
+            self.row(1,1,0x801f,0x8001,0x801e,semi=1),
+            self.row(2,2,0x801e,0x7c00,0x7c00),
+        ]
+        self.pixel_rows[1]["abr"]=2
+        self.save()
+        report=verify_pixel_ot(self.root,self.native)
+        self.assertEqual(report["semi_transparent_putpixel_requests"],2)
+        self.assertEqual(report["accurate_pc_blend_results_checked"],2)
+        self.assertEqual(report["source_ft4_scoped_semitransparent_blend_calls"],2)
+        self.assertEqual(report["source_ft4_scoped_semi_blend_abr0_calls"],0)
+        self.assertEqual(report["source_ft4_scoped_semi_blend_abr1_calls"],1)
+        self.assertEqual(report["source_ft4_scoped_semi_blend_abr2_calls"],1)
+        self.assertEqual(report["source_ft4_scoped_semi_blend_abr3_calls"],0)
+        self.assertEqual(report["source_ft4_scoped_accurate_semi_blend_calls"],2)
+        self.assertEqual(report["source_ft4_scoped_legacy_semi_blend_calls"],0)
+        self.assertEqual(report["source_ft4_scoped_draws_with_multiple_semi_blends"],1)
+        self.assertEqual(report["source_ft4_scoped_changed_putpixel_calls"],3)
+        self.assertEqual(report["source_ft4_sampled_changed_word_draws"],2)
+
+        # A forged ABR is rejected even when the claimed final value,
+        # per-primitive endpoints and all SHA digests are recomputed.
+        self.pixel_rows[1]["abr"]=0
+        self.save()
+        with self.assertRaisesRegex(ValueError, "semi-transparent PutPixel"):
+            verify_pixel_ot(self.root,self.native)
+
+    def test_source_ft4_semi_blend_abrs_0_and_3_on_adjacent_draws(self):
+        original = bytes(self.base.base.bytes_before)
+        first = bytearray(original)
+        second = bytearray(first)
+        struct.pack_into("<H", first, (30*1024+30)*2, 0xbc00)
+        second[:] = first
+        struct.pack_into("<H", second, (30*1024+30)*2, 0xbc07)
+        self.base.base.override_snapshots = {
+            3:bytes(first),4:bytes(first),5:bytes(second),
+        }
+        self.pixel_rows = [
+            self.row(0,1,0,0x7c00,0xbc00,semi=1),
+            self.row(1,2,0xbc00,0x001f,0xbc07,semi=1),
+        ]
+        self.pixel_rows[0]["abr"]=0
+        self.pixel_rows[1]["abr"]=3
+        self.save()
+        report=verify_pixel_ot(self.root,self.native)
+        self.assertEqual(report["source_ft4_scoped_semitransparent_blend_calls"],2)
+        self.assertEqual(report["source_ft4_scoped_semi_blend_abr0_calls"],1)
+        self.assertEqual(report["source_ft4_scoped_semi_blend_abr3_calls"],1)
+        self.assertEqual(report["source_ft4_scoped_draws_with_multiple_semi_blends"],0)
+        self.assertEqual(report["source_ft4_scoped_accurate_semi_blend_calls"],2)
+        self.assertEqual(report["source_ft4_scoped_color_and_bit15_putpixel_calls"],1)
+        self.assertEqual(report["source_ft4_scoped_color_only_putpixel_calls"],1)
+
     def test_two_scoped_ft4_bit15_changes_cancel_at_temporal_endpoints(self):
         # Two observed PutPixel calls (0 -> bit15 -> 0) leave the
         # sampled VRAM word unchanged at the first PRE / final POST.
