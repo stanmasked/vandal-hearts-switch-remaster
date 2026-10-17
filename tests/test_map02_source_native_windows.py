@@ -152,6 +152,51 @@ class WindowSourceWitnessTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "texture/CLUT"):
             verify_window_source_join(self.source, self.native)
 
+    def test_rejects_ambiguous_duplicate_gpu_ft4_packets(self):
+        first_ft4 = self.fixture.events[0]["ft4"]
+        for event in self.fixture.events[2:]:
+            event["ft4"] = dict(first_ft4)
+            event["primitive_type"] = 2
+        self.save_native()
+        with self.assertRaisesRegex(ValueError, "absent or ambiguous"):
+            verify_window_source_join(self.source, self.native)
+
+    def test_two_source_faces_obey_relative_ot_depth_order(self):
+        second_packet = {
+            "tpage": 1, "clut": 0,
+            "xy": [4, 4, 6, 4, 6, 6, 4, 6],
+            "uv": [0, 0, 1, 0, 0, 1, 1, 1],
+        }
+        for event in self.fixture.events[2:]:
+            event["ft4"] = dict(second_packet)
+            event["primitive_type"] = 2
+        self.save_native()
+        self.source_event["gte"]["raw_otz"] = 8
+        second = {
+            "gte": {"perimeter_xy": [[4, 4], [6, 4], [4, 6], [6, 6]],
+                    "raw_otz": 6},
+            "texture": dict(self.source_event["texture"], tpage=1),
+        }
+        self.source_events = jsonline(self.source_event) + jsonline(second)
+        (self.source / "gpu-events.jsonl").write_bytes(self.source_events)
+        self.claim["source_events_sha256"] = sha(self.source_events)
+        self.save_claim()
+        self.checked_bundle.return_value = {
+            "frame": 7, "submitted_faces_checked": 2,
+        }
+        verified = verify_window_source_join(self.source, self.native)
+        self.assertEqual(verified["source_ft4_exact_matches"], 2)
+        self.assertTrue(verified["source_ft4_relative_ot_order_checked"])
+        # Same source packets and native bytes, but an impossible original
+        # OT depth ordering: the higher depth second face should draw first.
+        self.source_event["gte"]["raw_otz"] = 5
+        self.source_events = jsonline(self.source_event) + jsonline(second)
+        (self.source / "gpu-events.jsonl").write_bytes(self.source_events)
+        self.claim["source_events_sha256"] = sha(self.source_events)
+        self.save_claim()
+        with self.assertRaisesRegex(ValueError, "relative DrawOTag order"):
+            verify_window_source_join(self.source, self.native)
+
     def test_refuses_false_source_gte_and_postpublish_tampering(self):
         self.checked_bundle.side_effect = ValueError("GTE source verification failed")
         with self.assertRaisesRegex(ValueError, "GTE source"):
