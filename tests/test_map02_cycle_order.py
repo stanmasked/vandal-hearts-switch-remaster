@@ -87,7 +87,7 @@ int main(int argc, char **argv) {
 }
 """
 
-/* Synthetic LD_PRELOAD fault injection. Never touches the user's game. */
+# Synthetic LD_PRELOAD fault injection. Never touches the user's game.
 FAULT_SHIM = r"""
 #define _GNU_SOURCE
 #include <dlfcn.h>
