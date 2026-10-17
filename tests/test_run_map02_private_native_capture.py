@@ -17,6 +17,10 @@ from pathlib import Path
 import sys
 
 root = Path(os.environ["VH_MAP02_GPU_CAPTURE_DIR"])
+if "--hang" in sys.argv:
+    import time
+    time.sleep(5)
+    sys.exit(0)
 if "--exit-error" in sys.argv:
     sys.exit(6)
 if "--no-capture" in sys.argv:
@@ -102,6 +106,15 @@ class PrivateNativeLauncherTests(unittest.TestCase):
         self.assertEqual(result["failure_category"],
                          "incomplete_or_invalid_private_capture")
         self.assertFalse(result["capture_verified"])
+
+    def test_synthetic_process_timeout_is_terminated_and_unverified(self):
+        result = capture(self.executable, self.preflight, self.summary,
+                         environ=self.env, game_args=("--hang",), timeout=0.2)
+        self.assertTrue(result["process_started"])
+        self.assertFalse(result["capture_verified"])
+        self.assertEqual(result["failure_category"], "process_timeout")
+        self.assertIsNone(result["process_exit_code"])
+        self.assertTrue(self.summary.exists())
 
     def test_never_overwrites_receipts_or_reuses_capture_directory(self):
         self.run_synthetic()
