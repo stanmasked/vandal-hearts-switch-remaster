@@ -9,7 +9,6 @@ This is NOT verify_map02_vram_edges_witness: final authentication still invokes
 the full original PC source-keyed GTE/OT/VRAM and BlendG1 verification chain.
 """
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -100,9 +99,7 @@ def inspect_staged_capture(source_dir, native_dir):
            e.get("frame") != source_frame for e in events):
         raise ValueError("unrelated original source FT4 event")
     if "pc_game_binary_sha256" in bundle:
-        # Validate format; this is a caller assertion, NOT identity proof.
-        sha_check(b"", bundle["pc_game_binary_sha256"],
-                  "game binary fingerprint") if False else None
+        # Validate only syntax; caller-supplied fingerprint is not proof.
         digest = bundle["pc_game_binary_sha256"]
         if (type(digest) is not str or len(digest) != 64 or
                 any(ch not in "0123456789abcdef" for ch in digest)):
