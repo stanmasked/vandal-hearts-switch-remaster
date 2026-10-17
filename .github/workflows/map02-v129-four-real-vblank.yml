@@ -1,0 +1,32 @@
+name: MAP02 v129 five different four-genuine-VBlank DMA gap placements
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - '.github/workflows/map02-v129-four-real-vblank.yml'
+      - 'tools/make_map02_v129_four_vblank_exe.py'
+      - 'tools/apply_map02_v129_pcsx_rearmed.py'
+      - 'tools/summarize_map02_v129_four_vblank_profiles.py'
+      - 'tests/test_map02_v129_four_vblank_profiles.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-authored-four-vblank-gap-matrix:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify five bounded gap-four cases and regress original versions
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_map02_v129_four_vblank_profiles.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v128_triple_vblank_profiles.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v127_vblank_profiles.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v126_genuine_vblank_dma.py' -v
