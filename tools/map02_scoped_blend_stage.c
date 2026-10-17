@@ -9,6 +9,13 @@
 #ifdef VH_MAP02_VRAM_EDGE_PROBE
 #include "map02_vram_edges.h"
 #endif
+#ifdef VH_MAP02_CAPTURE_SESSION
+#if !defined(VH_MAP02_VRAM_EDGE_PROBE)
+#error "MAP02 session provenance needs all three native scoped streams"
+#endif
+#include "map02_capture_session.h"
+#define VH_SCOPED_SESSION "gpu-scoped-session.json"
+#endif
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -125,17 +132,17 @@ static int create_checked_temp(int dirfd, VHStageFile *file, unsigned slot) {
 }
 
 static int stage(const char *private_directory, int paired) {
-    VHStageFile files[3];
+    VHStageFile files[4];
     struct stat directory_stat;
     int dirfd = -1, ok = 0;
     unsigned i, active = paired ? 2u : 1u;
 
     memset(files, 0, sizeof files);
-    files[0].fd = files[1].fd = files[2].fd = -1;
+    files[0].fd = files[1].fd = files[2].fd = files[3].fd = -1;
     files[0].final_name = VH_BLEND_PENDING;
     files[1].final_name = VH_PIXEL_PENDING;
     files[2].final_name = VH_EDGE_PENDING;
-    for (i = 0; i < 3u; ++i) files[i].capacity = VH_STAGE_LIMIT;
+    for (i = 0; i < 4u; ++i) files[i].capacity = VH_STAGE_LIMIT;
     if (!private_directory || !*private_directory ||
         !collect(&files[1], &files[0], paired)) return 0;
 #ifdef VH_MAP02_VRAM_EDGE_PROBE
@@ -155,6 +162,23 @@ static int stage(const char *private_directory, int paired) {
         }
         if (!files[2].size ||
             payload(&files[2])[files[2].size - 1] != '\n') goto done;
+    }
+#endif
+
+#ifdef VH_MAP02_CAPTURE_SESSION
+    if (paired) {
+        const char *token = vh_map02_capture_session_token();
+        VHMap02BlendEvent first;
+        char line[192];
+        int n;
+        if (!token || !vh_map02_scope_copy(0u, &first)) goto done;
+        files[3].final_name = VH_SCOPED_SESSION;
+        n = snprintf(line, sizeof line,
+            "{\"schema\":\"vh.map02.scoped-session.v1\","
+            "\"gpu_draw_frame\":%u,\"capture_session\":\"%s\"}\n",
+            first.frame, token);
+        if (!append_line(&files[3], line, n)) goto done;
+        active = 4u;
     }
 #endif
 
