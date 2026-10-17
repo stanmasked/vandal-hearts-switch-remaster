@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import stat
 import subprocess
 
 from tools.check_map02_cycle_make_plan import BUILD, audit
