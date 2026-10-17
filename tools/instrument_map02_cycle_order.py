@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate three copied, source-pinned PC units with an opt-in CD -> OT order gate.
 
-Existing original CdRead and scoped DrawOTag observers are preserved. The new
+Existing original CdRead, scoped DrawOTag, native VRAM and pixel observers are preserved. The new
 gate only checks order of IN-PROCESS calls when all three translation units
 link against one map02_cycle_order.c. It never claims a MAP02 scene was drawn.
 No game assets or binary are read by the generator.
@@ -11,6 +11,8 @@ from pathlib import Path
 
 from tools.instrument_map02_cd_read import instrument_core_cd, instrument_libcd
 from tools.instrument_map02_drawotag_scope import instrument as instrument_gpu_scope
+from tools.instrument_map02_gpu_native_events import instrument as instrument_gpu_native
+from tools.instrument_map02_scoped_blend import instrument as instrument_raster_scope
 from tools.instrument_map02_gpu_native_events import PINNED_SOURCE as GPU_SOURCE
 from tools.prepare_map02_pcport import git_blob_sha1
 
@@ -63,7 +65,9 @@ def patch_libcd(original):
 def patch_gpu(original):
     if git_blob_sha1(original.encode("utf-8")) != GPU_SOURCE:
         raise ValueError("pinned original PC libgpu.c SHA-1 differs")
-    src = instrument_gpu_scope(original)
+    # The jointly tested original GPU composition is native first, scoped
+    # second; both use distinct pinned anchors and a shared DrawOTag walker.
+    src = instrument_gpu_scope(instrument_gpu_native(original))
     src = inject(src, 'void DrawOTag(unsigned int *p) {',
                  '#ifdef VH_MAP02_CYCLE_ORDER\n'
                  '#include "map02_cycle_order.h"\n#endif\n'
@@ -78,6 +82,10 @@ def patch_gpu(original):
     return src
 
 
+def patch_raster(original):
+    return instrument_raster_scope(original)
+
+
 def generate(checkout: Path, output: Path):
     # Check the provided path before resolve() erases the symlink itself.
     if output.is_symlink():
@@ -90,6 +98,7 @@ def generate(checkout: Path, output: Path):
         "core_cd.c": (checkout / "src/core/cd.c", patch_core),
         "libcd.c": (checkout / "platform/pc/src/libcd.c", patch_libcd),
         "libgpu.c": (checkout / "platform/pc/src/libgpu.c", patch_gpu),
+        "pc_raster.c": (checkout / "platform/pc/src/pc_raster.c", patch_raster),
     }
     if output.exists() and (output.is_symlink() or any(output.iterdir())):
         raise ValueError("output directory must be empty and not a symlink")
@@ -112,7 +121,7 @@ def main():
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
     print("Generated pinned opt-in single-process hooks: " + ", ".join(names))
-    print("Must link tools/map02_cycle_order.c and map02_capture_session.c")
+    print("Must link CD, cycle, session, GPU scoped sink/stage and VRAM edge observers")
     print("No real MAP02 gameplay or rendering was executed.")
 
 
