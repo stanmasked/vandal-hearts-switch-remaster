@@ -607,7 +607,7 @@ int vh_switch_game_audio_trace_render(VhCanvas *canvas,
 
 VhAudoutQueueExportResult vh_switch_game_audio_queue_export(
     char *committed_path,size_t capacity) {
-    if(committed_path && capacity) committed_path[0]='\\0';
+    if(committed_path && capacity) committed_path[0]='\0';
     if(thread_started) return VH_AUDOUT_QUEUE_EXPORT_INVALID;
     return vh_audout_queue_export(&audout_telemetry,
         VH_SCENE_TRACE_SD_DIRECTORY,committed_path,capacity);
