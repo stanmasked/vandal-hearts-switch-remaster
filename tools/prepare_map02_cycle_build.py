@@ -32,10 +32,10 @@ SUPPORT_FILES = (
 )
 MAKEFILE_SHA = PINNED_BLOB_SHA1["platform/pc/Makefile"]
 MAKE_ANCHORS = (
-    "BACKEND_OBJS", "GAME_C_FLAGS", "PORT_WARN",
     "$(BUILD_DIR)/libcd.o: src/libcd.c",
     "$(BUILD_DIR)/libgpu.o: src/libgpu.c",
     "link: $(DATA_OBJS)",
+    "$(BUILD_DIR)/src/%.o: $(SRC_DIR)/%.c | stage",
 )
 SAFE_PATH = re.compile(r"/[A-Za-z0-9_./-]+\Z")
 
@@ -122,7 +122,9 @@ def prepare(upstream: Path, output: Path, *, support=None):
     if git_blob_sha1(make_bytes) != MAKEFILE_SHA:
         raise ValueError("upstream Makefile differs from source-pinned build")
     make_text = make_bytes.decode("utf-8")
-    if any(make_text.count(anchor) != 1 for anchor in MAKE_ANCHORS):
+    if (any(make_text.count(anchor) != 1 for anchor in MAKE_ANCHORS) or
+            any(anchor not in make_text for anchor in
+                ("BACKEND_OBJS", "GAME_C_FLAGS", "PORT_WARN"))):
         raise ValueError("source-pinned Makefile target or build profile drift")
 
     rendered = {}
