@@ -86,6 +86,10 @@ int vh82_publish_private(const char *path,const char *bytes,size_t size) {
     owned=0;
     if(VH100_FAIL(3) || fsync(dirfd)<0)goto finish;
     vh100_synced_directories++;
+    /* The completed name is never trusted solely because link/fsync
+     * succeeded: re-open BOTH file and parent, compare ALL bytes and
+     * independently sync the committed file and directory again. */
+    if(vh101_verify_private_commit(path,bytes,size)!=0)goto finish;
     ok=0;
 finish:
     if(fd>=0)close(fd);
@@ -204,4 +208,77 @@ int vh99_publish_after_interruption(const char *abandoned_final,
        vh99_private_state(abandoned_final)!=2 ||
        vh99_private_state(fresh_final)!=1)return -1;
     return 0;
+}
+
+
+/* Verified commit counts contain no private payload or path details. */
+static unsigned int vh101_commits;
+static unsigned int vh101_parent_syncs;
+unsigned int vh101_verified_commits(void){return vh101_commits;}
+unsigned int vh101_reopened_directory_syncs(void){return vh101_parent_syncs;}
+#ifdef VH100_FAULT_TEST
+static int vh101_test_fault;
+void vh101_test_fail_at(int phase){vh101_test_fault=phase;}
+#define VH101_FAIL(phase) (vh101_test_fault==(phase))
+#else
+#define VH101_FAIL(phase) (0)
+#endif
+
+/* Read-only revalidation of a completed private journal. The reopening
+ * matters: do NOT assume that a successful write/fsync of a temporary
+ * file proves the final name points at the same bytes on its own.
+ * Both data and parent directory must successfully fsync AGAIN.
+ * No rename, replace or implicit cleanup is attempted on failure.
+ */
+int vh101_verify_private_commit(const char *path,const char *bytes,size_t size){
+    char parent[VH82_MAX_PATH],scratch[4096];
+    struct stat initial,again,named,dir_stat;
+    int fd=-1,dirfd=-1,ok=-1;
+    if(!path || !bytes || !size || size>VH82_MAX_BYTES ||
+       path[0]!='/')return -1;
+    size_t n=strnlen(path,VH82_MAX_PATH);
+    if(n==0 || n+5>=VH82_MAX_PATH ||
+       strstr(path,"/../") || strstr(path,"/./"))return -1;
+    const char *slash=strrchr(path,'/');
+    if(!slash || !slash[1])return -1;
+    size_t parent_length=(size_t)(slash-path);
+    if(parent_length==0){parent[0]='/';parent[1]='\0';}
+    else{memcpy(parent,path,parent_length);parent[parent_length]='\0';}
+    dirfd=open(parent,O_RDONLY|O_DIRECTORY|O_NOFOLLOW);
+    if(dirfd<0)goto finish;
+    if(VH101_FAIL(1) || fstat(dirfd,&dir_stat)<0 ||
+       !S_ISDIR(dir_stat.st_mode))goto finish;
+    /* A final file with a leftover .tmp (or linked-to-stage inode)
+     * remains ambiguous: a re-open must not certify it as complete. */
+    if(vh99_private_state(path)!=1)goto finish;
+    fd=open(path,O_RDONLY|O_NOFOLLOW);
+    if(fd<0)goto finish;
+    if(fstat(fd,&initial)<0 || !S_ISREG(initial.st_mode) ||
+       (initial.st_mode&0777)!=0600 || initial.st_nlink!=1 ||
+       initial.st_size<0 || (size_t)initial.st_size!=size)goto finish;
+    size_t pos=0;
+    while(pos<size){
+        size_t want=size-pos<sizeof(scratch)?size-pos:sizeof(scratch);
+        ssize_t got=read(fd,scratch,want);
+        if(got<=0 || memcmp(bytes+pos,scratch,(size_t)got)!=0)
+            goto finish;
+        pos+=(size_t)got;
+    }
+    if(read(fd,scratch,1)!=0)goto finish;
+    if(VH101_FAIL(2) || fsync(fd)<0)goto finish;
+    if(VH101_FAIL(3) || fsync(dirfd)<0)goto finish;
+    vh101_parent_syncs++;
+    if(fstat(fd,&again)<0 || lstat(path,&named)<0 ||
+       named.st_dev!=initial.st_dev || named.st_ino!=initial.st_ino ||
+       again.st_dev!=initial.st_dev || again.st_ino!=initial.st_ino ||
+       again.st_size!=initial.st_size ||
+       named.st_size!=initial.st_size || named.st_nlink!=1 ||
+       !S_ISREG(named.st_mode) || (named.st_mode&0777)!=0600)
+        goto finish;
+    ok=0;
+finish:
+    if(fd>=0 && close(fd)<0)ok=-1;
+    if(dirfd>=0 && close(dirfd)<0)ok=-1;
+    if(ok==0)vh101_commits++;
+    return ok;
 }

@@ -6,9 +6,17 @@
 int vh82_publish_private(const char *path,const char *bytes,size_t size);
 /* Successful directory fsync calls after final hard-link and temp unlink. */
 unsigned int vh100_directory_syncs(void);
+/* Reopen and validate an already published 0600 private file without
+ * modifying either the file or its pathname. Returns 0 ONLY if all
+ * bytes match, the file itself fsyncs, and the reopened parent fsyncs. */
+int vh101_verify_private_commit(const char *path,const char *bytes,size_t size);
+unsigned int vh101_verified_commits(void);
+unsigned int vh101_reopened_directory_syncs(void);
 #ifdef VH100_FAULT_TEST
 /* Test-only fault gates at each post-link publish durability boundary. */
 void vh100_test_fail_at(int phase);
+/* Isolated post-commit verifier I/O failures; never in production PCSX. */
+void vh101_test_fail_at(int phase);
 #endif
 /* An existing private file must be immutable. Only a DISTINCT unused path
  * may receive a recovered observer lifetime; never rename/replace old. */
