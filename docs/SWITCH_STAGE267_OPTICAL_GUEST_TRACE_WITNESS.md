@@ -111,3 +111,25 @@ All four serials have ordered `INPUT`, `POST`, `ACCEPT`, `SUBMIT_CALL` and `RELE
 The optical decoder's first successful run reused the strict SD-CSV parser and gave its nested auditor a misleading `source` label implying SD readback even when analyzing pixels. Follow-up code commit `bf8cfcac023ae7ca2169745c04d493ab5a9d18c5` explicitly labels the nested auditor as **framebuffer-derived**, leaving any independent SD verification to the separate SD verdict. The original archived evidence bytes have **not** been modified or rewritten.
 
 **Final Stage 267 conclusion: `GUEST_INTERNAL_AUDIO_SCENE_TIMESTAMPS_RECOVERED` in NeXium; physical Switch remains `HARDWARE NOT TESTED`.**
+
+## Second independent full emulator confirmation
+
+After the transport-provenance label correction, [NeXium run 39053726025](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39053726025) on source SHA `bf8cfcac023ae7ca2169745c04d493ab5a9d18c5` also completed **SUCCESS** in both jobs. Its published original runtime evidence artifact **`12109125395`** was downloaded independently; ZIP SHA-256 `17c1b4e064a1fe164eae5a1808a6f7f9eb22fa3edec70e607b4bd5aa7d8cc8c7`; **41 files with no ZIP CRC errors**.
+
+A separate clean decode of the second screenshot's actual 7,392 pixel bits recovered a **different genuine guest session**, rather than reusing the first one's CSV:
+- Second optical packet SHA-256 `cfb0742495869d48f068813307e297397e2a51b951eee96979e316f4a43a094e`, CRC32 `fca3ca31`.
+- **23 guest events, 0 dropped**, including the same four complete alternating scene serials and three unattributed startup events.
+- Second optical CSV SHA-256 `305e6d436f9fa8eb6840c76b10e706848372f2ca72e9f8fd3cb37e73395228e4`, **728 bytes**.
+- The **second SD-exported CSV matches the second optical CSV byte for byte**. The two run hashes intentionally differ; this rules out accidentally substituting a stale first-run capture for the second run's proof.
+- Nested optical audit source now correctly states `reconstructed from CRC-verified guest framebuffer pixels`, not an SD readback claim.
+
+| Internal guest interval (ms) | Run 39053160279 INPUT→ACCEPT | Run 39053726025 INPUT→ACCEPT | Second INPUT→RELEASE_RETURN |
+| --- | ---: | ---: | ---: |
+| FOCUS 1 | 17.560 | 16.609 | 50.780 |
+| FIELD 1 | 13.556 | 11.435 | 47.229 |
+| FOCUS 2 | 32.092 | 31.420 | 65.126 |
+| FIELD 2 | 15.791 | 4.392 | 20.627 |
+
+**Result:** two independent emulator sessions successfully transmitted *their own distinct* guest event logs by both visual framebuffer pixels and the emulated SD filesystem. The exact reason SD was absent in Stage 266 is still unknown; these positive observations do not prove physical FAT durability. Actual Switch hardware, speaker output, HOME/sleep, retail soundtrack and input-to-DAC latency remain **`HARDWARE NOT TESTED`**.
+
+The documentation-only changes following those two successful CI runs do not retroactively change the pinned NRO or the runner code SHAs.
