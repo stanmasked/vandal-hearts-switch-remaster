@@ -28,13 +28,21 @@ SECOND_COORDINATE_SELECTORS = (
 _SYM = re.compile(r"^[0-9A-Fa-f]*\s+([TtWw])\s+(VH_[A-Za-z0-9_]+)$")
 
 
-def inspect_binary(path, *, nm="nm"):
+def inspect_binary(path, *, nm="nm", pinned_fd=None):
+    """Inspect an exact already-pinned launch descriptor when supplied.
+
+    The descriptor is owned by the launcher and is never closed here.
+    Standalone inspection owns and closes its own descriptor instead.
+    """
     path = Path(path).absolute()
     before = _executable_fingerprint(path)
     # Check on a single open file descriptor; os.pread does not seek.
     flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
              | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0))
-    fd = os.open(path, flags)
+    owns_fd = pinned_fd is None
+    fd = os.open(path, flags) if owns_fd else pinned_fd
+    if type(fd) is not int or fd < 0:
+        raise ValueError("invalid pinned private executable descriptor")
     try:
         require_elf_image(fd)
         # For tests and stripped ELF, this scans bounded file contents.
@@ -50,9 +58,12 @@ def inspect_binary(path, *, nm="nm"):
         observed = set()
         overlap = b""
         remaining = size
+        offset = 0
         longest = max(len(item) for item in SECOND_COORDINATE_SELECTORS)
         while remaining:
-            data = os.read(fd, min(1024 * 1024, remaining))
+            # pread preserves the launch FD's seek position and binds all
+            # symbol/string checks to exactly the image that will be exec'd.
+            data = os.pread(fd, min(1024 * 1024, remaining), offset)
             if not data:
                 raise ValueError("private ELF changed while inspecting")
             digest.update(data)
@@ -61,6 +72,7 @@ def inspect_binary(path, *, nm="nm"):
                             if item in together)
             overlap = together[-(longest - 1):]
             remaining -= len(data)
+            offset += len(data)
         if digest.hexdigest() != before["executable_sha256"]:
             raise ValueError("private ELF SHA changed while inspecting")
         coordinate_selectors = len(observed) == len(SECOND_COORDINATE_SELECTORS)
@@ -120,7 +132,8 @@ def inspect_binary(path, *, nm="nm"):
             "hd_replacement_authorized": False,
         }
     finally:
-        os.close(fd)
+        if owns_fd:
+            os.close(fd)
 
 
 def main():
