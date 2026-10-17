@@ -65,6 +65,12 @@ typedef struct {
     /* Budget-normalized, disjoint first-return bands <=1x, (1,2]x,
      * (2,4]x and >4x. Missing budgets remain unclassified, not 0x. */
     unsigned budgeted_first_pages, page_budget_bands[4];
+    /* A failed logical submit_recover() call does NOT return a PCM
+     * descriptor. Its failure cannot consume pending HOME evidence.
+     * A subsequent explicit retry of the same immutable page may yet
+     * return it; these counters describe failed calls, not dropped
+     * or audible PCM frames. */
+    unsigned failed_logical_submissions, failures_while_pending;
 } VhAudioAppletEvents;
 
 #define VH_AUDIO_APPLET_BACKGROUND 1u
@@ -201,6 +207,19 @@ static inline int vh_audio_applet_page_returned_at(VhAudioAppletEvents *s,
     return vh_audio_applet_page_returned_budget_at(s,tick,0u);
 }
 
+/* Record only AFTER a failed logical submission is accepted by
+ * the scene-page telemetry. Preserve pending foreground and the
+ * original callback tick; no PCM page was returned. On error the
+ * observer remains byte-for-byte unchanged. */
+static inline int vh_audio_applet_submit_failed(VhAudioAppletEvents *s) {
+    if(!s || s->failed_logical_submissions==UINT_MAX ||
+       (s->pending_return && s->failures_while_pending==UINT_MAX))
+        return -1;
+    ++s->failed_logical_submissions;
+    if(s->pending_return) ++s->failures_while_pending;
+    return 0;
+}
+
 /* Strong internal event-to-returned-page accounting, never a
  * hardware-audio PASS. Subtractions avoid unsigned addition wrap. */
 static inline int vh_audio_applet_verify(const VhAudioAppletEvents *s) {
@@ -214,6 +233,7 @@ static inline int vh_audio_applet_verify(const VhAudioAppletEvents *s) {
        (s->timestamp_pending && !s->pending_return) ||
        s->timed_first_pages>s->first_pages_after_return ||
        s->budgeted_first_pages>s->timed_first_pages ||
+       s->failures_while_pending>s->failed_logical_submissions ||
        (uint64_t)s->page_budget_bands[0]+s->page_budget_bands[1]+
            s->page_budget_bands[2]+s->page_budget_bands[3] !=
                                                   s->budgeted_first_pages ||
