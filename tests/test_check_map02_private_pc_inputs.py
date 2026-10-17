@@ -38,7 +38,7 @@ class PrivateOriginalRetailBuildInputsTests(unittest.TestCase):
             executable[j] = (j * 31 + 13) % 256
         self.exe.write_bytes(executable)
         elf = bytearray(256 + sum(length for _, _, length in ANCHORS))
-        elf[:6] = b"\\x7fELF\\x01\\x01"
+        elf[:6] = b"\x7fELF\x01\x01"
         struct.pack_into("<H", elf, 18, 8)   # ELF32 MIPS
         struct.pack_into("<I", elf, 32, 64)  # section headers
         struct.pack_into("<HH", elf, 46, 40, len(ANCHORS) + 1)
