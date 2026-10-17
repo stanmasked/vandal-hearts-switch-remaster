@@ -30,10 +30,12 @@ stage, and verifies both the new MIPS-authored marker written into
 PS1 RAM and the expected destination PC. The GPU commands themselves
 are **not** submitted by the host.
 
-Stage zero is outside the equality witness. After stage zero only,
-the host resets the **private observer**, enables the established
-24-point native Unai readback, and then allows five actual CPU-authored
-rectangle draws. Each is verified by a `GPU_freeze` readback of
+Stage zero is outside the equality witness. Since CPU MMIO
+`GPUwriteData` buffers GP0 words in the real GPU plugin, the host first
+calls `GPU_freeze` to flush already CPU-authored setup commands. This
+adds **no host-authored GPU command**. Only after that drain does the host
+reset the **private observer**, enable the established 24-point native
+Unai readback, and allow five actual CPU-authored rectangle draws. Each is verified by a `GPU_freeze` readback of
 all 16 destination pixels, against expected 16-bit colors. The
 existing native v119 equality observer must report exactly five
 handlers and precisely one return to four callbacks earlier, in
