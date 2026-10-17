@@ -146,10 +146,8 @@ class TrueVblankMatrix(unittest.TestCase):
         for token in (
             "apply_map02_v127_pcsx_rearmed",
             "make_map02_v127_variable_vblank_exe",
-            "--vh127-vblank-00",
-            "--vh127-vblank-11",
-            "--vh127-vblank-02",
-            "--vh127-vblank-20",
+            "for mode in 00 11 02 20; do",
+            '"--vh127-vblank-$mode"',
             "VH127_REAL_VBLANK_PROFILES_PASS mode=",
             "summarize_map02_v127_vblank_profiles",
             "v127-real-vblank-profiles-summary.json",
