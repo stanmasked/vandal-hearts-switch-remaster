@@ -724,6 +724,7 @@ jobs:
             --receipt runtime-evidence/scene-soak/soak-audout-latency-export-result.txt \
             --sd-root "$RUNNER_TEMP/vh-nexium-stage268-${GITHUB_RUN_ID}" \
             --queue-verification runtime-evidence/scene-soak/soak-audout-verification.json \
+            --queue-csv runtime-evidence/scene-soak/soak-audout-sd-unverified.csv \
             --output runtime-evidence/scene-soak/soak-audout-latency-verification.json
           python3 -m json.tool runtime-evidence/scene-soak/soak-audout-latency-verification.json >/dev/null
           echo "Actual individual audout API-call duration bands checked across original guest SD; not audible underrun proof." >> "$GITHUB_STEP_SUMMARY"
