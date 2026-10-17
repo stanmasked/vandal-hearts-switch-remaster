@@ -138,3 +138,36 @@ also manually checked against that stricter condition; a new full
 CI run after that commit is separately tracked. The older run's
 results must not be misrepresented as automatically exercising
 subsequently added code.
+
+
+## Strict origin-bracketing NeXium acceptance — run 39071100764
+
+The second complete [NeXium run 39071100764](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39071100764), commit
+\`5defe65ab4d6574f78591225acc8dfd40444dd38\`, **also passed**.
+It exercised the extra startup submit/return origin-bracketing
+condition, which the previous run did not execute as code. The
+NRO SHA-256 remained **identical**:
+\`8b18fbac476500ec7725a71cc974039d5947c36ec5eebd33d982ea66c6ab8601\`.
+
+Its real guest clock origin was 132,230,677 ns, independently
+bracketed by startup guest \`SUBMIT_CALL\` at 128,161,979 ns
+and \`RELEASE_RETURN\` at 173,331,197 ns.
+The scene/latency original SD copies passed all audout and optical
+checks: 2,011 successful page returns, 53 one-second windows,
+zero failed returns and ten transitions over 61.080 seconds of
+host-monitored virtual PCM.
+
+One \`audoutPlayBuffer\` call took at least 50 ms, in audio-second
+**33**, which also contained INPUT serial **7** (first run: audio-second
+38, INPUT serial 8). Thus **the same scene-input serial did not
+reproduce** across the two identical-NRO emulator runs. This is
+descriptive evidence about host/guest scheduling variability, not proof
+that scene transitions cannot affect real hardware audio.
+
+The actual same-second counts ≥40 ms at the ten guest INPUT serials
+were **0, 1, 1, 0, 0, 0, 1, 2, 0, 0**. The serial-7
+≥50 ms overlap is one-second co-occurrence only, and neither run
+supplies the precise timestamp of the individual slow call.
+
+All data above come from the separately archived original NeXium
+workflow evidence and are not synthetic-fixture values.
