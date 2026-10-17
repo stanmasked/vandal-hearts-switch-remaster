@@ -269,8 +269,172 @@ static void test_audout_inflight_page_lease_scene_lifetime(void) {
     assert(vh_audio_page_lease_ready(&lease));
 }
 
+
+/* A production-shaped audout callback mock. The backend may return
+ * the WRONG AudioOutBuffer pointer; in this case the page remains
+ * in-flight even if the service itself returned success. The exact
+ * same output samples must survive a failed stop and eventual replay.
+ * There is no libnx service or physical-device claim in this test. */
+typedef struct {
+    VhAudioPageLease lease;
+    int descriptor, foreign_descriptor;
+    const int16_t *pcm;
+    size_t frames;
+    uint64_t pcm_hash;
+    unsigned opened, playing;
+    unsigned wrong_returns_left, failed_stops_left;
+    unsigned calls, stops, closes, opens, starts, returned;
+} LeasedDevice;
+
+static int leased_submit(void *opaque,const int16_t *pcm,size_t frames) {
+    LeasedDevice *d=opaque;
+    if(!d->opened || !d->playing ||
+       vh_audio_page_lease_begin(&d->lease,&d->descriptor))
+        return -1;
+    assert(pcm==d->pcm && frames==d->frames);
+    assert(hash_page(pcm,frames)==d->pcm_hash);
+    ++d->calls;
+    if(d->wrong_returns_left) {
+        --d->wrong_returns_left;
+        assert(!vh_audio_output_page_returned(&d->descriptor,
+                                             &d->foreign_descriptor));
+        assert(vh_audio_page_lease_return(
+                   &d->lease,&d->foreign_descriptor)==-1);
+        assert(!vh_audio_page_lease_ready(&d->lease));
+        return -1;
+    }
+    assert(vh_audio_output_page_returned(&d->descriptor,&d->descriptor));
+    assert(vh_audio_page_lease_return(&d->lease,&d->descriptor)==0);
+    assert(vh_audio_page_lease_ready(&d->lease));
+    ++d->returned;
+    return 0;
+}
+static int leased_stop(void *opaque) {
+    LeasedDevice *d=opaque;
+    ++d->stops;
+    if(!d->playing)
+        return vh_audio_page_lease_ready(&d->lease) ? 0 : -1;
+    if(d->failed_stops_left) {
+        --d->failed_stops_left;
+        assert(vh_audio_page_lease_stopped(&d->lease,-1)==-1);
+        assert(d->lease.in_flight==&d->descriptor);
+        return -1;
+    }
+    assert(vh_audio_page_lease_stopped(&d->lease,0)==0);
+    d->playing=0u;
+    return 0;
+}
+static void leased_close(void *opaque) {
+    LeasedDevice *d=opaque;
+    assert(!d->playing && vh_audio_page_lease_ready(&d->lease));
+    ++d->closes;
+    d->opened=0u;
+}
+static int leased_open(void *opaque) {
+    LeasedDevice *d=opaque;
+    if(d->opened || !vh_audio_page_lease_ready(&d->lease)) return -1;
+    ++d->opens;
+    d->opened=1u;
+    return 0;
+}
+static int leased_start(void *opaque) {
+    LeasedDevice *d=opaque;
+    if(!d->opened || d->playing ||
+       !vh_audio_page_lease_ready(&d->lease)) return -1;
+    ++d->starts;
+    d->playing=1u;
+    return 0;
+}
+static void test_failed_stop_page_lease_with_real_recovery(void) {
+    for(unsigned i=0u;i<128u;i++) {
+        sample[i]=(int16_t)((int)i*67-4400);
+        alternate_sample[i]=(int16_t)((int)i*93-6000);
+    }
+    vh_native_spu_reset(&spu);
+    assert(vh_native_spu_set_reverb(&spu,1,.5f)==0);
+    vh_audio_resample_reset(&resampler);
+    assert(vh_native_seq_init(&seq,song,sizeof song,
+                              &spu,resolve,sample,0u)==0);
+    unsigned recovered=0u,manual_stops=0u;
+    for(unsigned iteration=0u;iteration<36u;iteration++) {
+        assert(vh_native_seq_advance_block(&seq)>=0);
+        vh_native_spu_render(&spu,src,512u);
+        const size_t frames=vh_audio_resample_process(
+                              &resampler,src,512u,dst,640u);
+        assert(frames>=555u && frames<=559u);
+        const uint64_t original_hash=hash_page(dst,frames);
+        const VhNativeSeq old_seq=seq;
+        const uint64_t spu_frames=spu.frames_rendered;
+        const VhAudioResample old_resampler=resampler;
+        LeasedDevice d={
+            .pcm=dst,.frames=frames,.pcm_hash=original_hash,
+            .opened=1u,.playing=1u,
+            .wrong_returns_left=1u,
+            .failed_stops_left=(iteration%3u==0u ? 1u : 0u)
+        };
+        VhAudioOutputRecovery recovery={0};
+        const VhAudioOutputOps ops={
+            &d,leased_submit,leased_stop,leased_close,
+            leased_open,leased_start
+        };
+        const int first=vh_audio_output_submit_recover(
+                                       &ops,&recovery,dst,frames);
+        if(iteration%3u==0u) {
+            /* Failed stop: the original descriptor is still owned.
+             * No reopen, rerender, bank replacement or second submit. */
+            assert(first==-1);
+            assert(recovery.submit_failures==1u);
+            assert(recovery.restart_attempts==0u);
+            assert(recovery.pages_submitted==0u);
+            assert(d.calls==1u && d.stops==1u && d.closes==0u);
+            assert(d.opened && d.playing && !d.returned);
+            assert(d.lease.in_flight==&d.descriptor);
+            assert(leased_submit(&d,dst,frames)==-1);
+            assert(d.calls==1u);
+            assert(switch_when_page_free(&d.lease,alternate_sample)==-1);
+            assert(vh_audio_output_stop_close(&ops)==0);
+            assert(d.stops==2u && d.closes==1u);
+            assert(vh_audio_page_lease_ready(&d.lease));
+            assert(ops.open(ops.context)==0);
+            assert(ops.start(ops.context)==0);
+            assert(vh_audio_output_submit_recover(
+                        &ops,&recovery,dst,frames)==0);
+            assert(recovery.submit_failures==1u);
+            assert(recovery.pages_submitted==1u);
+            assert(recovery.restart_attempts==0u);
+            ++manual_stops;
+        } else {
+            /* Same fully rendered page is resent after a successful
+             * backend stop, close, reopen and restart. */
+            assert(first==0);
+            assert(recovery.submit_failures==1u);
+            assert(recovery.restart_attempts==1u);
+            assert(recovery.recoveries==1u);
+            assert(recovery.pages_submitted==1u);
+            assert(d.calls==2u && d.stops==1u &&
+                   d.closes==1u && d.opens==1u && d.starts==1u);
+            ++recovered;
+        }
+        assert(d.returned==1u && d.calls==2u);
+        assert(vh_audio_page_lease_ready(&d.lease));
+        assert(hash_page(dst,frames)==original_hash);
+        assert(memcmp(&seq,&old_seq,sizeof seq)==0);
+        assert(spu.frames_rendered==spu_frames);
+        assert(memcmp(&resampler,&old_resampler,sizeof resampler)==0);
+        assert(vh_audio_output_stop_close(&ops)==0);
+        assert(!d.opened && !d.playing);
+        const int16_t *next=iteration%2u ? sample : alternate_sample;
+        assert(switch_when_page_free(&d.lease,next)==0);
+        assert(seq.context==next && seq.blocks_advanced==0u);
+        assert(spu.frames_rendered==0u);
+        assert(resampler.input_frames==old_resampler.input_frames);
+    }
+    assert(recovered==24u && manual_stops==12u);
+}
+
 int main(void) {
     test_audout_inflight_page_lease_scene_lifetime();
+    test_failed_stop_page_lease_with_real_recovery();
     Mock device={.opened=1,.playing=1,
                  .checksum=UINT64_C(1469598103934665603)};
     VhAudioOutputOps ops=callbacks(&device);
