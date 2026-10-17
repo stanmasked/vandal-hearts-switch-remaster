@@ -35,6 +35,13 @@ def check(directory: Path, *, git_sha: str, run_id: int, artifact_id: int,
         raise PreflightError("expected NRO SHA-256 must be 64 lowercase hex digits")
     if not directory.is_dir() or directory.is_symlink():
         raise PreflightError("artifact directory missing or symlinked")
+    # Refuse ambiguous directories containing another NRO or hash receipt.
+    unexpected = sorted(p.name for p in directory.iterdir()
+                        if p.name not in (EXPECTED_NRO, EXPECTED_HASH_FILE)
+                        and (p.name.lower().endswith(".nro")
+                             or p.name.lower().endswith(".sha256")))
+    if unexpected:
+        raise PreflightError("unexpected competing artifact member: " + unexpected[0])
     nro = directory / EXPECTED_NRO
     sha_file = directory / EXPECTED_HASH_FILE
     for path in (nro, sha_file):
