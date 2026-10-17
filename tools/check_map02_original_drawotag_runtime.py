@@ -29,6 +29,9 @@ HARNESS = r"""
 #ifdef VH_MAP02_SCOPED_BLEND_PROBE
 #include "map02_scoped_blend_sink.h"
 #endif
+#ifdef VH_MAP02_VRAM_EDGE_PROBE
+#include "map02_vram_edges.h"
+#endif
 
 /* Headless stubs ONLY for non-raster external subsystems. Never link these
  * stubs into a real game build, replay, or authenticated original capture. */
@@ -66,6 +69,39 @@ void PC_GpuPresent(unsigned short *vram, int width, int height,
     (void)vram; (void)width; (void)height;
     (void)x; (void)y; (void)w; (void)h;
 }
+
+#ifdef VH_MAP02_VRAM_EDGE_PROBE
+/* Independent boundary sampler does not read PutPixel events itself.
+ * This harness performs the JOIN after both sealed buffers exist. */
+static void verify_edges_against_putpixel(void) {
+    unsigned i, j = 0, total = vh_map02_scope_count();
+    VHMap02VramEdge edge;
+    VHMap02BlendEvent pixel;
+    assert(!vh_map02_edges_failed());
+    assert(vh_map02_edges_count() > 0);
+    for (i = 0; i < vh_map02_edges_count(); i++) {
+        unsigned matched = 0;
+        unsigned short latest = 0;
+        assert(vh_map02_edges_copy(i, &edge));
+        assert(edge.frame == 1 && edge.ordinal == i);
+        assert(edge.x == 10 && edge.y == 10);
+        while (j < total) {
+            assert(vh_map02_scope_copy(j, &pixel));
+            if (pixel.ordinal != i) break;
+            assert(pixel.frame == edge.frame);
+            assert(pixel.primitive_type == edge.primitive_type);
+            if (!matched) assert(pixel.before == edge.before);
+            else assert(pixel.before == latest);
+            latest = pixel.after;
+            matched++;
+            j++;
+        }
+        if (matched) assert(latest == edge.after);
+        else assert(edge.before == edge.after);
+    }
+    assert(j == total);
+}
+#endif
 
 int main(void) {
     unsigned int ot[2];
@@ -113,6 +149,10 @@ int main(void) {
     AddPrim(&ot[0], &f4);
     AddPrim(&ot[0], &mode);
     DrawOTag(ot);
+#ifdef VH_MAP02_VRAM_EDGE_PROBE
+    verify_edges_against_putpixel();
+    assert(vh_map02_edges_count() == 2);
+#endif
     after = vram[10][10];
     assert(after != before);
 #ifdef VH_MAP02_SCOPED_BLEND_PROBE
@@ -178,7 +218,8 @@ def run_original_ot(upstream, *, compiler="cc", harness=HARNESS,
         for mode, defines in (
             ("ordinary", []),
             ("scoped", ["-DVH_MAP02_SCOPED_BLEND_PROBE"]),
-            ("staged", ["-DVH_MAP02_SCOPED_BLEND_PROBE", "-DVH_MAP02_POSIX_STAGE"]),
+            ("staged", ["-DVH_MAP02_SCOPED_BLEND_PROBE", "-DVH_MAP02_POSIX_STAGE",
+                        "-DVH_MAP02_VRAM_EDGE_PROBE"]),
         ):
             args = [
                 compiler, "-std=gnu99", "-Wall", "-Wextra", "-Werror",
@@ -194,6 +235,7 @@ def run_original_ot(upstream, *, compiler="cc", harness=HARNESS,
                 args.append(str(tools / "map02_scoped_blend_sink.c"))
             if mode == "staged":
                 args.append(str(tools / "map02_scoped_blend_stage.c"))
+                args.append(str(tools / "map02_vram_edges.c"))
             exe = root / ("test-" + mode)
             args += ["-Wl,--gc-sections", "-lm", "-pthread", "-o", str(exe)]
             compiled = subprocess.run(args, capture_output=True, text=True,
