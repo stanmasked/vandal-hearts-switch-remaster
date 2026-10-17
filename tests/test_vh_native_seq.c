@@ -1700,6 +1700,194 @@ static void test_full_pcm_queue_scene_switch_alternating_eon(void) {
     assert(memcmp(&ring,&pressure_expected_ring,sizeof ring)==0);
 }
 
+
+static void test_long_eon_tempo_scene_switch_under_variable_pcm_load(void) {
+    /* Each SEQ has one voice, rapid FF51 changes and NoteOff. For
+     * 24 scenes the consumer makes irregular reads (including underruns)
+     * while the producer repeatedly meets a full ring. Compare every
+     * accepted PCM frame to a separately clocked dry SPU plus an
+     * independently advanced STUDIO_C wet network. The current epoch
+     * may replace voices but never invalidate old enqueued PCM. */
+    static const uint8_t song_a[]={
+        HEADER,
+        0,0x90,60,100,
+        11,0xff,0x51,0x03,0xd0,0x90, /* 250000 */
+        24,0x80,60,0,
+        1,0xff,0x51,0x07,0xa1,0x20, /* 500000 */
+        35,0xff,0x51,0x04,0x93,0xe0, /* 300000 */
+        70,0xff,0x51,0x06,0x1a,0x80, /* 400000 */
+        0x83,0x10,0xff,0x2f
+    };
+    static const uint8_t song_b[]={
+        HEADER,
+        0,0x90,60,100,
+        10,0xff,0x51,0x04,0x93,0xe0, /* 300000 */
+        25,0x80,60,0,
+        1,0xff,0x51,0x03,0xd0,0x90, /* 250000 */
+        35,0xff,0x51,0x07,0xa1,0x20, /* 500000 */
+        70,0xff,0x51,0x06,0x1a,0x80, /* 400000 */
+        0x83,0x10,0xff,0x2f
+    };
+    static const unsigned requests[24]={
+        0u,0u,255u,257u,0u,1024u,32u,0u,
+        4096u,0u,0u,1536u,1u,511u,128u,128u,
+        384u,0u,2048u,0u,512u,64u,640u,0u
+    };
+    setup();
+    assert(vh_native_spu_set_reverb(&spu,1,0.75f)==0);
+    vh_native_spu_reset(&dry_reference_spu);
+    assert(vh_native_spu_set_interpolation(&dry_reference_spu,
+                                            VH_SPU_GAUSSIAN)==0);
+    memset(&expected_wet_tail,0,sizeof expected_wet_tail);
+    ResolverLog reference_log={0};
+    for(size_t i=0u;i<VH_AUDIO_RING_FRAMES*2u;i++)
+        alternating_expected[i]=(int16_t)((int)(i%317u)-158);
+    assert(vh_audio_stream_write(&ring,alternating_expected,
+                         VH_AUDIO_RING_FRAMES)==VH_AUDIO_RING_FRAMES);
+    assert(vh_audio_stream_write(&pressure_expected_ring,
+                         alternating_expected,VH_AUDIO_RING_FRAMES)
+                         ==VH_AUDIO_RING_FRAMES);
+
+    uint64_t total_missing=0u,total_pcm=0u,total_on=0u,total_off=0u;
+    unsigned blocked=0u,underruns=0u,nonempty_switches=0u;
+    unsigned wet_scenes=0u,dry_scenes=0u;
+    for(unsigned epoch=0u;epoch<24u;epoch++) {
+        const int send=!!(epoch&1u);
+        const uint8_t *music=(epoch%4u)<2u ? song_a : song_b;
+        const size_t music_size=(epoch%4u)<2u
+                                ? sizeof song_a : sizeof song_b;
+        const VhSeqResolve tone_resolver=send
+                                    ? resolve_with_reverb : resolve;
+        if(vh_audio_stream_queued(&ring)) nonempty_switches++;
+        assert(vh_native_seq_switch_scene(&seq,music,music_size,&spu,
+                                  tone_resolver,&log_state,1)==0);
+        assert(vh_native_seq_switch_scene(&pressure_reference_seq,
+                music,music_size,&dry_reference_spu,
+                resolve,&reference_log,1)==0);
+        assert(spu.frames_rendered==0u &&
+               dry_reference_spu.frames_rendered==0u);
+        assert(seq.blocks_advanced==0u && seq.note_ons==0u);
+        assert(seq.note_offs==0u && seq.playing);
+        assert(memcmp(&spu.reverb,&expected_wet_tail,
+                      sizeof expected_wet_tail)==0);
+        assert(memcmp(&ring,&pressure_expected_ring,sizeof ring)==0);
+        for(unsigned slot=0u;slot<VH_NATIVE_MUSIC_VOICES;slot++) {
+            assert(!vh_native_spu_voice_active(&spu,slot));
+            assert(!spu.voice[slot].reverb_send);
+            assert(seq.owner_ch[slot]==-1 && seq.owner_note[slot]==-1);
+        }
+
+        if(epoch%5u==3u) {
+            memcpy(&pressure_before_seq,&seq,sizeof seq);
+            memcpy(&pressure_before_spu,&spu,sizeof spu);
+            assert(vh_native_seq_switch_scene(&seq,invalid_tempo,
+                    sizeof invalid_tempo,&spu,resolve,&log_state,1)==-1);
+            assert(memcmp(&seq,&pressure_before_seq,sizeof seq)==0);
+            assert(memcmp(&spu,&pressure_before_spu,sizeof spu)==0);
+            assert(memcmp(&ring,&pressure_expected_ring,sizeof ring)==0);
+        }
+        unsigned tempo_mask=0u,accepted=0u;
+        for(unsigned step=0u;step<24u;step++) {
+            const size_t free_frames=VH_AUDIO_RING_FRAMES-
+                                         vh_audio_stream_queued(&ring);
+            if(free_frames<512u) {
+                memcpy(&pressure_before_seq,&seq,sizeof seq);
+                memcpy(&pressure_before_spu,&spu,sizeof spu);
+                assert(vh_native_seq_pump(&seq,&ring)==0);
+                assert(memcmp(&seq,&pressure_before_seq,sizeof seq)==0);
+                assert(memcmp(&spu,&pressure_before_spu,sizeof spu)==0);
+                blocked++;
+            } else {
+                assert(vh_native_seq_advance_block(
+                                       &pressure_reference_seq)>=0);
+                vh_native_spu_render(&dry_reference_spu,
+                                     dry_reference_pcm,512u);
+                for(unsigned frame=0u;frame<512u;frame++) {
+                    const unsigned l=frame*2u,r=l+1u;
+                    const int dry_l=dry_reference_pcm[l];
+                    const int dry_r=dry_reference_pcm[r];
+                    int wet_l=0,wet_r=0;
+                    vh_spu_reverb_process(&expected_wet_tail,
+                        send ? dry_l : 0,send ? dry_r : 0,
+                        0.75f,&wet_l,&wet_r);
+                    int mixed_l=dry_l+wet_l,mixed_r=dry_r+wet_r;
+                    if(mixed_l>INT16_MAX) mixed_l=INT16_MAX;
+                    if(mixed_l<INT16_MIN) mixed_l=INT16_MIN;
+                    if(mixed_r>INT16_MAX) mixed_r=INT16_MAX;
+                    if(mixed_r<INT16_MIN) mixed_r=INT16_MIN;
+                    pressure_expected_pcm[l]=(int16_t)mixed_l;
+                    pressure_expected_pcm[r]=(int16_t)mixed_r;
+                }
+                assert(vh_native_seq_pump(&seq,&ring)==512);
+                assert(vh_audio_stream_write(&pressure_expected_ring,
+                                     pressure_expected_pcm,512u)==512u);
+                accepted++;
+                total_pcm+=512u;
+            }
+            assert(seq.note_ons==pressure_reference_seq.note_ons);
+            assert(seq.note_offs==pressure_reference_seq.note_offs);
+            assert(seq.dispatched_events==
+                   pressure_reference_seq.dispatched_events);
+            assert(seq.tempo==pressure_reference_seq.tempo);
+            assert(seq.blocks_advanced==pressure_reference_seq.blocks_advanced);
+            assert(seq.cycles_completed==pressure_reference_seq.cycles_completed);
+            assert(seq.tick_budget==pressure_reference_seq.tick_budget);
+            assert(seq.playing==pressure_reference_seq.playing);
+            assert(spu.frames_rendered==dry_reference_spu.frames_rendered);
+            assert(memcmp(&spu.reverb,&expected_wet_tail,
+                          sizeof expected_wet_tail)==0);
+            assert(log_state.calls==reference_log.calls);
+            assert(memcmp(&ring,&pressure_expected_ring,sizeof ring)==0);
+            if(seq.tempo==250000u) tempo_mask|=1u;
+            if(seq.tempo==300000u) tempo_mask|=2u;
+            if(seq.tempo==400000u) tempo_mask|=4u;
+            if(seq.tempo==500000u) tempo_mask|=8u;
+
+            const unsigned request=requests[step];
+            const size_t present=vh_audio_stream_queued(&ring);
+            const size_t actual=present<request ? present : request;
+            memcpy(&pressure_before_seq,&seq,sizeof seq);
+            memcpy(&pressure_before_spu,&spu,sizeof spu);
+            assert(vh_audio_stream_read(&pressure_expected_ring,
+                                 alternating_expected,request)==actual);
+            assert(vh_audio_stream_read(&ring,
+                                 alternating_actual,request)==actual);
+            assert(memcmp(alternating_actual,alternating_expected,
+                          request*2u*sizeof(int16_t))==0);
+            for(size_t i=actual*2u;i<request*2u;i++)
+                assert(alternating_actual[i]==0);
+            assert(memcmp(&seq,&pressure_before_seq,sizeof seq)==0);
+            assert(memcmp(&spu,&pressure_before_spu,sizeof spu)==0);
+            total_missing+=(uint64_t)(request-actual);
+            if(actual<request) underruns++;
+            assert(ring.underrun_frames==total_missing);
+            assert(ring.overrun_frames==0u);
+            assert(memcmp(&ring,&pressure_expected_ring,sizeof ring)==0);
+        }
+        assert(accepted>=16u);
+        assert(seq.note_ons==1u && seq.note_offs==1u);
+        assert(tempo_mask==15u);
+        total_on+=seq.note_ons;
+        total_off+=seq.note_offs;
+        if(send) wet_scenes++;else dry_scenes++;
+    }
+    assert(total_pcm>200000u && total_on==24u && total_off==24u);
+    assert(blocked>0u && underruns>0u && nonempty_switches==24u);
+    assert(wet_scenes==12u && dry_scenes==12u);
+    while(vh_audio_stream_queued(&ring)) {
+        const size_t n=vh_audio_stream_queued(&ring);
+        assert(n<=VH_AUDIO_RING_FRAMES);
+        assert(vh_audio_stream_read(&pressure_expected_ring,
+                                  alternating_expected,n)==n);
+        assert(vh_audio_stream_read(&ring,alternating_actual,n)==n);
+        assert(memcmp(alternating_actual,alternating_expected,
+                      n*2u*sizeof(int16_t))==0);
+    }
+    assert(vh_audio_stream_queued(&pressure_expected_ring)==0u);
+    assert(memcmp(&ring,&pressure_expected_ring,sizeof ring)==0);
+    assert(!ring.overrun_frames && ring.underrun_frames==total_missing);
+}
+
 int main(void) {
     test_validation_and_source_immutability();
     test_512_block_controls_and_ring_pressure();
@@ -1726,6 +1914,7 @@ int main(void) {
     test_variable_underrun_recovery_across_scene_switches();
     test_tempo_note_events_under_alternating_backpressure();
     test_full_pcm_queue_scene_switch_alternating_eon();
+    test_long_eon_tempo_scene_switch_under_variable_pcm_load();
     puts("native pQES SEQ -> 20-voice SPU -> PCM ring: PASS");
     return 0;
 }
