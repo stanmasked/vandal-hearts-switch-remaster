@@ -506,6 +506,19 @@ jobs:
           assert checkpoints["HD_replacement_approved"] is False
           Path("proof/public/v110-boundary-class-summary.json").write_text(
               json.dumps(checkpoints,sort_keys=True)+"\n")
+          visibility=v111_divergence(path.read_bytes())
+          assert visibility["vblank_edges"]==4
+          assert visibility["sampled_vram_locations_per_handler"]==24
+          assert sum(r["handlers"] for r in visibility["overall_case_totals"].values())==observed
+          for metric in ("native_store_attempts","same_value_native_stores",
+                         "changed_value_native_stores","changed_sample_points"):
+              assert sum(r[metric] for r in visibility["overall_case_totals"].values())==ordinal["totals"][metric]
+          assert visibility["zero_sample_delta_does_not_mean_no_VRAM_writes"] is True
+          assert visibility["instrumented_sites_cover_all_vram_writes"] is False
+          assert visibility["cpu_cycle_accurate_gpu_timing_verified"] is False
+          assert visibility["HD_replacement_approved"] is False
+          Path("proof/public/v111-sample-store-divergence.json").write_text(
+              json.dumps(visibility,sort_keys=True)+"\n")
           assert evidence["vblank_edges"]==vblanks and evidence["gp1_mmio"]==gp1
           assert evidence["events"]==entries and evidence["bytes"]==size
           assert evidence["original_retail_MAP02_verified"] is False
