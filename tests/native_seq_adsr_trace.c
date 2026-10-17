@@ -79,7 +79,7 @@ static void test_voices(void) {
             if(chunk==v->off_chunk) vh_native_spu_note_off(&spu,0u);
             vh_native_spu_render(&spu,buffer,128u);
             const VhNativeVoice *voice=&spu.voice[0];
-            printf("V,%s,%u,%u,%d,%d,%llu,%d,%d\n",
+            printf("V,%s,%u,%u,%u,%d,%d,%llu,%d,%d\n",
                    v->name,chunk,(unsigned)voice->adsr.phase,
                    (unsigned)voice->active,voice->adsr.level,
                    voice->adsr.counter,

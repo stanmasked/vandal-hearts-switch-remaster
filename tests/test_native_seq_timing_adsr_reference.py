@@ -36,7 +36,7 @@ class NativeSeqAdsrDifferentialTests(unittest.TestCase):
     def setUpClass(cls):
         cls.temp = tempfile.TemporaryDirectory(prefix="vh-seq-adsr-reference-")
         cls.binary = Path(cls.temp.name) / "native_seq_adsr_trace"
-        subprocess.run(
+        compiler = subprocess.run(
             ["cc", "-std=c11", "-O2", "-g", "-Wall", "-Wextra",
              "-Werror", "-Isource", "-fsanitize=undefined",
              "-fno-sanitize-recover=all",
@@ -44,8 +44,13 @@ class NativeSeqAdsrDifferentialTests(unittest.TestCase):
              "source/vh_native_seq.c", "source/vh_native_spu.c",
              "source/vh_spu_reverb.c", "source/vh_spu_gaussian.c",
              "source/vh_audio_stream.c", "-lm", "-o", str(cls.binary)],
-            cwd=ROOT, check=True, capture_output=True, text=True,
+            cwd=ROOT, check=False, capture_output=True, text=True,
         )
+        if compiler.returncode:
+            raise AssertionError(
+                "native SEQ/ADSR test fixture compilation failed:\n"
+                + compiler.stderr
+            )
 
     @classmethod
     def tearDownClass(cls):
