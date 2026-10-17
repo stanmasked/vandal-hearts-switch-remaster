@@ -14,7 +14,7 @@ def valid_dry_run(root):
     original = [
         "src/core/cd.o", "src/core/graphics.o",
         *("src/core/extras_%02d.o" % i for i in range(88)),
-        "libcd.o", "libgpu.o", "pc_raster.o", "generated_data.o",
+        "libcd.o", "libgpu.o", "pc_raster.o", "pc_kanji_font.o", "generated_data.o",
         "pc_battle_data.o", "pc_string_table.o",
         "map02_cycle_order.o", "map02_cd_read_probe.o",
         "map02_capture_session.o", "map02_scoped_blend_sink.o",
