@@ -32,6 +32,10 @@ ANCHORS = {
 }
 HELPERS = r'''
 #if defined(VH_MAP02_GPU_CAPTURE)
+#if defined(VH_MAP02_POSIX_CAPTURE_WINDOWS)
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 /* The recorder is deliberately capped; it captures only when BOTH local
  * environment variables are explicit. It is single-threaded: DrawOTag's
  * native pass is synchronous and the deferred HD worker pass isn't traced.
@@ -42,6 +46,16 @@ static unsigned vh_capture_seq, vh_capture_saved;
 static unsigned long vh_capture_seen, vh_capture_before, vh_capture_after;
 static unsigned long vh_capture_draw_before, vh_capture_transfer_before;
 static int vh_capture_receipt_written;
+#if defined(VH_MAP02_POSIX_CAPTURE_WINDOWS)
+static unsigned vh_capture_windows;
+static int vh_capture_window_failed;
+static int VH_CapturePrivateRoot(void) {
+    struct stat st;
+    return vh_capture_dir && lstat(vh_capture_dir, &st) == 0 &&
+           S_ISDIR(st.st_mode) && (st.st_mode & 0777) == 0700 &&
+           st.st_uid == geteuid();
+}
+#endif
 static const char *vh_capture_dir;
 static unsigned long vh_capture_frame;
 static int vh_capture_init;
@@ -60,6 +74,16 @@ static void VH_CaptureInit(void) {
     if (end == value || !end || *end != '\0' ||
         vh_capture_frame == 0 || vh_capture_frame > 0xffffffffUL)
         vh_capture_frame = 0;
+#if defined(VH_MAP02_POSIX_CAPTURE_WINDOWS)
+    value = getenv("VH_MAP02_GPU_CAPTURE_WINDOW_COUNT");
+    if (value && *value) {
+        if (strcmp(value, "2") != 0 || !VH_CapturePrivateRoot()) {
+            vh_capture_frame = 0;
+            return;
+        }
+        vh_capture_windows = 2u;
+    }
+#endif
 }
 static void VH_CaptureEvent(const char *phase, const char *operation, int transfer,
                             const RECT *rect, const unsigned short *upload,
@@ -72,7 +96,12 @@ static void VH_CaptureEvent(const char *phase, const char *operation, int transf
     size_t bytes = 0;
     FILE *file, *log;
     int n;
-    unsigned seq;
+    unsigned seq, local_seq, max_events = VH_CAPTURE_LIMIT;
+    const char *directory = vh_capture_dir;
+#if defined(VH_MAP02_POSIX_CAPTURE_WINDOWS)
+    char window_dir[1024];
+    unsigned window_number;
+#endif
     VH_CaptureInit();
     if (!vh_capture_frame ||
         (transfer ? (unsigned long)s_drawFrame + 1ul != vh_capture_frame
@@ -90,12 +119,33 @@ static void VH_CaptureEvent(const char *phase, const char *operation, int transf
     } else if (vh_capture_after < 0xffffffffUL) {
         ++vh_capture_after;
     }
-    if (vh_capture_seq >= VH_CAPTURE_LIMIT) return;
+#if defined(VH_MAP02_POSIX_CAPTURE_WINDOWS)
+    if (vh_capture_windows) max_events = 2u * VH_CAPTURE_LIMIT;
+#endif
+    if (vh_capture_seq >= max_events) return;
     seq = vh_capture_seq++;
-    n = snprintf(snapshot_name, sizeof snapshot_name, "gpu-%04u-vram.bin", seq);
+    local_seq = seq;
+#if defined(VH_MAP02_POSIX_CAPTURE_WINDOWS)
+    if (vh_capture_windows) {
+        window_number = seq / VH_CAPTURE_LIMIT;
+        local_seq = seq % VH_CAPTURE_LIMIT;
+        n = snprintf(window_dir, sizeof window_dir, "%s/window-%03u",
+                     vh_capture_dir, window_number);
+        if (n <= 0 || (size_t)n >= sizeof window_dir) {
+            vh_capture_window_failed = 1;
+            return;
+        }
+        if (local_seq == 0 && mkdir(window_dir, 0700) != 0) {
+            vh_capture_window_failed = 1;
+            return;
+        }
+        directory = window_dir;
+    }
+#endif
+    n = snprintf(snapshot_name, sizeof snapshot_name, "gpu-%04u-vram.bin", local_seq);
     if (n < 0 || (size_t)n >= sizeof snapshot_name) return;
     n = snprintf(snapshot_path, sizeof snapshot_path, "%s/%s",
-                 vh_capture_dir, snapshot_name);
+                 directory, snapshot_name);
     if (n < 0 || (size_t)n >= sizeof snapshot_path) return;
     vram = PC_GpuVramBytes(&bytes);
     if (!vram || bytes != 1024u * 512u * 2u) return;
@@ -111,7 +161,7 @@ static void VH_CaptureEvent(const char *phase, const char *operation, int transf
         n = snprintf(upload_name, sizeof upload_name, "gpu-%04u-upload.bin", seq);
         if (n < 0 || (size_t)n >= sizeof upload_name) return;
         n = snprintf(upload_path, sizeof upload_path, "%s/%s",
-                     vh_capture_dir, upload_name);
+                     directory, upload_name);
         if (n < 0 || (size_t)n >= sizeof upload_path) return;
         file = fopen(upload_path, "wb");
         if (!file) return;
@@ -122,13 +172,13 @@ static void VH_CaptureEvent(const char *phase, const char *operation, int transf
             if (produced != upload_words || closed != 0) return;
         }
     }
-    n = snprintf(log_path, sizeof log_path, "%s/gpu-native-events.jsonl", vh_capture_dir);
+    n = snprintf(log_path, sizeof log_path, "%s/gpu-native-events.jsonl", directory);
     if (n < 0 || (size_t)n >= sizeof log_path) return;
     log = fopen(log_path, "ab");
     if (!log) return;
     fprintf(log, "{\"stage\":\"native_vram\",\"step\":%u,\"frame\":%u,"
             "\"phase\":\"%s\",\"operation\":\"%s\",\"snapshot\":\"%s\","
-            "\"rect\":", seq, s_drawFrame, phase, operation, snapshot_name);
+            "\"rect\":", local_seq, s_drawFrame, phase, operation, snapshot_name);
     if (rect)
         fprintf(log, "[%d,%d,%d,%d]", rect->x, rect->y, rect->w, rect->h);
     else
