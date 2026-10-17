@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from tools.verify_map02_v82_native_trace import validate,Refused
+from tools.summarize_map02_v83_unai_vblank import summarize
 from tools import apply_map02_v83_pcsx_rearmed as patch
 
 def record(kind,seq,value,cycle,frame):
@@ -34,6 +35,17 @@ class V83Test(unittest.TestCase):
         self.assertEqual(r["gpu_dma2_start"],0)
         self.assertFalse(r["original_retail_MAP02_verified"])
         self.assertFalse(r["HD_replacement_approved"])
+    def test_exact_unai_dispatch_intervals(self):
+        result=summarize(sample())
+        self.assertEqual([v["unai_handler_events"] for v in result["between_vblanks"]],[2,0,0])
+        self.assertEqual(result["before_first_vblank"],0)
+        self.assertEqual(result["after_last_vblank"],0)
+        self.assertFalse(result["commands_completed_pixel_change_verified"])
+    def test_refuse_forged_renderer_cycle(self):
+        parsed=[json.loads(x) for x in sample().decode().splitlines()]
+        next(e for e in parsed if e["kind"]=="gp0_unai_handled")["cycle"]=100
+        raw=("".join(json.dumps(e,separators=(",",":"))+"\\n" for e in parsed)).encode()
+        with self.assertRaises(Refused):summarize(raw)
     def test_refuse_unrecognized_renderer_command(self):
         parsed=[json.loads(x) for x in sample().decode().splitlines()]
         command=next(e for e in parsed if e["kind"]=="gp0_unai_handled")
