@@ -7,6 +7,8 @@ on:
     paths:
       - .github/workflows/nexium-eight-pair-variability.yml
       - tools/analyze_nexium_idle_switch_variability.py
+      - tools/analyze_nexium_steady_state.py
+      - tests/test_analyze_nexium_steady_state.py
       - tests/test_analyze_nexium_idle_switch_variability.py
   workflow_dispatch:
 
@@ -118,6 +120,24 @@ jobs:
                   report["statistical_causal_music_claim"] is not False):
               raise SystemExit("unverifiable paired sensitivity interpretation")
           print("Pair-preserving noncausal variation bounds:",report["bands"])
+          PY
+          python3 tools/analyze_nexium_steady_state.py \
+            "${args[@]}" --output verified-pairs/steady-state-only-s1-to-s51.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("verified-pairs/steady-state-only-s1-to-s51.json")
+          record=json.loads(p.read_text())
+          if (record["result"]!="ORIGINAL_SD_BOUND_COMMON_51S_AUDOUT_REVERIFIED" or
+                  record["complete_verified_source_pair_count"]!=8 or
+                  record["matched_second_count_per_mode"]!=51 or
+                  record["startup_second_excluded"] is not True or
+                  record["music_switch_causality_established"] is not False or
+                  record["physical_switch_tested"] is not False):
+              raise SystemExit("invalid common steady guest window comparison")
+          print("Common guest seconds 1-51 per mode:",
+                record["steady_pair_verdict"]["totals"],
+                record["steady_pair_verdict"]["rates"])
           PY
           sha256sum "$RUNNER_TEMP/neXium-eight/"*.zip \
             > verified-pairs/repacked-source-archives.sha256
