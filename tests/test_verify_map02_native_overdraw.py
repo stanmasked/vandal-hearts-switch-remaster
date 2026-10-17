@@ -214,7 +214,12 @@ class NativeOverdrawTests(unittest.TestCase):
             verify_native_overdraw(self.source,self.native)
 
     def test_unmatched_primitive_does_not_create_spurious_source_overdraw(self):
-        # An unrelated DrawOTag primitive changes a word first.
+        # An unrelated *rasterizing* DrawOTag primitive changes a word
+        # first. The default synthetic non-FT4 packet has type 5
+        # (DR_MODE), which cannot draw or modify VRAM in pinned libgpu.c.
+        # Use type 4 (non-FT4 rasterizer) rather than fabricating a
+        # state-only DR_MODE packet with illegal VRAM writes.
+        self.base.entries[0]["primitive_type"] = 4
         first_other=bytearray(self.base.bytes_before)
         write_word(first_other,30,30,0x03e0)
         first_source=bytearray(first_other)
