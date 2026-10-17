@@ -706,11 +706,15 @@ int main(int argc, char **argv) {
          * A real audout error or wrong descriptor cannot consume it.
          * This controlled fail-closed probe must be run SEPARATELY
          * from X/Y pause/reopen and A/B listening annotations. */
-        if ((pressed&HidNpadButton_ZL) &&
-            !(held&(HidNpadButton_X|HidNpadButton_Y)) &&
-            vh_audio_timing_fault_arm(&output.timing_injection)) {
-            result=30;
-            break;
+        if(pressed&HidNpadButton_ZL) {
+            /* Reject mixed controls rather than silently treating ZL
+             * as unused. A failed request is NOT an injected fault. */
+            if ((held&(HidNpadButton_X|HidNpadButton_Y|
+                        HidNpadButton_A|HidNpadButton_B)) ||
+                vh_audio_timing_fault_arm(&output.timing_injection)) {
+                result=30;
+                break;
+            }
         }
         const unsigned manual_pressed=
             (pressed&HidNpadButton_X ? VH_AUDIO_MANUAL_X : 0u) |
