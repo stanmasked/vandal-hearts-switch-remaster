@@ -204,14 +204,28 @@ def capture(executable, preflight_report, summary_report, *,
             type(arg) is not str or "\x00" in arg for arg in game_args):
         raise ValueError("game arguments must be plain strings")
     config = preflight(env, executable=executable)
-    # The optional production-oriented gate runs *before* any private
-    # receipt is published or child is started. No pathname, nm output,
-    # game bytes, or pixel selectors become public.
+    pinned_fd = None
+    pinned_identity = None
+    # Pin ONCE before probe inspection and retain the SAME file descriptor
+    # through subprocess exec. A byte-identical inode replacement must not
+    # turn the inspected image into a different launched image.
     if require_native_probe_symbols:
-        checked = inspect_binary(executable)
-        if checked["executable_sha256"] != config["executable_sha256"]:
-            raise ValueError("native probe inspection and preflight ELF differ")
-    _private_create(preflight_report, config)
+        pinned_fd, pinned_identity = _open_pinned_executable(executable, config)
+        try:
+            checked = inspect_binary(executable, pinned_fd=pinned_fd)
+            if checked["executable_sha256"] != config["executable_sha256"]:
+                raise ValueError("native probe inspection and preflight ELF differ")
+            if _opened_executable_identity(executable, pinned_fd) != pinned_identity:
+                raise ValueError("native probe executable changed after inspection")
+        except BaseException:
+            os.close(pinned_fd)
+            raise
+    try:
+        _private_create(preflight_report, config)
+    except BaseException:
+        if pinned_fd is not None:
+            os.close(pinned_fd)
+        raise
     receipt = {
         "schema": ("map02_private_native_process_receipt_v3"
                    if require_native_probe_symbols else
@@ -235,15 +249,21 @@ def capture(executable, preflight_report, summary_report, *,
     if require_native_probe_symbols:
         receipt["native_probe_symbols_required"] = True
         receipt["native_probe_symbols_inspected"] = True
-    pinned_fd = None
-    pinned_identity = None
-    try:
-        pinned_fd, pinned_identity = _open_pinned_executable(executable, config)
-    except (OSError, ValueError):
-        receipt["failure_category"] = "executable_changed"
+    if pinned_fd is None:
+        try:
+            pinned_fd, pinned_identity = _open_pinned_executable(executable, config)
+        except (OSError, ValueError):
+            receipt["failure_category"] = "executable_changed"
     if pinned_fd is not None:
         try:
-            if require_native_elf_image:
+            # Verify the pathname/FD still agree after receipt publication.
+            # Exec always targets the *pinned FD*, never a new pathname.
+            try:
+                if _opened_executable_identity(executable, pinned_fd) != pinned_identity:
+                    receipt["failure_category"] = "executable_changed"
+            except (OSError, ValueError):
+                receipt["failure_category"] = "executable_changed"
+            if require_native_elf_image and receipt["failure_category"] is None:
                 try:
                     require_elf_image(pinned_fd)
                 except ValueError:
