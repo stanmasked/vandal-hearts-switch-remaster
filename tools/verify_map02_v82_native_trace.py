@@ -29,7 +29,12 @@ KINDS={"vblank","gp1_mmio","gpu_dma2_start","gp0_unai_handled","unai_sample_delt
        "pressure_tried","pressure_accepted","pressure_idle_fallback","pressure_full_fallback","pressure_peak_words","pressure_worker_completed","pressure_worker_stores","pressure_sync_stores","pressure_pending_words","pressure_worker_same","pressure_sync_same",
        "lane_detail_events","lane_aggregate_events","lane_total_events",
        "snapshot_cached_reads","snapshot_invalidation_proven",
-       "snapshot_verified_reads"}
+       "snapshot_verified_reads",
+       "append_round_1","append_round_2","append_round_3",
+       "append_round_4","append_round_5","append_round_6",
+       "append_round_7","append_round_8",
+       "append_prefix_checks","append_memory_exports",
+       "append_exact_rebuilds","append_stale_refusals","append_stable_reads"}
 FIELDS={"kind","seq","value","cycle","frame"}
 
 class Refused(ValueError):pass
@@ -80,7 +85,8 @@ def validate(content: bytes):
                 item["kind"].startswith("cycle2_") or
                 item["kind"].startswith("pressure_") or
                 item["kind"].startswith("lane_") or
-                item["kind"].startswith("snapshot_")) and (item["cycle"]!=0 or
+                item["kind"].startswith("snapshot_") or
+                item["kind"].startswith("append_")) and (item["cycle"]!=0 or
                 item["value"]==0xffffffff):
                 raise Refused("invalid aggregate gpulib store event")
             if item["kind"]=="gp1_mmio":gp1+=1

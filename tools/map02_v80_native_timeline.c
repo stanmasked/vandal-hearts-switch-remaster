@@ -48,7 +48,7 @@ void vh80_reset(void) { count=0;aggregate_count=0;dropped=0;sequence=0;
 void vh84_set_sampling(int enabled) { vh84_sampling=!!enabled; }
 int vh84_sampling_enabled(void) { return vh84_sampling; }
 void vh80_record(uint32_t kind,uint32_t value,uint32_t cycle,uint32_t frame) {
-    if(kind<VH80_VBLANK || kind>VH94_VERIFIED_READS) { dropped++;return; }
+    if(kind<VH80_VBLANK || kind>VH95_STABLE_READS) { dropped++;return; }
     if(sequence==UINT32_MAX) { dropped++;return; }
     /* Real per-command evidence (types 1..7) and stage aggregates
      * (types 8..78) are physically independent bounded segments.
