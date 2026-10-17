@@ -19,6 +19,10 @@ from tools.verify_map02_putpixel_scope import PIXEL_LOG, verify_pixel_ot
 MAX_SAMPLES = 8
 
 AGGREGATE_FIELDS = (
+    "observed_native_putpixel_calls",
+    "source_keyed_ft4_draws_checked",
+    "source_ft4_draws_with_scoped_calls",
+    "source_ft4_draws_without_observable_word_change",
     "calls_attributed_to_source_keyed_ft4",
     "source_ft4_scoped_changed_putpixel_calls",
     "source_ft4_scoped_unchanged_putpixel_calls",
@@ -72,6 +76,14 @@ def audit_samples(captures, *, compiler="gcc"):
         native_hashes.add(report["native_gpu_event_log_sha256"])
         for name in AGGREGATE_FIELDS:
             totals[name] += report[name]
+
+    if (totals["calls_attributed_to_source_keyed_ft4"] >
+            totals["observed_native_putpixel_calls"] or
+            totals["source_ft4_draws_with_scoped_calls"] >
+            totals["source_keyed_ft4_draws_checked"] or
+            totals["source_ft4_draws_without_observable_word_change"] >
+            totals["source_keyed_ft4_draws_checked"]):
+        raise ValueError("independent PutPixel source attribution accounting mismatch")
 
     if (totals["source_ft4_scoped_semitransparent_blend_calls"] !=
             totals["source_ft4_scoped_accurate_semi_blend_calls"] +
