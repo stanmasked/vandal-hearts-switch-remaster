@@ -99,6 +99,11 @@ static inline int vh_audio_applet_record(VhAudioAppletEvents *s,
             return -1;
         ++s->returns;
         if(s->pending_return) ++s->coalesced_returns;
+        /* A new foreground notice supersedes any older timestamp.
+         * record_at() installs a fresh tick; the untimed path MUST
+         * NOT borrow time from a prior coalesced HOME return. */
+        s->timestamp_pending=0u;
+        s->foreground_tick=0u;
         s->pending_return=1u;
         s->in_background=0u;
         return 0;
