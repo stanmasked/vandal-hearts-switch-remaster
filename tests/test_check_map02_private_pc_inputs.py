@@ -4,6 +4,7 @@ No real Vandal Hearts EXE, game asset or BIOS is bundled or accessed.
 Real known original hashes are deliberately mocked ONLY inside this file.
 """
 import hashlib
+import os
 import struct
 import subprocess
 from pathlib import Path
@@ -284,6 +285,53 @@ for name, offset, size in [
                    side_effect=replace_generator):
             with self.assertRaisesRegex(ValueError, "generator changed"):
                 check_original_includes(self.root)
+
+    def test_elf_replaced_during_anchored_descriptor_read_is_rejected(self):
+        real_pread = os.pread
+        swapped = [False]
+
+        def swap_after_elf_header(fd, size, offset):
+            contents = real_pread(fd, size, offset)
+            if size == 52 and offset == 0 and not swapped[0]:
+                swapped[0] = True
+                original = self.elf.read_bytes()
+                self.elf.unlink()
+                self.elf.write_bytes(original)
+            return contents
+
+        with patch("tools.check_map02_original_extraction_anchors.os.pread",
+                   side_effect=swap_after_elf_header):
+            with self.assertRaisesRegex(ValueError, "extraction input changed"):
+                compare_data_ranges(self.exe, self.elf)
+        self.assertTrue(swapped[0])
+
+    def test_original_exe_in_place_change_during_anchor_read_is_rejected(self):
+        real_pread = os.pread
+        mutated = [False]
+
+        def modify_after_first_data_anchor(fd, size, offset):
+            contents = real_pread(fd, size, offset)
+            if size == 32 and not mutated[0]:
+                mutated[0] = True
+                data = bytearray(self.exe.read_bytes())
+                data[0x100] ^= 1  # outside the anchored image bytes
+                self.exe.write_bytes(data)
+            return contents
+
+        with patch("tools.check_map02_original_extraction_anchors.os.pread",
+                   side_effect=modify_after_first_data_anchor):
+            with self.assertRaisesRegex(ValueError, "extraction input changed"):
+                compare_data_ranges(self.exe, self.elf)
+        self.assertTrue(mutated[0])
+
+    def test_original_extraction_rejects_symlinked_elf_directly(self):
+        original = self.elf.read_bytes()
+        target = self.elf.with_name("original-private-elf")
+        target.write_bytes(original)
+        self.elf.unlink()
+        self.elf.symlink_to(target)
+        with self.assertRaisesRegex(ValueError, "linked original extraction"):
+            compare_data_ranges(self.exe, self.elf)
 
     def test_extracted_elf_changed_after_anchor_pass_is_rejected(self):
         original_font = private_inputs._krom_font
