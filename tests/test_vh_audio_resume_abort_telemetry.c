@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "vh_audio_page_telemetry.h"
+#include "vh_audio_report_pages.h"
 
 #define HZ UINT64_C(19200000)
 #define FRAMES 8u
@@ -357,6 +358,131 @@ int main(void) {
           &empty_joint,&empty_marks,0u,1u);
     assert(empty_waits.ordinary.failed_pages==1u);
     assert(empty_recovery.pages_submitted==0u);
+    /* An empty run that never submitted a page is INCOMPLETE,
+     * never FULL; shutdown success cannot manufacture playback. */
+    {
+        const VhAudioSceneWaits untouched_waits={0};
+        const VhAudioOutputRecovery untouched_stats={0};
+        const VhAudioSubmitTiming untouched_timing={0};
+        assert(vh_audio_output_verify_run(
+            &untouched_waits,&untouched_stats,&untouched_timing,
+            0u,0u,1u,0u,1)==0);
+        assert(vh_audio_report_evidence(0,0,0,0,0)==
+               VH_AUDIO_REPORT_INCOMPLETE);
+    }
+
+    /* One entire failed page, ZERO delivered pages. Stop fails
+     * twice, then succeeds and closes exactly once. Neither an
+     * unsuccessful shutdown nor the subsequent open/start may
+     * backfill the failed page into any returned-page accumulator. */
+    const uint64_t abandoned_hash=page_hash(never_delivered,FRAMES);
+    const unsigned failed_calls=empty.calls;
+    const uint64_t no_audio_hash=empty.delivery_hash;
+    const VhAudioSubmitTiming failed_timing=empty.timing;
+    const VhAudioSceneWaits failed_waits=empty_waits;
+    const VhAudioOutputRecovery failed_recovery=empty_recovery;
+    empty.failed_stops_left=2u;
+    for(unsigned i=0u;i<2u;i++) {
+        assert(vh_audio_output_stop_close(&empty_ops)==-1);
+        assert(empty.stops==VH_AUDIO_OUTPUT_RESTART_LIMIT+i+1u);
+        assert(empty.closes==VH_AUDIO_OUTPUT_RESTART_LIMIT);
+        assert(empty.open && empty.playing);
+        assert(empty.calls==failed_calls && empty.delivered==0u);
+        assert(empty.delivery_hash==no_audio_hash);
+        assert(!memcmp(&empty.timing,&failed_timing,sizeof failed_timing));
+        assert(!memcmp(&empty_waits,&failed_waits,sizeof failed_waits));
+        assert(!memcmp(&empty_recovery,&failed_recovery,sizeof failed_recovery));
+        audit(&empty,&empty_recovery,&empty_waits,&empty_seams,
+              &empty_joint,&empty_marks,0u,1u);
+    }
+    assert(empty.failed_stops_left==0u);
+    assert(vh_audio_output_stop_close(&empty_ops)==0);
+    assert(!empty.open && !empty.playing);
+    assert(empty.stops==VH_AUDIO_OUTPUT_RESTART_LIMIT+3u);
+    assert(empty.closes==VH_AUDIO_OUTPUT_RESTART_LIMIT+1u);
+    assert(empty.calls==failed_calls && empty.delivered==0u);
+    assert(empty.delivery_hash==no_audio_hash);
+    assert(vh_audio_last_returned_page_verify(
+        &empty_seams,&empty_marks,0u)==0);
+    assert(vh_audio_output_verify_run(
+        &empty_waits,&empty_recovery,&empty.timing,
+        0u,0u,1u,0u,1)==0);
+
+    /* A true *fresh* audio device open/start is not a submission:
+     * the old run's failed-page evidence remains in the old
+     * accumulators until intentionally beginning a new run. */
+    const unsigned raw_before_open=empty.calls;
+    const uint64_t frames_before_open=empty_recovery.frames_submitted;
+    assert(empty_ops.open(empty_ops.context)==0);
+    assert(empty_ops.start(empty_ops.context)==0);
+    assert(empty.open && empty.playing);
+    assert(empty.calls==raw_before_open);
+    assert(empty.delivered==0u && empty.delivery_hash==FNV_INIT);
+    assert(empty_recovery.frames_submitted==frames_before_open);
+    assert(empty_waits.ordinary.failed_pages==1u);
+    assert(vh_audio_last_returned_page_verify(
+        &empty_seams,&empty_marks,0u)==0);
+
+    /* A deliberately NEW PCM page is the FIRST ever delivered
+     * page. It receives no predecessor seam and cannot erase the
+     * earlier terminal backend failure from the session verdict. */
+    int16_t first_after_reopen[FRAMES*2u];
+    for(unsigned i=0u;i<FRAMES*2u;i++)
+        first_after_reopen[i]=(int16_t)(-6000+(int)i*173);
+    const uint64_t first_hash=page_hash(first_after_reopen,FRAMES);
+    const VhAudioSubmitTiming before_new=empty.timing;
+    new_page(&empty,0u);
+    assert(vh_audio_output_submit_recover(
+        &empty_ops,&empty_recovery,first_after_reopen,FRAMES)==0);
+    assert(vh_audio_returned_page_telemetry_record(
+        &empty_waits,&empty_seams,&empty_joint,&empty_marks,
+        first_after_reopen,FRAMES,0u,&before_new,&empty.timing,
+        HZ,0u)==0);
+    assert(empty.calls==failed_calls+1u && empty.delivered==1u);
+    assert(empty.delivery_hash==(FNV_INIT^first_hash)*FNV_PRIME);
+    assert(empty_recovery.pages_submitted==1u);
+    assert(empty_waits.ordinary.pages==2u &&
+           empty_waits.ordinary.failed_pages==1u);
+    assert(empty_seams.delivered_pages==1u &&
+           empty_seams.last_abs_step==0u &&
+           empty_marks.returned_pages==1u);
+    assert(page_hash(never_delivered,FRAMES)==abandoned_hash);
+    audit(&empty,&empty_recovery,&empty_waits,&empty_seams,
+          &empty_joint,&empty_marks,1u,2u);
+    assert(vh_audio_output_verify_run(
+        &empty_waits,&empty_recovery,&empty.timing,
+        1u,0u,1u,0u,1)==0);
+    assert(vh_audio_report_evidence(0,0,0,0,0)==
+           VH_AUDIO_REPORT_INCOMPLETE);
+
+    /* FULL may be reported only for an independently reset session
+     * which contains a genuinely delivered PCM page and NO failed
+     * logical pages. This contrast prevents a false FULL caused by
+     * reopening the device and disregarding previous failures. */
+    Device clean={.open=1u,.playing=1u,.delivery_hash=FNV_INIT};
+    VhAudioOutputOps clean_ops=callbacks(&clean);
+    VhAudioOutputRecovery clean_recovery={0};
+    VhAudioSceneWaits clean_waits={0};
+    VhAudioPcmSeams clean_seams={0};
+    VhAudioComputeWaitJoin clean_joint={0};
+    VhAudioListeningMarks clean_marks={0};
+    const VhAudioSubmitTiming clean_before={0};
+    new_page(&clean,0u);
+    assert(vh_audio_output_submit_recover(
+        &clean_ops,&clean_recovery,first_after_reopen,FRAMES)==0);
+    assert(vh_audio_returned_page_telemetry_record(
+        &clean_waits,&clean_seams,&clean_joint,&clean_marks,
+        first_after_reopen,FRAMES,0u,&clean_before,&clean.timing,
+        HZ,0u)==0);
+    assert(vh_audio_output_verify_pcm_seams(
+        &clean_seams,&clean_waits,1u)==0);
+    assert(vh_audio_last_returned_page_verify(
+        &clean_seams,&clean_marks,1u)==0);
+    assert(vh_audio_output_verify_run(
+        &clean_waits,&clean_recovery,&clean.timing,
+        1u,0u,1u,0u,1)==1);
+    assert(vh_audio_report_evidence(1,0,0,0,0)==VH_AUDIO_REPORT_FULL);
+    puts("audout zero-delivery shutdown/reopen verdict isolation: PASS");
     puts("audout 70-page repeated pause/resume + terminal failure: PASS");
     return 0;
 }

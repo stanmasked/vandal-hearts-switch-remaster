@@ -163,7 +163,7 @@ $(BUILD)/vh_local_music_transition_probe: tools/vh_local_music_transition_probe.
 $(BUILD)/test_vh_audio_report_pages: tests/test_vh_audio_report_pages.c source/vh_audio_report_pages.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Isource $< -o $@
 
-$(BUILD)/test_vh_audio_resume_abort_telemetry: tests/test_vh_audio_resume_abort_telemetry.c source/vh_audio_page_telemetry.h source/vh_audio_compute_wait_join.h source/vh_audio_listening_marks.h source/vh_audio_output_recovery.h source/vh_audio_output_recovery.c | $(BUILD)
+$(BUILD)/test_vh_audio_resume_abort_telemetry: tests/test_vh_audio_resume_abort_telemetry.c source/vh_audio_page_telemetry.h source/vh_audio_report_pages.h source/vh_audio_compute_wait_join.h source/vh_audio_listening_marks.h source/vh_audio_output_recovery.h source/vh_audio_output_recovery.c | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Isource $< source/vh_audio_output_recovery.c -o $@
 
 $(BUILD)/test_vh_audio_page_telemetry: tests/test_vh_audio_page_telemetry.c source/vh_audio_page_telemetry.h source/vh_audio_compute_wait_join.h source/vh_audio_listening_marks.h source/vh_audio_compute_timing.h source/vh_audio_output_recovery.h source/vh_audio_output_recovery.c | $(BUILD)

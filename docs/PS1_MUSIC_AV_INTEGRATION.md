@@ -1804,3 +1804,31 @@ convert the failed page into a returned one. Separate mock
 tests cover invalid callbacks and repeated failed shutdowns.
 These are fail-closed software ownership invariants, not
 measurements of actual physical Switch buffer drain semantics.
+
+
+### Zero-delivery shutdown, safe reopen and report verdict isolation
+
+The integrated host regression now explicitly tests the edge case
+of **no returned PCM page at all**. An all-failed audout logical
+page makes three raw attempts; its single failed logical wait-page
+count is retained, while every returned-page seam, DSP joint
+bucket and the 32-slot A/B ring remains empty. Two consecutive
+final-stop failures must not call close or create a page. The
+third stop succeeds and closes the service once; only an
+explicitly separate open/start can create a new backend session.
+
+Even after that reopen the raw audio call count and returned-page
+statistics must stay unchanged. A NEW, distinguishable PCM page
+may then be returned exactly once: it has a **zero first-page
+PCM seam** despite the earlier fully rendered, unreturned page.
+The final run auditor and on-device report evidence function
+must still say **INCOMPLETE** because the failed logical page
+has not disappeared. The same procedure in an independently
+reset, valid one-page session is allowed to report FULL. Thus
+the test distinguishes a clean new run from an accidental
+reset of failure evidence within an interrupted run.
+
+The test is already part of both Make host suites and the PCM
+CI UBSan stage; it requires no new external dependencies,
+game data, PCM recordings or calls to the real Switch audio
+service. This remains software accounting evidence only.
