@@ -38,7 +38,7 @@ def audit_objects(upstream, bundle, *, make="make"):
     # This target only expands GNU Make's own *complete* object variable
     # inventories. It does not compile, read retail content, or invoke link.
     listing_target = (
-        "map02-private-object-inventory:;@printf '%s\\n' "
+        "map02-private-object-inventory:;@printf '%s\n' "
         "'$(GAME_O_FILES)' '$(BACKEND_OBJS)'"
     )
     result = subprocess.run(
@@ -76,7 +76,7 @@ def audit_objects(upstream, bundle, *, make="make"):
                 or info.st_size < 256):
             raise ValueError("invalid original PC compiled object: " + relative)
         with file.open("rb") as stream:
-            if stream.read(4) != b"\\x7fELF":
+            if stream.read(4) != b"\x7fELF":
                 raise ValueError("compiled PC object is not an ELF: " + relative)
         names.append(relative)
     expected_source_objects = {
