@@ -84,6 +84,8 @@ class CandidateC11Tests(unittest.TestCase):
                     self.assertEqual([row["reason"] for row in records], [4, 5, 6, 7])
                     self.assertEqual([row["y"] for row in records], [9, 16, 16, 9])
                     self.assertEqual([row["step"] for row in records], [0, 1, 2, 3])
+                    self.assertEqual([(row["clip_t"], row["clip_b"]) for row in records], [(10, 15)] * 4)
+                    self.assertTrue(all((row["y"] < row["clip_t"] if row["reason"] in (4, 7) else row["y"] > row["clip_b"]) for row in records))
                     self.assertEqual(len(records), 4)
                     self.assertEqual({row["stage"] for row in records}, {"rejected_edge_candidate"})
                 else:
