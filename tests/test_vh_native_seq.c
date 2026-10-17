@@ -1076,6 +1076,125 @@ static void test_repeated_scene_switch_with_full_pcm_fifo(void) {
     assert(!ring.underrun_frames && !ring.overrun_frames);
 }
 
+
+static void test_chunked_pcm_drain_scene_switch_soak(void) {
+    /* The consumer drains a full 4096-frame FIFO in irregular chunks.
+     * Repeatedly switching scenes must preserve old PCM, while only
+     * exactly 512 available frames allow the next SEQ/SPU block.
+     * A detached SPU+SEQ clone supplies the next expected PCM page. */
+    static const unsigned drains[6][4] = {
+        {1u,511u,0u,0u},
+        {255u,256u,1u,0u},
+        {127u,128u,257u,0u},
+        {509u,2u,1u,0u},
+        {32u,64u,128u,288u},
+        {128u,128u,128u,128u}
+    };
+    setup();
+    assert(vh_native_spu_set_reverb(&spu,1,0.75f)==0);
+    assert(vh_native_seq_init(&seq,controls_song,sizeof controls_song,
+                              &spu,resolve_with_reverb,&log_state,1)==0);
+    for(unsigned block=0u;block<2u;block++)
+        assert(vh_native_seq_pump(&seq,&ring)==512);
+    for(size_t i=0u;i<sizeof pressure_padding/sizeof pressure_padding[0];i++)
+        pressure_padding[i]=(int16_t)((int)(i%379u)-189);
+    assert(vh_audio_stream_write(&ring,pressure_padding,
+                       VH_AUDIO_RING_FRAMES-1024u)==
+                       VH_AUDIO_RING_FRAMES-1024u);
+    memcpy(&pressure_expected_ring,&ring,sizeof ring);
+    assert(vh_audio_stream_queued(&ring)==VH_AUDIO_RING_FRAMES);
+
+    for(unsigned cycle=0u;cycle<48u;cycle++) {
+        if(cycle%6u==0u) {
+            const int use_running=cycle%12u==6u;
+            const uint8_t *song=use_running ? running_song : controls_song;
+            const size_t length=use_running
+                ? sizeof running_song : sizeof controls_song;
+            const VhSeqResolve resolver=use_running
+                ? resolve : resolve_with_reverb;
+            assert(vh_native_seq_switch_scene(&seq,song,length,
+                          &spu,resolver,&log_state,1)==0);
+            assert(seq.blocks_advanced==0u && spu.frames_rendered==0u);
+            assert(vh_audio_stream_queued(&ring)==VH_AUDIO_RING_FRAMES);
+            assert(memcmp(&ring,&pressure_expected_ring,sizeof ring)==0);
+        }
+        if(cycle%7u==3u) {
+            memcpy(&pressure_before_seq,&seq,sizeof seq);
+            memcpy(&pressure_before_spu,&spu,sizeof spu);
+            assert(vh_native_seq_switch_scene(&seq,invalid_tempo,
+                 sizeof invalid_tempo,&spu,resolve,&log_state,1)==-1);
+            assert(memcmp(&seq,&pressure_before_seq,sizeof seq)==0);
+            assert(memcmp(&spu,&pressure_before_spu,sizeof spu)==0);
+            assert(memcmp(&ring,&pressure_expected_ring,sizeof ring)==0);
+        }
+        memcpy(&pressure_before_seq,&seq,sizeof seq);
+        memcpy(&pressure_before_spu,&spu,sizeof spu);
+        const unsigned resolver_calls=log_state.calls;
+        assert(vh_native_seq_pump(&seq,&ring)==0);
+        assert(memcmp(&seq,&pressure_before_seq,sizeof seq)==0);
+        assert(memcmp(&spu,&pressure_before_spu,sizeof spu)==0);
+
+        unsigned drained=0u;
+        for(unsigned part=0u;part<4u;part++) {
+            const unsigned frames=drains[cycle%6u][part];
+            if(!frames) continue;
+            assert(vh_audio_stream_read(&pressure_expected_ring,
+                              pressure_expected_pcm,frames)==frames);
+            assert(vh_audio_stream_read(&ring,pcm,frames)==frames);
+            assert(memcmp(pcm,pressure_expected_pcm,
+                   (size_t)frames*2u*sizeof(int16_t))==0);
+            drained+=frames;
+            assert(drained<=512u);
+            assert(vh_audio_stream_queued(&ring)==
+                                     VH_AUDIO_RING_FRAMES-drained);
+            assert(memcmp(&ring,&pressure_expected_ring,sizeof ring)==0);
+            if(drained<512u) {
+                assert(vh_native_seq_pump(&seq,&ring)==0);
+                assert(memcmp(&seq,&pressure_before_seq,sizeof seq)==0);
+                assert(memcmp(&spu,&pressure_before_spu,sizeof spu)==0);
+                assert(log_state.calls==resolver_calls);
+            }
+        }
+        assert(drained==512u);
+        memcpy(&pressure_reference_spu,&spu,sizeof spu);
+        memcpy(&pressure_reference_seq,&seq,sizeof seq);
+        pressure_reference_seq.spu=&pressure_reference_spu;
+        ResolverLog reference_log=log_state;
+        pressure_reference_seq.context=&reference_log;
+        assert(vh_native_seq_advance_block(&pressure_reference_seq)>=0);
+        vh_native_spu_render(&pressure_reference_spu,
+                             pressure_expected_pcm,512u);
+
+        assert(vh_native_seq_pump(&seq,&ring)==512);
+        assert(seq.blocks_advanced==pressure_reference_seq.blocks_advanced);
+        assert(seq.note_ons==pressure_reference_seq.note_ons);
+        assert(seq.note_offs==pressure_reference_seq.note_offs);
+        assert(seq.dispatched_events==pressure_reference_seq.dispatched_events);
+        assert(seq.tempo==pressure_reference_seq.tempo);
+        assert(seq.playing==pressure_reference_seq.playing);
+        assert(seq.cycles_completed==pressure_reference_seq.cycles_completed);
+        assert(spu.frames_rendered==pressure_reference_spu.frames_rendered);
+        assert(!memcmp(&spu.reverb,&pressure_reference_spu.reverb,
+                       sizeof spu.reverb));
+        assert(log_state.calls==reference_log.calls);
+        assert(vh_audio_stream_write(&pressure_expected_ring,
+                                  pressure_expected_pcm,512u)==512u);
+        assert(vh_audio_stream_queued(&ring)==VH_AUDIO_RING_FRAMES);
+        assert(memcmp(&ring,&pressure_expected_ring,sizeof ring)==0);
+        assert(!ring.underrun_frames && !ring.overrun_frames);
+    }
+    for(unsigned page=0u;page<VH_AUDIO_RING_FRAMES/512u;page++) {
+        assert(vh_audio_stream_read(&pressure_expected_ring,
+                               pressure_expected_pcm,512u)==512u);
+        assert(vh_audio_stream_read(&ring,pcm,512u)==512u);
+        assert(memcmp(pcm,pressure_expected_pcm,
+                      sizeof pressure_expected_pcm)==0);
+    }
+    assert(vh_audio_stream_queued(&ring)==0u);
+    assert(memcmp(&ring,&pressure_expected_ring,sizeof ring)==0);
+    assert(!ring.underrun_frames && !ring.overrun_frames);
+}
+
 int main(void) {
     test_validation_and_source_immutability();
     test_512_block_controls_and_ring_pressure();
@@ -1097,6 +1216,7 @@ int main(void) {
     test_new_scene_dry_and_wet_notes_mix_with_old_tail();
     test_full_pcm_ring_scene_switch_backpressure();
     test_repeated_scene_switch_with_full_pcm_fifo();
+    test_chunked_pcm_drain_scene_switch_soak();
     puts("native pQES SEQ -> 20-voice SPU -> PCM ring: PASS");
     return 0;
 }
