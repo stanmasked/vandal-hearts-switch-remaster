@@ -20,6 +20,8 @@ on:
       - 'tools/verify_map02_dda_rejected_edges.py'
       - 'tests/test_verify_map02_dda_rejected_edges.py'
       - 'tests/test_map02_span_workflow_gate.py'
+      - 'tools/audit_map02_independent_dda_journals.py'
+      - 'tests/test_audit_map02_independent_dda_journals.py'
       - 'tools/verify_map02_dda_native_spans.py'
       - 'tests/test_verify_map02_dda_native_spans.py'
       - '.github/workflows/map02-dda-span.yml'
@@ -48,3 +50,4 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_verify_map02_dda_rejected_edges.py' -v
           python3 -m unittest discover -s tests -p 'test_map02_span_workflow_gate.py' -v
           python3 -m unittest discover -s tests -p 'test_verify_map02_dda_native_spans.py' -v
+          python3 -m unittest discover -s tests -p 'test_audit_map02_independent_dda_journals.py' -v
