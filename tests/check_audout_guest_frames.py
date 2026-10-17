@@ -30,7 +30,11 @@ def inspect_guest_frames(first: Image.Image, second: Image.Image) -> dict:
     # The black-and-white bitmap counts pixels that differ by >=24 RGB
     # intensity on at least one channel. This is NOT a PCM/audio metric.
     changed = 0
-    for pixel in diff.getdata():
+    # Pillow 14 removes getdata(); keep compatibility with older Pillow
+    # versions used by existing CI runners.
+    pixels = (diff.get_flattened_data() if
+              hasattr(diff, "get_flattened_data") else diff.getdata())
+    for pixel in pixels:
         if max(pixel) >= 24:
             changed += 1
     if changed < 80:
