@@ -79,6 +79,16 @@ on:
       - 'tests/test_map02_v113_vblank_outcome_transitions.py'
       - 'tools/summarize_map02_v114_vblank_readback_coverage.py'
       - 'tests/test_map02_v114_vblank_readback_coverage.py'
+      - 'tools/map02_v115_sample_identity.*'
+      - 'tools/apply_map02_v115_pcsx_rearmed.py'
+      - 'tools/summarize_map02_v115_identity_runtime.py'
+      - 'tests/test_map02_v115_sample_value_identity.py'
+      - 'tests/test_map02_v115_identity_runtime.py'
+      - 'tools/map02_v115_sample_identity.*'
+      - 'tools/apply_map02_v115_pcsx_rearmed.py'
+      - 'tools/summarize_map02_v115_identity_runtime.py'
+      - 'tests/test_map02_v115_sample_value_identity.py'
+      - 'tests/test_map02_v115_identity_runtime.py'
       - 'tools/map02_v80_native_timeline.*'
       - 'tools/map02_v81_event_jsonl.*'
       - 'tools/verify_map02_v82_native_trace.py'
@@ -142,6 +152,8 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v112_unchanged_sample_runs.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v113_vblank_outcome_transitions.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v114_vblank_readback_coverage.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v115_sample_value_identity.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v115_identity_runtime.py' -v
       - name: Patch pinned upstream with Unai post-dispatch observer
         shell: bash
         run: |
@@ -152,7 +164,7 @@ jobs:
           git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
           git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
-          python3 -m remaster.tools.apply_map02_v104_pcsx_rearmed upstream-pcsx
+          python3 -m remaster.tools.apply_map02_v115_pcsx_rearmed upstream-pcsx
           git -C upstream-pcsx diff --check
           grep -F 'vh80_record(VH83_GP0_UNAI_HANDLED' upstream-pcsx/plugins/gpu_unai/gpulib_if.cpp
           grep -F 'VH83_UNAI_DISPATCH_PASS' upstream-pcsx/frontend/main.c
@@ -238,6 +250,7 @@ jobs:
           grep -F 'VH83_UNAI_DISPATCH_PASS handled=' proof/private/v104-runtime.log
           grep -F 'VH84_UNAI_SAMPLES_PASS comparisons=' proof/private/v104-runtime.log
           grep -F 'VH85_UNAI_STORES_PASS attempts=' proof/private/v104-runtime.log
+          grep -F 'VH115_SAMPLE_IDENTITY_PASS handlers=' proof/private/v104-runtime.log
           grep -F 'VH86_GPULIB_PASS mips_a0_stores=' proof/private/v104-runtime.log
           grep -F 'VH87_GPULIB_PASS overlap_stores=' proof/private/v104-runtime.log
           grep -F 'VH88_ASYNC_PASS queued=' proof/private/v104-runtime.log
@@ -687,6 +700,23 @@ jobs:
           sha256sum -c proof/private/native.sha256
           test ! -e "$VH_MAP02_V82_PRIVATE_PATH.tmp"
           echo 'Duplicate private path refused without overwriting events.' >> proof/public/v104-runtime-summary.txt
+      - name: Reconcile actual native sample identity with canonical private JSONL
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from remaster.tools.summarize_map02_v115_identity_runtime import summarize
+          report=summarize(
+              Path("proof/private/v104-runtime.log").read_text(),
+              Path("proof/private/V104_RENDERER_EVENTS.jsonl").read_bytes())
+          assert report["actual_24_post_handler_16bit_values_compared_in_native_process"] is True
+          assert report["raw_values_or_pixel_hash_exported"] is False
+          assert report["HD_replacement_approved"] is False
+          Path("proof/public/v115-sample-identity-summary.json").write_text(
+              json.dumps(report,sort_keys=True)+"\n")
+          PY
       - name: Publish aggregate status only, never private trace
         if: always()
         uses: actions/upload-artifact@v4

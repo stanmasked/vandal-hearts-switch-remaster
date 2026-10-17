@@ -1,0 +1,33 @@
+name: MAP02 v115 exact native 24-point Unai sample-value equality
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v115-sample-identity.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/map02_v115_sample_identity.*'
+      - 'tools/apply_map02_v115_pcsx_rearmed.py'
+      - 'tools/summarize_map02_v115_identity_runtime.py'
+      - 'tests/test_map02_v115_sample_value_identity.py'
+      - 'tests/test_map02_v115_identity_runtime.py'
+      - 'tools/summarize_map02_v114_vblank_readback_coverage.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-sample-value-equality:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Native C exact 24-value identity and private trace reconciliation tests
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          for pattern in test_map02_v83_unai_dispatch.py test_map02_v84_unai_samples.py test_map02_v85_native_stores.py test_map02_v114_vblank_readback_coverage.py test_map02_v115_sample_value_identity.py test_map02_v115_identity_runtime.py; do
+            python3 -m unittest discover -s tests -p "$pattern" -v
+          done
