@@ -50,7 +50,8 @@ class PrivateFullPcBuildTests(unittest.TestCase):
         self.assertIn("NO_WEBP=1", command)
         self.assertIn("BUILD_DIR=build-map02-cycle", command)
         self.assertNotIn("VH_ALLOW_UNVERIFIED_EXE", env)
-        self.assertNotIn("VH_KROM_SOURCE", env)
+        self.assertEqual(env.get("VH_KROM_SOURCE"), str(
+            self.upstream / "external/psy-q/3.6/PSYQ/BIN/KROMDAT.BIN"))
         self.assertEqual(env.get("VH_REGION"), "us")
         self.assertEqual(env.get("VH_PSX_EXE"), str(self.upstream / "SLUS_004.47"))
         self.exe.parent.mkdir(parents=True, exist_ok=True)
