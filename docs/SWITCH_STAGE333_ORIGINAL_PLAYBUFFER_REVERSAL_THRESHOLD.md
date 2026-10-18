@@ -10,4 +10,17 @@ If the final call is strictly shorter than the minimum of *every* earlier call i
 
 Twelve synthetic positive/negative tests cover the guaranteed-all-subsets case, five faster/ten slower prior calls with a first k=5 reversal, exact k=5 combination accounting, ties, tampered Stage320/322 source evidence and source privacy. The dedicated GitHub Actions workflow `.github/workflows/stage333-original-playbuffer-reversal.yml` downloads the original artifacts and recomputes the result. Stage333 is a natural endpoint for retrospective sensitivity analysis on these two fixed source samples; further meaningful audio confidence will need **additional independent live capture runs** or physical hardware playback evidence.
 
-**Limits:** All durations are guest *software service call* brackets, not host PCM sample times, DAC output, speaker latency, preserved PS1 retail soundtrack proof, plus-induced audio failure or real Nintendo Switch hardware measurements. Stage304/305, SPU, audout, PCM and gameplay remain unchanged. Do not claim any Stage333 real-source reversal threshold until the independent workflow completes.
+**Limits:** All durations are guest *software service call* brackets, not host PCM sample times, DAC output, speaker latency, preserved PS1 retail soundtrack proof, plus-induced audio failure or real Nintendo Switch hardware measurements. Stage304/305, SPU, audout, PCM and gameplay remain unchanged. ### Verified independent original-source result
+
+[Stage333 GitHub Actions #39174673214](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39174673214) **completed successfully**, passing 12/12 synthetic source and negative-control tests and downloading both actual archived NeXium capture artifacts.
+
+| Source-audited finite guest-software comparison | First NeXium | Second NeXium |
+| --- | ---: | ---: |
+| Prior original calls shorter/equal/longer than last | 0 / 0 / 15 | 5 / 0 / 10 |
+| First deletion level with a subset whose median is not greater than last | None for any nonempty subset (proved) | **5** |
+| For k=5, subsets where last is shorter than median | 3,003 / 3,003 | 2,751 / 3,003 |
+| For k=5, subsets where last is equal to median | 0 | 0 |
+| For k=5, subsets where last is longer than median | 0 | **252 / 3,003** |
+| Smallest k=5 previous-median minus final software margin | +20,467,501 ns | −3,324,479 ns |
+
+This *closes this retrospective finite-source sensitivity exercise*. The first capture's exact strict inequality is mathematically preserved by any nonempty subset of its original previous calls, whereas the second source reaches an observed reversal at five deleted earlier calls. The 4,944 inspected subsets per source are **not independently performed game sessions**. New genuine NeXium captures, not more resampling of these two frozen windows, are required for additional independent software evidence.
