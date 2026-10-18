@@ -92,7 +92,9 @@ static void rapid_scene_stress(unsigned keep_tail) {
     /* End every stress session with forced teardown. Source pointers
      * and STUDIO_C work history may then be freed without depending on
      * whether the previous cue was fading in or actively playing. */
+    const uint32_t music_switches=scene.switches;
     assert(vh_music_scene_detach(&scene)==0);
+    assert(scene.switches==music_switches+1u);
     assert(scene.keep_reverb_across_cues==keep_tail &&
            scene.stage==VH_MUSIC_SILENT && !scene.active.id);
     for(unsigned voice=0u;voice<VH_NATIVE_MUSIC_VOICES;voice++)
@@ -100,7 +102,7 @@ static void rapid_scene_stress(unsigned keep_tail) {
     for(unsigned i=0u;i<VH_REV_SAMPLES;i++)
         assert(!synth.reverb.work[i]);
     printf("rapid scene switches (wet-tail=%u): PASS %u requests, %u deferred, %u switches, %llu frames\n",
-           keep_tail,updates,deferred,scene.switches,
+           keep_tail,updates,deferred,music_switches,
            (unsigned long long)frames);
 }
 
