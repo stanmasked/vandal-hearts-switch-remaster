@@ -109,6 +109,21 @@ class PrivateFinalSealTests(unittest.TestCase):
                 _publish(self.seal_dir, b"synthetic-private-test-receipt\n")
         self.assertEqual(list(self.seal_dir.iterdir()), [])
 
+    def test_failed_readback_keeps_foreign_changes_to_same_inode(self):
+        from tools.seal_map02_private_finalization import _publish
+        receipt = self.seal_dir / NAME
+
+        def mutate_during_readback(fd, length, offset):
+            receipt.write_bytes(b"foreign-modified-evidence")
+            return b"corrupted"
+
+        with patch(
+                "tools.seal_map02_private_finalization.os.pread",
+                side_effect=mutate_during_readback):
+            with self.assertRaisesRegex(ValueError, "readback/identity"):
+                _publish(self.seal_dir, b"original-synthetic-receipt\n")
+        self.assertEqual(receipt.read_bytes(), b"foreign-modified-evidence")
+
     def test_second_audit_mismatch_never_publishes_seal(self):
         from tools.seal_map02_private_finalization import finalize_private_capture
         original = finalize_private_capture
