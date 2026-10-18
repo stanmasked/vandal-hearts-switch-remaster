@@ -2361,6 +2361,39 @@ int main(void) {
     assert(vh_audio_output_verify_run(
         &measured_pages,&invalid_resume,&switching.timing,
         48u,5u,48u,8u,1)==-1);
+    /* One restart ends either in one recovery or one reopen failure.
+     * A lost outcome is corrupt, even when all PCM pages balanced.
+     * Fast-start errors may add failures without extra restarts. */
+    invalid_resume=switch_stats;
+    invalid_resume.resume_restarts=1u;
+    invalid_resume.resume_recoveries=1u;
+    assert(vh_audio_output_verify_run(
+        &measured_pages,&invalid_resume,&switching.timing,
+        48u,5u,48u,8u,1)==1);
+    invalid_resume.resume_restarts=2u; /* hidden second outcome */
+    assert(vh_audio_output_verify_run(
+        &measured_pages,&invalid_resume,&switching.timing,
+        48u,5u,48u,8u,1)==-1);
+    invalid_resume.resume_failures=1u;
+    assert(vh_audio_output_verify_run(
+        &measured_pages,&invalid_resume,&switching.timing,
+        48u,5u,48u,8u,1)==1);
+    invalid_resume=switch_stats;
+    invalid_resume.resume_failures=1u; /* failed fast start only */
+    assert(vh_audio_output_verify_run(
+        &measured_pages,&invalid_resume,&switching.timing,
+        48u,5u,48u,8u,1)==1);
+    /* Verify at the unsigned boundary with 64-bit addition. */
+    invalid_resume.resume_restarts=UINT_MAX;
+    invalid_resume.resume_recoveries=1u;
+    invalid_resume.resume_failures=UINT_MAX;
+    assert(vh_audio_output_verify_run(
+        &measured_pages,&invalid_resume,&switching.timing,
+        48u,5u,48u,8u,1)==1);
+    invalid_resume.resume_failures=0u;
+    assert(vh_audio_output_verify_run(
+        &measured_pages,&invalid_resume,&switching.timing,
+        48u,5u,48u,8u,1)==-1);
     assert(vh_audio_output_verify_run(
         &measured_pages,&switch_stats,&switching.timing,
         48u,5u,64u,8u,1)==0);
