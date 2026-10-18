@@ -49,6 +49,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_analyze_nexium_steady_disjoint_bands.py' -v
       - name: Stage 286 exact numerator-vs-exposure rate decomposition regressions
         run: python3 -m unittest discover -s tests -p 'test_analyze_nexium_steady_rate_exposure.py' -v
+      - name: Stage 287 audited 51-second slow-call concentration tests
+        run: python3 -m unittest discover -s tests -p 'test_analyze_nexium_steady_second_profile.py' -v
       - name: Statistical sensitivity of complete paired NeXium audio sessions
         run: python3 -m unittest discover -s tests -p 'test_analyze_nexium_idle_switch_variability.py' -v
       - name: Multi-pair no-switch original-SD archive negative controls
