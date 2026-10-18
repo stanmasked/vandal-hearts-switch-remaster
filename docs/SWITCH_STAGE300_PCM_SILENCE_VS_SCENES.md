@@ -38,3 +38,48 @@ Switch DAC, physically audible sound or event-caused underflow
 has been established. Threshold crossings are **not** defect gates.
 
 This stage modifies neither synthesizer nor audout implementation.
+
+## Verified Stage300 NeXium source results — 18 October 2026
+
+The complete [same-commit NeXium run **39129407196**](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39129407196)
+finished **SUCCESS** on
+[`3757a37b`](https://github.com/stanmasked/vandal-hearts-switch-remaster/commit/3757a37b1559980faece0c30461afd6682cb7714).
+The workflow executed the full source-reconstruction of Stage299 from
+**both current-run raw virtual PCM recordings**, checked their
+previous SHA-256 reports, five original buffered scene markers,
+all exact zero stereo frame counts, and the exact five-scene
+zone partition.
+
+The actual source-bound Stage300 stdout recorded:
+
+- **Two** exact-zero stereo runs of at least **100ms**.
+- Longest exact-zero run: **281,836 frames** = **5.871583s**
+  at 48,000 frames/second.
+- The longest run's exact zone overlap:
+  **257,836 frames (5.371583s)** inside
+  `field_2:settled_scene`; **24,000 frames (0.5s)** inside
+  `field_2:pre_next_or_end_guard`.
+- These parts sum *exactly* to **281,836** frames and
+  **do not cross** a scene marker. All scene-interval and
+  whole-PCM frame accounting checks passed.
+
+Unlike the Stage299 measurement of 5.839875s, this is a
+**different current-run recording**; both numbers represent
+their own independent virtual PCM sources and should not be
+mistaken for mismatched reports.
+
+**Interpretation limitations:** most of this longest exact-zero run
+occurred while the source was inside the **nominal settled region
+of the last field scene**, according to a host-buffered PCM
+byte-offset marker. This narrows down *where* the zero signal was
+recorded. It does **not** prove that the game should have been
+playing continuously at this point, that a button event caused
+silence, or that any guest audio DAC was starved. A host-side
+source recording and marker offsets cannot prove a dropout
+without an independent expected audio timeline.
+
+All on-commit checks passed:
+[Host C/Python + toolchain 39129407207](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39129407207),
+[Host SPU 39129407192](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39129407192),
+[native PCM 39129407174](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39129407174),
+and [full NRO/NeXium 39129407196](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39129407196).
