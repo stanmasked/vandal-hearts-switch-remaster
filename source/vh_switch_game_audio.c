@@ -12,6 +12,7 @@
 #include "vh_audio_exit_timeline.h"
 #include "vh_audio_exit_output_witness.h"
 #include "vh_audio_exit_worker_stop_witness.h"
+#include "vh_audio_worker_stop_gate.h"
 
 #include <stdio.h>
 
@@ -355,15 +356,12 @@ static void audio_worker(void *unused) {
     int pending_resume_reopen = 0;
     atomic_store_explicit(&audio_status, 0, memory_order_release);
     for (;;) {
-        /* This is the SAME single running-flag read formerly used
-         * as the while condition. Stamp only after observing false:
-         * there is no additional polling or audio-loop clock read.
-         * Other failure breaks leave the stop marker unobserved. */
-        if (!vh_game_music_mailbox_running(&mailbox)) {
-            (void)vh_audio_exit_worker_stop_mark(
-                &worker_stop_witness,scene_trace_now_ns());
+        /* One existing running-flag read; zero clock queries while
+         * PCM production continues. Only after observing running==0
+         * stamp the one-shot software marker and leave the loop. */
+        if (!vh_audio_worker_stop_gate_continue(
+                &mailbox,&worker_stop_witness,scene_trace_now_ns))
             break;
-        }
         const unsigned newest_resume =
             vh_game_music_mailbox_resume_serial(&mailbox);
         if (newest_resume != handled_resume) {
