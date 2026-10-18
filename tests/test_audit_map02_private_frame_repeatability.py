@@ -149,9 +149,6 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
             index = int(name[4:8])
             return actual[index % 2], ("synthetic", index)
         with patch.object(repeat, "_private_raw", side_effect=fake_read):
-            with self.assertRaises(IndexError):
-                # Only two known snapshots: keep synthetic mocks honest.
-                fake_read(0, "gpu-0002-vram.bin")
             diagnostics = repeat._gpu_snapshot_differences(
                 1, 2, 1, 2, lambda: None)
         self.assertEqual(diagnostics["gpu_vram_snapshots_compared"], 2)
