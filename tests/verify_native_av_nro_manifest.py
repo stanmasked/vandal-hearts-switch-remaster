@@ -41,10 +41,20 @@ def check_nro_header(header, size, filename):
             raise ValueError("invalid NRO segment bounds: " + filename)
 
 
-def verify_bundle(root, expected_commit=None):
+def verify_bundle(root, expected_commit=None, *, exact_inventory=False):
     root = Path(root)
     if root.is_symlink() or not root.is_dir():
         raise ValueError("expected a non-symlink AV artifact directory")
+    # CI's working build directory can contain other products, but the
+    # downloaded, published AV bundle must contain ONLY these nine files.
+    if exact_inventory:
+        expected = set(NRO_NAMES) | {MANIFEST, COMMIT_FILE}
+        actual = {entry.name for entry in root.iterdir()}
+        if actual != expected:
+            missing = sorted(expected - actual)
+            extra = sorted(actual - expected)
+            raise ValueError("AV artifact directory inventory mismatch; " +
+                             "missing=" + repr(missing) + ", extra=" + repr(extra))
     if (expected_commit is not None and
             re.fullmatch(r"[a-fA-F0-9]{40}", expected_commit) is None):
         raise ValueError("expected source commit must contain 40 hexadecimal characters")
@@ -91,9 +101,12 @@ def main():
     parser.add_argument("artifact_directory", type=Path)
     parser.add_argument("--expected-commit",
                         help="source SHA read independently from the GitHub Actions run")
+    parser.add_argument("--exact-inventory", action="store_true",
+                        help="require exactly the seven NROs and two metadata files (published bundle only)")
     args = parser.parse_args()
     try:
-        result = verify_bundle(args.artifact_directory, args.expected_commit)
+        result = verify_bundle(args.artifact_directory, args.expected_commit,
+                               exact_inventory=args.exact_inventory)
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
     print("PASS: verified " + str(result["nro_count"]) +

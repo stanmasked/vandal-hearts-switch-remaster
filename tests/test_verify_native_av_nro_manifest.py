@@ -53,6 +53,39 @@ class AvNroManifestTests(unittest.TestCase):
         self.assertFalse(report["audible_audio_verified"])
         self.assertEqual(self.cli("--expected-commit", COMMIT.upper()).returncode, 0)
 
+    def test_exact_published_inventory_accepts_only_nine_files(self):
+        accepted = verify_bundle(self.root, COMMIT, exact_inventory=True)
+        self.assertEqual(accepted["nro_count"], 7)
+        self.assertEqual(
+            self.cli("--expected-commit", COMMIT, "--exact-inventory").returncode, 0)
+
+    def test_unknown_extra_nro_rejected_in_published_bundle(self):
+        (self.root / "unexpected-variant.nro").write_bytes(tiny_nro(200))
+        # Normal build/ staging directories may contain other output.
+        self.assertEqual(verify_bundle(self.root, COMMIT)["nro_count"], 7)
+        with self.assertRaisesRegex(ValueError, "inventory mismatch"):
+            verify_bundle(self.root, COMMIT, exact_inventory=True)
+        self.assertNotEqual(self.cli("--exact-inventory").returncode, 0)
+
+    def test_unknown_extra_metadata_or_directory_rejected(self):
+        unexpected = self.root / "extra-metadata.json"
+        unexpected.write_text("{}")
+        with self.assertRaisesRegex(ValueError, "extra-metadata.json"):
+            verify_bundle(self.root, exact_inventory=True)
+        unexpected.unlink()
+        (self.root / "unlisted-subdir").mkdir()
+        with self.assertRaisesRegex(ValueError, "unlisted-subdir"):
+            verify_bundle(self.root, exact_inventory=True)
+
+    def test_exact_inventory_rejects_absent_or_symlinked_expected_files(self):
+        target = self.root / NRO_NAMES[-1]
+        target.unlink()
+        with self.assertRaisesRegex(ValueError, "missing="):
+            verify_bundle(self.root, exact_inventory=True)
+        target.symlink_to(self.root / NRO_NAMES[0])
+        with self.assertRaisesRegex(ValueError, "symlinked AV artifact"):
+            verify_bundle(self.root, exact_inventory=True)
+
     def test_missing_manifest_record_rejected(self):
         self.set_manifest(names=NRO_NAMES[:-1])
         with self.assertRaisesRegex(ValueError, "exactly seven"):

@@ -194,7 +194,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 tests/verify_native_av_nro_manifest.py nros --expected-commit "$GITHUB_SHA"
+          python3 tests/verify_native_av_nro_manifest.py nros --expected-commit "$GITHUB_SHA" --exact-inventory
 
       - name: Prepare isolated synthetic SD fixture (no game assets)
         shell: bash
