@@ -76,7 +76,7 @@ class PrivateFinalSealTests(unittest.TestCase):
         original = receipt.read_bytes()
         record = json.loads(original)
         record["original_map02_rendering_proven"] = True
-        receipt.write_text(json.dumps(record, sort_keys=True) + "\n")
+        receipt.write_text(json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n")
         with self.assertRaisesRegex(ValueError, "authenticity flags"):
             self.call(action="verify")
         receipt.write_bytes(original + b" ")
