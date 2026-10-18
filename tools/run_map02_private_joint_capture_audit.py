@@ -10,7 +10,9 @@ process-writer attestation, gameplay certification or HD authorization.
 """
 import argparse
 import json
+import os
 from pathlib import Path
+import stat
 
 from tools.capture_map02_live_frame_pipe import capture
 from tools.replay_map02_live_frame_receipt import replay
@@ -19,6 +21,58 @@ SCHEMA = "vh.map02.private-joint-elf-run-two-replays.v1"
 WIDTH, HEIGHT = 1024, 512
 EXPECTED_CAPTURE = "vh.map02.live-child-pipe-bgr555-gpu.v1"
 EXPECTED_REPLAY = "vh.map02.live-child-pipe-gpu-replayed.v1"
+
+
+def _session_inode_witness(output_dir, gpu_journal_dir):
+    """Return private in-memory identity of both full replay inventories.
+
+    Names and inodes are only used for local equality, never returned
+    in the public two-replay digest-only report.
+    """
+    witness = []
+    for root, expected in (
+        (output_dir, {"process-frame.bgr555", "process-frame.json"}),
+        (gpu_journal_dir, None),
+    ):
+        path = Path(root).absolute()
+        fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY |
+                     os.O_NOFOLLOW | os.O_CLOEXEC)
+        try:
+            first = os.fstat(fd)
+            if (not stat.S_ISDIR(first.st_mode)
+                    or stat.S_IMODE(first.st_mode) & 0o077):
+                raise ValueError("MAP02 two-pass directory is not private")
+            names = set(os.listdir(fd))
+            if ((expected is not None and names != expected)
+                    or not names or len(names) > 129):
+                raise ValueError("MAP02 private two-pass inventory invalid")
+            identities = []
+            for name in sorted(names):
+                if name in ("", ".", "..") or "/" in name or "\\" in name:
+                    raise ValueError("MAP02 private two-pass filename invalid")
+                state = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                if (not stat.S_ISREG(state.st_mode)
+                        or stat.S_IMODE(state.st_mode) != 0o600
+                        or state.st_nlink != 1):
+                    raise ValueError("MAP02 private two-pass file not owner-private")
+                identities.append((
+                    name, state.st_dev, state.st_ino, state.st_mode,
+                    state.st_nlink, state.st_size,
+                    state.st_mtime_ns, state.st_ctime_ns))
+            last = os.fstat(fd)
+            routed = os.stat(path, follow_symlinks=False)
+            def dir_id(info):
+                return (info.st_dev, info.st_ino, info.st_mode,
+                        info.st_mtime_ns, info.st_ctime_ns)
+            if (dir_id(first) != dir_id(last)
+                    or dir_id(first) != dir_id(routed)
+                    or set(os.listdir(fd)) != names):
+                raise ValueError("MAP02 private two-pass directory changed")
+            witness.append((dir_id(first), tuple(identities)))
+        finally:
+            os.close(fd)
+    return tuple(witness)
+
 
 
 def run(executable, output_dir, gpu_journal_dir, *, frame, executable_sha256,
@@ -46,11 +100,16 @@ def run(executable, output_dir, gpu_journal_dir, *, frame, executable_sha256,
     # Do not rely solely on capture's receipt or trust a caller-supplied
     # hash: independently reopen all private original files, journal
     # snapshots and the pinned executable in TWO separate audit passes.
+    pinned_session = _session_inode_witness(output_dir, gpu_journal_dir)
     first = replay(output_dir, executable=executable,
                    gpu_journal_dir=gpu_journal_dir)
+    if _session_inode_witness(output_dir, gpu_journal_dir) != pinned_session:
+        raise ValueError("MAP02 private GPU/frame files changed between replays")
     second = replay(output_dir, executable=executable,
                     gpu_journal_dir=gpu_journal_dir)
-    if first != second:
+    if (first != second
+            or _session_inode_witness(output_dir, gpu_journal_dir)
+               != pinned_session):
         raise ValueError("MAP02 private GPU/frame evidence changed between replays")
     if (first.get("schema") != EXPECTED_REPLAY
             or first.get("frame") != frame
@@ -82,6 +141,7 @@ def run(executable, output_dir, gpu_journal_dir, *, frame, executable_sha256,
             first["terminal_gpu_after_vram_sha256"],
         "gpu_journal_pairs_verified": first["gpu_journal_pairs_verified"],
         "two_full_independent_private_replays_equal": True,
+        "private_frame_and_journal_inodes_stable_through_replays": True,
         "child_writable_gpu_journal_fd_observed": True,
         "terminal_frame_exactly_equals_gpu_after_vram": True,
         "retail_gameplay_or_ps1_pixels_authenticated": False,
