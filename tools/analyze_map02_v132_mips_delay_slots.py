@@ -21,7 +21,8 @@ from .analyze_map02_v131_private_mips_mmio import (
 )
 
 SCHEMA="vh.map02.private-mips-delay-slot-static-candidates.v1"
-LIKELY_OPS=(0x14,0x15,0x16,0x17)
+# Branch-likely opcodes belong to MIPS II and are reserved on PS1 R3000A.
+RESERVED_LIKELY_OPS=(0x14,0x15,0x16,0x17)
 CONTROL_OPS=(0x01,0x02,0x03,0x04,0x05,0x06,0x07,
              0x14,0x15,0x16,0x17)
 
@@ -41,7 +42,7 @@ def analyze_delay_aware_text(text):
     metadata={
         "control_flow_delay_slots":0,
         "constant_proven_sw_in_delay_slots":0,
-        "likely_conditional_sw_in_delay_slots":0,
+        "unsupported_mips_ii_branch_likely_opcode_sites":0,
         "ambiguous_control_in_delay_slot":0,
     }
     regs=_reset()
@@ -64,6 +65,19 @@ def analyze_delay_aware_text(text):
             continue
         if old_pending is not None:
             metadata["control_flow_delay_slots"]+=1
+        # MIPS II BEQL/BNEL/BLEZL/BGTZL and REGIMM/COP likely variants
+        # are NOT runnable branch-likely instructions on PS1 R3000A.
+        # Treat their bytes as unsupported, invalidate all constants,
+        # and never credit a GPU/DMA SW in their following word.
+        unsupported_likely=(
+            opcode in RESERVED_LIKELY_OPS or
+            (opcode==0x01 and rt in (2,3,18,19)) or
+            (is_cop_branch and rt in (2,3))
+        )
+        if unsupported_likely:
+            metadata["unsupported_mips_ii_branch_likely_opcode_sites"]+=1
+            regs=_reset()
+            continue
         val=_get(regs,rs)
         if word==0: # No-op does not clobber any register.
             pass
@@ -87,8 +101,6 @@ def analyze_delay_aware_text(text):
                         counts["dma2_linked_list_chcr_literal"]+=1
                     if old_pending is not None:
                         metadata["constant_proven_sw_in_delay_slots"]+=1
-                        if old_pending=="likely":
-                            metadata["likely_conditional_sw_in_delay_slots"]+=1
         elif opcode in (0x28,0x29,0x2a,0x2e):
             pass
         elif opcode in (0x20,0x21,0x22,0x23,0x24,0x25,0x26,0x27,
@@ -113,9 +125,7 @@ def analyze_delay_aware_text(text):
             # Coprocessor/non-modeled instruction: unknown next GPR state.
             regs=_reset()
         if controls:
-            pending="likely" if (
-                opcode in LIKELY_OPS or (
-                    opcode==0x01 and rt in (2,3,18,19))) else "ordinary"
+            pending="ordinary"
         if old_pending is not None:
             regs=_reset()
     if pending is not None:
@@ -135,7 +145,7 @@ def audit_private_exe(path):
         "static_delay_slot_candidate_counts":control,
         "analysis_kind":"conservative_linear_mips_delay_slot_candidate_inventory",
         "did_not_execute_mips":True,
-        "branch_likely_slots_are_only_possible_not_guaranteed_executions":True,
+        "ps1_r3000a_mips_ii_branch_likely_not_credited":True,
         "delay_slot_control_transfer_is_ambiguous_and_not_proven":True,
         "candidate_mmio_not_proof_of_executed_dma":True,
         "private_program_bytes_exported":False,
