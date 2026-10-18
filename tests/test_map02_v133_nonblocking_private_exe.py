@@ -24,11 +24,19 @@ from tools.make_map02_v129_four_vblank_exe import build
 
 class PrivateExeNonblockingInputs(unittest.TestCase):
     def test_open_flags_no_symlinks_no_fifo_wait_no_terminal(self):
+        from tools.analyze_map02_v131_private_mips_mmio import (
+            _open_private_exe_dirfd
+        )
         source=inspect.getsource(read_private_exe)
+        safe_open=inspect.getsource(_open_private_exe_dirfd)
         for key in ("O_NOFOLLOW","O_CLOEXEC","O_NONBLOCK","O_NOCTTY",
+                    "O_DIRECTORY","dir_fd=directory"):
+            with self.subTest(flag=key):
+                self.assertIn(key,safe_open)
+        for key in ("_open_private_exe_dirfd(path)",
                     "os.fstat(fd)","stat.S_ISREG","st.st_nlink != 1",
                     "hashlib.sha256(first).digest()"):
-            with self.subTest(flag=key):
+            with self.subTest(guard=key):
                 self.assertIn(key,source)
 
     def test_fifo_never_blocks_even_when_it_has_no_writer(self):
