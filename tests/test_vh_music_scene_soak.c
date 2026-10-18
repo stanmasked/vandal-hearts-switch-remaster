@@ -318,8 +318,6 @@ static uint64_t silent_second_cue_oracle(void) {
     assert(wet_scene.switches==2u && dry_scene.switches==2u);
     /* An empty cue never produces voices; wet history is the sole
      * possible output source after old PCM pointers are released. */
-    assert(!memcmp(wet_spu.reverb.work,dry_spu.reverb.work,
-                   0u)); /* no state access required for a zero-length check */
     for(unsigned i=0u;i<VH_NATIVE_MUSIC_VOICES;i++) {
         assert(!wet_spu.voice[i].pcm && !wet_spu.voice[i].active);
         assert(!dry_spu.voice[i].pcm && !dry_spu.voice[i].active);
