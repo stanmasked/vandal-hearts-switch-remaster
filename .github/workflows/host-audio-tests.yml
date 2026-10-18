@@ -116,6 +116,16 @@ jobs:
               -o "/tmp/vh-stop-observed-$cc"
             "/tmp/vh-stop-observed-$cc"
           done
+      - name: Stage319 prove 100000 audio gate loops have no clock query or witness write
+        run: |
+          set -euxo pipefail
+          for cc in gcc clang; do
+            "$cc" -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+              tests/test_vh_audio_worker_stop_gate.c \
+              source/vh_game_music_mailbox.c \
+              -o "/tmp/vh-stage319-worker-gate-$cc"
+            "/tmp/vh-stage319-worker-gate-$cc"
+          done
       - name: Stage317 guest stop observation source and ordering tests
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_guest_worker_stop_observed.py' -v
       - name: Stage318 original worker stop, audout last page, guest exit and optical replay adversarial tests
