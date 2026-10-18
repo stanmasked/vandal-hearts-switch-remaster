@@ -109,6 +109,55 @@ class PrivateFinalSealTests(unittest.TestCase):
                 _publish(self.seal_dir, b"synthetic-private-test-receipt\n")
         self.assertEqual(list(self.seal_dir.iterdir()), [])
 
+    def test_zero_length_write_rolls_back_unchanged_created_inode(self):
+        from tools.seal_map02_private_finalization import _publish
+        with patch("tools.seal_map02_private_finalization.os.write",
+                   return_value=0):
+            with self.assertRaisesRegex(ValueError, "incomplete private seal write"):
+                _publish(self.seal_dir, b"synthetic-partial-test\n")
+        self.assertEqual(list(self.seal_dir.iterdir()), [])
+
+    def test_short_write_then_failure_rolls_back_only_own_inode(self):
+        import os
+        from tools.seal_map02_private_finalization import _publish
+        actual_write = os.write
+        calls = [0]
+
+        def short_then_zero(fd, data):
+            calls[0] += 1
+            if calls[0] == 1:
+                return actual_write(fd, data[:4])
+            return 0
+
+        with patch("tools.seal_map02_private_finalization.os.write",
+                   side_effect=short_then_zero):
+            with self.assertRaisesRegex(ValueError, "incomplete private seal write"):
+                _publish(self.seal_dir, b"synthetic-partial-test\n")
+        self.assertEqual(calls[0], 2)
+        self.assertEqual(list(self.seal_dir.iterdir()), [])
+
+    def test_failed_file_fsync_rolls_back_unchanged_created_inode(self):
+        from tools.seal_map02_private_finalization import _publish
+        with patch("tools.seal_map02_private_finalization.os.fsync",
+                   side_effect=OSError("synthetic fsync failure")):
+            with self.assertRaisesRegex(OSError, "synthetic fsync failure"):
+                _publish(self.seal_dir, b"synthetic-partial-test\n")
+        self.assertEqual(list(self.seal_dir.iterdir()), [])
+
+    def test_failed_file_fsync_preserves_modified_same_inode(self):
+        from tools.seal_map02_private_finalization import _publish
+        receipt = self.seal_dir / NAME
+
+        def rewrite_then_fail(fd):
+            receipt.write_bytes(b"external-mutated-before-fsync")
+            raise OSError("synthetic fsync failure")
+
+        with patch("tools.seal_map02_private_finalization.os.fsync",
+                   side_effect=rewrite_then_fail):
+            with self.assertRaisesRegex(OSError, "synthetic fsync failure"):
+                _publish(self.seal_dir, b"synthetic-partial-test\n")
+        self.assertEqual(receipt.read_bytes(), b"external-mutated-before-fsync")
+
     def test_failed_readback_keeps_foreign_changes_to_same_inode(self):
         from tools.seal_map02_private_finalization import _publish
         receipt = self.seal_dir / NAME
