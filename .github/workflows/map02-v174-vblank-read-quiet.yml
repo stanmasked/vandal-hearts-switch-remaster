@@ -1,0 +1,34 @@
+name: MAP02 v174 no unexpected guest GPU reads during genuine VBlank waits
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v174-vblank-read-quiet.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v174_vblank_read_quiet.py'
+      - 'tests/test_map02_v174_vblank_read_quiet.py'
+      - 'tools/apply_map02_v173_vblank_quiet_mmio.py'
+      - 'tools/make_map02_v78_vblank_mips_exe.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  no-guest-gpu-read:
+    name: compiled MIPS GP0/GP1 VBlank read-window check (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile four clean native read windows and both forbidden GPU reads
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v174_vblank_read_quiet.py tests/test_map02_v174_vblank_read_quiet.py
+          python3 -m unittest discover -s tests -p 'test_map02_v174_vblank_read_quiet.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v173_vblank_quiet_mmio.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v172_mips_real_vblank_vram.py' -v
+          echo 'VH174_COMPILED_FOUR_GPU_READ_QUIET_WINDOWS_PASS forbidden_gp0_gp1_reads=0 real_native_vblank_pending=1 original_retail_executed=0'
