@@ -29,6 +29,9 @@ typedef struct {
     atomic_int action;
     atomic_int quick_result;  /* 0 untouched, 1 pending, 2 PCM returned, -1 error */
     atomic_int reopen_result;
+    /* Logical count of REAL returned audout pages at service completion.
+     * A stale PCM notification cannot certify a manual X/Y action. */
+    atomic_uint returned_pages_at_service;
 } VhAudioManualTransport;
 
 static inline void vh_audio_manual_init(VhAudioManualTransport *ctl) {
@@ -36,6 +39,7 @@ static inline void vh_audio_manual_init(VhAudioManualTransport *ctl) {
     atomic_init(&ctl->action, VH_MANUAL_NONE);
     atomic_init(&ctl->quick_result, 0);
     atomic_init(&ctl->reopen_result, 0);
+    atomic_init(&ctl->returned_pages_at_service, 0u);
 }
 
 /* Caller supplies real controller input; rejecting an overlapping input
@@ -66,7 +70,7 @@ static inline VhAudioManualAction vh_audio_manual_take(
 }
 
 static inline void vh_audio_manual_finished_service(
-    VhAudioManualTransport *ctl,int success) {
+    VhAudioManualTransport *ctl,int success,unsigned returned_pcm_pages) {
     if(atomic_load(&ctl->phase)!=VH_MANUAL_EXECUTING) return;
     if(!success) {
         const int action=atomic_load(&ctl->action);
@@ -74,13 +78,19 @@ static inline void vh_audio_manual_finished_service(
                      &ctl->quick_result : &ctl->reopen_result,-1);
         atomic_store(&ctl->phase,VH_MANUAL_FAILED);
     } else {
+        atomic_store(&ctl->returned_pages_at_service,returned_pcm_pages);
         atomic_store(&ctl->phase,VH_MANUAL_WAIT_PCM);
     }
 }
 
-/* Call ONLY on successfully returned native audout PCM, not generated PCM. */
-static inline void vh_audio_manual_returned_pcm(VhAudioManualTransport *ctl) {
-    if(atomic_load(&ctl->phase)!=VH_MANUAL_WAIT_PCM) return;
+/* The worker supplies the logical audout return count AFTER a confirmed
+ * descriptor return, not a mere generated PCM block or service restart.
+ * Strict monotonicity also rejects stale, duplicate and wrapped counters. */
+static inline void vh_audio_manual_returned_pcm(
+    VhAudioManualTransport *ctl,unsigned returned_pcm_pages) {
+    if(atomic_load(&ctl->phase)!=VH_MANUAL_WAIT_PCM ||
+       returned_pcm_pages<=atomic_load(&ctl->returned_pages_at_service))
+        return;
     const int action=atomic_load(&ctl->action);
     atomic_store(action==VH_MANUAL_QUICK ?
                  &ctl->quick_result : &ctl->reopen_result,2);
