@@ -85,8 +85,8 @@ def compare_native_present_rgb24(native_dir, cycle_dir, preview_dir,
         raise ValueError("hi-res PC present buffer is not native VRAM RGB24")
     rect = event["display_source_rect"]
     receipt = _private_evidence_snapshot(rgbdir, RGB24_RECEIPT, max_bytes=1024)
-    if (receipt[0].count(b"\\n") != 1 or not receipt[0].endswith(b"\\n")
-            or b"\\r" in receipt[0]):
+    if (receipt[0].count(b"\n") != 1 or not receipt[0].endswith(b"\n")
+            or b"\r" in receipt[0]):
         raise ValueError("noncanonical private PC RGB24 capture receipt")
     captured = parse_json(receipt[0][:-1], RGB24_RECEIPT)
     fields(captured, CAPTURE_KEYS, RGB24_RECEIPT)
