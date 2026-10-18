@@ -469,6 +469,7 @@ class CycleCdGpuSyntheticIntegrationTests(unittest.TestCase):
             "schema": CYCLE_SCHEMA,
             "capture_session": fixture.cd_receipt["capture_session"],
             "original_cd_raw_user_crc32": fixture.cd_receipt["raw_user_crc32"],
+            "original_cd_raw_user_sha256": fixture.cd_receipt["raw_user_sha256"],
             "gpu_draw_frame": 7,
             "ordered_source_hooks_observed": True,
             "cd_payload_verified_by_this_receipt": False,
