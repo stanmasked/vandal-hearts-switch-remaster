@@ -81,6 +81,20 @@ int vh_native_seq_init(VhNativeSeq *seq, const uint8_t *bytes, size_t length,
                        VhNativeSpu *spu, VhSeqResolve resolve,
                        void *context, unsigned repeat_count);
 
+/* Atomically switch to a separately loaded/validated SEQ and VAB resolver.
+ * Validate the next SEQ before touching playback. On failure, preserve
+ * the old SEQ, voices and reverb unchanged. On success, remove all old
+ * bank PCM references, keep STUDIO_C history/configuration and start the
+ * new SEQ at frame zero. The 44.1->48k resampler is caller-owned and is
+ * intentionally not reset. Caller must synchronize with audio playback,
+ * keep the new bank's PCM alive, and handle already-submitted audout pages.
+ * An active SEQ must retain its original SPU instance; mismatches fail.
+ */
+int vh_native_seq_switch_scene(VhNativeSeq *seq,
+                               const uint8_t *bytes, size_t length,
+                               VhNativeSpu *spu, VhSeqResolve resolve,
+                               void *context, unsigned repeat_count);
+
 /* Adds 512-frame musical tick budget and dispatches all due events
  * BEFORE PCM synthesis. Return count, or -1 on malformed state.
  */
