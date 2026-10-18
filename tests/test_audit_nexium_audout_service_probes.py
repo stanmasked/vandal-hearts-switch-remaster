@@ -22,11 +22,11 @@ def fixture():
     }
     slow=[{"attempt":17,"begin_ns":1_900_000_000,"audio_second":0,
            "duration_ns":41_000_000}]
-    raw=("scope,index,attempt,submit_begin_ns,status,queue_count,total_probes,dropped_probes\\n"
-         "TOTAL,-1,0,0,-1,0,3,0\\n"
-         "SAMPLE,0,1,1000000000,1,3,0,0\\n"
-         "SAMPLE,1,17,1900000000,0,0,0,0\\n"
-         "SAMPLE,2,33,2900000000,1,0,0,0\\n").encode("ascii")
+    raw=("scope,index,attempt,submit_begin_ns,status,queue_count,total_probes,dropped_probes\n"
+         "TOTAL,-1,0,0,-1,0,3,0\n"
+         "SAMPLE,0,1,1000000000,1,3,0,0\n"
+         "SAMPLE,1,17,1900000000,0,0,0,0\n"
+         "SAMPLE,2,33,2900000000,1,0,0,0\n").encode("ascii")
     return raw,origin,queue,latency,slow
 
 
@@ -45,7 +45,7 @@ class ServiceProbeCSVTests(unittest.TestCase):
         raw,origin,queue,latency,slow=fixture()
         cases=[
             raw.replace(b"total_probes",b"other_probes"),
-            raw.replace(b",3,0\\nSAMPLE",b",4,0\\nSAMPLE"),
+            raw.replace(b",3,0\nSAMPLE",b",4,0\nSAMPLE"),
             raw.replace(b"SAMPLE,1,17,",b"SAMPLE,1,18,"),
             raw.replace(b"1900000000",b"1800000000"),
             raw.replace(b"SAMPLE,1,17,1900000000,0,0",
@@ -53,8 +53,8 @@ class ServiceProbeCSVTests(unittest.TestCase):
             raw.replace(b"SAMPLE,2,33,2900000000,1,0",
                         b"SAMPLE,2,33,2900000000,1,2"),
             raw.replace(b"SAMPLE,2,33",b"SAMPLE,1,33"),
-            raw+b"APPENDED\\n",
-            raw.replace(b",3,0\\nSAMPLE",b",3,1\\nSAMPLE"),
+            raw+b"APPENDED\n",
+            raw.replace(b",3,0\nSAMPLE",b",3,1\nSAMPLE"),
         ]
         for candidate in cases:
             self.assertNotEqual(candidate,raw)

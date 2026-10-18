@@ -801,16 +801,16 @@ jobs:
           set -euo pipefail
           test -s runtime-evidence/scene-soak/soak-audout-probe-unverified.csv
           test -s runtime-evidence/scene-soak/soak-audout-probe-export-result.txt
-          python3 tools/audit_nexium_audout_service_probes.py \\
-            --source runtime-evidence/scene-soak/soak-audout-probe-unverified.csv \\
-            --locations runtime-evidence/scene-soak/soak-audout-probe-locations.txt \\
-            --receipt runtime-evidence/scene-soak/soak-audout-probe-export-result.txt \\
-            --sd-root "$RUNNER_TEMP/vh-nexium-stage268-${GITHUB_RUN_ID}" \\
-            --queue-csv runtime-evidence/scene-soak/soak-audout-sd-unverified.csv \\
-            --clock-csv runtime-evidence/scene-soak/soak-audout-clock-unverified.csv \\
-            --latency-csv runtime-evidence/scene-soak/soak-audout-latency-unverified.csv \\
-            --slow-csv runtime-evidence/scene-soak/soak-audout-slow-unverified.csv \\
-            --scene-csv runtime-evidence/scene-soak/soak-guest-optical.csv \\
+          python3 tools/audit_nexium_audout_service_probes.py \
+            --source runtime-evidence/scene-soak/soak-audout-probe-unverified.csv \
+            --locations runtime-evidence/scene-soak/soak-audout-probe-locations.txt \
+            --receipt runtime-evidence/scene-soak/soak-audout-probe-export-result.txt \
+            --sd-root "$RUNNER_TEMP/vh-nexium-stage268-${GITHUB_RUN_ID}" \
+            --queue-csv runtime-evidence/scene-soak/soak-audout-sd-unverified.csv \
+            --clock-csv runtime-evidence/scene-soak/soak-audout-clock-unverified.csv \
+            --latency-csv runtime-evidence/scene-soak/soak-audout-latency-unverified.csv \
+            --slow-csv runtime-evidence/scene-soak/soak-audout-slow-unverified.csv \
+            --scene-csv runtime-evidence/scene-soak/soak-guest-optical.csv \
             --output runtime-evidence/scene-soak/soak-audout-probe-verification.json
           python3 -m json.tool runtime-evidence/scene-soak/soak-audout-probe-verification.json >/dev/null
           echo "Stage289: original-SD-bound timestamped existing service probes verified. Not OS scheduler, DAC or audible playback telemetry." >> "$GITHUB_STEP_SUMMARY"

@@ -39,7 +39,7 @@ def _number(value:str,*,signed:bool=False)->int:
 
 def parse_probes(raw:bytes,origin:dict,queue:dict,
                  latency:dict,slow:list[dict])->dict:
-    if (len(raw)>64000 or b"\\r" in raw or not raw.endswith(b"\\n")):
+    if (len(raw)>64000 or b"\r" in raw or not raw.endswith(b"\n")):
         raise CorrelationError("oversized or noncanonical probe journal")
     try:
         rows=list(csv.reader(io.StringIO(raw.decode("ascii"),newline=""),
@@ -198,7 +198,7 @@ def main()->int:
                      queue_csv=args.queue_csv,clock_csv=args.clock_csv,
                      latency_csv=args.latency_csv,slow_csv=args.slow_csv,
                      scene_csv=args.scene_csv)
-        args.output.write_text(json.dumps(report,sort_keys=True,indent=2)+"\\n",
+        args.output.write_text(json.dumps(report,sort_keys=True,indent=2)+"\n",
                                encoding="utf-8")
         print(json.dumps({
             "result":report["result"],"queue_probe_samples":report["queue_probe_samples"],
