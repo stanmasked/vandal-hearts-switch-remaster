@@ -113,6 +113,44 @@ static void test_post_service_evidence_is_not_carried_across_retries(void) {
     assert(atomic_load(&ctl.reopen_result)==2);
 }
 
+static void test_worker_exit_marks_pending_and_queued_as_failure(void) {
+    VhAudioManualTransport ctl;
+    vh_audio_manual_init(&ctl);
+    assert(vh_audio_manual_request(&ctl,VH_MANUAL_REOPEN));
+    vh_audio_manual_abort_pending(&ctl);
+    assert(atomic_load(&ctl.phase)==VH_MANUAL_FAILED);
+    assert(atomic_load(&ctl.reopen_result)==-1);
+    vh_audio_manual_returned_pcm(&ctl,999u);
+    assert(atomic_load(&ctl.reopen_result)==-1);
+
+    vh_audio_manual_init(&ctl);
+    assert(vh_audio_manual_request(&ctl,VH_MANUAL_QUICK));
+    assert(vh_audio_manual_take(&ctl)==VH_MANUAL_QUICK);
+    vh_audio_manual_finished_service(&ctl,1,50u);
+    assert(atomic_load(&ctl.quick_result)==1);
+    vh_audio_manual_abort_pending(&ctl);
+    assert(atomic_load(&ctl.phase)==VH_MANUAL_FAILED);
+    assert(atomic_load(&ctl.quick_result)==-1);
+    vh_audio_manual_returned_pcm(&ctl,51u);
+    assert(atomic_load(&ctl.quick_result)==-1);
+    assert(!vh_audio_manual_request(&ctl,VH_MANUAL_REOPEN));
+}
+
+static void test_worker_exit_preserves_confirmed_and_idle(void) {
+    VhAudioManualTransport ctl;
+    vh_audio_manual_init(&ctl);
+    vh_audio_manual_abort_pending(&ctl);
+    assert(atomic_load(&ctl.phase)==VH_MANUAL_IDLE);
+    assert(atomic_load(&ctl.quick_result)==0);
+    assert(vh_audio_manual_request(&ctl,VH_MANUAL_QUICK));
+    assert(vh_audio_manual_take(&ctl)==VH_MANUAL_QUICK);
+    vh_audio_manual_finished_service(&ctl,1,17u);
+    vh_audio_manual_returned_pcm(&ctl,18u);
+    vh_audio_manual_abort_pending(&ctl);
+    assert(atomic_load(&ctl.quick_result)==2);
+    assert(atomic_load(&ctl.phase)==VH_MANUAL_CONFIRMED);
+}
+
 int main(void) {
     test_requires_real_returned_pcm();
     test_new_manual_command_after_verified_pcm();
@@ -120,6 +158,8 @@ int main(void) {
     test_spurious_pcm_without_command_is_not_evidence();
     test_pcm_count_wrap_never_confirms();
     test_post_service_evidence_is_not_carried_across_retries();
+    test_worker_exit_marks_pending_and_queued_as_failure();
+    test_worker_exit_preserves_confirmed_and_idle();
     puts("manual X/Y audout mailbox: serialized commands and post-service PCM PASS (host fixtures)");
     return 0;
 }
