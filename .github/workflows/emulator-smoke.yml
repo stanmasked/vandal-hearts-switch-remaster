@@ -169,6 +169,13 @@ jobs:
           path: |
             build/vandal-hearts-prototype.nro
             build/runtime-nro-manifest.json
+          if-no-files-found: error
+
+      - name: Upload isolated phase8 experimental NRO
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-smoke-phase8
+          path: |
             build/vandal-hearts-phase8.nro
             build/runtime-phase8-manifest.json
           if-no-files-found: error
@@ -187,6 +194,12 @@ jobs:
         with:
           name: runtime-smoke-nro
           path: nros
+
+      - name: Download isolated phase8 NRO from current workflow run
+        uses: actions/download-artifact@v4
+        with:
+          name: runtime-smoke-phase8
+          path: phase8
 
       - name: Require NRO from current run, commit and attempt
         shell: bash
@@ -1132,9 +1145,9 @@ jobs:
           python3 - <<'PY'
           import hashlib,json,os
           from pathlib import Path
-          m=json.loads(Path("nros/runtime-phase8-manifest.json").read_text())
+          m=json.loads(Path("phase8/runtime-phase8-manifest.json").read_text())
           b=json.loads(Path("nros/runtime-nro-manifest.json").read_text())
-          data=Path("nros/vandal-hearts-phase8.nro").read_bytes()
+          data=Path("phase8/vandal-hearts-phase8.nro").read_bytes()
           if (m["schema"]!="vh-switch-explicit-probe-phase/v1"
                   or m["phase"]!=8
                   or m["git_sha"]!=os.environ["GITHUB_SHA"]
@@ -1148,7 +1161,7 @@ jobs:
           print("Stage294 bound phase8 NRO",m["nro_sha256"])
           PY
           SOAK_MODE=switch SOAK_RUN_SUFFIX=phase8 \
-            SOAK_NRO=nros/vandal-hearts-phase8.nro \
+            SOAK_NRO=phase8/vandal-hearts-phase8.nro \
             bash tools/capture_nexium_scene_soak.sh runtime-evidence/scene-soak-phase8
           python3 tools/audit_nexium_audout_service_probes.py \
             --expected-phase 8 \
