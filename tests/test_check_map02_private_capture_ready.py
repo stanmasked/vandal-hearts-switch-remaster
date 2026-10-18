@@ -1,14 +1,16 @@
 """Asset-free MAP02 private capture readiness tests (structure, not provenance)."""
 import hashlib
+import io
 import json
 import os
+from contextlib import redirect_stderr
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from tools.check_map02_private_capture_ready import (
-    _snapshot_word, inspect_staged_capture,
+    _snapshot_word, inspect_staged_capture, main as preflight_main,
 )
 from tools.verify_map02_frame_bundle import MAP_BYTES, PINNED_PC_SOURCE, VRAM_BYTES
 
@@ -369,6 +371,28 @@ class PrivateCapturePreflightTests(unittest.TestCase):
         self.source_file("bundle.json", self.bundle)
         with self.assertRaisesRegex(ValueError, "exceed captured native draws"):
             self.run_preflight()
+
+    def test_cli_redacts_private_paths_and_untrusted_errors(self):
+        private_path = "/private/owned-game/MAP02/restricted-disc-image.bin"
+        argv = ["map02-preflight", str(self.source), str(self.native)]
+        errors = (
+            OSError(13, "access denied to original game image", private_path),
+            ValueError("untrusted source claims " + private_path),
+        )
+        for error in errors:
+            with self.subTest(error=type(error).__name__):
+                output = io.StringIO()
+                with (patch("sys.argv", argv),
+                      patch("tools.check_map02_private_capture_ready.inspect_staged_capture",
+                            side_effect=error),
+                      redirect_stderr(output)):
+                    with self.assertRaises(SystemExit) as exited:
+                        preflight_main()
+                self.assertEqual(exited.exception.code, 2)
+                self.assertIn("private MAP02 structural preflight unavailable",
+                              output.getvalue())
+                self.assertNotIn(private_path, output.getvalue())
+                self.assertNotIn("restricted-disc-image", output.getvalue())
 
     def test_never_creates_a_manifest_or_promotes_pending_logs(self):
         before_source = set(self.source.iterdir())
