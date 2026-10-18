@@ -47,3 +47,43 @@ The new JSON is
 alongside the raw PCM, source-quality report and scene-event evidence.
 The actual synthesis code, guest audout query frequency, NRO and
 SPU/PCM generation are unchanged by this offline audit.
+
+## Verified Stage299 current NeXium capture — 18 October 2026
+
+The corrected [current-workflow NeXium run **39127993232**](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39127993232)
+completed **success**, including both raw virtual PCM captures,
+previous quality and scene audits, all original SD audio source
+checks and the Stage299 final source-bound PCM scan. Its exact source
+revision was
+[`be2ca93c`](https://github.com/stanmasked/vandal-hearts-switch-remaster/commit/be2ca93cac56003efea684ca41024c7b6a6d07a2).
+
+| Observed virtual recording | General monitor | A/B scene capture |
+| --- | ---: | ---: |
+| Recorded complete s16le stereo frames | **2,166,776** | **2,244,209** |
+| 10-ms analysis blocks (including final partial) | 4,515 | 4,676 |
+| Exact-zero stereo runs (all lengths) | 1,642 | 1,461 |
+| Exact-zero runs lasting at least 10ms | **788** | **690** |
+| Longest exact-zero stereo run | **0.544146 seconds** | **5.839875 seconds** |
+| Adjacent frame steps with magnitude >=4096 in either channel | **0** | **0** |
+
+Each raw PCM byte stream was independently SHA-256-matched to its
+pre-existing analyzer's result, and the scene capture was bound to
+five actual frame-aligned host-buffered scene-event markers. This
+provides a repeatable source-level PCM **integrity/indicator** record.
+
+**Crucial scope limitation:** 5.84 seconds of exact digital zero in
+the scene capture is NOT evidence by itself of a broken soundtrack,
+an audout buffer underflow, or a glitch that would be heard.
+It could be startup, ordinary intentional silence, a pause in
+emulator rendering or capture conditions. The existing source does
+not independently timestamp every audio frame, nor provide a
+sample-exact expected original soundtrack. Similarly, a threshold
+of 4096 yielding zero large adjacent steps does NOT establish that
+no smaller or perceptually relevant discontinuity exists.
+
+The source NRO, guest synthesizer, output API, SPU and PCM
+generation were unchanged by this diagnostic stage.
+[Host C/Python and toolchain 39127820755](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39127820755),
+[Host SPU 39127993315](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39127993315)
+and [native PCM 39127993231](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39127993231)
+also completed successfully on the appropriate source/test revisions.
