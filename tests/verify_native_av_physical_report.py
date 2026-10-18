@@ -32,15 +32,19 @@ def canonical(value):
 
 def verify(report_path, before_path, after_path, *,
            require_focus_pixels=False, require_x_return_pixels=False,
-           require_y_return_pixels=False):
+           require_y_return_pixels=False, nro_path=None):
     stored = json.loads(Path(report_path).read_text(encoding="utf-8"),
                         object_pairs_hook=unique_json_object,
                         parse_constant=reject_nonfinite)
     if type(stored) is not dict:
         raise ValueError("pixel report must be a JSON object")
-    if stored.get("format") != "vh-av-physical-screenshot-pixel-observation-v2":
-        raise ValueError("pixel report must be an unsigned v2 PNG-bound report")
-    observed = inspect(before_path, after_path, bind_png_hashes=True)
+    expected_format = ("vh-av-physical-screenshot-pixel-observation-v3"
+                       if nro_path is not None else
+                       "vh-av-physical-screenshot-pixel-observation-v2")
+    if stored.get("format") != expected_format:
+        raise ValueError("pixel report format does not match requested NRO binding")
+    observed = inspect(before_path, after_path, bind_png_hashes=True,
+                       nro_path=nro_path)
     if stored.keys() != observed.keys() or canonical(stored) != canonical(observed):
         raise ValueError("pixel report does not match exact PNG bytes and observations")
     # A structurally correct report is not automatically evidence of an
@@ -67,18 +71,22 @@ def main():
                         help="require a recomputed yellow-to-blue X marker transition")
     parser.add_argument("--require-y-return-pixels", action="store_true",
                         help="require a recomputed yellow-to-blue Y marker transition")
+    parser.add_argument("--nro", type=Path,
+                        help="require the original diagnostic NRO bound into the v3 report")
     args = parser.parse_args()
     try:
         report = verify(
             args.report, args.before, args.after,
             require_focus_pixels=args.require_focus_pixels,
             require_x_return_pixels=args.require_x_return_pixels,
-            require_y_return_pixels=args.require_y_return_pixels)
+            require_y_return_pixels=args.require_y_return_pixels,
+            nro_path=args.nro)
     except (ValueError, OSError, TypeError, json.JSONDecodeError) as exc:
         parser.error(str(exc))
     print(json.dumps({
         "verification": "recomputed_png_pixel_report_match",
         "source_png_sha256": report["source_png_sha256"],
+        "source_nro_sha256": report.get("source_nro_sha256"),
         "required_pixel_conditions_reverified": [
             name for required, name in (
                 (args.require_focus_pixels, "new_focus_cycle_pixels"),

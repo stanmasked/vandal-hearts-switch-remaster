@@ -126,6 +126,32 @@ class PhysicalPixelReportVerificationTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("non-finite JSON number", result.stderr)
 
+    def test_v3_nro_report_rejects_wrong_artifact_or_missing_binding(self):
+        nro=Path(self.folder.name)/"probe.nro"
+        binary=bytearray(0x100)
+        binary[0x10:0x14]=b"NRO0"
+        binary[0x18:0x1c]=(0x100).to_bytes(4,"little")
+        for header,offset in ((0x20,0x80),(0x28,0x90),(0x30,0xa0)):
+            binary[header:header+4]=offset.to_bytes(4,"little")
+            binary[header+4:header+8]=(0x10).to_bytes(4,"little")
+        nro.write_bytes(binary)
+        self.write_report(inspect(self.before,self.after,
+                                  bind_png_hashes=True,nro_path=nro))
+        ok=self.cli(flags=("--nro",str(nro),"--require-focus-pixels"))
+        self.assertEqual(ok.returncode,0,ok.stderr)
+        self.assertEqual(json.loads(ok.stdout)["source_nro_sha256"],
+                         __import__("hashlib").sha256(binary).hexdigest())
+        # V3 cannot be downgraded to PNG-only verification.
+        self.assertNotEqual(self.cli().returncode,0)
+        binary[0xe0]=1
+        nro.write_bytes(binary)
+        self.assertNotEqual(self.cli(flags=("--nro",str(nro))).returncode,0)
+
+    def test_v2_report_rejects_unexpected_nro_binding(self):
+        nro=Path(self.folder.name)/"mismatched.nro"
+        nro.write_bytes(b"no-valid-nro")
+        self.assertNotEqual(self.cli(flags=("--nro",str(nro))).returncode,0)
+
     def test_unbound_v1_or_extra_field_rejected(self):
         data = inspect(self.before, self.after)
         self.write_report(data)

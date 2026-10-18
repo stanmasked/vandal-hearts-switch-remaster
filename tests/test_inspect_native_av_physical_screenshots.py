@@ -378,6 +378,43 @@ class PhysicalScreenshotPixelTests(unittest.TestCase):
             "vh-av-physical-screenshot-pixel-observation-v1")
         self.assertNotIn("source_png_sha256",unbound)
 
+    def test_optional_nro_report_out_records_exact_binary_digest(self):
+        binary=Path(self.tmp.name)/"probe.nro"
+        data=bytearray(0x100)
+        data[0x10:0x14]=b"NRO0"
+        data[0x18:0x1c]=(0x100).to_bytes(4,"little")
+        for header,segment in ((0x20,0x80),(0x28,0x90),(0x30,0xa0)):
+            data[header:header+4]=segment.to_bytes(4,"little")
+            data[header+4:header+8]=(0x10).to_bytes(4,"little")
+        binary.write_bytes(data)
+        frame().save(self.a)
+        frame(b=1,f=1,p=True).save(self.b)
+        report_path=Path(self.tmp.name)/"nro-bound.json"
+        result=self.cli("--report-out",str(report_path),"--nro",str(binary))
+        self.assertEqual(result.returncode,0,result.stderr)
+        bound=json.loads(report_path.read_text(encoding="utf-8"))
+        self.assertEqual(bound["format"],
+                         "vh-av-physical-screenshot-pixel-observation-v3")
+        self.assertEqual(bound["source_nro_sha256"],
+                         hashlib.sha256(data).hexdigest())
+        self.assertEqual(bound["source_nro_size_bytes"],len(data))
+        self.assertFalse(bound["physical_hardware_verified"])
+        self.assertFalse(bound["audible_audio_verified"])
+
+    def test_nro_binding_requires_report_and_valid_header(self):
+        binary=Path(self.tmp.name)/"wrong.nro"
+        binary.write_bytes(b"garbage"*40)
+        frame().save(self.a)
+        frame().save(self.b)
+        no_report=self.cli("--nro",str(binary))
+        self.assertNotEqual(no_report.returncode,0)
+        self.assertIn("requires a bound PNG report",no_report.stderr)
+        report_path=Path(self.tmp.name)/"bad-nro.json"
+        wrong=self.cli("--nro",str(binary),"--report-out",str(report_path))
+        self.assertNotEqual(wrong.returncode,0)
+        self.assertIn("recognizable NRO0",wrong.stderr)
+        self.assertFalse(report_path.exists())
+
     def test_reject_transparent_rgba_hidden_status_pixels(self):
         image=frame().convert("RGBA")
         image.putpixel((1005,640),(*BLUE,0))

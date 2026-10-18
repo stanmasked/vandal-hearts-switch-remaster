@@ -223,7 +223,10 @@ def comparison(before, after):
     }
 
 
-def inspect(before_path, after_path, *, bind_png_hashes=False):
+def inspect(before_path, after_path, *, bind_png_hashes=False,
+            nro_path=None):
+    if nro_path is not None and not bind_png_hashes:
+        raise ValueError("NRO identity requires a bound PNG report")
     # Read each file ONCE: the inspected bytes and their SHA-256 must be
     # identical even if a different process modifies a path mid-run.
     before_bytes = Path(before_path).read_bytes()
@@ -231,7 +234,9 @@ def inspect(before_path, after_path, *, bind_png_hashes=False):
     before = observe_frame(load_frame_bytes(before_bytes))
     after = observe_frame(load_frame_bytes(after_bytes))
     report = {
-        "format": ("vh-av-physical-screenshot-pixel-observation-v2"
+        "format": ("vh-av-physical-screenshot-pixel-observation-v3"
+                   if nro_path is not None else
+                   "vh-av-physical-screenshot-pixel-observation-v2"
                    if bind_png_hashes else
                    "vh-av-physical-screenshot-pixel-observation-v1"),
         "before": before,
@@ -249,6 +254,24 @@ def inspect(before_path, after_path, *, bind_png_hashes=False):
             "before": hashlib.sha256(before_bytes).hexdigest(),
             "after": hashlib.sha256(after_bytes).hexdigest(),
         }
+    if nro_path is not None:
+        # A file digest records the artifact supplied by the operator.
+        # Even an apparently valid NRO header does not prove that the
+        # Switch loaded the file or executed the indicated experiment.
+        nro_bytes = Path(nro_path).read_bytes()
+        if len(nro_bytes) < 0x80 or nro_bytes[0x10:0x14] != b"NRO0":
+            raise ValueError("NRO binding requires a recognizable NRO0 artifact")
+        declared_size = int.from_bytes(nro_bytes[0x18:0x1c], "little")
+        if declared_size < 0x80 or declared_size > len(nro_bytes):
+            raise ValueError("NRO binding has an invalid declared image size")
+        for header in (0x20, 0x28, 0x30):
+            segment_start = int.from_bytes(nro_bytes[header:header+4], "little")
+            segment_size = int.from_bytes(nro_bytes[header+4:header+8], "little")
+            if (not segment_size or segment_start >= declared_size or
+                    segment_start + segment_size > declared_size):
+                raise ValueError("NRO binding has an invalid segment range")
+        report["source_nro_sha256"] = hashlib.sha256(nro_bytes).hexdigest()
+        report["source_nro_size_bytes"] = len(nro_bytes)
     return report
 
 
@@ -262,10 +285,13 @@ def main():
     parser.add_argument("--require-y-return-pixels",action="store_true")
     parser.add_argument("--report-out",type=Path,
                         help="exclusively write an unsigned SHA-256-bound JSON report (never attests hardware)")
+    parser.add_argument("--nro",type=Path,
+                        help="also bind the exact diagnostic NRO artifact (requires --report-out)")
     args=parser.parse_args()
     try:
         result=inspect(args.before,args.after,
-                       bind_png_hashes=args.report_out is not None)
+                       bind_png_hashes=args.report_out is not None,
+                       nro_path=args.nro)
         diff=result["difference"]
         for required,field in (
             (args.require_focus_pixels,"new_focus_cycle_pixels"),
