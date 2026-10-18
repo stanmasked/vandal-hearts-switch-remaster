@@ -76,6 +76,16 @@ class SevenCaseDigestIndexTests(unittest.TestCase):
         self.assertFalse(report["physical_hardware_verified"])
         self.assertFalse(report["audible_audio_verified"])
         self.assertFalse(report["original_game_assets_included"])
+        self.assertEqual(len(report["published_nro_file_sha256"]), 9)
+
+    def test_all_seven_nros_and_two_provenance_files_are_fingerprinted(self):
+        report = self.report()
+        self.assertEqual(report["format"], "vh-native-av-seven-case-digest-index-v2")
+        expected = set(NRO_NAMES) | {MANIFEST, COMMIT_FILE}
+        self.assertEqual(set(report["published_nro_file_sha256"]), expected)
+        for name, digest in report["published_nro_file_sha256"].items():
+            self.assertEqual(digest, hashlib.sha256(
+                (self.nros / name).read_bytes()).hexdigest())
 
     def test_every_file_and_nro_digest_matches_its_bytes(self):
         report = self.report()
@@ -175,6 +185,20 @@ class SevenCaseDigestIndexTests(unittest.TestCase):
             verify_audit(file, self.evidence, self.nros, REVISION, RUN_ID,
                          ATTEMPT + 1, verify_case=lambda *a, **kw:
                          {"heartbeat_changed_pixels": 32})
+
+    def test_focus_manual_mutation_with_valid_rewritten_manifest_is_detected(self):
+        # focus-manual isn't launched by the seven CI guest scenarios.
+        # Changing it and updating the NRO manifest must still cause a
+        # mismatch against the originally published digest index.
+        audit = self.audit_path()
+        (self.nros / NRO_NAMES[-1]).write_bytes(tiny_nro(42))
+        (self.nros / MANIFEST).write_text(
+            "".join(hashlib.sha256((self.nros / name).read_bytes()).hexdigest() +
+                    "  " + name + "\n" for name in NRO_NAMES),
+            encoding="ascii")
+        with self.assertRaisesRegex(ValueError, "independently regenerated"):
+            verify_audit(audit, self.evidence, self.nros, REVISION, RUN_ID,
+                         ATTEMPT, verify_case=self.fake_verified)
 
     def test_modified_downloaded_evidence_fails_even_when_index_unchanged(self):
         file = self.audit_path()

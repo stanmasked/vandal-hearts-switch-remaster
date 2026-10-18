@@ -11,7 +11,7 @@ from verify_native_av_evidence_inventory import (
     FILES, PREFIX, SCENARIOS, SUFFIX, SD_MODE_BY_SCENARIO, validate_inventory,
 )
 from verify_native_av_guest_witness import NRO_BY_SCENARIO, hash_file, verify
-from verify_native_av_nro_manifest import verify_bundle
+from verify_native_av_nro_manifest import COMMIT_FILE, MANIFEST, NRO_NAMES, verify_bundle
 
 
 def build_report(evidence_root, nro_root, revision, run_id, attempt, *,
@@ -44,8 +44,14 @@ def build_report(evidence_root, nro_root, revision, run_id, attempt, *,
             },
             "heartbeat_changed_pixels": heartbeat,
         })
+    # Seven NeXium cases exercise only five NRO variants. Record both
+    # focus variants too, plus SHA-256 of the source and digest markers.
+    all_bundle_files = (*NRO_NAMES, MANIFEST, COMMIT_FILE)
     return {
-        "format": "vh-native-av-seven-case-digest-index-v1",
+        "format": "vh-native-av-seven-case-digest-index-v2",
+        "published_nro_file_sha256": {
+            name: hash_file(nro_root / name) for name in all_bundle_files
+        },
         "source_revision": bundle["source_commit"],
         "github_run_id": run_id, "github_run_attempt": attempt,
         "scenario_count": inventory["scenario_count"],
