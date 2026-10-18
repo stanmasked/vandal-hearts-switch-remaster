@@ -19,6 +19,7 @@ on:
       - 'tests/test_vh_audio_page_telemetry.c'
       - 'tests/test_vh_audio_resume_abort_telemetry.c'
       - 'tests/test_vh_audio_focus_trace.c'
+      - 'tests/test_vh_audio_manual_transport.c'
       - 'tests/test_vh_decoded_vab_audout.c'
       - 'tests/test_native_vab_python_reference.py'
       - 'tests/test_native_spu_reverb_reference.py'
@@ -42,6 +43,7 @@ on:
       - 'tests/test_vh_audio_page_telemetry.c'
       - 'tests/test_vh_audio_resume_abort_telemetry.c'
       - 'tests/test_vh_audio_focus_trace.c'
+      - 'tests/test_vh_audio_manual_transport.c'
       - 'tests/test_vh_decoded_vab_audout.c'
       - 'tests/test_native_vab_python_reference.py'
       - 'tests/test_native_spu_reverb_reference.py'
@@ -95,12 +97,14 @@ jobs:
           make ps1-music-av-resume-probe
           make ps1-music-av-resume-retry-probe
           make ps1-music-av-focus-probe
+          make ps1-music-av-focus-manual-probe
           test -s build/libnx-ps1-music-av.nro
           test -s build/libnx-ps1-music-av-zr.nro
           test -s build/libnx-ps1-music-av-zl.nro
           test -s build/libnx-ps1-music-av-resume.nro
           test -s build/libnx-ps1-music-av-resume-retry.nro
           test -s build/libnx-ps1-music-av-focus.nro
+          test -s build/libnx-ps1-music-av-focus-manual.nro
 
       - name: Upload NRO without proprietary audio assets
         uses: actions/upload-artifact@v4
@@ -113,6 +117,7 @@ jobs:
             build/libnx-ps1-music-av-resume.nro
             build/libnx-ps1-music-av-resume-retry.nro
             build/libnx-ps1-music-av-focus.nro
+            build/libnx-ps1-music-av-focus-manual.nro
           if-no-files-found: error
 
 
