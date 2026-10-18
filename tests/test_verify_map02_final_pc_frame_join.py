@@ -55,7 +55,12 @@ class SyntheticFinalPcFrameJoinTests(unittest.TestCase):
             "loader_completed": True,
         }
         self.process = {
-            "schema": "vh.map02.local-executed-process.v2",
+            "schema": "vh.map02.local-executed-process.v3",
+            "pc_preoverlay_capture_session_bound": True,
+            "pc_preoverlay_image_sha256": sha(self.fixture.rgbfile.read_bytes()),
+            "pc_preoverlay_receipt_sha256": sha(
+                (self.fixture.rgbdir /
+                 "map02-pc-present-preoverlay-receipt.jsonl").read_bytes()),
             "gpu_draw_frame": 7,
             "local_plan_sha256": "f" * 64,
             "kernel_observed_executable_sha256": "a" * 64,
@@ -130,6 +135,7 @@ class SyntheticFinalPcFrameJoinTests(unittest.TestCase):
         self.assertEqual(report["schema"], SCHEMA)
         self.assertTrue(report["independent_full_cd_gpu_process_witness_verified"])
         self.assertTrue(report["pc_preoverlay_rgb24_and_native_vram_png_match"])
+        self.assertTrue(report["process_receipt_binds_pc_rgb24_pixels_and_capture_receipt"])
         self.assertEqual(report["capture_session_sha256"], self.session)
         self.assertEqual(report["matched_native_draw_primitives"], 2)
         self.assertEqual(report["native_display_source_rect"], [0, 0, 1, 1])
@@ -139,6 +145,53 @@ class SyntheticFinalPcFrameJoinTests(unittest.TestCase):
         self.assertNotIn(self.token, json.dumps(report))
         self.assertNotIn(str(self.fixture.rgbdir), json.dumps(report))
         self.mock.assert_called_once()
+
+    def test_legacy_process_receipt_v2_rejected_for_final_rgb24_join(self):
+        previous = dict(self.process)
+        self.process["schema"] = "vh.map02.local-executed-process.v2"
+        for key in ("pc_preoverlay_capture_session_bound",
+                    "pc_preoverlay_image_sha256",
+                    "pc_preoverlay_receipt_sha256"):
+            self.process.pop(key)
+        self.write_fixture()
+        with self.assertRaisesRegex(ValueError, "not bound to this process"):
+            self.check()
+        self.mock.assert_not_called()
+        self.process = previous
+        self.write_fixture()
+
+    def test_process_rgb24_image_or_receipt_digest_mismatch_rejected(self):
+        previous = dict(self.process)
+        for key in ("pc_preoverlay_image_sha256",
+                    "pc_preoverlay_receipt_sha256"):
+            with self.subTest(key=key):
+                self.process[key] = "f" * 64
+                self.write_fixture()
+                with self.assertRaisesRegex(ValueError, "not bound to this process"):
+                    self.check()
+                self.mock.assert_not_called()
+                self.process = dict(previous)
+        self.write_fixture()
+
+    def test_missing_or_false_v3_binding_rejected(self):
+        original = dict(self.process)
+        for key in ("pc_preoverlay_image_sha256",
+                    "pc_preoverlay_receipt_sha256",
+                    "pc_preoverlay_capture_session_bound"):
+            with self.subTest(key=key):
+                self.process.pop(key, None)
+                self.write_fixture()
+                with self.assertRaises(ValueError):
+                    self.check()
+                self.mock.assert_not_called()
+                self.process = dict(original)
+        self.process["pc_preoverlay_capture_session_bound"] = False
+        self.write_fixture()
+        with self.assertRaises(ValueError):
+            self.check()
+        self.mock.assert_not_called()
+        self.process = original
+        self.write_fixture()
 
     def test_changed_process_witness_digest_rejected_early(self):
         self.original["observed_process_receipt_sha256"] = "a" * 64
