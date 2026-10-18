@@ -5,6 +5,8 @@ on:
   push:
     paths:
       - '.github/workflows/diagnose-stage304-original-archive.yml'
+      - 'tools/classify_nexium_stage304_exit_control_order.py'
+      - 'tests/test_classify_nexium_stage304_exit_control_order.py'
 
 permissions:
   contents: read
