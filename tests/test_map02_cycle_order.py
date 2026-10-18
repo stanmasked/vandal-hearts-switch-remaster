@@ -3,6 +3,8 @@
 The harness emits calls itself: these tests do NOT execute original game
 LoadCdFile / ContinueLoadingCdFile / DrawOTag, nor prove a MAP02 render.
 """
+import hashlib
+import json
 import os
 import zlib
 from pathlib import Path
@@ -157,6 +159,12 @@ int main(int argc, char **argv) {
         if (replacement < 0) return 11;
         if (write(replacement, "foreign-not-to-delete", 21) != 21) return 12;
         if (close(replacement) != 0 || close(dir) != 0) return 13;
+    }
+    if (!strcmp(argv[1], "sha-known")) {
+        char cd_json[512];
+        int cd_n = vh_map02_cd_probe_format_jsonl(cd_json, sizeof cd_json);
+        if (cd_n <= 0) return 19;
+        printf("cdsha=%.*s", cd_n, cd_json);
     }
     n = vh_map02_cycle_format_jsonl(out, sizeof out);
     printf("failed=%d receipt=%d\n", vh_map02_cycle_failed(), n > 0);
@@ -384,6 +392,22 @@ class CycleOrderTests(unittest.TestCase):
         malformed = self.run_mode("overflow-overlapping-read")
         self.assertEqual(malformed.returncode, 0, malformed.stderr)
         self.assertIn("failed=1 receipt=0", malformed.stdout)
+
+    def test_native_original_cd_sha256_matches_independent_hashlib(self):
+        # Exercise the actual compiled native probe on 12 distinct 2048-byte
+        # sector callbacks and independently calculate the expected hash.
+        proc = self.run_mode("sha-known")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("failed=0 receipt=1", proc.stdout)
+        encoded = proc.stdout.split("cdsha=", 1)[1].splitlines()[0]
+        cd = json.loads(encoded)
+        expected = bytes((i ^ (i >> 8)) & 255 for i in range(12 * 2048))
+        sha = hashlib.sha256(expected).hexdigest()
+        self.assertEqual(cd["schema"], "vh.map02.original-cd-read.v2")
+        self.assertEqual(cd["raw_user_sha256"], sha)
+        self.assertEqual(cd["returned_user_sha256"], sha)
+        self.assertEqual(cd["raw_user_crc32"], f"{zlib.crc32(expected):08x}")
+        self.assertEqual(cd["returned_user_crc32"], f"{zlib.crc32(expected):08x}")
 
     def test_original_cd_crc_proof_is_mandatory_before_cycle_receipt(self):
         for mode in ("cd-missing-claim", "cd-duplicate-claim",
