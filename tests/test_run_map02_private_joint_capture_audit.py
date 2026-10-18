@@ -181,6 +181,24 @@ class PrivateJointOneShotAuditTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "changed after publication"):
                 self.run_capture()
 
+    def test_failed_capture_publication_callback_rolls_back_frame(self):
+        from tools.capture_map02_live_frame_pipe import capture as native_capture
+        witnesses = []
+        def reject(output_fd, journal_fd):
+            self.assertTrue(os.fstat(output_fd).st_ino)
+            self.assertTrue(os.fstat(journal_fd).st_ino)
+            witnesses.append(True)
+            raise ValueError("intentional post-publication witness refusal")
+        with self.assertRaisesRegex(ValueError, "intentional post-publication"):
+            native_capture(
+                self.executable, self.output,
+                frame=123, width=1024, height=512,
+                executable_sha256=self.digest, timeout=4,
+                gpu_journal_dir=self.journal,
+                post_publish_witness=reject)
+        self.assertEqual(witnesses, [True])
+        self.assertEqual(list(self.output.iterdir()), [])
+
     def test_missing_same_launch_fd_witness_rejected(self):
         actual_capture = joint_runner.capture
         def skip_witness(*args, **kwargs):
