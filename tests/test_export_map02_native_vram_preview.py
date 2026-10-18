@@ -136,9 +136,11 @@ class PrivateNativeVramPreviewTests(unittest.TestCase):
     def test_file_hardlink_rejected_and_no_png_written(self):
         last = self.fixture.window / "gpu-0003-vram.bin"
         twin = Path(self.tmp.name) / "gpu-vram-hardlink.bin"
+        # Derive the synthetic baseline before intentionally introducing
+        # a forbidden hardlink; the patched exporter must then reject it.
+        original = verify_native_windows(self.fixture.root, target_frame=7)
         os.link(last, twin)
         self.addCleanup(twin.unlink)
-        original = verify_native_windows(self.fixture.root, target_frame=7)
         with patch("tools.export_map02_native_vram_preview.verify_native_windows",
                    return_value=original):
             with self.assertRaisesRegex(ValueError, "private regular"):
