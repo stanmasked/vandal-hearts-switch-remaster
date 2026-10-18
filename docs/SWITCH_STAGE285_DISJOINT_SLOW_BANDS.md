@@ -68,3 +68,36 @@ DAC underruns, actual hardware latency or a musical glitch. All
 eight historical captures used switching before idle; temporal
 positions and five overlapping shifts are not randomized independent
 trials. Physical Switch listening is unmeasured.
+
+## Verified Stage285 CI result — 2026-10-18
+
+[Eight-pair NeXium Actions run 39084865077](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39084865077)
+completed successfully at commit
+[`d2f79953`](https://github.com/stanmasked/vandal-hearts-switch-remaster/commit/d2f79953c3bc400a4b5211dc43fbf79e06daf480).
+The workflow independently reverified archived original-SD-bound copies
+and regenerated Stage279 through Stage284 before executing Stage285.
+Exact rational conservation held for every original and omitted
+whole-pair combination; the 5 × 8 matrix counted:
+
+| Disjoint software blocking-duration category | Positive | Negative | Min…max contrast /1,000 attempts |
+| --- | ---: | ---: | ---: |
+| 40 ms ≤ time < 50 ms | **40/40** | 0/40 | **+1.031997 … +8.280747** |
+| time ≥50 ms | 11/40 | 29/40 | −1.132053 … +0.687090 |
+
+The ≥40ms combined class remained 40/40 positive with
++0.585548 … +8.058364 per 1,000 calls. The positive combined
+result was numerically concentrated in the 40..<50ms class, not
+the ≥50ms class. This describes temporal contrast patterns only;
+it does not identify a physical driver.
+
+[Host SPU workflow 39084865071](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39084865071),
+[Switch native PCM workflow 39084865089](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39084865089)
+and [Switch toolchain + host C/Python workflow 39084865144](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39084865144)
+all completed successfully for this implementation.
+
+All five shifts share much of their recorded time, and the eight
+one-pair-deleted cohorts also overlap. Counting 40/40 positives is a
+deterministic robustness property of this exact archival evidence,
+**not** a binomial significance claim, independent replication,
+or causal proof. No physical Nintendo Switch playback or DAC
+starvation was measured.
