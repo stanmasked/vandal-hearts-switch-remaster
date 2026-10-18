@@ -73,6 +73,9 @@ def cohort(last_duration=11225937,prior_duration=32154011,total=380):
 def pin(source):
     return hashlib.sha256(source["history_csv"]).hexdigest()
 
+def pin_last(source):
+    return hashlib.sha256(source["last_csv"]).hexdigest()
+
 
 class TwoAuthenticGuestHistoryComparisonTests(unittest.TestCase):
     def setUp(self):
@@ -80,12 +83,17 @@ class TwoAuthenticGuestHistoryComparisonTests(unittest.TestCase):
         self.second=cohort(last_duration=22352500,prior_duration=31247083,total=382)
         self.first_pin=pin(self.first)
         self.second_pin=pin(self.second)
+        self.first_last_pin=pin_last(self.first)
+        self.second_last_pin=pin_last(self.second)
 
-    def compare(self,first=None,second=None,first_pin=None,second_pin=None):
+    def compare(self,first=None,second=None,first_pin=None,second_pin=None,
+                first_last_pin=None,second_last_pin=None):
         return compare(self.first if first is None else first,
                        self.second if second is None else second,
                        self.first_pin if first_pin is None else first_pin,
-                       self.second_pin if second_pin is None else second_pin)
+                       self.second_pin if second_pin is None else second_pin,
+                       self.first_last_pin if first_last_pin is None else first_last_pin,
+                       self.second_last_pin if second_last_pin is None else second_last_pin)
 
     def test_original_two_cohort_software_brackets_and_medians(self):
         r=self.compare()
@@ -123,6 +131,10 @@ class TwoAuthenticGuestHistoryComparisonTests(unittest.TestCase):
         with self.assertRaises(ExitTimelineError):
             self.compare(second=altered)
 
+    def test_forged_original_last_call_csv_pin_rejected(self):
+        with self.assertRaises(ExitTimelineError):
+            self.compare(first_last_pin="0"*64)
+
     def test_original_stage320_provenance_missing_rejected(self):
         for field in ("original_source_bytes_preserved",
                       "original_guest_playbuffer_source_observed",
@@ -142,12 +154,14 @@ class TwoAuthenticGuestHistoryComparisonTests(unittest.TestCase):
 
     def test_identical_source_history_pins_rejected(self):
         with self.assertRaises(ExitTimelineError):
-            self.compare(second=self.first,second_pin=self.first_pin)
+            self.compare(second=self.first,second_pin=self.first_pin,
+                         second_last_pin=self.first_last_pin)
 
     def test_missing_earlier_call_baseline_cannot_be_fabricated(self):
         altered=cohort(last_duration=11225937,prior_duration=5000000)
         with self.assertRaises(ExitTimelineError):
-            self.compare(first=altered,first_pin=pin(altered))
+            self.compare(first=altered,first_pin=pin(altered),
+                         first_last_pin=pin_last(altered))
 
     def test_corrupt_or_ambiguous_original_artifact_rejected(self):
         with TemporaryDirectory() as d:
