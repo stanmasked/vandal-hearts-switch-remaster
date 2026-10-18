@@ -77,6 +77,40 @@ class PrivateJointOneShotAuditTests(unittest.TestCase):
         self.assertNotIn(str(self.journal), json.dumps(result))
         self.assertNotIn(str(self.executable), json.dumps(result))
 
+    def test_cli_runs_native_one_shot_and_prints_digests_not_private_paths(self):
+        result = subprocess.run([
+            sys.executable, "-m", "tools.run_map02_private_joint_capture_audit",
+            "--executable", str(self.executable),
+            "--executable-sha256", self.digest,
+            "--output-dir", str(self.output),
+            "--gpu-journal-dir", str(self.journal),
+            "--frame", "123", "--timeout", "5",
+        ], capture_output=True, text=True, timeout=12)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        meta = json.loads(result.stdout)
+        self.assertEqual(meta["schema"], joint_runner.SCHEMA)
+        self.assertEqual(meta["gpu_journal_pairs_verified"], 1)
+        self.assertTrue(meta["two_full_independent_private_replays_equal"])
+        self.assertFalse(meta["retail_gameplay_or_ps1_pixels_authenticated"])
+        self.assertNotIn(str(self.executable), result.stdout)
+        self.assertNotIn(str(self.output), result.stdout)
+        self.assertNotIn(str(self.journal), result.stdout)
+
+    def test_cli_wrong_elf_digest_fails_without_publication(self):
+        result = subprocess.run([
+            sys.executable, "-m", "tools.run_map02_private_joint_capture_audit",
+            "--executable", str(self.executable),
+            "--executable-sha256", "0" * 64,
+            "--output-dir", str(self.output),
+            "--gpu-journal-dir", str(self.journal),
+            "--frame", "123", "--timeout", "5",
+        ], capture_output=True, text=True, timeout=12)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("SHA-256 mismatch", result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(list(self.output.iterdir()), [])
+        self.assertEqual(list(self.journal.iterdir()), [])
+
     def test_wrong_native_executable_digest_refused_without_publication(self):
         with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
             self.run_capture(sha="0" * 64)
