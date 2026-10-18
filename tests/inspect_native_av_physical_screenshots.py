@@ -17,6 +17,10 @@ YELLOW = (255, 219, 102)
 RED = (250, 108, 90)
 BACKGROUND = (17, 23, 39)
 TOLERANCE = 25
+# The renderer draws solid, unblended rectangles. Allow tiny capture
+# variation, but reject multi-shade regions that merely fall within
+# the wider palette classification tolerance.
+MAX_TILE_CHANNEL_SPREAD = 12
 LABELS = ("N", "B", "F", "P", "R")
 
 
@@ -49,12 +53,24 @@ def uniform_tile(frame, points, label):
     These are framebuffer consistency checks, not image provenance,
     evidence of real HOME input, or evidence of audible playback.
     """
-    readings = (marker_color(frame.getpixel(point)) for point in points)
-    first = next(readings, None)
+    first = None
+    channel_min = [255, 255, 255]
+    channel_max = [0, 0, 0]
+    for point in points:
+        pixel = frame.getpixel(point)
+        color = marker_color(pixel)
+        if first is None:
+            first = color
+        elif color != first:
+            raise ValueError("inconsistent " + label + " tile pixels")
+        for channel, value in enumerate(pixel):
+            channel_min[channel] = min(channel_min[channel], value)
+            channel_max[channel] = max(channel_max[channel], value)
     if first is None:
         raise ValueError("empty " + label + " tile area")
-    if any(color != first for color in readings):
-        raise ValueError("inconsistent " + label + " tile pixels")
+    if any(high-low > MAX_TILE_CHANNEL_SPREAD
+           for low, high in zip(channel_min, channel_max)):
+        raise ValueError("inconsistent " + label + " tile shades")
     return first
 
 
@@ -141,6 +157,16 @@ def observe_frame(frame):
 def comparison(before, after):
     if before["variant_pixels"] != after["variant_pixels"]:
         raise ValueError("cannot compare different focus NRO variants")
+    # N is set once from appletSetFocusHandlingMode at NRO startup.
+    # If it changes, these images cannot represent one continuous run.
+    if before["indicators"]["N"] != after["indicators"]["N"]:
+        raise ValueError("notification-mode indicator changed between frames")
+    # Manual X/Y errors stop the audio worker permanently. No subsequent
+    # in-session button operation can turn a terminal red back to green.
+    for label in ("X", "Y"):
+        if (before["indicators"][label] == "red" and
+                after["indicators"][label] != "red"):
+            raise ValueError("terminal " + label + " error changed between frames")
     a, b = before["tallies_capped_at_five"], after["tallies_capped_at_five"]
     for label in ("B", "F", "R"):
         if b[label] < a[label]:
