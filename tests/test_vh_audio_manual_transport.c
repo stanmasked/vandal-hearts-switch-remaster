@@ -140,15 +140,50 @@ static void test_worker_exit_preserves_confirmed_and_idle(void) {
     VhAudioManualTransport ctl;
     vh_audio_manual_init(&ctl);
     vh_audio_manual_abort_pending(&ctl);
-    assert(atomic_load(&ctl.phase)==VH_MANUAL_IDLE);
+    assert(atomic_load(&ctl.phase)==VH_MANUAL_STOPPED);
     assert(atomic_load(&ctl.quick_result)==0);
+    assert(!vh_audio_manual_request(&ctl,VH_MANUAL_QUICK));
+    /* A separate, newly started worker gets a new controller. */
+    vh_audio_manual_init(&ctl);
     assert(vh_audio_manual_request(&ctl,VH_MANUAL_QUICK));
     assert(vh_audio_manual_take(&ctl)==VH_MANUAL_QUICK);
     vh_audio_manual_finished_service(&ctl,1,17u);
     vh_audio_manual_returned_pcm(&ctl,18u);
     vh_audio_manual_abort_pending(&ctl);
     assert(atomic_load(&ctl.quick_result)==2);
-    assert(atomic_load(&ctl.phase)==VH_MANUAL_CONFIRMED);
+    assert(atomic_load(&ctl.phase)==VH_MANUAL_STOPPED);
+    assert(!vh_audio_manual_request(&ctl,VH_MANUAL_REOPEN));
+}
+
+static void test_interrupted_claim_cannot_resurrect_queue(void) {
+    VhAudioManualTransport ctl;
+    vh_audio_manual_init(&ctl);
+    /* A main-thread claim may be in progress when worker teardown
+     * begins. Shutdown must take precedence over final QUEUED store. */
+    atomic_store(&ctl.phase,VH_MANUAL_CLAIMING);
+    vh_audio_manual_abort_pending(&ctl);
+    assert(atomic_load(&ctl.phase)==VH_MANUAL_FAILED);
+    int expected=VH_MANUAL_CLAIMING;
+    assert(!atomic_compare_exchange_strong(&ctl.phase,&expected,
+                                           VH_MANUAL_QUEUED));
+    assert(atomic_load(&ctl.phase)==VH_MANUAL_FAILED);
+    assert(!vh_audio_manual_request(&ctl,VH_MANUAL_QUICK));
+}
+
+static void test_shutdown_is_terminal_after_prior_success(void) {
+    VhAudioManualTransport ctl;
+    vh_audio_manual_init(&ctl);
+    assert(vh_audio_manual_request(&ctl,VH_MANUAL_REOPEN));
+    assert(vh_audio_manual_take(&ctl)==VH_MANUAL_REOPEN);
+    vh_audio_manual_finished_service(&ctl,1,100u);
+    vh_audio_manual_returned_pcm(&ctl,101u);
+    assert(atomic_load(&ctl.reopen_result)==2);
+    vh_audio_manual_abort_pending(&ctl);
+    vh_audio_manual_abort_pending(&ctl);
+    assert(atomic_load(&ctl.phase)==VH_MANUAL_STOPPED);
+    assert(atomic_load(&ctl.reopen_result)==2);
+    assert(!vh_audio_manual_request(&ctl,VH_MANUAL_REOPEN));
+    assert(!vh_audio_manual_request(&ctl,VH_MANUAL_QUICK));
 }
 
 int main(void) {
@@ -160,6 +195,8 @@ int main(void) {
     test_post_service_evidence_is_not_carried_across_retries();
     test_worker_exit_marks_pending_and_queued_as_failure();
     test_worker_exit_preserves_confirmed_and_idle();
+    test_interrupted_claim_cannot_resurrect_queue();
+    test_shutdown_is_terminal_after_prior_success();
     puts("manual X/Y audout mailbox: serialized commands and post-service PCM PASS (host fixtures)");
     return 0;
 }
