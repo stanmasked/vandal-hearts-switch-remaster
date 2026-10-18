@@ -1,0 +1,36 @@
+name: MAP02 v139 native MIPS codeword and four-stage PC witness
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v139-native-words.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v139_mips_word_stages.py'
+      - 'tools/check_map02_v139_native_words.py'
+      - 'tests/test_map02_v139_native_words.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-derived-mips-word-stages:
+    name: compile exact MIPS words + four CPU stage gates (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Source-only instruction bytes and C11 sanitizer mutation checks
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          no_original_retail_data_in_ci=1
+          readonly no_original_retail_data_in_ci
+          test "$no_original_retail_data_in_ci" = 1
+          python3 -m unittest discover -s tests -p 'test_map02_v139_native_words.py' -v
+          python3 -m tools.check_map02_v139_native_words --cc "$CC"
+          python3 -m unittest discover -s tests -p 'test_map02_v138_interpreter_pc.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v137_private_mips_pc_sites.py' -v
+          echo "VH139_SOURCE_AUTHORED_WORD_STAGE_PASS original_retail_mips_executed=0"
