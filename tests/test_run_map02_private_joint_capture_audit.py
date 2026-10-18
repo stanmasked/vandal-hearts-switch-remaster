@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 from test_map02_joint_native_capture_c11 import PRODUCER
 from tools import run_map02_private_joint_capture_audit as joint_runner
+from tools import compare_map02_private_bgr555_frames as frame_compare
 
 
 class PrivateJointOneShotAuditTests(unittest.TestCase):
@@ -53,6 +54,95 @@ class PrivateJointOneShotAuditTests(unittest.TestCase):
             self.executable, self.output, self.journal, frame=123,
             executable_sha256=kwargs.pop("sha", self.digest),
             timeout=kwargs.pop("timeout", 4), args=args, **kwargs)
+
+    def make_claimed_private_frame_pair(self, *, different_reference=False,
+                                        different_candidate=False,
+                                        frame=123):
+        pair = Path(self.temp.name) / "private-claimed-frame-pair"
+        pair.mkdir(mode=0o700)
+        # The source-pinned C11 synthetic producer writes 0x7fff at
+        # VRAM pixel (0,0) and zero into all other words. This local
+        # fixture makes no claims of PS1 provenance or real game capture.
+        raw = b"\xff\x7f" + b"\x00" * (1024 * 512 * 2 - 2)
+        reference = ((b"\x00\x80" + raw[2:]) if different_reference else raw)
+        candidate = ((b"\x11\x22" + raw[2:]) if different_candidate else raw)
+        images = {}
+        for name, pixels, origin in (
+            ("reference.bgr555", reference, "ps1_reference_claimed"),
+            ("candidate.bgr555", candidate, "pc_port_candidate_claimed"),
+        ):
+            (pair / name).write_bytes(pixels)
+            images[name] = {
+                "sha256": hashlib.sha256(pixels).hexdigest(),
+                "frame": frame, "origin": origin}
+        (pair / "frames.json").write_text(json.dumps({
+            "schema": frame_compare.SCHEMA,
+            "frame": frame, "width": 1024, "height": 512,
+            "pixel_format": "bgr555_le", "images": images
+        }, sort_keys=True), encoding="utf-8")
+        return pair
+
+    def test_claimed_reference_and_same_launch_candidate_byte_equal(self):
+        pair = self.make_claimed_private_frame_pair()
+        result = self.run_capture(frame_pair_dir=pair)
+        self.assertTrue(result["claimed_reference_raw_bgr555_equal_to_live_candidate"])
+        self.assertFalse(result["claimed_reference_ps1_hardware_authenticated"])
+        self.assertEqual(result["claimed_reference_different_bgr555_pixels"], 0)
+        self.assertEqual(result["claimed_reference_exact_pixel_matches"], 1024 * 512)
+        self.assertNotIn(str(pair), json.dumps(result))
+
+    def test_claimed_reference_has_one_pixel_stp_and_color_mismatch(self):
+        pair = self.make_claimed_private_frame_pair(different_reference=True)
+        result = self.run_capture(frame_pair_dir=pair)
+        self.assertFalse(result["claimed_reference_raw_bgr555_equal_to_live_candidate"])
+        self.assertEqual(result["claimed_reference_different_bgr555_pixels"], 1)
+        self.assertEqual(result["claimed_reference_stp_bit_differences"], 1)
+        self.assertEqual(result["claimed_reference_changed_scanlines"], 1)
+        self.assertFalse(result["claimed_reference_ps1_hardware_authenticated"])
+
+    def test_self_consistent_forged_claimed_candidate_rejected(self):
+        pair = self.make_claimed_private_frame_pair(different_candidate=True)
+        with self.assertRaisesRegex(ValueError, "claimed candidate differs"):
+            self.run_capture(frame_pair_dir=pair)
+
+    def test_same_byte_claimed_reference_inode_swap_during_capture_rejected(self):
+        pair = self.make_claimed_private_frame_pair()
+        real_capture = joint_runner.capture
+        def swap(*args, **kwargs):
+            receipt = real_capture(*args, **kwargs)
+            path = pair / "reference.bgr555"
+            new_path = pair / "same-byte-reference.bgr555"
+            new_path.write_bytes(path.read_bytes())
+            os.replace(new_path, path)
+            return receipt
+        with patch.object(joint_runner, "capture", side_effect=swap):
+            with self.assertRaisesRegex(ValueError, "frame pair changed during capture"):
+                self.run_capture(frame_pair_dir=pair)
+
+    def test_claimed_pair_frame_label_mismatch_fails_before_executing_elf(self):
+        pair = self.make_claimed_private_frame_pair(frame=124)
+        with self.assertRaisesRegex(ValueError, "wrong labels"):
+            self.run_capture(frame_pair_dir=pair)
+        self.assertEqual(list(self.output.iterdir()), [])
+        self.assertEqual(list(self.journal.iterdir()), [])
+
+    def test_cli_claimed_reference_compare_returns_only_digests_and_counts(self):
+        pair = self.make_claimed_private_frame_pair(different_reference=True)
+        finished = subprocess.run([
+            sys.executable, "-m", "tools.run_map02_private_joint_capture_audit",
+            "--executable", str(self.executable),
+            "--executable-sha256", self.digest,
+            "--output-dir", str(self.output),
+            "--gpu-journal-dir", str(self.journal),
+            "--frame-pair-dir", str(pair),
+            "--frame", "123", "--timeout", "5",
+        ], capture_output=True, text=True, timeout=12)
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        result = json.loads(finished.stdout)
+        self.assertEqual(result["claimed_reference_different_bgr555_pixels"], 1)
+        self.assertFalse(result["claimed_reference_ps1_hardware_authenticated"])
+        self.assertNotIn(str(pair), finished.stdout)
+        self.assertNotIn(str(self.executable), finished.stdout)
 
     def test_one_real_synthetic_child_two_complete_private_replays(self):
         result = self.run_capture()
