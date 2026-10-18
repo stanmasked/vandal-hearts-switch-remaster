@@ -175,6 +175,11 @@ on:
       - 'tools/apply_map02_v143_atomic_private_receipt.py'
       - 'tools/check_map02_v143_atomic_receipt.py'
       - 'tests/test_map02_v143_atomic_private_receipt.py'
+      - 'tools/apply_map02_v144_private_run_challenge.py'
+      - 'tools/check_map02_v144_native_challenge_c.py'
+      - 'tools/check_map02_v144_run_challenge.py'
+      - 'tests/test_map02_v144_run_challenge.py'
+      - '.github/workflows/map02-v144-run-challenge.yml'
       - '.github/workflows/map02-v143-atomic-private-receipt.yml'
       - '.github/workflows/map02-v142-private-mmio-receipt.yml'
       - '.github/workflows/map02-v141-private-original-mmio.yml'
@@ -289,6 +294,9 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v141_private_original_mmio_claims.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v142_native_private_receipt.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v143_atomic_private_receipt.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v144_run_challenge.py' -v
+          python3 -m remaster.tools.check_map02_v144_native_challenge_c --cc "${{ matrix.cc }}" \
+            | grep -Fx 'VH144_COMPILED_CHALLENGE_NATIVE_PASS events=19 challenge_bits=128 atomic_receipt=1 missing_and_malformed_refused=1 sidecar_replay_refused=1 unsafe_parent_refused=1 original_retail=0'
           python3 -m remaster.tools.check_map02_v143_atomic_receipt --cc "${{ matrix.cc }}" \
             | grep -Fx 'VH143_COMPILED_ATOMIC_PRIVATE_RECEIPT_PASS events=19 atomic_publish=1 full_ancestor_nofollow=1 overwrite_refused=1 writable_ancestor_refused=1 symlink_and_stale_stage_refused=1 original_retail=0'
           python3 -m remaster.tools.check_map02_v140_native_mmio_effects --cc "${{ matrix.cc }}"
@@ -305,7 +313,8 @@ jobs:
           git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
           git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
-          python3 -m remaster.tools.apply_map02_v143_atomic_private_receipt upstream-pcsx
+          python3 -m remaster.tools.apply_map02_v144_private_run_challenge upstream-pcsx
+          grep -F 'VH144_CHALLENGE_NAME' upstream-pcsx/libpcsxcore/psxmem.c
           grep -F 'VH143_STAGING_NAME' upstream-pcsx/libpcsxcore/psxmem.c
           grep -F 'vh143_open_verified_directory' upstream-pcsx/libpcsxcore/psxmem.c
           grep -F 'VH142_NATIVE_PRIVATE_RECEIPT_PASS' upstream-pcsx/frontend/main.c
@@ -1469,10 +1478,21 @@ jobs:
           # PC/word/effective-address/value tuples to mode-0600 JSONL.
           # Independently compare EXE/ELF bytes; upload ONLY public summary.
           sha256sum -c proof/private/v131-same-exe.sha256
+          # Fresh challenges are generated independently, never included in
+          # public artifacts or logged, and retained outside the receipt dir.
+          python3 - <<'PY'
+          from pathlib import Path
+          import secrets
+          for label in ('positive','corrupt'):
+              p=Path(f'proof/private/v144-expected-{label}.hex')
+              p.write_text(secrets.token_hex(16)+'\n')
+              p.chmod(0o600)
+          PY
           mkdir -m 700 proof/private/v142-positive-dir
           mkdir -m 700 proof/v142-positive-home
           timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
             SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            VH144_RECEIPT_CHALLENGE_HEX="$(cat proof/private/v144-expected-positive.hex)" \
             VH142_PRIVATE_RECEIPT_DIR="$PWD/proof/private/v142-positive-dir" \
             HOME="$PWD/proof/v142-positive-home" \
             ./upstream-pcsx/pcsx -novid -nodrc -nothread \
@@ -1499,6 +1519,7 @@ jobs:
           mkdir -m 700 proof/v142-corrupt-home
           timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
             SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            VH144_RECEIPT_CHALLENGE_HEX="$(cat proof/private/v144-expected-corrupt.hex)" \
             VH142_PRIVATE_RECEIPT_DIR="$PWD/proof/private/v142-corrupt-dir" \
             HOME="$PWD/proof/v142-corrupt-home" \
             ./upstream-pcsx/pcsx -novid -nodrc -nothread \
@@ -1517,6 +1538,23 @@ jobs:
             proof/private/v142-corrupt-dir/vh142-interpreter-mmio.jsonl \
             --expect-refusal \
             | grep -Fx 'VH142_CORRUPTED_NATIVE_RECEIPT_REJECTED raw_trace_exported=0'
+          # v144 binds the actual native run to an independent fresh
+          # challenge, verifies complete EXE/ELF receipt bytes, and rejects
+          # cross-run replay even when MIPS emits identical instructions.
+          test "$(stat -c %a proof/private/v142-positive-dir/vh144-run-challenge.hex)" = 600
+          test "$(stat -c %a proof/private/v142-corrupt-dir/vh144-run-challenge.hex)" = 600
+          python3 -m remaster.tools.check_map02_v144_run_challenge \
+            proof/private/v142-positive-dir/vh142-interpreter-mmio.jsonl \
+            proof/private/v144-expected-positive.hex \
+            | grep -Fx 'VH144_NATIVE_RUN_CHALLENGE_BOUND_PASS events=19 source_sha256_matched=1 fresh_run_challenge_matched=1 retail_map02=0 raw_private_data_exported=0'
+          python3 -m remaster.tools.check_map02_v144_run_challenge \
+            proof/private/v142-positive-dir/vh142-interpreter-mmio.jsonl \
+            proof/private/v144-expected-corrupt.hex --expect-refusal \
+            | grep -Fx 'VH144_REPLAYED_OR_CHANGED_NATIVE_RECEIPT_REJECTED raw_private_data_exported=0'
+          python3 -m remaster.tools.check_map02_v144_run_challenge \
+            proof/private/v142-corrupt-dir/vh142-interpreter-mmio.jsonl \
+            proof/private/v144-expected-corrupt.hex --expect-refusal \
+            | grep -Fx 'VH144_REPLAYED_OR_CHANGED_NATIVE_RECEIPT_REJECTED raw_private_data_exported=0'
           # The native output files remain private. Only public aggregates
           # and per-workflow statuses may enter uploaded artifacts.
           sha256sum -c proof/private/native.sha256
@@ -1551,6 +1589,8 @@ jobs:
           report["v142_corrupted_native_receipt_independently_refused"]=True
           report["v143_private_native_receipt_atomic_publication_required"]=True
           report["v143_no_symlink_ancestors_and_no_overwrite_verified"]=True
+          report["v144_fresh_native_challenge_bound_to_source_receipt"]=True
+          report["v144_cross_run_receipt_replay_and_mutation_refused"]=True
           report["retail_map02_gpu_rendering_verified"]=False
           Path("proof/public/v129-four-real-vblank-profiles-summary.json").write_text(
               json.dumps(report,sort_keys=True)+"\n")
