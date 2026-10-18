@@ -301,9 +301,9 @@ def run(executable, output_dir, gpu_journal_dir, *, frame, executable_sha256,
         original_source = {
             "source_keyed_native_ft4_vram_independently_replayed": True,
             "source_original_launch_receipt_sha256":
-                joined["original_launch_receipt_sha256"],
+                _require_source_sha256(joined, "original_launch_receipt_sha256"),
             "source_native_gpu_event_log_sha256":
-                joined["native_gpu_event_log_sha256"],
+                _require_source_sha256(joined, "native_gpu_event_log_sha256"),
             "source_original_trace_same_session_as_live_elf_authenticated": False,
         }
 
@@ -331,6 +331,20 @@ def run(executable, output_dir, gpu_journal_dir, *, frame, executable_sha256,
         "private_pixel_bytes_or_paths_emitted": False,
     }
 
+
+
+def _require_source_sha256(report, key):
+    """Fail closed on untrusted source-replay digest fields.
+
+    The returned summary intentionally exposes only independently checked
+    lowercase hex digests. Never relay an arbitrary private file path or
+    untrusted string as if it were an SHA-256 commitment.
+    """
+    value = report.get(key) if type(report) is dict else None
+    if (type(value) is not str or len(value) != 64
+            or any(ch not in "0123456789abcdef" for ch in value)):
+        raise ValueError("MAP02 independent source witness has invalid SHA-256 digest")
+    return value
 
 
 def _safe_cli_failure(exc):
