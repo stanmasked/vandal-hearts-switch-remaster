@@ -116,11 +116,25 @@ def _gpu_snapshot_differences(first_fd, second_fd, first_pairs,
     first_changed_pixels = None
     first_changed_scanlines = None
     first_changed_stp_bits = None
+    last_change = None
+    first_reconvergence = None
+    divergence_reappeared = False
+    divergence_transitions = 0
+    previous_different = None
     for step in range(common):
         name = f"gpu-{step:04d}-vram.bin"
         left, _ = _private_raw(first_fd, name)
         right, _ = _private_raw(second_fd, name)
-        if left != right:
+        different_here = left != right
+        if previous_different is not None and different_here != previous_different:
+            divergence_transitions += 1
+        if (not different_here and last_change is not None
+                and first_reconvergence is None):
+            first_reconvergence = step
+        if different_here:
+            if first_reconvergence is not None:
+                divergence_reappeared = True
+            last_change = step
             changed += 1
             if step % 2 == 0:
                 changed_before += 1
@@ -130,6 +144,7 @@ def _gpu_snapshot_differences(first_fd, second_fd, first_pairs,
                 first_change = step
                 first_changed_pixels, first_changed_scanlines, first_changed_stp_bits = (
                     _private_difference(left, right))
+        previous_different = different_here
         check_inventories()
     return {
         "first_gpu_vram_snapshot_count": first_count,
@@ -140,6 +155,13 @@ def _gpu_snapshot_differences(first_fd, second_fd, first_pairs,
         "different_gpu_after_vram_snapshots": changed_after,
         "unmatched_gpu_vram_snapshots": abs(first_count - second_count),
         "first_different_gpu_vram_snapshot_index": first_change,
+        "last_different_gpu_vram_snapshot_index": last_change,
+        "first_reconverged_gpu_vram_snapshot_index": first_reconvergence,
+        "gpu_vram_equal_different_state_transitions": divergence_transitions,
+        "gpu_vram_divergence_reappeared_after_reconvergence":
+            divergence_reappeared,
+        "gpu_vram_reconverged_at_common_prefix_end":
+            changed > 0 and previous_different is False,
         "first_different_gpu_draw_pair_index": (
             None if first_change is None else first_change // 2),
         "first_different_gpu_snapshot_phase": (

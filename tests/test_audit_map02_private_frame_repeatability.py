@@ -94,6 +94,11 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
         self.assertEqual(result["different_gpu_before_vram_snapshots"], 0)
         self.assertEqual(result["different_gpu_after_vram_snapshots"], 0)
         self.assertIsNone(result["first_different_gpu_vram_snapshot_index"])
+        self.assertIsNone(result["last_different_gpu_vram_snapshot_index"])
+        self.assertIsNone(result["first_reconverged_gpu_vram_snapshot_index"])
+        self.assertEqual(result["gpu_vram_equal_different_state_transitions"], 0)
+        self.assertFalse(result["gpu_vram_reconverged_at_common_prefix_end"])
+        self.assertFalse(result["gpu_vram_divergence_reappeared_after_reconvergence"])
         self.assertIsNone(result["first_different_gpu_draw_pair_index"])
         self.assertIsNone(result["first_different_gpu_snapshot_phase"])
         self.assertIsNone(result["first_different_gpu_snapshot_changed_pixels"])
@@ -121,6 +126,11 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
         self.assertFalse(out["repeated_gpu_final_vram_identical"])
         self.assertEqual(out["different_gpu_vram_snapshots_in_common_prefix"], 1)
         self.assertEqual(out["first_different_gpu_vram_snapshot_index"], 1)
+        self.assertEqual(out["last_different_gpu_vram_snapshot_index"], 1)
+        self.assertIsNone(out["first_reconverged_gpu_vram_snapshot_index"])
+        self.assertEqual(out["gpu_vram_equal_different_state_transitions"], 1)
+        self.assertFalse(out["gpu_vram_reconverged_at_common_prefix_end"])
+        self.assertFalse(out["gpu_vram_divergence_reappeared_after_reconvergence"])
         self.assertEqual(out["first_different_gpu_draw_pair_index"], 0)
         self.assertEqual(out["first_different_gpu_snapshot_phase"], "after")
         self.assertEqual(out["first_different_gpu_snapshot_changed_pixels"], 1)
@@ -151,6 +161,11 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
         self.assertEqual(result["gpu_vram_snapshots_compared"], 2)
         self.assertEqual(result["different_gpu_vram_snapshots_in_common_prefix"], 1)
         self.assertEqual(result["first_different_gpu_vram_snapshot_index"], 0)
+        self.assertEqual(result["last_different_gpu_vram_snapshot_index"], 0)
+        self.assertEqual(result["first_reconverged_gpu_vram_snapshot_index"], 1)
+        self.assertEqual(result["gpu_vram_equal_different_state_transitions"], 1)
+        self.assertTrue(result["gpu_vram_reconverged_at_common_prefix_end"])
+        self.assertFalse(result["gpu_vram_divergence_reappeared_after_reconvergence"])
         self.assertEqual(result["first_different_gpu_draw_pair_index"], 0)
         self.assertEqual(result["first_different_gpu_snapshot_phase"], "before")
         self.assertEqual(result["first_different_gpu_snapshot_changed_pixels"], 1)
@@ -172,6 +187,8 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
         self.assertTrue(result["repeated_gpu_event_journal_identical"])
         self.assertEqual(result["different_bgr555_pixels"], 0)
         self.assertEqual(result["first_different_gpu_snapshot_phase"], "before")
+        self.assertEqual(result["first_reconverged_gpu_vram_snapshot_index"], 1)
+        self.assertTrue(result["gpu_vram_reconverged_at_common_prefix_end"])
         self.assertEqual(result["first_different_gpu_snapshot_changed_pixels"], 1)
         self.assertEqual(result["first_different_gpu_snapshot_changed_scanlines"], 1)
         self.assertEqual(result["first_different_gpu_snapshot_stp_bit_differences"], 1)
@@ -196,8 +213,53 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
             diagnostics["repeated_full_gpu_vram_snapshot_sequence_identical"])
         self.assertEqual(diagnostics["different_gpu_vram_snapshots_in_common_prefix"], 0)
         self.assertIsNone(diagnostics["first_different_gpu_vram_snapshot_index"])
+        self.assertIsNone(diagnostics["last_different_gpu_vram_snapshot_index"])
+        self.assertIsNone(diagnostics["first_reconverged_gpu_vram_snapshot_index"])
+        self.assertEqual(diagnostics["gpu_vram_equal_different_state_transitions"], 0)
+        self.assertFalse(diagnostics["gpu_vram_reconverged_at_common_prefix_end"])
         self.assertIsNone(diagnostics["first_different_gpu_snapshot_phase"])
         self.assertIsNone(diagnostics["first_different_gpu_snapshot_changed_pixels"])
+
+    def test_two_draw_pairs_show_recovery_then_repeat_divergence(self):
+        # Four synthetic snapshots: different, equal, different, equal.
+        # The index is an ordinal GPU snapshot, never a pixel coordinate.
+        pixel_count = 1024 * 512 * 2
+        clean = b"\x00" * pixel_count
+        one_pixel = b"\x01" + clean[1:]
+        def source(fd, name):
+            index = int(name[4:8])
+            raw = (one_pixel if fd == 2 and index in (0, 2) else clean)
+            return raw, ("synthetic", index)
+        checked = []
+        with patch.object(repeat, "_private_raw", side_effect=source):
+            report = repeat._gpu_snapshot_differences(
+                1, 2, 2, 2, lambda: checked.append(True))
+        self.assertEqual(len(checked), 4)
+        self.assertEqual(report["different_gpu_vram_snapshots_in_common_prefix"], 2)
+        self.assertEqual(report["first_different_gpu_vram_snapshot_index"], 0)
+        self.assertEqual(report["last_different_gpu_vram_snapshot_index"], 2)
+        self.assertEqual(report["first_reconverged_gpu_vram_snapshot_index"], 1)
+        self.assertEqual(report["gpu_vram_equal_different_state_transitions"], 3)
+        self.assertTrue(report["gpu_vram_divergence_reappeared_after_reconvergence"])
+        self.assertTrue(report["gpu_vram_reconverged_at_common_prefix_end"])
+        self.assertFalse(report["repeated_full_gpu_vram_snapshot_sequence_identical"])
+        self.assertEqual(report["first_different_gpu_snapshot_changed_pixels"], 1)
+
+    def test_two_draw_pairs_can_diverge_and_never_reconverge(self):
+        count = 1024 * 512 * 2
+        clean = b"\x00" * count
+        altered = b"\x01" + clean[1:]
+        def source(fd, name):
+            return (altered if fd == 2 else clean), ("synthetic", name)
+        with patch.object(repeat, "_private_raw", side_effect=source):
+            report = repeat._gpu_snapshot_differences(
+                1, 2, 2, 2, lambda: None)
+        self.assertEqual(report["different_gpu_vram_snapshots_in_common_prefix"], 4)
+        self.assertEqual(report["last_different_gpu_vram_snapshot_index"], 3)
+        self.assertIsNone(report["first_reconverged_gpu_vram_snapshot_index"])
+        self.assertEqual(report["gpu_vram_equal_different_state_transitions"], 0)
+        self.assertFalse(report["gpu_vram_divergence_reappeared_after_reconvergence"])
+        self.assertFalse(report["gpu_vram_reconverged_at_common_prefix_end"])
 
     def test_overlapping_capture_roles_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "directory roles overlap"):
