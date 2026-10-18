@@ -610,8 +610,8 @@ int main(int argc, char **argv) {
                 return_value={"required_symbols_present": 19}) as structural, patch(
                 "tools.map02_cycle_build_provenance.verify_build_receipt",
                 return_value={"source_pinned_full_elf_bytes_checked": True}) as build_verified, patch(
-                "tools.verify_map02_cycle_cd_gpu_join._cycle_receipt",
-                return_value=(b"synthetic-only", "b" * 64, ())) as receipt:
+                "tools.verify_map02_cycle_cd_gpu_join._cycle_cd_pair",
+                return_value=(b"cycle-bytes", (), b"cd-bytes", ())) as receipt:
             with patch.dict(os.environ, {
                     "VH_HD_PACK": "/untrusted/hd-backgrounds",
                     "VH_HD_VIDEOS": "/untrusted/hd-video",
@@ -683,8 +683,49 @@ int main(int argc, char **argv) {
                          str(self.upstream / "SLUS_004.47"))
         self.assertTrue(result["kernel_executable_hash_matched"])
         self.assertEqual(forwarded, [str(cycle)])
-        receipt.assert_called_once()
+        self.assertEqual(receipt.call_count, 2)
         self.assertTrue((self.handoff / RECEIPT).exists())
+
+    def test_cycle_wrong_cd_crc_refuses_kernel_receipt_publication(self):
+        cycle = self.handoff.parent / "cycle-wrong-cd"
+        cycle.mkdir(mode=0o700)
+        with patch(
+                "tools.check_map02_cycle_elf.audit_cycle_elf",
+                return_value={"required_symbols_present": 19}), patch(
+                "tools.map02_cycle_build_provenance.verify_build_receipt",
+                return_value={"source_pinned_full_elf_bytes_checked": True}), patch(
+                "tools.verify_map02_cycle_cd_gpu_join._cycle_cd_pair",
+                side_effect=ValueError("ordered cycle CRC32 and original CdRead receipt differ")):
+            with self.assertRaisesRegex(ValueError, "CRC32 and original CdRead"):
+                launch_observed_pc(
+                    self.handoff, self.native, self.scoped,
+                    self.binary, self.owned, upstream=self.upstream,
+                    x=10, y=20, timeout=8, cycle_dir=cycle,
+                    build_receipt_dir=self.handoff.parent / "receipt",
+                    build_bundle_dir=self.handoff.parent / "bundle")
+        self.assertFalse((self.handoff / RECEIPT).exists())
+
+    def test_cycle_cd_pair_inode_or_bytes_change_before_publish_refused(self):
+        cycle = self.handoff.parent / "cycle-cd-pair-replaced"
+        cycle.mkdir(mode=0o700)
+        original_proof = (b"cycle", ("inode-cycle",), b"original-cd", ("inode-cd",))
+        changed_proof = (b"cycle", ("inode-cycle",), b"original-cd", ("different-inode",))
+        with patch(
+                "tools.check_map02_cycle_elf.audit_cycle_elf",
+                return_value={"required_symbols_present": 19}), patch(
+                "tools.map02_cycle_build_provenance.verify_build_receipt",
+                return_value={"source_pinned_full_elf_bytes_checked": True}), patch(
+                "tools.verify_map02_cycle_cd_gpu_join._cycle_cd_pair",
+                side_effect=[original_proof, changed_proof]) as verifier:
+            with self.assertRaisesRegex(ValueError, "changed before process publication"):
+                launch_observed_pc(
+                    self.handoff, self.native, self.scoped,
+                    self.binary, self.owned, upstream=self.upstream,
+                    x=10, y=20, timeout=8, cycle_dir=cycle,
+                    build_receipt_dir=self.handoff.parent / "receipt",
+                    build_bundle_dir=self.handoff.parent / "bundle")
+        self.assertEqual(verifier.call_count, 2)
+        self.assertFalse((self.handoff / RECEIPT).exists())
 
     def test_cycle_rejects_identical_bytes_replacement_during_spawn(self):
         cycle = self.handoff.parent / "cycle-inode-race"
@@ -759,8 +800,8 @@ int main(int argc, char **argv) {
                 return_value={"required_symbols_present": 19}), patch(
                 "tools.map02_cycle_build_provenance.verify_build_receipt",
                 return_value={"source_pinned_full_elf_bytes_checked": True}), patch(
-                "tools.verify_map02_cycle_cd_gpu_join._cycle_receipt",
-                return_value=(b"synthetic-only", "f" * 64, ())):
+                "tools.verify_map02_cycle_cd_gpu_join._cycle_cd_pair",
+                side_effect=ValueError("single-process cycle nonce differs from GPU/scoped witness")):
             with self.assertRaisesRegex(ValueError, "cycle nonce differs"):
                 launch_observed_pc(
                     self.handoff, self.native, self.scoped,
