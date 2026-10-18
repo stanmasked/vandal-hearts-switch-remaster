@@ -697,6 +697,71 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
         # (1,2,3) paired captures and all possible 2/4/6-event masks.
         self.assertEqual(tested, 5 * 4**2 + 3 * 4**4 + 4**6)
 
+    def test_independent_native_gpu_audit_is_symmetric_under_capture_order(self):
+        # Swap the two *real* replay-verified synthetic native captures, not
+        # manually authored report dictionaries. Difference classification
+        # and pixel counts must be invariant, while source-labelled hashes
+        # and ordered commitments must swap.
+        invariant = (
+            "first_joint_gpu_divergence_kind",
+            "first_joint_gpu_divergence_index",
+            "first_joint_gpu_divergence_pair_index",
+            "first_joint_gpu_divergence_phase",
+            "first_different_gpu_event_record_index",
+            "first_different_gpu_vram_snapshot_index",
+            "different_gpu_event_records_in_common_prefix",
+            "different_gpu_vram_snapshots_in_common_prefix",
+            "different_bgr555_pixels",
+            "changed_scanlines",
+            "stp_bit_differences",
+            "repeated_native_frame_pixels_identical",
+            "repeated_gpu_event_records_identical",
+            "repeated_full_gpu_vram_snapshot_sequence_identical",
+        )
+        swapped = (
+            ("first_image_sha256", "second_image_sha256"),
+            ("first_gpu_journal_sha256", "second_gpu_journal_sha256"),
+            ("first_gpu_vram_timeline_sha256",
+             "second_gpu_vram_timeline_sha256"),
+            ("first_gpu_event_count", "second_gpu_event_count"),
+            ("first_gpu_vram_snapshot_count",
+             "second_gpu_vram_snapshot_count"),
+        )
+        cases = (
+            ("alternate-event", "event-only", 0),
+            ("alternate-before", "vram-only", 0),
+            ("alternate", "vram-only", 1),
+            ("alternate-event-before", "event-and-vram", 0),
+        )
+        for variant, kind, first_index in cases:
+            with self.subTest(variant=variant):
+                for folder in (self.f2, self.j2):
+                    for file in folder.iterdir():
+                        file.unlink()
+                self.capture(self.f2, self.j2, variant)
+                forward = self.run_repeat()
+                reverse = repeat.audit(
+                    self.f2, self.j2, self.f1, self.j1, self.executable)
+                self.assertEqual(
+                    forward["first_joint_gpu_divergence_kind"], kind)
+                self.assertEqual(
+                    forward["first_joint_gpu_divergence_index"], first_index)
+                for key in invariant:
+                    self.assertEqual(
+                        forward[key], reverse[key], msg=(variant, key))
+                for first_key, second_key in swapped:
+                    self.assertEqual(
+                        forward[first_key], reverse[second_key],
+                        msg=(variant, first_key, second_key))
+                    self.assertEqual(
+                        forward[second_key], reverse[first_key],
+                        msg=(variant, second_key, first_key))
+                for folder in (self.f1, self.j1, self.f2, self.j2):
+                    self.assertNotIn(str(folder), json.dumps(forward))
+                    self.assertNotIn(str(folder), json.dumps(reverse))
+                self.assertFalse(forward["hd_replacement_authorized"])
+                self.assertFalse(reverse["hd_replacement_authorized"])
+
     def test_overlapping_capture_roles_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "directory roles overlap"):
             repeat.audit(self.f1, self.j1, self.f1, self.j2, self.executable)
