@@ -74,14 +74,19 @@ def _roots(roots, seal_dir):
 
 
 def _identity(info):
+    # Stable inode identity: size and timestamps legitimately change on write.
     return (info.st_dev, info.st_ino, info.st_uid, info.st_nlink,
-            info.st_mode, info.st_size)
+            info.st_mode)
+
+
+def _complete_identity(info):
+    # After fsync, compare complete metadata including size and timestamps.
+    return _identity(info) + (info.st_size, info.st_mtime_ns, info.st_ctime_ns)
 
 
 def _dir_identity(info):
-    # Directory st_size may change after creating the sealed file.
-    return (info.st_dev, info.st_ino, info.st_uid, info.st_nlink,
-            info.st_mode)
+    # Directory st_size and timestamps change when a new entry is created.
+    return _identity(info)
 
 
 def _canonical(raw):
@@ -125,6 +130,7 @@ def _publish(directory, raw):
             raise ValueError("private final-seal directory must start empty")
         fd = os.open(NAME, os.O_RDWR | os.O_CREAT | os.O_EXCL |
                      os.O_CLOEXEC | os.O_NOFOLLOW, 0o600, dir_fd=dfd)
+        created = _identity(os.fstat(fd))
         os.fchmod(fd, 0o600)
         created = _identity(os.fstat(fd))
         done = 0
@@ -134,10 +140,18 @@ def _publish(directory, raw):
                 raise ValueError("incomplete private seal write")
             done += n
         os.fsync(fd)
-        if (os.pread(fd, len(raw), 0) != raw or
-                _identity(os.fstat(fd)) != created or
-                _identity(os.stat(NAME, dir_fd=dfd,
-                                  follow_symlinks=False)) != created or
+        completed = os.fstat(fd)
+        if (not stat.S_ISREG(completed.st_mode) or
+                stat.S_IMODE(completed.st_mode) != 0o600 or
+                completed.st_uid != os.geteuid() or
+                completed.st_nlink != 1 or completed.st_size != len(raw) or
+                _identity(completed) != created or
+                os.pread(fd, len(raw), 0) != raw or
+                _complete_identity(os.fstat(fd)) !=
+                _complete_identity(completed) or
+                _complete_identity(os.stat(NAME, dir_fd=dfd,
+                                           follow_symlinks=False)) !=
+                _complete_identity(completed) or
                 _dir_identity(os.stat(directory, follow_symlinks=False)) !=
                 _dir_identity(original_dir)):
             raise ValueError("MAP02 private final seal readback/identity differs")
