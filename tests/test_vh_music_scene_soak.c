@@ -143,7 +143,7 @@ static void request_opt_pair(unsigned which,unsigned fade) {
     assert(vh_music_scene_request(&wet_scene,&next,fade)==0);
     assert(vh_music_scene_request(&dry_scene,&next,fade)==0);
 }
-static void opt_in_48k_comparison(void) {
+static uint64_t opt_in_48k_comparison(void) {
     for(unsigned i=0u;i<128u;i++) {
         opt_sample_a[i]=(int16_t)(-8000+(int)i*127);
         opt_sample_b[i]=(int16_t)(9000-(int)i*123);
@@ -164,6 +164,7 @@ static void opt_in_48k_comparison(void) {
     assert(dry_scene.keep_reverb_across_cues==0u);
     request_opt_pair(1u,0u);
     uint64_t delivered=0u;
+    uint64_t fingerprint=UINT64_C(1469598103934665603);
     unsigned divergent_blocks=0u,frame_drift=0u;
     unsigned divergence_near_transition=0u,changed=0u;
     for(unsigned block=0u;block<512u;block++) {
@@ -190,6 +191,15 @@ static void opt_in_48k_comparison(void) {
         assert(wet_count==dry_count &&
                wet_count>=555u && wet_count<=559u);
         delivered+=wet_count;
+        /* Compare replay reproducibility over the FULL output stream,
+         * including the two intentionally different wet/dry channels.
+         * Hash sample values, not platform-specific struct padding. */
+        for(size_t k=0u;k<2u*wet_count;k++) {
+            fingerprint^=(uint16_t)wet_48k[k];
+            fingerprint*=UINT64_C(1099511628211);
+            fingerprint^=(uint16_t)dry_48k[k];
+            fingerprint*=UINT64_C(1099511628211);
+        }
         assert(wet_rate.input_frames==dry_rate.input_frames &&
                wet_rate.input_frames==((uint64_t)block+1u)*512u);
         /* PCM history samples naturally differ with retained wet
@@ -249,8 +259,10 @@ static void opt_in_48k_comparison(void) {
     assert(vh_music_scene_detach(&wet_scene)==0);
     assert(vh_music_scene_detach(&dry_scene)==0);
     assert(wet_scene.active.id==0u && dry_scene.active.id==0u);
-    printf("opt-in STUDIO_C -> 48k: PASS %u blocks, %u divergent, %llu frames\n",
-           512u,divergent_blocks,(unsigned long long)delivered);
+    printf("opt-in STUDIO_C -> 48k: PASS %u blocks, %u divergent, %llu frames, hash %016llx\n",
+           512u,divergent_blocks,(unsigned long long)delivered,
+           (unsigned long long)fingerprint);
+    return fingerprint;
 }
 
 int main(void) {
@@ -298,6 +310,8 @@ int main(void) {
            BLOCKS,(unsigned long long)frames,(unsigned long long)checksum);
     rapid_scene_stress(0u);
     rapid_scene_stress(1u);
-    opt_in_48k_comparison();
+    const uint64_t first_run=opt_in_48k_comparison();
+    const uint64_t replay=opt_in_48k_comparison();
+    assert(first_run==replay); /* no hidden previous-bank state */
     return 0;
 }
