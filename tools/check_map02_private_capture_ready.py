@@ -12,6 +12,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import stat
 
 from tools.map02_blendg1_witness import compare_blendg1_witnesses
@@ -41,6 +42,14 @@ def _snapshot_word(directory, filename, x, y):
     This checks only a two-byte sample, NOT the provenance of a whole frame.
     O_NONBLOCK ensures a FIFO substituted at open cannot hang the preflight.
     """
+    # Treat the event-supplied name as untrusted, including at direct
+    # call sites: never allow a slash, dot segment or another file type.
+    if (type(filename) is not str or
+            re.fullmatch(r"gpu-[0-9]{4}-vram\\.bin", filename) is None):
+        raise ValueError("invalid native VRAM snapshot filename")
+    if (type(x) is not int or type(y) is not int or
+            not 0 <= x < 1024 or not 0 <= y < 512):
+        raise ValueError("invalid native VRAM sample coordinates")
     path = directory / filename
     flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) |
              getattr(os, "O_NOFOLLOW", 0) |
@@ -56,7 +65,9 @@ def _snapshot_word(directory, filename, x, y):
                     info.st_ctime_ns)
 
         info = os.fstat(fd)
-        if not stat.S_ISREG(info.st_mode) or info.st_size != VRAM_BYTES:
+        if (not stat.S_ISREG(info.st_mode) or
+                info.st_uid != os.geteuid() or info.st_nlink != 1 or
+                info.st_size != VRAM_BYTES):
             raise ValueError("native VRAM snapshot has wrong type or size")
         address = (y * 1024 + x) * 2
         first = os.pread(fd, 2, address)
