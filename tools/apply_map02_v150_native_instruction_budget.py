@@ -86,7 +86,11 @@ def patch_frontend(source: str) -> str:
     source=once(source,
         "\tint vh147_generic_trace = 0;\n",
         "\tint vh147_generic_trace = 0;\n"
-        "\tint vh150_bounded_instructions = 0;\n",
+        "\tint vh150_bounded_instructions = 0;\n"
+        "\textern int vh150_arm(uint32_t,uint32_t,unsigned);\n"
+        "\textern unsigned vh150_steps(void);\n"
+        "\textern unsigned vh150_stop_reason(void);\n"
+        "\textern void vh150_disarm(void);\n",
         "explicit native guest budget opt-in variable")
     source=once(source,
         '\t\telse if (!strcmp(argv[i], "--vh147-bounded-mmio"))\n',
@@ -110,10 +114,7 @@ def patch_frontend(source: str) -> str:
     end=0x80010000 + len(raw)-2048
     replacement=(
         "        if(vh150_bounded_instructions){\n"
-        "            extern int vh150_arm(uint32_t,uint32_t,unsigned);\n"
-        "            extern unsigned vh150_steps(void);\n"
-        "            extern unsigned vh150_stop_reason(void);\n"
-        "            extern void vh150_disarm(void);\n"
+
         f"            if(vh150_arm(0x80010000u,0x{end:08x}u,3u)!=0){{\n"
         '                SysPrintf("VH150_NATIVE_BUDGET_REFUSED\\n");\n'
         "                ClosePlugins();SysClose();menu_finish();plat_finish();return 54;\n"
