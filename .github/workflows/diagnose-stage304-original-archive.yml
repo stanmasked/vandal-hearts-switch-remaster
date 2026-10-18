@@ -150,6 +150,10 @@ jobs:
                 doc["missing_archived_pinned_sources"])
           print("Ambiguous pinned source files:",
                 doc["ambiguous_archived_pinned_sources"])
+          print("Strict archived Stage304 replay error kind:",
+                doc.get("source_replay_error_kind","none"))
+          print("Strict archived Stage304 replay rejected source invariant:",
+                doc.get("source_replay_invariant","none"))
           with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as output:
               output.write("### Stage304 prior failed NeXium archive postmortem\n\n")
               output.write("- Original run **39157976877 failed**; not promoted to success.\n")
