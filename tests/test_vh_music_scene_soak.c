@@ -90,6 +90,120 @@ static void rapid_scene_stress(void) {
            updates,deferred,scene.switches,(unsigned long long)frames);
 }
 
+/* Compare legacy and opt-in directors under the SAME game cue
+ * schedule through the real 44.1->48 kHz transport, rather than
+ * comparing only the internal 44.1-kHz SPU buffer. */
+static VhMusicScene wet_scene, dry_scene;
+static VhNativeSpu wet_spu, dry_spu;
+static VhAudioResample wet_rate, dry_rate;
+static int16_t wet_raw[1024], dry_raw[1024];
+static int16_t wet_48k[1280], dry_48k[1280];
+static int16_t opt_sample_a[128], opt_sample_b[128];
+
+static int lookup_opt(void *context, unsigned program, unsigned note,
+                      unsigned velocity, unsigned volume, unsigned pan,
+                      VhSeqTone *tone) {
+    (void)context;(void)volume;(void)pan;
+    if(program!=7u || !velocity || (note!=60u && note!=64u))
+        return -1;
+    memset(tone,0,sizeof(*tone));
+    tone->pcm=note==60u?opt_sample_a:opt_sample_b;
+    tone->frames=128u;
+    tone->loop_start=0;
+    tone->loop_end=128;
+    tone->pitch_step=note==60u?4096u:5161u;
+    tone->adsr1=15;
+    tone->gain_left=0.8f;
+    tone->gain_right=0.6f;
+    tone->reverb_send=1;
+    return 0;
+}
+static void request_opt_pair(unsigned which,unsigned fade) {
+    const VhMusicCue next={
+        which,which==2u?seq_b:seq_a,
+        which==2u?sizeof seq_b:sizeof seq_a,
+        0u,lookup_opt,NULL
+    };
+    assert(vh_music_scene_request(&wet_scene,&next,fade)==0);
+    assert(vh_music_scene_request(&dry_scene,&next,fade)==0);
+}
+static void opt_in_48k_comparison(void) {
+    for(unsigned i=0u;i<128u;i++) {
+        opt_sample_a[i]=(int16_t)(-8000+(int)i*127);
+        opt_sample_b[i]=(int16_t)(9000-(int)i*123);
+    }
+    vh_native_spu_reset(&wet_spu);
+    vh_native_spu_reset(&dry_spu);
+    assert(vh_native_spu_set_interpolation(
+        &wet_spu,VH_SPU_GAUSSIAN)==0);
+    assert(vh_native_spu_set_interpolation(
+        &dry_spu,VH_SPU_GAUSSIAN)==0);
+    assert(vh_native_spu_set_reverb(&wet_spu,1,0.5f)==0);
+    assert(vh_native_spu_set_reverb(&dry_spu,1,0.5f)==0);
+    vh_music_scene_init(&wet_scene,&wet_spu);
+    vh_music_scene_init(&dry_scene,&dry_spu);
+    vh_audio_resample_reset(&wet_rate);
+    vh_audio_resample_reset(&dry_rate);
+    assert(vh_music_scene_set_reverb_continuity(&wet_scene,1)==0);
+    assert(dry_scene.keep_reverb_across_cues==0u);
+    request_opt_pair(1u,0u);
+    uint64_t delivered=0u;
+    unsigned divergent_blocks=0u,frame_drift=0u;
+    unsigned divergence_near_transition=0u,changed=0u;
+    for(unsigned block=0u;block<512u;block++) {
+        if(block==64u || block==192u || block==320u) {
+            request_opt_pair(block==192u?1u:2u,8u);
+            ++changed;
+        }
+        assert(vh_music_scene_render(&wet_scene,wet_raw)==0);
+        assert(vh_music_scene_render(&dry_scene,dry_raw)==0);
+        assert(wet_scene.blocks_rendered==dry_scene.blocks_rendered &&
+               wet_scene.blocks_rendered==(uint64_t)block+1u);
+        assert(wet_scene.stage==dry_scene.stage &&
+               wet_scene.fade_position==dry_scene.fade_position &&
+               wet_scene.switches==dry_scene.switches &&
+               wet_scene.active.id==dry_scene.active.id);
+        assert(wet_scene.seq.blocks_advanced==
+               dry_scene.seq.blocks_advanced);
+        assert(wet_scene.seq.note_ons==dry_scene.seq.note_ons &&
+               wet_scene.seq.note_offs==dry_scene.seq.note_offs);
+        const size_t wet_count=vh_audio_resample_process(
+            &wet_rate,wet_raw,512u,wet_48k,640u);
+        const size_t dry_count=vh_audio_resample_process(
+            &dry_rate,dry_raw,512u,dry_48k,640u);
+        assert(wet_count==dry_count &&
+               wet_count>=555u && wet_count<=559u);
+        delivered+=wet_count;
+        assert(wet_rate.input_frames==dry_rate.input_frames &&
+               wet_rate.input_frames==((uint64_t)block+1u)*512u);
+        if(memcmp(&wet_rate,&dry_rate,sizeof wet_rate)!=0)
+            ++frame_drift;
+        if(memcmp(wet_48k,dry_48k,wet_count*2u*sizeof(int16_t))!=0) {
+            ++divergent_blocks;
+            if(block>=73u && block<104u)
+                ++divergence_near_transition;
+        }
+        assert(!wet_scene.last_error && !dry_scene.last_error);
+        for(unsigned voice=0u;voice<VH_NATIVE_MUSIC_VOICES;voice++) {
+            const int16_t *a=wet_spu.voice[voice].pcm;
+            const int16_t *b=dry_spu.voice[voice].pcm;
+            assert(!a || a==opt_sample_a || a==opt_sample_b);
+            assert(!b || b==opt_sample_a || b==opt_sample_b);
+        }
+    }
+    assert(changed==3u && wet_scene.switches==4u &&
+           dry_scene.switches==4u);
+    assert(divergent_blocks>0u && divergence_near_transition>0u &&
+           frame_drift==0u);
+    const uint64_t expected=(((uint64_t)512u*512u)-1u)*160u/147u+1u;
+    assert(delivered>=expected-2u && delivered<=expected+2u);
+    assert(vh_music_scene_detach(&wet_scene)==0);
+    assert(vh_music_scene_detach(&dry_scene)==0);
+    assert(wet_scene.active.id==0u && dry_scene.active.id==0u);
+    printf("opt-in STUDIO_C -> 48k: PASS %u blocks, %u divergent, %llu frames\\n",
+           512u,divergent_blocks,(unsigned long long)delivered);
+}
+
 int main(void) {
     for(unsigned i=0;i<128;i++)sample[i]=(int16_t)(
         (int)(i*237u%24000u)-12000);
@@ -134,5 +248,6 @@ int main(void) {
     printf("scene->SEQ->SPU->STUDIO_C->48k: PASS %u blocks, %llu frames, 2 fades, checksum %016llx\n",
            BLOCKS,(unsigned long long)frames,(unsigned long long)checksum);
     rapid_scene_stress();
+    opt_in_48k_comparison();
     return 0;
 }
