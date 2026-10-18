@@ -354,6 +354,7 @@ class PrivateJointOneShotAuditTests(unittest.TestCase):
                 frame_pair_dir=pair, **self.source_witness_kwargs())
         self.assertEqual(audit.call_count, 1)
         self.assertTrue(result["source_keyed_native_ft4_vram_independently_replayed"])
+        self.assertTrue(result["original_source_receipt_and_roles_stable_through_replay"])
         self.assertEqual(result["source_original_launch_receipt_sha256"], "1" * 64)
         self.assertEqual(result["source_native_gpu_event_log_sha256"], "3" * 64)
         self.assertEqual(result["claimed_reference_different_bgr555_pixels"], 1)
@@ -362,6 +363,51 @@ class PrivateJointOneShotAuditTests(unittest.TestCase):
         self.assertFalse(result["retail_gameplay_or_ps1_pixels_authenticated"])
         self.assertFalse(result["hd_replacement_authorized"])
         self.assertNotIn(str(pair), json.dumps(result))
+
+    def test_original_source_receipt_same_bytes_new_inode_during_replay_refused(self):
+        pair = self.make_claimed_private_frame_pair()
+        source = self.source_witness_kwargs()
+        def replace_receipt(*args, **kwargs):
+            receipt = source["launch_receipt"]
+            replacement = receipt.with_name("fresh-private-launch.json")
+            replacement.write_bytes(receipt.read_bytes())
+            replacement.chmod(0o600)
+            os.replace(replacement, receipt)
+            return self.synthetic_original_ft4_witness(*args, **kwargs)
+        with patch.object(native_bridge, "audit_launch_two_word",
+                          side_effect=replace_receipt):
+            with self.assertRaisesRegex(
+                    ValueError, "original source input identities changed"):
+                self.run_capture(frame_pair_dir=pair, **source)
+
+    def test_original_source_directory_same_contents_new_inode_refused(self):
+        pair = self.make_claimed_private_frame_pair()
+        source = self.source_witness_kwargs()
+        def replace_dir(*args, **kwargs):
+            old = source["source_capture_dir"]
+            old.rename(old.with_name("old-private-ft4-directory"))
+            old.mkdir(mode=0o700)
+            return self.synthetic_original_ft4_witness(*args, **kwargs)
+        with patch.object(native_bridge, "audit_launch_two_word",
+                          side_effect=replace_dir):
+            with self.assertRaisesRegex(
+                    ValueError, "original source input identities changed"):
+                self.run_capture(frame_pair_dir=pair, **source)
+
+    def test_original_source_preflight_timestamp_mutation_refused(self):
+        pair = self.make_claimed_private_frame_pair()
+        source = self.source_witness_kwargs()
+        def mutate_receipt(*args, **kwargs):
+            receipt = source["preflight_report"]
+            before = receipt.stat()
+            os.utime(receipt, ns=(before.st_atime_ns,
+                                  before.st_mtime_ns + 2_000_000_000))
+            return self.synthetic_original_ft4_witness(*args, **kwargs)
+        with patch.object(native_bridge, "audit_launch_two_word",
+                          side_effect=mutate_receipt):
+            with self.assertRaisesRegex(
+                    ValueError, "original source input identities changed"):
+                self.run_capture(frame_pair_dir=pair, **source)
 
     def test_source_native_gpu_wrong_frame_rejected_not_label_joined(self):
         pair = self.make_claimed_private_frame_pair()
