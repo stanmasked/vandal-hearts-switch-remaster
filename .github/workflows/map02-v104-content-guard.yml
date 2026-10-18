@@ -196,6 +196,9 @@ on:
       - 'tools/apply_map02_v155_four_instruction_native.py'
       - 'tools/apply_map02_v156_register_checkpoints.py'
       - 'tools/apply_map02_v157_t1_fourth_checkpoint.py'
+      - 'tools/apply_map02_v158_native_gp0_fifth.py'
+      - 'tests/test_map02_v158_native_gp0_fifth.py'
+      - '.github/workflows/map02-v158-native-gp0-fifth.yml'
       - 'tests/test_map02_v157_t1_fourth_checkpoint.py'
       - '.github/workflows/map02-v157-t1-fourth-checkpoint.yml'
       - 'tests/test_map02_v156_register_checkpoints.py'
@@ -346,6 +349,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v155_four_instruction_native.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v156_register_checkpoints.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v157_t1_fourth_checkpoint.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v158_native_gp0_fifth.py' -v
           python3 -m remaster.tools.check_map02_v147_native_bounded_c --cc "${{ matrix.cc }}" \
             | grep -Fx 'VH147_COMPILED_BOUNDED_NATIVE_PASS capacity=1024 generic=1 repeated_pc=1 overflow_refused=1 atomic_mode0600=1 no_overwrite=1 original_retail=0'
           python3 -m remaster.tools.check_map02_v144_native_challenge_c --cc "${{ matrix.cc }}" \
@@ -366,7 +370,9 @@ jobs:
           git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
           git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
-          python3 -m remaster.tools.apply_map02_v157_t1_fourth_checkpoint upstream-pcsx
+          python3 -m remaster.tools.apply_map02_v158_native_gp0_fifth upstream-pcsx
+          grep -F 'vh158_capture_gp0(regs,addr,value)' upstream-pcsx/libpcsxcore/psxmem.c
+          grep -F 'VH158_NATIVE_GP0_FIFTH_PASS' upstream-pcsx/frontend/main.c
           grep -F 'vh157_arm_t1_fourth' upstream-pcsx/libpcsxcore/psxinterpreter.c
           grep -F 'VH157_NATIVE_T1_FOURTH_REFUSED' upstream-pcsx/frontend/main.c
           grep -F 'vh156_verify_previous_effects(regs,pc)' upstream-pcsx/libpcsxcore/psxinterpreter.c
@@ -1393,6 +1399,72 @@ jobs:
             exit 1
           fi
           sha256sum -c proof/private/v150-synthetic-before.sha256
+          # v158: after four verified LUI/ORI CPU instructions, execute
+          # the original self-authored fifth MIPS SW into the real GP0 MMIO
+          # writer. Verify EXACTLY one address/value source-derived store.
+          mkdir -m 700 proof/v158-gp0-positive-home
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v158-gp0-positive-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh129-vblank-04 --vh150-bounded-instructions \
+            --vh155-four-instructions --vh156-verify-register-effects \
+            --vh158-five-instructions \
+            proof/private/V129_SYNTHETIC.EXE \
+            > proof/private/v158-gp0-positive.log 2>&1 || {
+              tail -n 60 proof/private/v158-gp0-positive.log
+              exit 1
+            }
+          grep -Fx 'VH158_NATIVE_GP0_FIFTH_PASS opcodes=5 gp0_writes=1 capped=1 original_retail=0' \
+            proof/private/v158-gp0-positive.log
+          # Mutation after FOUR legitimate native instructions must refuse
+          # the fifth instruction before ANY attempted GP0 write.
+          mkdir -m 700 proof/v158-fifth-corrupt-home
+          v158_rc=0
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v158-fifth-corrupt-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh129-vblank-04 --vh150-bounded-instructions \
+            --vh155-four-instructions --vh156-verify-register-effects \
+            --vh158-five-instructions --vh158-mutate-fifth \
+            proof/private/V129_SYNTHETIC.EXE \
+            > proof/private/v158-fifth-corrupt.log 2>&1 || v158_rc=$?
+          test "$v158_rc" -eq 62
+          grep -Fx 'VH158_NATIVE_FIFTH_OPCODE_REFUSED matched=4 attempted=5 gp0_writes=0 original_retail=0' \
+            proof/private/v158-fifth-corrupt.log
+          if grep -Fq 'VH158_NATIVE_GP0_FIFTH_PASS' proof/private/v158-fifth-corrupt.log; then
+            echo 'VH158_MUTATED_MMIO_FALSE_ACCEPT_REFUSED'
+            exit 1
+          fi
+          # Five-step GP0 code must not run without four-step and register
+          # witnesses; nor alongside older opcode or register fault modes.
+          mkdir -m 700 proof/v158-invalid-home
+          v158_invalid_rc=0
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v158-invalid-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh129-vblank-04 --vh150-bounded-instructions \
+            --vh155-four-instructions --vh158-five-instructions \
+            proof/private/V129_SYNTHETIC.EXE \
+            > proof/private/v158-invalid.log 2>&1 || v158_invalid_rc=$?
+          test "$v158_invalid_rc" -eq 62
+          grep -Fx 'VH158_INVALID_MODE_REFUSED' proof/private/v158-invalid.log
+          mkdir -m 700 proof/v158-mixed-home
+          v158_mixed_rc=0
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v158-mixed-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh129-vblank-04 --vh150-bounded-instructions \
+            --vh155-four-instructions --vh156-verify-register-effects \
+            --vh157-corrupt-t1-fourth --vh158-five-instructions \
+            proof/private/V129_SYNTHETIC.EXE \
+            > proof/private/v158-mixed.log 2>&1 || v158_mixed_rc=$?
+          test "$v158_mixed_rc" -eq 62
+          grep -Fx 'VH158_INVALID_MODE_REFUSED' proof/private/v158-mixed.log
+          sha256sum -c proof/private/v150-synthetic-before.sha256
           # v157: first THREE genuine interpreted opcodes execute normally;
           # before the fourth ORI a one-bit t1 corruption is injected and
           # the native register checkpoint must refuse pre-dispatch.
@@ -2079,6 +2151,9 @@ jobs:
           report["v157_fourth_opcode_refused_before_dispatch"]=True
           report["v157_invalid_and_mixed_register_modes_rejected"]=True
           report["v157_original_game_runtime_unverified"]=True
+          report["v158_native_fifth_mips_gp0_sw_observed_exactly_once"]=True
+          report["v158_mutated_fifth_instruction_refused_without_gp0_sw"]=True
+          report["v158_original_MAP02_gameplay_unverified"]=True
           report["retail_map02_gpu_rendering_verified"]=False
           Path("proof/public/v129-four-real-vblank-profiles-summary.json").write_text(
               json.dumps(report,sort_keys=True)+"\n")
