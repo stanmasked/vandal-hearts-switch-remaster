@@ -133,12 +133,16 @@ class PhysicalScreenshotPixelTests(unittest.TestCase):
                                ("P",1164),("R",1212)):
             with self.subTest(label=label):
                 missing=frame(x="not_present",y="not_present")
-                missing.putpixel((x_coord,645),BACKGROUND)
+                for xx,yy in ((x_coord-15,640),(x_coord,645),
+                              (x_coord+14,655)):
+                    missing.putpixel((xx,yy),BACKGROUND)
                 with self.assertRaisesRegex(
                     ValueError,"missing or ambiguous " + label):
                     observe_frame(missing)
                 unknown=frame()
-                unknown.putpixel((x_coord,645),(127,127,127))
+                for xx,yy in ((x_coord-15,640),(x_coord,645),
+                              (x_coord+14,655)):
+                    unknown.putpixel((xx,yy),(127,127,127))
                 with self.assertRaisesRegex(
                     ValueError,"missing or ambiguous " + label):
                     observe_frame(unknown)
@@ -153,7 +157,8 @@ class PhysicalScreenshotPixelTests(unittest.TestCase):
                     ("unknown","blue")):
             if x=="unknown":
                 image=frame(x="yellow",y=y)
-                image.putpixel((1125,702),(127,127,127))
+                for point in ((1110,699),(1125,702),(1139,707)):
+                    image.putpixel(point,(127,127,127))
             else:
                 image=frame(x=x,y=y)
             with self.subTest(x=x,y=y):
@@ -179,11 +184,13 @@ class PhysicalScreenshotPixelTests(unittest.TestCase):
 
     def test_reject_inconsistent_or_noncontiguous_tally(self):
         broken=frame(b=1)
-        broken.putpixel((1053,671),BACKGROUND)
+        for point in ((1053,669),(1053,671),(1054,674)):
+            broken.putpixel(point,BACKGROUND)
         with self.assertRaisesRegex(ValueError,"blue without any event strokes"):
             observe_frame(broken)
         broken=frame(b=2)
-        broken.putpixel((1053,671),BACKGROUND)
+        for point in ((1053,669),(1053,671),(1054,674)):
+            broken.putpixel(point,BACKGROUND)
         with self.assertRaisesRegex(ValueError,"non-contiguous"):
             observe_frame(broken)
 
@@ -195,6 +202,26 @@ class PhysicalScreenshotPixelTests(unittest.TestCase):
         # Saturated B=5 means 5 or more: cannot infer a contradiction.
         self.assertEqual(observe_frame(frame(b=5,f=5))[
             "tallies_capped_at_five"]["B"],5)
+
+    def test_reject_partial_tile_and_tally_pixel_corruption(self):
+        # A valid-looking center pixel does not override disagreeing
+        # interior samples of a flat UI indicator.
+        for label,point in (
+            ("N",(1005,640)), ("B",(1053,640)),
+            ("F",(1101,640)), ("P",(1149,640)),
+            ("R",(1197,640)), ("X",(1110,699)),
+            ("Y",(1165,699))):
+            with self.subTest(label=label):
+                corrupt=frame(b=1,f=1,p=True)
+                corrupt.putpixel(point,(127,127,127))
+                with self.assertRaisesRegex(
+                    ValueError,"inconsistent " + label + " tile pixels"):
+                    observe_frame(corrupt)
+        tally=frame(b=1)
+        tally.putpixel((1053,669),BACKGROUND)
+        with self.assertRaisesRegex(
+            ValueError,"inconsistent B tally tile pixels"):
+            observe_frame(tally)
 
     def test_reject_decreasing_counts_and_invalid_resolution(self):
         with self.assertRaisesRegex(ValueError,"tally decreased"):
