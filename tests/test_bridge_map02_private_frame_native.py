@@ -1,6 +1,7 @@
 """Asset-free bridge between private BGR555 comparison and native MAP02 replay."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import struct
 import tempfile
@@ -162,6 +163,44 @@ class PrivateFrameNativeBridgeTests(unittest.TestCase):
         path.rename(backup)
         path.symlink_to(backup)
         with self.assertRaisesRegex(ValueError, "symlink"):
+            self.run_bridge()
+
+    def _replace_same_bytes(self, name):
+        # No pixel or JSON manifest digest drift: only the inode changes.
+        original = self.pair / name
+        replacement = self.pair / ("replacement-" + name)
+        replacement.write_bytes(original.read_bytes())
+        os.replace(replacement, original)
+
+    def test_identical_byte_candidate_inode_swap_during_native_audit_refused(self):
+        with self.assertRaisesRegex(ValueError, "changed during native witness"):
+            self.run_bridge(side_effect=lambda: self._replace_same_bytes(
+                "candidate.bgr555"))
+
+    def test_identical_byte_reference_inode_swap_during_native_audit_refused(self):
+        with self.assertRaisesRegex(ValueError, "changed during native witness"):
+            self.run_bridge(side_effect=lambda: self._replace_same_bytes(
+                "reference.bgr555"))
+
+    def test_identical_byte_manifest_inode_swap_during_native_audit_refused(self):
+        with self.assertRaisesRegex(ValueError, "changed during native witness"):
+            self.run_bridge(side_effect=lambda: self._replace_same_bytes(
+                "frames.json"))
+
+    def test_pair_directory_inode_swap_with_identical_files_refused(self):
+        def replace_directory():
+            original = self.pair.with_name("frames-parked")
+            self.pair.rename(original)
+            self.pair.mkdir()
+            for name in bridge.FRAME_PAIR_FILES:
+                (self.pair / name).write_bytes((original / name).read_bytes())
+        with self.assertRaisesRegex(ValueError, "changed during native witness"):
+            self.run_bridge(side_effect=replace_directory)
+
+    def test_hardlinked_frame_rejected_before_native_audit(self):
+        candidate = self.pair / "candidate.bgr555"
+        os.link(candidate, self.pair / "alternate-candidate")
+        with self.assertRaisesRegex(ValueError, "hardlink"):
             self.run_bridge()
 
     def test_wrong_native_schema_rejected(self):
