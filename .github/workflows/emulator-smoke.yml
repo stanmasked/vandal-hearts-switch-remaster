@@ -116,6 +116,9 @@ jobs:
           # Different build directory prevents replacing the phase0 NRO.
           make BUILD=build-phase8 AUDOUT_PROBE_PHASE=8 all
           test -s build-phase8/vandal-hearts-prototype.nro
+          # Keep artifact's root at build/ so the historical NRO path
+          # nros/vandal-hearts-prototype.nro does not change.
+          cp build-phase8/vandal-hearts-prototype.nro build/vandal-hearts-phase8.nro
 
       - name: Bind NRO bytes to current source revision and workflow run
         shell: bash
@@ -137,7 +140,7 @@ jobs:
           }
           Path("build/runtime-nro-manifest.json").write_text(
               json.dumps(record,sort_keys=True)+"\n",encoding="ascii")
-          alt=Path("build-phase8/vandal-hearts-prototype.nro")
+          alt=Path("build/vandal-hearts-phase8.nro")
           alt_data=alt.read_bytes()
           phase8={
               "schema":"vh-switch-explicit-probe-phase/v1",
@@ -151,7 +154,7 @@ jobs:
           }
           if phase8["nro_sha256"]==record["nro_sha256"]:
               raise SystemExit("phase8 NRO is identical to phase0 baseline")
-          Path("build-phase8/phase8-manifest.json").write_text(
+          Path("build/runtime-phase8-manifest.json").write_text(
               json.dumps(phase8,sort_keys=True)+"\n",encoding="ascii")
           print(json.dumps({"baseline":record,"experiment":phase8},sort_keys=True))
           PY
@@ -163,8 +166,8 @@ jobs:
           path: |
             build/vandal-hearts-prototype.nro
             build/runtime-nro-manifest.json
-            build-phase8/vandal-hearts-prototype.nro
-            build-phase8/phase8-manifest.json
+            build/vandal-hearts-phase8.nro
+            build/runtime-phase8-manifest.json
           if-no-files-found: error
 
   run-in-emulator:
@@ -1126,9 +1129,9 @@ jobs:
           python3 - <<'PY'
           import hashlib,json,os
           from pathlib import Path
-          m=json.loads(Path("nros/build-phase8/phase8-manifest.json").read_text())
-          b=json.loads(Path("nros/build/runtime-nro-manifest.json").read_text())
-          data=Path("nros/build-phase8/vandal-hearts-prototype.nro").read_bytes()
+          m=json.loads(Path("nros/runtime-phase8-manifest.json").read_text())
+          b=json.loads(Path("nros/runtime-nro-manifest.json").read_text())
+          data=Path("nros/vandal-hearts-phase8.nro").read_bytes()
           if (m["schema"]!="vh-switch-explicit-probe-phase/v1"
                   or m["phase"]!=8
                   or m["git_sha"]!=os.environ["GITHUB_SHA"]
@@ -1142,7 +1145,7 @@ jobs:
           print("Stage294 bound phase8 NRO",m["nro_sha256"])
           PY
           SOAK_MODE=switch SOAK_RUN_SUFFIX=phase8 \
-            SOAK_NRO=nros/build-phase8/vandal-hearts-prototype.nro \
+            SOAK_NRO=nros/vandal-hearts-phase8.nro \
             bash tools/capture_nexium_scene_soak.sh runtime-evidence/scene-soak-phase8
           python3 tools/audit_nexium_audout_service_probes.py \
             --expected-phase 8 \
