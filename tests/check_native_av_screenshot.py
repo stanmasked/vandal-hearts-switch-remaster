@@ -210,6 +210,10 @@ def main():
                         help="NRO whose exact bytes were launched for these screenshots")
     parser.add_argument("--source-revision",
                         help="40-digit lowercase Git commit associated with this NRO")
+    parser.add_argument("--github-run-id", type=int,
+                        help="GitHub Actions workflow run id, not a signed attestation")
+    parser.add_argument("--github-run-attempt", type=int,
+                        help="GitHub Actions attempt number for this run")
     parser.add_argument("--require-synthetic-source", action="store_true",
                         help="legacy empty SD fixture check")
     parser.add_argument("--require-audio-source",
@@ -302,6 +306,9 @@ def main():
                 raise ValueError("witness requires --nro-file and --source-revision")
             if re.fullmatch(r"[0-9a-f]{40}",args.source_revision) is None:
                 raise ValueError("source revision must be exactly 40 lowercase hex characters")
+            if not (args.github_run_id and args.github_run_id > 0 and
+                    args.github_run_attempt and args.github_run_attempt > 0):
+                raise ValueError("witness requires positive GitHub run id and attempt")
             if args.witness_out.exists():
                 raise ValueError("refusing to overwrite existing witness")
             # File hashes bind the derived verdict to the exact PNG/NRO
@@ -310,6 +317,8 @@ def main():
             witness={
                 "format": "vh-native-av-guest-witness-v1",
                 "source_revision": args.source_revision,
+                "github_run_id": args.github_run_id,
+                "github_run_attempt": args.github_run_attempt,
                 "nro_sha256": digest(args.nro_file),
                 "first_frame_sha256": digest(args.before),
                 "second_frame_sha256": digest(args.after),
