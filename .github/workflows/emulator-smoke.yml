@@ -103,6 +103,7 @@ jobs:
           export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$DEVKITPRO/portlibs/switch/bin:$PATH"
           make test
           python3 -m unittest discover -s tests -p "test_analyze_nexium_pcm.py" -v
+          python3 -m unittest discover -s tests -p "test_analyze_nexium_pcm_stream_integrity.py" -v
           python3 -m unittest discover -s tests -p "test_analyze_nexium_scene_audio.py" -v
           python3 -m unittest discover -s tests -p "test_audit_nexium_audout_queue.py" -v
           python3 -m unittest discover -s tests -p "test_audit_nexium_audout_latency.py" -v
@@ -1407,6 +1408,49 @@ jobs:
                 } for k in ("ge40","ge50")} for x in r["sessions"]})
           PY
           echo "Stage298: actual 1-in-16 queried-call software delays partitioned exactly from all other original-SD calls; no offphase service queue reading inferred." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage299 verify two real virtual PCM streams and observable continuity indicators
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/analyze_nexium_pcm_stream_integrity.py \
+            --monitor runtime-evidence/nexium-monitor-s16le-48k.pcm \
+            --monitor-report runtime-evidence/pcm-quality-report.json \
+            --scenes runtime-evidence/nexium-scenes-s16le-48k.pcm \
+            --scene-report runtime-evidence/scene-audio-report.json \
+            --events runtime-evidence/scene-events.csv \
+            --output runtime-evidence/pcm-stream-integrity-stage299.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("runtime-evidence/pcm-stream-integrity-stage299.json")
+          r=json.loads(p.read_text())
+          if (r["result"]!="TWO_ORIGINAL_NEXIUM_VIRTUAL_PCM_STREAMS_AUDITED"
+                  or r["both_prior_PCM_audits_bound_by_exact_SHA256"] is not True
+                  or r["all_stereo_frames_and_10ms_blocks_accounted"] is not True
+                  or r["physical_Nintendo_Switch_hardware_tested"] is not False
+                  or r["dropped_or_duplicated_audio_frames_proven"] is not False):
+              raise SystemExit("Stage299 real PCM integrity report invalid")
+          for label in ("monitor_capture","scene_capture"):
+              x=r[label]
+              if (x["frames"]*4!=x["pcm_bytes"]
+                      or x["analysis_blocks"]!=(x["frames"]+479)//480
+                      or x["ge4096_deltas_at_10ms_block_boundaries"]>
+                         x["adjacent_frame_deltas_ge4096"]
+                      or x["possible_sample_discontinuities_are_not_verified_dropouts"]
+                         is not True
+                      or x["guest_audio_queue_state_not_measured_by_pcm"] is not True):
+                  raise SystemExit("Stage299 incomplete PCM block or scope accounting")
+          if len(r["scene_capture"]["scene_event_markers"])!=5:
+              raise SystemExit("Stage299 scene event offset binding failed")
+          print("Stage299 virtual monitor PCM indicators:",
+                {n:{k:r[n][k] for k in (
+                    "frames","analysis_blocks","exact_zero_stereo_runs",
+                    "longest_exact_zero_stereo_run_seconds",
+                    "adjacent_frame_deltas_ge4096")}
+                 for n in ("monitor_capture","scene_capture")})
+          PY
+          echo "Stage299: 2 SHA256-bound NeXium virtual PCM recordings checked for frame/block integrity and signal discontinuity indicators; NOT physical or audible dropout evidence." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Record audio capture boundary
         if: always()
