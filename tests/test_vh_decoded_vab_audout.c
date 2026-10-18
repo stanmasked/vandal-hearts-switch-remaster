@@ -448,6 +448,91 @@ int main(void) {
         &waits,&recovery,&d.timing,TOTAL,boundaries,TOTAL,BLOCKS,1)==1);
     assert(vh_audio_report_evidence(1,0,0,0,0)==VH_AUDIO_REPORT_FULL);
 
+    /* The scene-boundary cases above recover single service faults.
+     * Also exhaust BOTH reopen attempts for each failure stage,
+     * then explicitly resume later. Failed stop must abort before
+     * close/open; failed open/start must not silently send PCM.
+     * This is a host callback simulation, not a real HOME event. */
+    {
+        const VhNativeSeq saved_seq=seq;
+        const uint64_t saved_spu_frames=spu.frames_rendered;
+        const int saved_reverb_cursor=spu.reverb.cursor;
+        const int16_t saved_reverb_tail=spu.reverb.work[0];
+        const VhAudioResample saved_resampler=resampler;
+        const VhAudioResample saved_oracle_resampler=oracle_resampler;
+        const uint64_t saved_oracle_blocks=oracle_seq.blocks_advanced;
+        const uint64_t saved_calls=d.submitted, saved_pages=d.accepted;
+        const uint64_t saved_hash=d.returned_hash;
+        const VhAudioSubmitTiming saved_timing=d.timing;
+        const VhAudioSceneWaits saved_waits=waits;
+        const VhAudioPcmSeams saved_seams=seams;
+        const VhAudioComputeWaitJoin saved_joint=joint;
+        const VhAudioListeningMarks saved_marks=marks;
+
+        for(unsigned fault=0u;fault<3u;fault++) {
+            assert(ops.stop(ops.context)==0);
+            const unsigned restarts=recovery.resume_restarts;
+            const unsigned failures=recovery.resume_failures;
+            const unsigned successes=recovery.resume_recoveries;
+            if(fault==0u) {
+                d.fail_resume_stop_left=VH_AUDIO_OUTPUT_RESTART_LIMIT;
+                for(unsigned n=0u;n<VH_AUDIO_OUTPUT_RESTART_LIMIT;n++) {
+                    assert(vh_audio_output_resume_recover(
+                        &ops,&recovery,1)==-1);
+                    assert(recovery.resume_restarts==restarts &&
+                           recovery.resume_failures==failures &&
+                           recovery.resume_recoveries==successes);
+                    assert(d.open && !d.playing);
+                }
+            } else {
+                if(fault==1u)
+                    d.fail_resume_open_left=VH_AUDIO_OUTPUT_RESTART_LIMIT;
+                else
+                    d.fail_resume_start_left=VH_AUDIO_OUTPUT_RESTART_LIMIT;
+                assert(vh_audio_output_resume_recover(
+                    &ops,&recovery,1)==-1);
+                assert(recovery.resume_restarts==
+                       restarts+VH_AUDIO_OUTPUT_RESTART_LIMIT);
+                assert(recovery.resume_failures==
+                       failures+VH_AUDIO_OUTPUT_RESTART_LIMIT);
+                assert(recovery.resume_recoveries==successes);
+                assert(!d.playing);
+            }
+            /* A subsequent explicit recovery may start a new session;
+             * it must not retroactively accept or replay prior pages. */
+            assert(vh_audio_output_resume_recover(
+                &ops,&recovery,1)==0);
+            assert(d.open && d.playing);
+            assert(!d.fail_resume_stop_left &&
+                   !d.fail_resume_open_left &&
+                   !d.fail_resume_start_left);
+            assert(recovery.resume_restarts==restarts+
+                   (fault==0u?1u:VH_AUDIO_OUTPUT_RESTART_LIMIT+1u));
+            assert(recovery.resume_failures==failures+
+                   (fault==0u?0u:VH_AUDIO_OUTPUT_RESTART_LIMIT));
+            assert(recovery.resume_recoveries==successes+1u);
+            assert(d.submitted==saved_calls && d.accepted==saved_pages &&
+                   d.returned_hash==saved_hash);
+            assert(!memcmp(&d.timing,&saved_timing,sizeof saved_timing));
+            assert(!memcmp(&waits,&saved_waits,sizeof saved_waits));
+            assert(!memcmp(&seams,&saved_seams,sizeof saved_seams));
+            assert(!memcmp(&joint,&saved_joint,sizeof saved_joint));
+            assert(!memcmp(&marks,&saved_marks,sizeof saved_marks));
+            assert(!memcmp(&seq,&saved_seq,sizeof saved_seq));
+            assert(spu.frames_rendered==saved_spu_frames);
+            assert(spu.reverb.cursor==saved_reverb_cursor &&
+                   spu.reverb.work[0]==saved_reverb_tail);
+            assert(oracle_seq.blocks_advanced==saved_oracle_blocks);
+            assert(!memcmp(&resampler,&saved_resampler,
+                           sizeof saved_resampler));
+            assert(!memcmp(&oracle_resampler,&saved_oracle_resampler,
+                           sizeof saved_oracle_resampler));
+        }
+        assert(vh_audio_output_verify_run(
+            &waits,&recovery,&d.timing,TOTAL,boundaries,
+            TOTAL,BLOCKS,1)==1);
+    }
+
     /* Final page was rendered but NEVER delivered. A failed audout
      * page has no seam, no DSP returned event and no A/B ring entry.
      * The scene switches and prior accepted samples remain intact. */
