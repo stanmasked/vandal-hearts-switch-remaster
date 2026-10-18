@@ -19,6 +19,8 @@ on:
       - 'tools/analyze_nexium_probe_phase_sensitivity.py'
       - 'tools/analyze_nexium_phase_selection_gap.py'
       - 'tools/compare_nexium_real_queue_phases.py'
+      - 'tools/audit_nexium_phase_order_reversal.py'
+      - 'tests/test_audit_nexium_phase_order_reversal.py'
       - 'tests/test_compare_nexium_real_queue_phases.py'
       - 'tools/analyze_nexium_slow_call_cycle_occupancy.py'
       - 'tests/test_analyze_nexium_slow_call_cycle_occupancy.py'
@@ -1245,6 +1247,76 @@ jobs:
                     "slow_ge50_on_queried_attempts")} for p in ("phase0","phase8")})
           PY
           echo "Stage295: two truly queried separate-NRO service phases compared with original-SD provenance; NOT a causal DAC/audio experiment." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage296 reversed order phase8 then phase0 with isolated original SD
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Baseline has already run phase0 and phase8 in this workflow.
+          # Do NOT rerun with the same isolated SD root or fake source.
+          audit_reversed() {
+            local phase="$1" suffix="$2" output="$3" binary="$4"
+            SOAK_MODE=switch SOAK_RUN_SUFFIX="$suffix" SOAK_NRO="$binary" \
+              bash tools/capture_nexium_scene_soak.sh "$output"
+            mapfile -t scene_files < "$output/soak-sd-locations.txt"
+            test "${#scene_files[@]}" -eq 1
+            test -s "$output/soak-sd-unverified.csv"
+            cmp -- "${scene_files[0]}" "$output/soak-sd-unverified.csv"
+            # Do not allow a copied prior source for ANY audout series.
+            for name in queue latency clock slow probe; do
+              case "$name" in
+                queue) stem="soak-audout-sd";;
+                *) stem="soak-audout-$name";;
+              esac
+              mapfile -t original < "$output/$stem-locations.txt"
+              test "${#original[@]}" -eq 1
+              test -s "$output/$stem-unverified.csv"
+              cmp -- "${original[0]}" "$output/$stem-unverified.csv"
+            done
+            python3 tools/audit_nexium_audout_service_probes.py \
+              --expected-phase "$phase" \
+              --source "$output/soak-audout-probe-unverified.csv" \
+              --locations "$output/soak-audout-probe-locations.txt" \
+              --receipt "$output/soak-audout-probe-export-result.txt" \
+              --sd-root "$RUNNER_TEMP/vh-nexium-stage268-${GITHUB_RUN_ID}-$suffix" \
+              --queue-csv "$output/soak-audout-sd-unverified.csv" \
+              --clock-csv "$output/soak-audout-clock-unverified.csv" \
+              --latency-csv "$output/soak-audout-latency-unverified.csv" \
+              --slow-csv "$output/soak-audout-slow-unverified.csv" \
+              --scene-csv "$output/soak-sd-unverified.csv" \
+              --output "$output/verified-real-probe.json"
+          }
+          audit_reversed 8 phase8r runtime-evidence/phase296-phase8-reversed phase8/vandal-hearts-phase8.nro
+          audit_reversed 0 phase0r runtime-evidence/phase296-phase0-reversed nros/vandal-hearts-prototype.nro
+          python3 tools/audit_nexium_phase_order_reversal.py \
+            --phase0-first runtime-evidence/scene-soak/soak-audout-probe-verification.json \
+            --phase8-first runtime-evidence/scene-soak-phase8/phase8-original-SD-probe-audit.json \
+            --phase8-reversed runtime-evidence/phase296-phase8-reversed/verified-real-probe.json \
+            --phase0-reversed runtime-evidence/phase296-phase0-reversed/verified-real-probe.json \
+            --phase0-manifest nros/runtime-nro-manifest.json \
+            --phase8-manifest phase8/runtime-phase8-manifest.json \
+            --output runtime-evidence/phase296-reversed-query-order.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("runtime-evidence/phase296-reversed-query-order.json").read_text())
+          if (r["result"]!="FOUR_ORIGINAL_GUEST_SD_PHASE0_PHASE8_REVERSED_ORDER_VERIFIED"
+                  or r["capture_sequence"]!=[
+                    "phase0_first","phase8_first","phase8_reversed","phase0_reversed"]
+                  or not r["all_four_guest_SD_probe_sha256_distinct"]
+                  or not r["all_four_guest_SD_sources_originally_audited"]
+                  or r["total_queried_attempts"]<=0
+                  or r["causal_effect_of_phase_or_order_proven"] is not False
+                  or r["physical_switch_audio_or_DAC_underrun_measured"] is not False):
+              raise SystemExit("Stage296 phase order witness is not sound")
+          print("Stage296 four original-SD phase sessions:",
+                {x["label"]:{
+                    "query_samples":x["service_query_count"],
+                    "slow_calls_ge40":x["slow_ge40_on_queried_attempts"],
+                    "nonzero_service_count":x["successful_service_queries_with_nonzero_queue"]
+                } for x in r["session_records"]})
+          PY
+          echo "Stage296: four independent original guest SD phases 0,8,8,0 checked; correlation only, not causal guest DAC audio." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Record audio capture boundary
         if: always()

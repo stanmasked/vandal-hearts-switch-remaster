@@ -27,7 +27,7 @@ pactl set-default-sink vh_nexium_capture
 # A distinct current-run guest SD root is mandatory for an alternate
 # phase experiment; never copy/relabel a phase0 source as phase8.
 SOAK_RUN_SUFFIX="${SOAK_RUN_SUFFIX:-}"
-case "$SOAK_RUN_SUFFIX" in ""|phase8) ;; *) echo "Invalid SOAK_RUN_SUFFIX" >&2; exit 2;; esac
+case "$SOAK_RUN_SUFFIX" in ""|phase8|phase8r|phase0r) ;; *) echo "Invalid SOAK_RUN_SUFFIX" >&2; exit 2;; esac
 if [[ "$SOAK_MODE" == idle ]]; then
   export NEXIUM_DATA_ROOT="${RUNNER_TEMP}/vh-nexium-idle276-${GITHUB_RUN_ID:-local}${SOAK_RUN_SUFFIX:+-$SOAK_RUN_SUFFIX}"
 else
