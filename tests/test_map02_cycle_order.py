@@ -129,6 +129,21 @@ int main(int argc, char **argv) {
         vh_map02_cd_read_sector(0x1bcb, sectors);
         vh_map02_cd_read_finish(0x1bca, 1, returned);
     }
+    if (!strcmp(argv[1], "post-publish-dir-replace") ||
+        !strcmp(argv[1], "post-publish-dir-symlink")) {
+        const char *root = getenv("VH_MAP02_CYCLE_OUTPUT_DIR");
+        char moved[4096];
+        int length;
+        if (!root) return 14;
+        length = snprintf(moved, sizeof moved, "%s.moved", root);
+        if (length <= 0 || (size_t)length >= sizeof moved) return 15;
+        if (rename(root, moved)) return 16;
+        if (!strcmp(argv[1], "post-publish-dir-replace")) {
+            if (mkdir(root, 0700)) return 17;
+        } else {
+            if (symlink(moved, root)) return 18;
+        }
+    }
     if (!strcmp(argv[1], "post-publish-replace")) {
         const char *root = getenv("VH_MAP02_CYCLE_OUTPUT_DIR");
         int dir, replacement;
@@ -448,6 +463,29 @@ class CycleOrderTests(unittest.TestCase):
             self.assertEqual(current.read_bytes(), b"foreign-not-to-delete")
             self.assertIn(b"cycle-order.v2", original.read_bytes())
             self.assertNotEqual(current.stat().st_ino, original.stat().st_ino)
+
+    def test_normal_exit_refuses_renamed_or_symlinked_output_directory(self):
+        for mode in ("post-publish-dir-replace",
+                     "post-publish-dir-symlink"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                out = Path(tmp) / "private"
+                moved = Path(tmp) / "private.moved"
+                out.mkdir(mode=0o700)
+                result = self.run_mode(mode, directory=out)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("failed=0 receipt=1", result.stdout)
+                self.assertTrue(moved.is_dir())
+                self.assertFalse(
+                    (moved / "map02-single-process-cycle.jsonl").exists())
+                self.assertFalse(
+                    (moved / "map02-cycle-clean-exit.jsonl").exists())
+                if mode == "post-publish-dir-replace":
+                    self.assertTrue(out.is_dir())
+                    self.assertEqual(list(out.iterdir()), [])
+                else:
+                    self.assertTrue(out.is_symlink())
+                self.assertFalse(
+                    (out / "map02-cycle-clean-exit.jsonl").exists())
 
     def test_clean_exit_requires_distinct_matching_private_seal(self):
         with tempfile.TemporaryDirectory() as tmp:
