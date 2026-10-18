@@ -1,0 +1,33 @@
+name: MAP02 v169 guest MIPS indexed CLUT STP ABR E2 vertical to Unai VRAM
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v169-mips-stp-e2v-vram.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v169_mips_stp_e2v_vram.py'
+      - 'tests/test_map02_v169_mips_stp_e2v_vram.py'
+      - 'tools/make_map02_v75_indexed_stp_e2v_exe.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  indexed-stp-e2v:
+    name: native guest MIPS indexed STP ABR and E2 vertical (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile 236 ordered MIPS SW PC GP0 STP/ABR/E2 source cases
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v169_mips_stp_e2v_vram.py tests/test_map02_v169_mips_stp_e2v_vram.py
+          python3 -m unittest discover -s tests -p 'test_map02_v169_mips_stp_e2v_vram.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v75_indexed_stp_e2v.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v168_mips_clut_uv_vram.py' -v
+          echo 'VH169_COMPILED_STP_ABR_E2V_PASS original_retail_executed=0 guest_gp0_words=236 native_unai_pending=1 switch_hd_parity=0'
