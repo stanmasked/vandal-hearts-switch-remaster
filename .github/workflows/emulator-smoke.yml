@@ -2037,6 +2037,39 @@ jobs:
           PY
           echo "Stage305: independently fenced terminal zero-run start against actual buffered Plus snapshots and inspected ±500ms original source PCM; correlation is not guest timing, audio causality or audible quality proof." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Stage325 final recheck of unchanged original host clock CSV witnesses
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,sys
+          from pathlib import Path
+          sys.path.insert(0,str(Path("tools").resolve()))
+          from audit_nexium_host_clock_pairs import audit
+          root=Path("runtime-evidence")
+          receipt=root/"host-dual-clock-stage325.json"
+          if receipt.is_symlink() or not receipt.is_file():
+              raise SystemExit("Stage325 missing original host clock receipt")
+          old=root/"scene-exit-controls.csv"
+          dual=root/"scene-exit-controls-monotonic.csv"
+          if old.is_symlink() or dual.is_symlink() or not old.is_file() or not dual.is_file():
+              raise SystemExit("Stage325 original clock CSV disappeared or was replaced")
+          previous=json.loads(receipt.read_text(encoding="utf-8"))
+          reproduced=audit(old.read_bytes(),dual.read_bytes())
+          if previous!=reproduced:
+              raise SystemExit("Stage325 later source evidence differs from initial receipt")
+          stage304=json.loads((root/"pcm-exit-controls-stage304.json").read_text())
+          if stage304["result"]!="SOURCE_BOUND_BUFFERED_EXIT_CONTROL_TIMELINE_RECONCILED":
+              raise SystemExit("Stage325 cannot replace strict Stage304 acceptance")
+          for before,after in zip(stage304["exit_control_snapshots"],
+                                  stage304["exit_control_snapshots"][1:]):
+              if (before["pcm_bytes"]>after["pcm_bytes"] or
+                      before["host_epoch_ms"]>=after["host_epoch_ms"]):
+                  raise SystemExit("Stage325 cannot permit rejected Stage304 host ordering")
+          print("Stage325 original paired host CSV sources unchanged through Stage305")
+          PY
+          echo "Stage325: independent final re-read reproduced exact original host dual-clock receipt after strict Stage304/305; unchanged PCM/music, no physical audio claim." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Record audio capture boundary
         if: always()
         env:
