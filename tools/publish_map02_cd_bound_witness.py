@@ -173,6 +173,8 @@ def publish_original_cd_witness(source, native, scoped, handoff, image,
             raise ValueError("source/GPU/CD process evidence changed before publication")
         os.link(temporary, target)
         linked = True
+        # Strict source-bound file readback rejects temporary hardlinks.
+        temporary.unlink()
         if private_file(source, MANIFEST, max_bytes=4096) != raw:
             raise ValueError("published MAP02 CD/GPU final witness readback differs")
     except BaseException:
