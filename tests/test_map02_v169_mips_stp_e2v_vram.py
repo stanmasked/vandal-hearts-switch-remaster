@@ -20,7 +20,7 @@ from tools.make_map02_v75_indexed_stp_e2v_exe import (
 from tools.make_map02_v70_synthetic_psx_exe import START,sw
 
 def stub_memory():
-    return """void vh140_mmio_enable(unsigned mutate_expected){(void)mutate_expected;}
+    return """void vh140_mmio_enable(unsigned mutate_expected) {\n (void)mutate_expected;\n}
 void psxMemWrite32(psxRegisters *regs,u32 mem,u32 value){
 #ifdef VH_MAP02_V66_PCSX_PROBE
     vh138_pc_observe(regs,mem,value);
