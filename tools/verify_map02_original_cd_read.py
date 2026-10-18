@@ -22,13 +22,49 @@ from tools.check_map02_owned_disc_extent import (
     verify_map02_disc_extent,
 )
 from tools.publish_map02_blendg1_witness import _private_directory
-from tools.verify_map02_native_gpu_capture import private_file
 from tools.verify_map02_window_scoped_join import (
     CD_READ, verify_window_scoped_join,
 )
 
 LBA = 0x1bcc
 COUNT = 12
+
+
+def _private_cd_receipt_snapshot(directory):
+    """Read the owned CD receipt twice from one 0600 inode and pin its identity.
+
+    A byte-identical replacement file is not the same observed process artifact.
+    Keep inode *and* timestamps across the independent disc and GPU audit.
+    """
+    path = directory / CD_READ
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except OSError:
+        raise ValueError("private MAP02 CD receipt unavailable") from None
+    try:
+        def identity(st):
+            return (st.st_dev, st.st_ino, st.st_uid, st.st_mode,
+                    st.st_nlink, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+
+        before = os.fstat(fd)
+        prior = identity(before)
+        if (not stat.S_ISREG(before.st_mode) or
+                before.st_uid != os.geteuid() or before.st_nlink != 1 or
+                stat.S_IMODE(before.st_mode) != 0o600 or
+                not 0 < before.st_size <= 2048):
+            raise ValueError("private MAP02 CD receipt must be a single-link 0600 file")
+        first = os.pread(fd, before.st_size, 0)
+        second = os.pread(fd, before.st_size, 0)
+        if len(first) != before.st_size or first != second:
+            raise ValueError("private MAP02 CD receipt changed while reading")
+        if (identity(os.fstat(fd)) != prior or
+                identity(os.stat(path, follow_symlinks=False)) != prior):
+            raise ValueError("private MAP02 CD receipt identity changed while reading")
+        return first, prior
+    except OSError:
+        raise ValueError("private MAP02 CD receipt verification unavailable") from None
+    finally:
+        os.close(fd)
 
 
 def verify_map02_original_cd_read(scoped_dir, native_dir, owned_image,
@@ -38,9 +74,9 @@ def verify_map02_original_cd_read(scoped_dir, native_dir, owned_image,
     if checked["original_map02_cd_read_receipt_present"] is not True:
         raise ValueError("missing actual original MAP02 CdRead and loader completion")
     scoped = _private_directory(scoped_dir)
-    if stat.S_IMODE((scoped / CD_READ).stat().st_mode) != 0o600:
-        raise ValueError("original MAP02 CD receipt must have private 0600 permissions")
-    raw = private_file(scoped, CD_READ, max_bytes=2048)
+    raw, receipt_inode = _private_cd_receipt_snapshot(scoped)
+    if checked["original_map02_cd_read_receipt_sha256"] != hashlib.sha256(raw).hexdigest():
+        raise ValueError("original MAP02 CD receipt differs from GPU witness digest")
     event = json.loads(raw)
     image = Path(owned_image).absolute()
     # Preserve the SAME original image inode across the two independent
@@ -85,9 +121,9 @@ def verify_map02_original_cd_read(scoped_dir, native_dir, owned_image,
         raise ValueError("owned MAP02 image changed while verifying actual CdRead")
     final_checked = verify_window_scoped_join(native_dir, scoped_dir,
                                                target_frame=frame)
-    if final_checked != checked or (
-            private_file(scoped, CD_READ, max_bytes=2048) != raw):
-        raise ValueError("original CD and GPU capture changed during verification")
+    if (final_checked != checked or
+            _private_cd_receipt_snapshot(scoped) != (raw, receipt_inode)):
+        raise ValueError("original CD receipt or GPU capture changed during verification")
     return {
         "original_map02_cd_read_observed": True,
         "original_game_loader_completion_observed": True,

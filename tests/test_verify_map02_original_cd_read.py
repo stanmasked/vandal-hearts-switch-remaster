@@ -191,6 +191,63 @@ class OriginalCdReadReceiptTests(unittest.TestCase):
                 self.check()
         self.assertEqual(modified, [True])
 
+    def test_byte_identical_cd_receipt_inode_swap_during_disc_audit_rejected(self):
+        receipt = self.scoped / CD_READ
+        original_inode = receipt.stat().st_ino
+        backup = self.root / "saved-original-cd-receipt.jsonl"
+        original_audit = cd_module.verify_map02_disc_extent
+        replaced = []
+
+        def replace_after_first_extent(*args, **kwargs):
+            result = original_audit(*args, **kwargs)
+            if not replaced:
+                receipt.replace(backup)
+                shutil.copyfile(backup, receipt)
+                receipt.chmod(0o600)
+                self.assertEqual(receipt.read_bytes(), backup.read_bytes())
+                self.assertNotEqual(receipt.stat().st_ino, original_inode)
+                replaced.append(True)
+            return result
+
+        try:
+            with patch("tools.verify_map02_original_cd_read.verify_map02_disc_extent",
+                       side_effect=replace_after_first_extent):
+                with self.assertRaisesRegex(ValueError, "CD receipt or GPU capture changed"):
+                    self.check()
+        finally:
+            if backup.exists():
+                receipt.unlink(missing_ok=True)
+                backup.replace(receipt)
+        self.assertEqual(replaced, [True])
+        self.assertEqual(receipt.stat().st_ino, original_inode)
+
+    def test_hardlinked_cd_receipt_rejected_even_when_private(self):
+        receipt = self.scoped / CD_READ
+        alias = self.root / "receipt-hardlink.jsonl"
+        os.link(receipt, alias)
+        self.addCleanup(alias.unlink)
+        with self.assertRaisesRegex(ValueError, "single-link 0600"):
+            self.check()
+
+    def test_same_bytes_changed_receipt_timestamp_rejected(self):
+        receipt = self.scoped / CD_READ
+        original_audit = cd_module.verify_map02_disc_extent
+        modified = []
+
+        def touch_after_first_extent(*args, **kwargs):
+            result = original_audit(*args, **kwargs)
+            if not modified:
+                st = receipt.stat()
+                os.utime(receipt, ns=(st.st_atime_ns, st.st_mtime_ns - 1000000000))
+                modified.append(True)
+            return result
+
+        with patch("tools.verify_map02_original_cd_read.verify_map02_disc_extent",
+                   side_effect=touch_after_first_extent):
+            with self.assertRaisesRegex(ValueError, "CD receipt or GPU capture changed"):
+                self.check()
+        self.assertEqual(modified, [True])
+
     def test_nonprivate_cd_receipt_rejected(self):
         (self.scoped / CD_READ).chmod(0o644)
         with self.assertRaises(ValueError):
