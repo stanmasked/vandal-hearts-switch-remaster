@@ -381,6 +381,37 @@ class SealedMakeOverlayTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unrecognized shared object"):
             sealed._runtime_loader_evidence(witness, "/usr/bin/gcc", {})
 
+    def test_runtime_loader_refuses_changed_mapped_library_bytes(self):
+        witness = self.root / "runtime-modified-library"
+        witness.mkdir()
+        library = self.root / "tampered-runtime-library.so"
+        library.write_bytes(b"before")
+        expected = hashlib.sha256(library.read_bytes()).hexdigest()
+        library.write_bytes(b"after")
+        (witness / "trace.321").write_text(
+            "321: initialize program: /usr/bin/gcc\n"
+            "321: calling init: " + str(library) + "\n")
+        with self.assertRaisesRegex(ValueError, "shared-object hash mismatch"):
+            sealed._runtime_loader_evidence(
+                witness, "/usr/bin/gcc", {str(library): expected})
+
+    def test_runtime_loader_refuses_ambiguous_process_identity(self):
+        witness = self.root / "runtime-ambiguous-process"
+        witness.mkdir()
+        (witness / "trace.321").write_text(
+            "321: initialize program: /usr/bin/gcc\n"
+            "321: initialize program: /usr/bin/as\n")
+        with self.assertRaisesRegex(ValueError, "program identity ambiguous"):
+            sealed._runtime_loader_evidence(witness, "/usr/bin/gcc", {})
+
+    def test_runtime_loader_refuses_non_numeric_trace_filename(self):
+        witness = self.root / "runtime-invalid-log"
+        witness.mkdir()
+        (witness / "trace.injected").write_text(
+            "321: initialize program: /usr/bin/gcc\n")
+        with self.assertRaisesRegex(ValueError, "log name invalid"):
+            sealed._runtime_loader_evidence(witness, "/usr/bin/gcc", {})
+
     def test_system_header_digest_mismatch_refused(self):
         original = sealed._system_header_evidence
         count = []
