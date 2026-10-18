@@ -90,6 +90,7 @@ class SpanWorkflowGateTests(unittest.TestCase):
                       private_build)
         self.assertIn('assert report["kernel_tool_exec_witnesses"] == 6', private_build)
         self.assertIn('assert not report["actual_make_children_kernel_attested"]', private_build)
+        self.assertIn('assert report["kernel_make_replay_executables_match_sha256"]', private_build)
         self.assertIn('assert report["system_header_bytes_before_after_match"]', private_build)
         self.assertIn('assert report["compiled_from_sealed_preprocessor_output"]', private_build)
         self.assertIn('assert report["staged_header_hashes_verified"]', private_build)

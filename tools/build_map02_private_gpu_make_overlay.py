@@ -25,6 +25,7 @@ import tempfile
 import time
 
 from tools import prepare_map02_private_gpu_make_overlay as builder
+from tools import map02_kernel_make_witness as kernel_witness
 from tools import verify_map02_private_gpu_make_overlay as auditor
 
 MAX_OBJECT_BYTES = 64 * 1024 * 1024
@@ -655,6 +656,34 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
                 runtime_objects["_resolved_tools"])
             if _system_header_evidence(preprocessed_files, pc, snapshot) != system_headers:
                 raise ValueError("MAP02 system header dependencies changed during Make build")
+            # Independent second Make compilation from the same sealed
+            # preprocessed units, now tracing actual fork+exec child inodes.
+            # The earlier, independently verified objects are left untouched.
+            replay_dir = build_dir + "-kernel-witness"
+            replay_path = pc / replay_dir
+            if replay_path.exists() or replay_path.is_symlink():
+                raise ValueError("MAP02 kernel Make witness build directory already exists")
+            stack.callback(shutil.rmtree, replay_path, ignore_errors=True)
+            child_execs = kernel_witness.trace_make_children(
+                base + [
+                    "BUILD_DIR=" + replay_dir,
+                    "VH_MAP02_PRIVATE_INPUT_LANG=cpp-output",
+                    "VH_MAP02_PRIVATE_GPU_C=" + fd_path("libgpu-preprocessed"),
+                    "VH_MAP02_PRIVATE_RASTER_C=" + fd_path("pc_raster-preprocessed"),
+                    "map02-private-gpu-objects",
+                ],
+                cwd=pc, env=clean_env, pass_fds=tuple(files.values()),
+                tools=runtime_objects["_resolved_tools"],
+                hashes=initial_compiler, timeout=180)
+            for name in ("libgpu.o", "pc_raster.o"):
+                replay_object = auditor._stable_regular_bytes(
+                    replay_path / name, max_bytes=MAX_OBJECT_BYTES)
+                if not replay_object:
+                    raise ValueError("MAP02 kernel Make replay object empty")
+            if _compiler_evidence() != (compiler, initial_compiler):
+                raise ValueError("MAP02 compiler binaries changed after kernel Make replay")
+            if _compiler_dynamic_evidence(compiler) != runtime_objects:
+                raise ValueError("MAP02 compiler shared objects changed after kernel Make replay")
     after = auditor.replay(upstream, output, manifest)
     if after != before:
         raise ValueError("MAP02 private overlay changed during sealed Make build")
@@ -690,6 +719,8 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
         "compiler_runtime_executables_bound_to_selected_tools": True,
         "kernel_tool_exec_witnesses": 6,
         "kernel_tool_exec_images_match_sha256": True,
+        "kernel_make_replay_children_seen": child_execs,
+        "kernel_make_replay_executables_match_sha256": True,
         "actual_make_children_kernel_attested": False,
         "system_header_count": system_headers["count"],
         "system_header_set_sha256": system_headers["sha256"],

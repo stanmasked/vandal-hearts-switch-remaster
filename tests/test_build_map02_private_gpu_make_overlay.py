@@ -93,6 +93,9 @@ class SealedMakeOverlayTests(unittest.TestCase):
         self.assertEqual(result["kernel_tool_exec_witnesses"], 6)
         self.assertTrue(result["kernel_tool_exec_images_match_sha256"])
         self.assertFalse(result["actual_make_children_kernel_attested"])
+        self.assertTrue(all(result["kernel_make_replay_children_seen"][role] >= 1
+                            for role in ("driver", "cc1", "as")))
+        self.assertTrue(result["kernel_make_replay_executables_match_sha256"])
         self.assertGreaterEqual(result["system_header_count"], 1)
         self.assertEqual(len(result["system_header_set_sha256"]), 64)
         self.assertTrue(result["system_header_bytes_before_after_match"])
