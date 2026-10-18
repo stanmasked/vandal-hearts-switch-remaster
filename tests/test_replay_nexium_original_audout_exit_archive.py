@@ -14,7 +14,6 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 from audit_switch_guest_scene_trace import TraceError
 from audit_nexium_guest_exit_timeline import SUBDIR, audit_guest_root
-from audit_nexium_guest_exit_three_run_cohort import SCHEMA as UNUSED
 from audit_nexium_guest_last_buffer_return import audit_guest
 from audit_nexium_guest_optical_exit_clock import audit_guest_clocks
 from preserve_nexium_guest_exit_original import preserve_original as preserve_exit
@@ -23,8 +22,6 @@ from replay_nexium_original_audout_exit_archive import (
     independent_original_audout_replay, read_original_archive,
     ORIGINAL_PAGE, SOURCE313, SOURCE314,
 )
-from test_replay_nexium_original_guest_exit_archive import ArchiveReplayerTests
-from test_preserve_nexium_guest_last_buffer_original import original_page
 from test_compare_nexium_guest_exit_cohort import fixture
 
 
@@ -41,7 +38,6 @@ class Stage315OriginalAudoutTests(unittest.TestCase):
         self.run_id=39145082758
         _,self.optical,_,self.guest_exit,_=fixture(0)
         (sd/"audio-exit-timeline-000.csv").write_bytes(self.guest_exit)
-        self.guest_page=original_page()
         # Stage313 source in this fixture must use SAME guest clock
         # as the original Stage307 guest exit receipt.
         from audit_nexium_guest_exit_timeline import parse_exit_csv
