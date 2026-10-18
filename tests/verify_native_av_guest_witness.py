@@ -64,6 +64,13 @@ def reject_nonfinite_json(value):
     raise ValueError("non-finite JSON number rejected: " + value)
 
 
+def canonical_json(value):
+    # Python considers True == 1 and 4 == 4.0. Serialized JSON
+    # comparison retains those critical distinctions in a witness.
+    return json.dumps(value, sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=False, allow_nan=False)
+
+
 def require(condition, reason):
     if not condition:
         raise ValueError(reason)
@@ -150,7 +157,8 @@ def verify(witness, first, second, nro, revision, scenario,
             "resume_retry": inspect_resume_retry_marker(b),
         }
 
-    require(data.get("observation") == observed, "stale or forged observation")
+    require(canonical_json(data.get("observation")) == canonical_json(observed),
+            "stale or forged observation")
     require(observed["video_framebuffer"] == "observed" and
             observed["grid_hero_marker"] == "observed" and
             type(observed["heartbeat_changed_pixels"]) is int and

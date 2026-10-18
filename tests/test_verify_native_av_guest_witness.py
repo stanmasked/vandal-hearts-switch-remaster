@@ -224,6 +224,33 @@ class GuestWitnessVerifierTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "required check mismatch"):
             self.verify()
 
+    def test_boolean_observation_cannot_be_replaced_with_integer(self):
+        data = json.loads(self.witness.read_text())
+        # Ordinary Python dict comparison would accept true == 1.
+        self.assertIs(data["observation"]["guest_resume_is_not_home_event"], True)
+        data["observation"]["guest_resume_is_not_home_event"] = 1
+        self.witness.write_text(json.dumps(data))
+        with self.assertRaisesRegex(ValueError, "stale or forged observation"):
+            self.verify()
+
+    def test_false_observation_disclaimer_cannot_be_replaced_with_zero(self):
+        data = json.loads(self.witness.read_text())
+        self.assertIs(data["observation"]["audible_audio_verified"], False)
+        data["observation"]["audible_audio_verified"] = 0
+        self.witness.write_text(json.dumps(data))
+        with self.assertRaisesRegex(ValueError, "stale or forged observation"):
+            self.verify()
+        self.assertEqual(self.witness.read_text().count('"audible_audio_verified"'), 2)
+
+    def test_integer_heartbeat_rejects_equivalent_float(self):
+        data = json.loads(self.witness.read_text())
+        frames = data["observation"]["heartbeat_changed_pixels"]
+        self.assertIs(type(frames), int)
+        data["observation"]["heartbeat_changed_pixels"] = float(frames)
+        self.witness.write_text(json.dumps(data))
+        with self.assertRaisesRegex(ValueError, "stale or forged observation"):
+            self.verify()
+
     def test_recomputed_observation_and_scope_fail_closed(self):
         data = json.loads(self.witness.read_text())
         data["observation"]["guest_resume_retry_after_fake_open_failure"] = "error"
