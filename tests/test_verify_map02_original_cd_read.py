@@ -6,6 +6,8 @@ No retail game assets are used.
 """
 import hashlib
 import json
+import os
+import shutil
 from pathlib import Path
 import tempfile
 import unittest
@@ -14,6 +16,7 @@ import zlib
 
 from tests.test_check_map02_owned_disc_extent import OwnedMap02DiscExtentTests
 from tools.check_map02_owned_disc_extent import _raw_sector
+import tools.verify_map02_original_cd_read as cd_module
 from tools.verify_map02_original_cd_read import verify_map02_original_cd_read
 from tools.verify_map02_window_scoped_join import CD_READ
 
@@ -100,6 +103,82 @@ class OriginalCdReadReceiptTests(unittest.TestCase):
             f.write(b"changed!")
         with self.assertRaisesRegex(ValueError, "payload differs"):
             self.check()
+
+    def test_cd_comparison_rejects_same_bytes_replaced_disc_inode(self):
+        image = self.fixture.image
+        saved = self.root / "owned-original-backup.bin"
+        original_inode = image.stat().st_ino
+        original_sector = _raw_sector
+        swapped = []
+
+        def replace_path_during_cd_comparison(fd, lba):
+            sector = original_sector(fd, lba)
+            if not swapped:
+                image.replace(saved)
+                shutil.copyfile(saved, image)
+                image.chmod(0o600)
+                self.assertNotEqual(image.stat().st_ino, original_inode)
+                swapped.append(True)
+            return sector
+
+        try:
+            with patch("tools.verify_map02_original_cd_read._raw_sector",
+                       side_effect=replace_path_during_cd_comparison):
+                with self.assertRaisesRegex(ValueError, "identity changed during CdRead comparison"):
+                    self.check()
+        finally:
+            if saved.exists():
+                image.unlink(missing_ok=True)
+                saved.replace(image)
+        self.assertEqual(swapped, [True])
+        self.assertEqual(image.stat().st_ino, original_inode)
+
+    def test_cd_comparison_rejects_disc_changed_after_first_extent_pass(self):
+        image = self.fixture.image
+        saved = self.root / "pre-cd-replacement.bin"
+        original_extent = cd_module.verify_map02_disc_extent
+        calls = []
+
+        def swap_after_complete_extent(*args, **kwargs):
+            report = original_extent(*args, **kwargs)
+            calls.append(1)
+            if len(calls) == 1:
+                image.replace(saved)
+                shutil.copyfile(saved, image)
+                image.chmod(0o600)
+            return report
+
+        try:
+            with patch("tools.verify_map02_original_cd_read.verify_map02_disc_extent",
+                       side_effect=swap_after_complete_extent):
+                with self.assertRaisesRegex(ValueError, "identity changed before CdRead comparison"):
+                    self.check()
+        finally:
+            if saved.exists():
+                image.unlink(missing_ok=True)
+                saved.replace(image)
+        self.assertEqual(calls, [1])
+
+    def test_cd_comparison_rejects_inplace_mutation_after_extent_audit(self):
+        original_sector = _raw_sector
+        modified = []
+
+        def modify_while_reading(fd, lba):
+            sector = original_sector(fd, lba)
+            if not modified:
+                writer = os.open(self.fixture.image, os.O_WRONLY | os.O_NOFOLLOW)
+                try:
+                    os.pwrite(writer, b"changed!", lba * 2352 + 24)
+                finally:
+                    os.close(writer)
+                modified.append(True)
+            return sector
+
+        with patch("tools.verify_map02_original_cd_read._raw_sector",
+                   side_effect=modify_while_reading):
+            with self.assertRaisesRegex(ValueError, "identity changed during CdRead comparison"):
+                self.check()
+        self.assertEqual(modified, [True])
 
     def test_nonprivate_cd_receipt_rejected(self):
         (self.scoped / CD_READ).chmod(0o644)
