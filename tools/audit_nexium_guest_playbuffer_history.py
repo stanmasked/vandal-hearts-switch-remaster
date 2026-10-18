@@ -72,6 +72,10 @@ def audit_source(raw:bytes, final:dict)->dict:
         raise ExitTimelineError("rolling history original call count conflicts with Stage320")
     original_last_idx=final["last_successful_PlayBuffer_attempt_index"]
     observed_successes=[r for r in rows if r["lease_returned"]]
+    original_success_count=final["successful_PlayBuffer_call_count"]
+    if (len(observed_successes)>original_success_count
+            or len(rows)-len(observed_successes)>total-original_success_count):
+        raise ExitTimelineError("recent retained original calls conflict with global successful/failed counts")
     if (any(r["sequence"]>original_last_idx for r in observed_successes)
             or (original_last_idx>=rows[0]["sequence"] and
                 (not observed_successes or
