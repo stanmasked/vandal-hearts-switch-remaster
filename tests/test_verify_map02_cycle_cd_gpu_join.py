@@ -213,7 +213,7 @@ class CycleCdGpuJoinTests(unittest.TestCase):
                 target = folder / filename
                 original = target.read_bytes()
                 def identical_inode_swap(*args, **kwargs):
-                    backup = folder / ("previous-" + filename)
+                    backup = folder.parent / ("previous-" + folder.name + "-" + filename)
                     target.replace(backup)
                     target.write_bytes(original)
                     target.chmod(0o600)
@@ -225,7 +225,7 @@ class CycleCdGpuJoinTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, "changed during verification"):
                         self.check()
                 target.unlink()
-                (folder / ("previous-" + filename)).replace(target)
+                (folder.parent / ("previous-" + folder.name + "-" + filename)).replace(target)
         self.mock.assert_not_called()
 
     def test_double_read_rejects_byte_change_with_identical_file_metadata(self):
