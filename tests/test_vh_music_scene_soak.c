@@ -233,7 +233,7 @@ static void opt_in_48k_comparison(void) {
     assert(vh_music_scene_detach(&wet_scene)==0);
     assert(vh_music_scene_detach(&dry_scene)==0);
     assert(wet_scene.active.id==0u && dry_scene.active.id==0u);
-    printf("opt-in STUDIO_C -> 48k: PASS %u blocks, %u divergent, %llu frames\\n",
+    printf("opt-in STUDIO_C -> 48k: PASS %u blocks, %u divergent, %llu frames\n",
            512u,divergent_blocks,(unsigned long long)delivered);
 }
 
