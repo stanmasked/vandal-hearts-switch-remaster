@@ -194,6 +194,9 @@ on:
       - 'tools/apply_map02_v153_second_instruction_mutation.py'
       - 'tools/apply_map02_v154_third_instruction_mutation.py'
       - 'tools/apply_map02_v155_four_instruction_native.py'
+      - 'tools/apply_map02_v156_register_checkpoints.py'
+      - 'tests/test_map02_v156_register_checkpoints.py'
+      - '.github/workflows/map02-v156-register-checkpoints.yml'
       - 'tests/test_map02_v155_four_instruction_native.py'
       - '.github/workflows/map02-v155-four-instruction-native.yml'
       - 'tests/test_map02_v154_third_instruction_mutation.py'
@@ -338,6 +341,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v153_second_instruction_mutation.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v154_third_instruction_mutation.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v155_four_instruction_native.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v156_register_checkpoints.py' -v
           python3 -m remaster.tools.check_map02_v147_native_bounded_c --cc "${{ matrix.cc }}" \
             | grep -Fx 'VH147_COMPILED_BOUNDED_NATIVE_PASS capacity=1024 generic=1 repeated_pc=1 overflow_refused=1 atomic_mode0600=1 no_overwrite=1 original_retail=0'
           python3 -m remaster.tools.check_map02_v144_native_challenge_c --cc "${{ matrix.cc }}" \
@@ -358,7 +362,9 @@ jobs:
           git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
           git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
-          python3 -m remaster.tools.apply_map02_v155_four_instruction_native upstream-pcsx
+          python3 -m remaster.tools.apply_map02_v156_register_checkpoints upstream-pcsx
+          grep -F 'vh156_verify_previous_effects(regs,pc)' upstream-pcsx/libpcsxcore/psxinterpreter.c
+          grep -F 'VH156_NATIVE_REGISTER_EFFECTS_PASS' upstream-pcsx/frontend/main.c
           grep -F 'vh155_enable_four' upstream-pcsx/libpcsxcore/psxinterpreter.c
           grep -F 'VH155_NATIVE_FOUR_STEP_PASS' upstream-pcsx/frontend/main.c
           grep -F 'vh154_arm_third_word_mutation' upstream-pcsx/libpcsxcore/psxinterpreter.c
@@ -1381,6 +1387,71 @@ jobs:
             exit 1
           fi
           sha256sum -c proof/private/v150-synthetic-before.sha256
+          # v156: true native MIPS LUI/ORI effects are verified at each
+          # subsequent opcode fetch (t0 and t1) and after four dispatches.
+          mkdir -m 700 proof/v156-register-pass-home
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v156-register-pass-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh129-vblank-04 --vh150-bounded-instructions \
+            --vh155-four-instructions --vh156-verify-register-effects \
+            proof/private/V129_SYNTHETIC.EXE \
+            > proof/private/v156-register-pass.log 2>&1 || {
+              tail -n 60 proof/private/v156-register-pass.log
+              exit 1
+            }
+          grep -Fx 'VH156_NATIVE_REGISTER_EFFECTS_PASS matched=4 capped=1 original_retail=0' \
+            proof/private/v156-register-pass.log
+          # Corrupt t0 only AFTER the first real interpreted LUI instruction.
+          # Next opcode must be denied before its own ORI is dispatched.
+          mkdir -m 700 proof/v156-register-corrupt-home
+          v156_rc=0
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v156-register-corrupt-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh129-vblank-04 --vh150-bounded-instructions \
+            --vh155-four-instructions --vh156-verify-register-effects \
+            --vh156-corrupt-t0-second \
+            proof/private/V129_SYNTHETIC.EXE \
+            > proof/private/v156-register-corrupt.log 2>&1 || v156_rc=$?
+          test "$v156_rc" -eq 60
+          grep -Fx 'VH156_NATIVE_REGISTER_CORRUPTION_REFUSED matched=1 attempted=2 original_retail=0' \
+            proof/private/v156-register-corrupt.log
+          if grep -Fq 'VH156_NATIVE_REGISTER_EFFECTS_PASS' \
+            proof/private/v156-register-corrupt.log; then
+            echo 'VH156_CORRUPTED_REGISTER_FALSE_ACCEPT_REFUSED'
+            exit 1
+          fi
+          # Neither the new corruption flag alone nor a mixed v155 opcode
+          # mutation + register mode is allowed to arm a native guest run.
+          mkdir -m 700 proof/v156-invalid-home
+          invalid_reg_rc=0
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v156-invalid-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh129-vblank-04 --vh150-bounded-instructions \
+            --vh155-four-instructions --vh156-corrupt-t0-second \
+            proof/private/V129_SYNTHETIC.EXE \
+            > proof/private/v156-invalid.log 2>&1 || invalid_reg_rc=$?
+          test "$invalid_reg_rc" -eq 60
+          grep -Fx 'VH156_INVALID_MODE_REFUSED' proof/private/v156-invalid.log
+          mkdir -m 700 proof/v156-mixed-home
+          mixed_reg_rc=0
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v156-mixed-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh129-vblank-04 --vh150-bounded-instructions \
+            --vh155-four-instructions --vh155-mutate-fourth-word \
+            --vh156-verify-register-effects \
+            proof/private/V129_SYNTHETIC.EXE \
+            > proof/private/v156-mixed.log 2>&1 || mixed_reg_rc=$?
+          test "$mixed_reg_rc" -eq 60
+          grep -Fx 'VH156_INVALID_MODE_REFUSED' proof/private/v156-mixed.log
+          sha256sum -c proof/private/v150-synthetic-before.sha256
           # v155 positive: extend the exact same v129 source-generated guest
           # program to four native MIPS instructions, then deny instruction 5.
           mkdir -m 700 proof/v155-four-positive-home
@@ -1944,6 +2015,10 @@ jobs:
           report["v155_fourth_word_after_third_mutation_refused"]=True
           report["v155_extended_mode_invalid_profile_rejected"]=True
           report["v155_original_game_runtime_unverified"]=True
+          report["v156_four_native_synthetic_register_effects_verified"]=True
+          report["v156_mutated_t0_before_second_opcode_refused"]=True
+          report["v156_invalid_register_diagnostic_modes_rejected"]=True
+          report["v156_original_game_runtime_unverified"]=True
           report["retail_map02_gpu_rendering_verified"]=False
           Path("proof/public/v129-four-real-vblank-profiles-summary.json").write_text(
               json.dumps(report,sort_keys=True)+"\n")
