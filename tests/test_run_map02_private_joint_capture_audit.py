@@ -367,6 +367,59 @@ class PrivateJointOneShotAuditTests(unittest.TestCase):
         self.assertNotIn(str(self.journal), json.dumps(result))
         self.assertNotIn(str(self.executable), json.dumps(result))
 
+    def test_cli_invalid_private_elf_path_is_not_disclosed(self):
+        sensitive = Path(self.temp.name) / "private-authored-ELF-secret"
+        finished = subprocess.run([
+            sys.executable, "-m", "tools.run_map02_private_joint_capture_audit",
+            "--executable", str(sensitive),
+            "--executable-sha256", self.digest,
+            "--output-dir", str(self.output),
+            "--gpu-journal-dir", str(self.journal),
+            "--frame", "123",
+        ], capture_output=True, text=True, timeout=12)
+        self.assertNotEqual(finished.returncode, 0)
+        self.assertEqual(finished.stdout, "")
+        self.assertIn("MAP02 private capture I/O failed", finished.stderr)
+        self.assertNotIn(str(sensitive), finished.stderr)
+        self.assertNotIn(str(self.output), finished.stderr)
+        self.assertNotIn(str(self.journal), finished.stderr)
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def test_cli_invalid_private_reference_path_is_not_disclosed(self):
+        sensitive = Path(self.temp.name) / "private-PS1-reference-secret"
+        finished = subprocess.run([
+            sys.executable, "-m", "tools.run_map02_private_joint_capture_audit",
+            "--executable", str(self.executable),
+            "--executable-sha256", self.digest,
+            "--output-dir", str(self.output),
+            "--gpu-journal-dir", str(self.journal),
+            "--frame-pair-dir", str(sensitive),
+            "--frame", "123",
+        ], capture_output=True, text=True, timeout=12)
+        self.assertNotEqual(finished.returncode, 0)
+        self.assertEqual(finished.stdout, "")
+        self.assertIn("MAP02 private capture I/O failed", finished.stderr)
+        self.assertNotIn(str(sensitive), finished.stderr)
+        self.assertNotIn(str(self.executable), finished.stderr)
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def test_untrusted_error_text_sanitized_before_cli_diagnostic(self):
+        secret = str(Path(self.temp.name) / "PS1-ROM-private-path")
+        generic = joint_runner._safe_cli_failure(
+            ValueError("unrecognized failed witness: " + secret))
+        self.assertEqual(generic, "MAP02 private capture validation failed")
+        self.assertNotIn(secret, generic)
+        for reason, expected in (
+                ("private SHA-256 mismatch: " + secret,
+                 "MAP02 private SHA-256 mismatch"),
+                ("source arguments incomplete " + secret,
+                 "MAP02 original FT4/VRAM witness arguments incomplete"),
+                ("native frame pair changed: " + secret,
+                 "MAP02 private claimed frame pair changed")):
+            public = joint_runner._safe_cli_failure(ValueError(reason))
+            self.assertEqual(public, expected)
+            self.assertNotIn(secret, public)
+
     def test_cli_runs_native_one_shot_and_prints_digests_not_private_paths(self):
         result = subprocess.run([
             sys.executable, "-m", "tools.run_map02_private_joint_capture_audit",
