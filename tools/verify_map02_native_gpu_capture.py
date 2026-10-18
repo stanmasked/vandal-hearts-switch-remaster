@@ -229,6 +229,8 @@ def verify_capture(directory: Path, *, target_frame: int):
     pairs=0;draws=loads=moves=clears=0
     assignments=0;draw_changed_words=transfer_changed_words=0
     snapshot_hashes=[]
+    previous_after=None
+    bridge_checks=0
     for i in range(0,len(events),2):
         before,after=events[i:i+2]
         validate_meta(before,i,target_frame)
@@ -239,6 +241,14 @@ def verify_capture(directory: Path, *, target_frame: int):
                 raise ValueError(f"GPU event {i}: before/after metadata diverges ({key})")
         a=read_evidence(before["snapshot"],expected=VRAM_BYTES)
         b=read_evidence(after["snapshot"],expected=VRAM_BYTES)
+        # Consecutive operations in a captured native window must share
+        # the same complete 1-MiB VRAM endpoint. An unobserved GPU write
+        # between them means the stream is not a complete transition log.
+        if previous_after is not None:
+            if a != previous_after:
+                raise ValueError("native GPU VRAM continuity broken between event pairs")
+            bridge_checks+=1
+        previous_after=b
         snapshot_hashes.extend((sha(a),sha(b)))
         changed=sum(a[j:j+2]!=b[j:j+2] for j in range(0,VRAM_BYTES,2))
         assignments+=changed
@@ -293,6 +303,7 @@ def verify_capture(directory: Path, *, target_frame: int):
         "vram_snapshot_sha256_list_sha256":sha("".join(snapshot_hashes).encode("ascii")),
         "frame":target_frame,
         "native_gpu_pairs_verified":pairs,
+        "native_gpu_vram_pair_bridge_checks":bridge_checks,
         "draw_otag_primitive_pairs":draws,
         "load_image_pairs":loads,
         "move_image_pairs":moves,
