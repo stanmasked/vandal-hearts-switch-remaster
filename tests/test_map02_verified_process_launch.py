@@ -395,7 +395,9 @@ int main(int argc, char **argv) {
                 with self.subTest(missing=missing):
                     invalid = dict(options)
                     invalid.pop(missing)
-                    with self.assertRaisesRegex(ValueError, "requires source"):
+                    expected = ("requires a source-bound cycle"
+                                if missing == "cycle_dir" else "requires source")
+                    with self.assertRaisesRegex(ValueError, expected):
                         launch_observed_pc(
                             self.handoff, self.native, self.scoped,
                             self.binary, self.owned, **invalid)
