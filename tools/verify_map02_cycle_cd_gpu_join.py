@@ -25,6 +25,7 @@ from tools.verify_map02_native_gpu_capture import private_file
 from tools.verify_map02_window_scoped_join import CD_READ
 
 CYCLE_RECEIPT = "map02-single-process-cycle.jsonl"
+CYCLE_CLEAN_EXIT = "map02-cycle-clean-exit.jsonl"
 CYCLE_SCHEMA = "vh.map02.cycle-order.v2"
 SCHEMA = "vh.map02.same-process-cycle-cd-gpu-join.v1"
 CD_READ_KEYS = (
@@ -93,10 +94,16 @@ def _private_evidence_snapshot(root, filename, *, max_bytes):
 
 def _cycle_receipt(directory, frame):
     root = _private_directory(directory)
-    if {entry.name for entry in root.iterdir()} != {CYCLE_RECEIPT}:
-        raise ValueError("cycle directory must contain exactly one receipt")
+    if {entry.name for entry in root.iterdir()} != {CYCLE_RECEIPT, CYCLE_CLEAN_EXIT}:
+        raise ValueError("cycle directory must contain receipt and normal-exit seal")
     raw, inode_identity = _private_evidence_snapshot(
         root, CYCLE_RECEIPT, max_bytes=2048)
+    seal, seal_identity = _private_evidence_snapshot(
+        root, CYCLE_CLEAN_EXIT, max_bytes=2048)
+    if (raw != seal or
+            (inode_identity[0], inode_identity[1]) ==
+            (seal_identity[0], seal_identity[1])):
+        raise ValueError("MAP02 cycle normal-exit seal and receipt differ")
     if raw.count(b"\n") != 1 or not raw.endswith(b"\n") or b"\r" in raw:
         raise ValueError("noncanonical cycle receipt JSONL")
     event = parse_json(raw[:-1], CYCLE_RECEIPT)
@@ -118,7 +125,9 @@ def _cycle_receipt(directory, frame):
     if (type(token) is not str or len(token) != 32 or
             any(c not in "0123456789abcdef" for c in token)):
         raise ValueError("invalid single-process cycle nonce")
-    return raw, _sha(token.encode("ascii")), inode_identity
+    # Retain identities of BOTH independent files across the full later
+    # CD/GPU/process audit; neither file may be replaced during it.
+    return raw, _sha(token.encode("ascii")), (inode_identity, seal_identity)
 
 
 def _cycle_cd_pair(scoped, cycle, frame, expected_session_sha256):
