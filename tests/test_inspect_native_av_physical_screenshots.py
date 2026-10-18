@@ -250,11 +250,15 @@ class PhysicalScreenshotPixelTests(unittest.TestCase):
     def test_blue_pcm_requires_matched_unsaturated_focus_tallies(self):
         # B can legitimately lead F while the app is in the background,
         # but P cannot be blue until the paired foreground return occurs.
-        for b,f in ((1,0),(2,1),(5,4)):
+        for b,f in ((2,1),(5,4)):
             with self.subTest(b=b,f=f):
                 with self.assertRaisesRegex(
                         ValueError,"post-return PCM marker has unmatched B/F"):
                     observe_frame(frame(b=b,f=f,p=True))
+        # When F is absent entirely, the older missing-pair guard
+        # triggers first, before count equality is considered.
+        with self.assertRaisesRegex(ValueError,"has no B/F pair"):
+            observe_frame(frame(b=1,f=0,p=True))
         # Pending state remains an admissible observation, not proof.
         self.assertEqual(
             observe_frame(frame(b=2,f=1,p=False))["indicators"]["P"],
