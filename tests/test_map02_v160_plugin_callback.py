@@ -77,6 +77,12 @@ static void CALLBACK real_gpu(uint32_t value) {
 static void CALLBACK foreign_gpu(uint32_t value) {
     (void)value;
 }
+/* Simulates the existing v69 callback wrapper installed before v160. */
+static unsigned existing_wrapper_calls;
+static void CALLBACK existing_wrapper(uint32_t value) {
+    existing_wrapper_calls++;
+    real_gpu(value);
+}
 static GPUwriteData GPU_writeData=real_gpu;
 """ + callback_probe_c() + r"""
 int main(void) {
@@ -124,7 +130,23 @@ int main(void) {
        GPU_writeData!=foreign_gpu ||
        vh160_callback_faults()!=1u) return 18;
     GPU_writeData=real_gpu;
-    puts("VH160_COMPILED_PLUGIN_CALLBACK_PASS enter_return=1 duplicate_refused=1 wrong_data_refused=1 mutated_zero=1 pointer_tamper_refused=1 original_retail=0");
+
+    /* If the old v69 wrapper was already active, v160 must wrap it,
+     * invoke it once and restore that EXACT pointer on disarm. */
+    GPU_writeData=existing_wrapper;
+    if(vh160_arm_plugin_callback()!=0) return 19;
+    GPU_writeData(0xe3000000u);
+    if(existing_wrapper_calls!=1u || last_word!=0xe3000000u ||
+       vh160_callback_enters()!=1u || vh160_callback_returns()!=1u ||
+       vh160_callback_faults()!=0u) return 20;
+    if(vh160_disarm_plugin_callback()!=0 ||
+       GPU_writeData!=existing_wrapper) return 21;
+
+    /* A missing callback must not be replaced with a dangling probe. */
+    GPU_writeData=0;
+    if(vh160_arm_plugin_callback()==0 || GPU_writeData) return 22;
+    GPU_writeData=real_gpu;
+    puts("VH160_COMPILED_PLUGIN_CALLBACK_PASS enter_return=1 duplicate_refused=1 wrong_data_refused=1 mutated_zero=1 pointer_tamper_refused=1 chain_preserved=1 null_refused=1 original_retail=0");
     return 0;
 }
 """
