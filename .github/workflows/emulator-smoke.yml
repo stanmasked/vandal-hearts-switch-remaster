@@ -112,8 +112,11 @@ jobs:
         run: |
           set -euo pipefail
           source_commit="bb92f521596588ab47e2e529fc8a3ebacb5a93a8"
-          test "$(git rev-parse HEAD^)" = "$source_commit"
-          actual="$(git diff --name-only "$source_commit" HEAD)"
+          # actions/checkout can own the repository differently from the
+          # devkitPro container user. Trust only this checkout for these
+          # read-only commands; do not weaken global git safe.directory.
+          test "$(git -c safe.directory="$PWD" rev-parse HEAD^)" = "$source_commit"
+          actual="$(git -c safe.directory="$PWD" diff --name-only "$source_commit" HEAD)"
           test "$actual" = ".github/workflows/emulator-smoke.yml"
           echo "### STUDIO_C NeXium rehearsal" >> "$GITHUB_STEP_SUMMARY"
           echo "Game source and tests unchanged from validated commit \`$source_commit\`." >> "$GITHUB_STEP_SUMMARY"
