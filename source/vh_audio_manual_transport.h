@@ -21,7 +21,8 @@ typedef enum {
     VH_MANUAL_QUEUED = 2,
     VH_MANUAL_EXECUTING = 3,
     VH_MANUAL_WAIT_PCM = 4,
-    VH_MANUAL_CONFIRMED = 5
+    VH_MANUAL_CONFIRMED = 5,
+    VH_MANUAL_STOPPED = 6 /* worker is gone; do not accept more input */
 } VhAudioManualPhase;
 
 typedef struct {
@@ -57,7 +58,15 @@ static inline int vh_audio_manual_request(VhAudioManualTransport *ctl,
     atomic_store(&ctl->action,action);
     atomic_store(action==VH_MANUAL_QUICK ?
                  &ctl->quick_result : &ctl->reopen_result,1);
-    atomic_store(&ctl->phase,VH_MANUAL_QUEUED);
+    /* Publish the command only if worker teardown has not changed
+     * CLAIMING into terminal FAILED. An unconditional store here could
+     * resurrect QUEUED *after* the audio worker has exited. */
+    phase=VH_MANUAL_CLAIMING;
+    if(!atomic_compare_exchange_strong(&ctl->phase,&phase,VH_MANUAL_QUEUED)) {
+        atomic_store(action==VH_MANUAL_QUICK ?
+                     &ctl->quick_result : &ctl->reopen_result,-1);
+        return 0;
+    }
     return 1;
 }
 
@@ -83,22 +92,31 @@ static inline void vh_audio_manual_finished_service(
     }
 }
 
-/* Worker shutdown before the required returned PCM page is a
- * genuine failed manual experiment. Preserve prior confirmed evidence;
- * do not turn an idle NRO into a spurious red error. Called after the
- * worker has stopped submitting PCM and while it owns the service.
+/* Worker shutdown is terminal even if there is no pending command.
+ * In particular, IDLE/CONFIRMED must not accept new input after the
+ * worker has stopped. An in-flight CLAIMING request may still be
+ * initializing its action/result, so that caller marks itself failed
+ * when its final CLAIMING->QUEUED CAS is denied.
  */
 static inline void vh_audio_manual_abort_pending(VhAudioManualTransport *ctl) {
     int phase=atomic_load(&ctl->phase);
-    while(phase==VH_MANUAL_QUEUED || phase==VH_MANUAL_EXECUTING ||
-          phase==VH_MANUAL_WAIT_PCM) {
-        if(atomic_compare_exchange_weak(&ctl->phase,&phase,
-                                        VH_MANUAL_FAILED)) {
-            const int action=atomic_load(&ctl->action);
-            if(action==VH_MANUAL_QUICK)
-                atomic_store(&ctl->quick_result,-1);
-            else if(action==VH_MANUAL_REOPEN)
-                atomic_store(&ctl->reopen_result,-1);
+    for(;;) {
+        if(phase==VH_MANUAL_FAILED || phase==VH_MANUAL_STOPPED)
+            return;
+        const int unfinished=phase==VH_MANUAL_CLAIMING ||
+            phase==VH_MANUAL_QUEUED || phase==VH_MANUAL_EXECUTING ||
+            phase==VH_MANUAL_WAIT_PCM;
+        const int next=unfinished ? VH_MANUAL_FAILED : VH_MANUAL_STOPPED;
+        if(atomic_compare_exchange_weak(&ctl->phase,&phase,next)) {
+            /* CLAIMING has no stable action yet: the request caller
+             * records its own failure on the rejected final CAS. */
+            if(unfinished && phase!=VH_MANUAL_CLAIMING) {
+                const int action=atomic_load(&ctl->action);
+                if(action==VH_MANUAL_QUICK)
+                    atomic_store(&ctl->quick_result,-1);
+                else if(action==VH_MANUAL_REOPEN)
+                    atomic_store(&ctl->reopen_result,-1);
+            }
             return;
         }
     }
