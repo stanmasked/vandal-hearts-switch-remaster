@@ -31,6 +31,10 @@ VhAudoutQueueExportResult vh_audout_slow_export(
 VhAudoutQueueExportResult vh_audout_clock_export(
     const VhAudoutQueueTelemetry *t,const char *directory,
     char *committed_path,size_t capacity);
+/* New Stage289 original-SD independent series. */
+VhAudoutQueueExportResult vh_audout_probe_export(
+    const VhAudoutQueueTelemetry *t,const char *directory,
+    char *committed_path,size_t capacity);
 VhAudoutQueueExportResult vh_audout_latency_export(
     const VhAudoutQueueTelemetry *t,const char *directory,
     char *committed_path,size_t capacity);

@@ -498,6 +498,34 @@ int main(int argc, char **argv) {
                 (int)slow_saved,slow_seen);
             export_status=2;
         }
+        /* Stage289: a separate numbered, read-back verified record of
+         * existing 1/16 pre-submit service probes; no new hot-path IO.
+         * Never confuse the service count with DAC/scheduler state. */
+        char probe_path[VH_AUDOUT_QUEUE_EXPORT_PATH_CAP];
+        const VhAudoutQueueExportResult probe_saved=
+            vh_switch_game_audio_probe_export(probe_path,sizeof probe_path);
+        struct stat probe_stat;
+        const int probe_seen=probe_saved==VH_AUDOUT_QUEUE_EXPORT_OK
+            && stat(probe_path,&probe_stat)==0 && S_ISREG(probe_stat.st_mode);
+        const int probe_receipt_fd=open(
+            "sdmc:/switch/vandal-hearts-remake/audio-audout-probe-export-result.txt",
+            O_WRONLY|O_CREAT|O_EXCL,0600);
+        if(probe_receipt_fd>=0) {
+            char message[160];
+            const int n=snprintf(message,sizeof message,
+                "export_status=%d\\npath_present=%u\\nfile_size=%llu\\n",
+                (int)probe_saved,probe_seen?1u:0u,
+                probe_seen ? (unsigned long long)probe_stat.st_size:0ull);
+            if(n>0 && (size_t)n<sizeof message)
+                (void)write(probe_receipt_fd,message,(size_t)n);
+            (void)close(probe_receipt_fd);
+        }
+        if(probe_saved!=VH_AUDOUT_QUEUE_EXPORT_OK || !probe_seen) {
+            fprintf(stderr,
+                "audout probe journal SD export failed: %d, path_present=%d\\n",
+                (int)probe_saved,probe_seen);
+            export_status=2;
+        }
         if (resume_message_enabled)
             (void)appletSetRestartMessageEnabled(false);
     }

@@ -43,6 +43,19 @@ void vh_audout_queue_record(VhAudoutQueueTelemetry *t,
             entry->returned=returned!=0;
         } else if(t->slow_dropped<UINT64_MAX) ++t->slow_dropped;
     }
+    /* No extra libnx calls. Journal the already existing query result
+     * with the audout submit-begin timestamp on the same guest clock. */
+    if(queue_status==0 || queue_status==1) {
+        if(t->probe_count<VH_AUDOUT_PROBE_CAP) {
+            VhAudoutProbeSample *p=&t->probe[t->probe_count++];
+            p->attempt=t->attempts+1u;
+            p->submit_begin_ns=begin_ns;
+            p->queue_status=queue_status;
+            p->queue_count=queue_status==1 ? queue_count : 0u;
+        } else if(t->probe_dropped<UINT64_MAX) {
+            ++t->probe_dropped;
+        }
+    }
     ++t->attempts; ++b->attempts;
     if(returned) {++t->returns;++b->returns;}
     else {++t->failures;++b->failures;}
@@ -297,6 +310,49 @@ int vh_audout_slow_verify_csv(const VhAudoutQueueTelemetry *t,FILE *in) {
        !fgets(got,sizeof got,in) || strcmp(got,want)!=0) return -1;
     for(unsigned i=0;i<t->slow_count;i++) {
         if(slow_row(want,sizeof want,i,&t->slow[i])<0 ||
+           !fgets(got,sizeof got,in) || strcmp(got,want)!=0) return -1;
+    }
+    return fgetc(in)==EOF && !ferror(in) ? 0 : -1;
+}
+
+/* Separate Stage289 probe CSV. Export only AFTER the sole audio worker
+ * joins. Original Stage269, 272, 273 and 274 CSVs are unchanged. */
+static const char PROBE_HEADER[]=
+    "scope,index,attempt,submit_begin_ns,status,queue_count,total_probes,dropped_probes\n";
+
+static int probe_total(char *line,size_t cap,const VhAudoutQueueTelemetry *t) {
+    const int n=snprintf(line,cap,"TOTAL,-1,0,0,-1,0,%llu,%llu\n",
+        (unsigned long long)((uint64_t)t->probe_count+t->probe_dropped),
+        (unsigned long long)t->probe_dropped);
+    return n>0 && (size_t)n<cap ? n : -1;
+}
+static int probe_row(char *line,size_t cap,unsigned index,
+                     const VhAudoutProbeSample *p) {
+    const int n=snprintf(line,cap,
+        "SAMPLE,%u,%llu,%llu,%d,%u,0,0\n",index,
+        (unsigned long long)p->attempt,
+        (unsigned long long)p->submit_begin_ns,
+        p->queue_status,p->queue_count);
+    return n>0 && (size_t)n<cap ? n : -1;
+}
+int vh_audout_probe_write_csv(const VhAudoutQueueTelemetry *t,FILE *out) {
+    char line[240];
+    if(!t || !out || probe_total(line,sizeof line,t)<0 ||
+       fputs(PROBE_HEADER,out)==EOF || fputs(line,out)==EOF) return -1;
+    for(unsigned i=0;i<t->probe_count;i++) {
+        if(probe_row(line,sizeof line,i,&t->probe[i])<0 ||
+           fputs(line,out)==EOF) return -1;
+    }
+    return ferror(out) ? -1 : (int)t->probe_count;
+}
+int vh_audout_probe_verify_csv(const VhAudoutQueueTelemetry *t,FILE *in) {
+    char got[240],want[240];
+    if(!t || !in || !fgets(got,sizeof got,in) ||
+       strcmp(got,PROBE_HEADER)!=0 ||
+       probe_total(want,sizeof want,t)<0 ||
+       !fgets(got,sizeof got,in) || strcmp(got,want)!=0) return -1;
+    for(unsigned i=0;i<t->probe_count;i++) {
+        if(probe_row(want,sizeof want,i,&t->probe[i])<0 ||
            !fgets(got,sizeof got,in) || strcmp(got,want)!=0) return -1;
     }
     return fgetc(in)==EOF && !ferror(in) ? 0 : -1;

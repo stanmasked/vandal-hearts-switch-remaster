@@ -35,6 +35,8 @@ VhAudoutQueueExportResult vh_switch_game_audio_slow_export(
     char *committed_path,size_t capacity);
 VhAudoutQueueExportResult vh_switch_game_audio_clock_export(
     char *committed_path,size_t capacity);
+VhAudoutQueueExportResult vh_switch_game_audio_probe_export(
+    char *committed_path,size_t capacity);
 VhAudoutQueueExportResult vh_switch_game_audio_latency_export(
     char *committed_path,size_t capacity);
 /* Export numbered, readback-verified SD CSV ONLY after the audio

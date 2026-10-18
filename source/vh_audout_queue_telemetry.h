@@ -15,6 +15,14 @@
 #define VH_AUDOUT_LATENCY_BANDS 4u
 /* No heap/IO/locks in audio owner. Overflow is explicit, never silent. */
 #define VH_AUDOUT_SLOW_CALL_CAP 128u
+/* Every 16th existing pre-submit queue SERVICE query, not a scheduler
+ * callback. Enough for 4096 attempts; overflow remains observable. */
+#define VH_AUDOUT_PROBE_CAP 256u
+typedef struct {
+    uint64_t attempt, submit_begin_ns;
+    uint32_t queue_count;
+    int queue_status;
+} VhAudoutProbeSample;
 typedef struct {
     uint64_t attempt, begin_ns, end_ns;
     unsigned returned;
@@ -36,6 +44,9 @@ typedef struct {
     uint32_t slow_count;
     uint64_t slow_dropped;
     VhAudoutSlowCall slow[VH_AUDOUT_SLOW_CALL_CAP];
+    uint32_t probe_count;
+    uint64_t probe_dropped;
+    VhAudoutProbeSample probe[VH_AUDOUT_PROBE_CAP];
 } VhAudoutQueueTelemetry;
 void vh_audout_queue_reset(VhAudoutQueueTelemetry *t);
 /* Probe ONLY before a normal audoutPlayBuffer; 1/16 calls. */
@@ -66,4 +77,9 @@ int vh_audout_clock_verify_csv(const VhAudoutQueueTelemetry *t,FILE *in);
  * Only after worker join; bounded memory; overflow explicitly exported. */
 int vh_audout_slow_write_csv(const VhAudoutQueueTelemetry *t,FILE *out);
 int vh_audout_slow_verify_csv(const VhAudoutQueueTelemetry *t,FILE *in);
+/* Stage289: independent pre-submit service probe chronology.
+ * submit_begin_ns is stamped AFTER the queue-count query, BEFORE the
+ * blocking call. It is NOT the query timestamp or a scheduler trace. */
+int vh_audout_probe_write_csv(const VhAudoutQueueTelemetry *t,FILE *out);
+int vh_audout_probe_verify_csv(const VhAudoutQueueTelemetry *t,FILE *in);
 #endif
