@@ -19,6 +19,68 @@ FILES = frozenset((
     "native-av-guest-witness.json",
 ))
 REQUIRED_NONEMPTY = FILES - {"nexium.log"}
+# These four guest-only controls have isolated EMPTY SD fixtures, even
+# though they exercise distinct synthetic audout fault paths.
+SD_MODE_BY_SCENARIO = {
+    "empty": "empty",
+    "full": "full",
+    "partial": "partial",
+    "zr": "empty",
+    "zl": "empty",
+    "resume": "empty",
+    "resume_retry": "empty",
+}
+
+
+def unique_json_object(pairs):
+    data = {}
+    for key, value in pairs:
+        if key in data:
+            raise ValueError("duplicate SD fixture JSON member: " + key)
+        data[key] = value
+    return data
+
+
+def reject_nonfinite(number):
+    raise ValueError("non-finite SD fixture JSON number: " + number)
+
+
+def expected_manifest(mode):
+    files = {"empty": [], "partial": ["music.seq"],
+             "full": ["music.seq", "music.vh", "music.vb"]}[mode]
+    return {
+        "fixture_mode": mode,
+        "synthetic_only": True,
+        "files_created": files,
+        "expected_audio_source": {
+            "empty": "synthetic", "full": "user_files",
+            "partial": "invalid_or_partial",
+        }[mode],
+        "expected_audout_status": (
+            "unavailable_or_error" if mode == "partial" else "initialized"
+        ),
+        "original_audio_verified": False,
+        "audible_audio_verified": False,
+    }
+
+
+def verify_fixture_manifest(path, scenario):
+    # Bound the JSON size even if someone publishes arbitrary bytes at
+    # the expected name. The generator outputs a small seven-field object.
+    if path.stat().st_size > 16384:
+        raise ValueError("SD fixture manifest exceeds 16 KiB")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"),
+                          object_pairs_hook=unique_json_object,
+                          parse_constant=reject_nonfinite)
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError("SD fixture manifest is not valid UTF-8 JSON") from exc
+    expected = expected_manifest(SD_MODE_BY_SCENARIO[scenario])
+    # Canonical serialization distinguishes JSON booleans from numbers.
+    if (type(data) is not dict or
+            json.dumps(data, sort_keys=True, allow_nan=False) !=
+            json.dumps(expected, sort_keys=True, allow_nan=False)):
+        raise ValueError("SD fixture manifest does not match scenario: " + scenario)
 
 
 def validate_inventory(root):
@@ -46,6 +108,8 @@ def validate_inventory(root):
                 raise ValueError("non-regular or symlinked evidence file: " + str(entry))
             if entry.name in REQUIRED_NONEMPTY and entry.stat().st_size == 0:
                 raise ValueError("empty required evidence file: " + str(entry))
+        scenario = folder.name[len(PREFIX):-len(SUFFIX)]
+        verify_fixture_manifest(folder / "sd-fixture-manifest.json", scenario)
     return {"scenario_count": len(SCENARIOS),
             "files_per_scenario": len(FILES),
             "physical_hardware_verified": False,

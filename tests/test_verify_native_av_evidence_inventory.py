@@ -7,7 +7,8 @@ import tempfile
 import unittest
 
 from verify_native_av_evidence_inventory import (
-    FILES, PREFIX, SCENARIOS, SUFFIX, validate_inventory,
+    FILES, PREFIX, SCENARIOS, SUFFIX, SD_MODE_BY_SCENARIO,
+    expected_manifest, validate_inventory,
 )
 
 
@@ -21,8 +22,13 @@ class NeXiumPublishedInventoryTests(unittest.TestCase):
             folder = self.root / (PREFIX + scenario + SUFFIX)
             folder.mkdir()
             for name in FILES:
-                payload = b"" if name == "nexium.log" else b"synthetic-not-real-proof"
-                (folder / name).write_bytes(payload)
+                if name == "sd-fixture-manifest.json":
+                    (folder / name).write_text(
+                        json.dumps(expected_manifest(SD_MODE_BY_SCENARIO[scenario])),
+                        encoding="utf-8")
+                else:
+                    payload = b"" if name == "nexium.log" else b"synthetic-not-real-proof"
+                    (folder / name).write_bytes(payload)
 
     def folder(self, scenario="empty"):
         return self.root / (PREFIX + scenario + SUFFIX)
@@ -93,6 +99,61 @@ class NeXiumPublishedInventoryTests(unittest.TestCase):
         (self.folder("empty") / "av-before.png").write_bytes(b"x")
         (self.folder("empty") / "native-av-guest-witness.json").write_bytes(b"")
         self.assertNotEqual(self.cli().returncode, 0)
+
+    def test_swapped_full_and_partial_sd_fixture_manifests_rejected(self):
+        full = self.folder("full") / "sd-fixture-manifest.json"
+        partial = self.folder("partial") / "sd-fixture-manifest.json"
+        before_full, before_partial = full.read_bytes(), partial.read_bytes()
+        full.write_bytes(before_partial)
+        partial.write_bytes(before_full)
+        with self.assertRaisesRegex(ValueError, "does not match scenario"):
+            validate_inventory(self.root)
+
+    def test_wrong_empty_fixture_for_resume_retry_rejected(self):
+        manifest = self.folder("resume_retry") / "sd-fixture-manifest.json"
+        data = expected_manifest("partial")
+        manifest.write_text(json.dumps(data))
+        self.assertNotEqual(self.cli().returncode, 0)
+
+    def test_fake_original_music_verified_claim_rejected(self):
+        manifest = self.folder("empty") / "sd-fixture-manifest.json"
+        data = expected_manifest("empty")
+        data["original_audio_verified"] = True
+        manifest.write_text(json.dumps(data))
+        with self.assertRaisesRegex(ValueError, "does not match scenario"):
+            validate_inventory(self.root)
+
+    def test_unexpected_sd_fixture_field_or_wrong_type_rejected(self):
+        manifest = self.folder("full") / "sd-fixture-manifest.json"
+        expected = expected_manifest("full")
+        expected["fixture_source"] = "unknown"
+        manifest.write_text(json.dumps(expected))
+        self.assertNotEqual(self.cli().returncode, 0)
+        del expected["fixture_source"]
+        expected["synthetic_only"] = 1
+        manifest.write_text(json.dumps(expected))
+        self.assertNotEqual(self.cli().returncode, 0)
+
+    def test_duplicate_sd_fixture_json_field_and_nan_rejected(self):
+        manifest = self.folder("full") / "sd-fixture-manifest.json"
+        original = manifest.read_text()
+        duplicate = original.replace('"fixture_mode":', '"fixture_mode": "full", "fixture_mode":', 1)
+        manifest.write_text(duplicate)
+        with self.assertRaisesRegex(ValueError, "duplicate SD fixture JSON"):
+            validate_inventory(self.root)
+        manifest.write_text(original.replace('"synthetic_only": true',
+                                              '"synthetic_only": NaN'))
+        with self.assertRaisesRegex(ValueError, "non-finite SD fixture JSON"):
+            validate_inventory(self.root)
+
+    def test_oversized_or_malformed_sd_fixture_rejected(self):
+        manifest = self.folder("empty") / "sd-fixture-manifest.json"
+        manifest.write_bytes(b" " * 16385)
+        with self.assertRaisesRegex(ValueError, "exceeds 16 KiB"):
+            validate_inventory(self.root)
+        manifest.write_bytes(b"\xff\xfe")
+        with self.assertRaisesRegex(ValueError, "not valid UTF-8 JSON"):
+            validate_inventory(self.root)
 
     def test_reject_missing_or_symlinked_root(self):
         with self.assertRaisesRegex(ValueError, "non-symlink directory"):
