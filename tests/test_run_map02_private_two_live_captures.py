@@ -348,6 +348,75 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
                             target.unlink()
                 self._launch_with_second_pair_difference(variant, strict=True)
 
+    def _launch_with_unmatched_gpu_pair(self, *, longer_second, strict):
+        # Both children use the exact same pinned ELF. Only this test's
+        # capture shim varies arguments, yielding a real extra GPU pair
+        # in one child with no changed prefix events or terminal pixels.
+        original = two_live.capture
+        calls = []
+        first_args = () if longer_second else ("two-pair",)
+        second_args = ("two-pair",) if longer_second else ()
+        def change_second(*args, **kwargs):
+            calls.append(1)
+            if len(calls) == 2:
+                kwargs["args"] = second_args
+            return original(*args, **kwargs)
+        with patch.object(two_live, "capture", side_effect=change_second):
+            if strict:
+                with self.assertRaisesRegex(ValueError, "not bit-exact"):
+                    self.run_two(args=first_args,
+                                 require_identical_gpu_timeline=True)
+                result = None
+            else:
+                result = self.run_two(args=first_args)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(list(self.dirs[1].iterdir())),
+                         3 if longer_second else 5)
+        self.assertEqual(len(list(self.dirs[3].iterdir())),
+                         5 if longer_second else 3)
+        return result
+
+    def test_unmatched_second_draw_pair_is_not_bit_exact_in_diagnostic_mode(self):
+        for longer_second in (True, False):
+            with self.subTest(longer_second=longer_second):
+                if not longer_second:
+                    for folder in self.dirs:
+                        for path in folder.iterdir():
+                            path.unlink()
+                report = self._launch_with_unmatched_gpu_pair(
+                    longer_second=longer_second, strict=False)
+                self.assertEqual(report["first_gpu_event_count"],
+                                 2 if longer_second else 4)
+                self.assertEqual(report["second_gpu_event_count"],
+                                 4 if longer_second else 2)
+                self.assertEqual(report["gpu_event_records_compared"], 2)
+                self.assertEqual(report["gpu_vram_snapshots_compared"], 2)
+                self.assertEqual(report["unmatched_gpu_event_records"], 2)
+                self.assertEqual(report["unmatched_gpu_vram_snapshots"], 2)
+                self.assertEqual(report["different_gpu_event_records_in_common_prefix"], 0)
+                self.assertEqual(report["different_gpu_vram_snapshots_in_common_prefix"], 0)
+                self.assertIsNone(report["first_different_gpu_event_record_index"])
+                self.assertIsNone(report["first_different_gpu_vram_snapshot_index"])
+                self.assertEqual(report["first_joint_gpu_divergence_kind"],
+                                 "unmatched-tail")
+                self.assertEqual(report["first_joint_gpu_divergence_index"], 2)
+                self.assertEqual(report["first_joint_gpu_divergence_pair_index"], 1)
+                self.assertEqual(report["first_joint_gpu_divergence_phase"], "before")
+                self.assertTrue(report["repeated_native_frame_pixels_identical"])
+                self.assertEqual(report["different_bgr555_pixels"], 0)
+                self.assertFalse(report["strict_gpu_timeline_match_verified"])
+                self.assertFalse(report["hd_replacement_authorized"])
+
+    def test_unmatched_second_draw_pair_strict_mode_rejects_both_directions(self):
+        for longer_second in (True, False):
+            with self.subTest(longer_second=longer_second):
+                if not longer_second:
+                    for folder in self.dirs:
+                        for path in folder.iterdir():
+                            path.unlink()
+                self._launch_with_unmatched_gpu_pair(
+                    longer_second=longer_second, strict=True)
+
     def test_strict_gpu_timeline_gate_rejects_missing_claims(self):
         good = self.run_two()
         with self.assertRaisesRegex(ValueError, "not bit-exact"):
