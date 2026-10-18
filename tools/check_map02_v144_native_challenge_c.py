@@ -84,8 +84,8 @@ def run(compiler):
         for i,bad in enumerate(invalid):
             d=directory("bad-"+str(i))
             invoke("refuse",d,bad)
-            if (d/name).exists() or (d/challenge_name).exists() or (
-                    d/".vh143-private-mmio-staging.jsonl").exists()):
+            if ((d/name).exists() or (d/challenge_name).exists() or
+                    (d/".vh143-private-mmio-staging.jsonl").exists()):
                 raise ValueError("VH144_INVALID_CHALLENGE_PUBLISHED")
 
         # Existing sidecar symlink and file must not be replaced.
