@@ -57,10 +57,11 @@ def parse_exit_csv(raw: bytes) -> dict:
         times.append(stamp)
 
     missing = [EVENTS[i] for i, t in enumerate(times) if t == 0]
-    if not missing and any(a > b for a, b in zip(times, times[1:])):
-        raise ExitTimelineError("guest exit software timestamps reversed")
-    if not missing and len(set(times)) != len(times):
-        raise ExitTimelineError("guest exit events timestamp tie (insufficient order)")
+    observed_times = [t for t in times if t != 0]
+    # Even an INCOMPLETE witness must not conceal reversed/tied observed
+    # guest milestones behind one missing value.
+    if any(a >= b for a, b in zip(observed_times, observed_times[1:])):
+        raise ExitTimelineError("observed guest exit events reversed or tied")
     orderly = not missing
     return {
         "schema": SCHEMA,
