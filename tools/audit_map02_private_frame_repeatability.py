@@ -334,6 +334,44 @@ def _require_gpu_snapshot_aggregate_consistency(data):
             or data["gpu_vram_reconverged_at_common_prefix_end"]
                is not (changed > 0 and last < common - 1)):
         raise ValueError(error)
+    # Each common-prefix position is either equal or different. Crossing
+    # between those states changes the transition count by exactly one,
+    # so its parity is determined by the first and final states.
+    # The "first reconverged" field must witness a REAL equal snapshot
+    # after an observed difference, never a fabricated recovery marker.
+    if changed:
+        starts_different = first == 0
+        ends_different = last == common - 1
+        expected_parity = int(starts_different != ends_different)
+        minimum_transitions = int(first > 0) + int(last < common - 1)
+        if (transitions < minimum_transitions
+                or transitions % 2 != expected_parity):
+            raise ValueError(error)
+        if reconverged is None:
+            # There can be no recovery when the differing suffix is
+            # uninterrupted; only the initial equal-to-different edge
+            # may remain in the count.
+            if last != common - 1 or transitions != int(first > 0):
+                raise ValueError(error)
+        elif last < reconverged:
+            # A single initial differing interval recovers once and
+            # never diverges again. The FIRST equal snapshot must be
+            # immediately after its last difference.
+            if (reconverged != last + 1
+                    or transitions != int(first > 0) + 1):
+                raise ValueError(error)
+        elif last > reconverged:
+            # At least one real equal interval separates the first
+            # differing interval from a later differing interval.
+            # Count their boundaries, including initial/final edges.
+            minimum_reappearance = (
+                int(first > 0) + 2 + int(last < common - 1))
+            if transitions < minimum_reappearance:
+                raise ValueError(error)
+        else:
+            # A reconvergence snapshot is equal and cannot itself be
+            # the final different snapshot.
+            raise ValueError(error)
     # The domain-separated ordered commitment covers each entire VRAM
     # snapshot, including any unmatched trailing GPU pairs.
     for key in ("first_gpu_vram_timeline_sha256",
