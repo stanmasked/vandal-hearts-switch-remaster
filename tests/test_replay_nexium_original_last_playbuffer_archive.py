@@ -90,6 +90,60 @@ class OriginalLastServiceCallReplayer(unittest.TestCase):
             result["last_call_return_to_last_page_witness_guest_ns"],10)
         self.assertFalse(result["physical_Nintendo_Switch_audio_tested"])
 
+    def test_main_stop_to_page_return_partition_straddling_call(self):
+        result=self.replay()
+        self.assertEqual(
+            result["stop_request_to_last_normal_PCM_page_return_guest_ns"],100)
+        self.assertEqual(
+            result["post_stop_before_last_successful_call_guest_ns"],0)
+        self.assertEqual(
+            result["post_stop_inside_last_successful_call_guest_ns"],90)
+        self.assertEqual(
+            result["post_stop_after_last_successful_call_to_page_return_guest_ns"],10)
+        self.assertTrue(result["source_time_partition_exactly_conserved"])
+
+    def test_main_stop_to_page_return_partition_call_starts_after_stop(self):
+        stop=self.originals[3]["guest_monotonic_timestamps_ns"]["stop_requested"]
+        before=self.originals[6]["last_page_return_guest_ns"]
+        original_begin=stop-1000
+        new_begin=stop+20
+        source=self.service_source.replace(
+            f"last_success_begin_guest_ns,{original_begin}\n".encode(),
+            f"last_success_begin_guest_ns,{new_begin}\n".encode())
+        self.assertNotEqual(source,self.service_source)
+        receipt=audit_original(
+            source,self.originals[3],self.originals[6],self.stage317)
+        receipt["original_guest_playbuffer_source_observed"]=True
+        receipt["original_guest_playbuffer_source_path"]=str(SUBDIR/PLAYBUFFER_SOURCE)
+        receipt["original_source_bytes_preserved"]=True
+        result=self.replay(source=source,receipt=receipt)
+        self.assertEqual(result["post_stop_before_last_successful_call_guest_ns"],20)
+        self.assertEqual(result["post_stop_inside_last_successful_call_guest_ns"],
+                         before-10-new_begin)
+        self.assertEqual(result["post_stop_after_last_successful_call_to_page_return_guest_ns"],10)
+        self.assertTrue(result["source_time_partition_exactly_conserved"])
+
+    def test_main_stop_to_page_return_partition_call_ends_before_stop(self):
+        stop=self.originals[3]["guest_monotonic_timestamps_ns"]["stop_requested"]
+        page=self.originals[6]["last_page_return_guest_ns"]
+        old_end=page-10
+        new_end=stop-1
+        source=self.service_source.replace(
+            f"last_success_end_guest_ns,{old_end}\n".encode(),
+            f"last_success_end_guest_ns,{new_end}\n".encode())
+        self.assertNotEqual(source,self.service_source)
+        receipt=audit_original(
+            source,self.originals[3],self.originals[6],self.stage317)
+        receipt["original_guest_playbuffer_source_observed"]=True
+        receipt["original_guest_playbuffer_source_path"]=str(SUBDIR/PLAYBUFFER_SOURCE)
+        receipt["original_source_bytes_preserved"]=True
+        result=self.replay(source=source,receipt=receipt)
+        self.assertEqual(result["post_stop_before_last_successful_call_guest_ns"],0)
+        self.assertEqual(result["post_stop_inside_last_successful_call_guest_ns"],0)
+        self.assertEqual(
+            result["post_stop_after_last_successful_call_to_page_return_guest_ns"],page-stop)
+        self.assertTrue(result["source_time_partition_exactly_conserved"])
+
     def test_separate_archive_replay_reads_actual_original_bytes(self):
         archive=read_archive(self.root)
         self.assertEqual(archive[3],self.service_source)
