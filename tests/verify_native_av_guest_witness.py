@@ -29,6 +29,26 @@ SCENARIOS = {
 
 HEX40 = re.compile(r"[0-9a-f]{40}\Z")
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
+WITNESS_FIELDS = frozenset({
+    "format", "source_revision", "github_run_id", "github_run_attempt",
+    "nro_sha256", "first_frame_sha256", "second_frame_sha256",
+    "required_checks", "observation", "audible_audio_verified",
+    "physical_switch_verified",
+})
+
+
+def unique_json_object(pairs):
+    """Reject ambiguous duplicate members at every nested JSON level."""
+    obj = {}
+    for key, value in pairs:
+        if key in obj:
+            raise ValueError("duplicate JSON member: " + key)
+        obj[key] = value
+    return obj
+
+
+def reject_nonfinite_json(value):
+    raise ValueError("non-finite JSON number rejected: " + value)
 
 
 def require(condition, reason):
@@ -49,8 +69,13 @@ def verify(witness, first, second, nro, revision, scenario,
     """Return recomputed observations; never trust the stored verdict alone."""
     require(scenario in SCENARIOS, "unknown guest scenario")
     require(HEX40.fullmatch(revision) is not None, "invalid source commit")
-    data = json.loads(witness.read_text(encoding="utf-8"))
+    data = json.loads(
+        witness.read_text(encoding="utf-8"),
+        object_pairs_hook=unique_json_object,
+        parse_constant=reject_nonfinite_json)
     require(type(data) is dict, "witness must be an object")
+    require(data.keys() == WITNESS_FIELDS,
+            "witness has missing or unexpected top-level fields")
     require(data.get("format") == "vh-native-av-guest-witness-v1",
             "unsupported witness format")
     require(data.get("source_revision") == revision, "source revision mismatch")
