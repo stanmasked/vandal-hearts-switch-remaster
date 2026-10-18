@@ -1144,6 +1144,48 @@ jobs:
             proof/private/v165-guest-gp0-vram.log
           grep -F 'VH121_MIPS_GP0_RETURN_PASS stages=6' \
             proof/private/v165-guest-gp0-vram.log
+          # Retain valid signed synthetic EXE / CPU stage markers, but
+          # mutate one actual interpreted ORI instruction so the first
+          # GP0(60) red command carries a wrong color. The native GPU
+          # observer must refuse it BEFORE any VRAM readback is credited.
+          python3 - <<'PY'
+          from pathlib import Path
+          from struct import pack
+          from remaster.tools.make_map02_v121_mips_gp0_return_exe import (
+              build,stage_body,HEADER_SIZE,ori,COLORS
+          )
+          path=Path("proof/private/V121_SYNTHETIC.EXE")
+          raw=path.read_bytes()
+          authored,stops,ops,starts=build()
+          assert raw==authored
+          # stage zero body+2 control words, stage one GP0 color ORI:
+          index=len(stage_body(0))+2+3
+          assert ops[index]==ori(9,9,COLORS[0]&0xffff)
+          offset=HEADER_SIZE+index*4
+          bad=bytearray(raw)
+          bad[offset:offset+4]=pack("<I",ops[index]^1)
+          assert bad[0x4c:0x54]==b"VH121SY!"
+          assert len(bad)==len(raw) and sum(a!=b for a,b in zip(raw,bad))==1
+          target=Path("proof/private/V165_BAD_COLOR.EXE")
+          assert not target.exists()
+          target.write_bytes(bad)
+          PY
+          mkdir -m 700 proof/v165-wrong-gp0-home
+          vh165_wrong_rc=0
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v165-wrong-gp0-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh165-mips-gp0-vram-bound proof/private/V165_BAD_COLOR.EXE \
+            > proof/private/v165-wrong-gp0.log 2>&1 || vh165_wrong_rc=$?
+          test "$vh165_wrong_rc" -eq 69
+          grep -F 'VH165_GP0_TRIPLET_REFUSED phase=0' \
+            proof/private/v165-wrong-gp0.log
+          if grep -Fq 'VH165_GUEST_MIPS_GP0_VRAM_BOUND_PASS' \
+              proof/private/v165-wrong-gp0.log; then
+            echo 'VH165_CHANGED_GP0_WORD_FALSE_ACCEPT_REFUSED'
+            exit 1
+          fi
           # Corrupt ONLY the self-authored EXE's tag; the stricter v164
           # mode must never credit it as authentic MIPS-sourced raster.
           python3 - <<'PY'
