@@ -359,6 +359,27 @@ class PrivateCapturePreflightTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "incomplete"):
             self.run_preflight()
 
+    def test_rejects_aliased_or_nested_capture_roots(self):
+        with self.assertRaisesRegex(ValueError, "directories overlap"):
+            inspect_staged_capture(self.source, self.source)
+        nested = self.source / "nested-native-capture"
+        nested.mkdir(mode=0o700)
+        with self.assertRaisesRegex(ValueError, "directories overlap"):
+            inspect_staged_capture(self.source, nested)
+        reverse_nested = self.native / "nested-source-capture"
+        reverse_nested.mkdir(mode=0o700)
+        with self.assertRaisesRegex(ValueError, "directories overlap"):
+            inspect_staged_capture(reverse_nested, self.native)
+        self.assertTrue(self.run_preflight()["structural_preflight_passed"])
+
+    def test_preflight_rejects_roots_not_owned_by_current_user(self):
+        own_uid = os.geteuid()
+        with patch("tools.check_map02_private_capture_ready.os.geteuid",
+                   return_value=own_uid + 1):
+            with self.assertRaisesRegex(ValueError, "require current owner"):
+                self.run_preflight()
+        self.assertTrue(self.run_preflight()["structural_preflight_passed"])
+
     def test_refuses_world_readable_or_symlinked_capture_directories(self):
         os.chmod(self.native, 0o755)
         with self.assertRaises(ValueError):
