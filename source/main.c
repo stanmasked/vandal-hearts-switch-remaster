@@ -503,6 +503,33 @@ int main(int argc, char **argv) {
                     (void)unlink(bracket_path);
             }
         }
+        /* Stage322: no output while audio runs; post-join only.
+         * Separate original guest source with O_EXCL to avoid replacing
+         * any earlier capture. Export failures do not alter game exit. */
+        int history_fd=-1;
+        char history_path[256];
+        for(unsigned slot=0;slot<32u;slot++) {
+            int n=snprintf(history_path,sizeof history_path,
+                VH_SCENE_TRACE_SD_DIRECTORY
+                "/audio-playbuffer-history-%03u.csv",slot);
+            if(n<=0 || (size_t)n>=sizeof history_path) break;
+            history_fd=open(history_path,O_WRONLY|O_CREAT|O_EXCL,0600);
+            if(history_fd>=0) break;
+            if(errno!=EEXIST) break;
+        }
+        if(history_fd>=0) {
+            FILE *history_stream=fdopen(history_fd,"w");
+            if(!history_stream) {
+                (void)close(history_fd);
+                (void)unlink(history_path);
+            } else {
+                const int rows=vh_switch_game_audio_playbuffer_history_dump(history_stream);
+                const int flushed=fflush(history_stream);
+                const int closed=fclose(history_stream);
+                if(rows<=0 || flushed!=0 || closed!=0)
+                    (void)unlink(history_path);
+            }
+        }
         char scene_path[VH_SCENE_TRACE_EXPORT_PATH_CAP];
         const VhSceneExportResult saved=vh_switch_game_audio_trace_export(
             scene_path,sizeof scene_path);
