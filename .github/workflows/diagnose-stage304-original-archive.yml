@@ -52,21 +52,43 @@ jobs:
           }
           found={}
           missing=[]
+          ambiguous=[]
+          # The artifact action may strip the top-level directory or
+          # retain a nested evidence directory. Search by exact
+          # basename, require precisely ONE regular non-symlink file
+          # and preserve the located relative path for strict replay.
           for label,name in expected.items():
-              source=root/name
-              regular=source.is_file() and not source.is_symlink()
-              found[label]={"filename":name,"regular_source_available":regular}
-              if regular:
-                  found[label]["size_bytes"]=source.stat().st_size
+              candidates=list(root.rglob(name))
+              safe=[
+                  p for p in candidates
+                  if p.is_file() and not p.is_symlink()
+                  and all(not parent.is_symlink()
+                          for parent in p.relative_to(root).parents
+                          if parent!=Path("."))
+              ]
+              record={
+                  "filename":name,
+                  "candidate_count":len(candidates),
+                  "safe_regular_candidate_count":len(safe),
+                  "regular_source_available":len(safe)==1 and len(candidates)==1,
+              }
+              if record["regular_source_available"]:
+                  source=safe[0]
+                  record["relative_archive_path"]=source.relative_to(root).as_posix()
+                  record["size_bytes"]=source.stat().st_size
+              elif len(candidates)>1:
+                  ambiguous.append(name)
               else:
                   missing.append(name)
+              found[label]=record
           out={
               "schema":"vh-stage304-failed-run-archive-availability/v2",
               "original_neXium_run_id":39157976877,
               "original_runtime_successfully_completed":False,
-              "archive_has_all_Stage304_pinned_sources":not missing,
+              "archive_has_all_Stage304_pinned_sources":not missing and not ambiguous,
               "archived_pinned_source_files":found,
               "missing_archived_pinned_sources":missing,
+              "ambiguous_archived_pinned_sources":ambiguous,
               "original_capture_failure_reason_established":False,
               "archive_defect_not_automatically_original_run_defect":True,
               "guest_speaker_playback_verified":False,
@@ -75,6 +97,7 @@ jobs:
           Path("stage304-original-postmortem/source-inventory.json").write_text(
               json.dumps(out,indent=2,sort_keys=True)+"\n")
           print("Old Stage304 archived pinned sources missing:",missing)
+          print("Old Stage304 archived pinned sources ambiguous:",ambiguous)
           PY
 
       - name: Re-audit strict Stage304 only when its archived inputs actually exist
@@ -87,8 +110,9 @@ jobs:
           folder=Path("stage304-original-postmortem")
           doc=json.loads((folder/"source-inventory.json").read_text())
           root=Path("original-failed-stage322")
-          if doc["missing_archived_pinned_sources"]:
-              doc["archive_replay_result"]="ARCHIVE_INCOMPLETE_NO_FULL_REPLAY"
+          if (doc["missing_archived_pinned_sources"] or
+                  doc["ambiguous_archived_pinned_sources"]):
+              doc["archive_replay_result"]="ARCHIVE_INCOMPLETE_OR_AMBIGUOUS_NO_FULL_REPLAY"
               doc["original_capture_failure_reason_established"]=False
               doc["archive_input_error_does_not_prove_original_run_error"]=True
           else:
@@ -97,7 +121,7 @@ jobs:
               for name in ("monitor","monitor-report","scenes","scene-report",
                            "events","stage299","stage300","stage301","stage302",
                            "stage303","stop-csv","control-csv"):
-                  command.extend(["--"+name,str(root/sources[name]["filename"])])
+                  command.extend(["--"+name,str(root/sources[name]["relative_archive_path"])])
               command.extend(["--output",
                               str(folder/"recomputed-stage304.json")])
               result=subprocess.run(command,text=True,capture_output=True)
@@ -124,12 +148,17 @@ jobs:
                 doc["archive_replay_result"])
           print("Missing pinned source files:",
                 doc["missing_archived_pinned_sources"])
+          print("Ambiguous pinned source files:",
+                doc["ambiguous_archived_pinned_sources"])
           with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as output:
               output.write("### Stage304 prior failed NeXium archive postmortem\n\n")
               output.write("- Original run **39157976877 failed**; not promoted to success.\n")
               output.write("- Archived replay: "+doc["archive_replay_result"]+"\n")
               output.write("- Missing archived inputs: "+
                            (", ".join(doc["missing_archived_pinned_sources"])
+                            or "none")+"\n")
+              output.write("- Ambiguous archived inputs: "+
+                           (", ".join(doc["ambiguous_archived_pinned_sources"])
                             or "none")+"\n")
               output.write("- An archived input missing now does not identify "+
                            "the original in-run failure cause.\n")
