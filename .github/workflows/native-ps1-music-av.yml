@@ -179,7 +179,7 @@ jobs:
   emulator:
     name: NeXium guest SD case ${{ matrix.sd_case }} (audio not recorded)
     runs-on: ubuntu-26.04
-    needs: native-av
+    needs: [native-av, diagnostic-png-regressions]
     timeout-minutes: 15
     strategy:
       fail-fast: false
