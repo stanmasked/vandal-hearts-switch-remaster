@@ -147,6 +147,36 @@ class PrivateCapturePreflightTests(unittest.TestCase):
             _snapshot_word(self.native, "gpu-0001-vram.bin", self.x, self.y),
             992)
 
+    def test_sample_rejects_path_escape_and_noncanonical_snapshot_names(self):
+        for name in (
+                "../gpu-0001-vram.bin", "/tmp/gpu-0001-vram.bin",
+                "gpu-0001-vram.bin/../../other",
+                "gpu-1-vram.bin", "gpu-0001-vramXbin",
+                "gpu-0001-vram.bin/", 42, True):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ValueError, "snapshot filename"):
+                    _snapshot_word(self.native, name, self.x, self.y)
+
+    def test_sample_rejects_outside_vram_coordinates_and_bool(self):
+        for x, y in ((-1, 20), (1024, 20), (10, -1), (10, 512),
+                     (True, 20), (10, False), (10.0, 20)):
+            with self.subTest(x=x, y=y):
+                with self.assertRaisesRegex(ValueError, "sample coordinates"):
+                    _snapshot_word(self.native, "gpu-0001-vram.bin", x, y)
+
+    def test_sample_rejects_hardlinked_snapshot_inode(self):
+        target = self.native / "gpu-0001-vram.bin"
+        alias = self.native.parent / "foreign-hardlink"
+        os.link(target, alias)
+        try:
+            with self.assertRaisesRegex(ValueError, "wrong type or size"):
+                _snapshot_word(self.native, target.name, self.x, self.y)
+        finally:
+            alias.unlink()
+        self.assertEqual(
+            _snapshot_word(self.native, target.name, self.x, self.y),
+            992)
+
     @unittest.skipUnless(hasattr(os, "mkfifo"), "requires POSIX FIFO")
     def test_fifo_snapshot_rejected_without_blocking(self):
         target = self.native / "gpu-0001-vram.bin"
