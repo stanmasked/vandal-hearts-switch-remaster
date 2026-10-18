@@ -119,6 +119,12 @@ int main(void) {
         result=patch_frontend(example)
         self.assertIn("vh150_arm(0x80010000u,0x80012000u,3u)",result)
         self.assertIn("vh150_stop_reason()",result)
+        # Declarations must be visible after the first native ExecuteBlock.
+        # A block-local extern compiles only until a later call outside it.
+        self.assertLess(result.index("extern unsigned vh150_steps(void);"),
+                        result.index("if(vh150_bounded_instructions){"))
+        self.assertEqual(result.count("extern unsigned vh150_steps(void);"),1)
+        self.assertEqual(result.count("extern void vh150_disarm(void);"),1)
         self.assertIn("if(count!=3u || reason!=1u)",result)
         self.assertIn("vh150_bounded_instructions && vh129_vblank_mode!=0",result)
         self.assertIn("VH150_NATIVE_BOUNDED_INTERPRETER_PASS",result)
