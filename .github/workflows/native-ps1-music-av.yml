@@ -278,12 +278,24 @@ jobs:
             --before "$SHOT1" --after "$SHOT2" --nro "$NRO" \
             --revision "$GITHUB_SHA" --scenario "${{ matrix.sd_case }}"
 
-      - name: Upload AV runtime evidence
-        if: always()
+      - name: Publish validated AV guest evidence
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: native-ps1-music-av-nexium-${{ matrix.sd_case }}-evidence
           path: runtime-evidence/
+          if-no-files-found: error
+
+      - name: Retain failure-only diagnostics without witness JSON
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-ps1-music-av-nexium-${{ matrix.sd_case }}-diagnostics
+          path: |
+            runtime-evidence/av-before.png
+            runtime-evidence/av-after.png
+            runtime-evidence/nexium.log
+            runtime-evidence/sd-fixture-manifest.json
           if-no-files-found: warn
 
   verify-published-evidence:
