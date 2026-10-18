@@ -475,3 +475,53 @@ has an opportunity to take a second witness. Asset-free tests swap
 each of the two image names and `frames.json` at the exact point of
 an in-progress `os.read` and require a hard refusal. No file paths,
 pixels or inode numbers appear in the final comparison report.
+
+## One-command private MAP02 GPU capture with two complete replays
+
+A practical local wrapper is now available as
+`python3 -m tools.run_map02_private_joint_capture_audit`.
+The user must supply their *own* previously prepared SHA-pinned Linux ELF,
+two **existing empty** owner-private 0700 directories and the desired
+source-native frame selector. The tool does not search for ROM/disc
+files, obtain original assets, or commit private data.
+
+Example (replace the paths and SHA with locally computed private values):
+
+```sh
+mkdir -m 700 /private/capture-frame /private/capture-gpu
+python3 -m tools.run_map02_private_joint_capture_audit \
+  --executable /private/pinned-map02-elf \
+  --executable-sha256 YOUR_LOCAL_ELF_SHA256 \
+  --frame 123 \
+  --output-dir /private/capture-frame \
+  --gpu-journal-dir /private/capture-gpu
+```
+
+The wrapper runs the pinned native ELF **once**, requesting its full
+1024×512 little-endian BGR555 terminal frame and bounded before/after
+GPU snapshots. It requires the observed writable journal descriptor
+of the actual live Linux child, exact equality of the final native
+post-draw VRAM and stdout bytes, and the deliberately unauthenticated
+source/provenance flags.
+
+After the child exits it performs **two independent full replays** of
+the private BGR555 frame, JSON receipt, original ELF SHA-256, complete
+GPU journal and the native GPU operation/snapshot validator. To detect
+a byte-identical file swap *between* these replays, it also snapshots
+the inode/mode/size/time identity of the two output files and every
+journal file through owner-private no-follow directory descriptors
+before and after each replay. File changes make the command fail.
+Only SHA-256 digests, counts and explicit false provenance flags are
+printed; no filenames, private paths, BGR555 pixels or inode numbers
+appear in its success report.
+
+The wrapper is an offline development aid, **not a runnable remade
+level**, and it does not merge the independently captured PS1 source
+FT4/VRAM witness by itself (that remains the optional private digest
+join). It cannot prove the child wrote every GPU record, that the
+private upstream PC port rendered the original disc resources, that
+PS1 console pixels match, or that HD substitution is authorized.
+It cannot detect every possible concurrent modification or an inode
+replacement that occurred before the first post-capture audit; only
+the strict live launch gate and within-audit checks address that
+earlier window. HD replacement remains disabled.
