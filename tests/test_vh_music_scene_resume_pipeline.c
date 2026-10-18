@@ -222,10 +222,43 @@ int main(void) {
         dev.failures_left=block%12u==11u?(block==35u?2u:1u):0u;
         failures+=dev.failures_left;
         recovered_pages+=(dev.failures_left!=0);
+        if(block==51u) {
+            /* A failed submit followed by REFUSED stop is neither a
+             * returned descriptor nor permission to close/reopen.
+             * Explicitly resend the identical prepared PCM page,
+             * without re-rendering/advancing SEQ or rearming ramp. */
+            ++failures;
+            const VhAudioOutputRecovery before=stats;
+            const unsigned closes=dev.closes,opens=dev.opens;
+            const unsigned starts=dev.starts;
+            const uint64_t delivered=dev.accepted;
+            dev.failures_left=1u;
+            dev.fail_stops_left=1u;
+            assert(vh_audio_output_submit_recover(
+                &ops,&stats,source_pcm,frames)==-1);
+            assert(!dev.failures_left && !dev.fail_stops_left);
+            assert(dev.opened && dev.playing &&
+                   dev.closes==closes && dev.opens==opens &&
+                   dev.starts==starts);
+            assert(dev.accepted==delivered &&
+                   dev.submissions==before_submits+1u);
+            assert(stats.pages_submitted==before.pages_submitted &&
+                   stats.frames_submitted==before.frames_submitted &&
+                   stats.restart_attempts==before.restart_attempts &&
+                   stats.recoveries==before.recoveries &&
+                   stats.submit_failures==before.submit_failures+1u);
+            assert(hash_pcm(source_pcm,frames)==digest);
+            assert(!memcmp(&source_scene,&saved_scene,
+                           sizeof saved_scene));
+            assert(!memcmp(&source_spu,&saved_spu,sizeof saved_spu));
+            assert(!memcmp(&source_rate,&saved_rate,sizeof saved_rate));
+            assert(!memcmp(&source_ramp,&saved_ramp,sizeof saved_ramp));
+        }
         assert(vh_audio_output_submit_recover(
             &ops,&stats,source_pcm,frames)==0);
         assert(dev.submissions==before_submits+
-               (uint64_t)(block%12u==11u?(block==35u?3u:2u):1u));
+               (uint64_t)(block==51u?2u:
+                 block%12u==11u?(block==35u?3u:2u):1u));
         assert(hash_pcm(source_pcm,frames)==digest);
         assert(!memcmp(&source_scene,&saved_scene,sizeof saved_scene));
         assert(!memcmp(&source_spu,&saved_spu,sizeof saved_spu));
@@ -287,7 +320,7 @@ int main(void) {
     assert(stats.pages_submitted==BLOCKS &&
            stats.frames_submitted==returned_frames);
     assert(stats.submit_failures==failures &&
-           stats.restart_attempts==failures &&
+           stats.restart_attempts==failures-1u &&
            stats.recoveries==recovered_pages);
     assert(stats.resume_restarts==4u && stats.resume_failures==2u &&
            stats.resume_recoveries==3u);
