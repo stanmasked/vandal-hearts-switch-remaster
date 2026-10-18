@@ -57,7 +57,9 @@ def _read_regular(directory, name, exact_bytes):
         def identity(s):
             return (s.st_dev, s.st_ino, s.st_size,
                     s.st_mtime_ns, s.st_ctime_ns)
-        if identity(before) != identity(after):
+        if (identity(before) != identity(after)
+                or identity(os.stat(path, follow_symlinks=False))
+                != identity(before)):
             raise ValueError("MAP02 private frame changed while reading")
         return b"".join(chunks)
     finally:
@@ -87,7 +89,9 @@ def _bounded_manifest(directory):
         def identity(s):
             return (s.st_dev, s.st_ino, s.st_size,
                     s.st_mtime_ns, s.st_ctime_ns)
-        if len(raw) != start.st_size or identity(start) != identity(end):
+        if (len(raw) != start.st_size or identity(start) != identity(end)
+                or identity(os.stat(path, follow_symlinks=False))
+                != identity(start)):
             raise ValueError("MAP02 private manifest changed while reading")
         try:
             obj = json.loads(raw.decode("utf-8"), object_pairs_hook=_object_pairs,
