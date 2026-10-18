@@ -320,21 +320,35 @@ def _joint_gpu_vram_first_divergence(snapshots, events):
         raise ValueError("MAP02 GPU event and VRAM timeline counts disagree")
     first_event = events["first_different_gpu_event_record_index"]
     first_vram = snapshots["first_different_gpu_vram_snapshot_index"]
-    # First-divergence ordinals must agree with the independently counted
-    # common-prefix differences. Never silently accept "no first change"
-    # when the replay auditor has counted one or more differences.
-    for report, changed_key, first_index in (
-        (events, "different_gpu_event_records_in_common_prefix", first_event),
-        (snapshots, "different_gpu_vram_snapshots_in_common_prefix", first_vram),
-    ):
-        changed = report.get(changed_key)
-        if (type(changed) is not int or not 0 <= changed <= common
-                or (first_index is None) != (changed == 0)):
-            raise ValueError("MAP02 GPU divergence count/first index disagree")
+    # First-divergence ordinals must be well formed before checking the
+    # count of later changed records. An index in the final common-prefix
+    # slot leaves room for only one differing record, not several.
     for index in (first_event, first_vram):
         if index is not None and (type(index) is not int
                                   or not 0 <= index < common):
             raise ValueError("MAP02 GPU divergence ordinal invalid")
+    for report, changed_key, first_index, pair_key, phase_key in (
+        (events, "different_gpu_event_records_in_common_prefix", first_event,
+         "first_different_gpu_event_pair_index", "first_different_gpu_event_phase"),
+        (snapshots, "different_gpu_vram_snapshots_in_common_prefix", first_vram,
+         "first_different_gpu_draw_pair_index",
+         "first_different_gpu_snapshot_phase"),
+    ):
+        changed = report.get(changed_key)
+        if (type(changed) is not int or not 0 <= changed <= common
+                or (first_index is None) != (changed == 0)
+                or (first_index is not None
+                    and changed > common - first_index)):
+            raise ValueError("MAP02 GPU divergence count/first index disagree")
+        expected_pair = None if first_index is None else first_index // 2
+        expected_phase = (None if first_index is None else
+                          ("before" if first_index % 2 == 0 else "after"))
+        pair = report.get(pair_key)
+        phase = report.get(phase_key)
+        if (pair is not None and type(pair) is not int
+                or pair != expected_pair or phase != expected_phase
+                or pair_key not in report or phase_key not in report):
+            raise ValueError("MAP02 GPU divergence first position metadata disagree")
     candidates = [i for i in (first_event, first_vram) if i is not None]
     if unmatched:
         candidates.append(common)
