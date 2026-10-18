@@ -81,6 +81,8 @@ class SpanWorkflowGateTests(unittest.TestCase):
                       private_build)
         self.assertIn('assert report["header_path_mutations_rejected"]', private_build)
         self.assertIn('assert report["compiler_tools_before_after_match"]', private_build)
+        self.assertIn('assert report["compiler_shared_objects_before_after_match"]',
+                      private_build)
         self.assertIn('assert report["system_header_bytes_before_after_match"]', private_build)
         self.assertIn('assert report["compiled_from_sealed_preprocessor_output"]', private_build)
         self.assertIn('assert report["staged_header_hashes_verified"]', private_build)

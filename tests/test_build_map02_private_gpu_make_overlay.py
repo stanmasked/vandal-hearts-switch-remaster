@@ -82,6 +82,9 @@ class SealedMakeOverlayTests(unittest.TestCase):
         self.assertTrue(result["header_path_mutations_rejected"])
         self.assertEqual(set(result["compiler_tool_sha256"]), {"driver", "cc1", "as"})
         self.assertTrue(result["compiler_tools_before_after_match"])
+        self.assertGreaterEqual(result["compiler_shared_object_count"], 1)
+        self.assertEqual(len(result["compiler_shared_object_set_sha256"]), 64)
+        self.assertTrue(result["compiler_shared_objects_before_after_match"])
         self.assertGreaterEqual(result["system_header_count"], 1)
         self.assertEqual(len(result["system_header_set_sha256"]), 64)
         self.assertTrue(result["system_header_bytes_before_after_match"])
@@ -317,6 +320,37 @@ class SealedMakeOverlayTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "compiler binaries changed"):
                 self.run_build("build-map02-compiler-tamper")
         self.assertEqual(len(count), 2)
+
+    def test_compiler_shared_object_digest_mismatch_refused(self):
+        original = sealed._compiler_dynamic_evidence
+        invocations = []
+
+        def alter_second(*args):
+            result = original(*args)
+            invocations.append(True)
+            if len(invocations) == 2:
+                result = dict(result)
+                result["sha256"] = "0" * 64
+            return result
+
+        with patch.object(sealed, "_compiler_dynamic_evidence", side_effect=alter_second):
+            with self.assertRaisesRegex(ValueError, "shared objects changed"):
+                self.run_build("build-map02-shared-objects-changed")
+        self.assertEqual(invocations, [True, True])
+
+    def test_missing_shared_library_refuses_inventory(self):
+        real_run = subprocess.run
+
+        def fake_ldd(args, **kwargs):
+            if args and str(args[0]).endswith("/ldd"):
+                return subprocess.CompletedProcess(
+                    args, 0, stdout="libmissing.so => not found\\n", stderr="")
+            return real_run(args, **kwargs)
+
+        driver = shutil.which("cc", path="/usr/bin:/bin")
+        with patch.object(sealed.subprocess, "run", side_effect=fake_ldd):
+            with self.assertRaisesRegex(ValueError, "shared-object record malformed"):
+                sealed._compiler_dynamic_evidence(driver)
 
     def test_system_header_digest_mismatch_refused(self):
         original = sealed._system_header_evidence

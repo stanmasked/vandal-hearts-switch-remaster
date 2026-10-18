@@ -236,6 +236,75 @@ def _compiler_evidence():
     return driver, evidence
 
 
+
+def _compiler_dynamic_evidence(driver):
+    """Snapshot resolved ELF shared objects for the GCC driver, cc1 and as.
+
+    ldd is limited to the already selected system compiler tools. Results
+    are cross-checked before/after Make; they are not runtime attestation.
+    """
+    ldd = shutil.which("ldd", path="/usr/bin:/bin")
+    if not ldd:
+        raise ValueError("MAP02 compiler shared-object inspector unavailable")
+    environment = {"PATH": "/usr/bin:/bin", "LC_ALL": "C"}
+    tools = [driver]
+    for name in ("cc1", "as"):
+        try:
+            query = subprocess.run(
+                [driver, "-print-prog-name=" + name],
+                capture_output=True, text=True, env=environment,
+                check=False, timeout=20)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ValueError("MAP02 compiler tool resolution failed") from exc
+        path = query.stdout.strip()
+        if query.returncode or not path or chr(10) in path:
+            raise ValueError("MAP02 compiler tool resolution failed")
+        if not Path(path).is_absolute():
+            if "/" in path:
+                raise ValueError("MAP02 compiler tool resolution unsafe")
+            path = shutil.which(path, path="/usr/bin:/bin")
+            if not path:
+                raise ValueError("MAP02 compiler tool unavailable")
+        tools.append(str(Path(path).resolve(strict=True)))
+
+    loaded = {}
+    for tool in tools:
+        try:
+            result = subprocess.run(
+                [ldd, tool], capture_output=True, text=True,
+                env=environment, check=False, timeout=30)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ValueError("MAP02 compiler shared-object inspection failed") from exc
+        if result.returncode or not result.stdout or len(result.stdout) > 131072:
+            raise ValueError("MAP02 compiler shared-object inspection failed")
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if line.startswith("linux-vdso.so.") and " (0x" in line:
+                continue  # Kernel virtual mapping has no file to fingerprint.
+            origin, sep, address = line.partition(" (0x")
+            if not sep or not address.endswith(")"):
+                raise ValueError("MAP02 compiler shared-object record malformed")
+            target = origin.split(" => ", 1)[-1].strip()
+            if not target.startswith("/"):
+                raise ValueError("MAP02 compiler shared-object unresolved")
+            resolved = Path(target).resolve(strict=True)
+            if not resolved.is_file():
+                raise ValueError("MAP02 compiler shared-object is not a regular file")
+            digest = hashlib.sha256(auditor._stable_regular_bytes(
+                resolved, max_bytes=COMPILER_LIMIT)).hexdigest()
+            key = str(resolved)
+            if key in loaded and loaded[key] != digest:
+                raise ValueError("MAP02 compiler shared-object changed during inventory")
+            loaded[key] = digest
+            if len(loaded) > 128:
+                raise ValueError("MAP02 compiler shared-object inventory too large")
+    if not loaded:
+        raise ValueError("MAP02 compiler shared-object inventory empty")
+    summary = chr(10).join(k + " " + v for k,v in sorted(loaded.items()))
+    return {"count": len(loaded),
+            "sha256": hashlib.sha256(summary.encode("utf-8")).hexdigest()}
+
+
 def _system_header_evidence(preprocessed_files, pc, stage):
     """Fingerprint system includes named by GCC in the sealed .i byte stream.
 
@@ -320,6 +389,7 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
     if auditor.replay(upstream, output, manifest) != before:
         raise ValueError("MAP02 independent replay changed before compilation")
     compiler, initial_compiler = _compiler_evidence()
+    runtime_objects = _compiler_dynamic_evidence(compiler)
     with ExitStack() as stack:
         files = {}
         for name, payload in (
@@ -401,6 +471,8 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
             ])
             if _compiler_evidence() != (compiler, initial_compiler):
                 raise ValueError("MAP02 compiler binaries changed during Make build")
+            if _compiler_dynamic_evidence(compiler) != runtime_objects:
+                raise ValueError("MAP02 compiler shared objects changed during Make build")
             if _system_header_evidence(preprocessed_files, pc, snapshot) != system_headers:
                 raise ValueError("MAP02 system header dependencies changed during Make build")
     after = auditor.replay(upstream, output, manifest)
@@ -427,6 +499,9 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
         "header_path_mutations_rejected": True,
         "compiler_tool_sha256": initial_compiler,
         "compiler_tools_before_after_match": True,
+        "compiler_shared_object_count": runtime_objects["count"],
+        "compiler_shared_object_set_sha256": runtime_objects["sha256"],
+        "compiler_shared_objects_before_after_match": True,
         "system_header_count": system_headers["count"],
         "system_header_set_sha256": system_headers["sha256"],
         "system_header_bytes_before_after_match": True,
