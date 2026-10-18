@@ -705,6 +705,54 @@ static void test_full_twenty_voice_scene_switch_detaches_bank(void) {
            spu.frames_rendered==48u*VH_AUDIO_BLOCK_FRAMES);
 }
 
+/* The music producer can switch scenes only after the caller has
+ * accounted for output pages already prepared from the previous bank.
+ * A copied PCM FIFO page must not change when the live SEQ detaches
+ * old VAB sample pointers. Its consumer drains it exactly once. */
+static void test_pending_pcm_fifo_unchanged_by_scene_switch(void) {
+    setup();
+    for(unsigned i=0u;i<64u;i++)
+        next_scene_sample[i]=(int16_t)(-12000+(int)i*19);
+    assert(vh_native_spu_set_reverb(&spu,1,0.5f)==0);
+    assert(vh_native_seq_init(
+        &seq,controls_song,sizeof controls_song,&spu,
+        resolve_scene_reverb,&log_state,1u)==0);
+    assert(vh_native_seq_pump(&seq,&ring)==VH_AUDIO_BLOCK_FRAMES);
+    assert(vh_audio_stream_queued(&ring)==VH_AUDIO_BLOCK_FRAMES &&
+           seq.blocks_advanced==1u && spu.frames_rendered==512u);
+    assert(spu.voice[0].pcm==sample && spu.voice[0].active);
+    const VhAudioStream pending_pcm=ring;
+    const VhNativeSeq pending_seq=seq;
+    before_scene_spu=spu;
+    assert(vh_native_seq_switch_scene(
+        &seq,invalid_data,sizeof invalid_data,&spu,
+        resolve_next_scene,&log_state,1u)==-1);
+    assert(!memcmp(&seq,&pending_seq,sizeof seq));
+    assert(!memcmp(&spu,&before_scene_spu,sizeof spu));
+    assert(!memcmp(&ring,&pending_pcm,sizeof ring));
+
+    /* The new bank takes over the producer, not bytes already owned
+     * by the FIFO consumer. Keep wet history but release old voices. */
+    assert(vh_native_seq_switch_scene(
+        &seq,controls_song,sizeof controls_song,&spu,
+        resolve_next_scene,&log_state,1u)==0);
+    assert(!memcmp(&ring,&pending_pcm,sizeof ring));
+    assert(!memcmp(&spu.reverb,&before_scene_spu.reverb,
+                   sizeof spu.reverb));
+    for(unsigned i=0u;i<VH_NATIVE_MUSIC_VOICES;i++)
+        assert(!spu.voice[i].pcm && !spu.voice[i].active);
+    assert(vh_audio_stream_read(&ring,pcm,VH_AUDIO_BLOCK_FRAMES)
+           ==VH_AUDIO_BLOCK_FRAMES);
+    assert(!memcmp(pcm,pending_pcm.pcm,sizeof pcm));
+    assert(vh_audio_stream_queued(&ring)==0u &&
+           ring.underrun_frames==0u && ring.overrun_frames==0u);
+    assert(vh_native_seq_pump(&seq,&ring)==VH_AUDIO_BLOCK_FRAMES);
+    assert(seq.note_ons==1u &&
+           spu.voice[0].pcm==next_scene_sample &&
+           vh_audio_stream_queued(&ring)==VH_AUDIO_BLOCK_FRAMES);
+    assert(ring.underrun_frames==0u && ring.overrun_frames==0u);
+}
+
 static void test_preflight_instrument_coverage(void) {
     setup();
     VhSeqAudit info={0};
@@ -750,6 +798,7 @@ int main(void) {
     test_scene_switch_preserves_audit_and_wet_tail();
     test_repeated_scene_switch_preserves_wet_tail();
     test_full_twenty_voice_scene_switch_detaches_bank();
+    test_pending_pcm_fifo_unchanged_by_scene_switch();
     puts("native pQES SEQ -> 20-voice SPU -> PCM ring: PASS");
     return 0;
 }
