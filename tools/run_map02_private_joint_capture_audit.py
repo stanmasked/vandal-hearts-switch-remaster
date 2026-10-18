@@ -25,6 +25,39 @@ EXPECTED_CAPTURE = "vh.map02.live-child-pipe-bgr555-gpu.v1"
 EXPECTED_REPLAY = "vh.map02.live-child-pipe-gpu-replayed.v1"
 
 
+def _require_owner_private_claimed_pair(frame_pair_dir):
+    """Require exactly three owner-only regular files before reading PS1 claims.
+
+    Called before the ELF launch: refuse accidentally shared directories,
+    extra files, symlinks, and hardlinks instead of quietly accepting an
+    unprotected allegedly private reference or candidate image.
+    """
+    path = Path(frame_pair_dir).absolute()
+    directory_fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY |
+                           os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        root = os.fstat(directory_fd)
+        if (not stat.S_ISDIR(root.st_mode) or root.st_uid != os.getuid()
+                or stat.S_IMODE(root.st_mode) & 0o077):
+            raise ValueError("MAP02 claimed frame pair directory must be owner-private")
+        expected = {"frames.json", "reference.bgr555", "candidate.bgr555"}
+        if set(os.listdir(directory_fd)) != expected:
+            raise ValueError("MAP02 claimed frame pair has unexpected file inventory")
+        for name in sorted(expected):
+            entry = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+            if (not stat.S_ISREG(entry.st_mode)
+                    or entry.st_uid != os.getuid()
+                    or stat.S_IMODE(entry.st_mode) != 0o600
+                    or entry.st_nlink != 1):
+                raise ValueError("MAP02 claimed frame pair file must be owner-private and singly linked")
+        if (root.st_dev, root.st_ino) != (
+                os.stat(path, follow_symlinks=False).st_dev,
+                os.stat(path, follow_symlinks=False).st_ino):
+            raise ValueError("MAP02 claimed frame pair directory replaced")
+    finally:
+        os.close(directory_fd)
+
+
 def _session_inode_witness(output_dir, gpu_journal_dir, *,
                            held_output_fd=None, held_journal_fd=None):
     """Return private in-memory identity of both full replay inventories.
@@ -95,6 +128,7 @@ def run(executable, output_dir, gpu_journal_dir, *, frame, executable_sha256,
     pair_witness = None
     pair_report = None
     if frame_pair_dir is not None:
+        _require_owner_private_claimed_pair(frame_pair_dir)
         pair_witness = _private_frame_pair_identity(frame_pair_dir)
         pair_report = compare(frame_pair_dir)
         if (_private_frame_pair_identity(frame_pair_dir) != pair_witness
@@ -167,6 +201,7 @@ def run(executable, output_dir, gpu_journal_dir, *, frame, executable_sha256,
         raise ValueError("MAP02 joint capture and independent replays disagree")
     claimed_pair = {}
     if frame_pair_dir is not None:
+        _require_owner_private_claimed_pair(frame_pair_dir)
         # The two independent source claims are still only claims.
         # Preserve inode identity across launch/replays and require the
         # claimant candidate to be exactly the same raw BGR555 frame
