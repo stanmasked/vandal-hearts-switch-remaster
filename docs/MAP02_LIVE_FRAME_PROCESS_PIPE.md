@@ -606,3 +606,24 @@ files. It does not claim the reference was captured from authentic
 PlayStation hardware. Asset-free tests confirm that a shared directory,
 world-readable claimed reference, symbolic/hard link, or extra file
 fails before the ELF starts.
+
+### Double-read owner and inode inventory at the publication/replay boundary
+
+The private two-replay wrapper now requires **both** frame-output and GPU
+journal directories to belong to the caller's effective Unix UID, in
+addition to having no group/other access. Each original 0600 file must
+also be owned by the same caller. The inventory walker checks every
+entry's device, inode, UID, mode, link count, length, mtime and ctime
+**twice through the same held directory FD** before returning its
+private in-memory identity witness. A file that changes metadata during
+the scan is rejected, even if its raw bytes remain unchanged.
+
+The checks are repeated as before at successful frame publication,
+immediately after the launcher returns and between/after the two
+independent full native GPU + frame replays. All owner IDs and inode
+numbers stay internal to the invoking process, never in the returned
+JSON report. Asset-free Linux regressions simulate a directory with
+an alien UID, a privately readable file attributed to another UID,
+and a file whose timestamp changes between the two descriptor-relative
+inventory scans. No retail image or original console capture is
+authenticated by these checks.
