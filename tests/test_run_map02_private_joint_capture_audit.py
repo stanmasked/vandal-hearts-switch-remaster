@@ -72,6 +72,7 @@ class PrivateJointOneShotAuditTests(unittest.TestCase):
             ("candidate.bgr555", candidate, "pc_port_candidate_claimed"),
         ):
             (pair / name).write_bytes(pixels)
+            (pair / name).chmod(0o600)
             images[name] = {
                 "sha256": hashlib.sha256(pixels).hexdigest(),
                 "frame": frame, "origin": origin}
@@ -80,6 +81,7 @@ class PrivateJointOneShotAuditTests(unittest.TestCase):
             "frame": frame, "width": 1024, "height": 512,
             "pixel_format": "bgr555_le", "images": images
         }, sort_keys=True), encoding="utf-8")
+        (pair / "frames.json").chmod(0o600)
         return pair
 
     def test_claimed_reference_and_same_launch_candidate_byte_equal(self):
@@ -143,6 +145,46 @@ class PrivateJointOneShotAuditTests(unittest.TestCase):
         self.assertFalse(result["claimed_reference_ps1_hardware_authenticated"])
         self.assertNotIn(str(pair), finished.stdout)
         self.assertNotIn(str(self.executable), finished.stdout)
+
+    def test_claimed_frame_pair_shared_directory_refused_before_elf(self):
+        pair = self.make_claimed_private_frame_pair()
+        pair.chmod(0o755)
+        with self.assertRaisesRegex(ValueError, "directory must be owner-private"):
+            self.run_capture(frame_pair_dir=pair)
+        self.assertEqual(list(self.output.iterdir()), [])
+        self.assertEqual(list(self.journal.iterdir()), [])
+
+    def test_claimed_pair_world_readable_reference_refused_before_elf(self):
+        pair = self.make_claimed_private_frame_pair()
+        (pair / "reference.bgr555").chmod(0o644)
+        with self.assertRaisesRegex(ValueError, "file must be owner-private"):
+            self.run_capture(frame_pair_dir=pair)
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def test_claimed_pair_symlinked_reference_refused_before_elf(self):
+        pair = self.make_claimed_private_frame_pair()
+        ref = pair / "reference.bgr555"
+        ref.unlink()
+        ref.symlink_to(pair / "candidate.bgr555")
+        with self.assertRaisesRegex(ValueError, "file must be owner-private"):
+            self.run_capture(frame_pair_dir=pair)
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def test_claimed_pair_hardlinked_reference_refused_before_elf(self):
+        pair = self.make_claimed_private_frame_pair()
+        ref = pair / "reference.bgr555"
+        ref.unlink()
+        os.link(pair / "candidate.bgr555", ref)
+        with self.assertRaisesRegex(ValueError, "singly linked"):
+            self.run_capture(frame_pair_dir=pair)
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def test_claimed_pair_extra_file_refused_before_elf(self):
+        pair = self.make_claimed_private_frame_pair()
+        (pair / "notes.txt").write_text("not part of the pair", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "unexpected file inventory"):
+            self.run_capture(frame_pair_dir=pair)
+        self.assertEqual(list(self.output.iterdir()), [])
 
     def test_one_real_synthetic_child_two_complete_private_replays(self):
         result = self.run_capture()
