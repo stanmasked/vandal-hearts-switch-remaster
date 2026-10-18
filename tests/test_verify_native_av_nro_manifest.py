@@ -244,7 +244,9 @@ class AvNroManifestTests(unittest.TestCase):
         name = NRO_NAMES[1]
         data = bytearray(self.files[name])
         data[0x20:0x24] = (0).to_bytes(4, "little")
-        data[0x24:0x28] = (0x10).to_bytes(4, "little")
+        # Keep text valid so this specifically exercises the rodata
+        # header-overlap diagnostic rather than the text-length rule.
+        data[0x24:0x28] = (0x80).to_bytes(4, "little")
         data[0x28:0x2c] = (0x70).to_bytes(4, "little")
         self.files[name] = bytes(data)
         (self.root / name).write_bytes(data)
