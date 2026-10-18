@@ -41,16 +41,27 @@ class MipsDelaySlotSafeCandidates(unittest.TestCase):
         self.assertEqual(metadata["likely_conditional_sw_in_delay_slots"],0)
         self.assertEqual(metadata["control_flow_delay_slots"],1)
 
-    def test_conditional_and_branch_likely_are_only_candidates(self):
+    def test_regular_mips_i_conditional_branch_has_a_real_slot(self):
         setup=(lui(11,0x1f80),ori(11,11,0x1000))
-        for likely in (False,True):
-            with self.subTest(likely=likely):
-                words=ins(*setup,branch(3,2,likely),sw(0,0xa0,11),sw(0,0xa0,11))
-                count,meta=analyze_delay_aware_text(words)
-                self.assertEqual(count["dma2_madr"],1)
-                self.assertEqual(meta["constant_proven_sw_in_delay_slots"],1)
-                self.assertEqual(meta["likely_conditional_sw_in_delay_slots"],
-                                 int(likely))
+        counts,meta=analyze_delay_aware_text(ins(
+            *setup,branch(3,2,False),sw(0,0xa0,11),sw(0,0xa0,11)))
+        self.assertEqual(counts["dma2_madr"],1)
+        self.assertEqual(meta["constant_proven_sw_in_delay_slots"],1)
+        self.assertEqual(meta["control_flow_delay_slots"],1)
+        self.assertEqual(meta["unsupported_mips_ii_branch_likely_opcode_sites"],0)
+
+    def test_mips_ii_branch_likely_is_reserved_on_ps1_and_not_credited(self):
+        setup=(lui(11,0x1f80),ori(11,11,0x1000))
+        for reserved in (branch(3,2,True),
+                         (0x01<<26)|(4<<21)|(2<<16)|1,
+                         (0x10<<26)|(8<<21)|(2<<16)|1):
+            with self.subTest(opcode=hex(reserved)):
+                counts,meta=analyze_delay_aware_text(ins(
+                    *setup,reserved,sw(0,0xa0,11)))
+                self.assertEqual(counts["dma2_madr"],0)
+                self.assertEqual(meta["constant_proven_sw_in_delay_slots"],0)
+                self.assertEqual(
+                    meta["unsupported_mips_ii_branch_likely_opcode_sites"],1)
 
     def test_nop_delay_slot_clears_constants_afterward(self):
         counts,meta=analyze_delay_aware_text(ins(lui(11,0x1f80),
