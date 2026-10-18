@@ -188,6 +188,9 @@ def _publish(directory, raw):
                         _complete_identity(os.fstat(fd)) == expected and
                         _identity(latest) == created):
                     os.unlink(NAME, dir_fd=dfd)
+                    # Make failure rollback durable: an unflushed
+                    # directory unlink may reappear after a crash.
+                    os.fsync(dfd)
             except OSError:
                 pass
         raise
