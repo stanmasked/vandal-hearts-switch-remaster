@@ -53,6 +53,8 @@ on:
       - 'tests/test_audit_nexium_audout_queue.py'
       - 'tests/check_nro.py'
       - 'tools/analyze_nexium_scene_audio.py'
+      - 'tools/audit_nexium_wet_tail_scene_pair.py'
+      - 'tests/test_audit_nexium_wet_tail_scene_pair.py'
       - 'tools/analyze_nexium_pcm_stream_integrity.py'
       - 'tools/analyze_nexium_pcm_scene_silence.py'
       - 'tests/test_analyze_nexium_pcm_scene_silence.py'
@@ -787,6 +789,19 @@ jobs:
               json.dumps(result,sort_keys=True,indent=2)+"\n")
           print(json.dumps(result,sort_keys=True))
           PY
+
+      - name: Audit independent baseline versus wet-tail virtual PCM scenes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_nexium_wet_tail_scene_pair.py' -v
+          python3 tools/audit_nexium_wet_tail_scene_pair.py \
+            runtime-evidence wet-tail-pair-preflight.json \
+            --output runtime-evidence/wet-tail-scene-pair-summary.json
+          python3 -m json.tool \
+            runtime-evidence/wet-tail-scene-pair-summary.json >/dev/null
+          echo "Two independently buffered virtual PCM scene captures validated; not sample-aligned and no wet-tail causality claim." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify observed framebuffer music labels and scene evidence
         shell: bash

@@ -137,6 +137,19 @@ requires the prior same-run experimental NRO provenance report, toggling
 on-screen scene labels, and writes
 `runtime-evidence/wet-tail-scenes/opt-in-scene-witness.json`.
 
+A separate `audit_nexium_wet_tail_scene_pair.py` gate now
+recomputes each five-scene report from its original PCM and marker
+CSV, compares the recorded scene classifications and descriptive
+per-channel RMS/zero-crossing rates, and verifies the experimental
+PCM SHA256 is bound to its same-run NRO witness. The output
+`wet-tail-scene-pair-summary.json` includes both PCM hashes and
+explicit `sample_aligned_A_B_comparison=false` and
+`reverb_effect_causally_proven=false`. Ten additional synthetic
+negative/positive tests reject tampering, mismatched NROs, weak scene
+classification, spoofed display labels and symlinked output folders.
+This is repeatable evidence accounting, **not** a difference signal
+extracted from non-synchronous recordings.
+
 The opt-in PCM evidence is **virtual PulseAudio PCM only**, and its host
 timestamps are not exact guest sample times. The baseline and opt-in
 raw waveforms are not directly sample-aligned, and their numerical
