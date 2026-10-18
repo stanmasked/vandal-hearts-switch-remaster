@@ -339,6 +339,39 @@ int main(int argc, char **argv) {
         self.assertTrue(exchanged)
         self.assertFalse((self.handoff / RECEIPT).exists())
 
+    def test_real_child_must_open_disc_independently_of_inherited_fd(self):
+        cycle = self.handoff.parent / "cycle-inherited-only"
+        cycle.mkdir(mode=0o700)
+        original_popen = subprocess.Popen
+        observed_inherited = []
+
+        def child_without_cd_mount(*args, **kwargs):
+            exec_fd, image_fd = kwargs["pass_fds"]
+            self.assertEqual(kwargs["env"]["VH_DISC_IMAGE"],
+                             f"/proc/self/fd/{image_fd}")
+            observed_inherited.append(os.fstat(image_fd).st_ino)
+            # The synthetic native ELF sleeps with its inherited FD alive,
+            # but never calls fopen on the planned image.
+            kwargs["env"]["VH_TEST_SKIP_DISC_FD"] = "1"
+            return original_popen(*args, **kwargs)
+
+        with patch(
+                "tools.check_map02_cycle_elf.audit_cycle_elf",
+                return_value={"required_symbols_present": 19}), patch(
+                "tools.map02_cycle_build_provenance.verify_build_receipt",
+                return_value={"source_pinned_full_elf_bytes_checked": True}), patch(
+                "tools.map02_verified_process_launch.subprocess.Popen",
+                side_effect=child_without_cd_mount):
+            with self.assertRaisesRegex(ValueError, "never opened the planned game-image"):
+                launch_observed_pc(
+                    self.handoff, self.native, self.scoped,
+                    self.binary, self.owned, upstream=self.upstream,
+                    x=10, y=20, timeout=8, cycle_dir=cycle,
+                    build_receipt_dir=self.handoff.parent / "receipt",
+                    build_bundle_dir=self.handoff.parent / "bundle")
+        self.assertEqual(observed_inherited, [self.owned.stat().st_ino])
+        self.assertFalse((self.handoff / RECEIPT).exists())
+
     def test_inherited_cycle_image_fd_is_not_mistaken_for_child_open(self):
         expected_stat = self.owned.stat()
         expected = (expected_stat.st_dev, expected_stat.st_ino,
