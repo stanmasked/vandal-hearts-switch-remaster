@@ -223,6 +223,8 @@ def _require_published_identity(directory, file_identity, directory_identity):
                 _dir_identity(os.stat(directory, follow_symlinks=False))
                 != directory_identity):
             raise ValueError("MAP02 final seal directory changed after publication")
+        if set(os.listdir(dfd)) != {NAME}:
+            raise ValueError("MAP02 final seal directory entries changed after publication")
         fd = os.open(NAME, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC |
                      os.O_NOFOLLOW, dir_fd=dfd)
         observed = os.fstat(fd)
