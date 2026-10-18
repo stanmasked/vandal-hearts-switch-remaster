@@ -250,7 +250,7 @@ def capture(executable, output_dir, *, frame, width, height,
             # descriptors. Exceptions roll back the just-published frame
             # and receipt, never silently blessing a changed file.
             if post_publish_witness is not None:
-                post_publish_witness()
+                post_publish_witness(directory_fd, journal_fd)
         except BaseException:
             if wrote_receipt:
                 os.unlink("process-frame.json", dir_fd=directory_fd)
