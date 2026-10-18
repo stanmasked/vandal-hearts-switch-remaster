@@ -12,6 +12,8 @@ from test_check_native_av_screenshot import make_frames
 from verify_native_av_guest_witness import verify
 
 REVISION = "a" * 40
+GITHUB_RUN_ID = 39081974011
+GITHUB_RUN_ATTEMPT = 1
 
 
 class GuestWitnessVerifierTests(unittest.TestCase):
@@ -45,13 +47,16 @@ class GuestWitnessVerifierTests(unittest.TestCase):
             "--witness-out", str(self.witness),
             "--nro-file", str(self.nro),
             "--source-revision", REVISION,
+            "--github-run-id", str(GITHUB_RUN_ID),
+            "--github-run-attempt", str(GITHUB_RUN_ATTEMPT),
         ]
         done = subprocess.run(cmd, capture_output=True, text=True)
         self.assertEqual(done.returncode, 0, done.stderr)
 
     def verify(self, scenario="resume_retry"):
         return verify(self.witness, self.before, self.after, self.nro,
-                      REVISION, scenario)
+                      REVISION, scenario,
+                      GITHUB_RUN_ID, GITHUB_RUN_ATTEMPT)
 
     def test_valid_bound_witness_and_cli(self):
         report = self.verify()
@@ -64,13 +69,30 @@ class GuestWitnessVerifierTests(unittest.TestCase):
              "--after", str(self.after),
              "--nro", str(self.nro),
              "--revision", REVISION,
-             "--scenario", "resume_retry"],
+             "--scenario", "resume_retry",
+             "--github-run-id", str(GITHUB_RUN_ID),
+             "--github-run-attempt", str(GITHUB_RUN_ATTEMPT)],
             capture_output=True, text=True)
         self.assertEqual(completed.returncode, 0, completed.stderr)
         verified = json.loads(completed.stdout)
         self.assertEqual(verified["verification"], "passed")
         self.assertFalse(verified["hardware_attested"])
         self.assertFalse(verified["audible_audio_attested"])
+
+    def test_run_and_attempt_mismatch_fail_closed(self):
+        with self.assertRaisesRegex(ValueError, "GitHub run ID mismatch"):
+            verify(self.witness, self.before, self.after, self.nro,
+                   REVISION, "resume_retry",
+                   GITHUB_RUN_ID + 1, GITHUB_RUN_ATTEMPT)
+        with self.assertRaisesRegex(ValueError, "GitHub attempt mismatch"):
+            verify(self.witness, self.before, self.after, self.nro,
+                   REVISION, "resume_retry",
+                   GITHUB_RUN_ID, GITHUB_RUN_ATTEMPT + 1)
+        data = json.loads(self.witness.read_text())
+        data["github_run_id"] = True
+        self.witness.write_text(json.dumps(data))
+        with self.assertRaisesRegex(ValueError, "GitHub run ID mismatch"):
+            self.verify()
 
     def test_modified_nro_and_each_png_are_rejected(self):
         for path in (self.nro, self.before, self.after):
@@ -86,7 +108,8 @@ class GuestWitnessVerifierTests(unittest.TestCase):
     def test_wrong_case_commit_and_required_checks_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "source revision mismatch"):
             verify(self.witness, self.before, self.after, self.nro,
-                   "b"*40, "resume_retry")
+                   "b"*40, "resume_retry",
+                   GITHUB_RUN_ID, GITHUB_RUN_ATTEMPT)
         with self.assertRaisesRegex(ValueError, "required check mismatch"):
             self.verify("resume")
         data = json.loads(self.witness.read_text())
