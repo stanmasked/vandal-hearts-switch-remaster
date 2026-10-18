@@ -1568,6 +1568,44 @@ jobs:
           PY
           echo "Stage302: independently re-count original PCM zero runs by recording-start, interior, EOF and whole-recording censoring; EOF is NOT evidence of guest shutdown or audible dropout." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Stage303 original host recorder SIGINT snapshots versus exact terminal PCM
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_pcm_recorder_stop.py \
+            --monitor runtime-evidence/nexium-monitor-s16le-48k.pcm \
+            --monitor-report runtime-evidence/pcm-quality-report.json \
+            --scenes runtime-evidence/nexium-scenes-s16le-48k.pcm \
+            --scene-report runtime-evidence/scene-audio-report.json \
+            --events runtime-evidence/scene-events.csv \
+            --stage299 runtime-evidence/pcm-stream-integrity-stage299.json \
+            --stage300 runtime-evidence/pcm-scene-silence-stage300.json \
+            --stage301 runtime-evidence/pcm-marker-envelopes-stage301.json \
+            --stage302 runtime-evidence/pcm-recording-edge-silence-stage302.json \
+            --stop-csv runtime-evidence/scene-recorder-stop.csv \
+            --output runtime-evidence/pcm-recorder-stop-stage303.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("runtime-evidence/pcm-recorder-stop-stage303.json").read_text())
+          e=r["stop_events"]
+          if (r["result"]!="SOURCE_BOUND_HOST_RECORDER_STOP_SNAPSHOT_RECONCILED"
+                  or [x["event"] for x in e]!=["before_sigint","after_wait"]
+                  or e[1]["pcm_bytes"]!=r["scene_pcm_frames"]*4
+                  or any(x["signal_success"]!=1 for x in e)
+                  or r["stage302_original_zero_run_classes_conserved"] is not True
+                  or r["host_stop_snapshots_not_sample_exact_guest_audio_times"] is not True
+                  or r["host_stop_signal_does_not_prove_guest_playback_end"] is not True
+                  or r["original_soundtrack_or_audible_dropout_verified"] is not False
+                  or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage303 source-bound stop lifecycle or evidence scope failed")
+          print("Stage303 SIGINT recorder buffered byte snapshot:",
+                {x["event"]:x["pcm_bytes"] for x in e})
+          print("Stage303 terminal original zero run bounded overlap:",
+                r["terminal_exact_zero_run_stop_overlap"])
+          PY
+          echo "Stage303: captured original Parec before-SIGINT and after-wait PCM byte snapshots; independently source-bound and byte/frame-intersected with EOF silence. Buffered host snapshots do NOT prove audible/guest shutdown." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Record audio capture boundary
         if: always()
         env:
