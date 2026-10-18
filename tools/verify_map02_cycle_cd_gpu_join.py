@@ -26,7 +26,7 @@ from tools.verify_map02_window_scoped_join import CD_READ
 
 CYCLE_RECEIPT = "map02-single-process-cycle.jsonl"
 CYCLE_CLEAN_EXIT = "map02-cycle-clean-exit.jsonl"
-CYCLE_SCHEMA = "vh.map02.cycle-order.v4"
+CYCLE_SCHEMA = "vh.map02.cycle-order.v5"
 SCHEMA = "vh.map02.same-process-cycle-cd-gpu-join.v1"
 CD_READ_KEYS = (
     "schema", "capture_session", "source", "cdf", "lba",
@@ -37,7 +37,9 @@ CD_READ_KEYS = (
 CYCLE_KEYS = (
     "schema", "capture_session", "gpu_draw_frame",
     "original_cd_raw_user_crc32", "original_cd_raw_user_sha256",
-    "observed_draw_primitive_count", "ordered_source_hooks_observed", "cd_payload_verified_by_this_receipt",
+    "observed_draw_primitive_count", "display_source_rect",
+    "present_backend_is_hires", "pc_present_call_returned",
+    "ordered_source_hooks_observed", "cd_payload_verified_by_this_receipt",
     "original_map02_rendering_proven", "physical_ps1_equivalence_proven",
 )
 
@@ -110,6 +112,7 @@ def _cycle_receipt(directory, frame):
     fields(event, CYCLE_KEYS, CYCLE_RECEIPT)
     if (event["schema"] != CYCLE_SCHEMA or
             event["ordered_source_hooks_observed"] is not True or
+            event["pc_present_call_returned"] is not True or
             event["cd_payload_verified_by_this_receipt"] is not False or
             event["original_map02_rendering_proven"] is not False or
             event["physical_ps1_equivalence_proven"] is not False):
@@ -119,6 +122,17 @@ def _cycle_receipt(directory, frame):
         raise ValueError("single-process cycle and GPU frame mismatch")
     count = number(event["observed_draw_primitive_count"],
                    "same-process executed DrawOTag primitives", 1, 63)
+    rect = event["display_source_rect"]
+    if type(rect) is not list or len(rect) != 4:
+        raise ValueError("missing or malformed native PC display source rectangle")
+    x = number(rect[0], "PC display VRAM origin x", 0, 1023)
+    y = number(rect[1], "PC display VRAM origin y", 0, 511)
+    w = number(rect[2], "PC display VRAM width", 1, 1024)
+    h = number(rect[3], "PC display VRAM height", 1, 512)
+    if x + w > 1024 or y + h > 512:
+        raise ValueError("native PC display source rectangle exceeds VRAM")
+    if type(event["present_backend_is_hires"]) is not bool:
+        raise ValueError("native PC presentation backend flag is not boolean")
     checksum = event["original_cd_raw_user_crc32"]
     if (type(checksum) is not str or len(checksum) != 8 or
             any(ch not in "0123456789abcdef" for ch in checksum)):
@@ -234,6 +248,10 @@ def verify_cycle_cd_gpu_join(source, native, scoped, handoff, cycle, image,
         "same_process_event_order_and_prior_cd_gpu_witness_join_verified": True,
         "same_process_draw_primitive_count_matches_native_gpu_windows": True,
         "verified_draw_primitive_count": cycle_event["observed_draw_primitive_count"],
+        "observed_pc_display_source_rect": cycle_event["display_source_rect"],
+        "observed_pc_hires_present_backend": cycle_event["present_backend_is_hires"],
+        "pc_present_call_returned_in_observed_process": True,
+        "presented_framebuffer_verified": False,
         "full_original_gameplay_authenticated": False,
         "original_map02_rendering_proven": False,
         "physical_ps1_equivalence_proven": False,

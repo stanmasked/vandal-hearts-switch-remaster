@@ -93,6 +93,25 @@ def patch_gpu(original):
                  '#ifdef VH_MAP02_CYCLE_ORDER\n'
                  '    vh_map02_cycle_draw_finish(s_drawFrame, nextTok == 0);\n'
                  '#endif\n    TrcFrameEnd();')
+    # In the pinned PC backend, PutDispEnv only updates s_dispEnv; the
+    # real present call occurs AFTER the native DrawOTag and optional hires
+    # rasterization. Count successful return from exactly ONE present path.
+    # Do not claim a presented framebuffer from a pre-present VRAM snapshot.
+    hires = ('        HiresPresent(s_dispEnv.disp.x, s_dispEnv.disp.y, '
+             's_dispEnv.disp.w, s_dispEnv.disp.h);')
+    src = inject(src, hires,
+                 hires + '\n#ifdef VH_MAP02_CYCLE_ORDER\n'
+                 '        vh_map02_cycle_present_finish(s_drawFrame, '
+                 's_dispEnv.disp.x, s_dispEnv.disp.y, '
+                 's_dispEnv.disp.w, s_dispEnv.disp.h, 1);\n#endif')
+    native = ('        PC_GpuPresent(&vram[0][0], VRAM_W, VRAM_H,\n'
+              '                      s_dispEnv.disp.x, s_dispEnv.disp.y, '
+              's_dispEnv.disp.w, s_dispEnv.disp.h);')
+    src = inject(src, native,
+                 native + '\n#ifdef VH_MAP02_CYCLE_ORDER\n'
+                 '        vh_map02_cycle_present_finish(s_drawFrame, '
+                 's_dispEnv.disp.x, s_dispEnv.disp.y, '
+                 's_dispEnv.disp.w, s_dispEnv.disp.h, 0);\n#endif')
     return src
 
 

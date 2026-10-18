@@ -71,6 +71,9 @@ class CycleCdGpuJoinTests(unittest.TestCase):
             "original_cd_raw_user_crc32": self.crc,
             "original_cd_raw_user_sha256": "a" * 64,
             "observed_draw_primitive_count": 2,
+            "display_source_rect": [0, 16, 320, 240],
+            "present_backend_is_hires": False,
+            "pc_present_call_returned": True,
             "capture_session": self.nonce,
             "gpu_draw_frame": 7,
             "ordered_source_hooks_observed": True,
@@ -118,6 +121,11 @@ class CycleCdGpuJoinTests(unittest.TestCase):
         self.assertFalse(result["physical_ps1_equivalence_proven"])
         self.assertTrue(result["same_process_draw_primitive_count_matches_native_gpu_windows"])
         self.assertEqual(result["verified_draw_primitive_count"], 2)
+        self.assertEqual(result["observed_pc_display_source_rect"],
+                         [0, 16, 320, 240])
+        self.assertFalse(result["observed_pc_hires_present_backend"])
+        self.assertTrue(result["pc_present_call_returned_in_observed_process"])
+        self.assertFalse(result["presented_framebuffer_verified"])
         self.assertNotIn(self.nonce, json.dumps(result))
         self.mock.assert_called_once()
 
@@ -279,6 +287,14 @@ class CycleCdGpuJoinTests(unittest.TestCase):
             {"observed_draw_primitive_count": 64},
             {"observed_draw_primitive_count": True},
             {"observed_draw_primitive_count": 1.5},
+            {"display_source_rect": [0, 16, 0, 240]},
+            {"display_source_rect": [1023, 16, 320, 240]},
+            {"display_source_rect": [0, 500, 320, 240]},
+            {"display_source_rect": [0, 16, 320]},
+            {"display_source_rect": [True, 16, 320, 240]},
+            {"present_backend_is_hires": 1},
+            {"pc_present_call_returned": False},
+            {"pc_present_call_returned": True if False else 1},
             {"ordered_source_hooks_observed": False},
             {"ordered_source_hooks_observed": 1},
             {"cd_payload_verified_by_this_receipt": True},
@@ -339,6 +355,13 @@ class CycleCdGpuJoinTests(unittest.TestCase):
             "private_map02_cd_final_sha256": "0" * 64}
         with self.assertRaisesRegex(ValueError, "SHA differs"):
             self.check()
+
+    def test_hires_presentation_is_explicitly_not_native_framebuffer_proof(self):
+        self.receipt["present_backend_is_hires"] = True
+        self.write_cycle()
+        result = self.check()
+        self.assertTrue(result["observed_pc_hires_present_backend"])
+        self.assertFalse(result["presented_framebuffer_verified"])
 
     def test_mismatched_draw_primitive_count_rejected_before_full_audit(self):
         self.receipt["observed_draw_primitive_count"] = 3
@@ -502,6 +525,9 @@ class CycleCdGpuSyntheticIntegrationTests(unittest.TestCase):
             "original_cd_raw_user_crc32": fixture.cd_receipt["raw_user_crc32"],
             "original_cd_raw_user_sha256": fixture.cd_receipt["raw_user_sha256"],
             "observed_draw_primitive_count": recorded["native_draw_pairs"],
+            "display_source_rect": [0, 16, 320, 240],
+            "present_backend_is_hires": False,
+            "pc_present_call_returned": True,
             "gpu_draw_frame": 7,
             "ordered_source_hooks_observed": True,
             "cd_payload_verified_by_this_receipt": False,

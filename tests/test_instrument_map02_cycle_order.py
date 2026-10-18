@@ -45,6 +45,12 @@ GPU = """void DrawOTag(unsigned int *p) {
     s_drawFrame++;
         nextTok = rawTagOfCur;
     TrcFrameEnd();
+    if (HiresActive()) {
+        HiresPresent(s_dispEnv.disp.x, s_dispEnv.disp.y, s_dispEnv.disp.w, s_dispEnv.disp.h);
+    } else {
+        PC_GpuPresent(&vram[0][0], VRAM_W, VRAM_H,
+                      s_dispEnv.disp.x, s_dispEnv.disp.y, s_dispEnv.disp.w, s_dispEnv.disp.h);
+    }
 }
 """
 
@@ -90,6 +96,13 @@ class CycleHookCompositionTests(unittest.TestCase):
                         result.index("vh_map02_cycle_draw_finish(s_drawFrame, nextTok == 0)"))
         self.assertLess(result.index("vh_map02_cycle_draw_finish(s_drawFrame, nextTok == 0)"),
                         result.index("TrcFrameEnd();"))
+        self.assertLess(result.index("TrcFrameEnd();"),
+                        result.index("vh_map02_cycle_present_finish(s_drawFrame"))
+        self.assertEqual(result.count("vh_map02_cycle_present_finish(s_drawFrame"), 2)
+        self.assertLess(result.index("HiresPresent(s_dispEnv.disp.x"),
+                        result.index("s_dispEnv.disp.h, 1);"))
+        self.assertLess(result.index("PC_GpuPresent(&vram[0][0]"),
+                        result.index("s_dispEnv.disp.h, 0);"))
 
     def test_ambiguous_or_missing_gpu_walk_anchor_fails_closed(self):
         with patch("tools.instrument_map02_cycle_order.git_blob_sha1",

@@ -26,7 +26,7 @@ HARNESS = r"""
 #include <unistd.h>
 
 int main(int argc, char **argv) {
-    char out[512];
+    char out[1024];
     unsigned char sectors[12u * 2048u], returned[12u * 2048u];
     int n, i;
     if (argc != 2) return 2;
@@ -35,6 +35,8 @@ int main(int argc, char **argv) {
     memcpy(returned, sectors, sizeof sectors);
     if (!strcmp(argv[1], "draw-primitive-before-start"))
         vh_map02_cycle_draw_primitive(73);
+    if (!strcmp(argv[1], "present-before-draw"))
+        vh_map02_cycle_present_finish(73, 0, 16, 320, 240, 0);
     if (!strcmp(argv[1], "draw-early")) {
         vh_map02_cycle_draw_start(73);
         vh_map02_cycle_draw_finish(73, 1);
@@ -125,8 +127,19 @@ int main(int argc, char **argv) {
         vh_map02_cycle_draw_finish(73,
             strcmp(argv[1], "broken-ot") != 0);
     }
-    /* The chosen DrawOTag has now returned and its provisional receipt
-     * exists. _exit(0) deliberately skips normal-exit seal creation. */
+    /* Only a returned present call after DrawOTag can create a receipt. */
+    if (strcmp(argv[1], "present-missing") && strcmp(argv[1], "no-draw")) {
+        int x = 0, y = 16, w = 320, h = 240;
+        int hires = !strcmp(argv[1], "present-hires");
+        if (!strcmp(argv[1], "present-zero-width")) w = 0;
+        if (!strcmp(argv[1], "present-outside-vram")) x = 900;
+        if (!strcmp(argv[1], "present-invalid-hires")) hires = 2;
+        vh_map02_cycle_present_finish(73, x, y, w, h, hires);
+        if (!strcmp(argv[1], "present-duplicate"))
+            vh_map02_cycle_present_finish(73, x, y, w, h, hires);
+    }
+    /* The receipt is provisional until normal exit; _exit(0)
+     * deliberately bypasses the independent clean-exit seal. */
     if (!strcmp(argv[1], "abrupt-zero-exit"))
         _exit(0);
     /* Exercise a fault later in the SAME original process. */
@@ -376,7 +389,10 @@ class CycleOrderTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("failed=0 receipt=1", proc.stdout)
         self.assertIn('"gpu_draw_frame":73', proc.stdout)
-        self.assertIn('"schema":"vh.map02.cycle-order.v4"', proc.stdout)
+        self.assertIn('"schema":"vh.map02.cycle-order.v5"', proc.stdout)
+        self.assertIn('"display_source_rect":[0,16,320,240]', proc.stdout)
+        self.assertIn('"present_backend_is_hires":false', proc.stdout)
+        self.assertIn('"pc_present_call_returned":true', proc.stdout)
         self.assertIn('"observed_draw_primitive_count":2', proc.stdout)
         expected_sector_data = bytes((i ^ (i >> 8)) & 255
                                      for i in range(12 * 2048))
@@ -398,11 +414,22 @@ class CycleOrderTests(unittest.TestCase):
         for mode in ("draw-early", "finish-first", "duplicate-claim",
                      "missing-completion", "duplicate-completion",
                      "broken-ot", "no-draw", "draw-zero-primitives",
-                      "draw-overflow", "draw-primitive-before-start"):
+                      "draw-overflow", "draw-primitive-before-start",
+                      "present-missing", "present-zero-width",
+                      "present-outside-vram", "present-invalid-hires",
+                      "present-duplicate", "present-before-draw"):
             with self.subTest(mode=mode):
                 proc = self.run_mode(mode)
                 self.assertEqual(proc.returncode, 0, proc.stderr)
                 self.assertIn("receipt=0", proc.stdout)
+
+    def test_hires_present_is_distinct_from_native_vram(self):
+        proc = self.run_mode("present-hires")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("failed=0 receipt=1", proc.stdout)
+        self.assertIn('"display_source_rect":[0,16,320,240]', proc.stdout)
+        self.assertIn('"present_backend_is_hires":true', proc.stdout)
+        self.assertIn('"original_map02_rendering_proven":false', proc.stdout)
 
     def test_unselected_frame_draw_hook_is_ignored(self):
         proc = self.run_mode("draw-unselected-frame")
@@ -432,7 +459,7 @@ class CycleOrderTests(unittest.TestCase):
         self.assertEqual(cd["raw_user_sha256"], sha)
         self.assertEqual(cd["returned_user_sha256"], sha)
         cycle_receipt = json.loads(proc.stdout.splitlines()[-1])
-        self.assertEqual(cycle_receipt["schema"], "vh.map02.cycle-order.v4")
+        self.assertEqual(cycle_receipt["schema"], "vh.map02.cycle-order.v5")
         self.assertEqual(cycle_receipt["observed_draw_primitive_count"], 2)
         self.assertEqual(cycle_receipt["original_cd_raw_user_sha256"], sha)
         self.assertEqual(cd["raw_user_crc32"], f"{zlib.crc32(expected):08x}")
@@ -527,7 +554,7 @@ class CycleOrderTests(unittest.TestCase):
             current = out / "map02-single-process-cycle.jsonl"
             original = out / "prior-original-receipt"
             self.assertEqual(current.read_bytes(), b"foreign-not-to-delete")
-            self.assertIn(b"cycle-order.v4", original.read_bytes())
+            self.assertIn(b"cycle-order.v5", original.read_bytes())
             self.assertNotEqual(current.stat().st_ino, original.stat().st_ino)
 
     def test_normal_exit_refuses_renamed_or_symlinked_output_directory(self):
@@ -610,7 +637,7 @@ class CycleOrderTests(unittest.TestCase):
                 self.assertFalse((out / "map02-cycle-clean-exit.jsonl").exists())
                 alias = out / "seal-hardlink-alias"
                 self.assertTrue(alias.is_file())
-                self.assertIn(b"vh.map02.cycle-order.v4", alias.read_bytes())
+                self.assertIn(b"vh.map02.cycle-order.v5", alias.read_bytes())
                 self.assertEqual(alias.stat().st_nlink, 1)
 
     def test_clean_exit_fsync_failure_revokes_both_private_receipts(self):
@@ -645,7 +672,7 @@ class CycleOrderTests(unittest.TestCase):
                 self.assertFalse((out / "map02-single-process-cycle.jsonl").exists())
                 seal = out / "map02-cycle-clean-exit.jsonl"
                 self.assertTrue(seal.is_file(), "foreign seal inode was deleted")
-                self.assertIn(b"vh.map02.cycle-order.v4", seal.read_bytes())
+                self.assertIn(b"vh.map02.cycle-order.v5", seal.read_bytes())
 
     def test_private_exclusive_receipt_and_no_overwrite(self):
         with tempfile.TemporaryDirectory() as tmp:

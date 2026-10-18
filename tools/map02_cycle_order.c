@@ -22,11 +22,14 @@
 static struct {
     int step, failed;
     unsigned frame, draw_primitives;
+    int present_x, present_y, present_w, present_h, present_hires;
 } observed;
 
 /* Two 64-event native windows hold fewer than 128 events; every supported
  * DRAW needs paired before/after snapshots. Bound to 63 complete pairs. */
 #define MAP02_MAX_DRAW_PAIRS 63u
+
+static void publish_if_requested(void);
 
 static int overlaps_map02_extent(int lba, int sectors) {
     int64_t start = (int64_t)lba;
@@ -99,7 +102,7 @@ void vh_map02_cycle_draw_primitive(unsigned frame) {
 int vh_map02_cycle_failed(void) {
     char cd_receipt[512];
     return observed.failed || vh_map02_cd_probe_failed() ||
-           (observed.step == 6 &&
+           (observed.step == 7 &&
             vh_map02_cd_probe_format_jsonl(cd_receipt, sizeof cd_receipt) <= 0);
 }
 int vh_map02_cycle_format_jsonl(char *out, size_t capacity) {
@@ -108,7 +111,7 @@ int vh_map02_cycle_format_jsonl(char *out, size_t capacity) {
     unsigned raw_crc32;
     char raw_sha256[65];
     int n;
-    if (observed.failed || observed.step != 6 || !out || !capacity ||
+    if (observed.failed || observed.step != 7 || !out || !capacity ||
             !observed.draw_primitives ||
             observed.draw_primitives > MAP02_MAX_DRAW_PAIRS)
         return 0;
@@ -124,17 +127,23 @@ int vh_map02_cycle_format_jsonl(char *out, size_t capacity) {
     token = vh_map02_capture_session_token();
     if (!token || strlen(token) != 32u) return 0;
     n = snprintf(out, capacity,
-        "{\"schema\":\"vh.map02.cycle-order.v4\","
+        "{\"schema\":\"vh.map02.cycle-order.v5\","
         "\"capture_session\":\"%s\",\"gpu_draw_frame\":%u,"
         "\"original_cd_raw_user_crc32\":\"%08x\","
         "\"original_cd_raw_user_sha256\":\"%s\","
         "\"observed_draw_primitive_count\":%u,"
+        "\"display_source_rect\":[%d,%d,%d,%d],"
+        "\"present_backend_is_hires\":%s,"
+        "\"pc_present_call_returned\":true,"
         "\"ordered_source_hooks_observed\":true,"
         "\"cd_payload_verified_by_this_receipt\":false,"
         "\"original_map02_rendering_proven\":false,"
         "\"physical_ps1_equivalence_proven\":false}\n",
         token, observed.frame, raw_crc32, raw_sha256,
-        observed.draw_primitives);
+        observed.draw_primitives,
+        observed.present_x, observed.present_y,
+        observed.present_w, observed.present_h,
+        observed.present_hires ? "true" : "false");
     return n > 0 && (size_t)n < capacity ? n : 0;
 }
 /* Identity is checked both via the opened file descriptor and the
@@ -158,7 +167,7 @@ static int verify_published_fd(int dfd, int fd, const char *name,
                                const char *data, size_t length,
                                const struct stat *baseline) {
     struct stat file, named, after;
-    char checked[512];
+    char checked[1024];
     size_t done = 0;
     if (length > sizeof checked ||
         fstat(fd, &file) || !same_contents_metadata(&file, baseline) ||
@@ -218,7 +227,7 @@ static int published_directory_still_named(void) {
 static void revoke_invalid_cycle_at_exit(void) {
     struct stat directory, named, seal_baseline = {0}, seal_named;
     int fd = -1, seal_fd = -1, seal_created = 0, clean = 0, n;
-    char data[512];
+    char data[1024];
     if (!published.armed) return;
     if (fstat(published.dirfd, &directory) ||
         !published_directory_still_named())
@@ -285,7 +294,7 @@ done:
  * Never delete a foreign/replaced inode on cleanup. */
 static void publish_if_requested(void) {
     const char *directory = getenv("VH_MAP02_CYCLE_OUTPUT_DIR");
-    char data[512];
+    char data[1024];
     int dfd = -1, fd = -1, n, ok = 0, created = 0;
     struct stat st, baseline, named;
     ssize_t written;
@@ -348,5 +357,25 @@ void vh_map02_cycle_draw_finish(unsigned frame, int walk_complete) {
     if (frame != observed.frame || !walk_complete ||
             !observed.draw_primitives) observed.failed = 1;
     transition(5, 6);
-    if (!observed.failed) publish_if_requested();
+    /* The original renderer has NOT presented yet. No receipt until the
+     * actual PC_GpuPresent/HiresPresent call returns on this frame. */
+}
+void vh_map02_cycle_present_finish(unsigned frame, int x, int y, int w,
+                                   int h, int hires) {
+    if (!selected_frame(frame)) return;
+    /* Coordinates are native VRAM units even for the hi-res presentation
+     * branch. The hi-res framebuffer is NOT the native BGR555 VRAM plane. */
+    if (frame != observed.frame || x < 0 || y < 0 || w <= 0 || h <= 0 ||
+            (int64_t)x + w > 1024 || (int64_t)y + h > 512 ||
+            (hires != 0 && hires != 1)) {
+        observed.failed = 1;
+    }
+    transition(6, 7);
+    if (observed.failed) return;
+    observed.present_x = x;
+    observed.present_y = y;
+    observed.present_w = w;
+    observed.present_h = h;
+    observed.present_hires = hires;
+    publish_if_requested();
 }

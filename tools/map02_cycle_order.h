@@ -10,6 +10,8 @@ void vh_map02_cycle_loader_complete(int cdf, int target_cdf, int state);
 void vh_map02_cycle_draw_start(unsigned frame);
 void vh_map02_cycle_draw_primitive(unsigned frame);
 void vh_map02_cycle_draw_finish(unsigned frame, int walk_complete);
+void vh_map02_cycle_present_finish(unsigned frame, int x, int y, int w,
+                                   int h, int hires);
 int vh_map02_cycle_failed(void);
 int vh_map02_cycle_format_jsonl(char *out, size_t capacity);
 #endif
