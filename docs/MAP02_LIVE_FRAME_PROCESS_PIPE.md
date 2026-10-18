@@ -344,3 +344,39 @@ risks, but they do not authenticate a running game binary beyond the
 existing pinned ELF checks or prove the private journal writer's kernel
 identity. The test environment contains no actual game resources and
 no PlayStation hardware raster evidence. Keep HD replacement disabled.
+
+## Linux child journal-writer FD witness before frame release
+
+In **joint** diagnostic mode, the one-shot native GPU recorder keeps its
+JSONL `FILE*` open after flushing the last bounded event and before the
+post-`DrawOTag` framebuffer gate. The independent SHA-pinned Linux
+launcher now waits **before sending the single-byte release signal**,
+checks the actual `/proc/PID/fd` entries for the launched child,
+compares their device+inode to the held private GPU journal directory
+entry, and reads `/proc/PID/fdinfo/N` to require a real write-capable
+(`O_WRONLY` or `O_RDWR`) open file descriptor. It checks the still-live
+child, then re-verifies the pinned `/proc/PID/exe` image and releases the
+terminal stdout frame only when the fd witness is present.
+
+The joint receipt carries
+`child_writable_gpu_journal_fd_observed=true`. The independent offline
+replay requires this exact flag alongside the existing executable hash,
+GPU journal hashes, BGR555 payload hash, final native VRAM byte identity,
+and deliberately false source/authenticity flags.
+
+Tests execute a real synthesized Linux C11 ELF that writes two complete
+VRAM event snapshots and a JSONL journal **before waiting for release**,
+leaving its writable journal stream open. They also verify fail-closed
+behavior when the journal is absent, the child closes the journal before
+release, the only remaining journal descriptor is read-only, or a local
+actor falsifies the receipt flag.
+
+**Evidence boundary:** `/proc` confirms the pinned live child *held*
+a writable descriptor to the journal inode at that moment. It does NOT
+cryptographically prove that every byte was written by that process,
+guarantee that nobody else wrote the file, prove any retail disc was
+loaded, or authenticate original PlayStation GPU output. For this
+reason `gpu_journal_writer_kernel_authenticated` remains **false**
+in receipts and reports. The observer is Linux-specific and is not
+compiled into normal Nintendo Switch gameplay. Preserve HD-off and
+private local file handling.
