@@ -170,8 +170,29 @@ static int verify_published_fd(int dfd, int fd, const char *name,
  * revoke the provisional receipt instead. No foreign inode is deleted. */
 static struct {
     int armed, dirfd;
-    struct stat file;
+    struct stat file, directory;
+    char directory_path[4096];
 } published;
+
+/* The original name must continue to resolve to the verified directory,
+ * not merely to a new private directory replacing it after DrawOTag.
+ * Directory mtime/ctime can legitimately change as receipts are created,
+ * so compare stable inode/owner/mode/link metadata only. */
+static int same_private_directory(const struct stat *a, const struct stat *b) {
+    return S_ISDIR(a->st_mode) && S_ISDIR(b->st_mode) &&
+           same_inode(a, b) && a->st_uid == b->st_uid &&
+           a->st_mode == b->st_mode && a->st_nlink == b->st_nlink &&
+           (a->st_mode & 0777) == 0700;
+}
+static int published_directory_still_named(void) {
+    struct stat fdinfo, named;
+    return published.armed &&
+           !fstat(published.dirfd, &fdinfo) &&
+           !fstatat(AT_FDCWD, published.directory_path, &named,
+                    AT_SYMLINK_NOFOLLOW) &&
+           same_private_directory(&published.directory, &fdinfo) &&
+           same_private_directory(&published.directory, &named);
+}
 
 static void revoke_invalid_cycle_at_exit(void) {
     struct stat directory, named, seal_baseline = {0}, seal_named;
@@ -179,8 +200,7 @@ static void revoke_invalid_cycle_at_exit(void) {
     char data[512];
     if (!published.armed) return;
     if (fstat(published.dirfd, &directory) ||
-        !S_ISDIR(directory.st_mode) || directory.st_uid != geteuid() ||
-        (directory.st_mode & 0777) != 0700)
+        !published_directory_still_named())
         goto done;
     if (vh_map02_cycle_failed()) goto done;
     n = vh_map02_cycle_format_jsonl(data, sizeof data);
@@ -213,7 +233,8 @@ static void revoke_invalid_cycle_at_exit(void) {
     seal_fd = -1;
     if (fstatat(published.dirfd, SEAL_NAME, &seal_named,
                 AT_SYMLINK_NOFOLLOW) ||
-        !same_contents_metadata(&seal_baseline, &seal_named))
+        !same_contents_metadata(&seal_baseline, &seal_named) ||
+        !published_directory_still_named())
         goto done;
     clean = 1;
 done:
@@ -247,6 +268,10 @@ static void publish_if_requested(void) {
     struct stat st, baseline, named;
     ssize_t written;
     if (!directory || !*directory) return;
+    if (strlen(directory) >= sizeof published.directory_path) {
+        observed.failed = 1;
+        return;
+    }
     n = vh_map02_cycle_format_jsonl(data, sizeof data);
     if (!n) { observed.failed = 1; return; }
     dfd = open(directory, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
@@ -271,9 +296,13 @@ static void publish_if_requested(void) {
     fd = -1;
     if (fstatat(dfd, OUTPUT_NAME, &named, AT_SYMLINK_NOFOLLOW) ||
         !same_contents_metadata(&baseline, &named) ||
+        fstatat(AT_FDCWD, directory, &named, AT_SYMLINK_NOFOLLOW) ||
+        !same_private_directory(&st, &named) ||
         published.armed || atexit(revoke_invalid_cycle_at_exit))
         goto done;
     published.file = baseline;
+    published.directory = st;
+    memcpy(published.directory_path, directory, strlen(directory) + 1);
     published.dirfd = dfd;
     published.armed = 1;
     dfd = -1; /* exit guard owns the verified directory descriptor */
