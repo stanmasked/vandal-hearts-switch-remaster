@@ -1,0 +1,113 @@
+name: Stage316 two independent guest audout page-return cohorts
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage316-two-last-audout-release-runs.yml'
+      - 'tools/compare_nexium_guest_last_page_two_runs.py'
+      - 'tests/test_compare_nexium_guest_last_page_two_runs.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  last-page-original-cohort:
+    name: Compare two real guest last audout lease returns with honest original provenance
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - name: Checkout guest optical CRC and original source analyzers
+        uses: actions/checkout@v4
+
+      - name: Install Pillow in isolated virtualenv
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv /tmp/vh-stage316
+          /tmp/vh-stage316/bin/python -m pip install --disable-pip-version-check 'Pillow>=10,<13'
+
+      - name: Stage316 mixed-evidence last page comparison adversarial tests
+        run: /tmp/vh-stage316/bin/python -m unittest discover -s tests -p 'test_compare_nexium_guest_last_page_two_runs.py' -v
+
+      - name: Download first archived Stage313 NeXium guest last buffer source receipt
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39144389184
+          github-token: ${{ github.token }}
+          path: original-guest-sources/39144389184
+
+      - name: Download second archived Stage314 raw original audout and exit CSV
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39145082758
+          github-token: ${{ github.token }}
+          path: original-guest-sources/39145082758
+
+      - name: Download separate-run Stage315 independently replayed original-byte witness
+        uses: actions/download-artifact@v4
+        with:
+          name: stage315-independent-guest-audout-original-receipt
+          run-id: 39145673203
+          github-token: ${{ github.token }}
+          path: independently-audited-original
+
+      - name: Independently reconcile both original optical scenes and guest audout returns
+        shell: bash
+        run: |
+          set -euo pipefail
+          receipt="$(find independently-audited-original -type f \
+            -name 'guest-original-last-audout-stage315.json' -print -quit)"
+          test -n "$receipt" && test -f "$receipt" && test ! -L "$receipt"
+          mkdir -p independent-stage316-evidence
+          /tmp/vh-stage316/bin/python tools/compare_nexium_guest_last_page_two_runs.py \
+            --legacy-workflow 39144389184 \
+            --legacy-archive original-guest-sources/39144389184 \
+            --original-workflow 39145082758 \
+            --original-archive original-guest-sources/39145082758 \
+            --stage315-independent-receipt "$receipt" \
+            --output independent-stage316-evidence/two-original-last-audout-pages-stage316.json
+          /tmp/vh-stage316/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+          doc=json.loads(Path(
+              "independent-stage316-evidence/two-original-last-audout-pages-stage316.json"
+          ).read_text())
+          if (doc["result"]!="TWO_INDEPENDENT_GUEST_LAST_PAGE_RELEASES_COMPARED"
+                  or doc["run_count"]!=2
+                  or doc["capture_time_JSON_only_audout_run_ids"]!=[39144389184]
+                  or doc["byte_original_independently_reaudited_audout_run_ids"]!=[39145082758]
+                  or doc["separate_stage315_original_source_replay_identical"] is not True
+                  or doc["all_original_optical_scene_PNGs_independently_CRC_replayed"] is not True
+                  or doc["all_successful_last_page_returns_after_stop_before_cleanup"] is not True
+                  or doc["all_bounded_taper_buffer_returns_confirmed"] is not True
+                  or doc["first_capture_original_audout_bytes_NOT_reaudited"] is not True
+                  or doc["audout_return_is_NOT_speaker_or_DAC_sample_time"] is not True
+                  or doc["guest_clock_NOT_calibrated_to_host_pcm_frames"] is not True
+                  or doc["Plus_caused_audible_dropout_proven"] is not False
+                  or doc["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage316 sources/provenance/guest audout result mismatch")
+          bounds=doc["last_page_after_Plus_guest_software_interval_ns"]
+          if (len(bounds["observations"])!=2 or bounds["minimum"]<=0 or
+                  bounds["maximum"]<bounds["minimum"] or
+                  bounds["range"]!=bounds["maximum"]-bounds["minimum"]):
+              raise SystemExit("Stage316 guest last-page software interval conservation failed")
+          print("Stage316 real original guest buffer release intervals:",bounds)
+          for row in doc["source_runs"]:
+              print("Workflow",row["original_workflow_run_id"],
+                    "last page SHA-256",row["original_last_page_csv_sha256"],
+                    "original source bytes separately verified:",
+                    row["original_last_page_csv_bytes_independently_reaudited"])
+          PY
+          echo "Stage316: compared two independent guest last audout PCM buffer RETURN software events. One older recording has capture-time original SHA-bound JSON, the newer has actual original CSV bytes independently re-audited by Stage315. Both CRC optical scene sources independently replayed. No guest-to-host PCM clock mapping or audible speaker evidence." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload only independent provenance comparison receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage316-independent-last-audout-page-cohort
+          path: independent-stage316-evidence/
+          if-no-files-found: warn
