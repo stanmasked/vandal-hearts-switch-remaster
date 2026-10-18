@@ -167,6 +167,9 @@ on:
       - 'tools/apply_map02_v140_mmio_effects.py'
       - 'tools/check_map02_v140_native_mmio_effects.py'
       - 'tests/test_map02_v140_native_mmio_effects.py'
+      - 'tools/verify_map02_v141_private_original_mmio_claims.py'
+      - 'tests/test_map02_v141_private_original_mmio_claims.py'
+      - '.github/workflows/map02-v141-private-original-mmio.yml'
       - '.github/workflows/map02-v140-native-mmio-effects.yml'
       - '.github/workflows/map02-v139-native-words.yml'
       - '.github/workflows/map02-v138-interpreter-pc.yml'
@@ -275,6 +278,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v138_interpreter_pc.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v139_native_words.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v140_native_mmio_effects.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v141_private_original_mmio_claims.py' -v
           python3 -m remaster.tools.check_map02_v140_native_mmio_effects --cc "${{ matrix.cc }}"
           python3 -m remaster.tools.check_map02_v139_native_words --cc "${{ matrix.cc }}"
           python3 -m remaster.tools.check_map02_v138_native_pc_observer --cc "${{ matrix.cc }}"
