@@ -55,7 +55,12 @@ class NativePluginCallback160(unittest.TestCase):
         ):
             self.assertIn(marker,patched)
         self.assertLess(patched.index("vh159_arm_gpu_sink();"),
-                        patched.index("vh160_arm_plugin_callback();"))
+                        patched.index("if(vh160_arm_plugin_callback()!=0){"))
+        # Require a checked arm result and explicit fail-closed exit,
+        # not an unchecked bare call that could pass a loose substring test.
+        self.assertIn("VH160_CALLBACK_ARM_REFUSED",patched)
+        self.assertIn("return 63;",patched)
+        self.assertNotIn("                    vh160_arm_plugin_callback();",patched)
         with self.assertRaises(ValueError):
             patch_frontend(patched)
 
