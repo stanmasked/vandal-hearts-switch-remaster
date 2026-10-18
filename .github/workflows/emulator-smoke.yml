@@ -1,4 +1,7 @@
 name: Experimental NRO runtime smoke test
+# Stage324: deliberately repeat the same Stage323 audio implementation in a
+# NEW independent NeXium workflow run. Original run 39159226320 remains
+# untouched; compare raw guest source bytes after both captures succeed.
 
 on:
   workflow_dispatch:

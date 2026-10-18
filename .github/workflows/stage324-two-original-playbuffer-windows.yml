@@ -1,0 +1,124 @@
+name: Stage324 two independent original guest PlayBuffer cohorts
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage324-two-original-playbuffer-windows.yml'
+      - 'tools/compare_nexium_two_original_playbuffer_windows.py'
+      - 'tests/test_compare_nexium_two_original_playbuffer_windows.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  compare-independent-original-windows:
+    name: Independently replay and compare two ORIGINAL guest PlayBuffer histories
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout original guest source replay and CRC validator
+        uses: actions/checkout@v4
+
+      - name: Install isolated source optical decoder
+        run: |
+          set -euxo pipefail
+          python3 -m venv /tmp/vh-stage324
+          /tmp/vh-stage324/bin/python -m pip install --disable-pip-version-check 'Pillow>=10,<13'
+
+      - name: Stage324 16 distinct-source, deterministic-frame, rank and audible overclaim controls
+        run: /tmp/vh-stage324/bin/python -m unittest discover -s tests -p 'test_compare_nexium_two_original_playbuffer_windows.py' -v
+
+      - name: Verify BOTH exact original captures completed successfully
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for run in 39159226320 39162251380; do
+            for attempt in $(seq 1 150); do
+              status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$run" --jq '.status')"
+              conclusion="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$run" --jq '.conclusion // "pending"')"
+              if [[ "$status" == completed ]]; then
+                if [[ "$conclusion" != success ]]; then
+                  echo "Original guest source run $run was not successful: $conclusion" >&2
+                  exit 1
+                fi
+                echo "Authenticated successful original guest source run $run"
+                break
+              fi
+              if (( attempt == 150 )); then
+                echo "Original NeXium run $run not completed within bounded verification" >&2
+                exit 1
+              fi
+              sleep 15
+            done
+          done
+
+      - name: Download FIRST original Stage322 verified guest source archive
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39159226320
+          github-token: ${{ github.token }}
+          path: first-original-neXium
+
+      - name: Download SECOND independent original Stage324 guest source archive
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39162251380
+          github-token: ${{ github.token }}
+          path: second-original-neXium
+
+      - name: Independently replay BOTH original CSV chains and compare 16-call windows
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p independent-stage324-comparison
+          /tmp/vh-stage324/bin/python tools/compare_nexium_two_original_playbuffer_windows.py \
+            --first-run-id 39159226320 --first-archive first-original-neXium \
+            --second-run-id 39162251380 --second-archive second-original-neXium \
+            --output independent-stage324-comparison/dual-playbuffer-windows-stage324.json
+          /tmp/vh-stage324/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path(
+              "independent-stage324-comparison/dual-playbuffer-windows-stage324.json").read_text())
+          if (r["schema"]!="vh-independent-two-run-original-last16-PlayBuffer-cohort/v1"
+                  or r["result"]!="TWO_ORIGINAL_GUEST_PLAYBUFFER_WINDOWS_INDEPENDENTLY_REPLAYED"
+                  or r["independent_original_workflow_run_count"]!=2
+                  or [x["original_neXium_run_id"] for x in r["source_runs"]]
+                     !=[39159226320,39162251380]
+                  or r["both_original_guest_archive_chains_independently_replayed"] is not True
+                  or r["both_have_source_verified_prior_baseline"] is not True
+                  or any(s["prior_shorter"]+s["prior_equal"]+s["prior_longer"]!=
+                         s["prior_successes_in_window"] for s in r["source_runs"])
+                  or r["guest_software_times_not_host_PCM_or_DAC_samples"] is not True
+                  or r["two_captures_do_not_establish_population_latency_distribution"] is not True
+                  or r["retail_PlayStation_music_fidelity_verified"] is not False
+                  or r["audible_Plus_audio_dropout_causality_verified"] is not False
+                  or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage324 source distinctness, software-timing or provenance violated")
+          for x in r["source_runs"]:
+              print("Original NeXium run:",x["original_neXium_run_id"])
+              print("Original bounded normal PlayBuffer window SHA:",x["original_guest_history_csv_sha256"])
+              print("Source-backed last call / prior lower median (ns):",
+                    x["final_successful_call_duration_guest_ns"],
+                    x["prior_successful_lower_median_guest_ns"])
+              print("Last-call rank:",x["final_call_ascending_rank_in_window"],
+                    "prior shorter/tied/longer:",
+                    x["prior_shorter"],x["prior_equal"],x["prior_longer"])
+          print("Both original last calls below their own earlier median:",
+                r["both_final_calls_below_own_prior_lower_median"])
+          PY
+          echo "Stage324: separately re-read two ORIGINAL NeXium last16 PlayBuffer guest source archives with exact exit/worker/page/optical CRC provenance. This is a two-capture software time comparison, NOT a statistically representative sample, DAC or audible sound proof." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload only new independent comparison receipt (no PCM or game sources)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage324-independent-original-two-PlayBuffer-windows
+          path: independent-stage324-comparison/
+          if-no-files-found: warn
