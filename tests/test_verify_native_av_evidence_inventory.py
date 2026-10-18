@@ -1,6 +1,7 @@
 """Synthetic directory fixtures for published NeXium evidence inventory."""
 from pathlib import Path
 import json
+import zlib
 import subprocess
 import sys
 import tempfile
@@ -10,6 +11,16 @@ from verify_native_av_evidence_inventory import (
     FILES, PREFIX, SCENARIOS, SUFFIX, SD_MODE_BY_SCENARIO,
     expected_manifest, validate_inventory, MAX_BYTES, PNG_PREFIX,
 )
+
+
+def synthetic_ihdr(width=1280, height=720, *, depth=8, color_type=2,
+                   compression=0, filtering=0, interlace=0):
+    # A CRC-correct IHDR only. No IDAT or pixel payload is generated:
+    # inventory checks structure; the downstream verifier decodes frames.
+    fields = (width.to_bytes(4, "big") + height.to_bytes(4, "big") +
+              bytes((depth, color_type, compression, filtering, interlace)))
+    chunk = b"IHDR" + fields
+    return PNG_PREFIX + fields + zlib.crc32(chunk).to_bytes(4, "big")
 
 
 class NeXiumPublishedInventoryTests(unittest.TestCase):
@@ -32,9 +43,7 @@ class NeXiumPublishedInventoryTests(unittest.TestCase):
                     elif name in ("av-before.png", "av-after.png"):
                         # Header-valid synthetic fixture for inventory only.
                         # Downstream Pillow checks still decode real PNG.
-                        payload = (PNG_PREFIX +
-                                   (1280).to_bytes(4, "big") +
-                                   (720).to_bytes(4, "big") +
+                        payload = (synthetic_ihdr() +
                                    b"synthetic-not-a-decodable-PNG")
                     else:
                         payload = b"synthetic-not-real-proof"
@@ -183,6 +192,41 @@ class NeXiumPublishedInventoryTests(unittest.TestCase):
         png.write_bytes(original[:20] + (4096).to_bytes(4, "big") +
                         original[24:])
         self.assertNotEqual(self.cli().returncode, 0)
+
+    def test_png_ihdr_crc_mismatch_is_rejected(self):
+        png = self.folder("zr") / "av-before.png"
+        original = bytearray(png.read_bytes())
+        original[30] ^= 1  # Only the stored IHDR CRC changes.
+        png.write_bytes(original)
+        with self.assertRaisesRegex(ValueError, "invalid PNG IHDR CRC-32"):
+            validate_inventory(self.root)
+        self.assertNotEqual(self.cli().returncode, 0)
+
+    def test_reject_illegal_png_bit_depth_and_color_type(self):
+        png = self.folder("full") / "av-after.png"
+        for params in ({"depth": 4, "color_type": 2},
+                       {"depth": 16, "color_type": 3},
+                       {"depth": 8, "color_type": 1}):
+            with self.subTest(params=params):
+                png.write_bytes(synthetic_ihdr(**params))
+                with self.assertRaisesRegex(ValueError, "invalid PNG IHDR bit depth"):
+                    validate_inventory(self.root)
+
+    def test_reject_invalid_png_compression_filter_and_interlace(self):
+        png = self.folder("partial") / "av-before.png"
+        for params in ({"compression": 1}, {"filtering": 1},
+                       {"interlace": 2}):
+            with self.subTest(params=params):
+                png.write_bytes(synthetic_ihdr(**params))
+                with self.assertRaisesRegex(ValueError, "invalid PNG IHDR bit depth"):
+                    validate_inventory(self.root)
+
+    def test_legal_interlaced_indexed_png_ihdr_is_accepted(self):
+        png = self.folder("empty") / "av-after.png"
+        png.write_bytes(synthetic_ihdr(depth=4, color_type=3, interlace=1))
+        result = validate_inventory(self.root)
+        self.assertEqual(result["scenario_count"], 7)
+        self.assertFalse(result["physical_hardware_verified"])
 
     def test_oversized_png_rejected_before_decoder(self):
         png = self.folder("zr") / "av-before.png"

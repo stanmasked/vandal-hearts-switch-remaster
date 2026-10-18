@@ -6,6 +6,7 @@ unexpectedly empty published files before pixel/witness verification.
 """
 import argparse
 import json
+import zlib
 from pathlib import Path
 
 SCENARIOS = ("empty", "full", "partial", "zr", "zl", "resume", "resume_retry")
@@ -29,20 +30,39 @@ MAX_BYTES = {
 }
 PNG_PREFIX = bytes.fromhex("89504e470d0a1a0a0000000d49484452")
 FRAME_SIZE = (1280, 720)
+# Valid bit depths depend on the PNG IHDR color type. Keep this
+# independent of whatever Pillow might tolerate while decoding.
+PNG_COLOR_DEPTHS = {
+    0: (1, 2, 4, 8, 16),  # grayscale
+    2: (8, 16),           # truecolor RGB
+    3: (1, 2, 4, 8),      # indexed
+    4: (8, 16),           # grayscale + alpha
+    6: (8, 16),           # RGBA
+}
 
 
 def verify_png_preflight(path):
-    # Preflight only: the existing pixel/witness verifier still performs
-    # full PNG decoding. Check IHDR before handing untrusted bytes to PIL.
+    # Preflight only; the existing pixel/witness verifier still performs
+    # full PNG decoding. Read the entire fixed-length 13-byte IHDR plus
+    # its CRC rather than trusting only the signature and image size.
     with path.open("rb") as stream:
-        header = stream.read(24)
-    if len(header) != 24 or header[:16] != PNG_PREFIX:
+        header = stream.read(33)
+    if len(header) != 33 or header[:16] != PNG_PREFIX:
         raise ValueError("invalid PNG signature or IHDR: " + str(path))
     size = (int.from_bytes(header[16:20], "big"),
             int.from_bytes(header[20:24], "big"))
     if size != FRAME_SIZE:
         raise ValueError("unexpected PNG framebuffer dimensions: " +
                          str(path) + ": " + repr(size))
+    bit_depth, color_type, compression, filtering, interlace = header[24:29]
+    if (bit_depth not in PNG_COLOR_DEPTHS.get(color_type, ()) or
+            compression != 0 or filtering != 0 or interlace not in (0, 1)):
+        raise ValueError("invalid PNG IHDR bit depth or encoding parameters: " +
+                         str(path))
+    crc = int.from_bytes(header[29:33], "big")
+    expected_crc = zlib.crc32(header[12:29]) & 0xffffffff
+    if crc != expected_crc:
+        raise ValueError("invalid PNG IHDR CRC-32: " + str(path))
 # These four guest-only controls have isolated EMPTY SD fixtures, even
 # though they exercise distinct synthetic audout fault paths.
 SD_MODE_BY_SCENARIO = {
