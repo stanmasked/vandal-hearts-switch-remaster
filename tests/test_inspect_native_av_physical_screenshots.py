@@ -97,6 +97,19 @@ class PhysicalScreenshotPixelTests(unittest.TestCase):
         self.assertEqual(self.cli("--require-y-return-pixels").returncode,0)
         self.assertFalse(out["audible_audio_verified"])
 
+    def test_terminal_red_manual_error_cannot_turn_into_success(self):
+        before=frame(b=1,f=1,p=True,x="red",y="red")
+        after=frame(b=1,f=1,p=True,x="blue",y="blue")
+        out=self.images(before,after)
+        self.assertFalse(out["difference"]["new_x_return_pixels"])
+        self.assertFalse(out["difference"]["new_y_return_pixels"])
+        self.assertNotEqual(self.cli("--require-x-return-pixels").returncode,0)
+        self.assertNotEqual(self.cli("--require-y-return-pixels").returncode,0)
+        # Both still look like manual interface screenshots, but their
+        # colors cannot establish a continuous successful run.
+        self.assertEqual(out["before"]["variant_pixels"],"focus_manual")
+        self.assertEqual(out["after"]["variant_pixels"],"focus_manual")
+
     def test_old_blue_x_is_not_a_new_x_confirmation(self):
         out=self.images(frame(x="blue"),frame(x="blue"))
         self.assertFalse(out["difference"]["new_x_return_pixels"])
