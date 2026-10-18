@@ -33,7 +33,7 @@ LDLIBS   := -L$(DEVKITPRO)/libnx/lib -lnx
 .PHONY: all clean test test-audio-stream test-sanitize verify-nro sdl2-probe sdl2-gl-probe sdl2-texture-probe sdl2-audio-probe audout-audio-probe openal-probe
 all: $(BUILD)/$(TARGET).nro
 
-test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(BUILD)/test_vh_native_seq $(BUILD)/test_vh_native_vab $(BUILD)/test_vh_audio_assets $(BUILD)/test_vh_audio_resample $(BUILD)/test_vh_audio_output_ramp $(BUILD)/test_vh_audio_diagnostics $(BUILD)/test_vh_audio_diag_journal $(BUILD)/test_vh_audio_diag_export $(BUILD)/switch_audio_export_session $(BUILD)/test_vh_audio_output_edges $(BUILD)/test_vh_audio_buffer_lease $(BUILD)/test_vh_audout_queue_telemetry $(BUILD)/test_vh_audout_queue_export $(BUILD)/test_vh_audio_output_recovery $(BUILD)/test_vh_spu_reverb $(BUILD)/test_vh_native_audio_soak $(BUILD)/test_vh_music_scene $(BUILD)/test_vh_music_scene_soak $(BUILD)/test_vh_audio_scene_trace $(BUILD)/test_vh_audio_scene_trace_export $(BUILD)/test_vh_audio_exit_timeline $(BUILD)/test_vh_audio_exit_output_witness $(BUILD)/test_vh_audio_exit_worker_stop_witness $(BUILD)/test_vh_audio_worker_stop_gate $(BUILD)/test_vh_audio_last_playbuffer_call $(BUILD)/test_vh_audio_scene_optical $(BUILD)/test_vh_game_music_mailbox $(BUILD)/test_vh_music_focus_resume $(BUILD)/test_vh_music_lifecycle_soak $(BUILD)/test_vh_game_music_banks $(BUILD)/vh_music_bank_audit
+test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(BUILD)/test_vh_native_seq $(BUILD)/test_vh_native_vab $(BUILD)/test_vh_audio_assets $(BUILD)/test_vh_audio_resample $(BUILD)/test_vh_audio_output_ramp $(BUILD)/test_vh_audio_diagnostics $(BUILD)/test_vh_audio_diag_journal $(BUILD)/test_vh_audio_diag_export $(BUILD)/switch_audio_export_session $(BUILD)/test_vh_audio_output_edges $(BUILD)/test_vh_audio_buffer_lease $(BUILD)/test_vh_audout_queue_telemetry $(BUILD)/test_vh_audout_queue_export $(BUILD)/test_vh_audio_output_recovery $(BUILD)/test_vh_spu_reverb $(BUILD)/test_vh_native_audio_soak $(BUILD)/test_vh_music_scene $(BUILD)/test_vh_music_scene_soak $(BUILD)/test_vh_audio_scene_trace $(BUILD)/test_vh_audio_scene_trace_export $(BUILD)/test_vh_audio_exit_timeline $(BUILD)/test_vh_audio_exit_output_witness $(BUILD)/test_vh_audio_exit_worker_stop_witness $(BUILD)/test_vh_audio_worker_stop_gate $(BUILD)/test_vh_audio_last_playbuffer_call $(BUILD)/test_vh_audio_playbuffer_history $(BUILD)/test_vh_audio_scene_optical $(BUILD)/test_vh_game_music_mailbox $(BUILD)/test_vh_music_focus_resume $(BUILD)/test_vh_music_lifecycle_soak $(BUILD)/test_vh_game_music_banks $(BUILD)/vh_music_bank_audit
 	./$(BUILD)/test_game_rules
 	./$(BUILD)/test_software_renderer
 	./$(BUILD)/test_vh_audio_stream
@@ -62,6 +62,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_vh_
 	./$(BUILD)/test_vh_audio_exit_worker_stop_witness
 	./$(BUILD)/test_vh_audio_worker_stop_gate
 	./$(BUILD)/test_vh_audio_last_playbuffer_call
+	./$(BUILD)/test_vh_audio_playbuffer_history
 	./$(BUILD)/test_vh_audio_scene_optical
 	./$(BUILD)/test_vh_game_music_mailbox
 	./$(BUILD)/test_vh_music_focus_resume
@@ -71,6 +72,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_vh_
 	python3 tests/test_audit_nexium_guest_exit_timeline.py
 	python3 tests/test_audit_nexium_guest_last_buffer_return.py
 	python3 tests/test_audit_nexium_guest_worker_stop_observed.py
+	python3 tests/test_audit_nexium_guest_playbuffer_history.py
 	python3 tests/test_analyze_switch_audio_log.py
 	python3 tests/test_verify_switch_audio_bundle.py
 	python3 tests/test_report_switch_audio_hardware.py
@@ -135,7 +137,7 @@ test: $(BUILD)/test_game_rules $(BUILD)/test_software_renderer $(BUILD)/test_vh_
 	python3 tests/test_native_vab_python_reference.py
 	python3 tests/test_native_spu_reverb_reference.py
 
-test-audio-stream: $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(BUILD)/test_vh_native_seq $(BUILD)/test_vh_native_vab $(BUILD)/test_vh_audio_assets $(BUILD)/test_vh_audio_resample $(BUILD)/test_vh_audio_output_ramp $(BUILD)/test_vh_audio_diagnostics $(BUILD)/test_vh_audio_diag_journal $(BUILD)/test_vh_audio_diag_export $(BUILD)/switch_audio_export_session $(BUILD)/test_vh_audio_output_edges $(BUILD)/test_vh_audio_buffer_lease $(BUILD)/test_vh_audout_queue_telemetry $(BUILD)/test_vh_audout_queue_export $(BUILD)/test_vh_audio_output_recovery $(BUILD)/test_vh_spu_reverb $(BUILD)/test_vh_native_audio_soak $(BUILD)/test_vh_music_scene $(BUILD)/test_vh_music_scene_soak $(BUILD)/test_vh_audio_scene_trace $(BUILD)/test_vh_audio_scene_trace_export $(BUILD)/test_vh_audio_exit_timeline $(BUILD)/test_vh_audio_exit_output_witness $(BUILD)/test_vh_audio_exit_worker_stop_witness $(BUILD)/test_vh_audio_worker_stop_gate $(BUILD)/test_vh_audio_last_playbuffer_call $(BUILD)/test_vh_audio_scene_optical $(BUILD)/test_vh_game_music_mailbox $(BUILD)/test_vh_music_focus_resume $(BUILD)/test_vh_music_lifecycle_soak $(BUILD)/test_vh_game_music_banks $(BUILD)/vh_music_bank_audit
+test-audio-stream: $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(BUILD)/test_vh_native_seq $(BUILD)/test_vh_native_vab $(BUILD)/test_vh_audio_assets $(BUILD)/test_vh_audio_resample $(BUILD)/test_vh_audio_output_ramp $(BUILD)/test_vh_audio_diagnostics $(BUILD)/test_vh_audio_diag_journal $(BUILD)/test_vh_audio_diag_export $(BUILD)/switch_audio_export_session $(BUILD)/test_vh_audio_output_edges $(BUILD)/test_vh_audio_buffer_lease $(BUILD)/test_vh_audout_queue_telemetry $(BUILD)/test_vh_audout_queue_export $(BUILD)/test_vh_audio_output_recovery $(BUILD)/test_vh_spu_reverb $(BUILD)/test_vh_native_audio_soak $(BUILD)/test_vh_music_scene $(BUILD)/test_vh_music_scene_soak $(BUILD)/test_vh_audio_scene_trace $(BUILD)/test_vh_audio_scene_trace_export $(BUILD)/test_vh_audio_exit_timeline $(BUILD)/test_vh_audio_exit_output_witness $(BUILD)/test_vh_audio_exit_worker_stop_witness $(BUILD)/test_vh_audio_worker_stop_gate $(BUILD)/test_vh_audio_last_playbuffer_call $(BUILD)/test_vh_audio_playbuffer_history $(BUILD)/test_vh_audio_scene_optical $(BUILD)/test_vh_game_music_mailbox $(BUILD)/test_vh_music_focus_resume $(BUILD)/test_vh_music_lifecycle_soak $(BUILD)/test_vh_game_music_banks $(BUILD)/vh_music_bank_audit
 	./$(BUILD)/test_vh_audio_stream
 	./$(BUILD)/test_vh_native_spu
 	./$(BUILD)/test_vh_native_seq
@@ -162,6 +164,7 @@ test-audio-stream: $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(B
 	./$(BUILD)/test_vh_audio_exit_worker_stop_witness
 	./$(BUILD)/test_vh_audio_worker_stop_gate
 	./$(BUILD)/test_vh_audio_last_playbuffer_call
+	./$(BUILD)/test_vh_audio_playbuffer_history
 	./$(BUILD)/test_vh_audio_scene_optical
 	./$(BUILD)/test_vh_game_music_mailbox
 	./$(BUILD)/test_vh_music_focus_resume
@@ -171,6 +174,7 @@ test-audio-stream: $(BUILD)/test_vh_audio_stream $(BUILD)/test_vh_native_spu $(B
 	python3 tests/test_audit_nexium_guest_exit_timeline.py
 	python3 tests/test_audit_nexium_guest_last_buffer_return.py
 	python3 tests/test_audit_nexium_guest_worker_stop_observed.py
+	python3 tests/test_audit_nexium_guest_playbuffer_history.py
 	python3 tests/test_analyze_switch_audio_log.py
 	python3 tests/test_verify_switch_audio_bundle.py
 	python3 tests/test_report_switch_audio_hardware.py
@@ -265,6 +269,9 @@ $(BUILD)/test_vh_audio_scene_optical: tests/test_vh_audio_scene_optical.c source
 
 $(BUILD)/test_vh_audio_scene_trace_export: tests/test_vh_audio_scene_trace_export.c source/vh_audio_scene_trace_export.c source/vh_audio_scene_trace_export.h source/vh_audio_scene_trace.c source/vh_audio_scene_trace.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Isource tests/test_vh_audio_scene_trace_export.c source/vh_audio_scene_trace_export.c source/vh_audio_scene_trace.c -o $@
+
+$(BUILD)/test_vh_audio_playbuffer_history: tests/test_vh_audio_playbuffer_history.c source/vh_audio_playbuffer_history.h | $(BUILD)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Isource tests/test_vh_audio_playbuffer_history.c -o $@
 
 $(BUILD)/test_vh_audio_last_playbuffer_call: tests/test_vh_audio_last_playbuffer_call.c source/vh_audio_last_playbuffer_call.h | $(BUILD)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 -Isource tests/test_vh_audio_last_playbuffer_call.c -o $@
