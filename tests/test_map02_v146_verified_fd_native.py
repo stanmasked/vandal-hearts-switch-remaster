@@ -33,7 +33,7 @@ class VerifiedInodeNativeExec(unittest.TestCase):
             c=path.with_suffix(".c")
             c.write_text(
                 "#include <stdio.h>\n"
-                "int main(int argc,char **argv) {"
+                "int main(void) {"
                 " puts(\"VH146_"+label+"_ACTUALLY_EXECUTED\"); return 0; }\n")
             p=subprocess.run(
                 [cc,"-O1","-Wall","-Wextra","-Werror",str(c),"-o",str(path)],
