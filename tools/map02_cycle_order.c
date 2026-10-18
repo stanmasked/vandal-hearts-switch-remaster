@@ -17,6 +17,7 @@
 #define MAP02_LBA 0x1bcc
 #define MAP02_SECTORS 12
 #define OUTPUT_NAME "map02-single-process-cycle.jsonl"
+#define SEAL_NAME "map02-cycle-clean-exit.jsonl"
 
 static struct {
     int step, failed;
@@ -128,8 +129,9 @@ static int same_contents_metadata(const struct stat *a, const struct stat *b) {
            a->st_ctim.tv_sec == b->st_ctim.tv_sec &&
            a->st_ctim.tv_nsec == b->st_ctim.tv_nsec;
 }
-static int verify_published_fd(int dfd, int fd, const char *data,
-                               size_t length, const struct stat *baseline) {
+static int verify_published_fd(int dfd, int fd, const char *name,
+                               const char *data, size_t length,
+                               const struct stat *baseline) {
     struct stat file, named, after;
     char checked[512];
     size_t done = 0;
@@ -138,7 +140,7 @@ static int verify_published_fd(int dfd, int fd, const char *data,
         !S_ISREG(file.st_mode) || file.st_uid != geteuid() ||
         (file.st_mode & 0777) != 0600 || file.st_nlink != 1 ||
         file.st_size != (off_t)length ||
-        fstatat(dfd, OUTPUT_NAME, &named, AT_SYMLINK_NOFOLLOW) ||
+        fstatat(dfd, name, &named, AT_SYMLINK_NOFOLLOW) ||
         !same_contents_metadata(&file, &named) ||
         !S_ISREG(named.st_mode))
         return 0;
@@ -150,35 +152,79 @@ static int verify_published_fd(int dfd, int fd, const char *data,
     }
     if (memcmp(data, checked, length) != 0 ||
         fstat(fd, &after) || !same_contents_metadata(&file, &after) ||
-        fstatat(dfd, OUTPUT_NAME, &named, AT_SYMLINK_NOFOLLOW) ||
+        fstatat(dfd, name, &named, AT_SYMLINK_NOFOLLOW) ||
         !same_contents_metadata(&file, &named))
         return 0;
     return 1;
 }
 
-/* DrawOTag can return before the monitored process exits. Its published
- * receipt is provisional until a normal process exit: a later extra MAP02
- * CdRead or ordering failure must revoke the originally created inode.
- * Retain the verified private directory FD to avoid pathname redirection.
- * A _exit/SIGKILL bypasses atexit: the independent process launcher must
- * still demand a clean zero exit before validating these observations. */
+/* DrawOTag's receipt is provisional until the normal atexit path.
+ * A successful exit writes a second exclusively created, independently
+ * checked owner-private copy of the SAME receipt. The private verifier
+ * requires both different inodes with identical data. _exit(0) bypasses
+ * atexit and CANNOT create this clean-exit seal. Late CD/order errors
+ * revoke the provisional receipt instead. No foreign inode is deleted. */
 static struct {
     int armed, dirfd;
     struct stat file;
 } published;
 
 static void revoke_invalid_cycle_at_exit(void) {
-    struct stat directory, named;
+    struct stat directory, named, seal_baseline, seal_named;
+    int fd = -1, seal_fd = -1, seal_created = 0, clean = 0, n;
+    char data[512];
     if (!published.armed) return;
-    if (vh_map02_cycle_failed() &&
-        !fstat(published.dirfd, &directory) &&
-        S_ISDIR(directory.st_mode) && directory.st_uid == geteuid() &&
-        (directory.st_mode & 0777) == 0700 &&
-        !fstatat(published.dirfd, OUTPUT_NAME, &named, AT_SYMLINK_NOFOLLOW) &&
-        S_ISREG(named.st_mode) &&
-        same_inode(&published.file, &named)) {
-        /* Never unlink a foreign same-name inode after a rename attack. */
-        (void)unlinkat(published.dirfd, OUTPUT_NAME, 0);
+    if (fstat(published.dirfd, &directory) ||
+        !S_ISDIR(directory.st_mode) || directory.st_uid != geteuid() ||
+        (directory.st_mode & 0777) != 0700)
+        goto done;
+    if (vh_map02_cycle_failed()) goto done;
+    n = vh_map02_cycle_format_jsonl(data, sizeof data);
+    if (!n) goto done;
+    fd = openat(published.dirfd, OUTPUT_NAME,
+                O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    if (fd < 0 ||
+        !verify_published_fd(published.dirfd, fd, OUTPUT_NAME,
+                             data, (size_t)n, &published.file))
+        goto done;
+    /* No seal can be issued merely by observing a zero process exit code.
+     * Only this normal-exit handler, reached after all recorded hooks,
+     * creates it; a missing/malformed/existing seal fails closed. */
+    seal_fd = openat(published.dirfd, SEAL_NAME,
+                     O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0600);
+    if (seal_fd < 0) goto done;
+    seal_created = 1;
+    if (fstat(seal_fd, &seal_baseline)) goto done;
+    if (write(seal_fd, data, (size_t)n) != n ||
+        fsync(seal_fd) || fstat(seal_fd, &seal_baseline) ||
+        !verify_published_fd(published.dirfd, seal_fd, SEAL_NAME,
+                             data, (size_t)n, &seal_baseline) ||
+        fsync(published.dirfd) ||
+        !verify_published_fd(published.dirfd, seal_fd, SEAL_NAME,
+                             data, (size_t)n, &seal_baseline) ||
+        !verify_published_fd(published.dirfd, fd, OUTPUT_NAME,
+                             data, (size_t)n, &published.file))
+        goto done;
+    if (close(seal_fd)) { seal_fd = -1; goto done; }
+    seal_fd = -1;
+    if (fstatat(published.dirfd, SEAL_NAME, &seal_named,
+                AT_SYMLINK_NOFOLLOW) ||
+        !same_contents_metadata(&seal_baseline, &seal_named))
+        goto done;
+    clean = 1;
+done:
+    if (seal_fd >= 0) (void)close(seal_fd);
+    if (fd >= 0) (void)close(fd);
+    if (!clean) {
+        if (seal_created &&
+            !fstatat(published.dirfd, SEAL_NAME, &named,
+                     AT_SYMLINK_NOFOLLOW) &&
+            S_ISREG(named.st_mode) && same_inode(&seal_baseline, &named))
+            (void)unlinkat(published.dirfd, SEAL_NAME, 0);
+        if (!fstatat(published.dirfd, OUTPUT_NAME, &named,
+                     AT_SYMLINK_NOFOLLOW) &&
+            S_ISREG(named.st_mode) && same_inode(&published.file, &named))
+            (void)unlinkat(published.dirfd, OUTPUT_NAME, 0);
         (void)fsync(published.dirfd);
     }
     (void)close(published.dirfd);
@@ -213,9 +259,9 @@ static void publish_if_requested(void) {
     /* Capture the metadata AFTER our own write. Subsequent in-place
      * changes can no longer pass the before/after metadata checks. */
     if (fstat(fd, &baseline) ||
-        !verify_published_fd(dfd, fd, data, (size_t)n, &baseline) ||
+        !verify_published_fd(dfd, fd, OUTPUT_NAME, data, (size_t)n, &baseline) ||
         fsync(dfd) ||
-        !verify_published_fd(dfd, fd, data, (size_t)n, &baseline))
+        !verify_published_fd(dfd, fd, OUTPUT_NAME, data, (size_t)n, &baseline))
         goto done;
     if (close(fd)) { fd = -1; goto done; }
     fd = -1;
