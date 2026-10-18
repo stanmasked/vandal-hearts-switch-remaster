@@ -529,9 +529,16 @@ def verify_observed_process(handoff_dir, native_dir, scoped_dir, pc_binary,
                             owned_game, *, upstream):
     handoff, native, scoped = (_private_directory(p) for p in
                                (handoff_dir, native_dir, scoped_dir))
-    raw = private_file(handoff, RECEIPT, max_bytes=4096)
+    # This late audit must not accept a byte-identical replacement inode
+    # while it re-verifies native GPU/scoped output. Check both process
+    # receipt and its source plan through double-read pinned descriptors.
+    # Import lazily to avoid verifier/witness module import cycles.
+    from tools.verify_map02_cycle_cd_gpu_join import _private_evidence_snapshot
+    raw, receipt_identity = _private_evidence_snapshot(
+        handoff, RECEIPT, max_bytes=4096)
     receipt = _validate_receipt(raw)
-    plan_raw = private_file(handoff, PLAN, max_bytes=4096)
+    plan_raw, plan_identity = _private_evidence_snapshot(
+        handoff, PLAN, max_bytes=4096)
     plan = _validate_plan(plan_raw)
     if (receipt["gpu_draw_frame"] != plan["target_gpu_draw_frame"] or
             receipt["local_plan_sha256"] != _sha(plan_raw) or
@@ -553,8 +560,11 @@ def verify_observed_process(handoff_dir, native_dir, scoped_dir, pc_binary,
             receipt["native_window_all_files_sha256"] !=
             observed["all_native_window_file_bytes_sha256"]):
         raise ValueError("process receipt differs from captured GPU/scoped streams")
-    if private_file(handoff, RECEIPT, max_bytes=4096) != raw:
-        raise ValueError("process receipt modified during re-verification")
+    if (_private_evidence_snapshot(handoff, RECEIPT, max_bytes=4096)
+            != (raw, receipt_identity) or
+            _private_evidence_snapshot(handoff, PLAN, max_bytes=4096)
+            != (plan_raw, plan_identity)):
+        raise ValueError("process receipt or plan identity changed during re-verification")
     return {"private_process_receipt_sha256": _sha(raw),
             "kernel_executable_hash_matched": True,
             "game_image_fd_observed": True,
