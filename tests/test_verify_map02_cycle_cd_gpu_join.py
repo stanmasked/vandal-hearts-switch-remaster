@@ -53,8 +53,14 @@ class CycleCdGpuJoinTests(unittest.TestCase):
         self.cd_raw = (json.dumps({
             "schema": "vh.map02.original-cd-read.v1",
             "capture_session": self.nonce,
+            "source": "original-CdRead-and-ContinueLoadingCdFile",
+            "cdf": "CDF_M_MAP02_PRS",
+            "lba": 0x1bcc,
+            "sectors": 12,
+            "bytes": 12 * 2048,
             "raw_user_crc32": self.crc,
             "returned_user_crc32": self.crc,
+            "loader_completed": True,
         }, sort_keys=True) + "\n").encode()
         (self.scoped / CD_READ).write_bytes(self.cd_raw)
         (self.scoped / CD_READ).chmod(0o600)
@@ -121,6 +127,46 @@ class CycleCdGpuJoinTests(unittest.TestCase):
                 path = self.scoped / CD_READ
                 path.write_bytes((json.dumps(record, sort_keys=True) + "\n").encode())
                 with self.assertRaisesRegex(ValueError, "CRC32 and original CdRead receipt differ"):
+                    _cycle_cd_pair(self.scoped, self.cycle, 7, self.digest)
+                path.write_bytes(self.cd_raw)
+        self.mock.assert_not_called()
+
+    def test_cd_pair_refuses_wrong_extent_source_and_incomplete_loader(self):
+        path = self.scoped / CD_READ
+        baseline = json.loads(self.cd_raw)
+        changes = (
+            {"lba": 0x1bcd}, {"lba": True}, {"lba": -1},
+            {"sectors": 11}, {"sectors": True},
+            {"bytes": 24575}, {"bytes": True},
+            {"source": "synthetic-CdRead"},
+            {"cdf": "CDF_M_MAP01_PRS"},
+            {"loader_completed": False}, {"loader_completed": 1},
+            {"schema": "vh.map02.original-cd-read.v0"},
+        )
+        for change in changes:
+            with self.subTest(change=change):
+                mutated = dict(baseline, **change)
+                path.write_bytes((json.dumps(mutated, sort_keys=True) + "\n").encode())
+                with self.assertRaises(ValueError):
+                    _cycle_cd_pair(self.scoped, self.cycle, 7, self.digest)
+                path.write_bytes(self.cd_raw)
+        self.mock.assert_not_called()
+
+    def test_cd_pair_refuses_missing_extra_duplicate_or_multiline_fields(self):
+        path = self.scoped / CD_READ
+        baseline = json.loads(self.cd_raw)
+        variants = [
+            (json.dumps({k: v for k, v in baseline.items()
+                         if k != "loader_completed"}) + "\n").encode(),
+            (json.dumps(dict(baseline, extra_field=True)) + "\n").encode(),
+            self.cd_raw + b"\n",
+            self.cd_raw.replace(b"\n", b"\r\n"),
+            self.cd_raw[:-2] + b",\"lba\":7116}\n",
+        ]
+        for raw in variants:
+            with self.subTest(raw_sha256=sha(raw)):
+                path.write_bytes(raw)
+                with self.assertRaises(ValueError):
                     _cycle_cd_pair(self.scoped, self.cycle, 7, self.digest)
                 path.write_bytes(self.cd_raw)
         self.mock.assert_not_called()
