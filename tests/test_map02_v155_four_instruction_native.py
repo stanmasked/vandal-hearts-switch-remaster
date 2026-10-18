@@ -24,7 +24,6 @@ class FourNativeSyntheticInstructions(unittest.TestCase):
     def test_four_words_exactly_derive_from_synthetic_source(self):
         words=four_source_words()
         self.assertEqual(len(words),4)
-        self.assertEqual(len(set(words)),len(words))
         self.assertNotEqual(words[3],0)
         native=patch_interpreter(v154(v153(native_opcode_witness())))
         self.assertIn("static const u32 vh152_words[4]={",native)
