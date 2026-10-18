@@ -349,6 +349,54 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
                     repeat._require_gpu_snapshot_aggregate_consistency(
                         {**good, field: value})
 
+    def test_vram_ordered_commitment_must_match_actual_differences(self):
+        # The raw VRAM bytes were independently replayed before this
+        # aggregate is constructed. Even mutually self-consistent boolean
+        # and digest-field edits must not reverse the measured equality.
+        matching = self.run_repeat()
+        repeat._require_gpu_snapshot_aggregate_consistency(matching)
+        self.assertEqual(
+            matching["first_gpu_vram_timeline_sha256"],
+            matching["second_gpu_vram_timeline_sha256"])
+        forged_mismatch = {
+            **matching,
+            "second_gpu_vram_timeline_sha256": "0" * 64,
+            "gpu_vram_timeline_commitments_identical": False,
+            "repeated_full_gpu_vram_snapshot_sequence_identical": False,
+        }
+        with self.assertRaisesRegex(ValueError, "aggregate inconsistent"):
+            repeat._require_gpu_snapshot_aggregate_consistency(forged_mismatch)
+        for changed in (
+            {"second_gpu_vram_snapshot_count": 4},
+            {"first_gpu_vram_snapshot_count": 3},
+            {"unmatched_gpu_vram_snapshots": 2},
+            {"gpu_vram_snapshots_compared": 4},
+        ):
+            with self.subTest(changed=changed):
+                with self.assertRaisesRegex(ValueError, "aggregate inconsistent"):
+                    repeat._require_gpu_snapshot_aggregate_consistency(
+                        {**matching, **changed})
+
+        # Different BEFORE DrawOTag VRAM, followed by convergence to
+        # identical terminal frames: the timeline digests must differ.
+        for folder in (self.f2, self.j2):
+            for file in folder.iterdir():
+                file.unlink()
+        self.capture(self.f2, self.j2, "alternate-before")
+        different = self.run_repeat()
+        repeat._require_gpu_snapshot_aggregate_consistency(different)
+        self.assertEqual(different["different_bgr555_pixels"], 0)
+        self.assertEqual(
+            different["different_gpu_vram_snapshots_in_common_prefix"], 1)
+        forged_equality = {
+            **different,
+            "second_gpu_vram_timeline_sha256":
+                different["first_gpu_vram_timeline_sha256"],
+            "gpu_vram_timeline_commitments_identical": True,
+        }
+        with self.assertRaisesRegex(ValueError, "aggregate inconsistent"):
+            repeat._require_gpu_snapshot_aggregate_consistency(forged_equality)
+
     def test_vram_recovery_history_matches_all_synthetic_two_pair_masks(self):
         # Independent 4-position boolean timeline oracle: each GPU pair
         # has a before and after VRAM snapshot, with all 16 possible
