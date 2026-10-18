@@ -12,7 +12,9 @@
 #include "vh_audio_report_pages.h"
 
 #define VH_SIZE (32u+128u*16u+512u+512u)
-#define SCENES 4u
+/* Twelve alternating banks: eleven actual scene boundaries, including
+ * recovery of one or two failed backend submissions on boundary pages. */
+#define SCENES 12u
 #define BLOCKS 8u
 #define TOTAL (SCENES*BLOCKS)
 #define HZ UINT64_C(19200000)
@@ -189,7 +191,8 @@ int main(void) {
     unsigned oracle_boundary_checks=0u;
     uint32_t max_oracle_scene_seam=0u;
     int16_t oracle_last_l=0,oracle_last_r=0;
-    uint64_t boundaries=0u;
+    uint64_t boundaries=0u,expected_failed_attempts=0u;
+    assert(VH_AUDIO_OUTPUT_RESTART_LIMIT>=2u);
 
     for(unsigned page=0u;page<TOTAL;page++) {
         const unsigned scene=page/BLOCKS;
@@ -299,14 +302,25 @@ int main(void) {
         const uint64_t old_frames=spu.frames_rendered;
         const uint64_t old_notes=seq.note_ons;
         const VhAudioSubmitTiming before=d.timing;
-        /* Recover one intentionally rejected backend call on every
-         * new bank's first returned page and at one ordinary page. */
-        const unsigned fails=(unsigned)(boundary || page==5u);
+        /* Each new bank gets a recoverable failure; every third
+         * boundary consumes BOTH available restart attempts. One
+         * ordinary page also retries. No retry may advance SEQ/SPU,
+         * create a duplicate PCM page or shift resampler phase. */
+        const unsigned fails=boundary
+            ? 1u+(unsigned)(scene%3u==0u)
+            : (unsigned)(page==5u);
         new_page(&d,fails);
         assert(vh_audio_output_submit_recover(
             &ops,&recovery,dst,frames)==0);
+        expected_failed_attempts+=fails;
         assert(d.tries_this_page==1u+fails && d.page_hash==hash);
         assert(d.page_addr==dst && d.page_frames==frames);
+        assert(d.submitted==page+1u+expected_failed_attempts);
+        assert(d.accepted==page+1u);
+        assert(recovery.submit_failures==expected_failed_attempts);
+        assert(recovery.restart_attempts==expected_failed_attempts);
+        assert(recovery.recoveries==boundaries+
+               (unsigned)(page>=5u));
         assert(hash_pcm(dst,frames)==hash);
         assert(memcmp(dst,oracle_dst,frames*2u*sizeof(int16_t))==0);
         assert(resampler.input_frames==old_input &&
@@ -333,7 +347,10 @@ int main(void) {
             &waits,&recovery,&d.timing,page+1u,boundaries,
             TOTAL,BLOCKS,0)==0);
     }
-    assert(boundaries==3u && d.accepted==TOTAL);
+    assert(boundaries==SCENES-1u && d.accepted==TOTAL);
+    assert(expected_failed_attempts==15u);
+    assert(recovery.resume_recoveries==boundaries &&
+           recovery.resume_restarts==boundaries);
     assert(bank_hash[0]!=bank_hash[1]);
     assert(bank_hash[0]==oracle_bank_hash[0] &&
            bank_hash[1]==oracle_bank_hash[1]);
@@ -355,9 +372,9 @@ int main(void) {
     assert(memcmp(dst,oracle_dst,
                   2u*VH_AUDIO_RESAMPLE_MAX_FRAMES*
                   sizeof(int16_t))==0);
-    assert(recovery.recoveries==4u &&
-           recovery.submit_failures==4u);
-    assert(d.submitted==TOTAL+4u);
+    assert(recovery.recoveries==SCENES &&
+           recovery.submit_failures==expected_failed_attempts);
+    assert(d.submitted==TOTAL+expected_failed_attempts);
     assert(recovery.frames_submitted==output_frames);
     assert(resampler.input_frames==(uint64_t)TOTAL*VH_AUDIO_BLOCK_FRAMES);
     assert(vh_audio_output_verify_run(
@@ -411,6 +428,6 @@ int main(void) {
            VH_AUDIO_REPORT_INCOMPLETE);
     assert(vh_audio_output_stop_close(&ops)==0);
     assert(!d.open && !d.playing);
-    puts("decoded VH/VB SEQ audout scene transaction: PASS");
+    puts("decoded VH/VB SEQ audout scene transaction: PASS (12 scenes, 15 recovered submit faults)");
     return 0;
 }
