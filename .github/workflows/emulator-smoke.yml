@@ -101,6 +101,23 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      # Isolated NeXium run, using the exact same game source and tests
+      # validated in rehearsal PR #187. This branch modifies only this
+      # workflow file to trigger its existing push event.
+      - name: Assert rehearsal source and test bytes are unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_commit="bb92f521596588ab47e2e529fc8a3ebacb5a93a8"
+          test "$(git rev-parse HEAD^)" = "$source_commit"
+          actual="$(git diff --name-only "$source_commit" HEAD)"
+          test "$actual" = ".github/workflows/emulator-smoke.yml"
+          echo "### STUDIO_C NeXium rehearsal" >> "$GITHUB_STEP_SUMMARY"
+          echo "Game source and tests unchanged from validated commit \`$source_commit\`." >> "$GITHUB_STEP_SUMMARY"
+          echo "Only this smoke-test workflow was modified for a dedicated push run." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build and test libnx prototype
         shell: bash
