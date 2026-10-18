@@ -1,0 +1,87 @@
+name: Stage311 original guest exit archive independent replay
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage311-original-guest-exit-archive.yml'
+      - 'tools/replay_nexium_original_guest_exit_archive.py'
+      - 'tests/test_replay_nexium_original_guest_exit_archive.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  independent-original-guest-exit-archive:
+    name: Reread real original guest-created CSV and optical PNG from prior run
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout current original guest and optical decoders
+        uses: actions/checkout@v4
+
+      - name: Install isolated Pillow dependency
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 -m venv /tmp/vh-stage311
+          /tmp/vh-stage311/bin/python -m pip install --disable-pip-version-check 'Pillow>=10,<13'
+
+      - name: Stage311 independent archive source mutation tests
+        shell: bash
+        run: |
+          set -euxo pipefail
+          /tmp/vh-stage311/bin/python -m unittest discover -s tests \
+            -p 'test_replay_nexium_original_guest_exit_archive.py' -v
+
+      - name: Download original NeXium Stage310 runtime artifact from exact source run
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39141325435
+          github-token: ${{ github.token }}
+          path: preserved-stage310-original
+
+      - name: Source-replay original guest exit bytes, SHA256, and guest optical scene packet
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p independent-stage311-evidence
+          /tmp/vh-stage311/bin/python tools/replay_nexium_original_guest_exit_archive.py \
+            --original-run-id 39141325435 \
+            --archive preserved-stage310-original \
+            --output independent-stage311-evidence/original-guest-exit-stage311.json
+          /tmp/vh-stage311/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path(
+              "independent-stage311-evidence/original-guest-exit-stage311.json"
+          ).read_text())
+          if (r["result"]!="INDEPENDENT_ORIGINAL_GUEST_EXIT_BYTES_FULLY_REPLAYED"
+                  or r["original_capture_workflow_run_id"]!=39141325435
+                  or r["original_guest_csv_bytes_independently_reaudited"] is not True
+                  or r["source_stage307_receipt_reproduced"] is not True
+                  or r["source_stage308_receipt_reproduced"] is not True
+                  or r["source_stage310_receipt_reproduced"] is not True
+                  or r["guest_software_clock_not_calibrated_to_host_pcm"] is not True
+                  or r["audible_music_or_dropout_verified"] is not False
+                  or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage311 independent original CSV/PNG replay invalid")
+          durations=r["guest_software_exit_intervals_ns"]
+          if len(durations)!=5 or min(durations.values())<=0:
+              raise SystemExit("Stage311 software shutdown milestone conservation failed")
+          print("Stage311 original guest-created CSV re-audited:",
+                r["original_guest_csv_sha256"])
+          print("Stage311 guest software shutdown intervals:",durations)
+          print("Stage311 optical CRC packet:",r["original_optical_packet_sha256"])
+          PY
+          echo "Stage311: on a separate GitHub Actions runner, read the ORIGINAL guest-created Stage310 CSV bytes, verified their SHA256, independently replayed Stage307/308/310 receipts and original optical CRC. Guest software only; no host PCM/DAC clock mapping or audible Switch claim." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload independently regenerated Stage311 report, never input game files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage311-independent-original-guest-exit-receipt
+          path: independent-stage311-evidence/
+          if-no-files-found: warn
