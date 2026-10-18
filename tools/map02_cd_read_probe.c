@@ -49,7 +49,14 @@ void vh_map02_cd_read_start(int lba, int sectors) {
 }
 
 void vh_map02_cd_read_sector(int lba, const unsigned char *user2048) {
-    if (!state.observing) return;
+    if (!state.observing) {
+        /* A real MAP02 sector callback outside its one authorized read
+         * cannot silently disappear from the source-process audit. Ordinary
+         * unrelated CD sectors may still be observed and ignored. */
+        if (lba >= MAP02_LBA && lba < MAP02_LBA + MAP02_SECTORS)
+            state.failed = 1;
+        return;
+    }
     if (!user2048 || lba != MAP02_LBA + (int)state.count ||
             state.count >= MAP02_SECTORS) {
         state.failed = 1;
@@ -61,7 +68,13 @@ void vh_map02_cd_read_sector(int lba, const unsigned char *user2048) {
 
 void vh_map02_cd_read_finish(int lba, int sectors,
                              const unsigned char *transferred) {
-    if (!state.observing) return;
+    if (!state.observing) {
+        /* Reject orphaned or duplicate MAP02 read completion events.
+         * A later/earlier read for an unrelated extent remains irrelevant. */
+        if (overlaps_map02_extent(lba, sectors))
+            state.failed = 1;
+        return;
+    }
     if (lba != MAP02_LBA || sectors != MAP02_SECTORS ||
             state.count != MAP02_SECTORS || !transferred || state.finished++)
         state.failed = 1;
