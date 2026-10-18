@@ -18,6 +18,8 @@ on:
       - 'tools/analyze_nexium_idle_switch_service_probes.py'
       - 'tools/analyze_nexium_probe_phase_sensitivity.py'
       - 'tools/analyze_nexium_phase_selection_gap.py'
+      - 'tools/analyze_nexium_slow_call_cycle_occupancy.py'
+      - 'tests/test_analyze_nexium_slow_call_cycle_occupancy.py'
       - 'tests/test_analyze_nexium_phase_selection_gap.py'
       - 'tests/test_analyze_nexium_probe_phase_sensitivity.py'
       - 'tests/test_analyze_nexium_idle_switch_service_probes.py'
@@ -1049,6 +1051,52 @@ jobs:
                 doc["bands"])
           PY
           echo "Stage292: exact weighted every-phase slow-call accounting. No unmeasured DAC/scheduler/queue states inferred." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify source original-SD latency occupancy within actual 16-call probe groups
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/analyze_nexium_slow_call_cycle_occupancy.py \
+            --switch-sd-root "$RUNNER_TEMP/vh-nexium-stage268-${GITHUB_RUN_ID}" \
+            --idle-sd-root "$RUNNER_TEMP/vh-nexium-idle276-${GITHUB_RUN_ID}" \
+            --switch-evidence runtime-evidence/scene-soak \
+            --idle-evidence runtime-evidence/idle-control \
+            --stage290-report runtime-evidence/idle-control/idle-switch-service-probe-comparison.json \
+            --stage291-report runtime-evidence/idle-control/idle-switch-phase-sensitivity.json \
+            --stage292-report runtime-evidence/idle-control/idle-switch-phase-selection-gap.json \
+            --switch-slow-report runtime-evidence/scene-soak/soak-audout-exact-slow-verification.json \
+            --idle-verdict runtime-evidence/idle-control/idle-audout-verification.json \
+            --output runtime-evidence/idle-control/idle-switch-16-call-cycle-occupancy.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path(
+              "runtime-evidence/idle-control/idle-switch-16-call-cycle-occupancy.json").read_text())
+          if (r["result"]!="SOURCE_ORIGINAL_SD_16_CALL_LATENCY_CYCLES_RECONCILED"
+                  or r["stage292_exactly_recomputed_from_current_original_SD"] is not True
+                  or r["unqueried_phase_queue_values_imputed"] is not False
+                  or r["physical_console_playback_verified"] is not False
+                  or r["OS_scheduler_events_or_DAC_underruns_measured"] is not False):
+              raise SystemExit("Stage293 original-SD slow-call cycle audit invalid")
+          for mode in ("switching","idle"):
+              m=r[mode]
+              if (len(m["cycles"])!=m["total_cycles"]
+                      or sum(x["attempts_in_cycle"] for x in m["cycles"])!=m["audout_attempts"]
+                      or sum(x["slow_ge40"] for x in m["cycles"])!=
+                         m["slow_calls_at_actual_phase0"]+
+                         m["slow_calls_on_unqueried_phases"]
+                      or m["cycles_with_any_ge40"]!=
+                         m["cycles_with_slow_at_actual_phase0"]+
+                         m["cycles_with_slow_only_off_actual_phase0"]):
+                  raise SystemExit("Stage293 16-call grouping lost original audout attempts")
+          print("Stage293 exact 16-call latency-cycle occupancy:",
+                {x:{key:r[x][key] for key in (
+                    "total_cycles","cycles_with_any_ge40",
+                    "cycles_with_multiple_ge40",
+                    "cycles_with_slow_only_off_actual_phase0",
+                    "slow_calls_on_unqueried_phases")} for x in ("switching","idle")})
+          PY
+          echo "Stage293: every current-run original-SD slow audout call bound to actual 16-attempt cycle; no unqueried queue values imputed." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Record audio capture boundary
         if: always()
