@@ -374,6 +374,91 @@ int main(int argc, char **argv) {
                     build_bundle_dir=self.handoff.parent / "private-bundle")
         self.assertFalse((self.handoff / RECEIPT).exists())
 
+    def test_strict_complete_preflight_requires_all_private_launch_inputs(self):
+        source = self.handoff.parent / "strict-source"
+        preview = self.handoff.parent / "strict-preview"
+        cycle = self.handoff.parent / "strict-cycle"
+        rgb = self.handoff.parent / "strict-rgb"
+        for item in (source, preview, cycle, rgb):
+            item.mkdir(mode=0o700)
+        options = dict(
+            upstream=self.upstream, x=10, y=20, timeout=8,
+            source_capture_dir=source, native_preview_dir=preview,
+            cycle_dir=cycle, pc_preoverlay_dir=rgb,
+            build_receipt_dir=self.handoff.parent / "strict-build-receipt",
+            build_bundle_dir=self.handoff.parent / "strict-build-bundle",
+            require_complete_preflight=True)
+        with patch("tools.map02_verified_process_launch.subprocess.Popen") as spawn:
+            for missing in ("source_capture_dir", "native_preview_dir",
+                            "cycle_dir", "pc_preoverlay_dir",
+                            "build_receipt_dir", "build_bundle_dir"):
+                with self.subTest(missing=missing):
+                    invalid = dict(options)
+                    invalid.pop(missing)
+                    with self.assertRaisesRegex(ValueError, "requires source"):
+                        launch_observed_pc(
+                            self.handoff, self.native, self.scoped,
+                            self.binary, self.owned, **invalid)
+            spawn.assert_not_called()
+
+    def test_strict_complete_preflight_rejects_negative_report_before_spawn(self):
+        source = self.handoff.parent / "strict-negative-source"
+        preview = self.handoff.parent / "strict-negative-preview"
+        cycle = self.handoff.parent / "strict-negative-cycle"
+        rgb = self.handoff.parent / "strict-negative-rgb"
+        for item in (source, preview, cycle, rgb):
+            item.mkdir(mode=0o700)
+        with (patch(
+                "tools.check_map02_private_launch_layout.inspect_private_launch_layout",
+                return_value={"prelaunch_layout_ready": True}),
+              patch(
+                "tools.check_map02_private_cycle_readiness.verify_private_cycle_readiness",
+                return_value={"ready_for_controlled_local_launch": False}) as ready,
+              patch("tools.map02_verified_process_launch.subprocess.Popen") as spawn):
+            with self.assertRaisesRegex(ValueError, "not confirmed"):
+                launch_observed_pc(
+                    self.handoff, self.native, self.scoped,
+                    self.binary, self.owned, upstream=self.upstream,
+                    x=10, y=20, timeout=8,
+                    source_capture_dir=source, native_preview_dir=preview,
+                    cycle_dir=cycle, pc_preoverlay_dir=rgb,
+                    build_receipt_dir=self.handoff.parent / "strict-receipt",
+                    build_bundle_dir=self.handoff.parent / "strict-bundle",
+                    require_complete_preflight=True)
+            ready.assert_called_once()
+            spawn.assert_not_called()
+        self.assertFalse((self.handoff / RECEIPT).exists())
+
+    def test_strict_complete_preflight_runs_before_original_pc_plan_read(self):
+        source = self.handoff.parent / "strict-confirm-source"
+        preview = self.handoff.parent / "strict-confirm-preview"
+        cycle = self.handoff.parent / "strict-confirm-cycle"
+        rgb = self.handoff.parent / "strict-confirm-rgb"
+        for item in (source, preview, cycle, rgb):
+            item.mkdir(mode=0o700)
+        with (patch(
+                "tools.check_map02_private_launch_layout.inspect_private_launch_layout",
+                return_value={"prelaunch_layout_ready": True}),
+              patch(
+                "tools.check_map02_private_cycle_readiness.verify_private_cycle_readiness",
+                return_value={"ready_for_controlled_local_launch": True}) as ready,
+              patch("tools.map02_verified_process_launch.private_file",
+                    side_effect=ValueError("post-preflight plan check")) as plan_read,
+              patch("tools.map02_verified_process_launch.subprocess.Popen") as spawn):
+            with self.assertRaisesRegex(ValueError, "post-preflight plan check"):
+                launch_observed_pc(
+                    self.handoff, self.native, self.scoped,
+                    self.binary, self.owned, upstream=self.upstream,
+                    x=10, y=20, timeout=8,
+                    source_capture_dir=source, native_preview_dir=preview,
+                    cycle_dir=cycle, pc_preoverlay_dir=rgb,
+                    build_receipt_dir=self.handoff.parent / "strict-receipt",
+                    build_bundle_dir=self.handoff.parent / "strict-bundle",
+                    require_complete_preflight=True)
+            ready.assert_called_once()
+            plan_read.assert_called_once()
+            spawn.assert_not_called()
+
     def test_full_prelaunch_gate_requires_both_paths_and_cycle_rgb24(self):
         source = self.handoff.parent / "source-full-layout"
         preview = self.handoff.parent / "preview-full-layout"
