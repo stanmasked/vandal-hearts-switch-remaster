@@ -8,6 +8,7 @@ snapshots. Returns only count and hashes, not screenshots or game bytes.
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import stat
@@ -23,15 +24,48 @@ MAX_EVENT_BYTES = 128 * 1024
 
 
 def private_file(root: Path, name: str, *, expected=None, max_bytes=None):
+    """Double-read a bounded native GPU input from a pinned regular inode.
+
+    The recorder may be audited after a private process exits; refuse links,
+    FIFOs, inode replacement and mid-read changes before using any bytes.
+    """
+    if (type(name) is not str or not name or
+            name in (".", "..") or "/" in name or "\\" in name):
+        raise ValueError("invalid native GPU input name")
     path = root / name
-    if path.is_symlink() or not path.is_file() or not stat.S_ISREG(path.stat().st_mode):
-        raise ValueError(f"{name}: missing, symlinked or non-regular file")
-    size = path.stat().st_size
-    if expected is not None and size != expected:
-        raise ValueError(f"{name}: wrong file size")
-    if max_bytes is not None and (size < 1 or size > max_bytes):
-        raise ValueError(f"{name}: over size limit or empty")
-    return path.read_bytes()
+    flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) |
+             getattr(os, "O_NOFOLLOW", 0) |
+             getattr(os, "O_NONBLOCK", 0))
+    try:
+        fd = os.open(path, flags)
+    except OSError:
+        raise ValueError(f"{name}: missing, symlinked or non-regular file") from None
+    try:
+        def identity(st):
+            return (st.st_dev, st.st_ino, st.st_uid, st.st_mode,
+                    st.st_nlink, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+
+        before = os.fstat(fd)
+        if (not stat.S_ISREG(before.st_mode) or
+                before.st_uid != os.geteuid() or before.st_nlink != 1):
+            raise ValueError(f"{name}: missing, symlinked or non-regular file")
+        size = before.st_size
+        if expected is not None and size != expected:
+            raise ValueError(f"{name}: wrong file size")
+        if max_bytes is not None and (size < 1 or size > max_bytes):
+            raise ValueError(f"{name}: over size limit or empty")
+        first = os.pread(fd, size, 0)
+        second = os.pread(fd, size, 0)
+        if (len(first) != size or first != second or
+                identity(os.fstat(fd)) != identity(before) or
+                identity(os.stat(path, follow_symlinks=False)) !=
+                identity(before)):
+            raise ValueError(f"{name}: input changed during private read")
+        return first
+    except OSError:
+        raise ValueError(f"{name}: private input verification unavailable") from None
+    finally:
+        os.close(fd)
 
 
 def sha(raw):
