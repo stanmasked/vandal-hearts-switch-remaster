@@ -60,7 +60,8 @@ static inline int vh_playbuffer_history_write_csv(
     const uint64_t retained=h->total_attempts<VH_PLAYBUFFER_HISTORY_CAP ?
         h->total_attempts : VH_PLAYBUFFER_HISTORY_CAP;
     const uint64_t first=h->total_attempts-retained+1;
-    for (uint64_t seq=first;seq<=h->total_attempts && retained;seq++) {
+    for (uint64_t i=0;i<retained;i++) {
+        const uint64_t seq=first+i;
         const VhPlayBufferHistoryEntry *e=
             &h->last[(unsigned)((seq-1)%VH_PLAYBUFFER_HISTORY_CAP)];
         if (e->sequence!=seq || e->end_guest_ns<e->begin_guest_ns ||
