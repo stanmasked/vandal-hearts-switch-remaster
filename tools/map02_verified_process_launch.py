@@ -334,7 +334,8 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
             build_bundle_dir=build_bundle_dir, krom_source=krom_source)
         if readiness["ready_for_controlled_local_launch"] is not True:
             raise ValueError("strict source-bound MAP02 preflight not confirmed")
-    plan_raw = private_file(handoff, PLAN, max_bytes=4096)
+    plan_raw, plan_identity = private_file(
+        handoff, PLAN, max_bytes=4096, _with_identity=True)
     plan = _validate_plan(plan_raw)
     x = number(x, "sample X", 0, 1023)
     y = number(y, "sample Y", 0, 511)
@@ -531,7 +532,8 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
              else _sha_file(owned_game, private=True)) != plan["owned_game_image_sha256"] or
             verify_pinned_upstream(upstream) !=
             plan["pinned_upstream_source_identity_sha256"] or
-            private_file(handoff, PLAN, max_bytes=4096) != plan_raw):
+            private_file(handoff, PLAN, max_bytes=4096,
+                         _with_identity=True) != (plan_raw, plan_identity)):
         raise ValueError("original PC executable, owned input or plan changed during run")
     if cycle is not None:
         # Re-audit AFTER the actual child exits. A same-owner edit of
@@ -598,6 +600,11 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
             expected_session_sha256=checked["capture_session_sha256"]
     ) != preoverlay_proof:
         raise ValueError("PC pre-overlay process capture changed before publication")
+    # Publication must still refer to the original prepared plan inode.
+    # Stable bytes alone cannot exclude an equal-content pathname swap.
+    if private_file(handoff, PLAN, max_bytes=4096,
+                    _with_identity=True) != (plan_raw, plan_identity):
+        raise ValueError("private MAP02 plan inode changed before process receipt publication")
     _publish(handoff, RECEIPT, raw)
     result = {
         "private_process_receipt_sha256": _sha(raw),
