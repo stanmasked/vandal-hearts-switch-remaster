@@ -1,0 +1,114 @@
+name: Stage329 replay source-authentic guest PlayBuffer software dispersion
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage329-original-playbuffer-dispersion.yml'
+      - 'tools/audit_nexium_stage329_guest_software_dispersion.py'
+      - 'tests/test_audit_nexium_stage329_guest_software_dispersion.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  two-captured-playbuffer-dispersions:
+    name: Independently compute original guest PlayBuffer last-sixteen software duration distribution
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - name: Check out source-audit code
+        uses: actions/checkout@v4
+
+      - name: Stage329 twelve source-derived distribution positive and negative tests
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/audit_nexium_stage329_guest_software_dispersion.py tests/test_audit_nexium_stage329_guest_software_dispersion.py
+          python3 -m unittest discover -s tests -p 'test_audit_nexium_stage329_guest_software_dispersion.py' -v
+
+      - name: Verify two authentic original NeXium software history captures
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for id in 39166023593 39167324026; do
+            status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$id" --jq '.status')"
+            result="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$id" --jq '.conclusion')"
+            test "$status" = completed
+            test "$result" = success
+            echo "Confirmed original source capture $id succeeded"
+          done
+
+      - name: Download original first NeXium audout history
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39166023593
+          github-token: ${{ github.token }}
+          path: original-playbuffer-cohort-first
+
+      - name: Download original second NeXium audout history
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39167324026
+          github-token: ${{ github.token }}
+          path: original-playbuffer-cohort-second
+
+      - name: Re-audit all original Stage322 guest records and compute duration dispersion
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p stage329-original-dispersion
+          python3 tools/audit_nexium_stage329_guest_software_dispersion.py \
+            --first-root original-playbuffer-cohort-first \
+            --second-root original-playbuffer-cohort-second \
+            --first-history-sha256 72eb03e4508e2f8f7814f8b059aa5bfba69c71bbdac9f495ffab447d23fc345d \
+            --second-history-sha256 795c751e11449b0d0e0938031c540890eac23058e3a50c49ac2be9f622950a07 \
+            --first-last-sha256 fdc3ab8bcc5908ccb61c149ba185435fb5ab4a6409d33a43c02e7a179caf4aec \
+            --second-last-sha256 2559938d1f86f8812405e2d3b1573398109450663188000bf1d58c8c965031e9 \
+            --output stage329-original-dispersion/guest-software-tail-distributions.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path(
+              "stage329-original-dispersion/guest-software-tail-distributions.json"
+          ).read_text(encoding="utf-8"))
+          if (r["result"]!="TWO_SOURCE_PINNED_GUEST_PLAYBUFFER_SOFTWARE_DISTRIBUTIONS_CLASSIFIED"
+              or r["original_stage328_pinned_sources_independently_replayed"] is not True
+              or r["two_bounded_cohorts_not_population_latency_estimate"] is not True
+              or r["no_absolute_original_guest_software_timestamps_published"] is not True
+              or r["Nintendo_Switch_speaker_audio_measured"] is not False):
+              raise SystemExit("Stage329 original guest source or scope not verified")
+          c=r["cohorts"]
+          if (len(c)!=2
+              or [x["previous_successful_call_count"] for x in c]!=[15,15]
+              or [x["last_successful_duration_guest_software_ns"] for x in c]!=[11225937,22352500]
+              or [x["previous_lower_median_duration_guest_software_ns"] for x in c]!=[32154011,31247083]):
+              raise SystemExit("Stage329 source call cohort does not match prior real captures")
+          for x in c:
+            if (x["previous_calls_faster_than_last"]+
+                x["previous_calls_equal_to_last"]+
+                x["previous_calls_slower_than_last"]!=15):
+              raise SystemExit("Stage329 lost original source comparisons")
+          print("Stage329 source-authentic original call shape:")
+          for x in c:
+            print(x["original_guest_history_sha256"],
+                  "previous min/median/max (guest software ns)",
+                  x["previous_min_duration_guest_software_ns"],
+                  x["previous_lower_median_duration_guest_software_ns"],
+                  x["previous_max_duration_guest_software_ns"],
+                  "MAD(ns)",x["previous_median_absolute_deviation_guest_software_ns"],
+                  "last rank",x["last_call_insertion_rank_among_16_if_ties_before"])
+          PY
+          echo "Stage329 recomputed original guest PlayBuffer previous-15 distributions from two real captures; only bounded software-call statistics, no DAC, speaker latency, original soundtrack or guest/host time mapping." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload compact software-call shape with source hashes, without raw absolute timestamps
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage329-original-playbuffer-dispersion
+          path: stage329-original-dispersion/
+          if-no-files-found: warn
