@@ -120,6 +120,7 @@ class SourceToNativeFt4JoinTests(unittest.TestCase):
         changed = bytearray(self.bytes_before)
         fixture.word(changed, 0, 0, 0x801f)
         self.override_snapshots[3] = bytes(changed)
+        self.override_snapshots[4] = bytes(changed)
         self.save()
         with self.assertRaisesRegex(ValueError, "geometry entirely outside"):
             verify_join(self.source, self.native)
@@ -181,6 +182,9 @@ class SourceToNativeFt4JoinTests(unittest.TestCase):
     def test_different_material_vram_texel_rejected_even_when_ft4_matches(self):
         modified=bytearray(self.bytes_before)
         fixture.word(modified,380,192,0x2222)  # used by source face 0
+        # GPU state entering this draw must equal the previous draw's
+        # output; keep the bridge valid to test material mismatch itself.
+        self.override_snapshots[3]=bytes(modified)
         self.override_snapshots[4]=bytes(modified)
         self.save()
         with self.assertRaisesRegex(ValueError,"texture or CLUT words differ"):
@@ -189,6 +193,9 @@ class SourceToNativeFt4JoinTests(unittest.TestCase):
     def test_unrelated_render_target_vram_mutation_allowed(self):
         modified=bytearray(self.bytes_before)
         fixture.word(modified,0,0,0xffff)
+        # An unrelated render-target write must still be recorded by an
+        # adjacent draw before it becomes the next draw's initial VRAM.
+        self.override_snapshots[3]=bytes(modified)
         self.override_snapshots[4]=bytes(modified)
         self.override_snapshots[5]=bytes(modified)
         self.save()
