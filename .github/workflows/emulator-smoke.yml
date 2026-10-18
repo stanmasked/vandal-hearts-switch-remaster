@@ -20,6 +20,8 @@ on:
       - 'tools/analyze_nexium_phase_selection_gap.py'
       - 'tools/compare_nexium_real_queue_phases.py'
       - 'tools/audit_nexium_phase_order_reversal.py'
+      - 'tools/audit_nexium_phase_order_full_call_rates.py'
+      - 'tests/test_audit_nexium_phase_order_full_call_rates.py'
       - 'tests/test_audit_nexium_phase_order_reversal.py'
       - 'tests/test_compare_nexium_real_queue_phases.py'
       - 'tools/analyze_nexium_slow_call_cycle_occupancy.py'
@@ -1317,6 +1319,48 @@ jobs:
                 } for x in r["session_records"]})
           PY
           echo "Stage296: four independent original guest SD phases 0,8,8,0 checked; correlation only, not causal guest DAC audio." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage297 reread four original guest-SD complete slow-call traces against queried phases
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_phase_order_full_call_rates.py \
+            --stage296 runtime-evidence/phase296-reversed-query-order.json \
+            --phase0_first-sd-root "$RUNNER_TEMP/vh-nexium-stage268-${GITHUB_RUN_ID}" \
+            --phase0_first-evidence runtime-evidence/scene-soak \
+            --phase8_first-sd-root "$RUNNER_TEMP/vh-nexium-stage268-${GITHUB_RUN_ID}-phase8" \
+            --phase8_first-evidence runtime-evidence/scene-soak-phase8 \
+            --phase8_reversed-sd-root "$RUNNER_TEMP/vh-nexium-stage268-${GITHUB_RUN_ID}-phase8r" \
+            --phase8_reversed-evidence runtime-evidence/phase296-phase8-reversed \
+            --phase0_reversed-sd-root "$RUNNER_TEMP/vh-nexium-stage268-${GITHUB_RUN_ID}-phase0r" \
+            --phase0_reversed-evidence runtime-evidence/phase296-phase0-reversed \
+            --output runtime-evidence/phase297-full-call-vs-queried.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("runtime-evidence/phase297-full-call-vs-queried.json").read_text())
+          if (r["result"]!="FOUR_REAL_GUEST_SD_FULL_AUDOUT_VS_QUERIED_RATES_VERIFIED"
+                  or r["capture_sequence"]!=[
+                    "phase0_first","phase8_first","phase8_reversed","phase0_reversed"]
+                  or r["four_current_run_original_slow_sources_reread"] is not True
+                  or r["queried_slow_call_IDs_exact_subset_of_full_calls"] is not True
+                  or r["no_unqueried_queue_service_counts_imputed"] is not True
+                  or r["DAC_underruns_or_physical_Switch_audio_measured"] is not False
+                  or r["phase_or_music_switch_causality_proven"] is not False):
+              raise SystemExit("Stage297 four original-SD complete API call audit failed")
+          for row in r["sessions"]:
+              if not (0<=row["queried_slow_ge50"]<=row["queried_slow_ge40"]<=
+                      row["full_slow_ge40"]<=row["audout_attempts"]):
+                  raise SystemExit("Stage297 full vs queried slow-call subset mismatch")
+          print("Stage297 full and actually queried slow-call rates:",
+                {x["label"]:{
+                 "all_ge40":x["full_slow_ge40"],
+                 "queried_ge40":x["queried_slow_ge40"],
+                 "all_rate":x["ge40_per_1000_all_calls"],
+                 "queried_rate":x["ge40_per_1000_queried_calls"]}
+                 for x in r["sessions"]})
+          PY
+          echo "Stage297: full original guest-SD software audout call counts reconciled for all four sessions. No unqueried queue state imputed." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Record audio capture boundary
         if: always()
