@@ -106,6 +106,34 @@ class OpticalGuestExitSynthetic(unittest.TestCase):
                 "guest_sd_receipt_observed":True,
             })
 
+    def test_valid_png_with_single_flipped_optical_bit_rejected(self):
+        # Remain a valid PNG while corrupting one payload bit. The audit
+        # must verify the ORIGINAL guest optical CRC, not image decodability.
+        with Image.open(io.BytesIO(self.image)) as source:
+            altered=source.copy()
+        bit_index=200
+        col,row=bit_index % 112,bit_index // 112
+        px=250+7+col*7+3
+        py=160+7+row*7+3
+        original=altered.getpixel((px,py))
+        altered.putpixel((px,py),
+                         (0,0,0) if min(original)>=177 else (255,255,255))
+        buffer=io.BytesIO()
+        altered.save(buffer,format="PNG")
+        with self.assertRaises(TraceError):
+            audit_guest_clocks(buffer.getvalue(),self.good)
+
+    def test_optical_frame_with_only_three_scenes_fails_closed(self):
+        rows=[]
+        for serial,scene in enumerate((2,1,2),start=1):
+            for kind in (1,2,3,4,5):
+                rows.append((kind,scene,serial,serial*1000000+kind*1000))
+        image=synthetic_image(encode_fixture(rows))
+        buffer=io.BytesIO()
+        image.save(buffer,format="PNG")
+        with self.assertRaises(TraceError):
+            audit_guest_clocks(buffer.getvalue(),self.good)
+
     def test_invalid_or_corrupted_original_optical_png_rejected(self):
         from PIL import UnidentifiedImageError
         with self.assertRaises((TraceError,UnidentifiedImageError,OSError)):
