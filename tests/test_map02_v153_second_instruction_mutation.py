@@ -24,26 +24,8 @@ class SecondInstructionMutation(unittest.TestCase):
         cc=os.environ.get("CC","cc")
         if not shutil.which(cc):
             self.skipTest("compiler not available")
-        source=(
-            'static inline void execI_(\n'
-            '\tu32 (INT_ATTR *fetch)(struct psxRegisters *r, '
-            'const uintptr_t *luts, u32 pc),\n'
-            '\tconst uintptr_t *memRLUT, psxRegisters *regs);\n'
-            +native_opcode_witness()
-        )
-        instrumented=patch_interpreter(source)
         guest=expected_first_three_words()
         values=",".join("0x%08xu"%x for x in guest)
-        c=r'''
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-typedef uint32_t u32;
-typedef struct { struct { unsigned char *psxM; } ptrs;
-                 unsigned stop,branchSeen; } psxRegisters;
-#define VH_MAP02_V66_PCSX_PROBE 1
-#define INT_ATTR
-''' +instrumented.split("static inline void execI_(",1)[1] if False else ""
         # Preserve exact native witness definition while removing its
         # interpreter prototype, which requires unrelated PCSX declarations.
         prefix=r'''
