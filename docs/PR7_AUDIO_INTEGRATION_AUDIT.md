@@ -82,6 +82,20 @@ and the full service lifecycle and physical playback can be evaluated.
 The mock `close` operation is intentionally idempotent to represent a
 retry after `open` fails, matching native audout teardown semantics.
 
+## Isolated atomic SEQ switch backport
+
+Draft [PR #171](https://github.com/stanmasked/vandal-hearts-switch-remaster/pull/171)
+is based directly on the target branch and extracts just
+`vh_native_seq_switch_scene`, `vh_native_spu_clear_voices_keep_reverb`
+and their focused synthetic host regression. Comparing the source
+against the target with a line-wise longest-common-subsequence diff
+showed that all four source/header changes are pure additions.
+The PR touches five files, adds 126 lines and deletes none; it
+preserves the target-side `vh_native_seq_audit` code unchanged.
+It is **not merged** and requires its own CI approval. Its narrow
+scope does not authorize merging the much larger PR #7 or routing
+real libnx audio through the scene director without lifecycle review.
+
 ## Required integration gates
 
 1. Create a disposable integration branch at the **current target HEAD**;
