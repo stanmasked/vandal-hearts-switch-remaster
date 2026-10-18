@@ -173,6 +173,36 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
         self.assertIsNone(result["first_joint_gpu_divergence_index"])
         self.assertIsNone(result["first_joint_gpu_divergence_kind"])
 
+    def test_mutated_caller_argument_list_cannot_change_second_elf_launch(self):
+        # The same compiled C11 ELF supports both a plain two-pair GPU
+        # run and an alternate second-pair VRAM image. A caller can mutate
+        # its original argv LIST during the first child capture; neither
+        # the second launch nor the bit-exact strict receipt may change.
+        supplied_args = ["two-pair"]
+        actual_args = []
+        real_capture = two_live.capture
+        def mutate_after_first_child(*args, **kwargs):
+            actual_args.append(tuple(kwargs["args"]))
+            receipt = real_capture(*args, **kwargs)
+            if len(actual_args) == 1:
+                supplied_args[:] = ["two-pair-alternate-vram"]
+            return receipt
+        with patch.object(two_live, "capture",
+                          side_effect=mutate_after_first_child):
+            report = self.run_two(
+                args=supplied_args, require_identical_gpu_timeline=True)
+        self.assertEqual(supplied_args, ["two-pair-alternate-vram"])
+        self.assertEqual(actual_args, [("two-pair",), ("two-pair",)])
+        self.assertEqual(report["gpu_event_records_compared"], 4)
+        self.assertEqual(report["gpu_vram_snapshots_compared"], 4)
+        self.assertTrue(report["strict_gpu_timeline_match_verified"])
+        self.assertTrue(report["same_elf_arguments_used_for_both_launches"])
+        self.assertTrue(report["repeated_full_gpu_vram_snapshot_sequence_identical"])
+        self.assertEqual(report["different_bgr555_pixels"], 0)
+        self.assertFalse(report["hd_replacement_authorized"])
+        for folder in self.dirs:
+            self.assertNotIn(str(folder), json.dumps(report))
+
     def test_invalid_strict_mode_type_refused_before_launch(self):
         with self.assertRaisesRegex(ValueError, "arguments invalid"):
             self.run_two(require_identical_gpu_timeline="true")
