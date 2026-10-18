@@ -23,20 +23,23 @@ EXPECTED_CAPTURE = "vh.map02.live-child-pipe-bgr555-gpu.v1"
 EXPECTED_REPLAY = "vh.map02.live-child-pipe-gpu-replayed.v1"
 
 
-def _session_inode_witness(output_dir, gpu_journal_dir):
+def _session_inode_witness(output_dir, gpu_journal_dir, *,
+                           held_output_fd=None, held_journal_fd=None):
     """Return private in-memory identity of both full replay inventories.
 
     Names and inodes are only used for local equality, never returned
     in the public two-replay digest-only report.
     """
     witness = []
-    for root, expected in (
-        (output_dir, {"process-frame.bgr555", "process-frame.json"}),
-        (gpu_journal_dir, None),
+    for root, expected, held in (
+        (output_dir, {"process-frame.bgr555", "process-frame.json"},
+         held_output_fd),
+        (gpu_journal_dir, None, held_journal_fd),
     ):
         path = Path(root).absolute()
-        fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY |
-                     os.O_NOFOLLOW | os.O_CLOEXEC)
+        fd = (os.dup(held) if held is not None
+              else os.open(path, os.O_RDONLY | os.O_DIRECTORY |
+                           os.O_NOFOLLOW | os.O_CLOEXEC))
         try:
             first = os.fstat(fd)
             if (not stat.S_ISDIR(first.st_mode)
@@ -88,9 +91,12 @@ def run(executable, output_dir, gpu_journal_dir, *, frame, executable_sha256,
     # close; a same-byte replacement before the first offline replay must
     # then fail even when all SHA-256 digests remain identical.
     publication_witness = []
-    def pin_at_publication():
-        publication_witness.append(
-            _session_inode_witness(output_dir, gpu_journal_dir))
+    def pin_at_publication(held_output_fd, held_journal_fd):
+        if held_journal_fd is None:
+            raise ValueError("MAP02 joint publication lacks pinned GPU directory")
+        publication_witness.append(_session_inode_witness(
+            output_dir, gpu_journal_dir, held_output_fd=held_output_fd,
+            held_journal_fd=held_journal_fd))
 
     captured = capture(
         executable, output_dir, frame=frame, width=WIDTH, height=HEIGHT,
