@@ -1738,7 +1738,7 @@ int main(void) {
 
     /* Pre-callback accounting failure means no backend action
      * and no mutable stats (including pages) may change. */
-    for(unsigned scenario=0u;scenario<4u;scenario++) {
+    for(unsigned scenario=0u;scenario<5u;scenario++) {
         Mock guard={.opened=1,.playing=0};
         VhAudioOutputOps guard_ops=callbacks(&guard);
         VhAudioOutputRecovery guard_stats={
@@ -1751,6 +1751,13 @@ int main(void) {
         if (scenario==3u) {
             guard_stats.resume_recoveries=1u;
             forced=0u; /* contradictory pre-existing counters */
+        }
+        if (scenario==4u) {
+            /* No outcome for a prior restart: do not touch the live
+             * device or silently repair this corrupted history. */
+            guard_stats.resume_restarts=2u;
+            guard_stats.resume_recoveries=1u;
+            guard_stats.resume_failures=0u;
         }
         const VhAudioOutputRecovery saved=guard_stats;
         assert(vh_audio_output_resume_recover(
