@@ -24,10 +24,14 @@ test -n "$icd"
 export VK_ICD_FILENAMES="$icd"
 pactl info >/dev/null
 pactl set-default-sink vh_nexium_capture
+# A distinct current-run guest SD root is mandatory for an alternate
+# phase experiment; never copy/relabel a phase0 source as phase8.
+SOAK_RUN_SUFFIX="${SOAK_RUN_SUFFIX:-}"
+case "$SOAK_RUN_SUFFIX" in ""|phase8) ;; *) echo "Invalid SOAK_RUN_SUFFIX" >&2; exit 2;; esac
 if [[ "$SOAK_MODE" == idle ]]; then
-  export NEXIUM_DATA_ROOT="${RUNNER_TEMP}/vh-nexium-idle276-${GITHUB_RUN_ID:-local}"
+  export NEXIUM_DATA_ROOT="${RUNNER_TEMP}/vh-nexium-idle276-${GITHUB_RUN_ID:-local}${SOAK_RUN_SUFFIX:+-$SOAK_RUN_SUFFIX}"
 else
-  export NEXIUM_DATA_ROOT="${RUNNER_TEMP}/vh-nexium-stage268-${GITHUB_RUN_ID:-local}"
+  export NEXIUM_DATA_ROOT="${RUNNER_TEMP}/vh-nexium-stage268-${GITHUB_RUN_ID:-local}${SOAK_RUN_SUFFIX:+-$SOAK_RUN_SUFFIX}"
 fi
 export SOAK_SD_DIR="$NEXIUM_DATA_ROOT/sdmc/switch/vandal-hearts-remake"
 if [[ -e "$NEXIUM_DATA_ROOT" ]]; then
@@ -40,7 +44,7 @@ export SOAK_PCM="$output/soak-monitor-s16le-48k.pcm"
 export SOAK_EVENTS="$output/soak-events.csv"
 export SOAK_GUEST_LOG="$output/soak-nexium-guest.log"
 export SOAK_DIR="$output"
-export SOAK_NRO="nros/vandal-hearts-prototype.nro"
+export SOAK_NRO="${SOAK_NRO:-nros/vandal-hearts-prototype.nro}"
 : > "$SOAK_PCM"
 printf 'scene,serial,pcm_bytes,epoch_ms\n' > "$SOAK_EVENTS"
 parec --device=vh_nexium_capture.monitor --rate=48000 \

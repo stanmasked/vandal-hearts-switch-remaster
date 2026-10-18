@@ -113,6 +113,9 @@ jobs:
           python3 -m unittest discover -s tests -p "test_analyze_nexium_steady_state.py" -v
           bash -n tools/capture_nexium_scene_audio.sh
           make verify-nro
+          # Different build directory prevents replacing the phase0 NRO.
+          make BUILD=build-phase8 AUDOUT_PROBE_PHASE=8 all
+          test -s build-phase8/vandal-hearts-prototype.nro
 
       - name: Bind NRO bytes to current source revision and workflow run
         shell: bash
@@ -134,7 +137,23 @@ jobs:
           }
           Path("build/runtime-nro-manifest.json").write_text(
               json.dumps(record,sort_keys=True)+"\n",encoding="ascii")
-          print(json.dumps(record,sort_keys=True))
+          alt=Path("build-phase8/vandal-hearts-prototype.nro")
+          alt_data=alt.read_bytes()
+          phase8={
+              "schema":"vh-switch-explicit-probe-phase/v1",
+              "git_sha":os.environ["GITHUB_SHA"],
+              "run_id":int(os.environ["GITHUB_RUN_ID"]),
+              "run_attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "phase":8,
+              "nro_bytes":len(alt_data),
+              "nro_sha256":hashlib.sha256(alt_data).hexdigest(),
+              "baseline_sha256":record["nro_sha256"],
+          }
+          if phase8["nro_sha256"]==record["nro_sha256"]:
+              raise SystemExit("phase8 NRO is identical to phase0 baseline")
+          Path("build-phase8/phase8-manifest.json").write_text(
+              json.dumps(phase8,sort_keys=True)+"\n",encoding="ascii")
+          print(json.dumps({"baseline":record,"experiment":phase8},sort_keys=True))
           PY
 
       - name: Upload NROs for emulator smoke test
@@ -144,6 +163,8 @@ jobs:
           path: |
             build/vandal-hearts-prototype.nro
             build/runtime-nro-manifest.json
+            build-phase8/vandal-hearts-prototype.nro
+            build-phase8/phase8-manifest.json
           if-no-files-found: error
 
   run-in-emulator:
@@ -1097,6 +1118,68 @@ jobs:
                     "slow_calls_on_unqueried_phases")} for x in ("switching","idle")})
           PY
           echo "Stage293: every current-run original-SD slow audout call bound to actual 16-attempt cycle; no unqueried queue values imputed." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage 294 verify isolated phase8 NRO provenance and original guest service telemetry
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          m=json.loads(Path("nros/build-phase8/phase8-manifest.json").read_text())
+          b=json.loads(Path("nros/build/runtime-nro-manifest.json").read_text())
+          data=Path("nros/build-phase8/vandal-hearts-prototype.nro").read_bytes()
+          if (m["schema"]!="vh-switch-explicit-probe-phase/v1"
+                  or m["phase"]!=8
+                  or m["git_sha"]!=os.environ["GITHUB_SHA"]
+                  or m["run_id"]!=int(os.environ["GITHUB_RUN_ID"])
+                  or m["run_attempt"]!=int(os.environ["GITHUB_RUN_ATTEMPT"])
+                  or m["nro_bytes"]!=len(data)
+                  or m["nro_sha256"]!=hashlib.sha256(data).hexdigest()
+                  or m["baseline_sha256"]!=b["nro_sha256"]
+                  or m["nro_sha256"]==m["baseline_sha256"]):
+              raise SystemExit("Stage294 phase8 NRO provenance mismatch")
+          print("Stage294 bound phase8 NRO",m["nro_sha256"])
+          PY
+          SOAK_MODE=switch SOAK_RUN_SUFFIX=phase8 \
+            SOAK_NRO=nros/build-phase8/vandal-hearts-prototype.nro \
+            bash tools/capture_nexium_scene_soak.sh runtime-evidence/scene-soak-phase8
+          python3 tools/audit_nexium_audout_service_probes.py \
+            --expected-phase 8 \
+            --source runtime-evidence/scene-soak-phase8/soak-audout-probe-unverified.csv \
+            --locations runtime-evidence/scene-soak-phase8/soak-audout-probe-locations.txt \
+            --receipt runtime-evidence/scene-soak-phase8/soak-audout-probe-export-result.txt \
+            --sd-root "$RUNNER_TEMP/vh-nexium-stage268-${GITHUB_RUN_ID}-phase8" \
+            --queue-csv runtime-evidence/scene-soak-phase8/soak-audout-sd-unverified.csv \
+            --clock-csv runtime-evidence/scene-soak-phase8/soak-audout-clock-unverified.csv \
+            --latency-csv runtime-evidence/scene-soak-phase8/soak-audout-latency-unverified.csv \
+            --slow-csv runtime-evidence/scene-soak-phase8/soak-audout-slow-unverified.csv \
+            --scene-csv runtime-evidence/scene-soak-phase8/soak-guest-optical.csv \
+            --output runtime-evidence/scene-soak-phase8/phase8-original-SD-probe-audit.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          src=Path("runtime-evidence/scene-soak-phase8")
+          r=json.loads((src/"phase8-original-SD-probe-audit.json").read_text())
+          if (r["result"]!="GUEST_PRE_SUBMIT_SERVICE_PROBES_RECONCILED"
+                  or r["declared_query_phase"]!=8
+                  or r["original_guest_sd_opened_in_current_workflow"] is not True
+                  or r["scene_input_count"]!=10
+                  or r["queue_probe_dropped"]!=0
+                  or r["scheduler_or_DAC_state_measured"] is not False
+                  or r["physical_switch_tested"] is not False
+                  or not r["sample_records"]
+                  or any((x["attempt"]-1)%16!=8 for x in r["sample_records"])):
+              raise SystemExit("Stage294 genuine phase8 queue service query audit rejected")
+          print("Stage294 verified original-SD phase8 queue measurements:",
+                {"queries":r["queue_probe_samples"],
+                 "success":r["queue_probe_successes"],
+                 "failed":r["queue_probe_failures"],
+                 "first_attempt":r["sample_records"][0]["attempt"],
+                 "last_attempt":r["sample_records"][-1]["attempt"],
+                 "slow_at_query":len(r["probed_slow_calls"])})
+          PY
+          echo "Stage294 alternate phase8 guest-SD probe audit passed; phase0 baseline unchanged. No physical DAC or scheduler evidence." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Record audio capture boundary
         if: always()
