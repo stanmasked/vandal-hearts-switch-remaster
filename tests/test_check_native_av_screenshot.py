@@ -70,6 +70,77 @@ class NativeAVScreenshotTests(unittest.TestCase):
             self.assertNotEqual(denied.returncode, 0)
             self.assertIn("scene-switch marker not confirmed", denied.stderr)
 
+    def test_sha256_witness_is_bound_and_refuses_overwrite(self):
+        before,after=make_frames(synthetic_switches=AUDIO_OK)
+        before.putpixel((1050,545),AUDIO_OK)
+        after.putpixel((1050,545),AUDIO_OK)
+        before.putpixel((1180,545),AUDIO_OK)
+        after.putpixel((1180,545),AUDIO_OK)
+        with tempfile.TemporaryDirectory() as folder:
+            a=Path(folder)/"before.png"
+            b=Path(folder)/"after.png"
+            nro=Path(folder)/"guest.nro"
+            witness=Path(folder)/"witness.json"
+            a_before=before.save(a)
+            after.save(b)
+            nro.write_bytes(b"NRO0 generated test fixture")
+            cmd=[sys.executable,"tests/check_native_av_screenshot.py",
+                 str(a),str(b),
+                 "--require-guest-resume-continuation",
+                 "--require-guest-resume-retry",
+                 "--witness-out",str(witness),
+                 "--nro-file",str(nro),
+                 "--source-revision","a"*40]
+            passed=subprocess.run(cmd,capture_output=True,text=True)
+            self.assertEqual(passed.returncode,0,passed.stderr)
+            evidence=json.loads(witness.read_text())
+            self.assertEqual(evidence["format"],"vh-native-av-guest-witness-v1")
+            self.assertEqual(evidence["source_revision"],"a"*40)
+            self.assertEqual(evidence["observation"][
+                "guest_resume_retry_after_fake_open_failure"],"confirmed")
+            self.assertFalse(evidence["physical_switch_verified"])
+            self.assertFalse(evidence["audible_audio_verified"])
+            import hashlib
+            self.assertEqual(evidence["nro_sha256"],
+                             hashlib.sha256(nro.read_bytes()).hexdigest())
+            self.assertEqual(evidence["first_frame_sha256"],
+                             hashlib.sha256(a.read_bytes()).hexdigest())
+            self.assertEqual(evidence["second_frame_sha256"],
+                             hashlib.sha256(b.read_bytes()).hexdigest())
+            # Fail closed: a second run cannot replace earlier evidence.
+            denied=subprocess.run(cmd,capture_output=True,text=True)
+            self.assertNotEqual(denied.returncode,0)
+            self.assertIn("refusing to overwrite",denied.stderr)
+            self.assertEqual(json.loads(witness.read_text()),evidence)
+
+    def test_rejected_guest_frame_cannot_publish_witness(self):
+        before,after=make_frames(synthetic_switches=AUDIO_OK)
+        before.putpixel((1050,545),AUDIO_OK)
+        after.putpixel((1050,545),AUDIO_OK)
+        with tempfile.TemporaryDirectory() as folder:
+            a=Path(folder)/"before.png"
+            b=Path(folder)/"after.png"
+            nro=Path(folder)/"guest.nro"
+            witness=Path(folder)/"witness.json"
+            before.save(a)
+            after.save(b)
+            nro.write_bytes(b"NRO0 synthetic test fixture")
+            cmd=[sys.executable,"tests/check_native_av_screenshot.py",
+                 str(a),str(b),"--require-guest-resume-retry",
+                 "--witness-out",str(witness),
+                 "--nro-file",str(nro),"--source-revision","a"*40]
+            rejected=subprocess.run(cmd,capture_output=True,text=True)
+            self.assertNotEqual(rejected.returncode,0)
+            self.assertFalse(witness.exists())
+            # Missing provenance must also block output even for valid frames.
+            before.putpixel((1180,545),AUDIO_OK)
+            after.putpixel((1180,545),AUDIO_OK)
+            before.save(a)
+            after.save(b)
+            rejected=subprocess.run(cmd[:-1],capture_output=True,text=True)
+            self.assertNotEqual(rejected.returncode,0)
+            self.assertFalse(witness.exists())
+
     def test_retry_marker_is_separate_from_clean_resume(self):
         before,after=make_frames(synthetic_switches=AUDIO_OK)
         before.putpixel((1050,545),AUDIO_OK)
