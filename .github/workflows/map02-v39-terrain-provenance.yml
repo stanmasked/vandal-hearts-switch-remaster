@@ -1,0 +1,151 @@
+name: Map02 v39 terrain-to-DDA provenance proof
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v39-terrain-provenance.yml'
+      - 'tools/instrument_map02_v39.py'
+      - 'tools/vh_map02_v39_tokens.h'
+      - 'tests/test_map02_v39_tokens.c'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-terrain-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - name: Checkout remaster tree
+        uses: actions/checkout@v4
+        with:
+          path: remaster
+          persist-credentials: false
+      - name: Checkout pinned US PC port
+        uses: actions/checkout@v4
+        with:
+          repository: HalmyLyseas/VandalHearts-PcPort
+          ref: 14552fffa0e0b47e02b57592e274fc6e7a649923
+          path: pcport
+          persist-credentials: false
+      - name: Compile portable provenance tests
+        env:
+          CC: ${{ matrix.cc }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$CC" -std=gnu89 -Wall -Wextra -Werror -pedantic \
+            -Iremaster/tools remaster/tests/test_map02_v39_tokens.c \
+            -o "$RUNNER_TEMP/v39-token-test"
+          "$RUNNER_TEMP/v39-token-test"
+      - name: Apply verified source trace and v39 native observer
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m remaster.tools.make_map02_trace_patch pcport --output "$RUNNER_TEMP/v39-map02.patch"
+          (
+            cd pcport
+            git apply --check "$RUNNER_TEMP/v39-map02.patch"
+            git apply "$RUNNER_TEMP/v39-map02.patch"
+          )
+          python3 -m remaster.tools.instrument_map02_v39 pcport \
+            --header remaster/tools/vh_map02_v39_tokens.h --apply
+          python3 - <<'PY'
+          from pathlib import Path
+          # The pinned matching-decomp sources rely on implicit GNU89
+          # forward declarations; Clang enforces later type consistency.
+          patches = [
+              (Path("pcport/src/core/graphics.c"), '#include "PsyQ/gtemac.h"',
+               '#include "PsyQ/gtemac.h"\n'
+               'void UpdateMapTileLighting(MapTileModel *tileModel);\n'
+               'void RenderMapTile(u32 *ot, MapTileModel *tileModel, s32 gridColor);\n'
+               'void RenderEdgeMapTile(u32 *ot, MapTileModel *tileModel, s32 gridColor);\n'
+               'void RenderOverheadMapTile(u32 *ot, MapTileModel *tileModel, s32 brightness);'),
+              (Path("pcport/src/states/game_setup.c"), '#include "PsyQ/libsn.h"',
+               '#include "PsyQ/libsn.h"\n'
+               'void UpdateTileElevation(u8 tileZ, u8 tileX);')
+          ]
+          for path, anchor, substitute in patches:
+              content = path.read_text()
+              assert content.count(anchor) == 1, str(path)
+              path.write_text(content.replace(anchor, substitute, 1))
+          print("Pinned source forward-declaration compatibility gate applied.")
+          PY
+          (
+            cd pcport
+            git diff --check
+            python3 - <<'PY'
+          import subprocess
+          expected = {
+              "src/core/graphics.c", "src/states/game_setup.c",
+              "platform/pc/src/libgpu.c", "platform/pc/src/pc_raster.c"
+          }
+          found = set(subprocess.check_output(
+              ["git", "diff", "--name-only"], text=True).splitlines())
+          assert found == expected, (found, expected)
+          print("Only four intended source units have changed.")
+          PY
+          )
+      - name: Compile pinned modified upstream units and partial link
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          cd pcport/platform/pc
+          mkdir -p build-v39/include_stage build-v39/proof
+          for header in ../../include/*.h ../../include/*.inc; do
+            if test -f "$header"; then
+              ln -sf "$(realpath "$header")" "build-v39/include_stage/$(basename "$header")"
+            fi
+          done
+          for item in PsyQ types.h inline_gte.h; do
+            ln -sfn "$(realpath "include/$item")" "build-v39/include_stage/$item"
+          done
+          common=(
+            -m64 -std=gnu89 -fno-builtin-csqrt
+            -DPERMUTER -DPC_PORT -DPC_FEAT -DVH_REGION_US
+            -DVH_TRACE_MAP02 -DVH_MAP02_V39_TRACE
+            '-Dasm(x)=' -Ibuild-v39/include_stage -Iinclude -I../..
+            -include pc_forward_decls.h
+            -Wno-incompatible-pointer-types -Wno-int-conversion
+            -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast
+          )
+          "$CC" "${common[@]}" -c ../../src/core/graphics.c -o build-v39/proof/graphics.o
+          "$CC" "${common[@]}" -c ../../src/states/game_setup.c -o build-v39/proof/game_setup.o
+          backend=(-m64 -std=gnu89 -DPC_PORT -DPC_FEAT -DVH_MAP02_V39_TRACE -Iinclude)
+          "$CC" "${backend[@]}" -c src/libgpu.c -o build-v39/proof/libgpu.o
+          "$CC" "${backend[@]}" -c src/pc_raster.c -o build-v39/proof/pc_raster.o
+          "$CC" -r -o build-v39/proof/v39_gpu_partial_link.o \
+            build-v39/proof/graphics.o build-v39/proof/game_setup.o \
+            build-v39/proof/libgpu.o build-v39/proof/pc_raster.o
+          nm build-v39/proof/graphics.o | grep PC_Map02V39MarkSubmitted
+          nm build-v39/proof/libgpu.o | grep ' T PC_Map02V39MarkSubmitted'
+          nm build-v39/proof/pc_raster.o | grep ' U VH_Map02V39Token'
+          if nm -u build-v39/proof/v39_gpu_partial_link.o | grep -q 'VH_Map02V39\|PC_Map02V39'; then
+            echo "ERROR: unresolved v39 diagnostic symbol after partial link" >&2
+            exit 1
+          fi
+          nm -a build-v39/proof/v39_gpu_partial_link.o > build-v39/proof/SYMBOLS.txt
+          sha256sum build-v39/proof/*.o > build-v39/proof/SHA256SUMS
+          cat > build-v39/proof/BUILD_INFO.txt <<EOF
+          compiler=$CC
+          upstream=14552fffa0e0b47e02b57592e274fc6e7a649923
+          mode=read-only map11 terrain-token + native DDA sampling
+          full_game_linked=no
+          game_executed=no
+          gameplay_log_observed=no
+          EOF
+          echo "PASS: pinned game sources + OT terrain provenance + DDA observer + partial link."
+      - name: Save native proof artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-v39-${{ matrix.cc }}-native-proof
+          path: pcport/platform/pc/build-v39/proof/
+          if-no-files-found: warn
