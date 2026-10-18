@@ -109,3 +109,49 @@ jobs:
             build/wet-tail-${{ matrix.mode }}/vandal-hearts-prototype.nro
             build/wet-tail-${{ matrix.mode }}/nro.sha256
           if-no-files-found: error
+
+  verify-switch-wet-tail-build-pair:
+    name: Verify two exact-run research NRO binaries
+    needs: switch-game-wet-tail-variants
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Download paired NROs from this same workflow run
+        uses: actions/download-artifact@v4
+        with:
+          pattern: tactical-wet-tail-*
+          path: variants
+      - name: Verify per-mode SHA256 and that binaries differ
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p verified
+          for mode in 0 1; do
+            root="variants/tactical-wet-tail-$mode"
+            test -d "$root"
+            nro="$(find "$root" -type f -name 'vandal-hearts-prototype.nro' -print -quit)"
+            manifest="$(find "$root" -type f -name 'nro.sha256' -print -quit)"
+            test -n "$nro" && test -n "$manifest"
+            test -s "$nro" && test -s "$manifest"
+            expected="$(awk 'NR==1{print $1}' "$manifest")"
+            actual="$(sha256sum "$nro" | cut -d ' ' -f1)"
+            test "$expected" = "$actual"
+            printf '%s %s %s\n' "$mode" "$actual" "$GITHUB_SHA" \
+              >> verified/binary-variants.txt
+          done
+          a="$(awk '$1==0{print $2}' verified/binary-variants.txt)"
+          b="$(awk '$1==1{print $2}' verified/binary-variants.txt)"
+          test "$a" != "$b"
+          {
+            echo "### Same-run tactical music NRO pair"
+            echo "Both NROs match the SHA256 recorded by their individual build jobs."
+            echo "Mode 0 and mode 1 binaries have different SHA256s."
+            echo "Build-only evidence; no emulator launch or hardware audio asserted."
+            cat verified/binary-variants.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload paired-mode provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: wet-tail-research-nro-pair-verified
+          path: verified/binary-variants.txt
+          if-no-files-found: error
