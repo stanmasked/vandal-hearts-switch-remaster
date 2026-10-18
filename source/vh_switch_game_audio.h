@@ -57,6 +57,12 @@ void vh_switch_game_audio_set_focus(int in_focus);
  * suspension prevented the worker from observing focus loss first.
  */
 void vh_switch_game_audio_on_resume(int in_focus);
+/* Stage307: guest-exact software clock when the input loop first OBSERVES Plus.
+ * This is NOT the keyboard/HID sampling instant. Nonblocking, no I/O. */
+void vh_switch_game_audio_exit_note_plus(void);
+/* Emit immutable guest shutdown event times only after worker join.
+ * Returns 5 rows, or negative if unavailable / still running. */
+int vh_switch_game_audio_exit_dump(FILE *stream);
 void vh_switch_game_audio_stop(void);
 /* 0 starting/stopped, 1 playing, 2 paused, negative means audio failed.
  * Main gameplay can continue silently if the device is unavailable.
