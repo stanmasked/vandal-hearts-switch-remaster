@@ -586,6 +586,14 @@ static void test_full_twenty_voice_scene_switch_detaches_bank(void) {
     for(unsigned i=0;i<64u;i++)
         next_scene_sample[i]=(int16_t)(-7000+(int)i*17);
     assert(vh_native_spu_set_reverb(&spu,1,0.5f)==0);
+    assert(vh_native_spu_set_interpolation(&spu,VH_SPU_GAUSSIAN)==0);
+    VhSeqAudit full_audit={0};
+    assert(vh_native_seq_audit(
+        full_voice_scene_song,sizeof full_voice_scene_song,
+        resolve_scene_reverb,&log_state,&full_audit)==0);
+    assert(full_audit.note_events==VH_NATIVE_MUSIC_VOICES &&
+           full_audit.resolved_notes==VH_NATIVE_MUSIC_VOICES &&
+           full_audit.missing_notes==0u);
     assert(vh_native_seq_init(
         &seq,full_voice_scene_song,sizeof full_voice_scene_song,
         &spu,resolve_scene_reverb,&log_state,1u)==0);
@@ -598,8 +606,28 @@ static void test_full_twenty_voice_scene_switch_detaches_bank(void) {
     assert(spu.frames_rendered==VH_AUDIO_BLOCK_FRAMES);
     const VhNativeSeq saved=seq;
     before_scene_spu=spu;
+    const uint8_t *bad_songs[]={
+        invalid_status,invalid_tempo,invalid_vlq,invalid_data
+    };
+    const size_t bad_sizes[]={
+        sizeof invalid_status,sizeof invalid_tempo,
+        sizeof invalid_vlq,sizeof invalid_data
+    };
+    for(unsigned bad=0u;bad<4u;bad++) {
+        assert(vh_native_seq_switch_scene(
+            &seq,bad_songs[bad],bad_sizes[bad],&spu,
+            resolve_next_scene,&log_state,1u)==-1);
+        assert(!memcmp(&seq,&saved,sizeof saved));
+        assert(!memcmp(&spu,&before_scene_spu,sizeof spu));
+    }
     assert(vh_native_seq_switch_scene(
-        &seq,invalid_data,sizeof invalid_data,&spu,
+        &seq,controls_song,sizeof controls_song,&spu,
+        resolve_next_scene,&log_state,VH_SEQ_MAX_REPEATS+1u)==-1);
+    assert(vh_native_seq_switch_scene(
+        &seq,controls_song,sizeof controls_song,&spu,
+        NULL,&log_state,1u)==-1);
+    assert(vh_native_seq_switch_scene(
+        &seq,NULL,sizeof controls_song,&spu,
         resolve_next_scene,&log_state,1u)==-1);
     assert(!memcmp(&seq,&saved,sizeof saved));
     assert(!memcmp(&spu,&before_scene_spu,sizeof spu));
@@ -610,7 +638,8 @@ static void test_full_twenty_voice_scene_switch_detaches_bank(void) {
     assert(seq.note_ons==0u && seq.note_offs==0u &&
            seq.blocks_advanced==0u);
     assert(spu.frames_rendered==0u);
-    assert(spu.reverb_enabled && spu.reverb_depth==0.5f);
+    assert(spu.reverb_enabled && spu.reverb_depth==0.5f &&
+           spu.interpolation==VH_SPU_GAUSSIAN);
     assert(!memcmp(&spu.reverb,&before_scene_spu.reverb,
                    sizeof spu.reverb));
     for(unsigned i=0;i<VH_NATIVE_MUSIC_VOICES;i++)
