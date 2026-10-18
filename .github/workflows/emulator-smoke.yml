@@ -136,6 +136,10 @@ jobs:
           # Keep artifact's root at build/ so the historical NRO path
           # nros/vandal-hearts-prototype.nro does not change.
           cp build-phase8/vandal-hearts-prototype.nro build/vandal-hearts-phase8.nro
+          # Strictly separate variant from baseline and phase8.
+          make BUILD=build-wet-tail-1 GAME_AUDIO_WET_TAIL=1 all
+          test -s build-wet-tail-1/vandal-hearts-prototype.nro
+          cp build-wet-tail-1/vandal-hearts-prototype.nro build/vandal-hearts-wet-tail.nro
 
       - name: Bind NRO bytes to current source revision and workflow run
         shell: bash
@@ -173,7 +177,25 @@ jobs:
               raise SystemExit("phase8 NRO is identical to phase0 baseline")
           Path("build/runtime-phase8-manifest.json").write_text(
               json.dumps(phase8,sort_keys=True)+"\n",encoding="ascii")
-          print(json.dumps({"baseline":record,"experiment":phase8},sort_keys=True))
+          wet_nro=Path("build/vandal-hearts-wet-tail.nro")
+          wet_bytes=wet_nro.read_bytes()
+          wet={
+              "schema":"vh-switch-explicit-wet-tail/v1",
+              "git_sha":os.environ["GITHUB_SHA"],
+              "run_id":int(os.environ["GITHUB_RUN_ID"]),
+              "run_attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "mode":1,
+              "nro_name":wet_nro.name,
+              "nro_bytes":len(wet_bytes),
+              "nro_sha256":hashlib.sha256(wet_bytes).hexdigest(),
+              "baseline_sha256":record["nro_sha256"],
+          }
+          if wet["nro_sha256"]==record["nro_sha256"]:
+              raise SystemExit("wet-tail NRO identical to legacy baseline")
+          Path("build/runtime-wet-tail-manifest.json").write_text(
+              json.dumps(wet,sort_keys=True)+"\n",encoding="ascii")
+          print(json.dumps({"baseline":record,"experiment":phase8,
+                            "wet_tail":wet},sort_keys=True))
           PY
 
       - name: Upload NROs for emulator smoke test
@@ -192,6 +214,15 @@ jobs:
           path: |
             build/vandal-hearts-phase8.nro
             build/runtime-phase8-manifest.json
+          if-no-files-found: error
+
+      - name: Upload opt-in wet-tail NRO from this same run
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-smoke-wet-tail
+          path: |
+            build/vandal-hearts-wet-tail.nro
+            build/runtime-wet-tail-manifest.json
           if-no-files-found: error
 
   run-in-emulator:
@@ -214,6 +245,37 @@ jobs:
         with:
           name: runtime-smoke-phase8
           path: phase8
+
+      - name: Download same-run experimental wet-tail NRO
+        uses: actions/download-artifact@v4
+        with:
+          name: runtime-smoke-wet-tail
+          path: wet-tail
+
+      - name: Verify wet-tail runtime artifact provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          manifest=json.loads(
+              Path("wet-tail/runtime-wet-tail-manifest.json").read_text())
+          nro=Path("wet-tail/vandal-hearts-wet-tail.nro")
+          baseline=json.loads(Path("nros/runtime-nro-manifest.json").read_text())
+          if (manifest["schema"]!="vh-switch-explicit-wet-tail/v1"
+              or manifest["git_sha"]!=os.environ["GITHUB_SHA"]
+              or manifest["run_id"]!=int(os.environ["GITHUB_RUN_ID"])
+              or manifest["run_attempt"]!=int(os.environ["GITHUB_RUN_ATTEMPT"])
+              or manifest["mode"]!=1
+              or manifest["nro_name"]!=nro.name
+              or manifest["nro_bytes"]!=nro.stat().st_size
+              or manifest["nro_sha256"]!=hashlib.sha256(nro.read_bytes()).hexdigest()
+              or manifest["baseline_sha256"]!=baseline["nro_sha256"]
+              or manifest["nro_sha256"]==baseline["nro_sha256"]):
+              raise SystemExit("wet-tail NRO source/run/hash mismatch")
+          print("Verified same-run experimental wet-tail NRO manifest")
+          PY
 
       - name: Require NRO from current run, commit and attempt
         shell: bash
@@ -535,6 +597,9 @@ jobs:
           }
 
           run_probe "nros/vandal-hearts-prototype.nro" "libnx-framebuffer" "1"
+          # Capture the opted-in version through the same NeXium and
+          # input probe. No assertions about audible speaker output.
+          run_probe "wet-tail/vandal-hearts-wet-tail.nro" "libnx-wet-tail" "1"
           exit "$result"
 
       - name: Capture guest audio through isolated PulseAudio monitor
