@@ -725,6 +725,11 @@ static void audio_worker(void *unused) {
             atomic_fetch_add(&synthetic_scene_switches,1u);
         ++rendered_blocks;
     }
+#ifdef VH_AUDIO_HARDWARE_MANUAL_RESUME
+    /* Any uncompleted X/Y trial becomes an explicit failure on worker
+     * exit; a previously confirmed return remains confirmed. */
+    vh_audio_manual_abort_pending(&hardware_manual_transport);
+#endif
 }
 
 static int start_native_audio(void) {
