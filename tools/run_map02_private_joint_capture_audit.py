@@ -16,6 +16,8 @@ import stat
 
 from tools.capture_map02_live_frame_pipe import capture
 from tools.replay_map02_live_frame_receipt import replay
+from tools.compare_map02_private_bgr555_frames import compare
+from tools.bridge_map02_private_frame_native import _private_frame_pair_identity
 
 SCHEMA = "vh.map02.private-joint-elf-run-two-replays.v1"
 WIDTH, HEIGHT = 1024, 512
@@ -79,13 +81,27 @@ def _session_inode_witness(output_dir, gpu_journal_dir, *,
 
 
 def run(executable, output_dir, gpu_journal_dir, *, frame, executable_sha256,
-        timeout=10, args=()):
+        timeout=10, args=(), frame_pair_dir=None):
     """Run one pinned Linux ELF, then independently audit the same bytes twice.
 
     The output/journal directories must already exist, be empty, and have
     owner-private permissions. On failure, the launcher's fail-closed
     publication and the independent replay checks determine refusal.
     """
+    # The optional claimed pair is independent of the same-launch frame.
+    # Observe its inode inventory and exact claimed hashes BEFORE launching.
+    # A comparison with an independently captured reference is informative
+    # but never authenticates PS1 hardware or original retail assets.
+    pair_witness = None
+    pair_report = None
+    if frame_pair_dir is not None:
+        pair_witness = _private_frame_pair_identity(frame_pair_dir)
+        pair_report = compare(frame_pair_dir)
+        if (_private_frame_pair_identity(frame_pair_dir) != pair_witness
+                or (pair_report["frame"], pair_report["width"],
+                    pair_report["height"]) != (frame, WIDTH, HEIGHT)):
+            raise ValueError("MAP02 private reference frame pair changed or has wrong labels")
+
     # A capture-success reply alone cannot pin a filesystem inode.
     # Take the inventory witness BEFORE the launcher's held directory FDs
     # close; a same-byte replacement before the first offline replay must
@@ -149,6 +165,35 @@ def run(executable, output_dir, gpu_journal_dir, *, frame, executable_sha256,
             or first.get("native_gpu_log_same_process_authenticated") is not False
             or first.get("hd_replacement_authorized") is not False):
         raise ValueError("MAP02 joint capture and independent replays disagree")
+    claimed_pair = {}
+    if frame_pair_dir is not None:
+        # The two independent source claims are still only claims.
+        # Preserve inode identity across launch/replays and require the
+        # claimant candidate to be exactly the same raw BGR555 frame
+        # that came from the pinned native Linux child stdout.
+        after_pair = compare(frame_pair_dir)
+        if (after_pair != pair_report
+                or _private_frame_pair_identity(frame_pair_dir) != pair_witness):
+            raise ValueError("MAP02 private reference frame pair changed during capture")
+        if after_pair["candidate_sha256"] != first["image_sha256"]:
+            raise ValueError("MAP02 claimed candidate differs from same-launch BGR555 frame")
+        claimed_pair = {
+            "claimed_reference_sha256": after_pair["reference_sha256"],
+            "claimed_reference_difference_mask_sha256":
+                after_pair["difference_mask_sha256"],
+            "claimed_reference_different_bgr555_pixels":
+                after_pair["different_bgr555_pixels"],
+            "claimed_reference_changed_scanlines":
+                after_pair["changed_scanlines"],
+            "claimed_reference_stp_bit_differences":
+                after_pair["stp_bit_differences"],
+            "claimed_reference_exact_pixel_matches":
+                after_pair["exact_bgr555_pixel_matches"],
+            "claimed_reference_raw_bgr555_equal_to_live_candidate":
+                after_pair["different_bgr555_pixels"] == 0,
+            "claimed_reference_ps1_hardware_authenticated": False,
+        }
+
     return {
         "schema": SCHEMA,
         "frame": frame,
@@ -160,6 +205,7 @@ def run(executable, output_dir, gpu_journal_dir, *, frame, executable_sha256,
         "terminal_gpu_after_vram_sha256":
             first["terminal_gpu_after_vram_sha256"],
         "gpu_journal_pairs_verified": first["gpu_journal_pairs_verified"],
+        **claimed_pair,
         "two_full_independent_private_replays_equal": True,
         "private_frame_and_journal_inodes_stable_through_replays": True,
         "child_writable_gpu_journal_fd_observed": True,
@@ -179,13 +225,14 @@ def main():
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--gpu-journal-dir", type=Path, required=True)
     parser.add_argument("--frame", type=int, required=True)
+    parser.add_argument("--frame-pair-dir", type=Path)
     parser.add_argument("--timeout", type=int, default=10)
     ns = parser.parse_args()
     try:
         report = run(
             ns.executable, ns.output_dir, ns.gpu_journal_dir,
             frame=ns.frame, executable_sha256=ns.executable_sha256,
-            timeout=ns.timeout)
+            timeout=ns.timeout, frame_pair_dir=ns.frame_pair_dir)
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
     print(json.dumps(report, sort_keys=True, indent=2))
