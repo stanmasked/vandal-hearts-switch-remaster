@@ -16,6 +16,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -50,6 +51,8 @@ def _sealed_fd(content, label):
 
 
 HEADER_LIMIT = 16 * 1024 * 1024
+COMPILER_LIMIT = 128 * 1024 * 1024
+DEPENDENCY_LIMIT = 2 * 1024 * 1024
 
 
 def _tracked_header_blobs(upstream):
@@ -194,6 +197,89 @@ def _check_header_watch(fd):
         raise ValueError("MAP02 pinned header include paths changed during preprocessing")
 
 
+
+def _compiler_evidence():
+    """Bind both Make passes to one checked GCC driver, cc1 and assembler.
+
+    This is a before/after content check, not process or toolchain attestation.
+    """
+    driver = shutil.which("cc", path="/usr/bin:/bin")
+    if not driver:
+        raise ValueError("MAP02 C compiler unavailable")
+    driver = str(Path(driver).resolve(strict=True))
+    if not Path(driver).is_file():
+        raise ValueError("MAP02 compiler is not a regular file")
+    evidence = {}
+    for name in ("driver", "cc1", "as"):
+        if name == "driver":
+            candidate = driver
+        else:
+            try:
+                p = subprocess.run(
+                    [driver, "-print-prog-name=" + name],
+                    env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+                    capture_output=True, text=True, timeout=20, check=False)
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                raise ValueError("MAP02 compiler tool resolution failed") from exc
+            if p.returncode or not p.stdout.strip() or "\\n" in p.stdout.strip():
+                raise ValueError("MAP02 compiler tool resolution failed")
+            candidate = p.stdout.strip()
+            if not Path(candidate).is_absolute():
+                if "/" in candidate:
+                    raise ValueError("MAP02 compiler tool path not absolute")
+                candidate = shutil.which(candidate, path="/usr/bin:/bin")
+                if not candidate:
+                    raise ValueError("MAP02 compiler tool unavailable")
+        resolved = Path(candidate).resolve(strict=True)
+        if not resolved.is_file():
+            raise ValueError("MAP02 compiler tool is not a regular file")
+        data = auditor._stable_regular_bytes(resolved, max_bytes=COMPILER_LIMIT)
+        evidence[name] = hashlib.sha256(data).hexdigest()
+    return driver, evidence
+
+
+def _system_header_evidence(dependency_files, pc, stage):
+    """Hash actual -MD system-header dependencies without publishing paths."""
+    systems = {}
+    prefix = str(stage) + os.sep
+    for dependency_file in dependency_files:
+        data = auditor._stable_regular_bytes(
+            dependency_file, max_bytes=DEPENDENCY_LIMIT)
+        try:
+            raw = data.decode("utf-8").replace("\\\\n", " ")
+            target, sep, dependencies = raw.partition(": ")
+            paths = shlex.split(dependencies)
+        except (UnicodeError, ValueError) as exc:
+            raise ValueError("MAP02 system header dependency syntax invalid") from exc
+        if not sep or not target or not paths:
+            raise ValueError("MAP02 system header dependency inventory empty")
+        for value in paths:
+            if value.startswith("/proc/self/fd/"):
+                continue
+            absolute = Path(value)
+            if not absolute.is_absolute():
+                absolute = pc / absolute
+            absolute = absolute.absolute()
+            if str(absolute).startswith(prefix):
+                continue
+            canonical = absolute.resolve(strict=True)
+            if (canonical == pc or pc in canonical.parents):
+                raise ValueError("MAP02 unexpected PC checkout header dependency")
+            if not canonical.is_file():
+                raise ValueError("MAP02 dependency is not a regular header")
+            sha = hashlib.sha256(auditor._stable_regular_bytes(
+                canonical, max_bytes=HEADER_LIMIT)).hexdigest()
+            entry = str(canonical)
+            if entry in systems and systems[entry] != sha:
+                raise ValueError("MAP02 system header changed during collection")
+            systems[entry] = sha
+    if not systems:
+        raise ValueError("MAP02 system header dependency inventory empty")
+    joined = "\\n".join(k + " " + v for k,v in sorted(systems.items()))
+    return {"count": len(systems),
+            "sha256": hashlib.sha256(joined.encode("utf-8")).hexdigest()}
+
+
 def compile_overlay(upstream, output, manifest, *, build_dir):
     """Fail closed if the replayed payload differs from the sealed Make input."""
     if sys.platform != "linux" or not hasattr(os, "memfd_create"):
@@ -226,6 +312,7 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
     # from our sealed byte snapshots after this point.
     if auditor.replay(upstream, output, manifest) != before:
         raise ValueError("MAP02 independent replay changed before compilation")
+    compiler, initial_compiler = _compiler_evidence()
     with ExitStack() as stack:
         files = {}
         for name, payload in (
@@ -245,6 +332,7 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
             "-f", fd_path("original-make"),
             "-f", fd_path(builder.GENERATED_MAKE),
             "REGION=us", "BUILD_DIR=" + build_dir,
+            "CC=" + compiler,
         ]
         clean_env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C"}
 
@@ -282,6 +370,10 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
             _check_header_watch(watch_fd)
             _recheck_headers(snapshot, staged_headers, files)
             _check_header_watch(watch_fd)
+            system_deps = tuple(
+                Path(temp) / (name + ".dependencies")
+                for name in ("libgpu", "pc_raster"))
+            system_headers = _system_header_evidence(system_deps, pc, snapshot)
             preprocessed = {}
             for unit in ("libgpu", "pc_raster"):
                 source = auditor._stable_regular_bytes(
@@ -300,6 +392,10 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
             "VH_MAP02_PRIVATE_RASTER_C=" + fd_path("pc_raster-preprocessed"),
             "map02-private-gpu-objects",
         ])
+        if _compiler_evidence() != (compiler, initial_compiler):
+            raise ValueError("MAP02 compiler binaries changed during Make build")
+        if _system_header_evidence(system_deps, pc, snapshot) != system_headers:
+            raise ValueError("MAP02 system header dependencies changed during Make build")
     after = auditor.replay(upstream, output, manifest)
     if after != before:
         raise ValueError("MAP02 private overlay changed during sealed Make build")
@@ -322,6 +418,11 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
         "pinned_headers_sealed": len(staged_headers),
         "header_include_directory_watches": watched_dirs,
         "header_path_mutations_rejected": True,
+        "compiler_tool_sha256": initial_compiler,
+        "compiler_tools_before_after_match": True,
+        "system_header_count": system_headers["count"],
+        "system_header_set_sha256": system_headers["sha256"],
+        "system_header_bytes_before_after_match": True,
         "staged_header_hashes_verified": True,
         "compiled_from_sealed_preprocessor_output": True,
         "verified_source_bytes_used_for_compilation": True,

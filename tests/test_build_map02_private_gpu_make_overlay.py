@@ -80,6 +80,11 @@ class SealedMakeOverlayTests(unittest.TestCase):
         self.assertEqual(result["pinned_headers_sealed"], 1)
         self.assertGreaterEqual(result["header_include_directory_watches"], 4)
         self.assertTrue(result["header_path_mutations_rejected"])
+        self.assertEqual(set(result["compiler_tool_sha256"]), {"driver", "cc1", "as"})
+        self.assertTrue(result["compiler_tools_before_after_match"])
+        self.assertGreaterEqual(result["system_header_count"], 1)
+        self.assertEqual(len(result["system_header_set_sha256"]), 64)
+        self.assertTrue(result["system_header_bytes_before_after_match"])
         self.assertEqual(set(result["preprocessed_sha256"]), {"libgpu", "pc_raster"})
         self.assertEqual(result["pinned_headers_checked"], 1)
         self.assertTrue(result["staged_header_hashes_verified"])
@@ -285,6 +290,40 @@ class SealedMakeOverlayTests(unittest.TestCase):
                 self.run_build("build-map02-temporary-extra")
         self.assertEqual(changed, [True])
         self.assertFalse((self.pc / "build-map02-temporary-extra/libgpu.o").exists())
+
+    def test_compiler_binary_fingerprint_mismatch_refused(self):
+        original = sealed._compiler_evidence
+        count = []
+
+        def replace_second():
+            driver, witness = original()
+            count.append(True)
+            if len(count) == 2:
+                witness = dict(witness)
+                witness["cc1"] = "0" * 64
+            return driver, witness
+
+        with patch.object(sealed, "_compiler_evidence", side_effect=replace_second):
+            with self.assertRaisesRegex(ValueError, "compiler binaries changed"):
+                self.run_build("build-map02-compiler-tamper")
+        self.assertEqual(len(count), 2)
+
+    def test_system_header_digest_mismatch_refused(self):
+        original = sealed._system_header_evidence
+        count = []
+
+        def change_second(*args):
+            result = original(*args)
+            count.append(True)
+            if len(count) == 2:
+                result = dict(result)
+                result["sha256"] = "0" * 64
+            return result
+
+        with patch.object(sealed, "_system_header_evidence", side_effect=change_second):
+            with self.assertRaisesRegex(ValueError, "system header dependencies changed"):
+                self.run_build("build-map02-system-header-tamper")
+        self.assertEqual(len(count), 2)
 
     def test_invalid_and_existing_build_directories_fail_closed(self):
         for name in ("build", "build-map02-", "build-map02-x/../y",
