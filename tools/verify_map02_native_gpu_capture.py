@@ -216,7 +216,12 @@ def verify_capture(directory: Path, *, target_frame: int):
         return raw
 
     log_raw=read_evidence(LOG,max_bytes=MAX_EVENT_BYTES)
-    lines=log_raw.splitlines()
+    # Recorder events are newline-terminated JSONL. splitlines() silently
+    # accepted a missing final LF and alternative line separators, making
+    # a truncated event log appear complete when its JSON remained valid.
+    if not log_raw.endswith(b"\n") or b"\r" in log_raw:
+        raise ValueError("incomplete or noncanonical native GPU event stream")
+    lines=log_raw.split(b"\n")[:-1]
     if (len(lines)<2 or len(lines)>MAX_RECORDS or len(lines)%2 or
             any(not line.strip() for line in lines)):
         raise ValueError("incomplete, blank or oversized native GPU event stream")
