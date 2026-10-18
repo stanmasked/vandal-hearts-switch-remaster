@@ -52,7 +52,7 @@ class NativeGpuDispatch159(unittest.TestCase):
     def test_pinned_gpu_dispatch_exact_source_anchor(self):
         self.assertIn("vh68_pcsx_gp0_mmio_observe(value);",GPU_DISPATCH)
         self.assertIn("GPU_writeData(value); return;",GPU_DISPATCH)
-        self.assertIn("\\tcase 0x1810:",GPU_DISPATCH)
+        self.assertIn("\tcase 0x1810:",GPU_DISPATCH)
         hw=patch_hardware(sample_hardware())
         self.assertIn("if(vh159_sink_active) vh159_capture_sink(regs,add,value);",hw)
         self.assertIn("GPU_writeData(value); return;",hw)
