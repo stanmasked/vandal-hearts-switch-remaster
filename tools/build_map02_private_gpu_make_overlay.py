@@ -356,10 +356,19 @@ def _runtime_loader_evidence(directory, driver, expected, expected_tools=None):
             # A forged /tmp/.../cc1 must never match merely by basename.
             if set(expected_tools) != {"driver", "cc1", "as"}:
                 raise ValueError("MAP02 compiler runtime tool inventory invalid")
-            if not name.startswith("/"):
-                raise ValueError("MAP02 compiler runtime executable identity mismatch")
-            if str(Path(name).resolve(strict=True)) != str(
-                    Path(expected_tools[role]).resolve(strict=True)):
+            if name.startswith("/"):
+                resolved_name = Path(name).resolve(strict=True)
+            else:
+                # GNU loader can report "initialize program: as" for a
+                # compiler subprocess invoked by basename. The wrapper
+                # restricts Make's PATH to /usr/bin:/bin.
+                if "/" in name or name not in ("cc1", "as"):
+                    raise ValueError("MAP02 compiler runtime executable identity mismatch")
+                resolved_path = shutil.which(name, path="/usr/bin:/bin")
+                if not resolved_path:
+                    raise ValueError("MAP02 compiler runtime executable identity mismatch")
+                resolved_name = Path(resolved_path).resolve(strict=True)
+            if str(resolved_name) != str(Path(expected_tools[role]).resolve(strict=True)):
                 raise ValueError("MAP02 compiler runtime executable identity mismatch")
         matches = re.findall(r"calling init:\s*(/\S+)", text)
         if not matches:

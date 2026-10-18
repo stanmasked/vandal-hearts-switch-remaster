@@ -389,6 +389,26 @@ class SealedMakeOverlayTests(unittest.TestCase):
                 {"driver": "/usr/bin/gcc", "cc1": "/usr/bin/gcc",
                  "as": "/usr/bin/as"})
 
+    def test_runtime_loader_accepts_relative_assembler_with_restricted_path(self):
+        witness = self.root / "runtime-relative-as"
+        witness.mkdir()
+        lib = self.root / "mapped-fixture.so"
+        lib.write_bytes(b"test library")
+        executable = self.root / "cc1"
+        executable.write_bytes(b"known compiler")
+        for pid, name in ((111, "/usr/bin/gcc"),
+                          (222, str(executable)), (333, "as")):
+            (witness / ("trace." + str(pid))).write_text(
+                str(pid) + ": initialize program: " + name + "\n"
+                + str(pid) + ": calling init: " + str(lib) + "\n")
+        result = sealed._runtime_loader_evidence(
+            witness, "/usr/bin/gcc",
+            {str(lib): hashlib.sha256(lib.read_bytes()).hexdigest()},
+            {"driver": "/usr/bin/gcc", "cc1": str(executable),
+             "as": shutil.which("as", path="/usr/bin:/bin")})
+        self.assertEqual(result["processes"],
+                         {"driver": 1, "cc1": 1, "as": 1})
+
     def test_runtime_loader_refuses_missing_assembler_process(self):
         witness = self.root / "runtime-missing-as"
         witness.mkdir()
