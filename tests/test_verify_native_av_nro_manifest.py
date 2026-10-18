@@ -188,18 +188,44 @@ class AvNroManifestTests(unittest.TestCase):
             verify_bundle(self.root,COMMIT)
         self.assertNotEqual(self.cli().returncode,0)
 
-    def test_nro_text_must_start_after_full_header(self):
+    def test_nro_text_cannot_partially_overlap_header(self):
         name = NRO_NAMES[2]
         data = bytearray(self.files[name])
         data[0x20:0x24] = (0x70).to_bytes(4, "little")
-        # All three segments remain disjoint and within declared size,
-        # but the first one overwrites the NRO's 0x80-byte header.
+        # An offset of 0 is normal for elf2nro's text section, but a
+        # nonzero offset inside the 0x80-byte stub/header isn't.
         self.files[name] = bytes(data)
         (self.root / name).write_bytes(data)
         self.set_manifest()
-        with self.assertRaisesRegex(ValueError, "NRO segment overlaps header"):
+        with self.assertRaisesRegex(ValueError, "NRO segment partially overlaps header"):
             verify_bundle(self.root, COMMIT, exact_inventory=True)
         self.assertNotEqual(self.cli("--exact-inventory").returncode, 0)
+
+    def test_elf2nro_text_segment_at_zero_is_accepted(self):
+        name = NRO_NAMES[0]
+        data = bytearray(self.files[name])
+        data[0x20:0x24] = (0).to_bytes(4, "little")
+        data[0x24:0x28] = (0x90).to_bytes(4, "little")
+        # rodata and data remain ordered, disjoint and outside header.
+        self.files[name] = bytes(data)
+        (self.root / name).write_bytes(data)
+        self.set_manifest()
+        self.assertEqual(verify_bundle(self.root, COMMIT, exact_inventory=True)
+                         ["nro_count"], 7)
+        self.assertEqual(self.cli("--expected-commit", COMMIT,
+                                  "--exact-inventory").returncode, 0)
+
+    def test_rodata_cannot_begin_within_header_even_if_text_starts_zero(self):
+        name = NRO_NAMES[1]
+        data = bytearray(self.files[name])
+        data[0x20:0x24] = (0).to_bytes(4, "little")
+        data[0x24:0x28] = (0x10).to_bytes(4, "little")
+        data[0x28:0x2c] = (0x70).to_bytes(4, "little")
+        self.files[name] = bytes(data)
+        (self.root / name).write_bytes(data)
+        self.set_manifest()
+        with self.assertRaisesRegex(ValueError, "partially overlaps header"):
+            verify_bundle(self.root, COMMIT)
 
     def test_unaligned_data_offset_with_updated_hash_rejected(self):
         name = NRO_NAMES[4]

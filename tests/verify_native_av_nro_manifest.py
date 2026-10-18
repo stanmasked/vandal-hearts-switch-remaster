@@ -56,11 +56,12 @@ def check_nro_header(header, size, filename):
         start, length = struct.unpack_from("<II", header, offset)
         if length == 0 or start >= declared or start + length > declared:
             raise ValueError("invalid NRO segment bounds: " + filename)
-        # The executable's 0x80-byte header is not part of any
-        # segment. File offsets are 4-byte aligned even when gaps
-        # appear between text, rodata and data.
-        if start < 0x80:
-            raise ValueError("NRO segment overlaps header: " + filename)
+        # elf2nro legitimately places the TEXT segment at file
+        # offset zero: its first bytes include the NRO startup stub
+        # and NRO0 header. Only reject a PARTIAL header overlap, or
+        # rodata/data entering that header region.
+        if start < 0x80 and not (offset == 0x20 and start == 0):
+            raise ValueError("NRO segment partially overlaps header: " + filename)
         if start & 3:
             raise ValueError("unaligned NRO segment offset: " + filename)
         # A valid NRO has text, rodata and data in their specified
