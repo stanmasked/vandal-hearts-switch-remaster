@@ -195,6 +195,9 @@ on:
       - 'tools/apply_map02_v154_third_instruction_mutation.py'
       - 'tools/apply_map02_v155_four_instruction_native.py'
       - 'tools/apply_map02_v156_register_checkpoints.py'
+      - 'tools/apply_map02_v157_t1_fourth_checkpoint.py'
+      - 'tests/test_map02_v157_t1_fourth_checkpoint.py'
+      - '.github/workflows/map02-v157-t1-fourth-checkpoint.yml'
       - 'tests/test_map02_v156_register_checkpoints.py'
       - '.github/workflows/map02-v156-register-checkpoints.yml'
       - 'tests/test_map02_v155_four_instruction_native.py'
@@ -342,6 +345,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v154_third_instruction_mutation.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v155_four_instruction_native.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v156_register_checkpoints.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v157_t1_fourth_checkpoint.py' -v
           python3 -m remaster.tools.check_map02_v147_native_bounded_c --cc "${{ matrix.cc }}" \
             | grep -Fx 'VH147_COMPILED_BOUNDED_NATIVE_PASS capacity=1024 generic=1 repeated_pc=1 overflow_refused=1 atomic_mode0600=1 no_overwrite=1 original_retail=0'
           python3 -m remaster.tools.check_map02_v144_native_challenge_c --cc "${{ matrix.cc }}" \
@@ -362,7 +366,9 @@ jobs:
           git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
           git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
-          python3 -m remaster.tools.apply_map02_v156_register_checkpoints upstream-pcsx
+          python3 -m remaster.tools.apply_map02_v157_t1_fourth_checkpoint upstream-pcsx
+          grep -F 'vh157_arm_t1_fourth' upstream-pcsx/libpcsxcore/psxinterpreter.c
+          grep -F 'VH157_NATIVE_T1_FOURTH_REFUSED' upstream-pcsx/frontend/main.c
           grep -F 'vh156_verify_previous_effects(regs,pc)' upstream-pcsx/libpcsxcore/psxinterpreter.c
           grep -F 'VH156_NATIVE_REGISTER_EFFECTS_PASS' upstream-pcsx/frontend/main.c
           grep -F 'vh155_enable_four' upstream-pcsx/libpcsxcore/psxinterpreter.c
@@ -1387,6 +1393,56 @@ jobs:
             exit 1
           fi
           sha256sum -c proof/private/v150-synthetic-before.sha256
+          # v157: first THREE genuine interpreted opcodes execute normally;
+          # before the fourth ORI a one-bit t1 corruption is injected and
+          # the native register checkpoint must refuse pre-dispatch.
+          mkdir -m 700 proof/v157-t1-fourth-home
+          v157_rc=0
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v157-t1-fourth-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh129-vblank-04 --vh150-bounded-instructions \
+            --vh155-four-instructions --vh156-verify-register-effects \
+            --vh157-corrupt-t1-fourth \
+            proof/private/V129_SYNTHETIC.EXE \
+            > proof/private/v157-t1-fourth-refused.log 2>&1 || v157_rc=$?
+          test "$v157_rc" -eq 61
+          grep -Fx 'VH157_NATIVE_T1_FOURTH_REFUSED matched=3 attempted=4 original_retail=0' \
+            proof/private/v157-t1-fourth-refused.log
+          if grep -Eq 'VH156_NATIVE_REGISTER_EFFECTS_PASS|VH155_NATIVE_FOUR_STEP_PASS' \
+            proof/private/v157-t1-fourth-refused.log; then
+            echo 'VH157_CORRUPTED_T1_FALSE_ACCEPT_REFUSED'
+            exit 1
+          fi
+          # Reject T1 tamper without an explicit four-step register-check run.
+          mkdir -m 700 proof/v157-invalid-home
+          invalid_t1_rc=0
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v157-invalid-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh129-vblank-04 --vh150-bounded-instructions \
+            --vh155-four-instructions --vh157-corrupt-t1-fourth \
+            proof/private/V129_SYNTHETIC.EXE \
+            > proof/private/v157-invalid.log 2>&1 || invalid_t1_rc=$?
+          test "$invalid_t1_rc" -eq 61
+          grep -Fx 'VH157_INVALID_MODE_REFUSED' proof/private/v157-invalid.log
+          # Also refuse mixing separate t0 and t1 faults.
+          mkdir -m 700 proof/v157-mixed-home
+          mixed_t1_rc=0
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v157-mixed-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh129-vblank-04 --vh150-bounded-instructions \
+            --vh155-four-instructions --vh156-verify-register-effects \
+            --vh156-corrupt-t0-second --vh157-corrupt-t1-fourth \
+            proof/private/V129_SYNTHETIC.EXE \
+            > proof/private/v157-mixed.log 2>&1 || mixed_t1_rc=$?
+          test "$mixed_t1_rc" -eq 61
+          grep -Fx 'VH157_INVALID_MODE_REFUSED' proof/private/v157-mixed.log
+          sha256sum -c proof/private/v150-synthetic-before.sha256
           # v156: true native MIPS LUI/ORI effects are verified at each
           # subsequent opcode fetch (t0 and t1) and after four dispatches.
           mkdir -m 700 proof/v156-register-pass-home
@@ -2019,6 +2075,10 @@ jobs:
           report["v156_mutated_t0_before_second_opcode_refused"]=True
           report["v156_invalid_register_diagnostic_modes_rejected"]=True
           report["v156_original_game_runtime_unverified"]=True
+          report["v157_three_interpreted_opcodes_before_t1_mutation"]=True
+          report["v157_fourth_opcode_refused_before_dispatch"]=True
+          report["v157_invalid_and_mixed_register_modes_rejected"]=True
+          report["v157_original_game_runtime_unverified"]=True
           report["retail_map02_gpu_rendering_verified"]=False
           Path("proof/public/v129-four-real-vblank-profiles-summary.json").write_text(
               json.dumps(report,sort_keys=True)+"\n")
