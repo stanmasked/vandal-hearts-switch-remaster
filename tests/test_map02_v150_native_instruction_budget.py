@@ -41,6 +41,7 @@ int main(void) {
     if(writes!=3u || i!=3u || vh150_steps()!=3u ||
        vh150_stop_reason()!=1u || !regs.stop || !regs.branchSeen)
         return 2;
+    if(vh150_before(&regs,0x8001000cu)) return 11; /* latched stop */
     vh150_disarm();
     regs.stop=0; regs.branchSeen=0;
     if(vh150_arm(0x80010000u,0x80012000u,4u)!=0) return 3;
