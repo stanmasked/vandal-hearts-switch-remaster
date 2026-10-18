@@ -101,7 +101,7 @@ jobs:
                   x["previous_lower_median_duration_guest_software_ns"],
                   x["previous_max_duration_guest_software_ns"],
                   "MAD(ns)",x["previous_median_absolute_deviation_guest_software_ns"],
-                  "last rank",x["last_call_insertion_rank_among_16_if_ties_before"])
+                  "last rank",x["last_call_first_possible_rank_among_16"])
           PY
           echo "Stage329 recomputed original guest PlayBuffer previous-15 distributions from two real captures; only bounded software-call statistics, no DAC, speaker latency, original soundtrack or guest/host time mapping." >> "$GITHUB_STEP_SUMMARY"
 
