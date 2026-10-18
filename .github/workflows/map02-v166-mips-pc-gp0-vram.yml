@@ -1,0 +1,33 @@
+name: MAP02 v166 interpreted MIPS SW instruction PC to GPU VRAM proof
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v166-mips-pc-gp0-vram.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v166_mips_pc_gp0_vram.py'
+      - 'tests/test_map02_v166_mips_pc_gp0_vram.py'
+      - 'tools/make_map02_v121_mips_gp0_return_exe.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  guest-pc:
+    name: real MIPS SW PCs against native GP0 and VRAM (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile source-generated 15 SW PC and exact MMIO negative cases
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v166_mips_pc_gp0_vram.py tests/test_map02_v166_mips_pc_gp0_vram.py
+          python3 -m unittest discover -s tests -p 'test_map02_v166_mips_pc_gp0_vram.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v165_guest_gp0_pixel_binding.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v164_guest_mips_halo.py' -v
+          echo 'VH166_COMPILED_SW_PC_PROOF_PASS original_retail_executed=0 guest_sw_pcs=15 host_gp0_draws=0'
