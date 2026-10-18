@@ -88,6 +88,13 @@ jobs:
                   or not 0<=r["last_successful_PlayBuffer_overlap_after_stop_request_ns"]<=
                      r["last_successful_PlayBuffer_call_duration_guest_ns"]
                   or r["last_call_return_to_last_page_witness_guest_ns"]<0
+                  or r["source_time_partition_exactly_conserved"] is not True
+                  or r["post_stop_before_last_successful_call_guest_ns"]<0
+                  or r["post_stop_after_last_successful_call_to_page_return_guest_ns"]<0
+                  or (r["post_stop_before_last_successful_call_guest_ns"]
+                      +r["post_stop_inside_last_successful_call_guest_ns"]
+                      +r["post_stop_after_last_successful_call_to_page_return_guest_ns"]
+                      !=r["stop_request_to_last_normal_PCM_page_return_guest_ns"])
                   or r["last_service_call_is_not_entire_stop_delay_proof"] is not True
                   or r["guest_software_time_not_host_PCM_or_DAC_sample_clock"] is not True
                   or r["plus_causes_audible_dropout_verified"] is not False
@@ -99,6 +106,10 @@ jobs:
                 r["last_successful_PlayBuffer_call_duration_guest_ns"])
           print("Last PlayBuffer overlap after stop requested (ns):",
                 r["last_successful_PlayBuffer_overlap_after_stop_request_ns"])
+          print("Stop-to-final-page conservation (before / inside / after last call, ns):",
+                r["post_stop_before_last_successful_call_guest_ns"],
+                r["post_stop_inside_last_successful_call_guest_ns"],
+                r["post_stop_after_last_successful_call_to_page_return_guest_ns"])
           PY
           echo "Stage321 independently re-read original guest-created PlayBuffer bracket and the exit, page-return, stop-observed and CRC-optical source chain. Call duration is software service timing, not physical speaker playback." >> "$GITHUB_STEP_SUMMARY"
 
