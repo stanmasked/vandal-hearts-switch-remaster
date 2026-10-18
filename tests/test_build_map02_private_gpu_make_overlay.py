@@ -341,6 +341,7 @@ class SealedMakeOverlayTests(unittest.TestCase):
         preprocessed = self.root / "sample.i"
         preprocessed.write_text(
             '# 0 "<built-in>"\n'
+            '# 1 "' + str(self.pc) + '//"\n'
             '# 1 "' + str(system) + '" 1 3 4\n'
             'int x;\n')
         evidence = sealed._system_header_evidence(

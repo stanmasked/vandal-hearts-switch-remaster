@@ -267,7 +267,11 @@ def _system_header_evidence(preprocessed_files, pc, stage):
             if str(absolute).startswith(prefix):
                 continue
             canonical = absolute.resolve(strict=True)
-            if canonical == pc or pc in canonical.parents:
+            # GCC emits a source-location marker for its working directory,
+            # often ending in "//"; this marker is not a header dependency.
+            if canonical == pc and canonical.is_dir():
+                continue
+            if pc in canonical.parents:
                 raise ValueError("MAP02 unexpected PC checkout header dependency")
             if not canonical.is_file():
                 raise ValueError("MAP02 source location is not a regular file")
