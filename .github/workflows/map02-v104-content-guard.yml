@@ -157,6 +157,9 @@ on:
       - 'tools/analyze_map02_v136_original_code_sections.py'
       - 'tests/test_map02_v136_original_code_sections.py'
       - 'tools/verify_map02_v137_private_mips_pc_sites.py'
+      - 'tools/apply_map02_v138_interpreter_pc_witness.py'
+      - 'tests/test_map02_v138_native_interpreter_sw_pc.py'
+      - '.github/workflows/map02-v138-native-interpreter-sw-pc.yml'
       - 'tests/test_map02_v137_private_mips_pc_sites.py'
       - '.github/workflows/map02-v137-private-pc-sites.yml'
       - 'tools/analyze_map02_v132_mips_delay_slots.py'
@@ -260,6 +263,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v135_original_us_elf_pair.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v136_original_code_sections.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v137_private_mips_pc_sites.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v138_native_interpreter_sw_pc.py' -v
           python3 -m remaster.tools.check_map02_v130_native_bounds --cc "${{ matrix.cc }}"
       - name: Patch pinned upstream with Unai post-dispatch observer
         shell: bash
@@ -271,7 +275,9 @@ jobs:
           git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
           git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
-          python3 -m remaster.tools.apply_map02_v129_pcsx_rearmed upstream-pcsx
+          python3 -m remaster.tools.apply_map02_v138_interpreter_pc_witness upstream-pcsx
+          grep -F 'vh138_observe_interpreted_sw(regs_->pc-4u,regs_->code,_oB_,_rRt_)' upstream-pcsx/libpcsxcore/psxinterpreter.c
+          grep -F 'VH138_CPU_SW_PC_PASS stores=12' upstream-pcsx/frontend/main.c
           git -C upstream-pcsx diff --check
           grep -F 'vh80_record(VH83_GP0_UNAI_HANDLED' upstream-pcsx/plugins/gpu_unai/gpulib_if.cpp
           grep -F 'VH83_UNAI_DISPATCH_PASS' upstream-pcsx/frontend/main.c
@@ -1285,6 +1291,8 @@ jobs:
                 exit 1
               }
             grep -F 'VH129_REAL_VBLANK_PROFILES_PASS mode=' \
+              "proof/private/v129-$mode.log"
+            grep -F 'VH138_CPU_SW_PC_PASS stores=12' \
               "proof/private/v129-$mode.log"
             sha256sum -c proof/private/native.sha256
             sha256sum -c proof/private/v131-same-exe.sha256
