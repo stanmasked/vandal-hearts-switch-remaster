@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import tools.check_map02_private_capture_ready as preflight_module
 from tools.check_map02_private_capture_ready import (
     _snapshot_word, inspect_staged_capture, main as preflight_main,
 )
@@ -231,6 +232,50 @@ class PrivateCapturePreflightTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "changed during sample"):
                 _snapshot_word(self.native, "gpu-0001-vram.bin",
                                self.x, self.y)
+        self.assertEqual(calls[0], 2)
+
+    def test_rejects_identical_snapshot_inode_swap_between_sampling_passes(self):
+        # Each individual two-byte read succeeds. Only cross-pass inode
+        # pinning catches the byte-identical replacement between visits.
+        target = self.native / "gpu-0000-vram.bin"
+        original_sample = preflight_module._snapshot_word
+        swapped = [False]
+
+        def replace_after_first_sample(*args, **kwargs):
+            pixel = original_sample(*args, **kwargs)
+            if args[1] == target.name and not swapped[0]:
+                old = self.native.parent / "old-private-vram"
+                target.replace(old)
+                target.write_bytes(old.read_bytes())
+                swapped[0] = True
+            return pixel
+
+        with patch.object(preflight_module, "_snapshot_word",
+                          side_effect=replace_after_first_sample):
+            with self.assertRaisesRegex(ValueError, "changed between samples"):
+                self.run_preflight()
+        self.assertTrue(swapped[0])
+
+    def test_rejects_post_draw_snapshot_mutation_at_final_revisit(self):
+        # Change the snapshot only after its edge is already checked; the
+        # final re-read must detect drift before publishing a positive report.
+        target = self.native / "gpu-0001-vram.bin"
+        original_sample = preflight_module._snapshot_word
+        calls = [0]
+
+        def touch_after_draw_comparison(*args, **kwargs):
+            pixel = original_sample(*args, **kwargs)
+            if args[1] == target.name:
+                calls[0] += 1
+                if calls[0] == 2:
+                    st = target.stat()
+                    os.utime(target, ns=(st.st_atime_ns, st.st_mtime_ns + 10**9))
+            return pixel
+
+        with patch.object(preflight_module, "_snapshot_word",
+                          side_effect=touch_after_draw_comparison):
+            with self.assertRaisesRegex(ValueError, "changed between samples"):
+                self.run_preflight()
         self.assertEqual(calls[0], 2)
 
     def test_catches_pixel_snapshot_drift_even_when_logs_and_sha_agree(self):
