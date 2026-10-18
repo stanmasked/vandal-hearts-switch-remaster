@@ -1,0 +1,116 @@
+name: Stage312 three-run source-audited guest exit cohort
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage312-three-guest-exit-provenance.yml'
+      - 'tools/audit_nexium_guest_exit_three_run_cohort.py'
+      - 'tests/test_audit_nexium_guest_exit_three_run_cohort.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  guest-three-cohort:
+    name: Three authentic guest exits, one independently source-byte verified
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - name: Checkout original guest exit/optical source auditors
+        uses: actions/checkout@v4
+
+      - name: Install Pillow in isolated Python
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 -m venv /tmp/vh-stage312
+          /tmp/vh-stage312/bin/python -m pip install --disable-pip-version-check 'Pillow>=10,<13'
+
+      - name: Stage312 three-run provenance synthetic adversarial regressions
+        run: /tmp/vh-stage312/bin/python -m unittest discover -s tests -p 'test_audit_nexium_guest_exit_three_run_cohort.py' -v
+
+      - name: Retrieve earliest original guest exit runtime evidence (capture-time receipt)
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39137949186
+          github-token: ${{ github.token }}
+          path: original-neXium/39137949186
+
+      - name: Retrieve second original guest exit runtime evidence (capture-time receipt)
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39138826525
+          github-token: ${{ github.token }}
+          path: original-neXium/39138826525
+
+      - name: Retrieve third original guest exit archive with guest-created CSV bytes
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39141325435
+          github-token: ${{ github.token }}
+          path: original-neXium/39141325435
+
+      - name: Retrieve separate-run independent Stage311 raw-original verification
+        uses: actions/download-artifact@v4
+        with:
+          name: stage311-independent-original-guest-exit-receipt
+          run-id: 39142041977
+          github-token: ${{ github.token }}
+          path: verified-stage311-original
+
+      - name: Compare distinct source-bound guest software exits and source provenance tiers
+        shell: bash
+        run: |
+          set -euo pipefail
+          receipt="$(find verified-stage311-original -name original-guest-exit-stage311.json -type f -print -quit)"
+          test -n "$receipt" && test -f "$receipt"
+          mkdir -p independent-stage312-evidence
+          /tmp/vh-stage312/bin/python tools/audit_nexium_guest_exit_three_run_cohort.py \
+            --capture 39137949186:original-neXium/39137949186 \
+            --capture 39138826525:original-neXium/39138826525 \
+            --capture 39141325435:original-neXium/39141325435 \
+            --raw-original-run 39141325435 \
+            --independent-stage311 "$receipt" \
+            --output independent-stage312-evidence/three-guest-exit-provenance-stage312.json
+          /tmp/vh-stage312/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("independent-stage312-evidence/three-guest-exit-provenance-stage312.json").read_text())
+          if (r["result"]!="THREE_ORIGINAL_GUEST_EXIT_RUNS_PROVENANCE_RECONCILED"
+                  or r["run_count"]!=3
+                  or r["run_ids"]!=[39137949186,39138826525,39141325435]
+                  or r["original_csv_byte_verified_runs"]!=[39141325435]
+                  or r["capture_time_source_audited_JSON_only_runs"]!=[
+                      39137949186,39138826525]
+                  or r["independent_stage311_receipt_reproduced"] is not True
+                  or r["all_three_distinct_optical_PNG_and_guest_exit_SHA256"] is not True
+                  or r["older_guest_csv_bytes_NOT_reaudited"] is not True
+                  or r["host_pcm_to_guest_software_clock_calibrated"] is not False
+                  or r["audible_audio_dropout_verified"] is not False
+                  or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage312 three original capture provenance/claim failure")
+          durations=r["guest_software_duration_distribution_ns"]["plus_to_join_ns"]
+          if (len(durations["observations"])!=3 or
+                  durations["minimum_ns"]<=0 or
+                  durations["minimum_ns"]>durations["median_ns"] or
+                  durations["median_ns"]>durations["maximum_ns"]):
+              raise SystemExit("Stage312 guest software interval ordering invalid")
+          print("Stage312 original-byte SHA256:",r["original_csv_sha256_revalidated"])
+          print("Stage312 software exit Plus->join across three real NeXium runs:",
+                durations)
+          print("Older run provenance:",r["capture_time_source_audited_JSON_only_runs"])
+          PY
+          echo "Stage312: compared three independently recorded NeXium guest software exit clocks, rechecked all optical CRCs; two historical captures only had capture-time JSON receipts, third had original guest CSV bytes independently reaudited in Stage311. No guest ↔ host PCM or hardware audio clock mapping." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload only independent three-run comparison output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage312-verified-guest-software-cohort
+          path: independent-stage312-evidence/
+          if-no-files-found: warn
