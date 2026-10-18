@@ -1,0 +1,136 @@
+name: Stage325 independent original NeXium paired clock replay
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage325-independent-original-clock-replay.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  replay-source:
+    name: Independently re-audit original dual host clocks against Stage304 and Stage305
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout strict host clock source replayer
+        uses: actions/checkout@v4
+
+      - name: Stage325 independent source parser negative tests
+        run: python3 -m unittest discover -s tests -p 'test_audit_nexium_host_clock_pairs.py' -v
+
+      - name: Verify exact original NeXium capture completed successfully
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          status="$(gh api 'repos/${GITHUB_REPOSITORY}/actions/runs/39166023593' --jq '.status')"
+          conclusion="$(gh api 'repos/${GITHUB_REPOSITORY}/actions/runs/39166023593' --jq '.conclusion')"
+          test "$status" = completed
+          test "$conclusion" = success
+          echo "Verified real original NeXium source capture 39166023593 completed successfully"
+
+      - name: Download exact first original Stage325 NeXium runtime evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39166023593
+          github-token: ${{ github.token }}
+          path: original-stage325-evidence
+
+      - name: Independently validate original paired host CSV bytes and Stage304/305 receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p independent-stage325-replay
+          python3 - <<'PY'
+          import hashlib,json,sys
+          from pathlib import Path
+          sys.path.insert(0,str(Path('tools').resolve()))
+          from audit_nexium_host_clock_pairs import audit
+          from audit_nexium_pcm_exit_controls import control_events
+          root=Path("original-stage325-evidence")
+          expected=(
+              "scene-exit-controls.csv",
+              "scene-exit-controls-monotonic.csv",
+              "host-dual-clock-stage325.json",
+              "pcm-exit-controls-stage304.json",
+              "pcm-plus-onset-fence-stage305.json",
+          )
+          located={}
+          for filename in expected:
+              candidates=list(root.rglob(filename))
+              safe=[p for p in candidates
+                    if p.is_file() and not p.is_symlink() and
+                    all(not q.is_symlink() for q in p.relative_to(root).parents)]
+              if len(candidates)!=1 or len(safe)!=1:
+                  raise SystemExit("missing or ambiguous original Stage325 source: "+filename)
+              located[filename]=safe[0]
+          old=located["scene-exit-controls.csv"].read_bytes()
+          paired=located["scene-exit-controls-monotonic.csv"].read_bytes()
+          if hashlib.sha256(old).hexdigest()!=(
+              "cd3b6a7e42d531310ae930969c3612b63697c13b840726056bde701ceffe3f2d"):
+              raise SystemExit("original legacy CSV differs from exact captured SHA-256")
+          if hashlib.sha256(paired).hexdigest()!=(
+              "302efc3b5c722f70956a0a6208c8e0b5e3e375aaa89fee73f6fff78b38f4d4c4"):
+              raise SystemExit("original monotonic CSV differs from exact captured SHA-256")
+          new=audit(old,paired)
+          first=json.loads(located["host-dual-clock-stage325.json"].read_text())
+          if new!=first:
+              raise SystemExit("original capture Stage325 receipt not independently reproduced")
+          legacy=control_events(old)
+          if [(p["pcm_bytes"],p["host_epoch_ms"]) for p in legacy]!=[
+                  (p["pcm_bytes"],p["host_epoch_ms"])
+                  for p in json.loads(
+                      located["pcm-exit-controls-stage304.json"].read_text()
+                  )["exit_control_snapshots"]]:
+              raise SystemExit("Stage325 legacy original events differ from strict Stage304")
+          stage304=json.loads(located["pcm-exit-controls-stage304.json"].read_text())
+          stage305=json.loads(located["pcm-plus-onset-fence-stage305.json"].read_text())
+          if stage304["result"]!="SOURCE_BOUND_BUFFERED_EXIT_CONTROL_TIMELINE_RECONCILED":
+              raise SystemExit("original real Stage304 strict source result missing")
+          if stage305["result"]!="SOURCE_BOUND_PLUS_BUFFERED_ZERO_RUN_ONSET_FENCED":
+              raise SystemExit("original real Stage305 strict source result missing")
+          if (not new["all_monotonic_intervals_positive"]
+              or new["wall_epoch_backwards_pair_count"]!=0
+              or new["wall_epoch_equal_pair_count"]!=0
+              or new["pcm_size_regression_pair_count"]!=0
+              or new["physical_Nintendo_Switch_audio_tested"] is not False
+              or new["legacy_stage304_strict_ordering_not_relaxed"] is not True):
+              raise SystemExit("original NeXium clock/PCM evidence invariant violated")
+          gaps=new["adjacent_host_clock_deltas"]
+          if [x["host_wall_delta_ms"] for x in gaps]!=[357,4270]:
+              raise SystemExit("original real wall intervals do not match captured log")
+          if [x["host_monotonic_delta_ns"] for x in gaps]!=[
+                  357687151,4269790190]:
+              raise SystemExit("original real monotonic intervals do not match captured log")
+          summary={
+              "schema":"vh-stage325-independent-original-neXium-host-dual-clock-replay/v1",
+              "result":"STAGE325_ORIGINAL_NE XIUM_HOST_CLOCK_SOURCE_INDEPENDENTLY_REPLAYED".replace(" ",""),
+              "original_workflow_run_id":39166023593,
+              "source_legacy_sha256":new["legacy_csv_sha256"],
+              "source_monotonic_sha256":new["paired_clock_csv_sha256"],
+              "wall_delta_ms":[x["host_wall_delta_ms"] for x in gaps],
+              "monotonic_delta_ns":[x["host_monotonic_delta_ns"] for x in gaps],
+              "strict_stage304_replayed_from_original_legacy_controls":True,
+              "original_stage305_result_present":True,
+              "all_monotonic_intervals_positive":True,
+              "guest_dac_or_speaker_audio_verified":False,
+              "physical_Nintendo_Switch_audio_tested":False,
+          }
+          dest=Path("independent-stage325-replay/replayed-original-dual-clock.json")
+          dest.write_text(json.dumps(summary,sort_keys=True,indent=2)+"\n")
+          print(json.dumps(summary,sort_keys=True))
+          PY
+
+      - name: Upload only independent Stage325 source comparison receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage325-independent-original-host-clocks
+          path: independent-stage325-replay/
+          if-no-files-found: warn
