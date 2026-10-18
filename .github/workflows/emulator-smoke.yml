@@ -83,6 +83,8 @@ on:
       - 'tests/test_analyze_nexium_pcm_scene_silence.py'
       - 'tests/test_analyze_nexium_pcm_stream_integrity.py'
       - 'tools/capture_nexium_scene_audio.sh'
+      - 'tools/audit_nexium_host_clock_pairs.py'
+      - 'tests/test_audit_nexium_host_clock_pairs.py'
       - 'tests/test_analyze_nexium_scene_audio.py'
       - 'tools/analyze_nexium_transition_timing.py'
       - 'tools/audit_switch_guest_scene_trace.py'
@@ -690,6 +692,30 @@ jobs:
           set -euo pipefail
           bash tools/capture_nexium_scene_audio.sh runtime-evidence
           python3 -m json.tool runtime-evidence/scene-audio-report.json > /dev/null
+          # Stage325 uses only tiny event/size/timestamp CSVs. The original
+          # Stage304 host-epoch order and provenance checks remain unchanged.
+          python3 tools/audit_nexium_host_clock_pairs.py audit \
+            --legacy runtime-evidence/scene-exit-controls.csv \
+            --dual runtime-evidence/scene-exit-controls-monotonic.csv \
+            --output runtime-evidence/host-dual-clock-stage325.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("runtime-evidence/host-dual-clock-stage325.json").read_text())
+          if (r["result"]!="ORIGINAL_HOST_DUAL_CLOCK_CSVS_INDEPENDENTLY_MATCHED"
+              or len(r["adjacent_host_clock_deltas"])!=2
+              or r["all_monotonic_intervals_positive"] is not True
+              or r["legacy_stage304_strict_ordering_not_relaxed"] is not True
+              or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage325 paired original host monotonic observations not verified")
+          print("Stage325 host CSV SHA:",r["legacy_csv_sha256"])
+          print("Stage325 monotonic companion SHA:",r["paired_clock_csv_sha256"])
+          print("Stage325 adjacent wall deltas (ms):",
+                [p["host_wall_delta_ms"] for p in r["adjacent_host_clock_deltas"]])
+          print("Stage325 adjacent monotonic deltas (ns):",
+                [p["host_monotonic_delta_ns"] for p in r["adjacent_host_clock_deltas"]])
+          PY
+          echo "Stage325 matched same-host wall-clock and monotonic Plus-control observations. Wall clock can move backward; original Stage304 still fails closed. Neither clock proves DAC or speaker sound." >> "$GITHUB_STEP_SUMMARY"
           python3 tools/analyze_nexium_transition_timing.py \
             runtime-evidence/nexium-scenes-s16le-48k.pcm \
             runtime-evidence/scene-events.csv \
