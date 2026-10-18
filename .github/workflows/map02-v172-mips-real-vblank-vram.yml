@@ -1,0 +1,33 @@
+name: MAP02 v172 source-attested genuine PCSX VBlank and native Unai VRAM
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v172-mips-real-vblank-vram.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v172_mips_real_vblank_vram.py'
+      - 'tests/test_map02_v172_mips_real_vblank_vram.py'
+      - 'tools/make_map02_v78_vblank_mips_exe.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  vblank-provenance:
+    name: synthetic MIPS actual psxRcntUpdate GPU VBlank edge (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify four MIPS execution-phase MMIO sources and real-counter observation invariants
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v172_mips_real_vblank_vram.py tests/test_map02_v172_mips_real_vblank_vram.py
+          python3 -m unittest discover -s tests -p 'test_map02_v172_mips_real_vblank_vram.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v78_vblank_mips.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v171_mips_multiphase_vram.py' -v
+          echo 'VH172_COMPILED_NATIVE_VBLANK_ORIGIN_PASS gp0_words=72 gp1_writes=3 four_native_vblank_edges_required=1 console_frame_parity=0 original_retail_executed=0'
