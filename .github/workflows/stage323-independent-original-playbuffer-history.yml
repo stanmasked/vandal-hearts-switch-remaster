@@ -27,7 +27,7 @@ jobs:
           python3 -m venv /tmp/vh-stage323
           /tmp/vh-stage323/bin/python -m pip install --disable-pip-version-check 'Pillow>=10,<13'
 
-      - name: Stage323 independent guest history 14 source attack controls
+      - name: Stage323 independent guest history 16 source and rank controls
         run: /tmp/vh-stage323/bin/python -m unittest discover -s tests -p 'test_replay_nexium_original_playbuffer_history_archive.py' -v
 
       - name: Require the exact original Stage322 source run to finish successfully
@@ -87,6 +87,11 @@ jobs:
                       !=r["recent_original_service_call_count"]
                   or r["has_source_verified_prior_call_baseline"]
                       !=(r["prior_successful_calls_in_window"]>0)
+                  or (r["prior_successful_calls_shorter_than_last"]
+                      +r["prior_successful_calls_equal_to_last"]
+                      +r["prior_successful_calls_longer_than_last"]
+                      !=r["prior_successful_calls_in_window"])
+                  or r["prior_successful_duration_rank_is_only_this_bounded_window"] is not True
                   or r["guest_software_call_is_NOT_DAC_or_speaker_sound"] is not True
                   or r["original_guest_to_host_PCM_clock_fit_verified"] is not False
                   or r["plus_caused_audible_dropout_verified"] is not False
@@ -108,6 +113,12 @@ jobs:
                 r["prior_successful_calls_in_window"])
           print("Stage323 prior lower median (guest software ns):",
                 r["prior_successful_lower_median_duration_guest_ns"])
+          print("Stage323 preceding successful calls shorter/equal/longer than final:",
+                r["prior_successful_calls_shorter_than_last"],
+                r["prior_successful_calls_equal_to_last"],
+                r["prior_successful_calls_longer_than_last"])
+          print("Stage323 last call ascending rank among final and prior samples:",
+                r["last_call_ascending_rank_among_prior_plus_last"])
           PY
           echo "Stage323: independent original-byte replay of guest last16 PlayBuffer history, final PlayBuffer call, worker stop, page return, guest exit and optical CRC evidence. Prior baseline shown only if supported by actual original calls. Software clock only; no DAC/speaker or Plus causality proof." >> "$GITHUB_STEP_SUMMARY"
 
