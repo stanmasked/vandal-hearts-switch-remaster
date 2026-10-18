@@ -13,9 +13,10 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 
 from tools.map02_local_capture_handoff import (
-    SOURCE_BLOBS, _sha_file, verify_pinned_upstream,
+    SOURCE_BLOBS, verify_pinned_upstream,
 )
 from tools.prepare_map02_pcport import git_blob_sha1
 
@@ -62,6 +63,24 @@ def _raw_sector(fd, lba):
     return data
 
 
+def _disc_file_identity(info):
+    """One private raw-image inode, including mutation-sensitive metadata."""
+    return (info.st_dev, info.st_ino, info.st_uid, info.st_mode,
+            info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+def _whole_disc_sha256(fd, length):
+    digest = hashlib.sha256()
+    for offset in range(0, length, 1 << 20):
+        count = min(1 << 20, length - offset)
+        data = os.pread(fd, count, offset)
+        if len(data) != count:
+            raise ValueError("owned MAP02 raw disc short read during hashing")
+        digest.update(data)
+    return digest.hexdigest()
+
+
+
 def verify_map02_disc_extent(image, upstream):
     source_root = Path(upstream).absolute()
     pinned_identity = verify_pinned_upstream(source_root)
@@ -75,14 +94,29 @@ def verify_map02_disc_extent(image, upstream):
     # Explicit single-region US source only; do not silently use this
     # LBA against unrelated Japanese/Asian disc layouts.
     image = Path(image).absolute()
-    image_hash = _sha_file(image, private=True)
-    fd = os.open(
-        image, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-        | getattr(os, "O_CLOEXEC", 0))
     try:
-        size = os.fstat(fd).st_size
+        fd = os.open(image, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except OSError:
+        raise ValueError("owned MAP02 raw image input unavailable") from None
+    try:
+        original = os.fstat(fd)
+        if not stat.S_ISREG(original.st_mode) or original.st_size <= 0:
+            raise ValueError("capture input is not a nonempty regular file")
+        if original.st_uid != os.geteuid() or original.st_mode & 0o077:
+            raise ValueError("owned game-image input must be owner-private")
+        if original.st_nlink != 1:
+            raise ValueError("owned MAP02 raw disc must have exactly one hardlink")
+        planned = _disc_file_identity(original)
+        if _disc_file_identity(os.stat(image, follow_symlinks=False)) != planned:
+            raise ValueError("owned MAP02 raw disc pathname changed before hashing")
+        size = original.st_size
         if size % SECTOR_RAW or size < (lba + count) * SECTOR_RAW:
             raise ValueError("original raw CD image size/extent incomplete")
+        # Both full hashes and all sector reads use the very SAME descriptor.
+        # Reopening the pathname here would allow a between-checks swap.
+        image_hash = _whole_disc_sha256(fd, size)
+        if _disc_file_identity(os.fstat(fd)) != planned:
+            raise ValueError("owned MAP02 raw disc changed during first hash")
         boot = _raw_sector(fd, BOOT_LBA_US)
         if boot[USER_DATA_START:USER_DATA_START + 8] != b"PS-X EXE":
             raise ValueError("original US PS-X EXE boot signature absent")
@@ -91,10 +125,18 @@ def verify_map02_disc_extent(image, upstream):
             raw = _raw_sector(fd, sector)
             digest.update(raw[USER_DATA_START:
                               USER_DATA_START + USER_DATA_BYTES])
+        if _disc_file_identity(os.fstat(fd)) != planned:
+            raise ValueError("owned MAP02 raw disc changed during sector read")
+        if _whole_disc_sha256(fd, size) != image_hash:
+            raise ValueError("owned game image changed while reading MAP02 sectors")
+        if (_disc_file_identity(os.fstat(fd)) != planned or
+                _disc_file_identity(os.stat(image, follow_symlinks=False))
+                != planned):
+            raise ValueError("owned MAP02 raw disc pathname or inode changed during audit")
+    except OSError:
+        raise ValueError("owned MAP02 raw image verification unavailable") from None
     finally:
         os.close(fd)
-    if _sha_file(image, private=True) != image_hash:
-        raise ValueError("owned game image changed while reading MAP02 sectors")
     return {
         "resource": RESOURCE,
         "original_pc_cd_table_sha256": hashlib.sha256(source_raw).hexdigest(),
