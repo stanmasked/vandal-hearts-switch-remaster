@@ -1,9 +1,13 @@
 """Negative structural tests for the asset-free same-run GPU window witness."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+
+import tools.verify_map02_native_gpu_windows as window_module
 
 from tools.verify_map02_native_gpu_windows import (
     INDEX, SCHEMA, verify_native_windows,
@@ -123,6 +127,64 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
         snapshot.symlink_to(self.window / "gpu-0001-vram.bin")
         with self.assertRaises(ValueError):
             self.verify()
+
+    def test_rejects_byte_identical_window_inode_swap_after_full_audit(self):
+        target = self.window / "gpu-0000-vram.bin"
+        previous = self.root / "old-vram-inode"
+        original = window_module.verify_capture
+        swapped = [False]
+
+        def swap_after_check(*args, **kwargs):
+            result = original(*args, **kwargs)
+            if not swapped[0]:
+                target.replace(previous)
+                target.write_bytes(previous.read_bytes())
+                swapped[0] = True
+            return result
+
+        with patch.object(window_module, "verify_capture",
+                          side_effect=swap_after_check):
+            with self.assertRaisesRegex(ValueError,
+                                        "window evidence changed during audit"):
+                self.verify()
+        self.assertTrue(swapped[0])
+
+    def test_rejects_byte_identical_index_swap_during_window_audit(self):
+        target = self.root / INDEX
+        previous = self.root / "old-window-index"
+        original = window_module.verify_capture
+        swapped = [False]
+
+        def replace_index_after_check(*args, **kwargs):
+            result = original(*args, **kwargs)
+            if not swapped[0]:
+                target.replace(previous)
+                target.write_bytes(previous.read_bytes())
+                swapped[0] = True
+            return result
+
+        with patch.object(window_module, "verify_capture",
+                          side_effect=replace_index_after_check):
+            with self.assertRaisesRegex(ValueError,
+                                        "window index changed during audit"):
+                self.verify()
+        self.assertTrue(swapped[0])
+
+    def test_rejects_unlisted_window_file_added_during_audit(self):
+        extra = self.window / "unlisted-after-hash.bin"
+        original = window_module.verify_capture
+
+        def add_after_check(*args, **kwargs):
+            result = original(*args, **kwargs)
+            extra.write_bytes(b"synthetic-only")
+            return result
+
+        with patch.object(window_module, "verify_capture",
+                          side_effect=add_after_check):
+            with self.assertRaisesRegex(ValueError,
+                                        "file set changed during audit"):
+                self.verify()
+        self.assertTrue(extra.is_file())
 
     def test_root_and_windows_must_be_private_directories(self):
         self.window.chmod(0o755)
