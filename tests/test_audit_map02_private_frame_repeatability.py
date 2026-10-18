@@ -87,6 +87,10 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
         self.assertTrue(result["two_full_replays_per_capture_verified"])
         self.assertTrue(result["four_private_file_inventories_stable_through_replays"])
         self.assertTrue(result["repeated_full_gpu_vram_snapshot_sequence_identical"])
+        self.assertTrue(result["gpu_vram_timeline_commitments_identical"])
+        self.assertEqual(result["first_gpu_vram_timeline_sha256"],
+                         result["second_gpu_vram_timeline_sha256"])
+        self.assertEqual(len(result["first_gpu_vram_timeline_sha256"]), 64)
         self.assertEqual(result["first_gpu_vram_snapshot_count"], 2)
         self.assertEqual(result["second_gpu_vram_snapshot_count"], 2)
         self.assertEqual(result["gpu_vram_snapshots_compared"], 2)
@@ -139,6 +143,9 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
         self.assertEqual(out["different_gpu_before_vram_snapshots"], 0)
         self.assertEqual(out["different_gpu_after_vram_snapshots"], 1)
         self.assertFalse(out["repeated_full_gpu_vram_snapshot_sequence_identical"])
+        self.assertFalse(out["gpu_vram_timeline_commitments_identical"])
+        self.assertNotEqual(out["first_gpu_vram_timeline_sha256"],
+                            out["second_gpu_vram_timeline_sha256"])
         # Event JSONL captures draw order and attributes, but NOT raw
         # post-draw VRAM pixels. The same two events can write different
         # pixels while the JSONL digest stays byte-identical.
@@ -157,6 +164,9 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
         self.assertTrue(result["repeated_gpu_final_vram_identical"])
         self.assertTrue(result["repeated_gpu_event_journal_identical"])
         self.assertFalse(result["repeated_full_gpu_vram_snapshot_sequence_identical"])
+        self.assertFalse(result["gpu_vram_timeline_commitments_identical"])
+        self.assertNotEqual(result["first_gpu_vram_timeline_sha256"],
+                            result["second_gpu_vram_timeline_sha256"])
         self.assertEqual(result["different_bgr555_pixels"], 0)
         self.assertEqual(result["gpu_vram_snapshots_compared"], 2)
         self.assertEqual(result["different_gpu_vram_snapshots_in_common_prefix"], 1)
@@ -209,6 +219,9 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
                 1, 2, 1, 2, lambda: None)
         self.assertEqual(diagnostics["gpu_vram_snapshots_compared"], 2)
         self.assertEqual(diagnostics["unmatched_gpu_vram_snapshots"], 2)
+        self.assertFalse(diagnostics["gpu_vram_timeline_commitments_identical"])
+        self.assertNotEqual(diagnostics["first_gpu_vram_timeline_sha256"],
+                            diagnostics["second_gpu_vram_timeline_sha256"])
         self.assertFalse(
             diagnostics["repeated_full_gpu_vram_snapshot_sequence_identical"])
         self.assertEqual(diagnostics["different_gpu_vram_snapshots_in_common_prefix"], 0)

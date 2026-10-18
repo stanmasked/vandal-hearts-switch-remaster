@@ -74,6 +74,9 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
         self.assertFalse(result["strict_gpu_timeline_match_required"])
         self.assertFalse(result["strict_gpu_timeline_match_verified"])
         self.assertTrue(result["repeated_full_gpu_vram_snapshot_sequence_identical"])
+        self.assertTrue(result["gpu_vram_timeline_commitments_identical"])
+        self.assertEqual(result["first_gpu_vram_timeline_sha256"],
+                         result["second_gpu_vram_timeline_sha256"])
         self.assertIsNone(result["first_different_gpu_snapshot_phase"])
         self.assertIsNone(result["first_different_gpu_snapshot_changed_pixels"])
         self.assertEqual(result["different_gpu_before_vram_snapshots"], 0)
@@ -146,6 +149,12 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not bit-exact"):
             two_live._require_bit_exact_gpu_timeline(
                 {**good, "gpu_vram_snapshots_compared": True})
+        with self.assertRaisesRegex(ValueError, "not bit-exact"):
+            two_live._require_bit_exact_gpu_timeline(
+                {**good, "second_gpu_vram_timeline_sha256": "0" * 64})
+        with self.assertRaisesRegex(ValueError, "not bit-exact"):
+            two_live._require_bit_exact_gpu_timeline(
+                {**good, "first_gpu_vram_timeline_sha256": "G" * 64})
 
     def test_strict_cli_flag_succeeds_with_two_real_synthetic_launches(self):
         cmd = [

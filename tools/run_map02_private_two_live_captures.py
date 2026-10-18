@@ -65,6 +65,17 @@ def _require_bit_exact_gpu_timeline(report):
     """
     if (type(report) is not dict
             or report.get("repeated_full_gpu_vram_snapshot_sequence_identical") is not True
+            or report.get("gpu_vram_timeline_commitments_identical") is not True
+            or type(report.get("first_gpu_vram_timeline_sha256")) is not str
+            or type(report.get("second_gpu_vram_timeline_sha256")) is not str
+            or len(report["first_gpu_vram_timeline_sha256"]) != 64
+            or len(report["second_gpu_vram_timeline_sha256"]) != 64
+            or any(c not in "0123456789abcdef"
+                   for c in report["first_gpu_vram_timeline_sha256"])
+            or any(c not in "0123456789abcdef"
+                   for c in report["second_gpu_vram_timeline_sha256"])
+            or report["first_gpu_vram_timeline_sha256"]
+               != report["second_gpu_vram_timeline_sha256"]
             or report.get("repeated_native_frame_pixels_identical") is not True
             or report.get("repeated_gpu_final_vram_identical") is not True
             or report.get("repeated_gpu_event_journal_identical") is not True

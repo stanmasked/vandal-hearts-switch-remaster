@@ -109,6 +109,13 @@ def _gpu_snapshot_differences(first_fd, second_fd, first_pairs,
     """
     first_count, second_count = 2 * first_pairs, 2 * second_pairs
     common = min(first_count, second_count)
+    # Domain-separated, fully ordered commitments for every native VRAM
+    # snapshot, including unmatched trailing events. Distinct from the
+    # JSONL event-log hash: the log can match while native pixels differ.
+    first_commit = hashlib.sha256(b"vh.map02.native-vram-timeline.v1\x00")
+    second_commit = hashlib.sha256(b"vh.map02.native-vram-timeline.v1\x00")
+    first_commit.update(first_count.to_bytes(4, "little"))
+    second_commit.update(second_count.to_bytes(4, "little"))
     changed = 0
     changed_before = 0
     changed_after = 0
@@ -121,10 +128,20 @@ def _gpu_snapshot_differences(first_fd, second_fd, first_pairs,
     divergence_reappeared = False
     divergence_transitions = 0
     previous_different = None
-    for step in range(common):
+    for step in range(max(first_count, second_count)):
         name = f"gpu-{step:04d}-vram.bin"
-        left, _ = _private_raw(first_fd, name)
-        right, _ = _private_raw(second_fd, name)
+        left = right = None
+        if step < first_count:
+            left, _ = _private_raw(first_fd, name)
+            first_commit.update(step.to_bytes(4, "little"))
+            first_commit.update(left)
+        if step < second_count:
+            right, _ = _private_raw(second_fd, name)
+            second_commit.update(step.to_bytes(4, "little"))
+            second_commit.update(right)
+        if step >= common:
+            check_inventories()
+            continue
         different_here = left != right
         if previous_different is not None and different_here != previous_different:
             divergence_transitions += 1
@@ -149,6 +166,10 @@ def _gpu_snapshot_differences(first_fd, second_fd, first_pairs,
     return {
         "first_gpu_vram_snapshot_count": first_count,
         "second_gpu_vram_snapshot_count": second_count,
+        "first_gpu_vram_timeline_sha256": first_commit.hexdigest(),
+        "second_gpu_vram_timeline_sha256": second_commit.hexdigest(),
+        "gpu_vram_timeline_commitments_identical":
+            first_commit.digest() == second_commit.digest(),
         "gpu_vram_snapshots_compared": common,
         "different_gpu_vram_snapshots_in_common_prefix": changed,
         "different_gpu_before_vram_snapshots": changed_before,
@@ -171,7 +192,8 @@ def _gpu_snapshot_differences(first_fd, second_fd, first_pairs,
         "first_different_gpu_snapshot_changed_scanlines": first_changed_scanlines,
         "first_different_gpu_snapshot_stp_bit_differences": first_changed_stp_bits,
         "repeated_full_gpu_vram_snapshot_sequence_identical":
-            first_count == second_count and changed == 0,
+            first_count == second_count and changed == 0
+            and first_commit.digest() == second_commit.digest(),
     }
 
 
