@@ -643,6 +643,7 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
             # Trace the actual primary Make compilation. It consumes the
             # sealed .i descriptors and emits the final audited objects.
             # No separate untraced Make pass or second object replay.
+            mapped_libraries = {}
             child_execs = kernel_witness.trace_make_children(
                 base + [
                     "VH_MAP02_PRIVATE_INPUT_LANG=cpp-output",
@@ -652,7 +653,9 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
                 ],
                 cwd=pc, env=clean_env, pass_fds=tuple(files.values()),
                 tools=runtime_objects["_resolved_tools"],
-                hashes=initial_compiler, timeout=180)
+                hashes=initial_compiler,
+                expected_libraries=runtime_objects["_resolved_files"],
+                mapped_receipt=mapped_libraries, timeout=180)
             if _compiler_evidence() != (compiler, initial_compiler):
                 raise ValueError("MAP02 compiler binaries changed during Make build")
             if _compiler_dynamic_evidence(compiler) != runtime_objects:
@@ -701,6 +704,10 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
         "kernel_tool_exec_images_match_sha256": True,
         "kernel_make_primary_children_seen": child_execs,
         "kernel_make_primary_executables_match_sha256": True,
+        "kernel_make_primary_mapped_library_count": mapped_libraries["count"],
+        "kernel_make_primary_mapped_library_set_sha256": mapped_libraries["sha256"],
+        "kernel_make_primary_mapped_library_roles": mapped_libraries["role_processes"],
+        "kernel_make_primary_mapped_libraries_match_sha256": True,
         "actual_make_children_kernel_attested": True,
         "separate_make_object_replay_performed": False,
         "system_header_count": system_headers["count"],

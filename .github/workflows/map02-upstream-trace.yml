@@ -310,6 +310,11 @@ jobs:
           assert all(report["kernel_make_primary_children_seen"][role] >= 1
                      for role in ("driver", "cc1", "as"))
           assert report["kernel_make_primary_executables_match_sha256"]
+          assert report["kernel_make_primary_mapped_library_count"] >= 1
+          assert len(report["kernel_make_primary_mapped_library_set_sha256"]) == 64
+          assert all(report["kernel_make_primary_mapped_library_roles"][role] >= 1
+                     for role in ("driver", "cc1", "as"))
+          assert report["kernel_make_primary_mapped_libraries_match_sha256"]
           assert not report["separate_make_object_replay_performed"]
           assert report["system_header_count"] >= 1
           assert len(report["system_header_set_sha256"]) == 64

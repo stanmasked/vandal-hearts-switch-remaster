@@ -17,10 +17,12 @@ import time
 PTRACEME = 0
 CONT = 7
 SETOPTIONS = 0x4200
-TRACE_OPTIONS = 2 | 4 | 8 | 16 | (1 << 20)
+TRACE_OPTIONS = 2 | 4 | 8 | 16 | 64 | (1 << 20)
 TRACE_EXEC_EVENT = 4
 LINUX_WAIT_ALL = 0x40000000
 MAX_TOOL_SIZE = 128 * 1024 * 1024
+TRACE_EXIT_EVENT = 6
+
 
 
 def _ptrace(request, pid, data=0):
@@ -60,7 +62,73 @@ def _executed_kernel_digest(pid, expected):
         os.close(fd)
 
 
-def trace_make_children(args, *, cwd, env, pass_fds, tools, hashes, timeout=180):
+
+def _mapped_shared_objects(map_text, expected):
+    """Verify file-backed ELF shared libraries recorded by Linux /proc/PID/maps.
+
+    Only mapped libraries are included, not every library in the ldd profile.
+    Both the inode from the kernel map and its file contents must match.
+    """
+    seen = {}
+    for line in map_text.splitlines():
+        columns = line.split(maxsplit=5)
+        if len(columns) < 6:
+            continue
+        address, access, offset, device, inode_text, name = columns
+        if ".so" not in Path(name).name and not Path(name).name.startswith("ld-linux"):
+            continue
+        if not name.startswith("/") or name.endswith(" (deleted)"):
+            raise ValueError("MAP02 compiler mapped library path invalid")
+        try:
+            major, minor = (int(x, 16) for x in device.split(":"))
+            inode = int(inode_text)
+        except (ValueError, TypeError) as exc:
+            raise ValueError("MAP02 compiler mapped library metadata invalid") from exc
+        if not inode:
+            raise ValueError("MAP02 compiler mapped library inode empty")
+        canonical = Path(name).resolve(strict=True)
+        if not canonical.is_file():
+            raise ValueError("MAP02 compiler mapped library is not regular")
+        fd = os.open(canonical, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+        try:
+            st = os.fstat(fd)
+            if (os.major(st.st_dev), os.minor(st.st_dev), st.st_ino) != (
+                    major, minor, inode):
+                raise ValueError("MAP02 compiler mapped library inode mismatch")
+            expected_digest = expected.get(str(canonical))
+            if expected_digest is None:
+                raise ValueError("MAP02 compiler mapped library unpinned")
+            if str(canonical) not in seen:
+                if not 0 < st.st_size <= MAX_TOOL_SIZE:
+                    raise ValueError("MAP02 compiler mapped library size invalid")
+                sha = hashlib.sha256()
+                total = 0
+                while True:
+                    chunk = os.read(fd, 1024 * 1024)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > MAX_TOOL_SIZE:
+                        raise ValueError("MAP02 compiler mapped library too large")
+                    sha.update(chunk)
+                if total != st.st_size or sha.hexdigest() != expected_digest:
+                    raise ValueError("MAP02 compiler mapped library SHA-256 mismatch")
+                seen[str(canonical)] = expected_digest
+        finally:
+            os.close(fd)
+    return seen
+
+
+def _observed_maps_receipt(libraries):
+    if not libraries:
+        raise ValueError("MAP02 compiler had no kernel observed library mappings")
+    raw = chr(10).join(k + " " + v for k, v in sorted(libraries.items()))
+    return {"count": len(libraries),
+            "sha256": hashlib.sha256(raw.encode("utf-8")).hexdigest()}
+
+
+def trace_make_children(args, *, cwd, env, pass_fds, tools, hashes,
+                        expected_libraries=None, mapped_receipt=None, timeout=180):
     """Run real Make under ptrace, reject mismatched GCC child exec inodes."""
     if set(tools) != {"driver", "cc1", "as"} or set(hashes) != set(tools):
         raise ValueError("MAP02 Make child witness tool inventory invalid")
@@ -72,7 +140,12 @@ def trace_make_children(args, *, cwd, env, pass_fds, tools, hashes, timeout=180)
         raise ValueError("MAP02 Make child witness executable must be absolute")
     if not 0 < timeout <= 240:
         raise ValueError("MAP02 Make child witness timeout invalid")
+    if (expected_libraries is None) != (mapped_receipt is None):
+        raise ValueError("MAP02 compiler mapped witness parameters inconsistent")
     counts = {name: 0 for name in selected}
+    pid_roles = {}
+    roles_with_maps = {name: 0 for name in selected}
+    all_mapped = {}
     with tempfile.TemporaryFile(mode="w+b") as output:
         leader = os.fork()
         if leader == 0:
@@ -112,6 +185,22 @@ def trace_make_children(args, *, cwd, env, pass_fds, tools, hashes, timeout=180)
                         raise ValueError("MAP02 Make child witness root exec failed")
                     _ptrace(SETOPTIONS, leader, TRACE_OPTIONS)
                     root_started = True
+                if event == TRACE_EXIT_EVENT and observed in pid_roles and (
+                        expected_libraries is not None):
+                    role = pid_roles[observed]
+                    with open("/proc/" + str(observed) + "/maps",
+                              encoding="utf-8") as stream:
+                        snapshot = stream.read(2 * 1024 * 1024 + 1)
+                    if len(snapshot) > 2 * 1024 * 1024:
+                        raise ValueError("MAP02 compiler maps snapshot too large")
+                    mappings = _mapped_shared_objects(snapshot, expected_libraries)
+                    if not mappings:
+                        raise ValueError("MAP02 compiler process had no shared library mappings")
+                    for path, sha in mappings.items():
+                        if path in all_mapped and all_mapped[path] != sha:
+                            raise ValueError("MAP02 compiler mapped library changed across children")
+                        all_mapped[path] = sha
+                    roles_with_maps[role] += 1
                 if event == TRACE_EXEC_EVENT:
                     executable = Path(os.readlink(
                         "/proc/" + str(observed) + "/exe"))
@@ -122,6 +211,7 @@ def trace_make_children(args, *, cwd, env, pass_fds, tools, hashes, timeout=180)
                             if _executed_kernel_digest(observed, chosen) != hashes[role]:
                                 raise ValueError("MAP02 Make child executable hash mismatch")
                             counts[role] += 1
+                            pid_roles[observed] = role
                             break
                 delivered = (signum if event == 0 and signum not in
                              (signal.SIGTRAP, signal.SIGSTOP) else 0)
@@ -131,6 +221,11 @@ def trace_make_children(args, *, cwd, env, pass_fds, tools, hashes, timeout=180)
             for role, count in counts.items():
                 if count < 1:
                     raise ValueError("MAP02 Make child kernel exec witness missing: " + role)
+            if expected_libraries is not None:
+                if not all(roles_with_maps.values()):
+                    raise ValueError("MAP02 Make child library maps witness missing")
+                mapped_receipt.update(_observed_maps_receipt(all_mapped))
+                mapped_receipt["role_processes"] = roles_with_maps
             return counts
         finally:
             if live:

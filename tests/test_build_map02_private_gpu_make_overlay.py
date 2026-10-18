@@ -96,6 +96,11 @@ class SealedMakeOverlayTests(unittest.TestCase):
         self.assertTrue(all(result["kernel_make_primary_children_seen"][role] >= 1
                             for role in ("driver", "cc1", "as")))
         self.assertTrue(result["kernel_make_primary_executables_match_sha256"])
+        self.assertGreaterEqual(result["kernel_make_primary_mapped_library_count"], 1)
+        self.assertEqual(len(result["kernel_make_primary_mapped_library_set_sha256"]), 64)
+        self.assertTrue(all(result["kernel_make_primary_mapped_library_roles"][role] >= 1
+                            for role in ("driver", "cc1", "as")))
+        self.assertTrue(result["kernel_make_primary_mapped_libraries_match_sha256"])
         self.assertFalse(result["separate_make_object_replay_performed"])
         self.assertGreaterEqual(result["system_header_count"], 1)
         self.assertEqual(len(result["system_header_set_sha256"]), 64)
@@ -469,6 +474,56 @@ class SealedMakeOverlayTests(unittest.TestCase):
             "321: initialize program: /usr/bin/gcc\n")
         with self.assertRaisesRegex(ValueError, "log name invalid"):
             sealed._runtime_loader_evidence(witness, "/usr/bin/gcc", {})
+
+    def test_kernel_mapped_library_accepts_real_linux_inode(self):
+        from tools.map02_kernel_make_witness import _mapped_shared_objects
+        import os
+        library = next((Path(x) for x in
+                        sealed._compiler_dynamic_evidence(
+                            sealed._compiler_evidence()[0])["_resolved_files"]
+                        if ".so" in Path(x).name), None)
+        self.assertIsNotNone(library)
+        st = library.stat()
+        digest = hashlib.sha256(library.read_bytes()).hexdigest()
+        text = ("7ff00000-7ff10000 r-xp 00000000 "
+                + format(os.major(st.st_dev), "02x") + ":"
+                + format(os.minor(st.st_dev), "02x") + " "
+                + str(st.st_ino) + " " + str(library) + "\\n")
+        self.assertEqual(_mapped_shared_objects(text, {str(library): digest}),
+                         {str(library): digest})
+
+    def test_kernel_mapped_library_refuses_digest_mismatch(self):
+        from tools.map02_kernel_make_witness import _mapped_shared_objects
+        import os
+        library = next((Path(x) for x in
+                        sealed._compiler_dynamic_evidence(
+                            sealed._compiler_evidence()[0])["_resolved_files"]
+                        if ".so" in Path(x).name), None)
+        self.assertIsNotNone(library)
+        st = library.stat()
+        text = ("7ff00000-7ff10000 r-xp 00000000 "
+                + format(os.major(st.st_dev), "02x") + ":"
+                + format(os.minor(st.st_dev), "02x") + " "
+                + str(st.st_ino) + " " + str(library) + "\\n")
+        with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
+            _mapped_shared_objects(text, {str(library): "0" * 64})
+
+    def test_kernel_mapped_library_refuses_wrong_inode(self):
+        from tools.map02_kernel_make_witness import _mapped_shared_objects
+        import os
+        library = next((Path(x) for x in
+                        sealed._compiler_dynamic_evidence(
+                            sealed._compiler_evidence()[0])["_resolved_files"]
+                        if ".so" in Path(x).name), None)
+        self.assertIsNotNone(library)
+        st = library.stat()
+        text = ("7ff00000-7ff10000 r-xp 00000000 "
+                + format(os.major(st.st_dev), "02x") + ":"
+                + format(os.minor(st.st_dev), "02x") + " "
+                + str(st.st_ino + 1) + " " + str(library) + "\\n")
+        with self.assertRaisesRegex(ValueError, "inode mismatch"):
+            _mapped_shared_objects(
+                text, {str(library): hashlib.sha256(library.read_bytes()).hexdigest()})
 
     def test_primary_make_is_traced_not_run_through_untraced_subprocess(self):
         actual = sealed.subprocess.run
