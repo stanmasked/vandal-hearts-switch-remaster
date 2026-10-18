@@ -161,13 +161,15 @@ def capture(executable, output_dir, *, frame, width, height,
         )
         observe_live_elf_image(proc.pid, fd)
         journal_child_fd_observed = False
+        observed_journal_inode = None
         if journal_fd is not None:
             # The joint C recorder keeps the JSONL FILE* writable and
             # open before DrawOTag waits for the terminal stdout gate.
             # Independently inspect the REAL child /proc fd table before
             # sending that release, rather than trusting an env label.
-            journal_child_fd_observed = observe_child_gpu_journal_fd(
+            observed_journal_inode = observe_child_gpu_journal_fd(
                 proc.pid, journal_fd, proc, deadline)
+            journal_child_fd_observed = True
             observe_live_elf_image(proc.pid, fd)
         proc.stdin.write(b"\x01")
         proc.stdin.close()
@@ -190,8 +192,18 @@ def capture(executable, output_dir, *, frame, width, height,
         pixels = data[HEADER.size:]
         journal = None
         if journal_fd is not None:
+            from tools.verify_map02_native_gpu_capture import LOG
+            def check_kernel_observed_journal_inode():
+                info = os.stat(LOG, dir_fd=journal_fd,
+                               follow_symlinks=False)
+                if ((info.st_dev, info.st_ino) != observed_journal_inode
+                        or not stat.S_ISREG(info.st_mode)):
+                    raise ValueError(
+                        "MAP02 GPU journal inode changed after child fd observation")
+            check_kernel_observed_journal_inode()
             journal = audit_joint_gpu(journal_path, frame=frame,
                                       final_pixels=pixels)
+            check_kernel_observed_journal_inode()
             for info in (os.fstat(journal_fd),
                          os.stat(journal_path, follow_symlinks=False)):
                 if (info.st_dev, info.st_ino) != (jstat.st_dev, jstat.st_ino):
