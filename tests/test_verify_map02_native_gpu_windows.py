@@ -246,6 +246,45 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
                 self.verify()
         self.assertTrue(extra.is_file())
 
+    def test_rejects_non_object_window_events_without_type_error(self):
+        log = self.window / "gpu-native-events.jsonl"
+        baseline = log.read_bytes().splitlines(keepends=True)
+        for malformed in (None, [], 23, "not a native GPU event"):
+            with self.subTest(event=malformed):
+                log.write_bytes(jsonline(malformed) + b"".join(baseline[1:]))
+                with self.assertRaisesRegex(ValueError, "not an object"):
+                    self.verify()
+        log.write_bytes(b"".join(baseline))
+        self.assertEqual(self.verify()["globally_ordered_native_gpu_events"], 4)
+
+    def test_rejects_unhashable_and_noncanonical_snapshot_names(self):
+        log = self.window / "gpu-native-events.jsonl"
+        baseline = log.read_bytes().splitlines(keepends=True)
+        for malformed in ([], {"name": "gpu-0000-vram.bin"},
+                          "../gpu-0000-vram.bin", "gpu-0001-vram.bin",
+                          17, True):
+            with self.subTest(snapshot=malformed):
+                event = dict(self.events[0], snapshot=malformed)
+                log.write_bytes(jsonline(event) + b"".join(baseline[1:]))
+                with self.assertRaisesRegex(ValueError, "snapshot name"):
+                    self.verify()
+        log.write_bytes(b"".join(baseline))
+        self.assertEqual(self.verify()["recorded_windows"], 1)
+
+    def test_rejects_unhashable_and_noncanonical_upload_names(self):
+        log = self.window / "gpu-native-events.jsonl"
+        baseline = log.read_bytes().splitlines(keepends=True)
+        for malformed in ([], {"upload": "gpu-0000-upload.bin"},
+                          "../gpu-0000-upload.bin", "gpu-0001-upload.bin",
+                          None, 12, True):
+            with self.subTest(upload=malformed):
+                event = dict(self.events[0], upload=malformed)
+                log.write_bytes(jsonline(event) + b"".join(baseline[1:]))
+                with self.assertRaisesRegex(ValueError, "upload name"):
+                    self.verify()
+        log.write_bytes(b"".join(baseline))
+        self.assertEqual(self.verify()["recorded_windows"], 1)
+
     def test_root_and_windows_must_be_private_directories(self):
         self.window.chmod(0o755)
         with self.assertRaises(ValueError):
