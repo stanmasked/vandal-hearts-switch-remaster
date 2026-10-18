@@ -207,12 +207,12 @@ int main(void) {
             const VhAudioListeningMarks saved_marks=marks;
             const uint64_t prior_calls=d.submitted;
             const uint64_t prior_hash=d.returned_hash;
-            const uint64_t prior_resampled=resampler.input_frames;
+            const VhAudioResample prior_resampler=resampler;
+            const VhAudioResample prior_oracle_resampler=oracle_resampler;
             const int old_cursor=spu.reverb.cursor;
             const int16_t wet_tail=spu.reverb.work[0];
             const int oracle_cursor=oracle_spu.reverb.cursor;
             const int16_t oracle_tail=oracle_spu.reverb.work[0];
-            const uint64_t oracle_input=oracle_resampler.input_frames;
             const uint64_t oracle_blocks=oracle_seq.blocks_advanced;
             assert(ops.stop(ops.context)==0);
             assert(vh_audio_output_resume_recover(
@@ -222,8 +222,13 @@ int main(void) {
             assert(!memcmp(&seams,&saved_seams,sizeof saved_seams));
             assert(!memcmp(&joint,&saved_joint,sizeof saved_joint));
             assert(!memcmp(&marks,&saved_marks,sizeof saved_marks));
-            assert(resampler.input_frames==prior_resampled);
-            assert(oracle_resampler.input_frames==oracle_input);
+            /* A forced audout service restart cannot consume input,
+             * reset the 48-kHz phase, or alter the cross-block
+             * interpolation history on either rendering pipeline. */
+            assert(!memcmp(&resampler,&prior_resampler,
+                           sizeof resampler));
+            assert(!memcmp(&oracle_resampler,&prior_oracle_resampler,
+                           sizeof oracle_resampler));
             assert(oracle_seq.blocks_advanced==oracle_blocks);
             assert(vh_native_seq_switch_scene(
                 &seq,song,sizeof song,&spu,
@@ -281,6 +286,26 @@ int main(void) {
         assert(memcmp(dst,oracle_dst,frames*2u*sizeof(int16_t))==0);
         output_frames+=frames;
         oracle_frames+=reference_frames;
+        /* Derive the precise 44.1-to-48 kHz sample count directly
+         * from the absolute 44.1-kHz input frame index, not from the
+         * resampler's own next_output_tick or accumulated page sizes.
+         * The final fractional source frame has no future sample yet,
+         * so no fabricated interpolation frame may be emitted. */
+        const uint64_t source_frames=
+            (uint64_t)(page+1u)*VH_AUDIO_BLOCK_FRAMES;
+        const uint64_t expected_output_frames=
+            ((source_frames-1u)*VH_NATIVE_AUDOUT_RATE)/
+            VH_AUDIO_SAMPLE_RATE+1u;
+        assert(resampler.input_frames==source_frames);
+        assert(oracle_resampler.input_frames==source_frames);
+        assert(output_frames==expected_output_frames);
+        assert(oracle_frames==expected_output_frames);
+        assert(resampler.next_output_tick==
+               expected_output_frames*VH_AUDIO_SAMPLE_RATE);
+        assert(oracle_resampler.next_output_tick==
+               expected_output_frames*VH_AUDIO_SAMPLE_RATE);
+        assert(!memcmp(&resampler,&oracle_resampler,
+                       sizeof resampler));
         const uint64_t hash=hash_pcm(dst,frames);
         const uint64_t ref_hash=hash_pcm(oracle_dst,reference_frames);
         assert(hash==ref_hash);
@@ -298,7 +323,7 @@ int main(void) {
         }
         oracle_last_l=oracle_dst[2u*(reference_frames-1u)];
         oracle_last_r=oracle_dst[2u*(reference_frames-1u)+1u];
-        const uint64_t old_input=resampler.input_frames;
+        const VhAudioResample before_submit=resampler;
         const uint64_t old_frames=spu.frames_rendered;
         const uint64_t old_notes=seq.note_ons;
         const VhAudioSubmitTiming before=d.timing;
@@ -323,8 +348,9 @@ int main(void) {
                (unsigned)(page>=5u));
         assert(hash_pcm(dst,frames)==hash);
         assert(memcmp(dst,oracle_dst,frames*2u*sizeof(int16_t))==0);
-        assert(resampler.input_frames==old_input &&
-               spu.frames_rendered==old_frames &&
+        assert(!memcmp(&resampler,&before_submit,
+                       sizeof resampler));
+        assert(spu.frames_rendered==old_frames &&
                seq.note_ons==old_notes);
         assert(vh_audio_returned_page_telemetry_record(
             &waits,&seams,&joint,&marks,dst,frames,boundary,
