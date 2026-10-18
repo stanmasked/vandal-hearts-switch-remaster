@@ -21,7 +21,8 @@ import tools.verify_map02_cycle_cd_gpu_join as cycle_module
 from tools.publish_map02_cd_bound_witness import MANIFEST
 from tools.verify_map02_window_scoped_join import CD_READ
 from tools.verify_map02_cycle_cd_gpu_join import (
-    CYCLE_RECEIPT, CYCLE_SCHEMA, SCHEMA, verify_cycle_cd_gpu_join,
+    CYCLE_RECEIPT, CYCLE_SCHEMA, SCHEMA, _cycle_cd_pair,
+    verify_cycle_cd_gpu_join,
 )
 
 
@@ -99,6 +100,30 @@ class CycleCdGpuJoinTests(unittest.TestCase):
         self.assertFalse(result["physical_ps1_equivalence_proven"])
         self.assertNotIn(self.nonce, json.dumps(result))
         self.mock.assert_called_once()
+
+    def test_prepublication_cycle_cd_pair_matches_both_original_crc_fields(self):
+        proof = _cycle_cd_pair(self.scoped, self.cycle, 7, self.digest)
+        self.assertEqual(proof[0], (self.cycle / CYCLE_RECEIPT).read_bytes())
+        self.assertEqual(proof[2], self.cd_raw)
+        self.assertEqual(len(proof[1]), 8)
+        self.assertEqual(len(proof[3]), 8)
+        self.assertEqual(
+            _cycle_cd_pair(self.scoped, self.cycle, 7, self.digest), proof)
+        self.mock.assert_not_called()  # no costly retail-image audit yet
+
+    def test_prepublication_cycle_cd_pair_rejects_crc_and_session_mismatch(self):
+        with self.assertRaisesRegex(ValueError, "cycle nonce differs"):
+            _cycle_cd_pair(self.scoped, self.cycle, 7, "f" * 64)
+        for key in ("raw_user_crc32", "returned_user_crc32", "capture_session"):
+            with self.subTest(key=key):
+                record = json.loads(self.cd_raw)
+                record[key] = ("0" * 8 if key.endswith("crc32") else "cd" * 16)
+                path = self.scoped / CD_READ
+                path.write_bytes((json.dumps(record, sort_keys=True) + "\n").encode())
+                with self.assertRaisesRegex(ValueError, "CRC32 and original CdRead receipt differ"):
+                    _cycle_cd_pair(self.scoped, self.cycle, 7, self.digest)
+                path.write_bytes(self.cd_raw)
+        self.mock.assert_not_called()
 
     def test_wrong_frame_or_session_fails_before_expensive_recheck(self):
         self.receipt["gpu_draw_frame"] = 8
