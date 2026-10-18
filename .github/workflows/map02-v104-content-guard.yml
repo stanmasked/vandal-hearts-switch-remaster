@@ -396,6 +396,7 @@ jobs:
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
           python3 -m remaster.tools.apply_map02_v164_guest_mips_halo upstream-pcsx
           grep -F 'VH164_GUEST_MIPS_UNAI_VRAM_PASS' upstream-pcsx/frontend/main.c
+          grep -F 'VH164_MIXED_PROVENANCE_REFUSED' upstream-pcsx/frontend/main.c
           grep -F 'vh164_check_mips_halo' upstream-pcsx/frontend/main.c
           grep -F 'VH163_HOST_ONLY_UNAI_VRAM_RECT_PASS' upstream-pcsx/frontend/main.c
           grep -F 'vh162_note_gpu_parse(gpu, data, pos, count, cmd)' upstream-pcsx/plugins/gpulib/gpu.c
