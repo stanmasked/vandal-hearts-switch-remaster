@@ -116,7 +116,7 @@ def run(compiler):
         for mode in ("overflow","empty"):
             output=create_dir(mode)
             invoke(mode,output)
-            if (output/"vh147-original-mips-events.jsonl").exists() or
+            if ((output/"vh147-original-mips-events.jsonl").exists() or
                     (output/".vh147-private-mips-stage.jsonl").exists() or
                     (output/"vh144-run-challenge.hex").exists()):
                 raise Refused("v147 incomplete/overflow trace published")
