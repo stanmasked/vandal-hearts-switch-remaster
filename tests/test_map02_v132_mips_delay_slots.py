@@ -38,7 +38,7 @@ class MipsDelaySlotSafeCandidates(unittest.TestCase):
         self.assertEqual(now["dma2_chcr"],1)
         self.assertEqual(now["dma2_linked_list_chcr_literal"],1)
         self.assertEqual(metadata["constant_proven_sw_in_delay_slots"],1)
-        self.assertEqual(metadata["likely_conditional_sw_in_delay_slots"],0)
+        self.assertEqual(metadata["unsupported_mips_ii_branch_likely_opcode_sites"],0)
         self.assertEqual(metadata["control_flow_delay_slots"],1)
 
     def test_regular_mips_i_conditional_branch_has_a_real_slot(self):
