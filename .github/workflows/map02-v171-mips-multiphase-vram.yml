@@ -1,0 +1,33 @@
+name: MAP02 v171 source-bound four MIPS GPU phases and 2380 VRAM pixels
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v171-mips-multiphase-vram.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v171_mips_multiphase_vram.py'
+      - 'tests/test_map02_v171_mips_multiphase_vram.py'
+      - 'tools/make_map02_v77_gpu_multiphase_exe.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  guest-multiphase:
+    name: exact native guest MMIO GP0 GP1 per MIPS phase (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile actual per-phase GP0/GP1 MMIO provenance negative tests
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v171_mips_multiphase_vram.py tests/test_map02_v171_mips_multiphase_vram.py
+          python3 -m unittest discover -s tests -p 'test_map02_v171_mips_multiphase_vram.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v77_gpu_multiphase.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v170_mips_ft4_gpu_state.py' -v
+          echo 'VH171_COMPILED_FOUR_PHASES_PASS phases=4 gp0_words=72 gp1_writes=3 actual_vblank_asserted=0 original_retail_executed=0'
