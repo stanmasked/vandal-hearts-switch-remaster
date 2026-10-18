@@ -33,9 +33,25 @@ parec --device=vh_nexium_capture.monitor --rate=48000 \
   --channels=2 --format=s16le --raw > "$SCENE_PCM" \
   2> "$output/scene-parec.log" &
 recorder=$!
+# Host-only recorder stop lifecycle. Byte lengths are buffered file snapshots,
+# never sample-exact timestamps or proof that the guest audio has stopped.
+SCENE_RECORDER_STOP="$output/scene-recorder-stop.csv"
 cleanup() {
-  kill -INT "$recorder" 2>/dev/null || true
+  local pre_bytes pre_ms post_bytes post_ms signal_success
+  pre_bytes="$(stat -c %s "$SCENE_PCM")"
+  pre_ms="$(date +%s%3N)"
+  signal_success=0
+  if kill -INT "$recorder" 2>/dev/null; then
+    signal_success=1
+  fi
   wait "$recorder" 2>/dev/null || true
+  post_bytes="$(stat -c %s "$SCENE_PCM")"
+  post_ms="$(date +%s%3N)"
+  {
+    printf 'event,pcm_bytes,host_epoch_ms,signal_success\n'
+    printf 'before_sigint,%s,%s,%s\n' "$pre_bytes" "$pre_ms" "$signal_success"
+    printf 'after_wait,%s,%s,%s\n' "$post_bytes" "$post_ms" "$signal_success"
+  } > "$SCENE_RECORDER_STOP"
 }
 trap cleanup EXIT
 sleep 1
