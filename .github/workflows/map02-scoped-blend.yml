@@ -25,6 +25,10 @@ on:
       - 'tests/test_verify_map02_native_gpu_windows.py'
       - 'tools/export_map02_native_vram_preview.py'
       - 'tests/test_export_map02_native_vram_preview.py'
+      - 'tools/verify_map02_pc_present_rgb24.py'
+      - 'tests/test_verify_map02_pc_present_rgb24.py'
+      - 'tools/check_map02_pc_present_rgb24_source.py'
+      - 'tests/test_check_map02_pc_present_rgb24_source.py'
       - 'docs/MAP02_NATIVE_VRAM_PREVIEW.md'
       - 'tools/verify_map02_source_native_windows.py'
       - 'tools/verify_map02_window_scoped_join.py'
@@ -131,6 +135,10 @@ on:
       - 'tests/test_verify_map02_native_gpu_windows.py'
       - 'tools/export_map02_native_vram_preview.py'
       - 'tests/test_export_map02_native_vram_preview.py'
+      - 'tools/verify_map02_pc_present_rgb24.py'
+      - 'tests/test_verify_map02_pc_present_rgb24.py'
+      - 'tools/check_map02_pc_present_rgb24_source.py'
+      - 'tests/test_check_map02_pc_present_rgb24_source.py'
       - 'docs/MAP02_NATIVE_VRAM_PREVIEW.md'
       - 'tools/verify_map02_source_native_windows.py'
       - 'tools/verify_map02_window_scoped_join.py'
@@ -249,6 +257,8 @@ jobs:
             tests.test_verify_map02_gpu_capture_receipt \
             tests.test_verify_map02_native_gpu_windows \
             tests.test_export_map02_native_vram_preview \
+            tests.test_verify_map02_pc_present_rgb24 \
+            tests.test_check_map02_pc_present_rgb24_source \
             tests.test_map02_source_native_windows \
             tests.test_verify_map02_window_scoped_join \
             tests.test_publish_map02_window_scoped_witness \
@@ -282,6 +292,8 @@ jobs:
       - name: Confirm original US MAP02 CDF sector range from pinned core CD table
         run: |
           python3 -c 'from pathlib import Path; from tools.check_map02_owned_disc_extent import extract_layout; p=Path("upstream-pc/src/core/cd.c"); assert extract_layout(p.read_text()) == (0x1bcc, 12); print("Original MAP02 CDF_M_MAP02_PRS LBA 0x1bcc, 12 raw CD sectors")'
+      - name: Fail closed on PC present BGR555-to-bottom-up-RGB24 source drift
+        run: python3 -m tools.check_map02_pc_present_rgb24_source upstream-pc
       - name: Confirm original PC GPU/GTE source blobs against pinned reference
         run: |
           python3 -c 'from pathlib import Path; from tools.map02_local_capture_handoff import verify_pinned_upstream; verify_pinned_upstream(Path("upstream-pc")); print("Pinned original PC GPU/GTE/Makefile blobs verified")'
