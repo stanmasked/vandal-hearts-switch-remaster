@@ -21,7 +21,7 @@ import tools.verify_map02_cycle_cd_gpu_join as cycle_module
 from tools.publish_map02_cd_bound_witness import MANIFEST
 from tools.verify_map02_window_scoped_join import CD_READ
 from tools.verify_map02_cycle_cd_gpu_join import (
-    CYCLE_RECEIPT, CYCLE_SCHEMA, SCHEMA, _cycle_cd_pair,
+    CYCLE_RECEIPT, CYCLE_CLEAN_EXIT, CYCLE_SCHEMA, SCHEMA, _cycle_cd_pair,
     verify_cycle_cd_gpu_join,
 )
 
@@ -82,10 +82,12 @@ class CycleCdGpuJoinTests(unittest.TestCase):
         self.addCleanup(self.verifier.stop)
 
     def write_cycle(self):
-        path = self.cycle / CYCLE_RECEIPT
-        path.write_bytes((json.dumps(self.receipt, sort_keys=True,
-                                     separators=(",", ":")) + "\n").encode())
-        path.chmod(0o600)
+        raw = (json.dumps(self.receipt, sort_keys=True,
+                          separators=(",", ":")) + "\n").encode()
+        for name in (CYCLE_RECEIPT, CYCLE_CLEAN_EXIT):
+            path = self.cycle / name
+            path.write_bytes(raw)
+            path.chmod(0o600)
 
     def check(self):
         return verify_cycle_cd_gpu_join(
@@ -107,11 +109,42 @@ class CycleCdGpuJoinTests(unittest.TestCase):
         self.assertNotIn(self.nonce, json.dumps(result))
         self.mock.assert_called_once()
 
+    def test_missing_or_nonmatching_normal_exit_seal_rejected(self):
+        seal = self.cycle / CYCLE_CLEAN_EXIT
+        original = seal.read_bytes()
+        seal.unlink()
+        with self.assertRaisesRegex(ValueError, "normal-exit seal"):
+            self.check()
+        self.assertTrue((self.cycle / CYCLE_RECEIPT).is_file())
+        seal.write_bytes(original + b" ")
+        seal.chmod(0o600)
+        with self.assertRaisesRegex(ValueError, "normal-exit seal and receipt differ"):
+            self.check()
+        seal.write_bytes(original)
+        seal.chmod(0o600)
+        self.assertEqual(self.check()["schema"], SCHEMA)
+
+    def test_seal_must_be_independent_owner_private_inode(self):
+        seal = self.cycle / CYCLE_CLEAN_EXIT
+        receipt = self.cycle / CYCLE_RECEIPT
+        seal.unlink()
+        os.link(receipt, seal)
+        with self.assertRaisesRegex(ValueError, "owner-only 0600"):
+            self.check()
+        seal.unlink()
+        seal.write_bytes(receipt.read_bytes())
+        seal.chmod(0o644)
+        with self.assertRaisesRegex(ValueError, "0600"):
+            self.check()
+        seal.chmod(0o600)
+
     def test_prepublication_cycle_cd_pair_matches_both_original_crc_fields(self):
         proof = _cycle_cd_pair(self.scoped, self.cycle, 7, self.digest)
         self.assertEqual(proof[0], (self.cycle / CYCLE_RECEIPT).read_bytes())
         self.assertEqual(proof[2], self.cd_raw)
-        self.assertEqual(len(proof[1]), 8)
+        self.assertEqual(len(proof[1]), 2)
+        self.assertEqual(len(proof[1][0]), 8)
+        self.assertEqual(len(proof[1][1]), 8)
         self.assertEqual(len(proof[3]), 8)
         self.assertEqual(
             _cycle_cd_pair(self.scoped, self.cycle, 7, self.digest), proof)
@@ -224,7 +257,7 @@ class CycleCdGpuJoinTests(unittest.TestCase):
                     self.check()
         file.write_bytes(original)
         (self.cycle / "unlisted.json").write_text("{}")
-        with self.assertRaisesRegex(ValueError, "exactly one"):
+        with self.assertRaisesRegex(ValueError, "receipt and normal-exit seal"):
             self.check()
         self.mock.assert_not_called()
 
@@ -285,7 +318,8 @@ class CycleCdGpuJoinTests(unittest.TestCase):
     def test_identical_byte_inode_swap_during_full_recheck_is_rejected(self):
         for folder, filename in (
                 (self.source, MANIFEST), (self.scoped, CD_READ),
-                (self.cycle, CYCLE_RECEIPT)):
+                (self.cycle, CYCLE_RECEIPT),
+                (self.cycle, CYCLE_CLEAN_EXIT)):
             with self.subTest(filename=filename):
                 target = folder / filename
                 original = target.read_bytes()
@@ -390,9 +424,11 @@ class CycleCdGpuSyntheticIntegrationTests(unittest.TestCase):
             "original_map02_rendering_proven": False,
             "physical_ps1_equivalence_proven": False,
         }
-        path = cycle / CYCLE_RECEIPT
-        path.write_bytes((json.dumps(event, sort_keys=True) + "\n").encode())
-        path.chmod(0o600)
+        raw = (json.dumps(event, sort_keys=True) + "\n").encode()
+        for name in (CYCLE_RECEIPT, CYCLE_CLEAN_EXIT):
+            path = cycle / name
+            path.write_bytes(raw)
+            path.chmod(0o600)
         result = verify_cycle_cd_gpu_join(
             fixture.source, fixture.native, fixture.scoped,
             fixture.handoff, cycle, fixture.image, fixture.upstream,
