@@ -110,23 +110,44 @@ def _gpu_snapshot_differences(first_fd, second_fd, first_pairs,
     first_count, second_count = 2 * first_pairs, 2 * second_pairs
     common = min(first_count, second_count)
     changed = 0
+    changed_before = 0
+    changed_after = 0
     first_change = None
+    first_changed_pixels = None
+    first_changed_scanlines = None
+    first_changed_stp_bits = None
     for step in range(common):
         name = f"gpu-{step:04d}-vram.bin"
         left, _ = _private_raw(first_fd, name)
         right, _ = _private_raw(second_fd, name)
         if left != right:
             changed += 1
+            if step % 2 == 0:
+                changed_before += 1
+            else:
+                changed_after += 1
             if first_change is None:
                 first_change = step
+                first_changed_pixels, first_changed_scanlines, first_changed_stp_bits = (
+                    _private_difference(left, right))
         check_inventories()
     return {
         "first_gpu_vram_snapshot_count": first_count,
         "second_gpu_vram_snapshot_count": second_count,
         "gpu_vram_snapshots_compared": common,
         "different_gpu_vram_snapshots_in_common_prefix": changed,
+        "different_gpu_before_vram_snapshots": changed_before,
+        "different_gpu_after_vram_snapshots": changed_after,
         "unmatched_gpu_vram_snapshots": abs(first_count - second_count),
         "first_different_gpu_vram_snapshot_index": first_change,
+        "first_different_gpu_draw_pair_index": (
+            None if first_change is None else first_change // 2),
+        "first_different_gpu_snapshot_phase": (
+            None if first_change is None else (
+                "before" if first_change % 2 == 0 else "after")),
+        "first_different_gpu_snapshot_changed_pixels": first_changed_pixels,
+        "first_different_gpu_snapshot_changed_scanlines": first_changed_scanlines,
+        "first_different_gpu_snapshot_stp_bit_differences": first_changed_stp_bits,
         "repeated_full_gpu_vram_snapshot_sequence_identical":
             first_count == second_count and changed == 0,
     }

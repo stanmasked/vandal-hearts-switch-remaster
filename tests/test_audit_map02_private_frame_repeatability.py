@@ -40,7 +40,9 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
         updated = updated.replace(
             before,
             'if (argc > 1 && !strcmp(argv[1], "alternate-before")) '
-            'native_vram[0][0] = 0x1234;\n        ' + before)
+            'native_vram[0][0] = 0x1234;\n        '
+            'if (argc > 1 && !strcmp(argv[1], "alternate-before-stp")) '
+            'native_vram[0][0] = 0x8000;\n        ' + before)
         source.write_text(updated, encoding="utf-8")
         cc = os.environ.get("CC", "cc")
         if not shutil.which(cc):
@@ -89,7 +91,12 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
         self.assertEqual(result["second_gpu_vram_snapshot_count"], 2)
         self.assertEqual(result["gpu_vram_snapshots_compared"], 2)
         self.assertEqual(result["different_gpu_vram_snapshots_in_common_prefix"], 0)
+        self.assertEqual(result["different_gpu_before_vram_snapshots"], 0)
+        self.assertEqual(result["different_gpu_after_vram_snapshots"], 0)
         self.assertIsNone(result["first_different_gpu_vram_snapshot_index"])
+        self.assertIsNone(result["first_different_gpu_draw_pair_index"])
+        self.assertIsNone(result["first_different_gpu_snapshot_phase"])
+        self.assertIsNone(result["first_different_gpu_snapshot_changed_pixels"])
         self.assertEqual(result["different_bgr555_pixels"], 0)
         self.assertEqual(result["first_gpu_pairs_verified"], 1)
         self.assertFalse(result["ps1_hardware_pixel_equivalence_verified"])
@@ -114,6 +121,13 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
         self.assertFalse(out["repeated_gpu_final_vram_identical"])
         self.assertEqual(out["different_gpu_vram_snapshots_in_common_prefix"], 1)
         self.assertEqual(out["first_different_gpu_vram_snapshot_index"], 1)
+        self.assertEqual(out["first_different_gpu_draw_pair_index"], 0)
+        self.assertEqual(out["first_different_gpu_snapshot_phase"], "after")
+        self.assertEqual(out["first_different_gpu_snapshot_changed_pixels"], 1)
+        self.assertEqual(out["first_different_gpu_snapshot_changed_scanlines"], 1)
+        self.assertEqual(out["first_different_gpu_snapshot_stp_bit_differences"], 0)
+        self.assertEqual(out["different_gpu_before_vram_snapshots"], 0)
+        self.assertEqual(out["different_gpu_after_vram_snapshots"], 1)
         self.assertFalse(out["repeated_full_gpu_vram_snapshot_sequence_identical"])
         # Event JSONL captures draw order and attributes, but NOT raw
         # post-draw VRAM pixels. The same two events can write different
@@ -137,7 +151,32 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
         self.assertEqual(result["gpu_vram_snapshots_compared"], 2)
         self.assertEqual(result["different_gpu_vram_snapshots_in_common_prefix"], 1)
         self.assertEqual(result["first_different_gpu_vram_snapshot_index"], 0)
+        self.assertEqual(result["first_different_gpu_draw_pair_index"], 0)
+        self.assertEqual(result["first_different_gpu_snapshot_phase"], "before")
+        self.assertEqual(result["first_different_gpu_snapshot_changed_pixels"], 1)
+        self.assertEqual(result["first_different_gpu_snapshot_changed_scanlines"], 1)
+        self.assertEqual(result["first_different_gpu_snapshot_stp_bit_differences"], 0)
+        self.assertEqual(result["different_gpu_before_vram_snapshots"], 1)
+        self.assertEqual(result["different_gpu_after_vram_snapshots"], 0)
         self.assertEqual(result["unmatched_gpu_vram_snapshots"], 0)
+
+    def test_transient_before_vram_stp_only_difference_is_counted(self):
+        # A single semitransparency-bit difference in *intermediate* VRAM
+        # must not be hidden by the identical terminal image or event log.
+        for folder in (self.f2, self.j2):
+            for path in folder.iterdir():
+                path.unlink()
+        self.capture(self.f2, self.j2, "alternate-before-stp")
+        result = self.run_repeat()
+        self.assertTrue(result["repeated_native_frame_pixels_identical"])
+        self.assertTrue(result["repeated_gpu_event_journal_identical"])
+        self.assertEqual(result["different_bgr555_pixels"], 0)
+        self.assertEqual(result["first_different_gpu_snapshot_phase"], "before")
+        self.assertEqual(result["first_different_gpu_snapshot_changed_pixels"], 1)
+        self.assertEqual(result["first_different_gpu_snapshot_changed_scanlines"], 1)
+        self.assertEqual(result["first_different_gpu_snapshot_stp_bit_differences"], 1)
+        self.assertEqual(result["different_gpu_before_vram_snapshots"], 1)
+        self.assertEqual(result["different_gpu_after_vram_snapshots"], 0)
 
     def test_snapshot_comparator_accepts_distinct_pair_lengths_as_diagnostic(self):
         # Pure, asset-free bounds test. The actual journal/replay layers
@@ -157,6 +196,8 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
             diagnostics["repeated_full_gpu_vram_snapshot_sequence_identical"])
         self.assertEqual(diagnostics["different_gpu_vram_snapshots_in_common_prefix"], 0)
         self.assertIsNone(diagnostics["first_different_gpu_vram_snapshot_index"])
+        self.assertIsNone(diagnostics["first_different_gpu_snapshot_phase"])
+        self.assertIsNone(diagnostics["first_different_gpu_snapshot_changed_pixels"])
 
     def test_overlapping_capture_roles_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "directory roles overlap"):
