@@ -261,12 +261,70 @@ class PrivateJointOneShotAuditTests(unittest.TestCase):
         }
 
     def source_witness_kwargs(self):
-        return {
+        kwargs = {
             "native_capture_dir": Path(self.temp.name) / "source-native",
             "source_capture_dir": Path(self.temp.name) / "source-ft4",
             "launch_receipt": Path(self.temp.name) / "launch.json",
             "preflight_report": Path(self.temp.name) / "preflight.json",
         }
+        for key in ("native_capture_dir", "source_capture_dir"):
+            kwargs[key].mkdir(mode=0o700, exist_ok=True)
+        for key in ("launch_receipt", "preflight_report"):
+            kwargs[key].write_text('{"synthetic":"private-only"}\n',
+                                   encoding="utf-8")
+            kwargs[key].chmod(0o600)
+        return kwargs
+
+    def test_missing_source_ft4_directory_refused_before_native_launch(self):
+        pair = self.make_claimed_private_frame_pair()
+        inputs = self.source_witness_kwargs()
+        inputs["source_capture_dir"].rmdir()
+        with self.assertRaises(OSError):
+            self.run_capture(frame_pair_dir=pair, **inputs)
+        self.assertEqual(list(self.output.iterdir()), [])
+        self.assertEqual(list(self.journal.iterdir()), [])
+
+    def test_world_readable_original_source_receipt_refused_before_launch(self):
+        pair = self.make_claimed_private_frame_pair()
+        inputs = self.source_witness_kwargs()
+        inputs["launch_receipt"].chmod(0o644)
+        with self.assertRaisesRegex(ValueError, "witness file not private"):
+            self.run_capture(frame_pair_dir=pair, **inputs)
+        self.assertEqual(list(self.output.iterdir()), [])
+        self.assertEqual(list(self.journal.iterdir()), [])
+
+    def test_original_source_symlinked_receipt_refused_before_launch(self):
+        pair = self.make_claimed_private_frame_pair()
+        inputs = self.source_witness_kwargs()
+        inputs["launch_receipt"].unlink()
+        inputs["launch_receipt"].symlink_to(inputs["preflight_report"])
+        with self.assertRaises(OSError):
+            self.run_capture(frame_pair_dir=pair, **inputs)
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def test_original_source_shared_directory_refused_before_launch(self):
+        pair = self.make_claimed_private_frame_pair()
+        inputs = self.source_witness_kwargs()
+        inputs["native_capture_dir"].chmod(0o755)
+        with self.assertRaisesRegex(ValueError, "directory is not private"):
+            self.run_capture(frame_pair_dir=pair, **inputs)
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def test_original_source_duplicate_directory_role_refused_before_launch(self):
+        pair = self.make_claimed_private_frame_pair()
+        inputs = self.source_witness_kwargs()
+        inputs["source_capture_dir"] = inputs["native_capture_dir"]
+        with self.assertRaisesRegex(ValueError, "directory roles overlap"):
+            self.run_capture(frame_pair_dir=pair, **inputs)
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def test_original_source_directory_cannot_alias_capture_output(self):
+        pair = self.make_claimed_private_frame_pair()
+        inputs = self.source_witness_kwargs()
+        inputs["native_capture_dir"] = self.output
+        with self.assertRaisesRegex(ValueError, "directory roles overlap"):
+            self.run_capture(frame_pair_dir=pair, **inputs)
+        self.assertEqual(list(self.output.iterdir()), [])
 
     def test_all_four_source_witness_inputs_required_before_launch(self):
         pair = self.make_claimed_private_frame_pair()
