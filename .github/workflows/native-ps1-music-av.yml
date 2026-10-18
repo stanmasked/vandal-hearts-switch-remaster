@@ -63,6 +63,22 @@ permissions:
   contents: read
 
 jobs:
+  diagnostic-png-regressions:
+    name: Synthetic diagnostic PNG regression tests (no hardware)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+      - name: Set up isolated Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Pillow for screenshot fixtures
+        run: python -m pip install --disable-pip-version-check Pillow==11.3.0
+      - name: Test all physical-frame pixel invariants on generated PNGs
+        run: python -m unittest discover -s tests -p 'test_inspect_native_av_physical_screenshots.py' -v
+
   native-av:
     name: Compile original format SEQ VAB SPU plus video (no SDL2)
     runs-on: ubuntu-latest
