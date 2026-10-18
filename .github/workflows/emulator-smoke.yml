@@ -784,7 +784,7 @@ jobs:
               "wet_tail_effect_causality_not_proven":True
           }
           (root/"opt-in-scene-witness.json").write_text(
-              json.dumps(result,sort_keys=True,indent=2)+"\\n")
+              json.dumps(result,sort_keys=True,indent=2)+"\n")
           print(json.dumps(result,sort_keys=True))
           PY
 
