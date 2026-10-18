@@ -615,6 +615,88 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
                     else:
                         repeat._joint_gpu_vram_first_divergence(broken, events)
 
+    def test_joint_gpu_divergence_matches_exhaustive_small_timeline_oracle(self):
+        # Enumerate all event/VRAM difference masks for 1..3 GPU pairs per
+        # independent capture. This is a pure synthetic aggregate model:
+        # no private event JSONL, frame pixels, coordinates or game bytes.
+        # The reference checks *each chronological ordinal* rather than
+        # inferring the first difference from the audit's reported indices.
+        tested = 0
+        for first_pairs in (1, 2, 3):
+            for second_pairs in (1, 2, 3):
+                left_count, right_count = 2 * first_pairs, 2 * second_pairs
+                common = min(left_count, right_count)
+                for event_mask in range(1 << common):
+                    for vram_mask in range(1 << common):
+                        event_first = next((
+                            i for i in range(common)
+                            if event_mask & (1 << i)), None)
+                        vram_first = next((
+                            i for i in range(common)
+                            if vram_mask & (1 << i)), None)
+                        def position(index):
+                            return (None, None) if index is None else (
+                                index // 2,
+                                "before" if index % 2 == 0 else "after")
+                        event_pair, event_phase = position(event_first)
+                        vram_pair, vram_phase = position(vram_first)
+                        events = {
+                            "first_gpu_event_count": left_count,
+                            "second_gpu_event_count": right_count,
+                            "gpu_event_records_compared": common,
+                            "unmatched_gpu_event_records":
+                                abs(left_count - right_count),
+                            "different_gpu_event_records_in_common_prefix":
+                                event_mask.bit_count(),
+                            "first_different_gpu_event_record_index": event_first,
+                            "first_different_gpu_event_pair_index": event_pair,
+                            "first_different_gpu_event_phase": event_phase,
+                        }
+                        snapshots = {
+                            "first_gpu_vram_snapshot_count": left_count,
+                            "second_gpu_vram_snapshot_count": right_count,
+                            "gpu_vram_snapshots_compared": common,
+                            "unmatched_gpu_vram_snapshots":
+                                abs(left_count - right_count),
+                            "different_gpu_vram_snapshots_in_common_prefix":
+                                vram_mask.bit_count(),
+                            "first_different_gpu_vram_snapshot_index": vram_first,
+                            "first_different_gpu_draw_pair_index": vram_pair,
+                            "first_different_gpu_snapshot_phase": vram_phase,
+                        }
+                        expected_index = expected_kind = None
+                        for step in range(max(left_count, right_count)):
+                            if step >= common:
+                                expected_index = step
+                                expected_kind = "unmatched-tail"
+                                break
+                            event_diff = bool(event_mask & (1 << step))
+                            vram_diff = bool(vram_mask & (1 << step))
+                            if event_diff or vram_diff:
+                                expected_index = step
+                                expected_kind = (
+                                    "event-and-vram" if event_diff and vram_diff
+                                    else "event-only" if event_diff else "vram-only")
+                                break
+                        expected_pair, expected_phase = position(expected_index)
+                        actual = repeat._joint_gpu_vram_first_divergence(
+                            snapshots, events)
+                        self.assertEqual(
+                            (
+                                actual["first_joint_gpu_divergence_index"],
+                                actual["first_joint_gpu_divergence_pair_index"],
+                                actual["first_joint_gpu_divergence_phase"],
+                                actual["first_joint_gpu_divergence_kind"],
+                            ),
+                            (expected_index, expected_pair,
+                             expected_phase, expected_kind),
+                            msg=(f"pairs={first_pairs}/{second_pairs}, "
+                                 f"event_mask={event_mask}, "
+                                 f"vram_mask={vram_mask}"))
+                        tested += 1
+        # (1,2,3) paired captures and all possible 2/4/6-event masks.
+        self.assertEqual(tested, 5 * 4**2 + 3 * 4**4 + 4**6)
+
     def test_overlapping_capture_roles_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "directory roles overlap"):
             repeat.audit(self.f1, self.j1, self.f1, self.j2, self.executable)
