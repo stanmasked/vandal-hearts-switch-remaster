@@ -312,6 +312,55 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
         self.assertFalse(report["gpu_vram_divergence_reappeared_after_reconvergence"])
         self.assertFalse(report["gpu_vram_reconverged_at_common_prefix_end"])
 
+    def test_vram_snapshot_aggregate_rejects_inconsistent_phase_and_recovery(self):
+        # Four fully synthetic VRAM buffers yield this timeline:
+        # different, equal, different, equal. The public aggregate must
+        # remain arithmetically coherent even after a future refactor.
+        clean = b"\x00" * (1024 * 512 * 2)
+        changed = b"\x01" + clean[1:]
+        def source(fd, name):
+            index = int(name[4:8])
+            value = changed if fd == 2 and index in (0, 2) else clean
+            return value, ("synthetic", index)
+        with patch.object(repeat, "_private_raw", side_effect=source):
+            good = repeat._gpu_snapshot_differences(
+                1, 2, 2, 2, lambda: None)
+        repeat._require_gpu_snapshot_aggregate_consistency(good)
+        mutations = (
+            ("different_gpu_before_vram_snapshots", 1),
+            ("different_gpu_after_vram_snapshots", 1),
+            ("different_gpu_vram_snapshots_in_common_prefix", True),
+            ("gpu_vram_equal_different_state_transitions", 4),
+            ("first_different_gpu_vram_snapshot_index", None),
+            ("last_different_gpu_vram_snapshot_index", 0),
+            ("first_reconverged_gpu_vram_snapshot_index", 0),
+            ("gpu_vram_divergence_reappeared_after_reconvergence", False),
+            ("gpu_vram_reconverged_at_common_prefix_end", False),
+            ("first_gpu_vram_timeline_sha256", "X" * 64),
+            ("gpu_vram_timeline_commitments_identical", True),
+            ("repeated_full_gpu_vram_snapshot_sequence_identical", True),
+            ("first_different_gpu_snapshot_changed_pixels", 0),
+            ("first_different_gpu_snapshot_changed_scanlines", True),
+            ("first_different_gpu_snapshot_stp_bit_differences", 2),
+        )
+        for field, value in mutations:
+            with self.subTest(field=field, value=value):
+                with self.assertRaisesRegex(ValueError, "aggregate inconsistent"):
+                    repeat._require_gpu_snapshot_aggregate_consistency(
+                        {**good, field: value})
+
+    def test_two_replay_audit_rejects_corrupted_vram_phase_aggregate(self):
+        # Verify the strict aggregate validator is actually applied during
+        # the full independent two-run replay and not just in its own test.
+        real = repeat._gpu_snapshot_differences
+        def falsify_one_phase(*args, **kwargs):
+            result = real(*args, **kwargs)
+            return {**result, "different_gpu_after_vram_snapshots": 1}
+        with patch.object(repeat, "_gpu_snapshot_differences",
+                          side_effect=falsify_one_phase):
+            with self.assertRaisesRegex(ValueError, "aggregate inconsistent"):
+                self.run_repeat()
+
     def test_first_changed_gpu_event_record_phase_is_aggregate_only(self):
         first = (b'{"record":"a"}', b'{"record":"b"}',
                  b'{"record":"c"}', b'{"record":"d"}')
