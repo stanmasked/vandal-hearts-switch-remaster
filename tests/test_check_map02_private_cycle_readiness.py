@@ -151,6 +151,34 @@ class PrivateCycleReadinessTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "not empty"):
                 self.verify()
 
+    def test_rejects_identical_bytes_plan_inode_swap(self):
+        plan = self.dirs["handoff"] / PLAN
+        backup = self.root / "old-plan-outside-capture"
+        def swap_after_verification(*args, **kwargs):
+            raw = plan.read_bytes()
+            plan.replace(backup)
+            plan.write_bytes(raw)
+            plan.chmod(0o600)
+            return {"source_pinned_full_elf_bytes_checked": True}
+        with patch.object(readiness, "verify_build_receipt",
+                          side_effect=swap_after_verification):
+            with self.assertRaisesRegex(ValueError, "changed during preflight"):
+                self.verify()
+        self.assertTrue(backup.exists())
+
+    def test_rejects_same_layout_after_directory_inode_swap(self):
+        original = self.dirs["preview"]
+        backup = self.root / "former-preview-dir"
+        def swap_preview_dir(*args, **kwargs):
+            original.replace(backup)
+            original.mkdir(mode=0o700)
+            return {"source_pinned_full_elf_bytes_checked": True}
+        with patch.object(readiness, "verify_build_receipt",
+                          side_effect=swap_preview_dir):
+            with self.assertRaisesRegex(ValueError, "layout changed"):
+                self.verify()
+        self.assertTrue(backup.is_dir())
+
     def test_cli_redacts_private_paths_in_process_and_io_failures(self):
         private = "/private/user/SLUS_004.47"
         args = (["map02-ready"] +
