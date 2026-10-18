@@ -74,11 +74,8 @@ class VerifiedInodeNativeExec(unittest.TestCase):
     def test_kernel_executes_exact_verified_file_descriptor(self):
         logfile=self.logdir/"native.log"
         self.assertTrue(execute_exact_inode(
-            self.binary,self.manifest,self.challenge,logfile,(),timeout=15,
-            prelaunch_hook=None) is False if False else
-            execute_exact_inode(
-                self.binary,self.manifest,self.challenge,logfile,(),timeout=15,
-                prelaunch_hook=None))
+            self.binary,self.manifest,self.challenge,logfile,
+            ("--synthetic-host-smoke",),timeout=15))
         self.assertEqual(logfile.stat().st_mode&0o777,0o600)
         self.assertIn(b"VH146_OLDER_ACTUALLY_EXECUTED",logfile.read_bytes())
         self.assertNotIn(b"VH146_NEWER_ACTUALLY_EXECUTED",logfile.read_bytes())
@@ -91,7 +88,7 @@ class VerifiedInodeNativeExec(unittest.TestCase):
             self.binary.chmod(0o700)
         with self.assertRaises(Refused):
             execute_exact_inode(
-                self.binary,self.manifest,self.challenge,logfile,(),
+                self.binary,self.manifest,self.challenge,logfile,("--synthetic-host-smoke",),
                 timeout=15,prelaunch_hook=replace_after_verified_fd)
         # A post-verification pathname swap cannot force executing NEWER:
         # kernel actually executed the open old file descriptor.
@@ -106,7 +103,7 @@ class VerifiedInodeNativeExec(unittest.TestCase):
             self.binary.chmod(0o700)
         with self.assertRaises(Refused):
             execute_exact_inode(self.binary,self.manifest,self.challenge,
-                                logfile,(),timeout=15,
+                                logfile,("--synthetic-host-smoke",),timeout=15,
                                 prelaunch_hook=replace_after_verified_fd)
         self.assertIn(b"VH146_OLDER_ACTUALLY_EXECUTED",logfile.read_bytes())
 
@@ -114,7 +111,7 @@ class VerifiedInodeNativeExec(unittest.TestCase):
         self.challenge.write_bytes(b"0"*32+b"\n")
         with self.assertRaises(Refused):
             execute_exact_inode(self.binary,self.manifest,self.challenge,
-                                self.logdir/"rejected.log",(),timeout=15)
+                                self.logdir/"rejected.log",("--synthetic-host-smoke",),timeout=15)
         self.assertFalse((self.logdir/"rejected.log").exists())
 
     def test_no_overwrite_of_existing_private_log(self):
@@ -123,7 +120,7 @@ class VerifiedInodeNativeExec(unittest.TestCase):
         existing.chmod(0o600)
         with self.assertRaises(Refused):
             execute_exact_inode(self.binary,self.manifest,self.challenge,
-                                existing,(),timeout=15)
+                                existing,("--synthetic-host-smoke",),timeout=15)
         self.assertEqual(existing.read_bytes(),b"unchanged")
 
     def test_symlinked_log_ancestor_and_mutable_parent_refused(self):
@@ -147,17 +144,17 @@ class VerifiedInodeNativeExec(unittest.TestCase):
         alias.symlink_to(self.binary)
         with self.assertRaises(Refused):
             execute_exact_inode(alias,self.manifest,self.challenge,
-                                self.logdir/"symlink.log",(),timeout=15)
+                                self.logdir/"symlink.log",("--synthetic-host-smoke",),timeout=15)
         self.binary.chmod(0o766)
         with self.assertRaises(Refused):
             execute_exact_inode(self.binary,self.manifest,self.challenge,
-                                self.logdir/"mode.log",(),timeout=15)
+                                self.logdir/"mode.log",("--synthetic-host-smoke",),timeout=15)
 
     def test_timeout_bounds_and_extra_args_are_refused(self):
         for timeout in (0,-1,181,True,1.2):
             with self.subTest(timeout=timeout),self.assertRaises(Refused):
                 execute_exact_inode(self.binary,self.manifest,self.challenge,
-                                    self.logdir/"invalid.log",(),timeout=timeout)
+                                    self.logdir/"invalid.log",("--synthetic-host-smoke",),timeout=timeout)
         for args in (("",),("flag\x00leak",),(3,)):
             with self.subTest(args=args),self.assertRaises(Refused):
                 execute_exact_inode(self.binary,self.manifest,self.challenge,
