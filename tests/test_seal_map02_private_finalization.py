@@ -40,6 +40,8 @@ class PrivateFinalSealTests(unittest.TestCase):
         receipt = self.seal_dir / NAME
         self.assertEqual(published["schema"], SCHEMA)
         self.assertTrue(published["two_independent_readonly_final_audits"])
+        self.assertTrue(
+            published["postpublication_independent_verification_completed"])
         self.assertEqual({p.name for p in self.seal_dir.iterdir()}, {NAME})
         self.assertEqual(stat.S_IMODE(receipt.stat().st_mode), 0o600)
         self.assertEqual(
@@ -115,6 +117,39 @@ class PrivateFinalSealTests(unittest.TestCase):
                 self.call()
         self.assertEqual(count[0], 2)
         self.assertEqual(list(self.seal_dir.iterdir()), [])
+
+    def test_postpublication_third_audit_blocks_changed_source_and_rolls_back(self):
+        from tools.seal_map02_private_finalization import finalize_private_capture
+        original = finalize_private_capture
+        calls = [0]
+        def change_on_postpublication(*args, **kwargs):
+            report = original(*args, **kwargs)
+            calls[0] += 1
+            if calls[0] == 3:
+                report = dict(report, verified_draw_primitives=4)
+            return report
+        with patch(
+                "tools.seal_map02_private_finalization.finalize_private_capture",
+                side_effect=change_on_postpublication):
+            with self.assertRaisesRegex(ValueError, "final seal differs"):
+                self.call()
+        self.assertEqual(calls[0], 3)
+        self.assertEqual(list(self.seal_dir.iterdir()), [])
+
+    def test_postpublication_failure_must_not_delete_replaced_foreign_inode(self):
+        def replace_seal(*args, **kwargs):
+            path = self.seal_dir / NAME
+            path.unlink()
+            path.write_bytes(b"foreign-evidence")
+            path.chmod(0o600)
+            raise ValueError("postpublication readback failed")
+        with patch(
+                "tools.seal_map02_private_finalization.verify_final_seal",
+                side_effect=replace_seal):
+            with self.assertRaisesRegex(ValueError, "readback failed"):
+                self.call()
+        self.assertEqual((self.seal_dir / NAME).read_bytes(),
+                         b"foreign-evidence")
 
     def test_missing_png_or_cd_proof_does_not_seal(self):
         (self.fixture.preview / "map02-native-vram-preview.png").unlink()

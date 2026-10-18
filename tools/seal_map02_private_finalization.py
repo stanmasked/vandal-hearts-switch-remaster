@@ -156,6 +156,7 @@ def _publish(directory, raw):
                 _dir_identity(original_dir)):
             raise ValueError("MAP02 private final seal readback/identity differs")
         os.fsync(dfd)
+        return _complete_identity(completed), _dir_identity(original_dir)
     except BaseException:
         if created is not None:
             try:
@@ -169,6 +170,31 @@ def _publish(directory, raw):
         if fd >= 0:
             os.close(fd)
         os.close(dfd)
+
+
+def _discard_own_published_seal(directory, file_identity, directory_identity):
+    """Best-effort rollback; NEVER delete a replaced or modified inode."""
+    fd = -1
+    try:
+        fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY |
+                     os.O_CLOEXEC | os.O_NOFOLLOW)
+        if (_dir_identity(os.fstat(fd)) != directory_identity or
+                _dir_identity(os.stat(directory, follow_symlinks=False))
+                != directory_identity):
+            return
+        observed = os.stat(NAME, dir_fd=fd, follow_symlinks=False)
+        if (not stat.S_ISREG(observed.st_mode) or
+                _complete_identity(observed) != file_identity):
+            return
+        os.unlink(NAME, dir_fd=fd)
+        os.fsync(fd)
+    except OSError:
+        # Preserve uncertain evidence instead of risking deletion of a
+        # foreign inode. The caller still reports finalization failure.
+        pass
+    finally:
+        if fd >= 0:
+            os.close(fd)
 
 
 def _check(source, native, scoped, handoff, cycle, preview, rgb,
@@ -206,12 +232,31 @@ def seal_final_capture(source, native, scoped, handoff, cycle, preview, rgb,
     raw = (json.dumps(first, sort_keys=True, separators=(",", ":")) +
            "\n").encode("utf-8")
     _canonical(raw)
-    _publish(directory, raw)
+    file_identity, directory_identity = _publish(directory, raw)
+    try:
+        # Close the verification gap between the second pre-write audit
+        # and exclusive publication. This reopens the seal by inode and
+        # independently revalidates ALL source/CD/GPU/process/RGB/PNG files.
+        observed = verify_final_seal(
+            source, native, scoped, handoff, cycle, preview, rgb,
+            owned_game, upstream, binary, seal_directory,
+            frame=frame, compiler=compiler)
+        if (observed["private_final_seal_sha256"] !=
+                hashlib.sha256(raw).hexdigest() or
+                observed["gpu_draw_frame"] != first["gpu_draw_frame"] or
+                observed["sealed_evidence_independently_reverified"]
+                is not True):
+            raise ValueError("published MAP02 seal differs after verification")
+    except BaseException:
+        _discard_own_published_seal(directory, file_identity,
+                                    directory_identity)
+        raise
     return {
         "schema": SCHEMA,
         "gpu_draw_frame": first["gpu_draw_frame"],
         "private_final_seal_sha256": hashlib.sha256(raw).hexdigest(),
         "two_independent_readonly_final_audits": True,
+        "postpublication_independent_verification_completed": True,
         "game_bytes_uploaded": False,
         "original_map02_rendering_proven": False,
     }
