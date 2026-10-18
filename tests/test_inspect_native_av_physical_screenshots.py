@@ -111,6 +111,28 @@ class PhysicalScreenshotPixelTests(unittest.TestCase):
                 self.assertNotEqual(
                     self.cli("--require-y-return-pixels").returncode,0)
 
+    def test_other_manual_result_cannot_turn_blue_after_terminal_failure(self):
+        # X/Y share one audio thread. Once a red status is already
+        # visible, no new returned PCM can be reported by its sibling.
+        for failed, before, after in (
+            ("X", frame(x="red",y="yellow"), frame(x="red",y="blue")),
+            ("Y", frame(x="yellow",y="red"), frame(x="blue",y="red")),
+        ):
+            with self.subTest(failed=failed):
+                with self.assertRaisesRegex(
+                        ValueError,"PCM return after terminal manual error"):
+                    self.images(before,after)
+                self.assertNotEqual(
+                    self.cli("--require-x-return-pixels").returncode,0)
+                self.assertNotEqual(
+                    self.cli("--require-y-return-pixels").returncode,0)
+        # Earlier confirmed success stays blue without representing a
+        # new return after failure. It must not be falsely rejected.
+        out=self.images(frame(x="red",y="blue"),
+                        frame(x="red",y="blue"))
+        self.assertFalse(out["difference"]["new_x_return_pixels"])
+        self.assertFalse(out["difference"]["new_y_return_pixels"])
+
     def test_notification_mode_cannot_flip_in_one_nro_session(self):
         for previous, current in (("red","blue"),("blue","red")):
             with self.subTest(previous=previous,current=current):
