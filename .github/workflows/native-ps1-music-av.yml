@@ -270,13 +270,17 @@ jobs:
             --require-audio-pipeline "$pipeline" "${scene_switch_gate[@]}" \
             "${zr_gate[@]}" "${zl_gate[@]}" "${resume_gate[@]}" \
             --witness-out runtime-evidence/native-av-guest-witness.json \
-            --nro-file "$NRO" --source-revision "$GITHUB_SHA"
+            --nro-file "$NRO" --source-revision "$GITHUB_SHA" \
+            --github-run-id "$GITHUB_RUN_ID" \
+            --github-run-attempt "$GITHUB_RUN_ATTEMPT"
           # Independent verifier reads the created JSON and recomputes
           # hashes and framebuffer observations from the exact files.
           python3 tests/verify_native_av_guest_witness.py \
             --witness runtime-evidence/native-av-guest-witness.json \
             --before "$SHOT1" --after "$SHOT2" --nro "$NRO" \
-            --revision "$GITHUB_SHA" --scenario "${{ matrix.sd_case }}"
+            --revision "$GITHUB_SHA" --scenario "${{ matrix.sd_case }}" \
+            --github-run-id "$GITHUB_RUN_ID" \
+            --github-run-attempt "$GITHUB_RUN_ATTEMPT"
 
       - name: Publish validated AV guest evidence
         if: success()
@@ -343,5 +347,7 @@ jobs:
               --witness "$folder/native-av-guest-witness.json" \
               --before "$folder/av-before.png" \
               --after "$folder/av-after.png" \
-              --nro "$nro" --revision "$GITHUB_SHA" --scenario "$scenario"
+              --nro "$nro" --revision "$GITHUB_SHA" --scenario "$scenario" \
+              --github-run-id "$GITHUB_RUN_ID" \
+              --github-run-attempt "$GITHUB_RUN_ATTEMPT"
           done
