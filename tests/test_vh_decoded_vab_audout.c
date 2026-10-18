@@ -419,6 +419,8 @@ int main(void) {
          * not just at scene changes. 24 cycles alternate clean focus
          * resumes, failed fast starts, clean forced reopens, and
          * failed first open/start attempts with bounded fallback.
+         * Clean fast resumes also follow an explicitly refused stop.
+         * The rejected stop must preserve the running session.
          * The independent dry renderer does not even see the event.
          * All produced PCM must remain exactly-once and gap-free. */
         if(page%4u==3u) {
@@ -444,6 +446,21 @@ int main(void) {
             const uint64_t saved_accepted=d.accepted;
             const uint64_t saved_hash=d.returned_hash;
             const uint64_t saved_pcm_hash=hash_pcm(dst,frames);
+            if(mode==0u) {
+                /* A refused device stop must not close/reopen an
+                 * in-flight audio session, advance a musical clock,
+                 * or manufacture any transport/accounting event. */
+                d.fail_resume_stop_left=1u;
+                assert(vh_audio_output_resume_recover(
+                    &ops,&recovery,1)==-1);
+                assert(d.open && d.playing &&
+                       !d.fail_resume_stop_left);
+                assert(!memcmp(&recovery,&saved_recovery,
+                               sizeof recovery));
+                assert(d.submitted==saved_submitted &&
+                       d.accepted==saved_accepted &&
+                       d.returned_hash==saved_hash);
+            }
             assert(ops.stop(ops.context)==0);
             assert(d.open && !d.playing);
             if(mode==1u)
