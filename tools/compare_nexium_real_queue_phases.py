@@ -19,10 +19,15 @@ from audit_nexium_audout_scene_correlation import CorrelationError
 
 SCHEMA="vh-nexium-real-phase0-phase8-service-observations/v1"
 _HEX=re.compile(r"[0-9a-f]{64}\Z")
+_GIT_HEX=re.compile(r"[0-9a-f]{40}\Z")
 
 
 def _hex64(value:object)->bool:
     return isinstance(value,str) and _HEX.fullmatch(value) is not None
+
+
+def _hex40(value:object)->bool:
+    return isinstance(value,str) and _GIT_HEX.fullmatch(value) is not None
 
 
 def inspect_observations(report:dict,phase:int)->dict:
@@ -144,7 +149,7 @@ def compare_real_phases(baseline:dict,phase8:dict,
             or type(baseline_manifest.get("run_id")) is not int
             or type(baseline_manifest.get("run_attempt")) is not int
             or baseline_manifest["run_id"]<1 or baseline_manifest["run_attempt"]<1
-            or not _hex64(baseline_manifest.get("git_sha"))
+            or not _hex40(baseline_manifest.get("git_sha"))
             or type(baseline_manifest.get("nro_bytes")) is not int
             or type(experimental_manifest.get("nro_bytes")) is not int
             or baseline_manifest["nro_bytes"]<=0

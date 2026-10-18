@@ -53,12 +53,12 @@ def model(phase:int)->dict:
 def manifests():
     base={
         "schema":"vh-switch-same-run-nro/v1",
-        "git_sha":"f"*64,"run_id":321,"run_attempt":1,
+        "git_sha":"f"*40,"run_id":321,"run_attempt":1,
         "nro_sha256":"c"*64,"nro_bytes":12345,
     }
     alt={
         "schema":"vh-switch-explicit-probe-phase/v1",
-        "git_sha":"f"*64,"run_id":321,"run_attempt":1,
+        "git_sha":"f"*40,"run_id":321,"run_attempt":1,
         "nro_sha256":"d"*64,"baseline_sha256":"c"*64,
         "phase":8,"nro_bytes":12346,
     }
@@ -97,7 +97,7 @@ class TestRealServicePhases(unittest.TestCase):
                 base,alt=manifests()
                 if kind=="binary":alt["baseline_sha256"]="a"*64
                 elif kind=="run":alt["run_id"]+=1
-                elif kind=="commit":alt["git_sha"]="e"*64
+                elif kind=="commit":alt["git_sha"]="e"*40
                 elif kind=="distinct":alt["nro_sha256"]=base["nro_sha256"]
                 else:alt["nro_bytes"]=0
                 compare_real_phases(model(0),model(8),base,alt)
