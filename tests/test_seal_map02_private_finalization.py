@@ -158,6 +158,52 @@ class PrivateFinalSealTests(unittest.TestCase):
                 _publish(self.seal_dir, b"synthetic-partial-test\n")
         self.assertEqual(receipt.read_bytes(), b"external-mutated-before-fsync")
 
+    def test_directory_fsync_failure_rolls_back_durably(self):
+        import os
+        from tools.seal_map02_private_finalization import _publish
+        real_fsync = os.fsync
+        directory_fsync_calls = [0]
+
+        def fail_first_directory_sync(fd):
+            if stat.S_ISDIR(os.fstat(fd).st_mode):
+                directory_fsync_calls[0] += 1
+                if directory_fsync_calls[0] == 1:
+                    raise OSError("synthetic directory fsync failure")
+            return real_fsync(fd)
+
+        with patch("tools.seal_map02_private_finalization.os.fsync",
+                   side_effect=fail_first_directory_sync):
+            with self.assertRaisesRegex(OSError, "directory fsync failure"):
+                _publish(self.seal_dir, b"synthetic-private-seal\n")
+        # The first fsync fails to publish; the second must durably unlink.
+        self.assertEqual(directory_fsync_calls[0], 2)
+        self.assertEqual(list(self.seal_dir.iterdir()), [])
+
+    def test_partial_write_foreign_inode_replacement_is_preserved(self):
+        import os
+        from tools.seal_map02_private_finalization import _publish
+        original_write = os.write
+        receipt = self.seal_dir / NAME
+        attempts = [0]
+
+        def swap_after_partial_write(fd, data):
+            attempts[0] += 1
+            if attempts[0] == 1:
+                n = original_write(fd, data[:4])
+                receipt.unlink()
+                receipt.write_bytes(b"foreign-inode-after-partial-write")
+                receipt.chmod(0o600)
+                return n
+            return 0
+
+        with patch("tools.seal_map02_private_finalization.os.write",
+                   side_effect=swap_after_partial_write):
+            with self.assertRaisesRegex(ValueError, "incomplete private seal write"):
+                _publish(self.seal_dir, b"synthetic-private-seal\n")
+        self.assertEqual(attempts[0], 2)
+        self.assertEqual(receipt.read_bytes(),
+                         b"foreign-inode-after-partial-write")
+
     def test_failed_readback_keeps_foreign_changes_to_same_inode(self):
         from tools.seal_map02_private_finalization import _publish
         receipt = self.seal_dir / NAME
