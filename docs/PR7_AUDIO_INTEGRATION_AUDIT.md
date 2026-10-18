@@ -66,6 +66,14 @@ A refused device stop during the third explicit resume must leave the
 session open-but-stopped, must not call close/open/start or change recovery
 counters, and must not submit any PCM until the next explicit attempt.
 This failure is modelled in the host callback only, not on hardware.
+An additional block-51 case deliberately fails the first PCM submit and
+then refuses the backend stop. It verifies that the page is NOT accepted,
+the session is NOT closed, neither SEQ/SPU nor resampler/ramp advances,
+and only an explicit second attempt can deliver the *same* prepared PCM
+page. The audit expects one extra raw submit failure with **no** matching
+restart or recovery, rather than pretending the page was silently
+recovered. This is transport-level diagnostic evidence, not audio output
+heard on physical hardware.
 
 This bridge is a **host-only synthetic integration regression**, not a
 replacement for the real libnx producer or its ownership model. Do not
