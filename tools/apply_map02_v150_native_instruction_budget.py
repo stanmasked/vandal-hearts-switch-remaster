@@ -30,7 +30,8 @@ int vh150_arm(u32 lo, u32 hi, unsigned budget) {
     return 0;
 }
 static int vh150_before(psxRegisters *regs, u32 pc) {
-    if(vh150_state!=1u) return 1;
+    if(vh150_state==0u) return 1;
+    if(vh150_state!=1u) return 0;
     if(vh150_count>=vh150_budget) vh150_reason=1u;
     else if((pc&3u) || pc<vh150_low || pc>=vh150_high)
         vh150_reason=2u;
