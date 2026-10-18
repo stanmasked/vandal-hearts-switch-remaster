@@ -1,0 +1,33 @@
+name: MAP02 v161 native gpulib GPUwriteData queue append
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v161-native-gpulib-queue.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v161_gpulib_queue.py'
+      - 'tests/test_map02_v161_gpulib_queue.py'
+      - 'tools/apply_map02_v160_plugin_callback.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  gpulib-queue:
+    name: synthetic native gpulib GP0 queue (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile actual append source fixture and reject mutations
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v161_gpulib_queue.py tests/test_map02_v161_gpulib_queue.py
+          python3 -m unittest discover -s tests -p 'test_map02_v161_gpulib_queue.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v160_plugin_callback.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v159_native_gpu_sink.py' -v
+          echo 'VH161_COMPILED_GPU_QUEUE_PASS original_retail_executed=0 unai_renderer_consumption_verified=0 map02_rendered=0'
