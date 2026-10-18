@@ -281,6 +281,94 @@ def _gpu_snapshot_differences(first_fd, second_fd, first_pairs,
 
 
 
+def _require_gpu_snapshot_aggregate_consistency(data):
+    """Fail closed when aggregate VRAM phase, history and hash claims conflict.
+
+    This consumes only replay-derived counters/digests, never emits
+    private GPU snapshots or single-pixel coordinates.
+    """
+    error = "MAP02 VRAM snapshot aggregate inconsistent"
+    if type(data) is not dict:
+        raise ValueError(error)
+    numeric = (
+        "first_gpu_vram_snapshot_count", "second_gpu_vram_snapshot_count",
+        "gpu_vram_snapshots_compared", "unmatched_gpu_vram_snapshots",
+        "different_gpu_vram_snapshots_in_common_prefix",
+        "different_gpu_before_vram_snapshots",
+        "different_gpu_after_vram_snapshots",
+        "gpu_vram_equal_different_state_transitions",
+    )
+    if any(type(data.get(key)) is not int for key in numeric):
+        raise ValueError(error)
+    common = data["gpu_vram_snapshots_compared"]
+    changed = data["different_gpu_vram_snapshots_in_common_prefix"]
+    before = data["different_gpu_before_vram_snapshots"]
+    after = data["different_gpu_after_vram_snapshots"]
+    transitions = data["gpu_vram_equal_different_state_transitions"]
+    first = data.get("first_different_gpu_vram_snapshot_index")
+    last = data.get("last_different_gpu_vram_snapshot_index")
+    reconverged = data.get("first_reconverged_gpu_vram_snapshot_index")
+    if (not 2 <= common <= MAX_RECORDS or common % 2
+            or not 0 <= changed <= common
+            or not 0 <= before <= common // 2
+            or not 0 <= after <= common // 2
+            or before + after != changed
+            or not 0 <= transitions < common
+            or (changed == 0) != (first is None and last is None)
+            or (changed == 0 and (reconverged is not None or transitions))
+            or (0 < changed and (
+                type(first) is not int or type(last) is not int
+                or not 0 <= first <= last < common
+                or changed > last - first + 1))
+            or (reconverged is not None and (
+                type(reconverged) is not int or first is None
+                or not first < reconverged < common))
+            or (reconverged is None and
+                data.get("gpu_vram_divergence_reappeared_after_reconvergence") is True)
+            or type(data.get("gpu_vram_divergence_reappeared_after_reconvergence"))
+               is not bool
+            or type(data.get("gpu_vram_reconverged_at_common_prefix_end"))
+               is not bool
+            or data["gpu_vram_divergence_reappeared_after_reconvergence"]
+               is not (reconverged is not None and last > reconverged)
+            or data["gpu_vram_reconverged_at_common_prefix_end"]
+               is not (changed > 0 and last < common - 1)):
+        raise ValueError(error)
+    # The domain-separated ordered commitment covers each entire VRAM
+    # snapshot, including any unmatched trailing GPU pairs.
+    for key in ("first_gpu_vram_timeline_sha256",
+                "second_gpu_vram_timeline_sha256"):
+        value = data.get(key)
+        if (type(value) is not str or len(value) != 64
+                or any(x not in "0123456789abcdef" for x in value)):
+            raise ValueError(error)
+    matching_hashes = (data["first_gpu_vram_timeline_sha256"] ==
+                       data["second_gpu_vram_timeline_sha256"])
+    if (type(data.get("gpu_vram_timeline_commitments_identical")) is not bool
+            or data["gpu_vram_timeline_commitments_identical"] is not matching_hashes
+            or type(data.get("repeated_full_gpu_vram_snapshot_sequence_identical"))
+               is not bool
+            or data["repeated_full_gpu_vram_snapshot_sequence_identical"]
+               is not (data["first_gpu_vram_snapshot_count"] ==
+                       data["second_gpu_vram_snapshot_count"]
+                       and changed == 0 and matching_hashes)):
+        raise ValueError(error)
+    if changed:
+        pixels = data.get("first_different_gpu_snapshot_changed_pixels")
+        scanlines = data.get("first_different_gpu_snapshot_changed_scanlines")
+        stp = data.get("first_different_gpu_snapshot_stp_bit_differences")
+        if (any(type(x) is not int for x in (pixels, scanlines, stp))
+                or not 1 <= pixels <= WIDTH * HEIGHT
+                or not 1 <= scanlines <= min(HEIGHT, pixels)
+                or not 0 <= stp <= pixels):
+            raise ValueError(error)
+    elif any(data.get(key) is not None for key in (
+            "first_different_gpu_snapshot_changed_pixels",
+            "first_different_gpu_snapshot_changed_scanlines",
+            "first_different_gpu_snapshot_stp_bit_differences")):
+        raise ValueError(error)
+
+
 def _joint_gpu_vram_first_divergence(snapshots, events):
     """Localize the first disagreement in aligned, replay-verified GPU pairs.
 
@@ -438,6 +526,7 @@ def audit(first_frame, first_journal, second_frame, second_journal, executable):
         if ((a["gpu_journal_sha256"] == b["gpu_journal_sha256"])
                 != event_records["repeated_gpu_event_records_identical"]):
             raise ValueError("MAP02 GPU event digests disagree with records")
+        _require_gpu_snapshot_aggregate_consistency(snapshots)
         joint = _joint_gpu_vram_first_divergence(snapshots, event_records)
         check_inventories()
         for fd, (path, identity) in zip(opened, sessions):
