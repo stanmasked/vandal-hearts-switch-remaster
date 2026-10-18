@@ -1,0 +1,103 @@
+name: Diagnose Stage304 original host Plus-control archive
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/diagnose-stage304-original-archive.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  recheck-original-source:
+    name: Independently identify failed Stage304 original-source invariant
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - name: Checkout current strict original-source verifier
+        uses: actions/checkout@v4
+
+      - name: Download exact failed Stage322 original runtime artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39157976877
+          github-token: ${{ github.token }}
+          path: original-failed-stage322
+
+      - name: Re-audit archived original host PCM controls and capture precise failure
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence=original-failed-stage322
+          mkdir -p stage304-original-postmortem
+          set +e
+          python3 tools/audit_nexium_pcm_exit_controls.py \
+            --monitor "$evidence/nexium-monitor-s16le-48k.pcm" \
+            --monitor-report "$evidence/pcm-quality-report.json" \
+            --scenes "$evidence/nexium-scenes-s16le-48k.pcm" \
+            --scene-report "$evidence/scene-audio-report.json" \
+            --events "$evidence/scene-events.csv" \
+            --stage299 "$evidence/pcm-stream-integrity-stage299.json" \
+            --stage300 "$evidence/pcm-scene-silence-stage300.json" \
+            --stage301 "$evidence/pcm-marker-envelopes-stage301.json" \
+            --stage302 "$evidence/pcm-recording-edge-silence-stage302.json" \
+            --stage303 "$evidence/pcm-recorder-stop-stage303.json" \
+            --stop-csv "$evidence/scene-recorder-stop.csv" \
+            --control-csv "$evidence/scene-exit-controls.csv" \
+            --output stage304-original-postmortem/recomputed-stage304.json \
+            > stage304-original-postmortem/stdout.txt \
+            2> stage304-original-postmortem/stderr.txt
+          status=$?
+          set -e
+          python3 - "$status" <<'PY'
+          import json,sys,os
+          from pathlib import Path
+          status=int(sys.argv[1])
+          location=Path("stage304-original-postmortem")
+          stderr=location.joinpath("stderr.txt").read_text().strip()
+          stdout=location.joinpath("stdout.txt").read_text().strip()
+          print("Original Stage304 replay exit status:",status)
+          print("Strict Stage304 replay result:",stdout or stderr)
+          if status==0:
+              raise SystemExit("Original previously failed source unexpectedly passed; investigate source mismatch")
+          try:
+              diagnostic=json.loads(stderr.splitlines()[-1])
+          except (IndexError,ValueError) as exc:
+              raise SystemExit("Stage304 postmortem did not produce machine-readable error") from exc
+          if (diagnostic.get("result")!="STAGE304_EXIT_PCM_TIMELINE_NOT_VERIFIED"
+                  or not diagnostic.get("error_kind")
+                  or not diagnostic.get("source_invariant_failure")
+                  or diagnostic.get("physical_Nintendo_Switch_audio_tested") is not False
+                  or diagnostic.get("guest_speaker_playback_verified") is not False):
+              raise SystemExit("Replayed old Stage304 source did not preserve strict refusal")
+          minimal={
+              "schema":"vh-original-failed-stage304-source-postmortem/v1",
+              "original_neXium_run_id":39157976877,
+              "original_run_fully_successful":False,
+              "strict_source_replay_refused":True,
+              "failure_class":diagnostic["error_kind"],
+              "failed_original_source_invariant":diagnostic["source_invariant_failure"],
+              "host_PCM_file_size_snapshot_not_DAC_or_speaker":True,
+              "new_audio_call_history_verified":False,
+          }
+          location.joinpath("failure-reason-only.json").write_text(
+              json.dumps(minimal,indent=2,sort_keys=True)+"\n")
+          print("Original Stage304 source invariant:",minimal["failed_original_source_invariant"])
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f:
+              f.write("### Stage304 prior failed capture postmortem\n\n")
+              f.write("- Original NeXium source run: 39157976877 (failed)\n")
+              f.write("- Strict validation result: NOT VERIFIED\n")
+              f.write("- Source invariant: "+minimal["failed_original_source_invariant"]+"\n")
+              f.write("- Original host recorder file-size witnesses are not DAC/speaker timing.\n")
+          PY
+
+      - name: Publish failure reason only, never PCM or original sound data
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage304-failed-original-invariant-only
+          path: stage304-original-postmortem/failure-reason-only.json
+          if-no-files-found: warn
