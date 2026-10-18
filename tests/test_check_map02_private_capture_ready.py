@@ -5,8 +5,11 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from tools.check_map02_private_capture_ready import inspect_staged_capture
+from tools.check_map02_private_capture_ready import (
+    _snapshot_word, inspect_staged_capture,
+)
 from tools.verify_map02_frame_bundle import MAP_BYTES, PINNED_PC_SOURCE, VRAM_BYTES
 
 
@@ -138,6 +141,65 @@ class PrivateCapturePreflightTests(unittest.TestCase):
         self.assertFalse(result["whole_gpu_frame_capture_proven"])
         self.assertFalse(result["original_gameplay_authenticated"])
         self.assertFalse(result["ps1_hardware_equivalence_proven"])
+
+    def test_sample_reads_correct_regular_vram_word(self):
+        self.assertEqual(
+            _snapshot_word(self.native, "gpu-0001-vram.bin", self.x, self.y),
+            992)
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "requires POSIX FIFO")
+    def test_fifo_snapshot_rejected_without_blocking(self):
+        target = self.native / "gpu-0001-vram.bin"
+        target.unlink()
+        os.mkfifo(target, mode=0o600)
+        original_open = os.open
+
+        def guarded_open(path, flags, *args, **kwargs):
+            if (os.fspath(path) == os.fspath(target) and
+                    not flags & os.O_NONBLOCK):
+                raise AssertionError("FIFO open must be nonblocking")
+            return original_open(path, flags, *args, **kwargs)
+
+        with patch("tools.check_map02_private_capture_ready.os.open",
+                   side_effect=guarded_open):
+            with self.assertRaisesRegex(ValueError, "wrong type or size"):
+                _snapshot_word(self.native, target.name, self.x, self.y)
+
+    def test_rejects_byte_identical_snapshot_inode_swap_during_sample(self):
+        target = self.native / "gpu-0001-vram.bin"
+        replacement = self.native / "prebuilt-replacement"
+        replacement.write_bytes(target.read_bytes())
+        original_pread = os.pread
+        calls = [0]
+
+        def swap_on_first_read(fd, size, offset):
+            raw = original_pread(fd, size, offset)
+            calls[0] += 1
+            if calls[0] == 1:
+                os.replace(replacement, target)
+            return raw
+
+        with patch("tools.check_map02_private_capture_ready.os.pread",
+                   side_effect=swap_on_first_read):
+            with self.assertRaisesRegex(ValueError, "changed during sample"):
+                _snapshot_word(self.native, target.name, self.x, self.y)
+        self.assertEqual(calls[0], 2)
+
+    def test_rejects_two_distinct_words_on_same_inode(self):
+        original_pread = os.pread
+        calls = [0]
+
+        def change_second_read(fd, size, offset):
+            raw = original_pread(fd, size, offset)
+            calls[0] += 1
+            return b"\x01\x00" if calls[0] == 2 else raw
+
+        with patch("tools.check_map02_private_capture_ready.os.pread",
+                   side_effect=change_second_read):
+            with self.assertRaisesRegex(ValueError, "changed during sample"):
+                _snapshot_word(self.native, "gpu-0001-vram.bin",
+                               self.x, self.y)
+        self.assertEqual(calls[0], 2)
 
     def test_catches_pixel_snapshot_drift_even_when_logs_and_sha_agree(self):
         snapshot = self.native / "gpu-0001-vram.bin"
