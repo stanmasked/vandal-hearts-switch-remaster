@@ -463,3 +463,15 @@ This prevents an undetected local file-identity change **during the
 bounded audit window**, not changes after that window or forged PS1
 source labels. Retail/gameplay authenticity and HD substitution
 remain unproven and disabled respectively.
+
+### Single-read pathname continuity for claimed BGR555 inputs
+
+The standalone private frame comparator has also been strengthened.
+After each `O_NOFOLLOW` image or JSON manifest read, it compares the
+original held file descriptor's device/inode/size/time identity with
+the **current pathname entry**. This rejects a same-byte replacement
+that occurs during the read itself, before the source-native bridge
+has an opportunity to take a second witness. Asset-free tests swap
+each of the two image names and `frames.json` at the exact point of
+an in-progress `os.read` and require a hard refusal. No file paths,
+pixels or inode numbers appear in the final comparison report.
