@@ -219,10 +219,10 @@ def patch_frontend(source: str) -> str:
         "                       psxRegs.GPR.r[9]!=0xe3000000u){\n"
         '                        SysPrintf("VH158_GP0_FIFTH_DIAG"'
         '" accepted=%u attempts=%u stop=%u fault=%u gp0=%u bad=%u"'
-        '" t0_ok=%u t1_ok=%u\\n",\\n"'
-        "                            witnessed,steps,reason,faulted,gp0,gp0_bad,\\n"
-        "                            psxRegs.GPR.r[8]==0x1f801810u,\\n"
-        "                            psxRegs.GPR.r[9]==0xe3000000u);\\n"
+        '" t0_ok=%u t1_ok=%u\\n",\n'
+        "                            witnessed,steps,reason,faulted,gp0,gp0_bad,\n"
+        "                            psxRegs.GPR.r[8]==0x1f801810u,\n"
+        "                            psxRegs.GPR.r[9]==0xe3000000u);\n"
         '                        SysPrintf("VH158_GP0_FIFTH_REFUSED\\n");\n'
         "                        ClosePlugins();SysClose();menu_finish();plat_finish();return 62;\n"
         "                    }\n"
