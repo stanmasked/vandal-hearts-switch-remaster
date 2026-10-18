@@ -1,10 +1,12 @@
 """Synthetic checker for bounded native GPU command/VRAM capture files."""
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from tools.verify_map02_native_gpu_capture import verify_capture, VRAM_BYTES
+from tools.verify_map02_native_gpu_capture import private_file, verify_capture, VRAM_BYTES
 
 class NativeGpuCaptureValidationTests(unittest.TestCase):
     def setUp(self):
@@ -46,6 +48,84 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
             (self.root/f"gpu-{i:04d}-vram.bin").write_bytes(payload)
         (self.root/"gpu-native-events.jsonl").write_text(
             "".join(json.dumps(e,sort_keys=True)+"\n" for e in self.events))
+
+    def test_pinned_private_snapshot_rejects_path_escape(self):
+        for name in ("../gpu-0000-vram.bin", "/tmp/foreign-vram.bin",
+                     "gpu-0000-vram.bin/extra", "..", True):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ValueError, "input name"):
+                    private_file(self.root, name, expected=VRAM_BYTES)
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "requires POSIX FIFO")
+    def test_pinned_private_snapshot_rejects_fifo_without_blocking(self):
+        target = self.root / "gpu-0000-vram.bin"
+        target.unlink()
+        os.mkfifo(target, mode=0o600)
+        original_open = os.open
+
+        def nonblocking_open(path, flags, *args, **kwargs):
+            if (os.fspath(path) == os.fspath(target) and
+                    not flags & os.O_NONBLOCK):
+                raise AssertionError("FIFO open must be nonblocking")
+            return original_open(path, flags, *args, **kwargs)
+
+        with patch("tools.verify_map02_native_gpu_capture.os.open",
+                   side_effect=nonblocking_open):
+            with self.assertRaisesRegex(ValueError, "non-regular file"):
+                private_file(self.root, target.name, expected=VRAM_BYTES)
+
+    def test_pinned_snapshot_rejects_identical_inode_swap_during_read(self):
+        target = self.root / "gpu-0000-vram.bin"
+        backup = self.root / "before-swap"
+        original_pread = os.pread
+        calls = [0]
+
+        def replace_after_first_pread(fd, size, offset):
+            raw = original_pread(fd, size, offset)
+            calls[0] += 1
+            if calls[0] == 1:
+                target.replace(backup)
+                target.write_bytes(backup.read_bytes())
+            return raw
+
+        with patch("tools.verify_map02_native_gpu_capture.os.pread",
+                   side_effect=replace_after_first_pread):
+            with self.assertRaisesRegex(ValueError, "changed during private read"):
+                private_file(self.root, target.name, expected=VRAM_BYTES)
+        self.assertEqual(calls[0], 2)
+
+    def test_pinned_snapshot_rejects_metadata_drift_during_read(self):
+        target = self.root / "gpu-0000-vram.bin"
+        original_pread = os.pread
+        calls = [0]
+
+        def touch_after_first_pread(fd, size, offset):
+            raw = original_pread(fd, size, offset)
+            calls[0] += 1
+            if calls[0] == 1:
+                st = target.stat()
+                os.utime(target, ns=(st.st_atime_ns,
+                                     st.st_mtime_ns + 10**9))
+            return raw
+
+        with patch("tools.verify_map02_native_gpu_capture.os.pread",
+                   side_effect=touch_after_first_pread):
+            with self.assertRaisesRegex(ValueError, "changed during private read"):
+                private_file(self.root, target.name, expected=VRAM_BYTES)
+        self.assertEqual(calls[0], 2)
+
+    def test_pinned_private_snapshot_rejects_hardlink(self):
+        target = self.root / "gpu-0000-vram.bin"
+        alias = self.root / "hardlinked-vram"
+        os.link(target, alias)
+        try:
+            with self.assertRaisesRegex(ValueError, "non-regular file"):
+                private_file(self.root, target.name, expected=VRAM_BYTES)
+        finally:
+            alias.unlink()
+        self.assertEqual(
+            len(private_file(self.root, target.name, expected=VRAM_BYTES)),
+            VRAM_BYTES)
 
     def test_two_native_pairs_and_hashes(self):
         result=verify_capture(self.root,target_frame=12)
