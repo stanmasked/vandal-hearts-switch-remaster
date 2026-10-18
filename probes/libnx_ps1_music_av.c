@@ -16,6 +16,9 @@
 #include "vh_audio_assets.h"
 #include "vh_audio_resample.h"
 #include "vh_audio_output_recovery.h"
+#ifdef VH_AUDIO_HARDWARE_FOCUS_TRACE
+#include "vh_audio_focus_trace.h"
+#endif
 #include "vh_native_seq.h"
 #include "vh_native_spu.h"
 
@@ -64,24 +67,19 @@ static atomic_uint audout_failed_returns;
  * This does not fabricate HOME, modify PCM or call audout from hooks. */
 static AppletHookCookie hardware_focus_cookie;
 static atomic_int hardware_focus_notify_mode;
-static atomic_uint hardware_focus_backgrounds;
-static atomic_uint hardware_focus_returns;
-static atomic_uint hardware_focus_resumes;
-static atomic_uint hardware_focus_pages_at_return;
+static VhAudioFocusTrace hardware_focus_trace;
 static void hardware_focus_event(AppletHookType kind, void *param) {
     (void)param;
     if (kind==AppletHookType_OnFocusState) {
         const AppletFocusState focus=appletGetFocusState();
         if(focus==AppletFocusState_Background)
-            atomic_fetch_add(&hardware_focus_backgrounds,1u);
-        else if(focus==AppletFocusState_InFocus &&
-                atomic_load(&hardware_focus_backgrounds)>0u) {
-            atomic_store(&hardware_focus_pages_at_return,
-                         atomic_load(&audout_buffers_completed));
-            atomic_fetch_add(&hardware_focus_returns,1u);
-        }
+            vh_audio_focus_trace_background(&hardware_focus_trace);
+        else if(focus==AppletFocusState_InFocus)
+            vh_audio_focus_trace_foreground(
+                &hardware_focus_trace,
+                atomic_load(&audout_buffers_completed));
     } else if(kind==AppletHookType_OnResume) {
-        atomic_fetch_add(&hardware_focus_resumes,1u);
+        vh_audio_focus_trace_resume(&hardware_focus_trace);
     }
 }
 #endif
@@ -905,18 +903,17 @@ static void paint(VhCanvas *canvas, const VhGameState *state,
      * return, post-returned-PCM, OnResume signal. Blue means the
      * indicated EVENT was observed, NOT that audio was heard.
      * Keep these away from synthetic ZL/ZR/resume witness tiles. */
-    const unsigned backgrounds=atomic_load(&hardware_focus_backgrounds);
-    const unsigned focus_returns=atomic_load(&hardware_focus_returns);
-    const unsigned applet_resumes=atomic_load(&hardware_focus_resumes);
-    const unsigned pages=atomic_load(&audout_buffers_completed);
-    const unsigned at_return=atomic_load(&hardware_focus_pages_at_return);
+    const VhAudioFocusObservation focus_info=
+        vh_audio_focus_trace_observe(
+            &hardware_focus_trace,
+            atomic_load(&audout_buffers_completed));
     const int notify_mode=atomic_load(&hardware_focus_notify_mode);
     const uint32_t focus_colors[5]={
         notify_mode>0 ? hero : sound_fail,
-        backgrounds>0u ? hero : source_missing,
-        focus_returns>0u ? hero : source_missing,
-        focus_returns>0u && pages>at_return ? hero : source_missing,
-        applet_resumes>0u ? hero : source_missing
+        focus_info.backgrounds>0u ? hero : source_missing,
+        focus_info.foreground_returns>0u ? hero : source_missing,
+        focus_info.post_return_pcm ? hero : source_missing,
+        focus_info.resumes>0u ? hero : source_missing
     };
     /* Small 5x7 N/B/F/P/R labels make console screenshots
      * interpretable without relying on an external text renderer. */
@@ -974,6 +971,7 @@ int main(void) {
      * during HOME/sleep while preserving the system's suspend policy.
      * Register before entering the libnx appletMainLoop. All callback
      * mutations are atomic counters. No audout IPC from the callback. */
+    vh_audio_focus_trace_init(&hardware_focus_trace);
     appletHook(&hardware_focus_cookie,hardware_focus_event,NULL);
     const Result notify_rc=appletSetFocusHandlingMode(
         AppletFocusHandlingMode_SuspendHomeSleepNotify);
