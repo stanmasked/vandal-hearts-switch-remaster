@@ -146,13 +146,11 @@ jobs:
           # file-size regression from same-millisecond or backward
           # host epochs using only the original small CSV, never PCM.
           if doc.get("archive_has_all_Stage304_pinned_sources"):
-              from tools.classify_nexium_stage304_exit_control_order import (
-                  classify_original_host_controls)
-              from analyze_nexium_pcm_stream_integrity import VirtualPcmEvidenceError
               import sys
-              # Independent tool imports other tools from its own directory.
-              # Adding the known in-repo tools path is not an input source.
+              # The isolated source verifier imports shared tools.
               sys.path.insert(0,str(Path("tools").resolve()))
+              from classify_nexium_stage304_exit_control_order import (
+                  classify_original_host_controls)
               csvpath=root/doc["archived_pinned_source_files"]["control-csv"]["relative_archive_path"]
               try:
                   derived=classify_original_host_controls(csvpath.read_bytes())
