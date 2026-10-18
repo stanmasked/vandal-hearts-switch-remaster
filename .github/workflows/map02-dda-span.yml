@@ -42,6 +42,7 @@ on:
       - 'tests/test_instrument_map02_joint_gpu_frame.py'
       - 'tests/test_map02_joint_gpu_secure_files_c11.py'
       - 'tools/audit_map02_joint_gpu_frame.py'
+      - 'tools/map02_linux_child_journal_fd.py'
       - 'tests/test_map02_joint_native_capture_c11.py'
       - 'tools/verify_map02_private_capture_receipt.py'
       - 'tests/test_run_map02_private_native_capture.py'
