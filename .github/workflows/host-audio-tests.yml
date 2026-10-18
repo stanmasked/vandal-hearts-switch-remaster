@@ -81,6 +81,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_pcm_terminal_silence.py' -v
       - name: Stage303 recorder stop snapshot and uncertain partial-frame regressions
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_pcm_recorder_stop.py' -v
+      - name: Stage304 host Plus exit controls and buffered terminal-PCM synthetic tests
+        run: python3 -m unittest discover -s tests -p 'test_audit_nexium_pcm_exit_controls.py' -v
       - name: Statistical sensitivity of complete paired NeXium audio sessions
         run: python3 -m unittest discover -s tests -p 'test_analyze_nexium_idle_switch_variability.py' -v
       - name: Multi-pair no-switch original-SD archive negative controls
