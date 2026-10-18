@@ -362,11 +362,14 @@ class CycleOrderTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("failed=0 receipt=1", proc.stdout)
         self.assertIn('"gpu_draw_frame":73', proc.stdout)
-        self.assertIn('"schema":"vh.map02.cycle-order.v2"', proc.stdout)
+        self.assertIn('"schema":"vh.map02.cycle-order.v3"', proc.stdout)
         expected_sector_data = bytes((i ^ (i >> 8)) & 255
                                      for i in range(12 * 2048))
         expected_crc = zlib.crc32(expected_sector_data)
         self.assertIn('"original_cd_raw_user_crc32":"%08x"' % expected_crc,
+                      proc.stdout)
+        expected_sha = hashlib.sha256(expected_sector_data).hexdigest()
+        self.assertIn('"original_cd_raw_user_sha256":"%s"' % expected_sha,
                       proc.stdout)
         self.assertIn('"original_map02_rendering_proven":false', proc.stdout)
 
@@ -406,6 +409,9 @@ class CycleOrderTests(unittest.TestCase):
         self.assertEqual(cd["schema"], "vh.map02.original-cd-read.v2")
         self.assertEqual(cd["raw_user_sha256"], sha)
         self.assertEqual(cd["returned_user_sha256"], sha)
+        cycle_receipt = json.loads(proc.stdout.splitlines()[-1])
+        self.assertEqual(cycle_receipt["schema"], "vh.map02.cycle-order.v3")
+        self.assertEqual(cycle_receipt["original_cd_raw_user_sha256"], sha)
         self.assertEqual(cd["raw_user_crc32"], f"{zlib.crc32(expected):08x}")
         self.assertEqual(cd["returned_user_crc32"], f"{zlib.crc32(expected):08x}")
 
@@ -497,7 +503,7 @@ class CycleOrderTests(unittest.TestCase):
             current = out / "map02-single-process-cycle.jsonl"
             original = out / "prior-original-receipt"
             self.assertEqual(current.read_bytes(), b"foreign-not-to-delete")
-            self.assertIn(b"cycle-order.v2", original.read_bytes())
+            self.assertIn(b"cycle-order.v3", original.read_bytes())
             self.assertNotEqual(current.stat().st_ino, original.stat().st_ino)
 
     def test_normal_exit_refuses_renamed_or_symlinked_output_directory(self):
@@ -580,7 +586,7 @@ class CycleOrderTests(unittest.TestCase):
                 self.assertFalse((out / "map02-cycle-clean-exit.jsonl").exists())
                 alias = out / "seal-hardlink-alias"
                 self.assertTrue(alias.is_file())
-                self.assertIn(b"vh.map02.cycle-order.v2", alias.read_bytes())
+                self.assertIn(b"vh.map02.cycle-order.v3", alias.read_bytes())
                 self.assertEqual(alias.stat().st_nlink, 1)
 
     def test_clean_exit_fsync_failure_revokes_both_private_receipts(self):
@@ -615,7 +621,7 @@ class CycleOrderTests(unittest.TestCase):
                 self.assertFalse((out / "map02-single-process-cycle.jsonl").exists())
                 seal = out / "map02-cycle-clean-exit.jsonl"
                 self.assertTrue(seal.is_file(), "foreign seal inode was deleted")
-                self.assertIn(b"vh.map02.cycle-order.v2", seal.read_bytes())
+                self.assertIn(b"vh.map02.cycle-order.v3", seal.read_bytes())
 
     def test_private_exclusive_receipt_and_no_overwrite(self):
         with tempfile.TemporaryDirectory() as tmp:

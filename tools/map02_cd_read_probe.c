@@ -224,6 +224,16 @@ int vh_map02_cd_probe_raw_crc32(unsigned *out) {
     return 1;
 }
 
+/* Bind the ordered GPU cycle to the raw SHA-256 from the SAME completed
+ * observer, using exactly the same completion and transfer gate. */
+int vh_map02_cd_probe_raw_sha256_hex(char out[65]) {
+    unsigned checked_crc;
+    if (!out || !vh_map02_cd_probe_raw_crc32(&checked_crc))
+        return 0;
+    sha_hex(state.raw_sha256, out);
+    return 1;
+}
+
 int vh_map02_cd_probe_format_jsonl(char *out, size_t capacity) {
     const char *session;
     char raw_sha[65], copied_sha[65];

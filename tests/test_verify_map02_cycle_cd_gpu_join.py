@@ -69,6 +69,7 @@ class CycleCdGpuJoinTests(unittest.TestCase):
         self.receipt = {
             "schema": CYCLE_SCHEMA,
             "original_cd_raw_user_crc32": self.crc,
+            "original_cd_raw_user_sha256": "a" * 64,
             "capture_session": self.nonce,
             "gpu_draw_frame": 7,
             "ordered_source_hooks_observed": True,
@@ -169,19 +170,23 @@ class CycleCdGpuJoinTests(unittest.TestCase):
         self.assertEqual(_cycle_cd_pair(
             self.scoped, self.cycle, 7, self.digest)[2], original)
 
-    def test_early_sha_pair_does_not_claim_owned_image_authentication(self):
-        # Both equal but intentionally different 64-hex SHA values remain
-        # self-consistent. Only the later independent *owned-disc* audit
-        # knows the correct payload hash and may authenticate it.
+    def test_early_sha_pair_must_match_cycle_but_cannot_authenticate_disc(self):
+        # Matching all *self-reported* hashes between both native witnesses
+        # still does not prove that the owned retail BIN contains those bytes.
         record = json.loads(self.cd_raw)
         record["raw_user_sha256"] = "b" * 64
         record["returned_user_sha256"] = "b" * 64
         altered = (json.dumps(record, sort_keys=True) + "\n").encode()
         path = self.scoped / CD_READ
         path.write_bytes(altered)
+        with self.assertRaisesRegex(ValueError, "checksum.*differ"):
+            _cycle_cd_pair(self.scoped, self.cycle, 7, self.digest)
+        self.mock.assert_not_called()
+        self.receipt["original_cd_raw_user_sha256"] = "b" * 64
+        self.write_cycle()
         proof = _cycle_cd_pair(self.scoped, self.cycle, 7, self.digest)
         self.assertEqual(proof[2], altered)
-        self.mock.assert_not_called()  # no user-owned image was examined
+        self.mock.assert_not_called()  # user-owned original BIN still unchecked
         path.write_bytes(self.cd_raw)
 
     def test_prepublication_cycle_cd_pair_rejects_crc_and_session_mismatch(self):
@@ -258,6 +263,9 @@ class CycleCdGpuJoinTests(unittest.TestCase):
             {"original_cd_raw_user_crc32": "xyz"},
             {"original_cd_raw_user_crc32": "D31A04B7"},
             {"original_cd_raw_user_crc32": True},
+            {"original_cd_raw_user_sha256": "b" * 63},
+            {"original_cd_raw_user_sha256": "G" * 64},
+            {"original_cd_raw_user_sha256": 123},
             {"ordered_source_hooks_observed": False},
             {"ordered_source_hooks_observed": 1},
             {"cd_payload_verified_by_this_receipt": True},
@@ -321,6 +329,14 @@ class CycleCdGpuJoinTests(unittest.TestCase):
 
     def test_mismatched_crc_is_rejected_before_original_disc_verification(self):
         self.receipt["original_cd_raw_user_crc32"] = "0" * 8
+        self.write_cycle()
+        with self.assertRaisesRegex(ValueError, "checksum.*differ"):
+            self.check()
+        self.mock.assert_not_called()
+
+    def test_mismatched_cycle_sha_is_rejected_before_owned_disc_verification(self):
+        # CRC still matches; a wrong cycle digest cannot pass.
+        self.receipt["original_cd_raw_user_sha256"] = "b" * 64
         self.write_cycle()
         with self.assertRaisesRegex(ValueError, "checksum.*differ"):
             self.check()

@@ -11,7 +11,8 @@ void vh_map02_cd_read_sector(int lba, const unsigned char *user2048);
 void vh_map02_cd_read_finish(int lba, int sectors, const unsigned char *transferred);
 void vh_map02_cd_loader_complete(int cdf, int target_cdf, int state);
 int vh_map02_cd_probe_format_jsonl(char *out, size_t size);
-/* Export only a completed observer's original 12-sector CRC32; never data. */
+/* Export completed original 12-sector checksums, never game bytes. */
 int vh_map02_cd_probe_raw_crc32(unsigned *out);
+int vh_map02_cd_probe_raw_sha256_hex(char out[65]);
 int vh_map02_cd_probe_failed(void);
 #endif

@@ -26,7 +26,7 @@ from tools.verify_map02_window_scoped_join import CD_READ
 
 CYCLE_RECEIPT = "map02-single-process-cycle.jsonl"
 CYCLE_CLEAN_EXIT = "map02-cycle-clean-exit.jsonl"
-CYCLE_SCHEMA = "vh.map02.cycle-order.v2"
+CYCLE_SCHEMA = "vh.map02.cycle-order.v3"
 SCHEMA = "vh.map02.same-process-cycle-cd-gpu-join.v1"
 CD_READ_KEYS = (
     "schema", "capture_session", "source", "cdf", "lba",
@@ -36,7 +36,7 @@ CD_READ_KEYS = (
 
 CYCLE_KEYS = (
     "schema", "capture_session", "gpu_draw_frame",
-    "original_cd_raw_user_crc32",
+    "original_cd_raw_user_crc32", "original_cd_raw_user_sha256",
     "ordered_source_hooks_observed", "cd_payload_verified_by_this_receipt",
     "original_map02_rendering_proven", "physical_ps1_equivalence_proven",
 )
@@ -121,6 +121,10 @@ def _cycle_receipt(directory, frame):
     if (type(checksum) is not str or len(checksum) != 8 or
             any(ch not in "0123456789abcdef" for ch in checksum)):
         raise ValueError("invalid same-process original CdRead CRC32")
+    digest = event["original_cd_raw_user_sha256"]
+    if (type(digest) is not str or len(digest) != 64 or
+            any(ch not in "0123456789abcdef" for ch in digest)):
+        raise ValueError("invalid same-process original CdRead SHA-256")
     token = event["capture_session"]
     if (type(token) is not str or len(token) != 32 or
             any(c not in "0123456789abcdef" for c in token)):
@@ -163,7 +167,8 @@ def _cycle_cd_pair(scoped, cycle, frame, expected_session_sha256):
             _sha(token.encode("ascii")) != session_digest or
             cd_event["raw_user_crc32"] != event["original_cd_raw_user_crc32"] or
             cd_event["returned_user_crc32"] != event["original_cd_raw_user_crc32"] or
-            cd_event["raw_user_sha256"] != cd_event["returned_user_sha256"] or
+            cd_event["raw_user_sha256"] != event["original_cd_raw_user_sha256"] or
+            cd_event["returned_user_sha256"] != event["original_cd_raw_user_sha256"] or
             any(type(cd_event[k]) is not str or len(cd_event[k]) != 64 or
                 any(ch not in "0123456789abcdef" for ch in cd_event[k])
                 for k in ("raw_user_sha256", "returned_user_sha256"))):
