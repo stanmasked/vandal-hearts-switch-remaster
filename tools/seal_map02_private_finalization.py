@@ -95,6 +95,9 @@ def _canonical(raw):
         raise ValueError("MAP02 sealed completion is not canonical JSONL")
     data = parse_json(raw[:-1], NAME)
     fields(data, KEYS, NAME)
+    if raw != (json.dumps(data, sort_keys=True, separators=(",", ":")) +
+               "\\n").encode("utf-8"):
+        raise ValueError("MAP02 final seal is not canonical JSONL")
     if (data["schema"] != SCHEMA or
             data["independent_postcapture_recheck_completed"] is not True or
             any(data[k] is not False for k in (
@@ -197,6 +200,31 @@ def _discard_own_published_seal(directory, file_identity, directory_identity):
             os.close(fd)
 
 
+def _require_published_identity(directory, file_identity, directory_identity):
+    """Reject replacement of the published receipt, even with identical bytes."""
+    dfd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY |
+                  os.O_CLOEXEC | os.O_NOFOLLOW)
+    fd = -1
+    try:
+        if (_dir_identity(os.fstat(dfd)) != directory_identity or
+                _dir_identity(os.stat(directory, follow_symlinks=False))
+                != directory_identity):
+            raise ValueError("MAP02 final seal directory changed after publication")
+        fd = os.open(NAME, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC |
+                     os.O_NOFOLLOW, dir_fd=dfd)
+        observed = os.fstat(fd)
+        if (not stat.S_ISREG(observed.st_mode) or
+                _complete_identity(observed) != file_identity or
+                _complete_identity(os.stat(NAME, dir_fd=dfd,
+                                           follow_symlinks=False))
+                != file_identity):
+            raise ValueError("MAP02 final seal inode changed after publication")
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        os.close(dfd)
+
+
 def _check(source, native, scoped, handoff, cycle, preview, rgb,
            owned_game, upstream, binary, seal_directory, frame,
            compiler):
@@ -247,6 +275,10 @@ def seal_final_capture(source, native, scoped, handoff, cycle, preview, rgb,
                 observed["sealed_evidence_independently_reverified"]
                 is not True):
             raise ValueError("published MAP02 seal differs after verification")
+        # Matching bytes are insufficient: the path must still refer to
+        # the exact receipt inode published by this invocation.
+        _require_published_identity(directory, file_identity,
+                                    directory_identity)
     except BaseException:
         _discard_own_published_seal(directory, file_identity,
                                     directory_identity)
