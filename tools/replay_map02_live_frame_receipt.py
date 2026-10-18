@@ -14,6 +14,7 @@ import re
 import stat
 
 from tools.capture_map02_live_frame_pipe import SCHEMA
+from tools.audit_map02_joint_gpu_frame import audit as audit_joint_gpu
 from tools.compare_map02_private_bgr555_frames import _object_pairs, _reject_constant
 
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
@@ -32,6 +33,13 @@ RECEIPT_KEYS = frozenset((
 MAX_PIXELS = 1024 * 1024
 MAX_BYTES = 2 * MAX_PIXELS
 MAX_RECEIPT = 4096
+JOINT_SCHEMA = "vh.map02.live-child-pipe-bgr555-gpu.v1"
+JOINT_KEYS = RECEIPT_KEYS | frozenset((
+    "gpu_journal_sha256", "terminal_gpu_after_vram_sha256",
+    "gpu_journal_pairs_verified", "terminal_after_vram_matched",
+    "gpu_journal_same_elf_launch_requested",
+    "gpu_journal_writer_kernel_authenticated",
+))
 
 
 def _identity(info):
@@ -93,7 +101,7 @@ def _executable_sha(path):
         os.close(fd)
 
 
-def replay(directory, *, executable):
+def replay(directory, *, executable, gpu_journal_dir=None):
     root = Path(directory).absolute()
     if root.is_symlink():
         raise ValueError("MAP02 live frame directory is a symlink")
@@ -116,9 +124,15 @@ def replay(directory, *, executable):
                                   parse_constant=_reject_constant)
         except (UnicodeError, json.JSONDecodeError) as exc:
             raise ValueError("MAP02 live receipt JSON invalid") from exc
-        if type(metadata) is not dict or set(metadata) != RECEIPT_KEYS:
+        if type(metadata) is not dict:
             raise ValueError("MAP02 live receipt schema/fields invalid")
-        if (metadata["schema"] != SCHEMA
+        joint = metadata.get("schema") == JOINT_SCHEMA
+        expected_keys = JOINT_KEYS if joint else RECEIPT_KEYS
+        if set(metadata) != expected_keys or metadata.get("schema") not in (SCHEMA, JOINT_SCHEMA):
+            raise ValueError("MAP02 live receipt schema/fields invalid")
+        if (joint != (gpu_journal_dir is not None)):
+            raise ValueError("MAP02 joint live receipt requires exactly one journal directory")
+        if (metadata["schema"] not in (SCHEMA, JOINT_SCHEMA)
                 or metadata["pixel_format"] != "bgr555_le"
                 or type(metadata["frame"]) is not int
                 or not 1 <= metadata["frame"] <= 0xffffffff
@@ -154,6 +168,26 @@ def replay(directory, *, executable):
         if binary_hash != metadata["executable_sha256"]:
             raise ValueError("MAP02 live executable SHA-256 mismatch")
 
+        if joint:
+            for digest_field in ("gpu_journal_sha256",
+                                 "terminal_gpu_after_vram_sha256"):
+                if (type(metadata[digest_field]) is not str
+                        or not HEX64.fullmatch(metadata[digest_field])):
+                    raise ValueError("MAP02 joint journal digest invalid")
+            if (type(metadata["gpu_journal_pairs_verified"]) is not int
+                    or not 1 <= metadata["gpu_journal_pairs_verified"] < 32
+                    or metadata["terminal_after_vram_matched"] is not True
+                    or metadata["gpu_journal_same_elf_launch_requested"] is not True
+                    or metadata["gpu_journal_writer_kernel_authenticated"] is not False):
+                raise ValueError("MAP02 joint GPU evidence flags invalid")
+            joint_result = audit_joint_gpu(gpu_journal_dir,
+                                           frame=metadata["frame"], final_pixels=image)
+            if (joint_result["gpu_journal_sha256"] != metadata["gpu_journal_sha256"]
+                    or joint_result["terminal_gpu_after_vram_sha256"]
+                    != metadata["terminal_gpu_after_vram_sha256"]
+                    or joint_result["gpu_pairs_verified"]
+                    != metadata["gpu_journal_pairs_verified"]):
+                raise ValueError("MAP02 joint native journal no longer matches launch receipt")
         # Re-read and compare identities so a replaced receipt/image cannot
         # be accepted while an independent executable audit runs.
         recheck, same_receipt_identity = _read_private_file(
@@ -166,13 +200,23 @@ def replay(directory, *, executable):
                 or set(os.listdir(root_fd)) != {IMAGE_NAME, RECEIPT_NAME}):
             raise ValueError("MAP02 live frame changed during independent replay")
         return {
-            "schema": "vh.map02.live-child-pipe-replayed.v1",
+            "schema": ("vh.map02.live-child-pipe-gpu-replayed.v1" if joint
+                       else "vh.map02.live-child-pipe-replayed.v1"),
             "frame": metadata["frame"],
             "width": metadata["width"],
             "height": metadata["height"],
             "image_sha256": image_hash,
             "executable_sha256": binary_hash,
             "receipt_sha256": hashlib.sha256(raw_receipt).hexdigest(),
+            **({
+                "gpu_journal_sha256": joint_result["gpu_journal_sha256"],
+                "terminal_gpu_after_vram_sha256":
+                    joint_result["terminal_gpu_after_vram_sha256"],
+                "gpu_journal_pairs_verified": joint_result["gpu_pairs_verified"],
+                "gpu_terminal_frame_equal": True,
+                "same_launcher_gpu_journal_operationally_checked": True,
+                "gpu_journal_writer_kernel_authenticated": False,
+            } if joint else {}),
             "private_frame_integrity_replayed": True,
             "pinned_executable_bytes_rechecked": True,
             "native_gpu_log_same_process_authenticated": False,
@@ -187,9 +231,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--live-frame", type=Path, required=True)
     parser.add_argument("--executable", type=Path, required=True)
+    parser.add_argument("--gpu-journal-dir", type=Path)
     args = parser.parse_args()
     try:
-        result = replay(args.live_frame, executable=args.executable)
+        result = replay(args.live_frame, executable=args.executable,
+                        gpu_journal_dir=args.gpu_journal_dir)
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
     print(json.dumps(result, sort_keys=True, indent=2))
