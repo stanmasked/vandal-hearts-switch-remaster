@@ -13,6 +13,8 @@ on:
       - 'source/vh_switch_game_audio.h'
       - 'source/vh_audio_exit_timeline.h'
       - 'tools/audit_nexium_guest_exit_timeline.py'
+      - 'tools/audit_nexium_guest_optical_exit_clock.py'
+      - 'tests/test_audit_nexium_guest_optical_exit_clock.py'
       - 'tests/test_audit_nexium_guest_exit_timeline.py'
       - 'tests/test_vh_audio_exit_timeline.c'
       - 'source/vh_audout_queue_telemetry.c'
@@ -780,6 +782,41 @@ jobs:
               print(r["guest_monotonic_timestamps_ns"])
           PY
           echo "Stage307: observed/missing guest exit event timeline explicitly distinguished. Neither guest monotonic events nor virtual PCM are a sample-exact cross-clock map or audible hardware proof." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage308 independently source-verify guest optical scene clocks versus guest exit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_guest_optical_exit_clock.py \
+            --optical-image runtime-evidence/scene-optical-trace.png \
+            --guest-root-file runtime-evidence/guest-sd-root.txt \
+            --output runtime-evidence/guest-optical-exit-clock-stage308.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("runtime-evidence/guest-optical-exit-clock-stage308.json").read_text())
+          if (r["schema"]!="vh-nexium-guest-optical-scene-versus-exit-monotonic/v1"
+                  or r["optical_guest_event_rows"]<20
+                  or r["result"] not in {
+                      "OPTICAL_SCENES_CONFIRMED_EXIT_SD_NOT_OBSERVED",
+                      "OPTICAL_SCENES_CONFIRMED_EXIT_GUEST_INCOMPLETE",
+                      "GUEST_OPTICAL_SCENES_PRECEDE_VERIFIED_GUEST_EXIT"}
+                  or r["guest_to_host_PCM_sample_clock_alignment_verified"] is not False
+                  or r["exit_control_caused_audible_dropouts"] is not False
+                  or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage308 optical guest provenance or causal claim invalid")
+          if r["result"]=="GUEST_OPTICAL_SCENES_PRECEDE_VERIFIED_GUEST_EXIT":
+              if not r["guest_exit_order_verified"] or r["scene_last_event_to_plus_ns"]<0:
+                  raise SystemExit("Stage308 guest software chronology incoherent")
+              print("Stage308 measured guest-software interval from latest music scene event "
+                    "to observed Plus (NOT host/PCM latency):",
+                    r["scene_last_event_to_plus_ns"],"ns")
+          else:
+              if r["guest_exit_order_verified"] is not False:
+                  raise SystemExit("Stage308 unobserved/incomplete exit cannot prove timing")
+              print("Stage308 guest exit chronology NOT VERIFIED:",r["result"])
+          PY
+          echo "Stage308: guest optical music-scene timestamps and optional guest exit events checked in a shared guest software monotonic domain. No host file-size ↔ guest timestamp ↔ DAC conversion inferred." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Capture ten additional A/B transitions in isolated NeXium
         id: scene_soak_capture
