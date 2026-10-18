@@ -87,7 +87,7 @@ class OriginalGuestBoundedSoftwareDispersionTests(unittest.TestCase):
             self.assertEqual(d["previous_calls_faster_than_last"],0)
             self.assertEqual(d["previous_calls_equal_to_last"],0)
             self.assertEqual(d["previous_calls_slower_than_last"],15)
-            self.assertEqual(d["last_call_insertion_rank_among_16_if_ties_before"],1)
+            self.assertEqual(d["last_call_first_possible_rank_among_16"],1)
         self.assertFalse(r["Nintendo_Switch_speaker_audio_measured"])
 
     def test_source_authenticated_mixed_prior_baseline_rank_seven(self):
@@ -103,7 +103,7 @@ class OriginalGuestBoundedSoftwareDispersionTests(unittest.TestCase):
         self.assertEqual(d["previous_calls_faster_than_last"],6)
         self.assertEqual(d["previous_calls_equal_to_last"],0)
         self.assertEqual(d["previous_calls_slower_than_last"],9)
-        self.assertEqual(d["last_call_insertion_rank_among_16_if_ties_before"],7)
+        self.assertEqual(d["last_call_first_possible_rank_among_16"],7)
         self.assertGreater(d["previous_median_absolute_deviation_guest_software_ns"],0)
 
     def test_source_authenticated_prior_ties_with_final_are_counted(self):
@@ -114,7 +114,7 @@ class OriginalGuestBoundedSoftwareDispersionTests(unittest.TestCase):
         self.assertEqual(d["previous_calls_faster_than_last"],0)
         self.assertEqual(d["previous_calls_equal_to_last"],2)
         self.assertEqual(d["previous_calls_slower_than_last"],13)
-        self.assertEqual(d["last_call_insertion_rank_among_16_if_ties_before"],1)
+        self.assertEqual(d["last_call_first_possible_rank_among_16"],1)
 
     def test_forged_history_csv_hash_rejected(self):
         with self.assertRaises(ExitTimelineError):
