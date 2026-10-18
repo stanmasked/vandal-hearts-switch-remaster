@@ -76,3 +76,50 @@ SD audit receipts and copies but does not reopen the original SD now.
 Do not claim hardware, audible output, independent scheduler events,
 host/guest PCM time synchronization, or scene-switch causality from
 this stage.
+
+## Accepted Stage288 archived-source observations (2026-10-18)
+
+The independent [eight-pair NeXium verification workflow
+39086324572](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39086324572)
+completed successfully at [commit
+`f45bc74e`](https://github.com/stanmasked/vandal-hearts-switch-remaster/commit/f45bc74e0462c519a11eddb67a638aa8a20fc241).
+It revalidated the live-original-SD-bound historical ZIP evidence,
+all eight original clock/scene/slow-call CSV sets, all source run IDs,
+all 51-second per-run windows, and every earlier Stage279–287
+source report.
+
+**80 actual scene INPUT events** (10 per switching session) had
+**37** blocking audout calls ≥40 ms whose **call begin** time
+was within ±500 ms of the INPUT (34 of duration 40–<50 ms,
+3 of duration ≥50 ms).
+
+Within the switching mode, after partitioning 408 complete
+run-seconds into 80 scene-INPUT seconds and 328 other seconds:
+
+| Relative guest-audio second category | Blocking calls 40–<50 ms /1,000 audout attempts |
+| --- | ---: |
+| Guest scene INPUT occurred in the second | 11.816340 |
+| No guest scene INPUT occurred in the second | 13.617869 |
+
+Thus, the verified archival software API trace does **not**
+show a higher **pooled 40–<50ms rate** on the 80 scene-INPUT
+seconds than on the other 328 relative run-seconds. These
+categories are descriptive, unevenly located in elapsed time
+and not order-randomized. They are **not** a statistical
+test of whether the scene inputs affect audio.
+
+The **±500 ms vicinity counts** and the separate
+**same-second rates** are distinct definitions: a call starting
+in the prior or following second can fall within 500 ms of
+an INPUT, and a slow call in the same second need not start
+within ±500 ms of the INPUT. Neither definition measures
+physical audio playback.
+
+The [native PCM workflow 39086324594](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39086324594)
+also succeeded at this commit. Host and toolchain runs are
+tracked in the corresponding commit checks. No second-by-second
+guest-to-host PCM clock synchronization or operating-system
+audio scheduler event timeline was captured. The next step
+toward stronger attribution would be a **new same-guest-clock
+scheduler-state witness recorded by the next NeXium NRO run**,
+not retroactively labeling old slow-call events as scheduler stalls.
