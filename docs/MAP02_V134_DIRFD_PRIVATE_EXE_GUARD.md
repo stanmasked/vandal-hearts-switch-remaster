@@ -13,6 +13,7 @@ The exact **file descriptor** returned by this guarded walk is passed to the exi
 ## Regression checks
 
 - Positive: original generated 10,240-byte synthetic MIPS EXE inside a nested private directory is opened and inspected by both analyzers.
+- Deterministic race test: immediately after the OS opens a parent directory FD, rename that directory and replace its old name with a symlink to a different valid synthetic EXE. The reader must still return bytes from the **original already-open directory**, not the substituted pathname. A later fresh call to the symlink must refuse.
 - Negative: symlink on an ancestor directory, symlink on the EXE itself, embedded `.` / `..` traversal, missing leaf and wrong input type all refuse.
 - Relative paths without traversal are supported from their original working directory; repeated reads may not leak directory descriptors.
 - Production v131 and v132 CLI binaries refuse an ancestor symlink within a short timeout and do not disclose the supplied private pathname.
