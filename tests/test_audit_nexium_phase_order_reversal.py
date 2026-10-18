@@ -74,7 +74,9 @@ class ReversePhaseOrderSyntheticTests(unittest.TestCase):
         with self.assertRaises(CorrelationError):
             audit_four_sessions(*v)
         v=list(copy.deepcopy(inputs()))
-        v[2]["sample_records"][0]["pre_submit_queue_count"]=9
+        v[2]["sample_records"][0]["query_succeeded"]=False
+        # Unsuccessful service queries may not be assigned ANY count.
+        # Leaving the original count in place must fail strictly.
         with self.assertRaises(CorrelationError):
             audit_four_sessions(*v)
 

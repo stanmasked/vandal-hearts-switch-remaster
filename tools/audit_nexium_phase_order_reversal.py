@@ -43,8 +43,7 @@ def audit_four_sessions(
         phase0_reversed,phase8_reversed,baseline_manifest,phase8_manifest)
     # compare_real_phases has performed independent sample/accounting/
     # NRO manifest validation for both ordered pairs.
-    if (forward["nro_sha256"] if "nro_sha256" in forward else
-            forward.get("baseline_nro_sha256")) != reverse.get("baseline_nro_sha256"):
+    if forward.get("baseline_nro_sha256") != reverse.get("baseline_nro_sha256"):
         raise CorrelationError("reversed runs are not the same baseline NRO")
     if (forward.get("phase8_nro_sha256")!=reverse.get("phase8_nro_sha256")
             or forward.get("run_id")!=reverse.get("run_id")
@@ -86,9 +85,14 @@ def audit_four_sessions(
     reverse_delta=contrast(rows[3],rows[2])
     order_gap={}
     for key in forward_delta:
+        # Keep exact rational rates until final six-decimal display;
+        # never subtract previously rounded floating-point results.
+        forward_exact=_rate(rows[0],key.split("_delta_per_1000_queried_attempts")[0])-\
+                      _rate(rows[1],key.split("_delta_per_1000_queried_attempts")[0])
+        reverse_exact=_rate(rows[3],key.split("_delta_per_1000_queried_attempts")[0])-\
+                      _rate(rows[2],key.split("_delta_per_1000_queried_attempts")[0])
         order_gap[key+"_forward_minus_reverse"]=_rounded(
-            Fraction.from_float(forward_delta[key])-
-            Fraction.from_float(reverse_delta[key]))
+            forward_exact-reverse_exact)
     zero_count=sum(r["successful_service_queries_with_zero_queue"]
                    for r in rows)
     nonzero_count=sum(r["successful_service_queries_with_nonzero_queue"]
