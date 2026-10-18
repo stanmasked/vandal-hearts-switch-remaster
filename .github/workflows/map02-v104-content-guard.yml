@@ -202,6 +202,9 @@ on:
       - 'tools/apply_map02_v161_gpulib_queue.py'
       - 'tools/apply_map02_v162_gpulib_parse_flush.py'
       - 'tools/apply_map02_v163_host_unai_rectangle.py'
+      - 'tools/apply_map02_v164_guest_mips_halo.py'
+      - 'tests/test_map02_v164_guest_mips_halo.py'
+      - '.github/workflows/map02-v164-guest-mips-halo.yml'
       - 'tests/test_map02_v163_host_unai_rectangle.py'
       - '.github/workflows/map02-v163-host-unai-rectangle.yml'
       - 'tests/test_map02_v162_gpulib_parse_flush.py'
@@ -370,6 +373,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v161_gpulib_queue.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v162_gpulib_parse_flush.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v163_host_unai_rectangle.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v164_guest_mips_halo.py' -v
           python3 -m remaster.tools.check_map02_v147_native_bounded_c --cc "${{ matrix.cc }}" \
             | grep -Fx 'VH147_COMPILED_BOUNDED_NATIVE_PASS capacity=1024 generic=1 repeated_pc=1 overflow_refused=1 atomic_mode0600=1 no_overwrite=1 original_retail=0'
           python3 -m remaster.tools.check_map02_v144_native_challenge_c --cc "${{ matrix.cc }}" \
@@ -390,7 +394,9 @@ jobs:
           git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
           git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
-          python3 -m remaster.tools.apply_map02_v163_host_unai_rectangle upstream-pcsx
+          python3 -m remaster.tools.apply_map02_v164_guest_mips_halo upstream-pcsx
+          grep -F 'VH164_GUEST_MIPS_UNAI_VRAM_PASS' upstream-pcsx/frontend/main.c
+          grep -F 'vh164_check_mips_halo' upstream-pcsx/frontend/main.c
           grep -F 'VH163_HOST_ONLY_UNAI_VRAM_RECT_PASS' upstream-pcsx/frontend/main.c
           grep -F 'vh162_note_gpu_parse(gpu, data, pos, count, cmd)' upstream-pcsx/plugins/gpulib/gpu.c
           grep -F 'vh162_note_gpu_flush(gpu, left)' upstream-pcsx/plugins/gpulib/gpu.c
@@ -1095,6 +1101,49 @@ jobs:
               exit 1
             }
           grep -F 'VH121_MIPS_GP0_RETURN_PASS stages=6' proof/private/v121-runtime.log
+          # Separate authentic interpreted guest-MIPS GP0 experiment.
+          # No host GPUwriteData or GPUwriteDataMem submission.
+          mkdir -m 700 proof/v164-guest-home
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v164-guest-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh164-mips-vram-halo proof/private/V121_SYNTHETIC.EXE \
+            > proof/private/v164-guest-halo.log 2>&1 || {
+              tail -n 70 proof/private/v164-guest-halo.log
+              exit 1
+            }
+          grep -Fx 'VH164_GUEST_MIPS_UNAI_VRAM_PASS rectangles=5 changed=80 border=100 host_draws=0 original_retail=0' \
+            proof/private/v164-guest-halo.log
+          grep -F 'VH121_MIPS_GP0_RETURN_PASS stages=6' \
+            proof/private/v164-guest-halo.log
+          # Corrupt ONLY the self-authored EXE's tag; the stricter v164
+          # mode must never credit it as authentic MIPS-sourced raster.
+          python3 - <<'PY'
+          from pathlib import Path
+          source=Path("proof/private/V121_SYNTHETIC.EXE").read_bytes()
+          mutated=bytearray(source)
+          assert source[:8]==b"PS-X EXE" and source[0x4c:0x54]==b"VH121SY!"
+          mutated[0x4c]^=1
+          path=Path("proof/private/V164_BAD_MAGIC.EXE")
+          assert not path.exists()
+          path.write_bytes(mutated)
+          PY
+          mkdir -m 700 proof/v164-invalid-home
+          vh164_invalid_rc=0
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v164-invalid-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh164-mips-vram-halo proof/private/V164_BAD_MAGIC.EXE \
+            > proof/private/v164-invalid.log 2>&1 || vh164_invalid_rc=$?
+          test "$vh164_invalid_rc" -eq 37
+          grep -Fx 'VH121_EXE_REFUSED' proof/private/v164-invalid.log
+          if grep -Fq 'VH164_GUEST_MIPS_UNAI_VRAM_PASS' \
+              proof/private/v164-invalid.log; then
+            echo 'VH164_CORRUPT_GUEST_SOURCE_FALSE_ACCEPT_REFUSED'
+            exit 1
+          fi
           sha256sum -c proof/private/native.sha256
           test ! -e proof/private/V104_RENDERER_EVENTS.jsonl.tmp
           python3 - <<'PY'
@@ -2252,6 +2301,10 @@ jobs:
           report["v163_host_only_gpulib_4x4_red_rectangle_vram_verified"]=True
           report["v163_host_mode_without_mips_provenance_refused"]=True
           report["v163_fifth_mips_rasterization_still_not_verified"]=True
+          report["v164_synthetic_guest_mips_five_rectangles_halo_verified"]=True
+          report["v164_guest_rectangles_changed_pixels"]=80
+          report["v164_guest_rectangles_untouched_border_samples"]=100
+          report["v164_original_retail_game_rasterization_unverified"]=True
           report["retail_map02_gpu_rendering_verified"]=False
           Path("proof/public/v129-four-real-vblank-profiles-summary.json").write_text(
               json.dumps(report,sort_keys=True)+"\n")
