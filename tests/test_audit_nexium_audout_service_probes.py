@@ -45,10 +45,10 @@ class ServiceProbeCSVTests(unittest.TestCase):
         raw,origin,queue,latency,slow=fixture()
         # This synthetic mode keeps the original 34 attempted calls but
         # has only two queries at phase8: attempts 9 and 25.
-        source=("scope,index,attempt,submit_begin_ns,status,queue_count,total_probes,dropped_probes\\n"
-                "TOTAL,-1,0,0,-1,0,2,0\\n"
-                "SAMPLE,0,9,1400000000,1,2,0,0\\n"
-                "SAMPLE,1,25,2400000000,1,0,0,0\\n").encode("ascii")
+        source=("scope,index,attempt,submit_begin_ns,status,queue_count,total_probes,dropped_probes\n"
+                "TOTAL,-1,0,0,-1,0,2,0\n"
+                "SAMPLE,0,9,1400000000,1,2,0,0\n"
+                "SAMPLE,1,25,2400000000,1,0,0,0\n").encode("ascii")
         new_queue={**queue,"queue_probes_ok":2,"queue_probes_failed":0,
                    "queue_min_pre_submit":0,"queue_max_pre_submit":2}
         # Attempt 9 occurs in the first 17-call service second, and 25
