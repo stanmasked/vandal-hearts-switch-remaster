@@ -47,3 +47,29 @@ time-varying host scheduling and recording conditions may
 also change. An observed queue count is a pre-submit service
 snapshot, NOT guest OS scheduler state, DAC starvation,
 physical Switch audio or audible music correctness.
+
+## Verified original-SD research run
+
+[Successful Stage294 NeXium CI 39120751817](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39120751817)
+audited the original guest SD journals in the **same workflow**
+after producing two distinct NROs and preserving the baseline's
+strict two-file artifact gate. Confirmed source data:
+
+| Quantity | Phase0 normal NRO | Phase8 experimental NRO |
+| --- | ---: | ---: |
+| Full audout attempts | 1947 | 1934 |
+| Real service queries | 122 | 121 |
+| Query successes / failures | 122 / 0 | 121 / 0 |
+| Measured queue service count zero | **122** | **121** |
+| Measured nonzero service queue count | 0 | 0 |
+| >=40ms calls on actually queried attempts | 0 | 3 |
+
+The three slow API calls on the phase8 queried attempts had
+original guest attempt IDs **153,249,409**, and guest durations
+**49,383,073 ns; 41,401,094 ns; 42,112,969 ns**, respectively.
+All queried pre-submit service counts were zero, including these
+three calls; that does not measure the service queue DURING the
+following blocking call. Physical console/audio was not tested.
+
+An independent later CI run Stage295 sampled different guest calls,
+so **do not merge these two runs into one experiment**.

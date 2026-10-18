@@ -33,3 +33,31 @@ speaker test.
 
 The Stage295 JSON report is archived with all original evidence
 under `runtime-evidence/scene-soak-phase8/`.
+
+## Verified Stage295 follow-up
+
+[Successful Stage295 NeXium CI 39121284096](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39121284096)
+passed the strict original-SD audits and the new two-phase comparison.
+The current-run comparison reported:
+
+| Source-bound real measurement | Phase0 | Phase8 |
+| --- | ---: | ---: |
+| Query samples | **121** | **121** |
+| Successful service queue queries | 121 | 121 |
+| Queries with service count 0 | **121** | **121** |
+| Queries with nonzero service count | 0 | 0 |
+| >=40ms calls on sampled attempts | 3 | 1 |
+| >=50ms calls on sampled attempts | 0 | 0 |
+
+[Host C/Python and toolchain 39121284067](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39121284067),
+[Host SPU 39121283967](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39121283967),
+and [native PCM 39121284007](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39121284007)
+were successful on the source revision containing the analyser.
+
+The separate successful Stage294 run **39120751817** saw **0 vs 3**
+sampled >=40ms calls instead of the newer run's **3 vs 1**.
+The two runs' different results demonstrate run-to-run variation
+in these small systematic samples, NOT that either query phase
+caused an audio quality or latency change. All actual pre-submit
+service queue counts were zero in both runs. No sampled value
+can stand in for the unqueried 15 phases or the DAC during playback.
