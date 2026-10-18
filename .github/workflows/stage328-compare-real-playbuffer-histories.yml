@@ -21,7 +21,7 @@ jobs:
       - name: Checkout strict source comparators
         uses: actions/checkout@v4
 
-      - name: Stage328 twelve guest software PlayBuffer source tests
+      - name: Stage328 guest software PlayBuffer original source tests
         run: |
           set -euo pipefail
           python3 -m py_compile tools/compare_nexium_stage328_original_playbuffer_histories.py tests/test_compare_nexium_stage328_original_playbuffer_histories.py
@@ -67,6 +67,8 @@ jobs:
             --second-root second-real-audout-history \
             --first-history-sha256 72eb03e4508e2f8f7814f8b059aa5bfba69c71bbdac9f495ffab447d23fc345d \
             --second-history-sha256 795c751e11449b0d0e0938031c540890eac23058e3a50c49ac2be9f622950a07 \
+            --first-last-sha256 fdc3ab8bcc5908ccb61c149ba185435fb5ab4a6409d33a43c02e7a179caf4aec \
+            --second-last-sha256 2559938d1f86f8812405e2d3b1573398109450663188000bf1d58c8c965031e9 \
             --output stage328-result/two-original-guest-playbuffer-histories.json
           python3 - <<'PY'
           import json
