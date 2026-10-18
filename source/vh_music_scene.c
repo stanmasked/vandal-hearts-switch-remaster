@@ -64,9 +64,11 @@ static int switch_to(VhMusicScene *s, const VhMusicCue *cue) {
     /* Old voice/PCM ownership must end before the caller frees a bank.
      * The optional branch preserves wet history, not borrowed samples.
      */
-    if (s->keep_reverb_across_cues && cue && cue->id) {
-        /* Validate then switch atomically, preserving the wet tail.
-         * Publish the new cue only after the SEQ/SPU switch succeeds. */
+    if (s->keep_reverb_across_cues && s->active.id &&
+        cue && cue->id) {
+        /* Preserve the wet tail ONLY between two active music cues.
+         * Starting from silence must clear any prior owner/old state.
+         * Validate then switch atomically and publish only on success. */
         if (vh_native_seq_switch_scene(&s->seq, cue->seq, cue->seq_size,
                                        s->spu, cue->resolver, cue->context,
                                        cue->repeats))
