@@ -26,9 +26,10 @@ class PrivateOneShotCycleTests(unittest.TestCase):
         self.receipt = self.root / "synthetic-build-receipt"
         self.bundle = self.root / "synthetic-build-bundle"
         self.plan = b'{"test":"only synthetic input"}\n'
+        self.plan_identity = (1, 11, 22, 0o100600, 1, len(self.plan), 3, 4)
         self.mocks = {}
         simulated = {
-            "private_file": self.plan,
+            "private_file": (self.plan, self.plan_identity),
             "_validate_plan": {"target_gpu_draw_frame": 12},
             "verify_private_cycle_readiness": {
                 "ready_for_controlled_local_launch": True},
@@ -125,10 +126,59 @@ class PrivateOneShotCycleTests(unittest.TestCase):
 
     def test_refuse_changed_plan_between_preflight_and_spawn(self):
         self.mocks["private_file"].side_effect = [
-            self.plan, b'{"changed":"plan"}\n']
+            (self.plan, self.plan_identity),
+            (b'{"changed":"plan"}\n', self.plan_identity)]
         with self.assertRaisesRegex(ValueError, "plan changed"):
             self.execute()
         self.mocks["launch_observed_pc"].assert_not_called()
+
+    def test_identical_bytes_plan_replacement_inode_rejected(self):
+        replaced = tuple(
+            999 if index == 1 else value
+            for index, value in enumerate(self.plan_identity))
+        self.mocks["private_file"].side_effect = [
+            (self.plan, self.plan_identity), (self.plan, replaced)]
+        with self.assertRaisesRegex(ValueError, "plan changed"):
+            self.execute()
+        self.mocks["launch_observed_pc"].assert_not_called()
+        self.mocks["finalize_private_capture"].assert_not_called()
+
+    def test_seal_directory_swap_during_process_rejected(self):
+        original = self.folders[-1]
+        archived = self.root / "old-seal-directory"
+
+        def swap_instead_of_private_child(*args, **kwargs):
+            original.rename(archived)
+            original.mkdir(mode=0o700)
+            return {
+                "kernel_executable_hash_matched": True,
+                "same_process_gpu_scoped_nonce_checked": True,
+                "pc_preoverlay_capture_session_bound": True,
+            }
+
+        self.mocks["launch_observed_pc"].side_effect = swap_instead_of_private_child
+        with self.assertRaisesRegex(ValueError, "seal directory changed"):
+            self.execute()
+        self.assertTrue(archived.is_dir())
+        self.mocks["finalize_private_capture"].assert_not_called()
+        self.mocks["seal_final_capture"].assert_not_called()
+
+    def test_seal_directory_populated_during_process_rejected(self):
+        original = self.folders[-1]
+
+        def create_rogue_output(*args, **kwargs):
+            (original / "unrelated-private-run").write_bytes(b"synthetic")
+            return {
+                "kernel_executable_hash_matched": True,
+                "same_process_gpu_scoped_nonce_checked": True,
+                "pc_preoverlay_capture_session_bound": True,
+            }
+
+        self.mocks["launch_observed_pc"].side_effect = create_rogue_output
+        with self.assertRaisesRegex(ValueError, "unexpectedly populated"):
+            self.execute()
+        self.mocks["finalize_private_capture"].assert_not_called()
+        self.mocks["seal_final_capture"].assert_not_called()
 
     def test_negative_readiness_prohibits_process_and_artifact_publication(self):
         self.mocks["verify_private_cycle_readiness"].return_value = {
