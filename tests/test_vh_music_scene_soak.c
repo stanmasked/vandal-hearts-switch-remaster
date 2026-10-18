@@ -176,7 +176,11 @@ static void opt_in_48k_comparison(void) {
         delivered+=wet_count;
         assert(wet_rate.input_frames==dry_rate.input_frames &&
                wet_rate.input_frames==((uint64_t)block+1u)*512u);
-        if(memcmp(&wet_rate,&dry_rate,sizeof wet_rate)!=0)
+        /* PCM history samples naturally differ with retained wet
+         * reverb. Only transport CLOCK phase/count must remain equal. */
+        if(wet_rate.input_frames!=dry_rate.input_frames ||
+           wet_rate.next_output_tick!=dry_rate.next_output_tick ||
+           wet_rate.have_previous!=dry_rate.have_previous)
             ++frame_drift;
         if(memcmp(wet_48k,dry_48k,wet_count*2u*sizeof(int16_t))!=0) {
             ++divergent_blocks;
