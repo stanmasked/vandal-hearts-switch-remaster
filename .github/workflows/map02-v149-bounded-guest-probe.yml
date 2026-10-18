@@ -1,0 +1,35 @@
+name: MAP02 v149 bounded private MIPS guest subset probe
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v149-bounded-guest-probe.yml'
+      - 'tools/run_map02_v149_bounded_guest.py'
+      - 'tests/test_map02_v149_bounded_guest.py'
+      - 'tools/prepare_map02_v148_original_guest_boot.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  bounded-mips-synthetic:
+    name: instruction bounds and private original-only gate (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test fail-closed MIPS subset in synthetic-only CI
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          no_retail_code_in_ci=1
+          readonly no_retail_code_in_ci
+          test "$no_retail_code_in_ci" = 1
+          python3 -m compileall -q tools/run_map02_v149_bounded_guest.py tests/test_map02_v149_bounded_guest.py
+          python3 -m unittest discover -s tests -p 'test_map02_v149_bounded_guest.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v148_original_guest_boot.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v147_generic_native_mmio.py' -v
+          echo 'VH149_BOUNDED_GUEST_SYNTHETIC_PASS original_game_in_ci=0 authenticated_retail_boot=0 map02_rendered=0'
