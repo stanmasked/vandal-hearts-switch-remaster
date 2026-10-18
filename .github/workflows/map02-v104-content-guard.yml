@@ -371,7 +371,7 @@ jobs:
           git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
           python3 -m remaster.tools.apply_map02_v158_native_gp0_fifth upstream-pcsx
-          grep -F 'vh158_capture_gp0(regs,addr,value)' upstream-pcsx/libpcsxcore/psxmem.c
+          grep -F 'if(vh158_gp0_active) vh158_capture_gp0(regs,mem,value);' upstream-pcsx/libpcsxcore/psxmem.c
           grep -F 'VH158_NATIVE_GP0_FIFTH_PASS' upstream-pcsx/frontend/main.c
           grep -F 'vh157_arm_t1_fourth' upstream-pcsx/libpcsxcore/psxinterpreter.c
           grep -F 'VH157_NATIVE_T1_FOURTH_REFUSED' upstream-pcsx/frontend/main.c
