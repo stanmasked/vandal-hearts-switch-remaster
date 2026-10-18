@@ -93,6 +93,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_stage327_clock_gap.py' -v
       - name: Stage328 compare two independent original 16-call PlayBuffer histories
         run: python3 -m unittest discover -s tests -p 'test_compare_nexium_stage328_original_playbuffer_histories.py' -v
+      - name: Stage329 original bounded PlayBuffer guest software dispersion tests
+        run: python3 -m unittest discover -s tests -p 'test_audit_nexium_stage329_guest_software_dispersion.py' -v
       - name: Stage305 strict buffered Plus/PCM terminal zero onset fence and baseline tests
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_pcm_plus_fence.py' -v
       - name: Stage307 guest software exit C11 timeline on GCC and Clang
