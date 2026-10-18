@@ -47,6 +47,79 @@ def _sealed_fd(content, label):
         raise
 
 
+HEADER_LIMIT = 16 * 1024 * 1024
+
+
+def _tracked_header_blobs(upstream):
+    """Read HEAD's tracked header inventory, independent of the mutable index."""
+    git = shutil.which("git", path="/usr/bin:/bin")
+    if not git:
+        raise ValueError("MAP02 pinned header Git inspector unavailable")
+    try:
+        result = subprocess.run(
+            [git, "ls-tree", "-r", "-z", "HEAD", "--",
+             "include", "platform/pc/include", "platform/pc/src"],
+            cwd=upstream, env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+            capture_output=True, timeout=20, check=False)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ValueError("MAP02 pinned header inventory unavailable") from exc
+    if result.returncode or not result.stdout:
+        raise ValueError("MAP02 pinned header inventory unavailable")
+    headers = {}
+    for entry in result.stdout.split(bytes([0])):
+        if not entry:
+            continue
+        try:
+            meta, raw_path = entry.split(bytes([9]), 1)
+            mode, kind, blob = meta.decode("ascii").split(" ")
+            rel = raw_path.decode("utf-8")
+        except (ValueError, UnicodeError) as exc:
+            raise ValueError("MAP02 pinned header inventory malformed") from exc
+        if not (rel.startswith(("include/", "platform/pc/include/",
+                                "platform/pc/src/"))
+                and rel.endswith((".h", ".inc", ".hpp"))):
+            continue
+        if (kind != "blob" or mode not in ("100644", "100755")
+                or rel in headers or not re.fullmatch(r"[A-Za-z0-9_./-]+", rel)
+                or any(x in (".", "..") for x in Path(rel).parts)):
+            raise ValueError("MAP02 pinned header inventory invalid")
+        headers[rel] = blob
+    if not headers:
+        raise ValueError("MAP02 pinned header inventory empty")
+    return headers
+
+
+def _stage_headers(upstream, stage):
+    """Materialize only byte-verified, tracked public headers in a private tree."""
+    digests = {}
+    for relative, blob in sorted(_tracked_header_blobs(upstream).items()):
+        source = upstream / relative
+        for parent in source.parents:
+            if parent == upstream:
+                break
+            if parent.is_symlink():
+                raise ValueError("MAP02 pinned header directory redirected")
+        content = auditor._stable_regular_bytes(source, max_bytes=HEADER_LIMIT)
+        if builder.git_blob_sha1(content) != blob:
+            raise ValueError("MAP02 pinned header differs from Git blob")
+        dest = stage / relative
+        dest.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        with dest.open("xb") as stream:
+            stream.write(content)
+        dest.chmod(0o400)
+        digests[relative] = hashlib.sha256(content).hexdigest()
+    return digests
+
+
+def _recheck_headers(stage, digests):
+    for relative, digest in digests.items():
+        content = auditor._stable_regular_bytes(
+            stage / relative, max_bytes=HEADER_LIMIT)
+        if hashlib.sha256(content).hexdigest() != digest:
+            raise ValueError("MAP02 staged header changed during preprocessing")
+
+
+
 def compile_overlay(upstream, output, manifest, *, build_dir):
     """Fail closed if the replayed payload differs from the sealed Make input."""
     if sys.platform != "linux" or not hasattr(os, "memfd_create"):
@@ -112,16 +185,23 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
             if result.returncode:
                 raise ValueError("MAP02 sealed Make compilation failed")
 
-        # Header expansion is a separate, audited boundary. Unlike the C
-        # compiler, the preprocessor must still read headers from the
-        # checkout; its complete output is sealed before object compilation.
-        with tempfile.TemporaryDirectory(prefix="vh-map02-preprocessed-") as temp:
+        # Preprocess against a private byte-verified snapshot of pinned Git
+        # headers, never the mutable upstream include/src header directories.
+        with (tempfile.TemporaryDirectory(prefix="vh-map02-pinned-headers-") as headers,
+              tempfile.TemporaryDirectory(prefix="vh-map02-preprocessed-") as temp):
+            snapshot = Path(headers)
+            staged_headers = _stage_headers(upstream, snapshot)
+            include_flags = ("-I" + str(snapshot / "platform/pc/include") +
+                             " -I" + str(snapshot / "platform/pc/src") +
+                             " -I" + str(snapshot / "include"))
             run_make(base + [
                 "VH_MAP02_PRIVATE_GPU_C=" + fd_path(builder.GENERATED_GPU),
                 "VH_MAP02_PRIVATE_RASTER_C=" + fd_path(builder.GENERATED_RASTER),
+                "VH_MAP02_PRIVATE_INCLUDE_FLAGS=" + include_flags,
                 "VH_MAP02_PRIVATE_PREPROCESS_DIR=" + temp,
                 "map02-private-gpu-preprocess",
             ])
+            _recheck_headers(snapshot, staged_headers)
             preprocessed = {}
             for unit in ("libgpu", "pc_raster"):
                 source = auditor._stable_regular_bytes(
@@ -158,6 +238,8 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
         "objects_sha256": hashes,
         "sealed_inputs": 6,
         "preprocessed_sha256": preprocessed,
+        "pinned_headers_checked": len(staged_headers),
+        "staged_header_hashes_verified": True,
         "compiled_from_sealed_preprocessor_output": True,
         "verified_source_bytes_used_for_compilation": True,
         "private_game_assets_read": False,

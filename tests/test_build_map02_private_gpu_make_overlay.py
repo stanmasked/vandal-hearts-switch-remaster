@@ -54,10 +54,17 @@ class SealedMakeOverlayTests(unittest.TestCase):
             "pinned_public_pc_commit": builder.PINNED_UPSTREAM_REF,
             "receipt_exactly_replayed": True,
         }
+        self.tracked = {"platform/pc/src/map02_fixture.h":
+                        builder.git_blob_sha1(
+                            (self.pc / "src/map02_fixture.h").read_bytes())}
+        real_blob = builder.git_blob_sha1
+        self.original_git_blob_sha1 = real_blob
         patches = [
             patch.object(auditor, "replay", return_value=self.replay),
-            patch.object(builder, "git_blob_sha1",
-                         return_value=builder.PINNED_BLOB_SHA1[builder.MAKE_REL]),
+            patch.object(sealed, "_tracked_header_blobs", return_value=self.tracked),
+            patch.object(builder, "git_blob_sha1", side_effect=lambda b:
+                         builder.PINNED_BLOB_SHA1[builder.MAKE_REL]
+                         if b == self.makefile else real_blob(b)),
         ]
         for item in patches:
             item.start()
@@ -71,6 +78,8 @@ class SealedMakeOverlayTests(unittest.TestCase):
         result = self.run_build()
         self.assertEqual(result["sealed_inputs"], 6)
         self.assertEqual(set(result["preprocessed_sha256"]), {"libgpu", "pc_raster"})
+        self.assertEqual(result["pinned_headers_checked"], 1)
+        self.assertTrue(result["staged_header_hashes_verified"])
         self.assertTrue(result["compiled_from_sealed_preprocessor_output"])
         self.assertTrue(result["verified_source_bytes_used_for_compilation"])
         self.assertFalse(result["all_headers_sealed"])
@@ -147,10 +156,33 @@ class SealedMakeOverlayTests(unittest.TestCase):
             self.assertIn(symbol, listing.stdout)
 
     def test_preprocessor_failure_aborts_before_object_compilation(self):
-        (self.pc / "src/map02_fixture.h").write_text("#error broken header\n")
+        damaged = b"#error broken header\\n"
+        (self.pc / "src/map02_fixture.h").write_bytes(damaged)
+        self.tracked["platform/pc/src/map02_fixture.h"] = (
+            self.original_git_blob_sha1(damaged))
         with self.assertRaisesRegex(ValueError, "sealed Make compilation failed"):
             self.run_build("build-map02-broken-header")
         self.assertFalse((self.pc / "build-map02-broken-header/libgpu.o").exists())
+
+    def test_tracked_header_tamper_rejected_before_make(self):
+        (self.pc / "src/map02_fixture.h").write_text("#define VH_TEST_GPU 999\n")
+        with patch.object(sealed.subprocess, "run") as spy:
+            with self.assertRaisesRegex(ValueError, "header differs from Git blob"):
+                self.run_build("build-map02-header-corrupt")
+            spy.assert_not_called()
+
+    def test_staged_header_mutation_is_refused(self):
+        check = sealed._recheck_headers
+
+        def damage(stage, digests):
+            header = stage / "platform/pc/src/map02_fixture.h"
+            header.chmod(0o600)
+            header.write_text("#define VH_TEST_GPU 999\n")
+            return check(stage, digests)
+
+        with patch.object(sealed, "_recheck_headers", side_effect=damage):
+            with self.assertRaisesRegex(ValueError, "staged header changed"):
+                self.run_build("build-map02-header-staged-tamper")
 
     def test_invalid_and_existing_build_directories_fail_closed(self):
         for name in ("build", "build-map02-", "build-map02-x/../y",
