@@ -168,9 +168,17 @@ def main(argv=None) -> int:
             "physical_Switch_tested": False,
         }, sort_keys=True))
         return 0
-    except (OSError, ValueError, KeyError, TypeError):
-        print(json.dumps({"result": "STAGE303_RECORDER_STOP_NOT_VERIFIED"}),
-              file=sys.stderr)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        # Preserve Stage303's fail-closed behavior. Diagnostics should
+        # reveal WHICH original source invariant failed rather than
+        # hiding the reason behind a generic status, especially when
+        # a host recorder has a partial/interrupted stop snapshot.
+        print(json.dumps({
+            "result": "STAGE303_RECORDER_STOP_NOT_VERIFIED",
+            "error_kind": type(exc).__name__,
+            "source_invariant_failure": str(exc)[:240],
+            "guest_speaker_playback_verified": False,
+        }, sort_keys=True), file=sys.stderr)
         return 2
 
 
