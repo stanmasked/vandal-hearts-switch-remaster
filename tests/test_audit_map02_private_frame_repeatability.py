@@ -415,6 +415,11 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
                     "different_gpu_event_records_in_common_prefix":
                         0 if event_index is None else 1,
                     "first_different_gpu_event_record_index": event_index,
+                    "first_different_gpu_event_pair_index":
+                        None if event_index is None else event_index // 2,
+                    "first_different_gpu_event_phase":
+                        None if event_index is None else
+                        ("before" if event_index % 2 == 0 else "after"),
                 }
                 snapshots = {
                     "first_gpu_vram_snapshot_count": 4,
@@ -424,6 +429,11 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
                     "different_gpu_vram_snapshots_in_common_prefix":
                         0 if vram_index is None else 1,
                     "first_different_gpu_vram_snapshot_index": vram_index,
+                    "first_different_gpu_draw_pair_index":
+                        None if vram_index is None else vram_index // 2,
+                    "first_different_gpu_snapshot_phase":
+                        None if vram_index is None else
+                        ("before" if vram_index % 2 == 0 else "after"),
                 }
                 out = repeat._joint_gpu_vram_first_divergence(snapshots, events)
                 self.assertEqual(out["first_joint_gpu_divergence_kind"], kind)
@@ -440,6 +450,8 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
             "unmatched_gpu_event_records": 2,
             "different_gpu_event_records_in_common_prefix": 0,
             "first_different_gpu_event_record_index": None,
+            "first_different_gpu_event_pair_index": None,
+            "first_different_gpu_event_phase": None,
         }
         snapshots = {
             "first_gpu_vram_snapshot_count": 2,
@@ -448,6 +460,8 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
             "unmatched_gpu_vram_snapshots": 0,
             "different_gpu_vram_snapshots_in_common_prefix": 0,
             "first_different_gpu_vram_snapshot_index": None,
+            "first_different_gpu_draw_pair_index": None,
+            "first_different_gpu_snapshot_phase": None,
         }
         with self.assertRaisesRegex(ValueError, "timeline counts disagree"):
             repeat._joint_gpu_vram_first_divergence(snapshots, events)
@@ -460,6 +474,8 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
             "unmatched_gpu_event_records": 0,
             "different_gpu_event_records_in_common_prefix": 0,
             "first_different_gpu_event_record_index": None,
+            "first_different_gpu_event_pair_index": None,
+            "first_different_gpu_event_phase": None,
         }
         snapshots = {
             "first_gpu_vram_snapshot_count": 4,
@@ -468,6 +484,8 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
             "unmatched_gpu_vram_snapshots": 0,
             "different_gpu_vram_snapshots_in_common_prefix": 0,
             "first_different_gpu_vram_snapshot_index": None,
+            "first_different_gpu_draw_pair_index": None,
+            "first_different_gpu_snapshot_phase": None,
         }
         self.assertIsNone(repeat._joint_gpu_vram_first_divergence(
             snapshots, events)["first_joint_gpu_divergence_index"])
@@ -500,6 +518,8 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
             "unmatched_gpu_event_records": 0,
             "different_gpu_event_records_in_common_prefix": 0,
             "first_different_gpu_event_record_index": None,
+            "first_different_gpu_event_pair_index": None,
+            "first_different_gpu_event_phase": None,
         }
         snapshots = {
             "first_gpu_vram_snapshot_count": 4,
@@ -508,6 +528,8 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
             "unmatched_gpu_vram_snapshots": 0,
             "different_gpu_vram_snapshots_in_common_prefix": 0,
             "first_different_gpu_vram_snapshot_index": None,
+            "first_different_gpu_draw_pair_index": None,
+            "first_different_gpu_snapshot_phase": None,
         }
         inconsistent = (
             (events, "different_gpu_event_records_in_common_prefix", 1),
@@ -531,6 +553,67 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
                     else:
                         repeat._joint_gpu_vram_first_divergence(
                             copy, events)
+
+    def test_joint_gpu_first_position_metadata_and_suffix_are_consistent(self):
+        events = {
+            "first_gpu_event_count": 4,
+            "second_gpu_event_count": 4,
+            "gpu_event_records_compared": 4,
+            "unmatched_gpu_event_records": 0,
+            "different_gpu_event_records_in_common_prefix": 1,
+            "first_different_gpu_event_record_index": 3,
+            "first_different_gpu_event_pair_index": 1,
+            "first_different_gpu_event_phase": "after",
+        }
+        snapshots = {
+            "first_gpu_vram_snapshot_count": 4,
+            "second_gpu_vram_snapshot_count": 4,
+            "gpu_vram_snapshots_compared": 4,
+            "unmatched_gpu_vram_snapshots": 0,
+            "different_gpu_vram_snapshots_in_common_prefix": 1,
+            "first_different_gpu_vram_snapshot_index": 3,
+            "first_different_gpu_draw_pair_index": 1,
+            "first_different_gpu_snapshot_phase": "after",
+        }
+        out = repeat._joint_gpu_vram_first_divergence(snapshots, events)
+        self.assertEqual(out["first_joint_gpu_divergence_kind"], "event-and-vram")
+        self.assertEqual(out["first_joint_gpu_divergence_index"], 3)
+        for source, key, wrong, message in (
+            (events, "different_gpu_event_records_in_common_prefix", 2,
+             "count/first index disagree"),
+            (snapshots, "different_gpu_vram_snapshots_in_common_prefix", 2,
+             "count/first index disagree"),
+            (events, "first_different_gpu_event_pair_index", 0,
+             "first position metadata disagree"),
+            (events, "first_different_gpu_event_pair_index", True,
+             "first position metadata disagree"),
+            (events, "first_different_gpu_event_phase", "before",
+             "first position metadata disagree"),
+            (snapshots, "first_different_gpu_draw_pair_index", None,
+             "first position metadata disagree"),
+            (snapshots, "first_different_gpu_snapshot_phase", "before",
+             "first position metadata disagree"),
+        ):
+            with self.subTest(key=key, wrong=wrong):
+                broken = dict(source)
+                broken[key] = wrong
+                with self.assertRaisesRegex(ValueError, message):
+                    if source is events:
+                        repeat._joint_gpu_vram_first_divergence(snapshots, broken)
+                    else:
+                        repeat._joint_gpu_vram_first_divergence(broken, events)
+        for source, name in (
+            (events, "first_different_gpu_event_phase"),
+            (snapshots, "first_different_gpu_draw_pair_index"),
+        ):
+            with self.subTest(missing=name):
+                broken = dict(source)
+                del broken[name]
+                with self.assertRaisesRegex(ValueError, "first position metadata disagree"):
+                    if source is events:
+                        repeat._joint_gpu_vram_first_divergence(snapshots, broken)
+                    else:
+                        repeat._joint_gpu_vram_first_divergence(broken, events)
 
     def test_overlapping_capture_roles_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "directory roles overlap"):
