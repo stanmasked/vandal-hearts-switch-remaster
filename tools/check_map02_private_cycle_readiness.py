@@ -12,7 +12,9 @@ from pathlib import Path
 import subprocess
 import sys
 
-from tools.check_map02_private_launch_layout import inspect_private_launch_layout
+from tools.check_map02_private_launch_layout import (
+    _directory_identity, inspect_private_launch_layout,
+)
 from tools.check_map02_cycle_elf import audit_cycle_elf
 from tools.check_map02_linked_font_elf import stable_owned_elf_sha256
 from tools.map02_cycle_build_provenance import verify_build_receipt
@@ -35,6 +37,10 @@ def verify_private_cycle_readiness(source, native, scoped, handoff, cycle,
         raise ValueError("strict MAP02 cycle process observation requires Linux procfs")
     layout_args = (source, native, scoped, handoff, cycle, preview, preoverlay)
     first_layout = inspect_private_launch_layout(*layout_args)
+    # Retain exact inode identities, not only the public boolean summary.
+    before_directories = tuple(
+        _directory_identity(Path(directory).absolute(), "prelaunch")
+        for directory in layout_args)
     if first_layout["prelaunch_layout_ready"] is not True:
         raise ValueError("private MAP02 directory layout is not ready")
 
@@ -42,7 +48,8 @@ def verify_private_cycle_readiness(source, native, scoped, handoff, cycle,
     binary = Path(pc_binary).absolute()
     image = Path(owned_game_image).absolute()
     upstream = Path(upstream_checkout).absolute()
-    plan_raw = private_file(handoff, PLAN, max_bytes=4096)
+    plan_raw, plan_identity = private_file(
+        handoff, PLAN, max_bytes=4096, _with_identity=True)
     plan = _validate_plan(plan_raw)
 
     pinned_source = verify_pinned_upstream(upstream)
@@ -65,13 +72,17 @@ def verify_private_cycle_readiness(source, native, scoped, handoff, cycle,
 
     # Expensive independent checks above must refer to one coherent set.
     # No claim about a future process is issued if anything changed meanwhile.
-    if (private_file(handoff, PLAN, max_bytes=4096) != plan_raw or
+    if (private_file(handoff, PLAN, max_bytes=4096,
+                     _with_identity=True) != (plan_raw, plan_identity) or
             verify_pinned_upstream(upstream) != pinned_source or
             stable_owned_elf_sha256(binary) != executable_sha or
             _stable_owned_cycle_image(image) != image_proof):
         raise ValueError("source-bound MAP02 launch inputs changed during preflight")
     second_layout = inspect_private_launch_layout(*layout_args)
-    if second_layout != first_layout:
+    after_directories = tuple(
+        _directory_identity(Path(directory).absolute(), "prelaunch")
+        for directory in layout_args)
+    if second_layout != first_layout or after_directories != before_directories:
         raise ValueError("private MAP02 launch layout changed during preflight")
 
     return {
