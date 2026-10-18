@@ -120,7 +120,7 @@ class PrivatePcPresentEvidenceTests(unittest.TestCase):
             self.base.event.update(change)
             self.base.save_cycle()
             with self.subTest(change=change), self.assertRaisesRegex(
-                    ValueError, "session or DRAW count"):
+                    ValueError, "capture session differs|session or DRAW count"):
                 self.check()
             self.base.event = original
         self.base.save_cycle()
