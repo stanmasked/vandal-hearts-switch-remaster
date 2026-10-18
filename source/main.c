@@ -476,6 +476,33 @@ int main(int argc, char **argv) {
                     (void)unlink(stop_path);
             }
         }
+        /* Stage320: export the ORIGINAL last successful audoutPlayBuffer
+         * begin/end timestamps, previously measured by queue telemetry.
+         * Exclusive guest SD file; post-join only. */
+        int bracket_fd=-1;
+        char bracket_path[256];
+        for(unsigned slot=0;slot<32u;slot++) {
+            int n=snprintf(bracket_path,sizeof bracket_path,
+                VH_SCENE_TRACE_SD_DIRECTORY
+                "/audio-last-playbuffer-%03u.csv",slot);
+            if(n<=0 || (size_t)n>=sizeof bracket_path) break;
+            bracket_fd=open(bracket_path,O_WRONLY|O_CREAT|O_EXCL,0600);
+            if(bracket_fd>=0) break;
+            if(errno!=EEXIST) break;
+        }
+        if(bracket_fd>=0) {
+            FILE *bracket_stream=fdopen(bracket_fd,"w");
+            if(!bracket_stream) {
+                (void)close(bracket_fd);
+                (void)unlink(bracket_path);
+            } else {
+                const int rows=vh_switch_game_audio_last_playbuffer_dump(bracket_stream);
+                const int flush_result=fflush(bracket_stream);
+                const int close_result=fclose(bracket_stream);
+                if(rows!=7 || flush_result!=0 || close_result!=0)
+                    (void)unlink(bracket_path);
+            }
+        }
         char scene_path[VH_SCENE_TRACE_EXPORT_PATH_CAP];
         const VhSceneExportResult saved=vh_switch_game_audio_trace_export(
             scene_path,sizeof scene_path);

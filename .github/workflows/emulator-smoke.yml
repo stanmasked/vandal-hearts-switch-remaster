@@ -14,6 +14,10 @@ on:
       - 'source/vh_audio_exit_timeline.h'
       - 'source/vh_audio_exit_output_witness.h'
       - 'source/vh_audio_exit_worker_stop_witness.h'
+      - 'source/vh_audio_last_playbuffer_call.h'
+      - 'tools/audit_nexium_guest_last_playbuffer.py'
+      - 'tests/test_vh_audio_last_playbuffer_call.c'
+      - 'tests/test_audit_nexium_guest_last_playbuffer.py'
       - 'tools/audit_nexium_guest_worker_stop_observed.py'
       - 'tests/test_audit_nexium_guest_worker_stop_observed.py'
       - 'tests/test_vh_audio_exit_worker_stop_witness.c'
@@ -866,6 +870,46 @@ jobs:
                 r["original_guest_worker_stop_csv_sha256"])
           PY
           echo "Stage317: the ORIGINAL guest worker-stop mailbox observation is measured between last returned audout buffer and audio cleanup on the same guest software clock. Guest SD original bytes saved, SHA-256 checked. This does not measure soundcard PCM, DAC or speaker latency." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage320 audit last PlayBuffer preexisting begin/end software timestamps against guest original stop and page
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_guest_last_playbuffer.py \
+            --guest-root-file runtime-evidence/guest-sd-root.txt \
+            --output runtime-evidence/guest-last-playbuffer-stage320.json \
+            --output-original runtime-evidence/audio-last-playbuffer-000.csv
+          python3 - <<'PY'
+          import json,hashlib
+          from pathlib import Path
+          r=json.loads(Path("runtime-evidence/guest-last-playbuffer-stage320.json").read_text())
+          p=Path("runtime-evidence/audio-last-playbuffer-000.csv")
+          if (r["schema"]!="vh-guest-last-successful-PlayBuffer-software-bracket/v1"
+                  or r["result"]!="ORIGINAL_GUEST_LAST_PLAYBUFFER_BRACKET_VERIFIED"
+                  or r["original_source_bytes_preserved"] is not True
+                  or r["original_guest_playbuffer_source_observed"] is not True
+                  or not p.is_file() or p.is_symlink()
+                  or hashlib.sha256(p.read_bytes()).hexdigest()!=r["original_last_playbuffer_csv_sha256"]
+                  or r["last_successful_PlayBuffer_software_duration_ns"]<0
+                  or r["portion_of_last_call_after_stop_request_ns"]<0
+                  or r["portion_of_last_call_after_stop_request_ns"]>r["last_successful_PlayBuffer_software_duration_ns"]
+                  or r["last_successful_PlayBuffer_return_to_page_witness_ns"]<0
+                  or r["audout_PlayBuffer_return_not_audible_speaker_or_DAC"] is not True
+                  or r["one_call_does_not_explain_entire_stop_delay_automatically"] is not True
+                  or r["guest_clock_not_synchronized_to_host_PCM"] is not True
+                  or r["physical_Nintendo_Switch_audio_tested"] is not False
+                  or r["audible_dropout_verified"] is not False):
+              raise SystemExit("Stage320 original PlayBuffer software service bracket invalid")
+          print("Stage320 guest final successful PlayBuffer call (ns):",
+                r["last_successful_PlayBuffer_software_duration_ns"])
+          print("Stage320 part of final call after in-game stop request (ns):",
+                r["portion_of_last_call_after_stop_request_ns"])
+          print("Stage320 last service end -> returned page witness (ns):",
+                r["last_successful_PlayBuffer_return_to_page_witness_ns"])
+          print("Stage320 original guest source SHA-256:",
+                r["original_last_playbuffer_csv_sha256"])
+          PY
+          echo "Stage320: final successful audoutPlayBuffer service call bracket measured with the ALREADY existing start/end clock readings, cross-referenced to three original guest software witnesses. One call is not necessarily all stop latency, nor DAC or audible speaker playback." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Stage308 independently source-verify guest optical scene clocks versus guest exit
         shell: bash
