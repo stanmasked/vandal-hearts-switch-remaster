@@ -138,16 +138,16 @@ jobs:
           set -euo pipefail
           (
             cd build
-            sha256sum \\
-              libnx-ps1-music-av.nro \\
-              libnx-ps1-music-av-zr.nro \\
-              libnx-ps1-music-av-zl.nro \\
-              libnx-ps1-music-av-resume.nro \\
-              libnx-ps1-music-av-resume-retry.nro \\
-              libnx-ps1-music-av-focus.nro \\
+            sha256sum \
+              libnx-ps1-music-av.nro \
+              libnx-ps1-music-av-zr.nro \
+              libnx-ps1-music-av-zl.nro \
+              libnx-ps1-music-av-resume.nro \
+              libnx-ps1-music-av-resume-retry.nro \
+              libnx-ps1-music-av-focus.nro \
               libnx-ps1-music-av-focus-manual.nro > native-ps1-av-nro-sha256.txt
             sha256sum --check native-ps1-av-nro-sha256.txt
-            printf '%s\\n' "$GITHUB_SHA" > native-ps1-av-source-commit.txt
+            printf '%s\n' "$GITHUB_SHA" > native-ps1-av-source-commit.txt
           )
 
       - name: Upload NRO without proprietary audio assets
