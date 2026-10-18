@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <errno.h>
 #include <unistd.h>
 
 #include "vh_audio_diag_journal.h"
@@ -276,6 +277,12 @@ int main(int argc, char **argv) {
                 appletGetFocusState() == AppletFocusState_InFocus);
         padUpdate(&pad);
         const u64 buttons_down = padGetButtonsDown(&pad);
+        /* Guest software timestamp of the FIRST observed Plus, on
+         * the same monotonic clock as the audio-worker milestones.
+         * No output, allocation, or synchronization on the game path.
+         * This is NOT the physical or host-emulated keydown time. */
+        if (audio_started && (buttons_down & HidNpadButton_Plus))
+            vh_switch_game_audio_exit_note_plus();
         /* Opt-in diagnostic only. A normal Plus exit is unchanged.
          * Rendering occurs after joining audout and SD export, not
          * in any game/audio callback. */
@@ -360,6 +367,10 @@ int main(int argc, char **argv) {
     if (audio_started) {
         appletUnhook(&focus_hook);
         vh_switch_game_audio_stop();
+        /* Guest exit milestones are now immutable after audio join.
+         * The new record is separate from legacy scene/queue CSVs.
+         * Print to stderr opportunistically; NeXium may not expose it. */
+        (void)vh_switch_game_audio_exit_dump(stderr);
         /* All scene event slots are immutable after joining the audio
          * producer. No SD I/O, malloc or CSV formatting was performed
          * in the game or audio loops. Guest stderr can be absent in
@@ -374,6 +385,38 @@ int main(int argc, char **argv) {
         }
         (void)mkdir("sdmc:/switch",0777);
         (void)mkdir(VH_SCENE_TRACE_SD_DIRECTORY,0777);
+        /* Stage307: numbered, exclusive guest exit timeline; never
+         * overwrite a previous research session on a real SD card.
+         * Only after audio join, never inside PCM/INPUT processing. */
+        int exit_fd=-1;
+        char exit_path[256];
+        for(unsigned slot=0;slot<32u;slot++) {
+            int n=snprintf(exit_path,sizeof exit_path,
+                VH_SCENE_TRACE_SD_DIRECTORY
+                "/audio-exit-timeline-%03u.csv",slot);
+            if(n<=0 || (size_t)n>=sizeof exit_path) break;
+            exit_fd=open(exit_path,O_WRONLY|O_CREAT|O_EXCL,0600);
+            if(exit_fd>=0) break;
+            if(errno!=EEXIST) break;
+        }
+        if(exit_fd<0) {
+            fprintf(stderr,"guest exit timeline exclusive SD open failed\n");
+            export_status=2;
+        } else {
+            FILE *exit_stream=fdopen(exit_fd,"w");
+            if(!exit_stream) {
+                (void)close(exit_fd);
+                export_status=2;
+            } else {
+                const int exit_rows=vh_switch_game_audio_exit_dump(exit_stream);
+                const int exit_flush=fflush(exit_stream);
+                const int exit_close=fclose(exit_stream);
+                if(exit_rows!=5 || exit_flush!=0 || exit_close!=0) {
+                    fprintf(stderr,"guest exit timeline SD write failed\n");
+                    export_status=2;
+                }
+            }
+        }
         char scene_path[VH_SCENE_TRACE_EXPORT_PATH_CAP];
         const VhSceneExportResult saved=vh_switch_game_audio_trace_export(
             scene_path,sizeof scene_path);
