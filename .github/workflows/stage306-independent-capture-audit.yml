@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   independent-capture-audit:
-    name: Replay and compare two independent original NeXium captures
+    name: Replay and compare three original independent NeXium captures
     runs-on: ubuntu-latest
     timeout-minutes: 18
     steps:
