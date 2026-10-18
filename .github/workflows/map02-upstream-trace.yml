@@ -192,6 +192,11 @@ jobs:
     name: Apply generated trace patch to pinned upstream
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     outputs:
       map02_receipt_sha256: ${{ steps.map02_receipt_commitment.outputs.sha256 }}
       map02_receipt_artifact_digest: ${{ steps.map02_receipt_uploaded.outputs.artifact-digest }}
@@ -424,6 +429,12 @@ jobs:
               summary.write("MAP02 sealed receipt SHA-256: `" + digest + "`\n")
           print("Published MAP02 receipt root SHA-256:", digest)
           PY
+
+      - name: Cryptographically attest MAP02 receipt using GitHub OIDC / Sigstore
+        id: map02_sigstore_attestation
+        uses: actions/attest@v4
+        with:
+          subject-path: /tmp/vh-map02-sealed-chain.json
 
       - name: Upload independently verifiable MAP02 receipt
         id: map02_receipt_uploaded
@@ -1269,6 +1280,21 @@ jobs:
         with:
           name: map02-gpu-receipt-${{ github.run_id }}-${{ github.run_attempt }}
           path: downloaded-map02-receipt
+
+      - name: Verify Sigstore signature and trusted GitHub workflow identity
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh attestation verify \
+            downloaded-map02-receipt/vh-map02-sealed-chain.json \
+            --repo "${{ github.repository }}" \
+            --signer-workflow "${{ github.repository }}/.github/workflows/map02-upstream-trace.yml" \
+            --source-digest "${{ github.sha }}" \
+            --format json > /tmp/vh-map02-sigstore-verified.json
+          test -s /tmp/vh-map02-sigstore-verified.json
+          echo "MAP02 receipt signature, source commit and workflow identity verified." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify uploaded JSON against producer's separate job output
         shell: bash
