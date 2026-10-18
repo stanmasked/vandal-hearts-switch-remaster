@@ -145,6 +145,9 @@ def verify_native_windows(directory, *, target_frame):
         "vram_bridge_checks": seen // 2 - 1,
         "native_window_event_logs_sha256": logs_hash.hexdigest(),
         "native_window_all_files_sha256": file_tree_hash.hexdigest(),
+        # Raw 1-MiB post-event VRAM endpoint. This does not establish an
+        # on-screen framebuffer location or original game authenticity.
+        "final_native_vram_sha256": last_vram.hex(),
         "capture_session_sha256": (
             hashlib.sha256(session.encode("ascii")).hexdigest()
             if session is not None else None),

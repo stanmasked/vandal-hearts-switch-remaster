@@ -1,4 +1,5 @@
 """Negative structural tests for the asset-free same-run GPU window witness."""
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -67,6 +68,9 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
         self.assertEqual(result["recorded_windows"], 1)
         self.assertEqual(result["globally_ordered_native_gpu_events"], 4)
         self.assertEqual(result["vram_bridge_checks"], 1)
+        self.assertEqual(
+            result["final_native_vram_sha256"],
+            hashlib.sha256(self.snapshots[-1]).hexdigest())
         self.assertFalse(result["whole_original_gameplay_frame_proven"])
 
     def test_fails_on_unrecorded_vram_mutation_between_draw_pairs(self):
