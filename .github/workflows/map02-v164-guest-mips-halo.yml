@@ -1,0 +1,33 @@
+name: MAP02 v164 guest MIPS-authored GPU VRAM halo
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v164-guest-mips-halo.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v164_guest_mips_halo.py'
+      - 'tests/test_map02_v164_guest_mips_halo.py'
+      - 'tools/make_map02_v121_mips_gp0_return_exe.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  guest-mips-halo:
+    name: synthetic MIPS-authored five Unai rectangles (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile five guest GPU rectangle halo delta tests
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v164_guest_mips_halo.py tests/test_map02_v164_guest_mips_halo.py
+          python3 -m unittest discover -s tests -p 'test_map02_v164_guest_mips_halo.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v163_host_unai_rectangle.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v162_gpulib_parse_flush.py' -v
+          echo 'VH164_COMPILED_MIPS_HALO_PASS original_retail_executed=0 host_gp0_draws=0 switch_hd_parity=0'
