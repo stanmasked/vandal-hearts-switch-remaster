@@ -94,15 +94,15 @@ def patch_frontend(source: str) -> str:
         "                    int queue_disarmed=vh161_disarm_gpu_queue();\n",
         "read real gpulib enqueue counters and explicitly disarm")
     source=once(source,
-        "callback_bad!=0u || callback_restored!=0){",
-        "callback_bad!=0u || callback_restored!=0 ||\n"
-        "                           queue!=0u || queue_bad!=0u || queue_disarmed!=0){",
-        "mutated fifth may not append any GP0 word")
-    source=once(source,
         "callback_bad!=0u || callback_restored!=0 ||",
         "callback_bad!=0u || callback_restored!=0 ||\n"
         "                       queue!=1u || queue_bad!=0u || queue_disarmed!=0 ||",
         "positive native GP0 command must enqueue exactly once")
+    source=once(source,
+        "callback_bad!=0u || callback_restored!=0){",
+        "callback_bad!=0u || callback_restored!=0 ||\n"
+        "                           queue!=0u || queue_bad!=0u || queue_disarmed!=0){",
+        "mutated fifth may not append any GP0 word")
     source=once(source,
         '                        SysPrintf("VH160_NATIVE_FIFTH_CALLBACK_REFUSED"',
         '                        SysPrintf("VH161_NATIVE_FIFTH_QUEUE_REFUSED"'
