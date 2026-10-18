@@ -163,6 +163,7 @@ int main(void) {
     uint64_t returned_frames=0;
     unsigned recovered_pages=0u,failures=0u;
     unsigned switched=0u,silent=0u,signalled=0u;
+    unsigned ramp_due=1u,ramp_exercised=0u;
     for(unsigned block=0u;block<BLOCKS;block++) {
         if(block==12u) request_both(&b,3u);
         if(block==30u) request_both(NULL,2u);
@@ -181,6 +182,14 @@ int main(void) {
         assert(!vh_audio_output_ramp_apply(&source_ramp,source_pcm,frames));
         assert(!vh_audio_output_ramp_apply(&oracle_ramp,oracle_pcm,frames));
         assert(!memcmp(source_pcm,oracle_pcm,frames*2u*sizeof(int16_t)));
+        if(ramp_due) {
+            /* The first page after each successful start/reopen fades
+             * from silence; a submit retry may NOT rearm the ramp. */
+            assert(source_pcm[0]==0 && source_pcm[1]==0);
+            assert(source_ramp.position==VH_AUDIO_OUTPUT_RAMP_FRAMES);
+            ++ramp_exercised;
+            ramp_due=0u;
+        }
         const uint64_t expected=((uint64_t)(block+1u)*
             VH_AUDIO_BLOCK_FRAMES-1u)*VH_NATIVE_AUDOUT_RATE/
             VH_AUDIO_SAMPLE_RATE+1u;
@@ -242,8 +251,10 @@ int main(void) {
             assert(!memcmp(&source_rate,&old_rate,sizeof old_rate));
             vh_audio_output_ramp_arm(&source_ramp);
             vh_audio_output_ramp_arm(&oracle_ramp);
+            ramp_due=1u;
         }
     }
+    assert(ramp_exercised==4u);
     assert(switched && signalled>12u && silent>=4u);
     assert(stats.pages_submitted==BLOCKS &&
            stats.frames_submitted==returned_frames);
