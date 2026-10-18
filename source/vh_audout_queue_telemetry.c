@@ -5,8 +5,14 @@
 void vh_audout_queue_reset(VhAudoutQueueTelemetry *t) {
     if(t) memset(t,0,sizeof *t);
 }
+int vh_audout_queue_set_probe_phase(VhAudoutQueueTelemetry *t,unsigned phase) {
+    if(!t || phase>=VH_AUDOUT_QUEUE_SAMPLE_EVERY || t->attempts ||
+       t->probe_count || t->probe_dropped || t->clock_errors) return -1;
+    t->probe_phase=phase;
+    return 0;
+}
 int vh_audout_queue_probe_due(const VhAudoutQueueTelemetry *t) {
-    return t && t->attempts % VH_AUDOUT_QUEUE_SAMPLE_EVERY == 0;
+    return t && t->attempts % VH_AUDOUT_QUEUE_SAMPLE_EVERY == t->probe_phase;
 }
 void vh_audout_queue_record(VhAudoutQueueTelemetry *t,
                             uint64_t begin_ns, uint64_t end_ns,

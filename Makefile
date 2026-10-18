@@ -23,6 +23,10 @@ HOST_CC  ?= gcc
 ELF2NRO  := $(DEVKITPRO)/tools/bin/elf2nro
 NACPTOOL := $(DEVKITPRO)/tools/bin/nacptool
 CFLAGS   := -g -Wall -Wextra -O2 -fPIE -ffunction-sections -fdata-sections -I$(DEVKITPRO)/libnx/include
+# Research variant builds use separate BUILD directories. Default remains
+# phase0 so existing NRO provenance and slow-call audit are unmodified.
+AUDOUT_PROBE_PHASE ?= 0
+CFLAGS += -DVH_AUDOUT_PROBE_PHASE=$(AUDOUT_PROBE_PHASE)
 LDFLAGS  := -specs=$(DEVKITPRO)/libnx/switch.specs -Wl,--gc-sections -pie
 LDLIBS   := -L$(DEVKITPRO)/libnx/lib -lnx
 

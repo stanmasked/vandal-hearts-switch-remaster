@@ -1,4 +1,12 @@
 #include "vh_switch_game_audio.h"
+/* Only explicit research builds may select a different pre-submit
+ * SERVICE query phase. Normal released NRO and all legacy CSVs stay phase0. */
+#ifndef VH_AUDOUT_PROBE_PHASE
+#define VH_AUDOUT_PROBE_PHASE 0
+#endif
+#if VH_AUDOUT_PROBE_PHASE < 0 || VH_AUDOUT_PROBE_PHASE >= 16
+#error "VH_AUDOUT_PROBE_PHASE must be in [0,15]"
+#endif
 #include "vh_audio_scene_trace.h"
 #include "vh_audio_scene_optical.h"
 
@@ -537,6 +545,8 @@ int vh_switch_game_audio_start(unsigned initial_scene) {
         return -1;
     vh_audio_scene_trace_init(&scene_trace);
     vh_audout_queue_reset(&audout_telemetry);
+    if(vh_audout_queue_set_probe_phase(&audout_telemetry,
+                                      VH_AUDOUT_PROBE_PHASE)) return -1;
     main_scene_serial=0u;
     atomic_store_explicit(&scene_trace_latest_ticket,
                           (uint64_t)initial_scene,memory_order_release);

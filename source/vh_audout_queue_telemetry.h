@@ -44,11 +44,15 @@ typedef struct {
     uint32_t slow_count;
     uint64_t slow_dropped;
     VhAudoutSlowCall slow[VH_AUDOUT_SLOW_CALL_CAP];
+    uint32_t probe_phase; /* 0..15 chosen only before first submission. */
     uint32_t probe_count;
     uint64_t probe_dropped;
     VhAudoutProbeSample probe[VH_AUDOUT_PROBE_CAP];
 } VhAudoutQueueTelemetry;
 void vh_audout_queue_reset(VhAudoutQueueTelemetry *t);
+/* Default phase0: attempts 1,17,... Alternative phase8: 9,25,...
+ * Reject a change after any submission or retained measurement. */
+int vh_audout_queue_set_probe_phase(VhAudoutQueueTelemetry *t,unsigned phase);
 /* Probe ONLY before a normal audoutPlayBuffer; 1/16 calls. */
 int vh_audout_queue_probe_due(const VhAudoutQueueTelemetry *t);
 /* Exactly one observation per attempted audoutPlayBuffer. queue_status

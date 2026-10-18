@@ -141,6 +141,32 @@ int main(void) {
            probe_overflow.probe[0].attempt==1 &&
            probe_overflow.probe[VH_AUDOUT_PROBE_CAP-1].attempt==
                 1u+16u*(VH_AUDOUT_PROBE_CAP-1u));
+    /* Stage294: the alternative phase is programmed before the first
+     * attempt. The query cadence stays exactly 1 per 16 attempts. */
+    VhAudoutQueueTelemetry phased;
+    vh_audout_queue_reset(&phased);
+    assert(phased.probe_phase==0u);
+    assert(vh_audout_queue_set_probe_phase(NULL,8u)==-1);
+    assert(vh_audout_queue_set_probe_phase(&phased,16u)==-1);
+    assert(vh_audout_queue_set_probe_phase(&phased,8u)==0);
+    assert(phased.probe_phase==8u);
+    for(unsigned i=0;i<36;i++) {
+        const int due=vh_audout_queue_probe_due(&phased);
+        assert(due==(i==8 || i==24));
+        vh_audout_queue_record(&phased,pc+(uint64_t)i*UINT64_C(20000000),
+            pc+(uint64_t)i*UINT64_C(20000000)+UINT64_C(1000000),
+            1,due ? 1:-1,due ? 2u:0u);
+    }
+    assert(phased.probe_count==2u && phased.queue_ok==2u);
+    assert(phased.probe[0].attempt==9u && phased.probe[1].attempt==25u);
+    assert(vh_audout_queue_set_probe_phase(&phased,0u)==-1);
+    f=tmpfile();
+    assert(f && vh_audout_probe_write_csv(&phased,f)==2);
+    rewind(f);
+    assert(vh_audout_probe_verify_csv(&phased,f)==0);
+    fclose(f);
+    vh_audout_queue_reset(&phased);
+    assert(phased.probe_phase==0u && vh_audout_queue_probe_due(&phased));
     VhAudoutQueueTelemetry empty;
     vh_audout_queue_reset(&empty);
     f=tmpfile();

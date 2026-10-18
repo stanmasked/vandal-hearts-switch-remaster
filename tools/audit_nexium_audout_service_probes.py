@@ -38,7 +38,9 @@ def _number(value:str,*,signed:bool=False)->int:
 
 
 def parse_probes(raw:bytes,origin:dict,queue:dict,
-                 latency:dict,slow:list[dict])->dict:
+                 latency:dict,slow:list[dict],*,phase:int=0)->dict:
+    if type(phase) is not int or not 0<=phase<16:
+        raise CorrelationError("invalid declared experiment query phase")
     if (len(raw)>64000 or b"\r" in raw or not raw.endswith(b"\n")):
         raise CorrelationError("oversized or noncanonical probe journal")
     try:
@@ -56,8 +58,9 @@ def parse_probes(raw:bytes,origin:dict,queue:dict,
     if dropped or total>CAP or total!=len(rows)-2:
         raise CorrelationError("probe journal overflow/truncation or omission")
     attempts=origin["attempts"]
+    expected_queries=(attempts+15-phase)//16 if attempts>phase else 0
     if (queue["attempts"]!=attempts or latency["attempts"]!=attempts
-            or (attempts+15)//16!=total
+            or expected_queries!=total
             or queue["queue_probes_ok"]+queue["queue_probes_failed"]!=total):
         raise CorrelationError("independent queue-clock probe totals differ")
     second_bounds=[]
@@ -87,7 +90,7 @@ def parse_probes(raw:bytes,origin:dict,queue:dict,
         stamp=_number(cols[3])
         status=_number(cols[4])
         value=_number(cols[5])
-        if (attempt!=1+16*index or stamp<origin["origin_ns"]
+        if (attempt!=1+phase+16*index or stamp<origin["origin_ns"]
                 or stamp<=last_ns or status not in (0,1)
                 or (status==0 and value!=0)):
             raise CorrelationError("probe call order, timestamp or query status invalid")
@@ -127,6 +130,8 @@ def parse_probes(raw:bytes,origin:dict,queue:dict,
         "result":"GUEST_PRE_SUBMIT_SERVICE_PROBES_RECONCILED",
         "audout_attempts":attempts,
         "queue_probe_samples":len(samples),
+        "declared_query_phase":phase,
+        "queries_per_sixteen_attempts_at_most_one":True,
         "queue_probe_successes":status_ok,
         "queue_probe_failures":status_failed,
         "queue_probe_dropped":0,
@@ -143,7 +148,8 @@ def parse_probes(raw:bytes,origin:dict,queue:dict,
 
 def audit(*,source:Path,locations:Path,receipt:Path,
           sd_root:Path,queue_csv:Path,clock_csv:Path,
-          latency_csv:Path,slow_csv:Path,scene_csv:Path)->dict:
+          latency_csv:Path,slow_csv:Path,scene_csv:Path,
+          expected_phase:int=0)->dict:
     if sd_root.is_symlink():
         raise CorrelationError("symlinked original NeXium guest SD root")
     directory=sd_root/"sdmc"/"switch"/"vandal-hearts-remake"
@@ -168,7 +174,8 @@ def audit(*,source:Path,locations:Path,receipt:Path,
     slow=parse_slow(stable_guest_bytes(slow_csv),
                     origin["origin_ns"],latency)
     inputs=parse_scene_inputs(stable_guest_bytes(scene_csv))
-    result=parse_probes(copied,origin,queue,latency,slow)
+    result=parse_probes(copied,origin,queue,latency,slow,
+                        phase=expected_phase)
     result.update({
         "guest_original_probe_sha256":hashlib.sha256(raw).hexdigest(),
         "copied_probe_sha256":hashlib.sha256(copied).hexdigest(),
@@ -189,6 +196,7 @@ def main()->int:
     for name in ("source","locations","receipt","sd-root","queue-csv",
                  "clock-csv","latency-csv","slow-csv","scene-csv","output"):
         p.add_argument("--"+name,type=Path,required=True)
+    p.add_argument("--expected-phase",type=int,default=0)
     args=p.parse_args()
     try:
         if args.output.exists() or args.output.is_symlink():
@@ -197,7 +205,8 @@ def main()->int:
                      receipt=args.receipt,sd_root=args.sd_root,
                      queue_csv=args.queue_csv,clock_csv=args.clock_csv,
                      latency_csv=args.latency_csv,slow_csv=args.slow_csv,
-                     scene_csv=args.scene_csv)
+                     scene_csv=args.scene_csv,
+                     expected_phase=args.expected_phase)
         args.output.write_text(json.dumps(report,sort_keys=True,indent=2)+"\n",
                                encoding="utf-8")
         print(json.dumps({
