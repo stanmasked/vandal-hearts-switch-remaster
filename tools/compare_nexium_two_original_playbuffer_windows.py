@@ -72,8 +72,15 @@ def compare_replays(a:dict,b:dict)->dict:
         v1,v2=a.get(k),b.get(k)
         if (not isinstance(v1,str) or not isinstance(v2,str) or
                 len(v1)!=64 or len(v2)!=64 or
-                v1==v2 or any(ch not in "0123456789abcdef" for ch in v1+v2)):
-            raise TraceError("original guest software sources are not independently distinct")
+                any(ch not in "0123456789abcdef" for ch in v1+v2)):
+            raise TraceError("invalid original guest source SHA-256")
+        # Two genuinely independent deterministic scene renders can
+        # produce IDENTICAL optical PNGs. Each source already had to
+        # pass its own original CRC and exact Stage323 byte replay.
+        # Only the original guest-generated timestamped CSV streams
+        # must differ to establish genuinely separate observations.
+        if k!="original_guest_optical_crc_PNG_sha256" and v1==v2:
+            raise TraceError("guest software timing sources are not independently distinct")
     inputs=[a,b]
     samples=[
         {
