@@ -25,10 +25,18 @@ physical audio playback or a completed Nintendo Switch port.
 | Test fixtures | `tests/test_vh_audio_output_recovery.c`, `tests/test_vh_native_seq.c`, `tests/test_native_spu_reverb_reference.py`, `tests/test_native_vab_python_reference.py` | Bring both suites forward; keep callback-free PCM reference and negative service-failure tests. |
 | Documentation | `README.md`, `docs/SWITCH_LOCAL_AUDIO_TEST.md` | Preserve both instructions and the distinction between simulated, emulated and physical playback. |
 
-**Target-only files to retain, not replace or silently drop:**
+**Target-only components preserved without alteration:**
 `source/vh_audio_output_ramp.c/.h` and `source/vh_music_scene.c/.h`,
-observed in the target on 2026-10-18. Check any new target dependencies
-before combining Makefile or native probe changes.
+plus their original `tests/test_vh_audio_output_ramp.c` and
+`tests/test_vh_music_scene.c`, have been added to the feature branch.
+All six GitHub blob hashes match the target branch byte-for-byte as
+checked on 2026-10-18. A separate `target-audio-compat` CI job now
+compiles both tests with UBSan; passing CI must be confirmed separately.
+These components are intentionally not automatically wired into the
+currently tested audout callback or scene-switch flow. The target's
+fade-out director and the feature's wet-tail-preserving scene switch
+have distinct ownership/transition policies, so reconcile their use
+explicitly before changing production routing or Makefile targets.
 
 ## Work performed safely in the feature branch
 
