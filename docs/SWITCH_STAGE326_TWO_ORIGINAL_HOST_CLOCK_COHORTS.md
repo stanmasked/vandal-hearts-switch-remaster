@@ -23,6 +23,12 @@ output timing.
 | `before_plus_down` → `after_plus_up` | 357 ms | 358 ms | +1 ms | 357,687,151 ns | 357,696,182 ns | +9,031 ns |
 | `after_plus_up` → `control_sequence_end` | 4,270 ms | 4,286 ms | +16 ms | 4,269,790,190 ns | 4,285,779,743 ns | +15,989,553 ns |
 
+For the same intervals the original buffered host PCM-file **size
+increased**, respectively, by **70,128 / 827,164 bytes** in the first
+capture and **69,144 / 832,548 bytes** in the second. These sizes are
+buffered host file snapshots, not sample-exact evidence of what the
+emulator's guest or a physical device played.
+
 Both original captures are successful and have **positive monotonic host
 intervals**. The different intervals reflect the two observed host
 capture sessions, **not** a measured audio-call latency distribution.
@@ -51,8 +57,16 @@ supplies 12 synthetic acceptance and rejection tests. The independent
 GitHub Actions workflow
 `.github/workflows/stage326-compare-original-host-clocks.yml`
 downloads the **two actual NeXium artifacts**, not fabricated timing
-inputs. Its status must be checked before claiming the Stage326
-cross-run replay passed.
+inputs. It **passed** in the independent [Stage326 GitHub Actions
+#39168578569](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39168578569):
+all **12 synthetic tests** passed; both independently successful original
+NeXium archives were downloaded; all four original CSV SHA-256 values
+matched exactly; both Stage325 receipts were recomputed from the actual
+CSV bytes; Stage304 original legacy event records and successful
+Stage305 receipts were verified. The compact Stage326 artifact
+`stage326-two-original-host-clock-cohorts` contains only hashes, event
+names, buffered PCM file-length **deltas** and host clock **deltas**,
+not actual PCM bytes or original copyrighted assets.
 
 Stage326 replays Stage304's **legacy host controls**, not the entire
 Stage299–305 PCM analysis chain on the second runner; the original
