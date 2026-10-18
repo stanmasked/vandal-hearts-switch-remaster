@@ -12,6 +12,10 @@ on:
       - 'source/vh_switch_game_audio.c'
       - 'source/vh_switch_game_audio.h'
       - 'source/vh_audio_exit_timeline.h'
+      - 'source/vh_audio_exit_output_witness.h'
+      - 'tools/audit_nexium_guest_last_buffer_return.py'
+      - 'tests/test_audit_nexium_guest_last_buffer_return.py'
+      - 'tests/test_vh_audio_exit_output_witness.c'
       - 'tools/audit_nexium_guest_exit_timeline.py'
       - 'tools/audit_nexium_guest_optical_exit_clock.py'
       - 'tools/preserve_nexium_guest_exit_original.py'
@@ -784,6 +788,39 @@ jobs:
               print(r["guest_monotonic_timestamps_ns"])
           PY
           echo "Stage307: observed/missing guest exit event timeline explicitly distinguished. Neither guest monotonic events nor virtual PCM are a sample-exact cross-clock map or audible hardware proof." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage313 verify guest last audout PCM page return versus Plus and bounded taper
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_guest_last_buffer_return.py \
+            --guest-root-file runtime-evidence/guest-sd-root.txt \
+            --output runtime-evidence/guest-last-audout-release-stage313.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("runtime-evidence/guest-last-audout-release-stage313.json").read_text())
+          if (r["schema"]!="vh-guest-last-audout-page-release-versus-exit/v1"
+                  or r["result"]!="GUEST_LAST_AUDOUT_RELEASE_SOFTWARE_TIMING_VALIDATED"
+                  or r["original_guest_page_witness_observed"] is not True
+                  or r["page_return_count"]<=0
+                  or r["last_page_return_guest_ns"] is None
+                  or r["last_page_return_is_not_DAC_or_speaker_output"] is not True
+                  or r["normal_exit_taper_is_not_PS1_SPU_rendered_music"] is not True
+                  or r["host_pcm_to_guest_clock_calibrated"] is not False
+                  or r["audible_dropout_verified"] is not False
+                  or r["hardware_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage313 original last audout page source missing / causal claim invalid")
+          print("Stage313 last guest PCM page RELEASE confirmation:",
+                r["last_page_return_guest_ns"],
+                "position:",r["last_page_position_relative_to_guest_exit"],
+                "from in-game observed Plus:",r["last_page_relative_to_Plus_ns"],
+                "guest software ns; NOT speaker/DAC time")
+          print("Stage313 bounded exit taper attempted:",
+                r["tail_bounded_attempt_observed"],
+                "buffer release confirmed:",r["tail_release_confirmed"])
+          PY
+          echo "Stage313: actual original guest last audout release and optional bounded exit taper compared on the common guest software clock with Plus, stop, cleanup and audout close. RELEASE is NOT DAC or audible playback; no host PCM calibration or retail audio proof." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Stage308 independently source-verify guest optical scene clocks versus guest exit
         shell: bash

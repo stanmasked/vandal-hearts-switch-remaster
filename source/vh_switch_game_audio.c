@@ -10,6 +10,7 @@
 #include "vh_audio_scene_trace.h"
 #include "vh_audio_scene_optical.h"
 #include "vh_audio_exit_timeline.h"
+#include "vh_audio_exit_output_witness.h"
 
 #include <stdio.h>
 
@@ -57,6 +58,7 @@ static atomic_uint published_abandoned_sessions;
  * No heap, locks or file I/O in this path. */
 static VhAudioSceneTrace scene_trace;
 static VhAudioExitTimeline exit_timeline; /* only once per audio start */
+static VhAudioExitOutputWitness exit_output_witness; /* audio owner only */
 /* Audout worker is the sole writer. Main reads after thread join. */
 static VhAudoutQueueTelemetry audout_telemetry;
 static atomic_ullong scene_trace_latest_ticket; /* serial << 32 | scene */
@@ -479,6 +481,10 @@ static void audio_worker(void *unused) {
         /* Submission returned ownership of THIS exact 48-kHz page.
          * Store the terminal sample for optional normal-exit taper;
          * never inspect or overwrite it while the device owns it. */
+        /* One timestamp AFTER final ownership return for this original
+         * PCM page. Never a claim of audible playback or DAC drain. */
+        (void)vh_audio_exit_output_page_returned(
+            &exit_output_witness,scene_trace_now_ns(),count);
         publish_audio_diagnostics(&recovery_stats,
                                   &recovery_backend.lease);
         last_pcm_left=pcm_48000_page[2u*count-2u];
@@ -518,9 +524,13 @@ cleanup:
         !vh_audio_stop_tail_build(
             pcm_48000_page,
             sizeof(pcm_48000_page)/(2u*sizeof(int16_t)),
-            last_pcm_left,last_pcm_right))
-        (void)output_tail_submit_bounded(&recovery_backend,
-                                         VH_AUDIO_STOP_TAIL_FRAMES);
+            last_pcm_left,last_pcm_right)) {
+        const uint64_t tail_begin=scene_trace_now_ns();
+        const int tail_returned=output_tail_submit_bounded(
+            &recovery_backend,VH_AUDIO_STOP_TAIL_FRAMES)==0;
+        (void)vh_audio_exit_output_tail(
+            &exit_output_witness,tail_begin,scene_trace_now_ns(),tail_returned);
+    }
     /* A stopped audout service may retain queued buffers. Close the
      * old session BEFORE overwriting or releasing the shared PCM page.
      */
@@ -551,6 +561,7 @@ int vh_switch_game_audio_start(unsigned initial_scene) {
         return -1;
     vh_audio_scene_trace_init(&scene_trace);
     vh_audio_exit_timeline_reset(&exit_timeline);
+    vh_audio_exit_output_reset(&exit_output_witness);
     vh_audout_queue_reset(&audout_telemetry);
     if(vh_audout_queue_set_probe_phase(&audout_telemetry,
                                       VH_AUDOUT_PROBE_PHASE)) return -1;
@@ -712,6 +723,13 @@ void vh_switch_game_audio_exit_note_plus(void) {
 int vh_switch_game_audio_exit_dump(FILE *stream) {
     if (!stream || thread_started) return -1;
     return vh_audio_exit_timeline_write_csv(&exit_timeline,stream);
+}
+
+/* Diagnostic counters are immutable once the audio owner joins.
+ * This never changes Stage307's existing five-row CSV source. */
+int vh_switch_game_audio_exit_output_dump(FILE *stream) {
+    if (!stream || thread_started) return -1;
+    return vh_audio_exit_output_write_csv(&exit_output_witness,stream);
 }
 
 void vh_switch_game_audio_stop(void) {

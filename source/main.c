@@ -422,6 +422,33 @@ int main(int argc, char **argv) {
                 }
             }
         }
+        /* Stage313 distinct diagnostic receipt; preserve the original
+         * Stage307 five-event source unchanged. File I/O only post join.
+         * Failure to write this optional witness cannot alter game exit. */
+        int page_fd=-1;
+        char page_path[256];
+        for(unsigned slot=0;slot<32u;slot++) {
+            int n=snprintf(page_path,sizeof page_path,
+                VH_SCENE_TRACE_SD_DIRECTORY
+                "/audio-exit-output-%03u.csv",slot);
+            if(n<=0 || (size_t)n>=sizeof page_path) break;
+            page_fd=open(page_path,O_WRONLY|O_CREAT|O_EXCL,0600);
+            if(page_fd>=0) break;
+            if(errno!=EEXIST) break;
+        }
+        if(page_fd>=0) {
+            FILE *page_stream=fdopen(page_fd,"w");
+            if(!page_stream) {
+                (void)close(page_fd);
+                (void)unlink(page_path);
+            } else {
+                const int rows=vh_switch_game_audio_exit_output_dump(page_stream);
+                const int flushed=fflush(page_stream);
+                const int closed=fclose(page_stream);
+                if(rows!=5 || flushed!=0 || closed!=0)
+                    (void)unlink(page_path);
+            }
+        }
         char scene_path[VH_SCENE_TRACE_EXPORT_PATH_CAP];
         const VhSceneExportResult saved=vh_switch_game_audio_trace_export(
             scene_path,sizeof scene_path);
