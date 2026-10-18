@@ -14,6 +14,8 @@ on:
       - 'source/vh_audio_exit_timeline.h'
       - 'source/vh_audio_exit_output_witness.h'
       - 'tools/audit_nexium_guest_last_buffer_return.py'
+      - 'tools/preserve_nexium_guest_last_buffer_original.py'
+      - 'tests/test_preserve_nexium_guest_last_buffer_original.py'
       - 'tests/test_audit_nexium_guest_last_buffer_return.py'
       - 'tests/test_vh_audio_exit_output_witness.c'
       - 'tools/audit_nexium_guest_exit_timeline.py'
@@ -888,6 +890,44 @@ jobs:
                 str(p), "SHA256:",r["guest_exit_receipt_sha256"])
           PY
           echo "Stage310: archived the original guest-created 5-row software exit timeline CSV byte-for-byte (not a reconstructed JSON copy), SHA/optical cross-verified. No retail music, physical audio or guest ↔ host PCM calibration inferred." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage314 preserve original guest-created last audout page source bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/preserve_nexium_guest_last_buffer_original.py \
+            --guest-root-file runtime-evidence/guest-sd-root.txt \
+            --stage307 runtime-evidence/guest-audio-exit-timeline-stage307.json \
+            --stage310 runtime-evidence/guest-original-exit-source-stage310.json \
+            --stage313 runtime-evidence/guest-last-audout-release-stage313.json \
+            --prior-original-exit runtime-evidence/audio-exit-timeline-000.csv \
+            --output-original runtime-evidence/audio-exit-output-000.csv \
+            --output-report runtime-evidence/guest-original-audout-last-page-stage314.json
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          r=json.loads(Path(
+              "runtime-evidence/guest-original-audout-last-page-stage314.json").read_text())
+          p=Path("runtime-evidence/audio-exit-output-000.csv")
+          if (r["result"]!="ORIGINAL_GUEST_LAST_AUDOUT_SOURCE_PRESERVED_AND_REAUDITED"
+                  or r["original_guest_output_csv_preserved"] is not True
+                  or r["original_guest_source_bytes_reaudited"] is not True
+                  or not p.is_file() or p.is_symlink()
+                  or len(p.read_bytes())!=r["original_guest_output_csv_size"]
+                  or hashlib.sha256(p.read_bytes()).hexdigest()!=r["original_guest_output_csv_sha256"]
+                  or r["source_stage307_reproduced"] is not True
+                  or r["source_stage310_original_bytes_reproduced"] is not True
+                  or r["source_stage313_reproduced"] is not True
+                  or r["audout_buffer_release_not_speaker_playback"] is not True
+                  or r["guest_to_host_PCM_clock_calibration_verified"] is not False
+                  or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage314 original guest audout release archive not verified")
+          print("Stage314 independently preserved original guest last-page CSV:",
+                r["original_guest_output_csv_sha256"],
+                "last page relative to observed guest Plus (ns):",
+                r["last_page_relative_to_Plus_ns"])
+          PY
+          echo "Stage314: copied ORIGINAL guest audout last-return CSV byte-for-byte, re-audited against original Stage307/310 exit source and Stage313 source, preserved separate audit hash. No DAC/speaker playback proof or guest-to-host PCM timing claims." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Capture ten additional A/B transitions in isolated NeXium
         id: scene_soak_capture
