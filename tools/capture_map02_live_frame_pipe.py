@@ -21,6 +21,7 @@ import time
 from tools.map02_linux_elf_process_image import (
     observe_live_elf_image, require_elf_image,
 )
+from tools.audit_map02_joint_gpu_frame import audit as audit_joint_gpu
 
 MAGIC = b"VHM2FRM1"
 HEADER = struct.Struct("<8sIII")
@@ -76,7 +77,7 @@ def _write_exclusive(directory_fd, name, data):
 
 
 def capture(executable, output_dir, *, frame, width, height,
-            executable_sha256, timeout=10, args=()):
+            executable_sha256, timeout=10, args=(), gpu_journal_dir=None):
     """Read exactly one framed child stream after live ELF observation.
 
     The producer protocol is: block reading stdin until a single 0x01;
@@ -99,6 +100,9 @@ def capture(executable, output_dir, *, frame, width, height,
         raise ValueError("invalid process capture arguments")
     exe = Path(executable).absolute()
     directory = Path(output_dir).absolute()
+    journal_path = (Path(gpu_journal_dir).absolute()
+                    if gpu_journal_dir is not None else None)
+    journal_fd = None
 
     # A pinned directory FD prevents a later pathname swap from redirecting
     # private image publication. Never traverse an output-directory symlink.
@@ -108,8 +112,21 @@ def capture(executable, output_dir, *, frame, width, height,
         if (not stat.S_ISDIR(st.st_mode) or stat.S_IMODE(st.st_mode) & 0o077
                 or os.listdir(directory_fd)):
             raise ValueError("private output directory must be empty and owner-only")
+        if journal_path is not None:
+            if frame == 0 or (width, height) != (1024, 512):
+                raise ValueError("joint GPU journal requires full native VRAM frame")
+            journal_fd = os.open(journal_path,
+                                 os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            jstat = os.fstat(journal_fd)
+            if (not stat.S_ISDIR(jstat.st_mode)
+                    or stat.S_IMODE(jstat.st_mode) & 0o077
+                    or os.listdir(journal_fd)
+                    or (jstat.st_dev, jstat.st_ino) == (st.st_dev, st.st_ino)):
+                raise ValueError("joint GPU journal must be separate, empty and owner-only")
         fd = os.open(exe, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
     except BaseException:
+        if journal_fd is not None:
+            os.close(journal_fd)
         os.close(directory_fd)
         raise
     proc = None
@@ -124,11 +141,17 @@ def capture(executable, output_dir, *, frame, width, height,
         if _identity(os.stat(exe, follow_symlinks=False)) != _identity(original):
             raise ValueError("native executable path changed before launch")
         deadline = time.monotonic() + timeout
+        child_env = {"LC_ALL": "C",
+                     "VH_MAP02_PRIVATE_FRAME_PIPE_FRAME": str(frame)}
+        if journal_path is not None:
+            child_env.update({
+                "VH_MAP02_GPU_CAPTURE_FRAME": str(frame),
+                "VH_MAP02_GPU_CAPTURE_DIR": str(journal_path),
+            })
         proc = subprocess.Popen(
             [str(exe), *args], executable=f"/proc/self/fd/{fd}",
             pass_fds=(fd,), cwd=exe.parent,
-            env={"LC_ALL": "C",
-                 "VH_MAP02_PRIVATE_FRAME_PIPE_FRAME": str(frame)},
+            env=child_env, umask=0o077,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL, shell=False,
         )
@@ -152,6 +175,14 @@ def capture(executable, output_dir, *, frame, width, height,
                 or _fingerprint_fd(fd) != (size, digest)):
             raise ValueError("native executable changed during frame capture")
         pixels = data[HEADER.size:]
+        journal = None
+        if journal_fd is not None:
+            journal = audit_joint_gpu(journal_path, frame=frame,
+                                      final_pixels=pixels)
+            if (_identity(os.fstat(journal_fd)) != _identity(jstat)
+                    or _identity(os.stat(journal_path, follow_symlinks=False))
+                    != _identity(jstat)):
+                raise ValueError("joint GPU journal directory replaced during capture")
         receipt = {
             "schema": SCHEMA,
             "frame": frame, "width": width, "height": height,
@@ -165,6 +196,17 @@ def capture(executable, output_dir, *, frame, width, height,
             "native_renderer_origin_authenticated": False,
             "hd_replacement_authorized": False,
         }
+        if journal is not None:
+            receipt.update({
+                "schema": "vh.map02.live-child-pipe-bgr555-gpu.v1",
+                "gpu_journal_sha256": journal["gpu_journal_sha256"],
+                "terminal_gpu_after_vram_sha256":
+                    journal["terminal_gpu_after_vram_sha256"],
+                "gpu_journal_pairs_verified": journal["gpu_pairs_verified"],
+                "terminal_after_vram_matched": True,
+                "gpu_journal_same_elf_launch_requested": True,
+                "gpu_journal_writer_kernel_authenticated": False,
+            })
         wrote_image = False
         wrote_receipt = False
         try:
@@ -191,6 +233,8 @@ def capture(executable, output_dir, *, frame, width, height,
             if proc.stdout is not None:
                 proc.stdout.close()
         os.close(fd)
+        if journal_fd is not None:
+            os.close(journal_fd)
         os.close(directory_fd)
 
 
@@ -203,12 +247,14 @@ def main():
     parser.add_argument("--width", required=True, type=int)
     parser.add_argument("--height", required=True, type=int)
     parser.add_argument("--timeout", type=int, default=10)
+    parser.add_argument("--gpu-journal-dir", type=Path)
     ns = parser.parse_args()
     try:
         result = capture(
             ns.executable, ns.output_dir, frame=ns.frame,
             width=ns.width, height=ns.height,
             executable_sha256=ns.executable_sha256, timeout=ns.timeout,
+            gpu_journal_dir=ns.gpu_journal_dir,
         )
     except (ValueError, OSError, subprocess.TimeoutExpired) as exc:
         parser.error(str(exc))
