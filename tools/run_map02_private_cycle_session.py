@@ -16,7 +16,7 @@ from tools.finalize_map02_private_capture import finalize_private_capture
 from tools.map02_local_capture_handoff import PLAN, _validate_plan
 from tools.map02_verified_process_launch import launch_observed_pc
 from tools.seal_map02_private_finalization import (
-    _roots, seal_final_capture, verify_final_seal,
+    _dir_identity, _roots, seal_final_capture, verify_final_seal,
 )
 from tools.verify_map02_frame_bundle import number
 from tools.verify_map02_native_gpu_capture import private_file
@@ -48,10 +48,19 @@ def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
     sealed = _roots(captures, seal_directory)
     if tuple(sealed.iterdir()):
         raise ValueError("private MAP02 seal directory must be empty before execution")
+    original_seal_directory_identity = _dir_identity(sealed.stat())
+
+    def require_original_seal_directory(*, must_be_empty):
+        current = _roots(captures, seal_directory)
+        if _dir_identity(current.stat()) != original_seal_directory_identity:
+            raise ValueError("private MAP02 seal directory changed during one-shot session")
+        if must_be_empty and tuple(current.iterdir()):
+            raise ValueError("private MAP02 seal directory unexpectedly populated")
 
     # The original plan's GPU DrawOTag must be the *requested* frame.
     # No original PC process has been started at this point.
-    plan_raw = private_file(Path(handoff).absolute(), PLAN, max_bytes=4096)
+    plan_raw, plan_identity = private_file(
+        Path(handoff).absolute(), PLAN, max_bytes=4096, _with_identity=True)
     plan = _validate_plan(plan_raw)
     if plan["target_gpu_draw_frame"] != frame:
         raise ValueError("MAP02 requested frame differs from prepared private plan")
@@ -62,8 +71,10 @@ def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
         build_bundle_dir=build_bundle, krom_source=krom_source)
     if ready["ready_for_controlled_local_launch"] is not True:
         raise ValueError("MAP02 original PC cycle preflight was not confirmed")
-    if private_file(Path(handoff).absolute(), PLAN, max_bytes=4096) != plan_raw:
+    if private_file(Path(handoff).absolute(), PLAN, max_bytes=4096,
+                    _with_identity=True) != (plan_raw, plan_identity):
         raise ValueError("MAP02 private launch plan changed before execution")
+    require_original_seal_directory(must_be_empty=True)
 
     observed = launch_observed_pc(
         handoff, native, scoped, binary, owned_game, upstream=upstream,
@@ -77,6 +88,9 @@ def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
             observed["pc_preoverlay_capture_session_bound"] is not True):
         raise ValueError("MAP02 observed local PC process not source/RGB24-bound")
 
+    # The destination cannot be replaced or populated while the original
+    # child runs; refuse rather than redirecting a later exclusive seal.
+    require_original_seal_directory(must_be_empty=True)
     # Only these two original-CD/GPU witness and PNG names may be created
     # locally, and only after successful observed process exit.
     finalized = finalize_private_capture(
@@ -88,6 +102,7 @@ def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
             finalized["original_map02_rendering_proven"] is not False):
         raise ValueError("MAP02 original CD/GPU/PC RGB24/PNG final join not verified")
 
+    require_original_seal_directory(must_be_empty=True)
     sealed_report = seal_final_capture(
         source, native, scoped, handoff, cycle, preview, rgb,
         owned_game, upstream, binary, seal_directory,
@@ -97,10 +112,12 @@ def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
             is not True or sealed_report["gpu_draw_frame"] != frame):
         raise ValueError("MAP02 private completion seal not independently verified")
 
+    require_original_seal_directory(must_be_empty=False)
     verified = verify_final_seal(
         source, native, scoped, handoff, cycle, preview, rgb,
         owned_game, upstream, binary, seal_directory,
         frame=frame, compiler=compiler)
+    require_original_seal_directory(must_be_empty=False)
     if (verified["sealed_evidence_independently_reverified"] is not True or
             verified["gpu_draw_frame"] != frame or
             verified["private_final_seal_sha256"] !=
