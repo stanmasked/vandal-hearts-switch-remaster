@@ -412,6 +412,8 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
                     "second_gpu_event_count": 4 + tail,
                     "gpu_event_records_compared": 4,
                     "unmatched_gpu_event_records": tail,
+                    "different_gpu_event_records_in_common_prefix":
+                        0 if event_index is None else 1,
                     "first_different_gpu_event_record_index": event_index,
                 }
                 snapshots = {
@@ -419,6 +421,8 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
                     "second_gpu_vram_snapshot_count": 4 + tail,
                     "gpu_vram_snapshots_compared": 4,
                     "unmatched_gpu_vram_snapshots": tail,
+                    "different_gpu_vram_snapshots_in_common_prefix":
+                        0 if vram_index is None else 1,
                     "first_different_gpu_vram_snapshot_index": vram_index,
                 }
                 out = repeat._joint_gpu_vram_first_divergence(snapshots, events)
@@ -434,6 +438,7 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
             "second_gpu_event_count": 4,
             "gpu_event_records_compared": 2,
             "unmatched_gpu_event_records": 2,
+            "different_gpu_event_records_in_common_prefix": 0,
             "first_different_gpu_event_record_index": None,
         }
         snapshots = {
@@ -441,10 +446,91 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
             "second_gpu_vram_snapshot_count": 2,
             "gpu_vram_snapshots_compared": 2,
             "unmatched_gpu_vram_snapshots": 0,
+            "different_gpu_vram_snapshots_in_common_prefix": 0,
             "first_different_gpu_vram_snapshot_index": None,
         }
         with self.assertRaisesRegex(ValueError, "timeline counts disagree"):
             repeat._joint_gpu_vram_first_divergence(snapshots, events)
+
+    def test_joint_gpu_divergence_rejects_malformed_aggregate_counts(self):
+        events = {
+            "first_gpu_event_count": 4,
+            "second_gpu_event_count": 4,
+            "gpu_event_records_compared": 4,
+            "unmatched_gpu_event_records": 0,
+            "different_gpu_event_records_in_common_prefix": 0,
+            "first_different_gpu_event_record_index": None,
+        }
+        snapshots = {
+            "first_gpu_vram_snapshot_count": 4,
+            "second_gpu_vram_snapshot_count": 4,
+            "gpu_vram_snapshots_compared": 4,
+            "unmatched_gpu_vram_snapshots": 0,
+            "different_gpu_vram_snapshots_in_common_prefix": 0,
+            "first_different_gpu_vram_snapshot_index": None,
+        }
+        self.assertIsNone(repeat._joint_gpu_vram_first_divergence(
+            snapshots, events)["first_joint_gpu_divergence_index"])
+        invalid = (
+            (events, "first_gpu_event_count", True),
+            (events, "second_gpu_event_count", 3),
+            (events, "gpu_event_records_compared", 0),
+            (events, "unmatched_gpu_event_records", -2),
+            (snapshots, "first_gpu_vram_snapshot_count", 65),
+            (snapshots, "second_gpu_vram_snapshot_count", None),
+            (snapshots, "gpu_vram_snapshots_compared", 3),
+            (snapshots, "unmatched_gpu_vram_snapshots", 1),
+        )
+        for source, field, value in invalid:
+            with self.subTest(field=field, value=value):
+                copy = dict(source)
+                copy[field] = value
+                observed = repeat._joint_gpu_vram_first_divergence
+                with self.assertRaisesRegex(ValueError, "counts invalid"):
+                    if source is events:
+                        observed(snapshots, copy)
+                    else:
+                        observed(copy, events)
+
+    def test_joint_gpu_divergence_requires_count_first_index_coherence(self):
+        events = {
+            "first_gpu_event_count": 4,
+            "second_gpu_event_count": 4,
+            "gpu_event_records_compared": 4,
+            "unmatched_gpu_event_records": 0,
+            "different_gpu_event_records_in_common_prefix": 0,
+            "first_different_gpu_event_record_index": None,
+        }
+        snapshots = {
+            "first_gpu_vram_snapshot_count": 4,
+            "second_gpu_vram_snapshot_count": 4,
+            "gpu_vram_snapshots_compared": 4,
+            "unmatched_gpu_vram_snapshots": 0,
+            "different_gpu_vram_snapshots_in_common_prefix": 0,
+            "first_different_gpu_vram_snapshot_index": None,
+        }
+        inconsistent = (
+            (events, "different_gpu_event_records_in_common_prefix", 1),
+            (events, "different_gpu_event_records_in_common_prefix", True),
+            (events, "different_gpu_event_records_in_common_prefix", 5),
+            (events, "first_different_gpu_event_record_index", 0),
+            (snapshots, "different_gpu_vram_snapshots_in_common_prefix", 1),
+            (snapshots, "different_gpu_vram_snapshots_in_common_prefix", -1),
+            (snapshots, "different_gpu_vram_snapshots_in_common_prefix", 5),
+            (snapshots, "first_different_gpu_vram_snapshot_index", 0),
+        )
+        for source, field, value in inconsistent:
+            with self.subTest(field=field, value=value):
+                copy = dict(source)
+                copy[field] = value
+                with self.assertRaisesRegex(
+                        ValueError, "count/first index disagree"):
+                    if source is events:
+                        repeat._joint_gpu_vram_first_divergence(
+                            snapshots, copy)
+                    else:
+                        repeat._joint_gpu_vram_first_divergence(
+                            copy, events)
 
     def test_overlapping_capture_roles_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "directory roles overlap"):
