@@ -156,6 +156,36 @@ static int verify_published_fd(int dfd, int fd, const char *data,
     return 1;
 }
 
+/* DrawOTag can return before the monitored process exits. Its published
+ * receipt is provisional until a normal process exit: a later extra MAP02
+ * CdRead or ordering failure must revoke the originally created inode.
+ * Retain the verified private directory FD to avoid pathname redirection.
+ * A _exit/SIGKILL bypasses atexit: the independent process launcher must
+ * still demand a clean zero exit before validating these observations. */
+static struct {
+    int armed, dirfd;
+    struct stat file;
+} published;
+
+static void revoke_invalid_cycle_at_exit(void) {
+    struct stat directory, named;
+    if (!published.armed) return;
+    if (vh_map02_cycle_failed() &&
+        !fstat(published.dirfd, &directory) &&
+        S_ISDIR(directory.st_mode) && directory.st_uid == geteuid() &&
+        (directory.st_mode & 0777) == 0700 &&
+        !fstatat(published.dirfd, OUTPUT_NAME, &named, AT_SYMLINK_NOFOLLOW) &&
+        S_ISREG(named.st_mode) &&
+        same_inode(&published.file, &named)) {
+        /* Never unlink a foreign same-name inode after a rename attack. */
+        (void)unlinkat(published.dirfd, OUTPUT_NAME, 0);
+        (void)fsync(published.dirfd);
+    }
+    (void)close(published.dirfd);
+    published.dirfd = -1;
+    published.armed = 0;
+}
+
 /* Only an explicit, owned 0700 directory receives one exclusive 0600
  * receipt. Open with O_RDWR so every byte is re-read after fsync; a second
  * complete read after directory fsync catches post-write replacement.
@@ -190,8 +220,13 @@ static void publish_if_requested(void) {
     if (close(fd)) { fd = -1; goto done; }
     fd = -1;
     if (fstatat(dfd, OUTPUT_NAME, &named, AT_SYMLINK_NOFOLLOW) ||
-        !same_contents_metadata(&baseline, &named))
+        !same_contents_metadata(&baseline, &named) ||
+        published.armed || atexit(revoke_invalid_cycle_at_exit))
         goto done;
+    published.file = baseline;
+    published.dirfd = dfd;
+    published.armed = 1;
+    dfd = -1; /* exit guard owns the verified directory descriptor */
     ok = 1;
 done:
     if (fd >= 0) (void)close(fd);
