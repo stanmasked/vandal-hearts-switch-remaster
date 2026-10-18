@@ -87,6 +87,60 @@ static void setup(void) {
     assert(vh_native_spu_set_interpolation(&spu,VH_SPU_GAUSSIAN)==0);
 }
 
+/* Cross-branch regression: the target branch's read-only SEQ audit
+ * must coexist with this branch's atomic scene-switch implementation.
+ * Missing program/note coverage is diagnostic, not a SPU mutation.
+ */
+static int resolve_audit_missing(void *ctx, unsigned program, unsigned note,
+                                 unsigned velocity, unsigned volume,
+                                 unsigned pan, VhSeqTone *out) {
+    if(note==61u) return -1;
+    return resolve(ctx,program,note,velocity,volume,pan,out);
+}
+static void test_target_seq_audit_survives_scene_switch_integration(void) {
+    setup();
+    assert(vh_native_seq_init(&seq,controls_song,sizeof controls_song,
+                              &spu,resolve,&log_state,1u)==0);
+    assert(vh_native_seq_advance_block(&seq)>=0);
+    const VhNativeSeq saved_seq=seq;
+    const VhNativeSpu saved_spu=spu;
+    const VhAudioStream saved_ring=ring;
+    VhSeqAudit report={0};
+    memset(&log_state,0,sizeof log_state);
+    assert(vh_native_seq_audit(controls_song,sizeof controls_song,
+                               resolve,&log_state,&report)==0);
+    assert(report.events==6u && report.note_events==1u &&
+           report.resolved_notes==1u && report.missing_notes==0u &&
+           report.program_changes==1u && !report.has_missing);
+    assert(log_state.calls==1u && log_state.program==7u &&
+           log_state.volume==80u && log_state.pan==0u);
+    assert(!memcmp(&seq,&saved_seq,sizeof seq));
+    assert(!memcmp(&spu,&saved_spu,sizeof spu));
+    assert(!memcmp(&ring,&saved_ring,sizeof ring));
+
+    memset(&log_state,0,sizeof log_state);
+    assert(vh_native_seq_audit(running_song,sizeof running_song,
+                               resolve_audit_missing,
+                               &log_state,&report)==0);
+    assert(report.note_events==2u && report.resolved_notes==1u &&
+           report.missing_notes==1u && report.has_missing &&
+           report.first_missing_channel==0u &&
+           report.first_missing_program==0u &&
+           report.first_missing_note==61u &&
+           report.tempo_changes==1u);
+    const VhSeqAudit saved_report=report;
+    assert(vh_native_seq_audit(invalid_data,sizeof invalid_data,
+                               resolve,&log_state,&report)==-1);
+    assert(vh_native_seq_audit(NULL,sizeof controls_song,
+                               resolve,&log_state,&report)==-1);
+    assert(vh_native_seq_audit(controls_song,sizeof controls_song,
+                               NULL,&log_state,&report)==-1);
+    assert(!memcmp(&report,&saved_report,sizeof report));
+    assert(!memcmp(&seq,&saved_seq,sizeof seq));
+    assert(!memcmp(&spu,&saved_spu,sizeof spu));
+    assert(!memcmp(&ring,&saved_ring,sizeof ring));
+}
+
 static void test_validation_and_source_immutability(void) {
     setup();
     const uint8_t *bad[] = {invalid_status,invalid_tempo,
@@ -1892,6 +1946,7 @@ static void test_long_eon_tempo_scene_switch_under_variable_pcm_load(void) {
 }
 
 int main(void) {
+    test_target_seq_audit_survives_scene_switch_integration();
     test_validation_and_source_immutability();
     test_512_block_controls_and_ring_pressure();
     test_running_tempo_and_repeat_seam();
