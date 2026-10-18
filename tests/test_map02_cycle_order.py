@@ -111,8 +111,11 @@ int main(int argc, char **argv) {
         vh_map02_cycle_draw_finish(73,
             strcmp(argv[1], "broken-ot") != 0);
     }
-    /* The chosen DrawOTag has now returned and its private receipt was
-     * published. Exercise a fault later in the SAME original process. */
+    /* The chosen DrawOTag has now returned and its provisional receipt
+     * exists. _exit(0) deliberately skips normal-exit seal creation. */
+    if (!strcmp(argv[1], "abrupt-zero-exit"))
+        _exit(0);
+    /* Exercise a fault later in the SAME original process. */
     if (!strcmp(argv[1], "post-publish-cd-duplicate-claim"))
         vh_map02_cd_loader_claim(42, 42, 0x1bcc, 12);
     if (!strcmp(argv[1], "post-publish-cd-sector") ||
@@ -389,6 +392,32 @@ class CycleOrderTests(unittest.TestCase):
             self.assertEqual(current.read_bytes(), b"foreign-not-to-delete")
             self.assertIn(b"cycle-order.v2", original.read_bytes())
             self.assertNotEqual(current.stat().st_ino, original.stat().st_ino)
+
+    def test_clean_exit_requires_distinct_matching_private_seal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / "private"
+            folder.mkdir(mode=0o700)
+            outcome = self.run_mode("good", directory=folder)
+            self.assertEqual(outcome.returncode, 0, outcome.stderr)
+            receipt = folder / "map02-single-process-cycle.jsonl"
+            seal = folder / "map02-cycle-clean-exit.jsonl"
+            self.assertEqual(receipt.read_bytes(), seal.read_bytes())
+            self.assertNotEqual(receipt.stat().st_ino, seal.stat().st_ino)
+            self.assertEqual(receipt.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(seal.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(set(p.name for p in folder.iterdir()),
+                             {receipt.name, seal.name})
+
+    def test_abrupt_zero_exit_leaves_unsealed_cycle_receipt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / "private"
+            folder.mkdir(mode=0o700)
+            outcome = self.run_mode("abrupt-zero-exit", directory=folder)
+            self.assertEqual(outcome.returncode, 0, outcome.stderr)
+            self.assertTrue(
+                (folder / "map02-single-process-cycle.jsonl").is_file())
+            self.assertFalse(
+                (folder / "map02-cycle-clean-exit.jsonl").exists())
 
     def test_private_exclusive_receipt_and_no_overwrite(self):
         with tempfile.TemporaryDirectory() as tmp:
