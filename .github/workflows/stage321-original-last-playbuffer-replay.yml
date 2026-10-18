@@ -1,0 +1,111 @@
+name: Stage321 independent original guest PlayBuffer call replay
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage321-original-last-playbuffer-replay.yml'
+      - 'tools/replay_nexium_original_last_playbuffer_archive.py'
+      - 'tests/test_replay_nexium_original_last_playbuffer_archive.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  original-last-playbuffer:
+    name: Reread original guest PlayBuffer, worker stop, last page and optical source
+    runs-on: ubuntu-latest
+    timeout-minutes: 48
+    steps:
+      - name: Checkout guest monotonic and optical CRC decoders
+        uses: actions/checkout@v4
+
+      - name: Install isolated optical PNG decoder
+        run: |
+          set -euxo pipefail
+          python3 -m venv /tmp/vh-stage321
+          /tmp/vh-stage321/bin/python -m pip install --disable-pip-version-check 'Pillow>=10,<13'
+
+      - name: Stage321 13 original service-call mutation controls
+        run: /tmp/vh-stage321/bin/python -m unittest discover -s tests -p 'test_replay_nexium_original_last_playbuffer_archive.py' -v
+
+      - name: Require exact Stage320 original NeXium run completed successfully
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 150); do
+            status="$(gh api repos/${GITHUB_REPOSITORY}/actions/runs/39153742811 --jq '.status')"
+            conclusion="$(gh api repos/${GITHUB_REPOSITORY}/actions/runs/39153742811 --jq '.conclusion // "pending"')"
+            if [[ "$status" == completed ]]; then
+              test "$conclusion" == success || {
+                echo "Original Stage320 NeXium run not successful: $conclusion" >&2
+                exit 1
+              }
+              echo "Stage320 original source run completed successfully"
+              break
+            fi
+            if (( attempt == 150 )); then
+              echo "Stage320 original source capture still incomplete" >&2
+              exit 1
+            fi
+            sleep 15
+          done
+
+      - name: Download original Stage320 NeXium runtime evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39153742811
+          github-token: ${{ github.token }}
+          path: original-stage320-neXium
+
+      - name: Independently replay original PlayBuffer and worker-stop sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p independent-stage321-report
+          /tmp/vh-stage321/bin/python tools/replay_nexium_original_last_playbuffer_archive.py \
+            --original-run-id 39153742811 \
+            --archive original-stage320-neXium \
+            --output independent-stage321-report/original-last-playbuffer-stage321.json
+          /tmp/vh-stage321/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path(
+              "independent-stage321-report/original-last-playbuffer-stage321.json"
+          ).read_text())
+          if (r["schema"]!="vh-independent-original-guest-last-playbuffer-call/v1"
+                  or r["result"]!="ORIGINAL_LAST_PLAYBUFFER_AND_WORKER_STOP_SOURCES_INDEPENDENTLY_REPLAYED"
+                  or r["original_capture_workflow_run_id"]!=39153742811
+                  or r["original_PlayBuffer_CSV_bytes_independently_reaudited"] is not True
+                  or r["original_exit_page_stop_CSVs_independently_reaudited"] is not True
+                  or r["original_guest_optical_CRC_replayed"] is not True
+                  or r["capture_time_stage307_308_310_313_314_317_320_reproduced"] is not True
+                  or r["last_successful_PlayBuffer_call_duration_guest_ns"]<0
+                  or not 0<=r["last_successful_PlayBuffer_overlap_after_stop_request_ns"]<=
+                     r["last_successful_PlayBuffer_call_duration_guest_ns"]
+                  or r["last_call_return_to_last_page_witness_guest_ns"]<0
+                  or r["last_service_call_is_not_entire_stop_delay_proof"] is not True
+                  or r["guest_software_time_not_host_PCM_or_DAC_sample_clock"] is not True
+                  or r["plus_causes_audible_dropout_verified"] is not False
+                  or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage321 original call source audit not verified")
+          print("Stage321 original service call source SHA:",
+                r["original_guest_last_playbuffer_source_sha256"])
+          print("Last normal PlayBuffer software duration (ns):",
+                r["last_successful_PlayBuffer_call_duration_guest_ns"])
+          print("Last PlayBuffer overlap after stop requested (ns):",
+                r["last_successful_PlayBuffer_overlap_after_stop_request_ns"])
+          PY
+          echo "Stage321 independently re-read original guest-created PlayBuffer bracket and the exit, page-return, stop-observed and CRC-optical source chain. Call duration is software service timing, not physical speaker playback." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload only the independent Stage321 guest software receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage321-original-guest-last-playbuffer-replay
+          path: independent-stage321-report/
+          if-no-files-found: warn
