@@ -78,13 +78,16 @@ def _write_exclusive(directory_fd, name, data):
 
 
 def capture(executable, output_dir, *, frame, width, height,
-            executable_sha256, timeout=10, args=(), gpu_journal_dir=None):
+            executable_sha256, timeout=10, args=(), gpu_journal_dir=None,
+            post_publish_witness=None):
     """Read exactly one framed child stream after live ELF observation.
 
     The producer protocol is: block reading stdin until a single 0x01;
     write <8sIII> magic/frame/width/height and width*height*2 BGR555 bytes
     to stdout; close stdout and exit with status 0. Other output is forbidden.
     """
+    if post_publish_witness is not None and not callable(post_publish_witness):
+        raise ValueError("MAP02 private post-publication witness must be callable")
     if sys.platform != "linux" or not Path("/proc/self/fd").is_dir():
         raise ValueError("live frame capture requires Linux procfs")
     if (type(frame) is not int or not 0 <= frame <= 0xffffffff
@@ -242,6 +245,12 @@ def capture(executable, output_dir, *, frame, width, height,
                              (json.dumps(receipt, sort_keys=True) + "\n").encode())
             wrote_receipt = True
             os.fsync(directory_fd)
+            # A trusted caller may snapshot the immutable session identity
+            # while the same launch still holds BOTH original directory
+            # descriptors. Exceptions roll back the just-published frame
+            # and receipt, never silently blessing a changed file.
+            if post_publish_witness is not None:
+                post_publish_witness()
         except BaseException:
             if wrote_receipt:
                 os.unlink("process-frame.json", dir_fd=directory_fd)
