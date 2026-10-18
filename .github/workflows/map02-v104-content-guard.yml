@@ -152,6 +152,9 @@ on:
       - 'tests/test_map02_v132_mips_delay_slots.py'
       - 'tests/test_map02_v133_nonblocking_private_exe.py'
       - 'tests/test_map02_v134_dirfd_private_exe.py'
+      - 'tools/analyze_map02_v135_original_us_elf_pair.py'
+      - 'tests/test_map02_v135_original_us_elf_pair.py'
+      - '.github/workflows/map02-v135-original-us-elf-gate.yml'
       - '.github/workflows/map02-v134-dirfd-private-exe.yml'
       - '.github/workflows/map02-v133-nonblocking-private-exe.yml'
       - '.github/workflows/map02-v132-mips-delay-slots.yml'
@@ -247,6 +250,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v132_mips_delay_slots.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v133_nonblocking_private_exe.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v134_dirfd_private_exe.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v135_original_us_elf_pair.py' -v
           python3 -m remaster.tools.check_map02_v130_native_bounds --cc "${{ matrix.cc }}"
       - name: Patch pinned upstream with Unai post-dispatch observer
         shell: bash
