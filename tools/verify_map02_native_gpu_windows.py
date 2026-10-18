@@ -100,8 +100,25 @@ def verify_native_windows(directory, *, target_frame):
         count = min(MAX_RECORDS, written - idx * MAX_RECORDS)
         if len(events) != count or count % 2:
             raise ValueError("missing, duplicated or reordered native GPU window events")
-        expected_files = {LOG} | {e.get("snapshot") for e in events}
-        expected_files |= {e.get("upload") for e in events if e.get("upload")}
+        # JSON input is untrusted. Validate field types and canonical
+        # recorder basenames BEFORE constructing a set or calling sorted():
+        # a list/dict in "snapshot" previously raised TypeError, bypassing
+        # the normal fail-closed ValueError path and CLI redaction.
+        expected_files = {LOG}
+        for step, event in enumerate(events):
+            if type(event) is not dict:
+                raise ValueError("native GPU window event is not an object")
+            snapshot = event.get("snapshot")
+            upload = event.get("upload")
+            if (type(snapshot) is not str or
+                    snapshot != f"gpu-{step:04d}-vram.bin"):
+                raise ValueError("invalid native GPU window snapshot name")
+            if (type(upload) is not str or
+                    upload not in ("", f"gpu-{step:04d}-upload.bin")):
+                raise ValueError("invalid native GPU window upload name")
+            expected_files.add(snapshot)
+            if upload:
+                expected_files.add(upload)
         if {item.name for item in window.iterdir()} != expected_files:
             raise ValueError("unlisted or missing files in native GPU capture window")
         # Hash ALL published capture bytes, not only JSONL: unreferenced or
