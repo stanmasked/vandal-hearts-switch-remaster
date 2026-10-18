@@ -122,6 +122,7 @@ def _publish(directory, raw):
                   os.O_CLOEXEC | os.O_NOFOLLOW)
     fd = -1
     created = None
+    completed = None
     try:
         original_dir = os.fstat(dfd)
         if (stat.S_IMODE(original_dir.st_mode) != 0o700 or
@@ -161,10 +162,22 @@ def _publish(directory, raw):
         os.fsync(dfd)
         return _complete_identity(completed), _dir_identity(original_dir)
     except BaseException:
-        if created is not None:
+        if created is not None and completed is not None:
             try:
-                if _identity(os.stat(NAME, dir_fd=dfd,
-                                     follow_symlinks=False)) == created:
+                # A failed readback does not authorize deleting a modified
+                # same-inode file: require its full post-write identity.
+                latest = os.stat(NAME, dir_fd=dfd, follow_symlinks=False)
+                if (stat.S_ISREG(latest.st_mode) and
+                        _dir_identity(os.fstat(dfd)) ==
+                        _dir_identity(original_dir) and
+                        _dir_identity(os.stat(directory,
+                                              follow_symlinks=False)) ==
+                        _dir_identity(original_dir) and
+                        _complete_identity(latest) ==
+                        _complete_identity(completed) and
+                        _complete_identity(os.fstat(fd)) ==
+                        _complete_identity(completed) and
+                        _identity(latest) == created):
                     os.unlink(NAME, dir_fd=dfd)
             except OSError:
                 pass
