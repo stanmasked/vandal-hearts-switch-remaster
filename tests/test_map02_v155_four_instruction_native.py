@@ -160,6 +160,9 @@ int main(void) {
             "VH155_NATIVE_FOURTH_WORD_REFUSED",
             "--vh155-four-instructions",
             "--vh155-mutate-fourth-word",
+            "v155-missing-four.log",
+            "v155-mixed-mode.log",
+            "VH155_UNAUTHORIZED_FOUR_WORD_ACCEPT_REFUSED",
             "VH154_NATIVE_THIRD_WORD_REFUSED",
             "VH150_NATIVE_BOUNDED_INTERPRETER_PASS",
         ):
