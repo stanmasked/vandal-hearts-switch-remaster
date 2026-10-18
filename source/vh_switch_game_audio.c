@@ -14,6 +14,7 @@
 #include "vh_audio_exit_worker_stop_witness.h"
 #include "vh_audio_worker_stop_gate.h"
 #include "vh_audio_last_playbuffer_call.h"
+#include "vh_audio_playbuffer_history.h"
 
 #include <stdio.h>
 
@@ -64,6 +65,7 @@ static VhAudioExitTimeline exit_timeline; /* only once per audio start */
 static VhAudioExitOutputWitness exit_output_witness; /* audio owner only */
 static VhAudioExitWorkerStopWitness worker_stop_witness;
 static VhAudioLastPlayBufferCall last_playbuffer_call; /* same owner, existing clocks */
+static VhPlayBufferHistory last_playbuffer_history; /* last 16 real calls */
 /* Audout worker is the sole writer. Main reads after thread join. */
 static VhAudoutQueueTelemetry audout_telemetry;
 static atomic_ullong scene_trace_latest_ticket; /* serial << 32 | scene */
@@ -194,6 +196,8 @@ static int output_submit(void *opaque, const int16_t *stereo,
         end_ns,returned,queue_status,queue_count);
     (void)vh_audio_last_playbuffer_record(
         &last_playbuffer_call,begin_ns,end_ns,returned);
+    (void)vh_playbuffer_history_record(
+        &last_playbuffer_history,begin_ns,end_ns,returned);
     return returned ? 0 : -1;
 }
 
@@ -580,6 +584,7 @@ int vh_switch_game_audio_start(unsigned initial_scene) {
     vh_audio_exit_output_reset(&exit_output_witness);
     vh_audio_exit_worker_stop_reset(&worker_stop_witness);
     vh_audio_last_playbuffer_reset(&last_playbuffer_call);
+    vh_playbuffer_history_reset(&last_playbuffer_history);
     vh_audout_queue_reset(&audout_telemetry);
     if(vh_audout_queue_set_probe_phase(&audout_telemetry,
                                       VH_AUDOUT_PROBE_PHASE)) return -1;
@@ -758,6 +763,11 @@ int vh_switch_game_audio_worker_stop_dump(FILE *stream) {
 int vh_switch_game_audio_last_playbuffer_dump(FILE *stream) {
     if (!stream || thread_started) return -1;
     return vh_audio_last_playbuffer_write_csv(&last_playbuffer_call,stream);
+}
+
+int vh_switch_game_audio_playbuffer_history_dump(FILE *stream) {
+    if (!stream || thread_started) return -1;
+    return vh_playbuffer_history_write_csv(&last_playbuffer_history,stream);
 }
 
 void vh_switch_game_audio_stop(void) {
