@@ -329,6 +329,55 @@ class PrivateJointOneShotAuditTests(unittest.TestCase):
                 self.run_capture(frame_pair_dir=pair,
                                  **self.source_witness_kwargs())
 
+    def test_source_digest_fields_reject_private_path_and_non_hex(self):
+        pair = self.make_claimed_private_frame_pair()
+        secret = str(Path(self.temp.name) / "private-playstation-source-path")
+        for field, value in (
+                ("original_launch_receipt_sha256", secret),
+                ("native_gpu_event_log_sha256", "G" * 64),
+                ("original_launch_receipt_sha256", None),
+                ("native_gpu_event_log_sha256", "a" * 63)):
+            def forged_digest(*args, **kwargs):
+                witness = self.synthetic_original_ft4_witness(*args, **kwargs)
+                witness[field] = value
+                return witness
+            with self.subTest(field=field, value_type=type(value).__name__):
+                # A fresh directory is required for each real ELF run.
+                for output in (self.output, self.journal):
+                    for child in output.iterdir():
+                        child.unlink()
+                with patch.object(native_bridge, "audit_launch_two_word",
+                                  side_effect=forged_digest):
+                    with self.assertRaisesRegex(ValueError, "invalid SHA-256 digest") as raised:
+                        self.run_capture(frame_pair_dir=pair,
+                                         **self.source_witness_kwargs())
+                self.assertNotIn(secret, str(raised.exception))
+
+    def test_malformed_source_join_result_refused_without_attribute_error(self):
+        pair = self.make_claimed_private_frame_pair()
+        for invalid in (None, "claimed-success", [1, 2, 3]):
+            with self.subTest(result_type=type(invalid).__name__):
+                for output in (self.output, self.journal):
+                    for child in output.iterdir():
+                        child.unlink()
+                with patch.object(joint_runner, "join_original_native",
+                                  return_value=invalid):
+                    with self.assertRaisesRegex(ValueError,
+                                                "independent source witness disagrees"):
+                        self.run_capture(frame_pair_dir=pair,
+                                         **self.source_witness_kwargs())
+
+    def test_digest_publication_helper_never_returns_arbitrary_strings(self):
+        source = {"original_launch_receipt_sha256": "a" * 64}
+        self.assertEqual(joint_runner._require_source_sha256(
+            source, "original_launch_receipt_sha256"), "a" * 64)
+        for bad in (None, True, 17, "", "A" * 64, "g" * 64, "a" * 65):
+            source["original_launch_receipt_sha256"] = bad
+            with self.subTest(bad=repr(bad)[:15]):
+                with self.assertRaisesRegex(ValueError, "invalid SHA-256 digest"):
+                    joint_runner._require_source_sha256(
+                        source, "original_launch_receipt_sha256")
+
     def test_same_byte_claimed_reference_swap_during_source_replay_refused(self):
         pair = self.make_claimed_private_frame_pair()
         def swap(*args, **kwargs):
