@@ -158,6 +158,10 @@ on:
       - 'tests/test_map02_v136_original_code_sections.py'
       - 'tools/verify_map02_v137_private_mips_pc_sites.py'
       - 'tests/test_map02_v137_private_mips_pc_sites.py'
+      - 'tools/apply_map02_v138_interpreter_pc.py'
+      - 'tools/check_map02_v138_native_pc_observer.py'
+      - 'tests/test_map02_v138_interpreter_pc.py'
+      - '.github/workflows/map02-v138-interpreter-pc.yml'
       - '.github/workflows/map02-v137-private-pc-sites.yml'
       - 'tools/analyze_map02_v132_mips_delay_slots.py'
       - '.github/workflows/map02-v136-original-code-sections.yml'
@@ -260,6 +264,8 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v135_original_us_elf_pair.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v136_original_code_sections.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v137_private_mips_pc_sites.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v138_interpreter_pc.py' -v
+          python3 -m remaster.tools.check_map02_v138_native_pc_observer --cc "${{ matrix.cc }}"
           python3 -m remaster.tools.check_map02_v130_native_bounds --cc "${{ matrix.cc }}"
       - name: Patch pinned upstream with Unai post-dispatch observer
         shell: bash
@@ -271,7 +277,9 @@ jobs:
           git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
           git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
-          python3 -m remaster.tools.apply_map02_v129_pcsx_rearmed upstream-pcsx
+          python3 -m remaster.tools.apply_map02_v138_interpreter_pc upstream-pcsx
+          grep -F 'vh138_pc_observe(regs,mem,value)' upstream-pcsx/libpcsxcore/psxmem.c
+          grep -F 'VH138_NATIVE_INTERPRETER_PC_PASS' upstream-pcsx/frontend/main.c
           git -C upstream-pcsx diff --check
           grep -F 'vh80_record(VH83_GP0_UNAI_HANDLED' upstream-pcsx/plugins/gpu_unai/gpulib_if.cpp
           grep -F 'VH83_UNAI_DISPATCH_PASS' upstream-pcsx/frontend/main.c
@@ -1290,6 +1298,51 @@ jobs:
             sha256sum -c proof/private/v131-same-exe.sha256
             test ! -e proof/private/V104_RENDERER_EVENTS.jsonl.tmp
           done
+          # Two additional independent genuine PS1 interpreter processes:
+          # positive bound PC trace, then compulsory deliberate witness
+          # corruption refusal. Both remain 0600 private and synthetic.
+          sha256sum -c proof/private/v131-same-exe.sha256
+          mkdir -m 700 proof/v138-native-home
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v138-native-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh129-vblank-04 --vh138-interpreter-pc \
+            proof/private/V129_SYNTHETIC.EXE \
+            > proof/private/v138-native-pc.log 2>&1 || {
+              tail -n 60 proof/private/v138-native-pc.log
+              exit 1
+            }
+          expected="$(python3 - <<'PY'
+          from remaster.tools.apply_map02_v138_interpreter_pc import expected_pc_events
+          print(len(expected_pc_events()))
+          PY
+          )"
+          grep -Fx "VH138_NATIVE_INTERPRETER_PC_PASS matched=$expected real_interpreter_sw=1 original_retail=0" \
+            proof/private/v138-native-pc.log
+          grep -F 'VH129_REAL_VBLANK_PROFILES_PASS mode=0 ' \
+            proof/private/v138-native-pc.log
+          sha256sum -c proof/private/native.sha256
+          sha256sum -c proof/private/v131-same-exe.sha256
+          mkdir -m 700 proof/v138-corrupt-home
+          bad_rc=0
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v138-corrupt-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh129-vblank-04 --vh138-interpreter-pc \
+            --vh138-corrupt-pc-witness \
+            proof/private/V129_SYNTHETIC.EXE \
+            > proof/private/v138-corrupt-pc.log 2>&1 || bad_rc=$?
+          test "$bad_rc" -eq 48
+          grep -Fx 'VH138_NATIVE_MIPS_PC_REFUSED' proof/private/v138-corrupt-pc.log
+          if grep -Fq 'VH138_NATIVE_INTERPRETER_PC_PASS' proof/private/v138-corrupt-pc.log; then
+            echo 'VH138_FALSE_PASS_REFUSED'
+            exit 1
+          fi
+          test ! -e proof/private/V104_RENDERER_EVENTS.jsonl.tmp
+          sha256sum -c proof/private/native.sha256
+          sha256sum -c proof/private/v131-same-exe.sha256
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -1310,6 +1363,8 @@ jobs:
           report["same_source_authored_exe_privately_hashed_before_after_each_mode"]=True
           report["v131_static_dma_mmio_candidate_counts_checked"]=True
           report["v132_delay_slot_mmio_candidate_consistency_checked"]=True
+          report["v138_actual_synthetic_interpreter_pc_to_mmio_sites_checked"]=True
+          report["v138_deliberately_corrupted_native_pc_witness_refused"]=True
           report["retail_map02_gpu_rendering_verified"]=False
           Path("proof/public/v129-four-real-vblank-profiles-summary.json").write_text(
               json.dumps(report,sort_keys=True)+"\n")

@@ -1,0 +1,36 @@
+name: MAP02 v138 interpreter MIPS SW PC provenance
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v138-interpreter-pc.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v138_interpreter_pc.py'
+      - 'tools/check_map02_v138_native_pc_observer.py'
+      - 'tests/test_map02_v138_interpreter_pc.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  actual-cpu-hook-cross-check:
+    name: compiled CPU PC/MMIO witness guards (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test native PC witness model with C bounds and UB sanitizers
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          no_retail_original_game_assets=1
+          readonly no_retail_original_game_assets
+          test "$no_retail_original_game_assets" = 1
+          python3 -m unittest discover -s tests -p 'test_map02_v138_interpreter_pc.py' -v
+          python3 -m tools.check_map02_v138_native_pc_observer --cc "$CC"
+          python3 -m unittest discover -s tests -p 'test_map02_v137_private_mips_pc_sites.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v136_original_code_sections.py' -v
+          echo "VH138_SOURCE_ONLY_SYNTHETIC_PASS runtime_original_map02=0"
