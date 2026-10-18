@@ -452,13 +452,13 @@ python3 -m tools.check_map02_private_cycle_readiness \\
 ## Однократный локальный запуск, проверка кадра и финальная квитанция seal
 
 После подготовки **подлинного приватного полного PC ELF**, собственного
-US-диска, \`gpu-local-capture-plan.json\` и квитанции исходной сборки
+US-диска, `gpu-local-capture-plan.json` и квитанции исходной сборки
 можно выполнить **одну** команду на локальной Linux-машине. Она
 последовательно исполняет уже существующие строгие проверки:
-\`verify_private_cycle_readiness\`, \`launch_observed_pc\` со
-\`stop_after_present=True\` и \`require_complete_preflight=True\`,
-\`finalize_private_capture\`, \`seal_final_capture\` и независимый
-\`verify_final_seal\`.
+`verify_private_cycle_readiness`, `launch_observed_pc` со
+`stop_after_present=True` и `require_complete_preflight=True`,
+`finalize_private_capture`, `seal_final_capture` и независимый
+`verify_final_seal`.
 
 ~~~sh
 # Все восемь каталогов должны уже существовать и иметь права 0700.
@@ -479,10 +479,10 @@ python3 -m tools.run_map02_private_cycle_session \
 # При необходимости дополнить --krom-source реальным приватным файлом.
 ~~~
 
-\`--frame\` должен совпасть с номером оригинального GPU DrawOTag в
-приватном плане. \`--x/--y\` выбираются по оригинальному FT4/GTE, а не
+`--frame` должен совпасть с номером оригинального GPU DrawOTag в
+приватном плане. `--x/--y` выбираются по оригинальному FT4/GTE, а не
 по условным координатам примера. Флаг
-\`--allow-local-completion\` обязателен и явно разрешает *только
+`--allow-local-completion` обязателен и явно разрешает *только
 локальную* запись отсутствующих оригинального CD witness и PNG; без
 него **процесс вообще не запускается**. Seal должен быть отдельным
 пустым каталогом. Любой ошибочный preflight, ненулевой код или
