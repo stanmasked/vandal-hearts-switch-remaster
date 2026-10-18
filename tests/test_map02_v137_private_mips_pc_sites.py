@@ -27,8 +27,7 @@ from tools.verify_map02_v137_private_mips_pc_sites import (
 
 def encode_claim(pc,kind):
     return (json.dumps({"schema":EVENT_SCHEMA,"pc":pc,"kind":kind},
-                       sort_keys=True,separators=(",",":"))+"\\n").replace(
-                       "\\\\n","\\n").encode()
+                       sort_keys=True,separators=(",",":"))+"\n").encode()
 
 class PrivatePCToMMIOProvenance(unittest.TestCase):
     def setUp(self):
