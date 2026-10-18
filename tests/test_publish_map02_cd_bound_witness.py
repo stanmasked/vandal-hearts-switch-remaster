@@ -58,18 +58,23 @@ class OriginalCdBoundFinalWitnessTests(unittest.TestCase):
         self.binary.chmod(0o700)
 
         crc = 0
+        payload_sha = hashlib.sha256()
         with self.image.open("rb") as fd:
             for lba in range(0x1bcc, 0x1bcc + 12):
                 fd.seek(lba * 2352 + 24)
-                crc = zlib.crc32(fd.read(2048), crc)
+                data = fd.read(2048)
+                crc = zlib.crc32(data, crc)
+                payload_sha.update(data)
         self.cd_receipt = {
-            "schema": "vh.map02.original-cd-read.v1",
+            "schema": "vh.map02.original-cd-read.v2",
             "capture_session": "bc" * 16,
             "source": "original-CdRead-and-ContinueLoadingCdFile",
             "cdf": "CDF_M_MAP02_PRS",
             "lba": 0x1bcc, "sectors": 12, "bytes": 24576,
             "raw_user_crc32": f"{crc:08x}",
             "returned_user_crc32": f"{crc:08x}",
+            "raw_user_sha256": payload_sha.hexdigest(),
+            "returned_user_sha256": payload_sha.hexdigest(),
             "loader_completed": True,
         }
         self.stage_cd()
