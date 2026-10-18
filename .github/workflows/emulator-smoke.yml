@@ -15,6 +15,10 @@ on:
       - 'source/vh_audio_exit_output_witness.h'
       - 'source/vh_audio_exit_worker_stop_witness.h'
       - 'source/vh_audio_last_playbuffer_call.h'
+      - 'source/vh_audio_playbuffer_history.h'
+      - 'tools/audit_nexium_guest_playbuffer_history.py'
+      - 'tests/test_audit_nexium_guest_playbuffer_history.py'
+      - 'tests/test_vh_audio_playbuffer_history.c'
       - 'tools/audit_nexium_guest_last_playbuffer.py'
       - 'tests/test_vh_audio_last_playbuffer_call.c'
       - 'tests/test_audit_nexium_guest_last_playbuffer.py'
@@ -910,6 +914,51 @@ jobs:
                 r["original_last_playbuffer_csv_sha256"])
           PY
           echo "Stage320: final successful audoutPlayBuffer service call bracket measured with the ALREADY existing start/end clock readings, cross-referenced to three original guest software witnesses. One call is not necessarily all stop latency, nor DAC or audible speaker playback." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage322 re-audit original last16 audout PlayBuffer calls and optional prior baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_guest_playbuffer_history.py \
+            --guest-root-file runtime-evidence/guest-sd-root.txt \
+            --output runtime-evidence/guest-playbuffer-history-stage322.json \
+            --output-original runtime-evidence/audio-playbuffer-history-000.csv
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          p=Path("runtime-evidence/guest-playbuffer-history-stage322.json")
+          r=json.loads(p.read_text())
+          original=Path("runtime-evidence/audio-playbuffer-history-000.csv")
+          if (r["schema"]!="vh-original-last16-PlayBuffer-guest-software-call-history/v1"
+                  or r["result"]!="ORIGINAL_GUEST_PLAYBUFFER_HISTORY_REAUDITED"
+                  or r["original_guest_history_source_observed"] is not True
+                  or r["original_guest_history_bytes_preserved"] is not True
+                  or not original.is_file() or original.is_symlink()
+                  or hashlib.sha256(original.read_bytes()).hexdigest()!=
+                     r["original_guest_history_csv_sha256"]
+                  or not 1<=r["original_recent_call_count"]<=16
+                  or r["total_original_normal_PlayBuffer_calls"]<
+                     r["original_recent_call_count"]
+                  or r["history_is_not_the_entire_session"] is not True
+                  or r["one_call_is_not_DAC_or_last_audible_sample"] is not True
+                  or r["guest_software_time_not_host_PCM_sample_clock"] is not True
+                  or r["original_PS1_retail_soundtrack_verified"] is not False
+                  or r["plus_caused_audible_dropout_verified"] is not False
+                  or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage322 guest original bounded PlayBuffer history source not verified")
+          if r["prior_successful_call_count_in_window"]==0:
+              if r["prior_successful_duration_lower_median_guest_ns"] is not None:
+                  raise SystemExit("Stage322 fabricated an earlier successful-call baseline")
+          print("Stage322 original last16 PlayBuffer source SHA:",
+                r["original_guest_history_csv_sha256"])
+          print("Stage322 final successful PlayBuffer software duration (ns):",
+                r["final_call_duration_guest_ns"])
+          print("Stage322 earlier successful calls preserved:",
+                r["prior_successful_call_count_in_window"])
+          print("Stage322 earlier lower median duration (guest ns):",
+                r["prior_successful_duration_lower_median_guest_ns"])
+          PY
+          echo "Stage322: real original guest last16 normal PlayBuffer software-call brackets preserved byte-exact, SHA-256 audited, compared with original Stage320 last success. Earlier baseline only when actual earlier successes exist. Reuses existing clocks; not DAC or audible music." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Stage308 independently source-verify guest optical scene clocks versus guest exit
         shell: bash
