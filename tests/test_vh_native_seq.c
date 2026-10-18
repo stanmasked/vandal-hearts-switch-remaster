@@ -481,6 +481,11 @@ static VhNativeSpu before_scene_spu, foreign_scene_spu;
 static VhNativeSpu oracle_scene_spu;
 static VhNativeSeq oracle_scene_seq;
 static int16_t oracle_scene_pcm[VH_AUDIO_BLOCK_FRAMES*2u];
+/* The counterfactual renderer starts from the same SPU but with its
+ * historical wet buffer reset, to establish an audible difference. */
+static VhNativeSpu reset_tail_spu;
+static VhNativeSeq reset_tail_seq;
+static int16_t reset_tail_pcm[VH_AUDIO_BLOCK_FRAMES*2u];
 static int resolve_scene_reverb(void *ctx,unsigned program,unsigned note,
                                 unsigned velocity,unsigned volume,
                                 unsigned pan,VhSeqTone *tone) {
@@ -622,8 +627,19 @@ static void test_full_twenty_voice_scene_switch_detaches_bank(void) {
     for(unsigned i=0;i<VH_NATIVE_MUSIC_VOICES;i++)
         assert(spu.voice[i].active && spu.voice[i].pcm==sample &&
                spu.voice[i].reverb_send);
-    vh_native_spu_render(&spu,pcm,VH_AUDIO_BLOCK_FRAMES);
-    assert(spu.frames_rendered==VH_AUDIO_BLOCK_FRAMES);
+    /* Charge the genuine STUDIO_C delay/FIR history before changing
+     * banks. An empty history would make the wet-tail comparison
+     * trivially pass even if switching accidentally reset reverb. */
+    for(unsigned warm=0u;warm<64u;warm++) {
+        if(warm) assert(vh_native_seq_advance_block(&seq)>=0);
+        vh_native_spu_render(&spu,pcm,VH_AUDIO_BLOCK_FRAMES);
+    }
+    assert(seq.note_ons==VH_NATIVE_MUSIC_VOICES &&
+           spu.frames_rendered==64u*VH_AUDIO_BLOCK_FRAMES);
+    unsigned nonzero_wet_cells=0u;
+    for(unsigned i=0;i<VH_REV_SAMPLES;i++)
+        nonzero_wet_cells+=(spu.reverb.work[i]!=0);
+    assert(nonzero_wet_cells>0u);
     const VhNativeSeq saved=seq;
     before_scene_spu=spu;
     const uint8_t *bad_songs[]={
@@ -683,25 +699,35 @@ static void test_full_twenty_voice_scene_switch_detaches_bank(void) {
     assert(vh_native_seq_init(
         &oracle_scene_seq,controls_song,sizeof controls_song,
         &oracle_scene_spu,resolve_next_scene,&log_state,1u)==0);
-    unsigned audible_blocks=0u;
+    reset_tail_spu=oracle_scene_spu;
+    vh_spu_reverb_reset(&reset_tail_spu.reverb);
+    assert(vh_native_seq_init(
+        &reset_tail_seq,controls_song,sizeof controls_song,
+        &reset_tail_spu,resolve_next_scene,&log_state,1u)==0);
+    unsigned audible_blocks=0u, wet_tail_effect_blocks=0u;
     for(unsigned block=0u;block<48u;block++) {
         const int actual=vh_native_seq_advance_block(&seq);
         const int expected=vh_native_seq_advance_block(&oracle_scene_seq);
-        assert(actual>=0 && actual==expected);
+        const int empty_wet=vh_native_seq_advance_block(&reset_tail_seq);
+        assert(actual>=0 && actual==expected && actual==empty_wet);
         assert(seq.note_ons==oracle_scene_seq.note_ons &&
                seq.note_offs==oracle_scene_seq.note_offs &&
                seq.blocks_advanced==oracle_scene_seq.blocks_advanced);
         vh_native_spu_render(&spu,pcm,VH_AUDIO_BLOCK_FRAMES);
         vh_native_spu_render(
             &oracle_scene_spu,oracle_scene_pcm,VH_AUDIO_BLOCK_FRAMES);
+        vh_native_spu_render(
+            &reset_tail_spu,reset_tail_pcm,VH_AUDIO_BLOCK_FRAMES);
         assert(!memcmp(pcm,oracle_scene_pcm,sizeof pcm));
+        if(memcmp(pcm,reset_tail_pcm,sizeof pcm)!=0)
+            ++wet_tail_effect_blocks;
         assert(!memcmp(&spu.reverb,&oracle_scene_spu.reverb,
                        sizeof spu.reverb));
         for(unsigned i=0u;i<VH_AUDIO_BLOCK_FRAMES*2u;i++)
             if(pcm[i]!=0) { ++audible_blocks; break; }
     }
-    assert(audible_blocks>0u && seq.note_ons==1u &&
-           seq.cycles_completed==1u &&
+    assert(audible_blocks>0u && wet_tail_effect_blocks>0u &&
+           seq.note_ons==1u && seq.cycles_completed==1u &&
            spu.frames_rendered==48u*VH_AUDIO_BLOCK_FRAMES);
 }
 
