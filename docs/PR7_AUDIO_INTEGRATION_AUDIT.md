@@ -1,0 +1,62 @@
+# PR #7 — audio integration audit against the CDXA target branch
+
+Status: **pre-merge review only**. This note does not declare a clean merge,
+physical audio playback or a completed Nintendo Switch port.
+
+## Pinned comparison
+
+- Target: `test/cdxa-extract-decode-pipeline`.
+- Feature: `feat/native-av-ps1-seq-integration` (PR #7).
+- Last inspected merge base: `90b0ff1cb9ba310a52b2186bdea078496af8e53c`.
+- GitHub three-dot comparison at the audit point reported 14 paths edited on
+  both sides, 602+ commits ahead and 801 behind. Counts will change after
+  further commits. **Two-sided edits are not automatically 14 text conflicts.**
+- GitHub marked the PR not mergeable (`dirty`) at that point. Do not overwrite
+  the target's current files wholesale with the feature versions.
+
+## Paths requiring a three-way review
+
+| Area | Both-sides-touched paths | Required check |
+| --- | --- | --- |
+| Playback service | `source/vh_audio_output_recovery.c`, `.h` | Retain target's existing submit/reopen contract and feature's lease, event counters, backpressure, page timing and resume APIs. Audit struct layouts and callers. |
+| Musical sequencing | `source/vh_native_seq.c`, `.h` | Preserve target's read-only `vh_native_seq_audit` and feature's `vh_native_seq_switch_scene`; validate both with synthetic banks. |
+| Native probe | `probes/audout_audio_smoke.c` | Keep target's ramp/scene integration and feature's strict exact-page return and fault diagnostics. |
+| Build and CI | `Makefile`, `.github/workflows/host-audio-tests.yml`, `.github/workflows/switch-audout-nro.yml` | Preserve target tests and add the feature's jobs without deleting steps or duplicating incompatible targets. |
+| Test fixtures | `tests/test_vh_audio_output_recovery.c`, `tests/test_vh_native_seq.c`, `tests/test_native_spu_reverb_reference.py`, `tests/test_native_vab_python_reference.py` | Bring both suites forward; keep callback-free PCM reference and negative service-failure tests. |
+| Documentation | `README.md`, `docs/SWITCH_LOCAL_AUDIO_TEST.md` | Preserve both instructions and the distinction between simulated, emulated and physical playback. |
+
+**Target-only files to retain, not replace or silently drop:**
+`source/vh_audio_output_ramp.c/.h` and `source/vh_music_scene.c/.h`,
+observed in the target on 2026-10-18. Check any new target dependencies
+before combining Makefile or native probe changes.
+
+## Work performed safely in the feature branch
+
+The strict target-side SEQ preflight API (`VhSeqAudit`,
+`vh_native_seq_audit`) was copied into the feature's header and
+source alongside its scene-switch API, without rewriting target branch
+history. A regression test now checks that preflight audit identifies
+a missing note, does not publish an invalid report, and leaves
+an active SEQ/SPU/ring unchanged. This is an initial compatibility
+port only. Both APIs must still pass the full host and native CI on
+the eventual integration branch.
+
+## Required integration gates
+
+1. Create a disposable integration branch at the **current target HEAD**;
+   do not force-push the target or merge PR #7 as-is.
+2. Compare all 14 dual-touched files against the three-way merge base and
+   resolve actual overlapping hunks; preserve target-only modules.
+3. Compile and run target plus feature Host SPU, ASan/UBSan, SEQ audit,
+   scene switching, source VAB resolution, resampler, exactly-once
+   page replay, and bounded resume-failure tests.
+4. Build libnx NROs; run all seven NeXium guest fixtures, downloaded
+   evidence inventory and digest-binding verification.
+5. Keep original user-owned game assets outside GitHub and CI. A passing
+   emulator screenshot/digest check cannot certify audible music or
+   physical Switch suspend/HOME behavior.
+6. Only consider merging once no semantic or textual conflicts remain
+   and the **new integration HEAD** has its own successful CI evidence.
+
+All test artifacts and emulated events here are diagnostic; they do not
+claim actual physical Switch playback or a signed attestation.
