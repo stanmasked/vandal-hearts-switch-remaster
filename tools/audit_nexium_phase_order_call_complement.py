@@ -83,8 +83,8 @@ def compare_complements(stage296:dict, stage297:dict,
     regenerated=compare_complete(stage296,profiles)
     if regenerated!=stage297:
         raise CorrelationError("Stage297 original-SD all-call witness is not reproducible")
-    if stage297.get("result")!=
-            "FOUR_REAL_GUEST_SD_FULL_AUDOUT_VS_QUERIED_RATES_VERIFIED":
+    if (stage297.get("result")!=
+            "FOUR_REAL_GUEST_SD_FULL_AUDOUT_VS_QUERIED_RATES_VERIFIED"):
         raise CorrelationError("unverified source stage")
     summaries=[complement_profile(profile) for profile in profiles]
     if ([s["phase"] for s in summaries]!=list(PHASES)
