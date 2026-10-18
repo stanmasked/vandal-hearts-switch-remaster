@@ -72,6 +72,7 @@ def _preflight_original_source_files(native_capture_dir, source_capture_dir,
     a foreseeable source-input failure never publishes a new BGR555 frame.
     """
     identities = set()
+    pinned_sources = []
     expected_dirs = (
         native_capture_dir, source_capture_dir,
         output_dir, gpu_journal_dir, frame_pair_dir,
@@ -92,6 +93,10 @@ def _preflight_original_source_files(native_capture_dir, source_capture_dir,
             if key in identities:
                 raise ValueError("MAP02 original source directory roles overlap")
             identities.add(key)
+            # Only stable role identity is recorded for mutable output
+            # directories: capture must create files inside them.
+            pinned_sources.append(("directory", key, info.st_uid,
+                                   stat.S_IMODE(info.st_mode)))
         finally:
             os.close(fd)
     for value in (launch_receipt, preflight_report):
@@ -112,8 +117,12 @@ def _preflight_original_source_files(native_capture_dir, source_capture_dir,
             if key in identities:
                 raise ValueError("MAP02 original source roles overlap")
             identities.add(key)
+            pinned_sources.append((
+                "file", key, info.st_uid, info.st_mode, info.st_nlink,
+                info.st_size, info.st_mtime_ns, info.st_ctime_ns))
         finally:
             os.close(fd)
+    return tuple(pinned_sources)
 
 
 def _session_inode_witness(output_dir, gpu_journal_dir, *,
@@ -204,8 +213,9 @@ def run(executable, output_dir, gpu_journal_dir, *, frame, executable_sha256,
                 (not all(v is not None for v in source_inputs)
                  or frame_pair_dir is None))):
         raise ValueError("MAP02 original FT4/VRAM witness arguments incomplete")
+    source_input_identity = None
     if source_requested:
-        _preflight_original_source_files(
+        source_input_identity = _preflight_original_source_files(
             native_capture_dir, source_capture_dir,
             launch_receipt, preflight_report,
             output_dir, gpu_journal_dir, frame_pair_dir)
@@ -353,6 +363,15 @@ def run(executable, output_dir, gpu_journal_dir, *, frame, executable_sha256,
                 or joined.get("gpu_journal_writer_kernel_authenticated") is not False
                 or joined.get("hd_replacement_authorized") is not False):
             raise ValueError("MAP02 independent source witness disagrees with same-launch frame")
+        # The original-source receipt and preflight file are independent
+        # inputs. A self-consistent same-byte rename/swap during the
+        # source replay must not silently change what preflight approved.
+        if _preflight_original_source_files(
+                native_capture_dir, source_capture_dir,
+                launch_receipt, preflight_report,
+                output_dir, gpu_journal_dir, frame_pair_dir
+        ) != source_input_identity:
+            raise ValueError("MAP02 original source input identities changed during capture")
         # The extra independent source replay is not allowed to swap any
         # of the files the original launcher bound through its held FDs.
         if (_session_inode_witness(output_dir, gpu_journal_dir) != pinned_session
@@ -361,6 +380,7 @@ def run(executable, output_dir, gpu_journal_dir, *, frame, executable_sha256,
             raise ValueError("MAP02 private capture changed during original FT4/VRAM witness")
         original_source = {
             "source_keyed_native_ft4_vram_independently_replayed": True,
+            "original_source_receipt_and_roles_stable_through_replay": True,
             "source_original_launch_receipt_sha256":
                 _require_source_sha256(joined, "original_launch_receipt_sha256"),
             "source_native_gpu_event_log_sha256":
