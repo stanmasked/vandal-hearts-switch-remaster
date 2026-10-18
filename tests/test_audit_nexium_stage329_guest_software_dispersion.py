@@ -92,11 +92,6 @@ class OriginalGuestBoundedSoftwareDispersionTests(unittest.TestCase):
 
     def test_source_authenticated_mixed_prior_baseline_rank_seven(self):
         modified=heterogeneous(self.first,[
-            5,6,7,8,9,10,12,20,30,31,32,33,34,35,36
-        ])
-        # 5..36 ns toy numbers: median 20, last 11,225,937 is not
-        # smaller than median. Use full millisecond values instead.
-        modified=heterogeneous(self.first,[
             x*1_000_000 for x in (5,6,7,8,9,10,12,20,30,31,32,33,34,35,36)
         ])
         out=self.derive(first=modified)
