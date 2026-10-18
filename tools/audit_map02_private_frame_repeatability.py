@@ -98,6 +98,40 @@ def _private_difference(first, second):
     return different, changed_lines, stp_changes
 
 
+def _gpu_snapshot_differences(first_fd, second_fd, first_pairs,
+                              second_pairs, check_inventories):
+    """Compare independent *intermediate* GPU VRAM, not only final frames.
+
+    The JSONL event sequence may be identical while a draw produces
+    different BGR555 memory. Names are derived exclusively from validated
+    replay pair counts, and each raw snapshot is reread through the pinned
+    journal directory FD (including full owner/mode/inode checks).
+    """
+    first_count, second_count = 2 * first_pairs, 2 * second_pairs
+    common = min(first_count, second_count)
+    changed = 0
+    first_change = None
+    for step in range(common):
+        name = f"gpu-{step:04d}-vram.bin"
+        left, _ = _private_raw(first_fd, name)
+        right, _ = _private_raw(second_fd, name)
+        if left != right:
+            changed += 1
+            if first_change is None:
+                first_change = step
+        check_inventories()
+    return {
+        "first_gpu_vram_snapshot_count": first_count,
+        "second_gpu_vram_snapshot_count": second_count,
+        "gpu_vram_snapshots_compared": common,
+        "different_gpu_vram_snapshots_in_common_prefix": changed,
+        "unmatched_gpu_vram_snapshots": abs(first_count - second_count),
+        "first_different_gpu_vram_snapshot_index": first_change,
+        "repeated_full_gpu_vram_snapshot_sequence_identical":
+            first_count == second_count and changed == 0,
+    }
+
+
 def audit(first_frame, first_journal, second_frame, second_journal, executable):
     folders = tuple(Path(x).absolute() for x in (
         first_frame, first_journal, second_frame, second_journal))
@@ -145,6 +179,13 @@ def audit(first_frame, first_journal, second_frame, second_journal, executable):
             raise ValueError("MAP02 independent runs differ in frame or ELF identity")
         different, lines, stp = _private_difference(
             evidence[0][1], evidence[1][1])
+        # A bit-exact terminal frame is not enough: earlier DrawOTag
+        # snapshots can diverge and later converge again. Audit every
+        # replay-validated before/after native GPU VRAM snapshot.
+        snapshots = _gpu_snapshot_differences(
+            opened[1], opened[3],
+            a["gpu_journal_pairs_verified"], b["gpu_journal_pairs_verified"],
+            check_inventories)
         check_inventories()
         for fd, (path, identity) in zip(opened, sessions):
             _check_directory(fd, path, identity)
@@ -161,6 +202,7 @@ def audit(first_frame, first_journal, second_frame, second_journal, executable):
             "different_bgr555_pixels": different,
             "changed_scanlines": lines,
             "stp_bit_differences": stp,
+            **snapshots,
             "repeated_native_frame_pixels_identical": different == 0,
             "repeated_gpu_final_vram_identical": different == 0,
             "repeated_gpu_event_journal_identical":

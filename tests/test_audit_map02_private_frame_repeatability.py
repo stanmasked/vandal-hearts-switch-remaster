@@ -33,7 +33,15 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
                        '        if (bad_vram)')
         if PRODUCER.count(needle) != 1:
             raise RuntimeError("MAP02 C11 producer anchor drift")
-        source.write_text(PRODUCER.replace(needle, replacement), encoding="utf-8")
+        updated = PRODUCER.replace(needle, replacement)
+        before = 'if (!write_image(dir, "gpu-0000-vram.bin")) return 43;'
+        if updated.count(before) != 1:
+            raise RuntimeError("MAP02 C11 before-snapshot anchor drift")
+        updated = updated.replace(
+            before,
+            'if (argc > 1 && !strcmp(argv[1], "alternate-before")) '
+            'native_vram[0][0] = 0x1234;\n        ' + before)
+        source.write_text(updated, encoding="utf-8")
         cc = os.environ.get("CC", "cc")
         if not shutil.which(cc):
             raise unittest.SkipTest("C11 compiler missing")
@@ -76,6 +84,12 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
         self.assertTrue(result["repeated_gpu_event_journal_identical"])
         self.assertTrue(result["two_full_replays_per_capture_verified"])
         self.assertTrue(result["four_private_file_inventories_stable_through_replays"])
+        self.assertTrue(result["repeated_full_gpu_vram_snapshot_sequence_identical"])
+        self.assertEqual(result["first_gpu_vram_snapshot_count"], 2)
+        self.assertEqual(result["second_gpu_vram_snapshot_count"], 2)
+        self.assertEqual(result["gpu_vram_snapshots_compared"], 2)
+        self.assertEqual(result["different_gpu_vram_snapshots_in_common_prefix"], 0)
+        self.assertIsNone(result["first_different_gpu_vram_snapshot_index"])
         self.assertEqual(result["different_bgr555_pixels"], 0)
         self.assertEqual(result["first_gpu_pairs_verified"], 1)
         self.assertFalse(result["ps1_hardware_pixel_equivalence_verified"])
@@ -98,10 +112,54 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
         self.assertNotEqual(out["first_image_sha256"],
                             out["second_image_sha256"])
         self.assertFalse(out["repeated_gpu_final_vram_identical"])
+        self.assertEqual(out["different_gpu_vram_snapshots_in_common_prefix"], 1)
+        self.assertEqual(out["first_different_gpu_vram_snapshot_index"], 1)
+        self.assertFalse(out["repeated_full_gpu_vram_snapshot_sequence_identical"])
         # Event JSONL captures draw order and attributes, but NOT raw
         # post-draw VRAM pixels. The same two events can write different
         # pixels while the JSONL digest stays byte-identical.
         self.assertTrue(out["repeated_gpu_event_journal_identical"])
+
+    def test_transient_before_vram_difference_converges_to_same_final_frame(self):
+        # The *same* compiled C11 ELF can create a different before-
+        # DrawOTag snapshot and still produce an identical after-VRAM
+        # frame and identical two-line JSONL GPU command journal.
+        for folder in (self.f2, self.j2):
+            for path in folder.iterdir():
+                path.unlink()
+        self.capture(self.f2, self.j2, "alternate-before")
+        result = self.run_repeat()
+        self.assertTrue(result["repeated_native_frame_pixels_identical"])
+        self.assertTrue(result["repeated_gpu_final_vram_identical"])
+        self.assertTrue(result["repeated_gpu_event_journal_identical"])
+        self.assertFalse(result["repeated_full_gpu_vram_snapshot_sequence_identical"])
+        self.assertEqual(result["different_bgr555_pixels"], 0)
+        self.assertEqual(result["gpu_vram_snapshots_compared"], 2)
+        self.assertEqual(result["different_gpu_vram_snapshots_in_common_prefix"], 1)
+        self.assertEqual(result["first_different_gpu_vram_snapshot_index"], 0)
+        self.assertEqual(result["unmatched_gpu_vram_snapshots"], 0)
+
+    def test_snapshot_comparator_accepts_distinct_pair_lengths_as_diagnostic(self):
+        # Pure, asset-free bounds test. The actual journal/replay layers
+        # separately authenticate each snapshot and event count.
+        original_raw = repeat._private_raw
+        actual = [b"\x00" * (1024 * 512 * 2),
+                  b"\x01" * (1024 * 512 * 2)]
+        def fake_read(fd, name):
+            index = int(name[4:8])
+            return actual[index % 2], ("synthetic", index)
+        with patch.object(repeat, "_private_raw", side_effect=fake_read):
+            with self.assertRaises(IndexError):
+                # Only two known snapshots: keep synthetic mocks honest.
+                fake_read(0, "gpu-0002-vram.bin")
+            diagnostics = repeat._gpu_snapshot_differences(
+                1, 2, 1, 2, lambda: None)
+        self.assertEqual(diagnostics["gpu_vram_snapshots_compared"], 2)
+        self.assertEqual(diagnostics["unmatched_gpu_vram_snapshots"], 2)
+        self.assertFalse(
+            diagnostics["repeated_full_gpu_vram_snapshot_sequence_identical"])
+        self.assertEqual(diagnostics["different_gpu_vram_snapshots_in_common_prefix"], 0)
+        self.assertIsNone(diagnostics["first_different_gpu_vram_snapshot_index"])
 
     def test_overlapping_capture_roles_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "directory roles overlap"):
