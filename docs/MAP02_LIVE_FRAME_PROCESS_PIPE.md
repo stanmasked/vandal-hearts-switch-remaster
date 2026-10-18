@@ -554,3 +554,36 @@ all GPU journal bytes were written by that child. No inode numbers,
 directory paths, raw pixels or per-event data are emitted in the
 public summary. HD substitution and original PS1 fidelity assertions
 remain disabled.
+
+## Optional private PS1-labelled reference image comparison
+
+The one-command Linux capture wrapper now supports an **optional**
+`--frame-pair-dir /private/claimed-frame-pair`. This must be a
+locally held three-file directory containing `frames.json`,
+`reference.bgr555`, and `candidate.bgr555` in the existing
+`vh.map02.private-bgr555-frame-comparison.v1` schema; see
+`docs/MAP02_PRIVATE_BGR555_FRAME_DIFF.md`. Both raw frames must be
+1024×512 little-endian BGR555 with a matching selected frame number.
+The original console/disc resources never need to enter GitHub.
+
+With this option the tool uses the **real private comparator**,
+checks the complete frame-pair device/inode/file metadata before and
+after the one-shot ELF capture, and requires the claimed PC candidate's
+SHA-256 to equal the actual stdout frame received from the pinned
+Linux ELF. A modified reference is *not* itself a failure: the report
+includes the aggregate differing-pixel count, exact matches, affected
+scanlines, STP-bit difference count and the pixel-difference mask SHA.
+The raw image bytes, coordinates, private paths and inode numbers stay
+out of this report.
+
+For example, append `--frame-pair-dir /private/claimed-frame-pair`
+to the previously documented local capture command. The report field
+`claimed_reference_ps1_hardware_authenticated` **always remains
+false**. A self-labelled PS1 reference, even when bit-exact against
+the current PC frame, is not trusted original hardware evidence; it
+is simply a byte-by-byte claim comparison. Synthetic regression cases
+exercise equal claimed pairs, one reference STP/color mismatch,
+self-consistent fake candidate bytes, an identical-byte reference
+inode swap while the child runs, mismatched frame labels and actual
+CLI digest-only output. The original-source FT4/VRAM provenance audit
+is still a distinct optional private input, not silently inferred.
