@@ -461,7 +461,17 @@ class CycleCdGpuJoinTests(unittest.TestCase):
         target.unlink()
         os.mkfifo(target, mode=0o600)
         real_open = os.open
-        with patch.object(cycle_module.os, "open", wraps=real_open) as opened:
+
+        def guarded_open(path, flags, *args, **kwargs):
+            # If the nonblocking flag disappears, fail immediately instead
+            # of hanging CI in the FIFO open.
+            if (os.fspath(path) == os.fspath(target) and
+                    not flags & os.O_NONBLOCK):
+                raise AssertionError("FIFO opened without O_NONBLOCK")
+            return real_open(path, flags, *args, **kwargs)
+
+        with patch.object(cycle_module.os, "open",
+                          side_effect=guarded_open) as opened:
             with self.assertRaisesRegex(ValueError, "regular file"):
                 self.check()
         calls = [c for c in opened.call_args_list
@@ -476,7 +486,17 @@ class CycleCdGpuJoinTests(unittest.TestCase):
         target.unlink()
         os.mkfifo(target, mode=0o600)
         real_open = os.open
-        with patch.object(cycle_module.os, "open", wraps=real_open) as opened:
+
+        def guarded_open(path, flags, *args, **kwargs):
+            # If the nonblocking flag disappears, fail immediately instead
+            # of hanging CI in the FIFO open.
+            if (os.fspath(path) == os.fspath(target) and
+                    not flags & os.O_NONBLOCK):
+                raise AssertionError("FIFO opened without O_NONBLOCK")
+            return real_open(path, flags, *args, **kwargs)
+
+        with patch.object(cycle_module.os, "open",
+                          side_effect=guarded_open) as opened:
             with self.assertRaisesRegex(ValueError, "regular file"):
                 _cycle_cd_pair(self.scoped, self.cycle, 7, self.digest)
         calls = [c for c in opened.call_args_list
