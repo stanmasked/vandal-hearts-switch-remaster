@@ -14,6 +14,8 @@ on:
       - 'source/vh_audio_exit_timeline.h'
       - 'tools/audit_nexium_guest_exit_timeline.py'
       - 'tools/audit_nexium_guest_optical_exit_clock.py'
+      - 'tools/preserve_nexium_guest_exit_original.py'
+      - 'tests/test_preserve_nexium_guest_exit_original.py'
       - 'tests/test_audit_nexium_guest_optical_exit_clock.py'
       - 'tests/test_audit_nexium_guest_exit_timeline.py'
       - 'tests/test_vh_audio_exit_timeline.c'
@@ -817,6 +819,38 @@ jobs:
               print("Stage308 guest exit chronology NOT VERIFIED:",r["result"])
           PY
           echo "Stage308: guest optical music-scene timestamps and optional guest exit events checked in a shared guest software monotonic domain. No host file-size ↔ guest timestamp ↔ DAC conversion inferred." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage310 preserve exact source guest exit CSV and reconcile all original optical evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/preserve_nexium_guest_exit_original.py \
+            --guest-root-file runtime-evidence/guest-sd-root.txt \
+            --stage307 runtime-evidence/guest-audio-exit-timeline-stage307.json \
+            --stage308 runtime-evidence/guest-optical-exit-clock-stage308.json \
+            --optical-image runtime-evidence/scene-optical-trace.png \
+            --output-original runtime-evidence/audio-exit-timeline-000.csv \
+            --output-report runtime-evidence/guest-original-exit-source-stage310.json
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          r=json.loads(Path(
+              "runtime-evidence/guest-original-exit-source-stage310.json").read_text())
+          p=Path("runtime-evidence/audio-exit-timeline-000.csv")
+          if (r["result"]!="ORIGINAL_GUEST_EXIT_CSV_BYTES_PRESERVED_AND_REAUDITED"
+                  or r["original_guest_exit_csv_preserved"] is not True
+                  or r["original_source_csv_bytes_independently_reaudited"] is not True
+                  or not p.is_file() or p.is_symlink()
+                  or p.stat().st_size!=r["original_guest_exit_csv_size"]
+                  or hashlib.sha256(p.read_bytes()).hexdigest()!=r["guest_exit_receipt_sha256"]
+                  or r["guest_to_host_pcm_clock_mapping_verified"] is not False
+                  or r["original_soundtrack_or_audible_dropout_verified"] is not False
+                  or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage310 original guest exit source preservation failed")
+          print("Stage310 ORIGINAL guest exit file independently saved:",
+                str(p), "SHA256:",r["guest_exit_receipt_sha256"])
+          PY
+          echo "Stage310: archived the original guest-created 5-row software exit timeline CSV byte-for-byte (not a reconstructed JSON copy), SHA/optical cross-verified. No retail music, physical audio or guest ↔ host PCM calibration inferred." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Capture ten additional A/B transitions in isolated NeXium
         id: scene_soak_capture
