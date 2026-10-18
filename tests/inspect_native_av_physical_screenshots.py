@@ -98,10 +98,10 @@ def comparison(before, after):
             after["indicators"]["P"] == "blue"
         ),
         "new_x_return_pixels": (
-            before["indicators"]["X"] != "blue" and
+            before["indicators"]["X"] in ("yellow", "red") and
             after["indicators"]["X"] == "blue"),
         "new_y_return_pixels": (
-            before["indicators"]["Y"] != "blue" and
+            before["indicators"]["Y"] in ("yellow", "red") and
             after["indicators"]["Y"] == "blue"),
     }
 
