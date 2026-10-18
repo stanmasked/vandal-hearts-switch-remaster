@@ -290,3 +290,25 @@ This tightens local integrity only: an external actor with control
 of the same files can still race after the audit, and no kernel
 evidence identifies which process emitted those bytes. It does
 not authenticate a PS1 reference or enable HD asset substitution.
+
+## Inherited journal directory descriptor (Linux)
+
+The launcher now opens the empty journal directory once, before starting
+the private ELF, and passes its held directory FD with `pass_fds`. The
+actual native C recorder receives `VH_MAP02_GPU_CAPTURE_DIR` as
+`/proc/self/fd/N`, **not** the mutable on-disk directory pathname.
+Original GPU event writes therefore resolve through that inherited inode
+even if a path is renamed or replaced while the game is running.
+
+The launcher still refuses to publish a completed frame if the original
+private directory path no longer names the held directory. Synthetic
+C11 tests require the producer to receive the descriptor-based procfs
+path and simulate a live pathname swap to a symlink. They verify that
+all journal bytes stay in the pinned original directory and nothing
+appears in the attacker-selected replacement destination.
+
+This narrows pathname redirection risk; it is not proof that only one
+process writes the files. Inherited descriptors may be passed on by
+forked children, and same-user attackers could still obtain other
+access to the directory. All claims of kernel-authenticated journal
+writer and original PS1 rendering remain false.
