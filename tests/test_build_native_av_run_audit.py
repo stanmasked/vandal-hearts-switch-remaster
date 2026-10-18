@@ -236,6 +236,42 @@ class SevenCaseDigestIndexTests(unittest.TestCase):
             verify_audit(file, self.evidence, self.nros, REVISION, RUN_ID,
                          ATTEMPT, verify_case=self.fake_verified)
 
+    def test_log_mutation_while_scenario_is_verified_fails_closed(self):
+        def mutating_checker(witness, before, after, nro, revision,
+                             scenario, run_id, attempt, *, published_nro_dir):
+            if scenario == "empty":
+                (witness.parent / "nexium.log").write_bytes(
+                    b"altered after manifest/inventory validation")
+            return {"heartbeat_changed_pixels": 32}
+        with self.assertRaisesRegex(
+                ValueError, "NeXium evidence changed during verification: empty"):
+            build_report(self.evidence, self.nros, REVISION, RUN_ID,
+                         ATTEMPT, verify_case=mutating_checker)
+
+    def test_frame_mutation_while_scenario_is_verified_fails_closed(self):
+        def mutating_checker(witness, before, after, nro, revision,
+                             scenario, run_id, attempt, *, published_nro_dir):
+            if scenario == "partial":
+                with after.open("ab") as stream:
+                    stream.write(b"tampered")
+            return {"heartbeat_changed_pixels": 32}
+        with self.assertRaisesRegex(
+                ValueError, "NeXium evidence changed during verification: partial"):
+            build_report(self.evidence, self.nros, REVISION, RUN_ID,
+                         ATTEMPT, verify_case=mutating_checker)
+
+    def test_unused_focus_nro_mutation_during_guest_checks_fails_closed(self):
+        def mutating_checker(witness, before, after, nro, revision,
+                             scenario, run_id, attempt, *, published_nro_dir):
+            if scenario == "resume_retry":
+                # This NRO is never selected by the seven guest cases.
+                (self.nros / NRO_NAMES[-1]).write_bytes(tiny_nro(47))
+            return {"heartbeat_changed_pixels": 32}
+        with self.assertRaisesRegex(
+                ValueError, "NRO artifact changed during seven-case verification"):
+            build_report(self.evidence, self.nros, REVISION, RUN_ID,
+                         ATTEMPT, verify_case=mutating_checker)
+
     def test_invalid_identity_and_noninteger_heartbeat_rejected(self):
         for run, attempt in ((True, ATTEMPT), (0, ATTEMPT), (RUN_ID, False)):
             with self.subTest(run=run, attempt=attempt):

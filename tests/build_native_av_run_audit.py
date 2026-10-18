@@ -14,6 +14,18 @@ from verify_native_av_guest_witness import NRO_BY_SCENARIO, hash_file, verify
 from verify_native_av_nro_manifest import COMMIT_FILE, MANIFEST, NRO_NAMES, verify_bundle
 
 
+def snapshot_file_digests(folder, filenames):
+    """Fingerprint regular files at a particular verification checkpoint."""
+    result = {}
+    for filename in filenames:
+        path = folder / filename
+        if path.is_symlink() or not path.is_file():
+            raise ValueError("missing, non-regular or symlinked audit input: " +
+                             str(path))
+        result[filename] = hash_file(path)
+    return result
+
+
 def build_report(evidence_root, nro_root, revision, run_id, attempt, *,
                  verify_case=verify):
     evidence_root, nro_root = Path(evidence_root), Path(nro_root)
@@ -22,10 +34,15 @@ def build_report(evidence_root, nro_root, revision, run_id, attempt, *,
         raise ValueError("GitHub run identity requires positive integers")
     inventory = validate_inventory(evidence_root)
     bundle = verify_bundle(nro_root, revision, exact_inventory=True)
+    all_bundle_files = (*NRO_NAMES, MANIFEST, COMMIT_FILE)
+    nro_start = snapshot_file_digests(nro_root, all_bundle_files)
     cases = []
     for scenario in SCENARIOS:
         folder = evidence_root / (PREFIX + scenario + SUFFIX)
         name = NRO_BY_SCENARIO[scenario]
+        # The digest published for this case must describe the very
+        # same bytes that its independent witness checker inspected.
+        evidence_start = snapshot_file_digests(folder, sorted(FILES))
         observed = verify_case(
             folder / "native-av-guest-witness.json",
             folder / "av-before.png", folder / "av-after.png",
@@ -34,24 +51,26 @@ def build_report(evidence_root, nro_root, revision, run_id, attempt, *,
         heartbeat = observed["heartbeat_changed_pixels"]
         if type(heartbeat) is not int or heartbeat < 16:
             raise ValueError("invalid verified framebuffer heartbeat: " + scenario)
+        evidence_end = snapshot_file_digests(folder, sorted(FILES))
+        if evidence_end != evidence_start:
+            raise ValueError("NeXium evidence changed during verification: " +
+                             scenario)
         cases.append({
             "scenario": scenario,
             "synthetic_sd_mode": SD_MODE_BY_SCENARIO[scenario],
             "nro_filename": name,
             "nro_sha256": bundle["nro_sha256"][name],
-            "evidence_sha256": {
-                filename: hash_file(folder / filename) for filename in sorted(FILES)
-            },
+            "evidence_sha256": evidence_end,
             "heartbeat_changed_pixels": heartbeat,
         })
-    # Seven NeXium cases exercise only five NRO variants. Record both
-    # focus variants too, plus SHA-256 of the source and digest markers.
-    all_bundle_files = (*NRO_NAMES, MANIFEST, COMMIT_FILE)
+    # Check that even unused NRO variants and provenance metadata
+    # are unchanged across the entire seven-scenario verification.
+    nro_end = snapshot_file_digests(nro_root, all_bundle_files)
+    if nro_start != nro_end:
+        raise ValueError("NRO artifact changed during seven-case verification")
     return {
         "format": "vh-native-av-seven-case-digest-index-v2",
-        "published_nro_file_sha256": {
-            name: hash_file(nro_root / name) for name in all_bundle_files
-        },
+        "published_nro_file_sha256": nro_end,
         "source_revision": bundle["source_commit"],
         "github_run_id": run_id, "github_run_attempt": attempt,
         "scenario_count": inventory["scenario_count"],
