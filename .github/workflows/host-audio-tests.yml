@@ -47,6 +47,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_analyze_nexium_steady_boundary_pair_grid.py' -v
       - name: Stage 285 disjoint 40-50ms vs ge50ms integer conservation
         run: python3 -m unittest discover -s tests -p 'test_analyze_nexium_steady_disjoint_bands.py' -v
+      - name: Stage 286 exact numerator-vs-exposure rate decomposition regressions
+        run: python3 -m unittest discover -s tests -p 'test_analyze_nexium_steady_rate_exposure.py' -v
       - name: Statistical sensitivity of complete paired NeXium audio sessions
         run: python3 -m unittest discover -s tests -p 'test_analyze_nexium_idle_switch_variability.py' -v
       - name: Multi-pair no-switch original-SD archive negative controls

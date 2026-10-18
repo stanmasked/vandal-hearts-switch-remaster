@@ -14,6 +14,8 @@ on:
       - tools/analyze_nexium_steady_boundary_shifts.py
       - tools/analyze_nexium_steady_boundary_pair_grid.py
       - tools/analyze_nexium_steady_disjoint_bands.py
+      - tools/analyze_nexium_steady_rate_exposure.py
+      - tests/test_analyze_nexium_steady_rate_exposure.py
       - tests/test_analyze_nexium_steady_disjoint_bands.py
       - tests/test_analyze_nexium_steady_boundary_pair_grid.py
       - tests/test_analyze_nexium_steady_boundary_shifts.py
@@ -324,6 +326,45 @@ jobs:
                       or sum(stats[x] for x in ("positive_cells","negative_cells","zero_cells"))!=40):
                   raise SystemExit("Stage285 missing source pair or threshold cell")
           print("Stage285 audited integer 40-50/50+ disjoint band contrast:",
+                report["matrix_summary"])
+          PY
+          python3 tools/analyze_nexium_steady_rate_exposure.py \
+            --verified-steady-state verified-pairs/steady-state-only-s1-to-s51.json \
+            --verified-temporal-thirds verified-pairs/steady-state-three-17s-segments.json \
+            --verified-third-sensitivity verified-pairs/steady-state-three-17s-sensitivity.json \
+            --verified-temporal-contrasts verified-pairs/steady-state-temporal-contrasts.json \
+            --verified-boundary-shifts verified-pairs/steady-state-fixed-left-boundary-shifts.json \
+            --verified-boundary-pair-grid verified-pairs/steady-state-boundary-pair-grid.json \
+            --verified-disjoint-bands verified-pairs/steady-state-disjoint-slow-call-bands.json \
+            --output verified-pairs/steady-state-rate-exposure-decomposition.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path(
+              "verified-pairs/steady-state-rate-exposure-decomposition.json").read_text())
+          if (report["result"]!="EXACT_SYMMETRIC_AUDOUT_RATE_EXPOSURE_COMPONENTS_RECONCILED"
+                  or report["pair_count"]!=8
+                  or len(report["windows"])!=5
+                  or report["shifts_seconds"]!=[-4,-3,-2,-1,0]
+                  or report["upstream_stage285_exactly_recomputed"] is not True
+                  or report["exact_fraction_identity_before_rounding"] is not True
+                  or report["no_denominator_interpolation_or_fabricated_calls"] is not True
+                  or report["physical_switch_tested"] is not False
+                  or report["audible_underruns_measured"] is not False):
+              raise SystemExit("Stage286 exposure accounting incomplete")
+          for band in ("ge40","between40and50","ge50"):
+              summary=report["matrix_summary"][band]
+              if (summary["total_shift_and_excluded_pair_cells"]!=40
+                      or sum(summary[x] for x in (
+                          "count_effect_positive_cells",
+                          "count_effect_negative_cells",
+                          "count_effect_zero_cells"))!=40
+                      or sum(summary[x] for x in (
+                          "denominator_effect_positive_cells",
+                          "denominator_effect_negative_cells",
+                          "denominator_effect_zero_cells"))!=40):
+                  raise SystemExit("Stage286 lost numerator/denominator cells")
+          print("Stage286 exact slow-call numerator and attempt-denominator effects:",
                 report["matrix_summary"])
           PY
           sha256sum "$RUNNER_TEMP/neXium-eight/"*.zip \
