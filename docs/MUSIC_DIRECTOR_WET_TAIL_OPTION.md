@@ -124,6 +124,27 @@ NRO.** Require a completed, successful NeXium run and examine the
 per-mode screenshots/logs. Even a successful virtual launch does not
 establish actual speaker or handheld Switch output.
 
+The workflow now also performs a **second, independent A/B scene PCM capture
+from the opt-in NRO**. `tools/capture_nexium_scene_audio.sh` accepts
+`SCENE_NRO=wet-tail/vandal-hearts-wet-tail.nro` with
+`SCENE_CAPTURE_TAG=wet-tail`, while its original default NRO and
+original SD root remain unchanged. The tagged capture has a separate
+guest SD directory, five controlled scene screenshots and host-buffered
+scene event offsets. `tools/analyze_nexium_scene_audio.py` and
+`tools/analyze_nexium_transition_timing.py` validate repeated scene
+correlation and four host-relative transitions. The strict gate also
+requires the prior same-run experimental NRO provenance report, toggling
+on-screen scene labels, and writes
+`runtime-evidence/wet-tail-scenes/opt-in-scene-witness.json`.
+
+The opt-in PCM evidence is **virtual PulseAudio PCM only**, and its host
+timestamps are not exact guest sample times. The baseline and opt-in
+raw waveforms are not directly sample-aligned, and their numerical
+difference must **not** be interpreted as a proven STUDIO_C wet-tail
+effect. The separate host SPU and 48-kHz regression/oracle tests verify
+the intended DSP-state difference under deterministic controlled inputs.
+
+
 ## Verification and limitations
 
 The synthetic regression compares an opt-in director with an unmodified
