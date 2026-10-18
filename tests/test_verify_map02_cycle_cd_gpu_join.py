@@ -152,12 +152,10 @@ class CycleCdGpuJoinTests(unittest.TestCase):
             _cycle_cd_pair(self.scoped, self.cycle, 7, self.digest), proof)
         self.mock.assert_not_called()  # no costly retail-image audit yet
 
-    def test_prepublication_rejects_wrong_sha_with_unchanged_crc(self):
+    def test_prepublication_sha_rejects_mismatch_or_nonhex_even_with_unchanged_crc(self):
         path = self.scoped / CD_READ
         original = self.cd_raw
         for updates in (
-                {"raw_user_sha256": "b" * 64,
-                 "returned_user_sha256": "b" * 64},
                 {"returned_user_sha256": "b" * 64},
                 {"raw_user_sha256": "Z" * 64},
                 {"raw_user_sha256": "ab12"}):
@@ -170,6 +168,21 @@ class CycleCdGpuJoinTests(unittest.TestCase):
         path.write_bytes(original)
         self.assertEqual(_cycle_cd_pair(
             self.scoped, self.cycle, 7, self.digest)[2], original)
+
+    def test_early_sha_pair_does_not_claim_owned_image_authentication(self):
+        # Both equal but intentionally different 64-hex SHA values remain
+        # self-consistent. Only the later independent *owned-disc* audit
+        # knows the correct payload hash and may authenticate it.
+        record = json.loads(self.cd_raw)
+        record["raw_user_sha256"] = "b" * 64
+        record["returned_user_sha256"] = "b" * 64
+        altered = (json.dumps(record, sort_keys=True) + "\n").encode()
+        path = self.scoped / CD_READ
+        path.write_bytes(altered)
+        proof = _cycle_cd_pair(self.scoped, self.cycle, 7, self.digest)
+        self.assertEqual(proof[2], altered)
+        self.mock.assert_not_called()  # no user-owned image was examined
+        path.write_bytes(self.cd_raw)
 
     def test_prepublication_cycle_cd_pair_rejects_crc_and_session_mismatch(self):
         with self.assertRaisesRegex(ValueError, "cycle nonce differs"):
@@ -309,7 +322,7 @@ class CycleCdGpuJoinTests(unittest.TestCase):
     def test_mismatched_crc_is_rejected_before_original_disc_verification(self):
         self.receipt["original_cd_raw_user_crc32"] = "0" * 8
         self.write_cycle()
-        with self.assertRaisesRegex(ValueError, "CRC32.*differ"):
+        with self.assertRaisesRegex(ValueError, "checksum.*differ"):
             self.check()
         self.mock.assert_not_called()
 
