@@ -206,6 +206,8 @@ int main(void) {
     uint32_t max_oracle_scene_seam=0u;
     int16_t oracle_last_l=0,oracle_last_r=0;
     uint64_t boundaries=0u,expected_failed_attempts=0u;
+    unsigned midscene_restarts=0u,midscene_failures=0u;
+    unsigned midscene_recoveries=0u,midscene_cycles=0u;
     assert(VH_AUDIO_OUTPUT_RESTART_LIMIT>=2u);
 
     for(unsigned page=0u;page<TOTAL;page++) {
@@ -412,12 +414,107 @@ int main(void) {
         assert(vh_audio_output_verify_run(
             &waits,&recovery,&d.timing,page+1u,boundaries,
             TOTAL,BLOCKS,0)==0);
+
+        /* Interrupt playback BETWEEN two successfully returned pages,
+         * not just at scene changes. 24 cycles alternate clean focus
+         * resumes, failed fast starts, clean forced reopens, and
+         * failed first open/start attempts with bounded fallback.
+         * The independent dry renderer does not even see the event.
+         * All produced PCM must remain exactly-once and gap-free. */
+        if(page%4u==3u) {
+            const unsigned cycle=page/4u;
+            const unsigned mode=cycle%4u;
+            const VhNativeSeq saved_seq=seq;
+            const VhNativeSeq saved_oracle_seq=oracle_seq;
+            const uint64_t saved_spu_frames=spu.frames_rendered;
+            const uint64_t saved_oracle_frames=oracle_spu.frames_rendered;
+            const int saved_spu_cursor=spu.reverb.cursor;
+            const int saved_oracle_cursor=oracle_spu.reverb.cursor;
+            const int16_t saved_spu_tail=spu.reverb.work[0];
+            const int16_t saved_oracle_tail=oracle_spu.reverb.work[0];
+            const VhAudioResample saved_rate=resampler;
+            const VhAudioResample saved_oracle_rate=oracle_resampler;
+            const VhAudioOutputRecovery saved_recovery=recovery;
+            const VhAudioSubmitTiming saved_timing=d.timing;
+            const VhAudioSceneWaits saved_waits=waits;
+            const VhAudioPcmSeams saved_seams=seams;
+            const VhAudioComputeWaitJoin saved_joint=joint;
+            const VhAudioListeningMarks saved_marks=marks;
+            const uint64_t saved_submitted=d.submitted;
+            const uint64_t saved_accepted=d.accepted;
+            const uint64_t saved_hash=d.returned_hash;
+            const uint64_t saved_pcm_hash=hash_pcm(dst,frames);
+            assert(ops.stop(ops.context)==0);
+            assert(d.open && !d.playing);
+            if(mode==1u)
+                d.fail_resume_start_left=1u; /* quick path fails */
+            if(mode==3u) {
+                if((cycle/4u)%2u==0u) d.fail_resume_open_left=1u;
+                else d.fail_resume_start_left=1u;
+            }
+            const unsigned forced=(unsigned)(mode>=2u);
+            assert(vh_audio_output_resume_recover(
+                &ops,&recovery,(int)forced)==0);
+            const unsigned extra_restarts=mode==0u?0u:
+                mode==3u?2u:1u;
+            const unsigned extra_failures=mode==1u || mode==3u;
+            const unsigned extra_recoveries=mode!=0u;
+            midscene_restarts+=extra_restarts;
+            midscene_failures+=extra_failures;
+            midscene_recoveries+=extra_recoveries;
+            ++midscene_cycles;
+            assert(d.open && d.playing);
+            assert(!d.fail_resume_stop_left &&
+                   !d.fail_resume_open_left &&
+                   !d.fail_resume_start_left);
+            assert(recovery.resume_restarts==
+                   saved_recovery.resume_restarts+extra_restarts);
+            assert(recovery.resume_failures==
+                   saved_recovery.resume_failures+extra_failures);
+            assert(recovery.resume_recoveries==
+                   saved_recovery.resume_recoveries+extra_recoveries);
+            assert(recovery.pages_submitted==
+                   saved_recovery.pages_submitted &&
+                   recovery.frames_submitted==
+                   saved_recovery.frames_submitted &&
+                   recovery.submit_failures==
+                   saved_recovery.submit_failures &&
+                   recovery.restart_attempts==
+                   saved_recovery.restart_attempts &&
+                   recovery.recoveries==saved_recovery.recoveries);
+            assert(d.submitted==saved_submitted &&
+                   d.accepted==saved_accepted &&
+                   d.returned_hash==saved_hash);
+            assert(hash_pcm(dst,frames)==saved_pcm_hash);
+            assert(!memcmp(&seq,&saved_seq,sizeof seq));
+            assert(!memcmp(&oracle_seq,&saved_oracle_seq,
+                           sizeof oracle_seq));
+            assert(spu.frames_rendered==saved_spu_frames &&
+                   oracle_spu.frames_rendered==saved_oracle_frames);
+            assert(spu.reverb.cursor==saved_spu_cursor &&
+                   oracle_spu.reverb.cursor==saved_oracle_cursor);
+            assert(spu.reverb.work[0]==saved_spu_tail &&
+                   oracle_spu.reverb.work[0]==saved_oracle_tail);
+            assert(!memcmp(&resampler,&saved_rate,sizeof resampler));
+            assert(!memcmp(&oracle_resampler,&saved_oracle_rate,
+                           sizeof oracle_resampler));
+            assert(!memcmp(&d.timing,&saved_timing,sizeof d.timing));
+            assert(!memcmp(&waits,&saved_waits,sizeof waits));
+            assert(!memcmp(&seams,&saved_seams,sizeof seams));
+            assert(!memcmp(&joint,&saved_joint,sizeof joint));
+            assert(!memcmp(&marks,&saved_marks,sizeof marks));
+            assert(vh_audio_output_verify_run(
+                &waits,&recovery,&d.timing,page+1u,boundaries,
+                TOTAL,BLOCKS,0)==0);
+        }
     }
+    assert(midscene_cycles==24u && midscene_restarts==24u &&
+           midscene_failures==12u && midscene_recoveries==18u);
     assert(boundaries==SCENES-1u && d.accepted==TOTAL);
     assert(expected_failed_attempts==15u);
-    assert(recovery.resume_recoveries==boundaries &&
-           recovery.resume_restarts==boundaries+8u &&
-           recovery.resume_failures==8u);
+    assert(recovery.resume_recoveries==boundaries+midscene_recoveries &&
+           recovery.resume_restarts==boundaries+8u+midscene_restarts &&
+           recovery.resume_failures==8u+midscene_failures);
     assert(bank_hash[0]!=bank_hash[1]);
     assert(bank_hash[0]==oracle_bank_hash[0] &&
            bank_hash[1]==oracle_bank_hash[1]);
