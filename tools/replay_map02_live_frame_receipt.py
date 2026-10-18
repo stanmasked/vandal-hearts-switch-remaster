@@ -39,6 +39,7 @@ JOINT_KEYS = RECEIPT_KEYS | frozenset((
     "gpu_journal_pairs_verified", "terminal_after_vram_matched",
     "gpu_journal_same_elf_launch_requested",
     "gpu_journal_writer_kernel_authenticated",
+    "child_writable_gpu_journal_fd_observed",
 ))
 
 
@@ -178,7 +179,8 @@ def replay(directory, *, executable, gpu_journal_dir=None):
                     or not 1 <= metadata["gpu_journal_pairs_verified"] < 32
                     or metadata["terminal_after_vram_matched"] is not True
                     or metadata["gpu_journal_same_elf_launch_requested"] is not True
-                    or metadata["gpu_journal_writer_kernel_authenticated"] is not False):
+                    or metadata["gpu_journal_writer_kernel_authenticated"] is not False
+                    or metadata["child_writable_gpu_journal_fd_observed"] is not True):
                 raise ValueError("MAP02 joint GPU evidence flags invalid")
             joint_result = audit_joint_gpu(gpu_journal_dir,
                                            frame=metadata["frame"], final_pixels=image)
@@ -214,6 +216,7 @@ def replay(directory, *, executable, gpu_journal_dir=None):
                     joint_result["terminal_gpu_after_vram_sha256"],
                 "gpu_journal_pairs_verified": joint_result["gpu_pairs_verified"],
                 "gpu_terminal_frame_equal": True,
+                "child_writable_gpu_journal_fd_observed": True,
                 "same_launcher_gpu_journal_operationally_checked": True,
                 "gpu_journal_writer_kernel_authenticated": False,
             } if joint else {}),
