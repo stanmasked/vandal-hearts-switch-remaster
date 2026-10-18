@@ -63,7 +63,31 @@ def _require_bit_exact_gpu_timeline(report):
     snapshots may diverge and reconverge. Identical JSONL event records
     alone are likewise insufficient: native VRAM bytes can differ.
     """
+    # A successful strict claim also requires coherent aligned event/VRAM
+    # counts and a *present* all-null joint divergence witness. Otherwise
+    # a stale/mutated report could assert exactness while contradicting its
+    # own new first-divergence evidence.
+    joint_keys = (
+        "first_joint_gpu_divergence_index",
+        "first_joint_gpu_divergence_pair_index",
+        "first_joint_gpu_divergence_phase",
+        "first_joint_gpu_divergence_kind",
+    )
     if (type(report) is not dict
+            or any(key not in report or report[key] is not None
+                   for key in joint_keys)
+            or any(type(report.get(key)) is not int for key in (
+                "first_gpu_event_count", "second_gpu_event_count",
+                "first_gpu_vram_snapshot_count",
+                "second_gpu_vram_snapshot_count"))
+            or report["first_gpu_event_count"] != report["second_gpu_event_count"]
+            or report["first_gpu_event_count"] != report.get("gpu_event_records_compared")
+            or report["first_gpu_vram_snapshot_count"]
+               != report["second_gpu_vram_snapshot_count"]
+            or report["first_gpu_vram_snapshot_count"]
+               != report.get("gpu_vram_snapshots_compared")
+            or report["first_gpu_event_count"]
+               != report["first_gpu_vram_snapshot_count"]
             or report.get("repeated_full_gpu_vram_snapshot_sequence_identical") is not True
             or report.get("gpu_vram_timeline_commitments_identical") is not True
             or type(report.get("first_gpu_vram_timeline_sha256")) is not str
