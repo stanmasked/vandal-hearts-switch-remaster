@@ -115,6 +115,24 @@ class PhysicalScreenshotPixelTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"different focus NRO variants"):
             self.images(manual_after,focus_only)
 
+    def test_core_focus_indicators_must_be_present_and_recognized(self):
+        for label, x_coord in (("N",1020),("B",1068),("F",1116),
+                               ("P",1164),("R",1212)):
+            with self.subTest(label=label):
+                missing=frame(x="not_present",y="not_present")
+                missing.putpixel((x_coord,645),BACKGROUND)
+                with self.assertRaisesRegex(
+                    ValueError,"missing or ambiguous " + label):
+                    observe_frame(missing)
+                unknown=frame()
+                unknown.putpixel((x_coord,645),(127,127,127))
+                with self.assertRaisesRegex(
+                    ValueError,"missing or ambiguous " + label):
+                    observe_frame(unknown)
+        valid_n_failure=observe_frame(frame(n="red"))
+        self.assertEqual(valid_n_failure["indicators"]["N"],"red")
+        self.assertEqual(valid_n_failure["variant_pixels"],"focus_manual")
+
     def test_partial_manual_tiles_fail_closed(self):
         for x,y in (("not_present","yellow"),
                     ("blue","not_present"),
