@@ -96,6 +96,8 @@ jobs:
           done
       - name: Stage307 optional guest SD exit timeline provenance tests
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_guest_exit_timeline.py' -v
+      - name: Stage308 guest optical/music scene versus guest exit software clock tests
+        run: python3 -m unittest discover -s tests -p 'test_audit_nexium_guest_optical_exit_clock.py' -v
       - name: Statistical sensitivity of complete paired NeXium audio sessions
         run: python3 -m unittest discover -s tests -p 'test_analyze_nexium_idle_switch_variability.py' -v
       - name: Multi-pair no-switch original-SD archive negative controls
