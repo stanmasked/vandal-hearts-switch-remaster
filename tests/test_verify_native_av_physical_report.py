@@ -1,0 +1,96 @@
+"""Only synthetic PNG fixtures: recheck bytes and an unsigned pixel report."""
+import json
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+
+from inspect_native_av_physical_screenshots import inspect
+from test_inspect_native_av_physical_screenshots import frame
+from verify_native_av_physical_report import verify
+
+
+class PhysicalPixelReportVerificationTests(unittest.TestCase):
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+        root = Path(self.folder.name)
+        self.before = root / "before.png"
+        self.after = root / "after.png"
+        self.report = root / "report.json"
+        frame().save(self.before)
+        frame(b=1, f=1, p=True).save(self.after)
+        self.write_report(inspect(self.before, self.after, bind_png_hashes=True))
+
+    def write_report(self, data):
+        self.report.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n",
+                               encoding="utf-8")
+
+    def cli(self, before=None, after=None):
+        return subprocess.run(
+            [sys.executable, "tests/verify_native_av_physical_report.py",
+             str(self.report), str(before or self.before), str(after or self.after)],
+            capture_output=True, text=True)
+
+    def test_matching_report_recomputed_without_hardware_claim(self):
+        report = verify(self.report, self.before, self.after)
+        self.assertFalse(report["physical_hardware_verified"])
+        self.assertFalse(report["home_event_verified"])
+        self.assertFalse(report["audible_audio_verified"])
+        result = self.cli()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        summary = json.loads(result.stdout)
+        self.assertEqual(summary["verification"],
+                         "recomputed_png_pixel_report_match")
+        self.assertFalse(summary["physical_hardware_verified"])
+
+    def test_png_change_outside_status_tiles_rejected(self):
+        altered = frame(b=1, f=1, p=True)
+        altered.putpixel((40, 40), (123, 45, 67))
+        altered.save(self.after)
+        self.assertNotEqual(self.cli().returncode, 0)
+
+    def test_swapped_pngs_rejected(self):
+        self.assertNotEqual(
+            self.cli(before=self.after, after=self.before).returncode, 0)
+
+    def test_modified_observation_rejected(self):
+        data = json.loads(self.report.read_text(encoding="utf-8"))
+        data["after"]["indicators"]["P"] = "yellow"
+        self.write_report(data)
+        self.assertNotEqual(self.cli().returncode, 0)
+
+    def test_modified_hash_or_scope_disclaimer_rejected(self):
+        data = json.loads(self.report.read_text(encoding="utf-8"))
+        data["source_png_sha256"]["after"] = "0" * 64
+        self.write_report(data)
+        self.assertNotEqual(self.cli().returncode, 0)
+        data = inspect(self.before, self.after, bind_png_hashes=True)
+        data["audible_audio_verified"] = True
+        self.write_report(data)
+        self.assertNotEqual(self.cli().returncode, 0)
+
+    def test_duplicate_keys_and_nonfinite_json_rejected(self):
+        self.report.write_text('{"format":"v2","format":"v2"}',
+                               encoding="utf-8")
+        result = self.cli()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("duplicate report JSON member", result.stderr)
+        self.report.write_text('{"format":NaN}', encoding="utf-8")
+        result = self.cli()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("non-finite JSON number", result.stderr)
+
+    def test_unbound_v1_or_extra_field_rejected(self):
+        data = inspect(self.before, self.after)
+        self.write_report(data)
+        self.assertNotEqual(self.cli().returncode, 0)
+        data = inspect(self.before, self.after, bind_png_hashes=True)
+        data["hardware_attested"] = True
+        self.write_report(data)
+        self.assertNotEqual(self.cli().returncode, 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
