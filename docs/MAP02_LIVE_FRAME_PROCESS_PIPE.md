@@ -107,3 +107,51 @@ parameter refusal, invalid frame/header rejection and disabled-build errors.
 framebuffer-flush boundary, then connect that *same launch session* to
 native GPU/FT4/VRAM journals. Until then, the frame stream and the previous
 log replay have no proven pixel-generation causality and HD remains off.
+
+## Original pinned PC-GPU DrawOTag integration — opt-in experiment
+
+tools/instrument_map02_frame_flush.py now requires the *exact* original
+Git blob of platform/pc/src/libgpu.c in pinned upstream revision
+14552fffa0e0b47e02b57592e274fc6e7a649923. It produces a separate
+source file by exclusive creation and refuses modified inputs, repeated
+instrumentation, a missing DrawOTag completion marker or changed
+presentation order. It never edits the upstream checkout.
+
+The one-shot hook is inserted immediately after PC_MaybeDumpVram(), after
+TrcFrameEnd() and the optional HiresRasterizeThreaded() call, but before
+native VRAM/hires presentation. It reads **native 1024 x 512 PC GPU VRAM**
+from PC_GpuVram(), *not* the deferred hires output and not a PS1
+console's video signal. All VRAM bytes include textures and potentially
+other private game content, so the destination must remain private.
+
+The strict Python launcher now supplies the selected requested frame
+as VH_MAP02_PRIVATE_FRAME_PIPE_FRAME. A diagnostics-enabled native
+libgpu.c waits until s_drawFrame reaches that positive value, flushes
+its C stdio journals, consumes the one-byte release signal, streams
+the entire native 1024x512 BGR555 VRAM to stdout using the native C
+pipe helper, and then immediately exits by _exit(0) so no later
+game output can corrupt this one-shot stream. This intentionally
+**terminates gameplay at the target frame** and is inappropriate for
+normal game or Switch builds. An unselected frame or a build without
+the compile flag does not emit this stream.
+
+Example transformation (does not launch any game or copy resources):
+
+    python3 -m tools.instrument_map02_frame_flush \
+      PRIVATE_PINNED_CHECKOUT/platform/pc/src/libgpu.c \
+      --output PRIVATE_NEW_DIR/libgpu.frame.c
+
+Compile that generated source **only in an isolated private host build**
+with -DVH_MAP02_PRIVATE_FRAME_PIPE_TRACE=1 and link with
+tools/map02_native_frame_pipe.c and its header. The pinned GPU CI
+checks compilation and relocatable linking on GCC and Clang in
+diagnostic and baseline modes; synthetic C11 tests separately
+exercise the pipe. The private launcher must request width 1024
+and height 512 for this hook.
+
+A successful CI compile means only that the hook is source-pinned and
+buildable. Public CI has no original game assets and does not execute
+retail gameplay; a full private game build/link, successful frame capture,
+proof of loaded original-disc resources, and a same-session GPU/FT4/VRAM
+journal join remain outstanding. Existing independent frame-pair
+comparisons must **not** be promoted to game rendering evidence.
