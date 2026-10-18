@@ -61,16 +61,33 @@ def classify_original_host_controls(raw:bytes)->dict:
             "original_buffer_size_decreased":byte_delta<0,
             "host_epoch_was_not_strictly_increasing":ms_delta<=0,
         })
-    nonmonotone=any(
-        p["original_buffer_size_decreased"] or p["host_epoch_was_not_strictly_increasing"]
-        for p in pairs
-    )
+    size_regressions=sum(p["original_buffer_size_decreased"] for p in pairs)
+    clock_backsteps=sum(p["host_epoch_delta_ms"]<0 for p in pairs)
+    clock_ties=sum(p["host_epoch_delta_ms"]==0 for p in pairs)
+    nonmonotone=bool(size_regressions or clock_backsteps or clock_ties)
+    # The label describes ONLY the ordering of archived host CSV records.
+    # It does not identify the original live failure, NTP adjustments, or
+    # any guest/DAC timing defect.
+    if size_regressions and (clock_backsteps or clock_ties):
+        violation="MULTIPLE_HOST_CONTROL_INVARIANTS"
+    elif size_regressions:
+        violation="PCM_FILE_SIZE_DECREASED"
+    elif clock_backsteps:
+        violation="HOST_EPOCH_MOVED_BACKWARD"
+    elif clock_ties:
+        violation="HOST_EPOCH_EQUAL_ADJACENT"
+    else:
+        violation="NO_ARCHIVED_CONTROL_ORDER_VIOLATION"
     return {
         "schema":SCHEMA,
         "result":"STAGE304_ARCHIVED_CONTROL_PAIRS_CLASSIFIED",
         "original_canonical_event_names":[v[0] for v in events],
         "adjacent_original_host_control_pairs":pairs,
         "reproduces_nonmonotone_exit_control_source_refusal":nonmonotone,
+        "archived_control_order_violation_kind":violation,
+        "pcm_size_regression_pair_count":size_regressions,
+        "host_epoch_backward_pair_count":clock_backsteps,
+        "host_epoch_equal_pair_count":clock_ties,
         "archive_replay_not_proof_original_in_run_failure_cause":True,
         "buffered_file_size_not_guest_audio_sample_clock":True,
         "physical_Nintendo_Switch_audio_tested":False,
