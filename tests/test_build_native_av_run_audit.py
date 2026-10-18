@@ -7,6 +7,7 @@ import unittest
 import zlib
 
 from build_native_av_run_audit import build_report, write_report
+from verify_native_av_run_audit import MAX_AUDIT_BYTES, verify_audit
 from test_verify_native_av_nro_manifest import NRO_NAMES, tiny_nro
 from verify_native_av_evidence_inventory import (
     FILES, PNG_PREFIX, PREFIX, SCENARIOS, SUFFIX,
@@ -115,6 +116,101 @@ class SevenCaseDigestIndexTests(unittest.TestCase):
             build_report(self.evidence, self.nros, "f" * 40, RUN_ID, ATTEMPT,
                          verify_case=self.fake_verified)
         self.assertEqual(self.visited, [])
+
+    def audit_path(self):
+        file = Path(self.temp.name) / "published-index.json"
+        write_report(file, self.report())
+        return file
+
+    def test_downloaded_audit_can_be_reverified_from_seven_cases(self):
+        file = self.audit_path()
+        report = verify_audit(file, self.evidence, self.nros, REVISION, RUN_ID,
+                              ATTEMPT, verify_case=self.fake_verified)
+        self.assertEqual(report["scenario_count"], 7)
+        self.assertFalse(report["audible_audio_verified"])
+
+    def test_reject_modified_digest_even_if_json_is_well_formed(self):
+        file = self.audit_path()
+        data = json.loads(file.read_text())
+        data["cases"][0]["evidence_sha256"]["av-before.png"] = "0" * 64
+        file.write_text(json.dumps(data, sort_keys=True, indent=2) + "\n")
+        with self.assertRaisesRegex(ValueError, "independently regenerated"):
+            verify_audit(file, self.evidence, self.nros, REVISION, RUN_ID,
+                         ATTEMPT, verify_case=self.fake_verified)
+
+    def test_audit_rejects_false_hardware_claim_and_extra_field(self):
+        file = self.audit_path()
+        for mutation in ("hardware", "extra"):
+            with self.subTest(mutation=mutation):
+                data = self.report()
+                if mutation == "hardware":
+                    data["physical_hardware_verified"] = True
+                else:
+                    data["unexpected"] = "untrusted"
+                file.write_text(json.dumps(data, sort_keys=True, indent=2) + "\n")
+                with self.assertRaisesRegex(ValueError, "independently regenerated"):
+                    verify_audit(file, self.evidence, self.nros, REVISION, RUN_ID,
+                                 ATTEMPT, verify_case=self.fake_verified)
+
+    def test_reject_reordered_cases_and_noncanonical_whitespace(self):
+        file = self.audit_path()
+        data = self.report()
+        data["cases"][0], data["cases"][1] = data["cases"][1], data["cases"][0]
+        file.write_text(json.dumps(data, sort_keys=True, indent=2) + "\n")
+        with self.assertRaisesRegex(ValueError, "independently regenerated"):
+            verify_audit(file, self.evidence, self.nros, REVISION, RUN_ID,
+                         ATTEMPT, verify_case=self.fake_verified)
+        file.write_text(json.dumps(self.report()))
+        with self.assertRaisesRegex(ValueError, "independently regenerated"):
+            verify_audit(file, self.evidence, self.nros, REVISION, RUN_ID,
+                         ATTEMPT, verify_case=self.fake_verified)
+
+    def test_independently_supplied_run_identity_mismatch_rejected(self):
+        file = self.audit_path()
+        with self.assertRaisesRegex(ValueError, "independently regenerated"):
+            verify_audit(file, self.evidence, self.nros, REVISION, RUN_ID + 1,
+                         ATTEMPT, verify_case=lambda *a, **kw:
+                         {"heartbeat_changed_pixels": 32})
+        with self.assertRaisesRegex(ValueError, "independently regenerated"):
+            verify_audit(file, self.evidence, self.nros, REVISION, RUN_ID,
+                         ATTEMPT + 1, verify_case=lambda *a, **kw:
+                         {"heartbeat_changed_pixels": 32})
+
+    def test_modified_downloaded_evidence_fails_even_when_index_unchanged(self):
+        file = self.audit_path()
+        log = self.evidence / (PREFIX + "zr" + SUFFIX) / "nexium.log"
+        log.write_bytes(b"new and unchecked log contents")
+        with self.assertRaisesRegex(ValueError, "independently regenerated"):
+            verify_audit(file, self.evidence, self.nros, REVISION, RUN_ID,
+                         ATTEMPT, verify_case=self.fake_verified)
+
+    def test_reject_duplicate_index_json_members_and_invalid_utf8(self):
+        file = self.audit_path()
+        original = file.read_text()
+        file.write_text(original.replace('"format": ',
+                                         '"format": "bad", "format": ', 1))
+        with self.assertRaisesRegex(ValueError, "duplicate JSON member"):
+            verify_audit(file, self.evidence, self.nros, REVISION, RUN_ID,
+                         ATTEMPT, verify_case=self.fake_verified)
+        file.write_bytes(bytes((0xff, 0xfe)))
+        with self.assertRaisesRegex(ValueError, "audit index is not UTF-8"):
+            verify_audit(file, self.evidence, self.nros, REVISION, RUN_ID,
+                         ATTEMPT, verify_case=self.fake_verified)
+
+    def test_reject_symlinked_and_oversized_audit_index(self):
+        file = self.audit_path()
+        source = Path(self.temp.name) / "saved-index.json"
+        file.rename(source)
+        file.symlink_to(source)
+        with self.assertRaisesRegex(ValueError, "symlinked audit index"):
+            verify_audit(file, self.evidence, self.nros, REVISION, RUN_ID,
+                         ATTEMPT, verify_case=self.fake_verified)
+        file.unlink()
+        with file.open("wb") as stream:
+            stream.truncate(MAX_AUDIT_BYTES + 1)
+        with self.assertRaisesRegex(ValueError, "audit index exceeds size limit"):
+            verify_audit(file, self.evidence, self.nros, REVISION, RUN_ID,
+                         ATTEMPT, verify_case=self.fake_verified)
 
     def test_invalid_identity_and_noninteger_heartbeat_rejected(self):
         for run, attempt in ((True, ATTEMPT), (0, ATTEMPT), (RUN_ID, False)):
