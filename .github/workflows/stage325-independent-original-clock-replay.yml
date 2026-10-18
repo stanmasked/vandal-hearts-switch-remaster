@@ -116,7 +116,7 @@ jobs:
               "source_monotonic_sha256":new["paired_clock_csv_sha256"],
               "wall_delta_ms":[x["host_wall_delta_ms"] for x in gaps],
               "monotonic_delta_ns":[x["host_monotonic_delta_ns"] for x in gaps],
-              "strict_stage304_replayed_from_original_legacy_controls":True,
+              "strict_stage304_legacy_control_order_independently_replayed":True,
               "original_stage305_result_present":True,
               "all_monotonic_intervals_positive":True,
               "guest_dac_or_speaker_audio_verified":False,
