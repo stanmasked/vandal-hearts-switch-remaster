@@ -27,6 +27,11 @@ requests with its PCM producer; this API is not callback-thread safe.
 
 On a **non-silent cue-to-cue** transition:
 
+**The first cue started from silence always performs the legacy full
+reverb/voice reset**, even with continuity enabled. The director cannot
+inherit unexplained STUDIO_C history or borrowed sample pointers from
+a previous SPU owner merely because the option was configured.
+
 1. Validate the complete replacement pQES SEQ before changing the live
    player (including queued cue validation immediately before use).
 2. Stop the old SEQ and release every borrowed old-bank PCM voice pointer.
@@ -56,7 +61,10 @@ not assume that the old cue can continue automatically after such an error.
 ## Verification and limitations
 
 The synthetic regression compares an opt-in director with an unmodified
-legacy director through 64 warm-up blocks and a two-block fade. It verifies
+legacy director through 64 warm-up blocks and a two-block fade. It also
+checks the first cue discards deliberately seeded stale silent-SPU state,
+and compares 48 post-transition output PCM blocks while ensuring both
+directors stay synchronized in SEQ clocks and scene stages. It verifies
 the original PCM matches before the transition, that only the opt-in path
 retains a precharged STUDIO_C tail at the cue change, and that both silence
 and detach clear reverb. A queued-cue mutation test checks fail-closed
