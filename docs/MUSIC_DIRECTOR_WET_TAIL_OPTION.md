@@ -85,6 +85,13 @@ resampler timing and forced detach after playback. This probes the same
 music scene scheduler under both configurations without adding a new
 source-asset dependency.
 
+An additional opt-in teardown/restart regression precharges the wet
+tail with the first cue, forcibly detaches it, overwrites the old bank's
+PCM memory, then starts a second cue. It compares 48 complete PCM output
+blocks, SEQ clocks and the entire STUDIO_C history against a **freshly
+initialized** reference synthesizer. This catches session-to-session
+wet-state leakage or stale pointers after a bank unload.
+
 A separate director-level synthetic PCM FIFO regression also prepares a
 full 512-frame page from the outgoing cue, makes a non-silent opt-in cue
 change, and verifies the already-queued page remains byte-identical and
