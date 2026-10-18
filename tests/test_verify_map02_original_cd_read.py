@@ -89,6 +89,13 @@ class OriginalCdReadReceiptTests(unittest.TestCase):
         self.assertFalse(result["physical_ps1_equivalence_proven"])
         self.assertEqual(self.join.call_count, 2)
 
+    def test_correct_crc_but_wrong_native_sha256_rejected(self):
+        self.event["raw_user_sha256"] = "f" * 64
+        self.event["returned_user_sha256"] = "f" * 64
+        self.save()
+        with self.assertRaisesRegex(ValueError, "payload differs"):
+            self.check()
+
     def test_wrong_sector_crc_rejected(self):
         self.event["raw_user_crc32"] = "00000000"
         self.event["returned_user_crc32"] = "00000000"
