@@ -1,6 +1,6 @@
 /* Explicit, opt-in observer of actual original PC CdRead / LoadCdFile MAP02.
  * Only US pinned source, raw sector LBA 0x1bcc, exactly 12 sectors.
- * Collect counters and CRC32, never raw game contents, never stdout.
+ * Collect counters, CRC32 and SHA-256, never raw game contents or stdout.
  */
 #ifndef VH_MAP02_CD_READ_PROBE_H
 #define VH_MAP02_CD_READ_PROBE_H
