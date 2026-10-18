@@ -52,3 +52,32 @@ have different clocks and are never considered frame-aligned.
 The CI-produced `runtime-evidence/phase297-full-call-vs-queried.json`
 is a source-bound software latency analysis, **not** a physical
 audio quality report.
+
+## Verified Stage297 original-SD NeXium data — 18 October 2026
+
+The full [NeXium workflow №39124924827](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39124924827)
+**passed** on fixed source commit
+[`60b1f63c`](https://github.com/stanmasked/vandal-hearts-switch-remaster/commit/60b1f63c9464fb479eb03511d2982b1bec33c156).
+The source was independently opened and checked on FOUR guest SDs.
+
+| Source-bound software latency ≥40ms | First phase0 | First phase8 | Reversed phase8 | Reversed phase0 |
+| --- | ---: | ---: | ---: | ---: |
+| Entire guest audout call stream, slow events | 39 | 23 | 32 | 37 |
+| Actually queried attempts, slow events | 4 | 3 | 4 | 5 |
+| Other 15 phases, known slow API events | **35** | **20** | **28** | **32** |
+| Full-call rate per 1,000 | 20.333681 | 11.837365 | 16.351559 | 18.925831 |
+| Queried-call rate per 1,000 | 33.333333 | 24.793388 | 32.786885 | 40.650407 |
+
+Phase0-minus-phase8 ≥40ms software-call contrasts:
+
+| Comparison | All audout calls /1,000 | Actually queried calls /1,000 |
+| --- | ---: | ---: |
+| First pair | +8.496316 | +8.539945 |
+| Reversed pair | +2.574273 | +7.863521 |
+
+These are independent programmatic **NeXium software API call
+durations**. They do not measure service queue state on any
+unqueried attempt, imply that a zero pre-submit count proves
+DAC starvation, randomize recording order, or demonstrate audio
+dropouts on physical Switch. The subsequent Stage298 explicitly
+checks the exact 1/16 versus 15/16 partition and rate weighting.
