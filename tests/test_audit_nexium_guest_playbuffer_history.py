@@ -149,7 +149,11 @@ class GuestPlayBufferHistoryTests(unittest.TestCase):
         doc=copy.deepcopy(self.final)
         doc["successful_PlayBuffer_call_count"]=364
         doc["last_successful_PlayBuffer_attempt_index"]=364
-        raw=history(failure_seq=tuple(range(365,381)))
+        # The older verified last success ended at 112900. All later
+        # failed attempts must be monotonic AFTER that original call.
+        raw=(HEADER+b"".join(
+            f"380,{seq},{112901+2*(seq-365)},{112902+2*(seq-365)},0\n".encode()
+            for seq in range(365,381)))
         report=self.check(raw=raw,final=doc)
         self.assertFalse(report["final_successful_call_in_recent_window"])
         self.assertIsNone(report["prior_successful_duration_lower_median_guest_ns"])
