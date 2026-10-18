@@ -1,17 +1,28 @@
 name: Music director optional wet-tail regression
 
 on:
-  push:
-    branches:
-      - integration/music-director-wet-tail-optin-20261018
+  # The draft PR is the primary gate; using push AND pull_request
+  # launched duplicate sanitizer matrices on every update.
   pull_request:
     paths:
       - "source/vh_music_scene.c"
       - "source/vh_music_scene.h"
+      - "source/vh_native_seq.c"
+      - "source/vh_native_seq.h"
+      - "source/vh_native_spu.c"
+      - "source/vh_native_spu.h"
+      - "source/vh_spu_reverb.c"
+      - "source/vh_audio_resample.c"
+      - "source/vh_audio_stream.c"
       - "tests/test_vh_music_scene.c"
       - "tests/test_vh_music_scene_soak.c"
       - ".github/workflows/music-director-wet-tail.yml"
   workflow_dispatch:
+
+# Cancel stale PR revisions, not an unrelated branch or manual run.
+concurrency:
+  group: wet-tail-director-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   music-director-optin:
