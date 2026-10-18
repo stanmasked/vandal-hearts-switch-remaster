@@ -40,12 +40,20 @@ jobs:
           github-token: ${{ github.token }}
           path: original-sources/39134382535
 
+      - name: Retrieve third original NeXium PCM capture
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39135617807
+          github-token: ${{ github.token }}
+          path: original-sources/39135617807
+
       - name: Independently replay original PCM and source receipts from each capture
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p comparison-evidence
-          for run_id in 39134188130 39134382535; do
+          for run_id in 39134188130 39134382535 39135617807; do
             source_path="$(find "original-sources/$run_id" -type f -name 'nexium-scenes-s16le-48k.pcm' -print -quit)"
             test -n "$source_path" && test -f "$source_path"
             source_dir="$(dirname "$source_path")"
@@ -98,13 +106,14 @@ jobs:
           python3 tools/compare_nexium_pcm_plus_capture_runs.py \
             --capture 39134188130:comparison-evidence/pcm-plus-onset-fence-stage305-39134188130.json \
             --capture 39134382535:comparison-evidence/pcm-plus-onset-fence-stage305-39134382535.json \
+            --capture 39135617807:comparison-evidence/pcm-plus-onset-fence-stage305-39135617807.json \
             --output comparison-evidence/independent-plus-PCM-stage306.json
           python3 - <<'PY'
           import json
           from pathlib import Path
           report=json.loads(Path("comparison-evidence/independent-plus-PCM-stage306.json").read_text())
           if (report["result"]!="INDEPENDENT_SOURCE_BOUND_PLUS_PCM_RUNS_COMPARED"
-                  or report["run_count"]!=2
+                  or report["run_count"]!=3
                   or report["distinct_workflow_run_ids"] is not True
                   or report["distinct_original_scene_pcm_sha256"] is not True
                   or report["sample_frame_proximity_does_not_prove_Plus_causality"] is not True
@@ -119,7 +128,7 @@ jobs:
                     "onset",run["terminal_zero_onset_class"],
                     "press offset frame bounds",run["source_frames_from_press_snapshot_min_max"])
           PY
-          echo "Stage306: separately replayed two SHA-distinct original NeXium virtual PCM captures from independent GitHub Actions runs; reports repeatability of buffered Plus proximity, not guest-time causality or physical audio quality." >> "$GITHUB_STEP_SUMMARY"
+          echo "Stage306: separately replayed three SHA-distinct original NeXium virtual PCM captures from independent GitHub Actions runs; reports repeatability of buffered Plus proximity, not guest-time causality or physical audio quality." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload independently computed comparison receipts
         if: always()
