@@ -191,6 +191,9 @@ on:
       - 'tools/apply_map02_v150_native_instruction_budget.py'
       - 'tools/apply_map02_v151_native_ram_identity.py'
       - 'tools/apply_map02_v152_fetch_opcode_witness.py'
+      - 'tools/apply_map02_v153_second_instruction_mutation.py'
+      - 'tests/test_map02_v153_second_instruction_mutation.py'
+      - '.github/workflows/map02-v153-second-instruction-mutation.yml'
       - 'tests/test_map02_v152_fetch_opcode_witness.py'
       - '.github/workflows/map02-v152-fetch-opcode-witness.yml'
       - 'tests/test_map02_v151_native_ram_identity.py'
@@ -326,6 +329,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v150_native_instruction_budget.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v151_native_ram_identity.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v152_fetch_opcode_witness.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v153_second_instruction_mutation.py' -v
           python3 -m remaster.tools.check_map02_v147_native_bounded_c --cc "${{ matrix.cc }}" \
             | grep -Fx 'VH147_COMPILED_BOUNDED_NATIVE_PASS capacity=1024 generic=1 repeated_pc=1 overflow_refused=1 atomic_mode0600=1 no_overwrite=1 original_retail=0'
           python3 -m remaster.tools.check_map02_v144_native_challenge_c --cc "${{ matrix.cc }}" \
@@ -346,7 +350,9 @@ jobs:
           git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
           git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
-          python3 -m remaster.tools.apply_map02_v152_fetch_opcode_witness upstream-pcsx
+          python3 -m remaster.tools.apply_map02_v153_second_instruction_mutation upstream-pcsx
+          grep -F 'vh153_arm_second_word_mutation' upstream-pcsx/libpcsxcore/psxinterpreter.c
+          grep -F 'VH153_NATIVE_SECOND_WORD_REFUSED' upstream-pcsx/frontend/main.c
           grep -F 'vh152_before_dispatch(regs,pc,regs->code)' upstream-pcsx/libpcsxcore/psxinterpreter.c
           grep -F 'VH152_NATIVE_FETCH_TAMPER_REFUSED' upstream-pcsx/frontend/main.c
           grep -F 'vh151_verify_payload' upstream-pcsx/frontend/main.c
@@ -1363,6 +1369,28 @@ jobs:
             exit 1
           fi
           sha256sum -c proof/private/v150-synthetic-before.sha256
+          # v153: first synthetic guest opcode is dispatched, then the native
+          # observer changes the next instruction in guest RAM. The second
+          # fetched opcode must be refused with exactly one word accepted.
+          mkdir -m 700 proof/v153-second-word-home
+          v153_rc=0
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v153-second-word-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh129-vblank-04 --vh150-bounded-instructions \
+            --vh153-mutate-second-word \
+            proof/private/V129_SYNTHETIC.EXE \
+            > proof/private/v153-second-word-refused.log 2>&1 || v153_rc=$?
+          test "$v153_rc" -eq 57
+          grep -Fx 'VH153_NATIVE_SECOND_WORD_REFUSED matched=1 attempted=2 original_retail=0' \
+            proof/private/v153-second-word-refused.log
+          if grep -Fq 'VH150_NATIVE_BOUNDED_INTERPRETER_PASS' \
+            proof/private/v153-second-word-refused.log; then
+            echo 'VH153_MUTATED_SECOND_WORD_FALSE_ACCEPT_REFUSED'
+            exit 1
+          fi
+          sha256sum -c proof/private/v150-synthetic-before.sha256
           # v152: preserve the exact v129 source on disk. The experimental
           # frontend flips one loaded guest RAM instruction AFTER the v151
           # SHA-256 preflight but BEFORE native fetch/dispatch.
@@ -1787,6 +1815,9 @@ jobs:
           report["v152_native_first_three_fetched_opcodes_verified"]=True
           report["v152_post_sha_guest_ram_mutation_refused_before_dispatch"]=True
           report["v152_original_game_runtime_unverified"]=True
+          report["v153_native_second_word_mutation_after_first_witnessed"]=True
+          report["v153_exactly_one_guest_instruction_accepted_before_refusal"]=True
+          report["v153_original_game_runtime_unverified"]=True
           report["retail_map02_gpu_rendering_verified"]=False
           Path("proof/public/v129-four-real-vblank-profiles-summary.json").write_text(
               json.dumps(report,sort_keys=True)+"\n")
