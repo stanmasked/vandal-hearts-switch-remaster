@@ -83,6 +83,27 @@ static inline void vh_audio_manual_finished_service(
     }
 }
 
+/* Worker shutdown before the required returned PCM page is a
+ * genuine failed manual experiment. Preserve prior confirmed evidence;
+ * do not turn an idle NRO into a spurious red error. Called after the
+ * worker has stopped submitting PCM and while it owns the service.
+ */
+static inline void vh_audio_manual_abort_pending(VhAudioManualTransport *ctl) {
+    int phase=atomic_load(&ctl->phase);
+    while(phase==VH_MANUAL_QUEUED || phase==VH_MANUAL_EXECUTING ||
+          phase==VH_MANUAL_WAIT_PCM) {
+        if(atomic_compare_exchange_weak(&ctl->phase,&phase,
+                                        VH_MANUAL_FAILED)) {
+            const int action=atomic_load(&ctl->action);
+            if(action==VH_MANUAL_QUICK)
+                atomic_store(&ctl->quick_result,-1);
+            else if(action==VH_MANUAL_REOPEN)
+                atomic_store(&ctl->reopen_result,-1);
+            return;
+        }
+    }
+}
+
 /* The worker supplies the logical audout return count AFTER a confirmed
  * descriptor return, not a mere generated PCM block or service restart.
  * Strict monotonicity also rejects stale, duplicate and wrapped counters. */
