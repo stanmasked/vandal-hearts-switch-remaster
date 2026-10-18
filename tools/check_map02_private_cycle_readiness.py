@@ -17,7 +17,9 @@ from tools.check_map02_private_launch_layout import (
 )
 from tools.check_map02_cycle_elf import audit_cycle_elf
 from tools.check_map02_linked_font_elf import stable_owned_elf_sha256
-from tools.map02_cycle_build_provenance import verify_build_receipt
+from tools.map02_cycle_build_provenance import (
+    NAME as BUILD_RECEIPT, verify_build_receipt,
+)
 from tools.map02_local_capture_handoff import PLAN, _validate_plan, verify_pinned_upstream
 from tools.map02_verified_process_launch import _stable_owned_cycle_image
 from tools.verify_map02_native_gpu_capture import private_file
@@ -64,6 +66,11 @@ def verify_private_cycle_readiness(source, native, scoped, handoff, cycle,
     image_proof = _stable_owned_cycle_image(image)
     if plan["owned_game_image_sha256"] != image_proof[1]:
         raise ValueError("private MAP02 game image differs from capture plan")
+    # Retain the exact build-receipt inode throughout both independent
+    # provenance checks. An identical-bytes replacement must not qualify.
+    receipt_root = Path(build_receipt_dir).absolute()
+    receipt_raw, receipt_identity = private_file(
+        receipt_root, BUILD_RECEIPT, max_bytes=4096, _with_identity=True)
     receipt = verify_build_receipt(
         build_receipt_dir, binary, upstream, build_bundle_dir,
         krom_source=krom_source)
@@ -78,6 +85,13 @@ def verify_private_cycle_readiness(source, native, scoped, handoff, cycle,
             stable_owned_elf_sha256(binary) != executable_sha or
             _stable_owned_cycle_image(image) != image_proof):
         raise ValueError("source-bound MAP02 launch inputs changed during preflight")
+    final_receipt = verify_build_receipt(
+        build_receipt_dir, binary, upstream, build_bundle_dir,
+        krom_source=krom_source)
+    if (final_receipt != receipt or
+            private_file(receipt_root, BUILD_RECEIPT, max_bytes=4096,
+                         _with_identity=True) != (receipt_raw, receipt_identity)):
+        raise ValueError("private original MAP02 build receipt changed during preflight")
     second_layout = inspect_private_launch_layout(*layout_args)
     after_directories = tuple(
         _directory_identity(Path(directory).absolute(), "prelaunch")
