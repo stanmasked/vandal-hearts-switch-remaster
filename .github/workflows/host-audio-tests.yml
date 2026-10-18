@@ -69,6 +69,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_phase_order_reversal.py' -v
       - name: Stage297 original-SD four full-audout versus 1-in-16 queried call tests
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_phase_order_full_call_rates.py' -v
+      - name: Stage298 exact sampled phase versus 15 unqueried source-call complements
+        run: python3 -m unittest discover -s tests -p 'test_audit_nexium_phase_order_call_complement.py' -v
       - name: Statistical sensitivity of complete paired NeXium audio sessions
         run: python3 -m unittest discover -s tests -p 'test_analyze_nexium_idle_switch_variability.py' -v
       - name: Multi-pair no-switch original-SD archive negative controls

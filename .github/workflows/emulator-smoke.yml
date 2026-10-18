@@ -21,6 +21,8 @@ on:
       - 'tools/compare_nexium_real_queue_phases.py'
       - 'tools/audit_nexium_phase_order_reversal.py'
       - 'tools/audit_nexium_phase_order_full_call_rates.py'
+      - 'tools/audit_nexium_phase_order_call_complement.py'
+      - 'tests/test_audit_nexium_phase_order_call_complement.py'
       - 'tests/test_audit_nexium_phase_order_full_call_rates.py'
       - 'tests/test_audit_nexium_phase_order_reversal.py'
       - 'tests/test_compare_nexium_real_queue_phases.py'
@@ -1361,6 +1363,50 @@ jobs:
                  for x in r["sessions"]})
           PY
           echo "Stage297: full original guest-SD software audout call counts reconciled for all four sessions. No unqueried queue state imputed." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage298 verify other fifteen unqueried call-duration phases on four original SDs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_phase_order_call_complement.py \
+            --stage296 runtime-evidence/phase296-reversed-query-order.json \
+            --stage297 runtime-evidence/phase297-full-call-vs-queried.json \
+            --phase0_first-sd-root "$RUNNER_TEMP/vh-nexium-stage268-${GITHUB_RUN_ID}" \
+            --phase0_first-evidence runtime-evidence/scene-soak \
+            --phase8_first-sd-root "$RUNNER_TEMP/vh-nexium-stage268-${GITHUB_RUN_ID}-phase8" \
+            --phase8_first-evidence runtime-evidence/scene-soak-phase8 \
+            --phase8_reversed-sd-root "$RUNNER_TEMP/vh-nexium-stage268-${GITHUB_RUN_ID}-phase8r" \
+            --phase8_reversed-evidence runtime-evidence/phase296-phase8-reversed \
+            --phase0_reversed-sd-root "$RUNNER_TEMP/vh-nexium-stage268-${GITHUB_RUN_ID}-phase0r" \
+            --phase0_reversed-evidence runtime-evidence/phase296-phase0-reversed \
+            --output runtime-evidence/phase298-query-complement.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("runtime-evidence/phase298-query-complement.json").read_text())
+          if (r["result"]!="FOUR_ORIGINAL_SD_ACTUAL_VS_OTHER15_SLOW_CALLS_RECONCILED"
+                  or r["nro_phase_order"]!=[0,8,8,0]
+                  or r["stage297_fully_recomputed_from_four_original_guest_SD"] is not True
+                  or r["exact_integer_count_partition_and_fraction_weighting"] is not True
+                  or r["offphase_queue_service_counts_observed"] is not False
+                  or r["offphase_queue_service_values_imputed"] is not False
+                  or r["physical_switch_DAC_or_audible_glitches_measured"] is not False
+                  or r["causal_audio_effect_proven"] is not False):
+              raise SystemExit("Stage298 original guest SD phase complement not verified")
+          for x in r["sessions"]:
+              for band in ("ge40","ge50"):
+                  y=x[band]
+                  if y["all_call_slow_count"]!=(
+                          y["queried_slow_count"]+
+                          y["other_15_phases_slow_count"]):
+                      raise SystemExit("Stage298 lost original guest slow call")
+          print("Stage298 exact on-phase vs other-15-phase slow count split:",
+                {x["label"]:{k:{
+                    "queried":x[k]["queried_slow_count"],
+                    "other_15":x[k]["other_15_phases_slow_count"]
+                } for k in ("ge40","ge50")} for x in r["sessions"]})
+          PY
+          echo "Stage298: actual 1-in-16 queried-call software delays partitioned exactly from all other original-SD calls; no offphase service queue reading inferred." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Record audio capture boundary
         if: always()
