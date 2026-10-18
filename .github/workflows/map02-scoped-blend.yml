@@ -248,9 +248,17 @@ on:
       - 'tests/test_map02_scoped_blend_integration.py'
       - '.github/workflows/map02-scoped-blend.yml'
 
+# New pushes to the same branch supersede older synthetic-only checks.
+# Keep push and pull_request executions in separate groups, so a PR
+# update cannot cancel the corresponding branch push unexpectedly.
+concurrency:
+  group: map02-scoped-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   scoped-blend:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
