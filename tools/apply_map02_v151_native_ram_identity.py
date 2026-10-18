@@ -147,22 +147,22 @@ def patch_frontend(source: str) -> str:
         raise ValueError("v151 native identity patch already installed")
     anchor="            if(vh150_arm(0x80010000u,0x80012000u,3u)!=0){"
     replacement=(
-        "            /* Loaded guest RAM, not just a path tag, must match the\\n"
-        "             * complete self-authored synthetic payload byte-for-byte\\n"
-        "             * under SHA-256 before even arming the native CPU. */\\n"
-        "            if(!psxRegs.ptrs.psxM ||\\n"
+        "            /* Loaded guest RAM, not just a path tag, must match the\n"
+        "             * complete self-authored synthetic payload byte-for-byte\n"
+        "             * under SHA-256 before even arming the native CPU. */\n"
+        "            if(!psxRegs.ptrs.psxM ||\n"
         "               !vh151_verify_payload(((const unsigned char *)"
-        "psxRegs.ptrs.psxM)+0x10000u)){\\n"
-        '                SysPrintf("VH151_NATIVE_SYNTHETIC_DIGEST_REFUSED\\\\n");\\n'
-        "                ClosePlugins();SysClose();menu_finish();plat_finish();return 55;\\n"
-        "            }\\n"
+        "psxRegs.ptrs.psxM)+0x10000u)){\n"
+        '                SysPrintf("VH151_NATIVE_SYNTHETIC_DIGEST_REFUSED\\n");\n'
+        "                ClosePlugins();SysClose();menu_finish();plat_finish();return 55;\n"
+        "            }\n"
         +anchor
     )
     source=once(source,anchor,replacement,
                 "native SHA-256 verification before guest instruction execution")
-    return ("#ifdef VH_MAP02_V66_PCSX_PROBE\\n"
-            '#include "vh151_synthetic_sha.h"\\n'
-            "#endif\\n"+source)
+    return ("#ifdef VH_MAP02_V66_PCSX_PROBE\n"
+            '#include "vh151_synthetic_sha.h"\n'
+            "#endif\n"+source)
 
 
 def apply(root: Path):
