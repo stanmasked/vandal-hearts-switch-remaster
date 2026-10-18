@@ -78,7 +78,6 @@ int main(int argc, char **argv) {
         if (rename(realpath, parked) || mkdir(redirect, 0700) ||
             symlink(redirect, realpath)) return 54;
     }
-    if (vh_map02_frame_pipe_wait_release(STDIN_FILENO) != 0) return 42;
     if (!omit_journal) {
         if (!write_image(dir, "gpu-0000-vram.bin")) return 43;
         native_vram[0][0] = 0x7fff;
@@ -91,7 +90,15 @@ int main(int argc, char **argv) {
         if (!events) return 46;
         if (!log_event(events, 0, "before", wrong_frame ? 124 : 123) ||
             !log_event(events, 1, "after", wrong_frame ? 124 : 123) ||
-            fclose(events) != 0) return 47;
+            fflush(events) != 0) return 47;
+        if (argc > 1 && !strcmp(argv[1], "closed-log")) {
+            if (fclose(events) != 0) return 55;
+        } else if (argc > 1 && !strcmp(argv[1], "readonly-log")) {
+            if (fclose(events) != 0) return 56;
+            events = fopen(logfile, "rb");
+            if (!events) return 57;
+        }
+
         if (extra_file) {
             if (snprintf(logfile, sizeof(logfile), "%s/unexpected.txt", dir) >=
                     (int)sizeof(logfile)) return 48;
@@ -101,6 +108,7 @@ int main(int argc, char **argv) {
     } else {
         native_vram[0][0] = 0x7fff;
     }
+    if (vh_map02_frame_pipe_wait_release(STDIN_FILENO) != 0) return 42;
     return vh_map02_frame_pipe_emit(STDOUT_FILENO, 123, 1024, 512,
                                     &native_vram[0][0], 1024) == 0 ? 0 : 50;
 }
@@ -141,7 +149,7 @@ class JointNativeCaptureTests(unittest.TestCase):
     def run_joint(self, *args, **kwargs):
         return capture(self.executable, self.out,
                        frame=123, width=1024, height=512,
-                       executable_sha256=self.digest, timeout=8, args=args,
+                       executable_sha256=self.digest, timeout=kwargs.get("timeout", 8), args=args,
                        gpu_journal_dir=kwargs.get("journal_dir", self.journal))
 
     def assert_no_published_frame(self):
@@ -152,6 +160,7 @@ class JointNativeCaptureTests(unittest.TestCase):
         self.assertEqual(result["schema"], "vh.map02.live-child-pipe-bgr555-gpu.v1")
         self.assertTrue(result["terminal_after_vram_matched"])
         self.assertTrue(result["gpu_journal_same_elf_launch_requested"])
+        self.assertTrue(result["child_writable_gpu_journal_fd_observed"])
         self.assertFalse(result["gpu_journal_writer_kernel_authenticated"])
         self.assertFalse(result["hd_replacement_authorized"])
         self.assertEqual(result["gpu_journal_pairs_verified"], 1)
@@ -160,6 +169,7 @@ class JointNativeCaptureTests(unittest.TestCase):
         verified = replay(self.out, executable=self.executable,
                           gpu_journal_dir=self.journal)
         self.assertTrue(verified["gpu_terminal_frame_equal"])
+        self.assertTrue(verified["child_writable_gpu_journal_fd_observed"])
         self.assertEqual(verified["terminal_gpu_after_vram_sha256"],
                          result["image_sha256"])
         self.assertFalse(verified["gpu_journal_writer_kernel_authenticated"])
@@ -203,9 +213,30 @@ class JointNativeCaptureTests(unittest.TestCase):
         self.assert_no_published_frame()
 
     def test_missing_native_gpu_journal_refused(self):
-        with self.assertRaisesRegex(ValueError, "missing"):
-            self.run_joint("no-journal")
+        with self.assertRaisesRegex(ValueError, "timed out observing writable"):
+            self.run_joint("no-journal", timeout=0.5)
         self.assert_no_published_frame()
+
+    def test_closed_child_gpu_journal_fd_refused_before_release(self):
+        with self.assertRaisesRegex(ValueError, "timed out observing writable"):
+            self.run_joint("closed-log", timeout=0.5)
+        self.assert_no_published_frame()
+
+    def test_readonly_child_gpu_journal_fd_refused_before_release(self):
+        with self.assertRaisesRegex(ValueError, "timed out observing writable"):
+            self.run_joint("readonly-log", timeout=0.5)
+        self.assert_no_published_frame()
+
+    def test_kernel_child_writable_fd_receipt_flag_cannot_be_forged(self):
+        self.run_joint()
+        import json
+        meta = self.out / "process-frame.json"
+        data = json.loads(meta.read_text(encoding="utf-8"))
+        data["child_writable_gpu_journal_fd_observed"] = False
+        meta.write_text(json.dumps(data, sort_keys=True) + "\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "evidence flags"):
+            replay(self.out, executable=self.executable,
+                   gpu_journal_dir=self.journal)
 
     def test_replay_requires_the_journal_for_v2_receipt(self):
         self.run_joint()
