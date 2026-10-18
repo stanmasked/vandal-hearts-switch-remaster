@@ -74,6 +74,11 @@ class OriginalCdReadReceiptTests(unittest.TestCase):
              + "\n").encode())
         receipt.chmod(0o600)
 
+    def bind_current_receipt_digest(self):
+        """Model a matching GPU witness when testing independent disc contents."""
+        self.report["original_map02_cd_read_receipt_sha256"] = hashlib.sha256(
+            (self.scoped / CD_READ).read_bytes()).hexdigest()
+
     def check(self):
         return verify_map02_original_cd_read(
             self.scoped, self.native, self.fixture.image,
@@ -93,13 +98,22 @@ class OriginalCdReadReceiptTests(unittest.TestCase):
         self.event["raw_user_sha256"] = "f" * 64
         self.event["returned_user_sha256"] = "f" * 64
         self.save()
+        self.bind_current_receipt_digest()
         with self.assertRaisesRegex(ValueError, "payload differs"):
+            self.check()
+
+    def test_modified_cd_receipt_rejected_before_disc_audit(self):
+        self.event["raw_user_sha256"] = "f" * 64
+        self.event["returned_user_sha256"] = "f" * 64
+        self.save()
+        with self.assertRaisesRegex(ValueError, "receipt differs from GPU witness digest"):
             self.check()
 
     def test_wrong_sector_crc_rejected(self):
         self.event["raw_user_crc32"] = "00000000"
         self.event["returned_user_crc32"] = "00000000"
         self.save()
+        self.bind_current_receipt_digest()
         with self.assertRaisesRegex(ValueError, "payload differs"):
             self.check()
 
