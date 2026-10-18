@@ -38,6 +38,7 @@ on:
       - 'tests/test_replay_map02_live_frame_receipt.py'
       - 'tools/join_map02_live_frame_native.py'
       - 'tests/test_join_map02_live_frame_native.py'
+      - 'tests/test_join_map02_live_gpu_receipt.py'
       - 'tools/instrument_map02_joint_gpu_frame.py'
       - 'tests/test_instrument_map02_joint_gpu_frame.py'
       - 'tests/test_map02_joint_gpu_secure_files_c11.py'
@@ -86,6 +87,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_instrument_map02_frame_flush.py' -v
           python3 -m unittest discover -s tests -p 'test_replay_map02_live_frame_receipt.py' -v
           python3 -m unittest discover -s tests -p 'test_join_map02_live_frame_native.py' -v
+          python3 -m unittest discover -s tests -p 'test_join_map02_live_gpu_receipt.py' -v
           python3 -m unittest discover -s tests -p 'test_instrument_map02_joint_gpu_frame.py' -v
           python3 -m unittest discover -s tests -p 'test_map02_joint_gpu_secure_files_c11.py' -v
           python3 -m unittest discover -s tests -p 'test_map02_joint_native_capture_c11.py' -v
