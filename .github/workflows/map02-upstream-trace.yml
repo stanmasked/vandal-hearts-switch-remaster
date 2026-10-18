@@ -568,6 +568,29 @@ jobs:
           )
           test -z "$(cd upstream && git status --porcelain -- src/core/graphics.c platform/pc/src/libgte.c)"
 
+      - name: Compile pinned MAP02 frame-flush source with GCC and Clang
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd remaster && python3 -m unittest discover -s tests -p 'test_instrument_map02_frame_flush.py' -v)
+          mkdir -p /tmp/vh-map02-flush-pinned
+          PYTHONPATH=remaster python3 -m tools.instrument_map02_frame_flush upstream/platform/pc/src/libgpu.c --output /tmp/vh-map02-flush-pinned/libgpu.frame.c
+          (
+            cd upstream/platform/pc
+            flags=(-m64 -std=gnu89 -fno-builtin-csqrt -DPERMUTER -DPC_PORT -DPC_FEAT -DVH_REGION_US '-Dasm(x)=' -Ibuild/include_stage -Iinclude -I../.. -include pc_forward_decls.h -Wno-incompatible-pointer-types -Wno-builtin-declaration-mismatch -Wno-discarded-qualifiers -Wno-pointer-to-int-cast -Wno-int-to-pointer-cast -Wno-int-conversion -Isrc -I"$GITHUB_WORKSPACE/remaster/tools")
+            mkdir -p build/map02-frame-flush-hook
+            for cc in gcc clang; do
+              "$cc" "${flags[@]}" -DVH_MAP02_PRIVATE_FRAME_PIPE_TRACE=1 -c /tmp/vh-map02-flush-pinned/libgpu.frame.c -o "build/map02-frame-flush-hook/libgpu.${cc}.probe.o"
+              "$cc" "${flags[@]}" -c /tmp/vh-map02-flush-pinned/libgpu.frame.c -o "build/map02-frame-flush-hook/libgpu.${cc}.baseline.o"
+              "$cc" -std=c11 -Wall -Wextra -Werror -DVH_MAP02_PRIVATE_FRAME_PIPE_TRACE=1 -c "$GITHUB_WORKSPACE/remaster/tools/map02_native_frame_pipe.c" -o "build/map02-frame-flush-hook/pipe.${cc}.o"
+              ld -r "build/map02-frame-flush-hook/libgpu.${cc}.probe.o" "build/map02-frame-flush-hook/pipe.${cc}.o" -o "build/map02-frame-flush-hook/linked.${cc}.o"
+              nm -a "build/map02-frame-flush-hook/libgpu.${cc}.probe.o" | grep -q VH_Map02PrivateFrameFlush
+              nm -a "build/map02-frame-flush-hook/linked.${cc}.o" | grep -q vh_map02_frame_pipe_emit
+              if nm -a "build/map02-frame-flush-hook/libgpu.${cc}.baseline.o" | grep -q VH_Map02PrivateFrameFlush; then echo 'Frame hook leaked into baseline' >&2; exit 1; fi
+              if nm -a "build/map02-frame-flush-hook/libgpu.${cc}.baseline.o" | grep -q vh_map02_frame_pipe_emit; then echo 'Frame writer linked into baseline' >&2; exit 1; fi
+            done
+          )
+          test -z "$(cd upstream && git status --porcelain -- platform/pc/src/libgpu.c)"
       - name: Compile opt-in original PC GPU event probe, baseline and mutation tests
         shell: bash
         run: |
