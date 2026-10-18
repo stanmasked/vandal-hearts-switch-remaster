@@ -10,6 +10,7 @@ executable, texture or VRAM bytes are printed, copied or uploaded.
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import stat
 import subprocess
@@ -38,14 +39,58 @@ def _sha(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
+def _private_evidence_snapshot(root, filename, *, max_bytes):
+    """Double-read a single verified private inode; retain its identity.
+
+    Bytes alone cannot detect replacement by a byte-identical foreign inode.
+    Keep both the exact bytes and inode/metadata snapshot until completion of
+    the expensive independent retail-source and process witness validation.
+    """
+    path = root / filename
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except OSError:
+        raise ValueError("private MAP02 evidence input unavailable") from None
+    try:
+        def identity(st):
+            return (st.st_dev, st.st_ino, st.st_uid, st.st_mode,
+                    st.st_nlink, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+
+        before = os.fstat(fd)
+        if (not stat.S_ISREG(before.st_mode) or
+                before.st_uid != os.geteuid() or before.st_nlink != 1 or
+                stat.S_IMODE(before.st_mode) != 0o600 or
+                not 0 < before.st_size <= max_bytes):
+            raise ValueError("private MAP02 evidence must be owner-only 0600 regular file")
+
+        def read_pass():
+            raw = os.pread(fd, before.st_size, 0)
+            if len(raw) != before.st_size:
+                raise ValueError("private MAP02 evidence incomplete read")
+            return raw
+
+        first = read_pass()
+        if identity(os.fstat(fd)) != identity(before):
+            raise ValueError("private MAP02 evidence changed during read")
+        second = read_pass()
+        if first != second:
+            raise ValueError("private MAP02 evidence bytes changed between reads")
+        if (identity(os.fstat(fd)) != identity(before) or
+                identity(os.stat(path, follow_symlinks=False)) != identity(before)):
+            raise ValueError("private MAP02 evidence inode changed during read")
+        return first, identity(before)
+    except OSError:
+        raise ValueError("private MAP02 evidence verification unavailable") from None
+    finally:
+        os.close(fd)
+
+
 def _cycle_receipt(directory, frame):
     root = _private_directory(directory)
     if {entry.name for entry in root.iterdir()} != {CYCLE_RECEIPT}:
         raise ValueError("cycle directory must contain exactly one receipt")
-    path = root / CYCLE_RECEIPT
-    if path.is_symlink() or stat.S_IMODE(path.stat().st_mode) != 0o600:
-        raise ValueError("cycle receipt must be a private 0600 regular file")
-    raw = private_file(root, CYCLE_RECEIPT, max_bytes=2048)
+    raw, inode_identity = _private_evidence_snapshot(
+        root, CYCLE_RECEIPT, max_bytes=2048)
     if raw.count(b"\n") != 1 or not raw.endswith(b"\n") or b"\r" in raw:
         raise ValueError("noncanonical cycle receipt JSONL")
     event = parse_json(raw[:-1], CYCLE_RECEIPT)
@@ -67,7 +112,7 @@ def _cycle_receipt(directory, frame):
     if (type(token) is not str or len(token) != 32 or
             any(c not in "0123456789abcdef" for c in token)):
         raise ValueError("invalid single-process cycle nonce")
-    return raw, _sha(token.encode("ascii"))
+    return raw, _sha(token.encode("ascii")), inode_identity
 
 
 def verify_cycle_cd_gpu_join(source, native, scoped, handoff, cycle, image,
@@ -78,9 +123,10 @@ def verify_cycle_cd_gpu_join(source, native, scoped, handoff, cycle, image,
     if len({p.resolve() for p in roots}) != 5:
         raise ValueError("source, GPU, scoped, process and cycle directories must differ")
     source, native, scoped, handoff, cycle = roots
-    cycle_raw, cycle_session_sha256 = _cycle_receipt(cycle, frame)
+    cycle_raw, cycle_session_sha256, cycle_inode = _cycle_receipt(cycle, frame)
     cycle_event = parse_json(cycle_raw[:-1], CYCLE_RECEIPT)
-    before = private_file(source, CD_GPU_MANIFEST, max_bytes=4096)
+    before, manifest_inode = _private_evidence_snapshot(
+        source, CD_GPU_MANIFEST, max_bytes=4096)
     original = parse_json(before, CD_GPU_MANIFEST)
     if (type(original) is not dict or
             original.get("gpu_draw_frame") != frame or
@@ -90,7 +136,7 @@ def verify_cycle_cd_gpu_join(source, native, scoped, handoff, cycle, image,
     # The cycle state machine exposes the CRC of the same original CdRead
     # observer it gated before DrawOTag. Compare with the separate native
     # CD receipt before accepting the expensive original disc/GPU process join.
-    cd_raw = private_file(scoped, CD_READ, max_bytes=2048)
+    cd_raw, cd_inode = _private_evidence_snapshot(scoped, CD_READ, max_bytes=2048)
     cd_event = parse_json(cd_raw, CD_READ)
     if (type(cd_event) is not dict or
             cd_event.get("schema") != "vh.map02.original-cd-read.v1" or
@@ -110,10 +156,12 @@ def verify_cycle_cd_gpu_join(source, native, scoped, handoff, cycle, image,
         frame=frame, compiler=compiler)
     if verified["private_map02_cd_final_sha256"] != _sha(before):
         raise ValueError("original CD/GPU manifest SHA differs after re-verification")
-    if (private_file(source, CD_GPU_MANIFEST, max_bytes=4096) != before or
-            private_file(scoped, CD_READ, max_bytes=2048) != cd_raw or
+    if (_private_evidence_snapshot(source, CD_GPU_MANIFEST, max_bytes=4096)
+            != (before, manifest_inode) or
+            _private_evidence_snapshot(scoped, CD_READ, max_bytes=2048)
+            != (cd_raw, cd_inode) or
             _cycle_receipt(cycle, frame) !=
-            (cycle_raw, cycle_session_sha256)):
+            (cycle_raw, cycle_session_sha256, cycle_inode)):
         raise ValueError("cycle or original CD/GPU evidence changed during verification")
 
     # Return hashes only; the nonce and all original game material remain private.
@@ -150,8 +198,12 @@ def main():
             args.private_cycle_order, args.private_owned_us_disc,
             args.upstream_checkout, args.pc_binary,
             frame=args.frame, compiler=args.compiler)
-    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+    except ValueError as exc:
         parser.error(str(exc))
+    except (OSError, subprocess.TimeoutExpired):
+        # Filesystem errors / timed-out external audits may include absolute
+        # private image, source or witness paths and captured process output.
+        parser.error("private MAP02 cycle verification unavailable")
     print(json.dumps(result, sort_keys=True, indent=2))
 
 
