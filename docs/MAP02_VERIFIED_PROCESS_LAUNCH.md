@@ -146,6 +146,21 @@ python3 -m tools.map02_verified_process_launch run \
 
 Запуск явным образом передаёт дочернему процессу
 `VH_MAP02_PC_PREOVERLAY_OUTPUT_DIR` через свой allowlist окружения.
+Если `--pc-preoverlay-dir` не указан, сохраняется прежняя
+схема `vh.map02.local-executed-process.v2`. Для приватного захвата
+RGB24 процессная квитанция теперь использует **v3** и дополнительно
+содержит `pc_preoverlay_capture_session_bound=true`,
+`pc_preoverlay_image_sha256` и `pc_preoverlay_receipt_sha256`.
+Поля добавляются только после проверенного завершения приложения
+и сверки CD/GPU/cycle/RGB24-сессии. Полноценный итоговый
+`verify_map02_final_pc_frame_join` принимает только v3, сверяет
+эти два SHA-256 с владельческими RGB24-файлами и вновь проверяет
+SHA-256 уже самой process receipt через оригинальный CD/GPU-witness.
+Так заменённый после запуска RGB24-дамп нельзя принять, даже
+сохранив подлинную квитанцию процесса. Проверка остаётся локальной
+и ничего не публикует; v3 **не доказывает** фактический
+запуск оригинального MAP02 без собственных исходных игровых данных.
+
 До публикации process receipt независимо проверяются байты
 `map02-pc-present-preoverlay-receipt.jsonl` и
 `map02-pc-present-preoverlay-rgb24.bin`, одноразовый nonce той же

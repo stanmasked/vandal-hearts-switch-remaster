@@ -31,6 +31,11 @@ from tools.verify_map02_window_scoped_join import verify_window_scoped_join
 
 RECEIPT = "gpu-local-executed-process.json"
 SCHEMA = "vh.map02.local-executed-process.v2"
+RGB24_SCHEMA = "vh.map02.local-executed-process.v3"
+RGB24_RECEIPT_FIELDS = (
+    "pc_preoverlay_image_sha256", "pc_preoverlay_receipt_sha256",
+    "pc_preoverlay_capture_session_bound",
+)
 
 # Source-bound cycle launch does not inherit arbitrary environment variables:
 # a prefix denylist misses loader/plugin controls such as GLIBC_TUNABLES,
@@ -220,8 +225,12 @@ def _kernel_observes_game_fd(pid, expected, *, excluded_fd=None):
 
 def _validate_receipt(raw):
     record = raw if type(raw) is dict else parse_json(raw, RECEIPT)
-    fields(record, REQUIRED, RECEIPT)
-    if (record["schema"] != SCHEMA or
+    schema = record.get("schema") if type(record) is dict else None
+    if schema == RGB24_SCHEMA:
+        fields(record, REQUIRED + RGB24_RECEIPT_FIELDS, RECEIPT)
+    else:
+        fields(record, REQUIRED, RECEIPT)
+    if (schema not in (SCHEMA, RGB24_SCHEMA) or
             record["kernel_executable_matched_plan"] is not True or
             record["same_process_gpu_scoped_nonce_checked"] is not True or
             record["game_image_fd_observed"] is not True or
@@ -229,8 +238,12 @@ def _validate_receipt(raw):
             record["retail_gameplay_authenticated"] is not False or
             record["physical_ps1_equivalence_proven"] is not False):
         raise ValueError("unsupported or overstated MAP02 process evidence")
-    for key in ("local_plan_sha256", "kernel_observed_executable_sha256",
-                "capture_session_sha256", "native_window_all_files_sha256"):
+    if (schema == RGB24_SCHEMA and
+            record["pc_preoverlay_capture_session_bound"] is not True):
+        raise ValueError("unverified PC pre-overlay process capture binding")
+    for key in (("local_plan_sha256", "kernel_observed_executable_sha256",
+                 "capture_session_sha256", "native_window_all_files_sha256") +
+                (RGB24_RECEIPT_FIELDS[:2] if schema == RGB24_SCHEMA else ())):
         value = record[key]
         if (type(value) is not str or len(value) != 64 or
                 any(c not in "0123456789abcdef" for c in value)):
@@ -500,8 +513,8 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
         preoverlay_proof = verify_preoverlay_session(
             preoverlay, cycle, frame=frame,
             expected_session_sha256=checked["capture_session_sha256"])
-    receipt = _validate_receipt({
-        "schema": SCHEMA,
+    receipt_data = {
+        "schema": RGB24_SCHEMA if preoverlay is not None else SCHEMA,
         "gpu_draw_frame": frame,
         "local_plan_sha256": _sha(plan_raw),
         "kernel_observed_executable_sha256": observed[2],
@@ -521,7 +534,14 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
         "game_image_consumption_proven": False,
         "retail_gameplay_authenticated": False,
         "physical_ps1_equivalence_proven": False,
-    })
+    }
+    if preoverlay is not None:
+        receipt_data.update({
+            "pc_preoverlay_capture_session_bound": True,
+            "pc_preoverlay_image_sha256": preoverlay_proof["pc_rgb24_image_sha256"],
+            "pc_preoverlay_receipt_sha256": preoverlay_proof["pc_rgb24_receipt_sha256"],
+        })
+    receipt = _validate_receipt(receipt_data)
     raw = (json.dumps(receipt, sort_keys=True, separators=(",", ":"))
            + "\n").encode("utf-8")
     if cycle is not None and _cycle_cd_pair(

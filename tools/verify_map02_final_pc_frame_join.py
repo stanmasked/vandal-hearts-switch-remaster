@@ -17,7 +17,8 @@ from tools.publish_map02_cd_bound_witness import (
     MANIFEST as CD_GPU_MANIFEST, _validate as validate_cd_manifest,
 )
 from tools.map02_verified_process_launch import (
-    RECEIPT as PROCESS_MANIFEST, _validate_receipt as validate_process,
+    RECEIPT as PROCESS_MANIFEST, RGB24_SCHEMA,
+    _validate_receipt as validate_process,
 )
 from tools.verify_map02_cycle_cd_gpu_join import (
     CYCLE_RECEIPT, _cycle_receipt, _private_evidence_snapshot,
@@ -71,6 +72,10 @@ def verify_final_pc_frame(source, native, scoped, handoff, cycle, preview, rgb,
     process = validate_process(process_before[0])
     session = cycle_before[1]
     if (original["gpu_draw_frame"] != frame or
+            process["schema"] != RGB24_SCHEMA or
+            process["pc_preoverlay_capture_session_bound"] is not True or
+            process["pc_preoverlay_image_sha256"] != digest(rgb_before[0][0]) or
+            process["pc_preoverlay_receipt_sha256"] != digest(rgb_before[1][0]) or
             process["gpu_draw_frame"] != frame or
             original["capture_session_sha256"] != session or
             process["capture_session_sha256"] != session or
@@ -142,6 +147,7 @@ def verify_final_pc_frame(source, native, scoped, handoff, cycle, preview, rgb,
         "matched_native_draw_primitives": rgb_join["native_draw_pairs"],
         "independent_full_cd_gpu_process_witness_verified": True,
         "pc_preoverlay_rgb24_and_native_vram_png_match": True,
+        "process_receipt_binds_pc_rgb24_pixels_and_capture_receipt": True,
         "source_pinned_full_elf_execution_claim_from_prior_witness": True,
         "presented_host_window_authenticated": False,
         "full_original_gameplay_authenticated": False,

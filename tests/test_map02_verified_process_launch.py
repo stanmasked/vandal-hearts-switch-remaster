@@ -241,6 +241,34 @@ int main(int argc, char **argv) {
                 self.audit()
         self.assertEqual(len(observed_reads), 2)
 
+    def test_v3_process_receipt_requires_exact_capture_digests(self):
+        self.run_capture()
+        original = json.loads((self.handoff / RECEIPT).read_bytes())
+        self.assertEqual(original["schema"], "vh.map02.local-executed-process.v2")
+        captured = dict(original,
+                        schema="vh.map02.local-executed-process.v3",
+                        pc_preoverlay_capture_session_bound=True,
+                        pc_preoverlay_image_sha256="a" * 64,
+                        pc_preoverlay_receipt_sha256="b" * 64)
+        validated = _validate_receipt(captured)
+        self.assertEqual(validated["pc_preoverlay_image_sha256"], "a" * 64)
+        for change in (
+            {"pc_preoverlay_image_sha256": "not-sha"},
+            {"pc_preoverlay_receipt_sha256": True},
+            {"pc_preoverlay_capture_session_bound": False},
+        ):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                _validate_receipt(dict(captured, **change))
+        for missing in ("pc_preoverlay_image_sha256",
+                        "pc_preoverlay_receipt_sha256",
+                        "pc_preoverlay_capture_session_bound"):
+            with self.subTest(missing=missing), self.assertRaises(ValueError):
+                _validate_receipt({k: v for k, v in captured.items()
+                                   if k != missing})
+        with self.assertRaises(ValueError):
+            _validate_receipt(dict(original,
+                                   pc_preoverlay_image_sha256="a" * 64))
+
     def test_mutated_receipt_and_synthetic_false_attestation_rejected(self):
         self.run_capture()
         receipt = self.handoff / RECEIPT

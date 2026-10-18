@@ -170,7 +170,7 @@ class SyntheticFinalPcFrameJoinTests(unittest.TestCase):
 
     def test_rgb24_mismatch_and_hires_mode_rejected(self):
         self.fixture.rgbfile.write_bytes(b"\xff\x00\x00")
-        with self.assertRaisesRegex(ValueError, "RGB24 buffer differs"):
+        with self.assertRaisesRegex(ValueError, "not bound to this process"):
             self.check()
         self.fixture.rgbfile.write_bytes(b"\x10\x00\x00")
         self.base.event["present_backend_is_hires"] = True

@@ -164,8 +164,12 @@ python3 -m tools.verify_map02_final_pc_frame_join \
   --pc-binary /private/map02/instrumented-pc-port --frame 7
 ```
 
-Проверка требует, чтобы SHA-256 `gpu-local-executed-process.json`
-действительно совпадал с `observed_process_receipt_sha256`
+Проверка требует process receipt **v3**, содержащую
+`pc_preoverlay_image_sha256` и `pc_preoverlay_receipt_sha256`.
+Оба хеша должны совпасть с приватным дампом и квитанцией RGB24 ещё
+**до** дорогостоящей полной проверки. Старая v2 (без захвата RGB24)
+отклоняется. SHA-256 `gpu-local-executed-process.json`
+должен действительно совпасть с `observed_process_receipt_sha256`
 из уже сформированного оригинального CD/GPU/process-witness; номера
 кадров и хеш nonce должны совпасть с обеими отдельными квитанциями.
 Затем **заново** запускаются полноценный CD/GPU/GTE/OS-process
