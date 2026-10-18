@@ -627,3 +627,56 @@ an alien UID, a privately readable file attributed to another UID,
 and a file whose timestamp changes between the two descriptor-relative
 inventory scans. No retail image or original console capture is
 authenticated by these checks.
+
+## Optional full original-source FT4/VRAM witness join
+
+The one-shot Linux joint GPU/BGR555 capture wrapper now optionally
+accepts all four *private*, pre-existing original-source/native
+inputs, in addition to `--frame-pair-dir`:
+
+```sh
+  --frame-pair-dir /private/claimed-pair \
+  --native-capture /private/native-gpu-evidence \
+  --source-capture /private/source-ft4-evidence \
+  --launch-receipt /private/launch-receipt.json \
+  --preflight-report /private/native-preflight.json \
+  --compiler gcc
+```
+
+Use these options with the main command from the previous section
+rather than as a separate command. `--compiler` may also be
+`clang`. **All four witness paths and the claimed reference pair
+are required together**: any partial combination is refused before
+launching the ELF or publishing a frame.
+
+With this option, the wrapper first performs its usual one-shot
+SHA-pinned Linux ELF BGR555 stdout + same-launch GPU-journal capture,
+owner/identity pinning, and two complete private replay passes.
+It then invokes the independently implemented
+`join_map02_live_frame_native.join`, which does *another two*
+private GPU+frame replays and a strict FT4/GTE/native VRAM
+validation using the original private launcher/receipt source
+evidence. It verifies frame number, 1024×512 dimensions,
+the candidate BGR555 hash, claimed reference hash and terminal
+native VRAM/journal SHA/count against the initial one-shot
+capture, and finally checks the original held directory-FD
+file identities and claimed reference bytes are still unchanged.
+A forged, self-signed or mismatched source witness is refused.
+
+When the complete optional chain succeeds, the digest-only report
+adds `source_keyed_native_ft4_vram_independently_replayed=true`,
+the checked original-launch receipt and source GPU event digests,
+and explicitly
+`source_original_trace_same_session_as_live_elf_authenticated=false`.
+These are **separately recorded capture sessions**; the join
+does not establish kernel-attested process causality, authenticate
+the retail PS1 resources, or prove that PS1 hardware pixels
+match the PC BGR555 output. No private pixel bytes, source paths,
+inode IDs, or original disc materials are published. HD substitution
+stays disabled.
+
+Synthetic Linux C11 regressions cover correct complete source
+joining (mocking only the unavailable original FT4/VRAM witness),
+wrong native frame, falsely positive provenance, same-byte
+reference inode substitution during the independent source replay,
+incomplete witness arguments and invalid compiler selection.
