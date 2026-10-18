@@ -44,7 +44,8 @@ class PrivateOneShotIntegratedEvidenceTests(unittest.TestCase):
         self.addCleanup(self.preflight.stop)
         self.plan_read = patch(
             "tools.run_map02_private_cycle_session.private_file",
-            return_value=b'{"synthetic":"plan"}\n')
+            return_value=(b'{"synthetic":"plan"}\n',
+                          (1, 111, 222, 0o100600, 1, 21, 33, 44)))
         self.plan_read_mock = self.plan_read.start()
         self.addCleanup(self.plan_read.stop)
         self.parse_plan = patch(
@@ -102,6 +103,24 @@ class PrivateOneShotIntegratedEvidenceTests(unittest.TestCase):
         self.assertTrue(preview.exists())
         self.assertEqual(preview.stat().st_mode & 0o777, 0o600)
         self.assert_real_seal(report)
+
+    def test_corrupt_existing_png_after_process_blocks_seal(self):
+        preview = self.synthetic.preview / PNG_NAME
+        original = preview.read_bytes()
+
+        def replace_pixels(*args, **kwargs):
+            preview.write_bytes(b"invalid synthetic png pixels")
+            return {
+                "kernel_executable_hash_matched": True,
+                "same_process_gpu_scoped_nonce_checked": True,
+                "pc_preoverlay_capture_session_bound": True,
+            }
+
+        self.launch_mock.side_effect = replace_pixels
+        with self.assertRaises(ValueError):
+            self.run_cycle()
+        self.assertNotEqual(preview.read_bytes(), original)
+        self.assertFalse(list(self.seal.iterdir()))
 
     def test_modified_rgb24_after_simulated_child_blocks_any_seal(self):
         rgb_path = self.synthetic.fixture.fixture.rgbfile
