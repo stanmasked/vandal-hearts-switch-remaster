@@ -6,12 +6,17 @@ existing synthetic CD, native GPU and window-scoped fixture; its process
 kernel/source witnesses retain the fixture's explicit mocks. No retail data.
 """
 import hashlib
+import io
 import json
+import os
+from contextlib import redirect_stderr
 from pathlib import Path
 import stat
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
+import tools.verify_map02_cycle_cd_gpu_join as cycle_module
 
 from tools.publish_map02_cd_bound_witness import MANIFEST
 from tools.verify_map02_window_scoped_join import CD_READ
@@ -199,6 +204,83 @@ class CycleCdGpuJoinTests(unittest.TestCase):
         self.mock.side_effect = mutate
         with self.assertRaisesRegex(ValueError, "changed during verification"):
             self.check()
+
+    def test_identical_byte_inode_swap_during_full_recheck_is_rejected(self):
+        for folder, filename in (
+                (self.source, MANIFEST), (self.scoped, CD_READ),
+                (self.cycle, CYCLE_RECEIPT)):
+            with self.subTest(filename=filename):
+                target = folder / filename
+                original = target.read_bytes()
+                def identical_inode_swap(*args, **kwargs):
+                    backup = folder / ("previous-" + filename)
+                    target.replace(backup)
+                    target.write_bytes(original)
+                    target.chmod(0o600)
+                    self.assertNotEqual(target.stat().st_ino, backup.stat().st_ino)
+                    return {"private_map02_cd_final_sha256": sha(self.manifest_raw)}
+                with patch.object(cycle_module,
+                                  "verify_published_original_cd_witness",
+                                  side_effect=identical_inode_swap):
+                    with self.assertRaisesRegex(ValueError, "changed during verification"):
+                        self.check()
+                target.unlink()
+                (folder / ("previous-" + filename)).replace(target)
+        self.mock.assert_not_called()
+
+    def test_double_read_rejects_byte_change_with_identical_file_metadata(self):
+        original_pread = os.pread
+        calls = []
+        def changed_second_read(fd, size, offset):
+            raw = original_pread(fd, size, offset)
+            calls.append(1)
+            if len(calls) == 2:
+                return bytes([raw[0] ^ 1]) + raw[1:]
+            return raw
+        with patch.object(cycle_module.os, "pread", side_effect=changed_second_read):
+            with self.assertRaisesRegex(ValueError, "bytes changed between reads"):
+                self.check()
+        self.assertEqual(len(calls), 2)
+        self.mock.assert_not_called()
+
+    def test_file_hardlink_and_wrong_owner_permissions_are_rejected(self):
+        target = self.cycle / CYCLE_RECEIPT
+        twin = self.cycle.parent / "cycle-linked-copy"
+        os.link(target, twin)
+        try:
+            with self.assertRaisesRegex(ValueError, "owner-only 0600"):
+                self.check()
+        finally:
+            twin.unlink()
+        target.chmod(0o640)
+        with self.assertRaisesRegex(ValueError, "owner-only 0600"):
+            self.check()
+        self.mock.assert_not_called()
+
+    def test_cycle_verifier_cli_redacts_native_errors(self):
+        private_path = "/private/map02/owned-cd-and-executable"
+        argv = ["cycle-verify", str(self.source), str(self.native),
+                str(self.scoped), str(self.handoff), str(self.cycle),
+                private_path, "--upstream-checkout", str(self.source),
+                "--pc-binary", private_path, "--frame", "7"]
+        errors = (
+            OSError(2, "original image missing", private_path),
+            subprocess.TimeoutExpired([private_path, "--inspect"], 15,
+                                      output=private_path.encode()),
+        )
+        for error in errors:
+            with self.subTest(error=type(error).__name__):
+                output = io.StringIO()
+                with (patch("sys.argv", argv),
+                      patch.object(cycle_module, "verify_cycle_cd_gpu_join",
+                                   side_effect=error),
+                      redirect_stderr(output)):
+                    with self.assertRaises(SystemExit) as exit_result:
+                        cycle_module.main()
+                self.assertEqual(exit_result.exception.code, 2)
+                self.assertIn("private MAP02 cycle verification unavailable",
+                              output.getvalue())
+                self.assertNotIn(private_path, output.getvalue())
 
     def test_changed_original_manifest_during_recheck_rejected(self):
         def mutate(*args, **kwargs):
