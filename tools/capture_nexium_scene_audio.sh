@@ -24,11 +24,13 @@ mkdir -p "$SCENE_SD_DIR"
 printf '%s\n' "$NEXIUM_DATA_ROOT" > "$output/guest-sd-root.txt"
 export SCENE_PCM="$output/nexium-scenes-s16le-48k.pcm"
 export SCENE_EVENTS="$output/scene-events.csv"
+export SCENE_CONTROL_EVENTS="$output/scene-exit-controls.csv"
 export SCENE_LOG="$output/nexium-scenes-run.log"
 export SCENE_DIR="$output"
 export SCENE_NRO="nros/vandal-hearts-prototype.nro"
 : > "$SCENE_PCM"
 printf 'scene,pcm_bytes,epoch_ms\n' > "$SCENE_EVENTS"
+printf 'event,pcm_bytes,host_epoch_ms\n' > "$SCENE_CONTROL_EVENTS"
 parec --device=vh_nexium_capture.monitor --rate=48000 \
   --channels=2 --format=s16le --raw > "$SCENE_PCM" \
   2> "$output/scene-parec.log" &
@@ -85,6 +87,13 @@ timeout --kill-after=5s 65s xvfb-run -a -s '-screen 0 1280x720x24' bash -c '
     xdotool keyup --window "$window" "$1"
     sleep 0.2
   }
+  host_control_event() {
+    # The recorder file stat is HOST BUFFERED, not a guest sample timestamp.
+    local label="$1" bytes millis
+    bytes="$(stat -c %s "$SCENE_PCM")"
+    millis="$(date +%s%3N)"
+    printf "%s,%s,%s\n" "$label" "$bytes" "$millis" >> "$SCENE_CONTROL_EVENTS"
+  }
   snapshot field_initial
   sleep 6
   key_press c; snapshot focus_1
@@ -105,14 +114,17 @@ timeout --kill-after=5s 65s xvfb-run -a -s '-screen 0 1280x720x24' bash -c '
   # the original optical/SD/PCM auditors still reject missing proof.
   xdotool keydown --window "$window" v
   sleep 0.4
+  host_control_event before_plus_down
   xdotool keydown --window "$window" m
   sleep 0.25
   xdotool keyup --window "$window" m
+  host_control_event after_plus_up
   sleep 1.1
   import -window "$window" "$SCENE_DIR/scene-optical-trace.png"
   test -s "$SCENE_DIR/scene-optical-trace.png"
   xdotool keyup --window "$window" v || true
   sleep 3
+  host_control_event control_sequence_end
 ' > "$output/scene-runner.log" 2>&1
 cleanup
 trap - EXIT
