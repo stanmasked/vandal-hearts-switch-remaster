@@ -31,6 +31,8 @@ on:
       - 'tests/test_check_native_av_screenshot.py'
       - 'tests/verify_native_av_guest_witness.py'
       - 'tests/test_verify_native_av_guest_witness.py'
+      - 'tests/inspect_native_av_physical_screenshots.py'
+      - 'tests/test_inspect_native_av_physical_screenshots.py'
       - 'tests/check_nro.py'
       - 'Makefile'
   pull_request:
@@ -50,6 +52,8 @@ on:
       - 'tests/test_native_seq_timing_adsr_reference.py'
       - 'tests/verify_native_av_guest_witness.py'
       - 'tests/test_verify_native_av_guest_witness.py'
+      - 'tests/inspect_native_av_physical_screenshots.py'
+      - 'tests/test_inspect_native_av_physical_screenshots.py'
       - 'tests/native_seq_adsr_trace.c'
       - 'tools/generate_ps1_music_sd_fixture.py'
       - 'tests/test_generate_ps1_music_sd_fixture.py'
@@ -222,6 +226,8 @@ jobs:
           '
           python3 -m unittest discover -s tests -p 'test_check_native_av_screenshot.py' -v
           python3 -m unittest discover -s tests -p 'test_verify_native_av_guest_witness.py' -v
+          # Static pixel fixtures only; no claim of guest or physical HOME.
+          python3 -m unittest discover -s tests -p 'test_inspect_native_av_physical_screenshots.py' -v
           case "${{ matrix.sd_case }}" in
             empty)
               source="synthetic"
