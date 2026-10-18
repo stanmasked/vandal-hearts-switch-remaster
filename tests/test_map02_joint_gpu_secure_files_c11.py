@@ -20,7 +20,7 @@ int main(int argc, char **argv)
 {
     FILE *a, *b;
     struct stat file_stat;
-    if (argc < 3) return 31;
+    if (argc < 3 || vh_map02_joint_events_completed != 0u) return 31;
     if (strcmp(argv[1], "new") == 0) {
         a = VH_Map02SecureFile(argv[2]);
         if (!a) return 32;
