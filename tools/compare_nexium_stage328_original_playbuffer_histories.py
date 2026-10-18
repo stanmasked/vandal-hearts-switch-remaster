@@ -57,8 +57,9 @@ def load(root:Path)->dict:
     return result
 
 
-def verify(source:dict,expected_history_sha:str)->dict:
-    if not isinstance(expected_history_sha,str) or not SHA.fullmatch(expected_history_sha):
+def verify(source:dict,expected_history_sha:str,expected_last_sha:str)->dict:
+    if (not isinstance(expected_history_sha,str) or not SHA.fullmatch(expected_history_sha)
+            or not isinstance(expected_last_sha,str) or not SHA.fullmatch(expected_last_sha)):
         raise ExitTimelineError("malformed original PlayBuffer source pin")
     history=source["history_csv"]
     last=source["last_csv"]
@@ -68,6 +69,8 @@ def verify(source:dict,expected_history_sha:str)->dict:
         raise ExitTimelineError("original source bytes missing")
     if hashlib.sha256(history).hexdigest()!=expected_history_sha:
         raise ExitTimelineError("original guest history SHA-256 differs from pinned capture")
+    if hashlib.sha256(last).hexdigest()!=expected_last_sha:
+        raise ExitTimelineError("original last PlayBuffer CSV SHA-256 differs from pinned capture")
     if (not isinstance(stage320,dict) or not isinstance(stage322,dict)
             or stage320.get("schema")!=LAST_SCHEMA
             or stage320.get("result")!=LAST_VERIFIED
@@ -109,11 +112,12 @@ def verify(source:dict,expected_history_sha:str)->dict:
     return reproduced
 
 
-def compare(a:dict,b:dict,first_sha:str,second_sha:str)->dict:
-    if first_sha==second_sha:
+def compare(a:dict,b:dict,first_sha:str,second_sha:str,
+            first_last_sha:str,second_last_sha:str)->dict:
+    if first_sha==second_sha or first_last_sha==second_last_sha:
         raise ExitTimelineError("original guest history cohorts are not distinct")
-    first=verify(a,first_sha)
-    second=verify(b,second_sha)
+    first=verify(a,first_sha,first_last_sha)
+    second=verify(b,second_sha,second_last_sha)
     intervals=[]
     for label,doc in (("first",first),("second",second)):
         intervals.append({
@@ -154,6 +158,8 @@ def main()->int:
     p.add_argument("--second-root",required=True,type=Path)
     p.add_argument("--first-history-sha256",required=True)
     p.add_argument("--second-history-sha256",required=True)
+    p.add_argument("--first-last-sha256",required=True)
+    p.add_argument("--second-last-sha256",required=True)
     p.add_argument("--output",required=True,type=Path)
     a=p.parse_args()
     try:
@@ -162,7 +168,8 @@ def main()->int:
         if a.output.is_symlink() or a.output.exists():
             raise ExitTimelineError("refuse overwrite original replay")
         result=compare(load(a.first_root),load(a.second_root),
-                       a.first_history_sha256,a.second_history_sha256)
+                       a.first_history_sha256,a.second_history_sha256,
+                       a.first_last_sha256,a.second_last_sha256)
         a.output.parent.mkdir(parents=True,exist_ok=True)
         with a.output.open("x",encoding="utf-8") as f:
             json.dump(result,f,sort_keys=True,indent=2)
