@@ -195,12 +195,16 @@ int fsync(int fd) {
             trigger = (++receipt_file_syncs == 2 &&
                        (!strcmp(fault, "seal-fsync-error") ||
                         !strcmp(fault, "seal-flip") ||
-                        !strcmp(fault, "seal-replace-identical")));
+                        !strcmp(fault, "seal-replace-identical") ||
+                        !strcmp(fault, "seal-mode") ||
+                        !strcmp(fault, "seal-link")));
         if (S_ISDIR(st.st_mode))
             trigger = (++output_dir_syncs == 2 &&
                        (!strcmp(fault, "seal-dir-error") ||
                         !strcmp(fault, "seal-dir-flip") ||
-                        !strcmp(fault, "seal-dir-replace-identical")));
+                        !strcmp(fault, "seal-dir-replace-identical") ||
+                        !strcmp(fault, "seal-dir-mode") ||
+                        !strcmp(fault, "seal-dir-link")));
         if (trigger) {
             injected = 1;
             if (!strcmp(fault, "seal-fsync-error") ||
@@ -215,7 +219,15 @@ int fsync(int fd) {
                 seal = openat(dfd, "map02-cycle-clean-exit.jsonl",
                               O_RDONLY | O_NOFOLLOW);
                 if (seal < 0) { close(dfd); return -1; }
-                if (!strcmp(fault, "seal-flip") ||
+                if (!strcmp(fault, "seal-mode")) {
+                    if (fchmod(seal, 0644)) return -1;
+                } else if (!strcmp(fault, "seal-dir-mode")) {
+                    if (fchmod(dfd, 0755)) return -1;
+                } else if (!strcmp(fault, "seal-link") ||
+                           !strcmp(fault, "seal-dir-link")) {
+                    if (linkat(dfd, "map02-cycle-clean-exit.jsonl",
+                               dfd, "seal-hardlink-alias", 0)) return -1;
+                } else if (!strcmp(fault, "seal-flip") ||
                     !strcmp(fault, "seal-dir-flip")) {
                     int modify = openat(dfd, "map02-cycle-clean-exit.jsonl",
                                         O_RDWR | O_NOFOLLOW);
@@ -512,6 +524,40 @@ class CycleOrderTests(unittest.TestCase):
                 (folder / "map02-single-process-cycle.jsonl").is_file())
             self.assertFalse(
                 (folder / "map02-cycle-clean-exit.jsonl").exists())
+
+    def test_clean_exit_seal_rejects_mode_change_during_file_sync(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "private"
+            out.mkdir(mode=0o700)
+            result = self.run_mode("good", directory=out, fault="seal-mode")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse((out / "map02-single-process-cycle.jsonl").exists())
+            self.assertFalse((out / "map02-cycle-clean-exit.jsonl").exists())
+            self.assertEqual(list(out.iterdir()), [])
+
+    def test_clean_exit_seal_rejects_mode_change_during_dir_sync(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "private"
+            out.mkdir(mode=0o700)
+            result = self.run_mode("good", directory=out, fault="seal-dir-mode")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(out.stat().st_mode & 0o777, 0o755)
+            self.assertFalse((out / "map02-single-process-cycle.jsonl").exists())
+            self.assertFalse((out / "map02-cycle-clean-exit.jsonl").exists())
+
+    def test_clean_exit_seal_rejects_hardlinks_during_sync(self):
+        for fault in ("seal-link", "seal-dir-link"):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as tmp:
+                out = Path(tmp) / "private"
+                out.mkdir(mode=0o700)
+                result = self.run_mode("good", directory=out, fault=fault)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertFalse((out / "map02-single-process-cycle.jsonl").exists())
+                self.assertFalse((out / "map02-cycle-clean-exit.jsonl").exists())
+                alias = out / "seal-hardlink-alias"
+                self.assertTrue(alias.is_file())
+                self.assertIn(b"vh.map02.cycle-order.v2", alias.read_bytes())
+                self.assertEqual(alias.stat().st_nlink, 1)
 
     def test_clean_exit_fsync_failure_revokes_both_private_receipts(self):
         for fault in ("seal-fsync-error", "seal-dir-error"):
