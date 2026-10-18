@@ -111,6 +111,9 @@ jobs:
           python3 -m unittest discover -s tests -p "test_compare_nexium_idle_switch_pairs.py" -v
           python3 -m unittest discover -s tests -p "test_analyze_nexium_idle_switch_variability.py" -v
           python3 -m unittest discover -s tests -p "test_analyze_nexium_steady_state.py" -v
+          # The experimental phase must pass strict original-SD CSV
+          # negative controls before either NRO is permitted to build.
+          python3 -m unittest discover -s tests -p "test_audit_nexium_audout_service_probes.py" -v
           bash -n tools/capture_nexium_scene_audio.sh
           make verify-nro
           # Different build directory prevents replacing the phase0 NRO.
