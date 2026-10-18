@@ -29,7 +29,8 @@ def verify_native_windows(directory, *, target_frame):
     number(target_frame, "GPU DrawOTag frame", 1, 2**32 - 1)
     if (root / STATUS).exists() or (root / STATUS).is_symlink():
         raise ValueError("legacy native GPU receipt cannot be mixed with windowed capture")
-    raw = private_file(root, INDEX, max_bytes=4096)
+    raw, index_identity = private_file(
+        root, INDEX, max_bytes=4096, _with_identity=True)
     status = parse_json(raw, INDEX)
     fields(status, (
         "schema", "gpu_draw_frame", "window_capacity_events",
@@ -85,6 +86,7 @@ def verify_native_windows(directory, *, target_frame):
     last_vram = None
     logs_hash = hashlib.sha256()
     file_tree_hash = hashlib.sha256()
+    audited_files = {}
     for idx in range(window_count):
         window = _private_directory(root / f"window-{idx:03d}")
         if (window / STATUS).exists() or (window / STATUS).is_symlink():
@@ -105,9 +107,13 @@ def verify_native_windows(directory, *, target_frame):
         # Hash ALL published capture bytes, not only JSONL: unreferenced or
         # replaced snapshots must never inherit the same source binding.
         for name in sorted(expected_files):
-            data = private_file(window, name, max_bytes=VRAM_BYTES + 128 * 1024)
+            data, inode = private_file(
+                window, name, max_bytes=VRAM_BYTES + 128 * 1024,
+                _with_identity=True)
+            digest = hashlib.sha256(data).digest()
+            audited_files[(idx, name)] = (digest, inode)
             file_tree_hash.update(f"window-{idx:03d}/{name}\0".encode("ascii"))
-            file_tree_hash.update(hashlib.sha256(data).digest())
+            file_tree_hash.update(digest)
         # The existing full 1-MiB VRAM auditor is reused, but its
         # missing-receipt result is deliberately not interpreted as a
         # complete original frame.
@@ -136,6 +142,28 @@ def verify_native_windows(directory, *, target_frame):
         raise ValueError("unlisted native GPU window directory")
     if seen != written or total_draws != draws or total_transfers != transfers:
         raise ValueError("global native GPU event count does not match window evidence")
+    # The original tree hashes, the full window audits and the continuity
+    # checks must refer to the same inode for every file. No game bytes
+    # are returned; only hashes and file identity are retained temporarily.
+    if {item.name for item in root.iterdir()} != expected_root_entries:
+        raise ValueError("native GPU window root changed during audit")
+    latest_index, latest_identity = private_file(
+        root, INDEX, max_bytes=4096, _with_identity=True)
+    if latest_index != raw or latest_identity != index_identity:
+        raise ValueError("native GPU window index changed during audit")
+    for idx in range(window_count):
+        window = _private_directory(root / f"window-{idx:03d}")
+        expected_names = {name for number, name in audited_files if number == idx}
+        if {item.name for item in window.iterdir()} != expected_names:
+            raise ValueError("native GPU window file set changed during audit")
+        for name in sorted(expected_names):
+            data, identity = private_file(
+                window, name, max_bytes=VRAM_BYTES + 128 * 1024,
+                _with_identity=True)
+            digest, original_identity = audited_files[(idx, name)]
+            if (hashlib.sha256(data).digest() != digest or
+                    identity != original_identity):
+                raise ValueError("native GPU window evidence changed during audit")
     return {
         "native_window_schema": SCHEMA,
         "recorded_windows": window_count,
