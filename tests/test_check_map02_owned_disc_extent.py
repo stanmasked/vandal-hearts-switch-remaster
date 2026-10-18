@@ -135,7 +135,7 @@ class OwnedMap02DiscExtentTests(unittest.TestCase):
         try:
             with patch("tools.check_map02_owned_disc_extent._raw_sector",
                        side_effect=swap_path_after_open):
-                with self.assertRaisesRegex(ValueError, "pathname or inode changed"):
+                with self.assertRaisesRegex(ValueError, "changed during sector read|pathname or inode changed"):
                     self.check()
         finally:
             if saved.exists():
