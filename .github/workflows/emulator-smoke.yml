@@ -1163,6 +1163,13 @@ jobs:
           SOAK_MODE=switch SOAK_RUN_SUFFIX=phase8 \
             SOAK_NRO=phase8/vandal-hearts-phase8.nro \
             bash tools/capture_nexium_scene_soak.sh runtime-evidence/scene-soak-phase8
+          # The source scene CSV is produced by the guest; the optical
+          # derived CSV is created only by baseline Stage268 audit.
+          # Bind phase8 directly to its isolated original guest SD.
+          mapfile -t phase8_scene_sources < runtime-evidence/scene-soak-phase8/soak-sd-locations.txt
+          test "${#phase8_scene_sources[@]}" -eq 1
+          test -s runtime-evidence/scene-soak-phase8/soak-sd-unverified.csv
+          cmp -- "${phase8_scene_sources[0]}" runtime-evidence/scene-soak-phase8/soak-sd-unverified.csv
           python3 tools/audit_nexium_audout_service_probes.py \
             --expected-phase 8 \
             --source runtime-evidence/scene-soak-phase8/soak-audout-probe-unverified.csv \
@@ -1173,7 +1180,7 @@ jobs:
             --clock-csv runtime-evidence/scene-soak-phase8/soak-audout-clock-unverified.csv \
             --latency-csv runtime-evidence/scene-soak-phase8/soak-audout-latency-unverified.csv \
             --slow-csv runtime-evidence/scene-soak-phase8/soak-audout-slow-unverified.csv \
-            --scene-csv runtime-evidence/scene-soak-phase8/soak-guest-optical.csv \
+            --scene-csv runtime-evidence/scene-soak-phase8/soak-sd-unverified.csv \
             --output runtime-evidence/scene-soak-phase8/phase8-original-SD-probe-audit.json
           python3 - <<'PY'
           import json
