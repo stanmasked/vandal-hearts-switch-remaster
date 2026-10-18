@@ -18,9 +18,14 @@ from tools.apply_map02_v159_native_gpu_sink import (
 
 
 def sample_hardware():
+    # v68 is ALWAYS installed before v159 by the production patch stack.
     return """void psxHwWrite32(psxRegisters *regs, u32 add, u32 value) {
     switch(add&0xffffu) {
-    case 0x1810: GPU_writeData(value); return;
+\tcase 0x1810:
+#ifdef VH_MAP02_V66_PCSX_PROBE
+\t\t(void)vh68_pcsx_gp0_mmio_observe(value);
+#endif
+\t\tGPU_writeData(value); return;
     case 0x1814: return;
     default: return;
     }
@@ -45,18 +50,27 @@ def sample_frontend():
 
 class NativeGpuDispatch159(unittest.TestCase):
     def test_pinned_gpu_dispatch_exact_source_anchor(self):
-        self.assertEqual(GPU_DISPATCH,"case 0x1810: GPU_writeData(value); return;")
+        self.assertIn("vh68_pcsx_gp0_mmio_observe(value);",GPU_DISPATCH)
+        self.assertIn("GPU_writeData(value); return;",GPU_DISPATCH)
+        self.assertIn("\\tcase 0x1810:",GPU_DISPATCH)
         hw=patch_hardware(sample_hardware())
         self.assertIn("if(vh159_sink_active) vh159_capture_sink(regs,add,value);",hw)
         self.assertIn("GPU_writeData(value); return;",hw)
+        self.assertLess(hw.index("vh68_pcsx_gp0_mmio_observe(value);"),
+                        hw.index("vh159_capture_sink(regs,add,value);"))
         self.assertLess(hw.index("vh159_capture_sink(regs,add,value);"),
                         hw.index("GPU_writeData(value); return;"))
         self.assertIn("#ifdef VH_MAP02_V66_PCSX_PROBE",hw)
         with self.assertRaises(ValueError):
             patch_hardware(hw)
+        # A stock, unpatched upstream source must not bypass v68's bridge.
         with self.assertRaises(ValueError):
             patch_hardware(sample_hardware().replace(GPU_DISPATCH,
-                "case 0x1810: GPU_writeData(value+1u); return;"))
+                "\\tcase 0x1810: GPU_writeData(value); return;"))
+        with self.assertRaises(ValueError):
+            patch_hardware(sample_hardware().replace(GPU_DISPATCH,
+                GPU_DISPATCH.replace("GPU_writeData(value);",
+                                     "GPU_writeData(value+1u);")))
 
     def test_frontend_requires_sink_and_preserves_v158_markers(self):
         front=patch_frontend(sample_frontend())
@@ -85,6 +99,12 @@ typedef struct { u32 pc,code; } psxRegisters;
 #define VH_MAP02_V66_PCSX_PROBE 1
 static unsigned gpu_calls;
 static u32 last_gpu_word;
+static unsigned bridge_calls;
+static unsigned vh68_pcsx_gp0_mmio_observe(u32 value) {
+    (void)value;
+    bridge_calls++;
+    return 0u;
+}
 static void GPU_writeData(u32 value) {
     gpu_calls++; last_gpu_word=value;
 }
@@ -93,12 +113,12 @@ int main(void){
     psxRegisters r={0x80010014u,0xad090000u};
     /* Disabled diagnostic never changes original GPU submission. */
     psxHwWrite32(&r,0x1f801810u,0xe3000000u);
-    if(gpu_calls!=1u || vh159_sink_writes() ||
+    if(gpu_calls!=1u || bridge_calls!=1u || vh159_sink_writes() ||
        vh159_sink_faults()) return 1;
     gpu_calls=0u;
     vh159_arm_gpu_sink();
     psxHwWrite32(&r,0x1f801810u,0xe3000000u);
-    if(gpu_calls!=1u || last_gpu_word!=0xe3000000u ||
+    if(gpu_calls!=1u || bridge_calls!=2u || last_gpu_word!=0xe3000000u ||
        vh159_sink_writes()!=1u || vh159_sink_faults()) return 2;
     /* Duplicate valid write must refuse exactly-one proof. */
     psxHwWrite32(&r,0x1f801810u,0xe3000000u);
