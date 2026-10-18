@@ -461,6 +461,11 @@ static int resolve_with_missing(void *ctx, unsigned program,
  */
 static int16_t next_scene_sample[64];
 static VhNativeSpu before_scene_spu, foreign_scene_spu;
+/* Independent post-switch oracle: an unmodified prior reverb snapshot
+ * with manually cleared voices, not the scene-switch API under test. */
+static VhNativeSpu oracle_scene_spu;
+static VhNativeSeq oracle_scene_seq;
+static int16_t oracle_scene_pcm[VH_AUDIO_BLOCK_FRAMES*2u];
 static int resolve_scene_reverb(void *ctx,unsigned program,unsigned note,
                                 unsigned velocity,unsigned volume,
                                 unsigned pan,VhSeqTone *tone) {
@@ -644,9 +649,38 @@ static void test_full_twenty_voice_scene_switch_detaches_bank(void) {
                    sizeof spu.reverb));
     for(unsigned i=0;i<VH_NATIVE_MUSIC_VOICES;i++)
         assert(!spu.voice[i].active && !spu.voice[i].pcm);
-    assert(vh_native_seq_advance_block(&seq)>0);
-    assert(seq.note_ons==1u && spu.voice[0].active &&
-           spu.voice[0].pcm==next_scene_sample);
+    /* Build the oracle DIRECTLY from the old, fully populated SPU.
+     * Do not use clear_voices_keep_reverb or switch_scene: this
+     * independently preserves the wet tail but releases old voices.
+     * Compare 48 mixed blocks, including the post-EOT decay interval,
+     * so equal pointer bookkeeping alone cannot prove PCM continuity. */
+    oracle_scene_spu=before_scene_spu;
+    memset(oracle_scene_spu.voice,0,sizeof oracle_scene_spu.voice);
+    oracle_scene_spu.steal_index=0u;
+    oracle_scene_spu.frames_rendered=0u;
+    assert(vh_native_seq_init(
+        &oracle_scene_seq,controls_song,sizeof controls_song,
+        &oracle_scene_spu,resolve_next_scene,&log_state,1u)==0);
+    unsigned audible_blocks=0u;
+    for(unsigned block=0u;block<48u;block++) {
+        const int actual=vh_native_seq_advance_block(&seq);
+        const int expected=vh_native_seq_advance_block(&oracle_scene_seq);
+        assert(actual>=0 && actual==expected);
+        assert(seq.note_ons==oracle_scene_seq.note_ons &&
+               seq.note_offs==oracle_scene_seq.note_offs &&
+               seq.blocks_advanced==oracle_scene_seq.blocks_advanced);
+        vh_native_spu_render(&spu,pcm,VH_AUDIO_BLOCK_FRAMES);
+        vh_native_spu_render(
+            &oracle_scene_spu,oracle_scene_pcm,VH_AUDIO_BLOCK_FRAMES);
+        assert(!memcmp(pcm,oracle_scene_pcm,sizeof pcm));
+        assert(!memcmp(&spu.reverb,&oracle_scene_spu.reverb,
+                       sizeof spu.reverb));
+        for(unsigned i=0u;i<VH_AUDIO_BLOCK_FRAMES*2u;i++)
+            if(pcm[i]!=0) { ++audible_blocks; break; }
+    }
+    assert(audible_blocks>0u && seq.note_ons==1u &&
+           seq.cycles_completed==1u &&
+           spu.frames_rendered==48u*VH_AUDIO_BLOCK_FRAMES);
 }
 
 static void test_preflight_instrument_coverage(void) {
