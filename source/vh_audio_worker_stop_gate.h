@@ -25,7 +25,7 @@ static inline int vh_audio_worker_stop_gate_continue(
         return 1;
     /* A missing clock is an unobserved timestamp, not a forged one.
      * Stopping gameplay/audio still works without diagnostic source. */
-    if (witness && now)
+    if (witness && now && !vh_audio_exit_worker_stop_read(witness))
         (void)vh_audio_exit_worker_stop_mark(witness,now());
     return 0;
 }
