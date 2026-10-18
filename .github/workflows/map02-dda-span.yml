@@ -32,6 +32,8 @@ on:
       - 'tests/test_run_map02_private_joint_capture_audit.py'
       - 'tools/prepare_map02_private_frame_pair.py'
       - 'tests/test_prepare_map02_private_frame_pair.py'
+      - 'tools/audit_map02_private_frame_repeatability.py'
+      - 'tests/test_audit_map02_private_frame_repeatability.py'
       - 'tests/test_capture_map02_live_frame_pipe.py'
       - 'tools/map02_native_frame_pipe.h'
       - 'tools/map02_native_frame_pipe.c'
@@ -100,3 +102,4 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_map02_joint_native_capture_c11.py' -v
           python3 -m unittest discover -s tests -p 'test_run_map02_private_joint_capture_audit.py' -v
           python3 -m unittest discover -s tests -p 'test_prepare_map02_private_frame_pair.py' -v
+          python3 -m unittest discover -s tests -p 'test_audit_map02_private_frame_repeatability.py' -v
