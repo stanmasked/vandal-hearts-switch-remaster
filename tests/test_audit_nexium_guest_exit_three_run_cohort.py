@@ -23,6 +23,12 @@ class MixedGuestExitProvenanceTests(unittest.TestCase):
     def setUp(self):
         self.samples=[fixture(0,raw_original=False),
                       fixture(1,raw_original=False),fixture(2)]
+        # Stage308's second historical capture includes an independent
+        # optical/guest SHA receipt. The first older Stage307 archive
+        # cannot cryptographically reverify its absent original CSV.
+        second=list(self.samples[1])
+        second[4]=audit_guest_clocks(second[1],second[2])
+        self.samples[1]=tuple(second)
         src=list(self.samples[2])
         self.stage308=audit_guest_clocks(src[1],src[2])
         src[4]=self.stage308
@@ -78,13 +84,13 @@ class MixedGuestExitProvenanceTests(unittest.TestCase):
         with self.assertRaises(TraceError):
             self.check(record=x)
 
-    def test_source_cohort_stage307_metadata_is_still_audited(self):
+    def test_second_archived_stage308_binds_guest_csv_hash(self):
         x=copy.deepcopy(self.samples)
-        source=list(x[0])
+        source=list(x[1])
         fake=copy.deepcopy(source[2])
         fake["guest_exit_csv_sha256"]="0"*64
         source[2]=fake
-        x[0]=tuple(source)
+        x[1]=tuple(source)
         with self.assertRaises(TraceError):
             self.check(samples=x)
 
