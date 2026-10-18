@@ -132,8 +132,18 @@ def patch_frontend(source: str) -> str:
         '                      " steps=3 capped=1 synthetic_only=1 original_retail=0\\n");\n'
         "            ClosePlugins();SysClose();menu_finish();plat_finish();return 0;\n"
         "        }")
-    return once(source,anchor,replacement,
-                "return immediately after true native bounded interpreter block")
+    # Earlier v125/v127 test oracles also contain the same setup phrase.
+    # Scope the replacement to v129's own block, never to an older mode.
+    header="    if(vh129_vblank_mode>=0) {"
+    if source.count(header)!=1:
+        raise ValueError("missing or ambiguous pinned v129 oracle boundary")
+    begin=source.index(header)
+    position=source.find(anchor,begin)
+    if (position<0 or "VH129SY!" not in source[begin:position]
+            or "#endif" in source[begin:position]):
+        raise ValueError("native bounded setup not inside authenticated v129 block")
+    # Permit the anchor to occur elsewhere for preserved older test modes.
+    return source[:position]+replacement+source[position+len(anchor):]
 
 
 def apply(root: Path):
