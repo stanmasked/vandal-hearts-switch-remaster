@@ -74,7 +74,7 @@ class SpanWorkflowGateTests(unittest.TestCase):
         private_build = text.split(
             "      - name: Build pinned two-word GPU and native DDA objects through original PC Make", 1
         )[1].split("      - name: Run patch generator regression tests", 1)[0]
-        self.assertIn("python3 -m tools.build_map02_private_gpu_make_overlay", private_build)
+        self.assertIn("python3 -m tools.run_map02_sealed_gpu_receipt_chain", private_build)
         self.assertIn("test_build_map02_private_gpu_make_overlay.py", private_build)
         self.assertIn('assert report["sealed_inputs"] == 6 + report["pinned_headers_checked"]', private_build)
         self.assertIn('assert report["pinned_headers_sealed"] == report["pinned_headers_checked"]',
@@ -107,7 +107,10 @@ class SpanWorkflowGateTests(unittest.TestCase):
         self.assertIn("'tests/test_build_map02_private_gpu_make_overlay.py'", pr_paths)
         self.assertIn("'tools/consume_map02_sealed_gpu_objects.py'", pr_paths)
         self.assertIn("'tools/verify_map02_linked_gpu_object.py'", pr_paths)
-        self.assertIn("python3 -m tools.verify_map02_linked_gpu_object", private_build)
+        self.assertIn("'tools/run_map02_sealed_gpu_receipt_chain.py'", pr_paths)
+        self.assertIn("'tests/test_run_map02_sealed_gpu_receipt_chain.py'", pr_paths)
+        self.assertIn('assert bundle["sealed_receipt_snapshots"] == 3', private_build)
+        self.assertIn('assert not bundle["externally_authenticated"]', private_build)
         self.assertIn('assert verified["linked_hash_verified_against_receipt"]', private_build)
         self.assertIn('assert verified["linked_bytes_sealed_before_binutils"]', private_build)
         self.assertIn("'tests/test_consume_map02_sealed_gpu_objects.py'", pr_paths)
