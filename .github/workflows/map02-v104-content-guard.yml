@@ -207,6 +207,9 @@ on:
       - 'tools/apply_map02_v166_mips_pc_gp0_vram.py'
       - 'tools/apply_map02_v167_mips_ft4_texture_vram.py'
       - 'tools/apply_map02_v168_mips_clut_uv_vram.py'
+      - 'tools/apply_map02_v169_mips_stp_e2v_vram.py'
+      - 'tests/test_map02_v169_mips_stp_e2v_vram.py'
+      - '.github/workflows/map02-v169-mips-stp-e2v-vram.yml'
       - 'tests/test_map02_v168_mips_clut_uv_vram.py'
       - '.github/workflows/map02-v168-mips-clut-uv-vram.yml'
       - 'tests/test_map02_v167_mips_ft4_texture_vram.py'
@@ -390,6 +393,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v166_mips_pc_gp0_vram.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v167_mips_ft4_texture_vram.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v168_mips_clut_uv_vram.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v169_mips_stp_e2v_vram.py' -v
           python3 -m remaster.tools.check_map02_v147_native_bounded_c --cc "${{ matrix.cc }}" \
             | grep -Fx 'VH147_COMPILED_BOUNDED_NATIVE_PASS capacity=1024 generic=1 repeated_pc=1 overflow_refused=1 atomic_mode0600=1 no_overwrite=1 original_retail=0'
           python3 -m remaster.tools.check_map02_v144_native_challenge_c --cc "${{ matrix.cc }}" \
@@ -410,7 +414,10 @@ jobs:
           git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
           git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
-          python3 -m remaster.tools.apply_map02_v168_mips_clut_uv_vram upstream-pcsx
+          python3 -m remaster.tools.apply_map02_v169_mips_stp_e2v_vram upstream-pcsx
+          grep -F 'vh169_note_stp_e2v_mips_sw(regs,mem,value)' upstream-pcsx/libpcsxcore/psxmem.c
+          grep -F 'VH169_GUEST_MIPS_STP_E2V_VRAM_PASS' upstream-pcsx/frontend/main.c
+          grep -F 'VH169_STP_E2V_MIPS_GP0_REFUSED' upstream-pcsx/frontend/main.c
           grep -F 'vh168_note_clut_mips_sw(regs,mem,value)' upstream-pcsx/libpcsxcore/psxmem.c
           grep -F 'VH168_GUEST_MIPS_CLUT_UV_VRAM_PASS' upstream-pcsx/frontend/main.c
           grep -F 'VH168_CLUT_MIPS_GP0_REFUSED' upstream-pcsx/frontend/main.c
@@ -1332,6 +1339,68 @@ jobs:
           if grep -Fq 'VH168_GUEST_MIPS_CLUT_UV_VRAM_PASS' \
               proof/private/v168-bad-clut.log; then
             echo 'VH168_BAD_FT4_CLUT_FALSE_ACCEPT_REFUSED'
+            exit 1
+          fi
+          # v169 self-authored MIPS 4/8bpp indexed texture with STP
+          # ABR0 average, ABR1 additive, palette index0 transparency
+          # and E2 vertical window. Strict GP0 source PCs/words first,
+          # then real native Unai 511 pixel STP/ABR oracle.
+          python3 -m remaster.tools.make_map02_v75_indexed_stp_e2v_exe \
+            --output proof/private/V169_SYNTHETIC.EXE
+          mkdir -m 700 proof/v169-stp-e2v-home
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v169-stp-e2v-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh169-mips-stp-e2v-vram proof/private/V169_SYNTHETIC.EXE \
+            > proof/private/v169-stp-e2v.log 2>&1 || {
+              tail -n 90 proof/private/v169-stp-e2v.log
+              exit 1
+            }
+          grep -Fx 'VH169_GUEST_MIPS_STP_E2V_VRAM_PASS gp0_words=236 gp1_words=1 a0_uploads=4 ft4=5 pixels_checked=511 stp4=16 nonstp=16 abr1=16 transparent=16 e2_vertical=16 guard=431 original_retail=0' \
+            proof/private/v169-stp-e2v.log
+          grep -Fx 'VH75_VRAM_PASS checked=511 stp4=16 nonstp=16 abr1=16 zero=16 e2v=16 guard=431' \
+            proof/private/v169-stp-e2v.log
+          # Keep the signed synthetic tag intact; mutate exactly one
+          # guest ORI producing E2 Y mask 1, converting E2 0xE2008020
+          # to 0xE2008000. Refuse at actual native MIPS MMIO provenance
+          # before falsely accrediting E2 vertical-window VRAM pixels.
+          python3 - <<'PY'
+          from pathlib import Path
+          from struct import pack
+          from remaster.tools.make_map02_v75_indexed_stp_e2v_exe import (
+              build,GP0_SEQUENCE,HEADER_SIZE,E2_VERTICAL
+          )
+          from remaster.tools.make_map02_v70_synthetic_psx_exe import ori
+          original,end,program=build()
+          assert original==Path("proof/private/V169_SYNTHETIC.EXE").read_bytes()
+          index=next(i for i,x in enumerate(GP0_SEQUENCE) if x==E2_VERTICAL)
+          assert index==225 and E2_VERTICAL==0xe2008020
+          offset=7+3*index
+          assert program[offset]==ori(9,9,0x8020)
+          corrupted=bytearray(original)
+          corrupted[HEADER_SIZE+4*offset:HEADER_SIZE+4*offset+4]=pack(
+              "<I",program[offset]^0x0020)
+          assert corrupted[0x4c:0x54]==b"VH75SYN!"
+          assert len(corrupted)==len(original)
+          destination=Path("proof/private/V169_BAD_E2V.EXE")
+          assert not destination.exists()
+          destination.write_bytes(corrupted)
+          PY
+          mkdir -m 700 proof/v169-bad-e2v-home
+          vh169_bad_rc=0
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v169-bad-e2v-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh169-mips-stp-e2v-vram proof/private/V169_BAD_E2V.EXE \
+            > proof/private/v169-bad-e2v.log 2>&1 || vh169_bad_rc=$?
+          test "$vh169_bad_rc" -eq 75
+          grep -F 'VH169_STP_E2V_MIPS_GP0_REFUSED' \
+            proof/private/v169-bad-e2v.log
+          if grep -Fq 'VH169_GUEST_MIPS_STP_E2V_VRAM_PASS' \
+              proof/private/v169-bad-e2v.log; then
+            echo 'VH169_BAD_E2V_PIXEL_FALSE_ACCEPT_REFUSED'
             exit 1
           fi
           # Retain valid signed synthetic EXE / CPU stage markers, but
@@ -2600,6 +2669,11 @@ jobs:
           report["v168_guest_indexed_textured_quads"]=4
           report["v168_indexed_clut_uv_pixels_checked"]=399
           report["v168_original_retail_map02_unverified"]=True
+          report["v169_guest_mips_gp0_words"]=236
+          report["v169_guest_gp1_reset"]=1
+          report["v169_guest_ft4_stp_e2v_polygons"]=5
+          report["v169_exact_vram_pixels_checked"]=511
+          report["v169_original_retail_map02_unverified"]=True
           report["retail_map02_gpu_rendering_verified"]=False
           Path("proof/public/v129-four-real-vblank-profiles-summary.json").write_text(
               json.dumps(report,sort_keys=True)+"\n")
