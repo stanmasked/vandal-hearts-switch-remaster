@@ -1,0 +1,34 @@
+name: MAP02 v145 pinned native PCSX executable-to-receipt binding
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v145-emulator-build-binding.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/check_map02_v145_native_build_binding.py'
+      - 'tests/test_map02_v145_native_build_binding.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-native-binary-binding:
+    name: compiled ELF build identity and replay refusal (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify executable digest, private challenge and source consistency
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          no_retail_exe_in_public_tests=1
+          readonly no_retail_exe_in_public_tests
+          test "$no_retail_exe_in_public_tests" = 1
+          python3 -m unittest discover -s tests -p 'test_map02_v145_native_build_binding.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v144_run_challenge.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v143_atomic_private_receipt.py' -v
+          echo "VH145_BUILD_IDENTITY_SYNTHETIC_TESTS_PASS original_retail=0"

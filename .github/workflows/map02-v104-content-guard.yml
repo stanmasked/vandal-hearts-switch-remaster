@@ -179,6 +179,9 @@ on:
       - 'tools/check_map02_v144_native_challenge_c.py'
       - 'tools/check_map02_v144_run_challenge.py'
       - 'tests/test_map02_v144_run_challenge.py'
+      - 'tools/check_map02_v145_native_build_binding.py'
+      - 'tests/test_map02_v145_native_build_binding.py'
+      - '.github/workflows/map02-v145-emulator-build-binding.yml'
       - '.github/workflows/map02-v144-run-challenge.yml'
       - '.github/workflows/map02-v143-atomic-private-receipt.yml'
       - '.github/workflows/map02-v142-private-mmio-receipt.yml'
@@ -295,6 +298,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v142_native_private_receipt.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v143_atomic_private_receipt.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v144_run_challenge.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v145_native_build_binding.py' -v
           python3 -m remaster.tools.check_map02_v144_native_challenge_c --cc "${{ matrix.cc }}" \
             | grep -Fx 'VH144_COMPILED_CHALLENGE_NATIVE_PASS events=19 challenge_bits=128 atomic_receipt=1 missing_and_malformed_refused=1 sidecar_replay_refused=1 unsafe_parent_refused=1 original_retail=0'
           python3 -m remaster.tools.check_map02_v143_atomic_receipt --cc "${{ matrix.cc }}" \
@@ -1488,6 +1492,12 @@ jobs:
               p.write_text(secrets.token_hex(16)+'\n')
               p.chmod(0o600)
           PY
+          test "$(git -C upstream-pcsx rev-parse HEAD)" = 8b6c163575e6ce9a0537553e0d4ed4225315955e
+          mkdir -m 700 proof/private/v145-positive-binding
+          python3 -m remaster.tools.check_map02_v145_native_build_binding prepare \
+            upstream-pcsx/pcsx proof/private/v144-expected-positive.hex \
+            proof/private/v145-positive-binding \
+            | grep -Fx 'VH145_PRIVATE_EMULATOR_BUILD_PREPARED pinned_source=1 synthetic_only=1 hashes_exported=0'
           mkdir -m 700 proof/private/v142-positive-dir
           mkdir -m 700 proof/v142-positive-home
           timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
@@ -1515,6 +1525,17 @@ jobs:
             | grep -Fx 'VH142_NATIVE_SOURCE_EXE_ELF_RECEIPT_PASS events=19 source_bytes=synthetic pc_word_address_value_matched=1 retail_map02=0 raw_trace_exported=0'
           sha256sum -c proof/private/native.sha256
           sha256sum -c proof/private/v131-same-exe.sha256
+          python3 -m remaster.tools.check_map02_v145_native_build_binding verify \
+            upstream-pcsx/pcsx proof/private/v144-expected-positive.hex \
+            proof/private/v145-positive-binding/vh145-private-emulator-build-binding.json \
+            proof/private/v142-positive-dir/vh142-interpreter-mmio.jsonl \
+            | grep -Fx 'VH145_NATIVE_BUILD_AND_RECEIPT_BOUND_PASS events=19 binary_sha256_matched=1 synthetic_exe_sha256_matched=1 challenge_matched=1 retail_map02=0 hashes_exported=0'
+          test "$(git -C upstream-pcsx rev-parse HEAD)" = 8b6c163575e6ce9a0537553e0d4ed4225315955e
+          mkdir -m 700 proof/private/v145-corrupt-binding
+          python3 -m remaster.tools.check_map02_v145_native_build_binding prepare \
+            upstream-pcsx/pcsx proof/private/v144-expected-corrupt.hex \
+            proof/private/v145-corrupt-binding \
+            | grep -Fx 'VH145_PRIVATE_EMULATOR_BUILD_PREPARED pinned_source=1 synthetic_only=1 hashes_exported=0'
           mkdir -m 700 proof/private/v142-corrupt-dir
           mkdir -m 700 proof/v142-corrupt-home
           timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
@@ -1555,6 +1576,25 @@ jobs:
             proof/private/v142-corrupt-dir/vh142-interpreter-mmio.jsonl \
             proof/private/v144-expected-corrupt.hex --expect-refusal \
             | grep -Fx 'VH144_REPLAYED_OR_CHANGED_NATIVE_RECEIPT_REJECTED raw_private_data_exported=0'
+          # A corrupted saved-word receipt may still match the same host
+          # binary and its fresh run challenge, but must NEVER be accepted
+          # as original source-consistent interpreter evidence.
+          if python3 -m remaster.tools.check_map02_v145_native_build_binding verify \
+            upstream-pcsx/pcsx proof/private/v144-expected-corrupt.hex \
+            proof/private/v145-corrupt-binding/vh145-private-emulator-build-binding.json \
+            proof/private/v142-corrupt-dir/vh142-interpreter-mmio.jsonl \
+            > proof/private/v145-corrupted-verifier.log 2>&1; then
+            echo 'VH145_CORRUPTED_NATIVE_RECEIPT_FALSE_ACCEPT_REFUSED'
+            exit 1
+          fi
+          grep -Fx 'VH145_PRIVATE_EMULATOR_BUILD_BINDING_REFUSED' \
+            proof/private/v145-corrupted-verifier.log
+          python3 -m remaster.tools.check_map02_v145_native_build_binding verify \
+            upstream-pcsx/pcsx proof/private/v144-expected-positive.hex \
+            proof/private/v145-positive-binding/vh145-private-emulator-build-binding.json \
+            proof/private/v142-positive-dir/vh142-interpreter-mmio.jsonl \
+            | grep -Fx 'VH145_NATIVE_BUILD_AND_RECEIPT_BOUND_PASS events=19 binary_sha256_matched=1 synthetic_exe_sha256_matched=1 challenge_matched=1 retail_map02=0 hashes_exported=0'
+          test "$(git -C upstream-pcsx rev-parse HEAD)" = 8b6c163575e6ce9a0537553e0d4ed4225315955e
           # The native output files remain private. Only public aggregates
           # and per-workflow statuses may enter uploaded artifacts.
           sha256sum -c proof/private/native.sha256
@@ -1591,6 +1631,8 @@ jobs:
           report["v143_no_symlink_ancestors_and_no_overwrite_verified"]=True
           report["v144_fresh_native_challenge_bound_to_source_receipt"]=True
           report["v144_cross_run_receipt_replay_and_mutation_refused"]=True
+          report["v145_pinned_native_emulator_binary_sha256_bound"]=True
+          report["v145_build_changed_or_corrupt_receipt_refused"]=True
           report["retail_map02_gpu_rendering_verified"]=False
           Path("proof/public/v129-four-real-vblank-profiles-summary.json").write_text(
               json.dumps(report,sort_keys=True)+"\n")
