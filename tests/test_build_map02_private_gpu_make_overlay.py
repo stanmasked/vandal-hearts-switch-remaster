@@ -76,7 +76,8 @@ class SealedMakeOverlayTests(unittest.TestCase):
 
     def test_compiles_two_original_make_targets_using_sealed_inputs(self):
         result = self.run_build()
-        self.assertEqual(result["sealed_inputs"], 6)
+        self.assertEqual(result["sealed_inputs"], 7)
+        self.assertEqual(result["pinned_headers_sealed"], 1)
         self.assertEqual(set(result["preprocessed_sha256"]), {"libgpu", "pc_raster"})
         self.assertEqual(result["pinned_headers_checked"], 1)
         self.assertTrue(result["staged_header_hashes_verified"])
@@ -174,23 +175,23 @@ class SealedMakeOverlayTests(unittest.TestCase):
     def test_staged_header_mutation_is_refused(self):
         check = sealed._recheck_headers
 
-        def damage(stage, digests):
+        def damage(stage, digests, files):
             header = stage / "platform/pc/src/map02_fixture.h"
-            header.chmod(0o600)
+            header.unlink()
             header.write_text("#define VH_TEST_GPU 999\n")
-            return check(stage, digests)
+            return check(stage, digests, files)
 
         with patch.object(sealed, "_recheck_headers", side_effect=damage):
-            with self.assertRaisesRegex(ValueError, "staged header changed"):
+            with self.assertRaisesRegex(ValueError, "staged header inventory changed"):
                 self.run_build("build-map02-header-staged-tamper")
 
     def test_extra_header_in_snapshot_is_refused(self):
         check = sealed._recheck_headers
 
-        def inject(stage, digests):
+        def inject(stage, digests, files):
             (stage / "platform/pc/src/unrecorded.h").write_text(
                 "#define SECRET_OVERRIDE 1\n")
-            return check(stage, digests)
+            return check(stage, digests, files)
 
         with patch.object(sealed, "_recheck_headers", side_effect=inject):
             with self.assertRaisesRegex(ValueError, "header inventory changed"):
@@ -199,14 +200,46 @@ class SealedMakeOverlayTests(unittest.TestCase):
     def test_symlinked_header_in_snapshot_is_refused(self):
         check = sealed._recheck_headers
 
-        def inject(stage, digests):
+        def inject(stage, digests, files):
             destination = stage / "platform/pc/src/unrecorded.h"
             destination.symlink_to(stage / "platform/pc/src/map02_fixture.h")
-            return check(stage, digests)
+            return check(stage, digests, files)
 
         with patch.object(sealed, "_recheck_headers", side_effect=inject):
             with self.assertRaisesRegex(ValueError, "header inventory changed"):
                 self.run_build("build-map02-symlink-header")
+
+    def test_header_memfd_cannot_be_modified_before_preprocessing(self):
+        actual_stage = sealed._stage_headers
+        attempted = []
+
+        def verify(upstream, stage, files, stack):
+            result = actual_stage(upstream, stage, files, stack)
+            path = stage / "platform/pc/src/map02_fixture.h"
+            self.assertTrue(path.is_symlink())
+            self.assertTrue(path.readlink().as_posix().startswith("/proc/self/fd/"))
+            with self.assertRaises(OSError):
+                path.write_bytes(b"#define VH_TEST_GPU 999\n")
+            attempted.append(True)
+            return result
+
+        with patch.object(sealed, "_stage_headers", side_effect=verify):
+            result = self.run_build("build-map02-immutable-header")
+        self.assertEqual(attempted, [True])
+        self.assertEqual(result["pinned_headers_sealed"], 1)
+
+    def test_header_link_redirect_during_preprocessing_rejected(self):
+        actual = sealed._recheck_headers
+
+        def redirect(stage, digests, files):
+            header = stage / "platform/pc/src/map02_fixture.h"
+            header.unlink()
+            header.symlink_to("/proc/self/fd/0")
+            return actual(stage, digests, files)
+
+        with patch.object(sealed, "_recheck_headers", side_effect=redirect):
+            with self.assertRaisesRegex(ValueError, "header link redirected"):
+                self.run_build("build-map02-header-redirect")
 
     def test_invalid_and_existing_build_directories_fail_closed(self):
         for name in ("build", "build-map02-", "build-map02-x/../y",

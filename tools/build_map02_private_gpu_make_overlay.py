@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Compile two source-pinned MAP02 backend objects from Linux sealed inputs.
 
-The original Makefile, generated Make overlay and both generated C files
-are sealed in anonymous memfd inodes before GNU Make starts. This narrows
-the audit-to-compiler pathname race for these four inputs only; headers,
-compiler/toolchain and the wider checkout are NOT execution-attested.
+The original Makefile, generated Make overlay, both generated C files and
+each pinned, source-local Git header are sealed in anonymous Linux memfd
+inodes before preprocessing. The two preprocessed C inputs are then sealed
+before object compilation. System headers, compiler/toolchain and other
+checkout inputs are NOT execution-attested.
 """
 import argparse
 from contextlib import ExitStack
@@ -89,8 +90,8 @@ def _tracked_header_blobs(upstream):
     return headers
 
 
-def _stage_headers(upstream, stage):
-    """Materialize only byte-verified, tracked public headers in a private tree."""
+def _stage_headers(upstream, stage, files, stack):
+    """Expose exact pinned header bytes only through immutable memfd symlinks."""
     digests = {}
     for relative, blob in sorted(_tracked_header_blobs(upstream).items()):
         source = upstream / relative
@@ -102,17 +103,19 @@ def _stage_headers(upstream, stage):
         content = auditor._stable_regular_bytes(source, max_bytes=HEADER_LIMIT)
         if builder.git_blob_sha1(content) != blob:
             raise ValueError("MAP02 pinned header differs from Git blob")
+        key = "header:" + relative
+        fd = _sealed_fd(content, "vh-map02-pinned-header")
+        stack.callback(os.close, fd)
+        files[key] = fd
         dest = stage / relative
         dest.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        with dest.open("xb") as stream:
-            stream.write(content)
-        dest.chmod(0o400)
+        dest.symlink_to("/proc/self/fd/" + str(fd))
         digests[relative] = hashlib.sha256(content).hexdigest()
     return digests
 
 
-def _recheck_headers(stage, digests):
-    """Reject untracked additions and symlinks, not only edited pinned files."""
+def _recheck_headers(stage, digests, files):
+    """Require an exact link inventory backed by the same sealed header FDs."""
     observed = set()
     for current, directories, filenames in os.walk(stage, followlinks=False):
         for directory in directories:
@@ -120,15 +123,23 @@ def _recheck_headers(stage, digests):
                 raise ValueError("MAP02 staged header inventory changed")
         for filename in filenames:
             file = Path(current) / filename
-            if file.is_symlink() or not file.is_file():
+            relative = file.relative_to(stage).as_posix()
+            key = "header:" + relative
+            if relative not in digests or key not in files or not file.is_symlink():
                 raise ValueError("MAP02 staged header inventory changed")
-            observed.add(file.relative_to(stage).as_posix())
+            fd = files[key]
+            if (os.readlink(file) != "/proc/self/fd/" + str(fd)
+                    or (os.stat(file).st_dev, os.stat(file).st_ino) !=
+                    (os.fstat(fd).st_dev, os.fstat(fd).st_ino)):
+                raise ValueError("MAP02 staged header link redirected")
+            observed.add(relative)
     if observed != set(digests):
         raise ValueError("MAP02 staged header inventory changed")
     for relative, digest in digests.items():
-        content = auditor._stable_regular_bytes(
-            stage / relative, max_bytes=HEADER_LIMIT)
-        if hashlib.sha256(content).hexdigest() != digest:
+        fd = files["header:" + relative]
+        if fcntl.fcntl(fd, fcntl.F_GET_SEALS) & SEALS != SEALS:
+            raise ValueError("MAP02 staged header seal invalid")
+        if hashlib.sha256(os.pread(fd, HEADER_LIMIT + 1, 0)).hexdigest() != digest:
             raise ValueError("MAP02 staged header changed during preprocessing")
 
 
@@ -203,7 +214,7 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
         with (tempfile.TemporaryDirectory(prefix="vh-map02-pinned-headers-") as headers,
               tempfile.TemporaryDirectory(prefix="vh-map02-preprocessed-") as temp):
             snapshot = Path(headers)
-            staged_headers = _stage_headers(upstream, snapshot)
+            staged_headers = _stage_headers(upstream, snapshot, files, stack)
             include_flags = ("-I" + str(snapshot / "platform/pc/include") +
                              " -I" + str(snapshot / "platform/pc/src") +
                              " -I" + str(snapshot / "include"))
@@ -214,7 +225,7 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
                 "VH_MAP02_PRIVATE_PREPROCESS_DIR=" + temp,
                 "map02-private-gpu-preprocess",
             ])
-            _recheck_headers(snapshot, staged_headers)
+            _recheck_headers(snapshot, staged_headers, files)
             preprocessed = {}
             for unit in ("libgpu", "pc_raster"):
                 source = auditor._stable_regular_bytes(
@@ -249,9 +260,10 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
         "generated_sha256": before["generated_sha256"],
         "makefile_sha256": hashlib.sha256(original_make).hexdigest(),
         "objects_sha256": hashes,
-        "sealed_inputs": 6,
+        "sealed_inputs": 6 + len(staged_headers),
         "preprocessed_sha256": preprocessed,
         "pinned_headers_checked": len(staged_headers),
+        "pinned_headers_sealed": len(staged_headers),
         "staged_header_hashes_verified": True,
         "compiled_from_sealed_preprocessor_output": True,
         "verified_source_bytes_used_for_compilation": True,
