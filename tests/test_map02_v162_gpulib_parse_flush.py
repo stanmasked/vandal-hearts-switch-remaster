@@ -39,6 +39,12 @@ static int do_cmd_buffer(struct psx_gpu *gpu, uint32_t *data, int count,
             pos++;
             continue;
           }
+          /* The genuine gpulib forwards changed E3 state to its
+           * renderer, which consumes the word. The tiny compiled
+           * fixture models that state transition without pixels. */
+          gpu->ex_regs[cmd & 7]=LE32TOH(data[pos]);
+          pos++;
+          continue;
         }
         return count-pos;
       default:
@@ -163,6 +169,9 @@ int main(void) {
        vh162_gpu_flushes() ||
        vh162_gpu_parse_faults()==0) return 12;
     if(vh162_disarm_gpu_parser()!=0) return 13;
+    /* The changed E3 was consumed as GPU state, despite correctly
+     * failing the EXACT-word proof: no stale word for the next case. */
+    if(gpu.cmd_len!=0 || gpu.ex_regs[3]!=0xe3000001u) return 18;
 
     /* Refuse stale GPU queue; an actual status preflight clears it.
      * Only THEN may the v162 observer arm, without credit for preflight. */
