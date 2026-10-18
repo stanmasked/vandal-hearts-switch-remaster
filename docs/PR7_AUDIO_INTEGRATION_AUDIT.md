@@ -62,6 +62,10 @@ page, rate phase and cumulative checksum. The mock injects repeated
 submit errors, then explicit quick-start and forced reopen events
 (including an open failure). It also checks that recovery touches no
 SEQ/SPU/rate state and delivers one logical PCM page exactly once.
+A refused device stop during the third explicit resume must leave the
+session open-but-stopped, must not call close/open/start or change recovery
+counters, and must not submit any PCM until the next explicit attempt.
+This failure is modelled in the host callback only, not on hardware.
 
 This bridge is a **host-only synthetic integration regression**, not a
 replacement for the real libnx producer or its ownership model. Do not
