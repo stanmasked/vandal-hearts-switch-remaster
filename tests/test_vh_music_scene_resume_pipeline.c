@@ -102,7 +102,9 @@ static int stop(void *opaque) {
 }
 static void close_out(void *opaque) {
     Device *d=opaque;
-    assert(!d->playing && d->opened);
+    assert(!d->playing);
+    /* Idempotent close: retry follows an already-failed open. */
+    if(!d->opened) return;
     ++d->closes;
     d->opened=0;
 }
