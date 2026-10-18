@@ -14,7 +14,7 @@ import re
 import stat
 
 from tools.capture_map02_live_frame_pipe import SCHEMA
-from tools.compare_map02_private_bgr555_frames import _object_pairs
+from tools.compare_map02_private_bgr555_frames import _object_pairs, _reject_constant
 
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 IMAGE_NAME = "process-frame.bgr555"
@@ -39,10 +39,9 @@ def _identity(info):
         "st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns"))
 
 
-def _read_private_file(root, name, *, max_bytes, exact_bytes=None):
-    path = root / name
-    fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK,
-                 dir_fd=None)
+def _read_private_file(root_fd, name, *, max_bytes, exact_bytes=None):
+    fd = os.open(name, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK,
+                 dir_fd=root_fd)
     try:
         before = os.fstat(fd)
         if (not stat.S_ISREG(before.st_mode)
@@ -59,7 +58,7 @@ def _read_private_file(root, name, *, max_bytes, exact_bytes=None):
             chunks.append(part)
             remaining -= len(part)
         if (_identity(os.fstat(fd)) != _identity(before)
-                or _identity(os.stat(path, follow_symlinks=False)) != _identity(before)):
+                or _identity(os.stat(name, dir_fd=root_fd, follow_symlinks=False)) != _identity(before)):
             raise ValueError("MAP02 private live frame file changed during replay")
         return b"".join(chunks), _identity(before)
     finally:
@@ -107,15 +106,14 @@ def replay(directory, *, executable):
         if set(os.listdir(root_fd)) != {IMAGE_NAME, RECEIPT_NAME}:
             raise ValueError("MAP02 live frame must have exact file inventory")
         raw_receipt, receipt_identity = _read_private_file(
-            root, RECEIPT_NAME, max_bytes=MAX_RECEIPT)
+            root_fd, RECEIPT_NAME, max_bytes=MAX_RECEIPT)
         if (not raw_receipt.endswith(b"\n") or b"\r" in raw_receipt
                 or b"\x00" in raw_receipt):
             raise ValueError("MAP02 live receipt is not canonical JSON")
         try:
             metadata = json.loads(raw_receipt.decode("utf-8"),
                                   object_pairs_hook=_object_pairs,
-                                  parse_constant=lambda _: (_ for _ in ()).throw(
-                                      ValueError("nonfinite JSON number")))
+                                  parse_constant=_reject_constant)
         except (UnicodeError, json.JSONDecodeError) as exc:
             raise ValueError("MAP02 live receipt JSON invalid") from exc
         if type(metadata) is not dict or set(metadata) != RECEIPT_KEYS:
@@ -148,7 +146,7 @@ def replay(directory, *, executable):
 
         expected_size = metadata["width"] * metadata["height"] * 2
         image, image_identity = _read_private_file(
-            root, IMAGE_NAME, max_bytes=MAX_BYTES, exact_bytes=expected_size)
+            root_fd, IMAGE_NAME, max_bytes=MAX_BYTES, exact_bytes=expected_size)
         image_hash = hashlib.sha256(image).hexdigest()
         if image_hash != metadata["image_sha256"]:
             raise ValueError("MAP02 live BGR555 image SHA-256 mismatch")
@@ -159,9 +157,9 @@ def replay(directory, *, executable):
         # Re-read and compare identities so a replaced receipt/image cannot
         # be accepted while an independent executable audit runs.
         recheck, same_receipt_identity = _read_private_file(
-            root, RECEIPT_NAME, max_bytes=MAX_RECEIPT)
+            root_fd, RECEIPT_NAME, max_bytes=MAX_RECEIPT)
         second_image, same_image_identity = _read_private_file(
-            root, IMAGE_NAME, max_bytes=MAX_BYTES, exact_bytes=expected_size)
+            root_fd, IMAGE_NAME, max_bytes=MAX_BYTES, exact_bytes=expected_size)
         if (recheck != raw_receipt or same_receipt_identity != receipt_identity
                 or second_image != image or same_image_identity != image_identity
                 or _identity(os.fstat(root_fd)) != _identity(state)
