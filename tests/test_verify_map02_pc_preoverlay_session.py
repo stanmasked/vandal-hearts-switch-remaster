@@ -63,7 +63,7 @@ class PcPreoverlaySessionTests(unittest.TestCase):
             self.check()
         self.fixture.base.event["present_backend_is_hires"] = False
         self.fixture.base.save_cycle()
-        self.fixture.rgbfile.write_bytes(b"")
+        self.fixture.rgbfile.write_bytes(b"\\x00")
         with self.assertRaisesRegex(ValueError, "payload length differs"):
             self.check()
 
