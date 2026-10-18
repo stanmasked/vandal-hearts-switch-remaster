@@ -172,6 +172,36 @@ class PrivateBgr555FramesTests(unittest.TestCase):
                             second["manifest_sha256"])
         self.assertEqual(second["frame"], 78)
 
+    def _swap_same_bytes_when_fd_is_read(self, name):
+        target = self.folder / name
+        original_inode = target.stat().st_ino
+        original_read = os.read
+        switched = [False]
+
+        def replace_after_fd_read(fd, count):
+            chunk = original_read(fd, count)
+            if (not switched[0] and chunk
+                    and os.fstat(fd).st_ino == original_inode):
+                replacement = self.folder / ("new-" + name)
+                replacement.write_bytes(target.read_bytes())
+                os.replace(replacement, target)
+                switched[0] = True
+            return chunk
+
+        with patch.object(diff.os, "read", side_effect=replace_after_fd_read):
+            with self.assertRaisesRegex(ValueError, "changed while reading"):
+                diff.compare(self.folder)
+        self.assertTrue(switched[0])
+
+    def test_same_bytes_candidate_inode_swap_mid_read_refused(self):
+        self._swap_same_bytes_when_fd_is_read("candidate.bgr555")
+
+    def test_same_bytes_reference_inode_swap_mid_read_refused(self):
+        self._swap_same_bytes_when_fd_is_read("reference.bgr555")
+
+    def test_same_bytes_manifest_inode_swap_mid_read_refused(self):
+        self._swap_same_bytes_when_fd_is_read("frames.json")
+
     def test_private_frame_directory_symlink_refused(self):
         alias = self.folder.parent / (self.folder.name + "-alias")
         alias.symlink_to(self.folder)
