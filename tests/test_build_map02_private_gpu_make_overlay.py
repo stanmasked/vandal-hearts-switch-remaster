@@ -488,7 +488,7 @@ class SealedMakeOverlayTests(unittest.TestCase):
         text = ("7ff00000-7ff10000 r-xp 00000000 "
                 + format(os.major(st.st_dev), "02x") + ":"
                 + format(os.minor(st.st_dev), "02x") + " "
-                + str(st.st_ino) + " " + str(library) + "\\n")
+                + str(st.st_ino) + " " + str(library) + "\n")
         self.assertEqual(_mapped_shared_objects(text, {str(library): digest}),
                          {str(library): digest})
 
@@ -504,7 +504,7 @@ class SealedMakeOverlayTests(unittest.TestCase):
         text = ("7ff00000-7ff10000 r-xp 00000000 "
                 + format(os.major(st.st_dev), "02x") + ":"
                 + format(os.minor(st.st_dev), "02x") + " "
-                + str(st.st_ino) + " " + str(library) + "\\n")
+                + str(st.st_ino) + " " + str(library) + "\n")
         with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
             _mapped_shared_objects(text, {str(library): "0" * 64})
 
@@ -520,7 +520,7 @@ class SealedMakeOverlayTests(unittest.TestCase):
         text = ("7ff00000-7ff10000 r-xp 00000000 "
                 + format(os.major(st.st_dev), "02x") + ":"
                 + format(os.minor(st.st_dev), "02x") + " "
-                + str(st.st_ino + 1) + " " + str(library) + "\\n")
+                + str(st.st_ino + 1) + " " + str(library) + "\n")
         with self.assertRaisesRegex(ValueError, "inode mismatch"):
             _mapped_shared_objects(
                 text, {str(library): hashlib.sha256(library.read_bytes()).hexdigest()})
