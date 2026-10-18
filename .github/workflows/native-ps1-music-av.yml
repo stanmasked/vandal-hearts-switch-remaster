@@ -458,3 +458,45 @@ jobs:
           name: native-ps1-music-av-seven-case-audit
           path: native-av-seven-case-audit.json
           if-no-files-found: error
+
+
+  verify-uploaded-audit:
+    name: Re-download and independently verify published AV digest index
+    runs-on: ubuntu-26.04
+    needs: [verify-published-evidence]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install offline image validator
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y python3-pil
+      - name: Download the published digest index
+        uses: actions/download-artifact@v4
+        with:
+          name: native-ps1-music-av-seven-case-audit
+          path: audit
+      - name: Download the published seven NRO images
+        uses: actions/download-artifact@v4
+        with:
+          name: native-libnx-ps1-music-av-probe
+          path: nros
+      - name: Download all seven published guest evidence bundles
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-ps1-music-av-nexium-*-evidence
+          path: published-evidence
+          merge-multiple: false
+      - name: Recompute seven scenarios and reject a tampered or extra audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find audit -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
+          test -s audit/native-av-seven-case-audit.json
+          python3 tests/verify_native_av_run_audit.py \
+            audit/native-av-seven-case-audit.json \
+            published-evidence nros --revision "$GITHUB_SHA" \
+            --github-run-id "$GITHUB_RUN_ID" \
+            --github-run-attempt "$GITHUB_RUN_ATTEMPT"
