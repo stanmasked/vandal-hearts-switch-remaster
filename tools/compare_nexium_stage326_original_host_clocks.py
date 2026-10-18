@@ -44,7 +44,10 @@ def verify_cohort(source:dict, *, expected_legacy_sha:str,
             or later.get("all_original_stage299_through_stage304_evidence_replayed") is not True
             or later.get("physical_Nintendo_Switch_audio_tested") is not False):
         raise ClockPairError("original Stage304/305 strict successful receipt missing")
-    controls=control_events(legacy)
+    try:
+        controls=control_events(legacy)
+    except ValueError as exc:
+        raise ClockPairError("original strict Stage304 legacy CSV rejected") from exc
     stage304_controls=strict.get("exit_control_snapshots")
     if not isinstance(stage304_controls,list) or len(stage304_controls)!=len(controls):
         raise ClockPairError("original strict Stage304 host controls incomplete")
