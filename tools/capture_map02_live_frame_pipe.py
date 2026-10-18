@@ -22,6 +22,7 @@ from tools.map02_linux_elf_process_image import (
     observe_live_elf_image, require_elf_image,
 )
 from tools.audit_map02_joint_gpu_frame import audit as audit_joint_gpu
+from tools.map02_linux_child_journal_fd import observe_child_gpu_journal_fd
 
 MAGIC = b"VHM2FRM1"
 HEADER = struct.Struct("<8sIII")
@@ -159,6 +160,15 @@ def capture(executable, output_dir, *, frame, width, height,
             stderr=subprocess.DEVNULL, shell=False,
         )
         observe_live_elf_image(proc.pid, fd)
+        journal_child_fd_observed = False
+        if journal_fd is not None:
+            # The joint C recorder keeps the JSONL FILE* writable and
+            # open before DrawOTag waits for the terminal stdout gate.
+            # Independently inspect the REAL child /proc fd table before
+            # sending that release, rather than trusting an env label.
+            journal_child_fd_observed = observe_child_gpu_journal_fd(
+                proc.pid, journal_fd, proc, deadline)
+            observe_live_elf_image(proc.pid, fd)
         proc.stdin.write(b"\x01")
         proc.stdin.close()
         expected = width * height * 2
@@ -208,6 +218,7 @@ def capture(executable, output_dir, *, frame, width, height,
                 "gpu_journal_pairs_verified": journal["gpu_pairs_verified"],
                 "terminal_after_vram_matched": True,
                 "gpu_journal_same_elf_launch_requested": True,
+                "child_writable_gpu_journal_fd_observed": journal_child_fd_observed,
                 "gpu_journal_writer_kernel_authenticated": False,
             })
         wrote_image = False
