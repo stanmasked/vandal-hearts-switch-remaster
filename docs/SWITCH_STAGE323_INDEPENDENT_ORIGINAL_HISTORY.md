@@ -4,7 +4,7 @@
 
 Stage320 authentic NeXium [#39154247222](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39154247222) and independent Stage321 [#39156088373](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39156088373) both succeeded. The final successful normal `audoutPlayBuffer` service call in that guest software capture lasted 28,391,093 ns and overlapped the main-thread stop request for 27,834,739 ns. That **does not** prove it is unusually slow during ordinary playback or that any sound is audible at the speakers.
 
-Stage322 introduced a fixed-size 16-entry original guest source history using the already existing software call begin/end clocks. Host SPU, C/Python, toolchain, native `audout` and integrated NRO CI passed on the corrected Stage322 branch. The source run is the **exact** NeXium workflow [#39157976877](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39157976877), whose complete runtime artifact must be successful before independent conclusions.
+Stage322 introduced a fixed-size 16-entry original guest source history using the already existing software call begin/end clocks. Host SPU, C/Python, toolchain, native `audout` and integrated NRO CI passed on the corrected Stage322 branch. The source run is the **exact** NeXium workflow [#39159226320](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39159226320), whose complete runtime artifact must be successful before independent conclusions.
 
 ## Stage323 source replay
 
