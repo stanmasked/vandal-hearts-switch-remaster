@@ -302,7 +302,70 @@ def _compiler_dynamic_evidence(driver):
         raise ValueError("MAP02 compiler shared-object inventory empty")
     summary = chr(10).join(k + " " + v for k,v in sorted(loaded.items()))
     return {"count": len(loaded),
-            "sha256": hashlib.sha256(summary.encode("utf-8")).hexdigest()}
+            "sha256": hashlib.sha256(summary.encode("utf-8")).hexdigest(),
+            "_resolved_files": loaded}
+
+
+
+def _runtime_loader_evidence(directory, driver, expected):
+    """Audit LD_DEBUG observations from the actual Make compiler processes.
+
+    Not a trusted kernel attestation: an unobserved/deliberately altered
+    loader log or a swap restored before the hash check remains possible.
+    """
+    seen = {"driver": 0, "cc1": 0, "as": 0}
+    libraries = {}
+    log_files = sorted(directory.glob("trace.*"))
+    if not log_files or len(log_files) > 256:
+        raise ValueError("MAP02 compiler runtime loader logs absent or excessive")
+    for log in log_files:
+        if not re.fullmatch(r"trace[.][0-9]+", log.name):
+            raise ValueError("MAP02 compiler runtime loader log name invalid")
+        payload = auditor._stable_regular_bytes(log, max_bytes=2 * 1024 * 1024)
+        try:
+            text = payload.decode("utf-8")
+        except UnicodeError as exc:
+            raise ValueError("MAP02 compiler runtime loader log encoding invalid") from exc
+        programs = re.findall(r"initialize program:\\s*(\\S+)", text)
+        if not programs:
+            continue  # A loader invocation without a program initializer.
+        if len(set(programs)) != 1:
+            raise ValueError("MAP02 compiler runtime program identity ambiguous")
+        name = programs[0]
+        if name == driver or (name.startswith("/")
+                              and str(Path(name).resolve(strict=True)) == driver):
+            role = "driver"
+        elif Path(name).name == "cc1":
+            role = "cc1"
+        elif Path(name).name == "as":
+            role = "as"
+        else:
+            continue  # Parent Make/shell and unrelated system utilities.
+        matches = re.findall(r"calling init:\\s*(/\\S+)", text)
+        if not matches:
+            raise ValueError("MAP02 compiler runtime mapped objects absent")
+        seen[role] += 1
+        for item in matches:
+            path = Path(item).resolve(strict=True)
+            key = str(path)
+            if key not in expected:
+                raise ValueError("MAP02 compiler runtime loaded unrecognized shared object")
+            digest = hashlib.sha256(
+                auditor._stable_regular_bytes(path, max_bytes=COMPILER_LIMIT)
+            ).hexdigest()
+            if digest != expected[key]:
+                raise ValueError("MAP02 compiler runtime shared-object hash mismatch")
+            libraries[key] = digest
+    if any(count < 1 for count in seen.values()):
+        raise ValueError("MAP02 compiler runtime process witness missing")
+    if not libraries:
+        raise ValueError("MAP02 compiler runtime shared-object witness empty")
+    joined = chr(10).join(key + " " + value for key, value in sorted(libraries.items()))
+    return {
+        "processes": seen,
+        "loaded_object_count": len(libraries),
+        "loaded_object_set_sha256": hashlib.sha256(joined.encode("utf-8")).hexdigest(),
+    }
 
 
 def _system_header_evidence(preprocessed_files, pc, stage):
@@ -391,6 +454,8 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
     compiler, initial_compiler = _compiler_evidence()
     runtime_objects = _compiler_dynamic_evidence(compiler)
     with ExitStack() as stack:
+        runtime_dir = Path(stack.enter_context(
+            tempfile.TemporaryDirectory(prefix="vh-map02-compiler-runtime-")))
         files = {}
         for name, payload in (
             ("original-make", original_make),
@@ -411,7 +476,11 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
             "REGION=us", "BUILD_DIR=" + build_dir,
             "CC=" + compiler,
         ]
-        clean_env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C"}
+        clean_env = {
+            "PATH": "/usr/bin:/bin", "LC_ALL": "C",
+            "LD_DEBUG": "libs",
+            "LD_DEBUG_OUTPUT": str(runtime_dir / "trace"),
+        }
 
         def run_make(args):
             try:
@@ -473,6 +542,8 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
                 raise ValueError("MAP02 compiler binaries changed during Make build")
             if _compiler_dynamic_evidence(compiler) != runtime_objects:
                 raise ValueError("MAP02 compiler shared objects changed during Make build")
+            runtime_loaded = _runtime_loader_evidence(
+                runtime_dir, compiler, runtime_objects["_resolved_files"])
             if _system_header_evidence(preprocessed_files, pc, snapshot) != system_headers:
                 raise ValueError("MAP02 system header dependencies changed during Make build")
     after = auditor.replay(upstream, output, manifest)
@@ -502,6 +573,10 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
         "compiler_shared_object_count": runtime_objects["count"],
         "compiler_shared_object_set_sha256": runtime_objects["sha256"],
         "compiler_shared_objects_before_after_match": True,
+        "compiler_runtime_processes_seen": runtime_loaded["processes"],
+        "compiler_runtime_loaded_object_count": runtime_loaded["loaded_object_count"],
+        "compiler_runtime_loaded_object_set_sha256": runtime_loaded["loaded_object_set_sha256"],
+        "compiler_runtime_mappings_correlated_to_resolved_files": True,
         "system_header_count": system_headers["count"],
         "system_header_set_sha256": system_headers["sha256"],
         "system_header_bytes_before_after_match": True,
