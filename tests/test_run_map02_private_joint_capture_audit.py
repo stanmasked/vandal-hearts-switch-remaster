@@ -61,6 +61,7 @@ class PrivateJointOneShotAuditTests(unittest.TestCase):
         self.assertEqual(result["frame"], 123)
         self.assertEqual(result["gpu_journal_pairs_verified"], 1)
         self.assertTrue(result["two_full_independent_private_replays_equal"])
+        self.assertTrue(result["private_frame_and_journal_inodes_stable_through_replays"])
         self.assertEqual(result["terminal_gpu_after_vram_sha256"],
                          result["terminal_bgr555_sha256"])
         self.assertTrue(result["child_writable_gpu_journal_fd_observed"])
@@ -99,23 +100,43 @@ class PrivateJointOneShotAuditTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
                 self.run_capture()
 
-    def test_same_byte_gpu_log_inode_replacement_after_capture_refused(self):
-        original_capture = joint_runner.capture
-        def tamper(*args, **kwargs):
-            receipt = original_capture(*args, **kwargs)
-            filename = self.journal / "gpu-native-events.jsonl"
-            replacement = self.journal / "fresh-log.jsonl"
-            replacement.write_bytes(filename.read_bytes())
-            replacement.chmod(0o600)
-            os.replace(replacement, filename)
-            return receipt
-        # Independent offline journal replay only records inode history
-        # inside each audit, not across the ended ELF launch. In this
-        # orchestration the image bytes and journal hash still agree,
-        # so do not misrepresent this as a witnessed rejection.
-        with patch.object(joint_runner, "capture", side_effect=tamper):
-            result = self.run_capture()
-        self.assertFalse(result["gpu_journal_writer_kernel_authenticated"])
+    def test_same_byte_gpu_log_inode_replacement_between_replays_refused(self):
+        original_replay = joint_runner.replay
+        calls = [0]
+        def replace_after_first(*args, **kwargs):
+            report = original_replay(*args, **kwargs)
+            calls[0] += 1
+            if calls[0] == 1:
+                filename = self.journal / "gpu-native-events.jsonl"
+                replacement = self.journal / "fresh-log.jsonl"
+                replacement.write_bytes(filename.read_bytes())
+                replacement.chmod(0o600)
+                os.replace(replacement, filename)
+            return report
+        with patch.object(joint_runner, "replay",
+                          side_effect=replace_after_first):
+            with self.assertRaisesRegex(ValueError, "files changed between replays"):
+                self.run_capture()
+        self.assertEqual(calls[0], 1)
+
+    def test_same_byte_frame_inode_replacement_between_replays_refused(self):
+        original_replay = joint_runner.replay
+        calls = [0]
+        def replace_after_first(*args, **kwargs):
+            report = original_replay(*args, **kwargs)
+            calls[0] += 1
+            if calls[0] == 1:
+                filename = self.output / "process-frame.bgr555"
+                replacement = self.output / "fresh-frame.bgr555"
+                replacement.write_bytes(filename.read_bytes())
+                replacement.chmod(0o600)
+                os.replace(replacement, filename)
+            return report
+        with patch.object(joint_runner, "replay",
+                          side_effect=replace_after_first):
+            with self.assertRaisesRegex(ValueError, "files changed between replays"):
+                self.run_capture()
+        self.assertEqual(calls[0], 1)
 
     def test_journal_bytes_changed_after_capture_refused(self):
         original_capture = joint_runner.capture
