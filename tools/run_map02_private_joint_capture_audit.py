@@ -78,25 +78,37 @@ def _session_inode_witness(output_dir, gpu_journal_dir, *,
         try:
             first = os.fstat(fd)
             if (not stat.S_ISDIR(first.st_mode)
+                    or first.st_uid != os.getuid()
                     or stat.S_IMODE(first.st_mode) & 0o077):
-                raise ValueError("MAP02 two-pass directory is not private")
+                raise ValueError("MAP02 two-pass directory is not owner-private")
             names = set(os.listdir(fd))
             if ((expected is not None and names != expected)
                     or not names or len(names) > 129):
                 raise ValueError("MAP02 private two-pass inventory invalid")
-            identities = []
-            for name in sorted(names):
-                if name in ("", ".", "..") or "/" in name or "\\" in name:
-                    raise ValueError("MAP02 private two-pass filename invalid")
-                state = os.stat(name, dir_fd=fd, follow_symlinks=False)
-                if (not stat.S_ISREG(state.st_mode)
-                        or stat.S_IMODE(state.st_mode) != 0o600
-                        or state.st_nlink != 1):
-                    raise ValueError("MAP02 private two-pass file not owner-private")
-                identities.append((
-                    name, state.st_dev, state.st_ino, state.st_mode,
-                    state.st_nlink, state.st_size,
-                    state.st_mtime_ns, state.st_ctime_ns))
+            def inspect_inventory():
+                identities = []
+                for name in sorted(names):
+                    if name in ("", ".", "..") or "/" in name or "\\" in name:
+                        raise ValueError("MAP02 private two-pass filename invalid")
+                    state = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                    if (not stat.S_ISREG(state.st_mode)
+                            or state.st_uid != os.getuid()
+                            or stat.S_IMODE(state.st_mode) != 0o600
+                            or state.st_nlink != 1):
+                        raise ValueError("MAP02 private two-pass file not owner-private")
+                    identities.append((
+                        name, state.st_dev, state.st_ino, state.st_uid,
+                        state.st_mode, state.st_nlink, state.st_size,
+                        state.st_mtime_ns, state.st_ctime_ns))
+                return tuple(identities)
+
+            # Stat every name twice through the SAME held directory FD.
+            # A concurrent modification of a nonterminal GPU snapshot can
+            # otherwise escape a one-pass stat inventory even if no bytes
+            # are ultimately leaked into the digest-only report.
+            identities = inspect_inventory()
+            if inspect_inventory() != identities:
+                raise ValueError("MAP02 private two-pass file identity changed during inventory")
             last = os.fstat(fd)
             routed = os.stat(path, follow_symlinks=False)
             def dir_id(info):
@@ -106,7 +118,7 @@ def _session_inode_witness(output_dir, gpu_journal_dir, *,
                     or dir_id(first) != dir_id(routed)
                     or set(os.listdir(fd)) != names):
                 raise ValueError("MAP02 private two-pass directory changed")
-            witness.append((dir_id(first), tuple(identities)))
+            witness.append((dir_id(first), identities))
         finally:
             os.close(fd)
     return tuple(witness)
