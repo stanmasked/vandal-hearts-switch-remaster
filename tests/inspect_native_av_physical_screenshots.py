@@ -70,6 +70,11 @@ def observe_frame(frame):
             raise ValueError(label + " is blue without any event strokes")
         if states[label] == "yellow" and tallies[label]:
             raise ValueError(label + " is yellow despite event strokes")
+    # A paired foreground return cannot outnumber backgrounds in the
+    # instrumented focus state machine. For saturated counts (5 means
+    # 5+), the precise order is unknown and this check is inconclusive.
+    if tallies["B"] < 5 and tallies["F"] > tallies["B"]:
+        raise ValueError("foreground tally exceeds background tally")
     if states["P"] == "blue" and (
         states["B"] != "blue" or states["F"] != "blue"
     ):
