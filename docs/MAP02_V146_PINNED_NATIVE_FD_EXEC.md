@@ -1,0 +1,19 @@
+# MAP02 v146 — execute the verified PCSX ELF *inode* instead of a pathname
+
+Stacked on [v145 Draft PR #137](https://github.com/stanmasked/vandal-hearts-switch-remaster/pull/137), verified **39/39** workflows successful.
+
+v145 records SHA-256 of the host PCSX executable **before and after** observing a protected 19-event synthetic-MIPS private GPU/DMA trace. That checks build identity but leaves an important time-of-check/time-of-use gap: `execve("upstream-pcsx/pcsx",...)` must resolve a pathname *again*, and a symlink or inode replacement between the preparation and launch might execute the wrong build even when bytes afterward appear identical.
+
+v146 adds the opt-in **host-only** `tools/run_map02_v146_verified_fd_native.py`:
+
+- Recheck v145's separately prepared 0600 private build manifest against the pinned native Linux PCSX ELF, independent challenge and independent v129 synthetic source bytes.
+- Use no-symlink, descriptor-walk opening of the actual host ELF. Read **all executable bytes twice from the same fd**, check regular-file ownership/mode/link count, inode/ctime/mtime stability, and compare SHA-256 to the pre-run manifest.
+- Keep that exact fd open and launch using Linux's `/proc/self/fd/N` and Python `subprocess.run(..., executable=..., pass_fds=(fd,))`. The **kernel executes the opened verified inode**, not a second lookup of the source path. Preserve conventional `argv[0]` for the native program. No shell interpolation is used for the executable or emulator arguments.
+- Send host stdout/stderr to a new, exclusive mode-0600 file inside a dirfd-validated private 0700 directory, not to public CI. The launcher emits only `VH146_VERIFIED_FD_NATIVE_LAUNCH_PASS` or a generic `VH146_VERIFIED_FD_NATIVE_LAUNCH_REFUSED`.
+- After the child exits successfully, recheck **the same pinned fd** and separately reopen the visible path, refusing if **device/inode** changed even when the substitute has identical SHA-256. Recheck the private manifest and challenge. The independent v145/v144 verifiers must still accept only the source-bound positive trace and refuse a deliberately corrupted saved-word record.
+- The CLI is deliberately restricted to the previously tested **synthetic-only** v129 mode with the v138–v142 trace flags and the generated source-authored private PS-X EXE; it does not allow user-supplied retail PS-X arguments. Generic synthetic-host unit tests invoke its Python helper with a compiled Linux ELF, not a game.
+- A deterministic race test replaces the visible executable pathname **after the checked fd opens and before subprocess exec**. It proves the older inode executes, but the result is correctly marked refused because the final pathname no longer identifies the prepared binary. A second test replaces the pathname with **the same binary bytes but a new inode**; this too must refuse. Other negative tests cover changed nonce/manifest, log overwrite, symlinked/mutable directories, ELF symlink, weak permissions, malformed arguments and timeout bounds.
+
+Both GCC and Clang standalone jobs compile an independent synthetic host ELF and exercise these cases. The pinned full native GCC/Clang PCSX ReARMed CI uses this fd-backed launcher for the existing two v142 private positive/corrupt-journal experiments, and retains five v129 four-genuine-VBlank/three-DMA2/five-Unai profiles and every v138–v145 source/nonce/receipt verification. Only public summary artifacts leave CI, never private MIPS event words or captured logs.
+
+**Scope:** The kernel using a checked fd is stronger evidence of **which host ELF was launched**, but cannot prove a malicious emulator reported truthful MIPS events, and is not a digital signature, reproducible build, original retail MAP02 execution, physical PS1 comparison, or Nintendo Switch HD parity. No retail game asset is uploaded or executed in public CI; `main` remains untouched.
