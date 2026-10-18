@@ -56,19 +56,47 @@ def _read_exact(fd, count):
     return b"".join(parts)
 
 
-def read_private_exe(path):
-    """Same-inode, two-pass bounded private read; no path or hashes in output."""
+def _open_private_exe_dirfd(path):
+    """Walk each directory by a no-follow fd, never resolving links as text.
+
+    Reject .. rather than normalize it: there is no reason for a private
+    original PS-X EXE witness to cross above its supplied directory root.
+    All descriptors are closed on every failed component or successful open.
+    """
+    required=("O_NOFOLLOW","O_DIRECTORY","O_CLOEXEC","O_NONBLOCK","O_NOCTTY")
+    if not all(hasattr(os,name) for name in required):
+        raise Refused("private PS-X EXE safe descriptor flags unavailable")
     try:
-        # Never wait for a writer on an attacker-supplied FIFO, or acquire a
-        # controlling terminal from a character device. O_NONBLOCK is ignored
-        # for normal regular-file reads; the existing fstat test still refuses
-        # anything that is not a single-link private regular file.
-        fd = os.open(Path(path), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) |
-                     getattr(os, "O_CLOEXEC", 0) |
-                     getattr(os, "O_NONBLOCK", 0) |
-                     getattr(os, "O_NOCTTY", 0))
+        raw=os.fspath(path)
+    except (TypeError,ValueError):
+        raise Refused("invalid private PS-X EXE input path") from None
+    if type(raw) is not str or not raw or "\0" in raw:
+        raise Refused("invalid private PS-X EXE input path")
+    absolute=raw.startswith("/")
+    components=[part for part in raw.split("/") if part]
+    if not components or any(part in (".","..") for part in components):
+        raise Refused("private PS-X EXE path traversal refused")
+    dirflags=os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC
+    fileflags=(os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC|
+               os.O_NONBLOCK|os.O_NOCTTY)
+    directory=-1
+    try:
+        directory=os.open("/" if absolute else ".",dirflags)
+        for part in components[:-1]:
+            nextfd=os.open(part,dirflags,dir_fd=directory)
+            os.close(directory)
+            directory=nextfd
+        return os.open(components[-1],fileflags,dir_fd=directory)
     except OSError:
-        raise Refused("private PS-X EXE cannot be safely opened") from None
+        raise Refused("private PS-X EXE directory or file safely inaccessible") from None
+    finally:
+        if directory>=0:
+            os.close(directory)
+
+
+def read_private_exe(path):
+    """Same-inode, two-pass bounded private read via no-symlink directory FDs."""
+    fd=_open_private_exe_dirfd(path)
     try:
         st = os.fstat(fd)
         if (not stat.S_ISREG(st.st_mode) or st.st_uid != os.geteuid() or
