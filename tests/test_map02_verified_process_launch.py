@@ -374,6 +374,89 @@ int main(int argc, char **argv) {
                     build_bundle_dir=self.handoff.parent / "private-bundle")
         self.assertFalse((self.handoff / RECEIPT).exists())
 
+    def test_full_prelaunch_gate_requires_both_paths_and_cycle_rgb24(self):
+        source = self.handoff.parent / "source-full-layout"
+        preview = self.handoff.parent / "preview-full-layout"
+        cycle = self.handoff.parent / "cycle-full-layout"
+        rgb = self.handoff.parent / "rgb-full-layout"
+        for item in (source, preview, cycle, rgb):
+            item.mkdir(mode=0o700)
+        common = dict(upstream=self.upstream, x=10, y=20, timeout=8)
+        cases = (
+            (dict(source_capture_dir=source), "both source and preview"),
+            (dict(native_preview_dir=preview), "both source and preview"),
+            (dict(source_capture_dir=source, native_preview_dir=preview),
+             "requires cycle and RGB24"),
+            (dict(source_capture_dir=source, native_preview_dir=preview,
+                  cycle_dir=cycle), "requires cycle and RGB24"),
+        )
+        with patch("tools.map02_verified_process_launch.subprocess.Popen") as spawn:
+            for options, reason in cases:
+                with self.subTest(options=tuple(options)):
+                    with self.assertRaisesRegex(ValueError, reason):
+                        launch_observed_pc(
+                            self.handoff, self.native, self.scoped,
+                            self.binary, self.owned, **common, **options)
+            spawn.assert_not_called()
+
+    def test_full_prelaunch_gate_checks_all_seven_folders_before_exec(self):
+        source = self.handoff.parent / "source-full-guard"
+        preview = self.handoff.parent / "preview-full-guard"
+        cycle = self.handoff.parent / "cycle-full-guard"
+        rgb = self.handoff.parent / "rgb-full-guard"
+        for item in (source, preview, cycle, rgb):
+            item.mkdir(mode=0o700)
+        common = dict(
+            upstream=self.upstream, x=10, y=20, timeout=8,
+            cycle_dir=cycle, pc_preoverlay_dir=rgb,
+            source_capture_dir=source, native_preview_dir=preview)
+        # Ensure that a malformed preview/source pair is rejected before
+        # any proprietary binary can be executed.
+        with patch("tools.map02_verified_process_launch.subprocess.Popen") as spawn:
+            with self.assertRaisesRegex(ValueError, "overlap"):
+                launch_observed_pc(
+                    self.handoff, self.native, self.scoped,
+                    self.binary, self.owned, **{
+                        **common, "native_preview_dir": cycle})
+            spawn.assert_not_called()
+        # For the correct seven paths, the gate must be called before ELF
+        # checks; a fake unverified executable still cannot run.
+        with (patch(
+                "tools.check_map02_private_launch_layout.inspect_private_launch_layout",
+                return_value={"prelaunch_layout_ready": True}) as inspected,
+              patch("tools.check_map02_cycle_elf.audit_cycle_elf",
+                    side_effect=ValueError("synthetic ELF not a full game")),
+              patch("tools.map02_verified_process_launch.subprocess.Popen") as spawn):
+            with self.assertRaisesRegex(ValueError, "not a full game"):
+                launch_observed_pc(
+                    self.handoff, self.native, self.scoped,
+                    self.binary, self.owned, **common)
+            inspected.assert_called_once_with(
+                source, self.native, self.scoped, self.handoff,
+                cycle, preview, rgb)
+            spawn.assert_not_called()
+        self.assertFalse((self.handoff / RECEIPT).exists())
+
+    def test_full_prelaunch_gate_never_accepts_false_ready_report(self):
+        source = self.handoff.parent / "source-layout-false"
+        preview = self.handoff.parent / "preview-layout-false"
+        cycle = self.handoff.parent / "cycle-layout-false"
+        rgb = self.handoff.parent / "rgb-layout-false"
+        for item in (source, preview, cycle, rgb):
+            item.mkdir(mode=0o700)
+        with (patch(
+                "tools.check_map02_private_launch_layout.inspect_private_launch_layout",
+                return_value={"prelaunch_layout_ready": False}),
+              patch("tools.map02_verified_process_launch.subprocess.Popen") as spawn):
+            with self.assertRaisesRegex(ValueError, "not verified"):
+                launch_observed_pc(
+                    self.handoff, self.native, self.scoped,
+                    self.binary, self.owned, upstream=self.upstream,
+                    x=10, y=20, timeout=8, cycle_dir=cycle,
+                    pc_preoverlay_dir=rgb,
+                    source_capture_dir=source, native_preview_dir=preview)
+            spawn.assert_not_called()
+
     def test_opt_in_cycle_requires_private_empty_directory(self):
         cycle = self.handoff.parent / "cycle-launch"
         cycle.mkdir(mode=0o700)
