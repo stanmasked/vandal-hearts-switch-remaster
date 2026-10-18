@@ -525,3 +525,32 @@ It cannot detect every possible concurrent modification or an inode
 replacement that occurred before the first post-capture audit; only
 the strict live launch gate and within-audit checks address that
 earlier window. HD replacement remains disabled.
+
+### Publication-time inode binding (same-launch held descriptors)
+
+A new `post_publish_witness` callback is available internally on the
+private Linux ELF launcher. After successfully writing and `fsync`ing
+the exact private BGR555 frame and receipt, and **before** the original
+held frame and GPU-journal directory FDs are closed, the launcher calls
+the callback with **those FDs**, never new path-derived replacements.
+The one-command private runner uses them to pin both directory inodes
+and all owner-private file identities in memory, then requires the
+entire inventory to stay identical after the launcher returns, after
+the first full native replay, and after the second replay.
+
+This closes a same-byte file replacement window **between successful
+capture publication and the first offline replay**. The callback is
+optional for legacy launcher users, but is mandatory in the new
+two-replay wrapper. A callback exception makes the launcher remove
+the just-published BGR555 image and receipt, rather than accepting
+an unwitnessed launch. Synthetic tests swap same-byte GPU journal,
+frame and receipt inodes immediately after capture returns, omit the
+callback, check that the callback receives real held directory FDs,
+and force a callback error to verify image/receipt rollback.
+
+The identity witness is only a local process-memory snapshot; it
+cannot authenticate the executable's game resources or prove that
+all GPU journal bytes were written by that child. No inode numbers,
+directory paths, raw pixels or per-event data are emitted in the
+public summary. HD substitution and original PS1 fidelity assertions
+remain disabled.
