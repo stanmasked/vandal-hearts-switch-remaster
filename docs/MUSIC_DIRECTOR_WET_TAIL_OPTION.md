@@ -78,6 +78,13 @@ requires divergent post-switch **PCM16 samples**, not merely divergent
 reverb state. Previous sample values in each resampler are
 channel-audio data, not timing invariants.
 
+The existing rapid gameplay mailbox stress now runs in **both** legacy
+and opt-in modes: 3,200 blocks each, including 100,000 competing desired
+scene updates, deferred requests during active fades, continuous 48-kHz
+resampler timing and forced detach after playback. This probes the same
+music scene scheduler under both configurations without adding a new
+source-asset dependency.
+
 A separate director-level synthetic PCM FIFO regression also prepares a
 full 512-frame page from the outgoing cue, makes a non-silent opt-in cue
 change, and verifies the already-queued page remains byte-identical and
