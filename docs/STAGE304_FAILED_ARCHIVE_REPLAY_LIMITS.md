@@ -1,44 +1,64 @@
-# Stage304 failure — original run vs downloaded archive
+# Stage304 prior failed NeXium: archive vs original host-control source
 
-The original Stage322 NeXium workflow
-[39157976877](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39157976877)
-**failed** at the pre-existing Stage304 host Plus-control PCM evidence
-step. The guest audout service behavior must **not** be diagnosed
-from that failure alone.
+Original Stage322 NeXium
+[run 39157976877](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39157976877)
+**failed** at pre-existing Stage304 buffered host PCM snapshot validation.
+This by itself does not identify an audout/SPU, sound quality, DAC or
+speaker problem.
 
-The first read-only archived replay
-[39160065284](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39160065284)
-refused the source because a required pinned report was not an
-existing regular file **in the downloaded artifact**. That message
-does not establish that the same report was missing when the original
-NeXium job executed: failed-workflow artifacts can be incomplete or
-laid out differently from the live workspace. Treat the original
-in-run cause as **not established**, not as proven audio failure,
-host recording failure, game defect or user-input timing issue.
+## Exact progression of original-source postmortem
 
-The revised read-only postmortem in
-`.github/workflows/diagnose-stage304-original-archive.yml`:
+1. Initial [archive replay #39160065284](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39160065284)
+   mistakenly assumed its downloaded artifact extracted directly to
+   the root of the requested output directory. It reported every
+   pinned source missing. **That was a layout/locator error**, not
+   evidence that all 12 source files were lost or were absent during
+   the original execution.
+2. The corrected [replay #39162119688](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39162119688)
+   searched the archive's nested paths, required exactly one safe
+   regular file per pinned input, and found **all 12 inputs with
+   no duplicates**. The independent strict Stage304 original-source
+   check still rejected the archived evidence.
+3. [Replay #39162820354](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39162820354)
+   reported the exact archived source failure invariant:
+   `VirtualPcmEvidenceError: nonmonotone exit-control snapshots`.
+   This means at least one of two events occurred between archived
+   adjacent Plus-control snapshots: PCM file length decreased, OR
+   host epoch milliseconds did not strictly increase.
+   The original run's actual live failure **is not established as
+   this identical cause**, since the archived replay is a separate
+   audit of stored files.
+4. The new source classifier
+   `tools/classify_nexium_stage304_exit_control_order.py`
+   independently inspects ONLY the original small host-control CSV,
+   reporting adjacent file-size **deltas** and host-millisecond
+   **deltas**. It does not expose absolute host epoch values, dump
+   audio, or alter the strict Stage304 acceptance criteria.
+   Seven synthetic negative/positive cases are included; new
+   archival CI is pending.
 
-- Enumerates the **exact 12 original Stage304 pinned input paths**
-  inside the downloaded failed-run archive, recording existence
-  and byte sizes, **not audio contents**.
-- If any input is absent, reports `ARCHIVE_INCOMPLETE_NO_FULL_REPLAY`
-  and does not pretend to reproduce the original in-run audit.
-- If all sources exist, reruns the **unchanged strict Stage304 source
-  checker**, records whether the archived replay passes or refuses,
-  and explicitly distinguishes that outcome from the cause of the
-  original workflow's failure.
-- Publishes only a compact JSON availability/replay classification,
-  never raw PCM, retail soundtrack, game data or keys.
+## Strict separation of evidence
 
-This diagnostic does **not** change `audout`, SPU, game logic or the
-Stage304 validation/acceptance rules.
+The postmortem workflow
+`.github/workflows/diagnose-stage304-original-archive.yml`
+has no authority to turn the old **failed** run into success. It
+requires original pinned source inventory before strict re-audit;
+missing or ambiguous inputs never count as a valid source replay.
+It saves only a compact diagnostic JSON classification, **never raw
+PCM/music**, PS1 game data, keys or firmware.
 
-A later original Stage322 NeXium run
-[39159226320](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39159226320)
-completed **successfully**, including Stage304 and the bounded normal
-PlayBuffer history. Independent Stage323
-[39159251998](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39159251998)
-replayed the later **real original guest CSV bytes** and optical CRC
-successfully. That later success does not retroactively change the
-failed status of 39157976877.
+Later original Stage322 NeXium
+[run 39159226320](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39159226320)
+did **pass** Stage304 as well as the original bounded 16-call software
+history. Independent Stage323
+[run 39159251998](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39159251998)
+replayed its original guest CSV bytes and CRC optical source successfully.
+Stage324 [NeXium run 39162251380](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39162251380)
+and separate
+[source replay 39162959331](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39162959331)
+also succeeded, establishing a **second original, distinct** software
+call-history cohort.
+
+No changes were made to SPU synthesis, PCM buffer content, audout
+scheduling, gameplay, or physical Switch audio claims in this source
+postmortem.
