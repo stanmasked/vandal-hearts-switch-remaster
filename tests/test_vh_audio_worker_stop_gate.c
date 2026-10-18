@@ -71,8 +71,10 @@ static void test_null_mailbox_fails_closed(void) {
     clock_calls=0;
     synthetic_now=333;
     assert(vh_audio_worker_stop_gate_continue(NULL,&w,counted_now)==0);
-    assert(clock_calls==1u);
-    assert(vh_audio_exit_worker_stop_read(&w)==333);
+    /* A nonexistent mailbox is NOT an observed running->stopped
+     * transition, so never manufacture a source timestamp. */
+    assert(clock_calls==0u);
+    assert(vh_audio_exit_worker_stop_read(&w)==0);
 }
 int main(void) {
     test_audio_running_has_no_clock_or_witness_writes();
