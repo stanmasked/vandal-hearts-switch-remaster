@@ -17,8 +17,17 @@ from .make_map02_v121_mips_gp0_return_exe import (
 
 GPU_ENTRY = "void GPUwriteData(uint32_t data)\n{"
 GPU_APPEND = "  vh161_observe_gpu_queue(data);\n"
-PHASE = "        for(unsigned int phase=0;phase<5u;phase++){\n"
-BEFORE_FREEZE = "            GPUFreeze_t freeze_state={0};\n"
+PHASE = ("        vh115_enable(1);\n"
+         "        unsigned int readbacks=0;\n"
+         "        for(unsigned int phase=0;phase<5u;phase++){\n")
+BEFORE_FREEZE = (
+    "            if(psxRegs.pc!=vh121_stops[phase+1u] ||\n"
+    "               marker!=vh121_marks[phase+1u]){\n"
+    '                SysPrintf("VH121_MIPS_PHASE_REFUSED phase=%u\\n",phase);\n'
+    "                ClosePlugins();SysClose();menu_finish();plat_finish();return 37;\n"
+    "            }\n"
+    "            GPUFreeze_t freeze_state={0};\n"
+)
 END = '        SysPrintf("VH121_MIPS_GP0_RETURN_PASS stages=6'
 
 
