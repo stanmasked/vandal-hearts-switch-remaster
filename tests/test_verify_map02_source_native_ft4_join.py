@@ -121,6 +121,9 @@ class SourceToNativeFt4JoinTests(unittest.TestCase):
         fixture.word(changed, 0, 0, 0x801f)
         self.override_snapshots[3] = bytes(changed)
         self.override_snapshots[4] = bytes(changed)
+        self.override_snapshots[5] = bytes(changed)
+        # A later FT4 retains the modified framebuffer without an extra
+        # write; only the deliberately clipped draw must violate coverage.
         self.save()
         with self.assertRaisesRegex(ValueError, "geometry entirely outside"):
             verify_join(self.source, self.native)
