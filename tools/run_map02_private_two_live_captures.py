@@ -22,8 +22,34 @@ CAPTURE_SCHEMA = "vh.map02.live-child-pipe-bgr555-gpu.v1"
 AUDIT_SCHEMA = "vh.map02.private-two-elf-gpu-frame-repeatability.v1"
 
 
+def _require_bit_exact_gpu_timeline(report):
+    """Accept only bit-exact *independent* journals and every GPU snapshot.
+
+    Terminal pixel equality alone is insufficient: earlier native VRAM
+    snapshots may diverge and reconverge. Identical JSONL event records
+    alone are likewise insufficient: native VRAM bytes can differ.
+    """
+    if (type(report) is not dict
+            or report.get("repeated_full_gpu_vram_snapshot_sequence_identical") is not True
+            or report.get("repeated_native_frame_pixels_identical") is not True
+            or report.get("repeated_gpu_final_vram_identical") is not True
+            or report.get("repeated_gpu_event_journal_identical") is not True
+            or type(report.get("gpu_vram_snapshots_compared")) is not int
+            or report["gpu_vram_snapshots_compared"] < 2
+            or type(report.get("unmatched_gpu_vram_snapshots")) is not int
+            or report["unmatched_gpu_vram_snapshots"] != 0
+            or type(report.get("different_gpu_vram_snapshots_in_common_prefix")) is not int
+            or report["different_gpu_vram_snapshots_in_common_prefix"] != 0
+            or type(report.get("different_bgr555_pixels")) is not int
+            or report["different_bgr555_pixels"] != 0
+            or type(report.get("gpu_vram_equal_different_state_transitions")) is not int
+            or report["gpu_vram_equal_different_state_transitions"] != 0):
+        raise ValueError("MAP02 independent native GPU timelines are not bit-exact")
+
+
 def run(executable, first_frame, first_journal, second_frame, second_journal,
-        *, frame, executable_sha256, args=(), timeout=10):
+        *, frame, executable_sha256, args=(), timeout=10,
+        require_identical_gpu_timeline=False):
     """Launch the same SHA-pinned ELF twice and audit independent GPU captures.
 
     Requires four pre-existing, distinct, empty owner-private directories.
@@ -35,6 +61,7 @@ def run(executable, first_frame, first_journal, second_frame, second_journal,
             or len(executable_sha256) != 64
             or any(c not in "0123456789abcdef" for c in executable_sha256)
             or type(timeout) not in (int, float) or not 0 < timeout <= 60
+            or type(require_identical_gpu_timeline) is not bool
             or not isinstance(args, (tuple, list))
             or any(type(arg) is not str or "\x00" in arg for arg in args)):
         raise ValueError("MAP02 two-run launch arguments invalid")
@@ -107,11 +134,19 @@ def run(executable, first_frame, first_journal, second_frame, second_journal,
         verify_all_published()
         for fd, path, identity in zip(opened, folders, identities):
             _check_directory(fd, path, identity)
+        # In normal mode a different but independently replay-verified
+        # native GPU sequence is a *diagnostic*, not a capture failure.
+        # The opt-in gate requires every intermediate VRAM snapshot, the
+        # terminal frame AND the separate native GPU event JSONL to match.
+        if require_identical_gpu_timeline:
+            _require_bit_exact_gpu_timeline(report)
         return {
             **report,
             "schema": SCHEMA,
             "same_elf_arguments_used_for_both_launches": True,
             "two_native_elf_captures_and_complete_replays_verified": True,
+            "strict_gpu_timeline_match_required": require_identical_gpu_timeline,
+            "strict_gpu_timeline_match_verified": require_identical_gpu_timeline,
             "original_ps1_reference_authenticated": False,
             "retail_gameplay_authenticated": False,
             "hd_replacement_authorized": False,
@@ -132,13 +167,17 @@ def main():
     p.add_argument("--frame", type=int, required=True)
     p.add_argument("--timeout", type=int, default=10)
     p.add_argument("--elf-arg", action="append", default=[])
+    p.add_argument("--require-identical-gpu-timeline", action="store_true",
+                   help="reject independently valid but different GPU event/"
+                        "VRAM snapshot/terminal frame sequences")
     ns = p.parse_args()
     try:
         report = run(
             ns.executable, ns.first_frame, ns.first_journal,
             ns.second_frame, ns.second_journal,
             frame=ns.frame, executable_sha256=ns.executable_sha256,
-            args=tuple(ns.elf_arg), timeout=ns.timeout)
+            args=tuple(ns.elf_arg), timeout=ns.timeout,
+            require_identical_gpu_timeline=ns.require_identical_gpu_timeline)
     except (ValueError, OSError, subprocess.TimeoutExpired):
         p.error("MAP02 two independent private ELF captures failed verification")
     print(json.dumps(report, indent=2, sort_keys=True))

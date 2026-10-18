@@ -24,7 +24,17 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
         folder = Path(cls.workspace.name)
         source = folder / "producer.c"
         cls.executable = folder / "synthetic-elf"
-        source.write_text(PRODUCER, encoding="utf-8")
+        # Keep the baseline fixture unchanged by default. One optional
+        # test-only argv can alter an after-VRAM pixel while preserving
+        # the pinned ELF hash and a fully valid native GPU journal.
+        needle = 'native_vram[0][0] = 0x7fff;\n        if (bad_vram)'
+        replacement = ('native_vram[0][0] = 0x7fff;\n'
+                       '        if (argc > 1 && !strcmp(argv[1], "alternate")) '
+                       'native_vram[0][0] = 0x7ffe;\n'
+                       '        if (bad_vram)')
+        if PRODUCER.count(needle) != 1:
+            raise RuntimeError("MAP02 synthetic GPU C11 fixture anchor drift")
+        source.write_text(PRODUCER.replace(needle, replacement), encoding="utf-8")
         cc = os.environ.get("CC", "cc")
         if not shutil.which(cc):
             raise unittest.SkipTest("C compiler missing")
@@ -60,6 +70,8 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
         self.assertEqual(result["schema"], two_live.SCHEMA)
         self.assertTrue(result["two_native_elf_captures_and_complete_replays_verified"])
         self.assertTrue(result["same_elf_arguments_used_for_both_launches"])
+        self.assertFalse(result["strict_gpu_timeline_match_required"])
+        self.assertFalse(result["strict_gpu_timeline_match_verified"])
         self.assertTrue(result["repeated_full_gpu_vram_snapshot_sequence_identical"])
         self.assertIsNone(result["first_different_gpu_snapshot_phase"])
         self.assertIsNone(result["first_different_gpu_snapshot_changed_pixels"])
@@ -73,6 +85,85 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
         for folder in self.dirs:
             self.assertGreater(len(list(folder.iterdir())), 0)
             self.assertNotIn(str(folder), json.dumps(result))
+
+    def test_opt_in_strict_bit_exact_gpu_timeline_succeeds(self):
+        result = self.run_two(require_identical_gpu_timeline=True)
+        self.assertTrue(result["strict_gpu_timeline_match_required"])
+        self.assertTrue(result["strict_gpu_timeline_match_verified"])
+        self.assertTrue(result["repeated_full_gpu_vram_snapshot_sequence_identical"])
+        self.assertTrue(result["repeated_gpu_event_journal_identical"])
+        self.assertEqual(result["unmatched_gpu_vram_snapshots"], 0)
+
+    def test_invalid_strict_mode_type_refused_before_launch(self):
+        with self.assertRaisesRegex(ValueError, "arguments invalid"):
+            self.run_two(require_identical_gpu_timeline="true")
+        self.assertTrue(all(not list(folder.iterdir()) for folder in self.dirs))
+
+    def test_nonidentical_native_vram_remains_diagnostic_without_strict_mode(self):
+        # Only the test harness changes the argv on the SECOND invocation:
+        # this allows two genuine independently validated C11 ELF/GPU
+        # sessions with different final VRAM, without changing ELF bytes.
+        real_capture = two_live.capture
+        called = []
+        def alter_second(*args, **kwargs):
+            called.append(1)
+            if len(called) == 2:
+                kwargs["args"] = ("alternate",)
+            return real_capture(*args, **kwargs)
+        with patch.object(two_live, "capture", side_effect=alter_second):
+            report = self.run_two()
+        self.assertEqual(len(called), 2)
+        self.assertEqual(report["different_bgr555_pixels"], 1)
+        self.assertFalse(report["repeated_full_gpu_vram_snapshot_sequence_identical"])
+        self.assertTrue(report["repeated_gpu_event_journal_identical"])
+        self.assertFalse(report["strict_gpu_timeline_match_required"])
+        self.assertFalse(report["strict_gpu_timeline_match_verified"])
+
+    def test_strict_mode_rejects_different_native_vram_with_same_gpu_events(self):
+        real_capture = two_live.capture
+        called = []
+        def alter_second(*args, **kwargs):
+            called.append(1)
+            if len(called) == 2:
+                kwargs["args"] = ("alternate",)
+            return real_capture(*args, **kwargs)
+        with patch.object(two_live, "capture", side_effect=alter_second):
+            with self.assertRaisesRegex(ValueError, "not bit-exact"):
+                self.run_two(require_identical_gpu_timeline=True)
+        self.assertEqual(len(called), 2)
+        self.assertEqual(len(list(self.dirs[0].iterdir())), 2)
+        self.assertEqual(len(list(self.dirs[2].iterdir())), 2)
+
+    def test_strict_gpu_timeline_gate_rejects_missing_claims(self):
+        good = self.run_two()
+        with self.assertRaisesRegex(ValueError, "not bit-exact"):
+            two_live._require_bit_exact_gpu_timeline(
+                {**good, "repeated_full_gpu_vram_snapshot_sequence_identical": None})
+        with self.assertRaisesRegex(ValueError, "not bit-exact"):
+            two_live._require_bit_exact_gpu_timeline(
+                {**good, "repeated_gpu_event_journal_identical": False})
+        with self.assertRaisesRegex(ValueError, "not bit-exact"):
+            two_live._require_bit_exact_gpu_timeline(
+                {**good, "gpu_vram_snapshots_compared": True})
+
+    def test_strict_cli_flag_succeeds_with_two_real_synthetic_launches(self):
+        cmd = [
+            sys.executable, "-m", "tools.run_map02_private_two_live_captures",
+            "--executable", str(self.executable),
+            "--executable-sha256", self.digest,
+            "--first-frame", str(self.dirs[0]),
+            "--first-journal", str(self.dirs[1]),
+            "--second-frame", str(self.dirs[2]),
+            "--second-journal", str(self.dirs[3]),
+            "--frame", "123", "--require-identical-gpu-timeline",
+        ]
+        completed = subprocess.run(cmd, text=True, capture_output=True,
+                                   timeout=22)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        output = json.loads(completed.stdout)
+        self.assertTrue(output["strict_gpu_timeline_match_required"])
+        self.assertTrue(output["strict_gpu_timeline_match_verified"])
+        self.assertNotIn(str(self.executable), completed.stdout)
 
     def test_duplicated_output_role_fails_before_any_launch(self):
         with self.assertRaisesRegex(ValueError, "directory roles overlap"):
