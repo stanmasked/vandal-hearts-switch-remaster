@@ -207,6 +207,7 @@ jobs:
             test -s "$SHOT2"
           '
           python3 -m unittest discover -s tests -p 'test_check_native_av_screenshot.py' -v
+          python3 -m unittest discover -s tests -p 'test_verify_native_av_guest_witness.py' -v
           case "${{ matrix.sd_case }}" in
             empty)
               source="synthetic"
@@ -266,6 +267,12 @@ jobs:
             "${zr_gate[@]}" "${zl_gate[@]}" "${resume_gate[@]}" \
             --witness-out runtime-evidence/native-av-guest-witness.json \
             --nro-file "$NRO" --source-revision "$GITHUB_SHA"
+          # Independent verifier reads the created JSON and recomputes
+          # hashes and framebuffer observations from the exact files.
+          python3 tests/verify_native_av_guest_witness.py \
+            --witness runtime-evidence/native-av-guest-witness.json \
+            --before "$SHOT1" --after "$SHOT2" --nro "$NRO" \
+            --revision "$GITHUB_SHA" --scenario "${{ matrix.sd_case }}"
 
       - name: Upload AV runtime evidence
         if: always()
