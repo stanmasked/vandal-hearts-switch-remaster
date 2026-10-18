@@ -51,6 +51,8 @@ on:
       - 'tests/test_audit_nexium_audout_queue.py'
       - 'tests/check_nro.py'
       - 'tools/analyze_nexium_scene_audio.py'
+      - 'tools/analyze_nexium_pcm_stream_integrity.py'
+      - 'tests/test_analyze_nexium_pcm_stream_integrity.py'
       - 'tools/capture_nexium_scene_audio.sh'
       - 'tests/test_analyze_nexium_scene_audio.py'
       - 'tools/analyze_nexium_transition_timing.py'
