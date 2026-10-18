@@ -918,9 +918,25 @@ static void paint(VhCanvas *canvas, const VhGameState *state,
         focus_returns>0u && pages>at_return ? hero : source_missing,
         applet_resumes>0u ? hero : source_missing
     };
-    for(unsigned focus_tile=0;focus_tile<5u;focus_tile++)
+    /* Small 5x7 N/B/F/P/R labels make console screenshots
+     * interpretable without relying on an external text renderer. */
+    static const uint8_t focus_glyphs[5][7]={
+        {0x11,0x19,0x15,0x13,0x11,0x11,0x11}, /* N */
+        {0x1e,0x11,0x11,0x1e,0x11,0x11,0x1e}, /* B */
+        {0x1f,0x10,0x10,0x1e,0x10,0x10,0x10}, /* F */
+        {0x1e,0x11,0x11,0x1e,0x10,0x10,0x10}, /* P */
+        {0x1e,0x11,0x11,0x1e,0x14,0x12,0x11}  /* R */
+    };
+    for(unsigned focus_tile=0;focus_tile<5u;focus_tile++) {
+        for(unsigned fy=0;fy<7u;fy++)
+            for(unsigned fx=0;fx<5u;fx++)
+                if(focus_glyphs[focus_tile][fy] & (0x10u>>fx))
+                    vh_canvas_fill_rect(canvas,
+                        1009+(int)focus_tile*48+(int)fx*4,
+                        612+(int)fy*3,3,2,hero);
         vh_canvas_fill_rect(canvas,1000+(int)focus_tile*48,
                             635,40,26,focus_colors[focus_tile]);
+    }
 #endif
 }
 
