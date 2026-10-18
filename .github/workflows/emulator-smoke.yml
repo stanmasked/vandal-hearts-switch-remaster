@@ -722,6 +722,72 @@ jobs:
             --output runtime-evidence/scene-transition-observations.json
           python3 -m json.tool runtime-evidence/scene-transition-observations.json > /dev/null
 
+      - name: Capture experimental wet-tail virtual PCM across A/B scenes
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n tools/capture_nexium_scene_audio.sh
+          # Reuse the SAME verified research NRO as the optical smoke.
+          # Separate SD and output paths from the original baseline.
+          SCENE_CAPTURE_TAG=wet-tail \
+          SCENE_NRO=wet-tail/vandal-hearts-wet-tail.nro \
+            bash tools/capture_nexium_scene_audio.sh runtime-evidence/wet-tail-scenes
+          python3 tools/analyze_nexium_transition_timing.py \
+            runtime-evidence/wet-tail-scenes/nexium-scenes-s16le-48k.pcm \
+            runtime-evidence/wet-tail-scenes/scene-events.csv \
+            --output runtime-evidence/wet-tail-scenes/transition-timing.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image,ImageChops
+          root=Path("runtime-evidence/wet-tail-scenes")
+          report=json.loads((root/"scene-audio-report.json").read_text())
+          timing=json.loads((root/"transition-timing.json").read_text())
+          source=json.loads(Path("wet-tail-pair-preflight.json").read_text())
+          labels=("field_initial","focus_1","field_1","focus_2","field_2")
+          screenshots=[Image.open(root/f"scene-{label}.png").convert("RGB")
+                       for label in labels]
+          if (any(img.size!=(1280,720) for img in screenshots)
+                  or report["schema"]!="vh-nexium-scene-audio/v1"
+                  or len(report["intervals"])!=5
+                  or [x["scene"] for x in report["intervals"]]!=list(labels)
+                  or report["result"]!="REPEATED_SCENE_CORRELATED_PCM_CHANGE"
+                  or report["hardware_status"]!="HARDWARE NOT TESTED"
+                  or report["audible_music_confirmed"] is not False
+                  or timing["pcm_sha256"]!=report["pcm_sha256"]
+                  or timing["timing_result"]!="HOST_RELATIVE_DETECTION_ONLY"
+                  or len(timing["transitions"])!=4
+                  or not all(x["stable_expected_scene_detected"]
+                             for x in timing["transitions"])
+                  or source["result"]!="SAME_RUN_WET_TAIL_NRO_PAIR_VERIFIED"):
+              raise SystemExit("opt-in wet-tail scene PCM or source evidence insufficient")
+          pixels=[]
+          for before,after in zip(screenshots,screenshots[1:]):
+              delta=ImageChops.difference(
+                  before.crop((960,600,1140,638)),
+                  after.crop((960,600,1140,638)))
+              pixels.append(sum(1 for rgb in delta.getdata()
+                                if max(rgb)>24))
+          if min(pixels)<25:
+              raise SystemExit("opt-in screenshot music labels did not toggle")
+          result={
+              "schema":"vh-nexium-opt-in-scene-pcm/v1",
+              "result":"SAME_RUN_OPT_IN_VIRTUAL_PCM_SCENES_OBSERVED",
+              "git_sha":source["git_sha"],
+              "run_id":source["run_id"],
+              "wet_tail_nro_sha256":source["wet_tail_sha256"],
+              "scene_pcm_sha256":report["pcm_sha256"],
+              "music_label_changed_pixels":pixels,
+              "hardware_status":"HARDWARE NOT TESTED",
+              "speaker_audio_not_verified":True,
+              "host_timing_not_guest_sample_accurate":True,
+              "wet_tail_effect_causality_not_proven":True
+          }
+          (root/"opt-in-scene-witness.json").write_text(
+              json.dumps(result,sort_keys=True,indent=2)+"\\n")
+          print(json.dumps(result,sort_keys=True))
+          PY
+
       - name: Verify observed framebuffer music labels and scene evidence
         shell: bash
         run: |
