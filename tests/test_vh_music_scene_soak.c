@@ -330,6 +330,8 @@ static uint64_t silent_second_cue_oracle(void) {
     assert(preserved==prior_reverb_nonzero);
 
     uint64_t wet_nonzero=0u;
+    uint64_t wet_raw_nonzero=0u;
+    uint64_t wet_after_boundary_nonzero=0u;
     uint64_t dry_nonzero=0u;
     uint64_t hash=UINT64_C(1469598103934665603);
     for(unsigned block=0u;block<96u;block++) {
@@ -337,6 +339,10 @@ static uint64_t silent_second_cue_oracle(void) {
         assert(vh_music_scene_render(&dry_scene,dry_raw)==0);
         assert(!wet_scene.seq.note_ons && !dry_scene.seq.note_ons);
         assert(!memcmp(dry_raw,(int16_t[1024]){0},sizeof dry_raw));
+        /* Count real 44.1-kHz wet DSP output: a nonzero resampler
+         * boundary alone must NEVER satisfy the reverb-causality gate. */
+        for(size_t k=0u;k<1024u;k++)
+            wet_raw_nonzero+=(wet_raw[k]!=0);
         const size_t wn=vh_audio_resample_process(
             &wet_rate,wet_raw,512u,wet_48k,640u);
         const size_t dn=vh_audio_resample_process(
@@ -347,6 +353,7 @@ static uint64_t silent_second_cue_oracle(void) {
         for(size_t k=0u;k<wn*2u;k++) {
             wet_nonzero+=(wet_48k[k]!=0);
             if(block>=1u) {
+                wet_after_boundary_nonzero+=(wet_48k[k]!=0);
                 dry_nonzero+=(dry_48k[k]!=0);
                 assert(dry_48k[k]==0);
             }
@@ -358,7 +365,11 @@ static uint64_t silent_second_cue_oracle(void) {
         for(unsigned i=0u;i<VH_NATIVE_MUSIC_VOICES;i++)
             assert(!wet_spu.voice[i].pcm && !dry_spu.voice[i].pcm);
     }
-    assert(wet_nonzero>0u && dry_nonzero==0u);
+    /* The dry transport may legitimately interpolate its last sample
+     * into the first page. Require wet signal both before resampling
+     * and AFTER the entire first 48-kHz boundary page was consumed. */
+    assert(wet_raw_nonzero>0u && wet_after_boundary_nonzero>0u &&
+           wet_nonzero>=wet_after_boundary_nonzero && dry_nonzero==0u);
     assert(vh_music_scene_detach(&wet_scene)==0);
     assert(vh_music_scene_detach(&dry_scene)==0);
     for(unsigned i=0u;i<VH_REV_SAMPLES;i++)
