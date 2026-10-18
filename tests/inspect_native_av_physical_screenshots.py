@@ -52,6 +52,16 @@ def observe_frame(frame):
     }
     states["X"] = marker_color(frame.getpixel((1125, 702)))
     states["Y"] = marker_color(frame.getpixel((1180, 702)))
+    # The focus observer has no X/Y tiles. The manual NRO MUST have
+    # both. Pixel-only inspection does not prove either came from HW,
+    # but mixed/missing tiles cannot be treated as one continuous run.
+    manual_colors = ("blue", "yellow", "red")
+    if states["X"] == states["Y"] == "not_present":
+        variant = "focus"
+    elif states["X"] in manual_colors and states["Y"] in manual_colors:
+        variant = "focus_manual"
+    else:
+        raise ValueError("incomplete or ambiguous X/Y diagnostic variant")
     tallies = {}
     for tile, label in ((1, "B"), (2, "F"), (4, "R")):
         strokes = []
@@ -79,10 +89,16 @@ def observe_frame(frame):
         states["B"] != "blue" or states["F"] != "blue"
     ):
         raise ValueError("post-return PCM marker has no B/F pair")
-    return {"indicators": states, "tallies_capped_at_five": tallies}
+    return {
+        "variant_pixels": variant,
+        "indicators": states,
+        "tallies_capped_at_five": tallies,
+    }
 
 
 def comparison(before, after):
+    if before["variant_pixels"] != after["variant_pixels"]:
+        raise ValueError("cannot compare different focus NRO variants")
     a, b = before["tallies_capped_at_five"], after["tallies_capped_at_five"]
     for label in ("B", "F", "R"):
         if b[label] < a[label]:
