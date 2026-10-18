@@ -75,16 +75,21 @@ void vh_map02_cd_read_finish(int lba, int sectors,
             state.failed = 1;
         return;
     }
+    /* Validate the original CdRead's full span BEFORE examining any bytes.
+     * A malformed/short caller buffer must never be blindly treated as
+     * 12 * 2048 accessible bytes. This observer is diagnostic, so a failed
+     * read must not introduce an out-of-bounds access of its own. */
     if (lba != MAP02_LBA || sectors != MAP02_SECTORS ||
-            state.count != MAP02_SECTORS || !transferred || state.finished++)
+            state.count != MAP02_SECTORS || !transferred || state.finished++) {
         state.failed = 1;
-    if (transferred) {
-        state.transferred_crc = crc32_append(
-            0xffffffffu, transferred, MAP02_SECTORS * USER_SECTOR);
-        /* Original game material must not be silently modified by
-         * PC_LangPatchRead or a translation pack for source comparison. */
-        if (state.transferred_crc != state.raw_crc) state.failed = 1;
+        state.observing = 0;
+        return;
     }
+    state.transferred_crc = crc32_append(
+        0xffffffffu, transferred, MAP02_SECTORS * USER_SECTOR);
+    /* Original game material must not be silently modified by
+     * PC_LangPatchRead or a translation pack for source comparison. */
+    if (state.transferred_crc != state.raw_crc) state.failed = 1;
     state.observing = 0;
 }
 
