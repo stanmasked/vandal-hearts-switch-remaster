@@ -38,6 +38,12 @@ class ExitMilestoneSynthetic(unittest.TestCase):
                          ["plus_observed", "stop_requested"])
         self.assertIsNone(r["stop_request_to_worker_cleanup_ns"])
 
+    def test_incomplete_trace_does_not_hide_reverse_observed_events(self):
+        with self.assertRaises(ExitTimelineError):
+            parse_exit_csv(csv(0, 0, 800, 750, 900))
+        with self.assertRaises(ExitTimelineError):
+            parse_exit_csv(csv(0, 0, 800, 800, 900))
+
     def test_order_reversal_and_equal_time_are_rejected(self):
         for stamps in ((1000, 1050, 1049, 1100, 1150),
                        (1000, 1050, 1050, 1100, 1150)):
