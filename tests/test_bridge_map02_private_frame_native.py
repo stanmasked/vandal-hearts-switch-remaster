@@ -107,7 +107,7 @@ class PrivateFrameNativeBridgeTests(unittest.TestCase):
             self.run_bridge()
 
     def test_incomplete_native_elf_witness_refused(self):
-        self.native["native_elf_image_observed"] = False
+        self.native["native_elf_process_image_observed"] = False
         with self.assertRaisesRegex(ValueError, "witness incomplete"):
             self.run_bridge()
 
