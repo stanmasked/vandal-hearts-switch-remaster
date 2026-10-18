@@ -260,8 +260,10 @@ def main():
     args = parser.parse_args()
     try:
         report = inspect_staged_capture(args.source_bundle, args.native_capture)
-    except (OSError, ValueError) as exc:
-        parser.error(str(exc))
+    except (OSError, ValueError):
+        # Errors from private files and JSON may contain absolute image paths
+        # or untrusted input. Do not expose them in CLI stderr or CI logs.
+        parser.error("private MAP02 structural preflight unavailable")
     print(json.dumps(report, sort_keys=True, indent=2))
 
 
