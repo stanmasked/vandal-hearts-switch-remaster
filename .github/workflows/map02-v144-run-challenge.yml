@@ -1,0 +1,37 @@
+name: MAP02 v144 private native MIPS run challenge binding
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v144-run-challenge.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v144_private_run_challenge.py'
+      - 'tools/check_map02_v144_native_challenge_c.py'
+      - 'tools/check_map02_v144_run_challenge.py'
+      - 'tests/test_map02_v144_run_challenge.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  private-run-nonce-synthetic:
+    name: fresh private 128-bit run challenge + replay refusal (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile native binder under sanitizers and refuse replay
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          no_retail_exe_in_public_tests=1
+          readonly no_retail_exe_in_public_tests
+          test "$no_retail_exe_in_public_tests" = 1
+          python3 -m unittest discover -s tests -p 'test_map02_v144_run_challenge.py' -v
+          python3 -m tools.check_map02_v144_native_challenge_c --cc "$CC"
+          python3 -m unittest discover -s tests -p 'test_map02_v143_atomic_private_receipt.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v142_native_private_receipt.py' -v
+          echo "VH144_RUN_CHALLENGE_SOURCE_ONLY_PASS retail_map02=0"
