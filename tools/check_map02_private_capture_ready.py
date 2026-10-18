@@ -96,7 +96,7 @@ def _input_snapshot(directory, name, *, expected=None, max_bytes=None):
     the latter reads only a selected two-byte pixel at each DRAW edge.
     """
     if (type(name) is not str or not name or
-            name in (".", "..") or "/" in name or "\\\\" in name):
+            name in (".", "..") or "/" in name or "\\" in name):
         raise ValueError("invalid private MAP02 input name")
     path = directory / name
     flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) |
