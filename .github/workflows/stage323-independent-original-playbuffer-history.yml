@@ -37,8 +37,8 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in $(seq 1 150); do
-            status="$(gh api repos/${GITHUB_REPOSITORY}/actions/runs/39157976877 --jq '.status')"
-            conclusion="$(gh api repos/${GITHUB_REPOSITORY}/actions/runs/39157976877 --jq '.conclusion // "pending"')"
+            status="$(gh api repos/${GITHUB_REPOSITORY}/actions/runs/39159226320 --jq '.status')"
+            conclusion="$(gh api repos/${GITHUB_REPOSITORY}/actions/runs/39159226320 --jq '.conclusion // "pending"')"
             if [[ "$status" == completed ]]; then
               if [[ "$conclusion" != success ]]; then
                 echo "Original Stage322 NeXium source failed: $conclusion" >&2
@@ -58,7 +58,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: nexium-runtime-evidence
-          run-id: 39157976877
+          run-id: 39159226320
           github-token: ${{ github.token }}
           path: original-stage322-neXium
 
@@ -68,7 +68,7 @@ jobs:
           set -euo pipefail
           mkdir -p independent-stage323-evidence
           /tmp/vh-stage323/bin/python tools/replay_nexium_original_playbuffer_history_archive.py \
-            --original-run-id 39157976877 \
+            --original-run-id 39159226320 \
             --archive original-stage322-neXium \
             --output independent-stage323-evidence/original-playbuffer-history-stage323.json
           /tmp/vh-stage323/bin/python - <<'PY'
@@ -79,7 +79,7 @@ jobs:
           ).read_text())
           if (r["schema"]!="vh-independent-original-last16-PlayBuffer-guest-source-replay/v1"
                   or r["result"]!="ORIGINAL_LAST16_PLAYBUFFER_CALLS_AND_EXIT_INDEPENDENTLY_REPLAYED"
-                  or r["original_source_workflow_run_id"]!=39157976877
+                  or r["original_source_workflow_run_id"]!=39159226320
                   or r["original_stage307_308_310_313_314_317_320_321_sources_replayed"] is not True
                   or r["original_stage322_history_CSV_and_receipt_replayed"] is not True
                   or not 1<=r["recent_original_service_call_count"]<=16
