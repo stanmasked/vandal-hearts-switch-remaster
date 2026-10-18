@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Fail-closed digest join: native replay + child-pipe image + claimed frame pair.
+"""Fail-closed digest join: native replay + optional same-launch GPU journal.
 
-The replayed live process channel and original native GPU/FT4 logs may still
-have been produced by DIFFERENT launches. This file never authenticates
-same-session origin or allows HD substitution.
+A real Linux child-pipe frame (with or without its bounded native GPU journal)
+is matched by hash against the separately claimed original/PC comparison and
+independent original GPU/FT4/VRAM trace witness. Different capture runs may
+still have produced the sources: no PS1 or retail provenance is asserted.
 """
 import argparse
 import json
@@ -14,8 +15,22 @@ from tools.replay_map02_live_frame_receipt import replay
 
 
 def join(frame_pair_dir, live_dir, native_dir, source_dir, *,
-         launch_receipt, preflight_report, executable, compiler="gcc"):
-    first = replay(live_dir, executable=executable)
+         launch_receipt, preflight_report, executable, compiler="gcc",
+         gpu_journal_dir=None):
+    first = replay(live_dir, executable=executable,
+                   gpu_journal_dir=gpu_journal_dir)
+    joint = gpu_journal_dir is not None
+    expected_schema = ("vh.map02.live-child-pipe-gpu-replayed.v1" if joint
+                       else "vh.map02.live-child-pipe-replayed.v1")
+    if first.get("schema") != expected_schema:
+        raise ValueError("MAP02 live capture joint/legacy replay schema invalid")
+    if joint and (first.get("gpu_terminal_frame_equal") is not True
+                  or first.get("child_writable_gpu_journal_fd_observed") is not True
+                  or first.get("same_launcher_gpu_journal_operationally_checked") is not True
+                  or first.get("gpu_journal_writer_kernel_authenticated") is not False
+                  or first.get("terminal_gpu_after_vram_sha256")
+                  != first.get("image_sha256")):
+        raise ValueError("MAP02 live native GPU journal session witness incomplete")
     joined = bridge(
         frame_pair_dir, native_dir, source_dir,
         launch_receipt=launch_receipt,
@@ -41,7 +56,8 @@ def join(frame_pair_dir, live_dir, native_dir, source_dir, *,
                   "hd_replacement_authorized"):
         if joined.get(field) is not False:
             raise ValueError("MAP02 native bridge asserted unproven provenance")
-    second = replay(live_dir, executable=executable)
+    second = replay(live_dir, executable=executable,
+                    gpu_journal_dir=gpu_journal_dir)
     if first != second:
         raise ValueError("MAP02 live pipe evidence changed through native GPU replay")
     return {
@@ -54,6 +70,16 @@ def join(frame_pair_dir, live_dir, native_dir, source_dir, *,
         "native_gpu_event_log_sha256": joined["native_gpu_event_log_sha256"],
         "original_launch_receipt_sha256": joined["original_launch_receipt_sha256"],
         "claimed_reference_sha256": joined["reference_sha256"],
+        **({
+            "same_launcher_gpu_journal_sha256": first["gpu_journal_sha256"],
+            "same_launcher_gpu_journal_pairs_verified":
+                first["gpu_journal_pairs_verified"],
+            "same_launcher_gpu_terminal_vram_sha256":
+                first["terminal_gpu_after_vram_sha256"],
+            "child_writable_gpu_journal_fd_observed": True,
+            "same_launcher_terminal_frame_equal_gpu_after_vram": True,
+            "gpu_journal_writer_kernel_authenticated": False,
+        } if joint else {}),
         "candidate_pixels_match_replayed_live_pipe": True,
         "native_gpu_trace_independently_replayed": True,
         "live_pipe_stable_during_native_replay": True,
@@ -74,13 +100,15 @@ def main():
     p.add_argument("--preflight-report", type=Path, required=True)
     p.add_argument("--executable", type=Path, required=True)
     p.add_argument("--compiler", choices=("gcc", "clang"), default="gcc")
+    p.add_argument("--gpu-journal-dir", type=Path)
     args = p.parse_args()
     try:
         result = join(
             args.frame_pair, args.live_frame, args.native_capture,
             args.source_capture, launch_receipt=args.launch_receipt,
             preflight_report=args.preflight_report,
-            executable=args.executable, compiler=args.compiler)
+            executable=args.executable, compiler=args.compiler,
+            gpu_journal_dir=args.gpu_journal_dir)
     except (ValueError, OSError) as exc:
         p.error(str(exc))
     print(json.dumps(result, sort_keys=True, indent=2))
