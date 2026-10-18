@@ -34,6 +34,7 @@ POSITIVE=(
     "--vh142-private-receipt",
 )
 NEGATIVE=POSITIVE+("--vh142-corrupt-receipt",)
+GENERIC=POSITIVE+("--vh147-bounded-mmio",)
 MAX_TIMEOUT=180
 
 
@@ -194,7 +195,7 @@ def main():
         if len(native)<2:
             raise Refused("native PS-X executable argument absent")
         flags=tuple(native[:-1])
-        if flags not in (POSITIVE,NEGATIVE):
+        if flags not in (POSITIVE,NEGATIVE,GENERIC):
             raise Refused("only pinned v129 synthetic CPU modes allowed")
         if read_private_exe(native[-1])!=build()[0]:
             raise Refused("private EXE does not match source-authored test")
