@@ -393,6 +393,29 @@ static void test_default_reset_and_opted_fade_comparison(void) {
     assert(wet_nonzero(&synth.reverb));
     assert(memcmp(&synth.reverb,&reference_synth.reverb,
                   sizeof synth.reverb)!=0);
+    /* Compare ACTUAL PCM, not only internal DSP work buffers:
+     * only the wet history is allowed to differ, while SEQ time,
+     * scene phase and outgoing bank ownership agree. */
+    unsigned differing_blocks=0u;
+    for(unsigned block=0u;block<48u;block++) {
+        assert(vh_music_scene_render(&scene,out)==0);
+        assert(vh_music_scene_render(&reference_scene,reference)==0);
+        if(memcmp(out,reference,sizeof out)!=0)
+            ++differing_blocks;
+        assert(scene.active.id==reference_scene.active.id);
+        assert(scene.stage==reference_scene.stage &&
+               scene.fade_position==reference_scene.fade_position &&
+               scene.blocks_rendered==reference_scene.blocks_rendered);
+        assert(scene.seq.note_ons==reference_scene.seq.note_ons &&
+               scene.seq.note_offs==reference_scene.seq.note_offs &&
+               scene.seq.blocks_advanced==
+               reference_scene.seq.blocks_advanced);
+        for(unsigned i=0u;i<VH_NATIVE_MUSIC_VOICES;i++) {
+            assert(synth.voice[i].pcm!=pcm_a &&
+                   reference_synth.voice[i].pcm!=pcm_a);
+        }
+    }
+    assert(differing_blocks>0u); /* retained STUDIO_C has a PCM effect */
     assert(vh_music_scene_detach(&scene)==0);
     assert(vh_music_scene_detach(&reference_scene)==0);
     assert(!wet_nonzero(&synth.reverb) &&
