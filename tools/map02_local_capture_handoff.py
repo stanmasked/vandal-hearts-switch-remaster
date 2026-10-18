@@ -170,6 +170,9 @@ def _publish(root, name, raw):
         temporary = _prepare_private_file(target, raw)
         os.link(temporary, target)
         linked = True
+        # End the temporary hardlink lifetime before strict readback:
+        # the published proof must have exactly one directory entry.
+        temporary.unlink()
         if private_file(root, name, max_bytes=4096) != raw:
             raise ValueError("private MAP02 local capture readback changed")
     except BaseException:
