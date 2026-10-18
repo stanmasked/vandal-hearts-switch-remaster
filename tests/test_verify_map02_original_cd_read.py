@@ -59,7 +59,8 @@ class OriginalCdReadReceiptTests(unittest.TestCase):
             "original_map02_cd_read_receipt_present": True,
             "original_map02_cd_read_receipt_sha256":
                 hashlib.sha256((self.scoped / CD_READ).read_bytes()).hexdigest(),
-            "capture_session_sha256": "d" * 64,
+            "capture_session_sha256": hashlib.sha256(
+                self.event["capture_session"].encode("ascii")).hexdigest(),
         }
         mock = patch(
             "tools.verify_map02_original_cd_read.verify_window_scoped_join",
@@ -115,6 +116,36 @@ class OriginalCdReadReceiptTests(unittest.TestCase):
         self.save()
         self.bind_current_receipt_digest()
         with self.assertRaisesRegex(ValueError, "payload differs"):
+            self.check()
+
+    def test_independent_cd_verifier_rejects_wrong_capture_session(self):
+        self.event["capture_session"] = "de" * 16
+        self.save()
+        self.bind_current_receipt_digest()
+        with self.assertRaisesRegex(ValueError, "session differs"):
+            self.check()
+
+    def test_independent_cd_verifier_rejects_divergent_returned_crc(self):
+        self.event["returned_user_crc32"] = "12345678"
+        self.save()
+        self.bind_current_receipt_digest()
+        with self.assertRaisesRegex(ValueError, "transfer differs"):
+            self.check()
+
+    def test_independent_cd_verifier_rejects_duplicate_json_field(self):
+        receipt = self.scoped / CD_READ
+        raw = receipt.read_bytes()
+        receipt.write_bytes(raw.replace(
+            b'{"bytes":', b'{"bytes":24576,"bytes":', 1))
+        self.bind_current_receipt_digest()
+        with self.assertRaisesRegex(ValueError, "duplicate JSON field"):
+            self.check()
+
+    def test_independent_cd_verifier_rejects_noncanonical_receipt(self):
+        receipt = self.scoped / CD_READ
+        receipt.write_bytes(receipt.read_bytes() + b"\n")
+        self.bind_current_receipt_digest()
+        with self.assertRaisesRegex(ValueError, "noncanonical"):
             self.check()
 
     def test_missing_original_cdread_receipt_rejected(self):

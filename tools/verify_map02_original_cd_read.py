@@ -22,12 +22,57 @@ from tools.check_map02_owned_disc_extent import (
     verify_map02_disc_extent,
 )
 from tools.publish_map02_blendg1_witness import _private_directory
+from tools.verify_map02_frame_bundle import fields, number, parse_json
 from tools.verify_map02_window_scoped_join import (
     CD_READ, verify_window_scoped_join,
 )
 
 LBA = 0x1bcc
 COUNT = 12
+
+
+def _verify_cd_receipt_claims(raw, checked):
+    """Independently validate the observed CdRead identity and transfer claims.
+
+    The GPU scoped verifier also checks these fields; this CD verifier must
+    reject contradictory receipts even if the upstream scoped result is stale.
+    """
+    if raw.count(b"\n") != 1 or not raw.endswith(b"\n") or b"\r" in raw:
+        raise ValueError("noncanonical original MAP02 CD receipt JSONL")
+    event = parse_json(raw[:-1], CD_READ)
+    keys = (
+        "schema", "capture_session", "source", "cdf", "lba", "sectors",
+        "bytes", "raw_user_crc32", "returned_user_crc32",
+        "raw_user_sha256", "returned_user_sha256", "loader_completed",
+    )
+    fields(event, keys, CD_READ)
+    if (event["schema"] != "vh.map02.original-cd-read.v2" or
+            event["source"] != "original-CdRead-and-ContinueLoadingCdFile" or
+            event["cdf"] != "CDF_M_MAP02_PRS" or
+            number(event["lba"], "original MAP02 LBA", 0, LBA) != LBA or
+            number(event["sectors"], "MAP02 sector count", 1, COUNT) != COUNT or
+            number(event["bytes"], "MAP02 user-data size", 1, COUNT * USER_DATA_BYTES)
+            != COUNT * USER_DATA_BYTES or
+            event["loader_completed"] is not True):
+        raise ValueError("original MAP02 CD receipt extent or loader claim differs")
+    token = event["capture_session"]
+    if (type(token) is not str or len(token) != 32 or
+            any(ch not in "0123456789abcdef" for ch in token) or
+            hashlib.sha256(token.encode("ascii")).hexdigest()
+            != checked["capture_session_sha256"]):
+        raise ValueError("original MAP02 CD receipt session differs from GPU witness")
+    for key, length in (
+        ("raw_user_crc32", 8), ("returned_user_crc32", 8),
+        ("raw_user_sha256", 64), ("returned_user_sha256", 64),
+    ):
+        value = event[key]
+        if (type(value) is not str or len(value) != length or
+                any(ch not in "0123456789abcdef" for ch in value)):
+            raise ValueError("invalid original MAP02 CD checksum encoding")
+    if (event["raw_user_crc32"] != event["returned_user_crc32"] or
+            event["raw_user_sha256"] != event["returned_user_sha256"]):
+        raise ValueError("original MAP02 CD transfer differs from raw sector data")
+    return event
 
 
 def _private_cd_receipt_snapshot(directory):
@@ -77,7 +122,7 @@ def verify_map02_original_cd_read(scoped_dir, native_dir, owned_image,
     raw, receipt_inode = _private_cd_receipt_snapshot(scoped)
     if checked["original_map02_cd_read_receipt_sha256"] != hashlib.sha256(raw).hexdigest():
         raise ValueError("original MAP02 CD receipt differs from GPU witness digest")
-    event = json.loads(raw)
+    event = _verify_cd_receipt_claims(raw, checked)
     image = Path(owned_image).absolute()
     # Preserve the SAME original image inode across the two independent
     # full-disc SHA/sector audits and our separate original CdRead CRC read.
@@ -111,6 +156,7 @@ def verify_map02_original_cd_read(scoped_dir, native_dir, owned_image,
     finally:
         os.close(fd)
     if (f"{crc:08x}" != event["raw_user_crc32"] or
+            f"{crc:08x}" != event["returned_user_crc32"] or
             extent["resource_user_data_sha256"] != data_sha.hexdigest() or
             event["raw_user_sha256"] != data_sha.hexdigest() or
             event["returned_user_sha256"] != data_sha.hexdigest()):
