@@ -100,6 +100,8 @@ class NativeGpulibParseFlush162(unittest.TestCase):
             self.assertIn(marker,front)
         self.assertLess(front.index("VH162_GPU_PREFLIGHT_REFUSED"),
                         front.index("if(vh161_arm_gpu_queue()!=0){"))
+        self.assertLess(front.index("(void)GPU_readStatus();"),
+                        front.index("if(vh161_arm_gpu_queue()!=0){"))
         self.assertLess(front.index("if(vh161_arm_gpu_queue()!=0){"),
                         front.index("if(vh162_arm_gpu_parser()!=0){"))
         self.assertEqual(front.count("(void)GPU_readStatus();"),2)
@@ -162,11 +164,16 @@ int main(void) {
        vh162_gpu_parse_faults()==0) return 12;
     if(vh162_disarm_gpu_parser()!=0) return 13;
 
-    /* Refuse diagnostic arming with any stale queued command. */
+    /* Refuse stale GPU queue; an actual status preflight clears it.
+     * Only THEN may the v162 observer arm, without credit for preflight. */
     GPUwriteData(0xe3000000u);
     if(vh162_arm_gpu_parser()==0) return 14;
     GPUreadStatus();
-    puts("VH162_COMPILED_GPULIB_PARSE_FLUSH_PASS parsed=1 flushed=1 duplicate_refused=1 wrong_word_refused=1 mutated_zero=1 stale_queue_refused=1 original_retail=0");
+    if(gpu.cmd_len!=0 || vh162_arm_gpu_parser()!=0) return 15;
+    if(vh162_gpu_parse_visits() || vh162_gpu_flushes() ||
+       vh162_gpu_parse_faults()) return 16;
+    if(vh162_disarm_gpu_parser()!=0) return 17;
+    puts("VH162_COMPILED_GPULIB_PARSE_FLUSH_PASS parsed=1 flushed=1 duplicate_refused=1 wrong_word_refused=1 mutated_zero=1 stale_queue_preflight=1 original_retail=0");
     return 0;
 }
 """
