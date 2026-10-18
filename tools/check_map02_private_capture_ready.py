@@ -106,6 +106,16 @@ def inspect_staged_capture(source_dir, native_dir):
     """Preflight only, never promote/modify files or authenticate retail MAP02."""
     source = _private_directory(source_dir)
     native = _private_directory(native_dir)
+    # The source evidence and executed GPU capture must be independent
+    # private directories. Alias/nesting invalidates that assumption even
+    # when both folders individually meet the 0700 mode requirement.
+    source_real, native_real = source.resolve(), native.resolve()
+    if (source_real == native_real or source_real in native_real.parents or
+            native_real in source_real.parents):
+        raise ValueError("MAP02 source and native capture directories overlap")
+    if (source.stat().st_uid != os.geteuid() or
+            native.stat().st_uid != os.geteuid()):
+        raise ValueError("MAP02 private capture directories require current owner")
 
     bundle_raw = private_file(source, "bundle.json", max_bytes=64 * 1024)
     bundle = parse_json(bundle_raw, "bundle.json")
