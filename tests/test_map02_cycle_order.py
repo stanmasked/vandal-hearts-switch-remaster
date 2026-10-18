@@ -154,6 +154,7 @@ int main(int argc, char **argv) {
 FAULT_SHIM = r"""
 #define _GNU_SOURCE
 #include <dlfcn.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -165,10 +166,65 @@ int fsync(int fd) {
     typedef int (*fsync_fn)(int);
     static fsync_fn original;
     static int injected;
+    static int receipt_file_syncs, output_dir_syncs;
     struct stat st;
     const char *fault = getenv("VH_MAP02_TEST_FAULT");
     const char *root = getenv("VH_MAP02_CYCLE_OUTPUT_DIR");
     if (!original) original = (fsync_fn)dlsym(RTLD_NEXT, "fsync");
+    /* Failures DURING clean-exit sealing must never leave a believable
+     * receipt+seal pair. Count only MAP02 fixture fsyncs; no retail data. */
+    if (!injected && fault && root &&
+        !strncmp(fault, "seal-", 5) && fstat(fd, &st) == 0) {
+        int trigger = 0;
+        if (S_ISREG(st.st_mode) && st.st_size > 100)
+            trigger = (++receipt_file_syncs == 2 &&
+                       (!strcmp(fault, "seal-fsync-error") ||
+                        !strcmp(fault, "seal-flip") ||
+                        !strcmp(fault, "seal-replace-identical")));
+        if (S_ISDIR(st.st_mode))
+            trigger = (++output_dir_syncs == 2 &&
+                       (!strcmp(fault, "seal-dir-error") ||
+                        !strcmp(fault, "seal-dir-flip") ||
+                        !strcmp(fault, "seal-dir-replace-identical")));
+        if (trigger) {
+            injected = 1;
+            if (!strcmp(fault, "seal-fsync-error") ||
+                !strcmp(fault, "seal-dir-error")) {
+                errno = EIO;
+                return -1;
+            }
+            {
+                int dfd = open(root, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+                int seal = -1;
+                if (dfd < 0) return -1;
+                seal = openat(dfd, "map02-cycle-clean-exit.jsonl",
+                              O_RDONLY | O_NOFOLLOW);
+                if (seal < 0) { close(dfd); return -1; }
+                if (!strcmp(fault, "seal-flip") ||
+                    !strcmp(fault, "seal-dir-flip")) {
+                    int modify = openat(dfd, "map02-cycle-clean-exit.jsonl",
+                                        O_RDWR | O_NOFOLLOW);
+                    if (modify < 0 || pwrite(modify, "!", 1, 0) != 1)
+                        return -1;
+                    close(modify);
+                } else {
+                    char buf[512];
+                    ssize_t n = pread(seal, buf, sizeof buf, 0);
+                    int tmp = openat(dfd, "seal-foreign-temp",
+                                     O_WRONLY | O_CREAT | O_EXCL |
+                                     O_NOFOLLOW, 0600);
+                    if (n <= 0 || tmp < 0 || write(tmp, buf, (size_t)n) != n)
+                        return -1;
+                    if (close(tmp) ||
+                        renameat(dfd, "seal-foreign-temp", dfd,
+                                 "map02-cycle-clean-exit.jsonl"))
+                        return -1;
+                }
+                close(seal);
+                close(dfd);
+            }
+        }
+    }
     if (!injected && fault && root && !strcmp(fault, "late-flip") &&
         fstat(fd, &st) == 0 && S_ISDIR(st.st_mode)) {
         int target = openat(fd, "map02-single-process-cycle.jsonl",
@@ -418,6 +474,40 @@ class CycleOrderTests(unittest.TestCase):
                 (folder / "map02-single-process-cycle.jsonl").is_file())
             self.assertFalse(
                 (folder / "map02-cycle-clean-exit.jsonl").exists())
+
+    def test_clean_exit_fsync_failure_revokes_both_private_receipts(self):
+        for fault in ("seal-fsync-error", "seal-dir-error"):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as tmp:
+                out = Path(tmp) / "private"
+                out.mkdir(mode=0o700)
+                result = self.run_mode("good", directory=out, fault=fault)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertFalse((out / "map02-single-process-cycle.jsonl").exists())
+                self.assertFalse((out / "map02-cycle-clean-exit.jsonl").exists())
+                self.assertEqual(list(out.iterdir()), [])
+
+    def test_clean_exit_seal_byte_corruption_revokes_both_receipts(self):
+        for fault in ("seal-flip", "seal-dir-flip"):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as tmp:
+                out = Path(tmp) / "private"
+                out.mkdir(mode=0o700)
+                result = self.run_mode("good", directory=out, fault=fault)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertFalse((out / "map02-single-process-cycle.jsonl").exists())
+                self.assertFalse((out / "map02-cycle-clean-exit.jsonl").exists())
+
+    def test_clean_exit_refuses_identical_foreign_seal_inode_without_unlink(self):
+        for fault in ("seal-replace-identical",
+                      "seal-dir-replace-identical"):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as tmp:
+                out = Path(tmp) / "private"
+                out.mkdir(mode=0o700)
+                result = self.run_mode("good", directory=out, fault=fault)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertFalse((out / "map02-single-process-cycle.jsonl").exists())
+                seal = out / "map02-cycle-clean-exit.jsonl"
+                self.assertTrue(seal.is_file(), "foreign seal inode was deleted")
+                self.assertIn(b"vh.map02.cycle-order.v2", seal.read_bytes())
 
     def test_private_exclusive_receipt_and_no_overwrite(self):
         with tempfile.TemporaryDirectory() as tmp:
