@@ -496,6 +496,56 @@ static void test_opted_pending_corruption_preserves_active_bank(void) {
     assert(!wet_nonzero(&synth.reverb));
 }
 
+/* The audio consumer owns an already-produced PCM descriptor, not
+ * a reference to the synth's old VAB bank. Switching the gameplay cue
+ * must detach the old bank without rewriting queued audio pages. */
+static VhAudioStream transition_fifo, saved_transition_fifo;
+static int16_t transition_pcm[VH_AUDIO_BLOCK_FRAMES*2u];
+static void test_opted_switch_preserves_prepared_fifo_page(void) {
+    setup();
+    VhMusicCue first=cue_a(), second=cue_b();
+    assert(vh_music_scene_set_reverb_continuity(&scene,1)==0);
+    assert(vh_music_scene_request(&scene,&first,0u)==0);
+    for(unsigned block=0u;block<64u;block++)
+        assert(vh_music_scene_render(&scene,out)==0);
+    assert(wet_nonzero(&synth.reverb) &&
+           synth.voice[0].pcm==pcm_a);
+    vh_audio_stream_reset(&transition_fifo);
+    assert(vh_audio_stream_write(&transition_fifo,out,
+                                 VH_AUDIO_BLOCK_FRAMES)==
+           VH_AUDIO_BLOCK_FRAMES);
+    saved_transition_fifo=transition_fifo;
+    memcpy(transition_pcm,out,sizeof transition_pcm);
+    assert(vh_music_scene_request(&scene,&second,0u)==0);
+    assert(scene.stage==VH_MUSIC_PLAYING &&
+           scene.active.id==202u && scene.seq.note_ons==0u);
+    assert(!memcmp(&transition_fifo,&saved_transition_fifo,
+                   sizeof transition_fifo));
+    for(unsigned i=0u;i<VH_NATIVE_MUSIC_VOICES;i++)
+        assert(!synth.voice[i].active && synth.voice[i].pcm==NULL);
+    assert(vh_audio_stream_read(&transition_fifo,out,
+                                VH_AUDIO_BLOCK_FRAMES)==
+           VH_AUDIO_BLOCK_FRAMES);
+    assert(!memcmp(out,transition_pcm,sizeof transition_pcm));
+    assert(vh_audio_stream_queued(&transition_fifo)==0u &&
+           transition_fifo.overrun_frames==0u &&
+           transition_fifo.underrun_frames==0u);
+    assert(vh_music_scene_render(&scene,out)==0);
+    assert(scene.seq.note_ons==1u &&
+           synth.voice[0].pcm==pcm_b && has_signal(out));
+    assert(vh_audio_stream_write(&transition_fifo,out,
+                                 VH_AUDIO_BLOCK_FRAMES)==
+           VH_AUDIO_BLOCK_FRAMES);
+    assert(vh_audio_stream_read(&transition_fifo,out,
+                                VH_AUDIO_BLOCK_FRAMES)==
+           VH_AUDIO_BLOCK_FRAMES);
+    assert(vh_audio_stream_queued(&transition_fifo)==0u);
+    assert(vh_music_scene_request(&scene,NULL,0u)==0);
+    assert(scene.stage==VH_MUSIC_SILENT &&
+           !wet_nonzero(&synth.reverb));
+    assert(vh_music_scene_detach(&scene)==0);
+}
+
 int main(void) {
     test_validation_and_zero_fade_restart();
     test_two_block_fade_and_silence();
@@ -506,6 +556,7 @@ int main(void) {
     test_optional_wet_tail_direct_switch();
     test_default_reset_and_opted_fade_comparison();
     test_opted_pending_corruption_preserves_active_bank();
+    test_opted_switch_preserves_prepared_fifo_page();
     puts("game scene music cues: fade / switch / silence / validation PASS");
     return 0;
 }
