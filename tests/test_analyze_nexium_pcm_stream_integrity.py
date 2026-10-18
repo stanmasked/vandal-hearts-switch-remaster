@@ -102,10 +102,13 @@ class VirtualPcmStreamIntegrityTests(unittest.TestCase):
 
     def test_hash_and_frame_corruption_rejected(self):
         r=self.ref(self.monitor,"monitor")
-        self.monitor.write_bytes(self.monitor.read_bytes()+b"\x00")
+        original=self.monitor.read_bytes()
+        self.monitor.write_bytes(original+b"\\x00")
         with self.assertRaises(s.VirtualPcmEvidenceError):
             s.scan_pcm(self.monitor,r,kind="monitor")
-        self.monitor.write_bytes(self.monitor.read_bytes()[:-1])
+        # Exact original length restored, but with one different byte:
+        # source SHA-256 must still reject the tampered waveform.
+        self.monitor.write_bytes(original[:-1]+b"\\x00")
         with self.assertRaises(s.VirtualPcmEvidenceError):
             s.scan_pcm(self.monitor,r,kind="monitor")
         r["pcm_sha256"]="a"*64
