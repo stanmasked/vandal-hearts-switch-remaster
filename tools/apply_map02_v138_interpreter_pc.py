@@ -136,7 +136,7 @@ def modified_native_oracle(stops,wait_pc,expected_count):
         /* Execute GPU setup as an original interpreted MIPS stage. */
         psxCpu->ExecuteBlock(&psxRegs,EXEC_CALLER_OTHER);"""
     src=once(src,anchor,replacement,"enable interpreter PC capture before actual setup MIPS")
-    status='        SysPrintf("VH129_REAL_VBLANK_PROFILES_PASS mode=%u gaps=%u,%u,%u,%u "'
+    status='        SysPrintf("VH129_REAL_VBLANK_PROFILES_PASS mode=%u'
     guard="""        if(vh138_pc_capture){
             if(vh138_pc_inject_bad) vh138_pc_inject_error();
             if(vh138_pc_check()!=0u || vh138_pc_count()!=VH138_COUNT){
