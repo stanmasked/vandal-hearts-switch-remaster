@@ -78,6 +78,17 @@ class BoundaryCensoredSynthetic(unittest.TestCase):
         self.assertEqual(report["terminal_run"]["start_frame"], 31000)
         self.assertTrue(report["terminal_run_starts_after_last_host_marker"])
 
+    def test_terminal_run_crosses_last_approximate_marker(self):
+        # Boundary censoring follows original PCM EOF, not a host scene label.
+        raw = self.raw[:24000 * 4] + b"\0" * (8000 * 4)
+        report = self.build(raw)
+        parts = report["counts_by_recording_boundary"]
+        self.assertEqual(parts["recording_end"]["frames"], 8000)
+        self.assertEqual(parts["recording_end"]["run_count"], 1)
+        self.assertEqual(report["terminal_run"]["start_frame"], 24000)
+        self.assertFalse(report["terminal_run_starts_after_last_host_marker"])
+        self.assertIs(report["audible_dropout_or_music_scene_causality_verified"], False)
+
     def test_whole_recording_zero_counted_once(self):
         report = self.build(b"\0" * len(self.raw))
         parts = report["counts_by_recording_boundary"]
