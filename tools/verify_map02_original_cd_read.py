@@ -10,6 +10,7 @@ Never infers retail gameplay authenticity or actual PS1 hardware parity.
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import zlib
@@ -17,6 +18,7 @@ import stat
 
 from tools.check_map02_owned_disc_extent import (
     SECTOR_RAW, USER_DATA_START, USER_DATA_BYTES, _raw_sector,
+    _disc_file_identity,
     verify_map02_disc_extent,
 )
 from tools.publish_map02_blendg1_witness import _private_directory
@@ -40,17 +42,24 @@ def verify_map02_original_cd_read(scoped_dir, native_dir, owned_image,
         raise ValueError("original MAP02 CD receipt must have private 0600 permissions")
     raw = private_file(scoped, CD_READ, max_bytes=2048)
     event = json.loads(raw)
-    extent = verify_map02_disc_extent(owned_image, upstream)
+    image = Path(owned_image).absolute()
+    # Preserve the SAME original image inode across the two independent
+    # full-disc SHA/sector audits and our separate original CdRead CRC read.
+    # Equal hashes on replacement pathname inodes are not equivalent input.
+    original_inode = _disc_file_identity(os.stat(image, follow_symlinks=False))
+    extent = verify_map02_disc_extent(image, upstream)
+    if _disc_file_identity(os.stat(image, follow_symlinks=False)) != original_inode:
+        raise ValueError("owned MAP02 raw disc identity changed before CdRead comparison")
     if (extent["resource_lba"] != LBA or
             extent["resource_sector_count"] != COUNT):
         raise ValueError("pinned source MAP02 file extent differs")
 
     # Independent checksum of the same 12 raw CD payload sectors. Source
     # images remain local: do not store, print or upload any raw payload.
-    image = Path(owned_image)
-    import os
-    fd = os.open(image, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    fd = os.open(image, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
     try:
+        if _disc_file_identity(os.fstat(fd)) != original_inode:
+            raise ValueError("owned MAP02 raw disc inode differs before CdRead comparison")
         crc = 0
         data_sha = hashlib.sha256()
         for lba in range(LBA, LBA + COUNT):
@@ -59,12 +68,18 @@ def verify_map02_original_cd_read(scoped_dir, native_dir, owned_image,
                                USER_DATA_START + USER_DATA_BYTES]
             crc = zlib.crc32(block, crc)
             data_sha.update(block)
+        if (_disc_file_identity(os.fstat(fd)) != original_inode or
+                _disc_file_identity(os.stat(image, follow_symlinks=False))
+                != original_inode):
+            raise ValueError("owned MAP02 raw disc identity changed during CdRead comparison")
     finally:
         os.close(fd)
     if (f"{crc:08x}" != event["raw_user_crc32"] or
             extent["resource_user_data_sha256"] != data_sha.hexdigest()):
         raise ValueError("actual original CdRead payload differs from owned MAP02 CD sectors")
-    if verify_map02_disc_extent(owned_image, upstream) != extent:
+    if (verify_map02_disc_extent(image, upstream) != extent or
+            _disc_file_identity(os.stat(image, follow_symlinks=False))
+            != original_inode):
         raise ValueError("owned MAP02 image changed while verifying actual CdRead")
     final_checked = verify_window_scoped_join(native_dir, scoped_dir,
                                                target_frame=frame)
