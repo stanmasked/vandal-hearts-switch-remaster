@@ -59,9 +59,12 @@ def patch_v138_probe_c(src):
         "            vh138_seen==VH138_EXPECTED_COUNT)?0u:1u;\n"
         "}\n")
     # The native v138 declarations have one unique static state.
-    src=once(src,"static unsigned vh138_seen, vh138_bad, vh138_active;\n",
-        "static unsigned vh138_seen, vh138_bad, vh138_active;\n"+declared,
-        "v139 source-bound full instruction table and real stage counters")
+    shape=(
+        "typedef char vh138_expected_shapes_match[\n"
+        "    (sizeof(vh138_expected_pc)/sizeof(vh138_expected_pc[0]) ==\n"
+        "     sizeof(vh138_expected_kind)/sizeof(vh138_expected_kind[0]))?1:-1];\n")
+    src=once(src,shape,shape+declared,
+        "v139 source-bound full instruction table after v138 COUNT declaration")
     hook="""    /* Check the whole fetched, executed MIPS instruction word, not only
      * its SW opcode. The corrupt control mutates the *expected* word
      * on the third store, never an emulator register or actual MMIO. */
