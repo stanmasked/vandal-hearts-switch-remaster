@@ -115,6 +115,7 @@ def prepare(binary_path,expected_challenge,manifest_directory):
     df=_open_private_exe_dirfd(directory)
     fd=-1
     created=False
+    committed=False
     try:
         st=os.fstat(df)
         if (not stat.S_ISDIR(st.st_mode) or st.st_uid!=os.geteuid()
@@ -143,18 +144,20 @@ def prepare(binary_path,expected_challenge,manifest_directory):
         stored,_=_read_manifest(directory/MANIFEST_FILE)
         if stored!=initial:
             raise Refused("private build manifest changed")
+        committed=True
         return True
     except OSError:
         raise Refused("private build manifest safely inaccessible") from None
     finally:
         if fd>=0:
             os.close(fd)
-        # No partially written manifest may be treated as an existing bind.
-        # Only this call sets created; do not unlink an older user's file.
-        if created:
-            # If creation did not complete the manifest is removed below
-            # by verify-on-return guard; positive completion preserves it.
-            pass
+        # Clean up ONLY the leaf this invocation created; never delete an
+        # existing user manifest after an O_EXCL refusal.
+        if created and not committed:
+            try:
+                os.unlink(MANIFEST_FILE,dir_fd=df)
+            except OSError:
+                pass
         os.close(df)
 
 
