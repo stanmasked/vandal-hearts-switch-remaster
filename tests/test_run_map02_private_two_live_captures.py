@@ -67,6 +67,44 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
             before,
             'if (argc > 1 && !strcmp(argv[1], "alternate-event-before")) '
             'native_vram[0][0] = 0x1234;\n        ' + before)
+        # Extend only explicitly requested synthetic captures with a
+        # SECOND real DrawOTag pair. This exercises later event ordinals
+        # while preserving the original single-pair test expectations.
+        anchor = 'if (snprintf(logfile, sizeof(logfile), "%s/gpu-native-events.jsonl", dir) >='
+        if updated.count(anchor) != 1:
+            raise RuntimeError("MAP02 two-pair journal anchor drift")
+        extra = (
+            'int two_pair = argc > 1 && '
+            '(!strcmp(argv[1], "two-pair") || '
+            '!strcmp(argv[1], "two-pair-alternate-event") || '
+            '!strcmp(argv[1], "two-pair-alternate-vram") || '
+            '!strcmp(argv[1], "two-pair-alternate-both"));\n'
+            '        int second_event = argc > 1 && '
+            '(!strcmp(argv[1], "two-pair-alternate-event") || '
+            '!strcmp(argv[1], "two-pair-alternate-both"));\n'
+            '        int second_vram = argc > 1 && '
+            '(!strcmp(argv[1], "two-pair-alternate-vram") || '
+            '!strcmp(argv[1], "two-pair-alternate-both"));\n'
+            '        if (two_pair) {\n'
+            '            if (!write_image(dir, "gpu-0002-vram.bin")) return 63;\n'
+            '            if (second_vram) native_vram[0][0] = 0x7ffe;\n'
+            '            if (!write_image(dir, "gpu-0003-vram.bin")) return 64;\n'
+            '        }\n        '
+        )
+        updated = updated.replace(anchor, extra + anchor)
+        log_anchor = (
+            '!log_event(events, 1, "after", wrong_frame ? 124 : 123, alternate_event) ||\n'
+            '            fflush(events) != 0'
+        )
+        if updated.count(log_anchor) != 1:
+            raise RuntimeError("MAP02 two-pair log emission anchor drift")
+        updated = updated.replace(log_anchor, (
+            '!log_event(events, 1, "after", wrong_frame ? 124 : 123, alternate_event) ||\n'
+            '            (two_pair && '
+            '(!log_event(events, 2, "before", 123, second_event) ||\n'
+            '             !log_event(events, 3, "after", 123, second_event))) ||\n'
+            '            fflush(events) != 0'
+        ))
         source.write_text(updated, encoding="utf-8")
         cc = os.environ.get("CC", "cc")
         if not shutil.which(cc):
@@ -230,6 +268,85 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
     def test_two_launch_strict_rejects_joint_difference(self):
         self._launch_with_different_second_gpu_event(
             "alternate-event-before", strict=True)
+
+    def test_two_draw_pairs_strict_same_elf_captures_bit_exact(self):
+        report = self.run_two(args=("two-pair",),
+                              require_identical_gpu_timeline=True)
+        self.assertTrue(report["strict_gpu_timeline_match_verified"])
+        self.assertEqual(report["first_gpu_pairs_verified"], 2)
+        self.assertEqual(report["second_gpu_pairs_verified"], 2)
+        self.assertEqual(report["gpu_event_records_compared"], 4)
+        self.assertEqual(report["gpu_vram_snapshots_compared"], 4)
+        self.assertIsNone(report["first_joint_gpu_divergence_index"])
+        self.assertTrue(report["repeated_native_frame_pixels_identical"])
+
+    def _launch_with_second_pair_difference(self, second_variant, *, strict):
+        original = two_live.capture
+        calls = []
+        def replace_second(*args, **kwargs):
+            calls.append(1)
+            if len(calls) == 2:
+                kwargs["args"] = (second_variant,)
+            return original(*args, **kwargs)
+        with patch.object(two_live, "capture", side_effect=replace_second):
+            if strict:
+                with self.assertRaisesRegex(ValueError, "not bit-exact"):
+                    self.run_two(args=("two-pair",),
+                                 require_identical_gpu_timeline=True)
+                result = None
+            else:
+                result = self.run_two(args=("two-pair",))
+        self.assertEqual(len(calls), 2)
+        return result
+
+    def test_second_draw_pair_event_only_divergence(self):
+        out = self._launch_with_second_pair_difference(
+            "two-pair-alternate-event", strict=False)
+        self.assertEqual(out["gpu_event_records_compared"], 4)
+        self.assertEqual(out["different_gpu_event_records_in_common_prefix"], 2)
+        self.assertEqual(out["first_different_gpu_event_record_index"], 2)
+        self.assertEqual(out["first_joint_gpu_divergence_index"], 2)
+        self.assertEqual(out["first_joint_gpu_divergence_pair_index"], 1)
+        self.assertEqual(out["first_joint_gpu_divergence_phase"], "before")
+        self.assertEqual(out["first_joint_gpu_divergence_kind"], "event-only")
+        self.assertTrue(out["repeated_full_gpu_vram_snapshot_sequence_identical"])
+        self.assertTrue(out["repeated_native_frame_pixels_identical"])
+        self.assertFalse(out["strict_gpu_timeline_match_verified"])
+
+    def test_second_draw_pair_vram_only_divergence(self):
+        out = self._launch_with_second_pair_difference(
+            "two-pair-alternate-vram", strict=False)
+        self.assertEqual(out["first_different_gpu_vram_snapshot_index"], 3)
+        self.assertEqual(out["first_joint_gpu_divergence_index"], 3)
+        self.assertEqual(out["first_joint_gpu_divergence_pair_index"], 1)
+        self.assertEqual(out["first_joint_gpu_divergence_phase"], "after")
+        self.assertEqual(out["first_joint_gpu_divergence_kind"], "vram-only")
+        self.assertTrue(out["repeated_gpu_event_records_identical"])
+        self.assertEqual(out["different_bgr555_pixels"], 1)
+        self.assertFalse(out["strict_gpu_timeline_match_verified"])
+
+    def test_second_draw_pair_event_precedes_vram_divergence(self):
+        out = self._launch_with_second_pair_difference(
+            "two-pair-alternate-both", strict=False)
+        self.assertEqual(out["first_different_gpu_event_record_index"], 2)
+        self.assertEqual(out["first_different_gpu_vram_snapshot_index"], 3)
+        self.assertEqual(out["first_joint_gpu_divergence_index"], 2)
+        self.assertEqual(out["first_joint_gpu_divergence_kind"], "event-only")
+        self.assertEqual(out["different_bgr555_pixels"], 1)
+        self.assertFalse(out["strict_gpu_timeline_match_verified"])
+
+    def test_second_draw_pair_strict_mode_rejects_all_divergences(self):
+        for variant in ("two-pair-alternate-event",
+                        "two-pair-alternate-vram",
+                        "two-pair-alternate-both"):
+            with self.subTest(variant=variant):
+                # Each strict attempt requires four new empty output
+                # directories; the first failed attempt keeps its evidence.
+                if variant != "two-pair-alternate-event":
+                    for folder in self.dirs:
+                        for target in folder.iterdir():
+                            target.unlink()
+                self._launch_with_second_pair_difference(variant, strict=True)
 
     def test_strict_gpu_timeline_gate_rejects_missing_claims(self):
         good = self.run_two()
