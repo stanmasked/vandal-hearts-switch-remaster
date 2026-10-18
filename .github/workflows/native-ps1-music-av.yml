@@ -87,10 +87,12 @@ jobs:
           make ps1-music-av-zr-probe
           make ps1-music-av-zl-probe
           make ps1-music-av-resume-probe
+          make ps1-music-av-resume-retry-probe
           test -s build/libnx-ps1-music-av.nro
           test -s build/libnx-ps1-music-av-zr.nro
           test -s build/libnx-ps1-music-av-zl.nro
           test -s build/libnx-ps1-music-av-resume.nro
+          test -s build/libnx-ps1-music-av-resume-retry.nro
 
       - name: Upload NRO without proprietary audio assets
         uses: actions/upload-artifact@v4
@@ -101,6 +103,7 @@ jobs:
             build/libnx-ps1-music-av-zr.nro
             build/libnx-ps1-music-av-zl.nro
             build/libnx-ps1-music-av-resume.nro
+            build/libnx-ps1-music-av-resume-retry.nro
           if-no-files-found: error
 
 
@@ -112,7 +115,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        sd_case: [empty, full, partial, zr, zl, resume]
+        sd_case: [empty, full, partial, zr, zl, resume, resume_retry]
     steps:
       - uses: actions/checkout@v4
       - name: Download combined libnx AV NRO
@@ -130,7 +133,7 @@ jobs:
           sd_root="$RUNNER_TEMP/vh-neXium-$SD_CASE"
           mkdir -p "$sd_root"
           mode="$SD_CASE"
-          if [[ "$mode" == "zr" || "$mode" == "zl" || "$mode" == "resume" ]]; then mode=empty; fi
+          if [[ "$mode" == "zr" || "$mode" == "zl" || "$mode" == "resume" || "$mode" == "resume_retry" ]]; then mode=empty; fi
           python3 -m tools.generate_ps1_music_sd_fixture "$sd_root" --mode "$mode" > runtime-evidence/sd-fixture-manifest.json
           echo "NEXIUM_DATA_ROOT=$sd_root" >> "$GITHUB_ENV"
 
@@ -176,6 +179,8 @@ jobs:
             export NRO="nros/libnx-ps1-music-av-zl.nro"
           elif [[ "${{ matrix.sd_case }}" == "resume" ]]; then
             export NRO="nros/libnx-ps1-music-av-resume.nro"
+          elif [[ "${{ matrix.sd_case }}" == "resume_retry" ]]; then
+            export NRO="nros/libnx-ps1-music-av-resume-retry.nro"
           fi
           export SHOT1="runtime-evidence/av-before.png"
           export SHOT2="runtime-evidence/av-after.png"
@@ -223,7 +228,7 @@ jobs:
               audout="unavailable_or_error"
               pipeline="inactive_or_error"
               ;;
-            resume)
+            resume|resume_retry)
               source="synthetic"
               audout="initialized"
               pipeline="buffers_returned"
@@ -246,6 +251,9 @@ jobs:
           resume_gate=()
           if [[ "${{ matrix.sd_case }}" == "resume" ]]; then
             resume_gate=(--require-guest-resume-continuation)
+          elif [[ "${{ matrix.sd_case }}" == "resume_retry" ]]; then
+            resume_gate=(--require-guest-resume-continuation
+                         --require-guest-resume-retry)
           fi
           if [[ "${{ matrix.sd_case }}" == "zr" ]]; then
             zr_gate=(--require-guest-zr-recovery)
