@@ -21,12 +21,28 @@ NRO_NAMES = (
 )
 MANIFEST = "native-ps1-av-nro-sha256.txt"
 COMMIT_FILE = "native-ps1-av-source-commit.txt"
+# SHA-1 lowercase ASCII + LF; one ordered SHA-256 entry per NRO.
+COMMIT_MARKER_BYTES = 41
+MANIFEST_BYTES = sum(64 + 2 + len(name) + 1 for name in NRO_NAMES)
 
 
 def regular_file(path):
     if path.is_symlink() or not path.is_file():
         raise ValueError("missing, non-regular or symlinked AV artifact: " + str(path))
     return path
+
+
+def read_bounded_metadata(path, maximum, label):
+    # Prevent unbounded reads from downloaded or operator-supplied text.
+    # A second bounded read check catches growth after the stat.
+    path = regular_file(path)
+    if path.stat().st_size > maximum:
+        raise ValueError(label + " exceeds exact size limit: " + str(path))
+    with path.open("rb") as stream:
+        data = stream.read(maximum + 1)
+    if len(data) > maximum:
+        raise ValueError(label + " exceeds exact size limit: " + str(path))
+    return data
 
 
 def check_nro_header(header, size, filename):
@@ -65,13 +81,15 @@ def verify_bundle(root, expected_commit=None, *, exact_inventory=False):
     if (expected_commit is not None and
             re.fullmatch(r"[a-fA-F0-9]{40}", expected_commit) is None):
         raise ValueError("expected source commit must contain 40 hexadecimal characters")
-    source = regular_file(root / COMMIT_FILE).read_bytes()
+    source = read_bounded_metadata(root / COMMIT_FILE, COMMIT_MARKER_BYTES,
+                                   "source commit marker")
     if re.fullmatch(rb"[a-f0-9]{40}\n", source) is None:
         raise ValueError("source commit marker must be a lowercase SHA-1 plus newline")
     commit = source[:-1].decode("ascii")
     if expected_commit is not None and commit != expected_commit.lower():
         raise ValueError("source commit marker differs from the independently expected commit")
-    data = regular_file(root / MANIFEST).read_bytes()
+    data = read_bounded_metadata(root / MANIFEST, MANIFEST_BYTES,
+                                 "NRO digest manifest")
     try:
         manifest = data.decode("ascii")
     except UnicodeError as exc:

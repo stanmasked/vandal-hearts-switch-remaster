@@ -7,7 +7,8 @@ import tempfile
 import unittest
 
 from verify_native_av_nro_manifest import (
-    COMMIT_FILE, MANIFEST, NRO_NAMES, verify_bundle,
+    COMMIT_FILE, COMMIT_MARKER_BYTES, MANIFEST, MANIFEST_BYTES,
+    NRO_NAMES, verify_bundle,
 )
 
 COMMIT = "0123456789abcdef" * 2 + "01234567"
@@ -186,6 +187,29 @@ class AvNroManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"overlapping or out-of-order"):
             verify_bundle(self.root,COMMIT)
         self.assertNotEqual(self.cli().returncode,0)
+
+    def test_metadata_limits_match_valid_exact_fixture_sizes(self):
+        self.assertEqual((self.root / COMMIT_FILE).stat().st_size,
+                         COMMIT_MARKER_BYTES)
+        self.assertEqual((self.root / MANIFEST).stat().st_size,
+                         MANIFEST_BYTES)
+        self.assertEqual(verify_bundle(self.root, COMMIT)["nro_count"], 7)
+
+    def test_oversized_source_marker_fails_before_unbounded_read(self):
+        path = self.root / COMMIT_FILE
+        with path.open("r+b") as stream:
+            stream.truncate(8 * 1024 * 1024)
+        with self.assertRaisesRegex(ValueError, "source commit marker exceeds exact size limit"):
+            verify_bundle(self.root, COMMIT, exact_inventory=True)
+        self.assertNotEqual(self.cli("--expected-commit", COMMIT).returncode, 0)
+
+    def test_oversized_manifest_fails_before_unbounded_read(self):
+        path = self.root / MANIFEST
+        with path.open("r+b") as stream:
+            stream.truncate(8 * 1024 * 1024)
+        with self.assertRaisesRegex(ValueError, "NRO digest manifest exceeds exact size limit"):
+            verify_bundle(self.root, COMMIT, exact_inventory=True)
+        self.assertNotEqual(self.cli("--exact-inventory").returncode, 0)
 
     def test_mismatched_or_nonhex_source_commit_rejected(self):
         with self.assertRaisesRegex(ValueError, "independently expected commit"):
