@@ -1533,6 +1533,41 @@ jobs:
           PY
           echo "Stage301: revalidated virtual PCM and estimated scene markers at hypothetical +/-250/500/1000ms windows; no measured event timing error, dropout or physical audio evidence." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Stage302 distinguish virtual PCM end-censored silence from interior runs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_pcm_terminal_silence.py \
+            --monitor runtime-evidence/nexium-monitor-s16le-48k.pcm \
+            --monitor-report runtime-evidence/pcm-quality-report.json \
+            --scenes runtime-evidence/nexium-scenes-s16le-48k.pcm \
+            --scene-report runtime-evidence/scene-audio-report.json \
+            --events runtime-evidence/scene-events.csv \
+            --stage299 runtime-evidence/pcm-stream-integrity-stage299.json \
+            --stage300 runtime-evidence/pcm-scene-silence-stage300.json \
+            --stage301 runtime-evidence/pcm-marker-envelopes-stage301.json \
+            --output runtime-evidence/pcm-recording-edge-silence-stage302.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("runtime-evidence/pcm-recording-edge-silence-stage302.json").read_text())
+          z=r["counts_by_recording_boundary"]
+          if (r["result"]!="SOURCE_BOUND_EXACT_ZERO_RUN_RECORDING_CENSORSHIP_RECONCILED"
+                  or set(z)!={"whole_recording","recording_start","interior","recording_end"}
+                  or sum(x["run_count"] for x in z.values())!=r["original_exact_zero_runs"]
+                  or sum(x["frames"] for x in z.values())!=r["original_exact_zero_frames"]
+                  or r["whole_recording_is_not_double_counted"] is not True
+                  or r["every_original_zero_frame_accounted_once"] is not True
+                  or r["marker_offset_error_measured"] is not False
+                  or r["virtual_monitor_end_cannot_establish_gameplay_or_audio_end"] is not True
+                  or r["audible_dropout_or_music_scene_causality_verified"] is not False
+                  or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage302 source-bound recording edge audit failed")
+          print("Stage302 original scene PCM silence by recording edge:",z)
+          print("Stage302 terminal zero run, if any:",r["terminal_run"])
+          PY
+          echo "Stage302: independently re-count original PCM zero runs by recording-start, interior, EOF and whole-recording censoring; EOF is NOT evidence of guest shutdown or audible dropout." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Record audio capture boundary
         if: always()
         env:
