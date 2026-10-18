@@ -83,10 +83,22 @@ def run(executable, output_dir, gpu_journal_dir, *, frame, executable_sha256,
     owner-private permissions. On failure, the launcher's fail-closed
     publication and the independent replay checks determine refusal.
     """
+    # A capture-success reply alone cannot pin a filesystem inode.
+    # Take the inventory witness BEFORE the launcher's held directory FDs
+    # close; a same-byte replacement before the first offline replay must
+    # then fail even when all SHA-256 digests remain identical.
+    publication_witness = []
+    def pin_at_publication():
+        publication_witness.append(
+            _session_inode_witness(output_dir, gpu_journal_dir))
+
     captured = capture(
         executable, output_dir, frame=frame, width=WIDTH, height=HEIGHT,
         executable_sha256=executable_sha256, timeout=timeout, args=args,
-        gpu_journal_dir=gpu_journal_dir)
+        gpu_journal_dir=gpu_journal_dir,
+        post_publish_witness=pin_at_publication)
+    if len(publication_witness) != 1:
+        raise ValueError("MAP02 missing same-launch private publication identity")
     if (captured.get("schema") != EXPECTED_CAPTURE
             or captured.get("frame") != frame
             or captured.get("width") != WIDTH
@@ -100,7 +112,9 @@ def run(executable, output_dir, gpu_journal_dir, *, frame, executable_sha256,
     # Do not rely solely on capture's receipt or trust a caller-supplied
     # hash: independently reopen all private original files, journal
     # snapshots and the pinned executable in TWO separate audit passes.
-    pinned_session = _session_inode_witness(output_dir, gpu_journal_dir)
+    pinned_session = publication_witness[0]
+    if _session_inode_witness(output_dir, gpu_journal_dir) != pinned_session:
+        raise ValueError("MAP02 private GPU/frame files changed after publication")
     first = replay(output_dir, executable=executable,
                    gpu_journal_dir=gpu_journal_dir)
     if _session_inode_witness(output_dir, gpu_journal_dir) != pinned_session:
