@@ -9,6 +9,15 @@ void vh_music_scene_init(VhMusicScene *scene, VhNativeSpu *spu) {
     scene->spu = spu;
 }
 
+int vh_music_scene_set_reverb_continuity(VhMusicScene *s, int enabled) {
+    if (!s || !s->spu || (enabled != 0 && enabled != 1) ||
+        s->stage != VH_MUSIC_SILENT || s->active.id || s->pending.id ||
+        s->last_error)
+        return -1;
+    s->keep_reverb_across_cues = (unsigned)enabled;
+    return 0;
+}
+
 int vh_music_scene_detach(VhMusicScene *s) {
     if (!s || !s->spu) return -1;
     /* This is the explicit point where caller-owned SEQ/VAB/PCM can
@@ -56,22 +65,33 @@ static int switch_to(VhMusicScene *s, const VhMusicCue *cue) {
      * Clear old pointers BEFORE the caller can release old bank PCM.
      * The incoming track gets new channel and voice ownership.
      */
-    const unsigned interpolation = s->spu->interpolation;
-    const int reverb_on = s->spu->reverb_enabled;
-    const float reverb_depth = s->spu->reverb_depth;
-    vh_native_spu_reset(s->spu);
-    if (vh_native_spu_set_interpolation(s->spu, interpolation) ||
-        vh_native_spu_set_reverb(s->spu, reverb_on, reverb_depth))
-        return -1;
-    memset(&s->seq, 0, sizeof(s->seq));
-    memset(&s->active, 0, sizeof(s->active));
-    if (cue && cue->id) {
-        if (vh_native_seq_init(&s->seq, cue->seq, cue->seq_size,
+    if (s->keep_reverb_across_cues && cue && cue->id) {
+        /* Optional continuity between actual music cues only. First
+         * validate and stage the replacement, then detach old PCM
+         * voices without flushing the already accumulated wet tail. */
+        if (vh_native_seq_switch_scene(&s->seq, cue->seq, cue->seq_size,
+                                       s->spu, cue->resolver, cue->context,
+                                       cue->repeats))
+            return -1;
+    } else {
+        /* Historical default: discard the old wet history, and ALWAYS
+         * clear it for explicit silence / bank unload. */
+        const unsigned interpolation = s->spu->interpolation;
+        const int reverb_on = s->spu->reverb_enabled;
+        const float reverb_depth = s->spu->reverb_depth;
+        vh_native_spu_reset(s->spu);
+        if (vh_native_spu_set_interpolation(s->spu, interpolation) ||
+            vh_native_spu_set_reverb(s->spu, reverb_on, reverb_depth))
+            return -1;
+        memset(&s->seq, 0, sizeof(s->seq));
+        if (cue && cue->id &&
+            vh_native_seq_init(&s->seq, cue->seq, cue->seq_size,
                                s->spu, cue->resolver, cue->context,
                                cue->repeats))
             return -1;
-        s->active = *cue;
     }
+    memset(&s->active, 0, sizeof(s->active));
+    if (cue && cue->id) s->active = *cue;
     ++s->switches;
     return 0;
 }
