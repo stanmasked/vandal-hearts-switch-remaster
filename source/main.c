@@ -449,6 +449,33 @@ int main(int argc, char **argv) {
                     (void)unlink(page_path);
             }
         }
+        /* Stage317: optional one-shot worker stop observation.
+         * Export after join only, to an independent exclusive CSV.
+         * Failure to write diagnostics never changes game exit. */
+        int stop_fd=-1;
+        char stop_path[256];
+        for(unsigned slot=0;slot<32u;slot++) {
+            int n=snprintf(stop_path,sizeof stop_path,
+                VH_SCENE_TRACE_SD_DIRECTORY
+                "/audio-exit-worker-stop-%03u.csv",slot);
+            if(n<=0 || (size_t)n>=sizeof stop_path) break;
+            stop_fd=open(stop_path,O_WRONLY|O_CREAT|O_EXCL,0600);
+            if(stop_fd>=0) break;
+            if(errno!=EEXIST) break;
+        }
+        if(stop_fd>=0) {
+            FILE *stop_stream=fdopen(stop_fd,"w");
+            if(!stop_stream) {
+                (void)close(stop_fd);
+                (void)unlink(stop_path);
+            } else {
+                const int rows=vh_switch_game_audio_worker_stop_dump(stop_stream);
+                const int flush_result=fflush(stop_stream);
+                const int close_result=fclose(stop_stream);
+                if(rows!=1 || flush_result!=0 || close_result!=0)
+                    (void)unlink(stop_path);
+            }
+        }
         char scene_path[VH_SCENE_TRACE_EXPORT_PATH_CAP];
         const VhSceneExportResult saved=vh_switch_game_audio_trace_export(
             scene_path,sizeof scene_path);

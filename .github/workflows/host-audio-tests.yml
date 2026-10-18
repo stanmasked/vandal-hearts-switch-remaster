@@ -107,6 +107,17 @@ jobs:
           done
       - name: Stage313 guest last returned buffer source and exit chronology tests
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_guest_last_buffer_return.py' -v
+      - name: Stage317 worker mailbox stop flag observation C11 GCC and Clang
+        run: |
+          set -euxo pipefail
+          for cc in gcc clang; do
+            "$cc" -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+              tests/test_vh_audio_exit_worker_stop_witness.c \
+              -o "/tmp/vh-stop-observed-$cc"
+            "/tmp/vh-stop-observed-$cc"
+          done
+      - name: Stage317 guest stop observation source and ordering tests
+        run: python3 -m unittest discover -s tests -p 'test_audit_nexium_guest_worker_stop_observed.py' -v
       - name: Stage314 byte-exact original guest audout release source preservation
         run: python3 -m unittest discover -s tests -p 'test_preserve_nexium_guest_last_buffer_original.py' -v
       - name: Stage308 CRC optical/guest exit source tests with Pillow

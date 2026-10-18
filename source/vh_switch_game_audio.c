@@ -11,6 +11,7 @@
 #include "vh_audio_scene_optical.h"
 #include "vh_audio_exit_timeline.h"
 #include "vh_audio_exit_output_witness.h"
+#include "vh_audio_exit_worker_stop_witness.h"
 
 #include <stdio.h>
 
@@ -59,6 +60,7 @@ static atomic_uint published_abandoned_sessions;
 static VhAudioSceneTrace scene_trace;
 static VhAudioExitTimeline exit_timeline; /* only once per audio start */
 static VhAudioExitOutputWitness exit_output_witness; /* audio owner only */
+static VhAudioExitWorkerStopWitness worker_stop_witness;
 /* Audout worker is the sole writer. Main reads after thread join. */
 static VhAudoutQueueTelemetry audout_telemetry;
 static atomic_ullong scene_trace_latest_ticket; /* serial << 32 | scene */
@@ -352,7 +354,16 @@ static void audio_worker(void *unused) {
         vh_game_music_mailbox_resume_serial(&mailbox);
     int pending_resume_reopen = 0;
     atomic_store_explicit(&audio_status, 0, memory_order_release);
-    while (vh_game_music_mailbox_running(&mailbox)) {
+    for (;;) {
+        /* This is the SAME single running-flag read formerly used
+         * as the while condition. Stamp only after observing false:
+         * there is no additional polling or audio-loop clock read.
+         * Other failure breaks leave the stop marker unobserved. */
+        if (!vh_game_music_mailbox_running(&mailbox)) {
+            (void)vh_audio_exit_worker_stop_mark(
+                &worker_stop_witness,scene_trace_now_ns());
+            break;
+        }
         const unsigned newest_resume =
             vh_game_music_mailbox_resume_serial(&mailbox);
         if (newest_resume != handled_resume) {
@@ -562,6 +573,7 @@ int vh_switch_game_audio_start(unsigned initial_scene) {
     vh_audio_scene_trace_init(&scene_trace);
     vh_audio_exit_timeline_reset(&exit_timeline);
     vh_audio_exit_output_reset(&exit_output_witness);
+    vh_audio_exit_worker_stop_reset(&worker_stop_witness);
     vh_audout_queue_reset(&audout_telemetry);
     if(vh_audout_queue_set_probe_phase(&audout_telemetry,
                                       VH_AUDOUT_PROBE_PHASE)) return -1;
@@ -730,6 +742,11 @@ int vh_switch_game_audio_exit_dump(FILE *stream) {
 int vh_switch_game_audio_exit_output_dump(FILE *stream) {
     if (!stream || thread_started) return -1;
     return vh_audio_exit_output_write_csv(&exit_output_witness,stream);
+}
+
+int vh_switch_game_audio_worker_stop_dump(FILE *stream) {
+    if (!stream || thread_started) return -1;
+    return vh_audio_exit_worker_stop_write_csv(&worker_stop_witness,stream);
 }
 
 void vh_switch_game_audio_stop(void) {
