@@ -243,6 +243,27 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
                 self.assertNotIn(private_path, stderr.getvalue())
                 self.assertNotIn("source-image.bin", stderr.getvalue())
 
+    def test_full_capture_rejects_unobserved_vram_write_between_pairs(self):
+        report=verify_capture(self.root,target_frame=12)
+        self.assertEqual(report["native_gpu_vram_pair_bridge_checks"],1)
+        # The second pair still contains two correctly sized snapshots and
+        # valid JSON, but its BEFORE diverges from the first pair's AFTER.
+        # This is an unobserved change to the original native VRAM state.
+        path=self.root/"gpu-0002-vram.bin"
+        mutated=bytearray(path.read_bytes())
+        mutated[10:12]=b"\x1f\x00"
+        path.write_bytes(mutated)
+        with self.assertRaisesRegex(ValueError,
+                                    "VRAM continuity broken between event pairs"):
+            verify_capture(self.root,target_frame=12)
+
+    def test_single_gpu_pair_needs_no_inter_pair_bridge(self):
+        self.events=self.events[:2]
+        self.save()
+        report=verify_capture(self.root,target_frame=12)
+        self.assertEqual(report["native_gpu_pairs_verified"],1)
+        self.assertEqual(report["native_gpu_vram_pair_bridge_checks"],0)
+
     def test_two_native_pairs_and_hashes(self):
         result=verify_capture(self.root,target_frame=12)
         self.assertEqual(result["native_gpu_pairs_verified"],2)
