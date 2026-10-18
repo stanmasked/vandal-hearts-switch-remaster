@@ -380,16 +380,29 @@ def _require_gpu_snapshot_aggregate_consistency(data):
         if (type(value) is not str or len(value) != 64
                 or any(x not in "0123456789abcdef" for x in value)):
             raise ValueError(error)
+    first_count = data["first_gpu_vram_snapshot_count"]
+    second_count = data["second_gpu_vram_snapshot_count"]
+    unmatched = data["unmatched_gpu_vram_snapshots"]
+    if (not 2 <= first_count <= MAX_RECORDS or first_count % 2
+            or not 2 <= second_count <= MAX_RECORDS or second_count % 2
+            or common != min(first_count, second_count)
+            or unmatched != abs(first_count - second_count)):
+        raise ValueError(error)
     matching_hashes = (data["first_gpu_vram_timeline_sha256"] ==
                        data["second_gpu_vram_timeline_sha256"])
-    if (type(data.get("gpu_vram_timeline_commitments_identical")) is not bool
+    # The ordered commitment includes the count and every raw native VRAM
+    # snapshot. Equal lengths plus zero byte differences must give the
+    # SAME digest; any differing snapshot or unmatched tail must give a
+    # different digest (modulo a theoretical SHA-256 collision). Reject
+    # contradicted aggregate hash claims even in diagnostic mode.
+    expected_identical = first_count == second_count and changed == 0
+    if (matching_hashes is not expected_identical
+            or type(data.get("gpu_vram_timeline_commitments_identical")) is not bool
             or data["gpu_vram_timeline_commitments_identical"] is not matching_hashes
             or type(data.get("repeated_full_gpu_vram_snapshot_sequence_identical"))
                is not bool
             or data["repeated_full_gpu_vram_snapshot_sequence_identical"]
-               is not (data["first_gpu_vram_snapshot_count"] ==
-                       data["second_gpu_vram_snapshot_count"]
-                       and changed == 0 and matching_hashes)):
+               is not expected_identical):
         raise ValueError(error)
     if changed:
         pixels = data.get("first_different_gpu_snapshot_changed_pixels")
