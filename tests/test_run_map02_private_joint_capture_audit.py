@@ -115,6 +115,9 @@ class PrivateJointOneShotAuditTests(unittest.TestCase):
             path = pair / "reference.bgr555"
             new_path = pair / "same-byte-reference.bgr555"
             new_path.write_bytes(path.read_bytes())
+            # The test isolates inode substitution, not file-mode refusal:
+            # the new inode must itself satisfy the strict 0600 preflight.
+            new_path.chmod(0o600)
             os.replace(new_path, path)
             return receipt
         with patch.object(joint_runner, "capture", side_effect=swap):
