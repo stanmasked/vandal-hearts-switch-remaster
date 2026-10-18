@@ -27,10 +27,11 @@ class PhysicalPixelReportVerificationTests(unittest.TestCase):
         self.report.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n",
                                encoding="utf-8")
 
-    def cli(self, before=None, after=None):
+    def cli(self, before=None, after=None, flags=()):
         return subprocess.run(
             [sys.executable, "tests/verify_native_av_physical_report.py",
-             str(self.report), str(before or self.before), str(after or self.after)],
+             str(self.report), str(before or self.before),
+             str(after or self.after), *flags],
             capture_output=True, text=True)
 
     def test_matching_report_recomputed_without_hardware_claim(self):
@@ -44,6 +45,49 @@ class PhysicalPixelReportVerificationTests(unittest.TestCase):
         self.assertEqual(summary["verification"],
                          "recomputed_png_pixel_report_match")
         self.assertFalse(summary["physical_hardware_verified"])
+
+    def test_recomputed_focus_gate_accepts_only_new_pixel_cycle(self):
+        passed = self.cli(flags=("--require-focus-pixels",))
+        self.assertEqual(passed.returncode, 0, passed.stderr)
+        summary = json.loads(passed.stdout)
+        self.assertEqual(summary["required_pixel_conditions_reverified"],
+                         ["new_focus_cycle_pixels"])
+        self.assertFalse(summary["home_event_verified"])
+        denied = self.cli(flags=("--require-x-return-pixels",))
+        self.assertNotEqual(denied.returncode, 0)
+        self.assertIn("new_x_return_pixels", denied.stderr)
+        denied = self.cli(flags=("--require-y-return-pixels",))
+        self.assertNotEqual(denied.returncode, 0)
+        self.assertIn("new_y_return_pixels", denied.stderr)
+
+    def test_recomputed_manual_x_y_gates_reject_stale_focus(self):
+        frame(b=1, f=1, p=True, x="yellow", y="yellow").save(self.before)
+        frame(b=1, f=1, p=True, x="blue", y="blue").save(self.after)
+        self.write_report(inspect(self.before, self.after,
+                                  bind_png_hashes=True))
+        passed = self.cli(flags=("--require-x-return-pixels",
+                                 "--require-y-return-pixels"))
+        self.assertEqual(passed.returncode, 0, passed.stderr)
+        flags = json.loads(passed.stdout)["required_pixel_conditions_reverified"]
+        self.assertEqual(flags, ["new_x_return_pixels", "new_y_return_pixels"])
+        self.assertNotEqual(self.cli(flags=("--require-focus-pixels",)).returncode, 0)
+        with self.assertRaisesRegex(ValueError,"new_focus_cycle_pixels"):
+            verify(self.report, self.before, self.after,
+                   require_focus_pixels=True)
+        # Old blue X remains blue and cannot falsely confirm a new X.
+        frame(b=1, f=1, p=True, x="blue", y="yellow").save(self.before)
+        self.write_report(inspect(self.before, self.after,
+                                  bind_png_hashes=True))
+        self.assertNotEqual(
+            self.cli(flags=("--require-x-return-pixels",)).returncode, 0)
+
+    def test_json_integrity_gate_stays_independent_of_requested_pixels(self):
+        data = json.loads(self.report.read_text(encoding="utf-8"))
+        data["difference"]["new_focus_cycle_pixels"] = False
+        self.write_report(data)
+        self.assertNotEqual(
+            self.cli(flags=("--require-focus-pixels",)).returncode, 0)
+        self.assertNotEqual(self.cli().returncode, 0)
 
     def test_png_change_outside_status_tiles_rejected(self):
         altered = frame(b=1, f=1, p=True)

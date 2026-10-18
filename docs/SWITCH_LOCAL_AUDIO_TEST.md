@@ -440,8 +440,15 @@ PNG при помощи `--report-out report.json`. Новый файл созд
 с сохранённым отчётом выполните:
 
 ```sh
-python3 tests/verify_native_av_physical_report.py report.json before.png after.png
+python3 tests/verify_native_av_physical_report.py report.json before.png after.png --require-focus-pixels
 ```
+
+При проверке X/Y вместо `--require-focus-pixels` указывают
+`--require-x-return-pixels` и/или `--require-y-return-pixels`.
+Без этих ключей проверяется соответствие файла отчёта исходным
+изображениям, но **не требуется** появление нового события.
+С указанными ключами необходимый визуальный переход проверяется
+заново, после проверки целостности отчёта.
 
 Проверка повторно читает исходные PNG, самостоятельно распознаёт
 индикаторы и сравнивает весь результат с сохранённым JSON,
