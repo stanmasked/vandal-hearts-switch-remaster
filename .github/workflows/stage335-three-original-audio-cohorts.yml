@@ -1,0 +1,121 @@
+name: Stage335 independently replay three real NeXium guest audio software and host clock cohorts
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage335-three-original-audio-cohorts.yml'
+      - 'tools/compare_nexium_stage335_three_original_capture_sources.py'
+      - 'tools/nexium_stage335_first_two_original_source_pins.json'
+      - 'tests/test_compare_nexium_stage335_three_original_capture_sources.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  independent-real-three-cohort-audit:
+    name: Verify three distinct original NeXium software-call and host-control source archives
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout independent original-source comparator
+        uses: actions/checkout@v4
+
+      - name: Stage335 thirteen source integrity, cohort independence and privacy regressions
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/compare_nexium_stage335_three_original_capture_sources.py tests/test_compare_nexium_stage335_three_original_capture_sources.py
+          python3 -m unittest discover -s tests -p 'test_compare_nexium_stage335_three_original_capture_sources.py' -v
+
+      - name: Confirm all three actual NeXium runs completed successfully
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for run_id in 39166023593 39167324026 39175592570; do
+            status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$run_id" --jq '.status')"
+            conclusion="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$run_id" --jq '.conclusion')"
+            test "$status" = completed
+            test "$conclusion" = success
+            echo "Original NeXium audio capture $run_id: completed success"
+          done
+
+      - name: Download first successfully captured genuine guest-host audio archive
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39166023593
+          github-token: ${{ github.token }}
+          path: actual-capture-one
+
+      - name: Download second successfully captured genuine guest-host audio archive
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39167324026
+          github-token: ${{ github.token }}
+          path: actual-capture-two
+
+      - name: Download new Stage334 successful third NeXium guest-host audio archive
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39175592570
+          github-token: ${{ github.token }}
+          path: actual-capture-three
+
+      - name: Independently replay and compare original three capture software and host control sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p stage335-three-originals
+          python3 tools/compare_nexium_stage335_three_original_capture_sources.py \
+            --first-archive actual-capture-one \
+            --second-archive actual-capture-two \
+            --third-archive actual-capture-three \
+            --old-pins tools/nexium_stage335_first_two_original_source_pins.json \
+            --output stage335-three-originals/three-source-guest-host-software-cohorts.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          doc=json.loads(Path(
+              "stage335-three-originals/three-source-guest-host-software-cohorts.json"
+          ).read_text(encoding="utf-8"))
+          if (doc["result"]!="THREE_DISTINCT_ORIGINAL_NEXIUM_GUEST_HOST_SOURCE_COHORTS_REPLAYED"
+                  or doc["new_original_stage334_receipt_reproduced_exactly"] is not True
+                  or doc["all_three_stage320_322_325_sources_independently_replayed"] is not True
+                  or doc["all_three_strict_stage304_305_success_receipts_checked"] is not True
+                  or doc["all_four_original_source_shas_distinct_across_three_captures"] is not True
+                  or doc["no_guest_software_clock_subtracted_from_host_clock"] is not True
+                  or doc["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage335 authentic three-NeXium replay or evidence scope failed")
+          rows=doc["cohorts"]
+          if (len(rows)!=3 or
+                  [r["guest_last_software_duration_ns"] for r in rows]
+                     !=[11225937,22352500,18486979] or
+                  [r["guest_prior_lower_median_software_ns"] for r in rows]
+                     !=[32154011,31247083,32374948]):
+              raise SystemExit("Stage335 guest software timing does not match three actual source runs")
+          if ([r["host_control_intervals"][0]["host_wall_delta_ms"] for r in rows]
+                  !=[357,358,324] or
+              [r["host_control_intervals"][1]["host_wall_delta_ms"] for r in rows]
+                  !=[4270,4286,4221]):
+              raise SystemExit("Stage335 host control intervals differ from the actual NeXium runs")
+          for item in rows:
+              print(item["source"],"guest last ns",item["guest_last_software_duration_ns"],
+                    "previous median ns",item["guest_prior_lower_median_software_ns"],
+                    "guest last rank",item["guest_last_first_possible_rank"],
+                    "host monotonic ns",[
+                        x["host_monotonic_delta_ns"] for x in item["host_control_intervals"]])
+          PY
+          echo "Stage335: three distinct genuine NeXium guest software + host-clock original CSV sources independently checked with strict Stage304/305 receipts. No guest/host clock alignment, DAC, speaker audio or original soundtrack proof." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save only compact source-validated per-capture comparison without absolute clocks or PCM
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage335-three-original-neXium-guest-host-cohorts
+          path: stage335-three-originals/
+          if-no-files-found: warn
