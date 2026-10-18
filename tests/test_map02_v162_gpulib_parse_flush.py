@@ -98,8 +98,11 @@ class NativeGpulibParseFlush162(unittest.TestCase):
             "VH160_NATIVE_PLUGIN_CALLBACK_PASS",
         ):
             self.assertIn(marker,front)
+        self.assertLess(front.index("VH162_GPU_PREFLIGHT_REFUSED"),
+                        front.index("if(vh161_arm_gpu_queue()!=0){"))
         self.assertLess(front.index("if(vh161_arm_gpu_queue()!=0){"),
                         front.index("if(vh162_arm_gpu_parser()!=0){"))
+        self.assertEqual(front.count("(void)GPU_readStatus();"),2)
         with self.assertRaises(ValueError):
             patch_frontend(front)
 
