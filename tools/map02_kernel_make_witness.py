@@ -1,8 +1,8 @@
-"""Linux ptrace witness for an independent, asset-free GNU Make replay.
+"""Linux ptrace witness for real GNU Make compiler children.
 
-Follows real Make grandchildren over fork/exec events and fingerprints
-/proc/PID/exe while each execve tracee is stopped. It does not retroactively
-attest the earlier untraced Make compilation.
+Follows actual Make descendants over fork/exec events and fingerprints
+/proc/PID/exe while each execve tracee is stopped. The caller can use this
+for the primary compile, rather than an independent replay.
 """
 
 import ctypes

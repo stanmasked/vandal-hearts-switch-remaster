@@ -92,10 +92,11 @@ class SealedMakeOverlayTests(unittest.TestCase):
         self.assertTrue(result["compiler_runtime_mappings_correlated_to_resolved_files"])
         self.assertEqual(result["kernel_tool_exec_witnesses"], 6)
         self.assertTrue(result["kernel_tool_exec_images_match_sha256"])
-        self.assertFalse(result["actual_make_children_kernel_attested"])
-        self.assertTrue(all(result["kernel_make_replay_children_seen"][role] >= 1
+        self.assertTrue(result["actual_make_children_kernel_attested"])
+        self.assertTrue(all(result["kernel_make_primary_children_seen"][role] >= 1
                             for role in ("driver", "cc1", "as")))
-        self.assertTrue(result["kernel_make_replay_executables_match_sha256"])
+        self.assertTrue(result["kernel_make_primary_executables_match_sha256"])
+        self.assertFalse(result["separate_make_object_replay_performed"])
         self.assertGreaterEqual(result["system_header_count"], 1)
         self.assertEqual(len(result["system_header_set_sha256"]), 64)
         self.assertTrue(result["system_header_bytes_before_after_match"])
@@ -149,25 +150,24 @@ class SealedMakeOverlayTests(unittest.TestCase):
         self.assertEqual(len(result["objects_sha256"]), 2)
 
     def test_header_replacement_after_preprocessing_does_not_change_objects(self):
-        real_run = subprocess.run
+        real_trace = sealed.kernel_witness.trace_make_children
         header = self.pc / "src/map02_fixture.h"
         original = header.read_bytes()
         changed = []
 
-        def inject(args, **kwargs):
-            if "map02-private-gpu-objects" in args:
-                header.write_text(
-                    "#define VH_TEST_GPU 999\n#define VH_TEST_RASTER 999\n"
-                    "#error modified-header-after-preprocessing\n")
-                try:
-                    result = real_run(args, **kwargs)
-                finally:
-                    header.write_bytes(original)
-                changed.append(True)
-                return result
-            return real_run(args, **kwargs)
+        def inject(*args, **kwargs):
+            header.write_text(
+                "#define VH_TEST_GPU 999\n#define VH_TEST_RASTER 999\n"
+                "#error modified-header-after-preprocessing\n")
+            try:
+                result = real_trace(*args, **kwargs)
+            finally:
+                header.write_bytes(original)
+            changed.append(True)
+            return result
 
-        with patch.object(sealed.subprocess, "run", side_effect=inject):
+        with patch.object(sealed.kernel_witness, "trace_make_children",
+                          side_effect=inject):
             self.run_build("build-map02-header-swap")
         self.assertEqual(changed, [True])
         for name, symbol in (("libgpu.o", "vh_gpu_value"),
@@ -469,6 +469,22 @@ class SealedMakeOverlayTests(unittest.TestCase):
             "321: initialize program: /usr/bin/gcc\n")
         with self.assertRaisesRegex(ValueError, "log name invalid"):
             sealed._runtime_loader_evidence(witness, "/usr/bin/gcc", {})
+
+    def test_primary_make_is_traced_not_run_through_untraced_subprocess(self):
+        actual = sealed.subprocess.run
+        forbidden = []
+
+        def checked_run(args, **kwargs):
+            if "map02-private-gpu-objects" in args:
+                forbidden.append(True)
+                raise AssertionError("An untraced object compilation was attempted")
+            return actual(args, **kwargs)
+
+        with patch.object(sealed.subprocess, "run", side_effect=checked_run):
+            report = self.run_build("build-map02-traced-primary-only")
+        self.assertFalse(forbidden)
+        self.assertTrue(report["actual_make_children_kernel_attested"])
+        self.assertFalse((self.pc / "build-map02-traced-primary-only-kernel-witness").exists())
 
     def test_kernel_exec_image_matches_selected_gcc(self):
         driver, hashes = sealed._compiler_evidence()
