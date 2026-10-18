@@ -139,6 +139,17 @@ jobs:
           done
       - name: Stage320 validate original guest audout PlayBuffer source against stop/return
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_guest_last_playbuffer.py' -v
+      - name: Stage322 bounded original PlayBuffer history under GCC and Clang
+        run: |
+          set -euxo pipefail
+          for cc in gcc clang; do
+            "$cc" -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+              tests/test_vh_audio_playbuffer_history.c \
+              -o "/tmp/vh-stage322-playbuffer-history-$cc"
+            "/tmp/vh-stage322-playbuffer-history-$cc"
+          done
+      - name: Stage322 verify last16 original call intervals and refuse fabricated baseline
+        run: python3 -m unittest discover -s tests -p 'test_audit_nexium_guest_playbuffer_history.py' -v
       - name: Stage318 original worker stop, audout last page, guest exit and optical replay adversarial tests
         run: |
           set -euxo pipefail
