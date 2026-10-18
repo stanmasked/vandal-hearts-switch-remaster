@@ -28,6 +28,8 @@ on:
       - 'tests/test_verify_map02_private_capture_session.py'
       - 'tools/run_map02_private_native_capture.py'
       - 'tools/capture_map02_live_frame_pipe.py'
+      - 'tools/run_map02_private_joint_capture_audit.py'
+      - 'tests/test_run_map02_private_joint_capture_audit.py'
       - 'tests/test_capture_map02_live_frame_pipe.py'
       - 'tools/map02_native_frame_pipe.h'
       - 'tools/map02_native_frame_pipe.c'
@@ -91,3 +93,4 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_instrument_map02_joint_gpu_frame.py' -v
           python3 -m unittest discover -s tests -p 'test_map02_joint_gpu_secure_files_c11.py' -v
           python3 -m unittest discover -s tests -p 'test_map02_joint_native_capture_c11.py' -v
+          python3 -m unittest discover -s tests -p 'test_run_map02_private_joint_capture_audit.py' -v
