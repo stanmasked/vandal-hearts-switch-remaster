@@ -281,3 +281,51 @@ jobs:
           name: native-ps1-music-av-nexium-${{ matrix.sd_case }}-evidence
           path: runtime-evidence/
           if-no-files-found: warn
+
+  verify-published-evidence:
+    name: Verify all seven uploaded NeXium evidence bundles
+    runs-on: ubuntu-26.04
+    needs: [native-av, emulator]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install offline image validator
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y python3-pil
+      - name: Download the published NRO artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: native-libnx-ps1-music-av-probe
+          path: nros
+      - name: Download all published guest evidence bundles
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-ps1-music-av-nexium-*-evidence
+          path: published-evidence
+          merge-multiple: false
+      - name: Re-verify downloaded PNG and NRO bytes for every case
+        shell: bash
+        run: |
+          set -euo pipefail
+          for scenario in empty full partial zr zl resume resume_retry; do
+            folder="published-evidence/native-ps1-music-av-nexium-${scenario}-evidence"
+            nro="nros/libnx-ps1-music-av.nro"
+            case "$scenario" in
+              zr) nro="nros/libnx-ps1-music-av-zr.nro" ;;
+              zl) nro="nros/libnx-ps1-music-av-zl.nro" ;;
+              resume) nro="nros/libnx-ps1-music-av-resume.nro" ;;
+              resume_retry) nro="nros/libnx-ps1-music-av-resume-retry.nro" ;;
+            esac
+            test -s "$folder/native-av-guest-witness.json"
+            test -s "$folder/av-before.png"
+            test -s "$folder/av-after.png"
+            test -s "$nro"
+            python3 tests/verify_native_av_guest_witness.py \
+              --witness "$folder/native-av-guest-witness.json" \
+              --before "$folder/av-before.png" \
+              --after "$folder/av-after.png" \
+              --nro "$nro" --revision "$GITHUB_SHA" --scenario "$scenario"
+          done
