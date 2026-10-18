@@ -131,8 +131,84 @@ class PrivateJointOneShotAuditTests(unittest.TestCase):
                 stream.write(b"\xff\xff")
             return receipt
         with patch.object(joint_runner, "capture", side_effect=tamper):
-            with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
+            with self.assertRaisesRegex(ValueError, "changed after publication"):
                 self.run_capture()
+
+    def test_same_byte_gpu_journal_inode_swap_after_publication_refused(self):
+        # Identity was captured while BOTH directory FDs remained open in
+        # the original launcher; no replay starts after this inode change.
+        original_capture = joint_runner.capture
+        called = []
+        def tamper(*args, **kwargs):
+            receipt = original_capture(*args, **kwargs)
+            original = self.journal / "gpu-native-events.jsonl"
+            replacement = self.journal / "identical-events.jsonl"
+            replacement.write_bytes(original.read_bytes())
+            replacement.chmod(0o600)
+            os.replace(replacement, original)
+            called.append(1)
+            return receipt
+        with patch.object(joint_runner, "capture", side_effect=tamper):
+            with self.assertRaisesRegex(ValueError, "changed after publication"):
+                self.run_capture()
+        self.assertEqual(called, [1])
+
+    def test_same_byte_frame_inode_swap_after_publication_refused(self):
+        original_capture = joint_runner.capture
+        def tamper(*args, **kwargs):
+            receipt = original_capture(*args, **kwargs)
+            original = self.output / "process-frame.bgr555"
+            replacement = self.output / "identical-frame.bgr555"
+            replacement.write_bytes(original.read_bytes())
+            replacement.chmod(0o600)
+            os.replace(replacement, original)
+            return receipt
+        with patch.object(joint_runner, "capture", side_effect=tamper):
+            with self.assertRaisesRegex(ValueError, "changed after publication"):
+                self.run_capture()
+
+    def test_same_byte_receipt_inode_swap_after_publication_refused(self):
+        original_capture = joint_runner.capture
+        def tamper(*args, **kwargs):
+            receipt = original_capture(*args, **kwargs)
+            original = self.output / "process-frame.json"
+            replacement = self.output / "identical-receipt.json"
+            replacement.write_bytes(original.read_bytes())
+            replacement.chmod(0o600)
+            os.replace(replacement, original)
+            return receipt
+        with patch.object(joint_runner, "capture", side_effect=tamper):
+            with self.assertRaisesRegex(ValueError, "changed after publication"):
+                self.run_capture()
+
+    def test_missing_same_launch_fd_witness_rejected(self):
+        actual_capture = joint_runner.capture
+        def skip_witness(*args, **kwargs):
+            kwargs.pop("post_publish_witness", None)
+            return actual_capture(*args, **kwargs)
+        with patch.object(joint_runner, "capture", side_effect=skip_witness):
+            with self.assertRaisesRegex(ValueError, "missing same-launch"):
+                self.run_capture()
+
+    def test_same_launch_publication_callback_receives_pinned_fds(self):
+        # Exercise held directory inodes directly, not a second path lookup.
+        original_capture = joint_runner.capture
+        observed = []
+        def wrapped(*args, **kwargs):
+            original = kwargs["post_publish_witness"]
+            def record(output_fd, journal_fd):
+                self.assertEqual(
+                    os.fstat(output_fd).st_ino, self.output.stat().st_ino)
+                self.assertEqual(
+                    os.fstat(journal_fd).st_ino, self.journal.stat().st_ino)
+                observed.append((output_fd, journal_fd))
+                original(output_fd, journal_fd)
+            kwargs["post_publish_witness"] = record
+            return original_capture(*args, **kwargs)
+        with patch.object(joint_runner, "capture", side_effect=wrapped):
+            report = self.run_capture()
+        self.assertTrue(report["two_full_independent_private_replays_equal"])
+        self.assertEqual(len(observed), 1)
 
     def test_same_byte_gpu_log_inode_replacement_between_replays_refused(self):
         original_replay = joint_runner.replay
