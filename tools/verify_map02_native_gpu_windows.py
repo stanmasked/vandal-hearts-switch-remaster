@@ -212,8 +212,9 @@ def main():
     try:
         result = verify_native_windows(args.private_capture,
                                        target_frame=args.frame)
-    except (OSError, ValueError) as exc:
-        p.error(str(exc))
+    except (OSError, ValueError):
+        # Never echo private window paths or untrusted capture metadata.
+        p.error("private native GPU window verification unavailable")
     print(json.dumps(result, indent=2, sort_keys=True))
 
 
