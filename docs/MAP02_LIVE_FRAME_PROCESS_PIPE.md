@@ -699,3 +699,23 @@ the existing digest-only successful report. The CLI command line
 supplied by the user may still be visible through the local shell
 history/process listing; this tool does not promise secrecy from
 local administrators or other privileged processes.
+
+### Untrusted original-witness digest field validation
+
+When the full optional original FT4/VRAM native source replay is used,
+its result is required to be a structured dictionary with all the
+existing provenance flags and verified live-frame correlations. The
+two independent source digest fields that appear in the public success
+summary (original-launch receipt SHA-256 and original native GPU event
+log SHA-256) must additionally be **exactly 64 lowercase hexadecimal
+characters**. Missing, non-string, uppercase, malformed, or
+path-bearing fields fail validation instead of being copied to a
+public JSON success report.
+
+The CLI still uses only bounded, path-free error categories. Three
+asset-free regression cases cover forged full-chain source digests
+(including an attempted private-path string), malformed source-join
+result types and the digest-only publication helper itself. These
+checks do not authenticate the original disc/console evidence or
+establish that independently acquired source traces were recorded by
+the same Linux child.
