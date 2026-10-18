@@ -36,6 +36,18 @@ def marker_color(pixel):
     return "unknown"
 
 
+def uniform_tile(frame, points, label):
+    """Require multiple interior pixels of the same flat UI tile color.
+
+    Reject a single valid-looking pixel embedded in a corrupt/foreign
+    tile; this is still heuristic pixel inspection, not frame provenance.
+    """
+    readings = [marker_color(frame.getpixel(point)) for point in points]
+    if any(color != readings[0] for color in readings[1:]):
+        raise ValueError("inconsistent " + label + " tile pixels")
+    return readings[0]
+
+
 def load_frame(path):
     with Image.open(path) as source:
         if source.format != "PNG" or source.size != (WIDTH, HEIGHT):
@@ -47,7 +59,10 @@ def load_frame(path):
 
 def observe_frame(frame):
     states = {
-        label: marker_color(frame.getpixel((1020 + i*48, 645)))
+        label: uniform_tile(
+            frame,
+            ((1005+i*48,640), (1020+i*48,645), (1034+i*48,655)),
+            label)
         for i, label in enumerate(LABELS)
     }
     # All five focus indicators are always rendered by both diagnostic
@@ -58,8 +73,10 @@ def observe_frame(frame):
     for label in ("B", "F", "P", "R"):
         if states[label] not in ("blue", "yellow"):
             raise ValueError("missing or ambiguous " + label + " focus indicator")
-    states["X"] = marker_color(frame.getpixel((1125, 702)))
-    states["Y"] = marker_color(frame.getpixel((1180, 702)))
+    states["X"] = uniform_tile(
+        frame, ((1110,699), (1125,702), (1139,707)), "X")
+    states["Y"] = uniform_tile(
+        frame, ((1165,699), (1180,702), (1194,707)), "Y")
     # The focus observer has no X/Y tiles. The manual NRO MUST have
     # both. Pixel-only inspection does not prove either came from HW,
     # but mixed/missing tiles cannot be treated as one continuous run.
@@ -74,10 +91,13 @@ def observe_frame(frame):
     for tile, label in ((1, "B"), (2, "F"), (4, "R")):
         strokes = []
         for n in range(5):
-            pixel=frame.getpixel((1005+tile*48+n*7, 671))
-            if near(pixel, BLUE):
+            x = 1004+tile*48+n*7
+            color = uniform_tile(
+                frame, ((x+1,669), (x+1,671), (x+2,674)),
+                label + " tally")
+            if color == "blue":
                 strokes.append(True)
-            elif near(pixel, BACKGROUND):
+            elif color == "not_present":
                 strokes.append(False)
             else:
                 raise ValueError("ambiguous " + label + " tally stroke")
