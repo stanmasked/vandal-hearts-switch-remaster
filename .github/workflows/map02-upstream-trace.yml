@@ -133,6 +133,8 @@ on:
       - 'tests/test_run_map02_sealed_gpu_receipt_chain.py'
       - 'tools/verify_map02_published_receipt.py'
       - 'tests/test_verify_map02_published_receipt.py'
+      - 'tools/map02_external_custody.py'
+      - 'tests/test_map02_external_custody.py'
       - 'tests/test_consume_map02_sealed_gpu_objects.py'
       - 'tools/audit_map02_putpixel_samples.py'
       - 'tools/verify_map02_camera_capture.py'
@@ -1331,3 +1333,37 @@ jobs:
               out.write("Independent MAP02 receipt recheck passed. SHA-256: `"
                         + receipt["published_report_sha256"] + "`\n")
           PY
+
+      - name: Prepare unsigned request for an external MAP02 custodian
+        shell: bash
+        env:
+          PRODUCER_SHA256: ${{ needs.verify-trace-patch.outputs.map02_receipt_sha256 }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=remaster python3 -m unittest discover \
+            -s remaster/tests -p 'test_map02_external_custody.py' -v
+          PYTHONPATH=remaster python3 -m tools.map02_external_custody prepare \
+            --receipt downloaded-map02-receipt/vh-map02-sealed-chain.json \
+            --expected-sha256 "$PRODUCER_SHA256" \
+            --source-commit "${{ github.sha }}" \
+            --run-id "${{ github.run_id }}" \
+            --run-attempt "${{ github.run_attempt }}" \
+            --output map02-external-custody-request.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          request = json.loads(Path("map02-external-custody-request.json").read_text())
+          assert request["schema"] == "vh.map02.external-custody-request.v1"
+          assert not request["independent_custodian_signed"]
+          assert not request["real_map02_gameplay_authenticated"]
+          assert not request["hd_replacement_authorized"]
+          assert len(request["subject"]["receipt_sha256"]) == 64
+          PY
+
+      - name: Publish UNSIGNED MAP02 external custody request
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-unsigned-external-custody-${{ github.run_id }}-${{ github.run_attempt }}
+          path: map02-external-custody-request.json
+          if-no-files-found: error
+          retention-days: 14
