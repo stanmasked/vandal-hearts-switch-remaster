@@ -5,7 +5,9 @@ The match proves only that stored text agrees with the provided PNGs
 and the current pixel reader. It is NOT a device or sound attestation.
 """
 import argparse
+import hmac
 import json
+import re
 from pathlib import Path
 
 from inspect_native_av_physical_screenshots import inspect
@@ -32,7 +34,16 @@ def canonical(value):
 
 def verify(report_path, before_path, after_path, *,
            require_focus_pixels=False, require_x_return_pixels=False,
-           require_y_return_pixels=False, nro_path=None):
+           require_y_return_pixels=False, nro_path=None,
+           expected_nro_sha256=None):
+    # A digest supplied separately from the report can cross-check a
+    # published build fingerprint. Never derive it from the same report.
+    if expected_nro_sha256 is not None:
+        if nro_path is None:
+            raise ValueError("independent NRO SHA-256 requires --nro")
+        if (not isinstance(expected_nro_sha256, str) or
+                re.fullmatch(r"[0-9a-fA-F]{64}", expected_nro_sha256) is None):
+            raise ValueError("expected NRO SHA-256 must be 64 hexadecimal characters")
     stored = json.loads(Path(report_path).read_text(encoding="utf-8"),
                         object_pairs_hook=unique_json_object,
                         parse_constant=reject_nonfinite)
@@ -47,6 +58,10 @@ def verify(report_path, before_path, after_path, *,
                        nro_path=nro_path)
     if stored.keys() != observed.keys() or canonical(stored) != canonical(observed):
         raise ValueError("pixel report does not match exact PNG bytes and observations")
+    if (expected_nro_sha256 is not None and
+            not hmac.compare_digest(observed["source_nro_sha256"],
+                                    expected_nro_sha256.lower())):
+        raise ValueError("NRO SHA-256 does not match independent expected digest")
     # A structurally correct report is not automatically evidence of an
     # operator-requested event. Assert that specific pixel gate afresh.
     gates = observed["difference"]
@@ -73,6 +88,8 @@ def main():
                         help="require a recomputed yellow-to-blue Y marker transition")
     parser.add_argument("--nro", type=Path,
                         help="require the original diagnostic NRO bound into the v3 report")
+    parser.add_argument("--expected-nro-sha256",
+                        help="independent 64-hex digest from a separately obtained build manifest (requires --nro)")
     args = parser.parse_args()
     try:
         report = verify(
@@ -80,13 +97,15 @@ def main():
             require_focus_pixels=args.require_focus_pixels,
             require_x_return_pixels=args.require_x_return_pixels,
             require_y_return_pixels=args.require_y_return_pixels,
-            nro_path=args.nro)
+            nro_path=args.nro,
+            expected_nro_sha256=args.expected_nro_sha256)
     except (ValueError, OSError, TypeError, json.JSONDecodeError) as exc:
         parser.error(str(exc))
     print(json.dumps({
         "verification": "recomputed_png_pixel_report_match",
         "source_png_sha256": report["source_png_sha256"],
         "source_nro_sha256": report.get("source_nro_sha256"),
+        "independent_nro_digest_matched": args.expected_nro_sha256 is not None,
         "required_pixel_conditions_reverified": [
             name for required, name in (
                 (args.require_focus_pixels, "new_focus_cycle_pixels"),

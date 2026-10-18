@@ -1,4 +1,5 @@
 """Only synthetic PNG fixtures: recheck bytes and an unsigned pixel report."""
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -146,6 +147,44 @@ class PhysicalPixelReportVerificationTests(unittest.TestCase):
         binary[0xe0]=1
         nro.write_bytes(binary)
         self.assertNotEqual(self.cli(flags=("--nro",str(nro))).returncode,0)
+
+    def test_independent_expected_nro_hash_matches_and_rejects_wrong_digest(self):
+        nro=Path(self.folder.name)/"external-fingerprint-probe.nro"
+        binary=bytearray(0x100)
+        binary[0x10:0x14]=b"NRO0"
+        binary[0x18:0x1c]=(0x100).to_bytes(4,"little")
+        for header,offset in ((0x20,0x80),(0x28,0x90),(0x30,0xa0)):
+            binary[header:header+4]=offset.to_bytes(4,"little")
+            binary[header+4:header+8]=(0x10).to_bytes(4,"little")
+        nro.write_bytes(binary)
+        self.write_report(inspect(self.before,self.after,
+                                  bind_png_hashes=True,nro_path=nro))
+        expected=hashlib.sha256(binary).hexdigest()
+        valid=self.cli(flags=("--nro",str(nro),
+                              "--expected-nro-sha256",expected.upper(),
+                              "--require-focus-pixels"))
+        self.assertEqual(valid.returncode,0,valid.stderr)
+        summary=json.loads(valid.stdout)
+        self.assertTrue(summary["independent_nro_digest_matched"])
+        self.assertFalse(summary["physical_hardware_verified"])
+        wrong=self.cli(flags=("--nro",str(nro),
+                              "--expected-nro-sha256","0"*64))
+        self.assertNotEqual(wrong.returncode,0)
+        self.assertIn("independent expected digest",wrong.stderr)
+        with self.assertRaisesRegex(ValueError,"independent expected digest"):
+            verify(self.report,self.before,self.after,nro_path=nro,
+                   expected_nro_sha256="0"*64)
+
+    def test_independent_expected_digest_requires_nro_and_valid_hex(self):
+        missing=self.cli(flags=("--expected-nro-sha256","0"*64))
+        self.assertNotEqual(missing.returncode,0)
+        self.assertIn("requires --nro",missing.stderr)
+        invalid=self.cli(flags=("--nro","missing.nro",
+                                "--expected-nro-sha256","not-a-sha256"))
+        self.assertNotEqual(invalid.returncode,0)
+        self.assertIn("64 hexadecimal characters",invalid.stderr)
+        self.assertFalse(json.loads(self.cli().stdout).get(
+            "independent_nro_digest_matched",True))
 
     def test_v2_report_rejects_unexpected_nro_binding(self):
         nro=Path(self.folder.name)/"mismatched.nro"

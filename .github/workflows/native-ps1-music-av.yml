@@ -132,6 +132,24 @@ jobs:
           test -s build/libnx-ps1-music-av-focus.nro
           test -s build/libnx-ps1-music-av-focus-manual.nro
 
+      - name: Fingerprint all seven published NROs and CI source commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd build
+            sha256sum \\
+              libnx-ps1-music-av.nro \\
+              libnx-ps1-music-av-zr.nro \\
+              libnx-ps1-music-av-zl.nro \\
+              libnx-ps1-music-av-resume.nro \\
+              libnx-ps1-music-av-resume-retry.nro \\
+              libnx-ps1-music-av-focus.nro \\
+              libnx-ps1-music-av-focus-manual.nro > native-ps1-av-nro-sha256.txt
+            sha256sum --check native-ps1-av-nro-sha256.txt
+            printf '%s\\n' "$GITHUB_SHA" > native-ps1-av-source-commit.txt
+          )
+
       - name: Upload NRO without proprietary audio assets
         uses: actions/upload-artifact@v4
         with:
@@ -144,6 +162,8 @@ jobs:
             build/libnx-ps1-music-av-resume-retry.nro
             build/libnx-ps1-music-av-focus.nro
             build/libnx-ps1-music-av-focus-manual.nro
+            build/native-ps1-av-nro-sha256.txt
+            build/native-ps1-av-source-commit.txt
           if-no-files-found: error
 
 
@@ -163,6 +183,13 @@ jobs:
         with:
           name: native-libnx-ps1-music-av-probe
           path: nros
+      - name: Confirm downloaded NRO bytes against the published fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd nros && sha256sum --check native-ps1-av-nro-sha256.txt)
+          test "$(cat nros/native-ps1-av-source-commit.txt)" = "$GITHUB_SHA"
+
       - name: Prepare isolated synthetic SD fixture (no game assets)
         shell: bash
         env:
