@@ -32,6 +32,8 @@ on:
       - 'tools/map02_native_frame_pipe.h'
       - 'tools/map02_native_frame_pipe.c'
       - 'tests/test_map02_native_frame_pipe_c11.py'
+      - 'tools/instrument_map02_frame_flush.py'
+      - 'tests/test_instrument_map02_frame_flush.py'
       - 'tools/verify_map02_private_capture_receipt.py'
       - 'tests/test_run_map02_private_native_capture.py'
       - 'tools/verify_map02_dda_native_spans.py'
@@ -71,3 +73,4 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_run_map02_private_native_capture.py' -v
           python3 -m unittest discover -s tests -p 'test_capture_map02_live_frame_pipe.py' -v
           python3 -m unittest discover -s tests -p 'test_map02_native_frame_pipe_c11.py' -v
+          python3 -m unittest discover -s tests -p 'test_instrument_map02_frame_flush.py' -v
