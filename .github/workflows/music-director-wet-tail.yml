@@ -1,0 +1,58 @@
+name: Music director optional wet-tail regression
+
+on:
+  push:
+    branches:
+      - integration/music-director-wet-tail-optin-20261018
+  pull_request:
+    paths:
+      - "source/vh_music_scene.c"
+      - "source/vh_music_scene.h"
+      - "tests/test_vh_music_scene.c"
+      - "tests/test_vh_music_scene_soak.c"
+      - ".github/workflows/music-director-wet-tail.yml"
+  workflow_dispatch:
+
+jobs:
+  music-director-optin:
+    name: Wet-tail director (${{ matrix.compiler }}; ASan + UBSan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - name: Check out project
+        uses: actions/checkout@v4
+      - name: Compile cue-switch and legacy compatibility tests with sanitizers
+        run: |
+          mkdir -p build
+          ${{ matrix.compiler }} -std=c11 -Wall -Wextra -Werror -O1 -g \
+            -fsanitize=address,undefined -fno-sanitize-recover=all \
+            -fno-omit-frame-pointer -Isource \
+            tests/test_vh_music_scene.c source/vh_music_scene.c \
+            source/vh_native_seq.c source/vh_native_spu.c \
+            source/vh_spu_reverb.c source/vh_spu_gaussian.c \
+            source/vh_audio_stream.c -lm \
+            -o build/test_music_director_wet_tail
+      - name: Verify opt-in, default, fade, silence, bank teardown
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ./build/test_music_director_wet_tail
+      - name: Compile 1200-block director PCM and 48k resampler soak
+        run: |
+          ${{ matrix.compiler }} -std=c11 -Wall -Wextra -Werror -O1 -g \
+            -fsanitize=address,undefined -fno-sanitize-recover=all \
+            -fno-omit-frame-pointer -Isource \
+            tests/test_vh_music_scene_soak.c source/vh_music_scene.c \
+            source/vh_native_seq.c source/vh_native_spu.c \
+            source/vh_spu_reverb.c source/vh_spu_gaussian.c \
+            source/vh_audio_resample.c source/vh_audio_stream.c -lm \
+            -o build/test_music_director_soak
+      - name: Ensure legacy full-session 48k PCM behavior is unchanged
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ./build/test_music_director_soak
