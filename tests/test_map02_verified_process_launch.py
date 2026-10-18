@@ -727,6 +727,102 @@ int main(int argc, char **argv) {
                     build_bundle_dir=self.handoff.parent / "bundle")
         self.assertFalse((self.handoff / RECEIPT).exists())
 
+    def test_real_synthetic_child_publishes_v3_bound_rgb24_digests(self):
+        cycle = self.handoff.parent / "cycle-with-rgb24"
+        rgb = self.handoff.parent / "preoverlay-process-v3"
+        cycle.mkdir(mode=0o700)
+        rgb.mkdir(mode=0o700)
+        capture = {
+            "pc_rgb24_image_sha256": "d" * 64,
+            "pc_rgb24_receipt_sha256": "e" * 64,
+        }
+        child_environments = []
+        genuine_popen = subprocess.Popen
+
+        def inspect_popen(*args, **kwargs):
+            child_environments.append(dict(kwargs["env"]))
+            self.assertEqual(kwargs["env"]["VH_MAP02_CYCLE_OUTPUT_DIR"],
+                             str(cycle))
+            self.assertEqual(
+                kwargs["env"]["VH_MAP02_PC_PREOVERLAY_OUTPUT_DIR"], str(rgb))
+            return genuine_popen(*args, **kwargs)
+
+        # The kernel genuinely executes the compiled synthetic ELF and reads
+        # its private owned image. ONLY the CD/GPU cycle and RGB evidence
+        # validators are stubbed; this does not authenticate retail frames.
+        with patch(
+                "tools.check_map02_cycle_elf.audit_cycle_elf",
+                return_value={"required_symbols_present": 22}), patch(
+                "tools.map02_cycle_build_provenance.verify_build_receipt",
+                return_value={"source_pinned_full_elf_bytes_checked": True}) as build, patch(
+                "tools.verify_map02_cycle_cd_gpu_join._cycle_cd_pair",
+                return_value=(b"cycle", (), b"cd", ())) as cycle_verified, patch(
+                "tools.verify_map02_pc_preoverlay_session.verify_preoverlay_session",
+                return_value=capture) as rgb_verified, patch(
+                "tools.map02_verified_process_launch.subprocess.Popen",
+                side_effect=inspect_popen):
+            with patch.dict(os.environ, {
+                    "VH_MAP02_PC_PREOVERLAY_OUTPUT_DIR": "/untrusted/rgb24",
+                    "VH_MAP02_PROBE_FRAME": "999",
+                    "LD_PRELOAD": "/untrusted/loader.so",
+            }):
+                result = launch_observed_pc(
+                    self.handoff, self.native, self.scoped,
+                    self.binary, self.owned, upstream=self.upstream,
+                    x=10, y=20, timeout=8, cycle_dir=cycle,
+                    build_receipt_dir=self.handoff.parent / "v3-build-receipt",
+                    build_bundle_dir=self.handoff.parent / "v3-build-bundle",
+                    pc_preoverlay_dir=rgb)
+        self.assertEqual(build.call_count, 2)
+        self.assertEqual(rgb_verified.call_count, 2)
+        self.assertEqual(cycle_verified.call_count, 2)
+        self.assertEqual(len(child_environments), 1)
+        self.assertNotIn("LD_PRELOAD", child_environments[0])
+        self.assertTrue(result["pc_preoverlay_capture_session_bound"])
+        self.assertEqual(result["pc_preoverlay_image_sha256"], "d" * 64)
+        self.assertEqual(result["pc_preoverlay_receipt_sha256"], "e" * 64)
+        receipt_raw = (self.handoff / RECEIPT).read_bytes()
+        receipt = _validate_receipt(receipt_raw)
+        self.assertEqual(receipt["schema"], "vh.map02.local-executed-process.v3")
+        self.assertTrue(receipt["pc_preoverlay_capture_session_bound"])
+        self.assertEqual(receipt["pc_preoverlay_image_sha256"], "d" * 64)
+        self.assertEqual(receipt["pc_preoverlay_receipt_sha256"], "e" * 64)
+        self.assertEqual(
+            result["private_process_receipt_sha256"],
+            __import__("hashlib").sha256(receipt_raw).hexdigest())
+        self.assertTrue(self.audit()["kernel_executable_hash_matched"])
+
+    def test_changed_rgb24_proof_blocks_v3_process_receipt_publication(self):
+        cycle = self.handoff.parent / "cycle-rgb-proof-change"
+        rgb = self.handoff.parent / "preoverlay-proof-change"
+        cycle.mkdir(mode=0o700)
+        rgb.mkdir(mode=0o700)
+        initial = {
+            "pc_rgb24_image_sha256": "d" * 64,
+            "pc_rgb24_receipt_sha256": "e" * 64,
+        }
+        altered = dict(initial, pc_rgb24_image_sha256="f" * 64)
+        with patch(
+                "tools.check_map02_cycle_elf.audit_cycle_elf",
+                return_value={"required_symbols_present": 22}), patch(
+                "tools.map02_cycle_build_provenance.verify_build_receipt",
+                return_value={"source_pinned_full_elf_bytes_checked": True}), patch(
+                "tools.verify_map02_cycle_cd_gpu_join._cycle_cd_pair",
+                return_value=(b"cycle", (), b"cd", ())), patch(
+                "tools.verify_map02_pc_preoverlay_session.verify_preoverlay_session",
+                side_effect=(initial, altered)) as rgb_verified:
+            with self.assertRaisesRegex(
+                    ValueError, "PC pre-overlay process capture changed"):
+                launch_observed_pc(
+                    self.handoff, self.native, self.scoped,
+                    self.binary, self.owned, upstream=self.upstream,
+                    x=10, y=20, timeout=8, cycle_dir=cycle,
+                    build_receipt_dir=self.handoff.parent / "v3-change-receipt",
+                    build_bundle_dir=self.handoff.parent / "v3-change-bundle",
+                    pc_preoverlay_dir=rgb)
+        self.assertEqual(rgb_verified.call_count, 2)
+        self.assertFalse((self.handoff / RECEIPT).exists())
+
     def test_cycle_directory_reaches_real_child_and_nonce_is_checked(self):
         cycle = self.handoff.parent / "cycle-transport"
         cycle.mkdir(mode=0o700)
