@@ -209,6 +209,9 @@ on:
       - 'tools/apply_map02_v168_mips_clut_uv_vram.py'
       - 'tools/apply_map02_v169_mips_stp_e2v_vram.py'
       - 'tools/apply_map02_v170_mips_ft4_gpu_state.py'
+      - 'tools/apply_map02_v171_mips_multiphase_vram.py'
+      - 'tests/test_map02_v171_mips_multiphase_vram.py'
+      - '.github/workflows/map02-v171-mips-multiphase-vram.yml'
       - 'tests/test_map02_v170_mips_ft4_gpu_state.py'
       - '.github/workflows/map02-v170-mips-ft4-gpu-state.yml'
       - 'tests/test_map02_v169_mips_stp_e2v_vram.py'
@@ -398,6 +401,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v168_mips_clut_uv_vram.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v169_mips_stp_e2v_vram.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v170_mips_ft4_gpu_state.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v171_mips_multiphase_vram.py' -v
           python3 -m remaster.tools.check_map02_v147_native_bounded_c --cc "${{ matrix.cc }}" \
             | grep -Fx 'VH147_COMPILED_BOUNDED_NATIVE_PASS capacity=1024 generic=1 repeated_pc=1 overflow_refused=1 atomic_mode0600=1 no_overwrite=1 original_retail=0'
           python3 -m remaster.tools.check_map02_v144_native_challenge_c --cc "${{ matrix.cc }}" \
@@ -418,7 +422,10 @@ jobs:
           git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
           git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
-          python3 -m remaster.tools.apply_map02_v170_mips_ft4_gpu_state upstream-pcsx
+          python3 -m remaster.tools.apply_map02_v171_mips_multiphase_vram upstream-pcsx
+          grep -F 'vh171_note_phase_mips_mmio(regs,mem,value)' upstream-pcsx/libpcsxcore/psxmem.c
+          grep -F 'VH171_GUEST_MIPS_MULTIPHASE_VRAM_PASS' upstream-pcsx/frontend/main.c
+          grep -F 'VH171_PHASE_GPU_ORIGIN_REFUSED' upstream-pcsx/frontend/main.c
           grep -F 'vh170_observe_state_mips_sw(regs,mem,value)' upstream-pcsx/libpcsxcore/psxmem.c
           grep -F 'VH170_GUEST_MIPS_GPU_STATE_VRAM_PASS' upstream-pcsx/frontend/main.c
           grep -F 'VH170_MIPS_GPU_STATE_REFUSED' upstream-pcsx/frontend/main.c
@@ -1468,6 +1475,71 @@ jobs:
           if grep -Fq 'VH170_GUEST_MIPS_GPU_STATE_VRAM_PASS' \
               proof/private/v170-bad-e6.log; then
             echo 'VH170_BAD_E6_FALSE_ACCEPT_REFUSED'
+            exit 1
+          fi
+          # Four bounded interpreter ExecuteBlock phases in ONE actual
+          # pinned PCSX ReARMed/Unai process. Native read-only MIPS SW
+          # source PC and exact GP0/GP1 origin proof must be disarmed
+          # BEFORE four independent VRAM snapshots / register checks.
+          # These are CPU blocks, NOT physical display VBlank edges.
+          python3 -m remaster.tools.make_map02_v77_gpu_multiphase_exe \
+            --output proof/private/V171_SYNTHETIC.EXE
+          mkdir -m 700 proof/v171-four-phase-home
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v171-four-phase-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh171-mips-multiphase-vram proof/private/V171_SYNTHETIC.EXE \
+            > proof/private/v171-four-phase.log 2>&1 || {
+              tail -n 95 proof/private/v171-four-phase.log
+              exit 1
+            }
+          grep -Fx 'VH171_GUEST_MIPS_MULTIPHASE_VRAM_PASS phases=4 gp0_words=72 gp1_writes=3 samples=2380 pixel_regions=6 fifo_reset_kept=1 full_reset_cleared=1 vblank_asserted=0 original_retail=0' \
+            proof/private/v171-four-phase.log
+          grep -Fx 'VH77_MULTIPHASE_PASS phases=4 samples=2380 gpu_fifo_reset_kept_state=1 gpu_full_reset_cleared_state=1' \
+            proof/private/v171-four-phase.log
+          for phase in 0 1 2 3; do
+            grep -Fx "VH77_PHASE_PASS phase=$phase checked=595 guard=499" \
+              proof/private/v171-four-phase.log
+          done
+          # Mutate the guest MIPS phase-2 GP1(01) FIFO-reset LUI into
+          # GP1(00) full reset, keeping the EXE tag and every other
+          # source-authored instruction unchanged. Source-PC MMIO
+          # attestation must refuse phase 2 before falsely crediting
+          # the frame-like readback and preserving-state assertion.
+          python3 - <<'PY'
+          from pathlib import Path
+          from struct import pack
+          from remaster.tools.make_map02_v77_gpu_multiphase_exe import build,phase_body
+          from remaster.tools.make_map02_v70_synthetic_psx_exe import START,lui
+          original,stops,ops,starts=build()
+          assert original==Path("proof/private/V171_SYNTHETIC.EXE").read_bytes()
+          phase=2
+          index=(starts[phase]-START)//4+3
+          assert ops[index]==lui(9,0x0100)
+          changed=bytearray(original)
+          offset=2048+4*index
+          changed[offset:offset+4]=pack("<I",ops[index]^0x0100)
+          assert changed[0x4c:0x54]==b"VH77SYN!"
+          assert len(changed)==len(original)
+          target=Path("proof/private/V171_BAD_GP1.EXE")
+          assert not target.exists()
+          target.write_bytes(changed)
+          PY
+          mkdir -m 700 proof/v171-bad-gp1-home
+          vh171_bad_rc=0
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v171-bad-gp1-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh171-mips-multiphase-vram proof/private/V171_BAD_GP1.EXE \
+            > proof/private/v171-bad-gp1.log 2>&1 || vh171_bad_rc=$?
+          test "$vh171_bad_rc" -eq 77
+          grep -F 'VH171_PHASE_GPU_ORIGIN_REFUSED phase=2' \
+            proof/private/v171-bad-gp1.log
+          if grep -Fq 'VH171_GUEST_MIPS_MULTIPHASE_VRAM_PASS' \
+              proof/private/v171-bad-gp1.log; then
+            echo 'VH171_BAD_GP1_FALSE_ACCEPT_REFUSED'
             exit 1
           fi
           # Retain valid signed synthetic EXE / CPU stage markers, but
@@ -2746,6 +2818,12 @@ jobs:
           report["v170_gpu_textured_sprites"]=3
           report["v170_independent_unai_pixels_checked"]=1162
           report["v170_original_retail_map02_unverified"]=True
+          report["v171_guest_mips_execute_blocks"]=4
+          report["v171_guest_gp0_words"]=72
+          report["v171_guest_gp1_writes"]=3
+          report["v171_four_independent_unai_vram_samples"]=2380
+          report["v171_cpu_blocks_not_physical_vblank"]=True
+          report["v171_original_retail_map02_unverified"]=True
           report["retail_map02_gpu_rendering_verified"]=False
           Path("proof/public/v129-four-real-vblank-profiles-summary.json").write_text(
               json.dumps(report,sort_keys=True)+"\n")
