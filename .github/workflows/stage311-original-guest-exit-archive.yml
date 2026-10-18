@@ -35,6 +35,33 @@ jobs:
           /tmp/vh-stage311/bin/python -m unittest discover -s tests \
             -p 'test_replay_nexium_original_guest_exit_archive.py' -v
 
+      - name: Require the original Stage310 source workflow to complete successfully
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # The independent push check can be queued before the capture
+          # has uploaded its original guest source. Never accept an
+          # artifact from an uncompleted or failed predecessor run.
+          for attempt in $(seq 1 72); do
+            status="$(gh api repos/${GITHUB_REPOSITORY}/actions/runs/39141325435 --jq '.status')"
+            conclusion="$(gh api repos/${GITHUB_REPOSITORY}/actions/runs/39141325435 --jq '.conclusion // "pending"')"
+            if [[ "$status" == completed ]]; then
+              test "$conclusion" == success || {
+                echo "Stage310 original run completed without success: $conclusion" >&2
+                exit 1
+              }
+              echo "Original Stage310 run complete and successful"
+              break
+            fi
+            if (( attempt == 72 )); then
+              echo "Stage310 original source workflow not completed within bounded check" >&2
+              exit 1
+            fi
+            sleep 10
+          done
+
       - name: Download original NeXium Stage310 runtime artifact from exact source run
         uses: actions/download-artifact@v4
         with:
