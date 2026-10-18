@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Compare *observed* original CdRead/loader MAP02 CRC with owned raw US disc.
+"""Compare observed original CdRead/loader CRC32+SHA256 with owned raw US disc.
 
 Runs the independently checked same-process native GPU/PutPixel/BlendG1/VRAM
 join AND validates the private 12-sector original CD read against the actual
-user-owned disc data. The CRC32 is used only for byte-corruption detection;
-full SHA-256 fingerprints bind the privately presented disc and receipts.
+user-owned disc data. CRC32 detects accidental changes; native raw/returned user bytes now also
+carry a SHA-256 digest independently checked against the owned disc.
 Never infers retail gameplay authenticity or actual PS1 hardware parity.
 """
 import argparse
@@ -75,7 +75,9 @@ def verify_map02_original_cd_read(scoped_dir, native_dir, owned_image,
     finally:
         os.close(fd)
     if (f"{crc:08x}" != event["raw_user_crc32"] or
-            extent["resource_user_data_sha256"] != data_sha.hexdigest()):
+            extent["resource_user_data_sha256"] != data_sha.hexdigest() or
+            event["raw_user_sha256"] != data_sha.hexdigest() or
+            event["returned_user_sha256"] != data_sha.hexdigest()):
         raise ValueError("actual original CdRead payload differs from owned MAP02 CD sectors")
     if (verify_map02_disc_extent(image, upstream) != extent or
             _disc_file_identity(os.stat(image, follow_symlinks=False))
@@ -90,6 +92,7 @@ def verify_map02_original_cd_read(scoped_dir, native_dir, owned_image,
         "original_map02_cd_read_observed": True,
         "original_game_loader_completion_observed": True,
         "original_cd_payload_crc32_matches_owned_image": True,
+        "original_cd_payload_sha256_matches_owned_image": True,
         "native_gpu_process_session_sha256": checked["capture_session_sha256"],
         "original_cd_receipt_sha256": checked[
             "original_map02_cd_read_receipt_sha256"],
