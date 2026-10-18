@@ -54,8 +54,10 @@ on:
       - 'tools/map02_capture_session.c'
       - 'tools/map02_local_capture_handoff.py'
       - 'tools/check_map02_private_launch_layout.py'
+      - 'tools/check_map02_private_cycle_readiness.py'
       - 'tests/test_map02_local_capture_handoff.py'
       - 'tests/test_check_map02_private_launch_layout.py'
+      - 'tests/test_check_map02_private_cycle_readiness.py'
       - 'tools/map02_verified_process_launch.py'
       - 'tests/test_map02_verified_process_launch.py'
       - 'tools/check_map02_owned_disc_extent.py'
@@ -181,8 +183,10 @@ on:
       - 'tools/map02_capture_session.c'
       - 'tools/map02_local_capture_handoff.py'
       - 'tools/check_map02_private_launch_layout.py'
+      - 'tools/check_map02_private_cycle_readiness.py'
       - 'tests/test_map02_local_capture_handoff.py'
       - 'tests/test_check_map02_private_launch_layout.py'
+      - 'tests/test_check_map02_private_cycle_readiness.py'
       - 'tools/map02_verified_process_launch.py'
       - 'tests/test_map02_verified_process_launch.py'
       - 'tools/check_map02_owned_disc_extent.py'
@@ -314,6 +318,7 @@ jobs:
             tests.test_publish_map02_window_scoped_witness \
             tests.test_map02_local_capture_handoff \
             tests.test_check_map02_private_launch_layout \
+            tests.test_check_map02_private_cycle_readiness \
             tests.test_map02_verified_process_launch \
             tests.test_check_map02_owned_disc_extent \
             tests.test_instrument_map02_cd_read \
