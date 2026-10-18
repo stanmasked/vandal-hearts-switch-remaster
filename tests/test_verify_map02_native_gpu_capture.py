@@ -1,13 +1,17 @@
 """Synthetic checker for bounded native GPU command/VRAM capture files."""
+import io
 import json
 import os
+from contextlib import redirect_stderr
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
 import tools.verify_map02_native_gpu_capture as gpu_module
-from tools.verify_map02_native_gpu_capture import private_file, verify_capture, VRAM_BYTES
+from tools.verify_map02_native_gpu_capture import (
+    main as gpu_cli_main, private_file, verify_capture, VRAM_BYTES,
+)
 
 class NativeGpuCaptureValidationTests(unittest.TestCase):
     def setUp(self):
@@ -220,6 +224,24 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
         self.assertEqual(
             verify_capture(self.root, target_frame=12)["native_gpu_pairs_verified"],
             2)
+
+    def test_cli_redacts_private_paths_in_capture_errors(self):
+        private_path = "/private/owned-game/MAP02/source-image.bin"
+        argv = ["native-gpu-audit", str(self.root), "--frame", "12"]
+        for error in (OSError(13, "private file unavailable", private_path),
+                      ValueError("untrusted GPU event: " + private_path)):
+            with self.subTest(kind=type(error).__name__):
+                stderr = io.StringIO()
+                with (patch("sys.argv", argv),
+                      patch.object(gpu_module, "verify_capture", side_effect=error),
+                      redirect_stderr(stderr)):
+                    with self.assertRaises(SystemExit) as exit_result:
+                        gpu_cli_main()
+                self.assertEqual(exit_result.exception.code, 2)
+                self.assertIn("private native GPU capture verification unavailable",
+                              stderr.getvalue())
+                self.assertNotIn(private_path, stderr.getvalue())
+                self.assertNotIn("source-image.bin", stderr.getvalue())
 
     def test_two_native_pairs_and_hashes(self):
         result=verify_capture(self.root,target_frame=12)
