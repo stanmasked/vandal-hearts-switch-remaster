@@ -65,3 +65,45 @@ Local test:
 
 Use CC=clang for the second compiler. Keep the PR in Draft, HD replacement
 disabled and private game resources outside the public repository.
+
+## Native C11 framebuffer producer (new)
+
+The repository now includes tools/map02_native_frame_pipe.h and
+tools/map02_native_frame_pipe.c. It can serialize a **completed in-memory**
+BGR555 pixel array in exactly the Linux ELF pipe protocol above, including
+explicit little-endian 16-bit words. Rows may have a larger native source
+stride than the requested output width (for example, a 1024-word PS1-style
+VRAM buffer with a smaller crop); padding pixels are not transmitted.
+The helper validates frame, width, height, pointer, stride, output descriptor
+and total byte count before writing its header. It uses bounded stack storage,
+does not allocate, and retries interrupted writes.
+
+For any hypothetical native renderer integration, first wait on
+vh_map02_frame_pipe_wait_release(input_fd) and **only after the requested
+frame is completed** call vh_map02_frame_pipe_emit(output_fd, frame,
+width, height, completed_pixels, stride_pixels). The caller is solely
+responsible for ensuring the pointer refers to the actual finished framebuffer
+and that its width * stride storage is valid. This helper does not instrument
+or alter the upstream GPU rasterizer automatically.
+
+The C11 implementation deliberately rejects builds without
+-DVH_MAP02_PRIVATE_FRAME_PIPE_TRACE=1 and rejects non-Linux platforms.
+It must not be linked into regular Switch/retail binaries. This is
+a *debug-only transport*, not evidence of a genuine GPU flush or proof that
+the requested image originated from the game. Neither the producer nor the
+launcher authenticates loaded disc resources or original PS1 pixel output.
+
+Additional asset-free end-to-end regression, through a compiled native
+ELF using a two-row pitched synthetic framebuffer:
+
+    CC=gcc python3 -m unittest discover -s tests \
+      -p 'test_map02_native_frame_pipe_c11.py' -v
+
+The same test is run with CC=clang in the dedicated GitHub Actions matrix.
+It checks exact BGR555 ordering, stride/padding exclusion, gating, strict
+parameter refusal, invalid frame/header rejection and disabled-build errors.
+
+**Outstanding:** add a source-pinned renderer call site at a proven
+framebuffer-flush boundary, then connect that *same launch session* to
+native GPU/FT4/VRAM journals. Until then, the frame stream and the previous
+log replay have no proven pixel-generation causality and HD remains off.
