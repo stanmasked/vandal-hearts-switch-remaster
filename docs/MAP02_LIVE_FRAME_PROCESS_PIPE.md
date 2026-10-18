@@ -266,3 +266,27 @@ intervene), nor does the source transcript authenticate the retail game,
 original disc assets, PS1 raster parity or completeness of every CPU VRAM
 write. It is specifically the **native PC renderer**, not PS1 hardware.
 No private game was launched in CI. Preserve Draft and HD-off.
+
+## Hardened private journal replay (filesystem identity)
+
+The native journal auditor now freezes **every** journal file through
+a held, no-follow directory descriptor before the independent native
+GPU replay. It requires single-link regular files with 0600 permissions,
+bounded file sizes, and a 0700 owner-private directory, including a
+correctly bounded 1 MiB VRAM image for each recorded snapshot. Each
+filename is relative to the held descriptor, never a caller-selected
+path outside the private directory.
+
+After replaying the native event/VRAM operations twice, the auditor
+independently rehashes ALL snapshots, the JSONL log and upload data
+and compares both content digests and filesystem identities
+(device, inode, size, modification/change timestamps) to those
+observed before replay. It also verifies that the original directory
+path still refers to the same held inode. A symlink, hardlink,
+world-readable snapshot, replaced file with identical bytes or
+changed directory path is a hard failure.
+
+This tightens local integrity only: an external actor with control
+of the same files can still race after the audit, and no kernel
+evidence identifies which process emitted those bytes. It does
+not authenticate a PS1 reference or enable HD asset substitution.
