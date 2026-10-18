@@ -92,11 +92,13 @@ jobs:
           make ps1-music-av-zl-probe
           make ps1-music-av-resume-probe
           make ps1-music-av-resume-retry-probe
+          make ps1-music-av-focus-probe
           test -s build/libnx-ps1-music-av.nro
           test -s build/libnx-ps1-music-av-zr.nro
           test -s build/libnx-ps1-music-av-zl.nro
           test -s build/libnx-ps1-music-av-resume.nro
           test -s build/libnx-ps1-music-av-resume-retry.nro
+          test -s build/libnx-ps1-music-av-focus.nro
 
       - name: Upload NRO without proprietary audio assets
         uses: actions/upload-artifact@v4
@@ -108,6 +110,7 @@ jobs:
             build/libnx-ps1-music-av-zl.nro
             build/libnx-ps1-music-av-resume.nro
             build/libnx-ps1-music-av-resume-retry.nro
+            build/libnx-ps1-music-av-focus.nro
           if-no-files-found: error
 
 
