@@ -67,6 +67,12 @@ def validate_capture(run_id: int, report: dict) -> dict:
             "exact_zero_frames": zeros,
             "nonzero_frames": nonzeros,
         }
+    pre, middle, post = (windows["before_plus_500ms_baseline"],
+                         windows["plus_snapshot_control_window"],
+                         windows["after_plus_500ms_window"])
+    if not (pre["end_frame_exclusive"] <= middle["start_frame"] <=
+            middle["end_frame_exclusive"] <= post["start_frame"]):
+        raise VirtualPcmEvidenceError("host Plus window chronology malformed")
     hold = report.get("plus_hold_host_ms_between_snapshots")
     if type(hold) is not int or hold <= 0:
         raise VirtualPcmEvidenceError("bad Plus hold time")
@@ -96,6 +102,29 @@ def validate_capture(run_id: int, report: dict) -> dict:
                 press_min > press_max or release_min > release_max or
                 onset.get("sample_alignment_is_not_host_input_timestamp") is not True):
             raise VirtualPcmEvidenceError("terminal original zero run malformed")
+        if (press_min != start - middle["start_frame"] or
+                press_max != start - pre["end_frame_exclusive"] or
+                release_min != middle["end_frame_exclusive"] - start or
+                release_max != post["start_frame"] - start):
+            raise VirtualPcmEvidenceError("terminal onset source fences forged")
+        if (classification == "present_by_before_plus_snapshot" and
+                start > pre["end_frame_exclusive"]):
+            raise VirtualPcmEvidenceError("onset before Plus position forged")
+        if (classification == "later_than_after_plus_snapshot" and
+                start <= post["start_frame"]):
+            raise VirtualPcmEvidenceError("onset after Plus position forged")
+        expected_class = (
+            "present_by_before_plus_snapshot"
+            if start <= pre["end_frame_exclusive"]
+            else "between_buffered_plus_snapshots"
+            if start > middle["start_frame"] and
+            start <= middle["end_frame_exclusive"]
+            else "later_than_after_plus_snapshot"
+            if start > post["start_frame"]
+            else "ambiguous_partial_stereo_frame_boundary"
+        )
+        if classification != expected_class:
+            raise VirtualPcmEvidenceError("onset class not source-fence consistent")
         press_range = [press_min, press_max]
         release_range = [release_min, release_max]
         if classification == "between_buffered_plus_snapshots" and not (
