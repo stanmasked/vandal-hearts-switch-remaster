@@ -61,6 +61,9 @@ int main(int argc, char **argv) {
     if (!dir || !selected || !gpu_frame ||
         strcmp(selected, "123") || strcmp(gpu_frame, selected))
         return 41;
+    /* Require the launcher to hand us a pinned inherited directory FD,
+     * not a mutable journal pathname or a caller-authored output route. */
+    if (strncmp(dir, "/proc/self/fd/", 14) != 0) return 51;
     if (vh_map02_frame_pipe_wait_release(STDIN_FILENO) != 0) return 42;
     if (!omit_journal) {
         if (!write_image(dir, "gpu-0000-vram.bin")) return 43;
@@ -147,6 +150,14 @@ class JointNativeCaptureTests(unittest.TestCase):
                          result["image_sha256"])
         self.assertFalse(verified["gpu_journal_writer_kernel_authenticated"])
         self.assertNotIn(str(self.journal), str(result))
+
+    def test_joint_producer_receives_inherited_directory_fd(self):
+        # The C test executable rejects any journal destination other than
+        # /proc/self/fd/N, so a successful full capture tests pass_fds and
+        # resolution of writes through the pinned directory inode.
+        receipt = self.run_joint()
+        self.assertTrue(receipt["terminal_after_vram_matched"])
+        self.assertTrue((self.journal / "gpu-native-events.jsonl").is_file())
 
     def test_wrong_event_frame_refused(self):
         with self.assertRaisesRegex(ValueError, "frame"):
