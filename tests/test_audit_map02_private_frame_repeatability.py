@@ -87,6 +87,8 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
         self.assertTrue(result["repeated_gpu_event_records_identical"])
         self.assertEqual(result["different_gpu_event_records_in_common_prefix"], 0)
         self.assertIsNone(result["first_different_gpu_event_record_index"])
+        self.assertIsNone(result["first_joint_gpu_divergence_index"])
+        self.assertIsNone(result["first_joint_gpu_divergence_kind"])
         self.assertEqual(result["gpu_event_records_compared"], 2)
         self.assertTrue(result["two_full_replays_per_capture_verified"])
         self.assertTrue(result["four_private_file_inventories_stable_through_replays"])
@@ -155,6 +157,9 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
         # pixels while the JSONL digest stays byte-identical.
         self.assertTrue(out["repeated_gpu_event_journal_identical"])
         self.assertTrue(out["repeated_gpu_event_records_identical"])
+        self.assertEqual(out["first_joint_gpu_divergence_kind"], "vram-only")
+        self.assertEqual(out["first_joint_gpu_divergence_index"], 1)
+        self.assertEqual(out["first_joint_gpu_divergence_phase"], "after")
 
     def test_transient_before_vram_difference_converges_to_same_final_frame(self):
         # The *same* compiled C11 ELF can create a different before-
@@ -299,7 +304,9 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
         self.assertEqual(report["different_gpu_event_records_in_common_prefix"], 1)
         self.assertFalse(report["repeated_gpu_event_records_identical"])
         self.assertNotIn("DIFFERENT", str(report))
-        self.assertNotIn("record", str(report))
+        # The public aggregate field names legitimately include "records";
+        # only private JSONL payload keys/values must stay unpublished.
+        self.assertNotIn('"record":', json.dumps(report))
 
     def test_gpu_event_records_with_unmatched_tail_cannot_claim_equality(self):
         first = (b"a", b"b")
@@ -320,6 +327,57 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "count disagrees"):
                 repeat._gpu_event_differences(
                     1, 2, "a" * 64, "b" * 64, 2, 1, lambda: None)
+
+    def test_first_joint_gpu_divergence_classifies_events_and_vram(self):
+        # All indices are ordinal event/snapshot positions (two per pair).
+        cases = (
+            (None, None, 0, None, None, None),
+            (1, 3, 0, "event-only", 1, "after"),
+            (3, 0, 0, "vram-only", 0, "before"),
+            (2, 2, 0, "event-and-vram", 2, "before"),
+            (None, None, 2, "unmatched-tail", 4, "before"),
+            (3, None, 2, "event-only", 3, "after"),
+        )
+        for event_index, vram_index, tail, kind, index, phase in cases:
+            with self.subTest(kind=kind, event=event_index, vram=vram_index):
+                events = {
+                    "first_gpu_event_count": 4,
+                    "second_gpu_event_count": 4 + tail,
+                    "gpu_event_records_compared": 4,
+                    "unmatched_gpu_event_records": tail,
+                    "first_different_gpu_event_record_index": event_index,
+                }
+                snapshots = {
+                    "first_gpu_vram_snapshot_count": 4,
+                    "second_gpu_vram_snapshot_count": 4 + tail,
+                    "gpu_vram_snapshots_compared": 4,
+                    "unmatched_gpu_vram_snapshots": tail,
+                    "first_different_gpu_vram_snapshot_index": vram_index,
+                }
+                out = repeat._joint_gpu_vram_first_divergence(snapshots, events)
+                self.assertEqual(out["first_joint_gpu_divergence_kind"], kind)
+                self.assertEqual(out["first_joint_gpu_divergence_index"], index)
+                self.assertEqual(out["first_joint_gpu_divergence_phase"], phase)
+                self.assertEqual(out["first_joint_gpu_divergence_pair_index"],
+                                 None if index is None else index // 2)
+
+    def test_first_joint_gpu_divergence_rejects_unpaired_evidence(self):
+        events = {
+            "first_gpu_event_count": 2,
+            "second_gpu_event_count": 4,
+            "gpu_event_records_compared": 2,
+            "unmatched_gpu_event_records": 2,
+            "first_different_gpu_event_record_index": None,
+        }
+        snapshots = {
+            "first_gpu_vram_snapshot_count": 2,
+            "second_gpu_vram_snapshot_count": 2,
+            "gpu_vram_snapshots_compared": 2,
+            "unmatched_gpu_vram_snapshots": 0,
+            "first_different_gpu_vram_snapshot_index": None,
+        }
+        with self.assertRaisesRegex(ValueError, "timeline counts disagree"):
+            repeat._joint_gpu_vram_first_divergence(snapshots, events)
 
     def test_overlapping_capture_roles_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "directory roles overlap"):
