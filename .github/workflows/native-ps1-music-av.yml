@@ -495,8 +495,14 @@ jobs:
           set -euo pipefail
           test "$(find audit -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
           test -s audit/native-av-seven-case-audit.json
+          # Failed-job-only reruns increment this consumer's attempt but do
+          # not regenerate successful guest captures from the prior attempt.
+          # Accept only an earlier producer attempt recorded in the index
+          # after independently binding all seven witnesses and NRO hashes
+          # to the original run ID and source revision.
           python3 tests/verify_native_av_run_audit.py \
             audit/native-av-seven-case-audit.json \
             published-evidence nros --revision "$GITHUB_SHA" \
             --github-run-id "$GITHUB_RUN_ID" \
-            --github-run-attempt "$GITHUB_RUN_ATTEMPT"
+            --github-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --accept-prior-published-attempt
