@@ -18,6 +18,7 @@ from tools.capture_map02_live_frame_pipe import capture
 from tools.replay_map02_live_frame_receipt import replay
 from tools.compare_map02_private_bgr555_frames import compare
 from tools.bridge_map02_private_frame_native import _private_frame_pair_identity
+from tools.join_map02_live_frame_native import join as join_original_native
 
 SCHEMA = "vh.map02.private-joint-elf-run-two-replays.v1"
 WIDTH, HEIGHT = 1024, 512
@@ -126,13 +127,26 @@ def _session_inode_witness(output_dir, gpu_journal_dir, *,
 
 
 def run(executable, output_dir, gpu_journal_dir, *, frame, executable_sha256,
-        timeout=10, args=(), frame_pair_dir=None):
+        timeout=10, args=(), frame_pair_dir=None, native_capture_dir=None,
+        source_capture_dir=None, launch_receipt=None, preflight_report=None,
+        compiler="gcc"):
     """Run one pinned Linux ELF, then independently audit the same bytes twice.
 
     The output/journal directories must already exist, be empty, and have
     owner-private permissions. On failure, the launcher's fail-closed
     publication and the independent replay checks determine refusal.
     """
+    # The four inputs form ONE all-or-nothing independent original-source
+    # FT4/VRAM witness. A partial argument set must fail before executing
+    # or publishing a native ELF frame.
+    source_inputs = (native_capture_dir, source_capture_dir,
+                     launch_receipt, preflight_report)
+    source_requested = any(v is not None for v in source_inputs)
+    if (compiler not in ("gcc", "clang")
+            or (source_requested and
+                (not all(v is not None for v in source_inputs)
+                 or frame_pair_dir is None))):
+        raise ValueError("MAP02 original FT4/VRAM witness arguments incomplete")
     # The optional claimed pair is independent of the same-launch frame.
     # Observe its inode inventory and exact claimed hashes BEFORE launching.
     # A comparison with an independently captured reference is informative
@@ -241,6 +255,57 @@ def run(executable, output_dir, gpu_journal_dir, *, frame, executable_sha256,
             "claimed_reference_ps1_hardware_authenticated": False,
         }
 
+    original_source = {}
+    if source_requested:
+        # Reuse the *existing independent* original-source native bridge:
+        # it validates the separate original FT4/GTE/OT/VRAM evidence,
+        # strict executable witness, claimed frame pair, and the live GPU
+        # journal through two more full replays, not a caller-made summary.
+        joined = join_original_native(
+            frame_pair_dir, output_dir, native_capture_dir,
+            source_capture_dir, launch_receipt=launch_receipt,
+            preflight_report=preflight_report, executable=executable,
+            compiler=compiler, gpu_journal_dir=gpu_journal_dir)
+        if (joined.get("schema") !=
+                "vh.map02.live-frame-claimed-pair-native-digest-join.v1"
+                or joined.get("frame") != frame
+                or (joined.get("width"), joined.get("height")) != (WIDTH, HEIGHT)
+                or joined.get("candidate_sha256") != first["image_sha256"]
+                or joined.get("claimed_reference_sha256")
+                   != pair_report["reference_sha256"]
+                or joined.get("same_launcher_gpu_journal_sha256")
+                   != first["gpu_journal_sha256"]
+                or joined.get("same_launcher_gpu_terminal_vram_sha256")
+                   != first["terminal_gpu_after_vram_sha256"]
+                or joined.get("same_launcher_gpu_journal_pairs_verified")
+                   != first["gpu_journal_pairs_verified"]
+                or joined.get("candidate_pixels_match_replayed_live_pipe") is not True
+                or joined.get("native_gpu_trace_independently_replayed") is not True
+                or joined.get("live_pipe_stable_during_native_replay") is not True
+                or joined.get("child_writable_gpu_journal_fd_observed") is not True
+                or joined.get("same_launcher_terminal_frame_equal_gpu_after_vram")
+                   is not True
+                or joined.get("same_process_gpu_event_and_frame_causality_authenticated")
+                   is not False
+                or joined.get("retail_disc_or_ps1_reference_authenticated") is not False
+                or joined.get("gpu_journal_writer_kernel_authenticated") is not False
+                or joined.get("hd_replacement_authorized") is not False):
+            raise ValueError("MAP02 independent source witness disagrees with same-launch frame")
+        # The extra independent source replay is not allowed to swap any
+        # of the files the original launcher bound through its held FDs.
+        if (_session_inode_witness(output_dir, gpu_journal_dir) != pinned_session
+                or _private_frame_pair_identity(frame_pair_dir) != pair_witness
+                or compare(frame_pair_dir) != pair_report):
+            raise ValueError("MAP02 private capture changed during original FT4/VRAM witness")
+        original_source = {
+            "source_keyed_native_ft4_vram_independently_replayed": True,
+            "source_original_launch_receipt_sha256":
+                joined["original_launch_receipt_sha256"],
+            "source_native_gpu_event_log_sha256":
+                joined["native_gpu_event_log_sha256"],
+            "source_original_trace_same_session_as_live_elf_authenticated": False,
+        }
+
     return {
         "schema": SCHEMA,
         "frame": frame,
@@ -253,6 +318,7 @@ def run(executable, output_dir, gpu_journal_dir, *, frame, executable_sha256,
             first["terminal_gpu_after_vram_sha256"],
         "gpu_journal_pairs_verified": first["gpu_journal_pairs_verified"],
         **claimed_pair,
+        **original_source,
         "two_full_independent_private_replays_equal": True,
         "private_frame_and_journal_inodes_stable_through_replays": True,
         "child_writable_gpu_journal_fd_observed": True,
@@ -273,13 +339,22 @@ def main():
     parser.add_argument("--gpu-journal-dir", type=Path, required=True)
     parser.add_argument("--frame", type=int, required=True)
     parser.add_argument("--frame-pair-dir", type=Path)
+    parser.add_argument("--native-capture", type=Path)
+    parser.add_argument("--source-capture", type=Path)
+    parser.add_argument("--launch-receipt", type=Path)
+    parser.add_argument("--preflight-report", type=Path)
+    parser.add_argument("--compiler", choices=("gcc", "clang"), default="gcc")
     parser.add_argument("--timeout", type=int, default=10)
     ns = parser.parse_args()
     try:
         report = run(
             ns.executable, ns.output_dir, ns.gpu_journal_dir,
             frame=ns.frame, executable_sha256=ns.executable_sha256,
-            timeout=ns.timeout, frame_pair_dir=ns.frame_pair_dir)
+            timeout=ns.timeout, frame_pair_dir=ns.frame_pair_dir,
+            native_capture_dir=ns.native_capture,
+            source_capture_dir=ns.source_capture,
+            launch_receipt=ns.launch_receipt,
+            preflight_report=ns.preflight_report, compiler=ns.compiler)
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
     print(json.dumps(report, sort_keys=True, indent=2))
