@@ -167,6 +167,15 @@ def comparison(before, after):
         if (before["indicators"][label] == "red" and
                 after["indicators"][label] != "red"):
             raise ValueError("terminal " + label + " error changed between frames")
+    # The shared audio worker terminates on any manual transport failure.
+    # A later X/Y success cannot first appear after a red marker was
+    # already visible in the earlier frame. Earlier confirmed blue tiles
+    # may remain blue, because those reflect completed past operations.
+    if any(before["indicators"][label] == "red" for label in ("X", "Y")):
+        for label in ("X", "Y"):
+            if (before["indicators"][label] == "yellow" and
+                    after["indicators"][label] == "blue"):
+                raise ValueError("new " + label + " PCM return after terminal manual error")
     a, b = before["tallies_capped_at_five"], after["tallies_capped_at_five"]
     for label in ("B", "F", "R"):
         if b[label] < a[label]:
