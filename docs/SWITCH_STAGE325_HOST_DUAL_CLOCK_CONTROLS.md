@@ -85,13 +85,23 @@ This NeXium run also passed the **unchanged** Stage304 and Stage305
 checks. The original Stage304 archive's negative 347 ms wall-clock
 interval was **not** reproduced in this particular successful sample.
 
-For another independent source replay, the isolated workflow
-`.github/workflows/stage325-independent-original-clock-replay.yml`
-authenticates the exact successful original run and downloads its
-actual runtime evidence. It must independently recompute both source
-hashes, both clock intervals and the agreement with original Stage304
-and Stage305 receipts. Its success is a separate pending claim until
-that workflow itself passes.
+A separate runner has now completed the independent original source
+replay twice: [39167538481](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39167538481)
+and [39167641369](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39167641369).
+Both workflows **passed all eleven Stage325 synthetic tests** and
+successfully downloaded the exact successful original NeXium archive.
+The replay independently recomputed both original CSV SHA-256 hashes
+and the original two wall/monotonic intervals, matched the original
+Stage325 receipt exactly, checked original Stage304 CSV ordering, and
+verified that the original capture held successful Stage304 and
+Stage305 result receipts. The source replayer **does not independently
+recompute the entire Stage304/305 PCM chain**; those full checks passed
+in the authentic original NeXium capture. Neither workflow checks real
+Nintendo Switch speakers.
+
+The compact independent comparison receipt is published as
+`stage325-independent-original-host-clocks`, containing **only**
+CSV hashes, host-clock deltas and limited source provenance.
 
 ## Evidentiary limits
 
