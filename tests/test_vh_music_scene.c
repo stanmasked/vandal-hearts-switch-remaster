@@ -309,6 +309,35 @@ static int wet_nonzero(const VhSpuReverb *tail) {
         if(tail->work[i]!=0) return 1;
     return 0;
 }
+static void test_opted_first_cue_resets_residual_silent_state(void) {
+    setup();
+    /* An initialized silent director does not own the SPU's previous
+     * contents. Even with continuity enabled, its FIRST cue must
+     * reset leftover reverb and borrowed pointers from a prior owner. */
+    synth.reverb.work[23]=12345;
+    synth.reverb.in_l[5]=1024;
+    synth.reverb.cursor=7;
+    synth.voice[0].pcm=pcm_b;
+    synth.voice[0].frames=128u;
+    synth.voice[0].active=1;
+    assert(wet_nonzero(&synth.reverb));
+    assert(vh_music_scene_set_reverb_continuity(&scene,1)==0);
+    VhMusicCue first=cue_a();
+    assert(vh_music_scene_request(&scene,&first,0u)==0);
+    assert(scene.active.id==101u && scene.switches==1u &&
+           scene.keep_reverb_across_cues==1u);
+    assert(!wet_nonzero(&synth.reverb) &&
+           synth.reverb.cursor==0 && synth.reverb.in_l[5]==0);
+    for(unsigned i=0u;i<VH_NATIVE_MUSIC_VOICES;i++)
+        assert(!synth.voice[i].active && synth.voice[i].pcm==NULL);
+    assert(synth.reverb_enabled && synth.reverb_depth==0.5f &&
+           synth.interpolation==VH_SPU_GAUSSIAN);
+    assert(vh_music_scene_render(&scene,out)==0);
+    assert(scene.seq.note_ons==1u && synth.voice[0].pcm==pcm_a);
+    assert(vh_music_scene_detach(&scene)==0);
+    assert(!wet_nonzero(&synth.reverb));
+}
+
 static void test_optional_wet_tail_direct_switch(void) {
     setup();
     VhMusicCue first=cue_a(),second=cue_b();
@@ -473,6 +502,7 @@ int main(void) {
     test_fade_ramp_matches_unscaled_audio();
     test_pending_corruption_fails_closed();
     test_forced_bank_detach_in_all_fade_stages();
+    test_opted_first_cue_resets_residual_silent_state();
     test_optional_wet_tail_direct_switch();
     test_default_reset_and_opted_fade_comparison();
     test_opted_pending_corruption_preserves_active_bank();
