@@ -261,7 +261,13 @@ class CycleCdGpuJoinTests(unittest.TestCase):
 
     def test_original_cd_crc_mutation_during_expensive_audit_rejected(self):
         def mutate(*args, **kwargs):
-            (self.scoped / CD_READ).write_bytes(self.cd_raw + b" ")
+            # Keep valid, single-line JSONL with EXACTLY the same CD fields
+            # and CRC. Only the raw bytes differ; the final inode/byte audit
+            # must still refuse to accept a modified mid-audit receipt.
+            alternate = (json.dumps(json.loads(self.cd_raw), sort_keys=True,
+                                    separators=(",", ":")) + "\n").encode()
+            self.assertNotEqual(alternate, self.cd_raw)
+            (self.scoped / CD_READ).write_bytes(alternate)
             return {"private_map02_cd_final_sha256": sha(self.manifest_raw)}
         self.mock.side_effect = mutate
         with self.assertRaisesRegex(ValueError, "changed during verification"):
