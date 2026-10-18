@@ -96,7 +96,7 @@ def _canonical(raw):
     data = parse_json(raw[:-1], NAME)
     fields(data, KEYS, NAME)
     if raw != (json.dumps(data, sort_keys=True, separators=(",", ":")) +
-               "\\n").encode("utf-8"):
+               "\n").encode("utf-8"):
         raise ValueError("MAP02 final seal is not canonical JSONL")
     if (data["schema"] != SCHEMA or
             data["independent_postcapture_recheck_completed"] is not True or
