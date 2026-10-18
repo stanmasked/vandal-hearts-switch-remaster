@@ -85,6 +85,17 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_pcm_exit_controls.py' -v
       - name: Stage305 strict buffered Plus/PCM terminal zero onset fence and baseline tests
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_pcm_plus_fence.py' -v
+      - name: Stage307 guest software exit C11 timeline on GCC and Clang
+        run: |
+          set -euxo pipefail
+          for cc in gcc clang; do
+            "$cc" -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+              tests/test_vh_audio_exit_timeline.c \
+              -o "/tmp/test-vh-audio-exit-$cc"
+            "/tmp/test-vh-audio-exit-$cc"
+          done
+      - name: Stage307 optional guest SD exit timeline provenance tests
+        run: python3 -m unittest discover -s tests -p 'test_audit_nexium_guest_exit_timeline.py' -v
       - name: Statistical sensitivity of complete paired NeXium audio sessions
         run: python3 -m unittest discover -s tests -p 'test_analyze_nexium_idle_switch_variability.py' -v
       - name: Multi-pair no-switch original-SD archive negative controls
