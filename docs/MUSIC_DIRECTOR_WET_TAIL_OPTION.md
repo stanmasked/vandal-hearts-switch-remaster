@@ -98,12 +98,26 @@ run/attempt, 1-mode flag, NRO byte size, SHA256 and legacy baseline
 SHA256. The emulator runner rechecks these values against the downloaded
 NRO before launch.
 
+Before launching the NRO, `tools/verify_switch_wet_tail_nro.py`
+now validates **both** downloaded artifacts through strict checks:
+exactly the expected two files per bundle, regular non-linked files,
+manifest field/type schema, exact source commit/run/attempt/mode,
+byte counts and SHA256, the experimental NRO's reference to the
+verified baseline digest, a non-identical experimental binary, and
+both NRO structures. It emits `wet-tail-pair-preflight.json`.
+`tests/test_verify_switch_wet_tail_nro.py` provides 20 synthetic
+positive/negative cases for that gate. The `Music director optional
+wet-tail regression` workflow executes these tests separately from
+the emulator build and the normal audio sanitizers.
+
 The existing NeXium runner attempts the same framebuffer and tactical
 input smoke probes against both the legacy NRO and the opt-in NRO.
-Screenshots and guest process logs are retained in the existing
-`nexium-runtime-evidence` artifact. The experimental build does
-**not** include copyrighted source-game assets, and the identical input
-probe does not establish STUDIO_C audio correctness.
+Screenshots, guest process logs and the pair verification report are
+retained in the existing `nexium-runtime-evidence` artifact. This
+strict build-provenance check is **not** an independent attestation,
+and the experimental build does **not** include copyrighted
+source-game assets. Neither a valid hash nor an identical input
+probe establishes STUDIO_C audio correctness.
 
 **Do not call this test passed based on a queued workflow or a compiled
 NRO.** Require a completed, successful NeXium run and examine the
