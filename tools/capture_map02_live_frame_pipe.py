@@ -179,10 +179,10 @@ def capture(executable, output_dir, *, frame, width, height,
         if journal_fd is not None:
             journal = audit_joint_gpu(journal_path, frame=frame,
                                       final_pixels=pixels)
-            if (_identity(os.fstat(journal_fd)) != _identity(jstat)
-                    or _identity(os.stat(journal_path, follow_symlinks=False))
-                    != _identity(jstat)):
-                raise ValueError("joint GPU journal directory replaced during capture")
+            for info in (os.fstat(journal_fd),
+                         os.stat(journal_path, follow_symlinks=False)):
+                if (info.st_dev, info.st_ino) != (jstat.st_dev, jstat.st_ino):
+                    raise ValueError("joint GPU journal directory replaced during capture")
         receipt = {
             "schema": SCHEMA,
             "frame": frame, "width": width, "height": height,
