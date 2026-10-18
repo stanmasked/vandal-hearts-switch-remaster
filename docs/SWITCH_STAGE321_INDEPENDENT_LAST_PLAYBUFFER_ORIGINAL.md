@@ -27,7 +27,7 @@ last call *after* the stop request, without assuming that the whole
 
 `tools/replay_nexium_original_last_playbuffer_archive.py` on a
 separate GitHub Actions runner requires the original Stage320
-NeXium source workflow **39153742811** to have *completed
+NeXium source workflow **39154247222** to have *completed
 successfully*. If the producer remains queued, fails, is cancelled,
 or did not publish the original source files, Stage321 does **not**
 report a verified measurement.
