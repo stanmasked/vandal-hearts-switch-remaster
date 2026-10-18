@@ -12,6 +12,7 @@ import tools.check_map02_private_cycle_readiness as readiness
 from tools.map02_local_capture_handoff import (
     PLAN, PLAN_SCHEMA, PINNED_UPSTREAM_REF, REQUIRED_DIAGNOSTIC_MACROS,
 )
+from tools.map02_cycle_build_provenance import NAME as BUILD_RECEIPT
 
 
 class PrivateCycleReadinessTests(unittest.TestCase):
@@ -29,6 +30,10 @@ class PrivateCycleReadinessTests(unittest.TestCase):
         self.upstream = self.root / "fake-source"
         self.bundle = self.root / "fake-overlay"
         self.receipt = self.root / "fake-build-receipt"
+        self.receipt.mkdir(mode=0o700)
+        receipt_file = self.receipt / BUILD_RECEIPT
+        receipt_file.write_bytes(b'{"synthetic":true}\n')
+        receipt_file.chmod(0o600)
         self.plan = {
             "schema": PLAN_SCHEMA,
             "pinned_original_pc_source_commit": PINNED_UPSTREAM_REF,
@@ -85,7 +90,7 @@ class PrivateCycleReadinessTests(unittest.TestCase):
         self.assertEqual(self.mocks[0].call_count, 2)
         self.assertEqual(self.mocks[1].call_count, 2)
         self.assertEqual(self.mocks[3].call_count, 2)
-        self.mocks[4].assert_called_once()
+        self.assertEqual(self.mocks[4].call_count, 2)
 
     def test_rejects_source_executable_and_image_drift_from_plan(self):
         for index, bad, phrase in (
@@ -178,6 +183,35 @@ class PrivateCycleReadinessTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "layout changed"):
                 self.verify()
         self.assertTrue(backup.is_dir())
+
+    def test_rejects_full_build_provenance_changed_between_audits(self):
+        first = {"source_pinned_full_elf_bytes_checked": True,
+                 "private_build_receipt_sha256": "a" * 64}
+        altered = dict(first, private_build_receipt_sha256="b" * 64)
+        with patch.object(readiness, "verify_build_receipt",
+                          side_effect=[first, altered]):
+            with self.assertRaisesRegex(ValueError, "build receipt changed"):
+                self.verify()
+
+    def test_rejects_byte_identical_build_receipt_inode_swap(self):
+        receipt_file = self.receipt / BUILD_RECEIPT
+        previous = self.root / "old-receipt-inode"
+        checked = {"source_pinned_full_elf_bytes_checked": True}
+        swaps = [0]
+
+        def replace_receipt(*args, **kwargs):
+            swaps[0] += 1
+            if swaps[0] == 1:
+                receipt_file.replace(previous)
+                receipt_file.write_bytes(previous.read_bytes())
+                receipt_file.chmod(0o600)
+            return checked
+
+        with patch.object(readiness, "verify_build_receipt",
+                          side_effect=replace_receipt):
+            with self.assertRaisesRegex(ValueError, "build receipt changed"):
+                self.verify()
+        self.assertTrue(previous.exists())
 
     def test_cli_redacts_private_paths_in_process_and_io_failures(self):
         private = "/private/user/SLUS_004.47"
