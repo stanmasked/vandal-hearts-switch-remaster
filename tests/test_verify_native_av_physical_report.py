@@ -196,10 +196,10 @@ class PhysicalPixelReportVerificationTests(unittest.TestCase):
             data[name]=tiny_nro(i)
             (bundle/name).write_bytes(data[name])
         (bundle/MANIFEST).write_text(
-            "".join(hashlib.sha256(data[name]).hexdigest()+"  "+name+"\\n"
+            "".join(hashlib.sha256(data[name]).hexdigest()+"  "+name+"\n"
                     for name in NRO_NAMES),
             encoding="ascii")
-        (bundle/COMMIT_FILE).write_text(COMMIT+"\\n",encoding="ascii")
+        (bundle/COMMIT_FILE).write_text(COMMIT+"\n",encoding="ascii")
         return bundle
 
     def test_manual_pixel_report_matches_only_published_manual_nro(self):
@@ -255,7 +255,7 @@ class PhysicalPixelReportVerificationTests(unittest.TestCase):
                                    "--expected-commit","f"*40))
         self.assertNotEqual(mismatched.returncode,0)
         self.assertIn("independently expected commit",mismatched.stderr)
-        (bundle/MANIFEST).write_text("invalid manifest\\n",encoding="ascii")
+        (bundle/MANIFEST).write_text("invalid manifest\n",encoding="ascii")
         damaged=self.cli(flags=("--nro",str(nro),"--bundle",str(bundle),
                                 "--expected-commit",COMMIT))
         self.assertNotEqual(damaged.returncode,0)
