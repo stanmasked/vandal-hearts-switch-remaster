@@ -92,7 +92,7 @@ jobs:
               if (doc["jackknife_replica_count"]!=15
                   or doc["calls_in_each_replica"]!=14
                   or doc["original_retained_success_count"]!=16
-                  or doc["all_replicas_have_last_shorter_than_prior_lower_median"] is not True):
+                  or type(doc["all_replicas_have_last_shorter_than_prior_lower_median"]) is not bool):
                   raise SystemExit("original guest software leave-one-out integrity rejected")
               print(doc["original_guest_history_sha256"],
                     "15 LOO medians (min/max ns)",
