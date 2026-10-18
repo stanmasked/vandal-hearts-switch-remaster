@@ -20,6 +20,8 @@ on:
       - "tests/test_vh_music_scene_soak.c"
       - "tools/verify_switch_wet_tail_nro.py"
       - "tests/test_verify_switch_wet_tail_nro.py"
+      - "tools/audit_nexium_wet_tail_scene_pair.py"
+      - "tests/test_audit_nexium_wet_tail_scene_pair.py"
       - ".github/workflows/music-director-wet-tail.yml"
   workflow_dispatch:
 
@@ -45,6 +47,8 @@ jobs:
             -p 'test_verify_switch_runtime_nro.py' -v
           python3 -m unittest discover -s tests \
             -p 'test_verify_switch_wet_tail_nro.py' -v
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_nexium_wet_tail_scene_pair.py' -v
 
   music-director-optin:
     name: Wet-tail director (${{ matrix.compiler }}; ASan + UBSan)
