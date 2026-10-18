@@ -117,6 +117,8 @@ jobs:
           /tmp/vh-stage308-venv/bin/python -m unittest discover -s tests -p 'test_audit_nexium_guest_optical_exit_clock.py' -v
       - name: Stage310 byte-exact guest exit CSV source preservation negative controls
         run: /tmp/vh-stage308-venv/bin/python -m unittest discover -s tests -p 'test_preserve_nexium_guest_exit_original.py' -v
+      - name: Stage315 independent raw guest audout and exit source archive tests
+        run: /tmp/vh-stage308-venv/bin/python -m unittest discover -s tests -p 'test_replay_nexium_original_audout_exit_archive.py' -v
       - name: Stage312 original-byte provenance versus legacy guest exit cohort controls
         run: /tmp/vh-stage308-venv/bin/python -m unittest discover -s tests -p 'test_audit_nexium_guest_exit_three_run_cohort.py' -v
       - name: Statistical sensitivity of complete paired NeXium audio sessions

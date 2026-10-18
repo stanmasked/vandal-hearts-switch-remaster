@@ -1,0 +1,112 @@
+name: Stage315 independent original guest audout release replay
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage315-independent-original-audout-replay.yml'
+      - 'tools/replay_nexium_original_audout_exit_archive.py'
+      - 'tests/test_replay_nexium_original_audout_exit_archive.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  independent-original-page-and-exit:
+    name: Independently re-read original guest audout and exit CSV bytes
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout original guest receipt and CRC optical decoders
+        uses: actions/checkout@v4
+
+      - name: Install isolated Pillow
+        run: |
+          set -euxo pipefail
+          python3 -m venv /tmp/vh-stage315
+          /tmp/vh-stage315/bin/python -m pip install --disable-pip-version-check 'Pillow>=10,<13'
+
+      - name: Stage315 independent original audout byte-source attack tests
+        run: /tmp/vh-stage315/bin/python -m unittest discover -s tests -p 'test_replay_nexium_original_audout_exit_archive.py' -v
+
+      - name: Require the original Stage314 full NeXium evidence upload to have completed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A source archive is never trusted while its originating
+          # emulator run is incomplete, cancelled or unsuccessful.
+          for attempt in $(seq 1 150); do
+            status="$(gh api repos/${GITHUB_REPOSITORY}/actions/runs/39145082758 --jq '.status')"
+            conclusion="$(gh api repos/${GITHUB_REPOSITORY}/actions/runs/39145082758 --jq '.conclusion // "pending"')"
+            if [[ "$status" == completed ]]; then
+              if [[ "$conclusion" != success ]]; then
+                echo "Stage314 origin failed: $conclusion" >&2
+                exit 1
+              fi
+              echo "Verified Stage314 source run completed successfully"
+              break
+            fi
+            if (( attempt == 150 )); then
+              echo "Stage314 capture source did not complete in bounded check" >&2
+              exit 1
+            fi
+            sleep 15
+          done
+
+      - name: Download Stage314 ORIGINAL guest-created audout source archive
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39145082758
+          github-token: ${{ github.token }}
+          path: original-stage314-evidence
+
+      - name: Independently replay both original guest CSVs and optical CRC, reject forged receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p independent-stage315-evidence
+          /tmp/vh-stage315/bin/python tools/replay_nexium_original_audout_exit_archive.py \
+            --original-run-id 39145082758 \
+            --archive original-stage314-evidence \
+            --output independent-stage315-evidence/guest-original-last-audout-stage315.json
+          /tmp/vh-stage315/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("independent-stage315-evidence/guest-original-last-audout-stage315.json")
+          r=json.loads(p.read_text())
+          if (r["schema"]!="vh-independent-original-audout-page-guest-exit-archive/v1"
+                  or r["result"]!="ORIGINAL_GUEST_AUDOUT_RELEASE_AND_EXIT_SOURCES_INDEPENDENTLY_REPLAYED"
+                  or r["original_capture_workflow_run_id"]!=39145082758
+                  or r["both_original_guest_created_CSVs_reaudited_byte_exact"] is not True
+                  or r["stages_307_308_310_independently_replayed"] is not True
+                  or r["stages_313_314_independently_replayed"] is not True
+                  or r["original_guest_last_page_return_count"]<=0
+                  or r["last_page_release_is_NOT_audible_sample_or_DAC_time"] is not True
+                  or r["guest_monotonic_clock_not_host_PCM_sample_clock"] is not True
+                  or r["original_soundtrack_or_audible_dropout_verified"] is not False
+                  or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage315 source provenance / audio claim violation")
+          print("Stage315 independently verified ORIGINAL guest audout output source SHA:",
+                r["original_guest_audout_page_csv_sha256"])
+          print("Stage315 independent original exit source SHA:",
+                r["original_guest_exit_csv_sha256"])
+          print("Stage315 last original buffer lease release position:",
+                r["last_page_software_exit_category"],
+                "guest ns from observed Plus:",
+                r["last_page_relative_to_guest_Plus_observed_ns"])
+          print("Stage315 bounded exit tail attempt/return:",
+                r["bounded_tail_attempted"],r["bounded_tail_return_confirmed"])
+          PY
+          echo "Stage315: independently re-read original guest-created audout return and guest exit CSV bytes, checked their SHA256, original optical CRC and Stage307/308/310/313/314 receipts. The buffer lease return is software ownership, NOT DAC/speaker or audible sound, and not calibrated to host PCM." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload only new independent source replay receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage315-independent-guest-audout-original-receipt
+          path: independent-stage315-evidence/
+          if-no-files-found: warn
