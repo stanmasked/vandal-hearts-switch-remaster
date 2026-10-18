@@ -380,3 +380,24 @@ reason `gpu_journal_writer_kernel_authenticated` remains **false**
 in receipts and reports. The observer is Linux-specific and is not
 compiled into normal Nintendo Switch gameplay. Preserve HD-off and
 private local file handling.
+
+### Hold journal inode identity across the terminal-frame gate
+
+A further race was closed: merely observing a writable child journal
+descriptor **before** release was not sufficient if another process
+replaced `gpu-native-events.jsonl` with a different inode carrying
+identical bytes **after** the gate was released. The Linux observer now
+returns the actual device/inode tuple and the launcher verifies it
+both before and after the private GPU/VRAM replay. A different inode
+fails, even when every event and SHA-256 digest is unchanged; no
+BGR555 image or receipt is published.
+
+A synthetic C11 regression creates two correct native VRAM event
+snapshots, flushes and holds the original journal open through the
+gate, then deliberately swaps in a new same-byte JSONL inode before
+writing the terminal frame. This must be rejected at the independent
+held-inode boundary.
+
+The bound is still to a journal **file inode**, not to every individual
+write or the original game software. It cannot replace trusted PS1
+capture evidence or enable HD replacement.
