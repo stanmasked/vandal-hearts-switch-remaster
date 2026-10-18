@@ -401,3 +401,35 @@ held-inode boundary.
 The bound is still to a journal **file inode**, not to every individual
 write or the original game software. It cannot replace trusted PS1
 capture evidence or enable HD replacement.
+
+## One-shot GPU journal → independent private native bridge (digest join)
+
+The former `tools/join_map02_live_frame_native.py` consumed only the
+legacy two-file live BGR555 receipt, so it could not verify the newer
+full-size same-launch GPU journal/terminal-frame receipt. The digest
+join now accepts the optional private `--gpu-journal-dir` and replays
+the **journal-aware receipt twice** across the independent FT4/VRAM
+and frame-pair bridge. It requires exactly the journal-aware v2 schema,
+a positive child writable-fd observation, exact BGR555 equality with
+the final post-`DrawOTag` snapshot, and deliberately false claims of
+kernel-certified log writer identity.
+
+A full-size synthetic 1024×512 C11 ELF integration test exercises:
+- actual Linux ELF child execution and a bounded GPU event journal;
+- independent receipt and journal verification against the full frame;
+- the real `compare_map02_private_bgr555_frames.compare` parser and
+  pixel-by-pixel comparator for a private claimed pair;
+- the real `bridge_map02_private_frame_native.bridge` implementation
+  with only its original-source FT4/VRAM witness simulated;
+- the actual `join_map02_live_frame_native.join`, verifying shared
+  candidate BGR555 SHA-256 across separately replayed stages.
+
+It rejects a changed candidate even when its claimant recomputes the
+entire frame manifest, a missing joint GPU journal, a mutated journal,
+and an upstream witness that claims unproven causal authenticity.
+The combined public report contains digests and counts only; the
+claim-labelled reference does NOT prove any original PS1 disc bytes,
+and any separate original-source witness may be from another run.
+Despite observing a writable journal FD, the pipeline does not
+authenticate the process which wrote every journal byte, physical
+PlayStation pixels, or permission to replace HD assets.
