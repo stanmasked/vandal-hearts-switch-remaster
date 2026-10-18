@@ -449,6 +449,56 @@ python3 -m tools.check_map02_private_cycle_readiness \\
 приватные пути или stderr. Публичный CI использует искусственные
 файлы и подменённые только внутри тестов проверки ресурсов.
 
+## Однократный локальный запуск, проверка кадра и финальная квитанция seal
+
+После подготовки **подлинного приватного полного PC ELF**, собственного
+US-диска, \`gpu-local-capture-plan.json\` и квитанции исходной сборки
+можно выполнить **одну** команду на локальной Linux-машине. Она
+последовательно исполняет уже существующие строгие проверки:
+\`verify_private_cycle_readiness\`, \`launch_observed_pc\` со
+\`stop_after_present=True\` и \`require_complete_preflight=True\`,
+\`finalize_private_capture\`, \`seal_final_capture\` и независимый
+\`verify_final_seal\`.
+
+~~~sh
+# Все восемь каталогов должны уже существовать и иметь права 0700.
+# Исходная source-папка может содержать приватные GTE/CD-свидетельства;
+# каталоги native/scoped/cycle/preview/rgb и seal должны быть пустыми.
+python3 -m tools.run_map02_private_cycle_session \
+  /private/map02/source /private/map02/native-windows \
+  /private/map02/scoped /private/map02/handoff \
+  /private/map02/cycle /private/map02/native-preview \
+  /private/map02/preoverlay /private/map02/final-seal \
+  /private/map02/owned-game-image.bin \
+  --upstream-checkout /private/map02/VandalHearts-PcPort \
+  --pc-binary /private/map02/VandalHearts-PcPort/platform/pc/build-map02-cycle/vandalhearts_pc \
+  --build-receipt-dir /private/map02/full-pc-build-receipt \
+  --build-bundle-dir /private/map02/cycle-build \
+  --frame 7 --x 10 --y 20 --timeout 900 \
+  --allow-local-completion
+# При необходимости дополнить --krom-source реальным приватным файлом.
+~~~
+
+\`--frame\` должен совпасть с номером оригинального GPU DrawOTag в
+приватном плане. \`--x/--y\` выбираются по оригинальному FT4/GTE, а не
+по условным координатам примера. Флаг
+\`--allow-local-completion\` обязателен и явно разрешает *только
+локальную* запись отсутствующих оригинального CD witness и PNG; без
+него **процесс вообще не запускается**. Seal должен быть отдельным
+пустым каталогом. Любой ошибочный preflight, ненулевой код или
+неподтверждённое VRAM/RGB24/PNG-сопоставление прерывает весь сценарий
+без положительного отчёта. После частичной неудачи запрещено
+автоматически повторять тот же запуск или перезаписывать старые данные:
+для новой попытки создают свежую приватную сессию.
+
+Команда не загружает ничего в GitHub и не печатает игровые байты:
+положительный ответ содержит выбранный номер кадра и SHA-256 локального
+seal. Даже если вся цепочка сошлась, свидетельство доказывает только
+**согласованность проверенных локальных артефактов**, а не то, что
+пользователь действительно играл в оригинальный MAP02, не факт показа
+окна ОС и не равенство железу PS1. Публичный CI по-прежнему использует
+лишь искусственные источники, исполняющийся retail-кадр не подменяет.
+
 ## Подключение полного цикла к контролируемому Linux-запуску
 
 Опциональная поддержка `--cycle-dir` добавлена в существующий
