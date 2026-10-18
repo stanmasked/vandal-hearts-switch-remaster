@@ -15,9 +15,13 @@ ROOT = Path(__file__).resolve().parents[1]
 HARNESS = r"""
 #include "map02_cycle_order.h"
 #include "map02_cd_read_probe.h"
+#include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 int main(int argc, char **argv) {
     char out[512];
@@ -106,6 +110,35 @@ int main(int argc, char **argv) {
         vh_map02_cycle_draw_start(73);
         vh_map02_cycle_draw_finish(73,
             strcmp(argv[1], "broken-ot") != 0);
+    }
+    /* The chosen DrawOTag has now returned and its private receipt was
+     * published. Exercise a fault later in the SAME original process. */
+    if (!strcmp(argv[1], "post-publish-cd-duplicate-claim"))
+        vh_map02_cd_loader_claim(42, 42, 0x1bcc, 12);
+    if (!strcmp(argv[1], "post-publish-cd-sector") ||
+        !strcmp(argv[1], "post-publish-replace"))
+        vh_map02_cd_read_sector(0x1bcc, sectors);
+    if (!strcmp(argv[1], "post-publish-cycle-extra-load"))
+        vh_map02_cycle_load(42, 42, 0x1bcc, 12);
+    if (!strcmp(argv[1], "post-publish-cycle-extra-draw"))
+        vh_map02_cycle_draw_finish(73, 1);
+    if (!strcmp(argv[1], "post-publish-unrelated-cd")) {
+        vh_map02_cd_read_sector(0x1bcb, sectors);
+        vh_map02_cd_read_finish(0x1bca, 1, returned);
+    }
+    if (!strcmp(argv[1], "post-publish-replace")) {
+        const char *root = getenv("VH_MAP02_CYCLE_OUTPUT_DIR");
+        int dir, replacement;
+        if (!root) return 8;
+        dir = open(root, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+        if (dir < 0) return 9;
+        if (renameat(dir, "map02-single-process-cycle.jsonl",
+                     dir, "prior-original-receipt") != 0) return 10;
+        replacement = openat(dir, "map02-single-process-cycle.jsonl",
+                             O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+        if (replacement < 0) return 11;
+        if (write(replacement, "foreign-not-to-delete", 21) != 21) return 12;
+        if (close(replacement) != 0 || close(dir) != 0) return 13;
     }
     n = vh_map02_cycle_format_jsonl(out, sizeof out);
     printf("failed=%d receipt=%d\n", vh_map02_cycle_failed(), n > 0);
@@ -321,6 +354,41 @@ class CycleOrderTests(unittest.TestCase):
             self.assertIn("receipt=0", proc.stdout)
             self.assertIn("failed=1", proc.stdout)
             self.assertFalse((out / "map02-single-process-cycle.jsonl").exists())
+
+    def test_late_source_fault_after_draw_retracts_published_receipt_on_exit(self):
+        for mode in ("post-publish-cd-duplicate-claim",
+                     "post-publish-cd-sector",
+                     "post-publish-cycle-extra-load",
+                     "post-publish-cycle-extra-draw"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                out = Path(tmp) / "private"
+                out.mkdir(mode=0o700)
+                proc = self.run_mode(mode, directory=out)
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                self.assertIn("failed=1 receipt=0", proc.stdout)
+                self.assertFalse((out / "map02-single-process-cycle.jsonl").exists())
+
+    def test_late_unrelated_cd_activity_preserves_completed_receipt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "private"
+            out.mkdir(mode=0o700)
+            proc = self.run_mode("post-publish-unrelated-cd", directory=out)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("failed=0 receipt=1", proc.stdout)
+            self.assertTrue((out / "map02-single-process-cycle.jsonl").exists())
+
+    def test_late_revocation_must_not_delete_replaced_foreign_inode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "private"
+            out.mkdir(mode=0o700)
+            proc = self.run_mode("post-publish-replace", directory=out)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("failed=1 receipt=0", proc.stdout)
+            current = out / "map02-single-process-cycle.jsonl"
+            original = out / "prior-original-receipt"
+            self.assertEqual(current.read_bytes(), b"foreign-not-to-delete")
+            self.assertIn(b"cycle-order.v2", original.read_bytes())
+            self.assertNotEqual(current.stat().st_ino, original.stat().st_ino)
 
     def test_private_exclusive_receipt_and_no_overwrite(self):
         with tempfile.TemporaryDirectory() as tmp:
