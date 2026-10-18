@@ -1,0 +1,33 @@
+name: MAP02 v173 no unexpected guest GPU MMIO during genuine VBlank NOP waits
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v173-vblank-quiet-mmio.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v173_vblank_quiet_mmio.py'
+      - 'tests/test_map02_v173_vblank_quiet_mmio.py'
+      - 'tools/make_map02_v78_vblank_mips_exe.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  guest-wait-quiet:
+    name: fail-closed genuine interpreted MIPS GPU MMIO VBlank wait (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile guest MMIO GP0 and GP1 prohibited wait-window checks
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v173_vblank_quiet_mmio.py tests/test_map02_v173_vblank_quiet_mmio.py
+          python3 -m unittest discover -s tests -p 'test_map02_v173_vblank_quiet_mmio.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v172_mips_real_vblank_vram.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v171_mips_multiphase_vram.py' -v
+          echo 'VH173_COMPILED_FOUR_QUIET_WINDOWS_PASS gp0_during_wait=0 gp1_during_wait=0 real_native_vblank_pending=1 original_retail_executed=0'
