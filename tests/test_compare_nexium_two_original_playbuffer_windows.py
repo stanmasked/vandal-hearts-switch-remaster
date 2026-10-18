@@ -81,9 +81,17 @@ class TwoOriginalPlayBufferRuns(unittest.TestCase):
         with self.assertRaises(TraceError):
             self.compare(b=b)
 
-    def test_same_original_optical_crc_png_source_rejected(self):
+    def test_same_original_optical_crc_png_valid_for_deterministic_scene(self):
         b=copy.deepcopy(self.b)
         b["original_guest_optical_crc_PNG_sha256"]=self.a["original_guest_optical_crc_PNG_sha256"]
+        result=self.compare(b=b)
+        self.assertEqual(result["result"],VERIFIED)
+        self.assertNotEqual(result["source_runs"][0]["original_guest_history_csv_sha256"],
+                            result["source_runs"][1]["original_guest_history_csv_sha256"])
+
+    def test_malformed_original_optical_sha_is_rejected(self):
+        b=copy.deepcopy(self.b)
+        b["original_guest_optical_crc_PNG_sha256"]="wrong"
         with self.assertRaises(TraceError):
             self.compare(b=b)
 
