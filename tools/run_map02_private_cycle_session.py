@@ -22,6 +22,13 @@ from tools.verify_map02_frame_bundle import number
 from tools.verify_map02_native_gpu_capture import private_file
 
 SCHEMA = "vh.map02.private-one-shot-cycle.v1"
+# These fixed identifiers are safe to print after errors from private inputs.
+# Never emit raw exception messages, child output, paths, or source contents.
+SAFE_STAGES = (
+    "argument-validation", "private-layout", "capture-plan",
+    "full-preflight", "observed-process", "capture-finalization",
+    "seal-publication", "seal-verification", "complete",
+)
 
 
 def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
@@ -29,12 +36,18 @@ def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
                                 upstream, binary, build_receipt, build_bundle,
                                 *, frame, x, y, timeout=900,
                                 krom_source=None, compiler="gcc",
-                                allow_local_completion=False):
+                                allow_local_completion=False,
+                                stage_callback=None):
     """Run only after explicit permission to publish missing PRIVATE evidence.
 
     No shell, no upload, no retry after partial failure. Subsequent attempts
     must use a fresh session, never silently reuse existing output folders.
     """
+    def enter(stage):
+        if stage_callback is not None:
+            stage_callback(stage)
+
+    enter("argument-validation")
     frame = number(frame, "selected MAP02 GPU frame", 1, 2**32 - 1)
     x = number(x, "MAP02 pixel X", 0, 1023)
     y = number(y, "MAP02 pixel Y", 0, 511)
@@ -44,6 +57,7 @@ def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
     if allow_local_completion is not True:
         raise ValueError("explicit private MAP02 CD witness and PNG completion permission required")
 
+    enter("private-layout")
     captures = (source, native, scoped, handoff, cycle, preview, rgb)
     sealed = _roots(captures, seal_directory)
     if tuple(sealed.iterdir()):
@@ -57,6 +71,7 @@ def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
         if must_be_empty and tuple(current.iterdir()):
             raise ValueError("private MAP02 seal directory unexpectedly populated")
 
+    enter("capture-plan")
     # The original plan's GPU DrawOTag must be the *requested* frame.
     # No original PC process has been started at this point.
     plan_raw, plan_identity = private_file(
@@ -65,6 +80,7 @@ def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
     if plan["target_gpu_draw_frame"] != frame:
         raise ValueError("MAP02 requested frame differs from prepared private plan")
 
+    enter("full-preflight")
     ready = verify_private_cycle_readiness(
         *captures, pc_binary=binary, owned_game_image=owned_game,
         upstream_checkout=upstream, build_receipt_dir=build_receipt,
@@ -76,6 +92,7 @@ def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
         raise ValueError("MAP02 private launch plan changed before execution")
     require_original_seal_directory(must_be_empty=True)
 
+    enter("observed-process")
     observed = launch_observed_pc(
         handoff, native, scoped, binary, owned_game, upstream=upstream,
         x=x, y=y, timeout=timeout, cycle_dir=cycle,
@@ -93,6 +110,7 @@ def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
     require_original_seal_directory(must_be_empty=True)
     # Only these two original-CD/GPU witness and PNG names may be created
     # locally, and only after successful observed process exit.
+    enter("capture-finalization")
     finalized = finalize_private_capture(
         source, native, scoped, handoff, cycle, preview, rgb,
         owned_game, upstream, binary, frame=frame, compiler=compiler,
@@ -103,6 +121,7 @@ def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
         raise ValueError("MAP02 original CD/GPU/PC RGB24/PNG final join not verified")
 
     require_original_seal_directory(must_be_empty=True)
+    enter("seal-publication")
     sealed_report = seal_final_capture(
         source, native, scoped, handoff, cycle, preview, rgb,
         owned_game, upstream, binary, seal_directory,
@@ -113,6 +132,7 @@ def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
         raise ValueError("MAP02 private completion seal not independently verified")
 
     require_original_seal_directory(must_be_empty=False)
+    enter("seal-verification")
     verified = verify_final_seal(
         source, native, scoped, handoff, cycle, preview, rgb,
         owned_game, upstream, binary, seal_directory,
@@ -124,6 +144,7 @@ def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
             sealed_report["private_final_seal_sha256"] or
             verified["original_map02_rendering_proven"] is not False):
         raise ValueError("MAP02 final seal changed after source-bound execution")
+    enter("complete")
     return {
         "schema": SCHEMA,
         "gpu_draw_frame": frame,
@@ -156,6 +177,14 @@ def main():
     p.add_argument("--allow-local-completion", action="store_true",
                    help="allow publishing only the named original CD witness and PNG in private folders")
     args = p.parse_args()
+    last_stage = ["argument-validation"]
+
+    def remember_stage(stage):
+        # Caller-controlled paths/exception strings must never become a
+        # terminal diagnostic. Only exact, compile-time stage IDs qualify.
+        if stage in SAFE_STAGES:
+            last_stage[0] = stage
+
     try:
         result = execute_private_map02_cycle(
             *(getattr(args, "private_" + role + "_directory")
@@ -166,11 +195,13 @@ def main():
             args.build_bundle_dir, frame=args.frame, x=args.x, y=args.y,
             timeout=args.timeout, krom_source=args.krom_source,
             compiler=args.compiler,
-            allow_local_completion=args.allow_local_completion)
+            allow_local_completion=args.allow_local_completion,
+            stage_callback=remember_stage)
     except (OSError, ValueError, subprocess.TimeoutExpired):
         # Exceptions from the original ELF/CD/asset verifiers may contain
         # user-owned source paths; do not copy those into terminal/CI logs.
-        p.error("private MAP02 one-shot execution/finalization unavailable")
+        p.error("private MAP02 one-shot execution/finalization unavailable"
+                " (stage=" + last_stage[0] + ")")
     print(json.dumps(result, sort_keys=True, indent=2))
 
 
