@@ -10,6 +10,12 @@ The pinned PCSX ReARMed gpulib GPU parser is instrumented **after** the original
 single exact `0xe3000000` E3 word from `gpu.cmd_buffer` with `count=1`,
 `pos=0`, and one consumed word (`left=0`).
 
+One native v162 integration attempt showed a nonempty gpulib buffer before
+arming the new exact-one parser witness. A protected, synthetic-only
+GPU_readStatus preflight now drains unrelated pending input **before both v161
+and v162 arm their observers**. The witness still refuses an incomplete or
+unconsumed prior command rather than claiming a clean baseline.
+
 Only inside the opt-in native synthetic MIPS test, call the already-loaded
 `GPU_readStatus` callback. In pinned gpulib this causes a genuine
 `flush_cmd_buffer` if there is pending input. The original parser and native
