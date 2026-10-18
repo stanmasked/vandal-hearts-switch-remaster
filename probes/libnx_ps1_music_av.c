@@ -934,6 +934,22 @@ static void paint(VhCanvas *canvas, const VhGameState *state,
         vh_canvas_fill_rect(canvas,1000+(int)focus_tile*48,
                             635,40,26,focus_colors[focus_tile]);
     }
+    /* Capped 1..5 tally strokes let an operator distinguish two HOME
+     * cycles on a single screenshot; only B/F/R count notifications.
+     * No new audio/HOME signal is inferred from this UI.
+     * Five strokes means 5 OR MORE, not exactly five events. */
+    const unsigned focus_tallies[5]={
+        0u,focus_info.backgrounds,focus_info.foreground_returns,
+        0u,focus_info.resumes
+    };
+    for(unsigned tile_idx=0u;tile_idx<5u;tile_idx++) {
+        const unsigned capped=focus_tallies[tile_idx]>5u ?
+                              5u : focus_tallies[tile_idx];
+        for(unsigned tally=0u;tally<capped;tally++)
+            vh_canvas_fill_rect(canvas,
+                1004+(int)tile_idx*48+(int)tally*7,
+                667,4,9,hero);
+    }
 #endif
 }
 
