@@ -131,6 +131,8 @@ on:
       - 'tools/verify_map02_linked_gpu_object.py'
       - 'tools/run_map02_sealed_gpu_receipt_chain.py'
       - 'tests/test_run_map02_sealed_gpu_receipt_chain.py'
+      - 'tools/verify_map02_published_receipt.py'
+      - 'tests/test_verify_map02_published_receipt.py'
       - 'tests/test_consume_map02_sealed_gpu_objects.py'
       - 'tools/audit_map02_putpixel_samples.py'
       - 'tools/verify_map02_camera_capture.py'
@@ -190,6 +192,9 @@ jobs:
     name: Apply generated trace patch to pinned upstream
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      map02_receipt_sha256: ${{ steps.map02_receipt_commitment.outputs.sha256 }}
+      map02_receipt_artifact_digest: ${{ steps.map02_receipt_uploaded.outputs.artifact-digest }}
     steps:
       - name: Checkout remaster diagnostics
         uses: actions/checkout@v4
@@ -393,6 +398,41 @@ jobs:
           assert not evidence["private_game_executable_built"]
           assert not evidence["hd_replacement_authorized"]
           PY
+
+      - name: Anchor MAP02 receipt hash in producing job output
+        id: map02_receipt_commitment
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          path = Path("/tmp/vh-map02-sealed-chain.json")
+          data = path.read_bytes()
+          assert 0 < len(data) <= 1024 * 1024
+          receipt = json.loads(data.decode("utf-8"))
+          assert receipt["schema"] == "vh.map02.sealed-gpu-receipt-chain.v1"
+          assert receipt["receipt_chain_consistent"]
+          assert not receipt["externally_authenticated"]
+          assert not receipt["hd_replacement_authorized"]
+          digest = hashlib.sha256(data).hexdigest()
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write("sha256=" + digest + "\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("MAP02 sealed receipt SHA-256: `" + digest + "`\n")
+          print("Published MAP02 receipt root SHA-256:", digest)
+          PY
+
+      - name: Upload independently verifiable MAP02 receipt
+        id: map02_receipt_uploaded
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-gpu-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/vh-map02-sealed-chain.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Run patch generator regression tests
         working-directory: remaster
@@ -1208,4 +1248,60 @@ jobs:
           combined = Path("build-map02-full-ci/map02-instrumented-units.o").read_bytes()
           assert marker in combined and loader in combined
           print("Verified matched loader/renderer markers in real Make-built and partial-linked objects.")
+          PY
+
+  verify-published-gpu-receipt:
+    name: Independently recheck MAP02 receipt artifact
+    needs: verify-trace-patch
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout independent verification code
+        uses: actions/checkout@v4
+        with:
+          path: remaster
+          persist-credentials: false
+
+      - name: Download immutable MAP02 receipt artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: map02-gpu-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: downloaded-map02-receipt
+
+      - name: Verify uploaded JSON against producer's separate job output
+        shell: bash
+        env:
+          PRODUCER_SHA256: ${{ needs.verify-trace-patch.outputs.map02_receipt_sha256 }}
+          GITHUB_ARCHIVE_SHA256: ${{ needs.verify-trace-patch.outputs.map02_receipt_artifact_digest }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import re
+          archive = os.environ["GITHUB_ARCHIVE_SHA256"]
+          assert re.fullmatch(r"(?:sha256:)?[0-9a-f]{64}", archive), (
+              "GitHub-hosted receipt archive digest is missing")
+          PY
+          PYTHONPATH=remaster python3 -m unittest discover \
+            -s remaster/tests -p 'test_verify_map02_published_receipt.py' -v
+          PYTHONPATH=remaster python3 -m tools.verify_map02_published_receipt \
+            downloaded-map02-receipt/vh-map02-sealed-chain.json \
+            --expected-sha256 "$PRODUCER_SHA256" > verified-map02-receipt.json
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          receipt = json.loads(Path("verified-map02-receipt.json").read_text())
+          assert receipt["schema"] == "vh.map02.published-gpu-receipt-audit.v1"
+          assert receipt["published_report_sha256"] == os.environ["PRODUCER_SHA256"]
+          assert receipt["caller_supplied_sha256_matched"]
+          assert receipt["three_embedded_receipts_checked"] == 3
+          assert receipt["receipt_chain_consistent"]
+          assert not receipt["independent_digital_signature_verified"]
+          assert not receipt["hd_replacement_authorized"]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as out:
+              out.write("Independent MAP02 receipt recheck passed. SHA-256: `"
+                        + receipt["published_report_sha256"] + "`\n")
           PY
