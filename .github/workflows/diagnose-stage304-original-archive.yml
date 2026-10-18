@@ -19,6 +19,9 @@ jobs:
       - name: Checkout current strict original-source verifier
         uses: actions/checkout@v4
 
+      - name: Stage304 seven no-PCM archived-control ordering classification tests
+        run: python3 -m unittest discover -s tests -p 'test_classify_nexium_stage304_exit_control_order.py' -v
+
       - name: Download exact failed Stage322 original runtime artifact
         uses: actions/download-artifact@v4
         with:
