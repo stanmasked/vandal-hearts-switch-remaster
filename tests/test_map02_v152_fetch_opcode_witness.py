@@ -33,6 +33,8 @@ class NativeFetchedOpcodeWitness(unittest.TestCase):
         opcode=("\tregs->code = fetch(regs, memRLUT, pc);\n"
                 "\tpsxBSC[regs->code >> 26](regs, regs->code);")
         prior=("static inline void execI_(\n"
+               "\tu32 (INT_ATTR *fetch)(struct psxRegisters *r, "
+               "const uintptr_t *luts, u32 pc),\n"
                "\tconst uintptr_t *memRLUT, psxRegisters *regs);\n"
                "static inline void execIbp(\n"
                "\tconst uintptr_t *memRLUT, psxRegisters *regs);\n"
