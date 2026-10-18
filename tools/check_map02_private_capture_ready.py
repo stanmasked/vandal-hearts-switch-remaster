@@ -45,7 +45,7 @@ def _snapshot_word(directory, filename, x, y):
     # Treat the event-supplied name as untrusted, including at direct
     # call sites: never allow a slash, dot segment or another file type.
     if (type(filename) is not str or
-            re.fullmatch(r"gpu-[0-9]{4}-vram\\.bin", filename) is None):
+            re.fullmatch(r"gpu-[0-9]{4}-vram\.bin", filename) is None):
         raise ValueError("invalid native VRAM snapshot filename")
     if (type(x) is not int or type(y) is not int or
             not 0 <= x < 1024 or not 0 <= y < 512):
