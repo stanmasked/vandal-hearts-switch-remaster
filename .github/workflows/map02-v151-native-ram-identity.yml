@@ -1,0 +1,35 @@
+name: MAP02 v151 native source-bound synthetic MIPS RAM identity
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v151-native-ram-identity.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v151_native_ram_identity.py'
+      - 'tests/test_map02_v151_native_ram_identity.py'
+      - 'tools/apply_map02_v150_native_instruction_budget.py'
+      - 'tools/make_map02_v129_four_vblank_exe.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-ram-sha256:
+    name: compiled SHA-256 identity (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compiled C SHA-256 vectors and mutation rejection
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v151_native_ram_identity.py tests/test_map02_v151_native_ram_identity.py
+          python3 -m unittest discover -s tests -p 'test_map02_v151_native_ram_identity.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v150_native_instruction_budget.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v149_bounded_guest.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v148_original_guest_boot.py' -v
+          echo 'VH151_NATIVE_SHA256_REGRESSIONS_PASS original_retail_executed=0 map02_rendered=0'
