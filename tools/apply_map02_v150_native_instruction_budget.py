@@ -81,6 +81,8 @@ def patch_interpreter(source: str) -> str:
 
 
 def patch_frontend(source: str) -> str:
+    if "VH150_NATIVE_BOUNDED_INTERPRETER_PASS" in source:
+        raise ValueError("v150 native quota patch is already present")
     source=once(source,
         "\tint vh147_generic_trace = 0;\n",
         "\tint vh147_generic_trace = 0;\n"
