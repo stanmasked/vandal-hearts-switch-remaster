@@ -1,0 +1,37 @@
+name: MAP02 v137 original-code MIPS PC to MMIO candidate correlation
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v137-private-pc-sites.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/analyze_map02_v132_mips_delay_slots.py'
+      - 'tools/verify_map02_v137_private_mips_pc_sites.py'
+      - 'tests/test_map02_v137_private_mips_pc_sites.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  original-code-bound-pc-candidates:
+    name: exact private PC/MMIO-class correlation (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Match only byte-verified synthetic code PCs to MMIO classes
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          no_original_retail_assets=1
+          readonly no_original_retail_assets
+          test "$no_original_retail_assets" = 1
+          python3 -m unittest discover -s tests -p 'test_map02_v137_private_mips_pc_sites.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v136_original_code_sections.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v135_original_us_elf_pair.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v134_dirfd_private_exe.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v133_nonblocking_private_exe.py' -v
+          echo "VH137_PRIVATE_PC_CLASS_SYNTHETIC_PASS original_retail_code=0 real_mips_execution=0"
