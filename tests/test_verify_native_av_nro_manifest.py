@@ -160,6 +160,33 @@ class AvNroManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid NRO segment bounds"):
             verify_bundle(self.root)
 
+    def test_overlapping_nro_sections_rejected_with_valid_digest(self):
+        name=NRO_NAMES[4]
+        data=bytearray(self.files[name])
+        # Text covers [0x80,0x90). Force rodata to overlap it while
+        # preserving all bounds and recomputing the manifest hash.
+        data[0x28:0x2c]=(0x88).to_bytes(4,"little")
+        self.files[name]=bytes(data)
+        (self.root/name).write_bytes(data)
+        self.set_manifest()
+        with self.assertRaisesRegex(ValueError,"overlapping or out-of-order"):
+            verify_bundle(self.root,COMMIT,exact_inventory=True)
+        self.assertNotEqual(self.cli("--exact-inventory").returncode,0)
+
+    def test_out_of_order_disjoint_nro_sections_rejected(self):
+        name=NRO_NAMES[5]
+        data=bytearray(self.files[name])
+        # Reorder text and rodata into disjoint intervals. Neither
+        # individual segment exceeds the NRO length.
+        data[0x20:0x24]=(0x90).to_bytes(4,"little")
+        data[0x28:0x2c]=(0x80).to_bytes(4,"little")
+        self.files[name]=bytes(data)
+        (self.root/name).write_bytes(data)
+        self.set_manifest()
+        with self.assertRaisesRegex(ValueError,"overlapping or out-of-order"):
+            verify_bundle(self.root,COMMIT)
+        self.assertNotEqual(self.cli().returncode,0)
+
     def test_mismatched_or_nonhex_source_commit_rejected(self):
         with self.assertRaisesRegex(ValueError, "independently expected commit"):
             verify_bundle(self.root, "f" * 40)

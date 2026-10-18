@@ -35,10 +35,17 @@ def check_nro_header(header, size, filename):
     declared = struct.unpack_from("<I", header, 0x18)[0]
     if declared < 0x80 or declared > size:
         raise ValueError("invalid declared NRO size: " + filename)
+    previous_end = 0
     for offset in (0x20, 0x28, 0x30):
         start, length = struct.unpack_from("<II", header, offset)
         if length == 0 or start >= declared or start + length > declared:
             raise ValueError("invalid NRO segment bounds: " + filename)
+        # A valid NRO has text, rodata and data in their specified
+        # order without overlapping file ranges. A recomputed digest
+        # cannot legitimize contradictory segment directory entries.
+        if start < previous_end:
+            raise ValueError("overlapping or out-of-order NRO segments: " + filename)
+        previous_end = start + length
 
 
 def verify_bundle(root, expected_commit=None, *, exact_inventory=False):
