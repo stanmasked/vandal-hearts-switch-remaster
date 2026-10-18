@@ -127,6 +127,15 @@ class PhysicalScreenshotPixelTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"non-contiguous"):
             observe_frame(broken)
 
+    def test_reject_foreground_count_greater_than_background(self):
+        with self.assertRaisesRegex(ValueError, "foreground tally exceeds"):
+            observe_frame(frame(b=1,f=2))
+        with self.assertRaisesRegex(ValueError, "foreground tally exceeds"):
+            self.images(frame(),frame(b=2,f=3,p=True))
+        # Saturated B=5 means 5 or more: cannot infer a contradiction.
+        self.assertEqual(observe_frame(frame(b=5,f=5))[
+            "tallies_capped_at_five"]["B"],5)
+
     def test_reject_decreasing_counts_and_invalid_resolution(self):
         with self.assertRaisesRegex(ValueError,"tally decreased"):
             self.images(frame(b=2,f=2),frame(b=1,f=1))
