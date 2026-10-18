@@ -324,7 +324,7 @@ int main(int argc, char **argv) {
                 return_value={"required_symbols_present": 19}), patch(
                 "tools.map02_cycle_build_provenance.verify_build_receipt",
                 return_value={"source_pinned_full_elf_bytes_checked": True}):
-            with self.assertRaisesRegex(ValueError, "exactly one receipt"):
+            with self.assertRaisesRegex(ValueError, "receipt and normal-exit seal"):
                 launch_observed_pc(
                     self.handoff, self.native, self.scoped,
                     self.binary, self.owned, upstream=self.upstream,
