@@ -1,0 +1,33 @@
+name: MAP02 v170 guest MIPS layered FT4 CLUT E1 E2 E6 Unai state
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v170-mips-ft4-gpu-state.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v170_mips_ft4_gpu_state.py'
+      - 'tests/test_map02_v170_mips_ft4_gpu_state.py'
+      - 'tools/make_map02_v76_gpu_state_order_exe.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  layered-mips-gpu:
+    name: self-authored MIPS CLUT FT4 and GPU E1 E2 E6 states (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile 202 exact MIPS guest GPU SW PC and state negative tests
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v170_mips_ft4_gpu_state.py tests/test_map02_v170_mips_ft4_gpu_state.py
+          python3 -m unittest discover -s tests -p 'test_map02_v170_mips_ft4_gpu_state.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v76_gpu_state_order.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v169_mips_stp_e2v_vram.py' -v
+          echo 'VH170_COMPILED_FT4_GPU_STATES_PASS original_retail_executed=0 gp0_words=202 states_e1_e2_e6=1 native_unai_pending=1'
