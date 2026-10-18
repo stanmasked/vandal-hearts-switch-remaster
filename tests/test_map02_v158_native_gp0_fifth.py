@@ -346,6 +346,11 @@ int main(void){
         ):
             self.assertIn(marker,native)
         self.assertIn("test_map02_v158_native_gp0_fifth.py",isolated)
+        self.assertIn(
+            "grep -F 'if(vh158_gp0_active) vh158_capture_gp0(regs,mem,value);'",
+            native,
+        )
+        self.assertNotIn("vh158_capture_gp0(regs,addr,value)",native)
         self.assertIn("original_retail_executed=0",isolated)
 
 
