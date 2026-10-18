@@ -1,0 +1,34 @@
+name: MAP02 v157 third-to-fourth synthetic MIPS t1 register integrity
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v157-t1-fourth-checkpoint.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v157_t1_fourth_checkpoint.py'
+      - 'tests/test_map02_v157_t1_fourth_checkpoint.py'
+      - 'tools/apply_map02_v156_register_checkpoints.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  t1-fourth:
+    name: compiled native fourth t1 checkpoint (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify native MIPS t1 register after three dispatches
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v157_t1_fourth_checkpoint.py tests/test_map02_v157_t1_fourth_checkpoint.py
+          python3 -m unittest discover -s tests -p 'test_map02_v157_t1_fourth_checkpoint.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v156_register_checkpoints.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v155_four_instruction_native.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v154_third_instruction_mutation.py' -v
+          echo 'VH157_NATIVE_T1_COMPILED_PASS original_retail_executed=0 map02_rendered=0'
