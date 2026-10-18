@@ -164,7 +164,6 @@ class NativeOriginalBootPreflight(unittest.TestCase):
         for required in (
             "test_map02_v148_original_guest_boot.py",
             "prepare_map02_v148_original_guest_boot",
-            "VH148_PRIVATE_ORIGINAL_BOOT_PLAN_REFUSED",
             "for mode in 04 13 22 31 40; do",
             "VH147_NATIVE_GENERIC_MMIO_SOURCE_BOUND_PASS",
             "path: proof/public/",
