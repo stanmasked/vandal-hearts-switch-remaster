@@ -279,7 +279,9 @@ jobs:
           import json
           from pathlib import Path
           report = json.loads(Path("/tmp/vh-map02-sealed-make.json").read_text())
-          assert report["sealed_inputs"] == 4
+          assert report["sealed_inputs"] == 6
+          assert sorted(report["preprocessed_sha256"]) == ["libgpu", "pc_raster"]
+          assert report["compiled_from_sealed_preprocessor_output"]
           assert report["verified_source_bytes_used_for_compilation"]
           assert sorted(report["objects_sha256"]) == ["libgpu.o", "pc_raster.o"]
           assert not report["all_headers_sealed"] and not report["hd_replacement_authorized"]

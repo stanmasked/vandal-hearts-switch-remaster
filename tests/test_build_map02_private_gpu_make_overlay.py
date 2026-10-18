@@ -39,10 +39,12 @@ class SealedMakeOverlayTests(unittest.TestCase):
         (self.pc / "Makefile").write_bytes(self.makefile)
         (self.pc / "src/libgpu.c").write_text("int old_gpu;\n")
         (self.pc / "src/pc_raster.c").write_text("int old_raster;\n")
+        (self.pc / "src/map02_fixture.h").write_text(
+            "#define VH_TEST_GPU 7\n#define VH_TEST_RASTER 8\n")
         self.generated = {
             builder.GENERATED_MAKE: builder.make_overlay(self.output).encode(),
-            builder.GENERATED_GPU: b"int vh_gpu_value(void){return 7;}\n",
-            builder.GENERATED_RASTER: b"int vh_raster_value(void){return 8;}\n",
+            builder.GENERATED_GPU: b'#include "map02_fixture.h"\nint vh_gpu_value(void){return VH_TEST_GPU;}\n',
+            builder.GENERATED_RASTER: b'#include "map02_fixture.h"\nint vh_raster_value(void){return VH_TEST_RASTER;}\n',
         }
         for name, content in self.generated.items():
             (self.output / name).write_bytes(content)
@@ -67,7 +69,9 @@ class SealedMakeOverlayTests(unittest.TestCase):
 
     def test_compiles_two_original_make_targets_using_sealed_inputs(self):
         result = self.run_build()
-        self.assertEqual(result["sealed_inputs"], 4)
+        self.assertEqual(result["sealed_inputs"], 6)
+        self.assertEqual(set(result["preprocessed_sha256"]), {"libgpu", "pc_raster"})
+        self.assertTrue(result["compiled_from_sealed_preprocessor_output"])
         self.assertTrue(result["verified_source_bytes_used_for_compilation"])
         self.assertFalse(result["all_headers_sealed"])
         self.assertFalse(result["compiler_execution_attested"])
@@ -112,6 +116,41 @@ class SealedMakeOverlayTests(unittest.TestCase):
             result = self.run_build("build-map02-swap")
         self.assertTrue(injected)
         self.assertEqual(len(result["objects_sha256"]), 2)
+
+    def test_header_replacement_after_preprocessing_does_not_change_objects(self):
+        real_run = subprocess.run
+        header = self.pc / "src/map02_fixture.h"
+        original = header.read_bytes()
+        changed = []
+
+        def inject(args, **kwargs):
+            if "map02-private-gpu-objects" in args:
+                header.write_text(
+                    "#define VH_TEST_GPU 999\n#define VH_TEST_RASTER 999\n"
+                    "#error modified-header-after-preprocessing\n")
+                try:
+                    result = real_run(args, **kwargs)
+                finally:
+                    header.write_bytes(original)
+                changed.append(True)
+                return result
+            return real_run(args, **kwargs)
+
+        with patch.object(sealed.subprocess, "run", side_effect=inject):
+            self.run_build("build-map02-header-swap")
+        self.assertEqual(changed, [True])
+        for name, symbol in (("libgpu.o", "vh_gpu_value"),
+                             ("pc_raster.o", "vh_raster_value")):
+            obj = self.pc / "build-map02-header-swap" / name
+            listing = subprocess.run(["nm", "--defined-only", str(obj)],
+                                     capture_output=True, text=True, check=True)
+            self.assertIn(symbol, listing.stdout)
+
+    def test_preprocessor_failure_aborts_before_object_compilation(self):
+        (self.pc / "src/map02_fixture.h").write_text("#error broken header\n")
+        with self.assertRaisesRegex(ValueError, "sealed Make compilation failed"):
+            self.run_build("build-map02-broken-header")
+        self.assertFalse((self.pc / "build-map02-broken-header/libgpu.o").exists())
 
     def test_invalid_and_existing_build_directories_fail_closed(self):
         for name in ("build", "build-map02-", "build-map02-x/../y",

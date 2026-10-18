@@ -67,7 +67,8 @@ class SpanWorkflowGateTests(unittest.TestCase):
         )[1].split("      - name: Run patch generator regression tests", 1)[0]
         self.assertIn("python3 -m tools.build_map02_private_gpu_make_overlay", private_build)
         self.assertIn("test_build_map02_private_gpu_make_overlay.py", private_build)
-        self.assertIn('assert report["sealed_inputs"] == 4', private_build)
+        self.assertIn('assert report["sealed_inputs"] == 6', private_build)
+        self.assertIn('assert report["compiled_from_sealed_preprocessor_output"]', private_build)
         self.assertIn('assert not report["all_headers_sealed"]', private_build)
         self.assertIn("--build-dir build-map02-private-ci", private_build)
         self.assertNotIn("BUILD_DIR=build-map02-private-ci map02-private-gpu-objects",

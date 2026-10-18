@@ -86,14 +86,23 @@ VH_MAP02_PRIVATE_GPU_SRC := {root}
 VH_MAP02_PRIVATE_GPU_C := $(VH_MAP02_PRIVATE_GPU_SRC)/{GENERATED_GPU}
 VH_MAP02_PRIVATE_RASTER_C := $(VH_MAP02_PRIVATE_GPU_SRC)/{GENERATED_RASTER}
 VH_MAP02_PRIVATE_GPU_DEFINES := {definitions}
+VH_MAP02_PRIVATE_INPUT_LANG ?= c
+VH_MAP02_PRIVATE_PREPROCESS_DIR ?=
+
+# First preprocess from the sealed C units using the exact GPU flags.
+# The wrapper seals both .i outputs before the real object recipes run.
+.PHONY: map02-private-gpu-preprocess
+map02-private-gpu-preprocess:
+	$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_PRIVATE_GPU_DEFINES) -Iinclude -Isrc -g -E -x c -o $(VH_MAP02_PRIVATE_PREPROCESS_DIR)/libgpu.i $(VH_MAP02_PRIVATE_GPU_C)
+	$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_PRIVATE_GPU_DEFINES) -Iinclude -Isrc -g -E -x c -o $(VH_MAP02_PRIVATE_PREPROCESS_DIR)/pc_raster.i $(VH_MAP02_PRIVATE_RASTER_C)
 
 $(BUILD_DIR)/libgpu.o: $(VH_MAP02_PRIVATE_GPU_C)
 \t@mkdir -p $(dir $@)
-\t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_PRIVATE_GPU_DEFINES) -Iinclude -Isrc -g -MMD -MP -x c -c -o $@ $(VH_MAP02_PRIVATE_GPU_C)
+\t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_PRIVATE_GPU_DEFINES) -Iinclude -Isrc -g -MMD -MP -x $(VH_MAP02_PRIVATE_INPUT_LANG) -c -o $@ $(VH_MAP02_PRIVATE_GPU_C)
 
 $(BUILD_DIR)/pc_raster.o: $(VH_MAP02_PRIVATE_RASTER_C)
 \t@mkdir -p $(dir $@)
-\t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_PRIVATE_GPU_DEFINES) -Iinclude -Isrc -g -MMD -MP -x c -c -o $@ $(VH_MAP02_PRIVATE_RASTER_C)
+\t$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_PRIVATE_GPU_DEFINES) -Iinclude -Isrc -g -MMD -MP -x $(VH_MAP02_PRIVATE_INPUT_LANG) -c -o $@ $(VH_MAP02_PRIVATE_RASTER_C)
 
 # The upstream 'link' recipe names GAME_O_FILES and BACKEND_OBJS but
 # depends only on DATA_OBJS. On a clean checkout it can therefore reach

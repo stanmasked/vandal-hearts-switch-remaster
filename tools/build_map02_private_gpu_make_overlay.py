@@ -17,6 +17,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 
 from tools import prepare_map02_private_gpu_make_overlay as builder
 from tools import verify_map02_private_gpu_make_overlay as auditor
@@ -89,25 +90,56 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
             fd = _sealed_fd(payload, "vh-map02-" + name)
             stack.callback(os.close, fd)
             files[name] = fd
-        fd_path = lambda name: "/proc/self/fd/" + str(files[name])
-        args = [
+        def fd_path(name):
+            return "/proc/self/fd/" + str(files[name])
+
+        base = [
             make, "--no-print-directory",
             "-f", fd_path("original-make"),
             "-f", fd_path(builder.GENERATED_MAKE),
             "REGION=us", "BUILD_DIR=" + build_dir,
-            "VH_MAP02_PRIVATE_GPU_C=" + fd_path(builder.GENERATED_GPU),
-            "VH_MAP02_PRIVATE_RASTER_C=" + fd_path(builder.GENERATED_RASTER),
-            "map02-private-gpu-objects",
         ]
-        try:
-            result = subprocess.run(
-                args, cwd=pc, env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
-                pass_fds=tuple(files.values()), capture_output=True,
-                timeout=180, check=False)
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            raise ValueError("MAP02 sealed Make execution failed") from exc
-        if result.returncode:
-            raise ValueError("MAP02 sealed Make compilation failed")
+        clean_env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C"}
+
+        def run_make(args):
+            try:
+                result = subprocess.run(
+                    args, cwd=pc, env=clean_env,
+                    pass_fds=tuple(files.values()), capture_output=True,
+                    timeout=180, check=False)
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                raise ValueError("MAP02 sealed Make execution failed") from exc
+            if result.returncode:
+                raise ValueError("MAP02 sealed Make compilation failed")
+
+        # Header expansion is a separate, audited boundary. Unlike the C
+        # compiler, the preprocessor must still read headers from the
+        # checkout; its complete output is sealed before object compilation.
+        with tempfile.TemporaryDirectory(prefix="vh-map02-preprocessed-") as temp:
+            run_make(base + [
+                "VH_MAP02_PRIVATE_GPU_C=" + fd_path(builder.GENERATED_GPU),
+                "VH_MAP02_PRIVATE_RASTER_C=" + fd_path(builder.GENERATED_RASTER),
+                "VH_MAP02_PRIVATE_PREPROCESS_DIR=" + temp,
+                "map02-private-gpu-preprocess",
+            ])
+            preprocessed = {}
+            for unit in ("libgpu", "pc_raster"):
+                source = auditor._stable_regular_bytes(
+                    Path(temp) / (unit + ".i"),
+                    max_bytes=MAX_OBJECT_BYTES)
+                if not source:
+                    raise ValueError("MAP02 preprocessor emitted an empty source")
+                preprocessed[unit] = hashlib.sha256(source).hexdigest()
+                files[unit + "-preprocessed"] = _sealed_fd(
+                    source, "vh-map02-preprocessed-" + unit)
+                stack.callback(os.close, files[unit + "-preprocessed"])
+
+        run_make(base + [
+            "VH_MAP02_PRIVATE_INPUT_LANG=cpp-output",
+            "VH_MAP02_PRIVATE_GPU_C=" + fd_path("libgpu-preprocessed"),
+            "VH_MAP02_PRIVATE_RASTER_C=" + fd_path("pc_raster-preprocessed"),
+            "map02-private-gpu-objects",
+        ])
     after = auditor.replay(upstream, output, manifest)
     if after != before:
         raise ValueError("MAP02 private overlay changed during sealed Make build")
@@ -124,7 +156,9 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
         "generated_sha256": before["generated_sha256"],
         "makefile_sha256": hashlib.sha256(original_make).hexdigest(),
         "objects_sha256": hashes,
-        "sealed_inputs": 4,
+        "sealed_inputs": 6,
+        "preprocessed_sha256": preprocessed,
+        "compiled_from_sealed_preprocessor_output": True,
         "verified_source_bytes_used_for_compilation": True,
         "private_game_assets_read": False,
         "retail_map02_gameplay_captured": False,
