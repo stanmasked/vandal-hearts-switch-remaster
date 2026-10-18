@@ -37,8 +37,8 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in $(seq 1 150); do
-            status="$(gh api repos/${GITHUB_REPOSITORY}/actions/runs/39153742811 --jq '.status')"
-            conclusion="$(gh api repos/${GITHUB_REPOSITORY}/actions/runs/39153742811 --jq '.conclusion // "pending"')"
+            status="$(gh api repos/${GITHUB_REPOSITORY}/actions/runs/39154247222 --jq '.status')"
+            conclusion="$(gh api repos/${GITHUB_REPOSITORY}/actions/runs/39154247222 --jq '.conclusion // "pending"')"
             if [[ "$status" == completed ]]; then
               test "$conclusion" == success || {
                 echo "Original Stage320 NeXium run not successful: $conclusion" >&2
@@ -58,7 +58,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: nexium-runtime-evidence
-          run-id: 39153742811
+          run-id: 39154247222
           github-token: ${{ github.token }}
           path: original-stage320-neXium
 
@@ -68,7 +68,7 @@ jobs:
           set -euo pipefail
           mkdir -p independent-stage321-report
           /tmp/vh-stage321/bin/python tools/replay_nexium_original_last_playbuffer_archive.py \
-            --original-run-id 39153742811 \
+            --original-run-id 39154247222 \
             --archive original-stage320-neXium \
             --output independent-stage321-report/original-last-playbuffer-stage321.json
           /tmp/vh-stage321/bin/python - <<'PY'
@@ -79,7 +79,7 @@ jobs:
           ).read_text())
           if (r["schema"]!="vh-independent-original-guest-last-playbuffer-call/v1"
                   or r["result"]!="ORIGINAL_LAST_PLAYBUFFER_AND_WORKER_STOP_SOURCES_INDEPENDENTLY_REPLAYED"
-                  or r["original_capture_workflow_run_id"]!=39153742811
+                  or r["original_capture_workflow_run_id"]!=39154247222
                   or r["original_PlayBuffer_CSV_bytes_independently_reaudited"] is not True
                   or r["original_exit_page_stop_CSVs_independently_reaudited"] is not True
                   or r["original_guest_optical_CRC_replayed"] is not True
