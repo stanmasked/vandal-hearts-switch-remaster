@@ -145,6 +145,8 @@ jobs:
           python3 -m venv /tmp/vh-stage318-source-tests
           /tmp/vh-stage318-source-tests/bin/python -m pip install --disable-pip-version-check 'Pillow>=10,<13'
           /tmp/vh-stage318-source-tests/bin/python -m unittest discover -s tests -p 'test_replay_nexium_original_worker_stop_archive.py' -v
+      - name: Stage321 independently replay original audout PlayBuffer and worker stop guest files
+        run: /tmp/vh-stage318-source-tests/bin/python -m unittest discover -s tests -p 'test_replay_nexium_original_last_playbuffer_archive.py' -v
       - name: Stage314 byte-exact original guest audout release source preservation
         run: python3 -m unittest discover -s tests -p 'test_preserve_nexium_guest_last_buffer_original.py' -v
       - name: Stage308 CRC optical/guest exit source tests with Pillow
