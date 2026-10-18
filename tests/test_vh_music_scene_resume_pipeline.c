@@ -65,7 +65,7 @@ typedef struct {
     int opened,playing;
     unsigned failures_left,tries;
     unsigned stops,closes,opens,starts;
-    unsigned fail_opens_left,fail_starts_left;
+    unsigned fail_opens_left,fail_starts_left,fail_stops_left;
     uint64_t submissions,accepted,rolling_hash;
     const int16_t *page;
     size_t frames;
@@ -97,6 +97,10 @@ static int submit(void *opaque,const int16_t *pcm,size_t frames) {
 static int stop(void *opaque) {
     Device *d=opaque;
     ++d->stops;
+    if(d->fail_stops_left) {
+        --d->fail_stops_left;
+        return -1; /* stop not confirmed: do not close the backend */
+    }
     d->playing=0;
     return 0;
 }
@@ -238,6 +242,30 @@ int main(void) {
             const VhNativeSpu old_spu=source_spu;
             const VhMusicScene old_scene=source_scene;
             assert(!stop(&dev));
+            if(block==48u) {
+                /* Forced reopen is not permitted to tear down audio
+                 * after stop fails. The exact previous page and the
+                 * renderer's current SEQ/reverb state must survive. */
+                const VhAudioOutputRecovery before=stats;
+                const unsigned closes=dev.closes,opens=dev.opens;
+                const unsigned starts=dev.starts;
+                dev.fail_stops_left=1u;
+                assert(vh_audio_output_resume_recover(
+                    &ops,&stats,1)==-1);
+                assert(dev.opened && !dev.playing &&
+                       !dev.fail_stops_left);
+                assert(dev.closes==closes && dev.opens==opens &&
+                       dev.starts==starts);
+                assert(!memcmp(&stats,&before,sizeof before));
+                assert(stats.pages_submitted==old_pages &&
+                       stats.frames_submitted==old_frames &&
+                       dev.rolling_hash==old_hash);
+                assert(!memcmp(&source_scene,&old_scene,
+                               sizeof old_scene));
+                assert(!memcmp(&source_spu,&old_spu,sizeof old_spu));
+                assert(!memcmp(&source_rate,&old_rate,
+                               sizeof old_rate));
+            }
             if(block==13u) dev.fail_starts_left=1u;
             if(block==29u) dev.fail_opens_left=1u;
             assert(!vh_audio_output_resume_recover(
