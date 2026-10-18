@@ -31,6 +31,8 @@ on:
       - 'tests/test_check_native_av_screenshot.py'
       - 'tests/verify_native_av_guest_witness.py'
       - 'tests/test_verify_native_av_guest_witness.py'
+      - 'tests/verify_native_av_evidence_inventory.py'
+      - 'tests/test_verify_native_av_evidence_inventory.py'
       - 'tests/inspect_native_av_physical_screenshots.py'
       - 'tests/test_inspect_native_av_physical_screenshots.py'
       - 'tests/verify_native_av_physical_report.py'
@@ -56,6 +58,8 @@ on:
       - 'tests/test_native_seq_timing_adsr_reference.py'
       - 'tests/verify_native_av_guest_witness.py'
       - 'tests/test_verify_native_av_guest_witness.py'
+      - 'tests/verify_native_av_evidence_inventory.py'
+      - 'tests/test_verify_native_av_evidence_inventory.py'
       - 'tests/inspect_native_av_physical_screenshots.py'
       - 'tests/test_inspect_native_av_physical_screenshots.py'
       - 'tests/verify_native_av_physical_report.py'
@@ -92,6 +96,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_verify_native_av_nro_manifest.py' -v
       - name: Test scenario-to-published-NRO binding without launching NeXium
         run: python -m unittest discover -s tests -p 'test_verify_native_av_guest_witness.py' -v
+      - name: Test exact seven-case evidence inventory with synthetic directories
+        run: python -m unittest discover -s tests -p 'test_verify_native_av_evidence_inventory.py' -v
 
   native-av:
     name: Compile original format SEQ VAB SPU plus video (no SDL2)
@@ -404,6 +410,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 tests/verify_native_av_evidence_inventory.py published-evidence
+          python3 tests/verify_native_av_nro_manifest.py nros --expected-commit "$GITHUB_SHA" --exact-inventory
           for scenario in empty full partial zr zl resume resume_retry; do
             folder="published-evidence/native-ps1-music-av-nexium-${scenario}-evidence"
             nro="nros/libnx-ps1-music-av.nro"
