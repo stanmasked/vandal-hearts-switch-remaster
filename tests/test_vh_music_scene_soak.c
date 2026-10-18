@@ -44,7 +44,7 @@ static int cue(uint32_t id, unsigned fade) {
     };
     return vh_music_scene_request(&scene,&c,fade);
 }
-static void rapid_scene_stress(void) {
+static void rapid_scene_stress(unsigned keep_tail) {
     /* Game publishes 40 changes per block while the audio owner
      * consumes only the latest scene ID, without queue growth.
      */
@@ -53,6 +53,9 @@ static void rapid_scene_stress(void) {
     vh_music_scene_init(&scene,&synth);
     assert(vh_native_spu_set_interpolation(&synth,VH_SPU_GAUSSIAN)==0);
     assert(vh_native_spu_set_reverb(&synth,1,0.5f)==0);
+    assert(vh_music_scene_set_reverb_continuity(
+        &scene,(int)keep_tail)==0);
+    assert(scene.keep_reverb_across_cues==keep_tail);
     assert(cue(1,0)==0);
     unsigned accepted=1, deferred=0, updates=0;
     uint64_t frames=0;
@@ -86,8 +89,19 @@ static void rapid_scene_stress(void) {
     assert(scene.switches<256);
     const uint64_t expected=((uint64_t)3200u*512u-1u)*160u/147u+1u;
     assert(frames>=expected-2 && frames<=expected+2);
-    printf("rapid scene switches: PASS %u requests, %u deferred, %u switches, %llu frames\n",
-           updates,deferred,scene.switches,(unsigned long long)frames);
+    /* End every stress session with forced teardown. Source pointers
+     * and STUDIO_C work history may then be freed without depending on
+     * whether the previous cue was fading in or actively playing. */
+    assert(vh_music_scene_detach(&scene)==0);
+    assert(scene.keep_reverb_across_cues==keep_tail &&
+           scene.stage==VH_MUSIC_SILENT && !scene.active.id);
+    for(unsigned voice=0u;voice<VH_NATIVE_MUSIC_VOICES;voice++)
+        assert(!synth.voice[voice].pcm && !synth.voice[voice].active);
+    for(unsigned i=0u;i<VH_REV_SAMPLES;i++)
+        assert(!synth.reverb.work[i]);
+    printf("rapid scene switches (wet-tail=%u): PASS %u requests, %u deferred, %u switches, %llu frames\n",
+           keep_tail,updates,deferred,scene.switches,
+           (unsigned long long)frames);
 }
 
 /* Compare legacy and opt-in directors under the SAME game cue
@@ -280,7 +294,8 @@ int main(void) {
     assert(nonzero>100000 && checksum!=UINT64_C(1469598103934665603));
     printf("scene->SEQ->SPU->STUDIO_C->48k: PASS %u blocks, %llu frames, 2 fades, checksum %016llx\n",
            BLOCKS,(unsigned long long)frames,(unsigned long long)checksum);
-    rapid_scene_stress();
+    rapid_scene_stress(0u);
+    rapid_scene_stress(1u);
     opt_in_48k_comparison();
     return 0;
 }
