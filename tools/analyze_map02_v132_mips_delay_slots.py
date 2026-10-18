@@ -34,7 +34,7 @@ def _reset():
 def _get(regs,reg):
     return 0 if reg==0 else regs[reg]
 
-def analyze_delay_aware_text(text):
+def analyze_delay_aware_text(text, *, site_sink=None):
     if type(text) is not bytes or not text or len(text)%4:
         raise Refused("invalid aligned MIPS instruction stream")
     counts={name:0 for name in NAME_ORDER}
@@ -47,7 +47,7 @@ def analyze_delay_aware_text(text):
     }
     regs=_reset()
     pending=None
-    for (word,) in struct.iter_unpack("<I",text):
+    for word_index,(word,) in enumerate(struct.iter_unpack("<I",text)):
         old_pending=pending
         pending=None
         opcode=word>>26
@@ -97,8 +97,15 @@ def analyze_delay_aware_text(text):
                 if address in MMIO:
                     kind=MMIO[address]
                     counts[kind]+=1
-                    if kind=="dma2_chcr" and _get(regs,rt)==0x01000401:
+                    linked_literal=(kind=="dma2_chcr" and
+                                    _get(regs,rt)==0x01000401)
+                    if linked_literal:
                         counts["dma2_linked_list_chcr_literal"]+=1
+                    if site_sink is not None:
+                        # Private raw MIPS section byte-offset, never public.
+                        # The consumer binds it to a verified executable
+                        # section and must not print address/word data.
+                        site_sink(word_index*4,kind,bool(linked_literal))
                     if old_pending is not None:
                         metadata["constant_proven_sw_in_delay_slots"]+=1
         elif opcode in (0x28,0x29,0x2a,0x2e):
