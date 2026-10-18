@@ -546,6 +546,60 @@ static void test_opted_switch_preserves_prepared_fifo_page(void) {
     assert(vh_music_scene_detach(&scene)==0);
 }
 
+/* Unloading the old bank must return an opt-in director to a
+ * clean equivalent of a newly initialized SPU. Release/overwrite
+ * former caller-owned PCM then compare the next scene against a
+ * fresh legacy reference for many complete output blocks. */
+static void test_opted_detach_restart_matches_fresh_synth(void) {
+    setup();
+    VhMusicCue first=cue_a(), second=cue_b();
+    assert(vh_music_scene_set_reverb_continuity(&scene,1)==0);
+    assert(vh_music_scene_request(&scene,&first,0u)==0);
+    for(unsigned block=0u;block<64u;block++)
+        assert(vh_music_scene_render(&scene,out)==0);
+    assert(wet_nonzero(&synth.reverb) &&
+           synth.voice[0].pcm==pcm_a);
+    const uint64_t previous_blocks=scene.blocks_rendered;
+    const uint32_t previous_switches=scene.switches;
+    assert(vh_music_scene_detach(&scene)==0);
+    assert(scene.stage==VH_MUSIC_SILENT &&
+           scene.keep_reverb_across_cues==1u);
+    assert(scene.blocks_rendered==previous_blocks &&
+           scene.switches==previous_switches+1u);
+    for(unsigned i=0u;i<VH_NATIVE_MUSIC_VOICES;i++)
+        assert(!synth.voice[i].pcm && !synth.voice[i].active);
+    assert(!wet_nonzero(&synth.reverb));
+
+    /* The source bank is no longer owned by any voice. Simulate the
+     * game releasing/reusing the old bank's memory. */
+    memset(pcm_a,0xa5,sizeof pcm_a);
+    vh_native_spu_reset(&reference_synth);
+    assert(vh_native_spu_set_interpolation(
+        &reference_synth,VH_SPU_GAUSSIAN)==0);
+    assert(vh_native_spu_set_reverb(&reference_synth,1,0.5f)==0);
+    vh_music_scene_init(&reference_scene,&reference_synth);
+    assert(vh_music_scene_request(&scene,&second,0u)==0);
+    assert(vh_music_scene_request(&reference_scene,&second,0u)==0);
+    assert(scene.active.id==202u && reference_scene.active.id==202u);
+    for(unsigned block=0u;block<48u;block++) {
+        assert(vh_music_scene_render(&scene,out)==0);
+        assert(vh_music_scene_render(&reference_scene,reference)==0);
+        assert(!memcmp(out,reference,sizeof out));
+        assert(!memcmp(&synth.reverb,&reference_synth.reverb,
+                       sizeof synth.reverb));
+        assert(scene.seq.note_ons==reference_scene.seq.note_ons &&
+               scene.seq.note_offs==reference_scene.seq.note_offs &&
+               scene.seq.blocks_advanced==
+               reference_scene.seq.blocks_advanced);
+        for(unsigned i=0u;i<VH_NATIVE_MUSIC_VOICES;i++)
+            assert(synth.voice[i].pcm!=pcm_a);
+    }
+    assert(scene.keep_reverb_across_cues==1u &&
+           synth.interpolation==VH_SPU_GAUSSIAN);
+    assert(vh_music_scene_detach(&scene)==0);
+    assert(vh_music_scene_detach(&reference_scene)==0);
+}
+
 int main(void) {
     test_validation_and_zero_fade_restart();
     test_two_block_fade_and_silence();
@@ -557,6 +611,7 @@ int main(void) {
     test_default_reset_and_opted_fade_comparison();
     test_opted_pending_corruption_preserves_active_bank();
     test_opted_switch_preserves_prepared_fifo_page();
+    test_opted_detach_restart_matches_fresh_synth();
     puts("game scene music cues: fade / switch / silence / validation PASS");
     return 0;
 }
