@@ -18,4 +18,27 @@ The original first and second per-run four source SHA-256 digests are pinned in 
 
 **Evidence boundary:** 3 successful distinct emulator executions are better evidence of repeatability than 576 synthetic omissions of the original two sets, but these are still small selected guest software and host recordings, **not a population confidence interval**, a real Nintendo Switch hardware test, speaker delay measurement, or proof the emulator represents physical audio behavior. No SPU, `audoutPlayBuffer`, PCM generation, tactical gameplay or original strict Stage304/305 verification logic changed.
 
-The independent Stage335 workflow must complete successfully before claiming all three original archives were independently re-validated together.
+## Independently confirmed three-original-capture result
+
+[Stage335 workflow #39176524278](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39176524278) **completed successfully**. All **13 original source and negative-control tests** passed, followed by re-downloading the three distinct originally successful NeXium evidence archives and reproducing each Stage334 guest/host source digest and bounded interval. The third saved Stage334 manifest matched an independently re-derived receipt **exactly**.
+
+| Genuine source evidence | Original #1 | Original #2 | New original #3 |
+| --- | ---: | ---: | ---: |
+| Total normal `PlayBuffer` call attempts | 1,414 | 1,443 | 1,401 |
+| Source-retained last calls | 16 | 16 | 16 |
+| Previous successful calls before last | 15 | 15 | 15 |
+| Last-call first-possible rank | 1 | 6 | **7** |
+| Prior lower median minus last guest software call | +20,928,074 ns | +8,894,583 ns | **+13,887,969 ns** |
+
+Third source's original SHA-256 digests, pinned by the successful source record and recomputed from the actual third archive:
+
+| Original third NeXium source | SHA-256 |
+| --- | --- |
+| `audio-playbuffer-history-000.csv` | `083efbdbc3332593615b70df271ea5608fba13b06d2f2c6e5c779b7762f3a909` |
+| `audio-last-playbuffer-000.csv` | `b9dd9c6875526fbb7f796d0b6766e95532e283d5f9d42bb80a063b3f43883a97` |
+| `scene-exit-controls.csv` | `452790e04711f1e0acbc87b5df3bb2e3d2351a412ce21d8c6560197fec2b0c5d` |
+| `scene-exit-controls-monotonic.csv` | `7922f76062f9609a4acb994083f5c957d01cfb865348fabba94f0616467c0486` |
+
+All four source digest types were distinct across all three runs. Stage335 compares **guest software duration to guest software duration**, and **host control interval to host control interval**, never guest software time to host recorder time.
+
+**Evidence boundary remains unchanged:** three original emulator captures do not measure physical Nintendo Switch speaker behavior, original retail soundtrack fidelity, or audio quality perceived by a player.
