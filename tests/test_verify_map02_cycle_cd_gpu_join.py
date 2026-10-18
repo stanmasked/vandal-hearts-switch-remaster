@@ -152,6 +152,25 @@ class CycleCdGpuJoinTests(unittest.TestCase):
             _cycle_cd_pair(self.scoped, self.cycle, 7, self.digest), proof)
         self.mock.assert_not_called()  # no costly retail-image audit yet
 
+    def test_prepublication_rejects_wrong_sha_with_unchanged_crc(self):
+        path = self.scoped / CD_READ
+        original = self.cd_raw
+        for updates in (
+                {"raw_user_sha256": "b" * 64,
+                 "returned_user_sha256": "b" * 64},
+                {"returned_user_sha256": "b" * 64},
+                {"raw_user_sha256": "Z" * 64},
+                {"raw_user_sha256": "ab12"}):
+            with self.subTest(fields=updates):
+                record = json.loads(original)
+                record.update(updates)
+                path.write_bytes((json.dumps(record, sort_keys=True) + "\n").encode())
+                with self.assertRaisesRegex(ValueError, "checksum.*differ"):
+                    _cycle_cd_pair(self.scoped, self.cycle, 7, self.digest)
+        path.write_bytes(original)
+        self.assertEqual(_cycle_cd_pair(
+            self.scoped, self.cycle, 7, self.digest)[2], original)
+
     def test_prepublication_cycle_cd_pair_rejects_crc_and_session_mismatch(self):
         with self.assertRaisesRegex(ValueError, "cycle nonce differs"):
             _cycle_cd_pair(self.scoped, self.cycle, 7, "f" * 64)
