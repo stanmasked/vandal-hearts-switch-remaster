@@ -83,6 +83,15 @@ class PrivateFinalSealTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not canonical"):
             self.call(action="verify")
 
+    def test_reject_noncanonical_jsonl_even_when_fields_match(self):
+        self.call()
+        receipt = self.seal_dir / NAME
+        content = json.loads(receipt.read_bytes())
+        # Valid JSON with all original values must still fail canonicality.
+        receipt.write_text(json.dumps(content, sort_keys=True, indent=2) + "\n")
+        with self.assertRaisesRegex(ValueError, "not canonical JSONL"):
+            self.call(action="verify")
+
     def test_reject_capture_change_after_seal(self):
         self.call()
         self.fixture.fixture.fixture.rgbfile.write_bytes(b"\xff\xfe\xfd")
@@ -150,6 +159,49 @@ class PrivateFinalSealTests(unittest.TestCase):
                 self.call()
         self.assertEqual((self.seal_dir / NAME).read_bytes(),
                          b"foreign-evidence")
+
+    def test_postaudit_identical_bytes_on_foreign_inode_are_not_accepted(self):
+        from tools.seal_map02_private_finalization import verify_final_seal
+        original_verify = verify_final_seal
+        replacement_bytes = []
+
+        def swap_after_verification(*args, **kwargs):
+            result = original_verify(*args, **kwargs)
+            path = self.seal_dir / NAME
+            replacement_bytes.append(path.read_bytes())
+            replacement = self.seal_dir / "foreign-inode"
+            replacement.write_bytes(replacement_bytes[-1])
+            replacement.chmod(0o600)
+            replacement.replace(path)
+            return result
+
+        with patch(
+                "tools.seal_map02_private_finalization.verify_final_seal",
+                side_effect=swap_after_verification):
+            with self.assertRaisesRegex(ValueError, "inode changed"):
+                self.call()
+        # Preserve the foreign inode even though its content is identical.
+        self.assertEqual((self.seal_dir / NAME).read_bytes(),
+                         replacement_bytes[0])
+        self.assertEqual({p.name for p in self.seal_dir.iterdir()}, {NAME})
+
+    def test_postaudit_mutation_of_same_inode_is_not_deleted(self):
+        from tools.seal_map02_private_finalization import verify_final_seal
+        original_verify = verify_final_seal
+
+        def mutate_after_verification(*args, **kwargs):
+            result = original_verify(*args, **kwargs)
+            path = self.seal_dir / NAME
+            path.write_bytes(b"foreign-same-inode")
+            return result
+
+        with patch(
+                "tools.seal_map02_private_finalization.verify_final_seal",
+                side_effect=mutate_after_verification):
+            with self.assertRaisesRegex(ValueError, "inode changed"):
+                self.call()
+        self.assertEqual((self.seal_dir / NAME).read_bytes(),
+                         b"foreign-same-inode")
 
     def test_missing_png_or_cd_proof_does_not_seal(self):
         (self.fixture.preview / "map02-native-vram-preview.png").unlink()
