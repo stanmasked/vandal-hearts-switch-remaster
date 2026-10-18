@@ -78,6 +78,15 @@ requires divergent post-switch **PCM16 samples**, not merely divergent
 reverb state. Previous sample values in each resampler are
 channel-audio data, not timing invariants.
 
+A separate director-level synthetic PCM FIFO regression also prepares a
+full 512-frame page from the outgoing cue, makes a non-silent opt-in cue
+change, and verifies the already-queued page remains byte-identical and
+can be consumed exactly once. The producer's subsequent PCM must come
+from the new bank, and no stale voice pointer may survive. This covers
+the portable `VhAudioStream` queue only; it is not proof that libnx
+audout has retired all in-flight descriptors or that a caller may free
+a bank without first completing the documented drain/synchronization.
+
 Dedicated GCC and Clang ASan/UBSan jobs and existing Host SPU / libnx builds
 must pass **for the exact merge candidate**. This development does not prove
 real audible output or HOME/suspend behavior on a physical Nintendo Switch.
