@@ -75,3 +75,50 @@ python3 -m tools.compare_map02_private_bgr555_frames /private/map02-frame-pair \
 CI запускает только синтетические маленькие кадры, включая тесты
 STP, ошибок каналов, подмены SHA-256, неверных размеров и путей.
 Реальных PS1/PC кадров в CI нет. HD-подмена остаётся запрещённой.
+
+
+## Привязка меток кадра к приватной проверке запущенного ELF
+
+После получения обоих кадров и отдельного двухточечного
+`DrawOTag`/FT4/VRAM-журнала можно запустить второй, более строгий
+**локальный** аудитор. Он повторяет исходное BGR555-сравнение
+**до и после** независимого `audit_map02_launch_two_word_binding.py`,
+который перепроверяет приватную квитанцию запуска, статические
+инструментальные символы, факт наблюдения Linux ELF в `/proc`,
+записи GPU/DDA и два разных VRAM-слова.
+
+```sh
+python3 -m tools.bridge_map02_private_frame_native \
+  --frame-pair /private/map02-frame-pair \
+  --native-capture /private/native-gpu-logs \
+  --source-capture /private/source-ft4-evidence \
+  --launch-receipt /private/launch-receipt.json \
+  --preflight-report /private/preflight.json \
+  --executable /private/verified-pc-elf \
+  --compiler gcc > /private/map02-frame-native-join.json
+```
+
+Требуется строгая проверка **обоих** признаков оригинального
+зафиксированного процесса: `native_elf_image_observed` и
+`native_probe_symbols_inspected`. Кадр в `frames.json` обязан
+совпадать с `source_frame` и `native_gpu_frame` записи исходной
+FT4/VRAM-сессии. Проверяются стабильность файлов кадров и JSON
+на протяжении независимого повторного анализа, SHA-256
+исходного журнала GPU, совпадение двух VRAM-слов и запрет HD.
+В итоговом отчёте находятся лишь SHA-256 и агрегированные
+счётчики; приватные файлы не публикуются.
+
+**Критическая граница доверия:** совпадение номера кадра, SHA-256
+и даже нулевые различия BGR555 **не связывают сами байты
+скриншотов причинно с запущенным процессом**. Приватный
+отладочный бинарник мог просто скопировать готовые файлы
+(что показывают существующие синтетические тесты).
+Поля `frame_bytes_causally_bound_to_executed_game`,
+`retail_disc_resources_authenticated`,
+`ps1_reference_capture_authenticated`,
+`pc_port_frame_capture_authenticated`,
+`ps1_hardware_pixel_equivalence_verified`
+и `hd_replacement_authorized` всегда `false`.
+Следующий реальный шаг — независимый доверенный канал захвата
+обеих кадровых поверхностей из известных процессов, а не
+повторение самосогласованного журнала.

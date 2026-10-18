@@ -137,6 +137,8 @@ on:
       - 'tests/test_map02_external_custody.py'
       - 'tools/compare_map02_private_bgr555_frames.py'
       - 'tests/test_compare_map02_private_bgr555_frames.py'
+      - 'tools/bridge_map02_private_frame_native.py'
+      - 'tests/test_bridge_map02_private_frame_native.py'
       - 'docs/MAP02_PRIVATE_BGR555_FRAME_DIFF.md'
       - 'tests/test_consume_map02_sealed_gpu_objects.py'
       - 'tools/audit_map02_putpixel_samples.py'
@@ -452,7 +454,9 @@ jobs:
 
       - name: Run asset-free private MAP02 frame differential regressions
         working-directory: remaster
-        run: python3 -m unittest discover -s tests -p 'test_compare_map02_private_bgr555_frames.py' -v
+        run: |
+          python3 -m unittest discover -s tests -p 'test_compare_map02_private_bgr555_frames.py' -v
+          python3 -m unittest discover -s tests -p 'test_bridge_map02_private_frame_native.py' -v
 
       - name: Run patch generator regression tests
         working-directory: remaster
