@@ -20,6 +20,7 @@ on:
       - 'tools/verify_map02_native_gpu_capture.py'
       - 'tests/test_instrument_map02_gpu_native_events.py'
       - 'tests/test_verify_map02_gpu_capture_receipt.py'
+      - 'tests/test_verify_map02_native_gpu_capture.py'
       - 'tools/check_map02_original_gpu_recorder_runtime.py'
       - 'tools/verify_map02_native_gpu_windows.py'
       - 'tests/test_verify_map02_native_gpu_windows.py'
@@ -144,6 +145,7 @@ on:
       - 'tools/verify_map02_native_gpu_capture.py'
       - 'tests/test_instrument_map02_gpu_native_events.py'
       - 'tests/test_verify_map02_gpu_capture_receipt.py'
+      - 'tests/test_verify_map02_native_gpu_capture.py'
       - 'tools/check_map02_original_gpu_recorder_runtime.py'
       - 'tools/verify_map02_native_gpu_windows.py'
       - 'tests/test_verify_map02_native_gpu_windows.py'
@@ -291,6 +293,7 @@ jobs:
             tests.test_check_map02_private_capture_ready \
             tests.test_instrument_map02_gpu_native_events \
             tests.test_verify_map02_gpu_capture_receipt \
+            tests.test_verify_map02_native_gpu_capture \
             tests.test_verify_map02_native_gpu_windows \
             tests.test_export_map02_native_vram_preview \
             tests.test_verify_map02_pc_present_rgb24 \
