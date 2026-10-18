@@ -1,0 +1,107 @@
+name: Stage328 independently replay two real guest PlayBuffer call histories
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage328-compare-real-playbuffer-histories.yml'
+      - 'tools/compare_nexium_stage328_original_playbuffer_histories.py'
+      - 'tests/test_compare_nexium_stage328_original_playbuffer_histories.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  replay-two-original-guest-call-cohorts:
+    name: Source-validate two original sixteen-call guest audout histories
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - name: Checkout strict source comparators
+        uses: actions/checkout@v4
+
+      - name: Stage328 twelve guest software PlayBuffer source tests
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/compare_nexium_stage328_original_playbuffer_histories.py tests/test_compare_nexium_stage328_original_playbuffer_histories.py
+          python3 -m unittest discover -s tests -p 'test_compare_nexium_stage328_original_playbuffer_histories.py' -v
+
+      - name: Verify both genuine NeXium source captures finished
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for id in 39166023593 39167324026; do
+            status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$id" --jq '.status')"
+            result="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$id" --jq '.conclusion')"
+            test "$status" = completed
+            test "$result" = success
+            echo "Original NeXium audout source run $id completed successfully"
+          done
+
+      - name: Download first exact original PlayBuffer history capture
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39166023593
+          github-token: ${{ github.token }}
+          path: first-real-audout-history
+
+      - name: Download second exact original PlayBuffer history capture
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39167324026
+          github-token: ${{ github.token }}
+          path: second-real-audout-history
+
+      - name: Recompute both authentic Stage322 histories and compare guest software call durations
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p stage328-result
+          python3 tools/compare_nexium_stage328_original_playbuffer_histories.py \
+            --first-root first-real-audout-history \
+            --second-root second-real-audout-history \
+            --first-history-sha256 72eb03e4508e2f8f7814f8b059aa5bfba69c71bbdac9f495ffab447d23fc345d \
+            --second-history-sha256 795c751e11449b0d0e0938031c540890eac23058e3a50c49ac2be9f622950a07 \
+            --output stage328-result/two-original-guest-playbuffer-histories.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path(
+              "stage328-result/two-original-guest-playbuffer-histories.json"
+          ).read_text(encoding="utf-8"))
+          if (d["result"]!="TWO_ORIGINAL_GUEST_PLAYBUFFER_HISTORY_COHORTS_SOURCE_REPLAYED"
+              or d["each_original_stage322_receipt_recomputed_from_exact_csv"] is not True
+              or d["original_stage320_summary_identity_bound_but_full_upstream_not_rerun"] is not True
+              or d["physical_Nintendo_Switch_audio_tested"] is not False
+              or d["speaker_audio_or_original_soundtrack_verified"] is not False
+              or d["plus_caused_audio_dropout_verified"] is not False):
+              raise SystemExit("Stage328 original guest software source comparison failed")
+          rows=d["cohorts"]
+          if (len(rows)!=2
+              or [x["normal_calls_retained"] for x in rows]!=[16,16]
+              or [x["previous_success_count"] for x in rows]!=[15,15]
+              or [x["last_software_ns"] for x in rows]!=[11225937,22352500]
+              or [x["previous_lower_median_software_ns"] for x in rows]!=[32154011,31247083]
+              or d["second_minus_first_last_software_ns"]!=11126563
+              or d["second_minus_first_prior_median_software_ns"]!=-906928):
+              raise SystemExit("Stage328 original last normal audout calls differ from source logs")
+          print("Stage328 exact original guest call-history comparison verified")
+          print("Last guest software call durations (ns):",
+                [x["last_software_ns"] for x in rows])
+          print("Prior lower medians of 15 guest calls (ns):",
+                [x["previous_lower_median_software_ns"] for x in rows])
+          PY
+          echo "Stage328: both original guest 16-call PlayBuffer software histories independently replayed; this is not DAC, speaker sound or guest/host sample-clock synchronization." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish compact source-derived software call comparison without original guest timestamps
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage328-two-original-playbuffer-software-histories
+          path: stage328-result/
+          if-no-files-found: warn
