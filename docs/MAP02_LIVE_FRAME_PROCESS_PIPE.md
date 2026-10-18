@@ -767,3 +767,22 @@ receipt replacement, directory reconstruction and receipt timestamp
 mutation during the mocked unavailable original-source witness.
 These checks do not authenticate original PS1 pixels or guarantee
 kernel-attested same-process FT4 event origin.
+
+### Source JSON structure verified before native execution
+
+For the optional complete FT4/VRAM witness, the two existing
+owner-private launch/preflight JSON files are now parsed **before**
+launching the live native ELF. Each must contain a nonempty UTF-8
+JSON object. Malformed encodings, malformed JSON, top-level
+nonobjects and duplicate object keys are refused. Each bounded
+file is read through its already opened `O_NOFOLLOW` descriptor,
+and its device/inode, byte length, mtime and ctime are compared
+again after parsing to detect in-place changes. The payload remains
+private: no JSON values or local paths enter the digest-only report.
+
+This is only syntactic readiness validation. The independent
+original FT4/GTE/OT/VRAM verifier still determines whether the
+claimed source is genuine and consistent; the JSON gate cannot
+certify an original PlayStation frame. Four new synthetic
+regressions reject malformed JSON, duplicate keys, nonobjects and
+mid-parse modification without publishing any frame or journal.

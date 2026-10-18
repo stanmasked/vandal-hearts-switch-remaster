@@ -275,6 +275,59 @@ class PrivateJointOneShotAuditTests(unittest.TestCase):
             kwargs[key].chmod(0o600)
         return kwargs
 
+    def test_malformed_original_source_json_refused_before_elf(self):
+        pair = self.make_claimed_private_frame_pair()
+        inputs = self.source_witness_kwargs()
+        receipt = inputs["launch_receipt"]
+        receipt.write_text('{"valid": [}', encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "JSON witness malformed"):
+            self.run_capture(frame_pair_dir=pair, **inputs)
+        self.assertEqual(list(self.output.iterdir()), [])
+        self.assertEqual(list(self.journal.iterdir()), [])
+
+    def test_duplicate_original_source_json_keys_refused_before_elf(self):
+        pair = self.make_claimed_private_frame_pair()
+        inputs = self.source_witness_kwargs()
+        receipt = inputs["preflight_report"]
+        receipt.write_text('{"frame":123,"frame":124}', encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "JSON witness duplicate key"):
+            self.run_capture(frame_pair_dir=pair, **inputs)
+        self.assertEqual(list(self.output.iterdir()), [])
+        self.assertEqual(list(self.journal.iterdir()), [])
+
+    def test_nonobject_original_source_json_refused_before_elf(self):
+        pair = self.make_claimed_private_frame_pair()
+        inputs = self.source_witness_kwargs()
+        receipt = inputs["launch_receipt"]
+        receipt.write_text('["private", "unsupported"]', encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "JSON witness must be a nonempty object"):
+            self.run_capture(frame_pair_dir=pair, **inputs)
+        self.assertEqual(list(self.output.iterdir()), [])
+        self.assertEqual(list(self.journal.iterdir()), [])
+
+    def test_original_source_json_parser_detects_inplace_mutation(self):
+        import io
+        pair = self.make_claimed_private_frame_pair()
+        inputs = self.source_witness_kwargs()
+        receipt = inputs["launch_receipt"]
+        real_pread = os.pread
+        changed = []
+        def mutate_while_reading(fd, size, offset):
+            chunk = real_pread(fd, size, offset)
+            if not changed and chunk:
+                changed.append(True)
+                stat_before = receipt.stat()
+                os.utime(receipt, ns=(
+                    stat_before.st_atime_ns,
+                    stat_before.st_mtime_ns + 2_000_000_000))
+            return chunk
+        with patch.object(joint_runner.os, "pread",
+                          side_effect=mutate_while_reading):
+            with self.assertRaisesRegex(ValueError, "JSON changed during preflight"):
+                self.run_capture(frame_pair_dir=pair, **inputs)
+        self.assertEqual(changed, [True])
+        self.assertEqual(list(self.output.iterdir()), [])
+
     def test_missing_source_ft4_directory_refused_before_native_launch(self):
         pair = self.make_claimed_private_frame_pair()
         inputs = self.source_witness_kwargs()

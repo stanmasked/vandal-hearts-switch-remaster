@@ -60,6 +60,34 @@ def _require_owner_private_claimed_pair(frame_pair_dir):
         os.close(directory_fd)
 
 
+def _parse_private_source_json(fd, size):
+    """Validate a local bounded JSON object without exposing its raw fields."""
+    chunks = []
+    offset = 0
+    while offset < size:
+        part = os.pread(fd, min(65536, size - offset), offset)
+        if not part:
+            raise ValueError("MAP02 original source JSON witness truncated")
+        chunks.append(part)
+        offset += len(part)
+
+    def distinct_keys(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("MAP02 original source JSON witness duplicate key")
+            result[key] = value
+        return result
+
+    try:
+        parsed = json.loads(b"".join(chunks).decode("utf-8"),
+                            object_pairs_hook=distinct_keys)
+    except (UnicodeError, json.JSONDecodeError, RecursionError):
+        raise ValueError("MAP02 original source JSON witness malformed") from None
+    if type(parsed) is not dict or not parsed:
+        raise ValueError("MAP02 original source JSON witness must be a nonempty object")
+
+
 def _preflight_original_source_files(native_capture_dir, source_capture_dir,
                                      launch_receipt, preflight_report,
                                      output_dir, gpu_journal_dir,
@@ -116,6 +144,18 @@ def _preflight_original_source_files(native_capture_dir, source_capture_dir,
                 raise ValueError("MAP02 original source witness file not private")
             if key in identities:
                 raise ValueError("MAP02 original source roles overlap")
+            _parse_private_source_json(fd, info.st_size)
+            # The bytes are never sent to GitHub or included in the report.
+            # Detect mid-parse replacement or in-place modification.
+            after = os.fstat(fd)
+            if ((info.st_dev, info.st_ino, info.st_size,
+                 info.st_mtime_ns, info.st_ctime_ns) !=
+                    (after.st_dev, after.st_ino, after.st_size,
+                     after.st_mtime_ns, after.st_ctime_ns)
+                    or key != (
+                        os.stat(path, follow_symlinks=False).st_dev,
+                        os.stat(path, follow_symlinks=False).st_ino)):
+                raise ValueError("MAP02 original source JSON changed during preflight")
             identities.add(key)
             pinned_sources.append((
                 "file", key, info.st_uid, info.st_mode, info.st_nlink,
