@@ -36,16 +36,26 @@ def marker_color(pixel):
     return "unknown"
 
 
-def uniform_tile(frame, points, label):
-    """Require multiple interior pixels of the same flat UI tile color.
+def rectangular_pixels(x0, y0, x1, y1):
+    """All pixels of a half-open rectangle strictly inside a solid UI fill."""
+    for y in range(y0, y1):
+        for x in range(x0, x1):
+            yield (x, y)
 
-    Reject a single valid-looking pixel embedded in a corrupt/foreign
-    tile; this is still heuristic pixel inspection, not frame provenance.
+
+def uniform_tile(frame, points, label):
+    """Reject any mixed colors in the inspected solid interior.
+
+    These are framebuffer consistency checks, not image provenance,
+    evidence of real HOME input, or evidence of audible playback.
     """
-    readings = [marker_color(frame.getpixel(point)) for point in points]
-    if any(color != readings[0] for color in readings[1:]):
+    readings = (marker_color(frame.getpixel(point)) for point in points)
+    first = next(readings, None)
+    if first is None:
+        raise ValueError("empty " + label + " tile area")
+    if any(color != first for color in readings):
         raise ValueError("inconsistent " + label + " tile pixels")
-    return readings[0]
+    return first
 
 
 def load_frame(path):
@@ -54,6 +64,10 @@ def load_frame(path):
             raise ValueError("expected an unscaled 1280x720 PNG diagnostic frame")
         if source.mode not in ("RGB", "RGBA"):
             raise ValueError("expected an RGB/RGBA PNG diagnostic frame")
+        # Transparent RGBA pixels may carry arbitrary hidden RGB values;
+        # never infer a displayed status from uncomposited RGB channels.
+        if source.mode == "RGBA" and source.getchannel("A").getextrema() != (255, 255):
+            raise ValueError("expected a fully opaque PNG diagnostic frame")
         return source.convert("RGB")
 
 
@@ -61,7 +75,7 @@ def observe_frame(frame):
     states = {
         label: uniform_tile(
             frame,
-            ((1005+i*48,640), (1020+i*48,645), (1034+i*48,655)),
+            rectangular_pixels(1002+i*48, 637, 1038+i*48, 659),
             label)
         for i, label in enumerate(LABELS)
     }
@@ -74,9 +88,9 @@ def observe_frame(frame):
         if states[label] not in ("blue", "yellow"):
             raise ValueError("missing or ambiguous " + label + " focus indicator")
     states["X"] = uniform_tile(
-        frame, ((1110,699), (1125,702), (1139,707)), "X")
+        frame, rectangular_pixels(1107, 698, 1143, 709), "X")
     states["Y"] = uniform_tile(
-        frame, ((1165,699), (1180,702), (1194,707)), "Y")
+        frame, rectangular_pixels(1162, 698, 1198, 709), "Y")
     # The focus observer has no X/Y tiles. The manual NRO MUST have
     # both. Pixel-only inspection does not prove either came from HW,
     # but mixed/missing tiles cannot be treated as one continuous run.
@@ -93,7 +107,7 @@ def observe_frame(frame):
         for n in range(5):
             x = 1004+tile*48+n*7
             color = uniform_tile(
-                frame, ((x+1,669), (x+1,671), (x+2,674)),
+                frame, rectangular_pixels(x, 667, x+4, 676),
                 label + " tally")
             if color == "blue":
                 strokes.append(True)
