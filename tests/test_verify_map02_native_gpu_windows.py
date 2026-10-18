@@ -192,7 +192,8 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
 
     def test_rejects_byte_identical_window_inode_swap_after_full_audit(self):
         target = self.window / "gpu-0000-vram.bin"
-        previous = self.root / "old-vram-inode"
+        # Preserve the expected capture tree; change only the file inode.
+        previous = self.root.parent / "old-vram-inode"
         original = window_module.verify_capture
         swapped = [False]
 
@@ -213,7 +214,8 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
 
     def test_rejects_byte_identical_index_swap_during_window_audit(self):
         target = self.root / INDEX
-        previous = self.root / "old-window-index"
+        # Keep the replaced index outside the audited capture directory.
+        previous = self.root.parent / "old-window-index"
         original = window_module.verify_capture
         swapped = [False]
 
