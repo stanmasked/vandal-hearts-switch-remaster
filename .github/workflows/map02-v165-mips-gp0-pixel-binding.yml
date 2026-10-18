@@ -1,0 +1,33 @@
+name: MAP02 v165 source-authored MIPS GP0 packet to Unai VRAM binding
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v165-mips-gp0-pixel-binding.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v165_guest_gp0_pixel_binding.py'
+      - 'tests/test_map02_v165_guest_gp0_pixel_binding.py'
+      - 'tools/make_map02_v121_mips_gp0_return_exe.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  exact-gp0-guest:
+    name: MIPS GP0 exact triplets & readback binding (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile actual gpulib append and reject extra, wrong, missing packets
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v165_guest_gp0_pixel_binding.py tests/test_map02_v165_guest_gp0_pixel_binding.py
+          python3 -m unittest discover -s tests -p 'test_map02_v165_guest_gp0_pixel_binding.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v164_guest_mips_halo.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v163_host_unai_rectangle.py' -v
+          echo 'VH165_COMPILED_GUEST_GP0_VRAM_BIND_PASS original_retail_executed=0 host_gp0_draws=0 switch_hd_parity=0'
