@@ -44,7 +44,8 @@ def hash_file(path):
     return hasher.hexdigest()
 
 
-def verify(witness, first, second, nro, revision, scenario):
+def verify(witness, first, second, nro, revision, scenario,
+           github_run_id, github_run_attempt):
     """Return recomputed observations; never trust the stored verdict alone."""
     require(scenario in SCENARIOS, "unknown guest scenario")
     require(HEX40.fullmatch(revision) is not None, "invalid source commit")
@@ -53,6 +54,15 @@ def verify(witness, first, second, nro, revision, scenario):
     require(data.get("format") == "vh-native-av-guest-witness-v1",
             "unsupported witness format")
     require(data.get("source_revision") == revision, "source revision mismatch")
+    require(type(github_run_id) is int and github_run_id > 0 and
+            type(github_run_attempt) is int and github_run_attempt > 0,
+            "invalid expected GitHub run identity")
+    require(type(data.get("github_run_id")) is int and
+            data["github_run_id"] == github_run_id,
+            "GitHub run ID mismatch")
+    require(type(data.get("github_run_attempt")) is int and
+            data["github_run_attempt"] == github_run_attempt,
+            "GitHub attempt mismatch")
     for label, path in (
         ("nro_sha256", nro),
         ("first_frame_sha256", first),
@@ -147,10 +157,13 @@ def main():
     parser.add_argument("--nro", required=True, type=Path)
     parser.add_argument("--revision", required=True)
     parser.add_argument("--scenario", required=True, choices=SCENARIOS)
+    parser.add_argument("--github-run-id", required=True, type=int)
+    parser.add_argument("--github-run-attempt", required=True, type=int)
     args = parser.parse_args()
     try:
         result = verify(args.witness, args.before, args.after, args.nro,
-                        args.revision, args.scenario)
+                        args.revision, args.scenario,
+                        args.github_run_id, args.github_run_attempt)
     except (ValueError, OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
         parser.error(str(exc))
     print(json.dumps({
