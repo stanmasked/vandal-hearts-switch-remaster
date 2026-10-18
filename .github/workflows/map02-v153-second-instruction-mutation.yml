@@ -1,0 +1,34 @@
+name: MAP02 v153 second synthetic MIPS instruction mutation refusal
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v153-second-instruction-mutation.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v153_second_instruction_mutation.py'
+      - 'tests/test_map02_v153_second_instruction_mutation.py'
+      - 'tools/apply_map02_v152_fetch_opcode_witness.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  second-instruction-refusal:
+    name: compiled native first/second opcode safety (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify compiled C first-word acceptance and second-word refusal
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v153_second_instruction_mutation.py tests/test_map02_v153_second_instruction_mutation.py
+          python3 -m unittest discover -s tests -p 'test_map02_v153_second_instruction_mutation.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v152_fetch_opcode_witness.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v151_native_ram_identity.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v150_native_instruction_budget.py' -v
+          echo 'VH153_COMPILED_SECOND_WORD_REFUSAL_PASS original_retail_executed=0 map02_rendered=0'
