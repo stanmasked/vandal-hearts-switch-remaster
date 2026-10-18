@@ -68,8 +68,15 @@ directors stay synchronized in SEQ clocks and scene stages. It verifies
 the original PCM matches before the transition, that only the opt-in path
 retains a precharged STUDIO_C tail at the cue change, and that both silence
 and detach clear reverb. A queued-cue mutation test checks fail-closed
-state and byte-identical old SEQ/SPU survival. The existing 1200-block
-44.1-to-48-kHz audio director soak remains unchanged.
+state and byte-identical old SEQ/SPU survival. The existing 1200-block 44.1-to-48-kHz audio director
+scenario remains unchanged, and the same test now also runs a separate
+**512-block opt-in versus legacy 48-kHz comparison** through three
+eight-block fades. Both paths must have equal SEQ/scene clocks, equal
+numbers of output frames and identical resampler timing, while their
+sample histories are intentionally allowed to differ. The test
+requires divergent post-switch **PCM16 samples**, not merely divergent
+reverb state. Previous sample values in each resampler are
+channel-audio data, not timing invariants.
 
 Dedicated GCC and Clang ASan/UBSan jobs and existing Host SPU / libnx builds
 must pass **for the exact merge candidate**. This development does not prove
