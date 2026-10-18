@@ -59,6 +59,49 @@ class ProtectedAncestorWalk(unittest.TestCase):
                         delay_audit(bad)
             self.assertEqual(read_private_exe(original),raw)
 
+    def test_ancestor_replacement_after_directory_open_stays_fd_bound(self):
+        """Deterministic TOCTOU test: swap path after obtaining ancestor FD."""
+        from unittest.mock import patch
+        raw,*_=build()
+        swapped=bytearray(raw)
+        swapped[2048]^=1
+        with tempfile.TemporaryDirectory(prefix="vh134-fd-race-") as temp:
+            root=Path(temp)
+            live=root/"live"
+            saved=root/"pinned"
+            diversion=root/"diversion"
+            live.mkdir(mode=0o700)
+            diversion.mkdir(mode=0o700)
+            name="synthetic.exe"
+            (live/name).write_bytes(raw)
+            (live/name).chmod(0o600)
+            (diversion/name).write_bytes(bytes(swapped))
+            (diversion/name).chmod(0o600)
+            genuine_open=os.open
+            changed=[False]
+
+            def swap_after_fd_open(path,flags,*args,**kwargs):
+                fd=genuine_open(path,flags,*args,**kwargs)
+                if (path=="live" and "dir_fd" in kwargs and
+                        not changed[0]):
+                    # The OS directory FD is already pinned to the real
+                    # inode. Retargeting the textual name must not redirect
+                    # the later leaf open into 'diversion'.
+                    changed[0]=True
+                    live.rename(saved)
+                    live.symlink_to(diversion,target_is_directory=True)
+                return fd
+
+            with patch("os.open",side_effect=swap_after_fd_open):
+                actual=read_private_exe(live/name)
+            self.assertTrue(changed[0])
+            self.assertEqual(actual,raw)
+            self.assertNotEqual(actual,bytes(swapped))
+            self.assertTrue(live.is_symlink())
+            with self.assertRaises(Refused):
+                read_private_exe(live/name)
+            self.assertEqual(read_private_exe(saved/name),raw)
+
     def test_dotdot_and_dot_components_cannot_bypass_anchoring(self):
         raw,*_=build()
         with tempfile.TemporaryDirectory(prefix="vh134-traversal-") as temp:
