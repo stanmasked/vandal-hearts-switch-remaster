@@ -336,8 +336,11 @@ int main(void) {
         assert(recovery.pages_submitted==page+1u);
         assert(marks.recent[page%VH_LISTEN_RECENT_PAGES]
             .scene_boundary==boundary);
+        /* The listening ring stores a boolean "retried" mark;
+         * the exact number of failed attempts is independently
+         * reconciled through d.submitted and recovery counters. */
         assert(marks.recent[page%VH_LISTEN_RECENT_PAGES]
-            .retry==fails);
+            .retry==(unsigned)(fails!=0u));
         /* Boundary metadata is independently derived from the
          * callback-free 48-kHz sample stream, including wet tails. */
         if(boundary) assert(seams.last_abs_step<=65535u);
