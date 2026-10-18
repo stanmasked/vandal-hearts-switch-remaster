@@ -9,6 +9,7 @@ checkout inputs are NOT execution-attested.
 """
 import argparse
 from contextlib import ExitStack
+import ctypes
 import fcntl
 import hashlib
 import json
@@ -144,6 +145,55 @@ def _recheck_headers(stage, digests, files):
 
 
 
+
+IN_MUTATION = (0x2 | 0x4 | 0x8 | 0x40 | 0x80 | 0x100 | 0x200 |
+               0x400 | 0x800 | 0x2000 | 0x4000 | 0x8000)
+IN_ONLYDIR = 0x01000000
+IN_DONT_FOLLOW = 0x02000000
+
+
+def _watch_header_tree(stage):
+    """Watch every include directory; refuse races including restored links."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    try:
+        init = libc.inotify_init1
+        add = libc.inotify_add_watch
+    except AttributeError as exc:
+        raise ValueError("MAP02 Linux inotify unavailable") from exc
+    init.argtypes, init.restype = [ctypes.c_int], ctypes.c_int
+    add.argtypes, add.restype = [ctypes.c_int, ctypes.c_char_p, ctypes.c_uint32], ctypes.c_int
+    fd = init(os.O_NONBLOCK | os.O_CLOEXEC)
+    if fd < 0:
+        raise OSError(ctypes.get_errno(), "MAP02 inotify initialization failed")
+    try:
+        count = 0
+        for current, directories, names in os.walk(stage, followlinks=False):
+            if count >= 512:
+                raise ValueError("MAP02 include watch directory limit exceeded")
+            if Path(current).is_symlink():
+                raise ValueError("MAP02 include directory redirected")
+            wd = add(fd, os.fsencode(current), IN_MUTATION | IN_ONLYDIR | IN_DONT_FOLLOW)
+            if wd < 0:
+                raise OSError(ctypes.get_errno(), "MAP02 include watch installation failed")
+            count += 1
+        if not count:
+            raise ValueError("MAP02 include watch inventory empty")
+        return fd, count
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def _check_header_watch(fd):
+    """A single mutation or an inotify overflow invalidates the build."""
+    try:
+        events = os.read(fd, 65536)
+    except BlockingIOError:
+        return
+    if events:
+        raise ValueError("MAP02 pinned header include paths changed during preprocessing")
+
+
 def compile_overlay(upstream, output, manifest, *, build_dir):
     """Fail closed if the replayed payload differs from the sealed Make input."""
     if sys.platform != "linux" or not hasattr(os, "memfd_create"):
@@ -215,6 +265,10 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
               tempfile.TemporaryDirectory(prefix="vh-map02-preprocessed-") as temp):
             snapshot = Path(headers)
             staged_headers = _stage_headers(upstream, snapshot, files, stack)
+            _recheck_headers(snapshot, staged_headers, files)
+            watch_fd, watched_dirs = _watch_header_tree(snapshot)
+            stack.callback(os.close, watch_fd)
+            _check_header_watch(watch_fd)
             include_flags = ("-I" + str(snapshot / "platform/pc/include") +
                              " -I" + str(snapshot / "platform/pc/src") +
                              " -I" + str(snapshot / "include"))
@@ -225,7 +279,9 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
                 "VH_MAP02_PRIVATE_PREPROCESS_DIR=" + temp,
                 "map02-private-gpu-preprocess",
             ])
+            _check_header_watch(watch_fd)
             _recheck_headers(snapshot, staged_headers, files)
+            _check_header_watch(watch_fd)
             preprocessed = {}
             for unit in ("libgpu", "pc_raster"):
                 source = auditor._stable_regular_bytes(
@@ -264,6 +320,8 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
         "preprocessed_sha256": preprocessed,
         "pinned_headers_checked": len(staged_headers),
         "pinned_headers_sealed": len(staged_headers),
+        "header_include_directory_watches": watched_dirs,
+        "header_path_mutations_rejected": True,
         "staged_header_hashes_verified": True,
         "compiled_from_sealed_preprocessor_output": True,
         "verified_source_bytes_used_for_compilation": True,

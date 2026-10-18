@@ -78,6 +78,8 @@ class SealedMakeOverlayTests(unittest.TestCase):
         result = self.run_build()
         self.assertEqual(result["sealed_inputs"], 7)
         self.assertEqual(result["pinned_headers_sealed"], 1)
+        self.assertGreaterEqual(result["header_include_directory_watches"], 4)
+        self.assertTrue(result["header_path_mutations_rejected"])
         self.assertEqual(set(result["preprocessed_sha256"]), {"libgpu", "pc_raster"})
         self.assertEqual(result["pinned_headers_checked"], 1)
         self.assertTrue(result["staged_header_hashes_verified"])
@@ -240,6 +242,49 @@ class SealedMakeOverlayTests(unittest.TestCase):
         with patch.object(sealed, "_recheck_headers", side_effect=redirect):
             with self.assertRaisesRegex(ValueError, "header link redirected"):
                 self.run_build("build-map02-header-redirect")
+
+    def test_swapped_and_restored_header_link_during_preprocess_rejected(self):
+        real_run = subprocess.run
+        swapped = []
+
+        def inject(args, **kwargs):
+            if "map02-private-gpu-preprocess" in args:
+                includes = next(x.split("=", 1)[1] for x in args
+                                if x.startswith("VH_MAP02_PRIVATE_INCLUDE_FLAGS="))
+                header = Path(includes.split(" -I")[1]) / "map02_fixture.h"
+                original = header.readlink()
+                header.unlink()
+                header.symlink_to("/proc/self/fd/0")
+                header.unlink()
+                header.symlink_to(original)
+                swapped.append(True)
+            return real_run(args, **kwargs)
+
+        with patch.object(sealed.subprocess, "run", side_effect=inject):
+            with self.assertRaisesRegex(ValueError, "include paths changed"):
+                self.run_build("build-map02-temporary-link")
+        self.assertEqual(swapped, [True])
+        self.assertFalse((self.pc / "build-map02-temporary-link/libgpu.o").exists())
+
+    def test_added_and_removed_header_during_preprocess_rejected(self):
+        real_run = subprocess.run
+        changed = []
+
+        def inject(args, **kwargs):
+            if "map02-private-gpu-preprocess" in args:
+                includes = next(x.split("=", 1)[1] for x in args
+                                if x.startswith("VH_MAP02_PRIVATE_INCLUDE_FLAGS="))
+                extra = Path(includes.split(" -I")[1]) / "undocumented.h"
+                extra.write_bytes(b"#define ATTACK 1\\n")
+                extra.unlink()
+                changed.append(True)
+            return real_run(args, **kwargs)
+
+        with patch.object(sealed.subprocess, "run", side_effect=inject):
+            with self.assertRaisesRegex(ValueError, "include paths changed"):
+                self.run_build("build-map02-temporary-extra")
+        self.assertEqual(changed, [True])
+        self.assertFalse((self.pc / "build-map02-temporary-extra/libgpu.o").exists())
 
     def test_invalid_and_existing_build_directories_fail_closed(self):
         for name in ("build", "build-map02-", "build-map02-x/../y",
