@@ -326,7 +326,7 @@ def _runtime_loader_evidence(directory, driver, expected):
             text = payload.decode("utf-8")
         except UnicodeError as exc:
             raise ValueError("MAP02 compiler runtime loader log encoding invalid") from exc
-        programs = re.findall(r"initialize program:\\s*(\\S+)", text)
+        programs = re.findall(r"initialize program:\s*(\S+)", text)
         if not programs:
             continue  # A loader invocation without a program initializer.
         if len(set(programs)) != 1:
@@ -341,7 +341,7 @@ def _runtime_loader_evidence(directory, driver, expected):
             role = "as"
         else:
             continue  # Parent Make/shell and unrelated system utilities.
-        matches = re.findall(r"calling init:\\s*(/\\S+)", text)
+        matches = re.findall(r"calling init:\s*(/\S+)", text)
         if not matches:
             raise ValueError("MAP02 compiler runtime mapped objects absent")
         seen[role] += 1

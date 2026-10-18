@@ -360,13 +360,15 @@ class SealedMakeOverlayTests(unittest.TestCase):
     def test_runtime_loader_refuses_missing_assembler_process(self):
         witness = self.root / "runtime-missing-as"
         witness.mkdir()
+        library = self.root / "synthetic-system.so"
+        library.write_bytes(b"test library")
         (witness / "trace.123").write_text(
-            "123: initialize program: /usr/bin/gcc\\n"
-            "123: calling init: /usr/lib/libc-example.so\\n")
+            "123: initialize program: /usr/bin/gcc\n"
+            "123: calling init: " + str(library) + "\n")
         with self.assertRaisesRegex(ValueError, "process witness missing"):
             sealed._runtime_loader_evidence(
                 witness, "/usr/bin/gcc", {
-                    str(self.root / "dummy.so"): "0" * 64})
+                    str(library): hashlib.sha256(library.read_bytes()).hexdigest()})
 
     def test_runtime_loader_refuses_unrecognized_mapped_library(self):
         witness = self.root / "runtime-extra-library"
@@ -374,8 +376,8 @@ class SealedMakeOverlayTests(unittest.TestCase):
         foreign = self.root / "unexpected-runtime-library.so"
         foreign.write_bytes(b"external library")
         (witness / "trace.123").write_text(
-            "123: initialize program: /usr/bin/gcc\\n"
-            "123: calling init: " + str(foreign) + "\\n")
+            "123: initialize program: /usr/bin/gcc\n"
+            "123: calling init: " + str(foreign) + "\n")
         with self.assertRaisesRegex(ValueError, "unrecognized shared object"):
             sealed._runtime_loader_evidence(witness, "/usr/bin/gcc", {})
 
