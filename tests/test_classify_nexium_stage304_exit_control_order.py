@@ -22,6 +22,7 @@ class OriginalControlPairPostmortemTests(unittest.TestCase):
         raw=csv_source()
         out=classify_original_host_controls(raw)
         self.assertFalse(out["reproduces_nonmonotone_exit_control_source_refusal"])
+        self.assertEqual(out["archived_control_order_violation_kind"],"NO_ARCHIVED_CONTROL_ORDER_VIOLATION")
         self.assertEqual([x["pcm_file_size_delta_bytes"] for x in out["adjacent_original_host_control_pairs"]],[100,100])
         self.assertEqual([x["host_epoch_delta_ms"] for x in out["adjacent_original_host_control_pairs"]],[10,10])
         self.assertFalse(out["physical_Nintendo_Switch_audio_tested"])
@@ -56,6 +57,38 @@ class OriginalControlPairPostmortemTests(unittest.TestCase):
         out=classify_original_host_controls(raw)
         self.assertEqual(sum(x["original_buffer_size_decreased"] for x in out["adjacent_original_host_control_pairs"]),2)
         self.assertEqual(sum(x["host_epoch_was_not_strictly_increasing"] for x in out["adjacent_original_host_control_pairs"]),2)
+
+    def test_archived_negative_347ms_pattern_is_clock_only(self):
+        # Based on confirmed DELTAS from archival replay 39164847668,
+        # without copying absolute host timestamps or original audio.
+        raw=csv_source(
+            bytes_=(100000,159368,978284),
+            times=(200000,199653,203867))
+        out=classify_original_host_controls(raw)
+        self.assertEqual(out["archived_control_order_violation_kind"],"HOST_EPOCH_MOVED_BACKWARD")
+        self.assertEqual(out["pcm_size_regression_pair_count"],0)
+        self.assertEqual(out["host_epoch_backward_pair_count"],1)
+        self.assertEqual(out["host_epoch_equal_pair_count"],0)
+        self.assertEqual(
+            [(p["pcm_file_size_delta_bytes"],p["host_epoch_delta_ms"])
+             for p in out["adjacent_original_host_control_pairs"]],
+            [(59368,-347),(818916,4214)])
+        with self.assertRaises(VirtualPcmEvidenceError):
+            control_events(raw)
+
+    def test_single_equal_clock_and_multiple_violation_labels(self):
+        tie=classify_original_host_controls(
+            csv_source(times=(100000,100000,100020)))
+        self.assertEqual(tie["archived_control_order_violation_kind"],
+                         "HOST_EPOCH_EQUAL_ADJACENT")
+        both=classify_original_host_controls(
+            csv_source(bytes_=(10000,9999,9998),times=(100000,100000,99999)))
+        self.assertEqual(both["archived_control_order_violation_kind"],
+                         "MULTIPLE_HOST_CONTROL_INVARIANTS")
+        size=classify_original_host_controls(
+            csv_source(bytes_=(10000,9999,10100)))
+        self.assertEqual(size["archived_control_order_violation_kind"],
+                         "PCM_FILE_SIZE_DECREASED")
 
     def test_missing_or_corrupt_original_source_rejected(self):
         raw=csv_source()
