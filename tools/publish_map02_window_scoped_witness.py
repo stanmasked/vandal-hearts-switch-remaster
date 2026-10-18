@@ -144,6 +144,8 @@ def publish_window_scoped_witness(source_dir, native_dir, scoped_dir, *,
             raise ValueError("MAP02 witness inputs changed before publication")
         os.link(temp, target)  # exclusive, no overwrite
         installed = True
+        # Remove staging alias before the nlink=1 evidence readback.
+        temp.unlink()
         if private_file(source, MANIFEST, max_bytes=4096) != raw:
             raise ValueError("final MAP02 witness write/readback mismatch")
     except BaseException:
