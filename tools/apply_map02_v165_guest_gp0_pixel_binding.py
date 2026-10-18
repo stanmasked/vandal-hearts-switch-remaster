@@ -102,9 +102,9 @@ def patch_frontend(source: str) -> str:
         '\t\t}\n'+anchor,
         "distinct guest-MIPS source+queue+pixel mode")
     source=once(source,PHASE,
-        "        static const uint32_t vh165_expected_colors[5]="+colors+";\n"
+        f"        static const uint32_t vh165_expected_colors[5]={colors};\n"
         "        unsigned vh165_total_words=0u;\n"
-        +PHASE
+        +PHASE+
         "            if(vh165_mips_gp0_vram_bound &&\n"
         "               vh165_arm_guest_gp0(vh165_expected_colors[phase],\n"
         "                                     0x00a00028u,0x00040004u)!=0){\n"
