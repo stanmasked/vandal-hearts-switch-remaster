@@ -201,6 +201,26 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
                 verify_capture(self.root,target_frame=12)
         self.assertTrue(swapped[0])
 
+    def test_recorder_rejects_unterminated_or_noncanonical_jsonl(self):
+        target = self.root / "gpu-native-events.jsonl"
+        complete = target.read_bytes()
+        self.assertTrue(complete.endswith(b"\n"))
+        cases = (
+            complete[:-1],                  # valid final JSON without LF
+            complete.replace(b"\n", b"\r\n"),  # CRLF
+            complete + b"\n",             # unpaired blank row
+            complete.replace(b"\n", b"\v", 1),  # alternative delimiter
+        )
+        for altered in cases:
+            with self.subTest(suffix=altered[-8:]):
+                target.write_bytes(altered)
+                with self.assertRaises(ValueError):
+                    verify_capture(self.root, target_frame=12)
+        target.write_bytes(complete)
+        self.assertEqual(
+            verify_capture(self.root, target_frame=12)["native_gpu_pairs_verified"],
+            2)
+
     def test_two_native_pairs_and_hashes(self):
         result=verify_capture(self.root,target_frame=12)
         self.assertEqual(result["native_gpu_pairs_verified"],2)
