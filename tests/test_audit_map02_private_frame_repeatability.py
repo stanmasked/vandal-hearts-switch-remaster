@@ -13,6 +13,7 @@ from unittest.mock import patch
 from test_map02_joint_native_capture_c11 import PRODUCER
 from tools.capture_map02_live_frame_pipe import capture
 from tools import audit_map02_private_frame_repeatability as repeat
+from tools import run_map02_private_two_live_captures as two_live
 
 
 class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
@@ -114,6 +115,9 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
         self.assertIsNone(result["first_joint_gpu_divergence_index"])
         self.assertIsNone(result["first_joint_gpu_divergence_kind"])
         self.assertEqual(result["gpu_event_records_compared"], 2)
+        # The strict acceptance function sees the independently replayed
+        # two-child report, not a hand-authored boolean-only fixture.
+        two_live._require_bit_exact_gpu_timeline(result)
         self.assertTrue(result["two_full_replays_per_capture_verified"])
         self.assertTrue(result["four_private_file_inventories_stable_through_replays"])
         self.assertTrue(result["repeated_full_gpu_vram_snapshot_sequence_identical"])
@@ -369,6 +373,8 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
         self.assertEqual(out["first_joint_gpu_divergence_phase"], "before")
         self.assertEqual(out["different_gpu_vram_snapshots_in_common_prefix"], 0)
         self.assertNotIn('"semi":', json.dumps(out))
+        with self.assertRaisesRegex(ValueError, "not bit-exact"):
+            two_live._require_bit_exact_gpu_timeline(out)
 
     def test_two_real_c11_captures_event_and_before_vram_change(self):
         for folder in (self.f2, self.j2):
@@ -386,6 +392,8 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
         self.assertEqual(out["first_joint_gpu_divergence_pair_index"], 0)
         self.assertEqual(out["first_joint_gpu_divergence_phase"], "before")
         self.assertFalse(out["ps1_hardware_pixel_equivalence_verified"])
+        with self.assertRaisesRegex(ValueError, "not bit-exact"):
+            two_live._require_bit_exact_gpu_timeline(out)
 
     def test_first_joint_gpu_divergence_classifies_events_and_vram(self):
         # All indices are ordinal event/snapshot positions (two per pair).
