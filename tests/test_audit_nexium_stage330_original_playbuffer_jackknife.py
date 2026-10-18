@@ -112,14 +112,16 @@ class SourceBoundPlayBufferJackknifeTests(unittest.TestCase):
         with self.assertRaises(ExitTimelineError):
             self.audit(second=self.a)
 
-    def test_last_call_does_not_have_to_remain_below_every_resample_median(self):
+    def test_sensitive_final_call_rank_is_reported_not_rejected(self):
         changed=heterogeneous(
             self.a,[x*1_000_000 for x in
                     (5,6,7,8,9,10,11,12,30,31,32,33,34,35,36)])
         # Full previous median 12 ms exceeds final call ~11.226ms, but
         # omitting one high source observation yields lower median 11ms.
-        with self.assertRaises(ExitTimelineError):
-            self.audit(first=changed)
+        observed=self.audit(first=changed)["cohorts"][0]
+        self.assertEqual(observed["full_previous_lower_median_ns"],12_000_000)
+        self.assertEqual(observed["leave_one_out_lower_median_min_ns"],11_000_000)
+        self.assertFalse(observed["all_replicas_have_last_shorter_than_prior_lower_median"])
 
     def test_no_guest_absolute_begin_end_or_host_PCM_in_result(self):
         text=json.dumps(self.audit(),sort_keys=True)
