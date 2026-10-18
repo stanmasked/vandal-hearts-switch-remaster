@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import subprocess
 
 from tools.capture_map02_live_frame_pipe import capture
 from tools.replay_map02_live_frame_receipt import replay
@@ -331,6 +332,32 @@ def run(executable, output_dir, gpu_journal_dir, *, frame, executable_sha256,
     }
 
 
+
+def _safe_cli_failure(exc):
+    """Reveal a bounded reason, never a private file path from OSError/JSON.
+
+    An exception can contain a caller's private full pathname (including
+    os.open FileNotFoundError) or an untrusted source-witness string.
+    Only recognized, path-free categories reach stdout/stderr.
+    """
+    if isinstance(exc, subprocess.TimeoutExpired):
+        return "MAP02 private ELF execution timed out"
+    if isinstance(exc, OSError):
+        return "MAP02 private capture I/O failed"
+    detail = str(exc)
+    if "SHA-256 mismatch" in detail:
+        return "MAP02 private SHA-256 mismatch"
+    if "arguments incomplete" in detail:
+        return "MAP02 original FT4/VRAM witness arguments incomplete"
+    if "timed out" in detail:
+        return "MAP02 private capture timed out"
+    if "frame pair changed" in detail:
+        return "MAP02 private claimed frame pair changed"
+    if "replays disagree" in detail:
+        return "MAP02 private GPU/frame replays disagree"
+    return "MAP02 private capture validation failed"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--executable", type=Path, required=True)
@@ -355,8 +382,8 @@ def main():
             source_capture_dir=ns.source_capture,
             launch_receipt=ns.launch_receipt,
             preflight_report=ns.preflight_report, compiler=ns.compiler)
-    except (OSError, ValueError) as exc:
-        parser.error(str(exc))
+    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+        parser.error(_safe_cli_failure(exc))
     print(json.dumps(report, sort_keys=True, indent=2))
 
 
