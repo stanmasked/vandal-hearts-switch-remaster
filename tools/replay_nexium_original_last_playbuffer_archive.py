@@ -77,6 +77,16 @@ def independently_replay(originals: tuple, worker_source: bytes,
     duration=end-begin
     if not 0<=overlap<=duration:
         raise TraceError("invalid overlap of last PlayBuffer call and exit")
+    # Partition the WHOLE guest software interval from the main-thread
+    # stop request to the last normal PCM page return. This does NOT
+    # imply that every nanosecond outside this one PlayBuffer bracket
+    # was spent in a single other service call or produced audible PCM.
+    stop_to_page=last_page-stop
+    before_call=max(0,begin-stop) if end>stop else 0
+    after_call=last_page-max(end,stop)
+    if (stop_to_page<0 or before_call<0 or after_call<0 or
+            before_call+overlap+after_call!=stop_to_page):
+        raise TraceError("final original audout call partition does not conserve guest time")
     return {
         "schema":SCHEMA,
         "result":VERIFIED,
@@ -105,6 +115,11 @@ def independently_replay(originals: tuple, worker_source: bytes,
             fresh["last_successful_call_relative_to_stop_request"],
         "last_call_return_to_last_page_witness_guest_ns":last_page-end,
         "last_page_to_worker_observed_stop_guest_ns":seen_stop-last_page,
+        "stop_request_to_last_normal_PCM_page_return_guest_ns":stop_to_page,
+        "post_stop_before_last_successful_call_guest_ns":before_call,
+        "post_stop_inside_last_successful_call_guest_ns":overlap,
+        "post_stop_after_last_successful_call_to_page_return_guest_ns":after_call,
+        "source_time_partition_exactly_conserved":True,
         "last_service_call_is_not_entire_stop_delay_proof":True,
         "guest_software_time_not_host_PCM_or_DAC_sample_clock":True,
         "last_buffer_release_not_audible_speaker_output":True,
