@@ -72,5 +72,17 @@ guest source file. It is not a physical-console audio test and cannot
 verify original PS1 soundtrack fidelity or whether Plus caused an
 audible dropout.
 
-The Stage328 workflow's final status must be checked before claiming
-that independent cross-run audit has passed.
+The source-pinned independent [Stage328 workflow #39170070183](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39170070183)
+**completed successfully** with **13/13 synthetic acceptance/rejection
+tests**, downloaded both original NeXium archives, re-verified all four
+independently pinned SHA-256 original CSV digests, re-ran Stage322 against
+each original guest history, and reproduced both original Stage322
+summaries exactly.
+
+The earlier original [workflow #39170048448](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39170048448)
+failed because its CI invocation omitted newly required independent
+Stage320 last-call SHA-256 arguments. The corrected source-pinned
+workflow passed. This is not evidence of a game audio failure.
+
+Host SPU regression suite [#39170052224](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39170052224)
+also succeeded. No hardware audio or guest/host audio clock mapping claim follows.
