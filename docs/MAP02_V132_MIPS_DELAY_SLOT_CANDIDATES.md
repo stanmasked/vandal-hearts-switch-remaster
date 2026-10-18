@@ -4,13 +4,13 @@ Stacked on [v131 Draft PR #122](https://github.com/stanmasked/vandal-hearts-swit
 
 ## Why a real hardware instruction detail matters
 
-On the PlayStation R3000A MIPS-I CPU, a branch or jump has a **delay slot**. The instruction immediately following the branch executes **before** the change of program counter (except for a branch-likely instruction whose delay slot is nullified when not taken). The original v131 conservative linear pass reset its register constants immediately upon seeing the branch opcode. It therefore could miss a statically provable candidate store into the DMA2 CHCR register located in the delay slot.
+On the PlayStation R3000A MIPS-I CPU, a branch or jump has a **delay slot**. The instruction immediately following the branch executes **before** the change of program counter (the PlayStation R3000A runs MIPS I; later MIPS II branch-likely opcodes are reserved, not valid branch instructions on this hardware). The original v131 conservative linear pass reset its register constants immediately upon seeing the branch opcode. It therefore could miss a statically provable candidate store into the DMA2 CHCR register located in the delay slot.
 
 The new `tools/analyze_map02_v132_mips_delay_slots.py` preserves known register values for precisely **one** following instruction, then clears inferred state. It separately counts:
 
 - control-flow delay slots examined;
 - candidate GPU/DMA `SW` instructions inside delay slots;
-- possible sites after branch-likely instructions (they are conditional, not proven executions);
+- occurrences of reserved MIPS II branch-likely opcodes, which must **never** credit a subsequent GPU/DMA write on the PS1;
 - ambiguous nested control instructions in delay slots (no inferred MMIO values).
 
 It also invalidates a JAL/JALR link destination before the delay-slot instruction reads it. A code section ending with an incomplete delay slot refuses analysis rather than pretending a complete MIPS program was examined. Unknown operations, loads and jumps continue to invalidate speculative constants.
@@ -18,7 +18,7 @@ It also invalidates a JAL/JALR link destination before the delay-slot instructio
 ### Positive and negative proof fixtures
 
 1. Confirm a statically provable `SW` after an original MIPS `j` while v131 missed it.
-2. Confirm ordinary and branch-likely slot candidates are distinguished.
+2. Confirm normal MIPS I branch slots are counted while MIPS II branch-likely opcodes are treated as unsupported (including REGIMM and coprocessor variants).
 3. Prove known constants cannot propagate after a branch's slot.
 4. Prove load clobbers and JALR link-register writes invalidate stale MMIO addresses.
 5. Treat branches embedded inside another delay slot as ambiguous, with no guessed MMIO instruction site.
@@ -34,3 +34,5 @@ The scanner remains a conservative **linear static candidate** inventory, not a 
 - original_retail_MAP02_verified: false
 - physical_PS1_verified: false
 - HD_replacement_approved: false
+
+Reference: the [R3000 family manual](https://student.cs.uwaterloo.ca/~cs350/common/r3000-manual.pdf) identifies R3000 as MIPS I and branch-likely as an addition of MIPS II. The [PS1 R3000A instruction overview](https://archives.somnolescent.net/web/cammy_v1/games/everything_psx/r3000a.html) describes the standard one-instruction branch delay.
