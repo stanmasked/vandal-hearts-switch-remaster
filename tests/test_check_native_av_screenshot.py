@@ -90,12 +90,16 @@ class NativeAVScreenshotTests(unittest.TestCase):
                  "--require-guest-resume-retry",
                  "--witness-out",str(witness),
                  "--nro-file",str(nro),
-                 "--source-revision","a"*40]
+                 "--source-revision","a"*40,
+                 "--github-run-id","39081974011",
+                 "--github-run-attempt","1"]
             passed=subprocess.run(cmd,capture_output=True,text=True)
             self.assertEqual(passed.returncode,0,passed.stderr)
             evidence=json.loads(witness.read_text())
             self.assertEqual(evidence["format"],"vh-native-av-guest-witness-v1")
             self.assertEqual(evidence["source_revision"],"a"*40)
+            self.assertEqual(evidence["github_run_id"],39081974011)
+            self.assertEqual(evidence["github_run_attempt"],1)
             self.assertEqual(evidence["observation"][
                 "guest_resume_retry_after_fake_open_failure"],"confirmed")
             self.assertFalse(evidence["physical_switch_verified"])
@@ -128,7 +132,9 @@ class NativeAVScreenshotTests(unittest.TestCase):
             cmd=[sys.executable,"tests/check_native_av_screenshot.py",
                  str(a),str(b),"--require-guest-resume-retry",
                  "--witness-out",str(witness),
-                 "--nro-file",str(nro),"--source-revision","a"*40]
+                 "--nro-file",str(nro),"--source-revision","a"*40,
+                 "--github-run-id","39081974011",
+                 "--github-run-attempt","1"]
             rejected=subprocess.run(cmd,capture_output=True,text=True)
             self.assertNotEqual(rejected.returncode,0)
             self.assertFalse(witness.exists())
