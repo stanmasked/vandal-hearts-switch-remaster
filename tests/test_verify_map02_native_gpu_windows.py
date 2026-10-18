@@ -67,6 +67,66 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
     def verify(self):
         return verify_native_windows(self.root, target_frame=7)
 
+    def build_two_windows_across_recorder_capacity(self):
+        """66 synthetic hooks: one full 64-record window and one 2-record window.
+
+        A single BGR555 word changes once per pair. Endpoint n of a draw is
+        identical to the starting word of draw n+1, including at the split.
+        This allocates only locally generated, asset-free 1-MiB VRAM images.
+        """
+        second = self.root / "window-001"
+        second.mkdir(mode=0o700)
+        for window_index, count in ((0, 64), (1, 2)):
+            directory = self.window if window_index == 0 else second
+            events = []
+            for step in range(count):
+                ordinal = window_index * 32 + step // 2
+                phase = "before" if step % 2 == 0 else "after"
+                word = ordinal + (step % 2)
+                snapshot = f"gpu-{step:04d}-vram.bin"
+                data = bytearray(VRAM_BYTES)
+                data[:2] = word.to_bytes(2, "little")
+                (directory / snapshot).write_bytes(data)
+                events.append({
+                    "stage": "native_vram", "step": step, "frame": 7,
+                    "phase": phase, "operation": "draw", "snapshot": snapshot,
+                    "rect": None, "dest": [0, 0], "rgb": [200, 0, 0],
+                    "primitive_type": 1, "semi": 0,
+                    "window": [0, 0, 0, 0], "draw_mode": [0, 0, 0],
+                    "upload": "", "ft4": None,
+                })
+            (directory / "gpu-native-events.jsonl").write_bytes(
+                b"".join(jsonline(e) for e in events))
+        self.status.update(
+            windows_written=2, observed_hooks=66,
+            before_hooks=33, after_hooks=33, draw_before_hooks=33,
+            indexed_hooks=66, written_hooks=66)
+        self.save_status()
+        return second
+
+    def test_two_windows_preserve_exact_64_event_cross_window_bridge(self):
+        second = self.build_two_windows_across_recorder_capacity()
+        report = self.verify()
+        self.assertEqual(report["recorded_windows"], 2)
+        self.assertEqual(report["globally_ordered_native_gpu_events"], 66)
+        self.assertEqual(report["native_draw_pairs"], 33)
+        self.assertEqual(report["native_transfer_pairs"], 0)
+        self.assertEqual(report["vram_bridge_checks"], 32)
+        final = bytearray(VRAM_BYTES)
+        final[:2] = (33).to_bytes(2, "little")
+        self.assertEqual(
+            report["final_native_vram_sha256"], hashlib.sha256(final).hexdigest())
+        self.assertFalse(report["whole_original_gameplay_frame_proven"])
+        # Corrupt only the first pre-DRAW snapshot in window 001. The
+        # individual pairs and counts remain valid, but the cross-window
+        # endpoint is no longer equal to window 000's final VRAM.
+        first = second / "gpu-0000-vram.bin"
+        changed = bytearray(first.read_bytes())
+        changed[:2] = (777).to_bytes(2, "little")
+        first.write_bytes(changed)
+        with self.assertRaisesRegex(ValueError, "continuity broken"):
+            self.verify()
+
     def test_small_one_window_is_not_mislabeled_as_complete_gameplay(self):
         result = self.verify()
         self.assertEqual(result["recorded_windows"], 1)
