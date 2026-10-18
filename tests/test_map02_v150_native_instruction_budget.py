@@ -134,7 +134,10 @@ int main(void) {
                         result.index("psxCpu->ExecuteBlock",native))
         self.assertEqual(result.count("psxCpu->ExecuteBlock"),2)
         self.assertLess(result.index("vh125_mips_variable_dma_smoke"),
-                        result.index("vh150_arm("))
+                        result.index("if(vh150_arm(",native))
+        self.assertEqual(
+            result[:native].count("if(vh150_arm("),0,
+            "v150 budget must never arm in earlier diagnostic oracles")
         with self.assertRaises(ValueError):
             patch_frontend(result)
 
