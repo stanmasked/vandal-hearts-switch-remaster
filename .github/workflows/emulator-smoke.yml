@@ -102,7 +102,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 8
 
       # Isolated NeXium run, using the exact same game source and tests
       # validated in rehearsal PR #187. This branch modifies only this
@@ -115,7 +115,9 @@ jobs:
           # actions/checkout can own the repository differently from the
           # devkitPro container user. Trust only this checkout for these
           # read-only commands; do not weaken global git safe.directory.
-          test "$(git -c safe.directory="$PWD" rev-parse HEAD^)" = "$source_commit"
+          # Multiple workflow-only fixes can precede this run. Keep the
+          # comparison anchored to the verified source commit.
+          git -c safe.directory="$PWD" merge-base --is-ancestor "$source_commit" HEAD
           actual="$(git -c safe.directory="$PWD" diff --name-only "$source_commit" HEAD)"
           test "$actual" = ".github/workflows/emulator-smoke.yml"
           echo "### STUDIO_C NeXium rehearsal" >> "$GITHUB_STEP_SUMMARY"
