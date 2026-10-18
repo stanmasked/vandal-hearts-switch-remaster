@@ -50,6 +50,14 @@ def observe_frame(frame):
         label: marker_color(frame.getpixel((1020 + i*48, 645)))
         for i, label in enumerate(LABELS)
     }
+    # All five focus indicators are always rendered by both diagnostic
+    # NROs. Missing/unknown core tiles cannot be silently interpreted as
+    # a valid baseline, even if both manual X/Y tiles are absent.
+    if states["N"] not in ("blue", "red"):
+        raise ValueError("missing or ambiguous N notification indicator")
+    for label in ("B", "F", "P", "R"):
+        if states[label] not in ("blue", "yellow"):
+            raise ValueError("missing or ambiguous " + label + " focus indicator")
     states["X"] = marker_color(frame.getpixel((1125, 702)))
     states["Y"] = marker_color(frame.getpixel((1180, 702)))
     # The focus observer has no X/Y tiles. The manual NRO MUST have
