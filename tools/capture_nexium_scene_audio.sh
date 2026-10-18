@@ -25,12 +25,14 @@ printf '%s\n' "$NEXIUM_DATA_ROOT" > "$output/guest-sd-root.txt"
 export SCENE_PCM="$output/nexium-scenes-s16le-48k.pcm"
 export SCENE_EVENTS="$output/scene-events.csv"
 export SCENE_CONTROL_EVENTS="$output/scene-exit-controls.csv"
+export SCENE_MONOTONIC_CONTROLS="$output/scene-exit-controls-monotonic.csv"
 export SCENE_LOG="$output/nexium-scenes-run.log"
 export SCENE_DIR="$output"
 export SCENE_NRO="nros/vandal-hearts-prototype.nro"
 : > "$SCENE_PCM"
 printf 'scene,pcm_bytes,epoch_ms\n' > "$SCENE_EVENTS"
 printf 'event,pcm_bytes,host_epoch_ms\n' > "$SCENE_CONTROL_EVENTS"
+printf 'event,pcm_bytes,host_epoch_ms,host_monotonic_ns\n' > "$SCENE_MONOTONIC_CONTROLS"
 parec --device=vh_nexium_capture.monitor --rate=48000 \
   --channels=2 --format=s16le --raw > "$SCENE_PCM" \
   2> "$output/scene-parec.log" &
@@ -88,11 +90,12 @@ timeout --kill-after=5s 65s xvfb-run -a -s '-screen 0 1280x720x24' bash -c '
     sleep 0.2
   }
   host_control_event() {
-    # The recorder file stat is HOST BUFFERED, not a guest sample timestamp.
-    local label="$1" bytes millis
-    bytes="$(stat -c %s "$SCENE_PCM")"
-    millis="$(date +%s%3N)"
-    printf "%s,%s,%s\n" "$label" "$bytes" "$millis" >> "$SCENE_CONTROL_EVENTS"
+    # Capture both host clocks in one process. Legacy CSV stays byte-schema
+    # compatible with strict Stage304. No guest/DAC clock conversion.
+    python3 tools/audit_nexium_host_clock_pairs.py record \
+      --event "$1" --pcm "$SCENE_PCM" \
+      --legacy "$SCENE_CONTROL_EVENTS" \
+      --dual "$SCENE_MONOTONIC_CONTROLS"
   }
   snapshot field_initial
   sleep 6
