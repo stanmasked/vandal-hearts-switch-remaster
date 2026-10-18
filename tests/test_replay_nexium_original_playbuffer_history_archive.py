@@ -11,6 +11,7 @@ sys.path.insert(0,str(ROOT/"tools"))
 sys.path.insert(0,str(ROOT/"tests"))
 
 from audit_switch_guest_scene_trace import TraceError
+from audit_nexium_guest_exit_timeline import SUBDIR
 from audit_nexium_guest_playbuffer_history import (
     HEADER, audit_source as audit_guest_history,
 )
@@ -41,7 +42,7 @@ class Stage323OriginalRollingHistoryTests(unittest.TestCase):
         ).encode()
         self.history_doc=audit_guest_history(self.history,self.receipt)
         self.history_doc["original_guest_history_source_observed"]=True
-        self.history_doc["original_guest_history_source_path"]="switch/vandal-hearts-remake/"+SOURCE
+        self.history_doc["original_guest_history_source_path"]=str(SUBDIR/SOURCE)
         self.history_doc["original_guest_history_bytes_preserved"]=True
         (self.root/SOURCE).write_bytes(self.history)
         (self.root/CAPTURE).write_text(json.dumps(self.history_doc)+"\n")
