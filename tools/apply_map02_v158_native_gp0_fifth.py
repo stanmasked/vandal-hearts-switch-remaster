@@ -66,11 +66,16 @@ def patch_memory(source: str) -> str:
         "void vh140_mmio_enable(unsigned mutate_expected) {\n",
         gp0_observer_c()+"void vh140_mmio_enable(unsigned mutate_expected) {\n",
         "place dedicated source-derived GP0 observer in pinned PS1 memory writer")
+    # v138_pc_observe() exits when the independently opted-in v138
+    # capture is disabled. Inserting the GP0 call before v147_capture()
+    # would put it INSIDE that inactive observer, silently losing every
+    # valid fifth SW. Hook directly in the unconditional psxMemWrite32
+    # entry instead; keep the old v138-v147 observer paths untouched.
     return once(source,
-        "    if(vh147_active) vh147_capture(regs,addr,value);\n",
-        "    if(vh158_gp0_active) vh158_capture_gp0(regs,addr,value);\n"
-        "    if(vh147_active) vh147_capture(regs,addr,value);\n",
-        "observe native fifth MIPS SW before MMIO side effects")
+        "    vh138_pc_observe(regs,mem,value);\n",
+        "    if(vh158_gp0_active) vh158_capture_gp0(regs,mem,value);\n"
+        "    vh138_pc_observe(regs,mem,value);\n",
+        "observe native fifth MIPS SW before v138 optional observer early return")
 
 
 def patch_interpreter(source: str) -> str:
