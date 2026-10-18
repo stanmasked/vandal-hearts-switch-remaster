@@ -680,3 +680,22 @@ joining (mocking only the unavailable original FT4/VRAM witness),
 wrong native frame, falsely positive provenance, same-byte
 reference inode substitution during the independent source replay,
 incomplete witness arguments and invalid compiler selection.
+
+### Sanitized private capture command diagnostics
+
+The one-shot local capture CLI now routes expected filesystem errors,
+timeout exceptions, and internal validation failures through a bounded
+failure-category formatter. A missing private ELF, absent source
+reference, or error message from an untrusted witness will no longer
+cause the CLI to echo the original absolute filenames in its stderr.
+Recognized error categories such as SHA-256 mismatch and incomplete
+original-witness arguments are preserved without embedding caller
+paths; other errors use a generic validation-failed category.
+
+Three asset-free regressions check missing ELF/reference paths and
+deliberately path-bearing arbitrary exception messages. This affects
+the command's displayed **error** text, not its validation behavior or
+the existing digest-only successful report. The CLI command line
+supplied by the user may still be visible through the local shell
+history/process listing; this tool does not promise secrecy from
+local administrators or other privileged processes.
