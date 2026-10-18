@@ -1,0 +1,33 @@
+name: MAP02 v163 host-only Unai 4x4 VRAM rectangle smoke
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v163-host-unai-rectangle.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v163_host_unai_rectangle.py'
+      - 'tests/test_map02_v163_host_unai_rectangle.py'
+      - 'tools/apply_map02_v162_gpulib_parse_flush.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  host-rectangle:
+    name: host-only Unai rectangle pixel accounting (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile host-only VRAM readback checks and prior GPU witnesses
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v163_host_unai_rectangle.py tests/test_map02_v163_host_unai_rectangle.py
+          python3 -m unittest discover -s tests -p 'test_map02_v163_host_unai_rectangle.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v162_gpulib_parse_flush.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v161_gpulib_queue.py' -v
+          echo 'VH163_COMPILED_HOST_RECT_PASS original_retail_executed=0 mips_raster=0 switch_hd_parity=0'
