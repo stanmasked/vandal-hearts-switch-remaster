@@ -7,7 +7,9 @@ pixel capture, source-disc authenticity or PS1 raster equivalence.
 """
 import argparse
 import json
+import os
 from pathlib import Path
+import stat
 
 from tools.compare_map02_private_bgr555_frames import compare
 from tools.audit_map02_launch_two_word_binding import audit_launch_two_word
@@ -33,12 +35,52 @@ FALSE_FIELDS = (
 )
 
 
+FRAME_PAIR_FILES = ("frames.json", "reference.bgr555", "candidate.bgr555")
+
+
+def _private_frame_pair_identity(directory):
+    """Snapshot directory + all 3 file inodes without exposing private paths.
+
+    SHA-256 proves byte equality, not stable file identity: another process
+    can swap a complete same-byte replacement during the native GPU audit.
+    No stat/file identities are returned in public reports.
+    """
+    root = Path(directory).absolute()
+    fd = os.open(root, os.O_RDONLY | os.O_CLOEXEC |
+                 os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        directory_before = os.fstat(fd)
+        if not stat.S_ISDIR(directory_before.st_mode):
+            raise ValueError("MAP02 private pair directory is not regular directory")
+        def identity(info):
+            return (info.st_dev, info.st_ino, info.st_mode, info.st_nlink,
+                    info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+        files = []
+        for name in FRAME_PAIR_FILES:
+            item = os.stat(name, dir_fd=fd, follow_symlinks=False)
+            if not stat.S_ISREG(item.st_mode):
+                raise ValueError("MAP02 private pair has symlink or nonregular file")
+            if item.st_nlink != 1:
+                raise ValueError("MAP02 private frame hardlink not allowed")
+            files.append(identity(item))
+        if (identity(os.fstat(fd)) != identity(directory_before)
+                or identity(os.stat(root, follow_symlinks=False))
+                != identity(directory_before)):
+            raise ValueError("MAP02 private pair directory changed during identity audit")
+        return (identity(directory_before), tuple(files))
+    finally:
+        os.close(fd)
+
+
 def bridge(frame_pair_dir, native_dir, source_dir, *, launch_receipt,
            preflight_report, executable, compiler="gcc"):
     """Run two real validators; never consume a caller-authored audit summary."""
     if compiler not in ("gcc", "clang"):
         raise ValueError("MAP02 comparison compiler selector invalid")
+    file_identity_before = _private_frame_pair_identity(frame_pair_dir)
     before = compare(frame_pair_dir)
+    if _private_frame_pair_identity(frame_pair_dir) != file_identity_before:
+        raise ValueError("MAP02 frame pair changed during native witness replay")
     native = audit_launch_two_word(
         native_dir, source_dir,
         launch_receipt=launch_receipt, preflight_report=preflight_report,
@@ -62,7 +104,8 @@ def bridge(frame_pair_dir, native_dir, source_dir, *, launch_receipt,
     # Catch even a self-consistent replacement of both a raw image and its
     # manifest while the independent native/source replay was running.
     after = compare(frame_pair_dir)
-    if before != after:
+    if (before != after or
+            _private_frame_pair_identity(frame_pair_dir) != file_identity_before):
         raise ValueError("MAP02 frame pair changed during native witness replay")
     return {
         "schema": "vh.map02.private-frame-native-join.v1",
