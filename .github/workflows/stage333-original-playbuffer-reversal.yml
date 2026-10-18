@@ -1,0 +1,105 @@
+name: Stage333 source-authentic PlayBuffer finite-sample median reversal
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage333-original-playbuffer-reversal.yml'
+      - 'tools/audit_nexium_stage333_original_playbuffer_reversal_threshold.py'
+      - 'tests/test_audit_nexium_stage333_original_playbuffer_reversal_threshold.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  original-finite-sample-boundary:
+    name: Source-audit exact first deletion count reversing original guest PlayBuffer final-call median
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - name: Checkout original guest software PlayBuffer auditors
+        uses: actions/checkout@v4
+      - name: Twelve Stage333 positive and negative source-provenance tests
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/audit_nexium_stage333_original_playbuffer_reversal_threshold.py tests/test_audit_nexium_stage333_original_playbuffer_reversal_threshold.py
+          python3 -m unittest discover -s tests -p 'test_audit_nexium_stage333_original_playbuffer_reversal_threshold.py' -v
+      - name: Confirm both original full NeXium runs succeeded
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for id in 39166023593 39167324026; do
+            test "$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$id" --jq '.status')" = completed
+            test "$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$id" --jq '.conclusion')" = success
+          done
+      - name: Download first original guest audout source archive
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39166023593
+          github-token: ${{ github.token }}
+          path: original-first-guest
+      - name: Download second original guest audout source archive
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39167324026
+          github-token: ${{ github.token }}
+          path: original-second-guest
+      - name: Recompute source-authentic earliest median reversal within 0-to-5 original omissions
+        run: |
+          set -euo pipefail
+          mkdir -p stage333-guest-threshold
+          python3 tools/audit_nexium_stage333_original_playbuffer_reversal_threshold.py \
+            --first-root original-first-guest \
+            --second-root original-second-guest \
+            --first-history-sha256 72eb03e4508e2f8f7814f8b059aa5bfba69c71bbdac9f495ffab447d23fc345d \
+            --second-history-sha256 795c751e11449b0d0e0938031c540890eac23058e3a50c49ac2be9f622950a07 \
+            --first-last-sha256 fdc3ab8bcc5908ccb61c149ba185435fb5ab4a6409d33a43c02e7a179caf4aec \
+            --second-last-sha256 2559938d1f86f8812405e2d3b1573398109450663188000bf1d58c8c965031e9 \
+            --output stage333-guest-threshold/first-guest-software-median-reversal.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          doc=json.loads(Path(
+            'stage333-guest-threshold/first-guest-software-median-reversal.json'
+          ).read_text(encoding='utf-8'))
+          if (doc['result']!='TWO_PINNED_ORIGINAL_PLAYBUFFER_FINITE_SAMPLE_REVERSAL_THRESHOLDS_VERIFIED'
+              or doc['all_original_stage328_to_332_source_audits_recomputed'] is not True
+              or doc['all_four_original_guest_CSV_SHA256_digests_checked'] is not True
+              or doc['original_guest_software_subsets_per_capture']!=4944
+              or doc['physical_Nintendo_Switch_audio_measured'] is not False):
+              raise SystemExit('original Stage333 source authenticity or scope not confirmed')
+          rows=doc['cohorts']
+          if len(rows)!=2:
+              raise SystemExit('original NeXium capture count differs')
+          for source in rows:
+            levels=source['deletion_levels']
+            if ([x['subset_count'] for x in levels]!=[1,15,105,455,1365,3003]
+                or sum(x['subset_count'] for x in levels)!=4944):
+              raise SystemExit('Stage333 failed original software subset conservation')
+            for x in levels:
+              if (x['subsets_with_final_strictly_shorter_than_median']
+                  +x['subsets_with_final_equal_to_median']
+                  +x['subsets_with_final_longer_than_median']!=x['subset_count']):
+                raise SystemExit('Stage333 original software outcome accounting rejected')
+            print(source['original_guest_history_sha256'],
+                  'previous shorter/equal/longer than last',
+                  source['prior_calls_shorter_equal_longer_than_last'],
+                  'first source reversal k',
+                  source['first_checked_deletion_k_with_final_not_strictly_below_median'],
+                  'at k=5 final shorter/equal/longer',
+                  levels[5]['subsets_with_final_strictly_shorter_than_median'],
+                  levels[5]['subsets_with_final_equal_to_median'],
+                  levels[5]['subsets_with_final_longer_than_median'])
+          PY
+          echo "Stage333: finite original guest software-call omission boundary; 4944 deterministic subsets per cohort, NOT new gameplay sessions, physical audio, or a soundtrack test." >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload only compact source-pinned guest software-call reversal analysis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage333-original-playbuffer-median-reversal
+          path: stage333-guest-threshold/
+          if-no-files-found: warn
