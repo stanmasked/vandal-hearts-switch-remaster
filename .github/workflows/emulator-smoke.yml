@@ -13,6 +13,10 @@ on:
       - 'source/vh_switch_game_audio.h'
       - 'source/vh_audio_exit_timeline.h'
       - 'source/vh_audio_exit_output_witness.h'
+      - 'source/vh_audio_exit_worker_stop_witness.h'
+      - 'tools/audit_nexium_guest_worker_stop_observed.py'
+      - 'tests/test_audit_nexium_guest_worker_stop_observed.py'
+      - 'tests/test_vh_audio_exit_worker_stop_witness.c'
       - 'tools/audit_nexium_guest_last_buffer_return.py'
       - 'tools/preserve_nexium_guest_last_buffer_original.py'
       - 'tests/test_preserve_nexium_guest_last_buffer_original.py'
@@ -823,6 +827,45 @@ jobs:
                 "buffer release confirmed:",r["tail_release_confirmed"])
           PY
           echo "Stage313: actual original guest last audout release and optional bounded exit taper compared on the common guest software clock with Plus, stop, cleanup and audout close. RELEASE is NOT DAC or audible playback; no host PCM calibration or retail audio proof." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage317 independently measure when worker observes stop flag after returned PCM page
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_guest_worker_stop_observed.py \
+            --guest-root-file runtime-evidence/guest-sd-root.txt \
+            --output runtime-evidence/guest-worker-stop-observed-stage317.json \
+            --output-original runtime-evidence/audio-exit-worker-stop-000.csv
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          r=json.loads(Path("runtime-evidence/guest-worker-stop-observed-stage317.json").read_text())
+          source=Path("runtime-evidence/audio-exit-worker-stop-000.csv")
+          if (r["schema"]!="vh-guest-worker-stop-mailbox-observation/v1"
+                  or r["result"]!="GUEST_WORKER_STOP_OBSERVED_BETWEEN_LAST_PAGE_AND_CLEANUP"
+                  or r["original_worker_stop_source_observed"] is not True
+                  or r["original_worker_stop_csv_bytes_preserved"] is not True
+                  or not source.is_file() or source.is_symlink()
+                  or hashlib.sha256(source.read_bytes()).hexdigest()!=
+                     r["original_guest_worker_stop_csv_sha256"]
+                  or r["last_page_return_to_worker_observation_ns"]<0
+                  or r["stop_request_to_worker_observation_ns"]<0
+                  or r["worker_observation_to_cleanup_ns"]<0
+                  or r["guest_to_host_PCM_sample_clock_calibrated"] is not False
+                  or r["audible_dropout_or_original_soundtrack_verified"] is not False
+                  or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage317 authentic worker stop receipt / chronology not verified")
+          print("Stage317 measured guest software intervals (ns):",
+                {"stop_request_to_last_page":
+                    r["guest_stop_requested_to_last_page_return_ns"],
+                 "last_page_to_worker_observation":
+                    r["last_page_return_to_worker_observation_ns"],
+                 "worker_observation_to_cleanup":
+                    r["worker_observation_to_cleanup_ns"]})
+          print("Stage317 byte-preserved original worker stop CSV:",
+                r["original_guest_worker_stop_csv_sha256"])
+          PY
+          echo "Stage317: the ORIGINAL guest worker-stop mailbox observation is measured between last returned audout buffer and audio cleanup on the same guest software clock. Guest SD original bytes saved, SHA-256 checked. This does not measure soundcard PCM, DAC or speaker latency." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Stage308 independently source-verify guest optical scene clocks versus guest exit
         shell: bash
