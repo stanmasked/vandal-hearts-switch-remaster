@@ -1430,6 +1430,41 @@ jobs:
             > proof/private/v155-invalid.log 2>&1 || invalid_rc=$?
           test "$invalid_rc" -eq 59
           grep -Fx 'VH155_INVALID_MODE_REFUSED' proof/private/v155-invalid.log
+          # Invalid: mutation flag without the four-word unlock must refuse.
+          mkdir -m 700 proof/v155-missing-four-home
+          no_four_rc=0
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v155-missing-four-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh129-vblank-04 --vh150-bounded-instructions \
+            --vh155-mutate-fourth-word \
+            proof/private/V129_SYNTHETIC.EXE \
+            > proof/private/v155-missing-four.log 2>&1 || no_four_rc=$?
+          test "$no_four_rc" -eq 59
+          grep -Fx 'VH155_INVALID_MODE_REFUSED' proof/private/v155-missing-four.log
+          # Invalid: crossing v154 third-word and v155 four-word mutation
+          # switches must refuse before any original synthetic guest opcode.
+          mkdir -m 700 proof/v155-mixed-mode-home
+          mixed_rc=0
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v155-mixed-mode-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh129-vblank-04 --vh150-bounded-instructions \
+            --vh154-mutate-third-word \
+            --vh155-four-instructions --vh155-mutate-fourth-word \
+            proof/private/V129_SYNTHETIC.EXE \
+            > proof/private/v155-mixed-mode.log 2>&1 || mixed_rc=$?
+          test "$mixed_rc" -eq 59
+          grep -Fx 'VH155_INVALID_MODE_REFUSED' proof/private/v155-mixed-mode.log
+          for rejected in proof/private/v155-invalid.log \
+            proof/private/v155-missing-four.log proof/private/v155-mixed-mode.log; do
+            if grep -Eq 'VH155_NATIVE_FOUR_STEP_PASS|VH155_NATIVE_FOURTH_WORD_REFUSED' "$rejected"; then
+              echo 'VH155_UNAUTHORIZED_FOUR_WORD_ACCEPT_REFUSED'
+              exit 1
+            fi
+          done
           sha256sum -c proof/private/v150-synthetic-before.sha256
           # v154: mutate third PS1 guest instruction after the first two
           # unmodified source-authored words are verified and dispatched.
