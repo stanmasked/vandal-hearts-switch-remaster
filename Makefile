@@ -27,6 +27,11 @@ CFLAGS   := -g -Wall -Wextra -O2 -fPIE -ffunction-sections -fdata-sections -I$(D
 # phase0 so existing NRO provenance and slow-call audit are unmodified.
 AUDOUT_PROBE_PHASE ?= 0
 CFLAGS += -DVH_AUDOUT_PROBE_PHASE=$(AUDOUT_PROBE_PHASE)
+# Experimental gameplay music carry-over; standard NRO remains 0.
+# Always use an isolated BUILD directory for variant builds because
+# make does not consider CFLAGS changes when reusing the same .elf.
+GAME_AUDIO_WET_TAIL ?= 0
+CFLAGS += -DVH_GAME_AUDIO_WET_TAIL=$(GAME_AUDIO_WET_TAIL)
 LDFLAGS  := -specs=$(DEVKITPRO)/libnx/switch.specs -Wl,--gc-sections -pie
 LDLIBS   := -L$(DEVKITPRO)/libnx/lib -lnx
 
