@@ -221,7 +221,7 @@ def _compiler_evidence():
                     capture_output=True, text=True, timeout=20, check=False)
             except (OSError, subprocess.TimeoutExpired) as exc:
                 raise ValueError("MAP02 compiler tool resolution failed") from exc
-            if p.returncode or not p.stdout.strip() or "\\n" in p.stdout.strip():
+            if p.returncode or not p.stdout.strip() or chr(10) in p.stdout.strip():
                 raise ValueError("MAP02 compiler tool resolution failed")
             candidate = p.stdout.strip()
             if not Path(candidate).is_absolute():
@@ -246,7 +246,7 @@ def _system_header_evidence(dependency_files, pc, stage):
         data = auditor._stable_regular_bytes(
             dependency_file, max_bytes=DEPENDENCY_LIMIT)
         try:
-            raw = data.decode("utf-8").replace("\\\\n", " ")
+            raw = data.decode("utf-8").replace(chr(92) + chr(10), " ")
             target, sep, dependencies = raw.partition(": ")
             paths = shlex.split(dependencies)
         except (UnicodeError, ValueError) as exc:
@@ -275,7 +275,7 @@ def _system_header_evidence(dependency_files, pc, stage):
             systems[entry] = sha
     if not systems:
         raise ValueError("MAP02 system header dependency inventory empty")
-    joined = "\\n".join(k + " " + v for k,v in sorted(systems.items()))
+    joined = chr(10).join(k + " " + v for k,v in sorted(systems.items()))
     return {"count": len(systems),
             "sha256": hashlib.sha256(joined.encode("utf-8")).hexdigest()}
 
