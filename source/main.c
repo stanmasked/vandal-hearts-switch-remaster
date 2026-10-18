@@ -400,20 +400,25 @@ int main(int argc, char **argv) {
             if(errno!=EEXIST) break;
         }
         if(exit_fd<0) {
-            fprintf(stderr,"guest exit timeline exclusive SD open failed\n");
-            export_status=2;
+            /* Optional guest transport cannot change the outcome of
+             * the already completed game/audio shutdown. Host auditor
+             * reports missing evidence explicitly, never synthesizes it. */
+            fprintf(stderr,"guest exit timeline SD transport unavailable\n");
         } else {
             FILE *exit_stream=fdopen(exit_fd,"w");
             if(!exit_stream) {
                 (void)close(exit_fd);
-                export_status=2;
+                (void)unlink(exit_path);
+                fprintf(stderr,"guest exit timeline SD stream unavailable\n");
             } else {
                 const int exit_rows=vh_switch_game_audio_exit_dump(exit_stream);
                 const int exit_flush=fflush(exit_stream);
                 const int exit_close=fclose(exit_stream);
                 if(exit_rows!=5 || exit_flush!=0 || exit_close!=0) {
-                    fprintf(stderr,"guest exit timeline SD write failed\n");
-                    export_status=2;
+                    /* A malformed/partial guest receipt must NOT survive
+                     * as if it were an independently measured timeline. */
+                    (void)unlink(exit_path);
+                    fprintf(stderr,"guest exit timeline SD write unavailable\n");
                 }
             }
         }
