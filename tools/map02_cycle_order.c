@@ -123,7 +123,11 @@ static int same_inode(const struct stat *a, const struct stat *b) {
     return a->st_dev == b->st_dev && a->st_ino == b->st_ino;
 }
 static int same_contents_metadata(const struct stat *a, const struct stat *b) {
-    return same_inode(a, b) && a->st_size == b->st_size &&
+    /* chmod/chown/link changes are part of evidence identity, even if the
+     * inode and receipt bytes stay the same between fsync/read passes. */
+    return same_inode(a, b) && a->st_uid == b->st_uid &&
+           a->st_mode == b->st_mode && a->st_nlink == b->st_nlink &&
+           a->st_size == b->st_size &&
            a->st_mtim.tv_sec == b->st_mtim.tv_sec &&
            a->st_mtim.tv_nsec == b->st_mtim.tv_nsec &&
            a->st_ctim.tv_sec == b->st_ctim.tv_sec &&
