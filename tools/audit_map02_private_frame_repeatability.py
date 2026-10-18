@@ -162,6 +162,7 @@ def audit(first_frame, first_journal, second_frame, second_journal, executable):
             "changed_scanlines": lines,
             "stp_bit_differences": stp,
             "repeated_native_frame_pixels_identical": different == 0,
+            "repeated_gpu_final_vram_identical": different == 0,
             "repeated_gpu_event_journal_identical":
                 a["gpu_journal_sha256"] == b["gpu_journal_sha256"],
             "two_full_replays_per_capture_verified": True,

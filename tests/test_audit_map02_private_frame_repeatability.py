@@ -72,6 +72,7 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
     def test_two_independent_real_native_captures_are_bit_exact(self):
         result = self.run_repeat()
         self.assertTrue(result["repeated_native_frame_pixels_identical"])
+        self.assertTrue(result["repeated_gpu_final_vram_identical"])
         self.assertTrue(result["repeated_gpu_event_journal_identical"])
         self.assertTrue(result["two_full_replays_per_capture_verified"])
         self.assertTrue(result["four_private_file_inventories_stable_through_replays"])
@@ -94,8 +95,13 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
         self.assertEqual(out["different_bgr555_pixels"], 1)
         self.assertEqual(out["changed_scanlines"], 1)
         self.assertEqual(out["stp_bit_differences"], 0)
-        self.assertFalse(out["repeated_gpu_event_journal_identical"] or
-                         out["repeated_native_frame_pixels_identical"])
+        self.assertNotEqual(out["first_image_sha256"],
+                            out["second_image_sha256"])
+        self.assertFalse(out["repeated_gpu_final_vram_identical"])
+        # Event JSONL captures draw order and attributes, but NOT raw
+        # post-draw VRAM pixels. The same two events can write different
+        # pixels while the JSONL digest stays byte-identical.
+        self.assertTrue(out["repeated_gpu_event_journal_identical"])
 
     def test_overlapping_capture_roles_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "directory roles overlap"):
