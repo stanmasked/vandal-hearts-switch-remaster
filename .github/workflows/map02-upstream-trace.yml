@@ -135,6 +135,9 @@ on:
       - 'tests/test_verify_map02_published_receipt.py'
       - 'tools/map02_external_custody.py'
       - 'tests/test_map02_external_custody.py'
+      - 'tools/compare_map02_private_bgr555_frames.py'
+      - 'tests/test_compare_map02_private_bgr555_frames.py'
+      - 'docs/MAP02_PRIVATE_BGR555_FRAME_DIFF.md'
       - 'tests/test_consume_map02_sealed_gpu_objects.py'
       - 'tools/audit_map02_putpixel_samples.py'
       - 'tools/verify_map02_camera_capture.py'
@@ -446,6 +449,10 @@ jobs:
           path: /tmp/vh-map02-sealed-chain.json
           if-no-files-found: error
           retention-days: 14
+
+      - name: Run asset-free private MAP02 frame differential regressions
+        working-directory: remaster
+        run: python3 -m unittest discover -s tests -p 'test_compare_map02_private_bgr555_frames.py' -v
 
       - name: Run patch generator regression tests
         working-directory: remaster
