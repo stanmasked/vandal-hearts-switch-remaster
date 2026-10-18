@@ -55,6 +55,9 @@ on:
       - 'tests/test_verify_map02_dda_native_spans.py'
       - '.github/workflows/map02-dda-span.yml'
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   native-span:
     runs-on: ubuntu-latest
