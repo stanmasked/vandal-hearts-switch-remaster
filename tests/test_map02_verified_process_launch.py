@@ -45,6 +45,7 @@ int main(int argc, char **argv) {
     if (getenv("VH_TEST_SKIP_DISC_FD")) { sleep(1); return 0; }
     disc = fopen(getenv("VH_DISC_IMAGE"), "rb");
     if (!disc) return 3;
+    if (fgetc(disc) != 'f') { fclose(disc); return 5; }
     sleep(1); /* real procfs inspection requires a live descriptor */
     if (fclose(disc) != 0) return 4;
     return 0;
@@ -305,8 +306,8 @@ int main(int argc, char **argv) {
         original_probe = launcher._kernel_observes_game_fd
         exchanged = []
 
-        def replace_image_after_kernel_observation(pid, expected):
-            observed = original_probe(pid, expected)
+        def replace_image_after_kernel_observation(pid, expected, *, excluded_fd=None):
+            observed = original_probe(pid, expected, excluded_fd=excluded_fd)
             if observed and not exchanged:
                 self.owned.replace(old_image)
                 shutil.copyfile(old_image, self.owned)
@@ -336,6 +337,98 @@ int main(int argc, char **argv) {
                 self.owned.unlink(missing_ok=True)
                 old_image.replace(self.owned)
         self.assertTrue(exchanged)
+        self.assertFalse((self.handoff / RECEIPT).exists())
+
+    def test_inherited_cycle_image_fd_is_not_mistaken_for_child_open(self):
+        expected_stat = self.owned.stat()
+        expected = (expected_stat.st_dev, expected_stat.st_ino,
+                    expected_stat.st_size)
+        inherited = os.open(self.owned, os.O_RDONLY | os.O_NOFOLLOW)
+        try:
+            self.assertFalse(launcher._kernel_observes_game_fd(
+                os.getpid(), expected, excluded_fd=inherited))
+            separate_open = os.open(self.owned, os.O_RDONLY | os.O_NOFOLLOW)
+            try:
+                self.assertTrue(launcher._kernel_observes_game_fd(
+                    os.getpid(), expected, excluded_fd=inherited))
+            finally:
+                os.close(separate_open)
+        finally:
+            os.close(inherited)
+
+    def test_cycle_disc_path_swap_during_spawn_cannot_redirect_child_cd_mount(self):
+        cycle = self.handoff.parent / "cycle-image-spawn-race"
+        cycle.mkdir(mode=0o700)
+        original_popen = subprocess.Popen
+        original = self.owned.with_suffix(".original-image")
+        forwarded = []
+
+        def substitute_path_at_spawn(*args, **kwargs):
+            exec_fd, image_fd = kwargs["pass_fds"]
+            self.assertEqual(kwargs["executable"], f"/proc/self/fd/{exec_fd}")
+            self.assertEqual(kwargs["env"]["VH_DISC_IMAGE"],
+                             f"/proc/self/fd/{image_fd}")
+            pinned_inode = os.fstat(image_fd).st_ino
+            self.owned.replace(original)
+            self.owned.write_bytes(b"untrusted replacement bytes, not the original image")
+            self.owned.chmod(0o600)
+            self.assertNotEqual(self.owned.stat().st_ino, pinned_inode)
+            forwarded.append(pinned_inode)
+            # The child reads a sentinel 'f' from the original inode. A
+            # reopened mutable pathname would read 'u' and exit with code 5.
+            return original_popen(*args, **kwargs)
+
+        try:
+            with patch(
+                    "tools.check_map02_cycle_elf.audit_cycle_elf",
+                    return_value={"required_symbols_present": 19}), patch(
+                    "tools.map02_cycle_build_provenance.verify_build_receipt",
+                    return_value={"source_pinned_full_elf_bytes_checked": True}), patch(
+                    "tools.map02_verified_process_launch.subprocess.Popen",
+                    side_effect=substitute_path_at_spawn):
+                with self.assertRaisesRegex(ValueError, "game-image identity changed during run"):
+                    launch_observed_pc(
+                        self.handoff, self.native, self.scoped,
+                        self.binary, self.owned, upstream=self.upstream,
+                        x=10, y=20, timeout=8, cycle_dir=cycle,
+                        build_receipt_dir=self.handoff.parent / "receipt",
+                        build_bundle_dir=self.handoff.parent / "bundle")
+        finally:
+            if original.exists():
+                self.owned.unlink(missing_ok=True)
+                original.replace(self.owned)
+        self.assertEqual(len(forwarded), 1)
+        self.assertFalse((self.handoff / RECEIPT).exists())
+
+    def test_cycle_spawn_error_closes_both_pinned_descriptors(self):
+        cycle = self.handoff.parent / "cycle-spawn-closed"
+        cycle.mkdir(mode=0o700)
+        passed_fds = []
+
+        def fail_popen(*args, **kwargs):
+            passed_fds.extend(kwargs["pass_fds"])
+            for descriptor in passed_fds:
+                os.fstat(descriptor)  # still open while Popen is called
+            raise ValueError("synthetic spawn failure")
+
+        with patch(
+                "tools.check_map02_cycle_elf.audit_cycle_elf",
+                return_value={"required_symbols_present": 19}), patch(
+                "tools.map02_cycle_build_provenance.verify_build_receipt",
+                return_value={"source_pinned_full_elf_bytes_checked": True}), patch(
+                "tools.map02_verified_process_launch.subprocess.Popen",
+                side_effect=fail_popen):
+            with self.assertRaisesRegex(ValueError, "synthetic spawn failure"):
+                launch_observed_pc(
+                    self.handoff, self.native, self.scoped,
+                    self.binary, self.owned, upstream=self.upstream,
+                    x=10, y=20, timeout=8, cycle_dir=cycle,
+                    build_receipt_dir=self.handoff.parent / "receipt",
+                    build_bundle_dir=self.handoff.parent / "bundle")
+        self.assertEqual(len(passed_fds), 2)
+        for descriptor in passed_fds:
+            with self.assertRaises(OSError):
+                os.fstat(descriptor)
         self.assertFalse((self.handoff / RECEIPT).exists())
 
     def test_cycle_image_rejects_changed_second_read_without_metadata_change(self):
@@ -468,9 +561,12 @@ int main(int argc, char **argv) {
             forwarded.append(kwargs["env"].get("VH_MAP02_CYCLE_OUTPUT_DIR"))
             # The actual ELF is opened by /proc/self/fd, not by the mutable
             # original pathname. Popen must inherit the pinned descriptor.
-            descriptor, = kwargs["pass_fds"]
-            self.assertEqual(kwargs["executable"], f"/proc/self/fd/{descriptor}")
-            self.assertEqual(os.fstat(descriptor).st_ino, self.binary.stat().st_ino)
+            exec_fd, image_fd = kwargs["pass_fds"]
+            self.assertEqual(kwargs["executable"], f"/proc/self/fd/{exec_fd}")
+            self.assertEqual(kwargs["env"]["VH_DISC_IMAGE"],
+                             f"/proc/self/fd/{image_fd}")
+            self.assertEqual(os.fstat(exec_fd).st_ino, self.binary.stat().st_ino)
+            self.assertEqual(os.fstat(image_fd).st_ino, self.owned.stat().st_ino)
             return original_popen(*args, **kwargs)
 
         # This test exercises only launcher wiring and nonce checking:
@@ -565,8 +661,9 @@ int main(int argc, char **argv) {
         forwarded_inode = []
 
         def replace_path_before_exec(*args, **kwargs):
-            descriptor, = kwargs["pass_fds"]
+            descriptor, image_fd = kwargs["pass_fds"]
             self.assertEqual(kwargs["executable"], f"/proc/self/fd/{descriptor}")
+            self.assertEqual(kwargs["env"]["VH_DISC_IMAGE"], f"/proc/self/fd/{image_fd}")
             expected_inode = os.fstat(descriptor).st_ino
             self.binary.replace(saved)
             # Identical executable bytes but a DIFFERENT inode. The child
