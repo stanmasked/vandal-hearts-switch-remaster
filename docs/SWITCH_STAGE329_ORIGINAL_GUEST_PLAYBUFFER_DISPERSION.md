@@ -19,6 +19,31 @@ capture. No audio synthesis or game runtime change is made.
 | Last minus prior median | −20,928,074 ns | −8,894,583 ns |
 | Original retained normal software calls | 16 | 16 |
 
+## First independent real-source results
+
+[Stage329 CI #39171613825](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39171613825)
+**passed twelve out of twelve synthetic tests** and computed these
+source-authentic statistics from the two original NeXium artifacts:
+
+| Previous fifteen original guest software calls | First capture | Second capture |
+| --- | ---: | ---: |
+| Minimum | 15,858,229 ns | 15,655,104 ns |
+| Lower median | 32,154,011 ns | 31,247,083 ns |
+| Maximum | 37,061,302 ns | 41,150,677 ns |
+| Range | 21,203,073 ns | 25,495,573 ns |
+| Median absolute deviation | 727,969 ns | 5,297,032 ns |
+| Last successful software-call duration | 11,225,937 ns | 22,352,500 ns |
+| Earlier calls faster than last | 0 | 5 |
+| Earlier calls equal to last | 0 | 0 |
+| Earlier calls slower than last | 15 | 10 |
+| First possible insertion rank among sixteen | 1 | 6 |
+
+The median absolute deviation in the second capture is larger in
+these fifteen retained software-call samples, but these are only
+two very small final-session cohorts. The rank convention was
+subsequently renamed for clarity without changing its arithmetic.
+A newer CI run must confirm that final label change separately.
+
 The previous distribution statistics (min, max, range,
 `median_low(abs(previous−median_low(previous)))`, counts of previous
 calls faster/equal/slower than last, and the **first possible insertion
