@@ -247,6 +247,35 @@ class PhysicalScreenshotPixelTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"non-contiguous"):
             observe_frame(broken)
 
+    def test_blue_pcm_requires_matched_unsaturated_focus_tallies(self):
+        # B can legitimately lead F while the app is in the background,
+        # but P cannot be blue until the paired foreground return occurs.
+        for b,f in ((1,0),(2,1),(5,4)):
+            with self.subTest(b=b,f=f):
+                with self.assertRaisesRegex(
+                        ValueError,"post-return PCM marker has unmatched B/F"):
+                    observe_frame(frame(b=b,f=f,p=True))
+        # Pending state remains an admissible observation, not proof.
+        self.assertEqual(
+            observe_frame(frame(b=2,f=1,p=False))["indicators"]["P"],
+            "yellow")
+        # After saturation, 5/5 means 5+ each: equality cannot be
+        # established from pixels, so never invent an exact count.
+        self.assertEqual(
+            observe_frame(frame(b=7,f=6,p=True))[
+                "tallies_capped_at_five"]["B"],5)
+        self.assertEqual(
+            observe_frame(frame(b=2,f=2,p=True))["indicators"]["P"],
+            "blue")
+
+    def test_unpaired_return_pixels_cannot_certify_focus_cycle(self):
+        before=frame()
+        after=frame(b=2,f=1,p=True)
+        with self.assertRaisesRegex(
+                ValueError,"post-return PCM marker has unmatched B/F"):
+            self.images(before,after)
+        self.assertNotEqual(self.cli("--require-focus-pixels").returncode,0)
+
     def test_reject_foreground_count_greater_than_background(self):
         with self.assertRaisesRegex(ValueError, "foreground tally exceeds"):
             observe_frame(frame(b=1,f=2))
