@@ -169,6 +169,10 @@ on:
       - 'tests/test_map02_v140_native_mmio_effects.py'
       - 'tools/verify_map02_v141_private_original_mmio_claims.py'
       - 'tests/test_map02_v141_private_original_mmio_claims.py'
+      - 'tools/apply_map02_v142_native_private_mmio_receipt.py'
+      - 'tools/check_map02_v142_native_private_receipt.py'
+      - 'tests/test_map02_v142_native_private_receipt.py'
+      - '.github/workflows/map02-v142-private-mmio-receipt.yml'
       - '.github/workflows/map02-v141-private-original-mmio.yml'
       - '.github/workflows/map02-v140-native-mmio-effects.yml'
       - '.github/workflows/map02-v139-native-words.yml'
@@ -279,6 +283,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v139_native_words.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v140_native_mmio_effects.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v141_private_original_mmio_claims.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v142_native_private_receipt.py' -v
           python3 -m remaster.tools.check_map02_v140_native_mmio_effects --cc "${{ matrix.cc }}"
           python3 -m remaster.tools.check_map02_v139_native_words --cc "${{ matrix.cc }}"
           python3 -m remaster.tools.check_map02_v138_native_pc_observer --cc "${{ matrix.cc }}"
@@ -293,7 +298,8 @@ jobs:
           git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
           git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
-          python3 -m remaster.tools.apply_map02_v140_mmio_effects upstream-pcsx
+          python3 -m remaster.tools.apply_map02_v142_native_private_mmio_receipt upstream-pcsx
+          grep -F 'VH142_NATIVE_PRIVATE_RECEIPT_PASS' upstream-pcsx/frontend/main.c
           grep -F 'VH140_NATIVE_MMIO_VALUES_PASS' upstream-pcsx/frontend/main.c
           grep -F 'VH139_NATIVE_MIPS_WORDS_PASS' upstream-pcsx/frontend/main.c
           grep -F 'vh138_pc_observe(regs,mem,value)' upstream-pcsx/libpcsxcore/psxmem.c
@@ -1450,6 +1456,62 @@ jobs:
           fi
           sha256sum -c proof/private/native.sha256
           sha256sum -c proof/private/v131-same-exe.sha256
+          # A real pinned PCSX MIPS interpreter now emits private ordered
+          # PC/word/effective-address/value tuples to mode-0600 JSONL.
+          # Independently compare EXE/ELF bytes; upload ONLY public summary.
+          sha256sum -c proof/private/v131-same-exe.sha256
+          mkdir -m 700 proof/private/v142-positive-dir
+          mkdir -m 700 proof/v142-positive-home
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            VH142_PRIVATE_RECEIPT_DIR="$PWD/proof/private/v142-positive-dir" \
+            HOME="$PWD/proof/v142-positive-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh129-vblank-04 --vh138-interpreter-pc \
+            --vh139-codewords --vh140-mmio-values \
+            --vh142-private-receipt proof/private/V129_SYNTHETIC.EXE \
+            > proof/private/v142-positive.log 2>&1 || {
+              tail -n 60 proof/private/v142-positive.log
+              exit 1
+            }
+          grep -Fx 'VH142_NATIVE_PRIVATE_RECEIPT_PASS events=19 source=synthetic emulator=pcsx original_retail=0' \
+            proof/private/v142-positive.log
+          grep -Fx 'VH140_NATIVE_MMIO_VALUES_PASS matched=19 gp0=6 dma2_starts=3 stages=4 original_retail=0' \
+            proof/private/v142-positive.log
+          grep -F 'VH129_REAL_VBLANK_PROFILES_PASS mode=0 ' \
+            proof/private/v142-positive.log
+          test "$(stat -c %a proof/private/v142-positive-dir/vh142-interpreter-mmio.jsonl)" = 600
+          python3 -m remaster.tools.check_map02_v142_native_private_receipt \
+            proof/private/v142-positive-dir/vh142-interpreter-mmio.jsonl \
+            | grep -Fx 'VH142_NATIVE_SOURCE_EXE_ELF_RECEIPT_PASS events=19 source_bytes=synthetic pc_word_address_value_matched=1 retail_map02=0 raw_trace_exported=0'
+          sha256sum -c proof/private/native.sha256
+          sha256sum -c proof/private/v131-same-exe.sha256
+          mkdir -m 700 proof/private/v142-corrupt-dir
+          mkdir -m 700 proof/v142-corrupt-home
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            VH142_PRIVATE_RECEIPT_DIR="$PWD/proof/private/v142-corrupt-dir" \
+            HOME="$PWD/proof/v142-corrupt-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh129-vblank-04 --vh138-interpreter-pc \
+            --vh139-codewords --vh140-mmio-values \
+            --vh142-private-receipt --vh142-corrupt-receipt \
+            proof/private/V129_SYNTHETIC.EXE \
+            > proof/private/v142-corrupt.log 2>&1 || {
+              tail -n 60 proof/private/v142-corrupt.log
+              exit 1
+            }
+          grep -Fx 'VH142_NATIVE_PRIVATE_RECEIPT_PASS events=19 source=synthetic emulator=pcsx original_retail=0' \
+            proof/private/v142-corrupt.log
+          test "$(stat -c %a proof/private/v142-corrupt-dir/vh142-interpreter-mmio.jsonl)" = 600
+          python3 -m remaster.tools.check_map02_v142_native_private_receipt \
+            proof/private/v142-corrupt-dir/vh142-interpreter-mmio.jsonl \
+            --expect-refusal \
+            | grep -Fx 'VH142_CORRUPTED_NATIVE_RECEIPT_REJECTED raw_trace_exported=0'
+          # The native output files remain private. Only public aggregates
+          # and per-workflow statuses may enter uploaded artifacts.
+          sha256sum -c proof/private/native.sha256
+          sha256sum -c proof/private/v131-same-exe.sha256
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -1476,6 +1538,8 @@ jobs:
           report["v139_mutated_expected_word_native_refused"]=True
           report["v140_exact_synthetic_mmio_addr_value_runtime_bound"]=True
           report["v140_corrupted_expected_gp0_value_native_refused"]=True
+          report["v142_private_native_interpreter_receipt_source_bound"]=True
+          report["v142_corrupted_native_receipt_independently_refused"]=True
           report["retail_map02_gpu_rendering_verified"]=False
           Path("proof/public/v129-four-real-vblank-profiles-summary.json").write_text(
               json.dumps(report,sort_keys=True)+"\n")

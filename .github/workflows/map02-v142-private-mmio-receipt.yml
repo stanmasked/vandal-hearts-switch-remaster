@@ -1,0 +1,35 @@
+name: MAP02 v142 private native MIPS GPU/DMA receipt validation
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v142-private-mmio-receipt.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v142_native_private_mmio_receipt.py'
+      - 'tools/check_map02_v142_native_private_receipt.py'
+      - 'tests/test_map02_v142_native_private_receipt.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-source-receipt-controls:
+    name: native receipt integrity synthetic-only (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify local native MIPS receipt source and privacy controls
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          no_retail_psx_exe_in_ci=1
+          readonly no_retail_psx_exe_in_ci
+          test "$no_retail_psx_exe_in_ci" = 1
+          python3 -m unittest discover -s tests -p 'test_map02_v142_native_private_receipt.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v141_private_original_mmio_claims.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v140_native_mmio_effects.py' -v
+          echo "VH142_NATIVE_RECEIPT_SOURCE_UNIT_PASS original_retail_executed=0"
