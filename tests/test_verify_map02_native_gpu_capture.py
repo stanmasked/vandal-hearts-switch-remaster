@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import tools.verify_map02_native_gpu_capture as gpu_module
 from tools.verify_map02_native_gpu_capture import private_file, verify_capture, VRAM_BYTES
 
 class NativeGpuCaptureValidationTests(unittest.TestCase):
@@ -126,6 +127,79 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
         self.assertEqual(
             len(private_file(self.root, target.name, expected=VRAM_BYTES)),
             VRAM_BYTES)
+
+    def test_full_audit_rejects_byte_identical_snapshot_swap_after_read(self):
+        # All individual reads succeed, and the new file contains the same
+        # bytes. The late whole-audit recheck must still reject its new inode.
+        target=self.root/"gpu-0000-vram.bin"
+        backup=self.root/"old-vram-for-test"
+        original=gpu_module.private_file
+        replaced=[False]
+
+        def swap_after_last_snapshot(root,name,**kwargs):
+            result=original(root,name,**kwargs)
+            if (name=="gpu-0003-vram.bin" and kwargs.get("_with_identity")
+                    and not replaced[0]):
+                target.replace(backup)
+                target.write_bytes(backup.read_bytes())
+                replaced[0]=True
+            return result
+
+        with patch.object(gpu_module,"private_file",
+                          side_effect=swap_after_last_snapshot):
+            with self.assertRaisesRegex(ValueError,
+                                        "evidence changed during full audit"):
+                verify_capture(self.root,target_frame=12)
+        self.assertTrue(replaced[0])
+
+    def test_full_audit_rejects_snapshot_drift_after_read(self):
+        target=self.root/"gpu-0002-vram.bin"
+        original=gpu_module.private_file
+        changed=[False]
+
+        def mutate_after_last_snapshot(root,name,**kwargs):
+            result=original(root,name,**kwargs)
+            if (name=="gpu-0003-vram.bin" and kwargs.get("_with_identity")
+                    and not changed[0]):
+                st=target.stat()
+                os.utime(target,ns=(st.st_atime_ns,st.st_mtime_ns+10**9))
+                changed[0]=True
+            return result
+
+        with patch.object(gpu_module,"private_file",
+                          side_effect=mutate_after_last_snapshot):
+            with self.assertRaisesRegex(ValueError,
+                                        "evidence changed during full audit"):
+                verify_capture(self.root,target_frame=12)
+        self.assertTrue(changed[0])
+
+    def test_full_audit_rechecks_terminal_receipt_after_validation(self):
+        receipt=dict(
+            schema="vh.map02.native-capture-status.v1",
+            gpu_draw_frame=12,observed_hooks=4,before_hooks=2,after_hooks=2,
+            draw_before_hooks=1,transfer_before_hooks=1,indexed_hooks=4,
+            written_hooks=4,limit_reached=False,walk_finished=True,
+            hooks_balanced=True,observed_window_closed_without_detected_loss=True)
+        target=self.root/"gpu-native-capture-status.json"
+        target.write_text(json.dumps(receipt)+"\\n",encoding="utf-8")
+        original=gpu_module.verify_capture_receipt
+        swapped=[False]
+
+        def swap_receipt_after_validation(*args,**kwargs):
+            result=original(*args,**kwargs)
+            if not swapped[0]:
+                backup=self.root/"old-receipt-for-test"
+                target.replace(backup)
+                target.write_bytes(backup.read_bytes())
+                swapped[0]=True
+            return result
+
+        with patch.object(gpu_module,"verify_capture_receipt",
+                          side_effect=swap_receipt_after_validation):
+            with self.assertRaisesRegex(ValueError,
+                                        "evidence changed during full audit"):
+                verify_capture(self.root,target_frame=12)
+        self.assertTrue(swapped[0])
 
     def test_two_native_pairs_and_hashes(self):
         result=verify_capture(self.root,target_frame=12)
