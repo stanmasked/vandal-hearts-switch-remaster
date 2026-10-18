@@ -73,6 +73,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_phase_order_call_complement.py' -v
       - name: Stage299 virtual PCM integrity and discontinuity candidate synthetic tests
         run: python3 -m unittest discover -s tests -p 'test_analyze_nexium_pcm_stream_integrity.py' -v
+      - name: Stage300 exact digital silence run placement within actual host-scene markers
+        run: python3 -m unittest discover -s tests -p 'test_analyze_nexium_pcm_scene_silence.py' -v
       - name: Statistical sensitivity of complete paired NeXium audio sessions
         run: python3 -m unittest discover -s tests -p 'test_analyze_nexium_idle_switch_variability.py' -v
       - name: Multi-pair no-switch original-SD archive negative controls

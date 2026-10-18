@@ -52,6 +52,8 @@ on:
       - 'tests/check_nro.py'
       - 'tools/analyze_nexium_scene_audio.py'
       - 'tools/analyze_nexium_pcm_stream_integrity.py'
+      - 'tools/analyze_nexium_pcm_scene_silence.py'
+      - 'tests/test_analyze_nexium_pcm_scene_silence.py'
       - 'tests/test_analyze_nexium_pcm_stream_integrity.py'
       - 'tools/capture_nexium_scene_audio.sh'
       - 'tests/test_analyze_nexium_scene_audio.py'
@@ -106,6 +108,7 @@ jobs:
           make test
           python3 -m unittest discover -s tests -p "test_analyze_nexium_pcm.py" -v
           python3 -m unittest discover -s tests -p "test_analyze_nexium_pcm_stream_integrity.py" -v
+          python3 -m unittest discover -s tests -p "test_analyze_nexium_pcm_scene_silence.py" -v
           python3 -m unittest discover -s tests -p "test_analyze_nexium_scene_audio.py" -v
           python3 -m unittest discover -s tests -p "test_audit_nexium_audout_queue.py" -v
           python3 -m unittest discover -s tests -p "test_audit_nexium_audout_latency.py" -v
@@ -1453,6 +1456,44 @@ jobs:
                  for n in ("monitor_capture","scene_capture")})
           PY
           echo "Stage299: 2 SHA256-bound NeXium virtual PCM recordings checked for frame/block integrity and signal discontinuity indicators; NOT physical or audible dropout evidence." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage300 original PCM zero runs versus approximate music-scene marker zones
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/analyze_nexium_pcm_scene_silence.py \
+            --monitor runtime-evidence/nexium-monitor-s16le-48k.pcm \
+            --monitor-report runtime-evidence/pcm-quality-report.json \
+            --scenes runtime-evidence/nexium-scenes-s16le-48k.pcm \
+            --scene-report runtime-evidence/scene-audio-report.json \
+            --events runtime-evidence/scene-events.csv \
+            --stage299 runtime-evidence/pcm-stream-integrity-stage299.json \
+            --output runtime-evidence/pcm-scene-silence-stage300.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("runtime-evidence/pcm-scene-silence-stage300.json").read_text())
+          if (r["result"]!="SOURCE_BOUND_SCENE_SILENCE_BY_APPROXIMATE_HOST_MARKERS_RECONCILED"
+                  or r["marker_count"]!=5
+                  or r["all_PCM_frames_partitioned_by_host_marker_zones"] is not True
+                  or r["all_original_zero_run_frames_partitioned_exactly"] is not True
+                  or r["zero_runs_are_not_verified_audio_dropouts"] is not True
+                  or r["scene_input_or_music_transition_causality_proven"] is not False
+                  or r["actual_guest_scheduler_or_DAC_state_measured"] is not False
+                  or r["original_soundtrack_or_physical_speaker_output_verified"] is not False):
+              raise SystemExit("Stage300 failed source-bound scene silence audit")
+          zones=r["zones"]
+          if (sum(z["frames"] for z in zones)!=r["scene_pcm_frames"]
+                  or sum(z["exact_zero_frames"] for z in zones)!=r["exact_zero_frames_total"]
+                  or sum(z["long_run_zero_frames"] for z in zones)!=r["long_run_frames_total"]):
+              raise SystemExit("Stage300 frame conservation failed")
+          print("Stage300 longest exact-zero scene zones:",
+                {k:r[k] for k in ("long_run_count","exact_zero_longest_run_frames")})
+          print("Stage300 dominant scene marker overlaps:",
+                r["longest_zero_runs_top20"][0]["zone_overlaps"]
+                if r["longest_zero_runs_top20"] else [])
+          PY
+          echo "Stage300: original virtual scene PCM exact-zero frames mapped to host-buffered scene-marker guards and settled intervals, not audible dropout proof." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Record audio capture boundary
         if: always()
