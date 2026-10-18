@@ -49,6 +49,14 @@ int main(int argc, char **argv) {
         vh_map02_cycle_read_start(0x1bcc, INT_MAX);
     }
 
+    if (!strcmp(argv[1], "cd-premature-sector"))
+        vh_map02_cd_read_sector(0x1bcc, sectors);
+    if (!strcmp(argv[1], "cd-orphan-finish"))
+        vh_map02_cd_read_finish(0x1bcc, 12, returned);
+    if (!strcmp(argv[1], "cd-unrelated-before-and-after")) {
+        vh_map02_cd_read_sector(0x1bcb, sectors);
+        vh_map02_cd_read_finish(0x1bca, 1, returned);
+    }
     if (strcmp(argv[1], "cd-missing-read"))
         vh_map02_cd_read_start(0x1bcc, 12);
     if (strcmp(argv[1], "finish-first"))
@@ -64,6 +72,14 @@ int main(int argc, char **argv) {
         if (!strcmp(argv[1], "cd-tampered-transfer"))
             returned[0] ^= 1u;
         vh_map02_cd_read_finish(0x1bcc, 12, returned);
+    }
+    if (!strcmp(argv[1], "cd-delayed-sector"))
+        vh_map02_cd_read_sector(0x1bcc + 7, sectors + 7u * 2048u);
+    if (!strcmp(argv[1], "cd-duplicate-finish"))
+        vh_map02_cd_read_finish(0x1bcc, 12, returned);
+    if (!strcmp(argv[1], "cd-unrelated-before-and-after")) {
+        vh_map02_cd_read_sector(0x1bcb, sectors);
+        vh_map02_cd_read_finish(0x1bca, 1, returned);
     }
     vh_map02_cycle_read_finish(0x1bcc, 12);
 
@@ -244,11 +260,31 @@ class CycleOrderTests(unittest.TestCase):
         for mode in ("cd-missing-claim", "cd-duplicate-claim",
                      "cd-missing-read", "cd-missing-sector",
                      "cd-wrong-sector", "cd-tampered-transfer",
-                     "cd-missing-completion", "cd-duplicate-completion"):
+                     "cd-missing-completion", "cd-duplicate-completion",
+                     "cd-premature-sector", "cd-orphan-finish",
+                     "cd-delayed-sector", "cd-duplicate-finish"):
             with self.subTest(mode=mode):
                 proc = self.run_mode(mode)
                 self.assertEqual(proc.returncode, 0, proc.stderr)
                 self.assertIn("failed=1 receipt=0", proc.stdout)
+
+    def test_unrelated_cd_callbacks_outside_map02_read_are_ignored(self):
+        proc = self.run_mode("cd-unrelated-before-and-after")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("failed=0 receipt=1", proc.stdout)
+        self.assertIn('"original_cd_raw_user_crc32":', proc.stdout)
+
+    def test_late_or_duplicate_map02_callbacks_never_publish(self):
+        for mode in ("cd-premature-sector", "cd-orphan-finish",
+                     "cd-delayed-sector", "cd-duplicate-finish"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                out = Path(tmp) / "private"
+                out.mkdir(mode=0o700)
+                proc = self.run_mode(mode, directory=out)
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                self.assertIn("failed=1 receipt=0", proc.stdout)
+                self.assertFalse(
+                    (out / "map02-single-process-cycle.jsonl").exists())
 
     def test_invalid_cd_state_never_publishes_on_disk(self):
         with tempfile.TemporaryDirectory() as tmp:
