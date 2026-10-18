@@ -1,0 +1,36 @@
+name: MAP02 v155 four source-authored native MIPS instruction gate
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v155-four-instruction-native.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v155_four_instruction_native.py'
+      - 'tests/test_map02_v155_four_instruction_native.py'
+      - 'tools/apply_map02_v154_third_instruction_mutation.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  four-instruction-native:
+    name: compiled four-step source and mutation (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify compiled C guest instruction quota and old regressions
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v155_four_instruction_native.py tests/test_map02_v155_four_instruction_native.py
+          python3 -m unittest discover -s tests -p 'test_map02_v155_four_instruction_native.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v154_third_instruction_mutation.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v153_second_instruction_mutation.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v152_fetch_opcode_witness.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v151_native_ram_identity.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v150_native_instruction_budget.py' -v
+          echo 'VH155_COMPILED_FOUR_NATIVE_PASS original_retail_executed=0 map02_rendered=0'
