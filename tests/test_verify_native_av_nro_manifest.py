@@ -86,6 +86,28 @@ class AvNroManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "symlinked AV artifact"):
             verify_bundle(self.root, exact_inventory=True)
 
+    def test_duplicate_nro_bytes_rejected_even_with_recomputed_manifest(self):
+        # Substituting a valid file for another and updating the
+        # checksums must not certify seven distinct diagnostic variants.
+        first, second = NRO_NAMES[0], NRO_NAMES[1]
+        self.files[second] = self.files[first]
+        (self.root / second).write_bytes(self.files[first])
+        self.set_manifest()
+        with self.assertRaisesRegex(ValueError, "duplicate NRO payload"):
+            verify_bundle(self.root, COMMIT, exact_inventory=True)
+        self.assertNotEqual(
+            self.cli("--expected-commit", COMMIT, "--exact-inventory").returncode, 0)
+
+    def test_hardlinked_distinct_names_rejected_even_with_updated_digest(self):
+        first, second = NRO_NAMES[-2], NRO_NAMES[-1]
+        (self.root / second).unlink()
+        (self.root / second).hardlink_to(self.root / first)
+        self.files[second] = self.files[first]
+        self.set_manifest()
+        with self.assertRaisesRegex(ValueError, "duplicate NRO payload"):
+            verify_bundle(self.root, exact_inventory=True)
+        self.assertEqual(len(set(self.files.values())), len(NRO_NAMES) - 1)
+
     def test_missing_manifest_record_rejected(self):
         self.set_manifest(names=NRO_NAMES[:-1])
         with self.assertRaisesRegex(ValueError, "exactly seven"):

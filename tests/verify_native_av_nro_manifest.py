@@ -90,6 +90,11 @@ def verify_bundle(root, expected_commit=None, *, exact_inventory=False):
         if sha.hexdigest() != expected_hash:
             raise ValueError("NRO SHA-256 mismatch: " + expected_name)
         checksums[expected_name] = expected_hash
+    # Every variant has an independent build target, diagnostic macro
+    # and NACP title. A repeated entire NRO image is a mislabeled or
+    # substituted variant even when somebody rewrites its digest entry.
+    if len(set(checksums.values())) != len(NRO_NAMES):
+        raise ValueError("duplicate NRO payload across distinct diagnostic variants")
     return {"source_commit": commit, "nro_count": len(checksums),
             "nro_sha256": checksums,
             "physical_hardware_verified": False,
