@@ -90,6 +90,9 @@ class SealedMakeOverlayTests(unittest.TestCase):
         self.assertGreaterEqual(result["compiler_runtime_loaded_object_count"], 1)
         self.assertEqual(len(result["compiler_runtime_loaded_object_set_sha256"]), 64)
         self.assertTrue(result["compiler_runtime_mappings_correlated_to_resolved_files"])
+        self.assertEqual(result["kernel_tool_exec_witnesses"], 6)
+        self.assertTrue(result["kernel_tool_exec_images_match_sha256"])
+        self.assertFalse(result["actual_make_children_kernel_attested"])
         self.assertGreaterEqual(result["system_header_count"], 1)
         self.assertEqual(len(result["system_header_set_sha256"]), 64)
         self.assertTrue(result["system_header_bytes_before_after_match"])
@@ -463,6 +466,18 @@ class SealedMakeOverlayTests(unittest.TestCase):
             "321: initialize program: /usr/bin/gcc\n")
         with self.assertRaisesRegex(ValueError, "log name invalid"):
             sealed._runtime_loader_evidence(witness, "/usr/bin/gcc", {})
+
+    def test_kernel_exec_image_matches_selected_gcc(self):
+        driver, hashes = sealed._compiler_evidence()
+        self.assertEqual(sealed._kernel_exec_image_digest(driver), hashes["driver"])
+
+    def test_kernel_toolchain_refuses_wrong_executable_digest(self):
+        driver, hashes = sealed._compiler_evidence()
+        mismatched = dict(hashes)
+        mismatched["driver"] = "0" * 64
+        with self.assertRaisesRegex(ValueError, "kernel compiler executable hash mismatch"):
+            sealed._kernel_toolchain_evidence(
+                {"driver": driver, "cc1": driver, "as": driver}, mismatched)
 
     def test_system_header_digest_mismatch_refused(self):
         original = sealed._system_header_evidence

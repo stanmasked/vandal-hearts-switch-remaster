@@ -17,9 +17,12 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
+import stat
 import subprocess
 import sys
 import tempfile
+import time
 
 from tools import prepare_map02_private_gpu_make_overlay as builder
 from tools import verify_map02_private_gpu_make_overlay as auditor
@@ -397,6 +400,80 @@ def _runtime_loader_evidence(directory, driver, expected, expected_tools=None):
     }
 
 
+
+def _kernel_exec_image_digest(executable):
+    """At execve SIGTRAP, read the actual /proc/PID/exe inode and SHA-256.
+
+    This is a separate, stopped control child, not a Make subprocess audit.
+    """
+    path = str(Path(executable).resolve(strict=True))
+    libc = ctypes.CDLL(None, use_errno=True)
+    trace = libc.ptrace
+    trace.argtypes = [ctypes.c_uint, ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p]
+    trace.restype = ctypes.c_long
+    pid = os.fork()
+    if pid == 0:
+        if trace(0, 0, None, None) != 0:  # PTRACE_TRACEME
+            os._exit(125)
+        try:
+            os.execve(path, [path, "--version"],
+                      {"PATH": "/usr/bin:/bin", "LC_ALL": "C"})
+        except OSError:
+            os._exit(126)
+    try:
+        deadline = time.monotonic() + 10
+        while True:
+            observed, status = os.waitpid(pid, os.WNOHANG)
+            if observed:
+                break
+            if time.monotonic() > deadline:
+                raise ValueError("MAP02 kernel tool exec timeout")
+            time.sleep(0.005)
+        if not os.WIFSTOPPED(status) or os.WSTOPSIG(status) != signal.SIGTRAP:
+            raise ValueError("MAP02 kernel tool did not stop after exec")
+        fd = os.open("/proc/" + str(pid) + "/exe", os.O_RDONLY | os.O_CLOEXEC)
+        try:
+            observed_stat = os.fstat(fd)
+            expected_stat = os.stat(path)
+            if (not stat.S_ISREG(observed_stat.st_mode) or
+                    (observed_stat.st_dev, observed_stat.st_ino) !=
+                    (expected_stat.st_dev, expected_stat.st_ino)):
+                raise ValueError("MAP02 kernel tool executable inode changed")
+            if not 0 < observed_stat.st_size <= COMPILER_LIMIT:
+                raise ValueError("MAP02 kernel tool executable size invalid")
+            digest, size = hashlib.sha256(), 0
+            while True:
+                part = os.read(fd, 1024 * 1024)
+                if not part:
+                    break
+                size += len(part)
+                if size > COMPILER_LIMIT:
+                    raise ValueError("MAP02 kernel tool executable too large")
+                digest.update(part)
+            if size != observed_stat.st_size:
+                raise ValueError("MAP02 kernel tool executable size changed")
+            return digest.hexdigest()
+        finally:
+            os.close(fd)
+    finally:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        try:
+            os.waitpid(pid, 0)
+        except ChildProcessError:
+            pass
+
+
+def _kernel_toolchain_evidence(tools, hashes):
+    if set(tools) != {"driver", "cc1", "as"} or set(hashes) != set(tools):
+        raise ValueError("MAP02 kernel toolchain inventory invalid")
+    for role in ("driver", "cc1", "as"):
+        if _kernel_exec_image_digest(tools[role]) != hashes[role]:
+            raise ValueError("MAP02 kernel compiler executable hash mismatch")
+
+
 def _system_header_evidence(preprocessed_files, pc, stage):
     """Fingerprint system includes named by GCC in the sealed .i byte stream.
 
@@ -482,6 +559,7 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
         raise ValueError("MAP02 independent replay changed before compilation")
     compiler, initial_compiler = _compiler_evidence()
     runtime_objects = _compiler_dynamic_evidence(compiler)
+    _kernel_toolchain_evidence(runtime_objects["_resolved_tools"], initial_compiler)
     with ExitStack() as stack:
         runtime_dir = Path(stack.enter_context(
             tempfile.TemporaryDirectory(prefix="vh-map02-compiler-runtime-")))
@@ -571,6 +649,7 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
                 raise ValueError("MAP02 compiler binaries changed during Make build")
             if _compiler_dynamic_evidence(compiler) != runtime_objects:
                 raise ValueError("MAP02 compiler shared objects changed during Make build")
+            _kernel_toolchain_evidence(runtime_objects["_resolved_tools"], initial_compiler)
             runtime_loaded = _runtime_loader_evidence(
                 runtime_dir, compiler, runtime_objects["_resolved_files"],
                 runtime_objects["_resolved_tools"])
@@ -609,6 +688,9 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
         "compiler_runtime_mappings_correlated_to_resolved_files": True,
         "compiler_runtime_log_pids_verified": True,
         "compiler_runtime_executables_bound_to_selected_tools": True,
+        "kernel_tool_exec_witnesses": 6,
+        "kernel_tool_exec_images_match_sha256": True,
+        "actual_make_children_kernel_attested": False,
         "system_header_count": system_headers["count"],
         "system_header_set_sha256": system_headers["sha256"],
         "system_header_bytes_before_after_match": True,

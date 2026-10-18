@@ -88,6 +88,8 @@ class SpanWorkflowGateTests(unittest.TestCase):
         self.assertIn('assert report["compiler_runtime_log_pids_verified"]', private_build)
         self.assertIn('assert report["compiler_runtime_executables_bound_to_selected_tools"]',
                       private_build)
+        self.assertIn('assert report["kernel_tool_exec_witnesses"] == 6', private_build)
+        self.assertIn('assert not report["actual_make_children_kernel_attested"]', private_build)
         self.assertIn('assert report["system_header_bytes_before_after_match"]', private_build)
         self.assertIn('assert report["compiled_from_sealed_preprocessor_output"]', private_build)
         self.assertIn('assert report["staged_header_hashes_verified"]', private_build)

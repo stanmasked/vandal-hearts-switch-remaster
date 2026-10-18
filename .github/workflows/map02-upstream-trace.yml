@@ -303,6 +303,9 @@ jobs:
           assert report["compiler_runtime_mappings_correlated_to_resolved_files"]
           assert report["compiler_runtime_log_pids_verified"]
           assert report["compiler_runtime_executables_bound_to_selected_tools"]
+          assert report["kernel_tool_exec_witnesses"] == 6
+          assert report["kernel_tool_exec_images_match_sha256"]
+          assert not report["actual_make_children_kernel_attested"]
           assert report["system_header_count"] >= 1
           assert len(report["system_header_set_sha256"]) == 64
           assert report["system_header_bytes_before_after_match"]
