@@ -7,7 +7,7 @@ those snapshots, but cannot by themselves establish a sample-accurate
 guest event or audio causality.
 
 Stage305 introduces a conservative frame-aligned onset fence and
-independent 500-ms PCM source-window counts. Stage306 compares **two
+independent 500-ms PCM source-window counts. Stage306 compares **three
 different completed NeXium runtime captures**, each separately audited
 with the current Stage304 and Stage305 analyzers against its own source
 PCM (rather than trusting a previous summary).
@@ -18,8 +18,10 @@ PCM (rather than trusting a previous summary).
   host-control instrumentation was first introduced.
 - NeXium workflow `39134382535`: independent virtual audio capture that
   originally passed the full Stage304 audit.
+- NeXium workflow `39135617807`: third independent virtual PCM capture
+  that passed the complete Stage305 NeXium workflow.
 
-Both successful runs published a `nexium-runtime-evidence` artifact
+All three successful runs published a `nexium-runtime-evidence` artifact
 containing their original virtual s16le stereo PCM, host scene markers,
 real host Plus input snapshots, and source-bound Stage299–303 receipts.
 No PS1 retail tracks, copyrighted game images or console keys are
@@ -29,7 +31,7 @@ read-only `actions:read` permission.
 
 The new workflow
 `.github/workflows/stage306-independent-capture-audit.yml` independently
-runs current Stage304 and Stage305 validation **again** for both
+runs current Stage304 and Stage305 validation **again** for all three
 archives. It will fail closed on missing source files, changed hashes,
 bad original host markers, failed stop evidence or broken frame
 conservation.
@@ -58,7 +60,7 @@ Host tests:
 
 ### Scientific/technical limits
 
-The two archives come from independent NeXium host recordings, but
+The three archives come from independent NeXium host recordings, but
 the virtual audio sink, test scenario, original PCM format, and
 host-buffered `stat` timing method are shared. The tool does **not**
 infer independent hardware testing, faithful retail music, audible
