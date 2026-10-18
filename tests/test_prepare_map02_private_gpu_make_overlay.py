@@ -56,7 +56,11 @@ class PrivateGpuMakeOverlayTests(unittest.TestCase):
         self.assertIn("$(M32) $(SAN) $(PORT_WARN)", result)
         # Generated C lives outside platform/pc/src, so -Isrc must
         # reproduce the original source-directory header lookup.
-        self.assertEqual(result.count("-Iinclude -Isrc"), 2)
+        # Two preprocessing recipes and two object recipes share the include profile.
+        self.assertEqual(result.count("-Iinclude -Isrc"), 4)
+        self.assertIn("map02-private-gpu-preprocess:", result)
+        self.assertEqual(result.count(" -E -x c -o "), 2)
+        self.assertEqual(result.count("-x $(VH_MAP02_PRIVATE_INPUT_LANG) -c"), 2)
         self.assertIn("$(error MAP02 private GPU requires isolated BUILD_DIR=", result)
         self.assertIn("$(error MAP02 private GPU instrumentation supports pinned US", result)
         self.assertIn("map02-private-gpu-objects:", result)
