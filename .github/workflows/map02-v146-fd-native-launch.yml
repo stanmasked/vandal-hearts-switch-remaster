@@ -1,0 +1,34 @@
+name: MAP02 v146 verified ELF descriptor native launch
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v146-fd-native-launch.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/run_map02_v146_verified_fd_native.py'
+      - 'tests/test_map02_v146_verified_fd_native.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  checked-elf-fd-exec:
+    name: checked ELF inode exec and path-swap refusal (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile synthetic ELF and verify actual fd-backed exec
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          no_retail_exe_in_public_tests=1
+          readonly no_retail_exe_in_public_tests
+          test "$no_retail_exe_in_public_tests" = 1
+          python3 -m unittest discover -s tests -p 'test_map02_v146_verified_fd_native.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v145_native_build_binding.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v144_run_challenge.py' -v
+          echo "VH146_SYNTHETIC_HOST_ELF_FD_EXEC_REGRESSION_PASS retail_map02=0"
