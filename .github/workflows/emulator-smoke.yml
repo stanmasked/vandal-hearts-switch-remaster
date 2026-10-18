@@ -2070,6 +2070,31 @@ jobs:
           PY
           echo "Stage325: independent final re-read reproduced exact original host dual-clock receipt after strict Stage304/305; unchanged PCM/music, no physical audio claim." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Stage334 capture new real guest-software and host-clock source manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_stage334_capture_manifest.py \
+            --evidence-root runtime-evidence \
+            --output runtime-evidence/source-guest-host-stage334.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("runtime-evidence/source-guest-host-stage334.json").read_text(encoding="utf-8"))
+          if (r["result"]!="ORIGINAL_GUEST_SOFTWARE_AND_HOST_CLOCK_SOURCES_INDEPENDENTLY_REPLAYED"
+                  or r["original_stage320_322_325_receipts_recomputed_from_exact_sources"] is not True
+                  or r["original_stage304_305_strict_success_receipts_checked"] is not True
+                  or r["no_guest_to_host_clock_alignment_proven"] is not True
+                  or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage334 genuine original guest-host evidence not verified")
+          print("Stage334 original capture guest software duration:",
+                r["original_guest_last_call_duration_software_ns"])
+          print("Stage334 original capture guest software previous baseline:",
+                r["original_guest_prior_lower_median_software_ns"])
+          print("Stage334 original host control deltas:",r["original_host_control_deltas"])
+          PY
+          echo "Stage334: new independent NeXium original guest-source / host-clock compact witness; Stage320/322/325 and strict Stage304/305 replayed; no original PCM or absolute timestamps in compact manifest; not guest-host clock mapping or physical Switch sound." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Record audio capture boundary
         if: always()
         env:
