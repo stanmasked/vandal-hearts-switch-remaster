@@ -1,0 +1,51 @@
+name: Audio-main integration prerequisite inventory (not approval)
+
+on:
+  pull_request:
+    paths:
+      - 'tools/audit_audio_branch_lineage.py'
+      - 'tests/test_audit_audio_branch_lineage.py'
+      - 'docs/AUDIO_MAIN_INTEGRATION_PREREQUISITES.md'
+      - '.github/workflows/audio-main-integration-prerequisites.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory-blocker:
+    name: Verify missing audio foundation in main (expected blocker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch both moving branch tips for lineage audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin \
+            +refs/heads/main:refs/remotes/origin/main \
+            +refs/heads/test/cdxa-extract-decode-pipeline:refs/remotes/origin/test/cdxa-extract-decode-pipeline
+      - name: Regression-test the fail-closed lineage inventory
+        run: python3 -m unittest discover -s tests -p 'test_audit_audio_branch_lineage.py' -v
+      - name: Audit live main versus audio foundation branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_audio_branch_lineage.py \
+            --destination refs/remotes/origin/main \
+            --audio refs/remotes/origin/test/cdxa-extract-decode-pipeline \
+            --expect-status BLOCKED_DESTINATION_MISSING_AUDIO_FOUNDATION \
+            --output build/audio-main-branch-prerequisites.json
+          echo '### Audio integration is BLOCKED on main' >> "$GITHUB_STEP_SUMMARY"
+          echo 'This green inventory job confirms a missing foundation, not a safe merge.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Review the JSON for exact branch heads, missing audio modules, and divergence.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Archive the independently reproducible gap report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audio-main-prerequisite-inventory
+          path: build/audio-main-branch-prerequisites.json
+          if-no-files-found: warn
