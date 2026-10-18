@@ -407,6 +407,64 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
                 self.assertFalse(report["strict_gpu_timeline_match_verified"])
                 self.assertFalse(report["hd_replacement_authorized"])
 
+    def test_unmatched_gpu_tail_is_symmetric_for_same_replayed_captures(self):
+        # Each case uses the exact same two independently published C11
+        # children for BOTH comparisons, reversing roles in the auditor
+        # rather than launching any replacement producer.
+        symmetric = (
+            "first_joint_gpu_divergence_index",
+            "first_joint_gpu_divergence_pair_index",
+            "first_joint_gpu_divergence_phase",
+            "first_joint_gpu_divergence_kind",
+            "gpu_event_records_compared",
+            "gpu_vram_snapshots_compared",
+            "unmatched_gpu_event_records",
+            "unmatched_gpu_vram_snapshots",
+            "different_gpu_event_records_in_common_prefix",
+            "different_gpu_vram_snapshots_in_common_prefix",
+            "different_bgr555_pixels",
+            "repeated_native_frame_pixels_identical",
+        )
+        paired = (
+            ("first_gpu_pairs_verified", "second_gpu_pairs_verified"),
+            ("first_gpu_event_count", "second_gpu_event_count"),
+            ("first_gpu_vram_snapshot_count",
+             "second_gpu_vram_snapshot_count"),
+            ("first_image_sha256", "second_image_sha256"),
+            ("first_gpu_journal_sha256", "second_gpu_journal_sha256"),
+            ("first_gpu_vram_timeline_sha256",
+             "second_gpu_vram_timeline_sha256"),
+        )
+        for longer_second in (True, False):
+            with self.subTest(longer_second=longer_second):
+                if not longer_second:
+                    for folder in self.dirs:
+                        for file in folder.iterdir():
+                            file.unlink()
+                forward = self._launch_with_unmatched_gpu_pair(
+                    longer_second=longer_second, strict=False)
+                reverse = two_live.audit(
+                    self.dirs[2], self.dirs[3],
+                    self.dirs[0], self.dirs[1], self.executable)
+                self.assertEqual(
+                    forward["first_joint_gpu_divergence_kind"],
+                    "unmatched-tail")
+                self.assertEqual(forward["first_joint_gpu_divergence_index"], 2)
+                self.assertTrue(forward["repeated_native_frame_pixels_identical"])
+                for key in symmetric:
+                    self.assertEqual(
+                        forward[key], reverse[key],
+                        msg=(longer_second, key))
+                for first, second in paired:
+                    self.assertEqual(forward[first], reverse[second])
+                    self.assertEqual(forward[second], reverse[first])
+                with self.assertRaisesRegex(ValueError, "not bit-exact"):
+                    two_live._require_bit_exact_gpu_timeline(reverse)
+                for folder in self.dirs:
+                    self.assertNotIn(str(folder), json.dumps(forward))
+                    self.assertNotIn(str(folder), json.dumps(reverse))
+                self.assertFalse(reverse["hd_replacement_authorized"])
+
     def test_unmatched_second_draw_pair_strict_mode_rejects_both_directions(self):
         for longer_second in (True, False):
             with self.subTest(longer_second=longer_second):
