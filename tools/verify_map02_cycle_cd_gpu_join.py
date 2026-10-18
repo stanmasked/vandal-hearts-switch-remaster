@@ -27,6 +27,12 @@ from tools.verify_map02_window_scoped_join import CD_READ
 CYCLE_RECEIPT = "map02-single-process-cycle.jsonl"
 CYCLE_SCHEMA = "vh.map02.cycle-order.v2"
 SCHEMA = "vh.map02.same-process-cycle-cd-gpu-join.v1"
+CD_READ_KEYS = (
+    "schema", "capture_session", "source", "cdf", "lba",
+    "sectors", "bytes", "raw_user_crc32", "returned_user_crc32",
+    "loader_completed",
+)
+
 CYCLE_KEYS = (
     "schema", "capture_session", "gpu_draw_frame",
     "original_cd_raw_user_crc32",
@@ -128,15 +134,26 @@ def _cycle_cd_pair(scoped, cycle, frame, expected_session_sha256):
     event = parse_json(cycle_raw[:-1], CYCLE_RECEIPT)
     scoped = _private_directory(scoped)
     cd_raw, cd_inode = _private_evidence_snapshot(scoped, CD_READ, max_bytes=2048)
-    cd_event = parse_json(cd_raw, CD_READ)
-    token = cd_event.get("capture_session") if type(cd_event) is dict else None
-    if (type(cd_event) is not dict or
-            cd_event.get("schema") != "vh.map02.original-cd-read.v1" or
-            cd_event.get("raw_user_crc32") != event["original_cd_raw_user_crc32"] or
-            cd_event.get("returned_user_crc32") != event["original_cd_raw_user_crc32"] or
-            type(token) is not str or len(token) != 32 or
+    if cd_raw.count(b"\n") != 1 or not cd_raw.endswith(b"\n") or b"\r" in cd_raw:
+        raise ValueError("noncanonical original MAP02 CdRead JSONL")
+    cd_event = parse_json(cd_raw[:-1], CD_READ)
+    fields(cd_event, CD_READ_KEYS, CD_READ)
+    # Only the original pinned MAP02 resource is acceptable. Matching CRC
+    # bytes alone does not identify an extent, source hook, or completed load.
+    if (cd_event["schema"] != "vh.map02.original-cd-read.v1" or
+            cd_event["source"] != "original-CdRead-and-ContinueLoadingCdFile" or
+            cd_event["cdf"] != "CDF_M_MAP02_PRS" or
+            number(cd_event["lba"], "MAP02 original LBA", 0, 0x1bcc) != 0x1bcc or
+            number(cd_event["sectors"], "MAP02 original sector count", 1, 12) != 12 or
+            number(cd_event["bytes"], "MAP02 original transfer bytes", 1, 24576) != 24576 or
+            cd_event["loader_completed"] is not True):
+        raise ValueError("original MAP02 CdRead extent or loader state differs")
+    token = cd_event["capture_session"]
+    if (type(token) is not str or len(token) != 32 or
             any(ch not in "0123456789abcdef" for ch in token) or
-            _sha(token.encode("ascii")) != session_digest):
+            _sha(token.encode("ascii")) != session_digest or
+            cd_event["raw_user_crc32"] != event["original_cd_raw_user_crc32"] or
+            cd_event["returned_user_crc32"] != event["original_cd_raw_user_crc32"]):
         raise ValueError("ordered cycle CRC32 and original CdRead receipt differ")
     return cycle_raw, cycle_inode, cd_raw, cd_inode
 
