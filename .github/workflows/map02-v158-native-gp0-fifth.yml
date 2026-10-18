@@ -1,0 +1,35 @@
+name: MAP02 v158 synthetic fifth native MIPS GP0 MMIO SW witness
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v158-native-gp0-fifth.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v158_native_gp0_fifth.py'
+      - 'tests/test_map02_v158_native_gp0_fifth.py'
+      - 'tools/apply_map02_v157_t1_fourth_checkpoint.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fifth-gp0:
+    name: compiled fifth native MIPS GP0 SW (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check source-bound native fifth GP0 store and all regressions
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v158_native_gp0_fifth.py tests/test_map02_v158_native_gp0_fifth.py
+          python3 -m unittest discover -s tests -p 'test_map02_v158_native_gp0_fifth.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v157_t1_fourth_checkpoint.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v156_register_checkpoints.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v155_four_instruction_native.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v154_third_instruction_mutation.py' -v
+          echo 'VH158_COMPILED_NATIVE_GP0_PASS original_retail_executed=0 map02_rendered=0'
