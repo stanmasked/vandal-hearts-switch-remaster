@@ -28,8 +28,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          status="$(gh api 'repos/${GITHUB_REPOSITORY}/actions/runs/39166023593' --jq '.status')"
-          conclusion="$(gh api 'repos/${GITHUB_REPOSITORY}/actions/runs/39166023593' --jq '.conclusion')"
+          status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/39166023593" --jq '.status')"
+          conclusion="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/39166023593" --jq '.conclusion')"
           test "$status" = completed
           test "$conclusion" = success
           echo "Verified real original NeXium source capture 39166023593 completed successfully"
@@ -110,7 +110,7 @@ jobs:
               raise SystemExit("original real monotonic intervals do not match captured log")
           summary={
               "schema":"vh-stage325-independent-original-neXium-host-dual-clock-replay/v1",
-              "result":"STAGE325_ORIGINAL_NE XIUM_HOST_CLOCK_SOURCE_INDEPENDENTLY_REPLAYED".replace(" ",""),
+              "result":"STAGE325_ORIGINAL_NEXIUM_HOST_CLOCK_SOURCE_INDEPENDENTLY_REPLAYED",
               "original_workflow_run_id":39166023593,
               "source_legacy_sha256":new["legacy_csv_sha256"],
               "source_monotonic_sha256":new["paired_clock_csv_sha256"],
