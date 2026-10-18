@@ -587,3 +587,22 @@ self-consistent fake candidate bytes, an identical-byte reference
 inode swap while the child runs, mismatched frame labels and actual
 CLI digest-only output. The original-source FT4/VRAM provenance audit
 is still a distinct optional private input, not silently inferred.
+
+### Private reference pair permissions and inventory preflight
+
+The optional `--frame-pair-dir` is now refused **before running the ELF**
+unless it names an owner-held directory without group/other access
+(typically `0700`). It must contain **exactly** `frames.json`,
+`reference.bgr555` and `candidate.bgr555`; all three must be
+owner-owned regular files with mode `0600` and exactly one hard link
+each. Symlinks, hardlinked aliases and extra files are not permitted.
+The same preflight is run again after the frame/journal capture and
+double replay, in addition to the already existing byte/hash/inode
+checks.
+
+This prevents accidental sharing of locally owned claim-labelled
+game screenshots through common `0755` directories or `0644`
+files. It does not claim the reference was captured from authentic
+PlayStation hardware. Asset-free tests confirm that a shared directory,
+world-readable claimed reference, symbolic/hard link, or extra file
+fails before the ELF starts.
