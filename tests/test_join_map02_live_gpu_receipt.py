@@ -126,6 +126,23 @@ class FullLiveGpuJournalNativeBridgeTests(unittest.TestCase):
         self.assertNotIn(str(self.root), data)
         self.assertNotIn(self.pixels[:12].hex(), data)
 
+    def test_same_byte_claimed_candidate_inode_swap_during_real_native_bridge_refused(self):
+        def substitute(*args, **kwargs):
+            image = self.pair / "candidate.bgr555"
+            replacement = self.pair / "fresh-candidate.bgr555"
+            replacement.write_bytes(image.read_bytes())
+            os.replace(replacement, image)
+            return self.original_native_witness(*args, **kwargs)
+        with patch.object(bridge_module, "audit_launch_two_word",
+                          side_effect=substitute):
+            with self.assertRaisesRegex(ValueError, "changed during native witness"):
+                live_join.join(
+                    self.pair, self.live, self.root / "native",
+                    self.root / "source",
+                    launch_receipt=self.root / "launch.json",
+                    preflight_report=self.root / "preflight.json",
+                    executable=self.executable, gpu_journal_dir=self.journal)
+
     def test_candidate_modified_with_self_consistent_manifest_refused(self):
         forged = bytearray(self.pixels)
         forged[-2:] = b"\x11\x22"
