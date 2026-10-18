@@ -280,6 +280,56 @@ def _gpu_snapshot_differences(first_fd, second_fd, first_pairs,
     }
 
 
+
+def _joint_gpu_vram_first_divergence(snapshots, events):
+    """Localize the first disagreement in aligned, replay-verified GPU pairs.
+
+    Event JSONL and VRAM snapshots each contain before/after entries for
+    the same verified GPU pair. Compare ordinals, never private content.
+    An unmatched tail is a mismatch even if every common entry agrees.
+    """
+    first_count = events["first_gpu_event_count"]
+    second_count = events["second_gpu_event_count"]
+    common = events["gpu_event_records_compared"]
+    unmatched = events["unmatched_gpu_event_records"]
+    if (first_count != snapshots["first_gpu_vram_snapshot_count"]
+            or second_count != snapshots["second_gpu_vram_snapshot_count"]
+            or common != snapshots["gpu_vram_snapshots_compared"]
+            or unmatched != snapshots["unmatched_gpu_vram_snapshots"]
+            or common != min(first_count, second_count)
+            or unmatched != abs(first_count - second_count)):
+        raise ValueError("MAP02 GPU event and VRAM timeline counts disagree")
+    first_event = events["first_different_gpu_event_record_index"]
+    first_vram = snapshots["first_different_gpu_vram_snapshot_index"]
+    for index in (first_event, first_vram):
+        if index is not None and (type(index) is not int
+                                  or not 0 <= index < common):
+            raise ValueError("MAP02 GPU divergence ordinal invalid")
+    candidates = [i for i in (first_event, first_vram) if i is not None]
+    if unmatched:
+        candidates.append(common)
+    first = min(candidates) if candidates else None
+    if first is None:
+        kind = None
+    elif first == common:
+        kind = "unmatched-tail"
+    elif first_event == first and first_vram == first:
+        kind = "event-and-vram"
+    elif first_event == first:
+        kind = "event-only"
+    else:
+        kind = "vram-only"
+    return {
+        "first_joint_gpu_divergence_index": first,
+        "first_joint_gpu_divergence_pair_index": (
+            None if first is None else first // 2),
+        "first_joint_gpu_divergence_phase": (
+            None if first is None else (
+                "before" if first % 2 == 0 else "after")),
+        "first_joint_gpu_divergence_kind": kind,
+    }
+
+
 def audit(first_frame, first_journal, second_frame, second_journal, executable):
     folders = tuple(Path(x).absolute() for x in (
         first_frame, first_journal, second_frame, second_journal))
@@ -344,6 +394,7 @@ def audit(first_frame, first_journal, second_frame, second_journal, executable):
         if ((a["gpu_journal_sha256"] == b["gpu_journal_sha256"])
                 != event_records["repeated_gpu_event_records_identical"]):
             raise ValueError("MAP02 GPU event digests disagree with records")
+        joint = _joint_gpu_vram_first_divergence(snapshots, event_records)
         check_inventories()
         for fd, (path, identity) in zip(opened, sessions):
             _check_directory(fd, path, identity)
@@ -362,6 +413,7 @@ def audit(first_frame, first_journal, second_frame, second_journal, executable):
             "stp_bit_differences": stp,
             **snapshots,
             **event_records,
+            **joint,
             "repeated_native_frame_pixels_identical": different == 0,
             "repeated_gpu_final_vram_identical": different == 0,
             "repeated_gpu_event_journal_identical":
