@@ -99,14 +99,21 @@ def _verified(source, native, scoped, handoff, image, upstream, pc_binary, *,
     source, native, scoped, handoff = folders
     frame = number(frame, "target GPU frame", 1, 2**32-1)
 
+    # Capture BOTH identities before expensive independent re-verification.
+    # A byte-identical same-UID replacement inode must not be accepted as
+    # unchanged merely because the final SHA-256 still matches.
+    # Lazy import avoids the cycle join -> final witness import at module load.
+    from tools.verify_map02_cycle_cd_gpu_join import _private_evidence_snapshot
+    source_raw, source_identity = _private_evidence_snapshot(
+        source, GPU_GTE_MANIFEST, max_bytes=4096)
+    process_raw, process_identity = _private_evidence_snapshot(
+        handoff, PROCESS_MANIFEST, max_bytes=4096)
     gpu = verify_published_window_scoped_witness(
         source, native, scoped, frame=frame, compiler=compiler)
     cd = verify_map02_original_cd_read(
         scoped, native, image, upstream, frame=frame)
     process = verify_observed_process(
         handoff, native, scoped, pc_binary, image, upstream=upstream)
-    source_raw = private_file(source, GPU_GTE_MANIFEST, max_bytes=4096)
-    process_raw = private_file(handoff, PROCESS_MANIFEST, max_bytes=4096)
     process_info = parse_json(process_raw, PROCESS_MANIFEST)
 
     if (_sha(source_raw) != gpu["private_witness_sha256"] or
@@ -139,9 +146,11 @@ def _verified(source, native, scoped, handoff, image, upstream, pc_binary, *,
         "original_map02_rendering_proven": False,
         "physical_ps1_equivalence_proven": False,
     })
-    if (private_file(source, GPU_GTE_MANIFEST, max_bytes=4096) != source_raw or
-            private_file(handoff, PROCESS_MANIFEST, max_bytes=4096) != process_raw):
-        raise ValueError("GTE/GPU or observed-process evidence changed during final CD audit")
+    if (_private_evidence_snapshot(source, GPU_GTE_MANIFEST, max_bytes=4096)
+            != (source_raw, source_identity) or
+            _private_evidence_snapshot(handoff, PROCESS_MANIFEST, max_bytes=4096)
+            != (process_raw, process_identity)):
+        raise ValueError("GTE/GPU or observed-process evidence identity changed during final CD audit")
     return record
 
 
@@ -183,16 +192,19 @@ def verify_published_original_cd_witness(
         source, native, scoped, handoff, image, upstream, pc_binary, *,
         frame, compiler="gcc"):
     source = _private_directory(source)
-    raw = private_file(source, MANIFEST, max_bytes=4096)
+    from tools.verify_map02_cycle_cd_gpu_join import _private_evidence_snapshot
+    raw, manifest_identity = _private_evidence_snapshot(
+        source, MANIFEST, max_bytes=4096)
     recorded = _validate(parse_json(raw, MANIFEST))
     if recorded["gpu_draw_frame"] != number(
             frame, "selected GPU frame", 1, 2**32-1):
         raise ValueError("selected frame differs from original MAP02 CD/GPU witness")
     verified = _verified(source, native, scoped, handoff, image, upstream,
                          pc_binary, frame=frame, compiler=compiler)
-    if verified != recorded or private_file(
-            source, MANIFEST, max_bytes=4096) != raw:
-        raise ValueError("final original MAP02 CD/GPU process witness changed")
+    if (verified != recorded or
+            _private_evidence_snapshot(source, MANIFEST, max_bytes=4096)
+            != (raw, manifest_identity)):
+        raise ValueError("final original MAP02 CD/GPU process witness identity changed")
     return {"private_map02_cd_final_sha256": _sha(raw),
             "same_process_original_cd_and_gpu_source_bound": True,
             "original_map02_rendering_proven": False,
