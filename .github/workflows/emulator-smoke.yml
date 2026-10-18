@@ -79,6 +79,7 @@ on:
       - 'tools/analyze_nexium_scene_audio.py'
       - 'tools/analyze_nexium_pcm_stream_integrity.py'
       - 'tools/analyze_nexium_pcm_scene_silence.py'
+      - 'tools/audit_nexium_pcm_exit_controls.py'
       - 'tests/test_analyze_nexium_pcm_scene_silence.py'
       - 'tests/test_analyze_nexium_pcm_stream_integrity.py'
       - 'tools/capture_nexium_scene_audio.sh'
