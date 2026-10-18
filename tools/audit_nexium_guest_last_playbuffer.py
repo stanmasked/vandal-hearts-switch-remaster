@@ -51,7 +51,7 @@ def audit_original(raw:bytes, exit_doc:dict, page_doc:dict, worker_doc:dict)->di
         vals.append(val)
     count,success,failures,index,begin,end,clock_rejected=vals
     if (not count or not success or success+failures!=count
-            or index>count or not index or clock_rejected
+            or index>count or index<success or clock_rejected
             or not 0<begin<=end):
         raise ExitTimelineError("no trustworthy final successful audout service call")
     if (worker_doc.get("result")!=WORKER_VERIFIED or
