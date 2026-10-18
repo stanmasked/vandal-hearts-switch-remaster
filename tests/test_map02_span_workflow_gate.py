@@ -60,6 +60,15 @@ class SpanWorkflowGateTests(unittest.TestCase):
                 self.assertIn("printf '%s" + chr(92) + "n'", line)
                 self.assertNotIn("printf '%s" + chr(92) * 2 + "n'", line)
 
+    def test_sparse_checkout_supplies_all_pinned_pc_source_headers(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        checkout = text.split("      - name: Checkout pinned public PC-port source", 1)[1].split(
+            "      - name: Audit local preflight against public pinned upstream", 1)[0]
+        for name in ("libsnd_internal.h", "pc_balance.h", "pc_etc_internal.h",
+                     "pc_gpu_internal.h", "pc_movie_subs.h", "pc_overlay.h",
+                     "pc_saves.h"):
+            self.assertIn("platform/pc/src/" + name, checkout)
+
     def test_private_make_uses_sealed_descriptors_in_ci(self):
         text = WORKFLOW.read_text(encoding="utf-8")
         private_build = text.split(
