@@ -34,8 +34,10 @@ class TimelineToNativeFt4JoinTests(unittest.TestCase):
         self.native = Path(temp.name)
         self.native_frame = 12
         # Deliberately reversed relative to source submission order.
+        # Both CLUT palettes coexist by the time DrawOTag starts. GPU OT
+        # draws must not jump back to the earlier source upload snapshot.
         self.packets = [self.packet(1), self.packet(0)]
-        self.native_vrams = [self.base.vrams[1], self.base.vrams[0]]
+        self.native_vrams = [self.base.vrams[1]] * 2
         self.save()
 
     def packet(self, source_index):
@@ -120,7 +122,7 @@ class TimelineToNativeFt4JoinTests(unittest.TestCase):
         after = bytearray(self.native_snapshots[1])
         timeline_fixture.fixture.word(after, 0, 0, 0x801f)  # bit 15 survives
         timeline_fixture.fixture.word(after, 690, 499, 0x001f)
-        self.native_snapshots[1] = bytes(after)
+        self.native_snapshots[1:4] = [bytes(after)] * 3
         self.write_native()
         report = self.verify()
         self.assertEqual(report["matched_ft4_draw_changed_vram_words"], 2)
@@ -131,7 +133,7 @@ class TimelineToNativeFt4JoinTests(unittest.TestCase):
         # Changing only bit15 of BGR555 still counts as a VRAM write.
         after = bytearray(self.native_snapshots[1])
         timeline_fixture.fixture.word(after, 690, 499, 0x83e0)
-        self.native_snapshots[1] = bytes(after)
+        self.native_snapshots[1:4] = [bytes(after)] * 3
         self.write_native()
         report = self.verify()
         self.assertEqual(report["matched_ft4_draw_changed_vram_words"], 2)
@@ -166,7 +168,7 @@ class TimelineToNativeFt4JoinTests(unittest.TestCase):
             self.base.vrams[i] = bytes(raw)
         for probe in self.base.events[0]["texture"]["probes"]:
             probe["bgr555"] = 0
-        self.native_vrams = [self.base.vrams[1], self.base.vrams[0]]
+        self.native_vrams = [self.base.vrams[1]] * 2
         self.save()
         result = self.verify()
         self.assertEqual(
@@ -193,7 +195,7 @@ class TimelineToNativeFt4JoinTests(unittest.TestCase):
             self.base.vrams[i] = bytes(raw)
         for probe in self.base.events[0]["texture"]["probes"]:
             probe["bgr555"] = 0x001f
-        self.native_vrams = [self.base.vrams[1], self.base.vrams[0]]
+        self.native_vrams = [self.base.vrams[1]] * 2
         self.save()
         for native_event in self.native_events[2:4]:
             native_event["semi"] = 1
@@ -220,7 +222,7 @@ class TimelineToNativeFt4JoinTests(unittest.TestCase):
             raw = bytearray(self.base.vrams[i])
             timeline_fixture.fixture.word(raw, 380, 192, 0x1f11)
             self.base.vrams[i] = bytes(raw)
-        self.native_vrams = [self.base.vrams[1], self.base.vrams[0]]
+        self.native_vrams = [self.base.vrams[1]] * 2
         self.save()
         for native_event in self.native_events[2:4]:
             native_event["semi"] = 1
@@ -304,7 +306,7 @@ class TimelineToNativeFt4JoinTests(unittest.TestCase):
             self.base.vrams[i] = bytes(raw)
         for probe in self.base.events[0]["texture"]["probes"]:
             probe["bgr555"] = 0x8000
-        self.native_vrams = [self.base.vrams[1], self.base.vrams[0]]
+        self.native_vrams = [self.base.vrams[1]] * 2
         self.save()
         for event in self.native_events[2:4]:
             event["semi"] = 1
@@ -343,7 +345,7 @@ class TimelineToNativeFt4JoinTests(unittest.TestCase):
         # contradicts the PC rasterizer even though the clip alone permits it.
         altered = bytearray(self.native_snapshots[1])
         timeline_fixture.fixture.word(altered, 0, 0, 0x801f)
-        self.native_snapshots[1] = bytes(altered)
+        self.native_snapshots[1:4] = [bytes(altered)] * 3
         self.write_native()
         with self.assertRaisesRegex(ValueError, "geometry entirely outside"):
             self.verify()
@@ -356,7 +358,7 @@ class TimelineToNativeFt4JoinTests(unittest.TestCase):
             self.verify()["matched_ft4_draws_proven_no_coverage"], 1)
         changed = bytearray(self.native_snapshots[1])
         timeline_fixture.fixture.word(changed, 20, 20, 0x7fff)
-        self.native_snapshots[1] = bytes(changed)
+        self.native_snapshots[1:4] = [bytes(changed)] * 3
         self.write_native()
         with self.assertRaisesRegex(ValueError, "outside captured DRAWENV"):
             self.verify()
@@ -382,7 +384,7 @@ class TimelineToNativeFt4JoinTests(unittest.TestCase):
         # of the shifted FT4 vertex coordinates.
         after = bytearray(self.native_snapshots[1])
         timeline_fixture.fixture.word(after, 2, 2, 0x801f)
-        self.native_snapshots[1] = bytes(after)
+        self.native_snapshots[1:4] = [bytes(after)] * 3
         self.write_native()
         report = self.verify()
         self.assertEqual(report["matched_ft4_draw_changed_vram_words"], 1)
@@ -391,7 +393,7 @@ class TimelineToNativeFt4JoinTests(unittest.TestCase):
         # recorded draw clip is an impossible native PC FT4 delta.
         after = bytearray(self.native_snapshots[1])
         timeline_fixture.fixture.word(after, 5, 2, 0x7c00)
-        self.native_snapshots[1] = bytes(after)
+        self.native_snapshots[1:4] = [bytes(after)] * 3
         self.write_native()
         with self.assertRaisesRegex(ValueError, "outside captured DRAWENV"):
             self.verify()
@@ -418,16 +420,17 @@ class TimelineToNativeFt4JoinTests(unittest.TestCase):
     def test_changed_current_face_clut_detected_at_native_draw(self):
         damaged = bytearray(self.native_snapshots[0])
         timeline_fixture.fixture.word(damaged, 690, 499, 0x7c00)
-        self.native_snapshots[0] = bytes(damaged)
+        # Keep the native GPU draw sequence continuous so this failure
+        # is a source/CLUT mismatch, not an unrelated missing GPU event.
+        self.native_snapshots[:] = [bytes(damaged)] * 4
         self.write_native()
         with self.assertRaisesRegex(ValueError, "texture or CLUT words differ"):
             self.verify()
 
-    def test_swapped_per_submission_vram_not_accepted(self):
-        self.native_snapshots[0], self.native_snapshots[2] = (
-            self.native_snapshots[2], self.native_snapshots[0])
-        self.native_snapshots[1], self.native_snapshots[3] = (
-            self.native_snapshots[3], self.native_snapshots[1])
+    def test_stale_pre_upload_native_vram_not_accepted(self):
+        # A continuous native GPU trace cannot substitute an earlier
+        # source-state image that lacks the second face's CLUT upload.
+        self.native_snapshots[:] = [self.base.vrams[0]] * 4
         self.write_native()
         with self.assertRaisesRegex(ValueError, "texture or CLUT words differ"):
             self.verify()
@@ -435,8 +438,7 @@ class TimelineToNativeFt4JoinTests(unittest.TestCase):
     def test_unrelated_native_render_target_change_allowed(self):
         raw = bytearray(self.native_snapshots[0])
         timeline_fixture.fixture.word(raw, 0, 0, 0xffff)
-        self.native_snapshots[0] = bytes(raw)
-        self.native_snapshots[1] = bytes(raw)
+        self.native_snapshots[:] = [bytes(raw)] * 4
         self.write_native()
         self.assertEqual(self.verify()["uniquely_matched_source_faces"], 2)
 
