@@ -160,6 +160,8 @@ jobs:
         run: /tmp/vh-stage318-source-tests/bin/python -m unittest discover -s tests -p 'test_replay_nexium_original_last_playbuffer_archive.py' -v
       - name: Stage323 independently replay original last16 PlayBuffer history and baseline
         run: /tmp/vh-stage318-source-tests/bin/python -m unittest discover -s tests -p 'test_replay_nexium_original_playbuffer_history_archive.py' -v
+      - name: Stage324 two independent original guest PlayBuffer history source comparisons
+        run: /tmp/vh-stage318-source-tests/bin/python -m unittest discover -s tests -p 'test_compare_nexium_two_original_playbuffer_windows.py' -v
       - name: Stage314 byte-exact original guest audout release source preservation
         run: python3 -m unittest discover -s tests -p 'test_preserve_nexium_guest_last_buffer_original.py' -v
       - name: Stage308 CRC optical/guest exit source tests with Pillow
