@@ -59,6 +59,19 @@ static const uint8_t steal_song[] = {
     10,60,110, 0,0x80,40,0, 0,0x90,61,100,
     0x81,0x70,0xff,0x2f
 };
+/* Twenty simultaneous sustained voices must all detach from the old
+ * bank before its caller-owned sample storage can be freed. */
+static const uint8_t full_voice_scene_song[]={
+    HEADER,
+    0,0xc0,7,
+    0,0x90,60,100,
+    0,61,100, 0,62,100, 0,63,100, 0,64,100,
+    0,65,100, 0,66,100, 0,67,100, 0,68,100,
+    0,69,100, 0,70,100, 0,71,100, 0,72,100,
+    0,73,100, 0,74,100, 0,75,100, 0,76,100,
+    0,77,100, 0,78,100, 0,79,100,
+    0x87,0x68,0xff,0x2f
+};
 static const uint8_t invalid_status[] = {HEADER,0,60,100,0,0xff,0x2f};
 static const uint8_t invalid_tempo[] = {HEADER,0,0xff,0x51,0x03};
 static const uint8_t invalid_vlq[] = {HEADER,0x81,0x80,0x80,0x80,0,0xff,0x2f};
@@ -568,6 +581,45 @@ static void test_repeated_scene_switch_preserves_wet_tail(void) {
     }
 }
 
+static void test_full_twenty_voice_scene_switch_detaches_bank(void) {
+    setup();
+    for(unsigned i=0;i<64u;i++)
+        next_scene_sample[i]=(int16_t)(-7000+(int)i*17);
+    assert(vh_native_spu_set_reverb(&spu,1,0.5f)==0);
+    assert(vh_native_seq_init(
+        &seq,full_voice_scene_song,sizeof full_voice_scene_song,
+        &spu,resolve_scene_reverb,&log_state,1u)==0);
+    assert(vh_native_seq_advance_block(&seq)>0);
+    assert(seq.note_ons==VH_NATIVE_MUSIC_VOICES);
+    for(unsigned i=0;i<VH_NATIVE_MUSIC_VOICES;i++)
+        assert(spu.voice[i].active && spu.voice[i].pcm==sample &&
+               spu.voice[i].reverb_send);
+    vh_native_spu_render(&spu,pcm,VH_AUDIO_BLOCK_FRAMES);
+    assert(spu.frames_rendered==VH_AUDIO_BLOCK_FRAMES);
+    const VhNativeSeq saved=seq;
+    before_scene_spu=spu;
+    assert(vh_native_seq_switch_scene(
+        &seq,invalid_data,sizeof invalid_data,&spu,
+        resolve_next_scene,&log_state,1u)==-1);
+    assert(!memcmp(&seq,&saved,sizeof saved));
+    assert(!memcmp(&spu,&before_scene_spu,sizeof spu));
+
+    assert(vh_native_seq_switch_scene(
+        &seq,controls_song,sizeof controls_song,&spu,
+        resolve_next_scene,&log_state,1u)==0);
+    assert(seq.note_ons==0u && seq.note_offs==0u &&
+           seq.blocks_advanced==0u);
+    assert(spu.frames_rendered==0u);
+    assert(spu.reverb_enabled && spu.reverb_depth==0.5f);
+    assert(!memcmp(&spu.reverb,&before_scene_spu.reverb,
+                   sizeof spu.reverb));
+    for(unsigned i=0;i<VH_NATIVE_MUSIC_VOICES;i++)
+        assert(!spu.voice[i].active && !spu.voice[i].pcm);
+    assert(vh_native_seq_advance_block(&seq)>0);
+    assert(seq.note_ons==1u && spu.voice[0].active &&
+           spu.voice[0].pcm==next_scene_sample);
+}
+
 static void test_preflight_instrument_coverage(void) {
     setup();
     VhSeqAudit info={0};
@@ -612,6 +664,7 @@ int main(void) {
     test_preflight_instrument_coverage();
     test_scene_switch_preserves_audit_and_wet_tail();
     test_repeated_scene_switch_preserves_wet_tail();
+    test_full_twenty_voice_scene_switch_detaches_bank();
     puts("native pQES SEQ -> 20-voice SPU -> PCM ring: PASS");
     return 0;
 }
