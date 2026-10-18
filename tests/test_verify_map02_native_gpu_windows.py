@@ -1,7 +1,9 @@
 """Negative structural tests for the asset-free same-run GPU window witness."""
 import hashlib
+import io
 import json
 import os
+from contextlib import redirect_stderr
 from pathlib import Path
 import tempfile
 import unittest
@@ -284,6 +286,25 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
                     self.verify()
         log.write_bytes(b"".join(baseline))
         self.assertEqual(self.verify()["recorded_windows"], 1)
+
+    def test_cli_redacts_private_paths_in_window_errors(self):
+        private_path = "/private/owned-game/MAP02/window-capture.bin"
+        argv = ["native-window-audit", str(self.root), "--frame", "7"]
+        for error in (OSError(13, "private window unavailable", private_path),
+                      ValueError("bad capture event: " + private_path)):
+            with self.subTest(kind=type(error).__name__):
+                stderr = io.StringIO()
+                with (patch("sys.argv", argv),
+                      patch.object(window_module, "verify_native_windows",
+                                   side_effect=error),
+                      redirect_stderr(stderr)):
+                    with self.assertRaises(SystemExit) as exit_result:
+                        window_module.main()
+                self.assertEqual(exit_result.exception.code, 2)
+                self.assertIn("private native GPU window verification unavailable",
+                              stderr.getvalue())
+                self.assertNotIn(private_path, stderr.getvalue())
+                self.assertNotIn("window-capture.bin", stderr.getvalue())
 
     def test_root_and_windows_must_be_private_directories(self):
         self.window.chmod(0o755)
