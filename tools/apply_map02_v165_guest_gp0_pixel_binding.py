@@ -122,6 +122,7 @@ def patch_frontend(source: str) -> str:
         "            }\n",
         "arm exactly three expected GP0 words before each interpreter stage")
     source=once(source,BEFORE_FREEZE,
+        BEFORE_FREEZE.replace("            GPUFreeze_t freeze_state={0};\n", "")+
         "            if(vh165_mips_gp0_vram_bound){\n"
         "                unsigned words=vh165_guest_gp0_words();\n"
         "                unsigned faults=vh165_guest_gp0_faults();\n"
@@ -132,7 +133,8 @@ def patch_frontend(source: str) -> str:
         "                    ClosePlugins();SysClose();menu_finish();plat_finish();return 69;\n"
         "                }\n"
         "                vh165_total_words+=words;\n"
-        "            }\n"+BEFORE_FREEZE,
+        "            }\n"
+        "            GPUFreeze_t freeze_state={0};\n",
         "strictly bind 3 exact native gpulib words before VRAM readback")
     source=once(source,END,
         "        if(vh165_mips_gp0_vram_bound){\n"
