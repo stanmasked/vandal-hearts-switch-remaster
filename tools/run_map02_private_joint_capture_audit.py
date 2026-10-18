@@ -267,7 +267,7 @@ def run(executable, output_dir, gpu_journal_dir, *, frame, executable_sha256,
             source_capture_dir, launch_receipt=launch_receipt,
             preflight_report=preflight_report, executable=executable,
             compiler=compiler, gpu_journal_dir=gpu_journal_dir)
-        if (joined.get("schema") !=
+        if (type(joined) is not dict or joined.get("schema") !=
                 "vh.map02.live-frame-claimed-pair-native-digest-join.v1"
                 or joined.get("frame") != frame
                 or (joined.get("width"), joined.get("height")) != (WIDTH, HEIGHT)
