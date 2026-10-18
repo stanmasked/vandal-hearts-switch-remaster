@@ -63,7 +63,8 @@ int main(int argc, char **argv) {
         vh_map02_cycle_read_start(0x1bcc, 12);
     if (strcmp(argv[1], "cd-missing-read")) {
         for (i = 0; i < 12; ++i) {
-            if (!strcmp(argv[1], "cd-missing-sector") && i == 11)
+            if ((!strcmp(argv[1], "cd-missing-sector") ||
+                 !strcmp(argv[1], "cd-short-buffer-pointer")) && i == 11)
                 continue;
             vh_map02_cd_read_sector(
                 0x1bcc + i + (!strcmp(argv[1], "cd-wrong-sector") && i == 5),
@@ -71,7 +72,16 @@ int main(int argc, char **argv) {
         }
         if (!strcmp(argv[1], "cd-tampered-transfer"))
             returned[0] ^= 1u;
-        vh_map02_cd_read_finish(0x1bcc, 12, returned);
+        if (!strcmp(argv[1], "cd-short-buffer-pointer"))
+            vh_map02_cd_read_finish(0x1bcc, 12, (const unsigned char *)1);
+        else if (!strcmp(argv[1], "cd-wrong-length-pointer"))
+            vh_map02_cd_read_finish(0x1bcc, 11, (const unsigned char *)1);
+        else if (!strcmp(argv[1], "cd-wrong-lba-pointer"))
+            vh_map02_cd_read_finish(0x1bcd, 12, (const unsigned char *)1);
+        else if (!strcmp(argv[1], "cd-null-transfer"))
+            vh_map02_cd_read_finish(0x1bcc, 12, NULL);
+        else
+            vh_map02_cd_read_finish(0x1bcc, 12, returned);
     }
     if (!strcmp(argv[1], "cd-delayed-sector"))
         vh_map02_cd_read_sector(0x1bcc + 7, sectors + 7u * 2048u);
@@ -262,11 +272,27 @@ class CycleOrderTests(unittest.TestCase):
                      "cd-wrong-sector", "cd-tampered-transfer",
                      "cd-missing-completion", "cd-duplicate-completion",
                      "cd-premature-sector", "cd-orphan-finish",
-                     "cd-delayed-sector", "cd-duplicate-finish"):
+                     "cd-delayed-sector", "cd-duplicate-finish",
+                     "cd-short-buffer-pointer", "cd-wrong-length-pointer",
+                     "cd-wrong-lba-pointer", "cd-null-transfer"):
             with self.subTest(mode=mode):
                 proc = self.run_mode(mode)
                 self.assertEqual(proc.returncode, 0, proc.stderr)
                 self.assertIn("failed=1 receipt=0", proc.stdout)
+
+    def test_malformed_cd_finish_does_not_dereference_invalid_buffer(self):
+        # Deliberately inaccessible pointers: a malformed original CdRead
+        # transfer must fail before the observer scans 12 * 2048 bytes.
+        for mode in ("cd-short-buffer-pointer", "cd-wrong-length-pointer",
+                     "cd-wrong-lba-pointer"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                out = Path(tmp) / "private"
+                out.mkdir(mode=0o700)
+                proc = self.run_mode(mode, directory=out)
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                self.assertIn("failed=1 receipt=0", proc.stdout)
+                self.assertFalse(
+                    (out / "map02-single-process-cycle.jsonl").exists())
 
     def test_unrelated_cd_callbacks_outside_map02_read_are_ignored(self):
         proc = self.run_mode("cd-unrelated-before-and-after")
