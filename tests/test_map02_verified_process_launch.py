@@ -175,6 +175,72 @@ int main(int argc, char **argv) {
         with self.assertRaisesRegex(ValueError, "differs from local capture plan"):
             self.audit()
 
+    def test_late_audit_rejects_byte_identical_receipt_or_plan_inode_swap(self):
+        self.run_capture()
+        for filename in (RECEIPT, "gpu-local-capture-plan.json"):
+            with self.subTest(file=filename):
+                path = self.handoff / filename
+                backup = self.handoff.parent / ("audit-original-" + filename)
+                original_bytes = path.read_bytes()
+                original_inode = path.stat().st_ino
+
+                def swap_during_gpu_audit(*args, **kwargs):
+                    path.replace(backup)
+                    path.write_bytes(original_bytes)
+                    path.chmod(0o600)
+                    self.assertNotEqual(path.stat().st_ino, original_inode)
+                    return self.checked
+
+                try:
+                    with patch(
+                            "tools.map02_verified_process_launch.verify_window_scoped_join",
+                            side_effect=swap_during_gpu_audit):
+                        with self.assertRaisesRegex(
+                                ValueError, "identity changed during re-verification"):
+                            self.audit()
+                finally:
+                    if backup.exists():
+                        path.unlink(missing_ok=True)
+                        backup.replace(path)
+                self.assertEqual(path.stat().st_ino, original_inode)
+
+    def test_late_audit_refuses_linked_or_exposed_receipt_and_plan(self):
+        self.run_capture()
+        for filename in (RECEIPT, "gpu-local-capture-plan.json"):
+            with self.subTest(file=filename):
+                target = self.handoff / filename
+                other = self.handoff.parent / ("duplicate-" + filename)
+                os.link(target, other)
+                try:
+                    with self.assertRaisesRegex(ValueError, "owner-only 0600"):
+                        self.audit()
+                finally:
+                    other.unlink()
+                target.chmod(0o640)
+                try:
+                    with self.assertRaisesRegex(ValueError, "owner-only 0600"):
+                        self.audit()
+                finally:
+                    target.chmod(0o600)
+
+    def test_late_audit_refuses_same_metadata_second_read_corruption(self):
+        self.run_capture()
+        actual_pread = os.pread
+        observed_reads = []
+
+        def corrupt_second_pass(fd, count, offset):
+            result = actual_pread(fd, count, offset)
+            observed_reads.append(True)
+            if len(observed_reads) == 2:
+                return bytes([result[0] ^ 1]) + result[1:]
+            return result
+
+        with patch("tools.verify_map02_cycle_cd_gpu_join.os.pread",
+                   side_effect=corrupt_second_pass):
+            with self.assertRaisesRegex(ValueError, "bytes changed between reads"):
+                self.audit()
+        self.assertEqual(len(observed_reads), 2)
+
     def test_mutated_receipt_and_synthetic_false_attestation_rejected(self):
         self.run_capture()
         receipt = self.handoff / RECEIPT
