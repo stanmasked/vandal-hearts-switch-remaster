@@ -37,7 +37,7 @@ def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
                                 *, frame, x, y, timeout=900,
                                 krom_source=None, compiler="gcc",
                                 allow_local_completion=False,
-                                stage_callback=None):
+                                dry_run=False, stage_callback=None):
     """Run only after explicit permission to publish missing PRIVATE evidence.
 
     No shell, no upload, no retry after partial failure. Subsequent attempts
@@ -54,7 +54,11 @@ def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
     timeout = number(timeout, "MAP02 launch timeout", 1, 86400)
     if compiler not in ("gcc", "clang"):
         raise ValueError("unsupported MAP02 original diagnostic compiler")
-    if allow_local_completion is not True:
+    if type(dry_run) is not bool:
+        raise ValueError("private MAP02 dry-run mode must be boolean")
+    if dry_run and allow_local_completion:
+        raise ValueError("MAP02 dry-run forbids local completion permission")
+    if not dry_run and allow_local_completion is not True:
         raise ValueError("explicit private MAP02 CD witness and PNG completion permission required")
 
     enter("private-layout")
@@ -91,6 +95,23 @@ def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
                     _with_identity=True) != (plan_raw, plan_identity):
         raise ValueError("MAP02 private launch plan changed before execution")
     require_original_seal_directory(must_be_empty=True)
+    if dry_run:
+        # Exactly the pre-execution checks used by the real one-shot path:
+        # no subprocess, no output witness, no finalizer, no seal.
+        enter("complete")
+        return {
+            "schema": "vh.map02.private-one-shot-dry-run.v1",
+            "gpu_draw_frame": frame,
+            "private_layout_and_capture_plan_checked": True,
+            "full_private_original_elf_disc_preflight_checked": True,
+            "ready_for_controlled_local_launch": True,
+            "gameplay_process_started": False,
+            "private_witnesses_written": False,
+            "private_final_seal_published": False,
+            "original_map02_rendering_proven": False,
+            "physical_ps1_equivalence_proven": False,
+            "private_game_files_uploaded": False,
+        }
 
     enter("observed-process")
     observed = launch_observed_pc(
@@ -176,6 +197,8 @@ def main():
     p.add_argument("--compiler", choices=("gcc", "clang"), default="gcc")
     p.add_argument("--allow-local-completion", action="store_true",
                    help="allow publishing only the named original CD witness and PNG in private folders")
+    p.add_argument("--dry-run", action="store_true",
+                   help="verify identical private inputs and clean seal destination without starting the PC binary or writing evidence")
     args = p.parse_args()
     last_stage = ["argument-validation"]
 
@@ -196,7 +219,7 @@ def main():
             timeout=args.timeout, krom_source=args.krom_source,
             compiler=args.compiler,
             allow_local_completion=args.allow_local_completion,
-            stage_callback=remember_stage)
+            dry_run=args.dry_run, stage_callback=remember_stage)
     except (OSError, ValueError, subprocess.TimeoutExpired):
         # Exceptions from the original ELF/CD/asset verifiers may contain
         # user-owned source paths; do not copy those into terminal/CI logs.
