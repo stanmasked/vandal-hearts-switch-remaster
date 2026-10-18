@@ -27,8 +27,10 @@ On `running != 0` it:
 
 Only when that same single running-flag read is **false** does it
 read the guest monotonic clock and mark a one-shot witness, then
-return false so the existing worker loop exits. If no clock/witness
-is available, audio still stops; the source marker remains unobserved.
+return false so the existing worker loop exits. If the mailbox, clock or witness
+is unavailable, the worker exits safely without manufacturing a stop
+observation or querying the guest clock. On a real non-null mailbox,
+the original single atomic running-flag read remains unchanged.
 Repeated invocation after a first observed stop doesn't replace
 the initial timestamp or call the clock again.
 
