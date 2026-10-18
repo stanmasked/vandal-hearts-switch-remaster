@@ -115,6 +115,32 @@ def _cycle_receipt(directory, frame):
     return raw, _sha(token.encode("ascii")), inode_identity
 
 
+def _cycle_cd_pair(scoped, cycle, frame, expected_session_sha256):
+    """Match private in-process order and original CdRead before process seal.
+
+    Do not conflate an ordered hook event with authenticated disc contents.
+    The full source/image/GPU recheck is performed by the final verifier.
+    Return the original bytes AND inode metadata for an after-audit recheck.
+    """
+    cycle_raw, session_digest, cycle_inode = _cycle_receipt(cycle, frame)
+    if session_digest != expected_session_sha256:
+        raise ValueError("single-process cycle nonce differs from GPU/scoped witness")
+    event = parse_json(cycle_raw[:-1], CYCLE_RECEIPT)
+    scoped = _private_directory(scoped)
+    cd_raw, cd_inode = _private_evidence_snapshot(scoped, CD_READ, max_bytes=2048)
+    cd_event = parse_json(cd_raw, CD_READ)
+    token = cd_event.get("capture_session") if type(cd_event) is dict else None
+    if (type(cd_event) is not dict or
+            cd_event.get("schema") != "vh.map02.original-cd-read.v1" or
+            cd_event.get("raw_user_crc32") != event["original_cd_raw_user_crc32"] or
+            cd_event.get("returned_user_crc32") != event["original_cd_raw_user_crc32"] or
+            type(token) is not str or len(token) != 32 or
+            any(ch not in "0123456789abcdef" for ch in token) or
+            _sha(token.encode("ascii")) != session_digest):
+        raise ValueError("ordered cycle CRC32 and original CdRead receipt differ")
+    return cycle_raw, cycle_inode, cd_raw, cd_inode
+
+
 def verify_cycle_cd_gpu_join(source, native, scoped, handoff, cycle, image,
                              upstream, pc_binary, *, frame, compiler="gcc"):
     frame = number(frame, "selected DrawOTag frame", 1, 2**32-1)
@@ -133,21 +159,11 @@ def verify_cycle_cd_gpu_join(source, native, scoped, handoff, cycle, image,
             original.get("capture_session_sha256") != cycle_session_sha256):
         raise ValueError("original CD/GPU manifest and ordered cycle are not one session")
 
-    # The cycle state machine exposes the CRC of the same original CdRead
-    # observer it gated before DrawOTag. Compare with the separate native
-    # CD receipt before accepting the expensive original disc/GPU process join.
-    cd_raw, cd_inode = _private_evidence_snapshot(scoped, CD_READ, max_bytes=2048)
-    cd_event = parse_json(cd_raw, CD_READ)
-    if (type(cd_event) is not dict or
-            cd_event.get("schema") != "vh.map02.original-cd-read.v1" or
-            cd_event.get("raw_user_crc32") !=
-            cycle_event["original_cd_raw_user_crc32"] or
-            cd_event.get("returned_user_crc32") !=
-            cycle_event["original_cd_raw_user_crc32"] or
-            type(cd_event.get("capture_session")) is not str or
-            hashlib.sha256(cd_event["capture_session"].encode("utf-8")).hexdigest()
-            != cycle_session_sha256):
-        raise ValueError("ordered cycle CRC32 and original CdRead receipt differ")
+    # Match both native CdRead and cycle-order evidence before the costly
+    # original-disc/GPU/process audit; retain their inode identities too.
+    pair = _cycle_cd_pair(scoped, cycle, frame, cycle_session_sha256)
+    if pair[:2] != (cycle_raw, cycle_inode):
+        raise ValueError("cycle evidence changed during verification")
 
     # This is intentionally the expensive FULL original source/CD/GPU/process
     # audit, not a mocked assertion or a trust-only schema comparison.
@@ -158,10 +174,7 @@ def verify_cycle_cd_gpu_join(source, native, scoped, handoff, cycle, image,
         raise ValueError("original CD/GPU manifest SHA differs after re-verification")
     if (_private_evidence_snapshot(source, CD_GPU_MANIFEST, max_bytes=4096)
             != (before, manifest_inode) or
-            _private_evidence_snapshot(scoped, CD_READ, max_bytes=2048)
-            != (cd_raw, cd_inode) or
-            _cycle_receipt(cycle, frame) !=
-            (cycle_raw, cycle_session_sha256, cycle_inode)):
+            _cycle_cd_pair(scoped, cycle, frame, cycle_session_sha256) != pair):
         raise ValueError("cycle or original CD/GPU evidence changed during verification")
 
     # Return hashes only; the nonce and all original game material remain private.
