@@ -90,8 +90,10 @@ class VirtualPcmStreamIntegrityTests(unittest.TestCase):
         self.assertEqual(doc["exact_zero_stereo_frames"],600)
 
     def test_adjacent_step_not_automatically_dropout(self):
-        self.write_pcm(self.monitor,[(0,0)]*479+[(20000,-20000)]*2+
-                       [(0,0)]*479)
+        # A 10ms window is 480 frames, so the first large step
+        # is precisely at frame 480, while the second is interior.
+        self.write_pcm(self.monitor,[(0,0)]*480+[(20000,-20000)]*2+
+                       [(0,0)]*478)
         doc=s.scan_pcm(self.monitor,self.ref(self.monitor,"monitor"),kind="monitor")
         self.assertEqual(doc["adjacent_frame_deltas_ge4096"],2)
         self.assertEqual(doc["ge4096_deltas_at_10ms_block_boundaries"],1)
