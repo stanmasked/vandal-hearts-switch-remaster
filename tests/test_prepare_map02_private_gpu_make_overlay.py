@@ -58,7 +58,7 @@ class PrivateGpuMakeOverlayTests(unittest.TestCase):
         # reproduce the original source-directory header lookup.
         # Two preprocessing recipes and two object recipes share the include profile.
         self.assertEqual(result.count("-Iinclude -Isrc"), 3)
-        self.assertEqual(result.count("$(VH_MAP02_PRIVATE_INCLUDE_FLAGS)"), 2)
+        self.assertEqual(result.count("$(VH_MAP02_PRIVATE_INCLUDE_FLAGS)"), 4)
         self.assertIn("map02-private-gpu-preprocess:", result)
         self.assertEqual(result.count(" -E -x c -o "), 2)
         self.assertEqual(result.count(" -M -MF "), 2)
