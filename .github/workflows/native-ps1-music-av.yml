@@ -90,6 +90,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_verify_native_av_physical_report.py' -v
       - name: Test complete seven-NRO manifest and source commit policy
         run: python -m unittest discover -s tests -p 'test_verify_native_av_nro_manifest.py' -v
+      - name: Test scenario-to-published-NRO binding without launching NeXium
+        run: python -m unittest discover -s tests -p 'test_verify_native_av_guest_witness.py' -v
 
   native-av:
     name: Compile original format SEQ VAB SPU plus video (no SDL2)
