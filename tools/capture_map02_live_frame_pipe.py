@@ -146,11 +146,14 @@ def capture(executable, output_dir, *, frame, width, height,
         if journal_path is not None:
             child_env.update({
                 "VH_MAP02_GPU_CAPTURE_FRAME": str(frame),
-                "VH_MAP02_GPU_CAPTURE_DIR": str(journal_path),
+                # Pin journal writes to this inherited directory descriptor;
+                # the child must not resolve the caller\'s mutable pathname.
+                "VH_MAP02_GPU_CAPTURE_DIR": f"/proc/self/fd/{journal_fd}",
             })
         proc = subprocess.Popen(
             [str(exe), *args], executable=f"/proc/self/fd/{fd}",
-            pass_fds=(fd,), cwd=exe.parent,
+            pass_fds=((fd, journal_fd) if journal_fd is not None
+                      else (fd,)), cwd=exe.parent,
             env=child_env, umask=0o077,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL, shell=False,
