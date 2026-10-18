@@ -147,7 +147,8 @@ def bounded_guest_probe(exe: bytes, elf: bytes, *, require_original=True,
                 effective = (src + offset) & MASK
                 pos = _phys(effective, width, width)
                 if op in (0x28, 0x29, 0x2b):
-                    if any(not (effective + width <= start or effective >= end)
+                    if any(not (pos + width <= (start & 0x1fffffff)
+                                or pos >= (end & 0x1fffffff))
                            for start, end in ranges):
                         raise GuestTrap("verified_code_write_refused")
                     store = (pos, rhs.to_bytes(4, "little")[:width])
