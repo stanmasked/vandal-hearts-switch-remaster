@@ -100,6 +100,17 @@ class PhysicalScreenshotPixelTests(unittest.TestCase):
         out=self.images(frame(x="blue"),frame(x="blue"))
         self.assertFalse(out["difference"]["new_x_return_pixels"])
 
+    def test_mixing_focus_and_manual_nros_cannot_fake_x_or_y(self):
+        focus_only=frame(x="not_present",y="not_present")
+        manual_after=frame(x="blue",y="blue")
+        out=self.images(focus_only,manual_after)
+        self.assertFalse(out["difference"]["new_x_return_pixels"])
+        self.assertFalse(out["difference"]["new_y_return_pixels"])
+        self.assertNotEqual(
+            self.cli("--require-x-return-pixels").returncode,0)
+        self.assertNotEqual(
+            self.cli("--require-y-return-pixels").returncode,0)
+
     def test_no_manual_tiles_cannot_look_like_manual_return(self):
         out=self.images(frame(x="not_present",y="not_present"),
                         frame(x="not_present",y="not_present"))
