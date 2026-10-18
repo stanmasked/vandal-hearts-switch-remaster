@@ -32,6 +32,8 @@ def five_source_words():
 
 
 def gp0_observer_c():
+    if five_source_words()[4]!=0xad090000:
+        raise ValueError("source-authored fifth opcode changed")
     return r'''
 /* v158 records ONLY the source-authored fifth synthetic MIPS SW
  * reaching the actual native PS1 MMIO write path. No private traces. */
@@ -44,7 +46,7 @@ static void vh158_capture_gp0(psxRegisters *regs,u32 addr,u32 value) {
     if((addr&0x1fffffffu)!=0x1f801810u ||
        value!=0xe3000000u ||
        regs->pc!=0x80010014u ||
-       regs->code!=0xac090000u) {
+       regs->code!=0xad090000u) {
         vh158_gp0_bad++;
         return;
     }
