@@ -5,6 +5,26 @@ import unittest
 WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/map02-upstream-trace.yml"
 
 class SpanWorkflowGateTests(unittest.TestCase):
+    def test_current_branch_ci_deduplicates_obsolete_workflow_runs(self):
+        # Workflow-level concurrency is scoped to the workflow and ref.
+        # Rapid pushes can supersede old jobs, not cancel other branches.
+        workflows = (
+            '.github/workflows/map02-dda-span.yml',
+            '.github/workflows/map02-upstream-trace.yml',
+            '.github/workflows/switch-toolchain.yml',
+        )
+        root = Path(__file__).resolve().parents[1]
+        expected = (
+            'concurrency:\n'
+            '  group: ${{ github.workflow }}-${{ github.ref }}\n'
+            '  cancel-in-progress: true\n'
+        )
+        for path in workflows:
+            with self.subTest(workflow=path):
+                source = (root / path).read_text(encoding='utf-8')
+                self.assertIn(expected, source)
+                self.assertEqual(source.count('concurrency:'), 1)
+                self.assertEqual(source.count('  cancel-in-progress: true'), 1)
     def test_original_gpu_and_span_objects_link_in_both_modes(self):
         text = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("for mode in diagnostic baseline; do", text)
