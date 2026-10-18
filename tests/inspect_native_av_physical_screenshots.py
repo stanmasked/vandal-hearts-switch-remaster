@@ -6,7 +6,9 @@ screenshot came from a physical Switch, that HOME was pressed, that
 audout resumed, or that audio could be heard.
 """
 import argparse
+import hashlib
 import json
+from io import BytesIO
 from pathlib import Path
 
 from PIL import Image
@@ -74,8 +76,9 @@ def uniform_tile(frame, points, label):
     return first
 
 
-def load_frame(path):
-    with Image.open(path) as source:
+def load_frame_bytes(png_bytes):
+    """Decode the same PNG bytes that are hashed for bound reports."""
+    with Image.open(BytesIO(png_bytes)) as source:
         if source.format != "PNG" or source.size != (WIDTH, HEIGHT):
             raise ValueError("expected an unscaled 1280x720 PNG diagnostic frame")
         if source.mode not in ("RGB", "RGBA"):
@@ -85,6 +88,10 @@ def load_frame(path):
         if source.mode == "RGBA" and source.getchannel("A").getextrema() != (255, 255):
             raise ValueError("expected a fully opaque PNG diagnostic frame")
         return source.convert("RGB")
+
+
+def load_frame(path):
+    return load_frame_bytes(Path(path).read_bytes())
 
 
 def observe_frame(frame):
@@ -216,11 +223,17 @@ def comparison(before, after):
     }
 
 
-def inspect(before_path, after_path):
-    before = observe_frame(load_frame(before_path))
-    after = observe_frame(load_frame(after_path))
-    return {
-        "format": "vh-av-physical-screenshot-pixel-observation-v1",
+def inspect(before_path, after_path, *, bind_png_hashes=False):
+    # Read each file ONCE: the inspected bytes and their SHA-256 must be
+    # identical even if a different process modifies a path mid-run.
+    before_bytes = Path(before_path).read_bytes()
+    after_bytes = Path(after_path).read_bytes()
+    before = observe_frame(load_frame_bytes(before_bytes))
+    after = observe_frame(load_frame_bytes(after_bytes))
+    report = {
+        "format": ("vh-av-physical-screenshot-pixel-observation-v2"
+                   if bind_png_hashes else
+                   "vh-av-physical-screenshot-pixel-observation-v1"),
         "before": before,
         "after": after,
         "difference": comparison(before, after),
@@ -229,6 +242,14 @@ def inspect(before_path, after_path):
         "audible_audio_verified": False,
         "note": "Pixel interpretation only; user must independently record physical actions and listening results",
     }
+    if bind_png_hashes:
+        # Unsigned, non-attesting file identity only. Not an assertion
+        # that a screenshot originated on a physical Nintendo Switch.
+        report["source_png_sha256"] = {
+            "before": hashlib.sha256(before_bytes).hexdigest(),
+            "after": hashlib.sha256(after_bytes).hexdigest(),
+        }
+    return report
 
 
 def main():
@@ -239,9 +260,12 @@ def main():
                         help="require changed B/F tally plus latest P blue")
     parser.add_argument("--require-x-return-pixels",action="store_true")
     parser.add_argument("--require-y-return-pixels",action="store_true")
+    parser.add_argument("--report-out",type=Path,
+                        help="exclusively write an unsigned SHA-256-bound JSON report (never attests hardware)")
     args=parser.parse_args()
     try:
-        result=inspect(args.before,args.after)
+        result=inspect(args.before,args.after,
+                       bind_png_hashes=args.report_out is not None)
         diff=result["difference"]
         for required,field in (
             (args.require_focus_pixels,"new_focus_cycle_pixels"),
@@ -250,9 +274,14 @@ def main():
         ):
             if required and not diff[field]:
                 raise ValueError("required screenshot condition not observed: "+field)
+        payload=json.dumps(result,ensure_ascii=False,indent=2,sort_keys=True)
+        if args.report_out is not None:
+            # Refuse to overwrite earlier results from another capture.
+            with args.report_out.open("x",encoding="utf-8") as stream:
+                stream.write(payload+"\n")
     except (ValueError, OSError) as exc:
         parser.error(str(exc))
-    print(json.dumps(result,ensure_ascii=False,indent=2,sort_keys=True))
+    print(payload)
 
 
 if __name__=="__main__":

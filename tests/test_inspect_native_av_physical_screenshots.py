@@ -1,4 +1,5 @@
 """Host-only fabricated PNGs test the pixel reader, NEVER HOME itself."""
+import hashlib
 import json
 import subprocess
 import sys
@@ -331,6 +332,51 @@ class PhysicalScreenshotPixelTests(unittest.TestCase):
         with self.assertRaisesRegex(
             ValueError,"inconsistent B tally tile pixels"):
             observe_frame(image)
+
+    def test_report_binds_exact_png_bytes_and_is_exclusive(self):
+        frame().save(self.a)
+        frame(b=1,f=1,p=True).save(self.b)
+        report_path=Path(self.tmp.name)/"pixel-report.json"
+        result=self.cli("--require-focus-pixels",
+                        "--report-out",str(report_path))
+        self.assertEqual(result.returncode,0,result.stderr)
+        bound=json.loads(report_path.read_text(encoding="utf-8"))
+        self.assertEqual(bound,json.loads(result.stdout))
+        self.assertEqual(
+            bound["format"],
+            "vh-av-physical-screenshot-pixel-observation-v2")
+        self.assertEqual(bound["source_png_sha256"],{
+            "before":hashlib.sha256(self.a.read_bytes()).hexdigest(),
+            "after":hashlib.sha256(self.b.read_bytes()).hexdigest(),
+        })
+        self.assertFalse(bound["physical_hardware_verified"])
+        self.assertFalse(bound["audible_audio_verified"])
+        self.assertEqual(self.cli("--report-out",str(report_path)).returncode,2)
+        # Editing non-status pixels must change the byte identity, even
+        # when the visible status classification remains unchanged.
+        altered=frame(b=1,f=1,p=True)
+        altered.putpixel((40,40),(99,77,55))
+        altered.save(self.b)
+        self.assertNotEqual(
+            bound["source_png_sha256"]["after"],
+            hashlib.sha256(self.b.read_bytes()).hexdigest())
+
+    def test_failed_gate_does_not_create_a_bound_report(self):
+        frame().save(self.a)
+        frame().save(self.b)
+        report_path=Path(self.tmp.name)/"rejected-report.json"
+        denied=self.cli("--require-focus-pixels",
+                        "--report-out",str(report_path))
+        self.assertNotEqual(denied.returncode,0)
+        self.assertFalse(report_path.exists())
+        # Backwards-compatible stdout remains the unbound v1 format.
+        accepted=self.cli()
+        self.assertEqual(accepted.returncode,0,accepted.stderr)
+        unbound=json.loads(accepted.stdout)
+        self.assertEqual(
+            unbound["format"],
+            "vh-av-physical-screenshot-pixel-observation-v1")
+        self.assertNotIn("source_png_sha256",unbound)
 
     def test_reject_transparent_rgba_hidden_status_pixels(self):
         image=frame().convert("RGBA")
