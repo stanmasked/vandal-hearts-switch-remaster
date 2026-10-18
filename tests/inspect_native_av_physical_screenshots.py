@@ -147,6 +147,15 @@ def observe_frame(frame):
         states["B"] != "blue" or states["F"] != "blue"
     ):
         raise ValueError("post-return PCM marker has no B/F pair")
+    # P is painted blue only while the focus trace has RETURNED phase
+    # and fresh PCM has been returned since that foreground transition.
+    # A complete Background -> InFocus pair cannot leave an unmatched
+    # Background notification. Once both counts saturate at five the
+    # pixels no longer establish equality, so remain inconclusive.
+    if (states["P"] == "blue" and
+            tallies["B"] != tallies["F"] and
+            (tallies["B"] < 5 or tallies["F"] < 5)):
+        raise ValueError("post-return PCM marker has unmatched B/F tallies")
     return {
         "variant_pixels": variant,
         "indicators": states,
