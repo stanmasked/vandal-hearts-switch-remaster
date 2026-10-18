@@ -26,8 +26,7 @@ from tools.verify_map02_frame_bundle import (
     fields, number, parse_json, sha_check,
 )
 from tools.verify_map02_native_gpu_capture import (
-    LOG as NATIVE_LOG, MAX_RECORDS, private_file, validate_meta,
-    verify_capture_receipt,
+    LOG as NATIVE_LOG, MAX_RECORDS, validate_meta, verify_capture_receipt,
 )
 from tools.verify_map02_putpixel_scope import FIELDS, SCHEMA as PIXEL_SCHEMA
 
@@ -90,6 +89,52 @@ def _snapshot_word(directory, filename, x, y, *, observed=None):
         os.close(fd)
 
 
+def _input_snapshot(directory, name, *, expected=None, max_bytes=None):
+    """Read a private input twice from one inode; return bytes and identity.
+
+    Keep the source-log and manifest audit separate from sampled VRAM:
+    the latter reads only a selected two-byte pixel at each DRAW edge.
+    """
+    if (type(name) is not str or not name or
+            name in (".", "..") or "/" in name or "\\\\" in name):
+        raise ValueError("invalid private MAP02 input name")
+    path = directory / name
+    flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) |
+             getattr(os, "O_NOFOLLOW", 0) |
+             getattr(os, "O_NONBLOCK", 0))
+    try:
+        fd = os.open(path, flags)
+    except OSError:
+        raise ValueError("private MAP02 input unavailable") from None
+    try:
+        def identity(st):
+            return (st.st_dev, st.st_ino, st.st_uid, st.st_mode,
+                    st.st_nlink, st.st_size, st.st_mtime_ns,
+                    st.st_ctime_ns)
+
+        before = os.fstat(fd)
+        size = before.st_size
+        if (not stat.S_ISREG(before.st_mode) or
+                before.st_uid != os.geteuid() or before.st_nlink != 1 or
+                (expected is not None and size != expected) or
+                (max_bytes is not None and not 0 < size <= max_bytes) or
+                (expected is None and max_bytes is None)):
+            raise ValueError("private MAP02 input type, owner or size invalid")
+        first = os.pread(fd, size, 0)
+        second = os.pread(fd, size, 0)
+        if len(first) != size or first != second:
+            raise ValueError("private MAP02 input changed or truncated")
+        if (identity(os.fstat(fd)) != identity(before) or
+                identity(os.stat(path, follow_symlinks=False)) !=
+                identity(before)):
+            raise ValueError("private MAP02 input inode changed")
+        return first, identity(before)
+    except OSError:
+        raise ValueError("private MAP02 input verification unavailable") from None
+    finally:
+        os.close(fd)
+
+
 def _jsonl(raw, label, *, max_rows=64):
     if not raw.endswith(b"\n") or b"\r" in raw:
         raise ValueError(label + ": incomplete or noncanonical JSONL")
@@ -117,7 +162,18 @@ def inspect_staged_capture(source_dir, native_dir):
             native.stat().st_uid != os.geteuid()):
         raise ValueError("MAP02 private capture directories require current owner")
 
-    bundle_raw = private_file(source, "bundle.json", max_bytes=64 * 1024)
+    inputs = {}
+
+    def read_input(directory, name, *, expected=None, max_bytes=None):
+        raw, inode = _input_snapshot(
+            directory, name, expected=expected, max_bytes=max_bytes)
+        key = (directory, name)
+        if key in inputs and inputs[key][:2] != (raw, inode):
+            raise ValueError("private MAP02 input changed between reads")
+        inputs[key] = (raw, inode, expected, max_bytes)
+        return raw
+
+    bundle_raw = read_input(source, "bundle.json", max_bytes=64 * 1024)
     bundle = parse_json(bundle_raw, "bundle.json")
     fields(bundle, ("schema", "frame", "vram_snapshot_frame", "ot_size",
                     "pc_source_commit", "decoded_map_sha256", "vram_sha256",
@@ -132,11 +188,11 @@ def inspect_staged_capture(source_dir, native_dir):
               1, 2**32 - 1) != source_frame:
         raise ValueError("source VRAM and MAP02 frame labels differ")
     number(bundle["ot_size"], "source OT size", 5, 4096)
-    sha_check(private_file(source, "map02.decoded.bin", expected=MAP_BYTES),
+    sha_check(read_input(source, "map02.decoded.bin", expected=MAP_BYTES),
               bundle["decoded_map_sha256"], "source MAP02 decoded map")
-    sha_check(private_file(source, "gpu-vram-le.bin", expected=VRAM_BYTES),
+    sha_check(read_input(source, "gpu-vram-le.bin", expected=VRAM_BYTES),
               bundle["vram_sha256"], "source VRAM snapshot")
-    events_raw = private_file(source, "gpu-events.jsonl", max_bytes=256 * 1024)
+    events_raw = read_input(source, "gpu-events.jsonl", max_bytes=256 * 1024)
     sha_check(events_raw, bundle["events_sha256"], "source GTE FT4 events")
     events = _jsonl(events_raw, "source FT4", max_rows=32)
     if any(e.get("stage") != "map02_ft4_submit" or
@@ -149,7 +205,7 @@ def inspect_staged_capture(source_dir, native_dir):
                 any(ch not in "0123456789abcdef" for ch in digest)):
             raise ValueError("invalid supplied original game fingerprint")
 
-    pixel_manifest_raw = private_file(source, "gpu-putpixel-ot.json",
+    pixel_manifest_raw = read_input(source, "gpu-putpixel-ot.json",
                                       max_bytes=64 * 1024)
     pixel_meta = parse_json(pixel_manifest_raw, "gpu-putpixel-ot.json")
     fields(pixel_meta, ("schema", "source_frame", "gpu_draw_frame",
@@ -161,7 +217,7 @@ def inspect_staged_capture(source_dir, native_dir):
         raise ValueError("PutPixel source frame or schema mismatch")
     gpu_frame = number(pixel_meta["gpu_draw_frame"], "GPU DrawOTag frame",
                        1, 2**32 - 1)
-    overdraw_raw = private_file(source, "gpu-native-overdraw.json",
+    overdraw_raw = read_input(source, "gpu-native-overdraw.json",
                                 max_bytes=64 * 1024)
     sha_check(overdraw_raw, pixel_meta["overdraw_manifest_sha256"],
               "overdraw evidence")
@@ -175,12 +231,12 @@ def inspect_staged_capture(source_dir, native_dir):
             number(overdraw["gpu_draw_frame"], "overdraw GPU frame",
                    1, 2**32 - 1) != gpu_frame):
         raise ValueError("overdraw frame or schema differs")
-    ot_raw = private_file(source, "gpu-ot-order-join.json",
+    ot_raw = read_input(source, "gpu-ot-order-join.json",
                           max_bytes=64 * 1024)
     sha_check(ot_raw, overdraw["ot_order_manifest_sha256"],
               "original AddPrim/OT join")
 
-    native_raw = private_file(native, NATIVE_LOG, max_bytes=128 * 1024)
+    native_raw = read_input(native, NATIVE_LOG, max_bytes=128 * 1024)
     sha_check(native_raw, pixel_meta["native_events_sha256"],
               "native original-PC GPU log")
     sha_check(native_raw, overdraw["native_events_sha256"],
@@ -201,9 +257,9 @@ def inspect_staged_capture(source_dir, native_dir):
                 raise ValueError("native GPU before/after provenance changed")
         pairs.append((before, after))
 
-    pixels_raw = private_file(native, STAGED_PIXEL, max_bytes=16 * 1024)
-    blend_raw = private_file(native, STAGED_BLEND, max_bytes=16 * 1024)
-    edge_raw = private_file(native, STAGED_EDGES, max_bytes=MAX_EDGE_BYTES)
+    pixels_raw = read_input(native, STAGED_PIXEL, max_bytes=16 * 1024)
+    blend_raw = read_input(native, STAGED_BLEND, max_bytes=16 * 1024)
+    edge_raw = read_input(native, STAGED_EDGES, max_bytes=MAX_EDGE_BYTES)
     sha_check(pixels_raw, pixel_meta["putpixel_events_sha256"],
               "independently supplied PutPixel digest")
     pixels = complete_events(pixels_raw, "staged native PutPixel")
@@ -240,7 +296,7 @@ def inspect_staged_capture(source_dir, native_dir):
             area = rect[2] * rect[3]
             if not 0 < area <= 16384:
                 raise ValueError("invalid source VRAM upload extent")
-            private_file(native, after["upload"], expected=area * 2)
+            read_input(native, after["upload"], expected=area * 2)
     for ordinal, (pair, edge) in enumerate(zip(native_draws, edges)):
         before, after = pair
         if (before["primitive_type"] != edge["primitive_type"] or
@@ -255,6 +311,14 @@ def inspect_staged_capture(source_dir, native_dir):
     # draw-edge comparison but before the structural result is returned.
     for filename in tuple(sampled_inodes):
         sample(filename)
+
+    # Verify original manifests, events and transfers again after GPU
+    # samples. A byte-identical inode replacement or metadata drift is
+    # not equivalent to the file used for the initial consistency check.
+    for (directory, name), (raw, inode, expected, max_bytes) in inputs.items():
+        if _input_snapshot(directory, name, expected=expected,
+                           max_bytes=max_bytes) != (raw, inode):
+            raise ValueError("private MAP02 input changed during preflight")
 
     # Source files may still be synthetic despite perfect hashes.
     return {
