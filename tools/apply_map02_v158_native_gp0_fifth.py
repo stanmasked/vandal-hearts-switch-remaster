@@ -58,6 +58,8 @@ void vh158_disarm_gp0(void){vh158_gp0_active=0u;}
 
 
 def patch_memory(source: str) -> str:
+    if "vh158_capture_gp0" in source:
+        raise ValueError("refusing to install native GP0 observer twice")
     source=once(source,
         "void vh140_mmio_enable(unsigned mutate_expected) {\n",
         gp0_observer_c()+"void vh140_mmio_enable(unsigned mutate_expected) {\n",
