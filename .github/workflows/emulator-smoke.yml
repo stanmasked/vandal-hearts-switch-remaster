@@ -48,6 +48,8 @@ on:
       - 'tests/test_audit_nexium_audout_repeatability.py'
       - 'tools/verify_switch_runtime_nro.py'
       - 'tests/test_verify_switch_runtime_nro.py'
+      - 'tools/verify_switch_wet_tail_nro.py'
+      - 'tests/test_verify_switch_wet_tail_nro.py'
       - 'tests/test_audit_nexium_audout_queue.py'
       - 'tests/check_nro.py'
       - 'tools/analyze_nexium_scene_audio.py'
@@ -118,6 +120,7 @@ jobs:
           python3 -m unittest discover -s tests -p "test_audit_nexium_audout_repeatability.py" -v
           python3 -m unittest discover -s tests -p "test_analyze_nexium_audout_window_maxima.py" -v
           python3 -m unittest discover -s tests -p "test_verify_switch_runtime_nro.py" -v
+          python3 -m unittest discover -s tests -p "test_verify_switch_wet_tail_nro.py" -v
           python3 -m unittest discover -s tests -p "test_analyze_nexium_transition_timing.py" -v
           python3 -m unittest discover -s tests -p "test_audit_nexium_guest_sd_handoff.py" -v
           bash -n tools/capture_nexium_scene_soak.sh
@@ -252,30 +255,15 @@ jobs:
           name: runtime-smoke-wet-tail
           path: wet-tail
 
-      - name: Verify wet-tail runtime artifact provenance
+      - name: Verify wet-tail pair with tampering-tested, same-run gate
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import hashlib,json,os
-          from pathlib import Path
-          manifest=json.loads(
-              Path("wet-tail/runtime-wet-tail-manifest.json").read_text())
-          nro=Path("wet-tail/vandal-hearts-wet-tail.nro")
-          baseline=json.loads(Path("nros/runtime-nro-manifest.json").read_text())
-          if (manifest["schema"]!="vh-switch-explicit-wet-tail/v1"
-              or manifest["git_sha"]!=os.environ["GITHUB_SHA"]
-              or manifest["run_id"]!=int(os.environ["GITHUB_RUN_ID"])
-              or manifest["run_attempt"]!=int(os.environ["GITHUB_RUN_ATTEMPT"])
-              or manifest["mode"]!=1
-              or manifest["nro_name"]!=nro.name
-              or manifest["nro_bytes"]!=nro.stat().st_size
-              or manifest["nro_sha256"]!=hashlib.sha256(nro.read_bytes()).hexdigest()
-              or manifest["baseline_sha256"]!=baseline["nro_sha256"]
-              or manifest["nro_sha256"]==baseline["nro_sha256"]):
-              raise SystemExit("wet-tail NRO source/run/hash mismatch")
-          print("Verified same-run experimental wet-tail NRO manifest")
-          PY
+          python3 tools/verify_switch_wet_tail_nro.py nros wet-tail \
+            --git-sha "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            | tee wet-tail-pair-preflight.json
 
       - name: Require NRO from current run, commit and attempt
         shell: bash
@@ -1581,4 +1569,5 @@ jobs:
           path: |
             runtime-evidence/
             integrated-nro-preflight.json
+            wet-tail-pair-preflight.json
           if-no-files-found: warn
