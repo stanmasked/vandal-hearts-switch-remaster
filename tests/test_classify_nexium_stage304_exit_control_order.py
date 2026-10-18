@@ -15,7 +15,7 @@ def csv_source(bytes_=(10000,10100,10200),times=(100000,100010,100020)):
             for event,size,ms in zip(
                 ("before_plus_down","after_plus_up","control_sequence_end"),
                 bytes_,times)
-    ).encode()
+    )).encode()
 
 class OriginalControlPairPostmortemTests(unittest.TestCase):
     def test_clean_source_has_no_violation(self):
