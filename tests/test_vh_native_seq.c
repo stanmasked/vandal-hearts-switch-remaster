@@ -515,6 +515,59 @@ static void test_scene_switch_preserves_audit_and_wet_tail(void) {
     assert(spu.frames_rendered==VH_AUDIO_BLOCK_FRAMES);
 }
 
+/* A music bank may change many times in one session. Prove every
+ * transition detaches old PCM pointers while retaining the complete
+ * wet-tail buffer, including when a read-only preflight is interleaved
+ * with the live sequencer. */
+static void test_repeated_scene_switch_preserves_wet_tail(void) {
+    setup();
+    for(unsigned i=0;i<64u;i++)
+        next_scene_sample[i]=(int16_t)(-11000+(int)i*29);
+    assert(vh_native_spu_set_reverb(&spu,1,0.5f)==0);
+    assert(vh_native_seq_init(&seq,controls_song,sizeof controls_song,
+                              &spu,resolve_scene_reverb,
+                              &log_state,1u)==0);
+    for(unsigned iteration=0;iteration<32u;iteration++) {
+        const VhSeqResolve incoming=(iteration%2u)
+            ? resolve_scene_reverb : resolve_next_scene;
+        const int16_t *expected=(iteration%2u)
+            ? sample : next_scene_sample;
+        VhSeqAudit report={0};
+        const VhNativeSeq live_seq=seq;
+        before_scene_spu=spu;
+        assert(vh_native_seq_audit(controls_song,sizeof controls_song,
+                                   incoming,&log_state,&report)==0);
+        assert(report.note_events==1u && report.resolved_notes==1u &&
+               report.missing_notes==0u);
+        assert(!memcmp(&seq,&live_seq,sizeof seq));
+        assert(!memcmp(&spu,&before_scene_spu,sizeof spu));
+        assert(vh_native_seq_switch_scene(
+            &seq,invalid_data,sizeof invalid_data,&spu,
+            incoming,&log_state,1u)==-1);
+        assert(!memcmp(&seq,&live_seq,sizeof seq));
+        assert(!memcmp(&spu,&before_scene_spu,sizeof spu));
+
+        assert(vh_native_seq_switch_scene(
+            &seq,controls_song,sizeof controls_song,&spu,
+            incoming,&log_state,1u)==0);
+        assert(seq.spu==&spu && seq.blocks_advanced==0u &&
+               seq.note_ons==0u && seq.note_offs==0u);
+        assert(spu.frames_rendered==0u);
+        assert(spu.reverb_enabled && spu.reverb_depth==0.5f);
+        assert(!memcmp(&spu.reverb,&before_scene_spu.reverb,
+                       sizeof spu.reverb));
+        for(unsigned voice=0;voice<VH_NATIVE_MUSIC_VOICES;voice++)
+            assert(!spu.voice[voice].pcm &&
+                   !spu.voice[voice].active);
+        assert(vh_native_seq_advance_block(&seq)>0);
+        assert(seq.note_ons==1u && seq.blocks_advanced==1u);
+        assert(spu.voice[0].pcm==expected &&
+               spu.voice[0].reverb_send);
+        vh_native_spu_render(&spu,pcm,VH_AUDIO_BLOCK_FRAMES);
+        assert(spu.frames_rendered==VH_AUDIO_BLOCK_FRAMES);
+    }
+}
+
 static void test_preflight_instrument_coverage(void) {
     setup();
     VhSeqAudit info={0};
@@ -558,6 +611,7 @@ int main(void) {
     test_512_pcm_event_to_spu_fifo();
     test_preflight_instrument_coverage();
     test_scene_switch_preserves_audit_and_wet_tail();
+    test_repeated_scene_switch_preserves_wet_tail();
     puts("native pQES SEQ -> 20-voice SPU -> PCM ring: PASS");
     return 0;
 }
