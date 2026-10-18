@@ -1,0 +1,91 @@
+name: Main MAP02 plus staged native audio - isolated CI
+
+on:
+  pull_request:
+    paths:
+      - "source/vh_*"
+      - "tests/test_vh_*"
+      - "tools/run_staged_audio_foundation_tests.sh"
+      - "docs/MAIN_MAP02_AUDIO_STAGING.md"
+      - ".github/workflows/main-map02-audio-staging.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  original-main-map02-regressions:
+    name: Preserve main graphics and MAP02 host tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run unchanged graphics and MAP02 test targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          targets=(
+            test_game_rules test_software_renderer test_ps1_abr_blend
+            test_map02_face_direction test_map02_projection
+            test_map02_terrain_ot_scene test_map02_vram4_frame
+          )
+          args=()
+          for target in "${targets[@]}"; do args+=("build/$target"); done
+          make "${args[@]}"
+          for target in "${targets[@]}"; do "build/$target"; done
+          echo "PASS: 7 unchanged main MAP02 and graphics test targets" >> "$GITHUB_STEP_SUMMARY"
+
+  staged-native-audio:
+    name: Audio foundation host regressions (${{ matrix.compiler }}; ASan + UBSan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run eight isolated audio regression executables
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tools/run_staged_audio_foundation_tests.sh "${{ matrix.compiler }}"
+          echo "PASS: ${{ matrix.compiler }} staged audio tests without modifying main Makefile" >> "$GITHUB_STEP_SUMMARY"
+
+  verify-origin-and-scope:
+    name: Exact audio blobs and unchanged MAP02 files
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Compare staged file blob IDs to integrated audio source commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          audio="bb92f521596588ab47e2e529fc8a3ebacb5a93a8"
+          main="af8e1709488df6e9bcc591e66fae337bcf713c69"
+          git cat-file -e "$audio^{commit}"
+          git cat-file -e "$main^{commit}"
+          # Git tree IDs prove the content bytes are unchanged.
+          mapfile -t staged < <(git ls-tree -r --name-only HEAD source | \
+            grep '^source/vh_' | grep -v '^source/vh_native_tone.h$')
+          test "${#staged[@]}" -eq 50
+          for file in "${staged[@]}"; do
+            test "$(git rev-parse "HEAD:$file")" = "$(git rev-parse "$audio:$file")"
+          done
+          tests=(
+            test_vh_audio_resample.c test_vh_audio_stream.c
+            test_vh_music_scene.c test_vh_music_scene_soak.c
+            test_vh_native_seq.c test_vh_native_spu.c
+            test_vh_native_vab.c test_vh_spu_reverb.c
+          )
+          for file in "${tests[@]}"; do
+            test "$(git rev-parse "HEAD:tests/$file")" = \
+                 "$(git rev-parse "$audio:tests/$file")"
+          done
+          git diff --exit-code "$main" HEAD -- \
+            Makefile source/main.c source/game_rules.h source/game_renderer.h \
+            'source/map02*' 'source/ps1_*' source/software_renderer.h
+          echo "PASS: exact 50 audio source blobs + 8 tests preserved; graphics MAP02 main unchanged" >> "$GITHUB_STEP_SUMMARY"
