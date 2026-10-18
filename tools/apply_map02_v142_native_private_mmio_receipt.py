@@ -192,11 +192,8 @@ def apply(root:Path):
     prior=apply_v140(root)
     events,words,prefixes=codeword_expectations()
     values=expected_actual_mmio()
-    if len(events)!=len(words)!=len(values):
-        raise ValueError("v142 source event lengths differ")
     if len(events)!=19 or len(words)!=19 or len(values)!=19 or prefixes!=(7,11,15,19):
         raise ValueError("v142 only allows pinned source-authored MIPS program")
-    code=root.resolve()/"libpcscore/psxmem.c"
     code=root.resolve()/"libpcsxcore/psxmem.c"
     frontend=root.resolve()/"frontend/main.c"
     source=patch_native_observer(code.read_text())
