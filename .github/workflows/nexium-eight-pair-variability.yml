@@ -9,6 +9,8 @@ on:
       - tools/analyze_nexium_idle_switch_variability.py
       - tools/analyze_nexium_steady_state.py
       - tools/analyze_nexium_steady_segments.py
+      - tools/analyze_nexium_steady_segment_sensitivity.py
+      - tests/test_analyze_nexium_steady_segment_sensitivity.py
       - tests/test_analyze_nexium_steady_segments.py
       - tests/test_analyze_nexium_steady_state.py
       - tests/test_analyze_nexium_idle_switch_variability.py
@@ -163,6 +165,35 @@ jobs:
                   raise SystemExit("Stage280 partitions lost complete-window counts")
           print("Per-third switching minus idle audout rates:",
                 [s["switch_minus_idle_per_1000"] for s in result["segments"]])
+          PY
+          python3 tools/analyze_nexium_steady_segment_sensitivity.py \
+            --verified-steady-state verified-pairs/steady-state-only-s1-to-s51.json \
+            --verified-temporal-thirds verified-pairs/steady-state-three-17s-segments.json \
+            --output verified-pairs/steady-state-three-17s-sensitivity.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path("verified-pairs")
+          report=json.loads((root/"steady-state-three-17s-sensitivity.json").read_text())
+          if (report["result"]!="THREE_VERIFIED_TEMPORAL_THIRDS_PAIRED_SENSITIVITY"
+                  or report["pair_count"]!=8 or len(report["thirds"])!=3
+                  or not report["source_stage280_report_exactly_rederived"]
+                  or report["is_formal_confidence_interval"] is not False
+                  or report["music_switch_causality_established"] is not False
+                  or report["physical_switch_tested"] is not False):
+              raise SystemExit("invalid Stage281 paired temporal sensitivity")
+          for third in report["thirds"]:
+              for threshold in ("ge40","ge50"):
+                  band=third["bands"][threshold]
+                  if (len(band["individual_pair_differences_per_1000"])!=8
+                          or sum(band[key] for key in (
+                              "positive_pairs","negative_pairs","exact_ties"))!=8
+                          or band["whole_pair_resampling"]["is_formal_confidence_interval"] is not False):
+                      raise SystemExit("incomplete Stage281 within-pair audit")
+          print("Three temporal bins verified; ≥40ms leave-one-pair-out bounds:",
+                [[t["bands"]["ge40"]["leave_one_pair_out_min_per_1000"],
+                  t["bands"]["ge40"]["leave_one_pair_out_max_per_1000"]]
+                 for t in report["thirds"]])
           PY
           sha256sum "$RUNNER_TEMP/neXium-eight/"*.zip \
             > verified-pairs/repacked-source-archives.sha256
