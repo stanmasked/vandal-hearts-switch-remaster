@@ -48,15 +48,94 @@ class NativeSyntheticGp0Fifth(unittest.TestCase):
             "void vh140_mmio_enable(unsigned mutate_expected) {\n"
             "  /* previous pinned native capture code */\n"
             "}\n"
-            "    if(vh147_active) vh147_capture(regs,addr,value);\n"
+            "static void vh138_pc_observe(psxRegisters *regs,u32 addr,u32 value){\n"
+            "  if(!vh138_active) return;\n"
+            "  if(vh147_active) vh147_capture(regs,addr,value);\n"
+            "}\n"
+            "void psxMemWrite32(psxRegisters *regs, u32 mem, u32 value) {\n"
+            "#ifdef VH_MAP02_V66_PCSX_PROBE\n"
+            "    vh138_pc_observe(regs,mem,value);\n"
+            "#endif\n"
+            "}\n"
         )
         patched=patch_memory(fixture)
         self.assertIn("static void vh158_capture_gp0(",patched)
-        self.assertIn("vh158_gp0_active) vh158_capture_gp0(regs,addr,value)",patched)
         self.assertIn("regs->pc!=0x80010014u",patched)
         self.assertIn("regs->code!=0xad090000u",patched)
+        self.assertIn(
+            "    if(vh158_gp0_active) vh158_capture_gp0(regs,mem,value);\n"
+            "    vh138_pc_observe(regs,mem,value);",patched)
+        self.assertLess(patched.index("void psxMemWrite32("),
+                        patched.index("vh158_capture_gp0(regs,mem,value)"))
+        self.assertLess(patched.index("vh158_capture_gp0(regs,mem,value)"),
+                        patched.index("vh138_pc_observe(regs,mem,value);"))
+        # The old v138-v147 branch remains completely independent and
+        # may be disabled without preventing the v158 fifth SW witness.
+        old_observer=patched.split("static void vh138_pc_observe(",1)[1].split(
+            "void psxMemWrite32(",1)[0]
+        self.assertNotIn("vh158_capture_gp0(regs,mem,value)",old_observer)
         with self.assertRaises(ValueError):
             patch_memory(patched)
+
+    def test_compiled_direct_mmio_hook_survives_inactive_v138(self):
+        cc=os.environ.get("CC","cc")
+        if not shutil.which(cc):
+            self.skipTest("native C compiler unavailable")
+        fixture=r'''
+static unsigned vh138_active,vh138_calls;
+static void vh138_pc_observe(psxRegisters *regs,u32 addr,u32 value) {
+    (void)regs; (void)addr; (void)value;
+    if(!vh138_active) return;
+    vh138_calls++;
+}
+void vh140_mmio_enable(unsigned mutate_expected) {
+    (void)mutate_expected;
+}
+void psxMemWrite32(psxRegisters *regs, u32 mem, u32 value) {
+#ifdef VH_MAP02_V66_PCSX_PROBE
+    vh138_pc_observe(regs,mem,value);
+#endif
+}
+'''
+        patched=patch_memory(fixture)
+        program=r'''
+#include <stdint.h>
+#include <stdio.h>
+typedef uint32_t u32;
+typedef struct {u32 pc,code;} psxRegisters;
+#define VH_MAP02_V66_PCSX_PROBE 1
+'''+patched+r'''
+int main(void) {
+    psxRegisters regs={0x80010014u,0xad090000u};
+    vh140_mmio_enable(0u);
+    vh158_arm_gp0();
+    /* Direct psxMemWrite32 GP0 observer must fire with v138 DISABLED. */
+    psxMemWrite32(&regs,0x1f801810u,0xe3000000u);
+    if(vh138_active || vh138_calls || vh158_gp0_writes()!=1u ||
+       vh158_gp0_faults()!=0u) return 1;
+    vh158_disarm_gp0();
+    vh158_arm_gp0();
+    vh138_active=1u;
+    psxMemWrite32(&regs,0x1f801810u,0xe3000000u);
+    if(vh138_calls!=1u || vh158_gp0_writes()!=1u ||
+       vh158_gp0_faults()!=0u) return 2;
+    vh158_disarm_gp0();
+    puts("VH158_COMPILED_DIRECT_MMIO_HOOK_PASS v138_inactive=1 gp0_writes=1");
+    return 0;
+}
+'''
+        with tempfile.TemporaryDirectory(prefix="vh158-direct-gp0-") as td:
+            p=Path(td)
+            (p/"test.c").write_text(program)
+            exe=p/"test"
+            built=subprocess.run([cc,"-std=c99","-Wall","-Wextra","-Werror",
+                                  "-pedantic",str(p/"test.c"),"-o",str(exe)],
+                                 capture_output=True,text=True,timeout=35)
+            self.assertEqual(built.returncode,0,built.stderr)
+            result=subprocess.run([str(exe)],capture_output=True,
+                                  text=True,timeout=10)
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertIn("VH158_COMPILED_DIRECT_MMIO_HOOK_PASS",result.stdout)
 
     def test_compiled_c_positive_five_guest_sw_and_pre_dispatch_refusal(self):
         cc=os.environ.get("CC","cc")
