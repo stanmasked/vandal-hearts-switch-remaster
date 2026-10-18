@@ -14,6 +14,8 @@ on:
       - "source/vh_spu_reverb.c"
       - "source/vh_audio_resample.c"
       - "source/vh_audio_stream.c"
+      - "source/vh_switch_game_audio.c"
+      - "Makefile"
       - "tests/test_vh_music_scene.c"
       - "tests/test_vh_music_scene_soak.c"
       - ".github/workflows/music-director-wet-tail.yml"
@@ -67,3 +69,43 @@ jobs:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: ./build/test_music_director_soak
+
+  switch-game-wet-tail-variants:
+    name: Integrated tactical NRO wet-tail=${{ matrix.mode }}
+    runs-on: ubuntu-latest
+    container: devkitpro/devkita64:latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [0, 1]
+    steps:
+      - name: Check out exact PR revision
+        uses: actions/checkout@v4
+      - name: Build isolated gameplay NRO variant without SDL2
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          make BUILD=build/wet-tail-${{ matrix.mode }} \
+               GAME_AUDIO_WET_TAIL=${{ matrix.mode }} all
+          test -s build/wet-tail-${{ matrix.mode }}/vandal-hearts-prototype.nro
+          sha256sum build/wet-tail-${{ matrix.mode }}/vandal-hearts-prototype.nro \
+            > build/wet-tail-${{ matrix.mode }}/nro.sha256
+          {
+            echo "### Experimental wet-tail tactical NRO"
+            echo "Mode: \`${{ matrix.mode }}\` (0=legacy default, 1=experimental)"
+            echo "Git SHA: \`$GITHUB_SHA\`"
+            echo "Hardware: NOT TESTED; compile-only"
+            echo "No commercial PS1 content bundled"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload isolated synthetic music NRO and digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: tactical-wet-tail-${{ matrix.mode }}
+          path: |
+            build/wet-tail-${{ matrix.mode }}/vandal-hearts-prototype.nro
+            build/wet-tail-${{ matrix.mode }}/nro.sha256
+          if-no-files-found: error
