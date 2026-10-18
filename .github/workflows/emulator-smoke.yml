@@ -1648,6 +1648,52 @@ jobs:
           PY
           echo "Stage304: source-bound buffered PCM snapshots around actual Plus control and optical exit sequence; does not prove guest music transition, audible glitch, or physical hardware behavior." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Stage305 original host Plus PCM zero-onset fence and flanking evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_pcm_plus_fence.py \
+            --monitor runtime-evidence/nexium-monitor-s16le-48k.pcm \
+            --monitor-report runtime-evidence/pcm-quality-report.json \
+            --scenes runtime-evidence/nexium-scenes-s16le-48k.pcm \
+            --scene-report runtime-evidence/scene-audio-report.json \
+            --events runtime-evidence/scene-events.csv \
+            --stage299 runtime-evidence/pcm-stream-integrity-stage299.json \
+            --stage300 runtime-evidence/pcm-scene-silence-stage300.json \
+            --stage301 runtime-evidence/pcm-marker-envelopes-stage301.json \
+            --stage302 runtime-evidence/pcm-recording-edge-silence-stage302.json \
+            --stage303 runtime-evidence/pcm-recorder-stop-stage303.json \
+            --stage304 runtime-evidence/pcm-exit-controls-stage304.json \
+            --stop-csv runtime-evidence/scene-recorder-stop.csv \
+            --control-csv runtime-evidence/scene-exit-controls.csv \
+            --output runtime-evidence/pcm-plus-onset-fence-stage305.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("runtime-evidence/pcm-plus-onset-fence-stage305.json").read_text())
+          if (r["result"]!="SOURCE_BOUND_PLUS_BUFFERED_ZERO_RUN_ONSET_FENCED"
+                  or r["sample_rate_hz"]!=48000
+                  or r["original_scene_pcm_frames"]<=0
+                  or r["all_original_stage299_through_stage304_evidence_replayed"] is not True
+                  or r["file_size_and_wall_time_snapshots_are_not_guest_input_timestamps"] is not True
+                  or r["temporal_overlap_is_not_plus_audio_causality"] is not True
+                  or r["original_soundtrack_or_audible_dropout_verified"] is not False
+                  or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage305 source or evidence scope failed")
+          for key in ("plus_snapshot_control_window",
+                      "before_plus_500ms_baseline","after_plus_500ms_window"):
+              w=r[key]
+              if (w["exact_zero_stereo_frames"]+w["nonzero_stereo_frames"]!=w["frames"]
+                      or w["end_frame_exclusive"]-w["start_frame"]!=w["frames"]):
+                  raise SystemExit("Stage305 zero/nonzero source frame conservation failed")
+          print("Stage305 source-bound buffered terminal zero onset classification:",
+                r["terminal_exact_zero_onset"])
+          print("Stage305 digital-zero/nonzero before and after Plus:",{
+                k:r[k] for k in ("before_plus_500ms_baseline",
+                                   "after_plus_500ms_window")})
+          PY
+          echo "Stage305: independently fenced terminal zero-run start against actual buffered Plus snapshots and inspected ±500ms original source PCM; correlation is not guest timing, audio causality or audible quality proof." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Record audio capture boundary
         if: always()
         env:
