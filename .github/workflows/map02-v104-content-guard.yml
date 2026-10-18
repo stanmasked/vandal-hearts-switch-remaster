@@ -181,6 +181,9 @@ on:
       - 'tests/test_map02_v144_run_challenge.py'
       - 'tools/check_map02_v145_native_build_binding.py'
       - 'tests/test_map02_v145_native_build_binding.py'
+      - 'tools/run_map02_v146_verified_fd_native.py'
+      - 'tests/test_map02_v146_verified_fd_native.py'
+      - '.github/workflows/map02-v146-fd-native-launch.yml'
       - '.github/workflows/map02-v145-emulator-build-binding.yml'
       - '.github/workflows/map02-v144-run-challenge.yml'
       - '.github/workflows/map02-v143-atomic-private-receipt.yml'
@@ -299,6 +302,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v143_atomic_private_receipt.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v144_run_challenge.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v145_native_build_binding.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v146_verified_fd_native.py' -v
           python3 -m remaster.tools.check_map02_v144_native_challenge_c --cc "${{ matrix.cc }}" \
             | grep -Fx 'VH144_COMPILED_CHALLENGE_NATIVE_PASS events=19 challenge_bits=128 atomic_receipt=1 missing_and_malformed_refused=1 sidecar_replay_refused=1 unsafe_parent_refused=1 original_retail=0'
           python3 -m remaster.tools.check_map02_v143_atomic_receipt --cc "${{ matrix.cc }}" \
@@ -1500,19 +1504,22 @@ jobs:
             | grep -Fx 'VH145_PRIVATE_EMULATOR_BUILD_PREPARED pinned_source=1 synthetic_only=1 hashes_exported=0'
           mkdir -m 700 proof/private/v142-positive-dir
           mkdir -m 700 proof/v142-positive-home
-          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+          env -u VH_MAP02_V82_PRIVATE_PATH \
             SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
             VH144_RECEIPT_CHALLENGE_HEX="$(cat proof/private/v144-expected-positive.hex)" \
             VH142_PRIVATE_RECEIPT_DIR="$PWD/proof/private/v142-positive-dir" \
             HOME="$PWD/proof/v142-positive-home" \
-            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            python3 -m remaster.tools.run_map02_v146_verified_fd_native \
+            --binary upstream-pcsx/pcsx \
+            --manifest proof/private/v145-positive-binding/vh145-private-emulator-build-binding.json \
+            --challenge proof/private/v144-expected-positive.hex \
+            --private-log proof/private/v142-positive.log \
+            --timeout-seconds 75 -- \
+            -novid -nodrc -nothread \
             --vh129-vblank-04 --vh138-interpreter-pc \
             --vh139-codewords --vh140-mmio-values \
             --vh142-private-receipt proof/private/V129_SYNTHETIC.EXE \
-            > proof/private/v142-positive.log 2>&1 || {
-              tail -n 60 proof/private/v142-positive.log
-              exit 1
-            }
+            | grep -Fx 'VH146_VERIFIED_FD_NATIVE_LAUNCH_PASS same_inode_executed=1 synthetic_only=1 private_log=1 retail_map02=0'
           grep -Fx 'VH142_NATIVE_PRIVATE_RECEIPT_PASS events=19 source=synthetic emulator=pcsx original_retail=0' \
             proof/private/v142-positive.log
           grep -Fx 'VH140_NATIVE_MMIO_VALUES_PASS matched=19 gp0=6 dma2_starts=3 stages=4 original_retail=0' \
@@ -1538,20 +1545,23 @@ jobs:
             | grep -Fx 'VH145_PRIVATE_EMULATOR_BUILD_PREPARED pinned_source=1 synthetic_only=1 hashes_exported=0'
           mkdir -m 700 proof/private/v142-corrupt-dir
           mkdir -m 700 proof/v142-corrupt-home
-          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+          env -u VH_MAP02_V82_PRIVATE_PATH \
             SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
             VH144_RECEIPT_CHALLENGE_HEX="$(cat proof/private/v144-expected-corrupt.hex)" \
             VH142_PRIVATE_RECEIPT_DIR="$PWD/proof/private/v142-corrupt-dir" \
             HOME="$PWD/proof/v142-corrupt-home" \
-            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            python3 -m remaster.tools.run_map02_v146_verified_fd_native \
+            --binary upstream-pcsx/pcsx \
+            --manifest proof/private/v145-corrupt-binding/vh145-private-emulator-build-binding.json \
+            --challenge proof/private/v144-expected-corrupt.hex \
+            --private-log proof/private/v142-corrupt.log \
+            --timeout-seconds 75 -- \
+            -novid -nodrc -nothread \
             --vh129-vblank-04 --vh138-interpreter-pc \
             --vh139-codewords --vh140-mmio-values \
             --vh142-private-receipt --vh142-corrupt-receipt \
             proof/private/V129_SYNTHETIC.EXE \
-            > proof/private/v142-corrupt.log 2>&1 || {
-              tail -n 60 proof/private/v142-corrupt.log
-              exit 1
-            }
+            | grep -Fx 'VH146_VERIFIED_FD_NATIVE_LAUNCH_PASS same_inode_executed=1 synthetic_only=1 private_log=1 retail_map02=0'
           grep -Fx 'VH142_NATIVE_PRIVATE_RECEIPT_PASS events=19 source=synthetic emulator=pcsx original_retail=0' \
             proof/private/v142-corrupt.log
           test "$(stat -c %a proof/private/v142-corrupt-dir/vh142-interpreter-mmio.jsonl)" = 600
@@ -1633,6 +1643,8 @@ jobs:
           report["v144_cross_run_receipt_replay_and_mutation_refused"]=True
           report["v145_pinned_native_emulator_binary_sha256_bound"]=True
           report["v145_build_changed_or_corrupt_receipt_refused"]=True
+          report["v146_verified_elf_fd_kernel_exec_same_inode"]=True
+          report["v146_pathname_swap_after_verification_refused"]=True
           report["retail_map02_gpu_rendering_verified"]=False
           Path("proof/public/v129-four-real-vblank-profiles-summary.json").write_text(
               json.dumps(report,sort_keys=True)+"\n")
