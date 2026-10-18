@@ -1,6 +1,7 @@
 """Private final MAP02 seal/verification (synthetic CD and GPU only)."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import stat
 from unittest.mock import patch
@@ -350,6 +351,15 @@ class PrivateFinalSealTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "already exists"):
             self.call()
         with self.assertRaisesRegex(ValueError, "unexpected"):
+            self.call(action="verify")
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "requires POSIX FIFO")
+    def test_private_final_seal_fifo_rejected_without_blocking(self):
+        self.call()
+        receipt = self.seal_dir / NAME
+        receipt.unlink()
+        os.mkfifo(receipt, mode=0o600)
+        with self.assertRaisesRegex(ValueError, "regular file"):
             self.call(action="verify")
 
     def test_symlink_and_hardlink_receipt_rejected(self):
