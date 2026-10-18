@@ -1,0 +1,111 @@
+name: Stage332 independently audit authentic guest PlayBuffer 0–3 deletion frontier
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage332-original-playbuffer-frontier.yml'
+      - 'tools/audit_nexium_stage332_original_playbuffer_frontier.py'
+      - 'tests/test_audit_nexium_stage332_original_playbuffer_frontier.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  authentic-source-frontier:
+    name: Original guest PlayBuffer software tail complete 0–3 exclusion frontier
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - name: Checkout Stage328-332 audout source validation
+        uses: actions/checkout@v4
+      - name: Twelve strict Stage332 software call source regression cases
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/audit_nexium_stage332_original_playbuffer_frontier.py tests/test_audit_nexium_stage332_original_playbuffer_frontier.py
+          python3 -m unittest discover -s tests -p 'test_audit_nexium_stage332_original_playbuffer_frontier.py' -v
+      - name: Verify original NeXium guest source runs succeeded
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for id in 39166023593 39167324026; do
+            test "$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$id" --jq '.status')" = completed
+            test "$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$id" --jq '.conclusion')" = success
+          done
+      - name: Retrieve first exact original NeXium guest software history
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39166023593
+          github-token: ${{ github.token }}
+          path: source-first-audout
+      - name: Retrieve second exact original NeXium guest software history
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39167324026
+          github-token: ${{ github.token }}
+          path: source-second-audout
+      - name: Recompute complete 576-subset frontier per authentic original guest history
+        run: |
+          set -euo pipefail
+          mkdir -p stage332-original-frontier
+          python3 tools/audit_nexium_stage332_original_playbuffer_frontier.py \
+            --first-root source-first-audout \
+            --second-root source-second-audout \
+            --first-history-sha256 72eb03e4508e2f8f7814f8b059aa5bfba69c71bbdac9f495ffab447d23fc345d \
+            --second-history-sha256 795c751e11449b0d0e0938031c540890eac23058e3a50c49ac2be9f622950a07 \
+            --first-last-sha256 fdc3ab8bcc5908ccb61c149ba185435fb5ab4a6409d33a43c02e7a179caf4aec \
+            --second-last-sha256 2559938d1f86f8812405e2d3b1573398109450663188000bf1d58c8c965031e9 \
+            --output stage332-original-frontier/software-call-0-3-deletion-frontier.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          doc=json.loads(Path(
+             'stage332-original-frontier/software-call-0-3-deletion-frontier.json'
+          ).read_text(encoding='utf-8'))
+          if (doc["result"]!="TWO_ORIGINAL_GUEST_PLAYBUFFER_SOURCE_DELETION_FRONTIERS_VERIFIED"
+              or doc["independent_original_stage328_to_331_source_replays_match"] is not True
+              or doc["four_original_guest_CSV_SHA256_pins_verified"] is not True
+              or doc["subset_count_per_cohort"]!=576
+              or doc["source_deletions_are_not_independent_gameplay_runs"] is not True
+              or doc["physical_Nintendo_Switch_audio_measured"] is not False):
+              raise SystemExit('Stage332 original software source replay invalid')
+          r=doc['cohorts']
+          if (len(r)!=2 or [x['full_previous_lower_median_software_ns'] for x in r]
+                 !=[32154011,31247083]
+              or [x['final_call_duration_software_ns'] for x in r]
+                 !=[11225937,22352500]):
+              raise SystemExit('Original NeXium software call medians changed')
+          for cohort in r:
+            f=cohort['source_subset_sensitivity_frontier']
+            if [x['subset_count'] for x in f]!=[1,15,105,455]:
+              raise SystemExit('Stage332 lost a source-authentic subset')
+            for row in f:
+              if sum(row[x] for x in (
+                'subsets_with_final_shorter_than_median',
+                'subsets_with_final_equal_to_median',
+                'subsets_with_final_longer_than_median'))!=row['subset_count']:
+                raise SystemExit('Stage332 original source outcome accounting failed')
+            print(cohort['original_guest_history_sha256'],
+                  'k=3 source median min/max (guest software ns)',
+                  f[3]['lower_median_min_software_ns'],
+                  f[3]['lower_median_max_software_ns'],
+                  'final rank min/max',
+                  f[3]['final_first_possible_rank_min'],
+                  f[3]['final_first_possible_rank_max'],
+                  'final shorter/equal/longer',
+                  f[3]['subsets_with_final_shorter_than_median'],
+                  f[3]['subsets_with_final_equal_to_median'],
+                  f[3]['subsets_with_final_longer_than_median'])
+          PY
+          echo "Stage332: all source-authentic subsets removing 0–3 of prior 15 guest software calls; neither independent gameplay runs nor physical DAC/speaker audio." >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload only compact original source software-call sensitivity frontier
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage332-original-software-playbuffer-0-3-frontier
+          path: stage332-original-frontier/
+          if-no-files-found: warn
