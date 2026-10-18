@@ -27,77 +27,118 @@ jobs:
           github-token: ${{ github.token }}
           path: original-failed-stage322
 
-      - name: Re-audit archived original host PCM controls and capture precise failure
+      - name: Inventory archived Stage304 dependencies before replay
         shell: bash
         run: |
           set -euo pipefail
-          evidence=original-failed-stage322
           mkdir -p stage304-original-postmortem
-          set +e
-          python3 tools/audit_nexium_pcm_exit_controls.py \
-            --monitor "$evidence/nexium-monitor-s16le-48k.pcm" \
-            --monitor-report "$evidence/pcm-quality-report.json" \
-            --scenes "$evidence/nexium-scenes-s16le-48k.pcm" \
-            --scene-report "$evidence/scene-audio-report.json" \
-            --events "$evidence/scene-events.csv" \
-            --stage299 "$evidence/pcm-stream-integrity-stage299.json" \
-            --stage300 "$evidence/pcm-scene-silence-stage300.json" \
-            --stage301 "$evidence/pcm-marker-envelopes-stage301.json" \
-            --stage302 "$evidence/pcm-recording-edge-silence-stage302.json" \
-            --stage303 "$evidence/pcm-recorder-stop-stage303.json" \
-            --stop-csv "$evidence/scene-recorder-stop.csv" \
-            --control-csv "$evidence/scene-exit-controls.csv" \
-            --output stage304-original-postmortem/recomputed-stage304.json \
-            > stage304-original-postmortem/stdout.txt \
-            2> stage304-original-postmortem/stderr.txt
-          status=$?
-          set -e
-          python3 - "$status" <<'PY'
-          import json,sys,os
+          python3 - <<'PY'
+          import json
           from pathlib import Path
-          status=int(sys.argv[1])
-          location=Path("stage304-original-postmortem")
-          stderr=location.joinpath("stderr.txt").read_text().strip()
-          stdout=location.joinpath("stdout.txt").read_text().strip()
-          print("Original Stage304 replay exit status:",status)
-          print("Strict Stage304 replay result:",stdout or stderr)
-          if status==0:
-              raise SystemExit("Original previously failed source unexpectedly passed; investigate source mismatch")
-          try:
-              diagnostic=json.loads(stderr.splitlines()[-1])
-          except (IndexError,ValueError) as exc:
-              raise SystemExit("Stage304 postmortem did not produce machine-readable error") from exc
-          if (diagnostic.get("result")!="STAGE304_EXIT_PCM_TIMELINE_NOT_VERIFIED"
-                  or not diagnostic.get("error_kind")
-                  or not diagnostic.get("source_invariant_failure")
-                  or diagnostic.get("physical_Nintendo_Switch_audio_tested") is not False
-                  or diagnostic.get("guest_speaker_playback_verified") is not False):
-              raise SystemExit("Replayed old Stage304 source did not preserve strict refusal")
-          minimal={
-              "schema":"vh-original-failed-stage304-source-postmortem/v1",
-              "original_neXium_run_id":39157976877,
-              "original_run_fully_successful":False,
-              "strict_source_replay_refused":True,
-              "failure_class":diagnostic["error_kind"],
-              "failed_original_source_invariant":diagnostic["source_invariant_failure"],
-              "host_PCM_file_size_snapshot_not_DAC_or_speaker":True,
-              "new_audio_call_history_verified":False,
+          root=Path("original-failed-stage322")
+          expected={
+              "monitor":"nexium-monitor-s16le-48k.pcm",
+              "monitor-report":"pcm-quality-report.json",
+              "scenes":"nexium-scenes-s16le-48k.pcm",
+              "scene-report":"scene-audio-report.json",
+              "events":"scene-events.csv",
+              "stage299":"pcm-stream-integrity-stage299.json",
+              "stage300":"pcm-scene-silence-stage300.json",
+              "stage301":"pcm-marker-envelopes-stage301.json",
+              "stage302":"pcm-recording-edge-silence-stage302.json",
+              "stage303":"pcm-recorder-stop-stage303.json",
+              "stop-csv":"scene-recorder-stop.csv",
+              "control-csv":"scene-exit-controls.csv",
           }
-          location.joinpath("failure-reason-only.json").write_text(
-              json.dumps(minimal,indent=2,sort_keys=True)+"\n")
-          print("Original Stage304 source invariant:",minimal["failed_original_source_invariant"])
-          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f:
-              f.write("### Stage304 prior failed capture postmortem\n\n")
-              f.write("- Original NeXium source run: 39157976877 (failed)\n")
-              f.write("- Strict validation result: NOT VERIFIED\n")
-              f.write("- Source invariant: "+minimal["failed_original_source_invariant"]+"\n")
-              f.write("- Original host recorder file-size witnesses are not DAC/speaker timing.\n")
+          found={}
+          missing=[]
+          for label,name in expected.items():
+              source=root/name
+              regular=source.is_file() and not source.is_symlink()
+              found[label]={"filename":name,"regular_source_available":regular}
+              if regular:
+                  found[label]["size_bytes"]=source.stat().st_size
+              else:
+                  missing.append(name)
+          out={
+              "schema":"vh-stage304-failed-run-archive-availability/v2",
+              "original_neXium_run_id":39157976877,
+              "original_runtime_successfully_completed":False,
+              "archive_has_all_Stage304_pinned_sources":not missing,
+              "archived_pinned_source_files":found,
+              "missing_archived_pinned_sources":missing,
+              "original_capture_failure_reason_established":False,
+              "archive_defect_not_automatically_original_run_defect":True,
+              "guest_speaker_playback_verified":False,
+              "physical_Nintendo_Switch_audio_tested":False,
+          }
+          Path("stage304-original-postmortem/source-inventory.json").write_text(
+              json.dumps(out,indent=2,sort_keys=True)+"\n")
+          print("Old Stage304 archived pinned sources missing:",missing)
           PY
 
-      - name: Publish failure reason only, never PCM or original sound data
+      - name: Re-audit strict Stage304 only when its archived inputs actually exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,subprocess,os
+          from pathlib import Path
+          folder=Path("stage304-original-postmortem")
+          doc=json.loads((folder/"source-inventory.json").read_text())
+          root=Path("original-failed-stage322")
+          if doc["missing_archived_pinned_sources"]:
+              doc["archive_replay_result"]="ARCHIVE_INCOMPLETE_NO_FULL_REPLAY"
+              doc["original_capture_failure_reason_established"]=False
+              doc["archive_input_error_does_not_prove_original_run_error"]=True
+          else:
+              sources=doc["archived_pinned_source_files"]
+              command=["python3","tools/audit_nexium_pcm_exit_controls.py"]
+              for name in ("monitor","monitor-report","scenes","scene-report",
+                           "events","stage299","stage300","stage301","stage302",
+                           "stage303","stop-csv","control-csv"):
+                  command.extend(["--"+name,str(root/sources[name]["filename"])])
+              command.extend(["--output",
+                              str(folder/"recomputed-stage304.json")])
+              result=subprocess.run(command,text=True,capture_output=True)
+              doc["replay_exit_code"]=result.returncode
+              if result.returncode==0:
+                  doc["archive_replay_result"]="ARCHIVE_STRICT_REPLAY_PASSED"
+                  doc["original_capture_failure_reason_established"]=False
+              else:
+                  doc["archive_replay_result"]="ARCHIVE_STRICT_REPLAY_REFUSED"
+                  try:
+                      err=json.loads(result.stderr.splitlines()[-1])
+                      doc["source_replay_error_kind"]=err.get("error_kind")
+                      doc["source_replay_invariant"]=err.get(
+                          "source_invariant_failure")
+                  except (IndexError,ValueError):
+                      doc["source_replay_error_kind"]="UNCLASSIFIED"
+                  # A failure from reconstructed archive files can differ
+                  # from the original in-run failure even if replay refused.
+                  doc["original_capture_failure_reason_established"]=False
+          doc["replay_of_archived_source_not_proof_of_original_exit"]=True
+          dest=folder/"source-inventory-and-replay.json"
+          dest.write_text(json.dumps(doc,indent=2,sort_keys=True)+"\n")
+          print("Stage304 prior failed original run archival diagnosis:",
+                doc["archive_replay_result"])
+          print("Missing pinned source files:",
+                doc["missing_archived_pinned_sources"])
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as output:
+              output.write("### Stage304 prior failed NeXium archive postmortem\n\n")
+              output.write("- Original run **39157976877 failed**; not promoted to success.\n")
+              output.write("- Archived replay: "+doc["archive_replay_result"]+"\n")
+              output.write("- Missing archived inputs: "+
+                           (", ".join(doc["missing_archived_pinned_sources"])
+                            or "none")+"\n")
+              output.write("- An archived input missing now does not identify "+
+                           "the original in-run failure cause.\n")
+          PY
+
+      - name: Publish archive availability and replay classification only, never original PCM
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: stage304-failed-original-invariant-only
-          path: stage304-original-postmortem/failure-reason-only.json
+          name: stage304-old-archive-source-availability
+          path: stage304-original-postmortem/source-inventory-and-replay.json
           if-no-files-found: warn
