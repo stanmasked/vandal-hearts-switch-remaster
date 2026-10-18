@@ -28,11 +28,11 @@ def sample_program():
 typedef uint32_t u32;
 typedef struct psxRegisters {u32 pc;u32 code;} psxRegisters;
 """ + native_probe_declarations(events) + r"""
+static const unsigned vh138_fixture_mmio_addrs[] = { VH138_REGISTERS };
 static int vh138_feed_all(unsigned alter_index) {
     unsigned i;
-    const unsigned addresses[] = { VH138_REGISTERS };
     psxRegisters regs={0};
-    if(sizeof(addresses)/sizeof(addresses[0]) !=
+    if(sizeof(vh138_fixture_mmio_addrs)/sizeof(vh138_fixture_mmio_addrs[0]) !=
        sizeof(vh138_expected_kind)/sizeof(vh138_expected_kind[0]))
         return 5;
     vh138_pc_enable();
@@ -41,7 +41,7 @@ static int vh138_feed_all(unsigned alter_index) {
         regs.code=0xac000000u; /* Original 0x2b MIPS SW opcode. */
         if(alter_index==i)
             regs.pc+=4u;
-        vh138_pc_observe(&regs,addresses[i],0u);
+        vh138_pc_observe(&regs,vh138_fixture_mmio_addrs[i],0u);
     }
     return (int)vh138_pc_check();
 }
@@ -66,7 +66,7 @@ int main(void) {
     vh138_pc_enable();
     regs.pc=vh138_expected_pc[0]+4u;
     regs.code=0x20000000u;
-    vh138_pc_observe(&regs,addresses[0],0u);
+    vh138_pc_observe(&regs,vh138_fixture_mmio_addrs[0],0u);
     if(vh138_pc_check()==0)
         return 16;
     /* Any forced mutation must cause refusal, never just relabel PASS. */
