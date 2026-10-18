@@ -56,7 +56,7 @@ def original_cohort_shape(source:dict,history_sha:str,last_sha:str)->dict:
         "previous_calls_faster_than_last":lower,
         "previous_calls_equal_to_last":equal,
         "previous_calls_slower_than_last":higher,
-        "last_call_insertion_rank_among_16_if_ties_before":lower+1,
+        "last_call_first_possible_rank_among_16":lower+1,
         "last_call_is_shorter_than_prior_lower_median":last<center,
     }
 
