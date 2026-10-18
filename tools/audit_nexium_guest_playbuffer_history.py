@@ -82,6 +82,10 @@ def audit_source(raw:bytes, final:dict)->dict:
                  observed_successes[-1]["sequence"]!=original_last_idx))):
         raise ExitTimelineError("history original successful call ordering differs from Stage320")
     last_in_window=original_last_idx>=rows[0]["sequence"]
+    if (not last_in_window and
+            rows[0]["begin_guest_ns"]<
+                final["last_successful_PlayBuffer_return_guest_ns"]):
+        raise ExitTimelineError("retained calls precede an earlier already-finished last success")
     if last_in_window:
         entry=observed_successes[-1]
         if (entry["begin_guest_ns"]!=final["last_successful_PlayBuffer_begin_guest_ns"]
