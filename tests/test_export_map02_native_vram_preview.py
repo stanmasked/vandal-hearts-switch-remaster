@@ -156,5 +156,140 @@ class PrivateNativeVramPreviewTests(unittest.TestCase):
         self.assertFalse((self.output / PNG_NAME).exists())
 
 
+
+class CycleBoundNativeVramPreviewTests(unittest.TestCase):
+    """Fake v5 sealed cycle + independent synthetic native GPU windows."""
+
+    def setUp(self):
+        fixture = NativeGpuWindowEvidenceTests(
+            methodName="test_small_one_window_is_not_mislabeled_as_complete_gameplay")
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        self.fixture = fixture
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        self.output = root / "private-preview"
+        self.cycle = root / "cycle-receipt"
+        self.output.mkdir(mode=0o700)
+        self.cycle.mkdir(mode=0o700)
+        self.token = "ab" * 16
+        self.fixture.status["capture_session"] = self.token
+        self.fixture.save_status()
+        self.event = {
+            "schema": "vh.map02.cycle-order.v5",
+            "capture_session": self.token,
+            "gpu_draw_frame": 7,
+            "original_cd_raw_user_crc32": "a" * 8,
+            "original_cd_raw_user_sha256": "a" * 64,
+            "observed_draw_primitive_count": 2,
+            "display_source_rect": [0, 0, 1, 1],
+            "present_backend_is_hires": False,
+            "pc_present_call_returned": True,
+            "ordered_source_hooks_observed": True,
+            "cd_payload_verified_by_this_receipt": False,
+            "original_map02_rendering_proven": False,
+            "physical_ps1_equivalence_proven": False,
+        }
+        self.save_cycle()
+
+    def save_cycle(self):
+        raw = (json.dumps(self.event, sort_keys=True) + "\n").encode()
+        for name in ("map02-single-process-cycle.jsonl",
+                     "map02-cycle-clean-exit.jsonl"):
+            path = self.cycle / name
+            path.write_bytes(raw)
+            path.chmod(0o600)
+
+    def run_cycle(self, **kwargs):
+        return export_native_vram_preview(
+            self.fixture.root, self.output, frame=7,
+            cycle_directory=self.cycle, **kwargs)
+
+    def test_same_session_native_rectangle_outputs_private_png(self):
+        report = self.run_cycle()
+        png = (self.output / PNG_NAME).read_bytes()
+        self.assertEqual(decoded_rows(png), ((1, 1), b"\x00\x10\x00\x00"))
+        self.assertEqual(report["cropped_vram_rectangle"], [0, 0, 1, 1])
+        self.assertEqual(report["verified_native_draw_pairs"], 2)
+        self.assertTrue(report["cycle_and_native_gpu_draw_count_matched"])
+        self.assertTrue(report["observed_native_present_source_rect_matched"])
+        self.assertTrue(report["native_present_call_returned"])
+        self.assertFalse(report["presented_framebuffer_verified"])
+        self.assertFalse(report["original_map02_authenticated"])
+        self.assertNotIn(self.token, json.dumps(report))
+        self.assertNotIn(str(self.cycle), json.dumps(report))
+
+    def test_hires_presentation_rejected_without_export(self):
+        self.event["present_backend_is_hires"] = True
+        self.save_cycle()
+        with self.assertRaisesRegex(ValueError, "HiresPresent uses"):
+            self.run_cycle()
+        self.assertFalse((self.output / PNG_NAME).exists())
+
+    def test_capture_session_mismatch_or_missing_nonce_rejected(self):
+        self.event["capture_session"] = "ef" * 16
+        self.save_cycle()
+        with self.assertRaisesRegex(ValueError, "session or native GPU draw count"):
+            self.run_cycle()
+        self.event["capture_session"] = self.token
+        self.save_cycle()
+        del self.fixture.status["capture_session"]
+        self.fixture.save_status()
+        with self.assertRaisesRegex(ValueError, "session or native GPU draw count"):
+            self.run_cycle()
+        self.assertFalse((self.output / PNG_NAME).exists())
+
+    def test_draw_count_mismatch_with_native_gpu_events_rejected(self):
+        self.event["observed_draw_primitive_count"] = 3
+        self.save_cycle()
+        with self.assertRaisesRegex(ValueError, "draw count differs"):
+            self.run_cycle()
+        self.assertFalse((self.output / PNG_NAME).exists())
+
+    def test_missing_or_invalid_present_claim_rejected(self):
+        for change in (
+            {"pc_present_call_returned": False},
+            {"display_source_rect": [0, 0, 0, 1]},
+            {"display_source_rect": [1023, 0, 2, 1]},
+            {"gpu_draw_frame": 8},
+        ):
+            with self.subTest(change=change):
+                before = dict(self.event)
+                self.event.update(change)
+                self.save_cycle()
+                with self.assertRaises(ValueError):
+                    self.run_cycle()
+                self.event = before
+        self.assertFalse((self.output / PNG_NAME).exists())
+
+    def test_unsealed_or_modified_cycle_rejected_before_png(self):
+        seal = self.cycle / "map02-cycle-clean-exit.jsonl"
+        seal.write_bytes(b"foreign")
+        with self.assertRaises(ValueError):
+            self.run_cycle()
+        self.assertFalse((self.output / PNG_NAME).exists())
+
+    def test_cycle_changed_during_second_audit_rejected_before_png(self):
+        from tools.verify_map02_cycle_cd_gpu_join import _cycle_receipt
+        original = _cycle_receipt(self.cycle, 7)
+        altered = (original[0] + b" ", original[1], original[2])
+        with patch("tools.export_map02_native_vram_preview._cycle_receipt",
+                   side_effect=(original, altered)):
+            with self.assertRaisesRegex(ValueError, "changed during PNG preparation"):
+                self.run_cycle()
+        self.assertFalse((self.output / PNG_NAME).exists())
+
+    def test_manual_crop_and_nested_output_refused(self):
+        with self.assertRaisesRegex(ValueError, "selects its own"):
+            self.run_cycle(x=1)
+        child = self.cycle / "exported"
+        child.mkdir(mode=0o700)
+        with self.assertRaisesRegex(ValueError, "directories must be separate"):
+            export_native_vram_preview(self.fixture.root, child,
+                                       frame=7, cycle_directory=self.cycle)
+        self.assertFalse((self.output / PNG_NAME).exists())
+
+
 if __name__ == "__main__":
     unittest.main()

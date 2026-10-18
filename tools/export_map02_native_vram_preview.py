@@ -16,7 +16,8 @@ import struct
 import zlib
 
 from tools.publish_map02_blendg1_witness import _private_directory
-from tools.verify_map02_frame_bundle import number
+from tools.verify_map02_cycle_cd_gpu_join import CYCLE_RECEIPT, _cycle_receipt
+from tools.verify_map02_frame_bundle import number, parse_json
 from tools.verify_map02_native_gpu_windows import verify_native_windows
 from tools.verify_map02_vram_timeline import VRAM_BYTES
 
@@ -102,7 +103,8 @@ def bgr555_png(vram, *, x=0, y=0, width=WIDTH, height=HEIGHT):
 
 
 def export_native_vram_preview(capture_directory, output_directory, *,
-                               frame, x=0, y=0, width=WIDTH, height=HEIGHT):
+                               frame, x=0, y=0, width=WIDTH, height=HEIGHT,
+                               cycle_directory=None):
     # Do not write inside the capture tree: it is an exact-file-set witness.
     capture = _private_directory(capture_directory)
     output = _private_directory(output_directory)
@@ -114,10 +116,33 @@ def export_native_vram_preview(capture_directory, output_directory, *,
     if destination.exists() or destination.is_symlink():
         raise ValueError("refusing to overwrite existing private VRAM preview")
     frame = number(frame, "selected native GPU frame", 1, 2**32 - 1)
+    cycle = None
+    cycle_proof = None
+    cycle_event = None
+    if cycle_directory is not None:
+        cycle = _private_directory(cycle_directory)
+        # All three directories must remain disjoint: the native verifier
+        # requires exact capture-file membership; the cycle receipt is sealed.
+        roots = (capture.resolve(), output.resolve(), cycle.resolve())
+        if any(a == b or a in b.parents or b in a.parents
+               for i, a in enumerate(roots) for b in roots[i + 1:]):
+            raise ValueError("MAP02 cycle, native GPU and preview directories must be separate")
+        if (x, y, width, height) != (0, 0, WIDTH, HEIGHT):
+            raise ValueError("cycle-bound VRAM preview selects its own verified display rectangle")
+        cycle_proof = _cycle_receipt(cycle, frame)
+        cycle_event = parse_json(cycle_proof[0][:-1], CYCLE_RECEIPT)
+        if cycle_event["present_backend_is_hires"]:
+            raise ValueError("HiresPresent uses a separate framebuffer, not native VRAM")
+        x, y, width, height = cycle_event["display_source_rect"]
 
     # This audit checks every before/after snapshot, transfer, frame, event,
     # capture counter, upload, and the continuity across GPU windows.
     first = verify_native_windows(capture, target_frame=frame)
+    if cycle_event is not None:
+        if (first["capture_session_sha256"] != cycle_proof[1] or
+                first["native_draw_pairs"] !=
+                cycle_event["observed_draw_primitive_count"]):
+            raise ValueError("MAP02 cycle session or native GPU draw count differs")
     count = first["globally_ordered_native_gpu_events"]
     idx = (count - 1) // 64
     local = (count - 1) % 64
@@ -131,6 +156,11 @@ def export_native_vram_preview(capture_directory, output_directory, *,
     if (verify_native_windows(capture, target_frame=frame) != first or
             _read_original_snapshot(endpoint) != (raw, pinned)):
         raise ValueError("native GPU capture changed while preparing VRAM preview")
+    # Verify sealed cycle bytes AND both distinct inode identities again
+    # before any output file can be created. An internally consistent,
+    # synthetic cycle alone does not authenticate a retail scene.
+    if cycle is not None and _cycle_receipt(cycle, frame) != cycle_proof:
+        raise ValueError("MAP02 cycle receipt changed during PNG preparation")
     png = bgr555_png(raw, x=x, y=y, width=width, height=height)
 
     # Never overwrite, never follow a final symlink, and never remove a
@@ -174,7 +204,7 @@ def export_native_vram_preview(capture_directory, output_directory, *,
         if fd >= 0:
             os.close(fd)
         os.close(dfd)
-    return {
+    result = {
         "schema": "vh.map02.native-vram-preview.v1",
         "gpu_draw_frame": frame,
         "final_native_vram_sha256": digest,
@@ -184,6 +214,18 @@ def export_native_vram_preview(capture_directory, output_directory, *,
         "presented_framebuffer_verified": False,
         "private_game_bytes_uploaded": False,
     }
+    if cycle_event is not None:
+        result.update({
+            "schema": "vh.map02.cycle-bound-native-vram-preview.v1",
+            "cycle_receipt_sha256": hashlib.sha256(cycle_proof[0]).hexdigest(),
+            "capture_session_sha256": cycle_proof[1],
+            "cycle_and_native_gpu_draw_count_matched": True,
+            "verified_native_draw_pairs": first["native_draw_pairs"],
+            "observed_native_present_source_rect_matched": True,
+            "native_present_call_returned": True,
+            "original_map02_authenticated": False,
+        })
+    return result
 
 
 def main():
@@ -191,6 +233,8 @@ def main():
     p.add_argument("private_native_gpu_windows", type=Path)
     p.add_argument("existing_private_output_directory", type=Path)
     p.add_argument("--frame", type=int, required=True)
+    p.add_argument("--cycle-directory", type=Path, default=None,
+                   help="require same-session v5 clean-exit receipt; reject hi-res and use observed native display rectangle")
     p.add_argument("--x", type=int, default=0)
     p.add_argument("--y", type=int, default=0)
     p.add_argument("--width", type=int, default=WIDTH)
@@ -200,7 +244,8 @@ def main():
         report = export_native_vram_preview(
             args.private_native_gpu_windows,
             args.existing_private_output_directory, frame=args.frame,
-            x=args.x, y=args.y, width=args.width, height=args.height)
+            x=args.x, y=args.y, width=args.width, height=args.height,
+            cycle_directory=args.cycle_directory)
     except (OSError, ValueError):
         p.error("private MAP02 native VRAM preview verification failed")
     print(json.dumps(report, sort_keys=True, indent=2))
