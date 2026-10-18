@@ -479,6 +479,40 @@ class SealedMakeOverlayTests(unittest.TestCase):
             sealed._kernel_toolchain_evidence(
                 {"driver": driver, "cc1": driver, "as": driver}, mismatched)
 
+    def test_traced_real_make_child_inodes_and_hashes(self):
+        from tools.map02_kernel_make_witness import trace_make_children
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "Makefile").write_text(
+                "all:\n\tcc -c -o child.o child.c\n")
+            (root / "child.c").write_text("int child(void) { return 7; }\n")
+            compiler, digests = sealed._compiler_evidence()
+            inventory = sealed._compiler_dynamic_evidence(compiler)
+            counts = trace_make_children(
+                ["/usr/bin/make", "all"], cwd=root,
+                env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+                pass_fds=(), tools=inventory["_resolved_tools"],
+                hashes=digests, timeout=30)
+            self.assertTrue((root / "child.o").is_file())
+            self.assertTrue(all(counts[name] >= 1 for name in ("driver", "cc1", "as")))
+
+    def test_traced_make_child_rejects_incorrect_kernel_digest(self):
+        from tools.map02_kernel_make_witness import trace_make_children
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "Makefile").write_text(
+                "all:\n\tcc -c -o child.o child.c\n")
+            (root / "child.c").write_text("int child(void) { return 7; }\n")
+            compiler, digests = sealed._compiler_evidence()
+            inventory = sealed._compiler_dynamic_evidence(compiler)
+            digests["cc1"] = "0" * 64
+            with self.assertRaisesRegex(ValueError, "executable hash mismatch"):
+                trace_make_children(
+                    ["/usr/bin/make", "all"], cwd=root,
+                    env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+                    pass_fds=(), tools=inventory["_resolved_tools"],
+                    hashes=digests, timeout=30)
+
     def test_system_header_digest_mismatch_refused(self):
         original = sealed._system_header_evidence
         count = []

@@ -123,6 +123,7 @@ on:
       - 'tools/prepare_map02_private_gpu_make_overlay.py'
       - 'tools/verify_map02_private_gpu_make_overlay.py'
       - 'tools/build_map02_private_gpu_make_overlay.py'
+      - 'tools/map02_kernel_make_witness.py'
       - 'tests/test_prepare_map02_private_gpu_make_overlay.py'
       - 'tests/test_verify_map02_private_gpu_make_overlay.py'
       - 'tests/test_build_map02_private_gpu_make_overlay.py'
