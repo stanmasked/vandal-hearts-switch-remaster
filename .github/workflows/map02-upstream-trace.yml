@@ -128,6 +128,7 @@ on:
       - 'tests/test_verify_map02_private_gpu_make_overlay.py'
       - 'tests/test_build_map02_private_gpu_make_overlay.py'
       - 'tools/consume_map02_sealed_gpu_objects.py'
+      - 'tools/verify_map02_linked_gpu_object.py'
       - 'tests/test_consume_map02_sealed_gpu_objects.py'
       - 'tools/audit_map02_putpixel_samples.py'
       - 'tools/verify_map02_camera_capture.py'
@@ -345,6 +346,26 @@ jobs:
           assert len(linked["linked_object_sha256"]) == 64
           assert linked["linked_output_path_stays_mutable"]
           assert not linked["hd_replacement_authorized"]
+          PY
+          PYTHONPATH=remaster python3 -m tools.verify_map02_linked_gpu_object \
+            --pc-dir upstream/platform/pc --build-dir build-map02-private-ci \
+            --primary-receipt /tmp/vh-map02-sealed-make.json \
+            --linked-receipt /tmp/vh-map02-sealed-link.json \
+            > /tmp/vh-map02-linked-rechecked.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          primary = json.loads(Path("/tmp/vh-map02-sealed-make.json").read_text())
+          linked = json.loads(Path("/tmp/vh-map02-sealed-link.json").read_text())
+          verified = json.loads(Path("/tmp/vh-map02-linked-rechecked.json").read_text())
+          assert verified["schema"] == "vh.map02.sealed-linked-gpu-consumption.v1"
+          assert verified["source_objects_sha256"] == primary["objects_sha256"]
+          assert verified["linked_object_sha256"] == linked["linked_object_sha256"]
+          assert verified["linked_hash_verified_against_receipt"]
+          assert verified["linked_bytes_sealed_before_binutils"]
+          assert verified["linked_symbols_and_dda_markers_checked"]
+          assert verified["linked_output_path_stays_mutable"]
+          assert not verified["hd_replacement_authorized"]
           PY
           (
             cd upstream/platform/pc

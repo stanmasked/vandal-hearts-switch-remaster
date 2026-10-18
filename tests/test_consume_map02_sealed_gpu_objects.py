@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch
 
 from tools import consume_map02_sealed_gpu_objects as consumer
+from tools import verify_map02_linked_gpu_object as linked_verifier
 
 
 @unittest.skipUnless(sys.platform == "linux" and all(
@@ -112,6 +113,72 @@ class SealedObjectConsumerTests(unittest.TestCase):
             self.consume()
         self.assertFalse((self.folder / consumer.LINKED_NAME).exists())
 
+
+    def verify_linked(self):
+        return linked_verifier.verify_and_inspect(
+            self.pc, "build-map02-consumer", self.receipt, self.link_receipt)
+
+    def test_linked_elf_receipt_rechecked_before_sealed_inspection(self):
+        self.link_receipt = self.consume()
+        result = self.verify_linked()
+        self.assertEqual(result["schema"], "vh.map02.sealed-linked-gpu-consumption.v1")
+        self.assertEqual(result["linked_object_sha256"],
+                         self.link_receipt["linked_object_sha256"])
+        self.assertTrue(result["linked_hash_verified_against_receipt"])
+        self.assertTrue(result["linked_bytes_sealed_before_binutils"])
+        self.assertTrue(result["linked_symbols_and_dda_markers_checked"])
+        self.assertFalse(result["hd_replacement_authorized"])
+
+    def test_linked_elf_mutation_refused_before_binutils(self):
+        self.link_receipt = self.consume()
+        target = self.folder / consumer.LINKED_NAME
+        target.write_bytes(target.read_bytes() + b"unauthorized")
+        with patch.object(consumer, "_run_binary") as command:
+            with self.assertRaisesRegex(ValueError, "linked object SHA-256 differs"):
+                self.verify_linked()
+            command.assert_not_called()
+
+    def test_linked_elf_symlink_substitution_refused(self):
+        self.link_receipt = self.consume()
+        original = self.folder / consumer.LINKED_NAME
+        displaced = self.folder / "linked-displaced.elf"
+        original.rename(displaced)
+        original.symlink_to(displaced)
+        with patch.object(consumer, "_run_binary") as command:
+            with self.assertRaises((OSError, ValueError)):
+                self.verify_linked()
+            command.assert_not_called()
+
+    def test_linked_receipt_source_mismatch_refused(self):
+        self.link_receipt = self.consume()
+        self.link_receipt["source_objects_sha256"] = {
+            "libgpu.o": "0" * 64,
+            "pc_raster.o": self.receipt["objects_sha256"]["pc_raster.o"],
+        }
+        with patch.object(consumer, "_run_binary") as command:
+            with self.assertRaisesRegex(ValueError, "source hash binding invalid"):
+                self.verify_linked()
+            command.assert_not_called()
+
+    def test_linked_elf_swap_after_sealing_cannot_change_inspection(self):
+        self.link_receipt = self.consume()
+        original = consumer._run_binary
+        replaced = []
+        def mutate(tool, *args, **kwargs):
+            if tool == "nm":
+                (self.folder / consumer.LINKED_NAME).write_bytes(b"not an ELF")
+                replaced.append(True)
+            return original(tool, *args, **kwargs)
+        with patch.object(consumer, "_run_binary", side_effect=mutate):
+            report = self.verify_linked()
+        self.assertEqual(replaced, [True])
+        self.assertTrue(report["linked_bytes_sealed_before_binutils"])
+
+    def test_linked_elf_false_provenance_refused(self):
+        self.link_receipt = self.consume()
+        self.receipt["actual_make_children_kernel_attested"] = False
+        with self.assertRaisesRegex(ValueError, "provenance not confirmed"):
+            self.verify_linked()
 
 if __name__ == "__main__":
     unittest.main()

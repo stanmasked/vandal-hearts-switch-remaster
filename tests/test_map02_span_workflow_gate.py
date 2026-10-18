@@ -106,6 +106,10 @@ class SpanWorkflowGateTests(unittest.TestCase):
         self.assertIn("'tools/build_map02_private_gpu_make_overlay.py'", pr_paths)
         self.assertIn("'tests/test_build_map02_private_gpu_make_overlay.py'", pr_paths)
         self.assertIn("'tools/consume_map02_sealed_gpu_objects.py'", pr_paths)
+        self.assertIn("'tools/verify_map02_linked_gpu_object.py'", pr_paths)
+        self.assertIn("python3 -m tools.verify_map02_linked_gpu_object", private_build)
+        self.assertIn('assert verified["linked_hash_verified_against_receipt"]', private_build)
+        self.assertIn('assert verified["linked_bytes_sealed_before_binutils"]', private_build)
         self.assertIn("'tests/test_consume_map02_sealed_gpu_objects.py'", pr_paths)
         self.assertIn('assert linked["binutils_consumed_sealed_objects"]', private_build)
 
