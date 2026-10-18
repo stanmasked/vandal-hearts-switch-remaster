@@ -182,6 +182,9 @@ static void opt_in_48k_comparison(void) {
            wet_rate.next_output_tick!=dry_rate.next_output_tick ||
            wet_rate.have_previous!=dry_rate.have_previous)
             ++frame_drift;
+        if(block<64u)
+            assert(!memcmp(wet_48k,dry_48k,
+                           wet_count*2u*sizeof(int16_t)));
         if(memcmp(wet_48k,dry_48k,wet_count*2u*sizeof(int16_t))!=0) {
             ++divergent_blocks;
             if(block>=73u && block<104u)
@@ -201,6 +204,32 @@ static void opt_in_48k_comparison(void) {
            frame_drift==0u);
     const uint64_t expected=(((uint64_t)512u*512u)-1u)*160u/147u+1u;
     assert(delivered>=expected-2u && delivered<=expected+2u);
+
+    /* Explicit silence has strict legacy semantics even with opt-in.
+     * Each independently stateful resampler is allowed to interpolate
+     * its previous *single* output boundary; the NEXT complete page
+     * must be entirely silent. No SPU wet tail may survive. */
+    assert(vh_music_scene_request(&wet_scene,NULL,0u)==0);
+    assert(vh_music_scene_request(&dry_scene,NULL,0u)==0);
+    assert(wet_scene.stage==VH_MUSIC_SILENT &&
+           dry_scene.stage==VH_MUSIC_SILENT);
+    for(unsigned k=0u;k<VH_REV_SAMPLES;k++)
+        assert(wet_spu.reverb.work[k]==0 &&
+               dry_spu.reverb.work[k]==0);
+    for(unsigned page=0u;page<2u;page++) {
+        assert(vh_music_scene_render(&wet_scene,wet_raw)==0);
+        assert(vh_music_scene_render(&dry_scene,dry_raw)==0);
+        for(unsigned k=0u;k<1024u;k++)
+            assert(!wet_raw[k] && !dry_raw[k]);
+        const size_t n=vh_audio_resample_process(
+            &wet_rate,wet_raw,512u,wet_48k,640u);
+        const size_t m=vh_audio_resample_process(
+            &dry_rate,dry_raw,512u,dry_48k,640u);
+        assert(n==m && n>=555u && n<=559u);
+        if(page==1u)
+            for(size_t k=0u;k<2u*n;k++)
+                assert(!wet_48k[k] && !dry_48k[k]);
+    }
     assert(vh_music_scene_detach(&wet_scene)==0);
     assert(vh_music_scene_detach(&dry_scene)==0);
     assert(wet_scene.active.id==0u && dry_scene.active.id==0u);
