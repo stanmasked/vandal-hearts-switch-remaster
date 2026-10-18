@@ -36,23 +36,39 @@ STAGED_EDGES = "vram-edges-native-events.pending.jsonl"
 
 
 def _snapshot_word(directory, filename, x, y):
-    """Read 2 bytes, not a game screenshot; refuse links/nonregular files."""
+    """Read one native VRAM sample without accepting an inode substitution.
+
+    This checks only a two-byte sample, NOT the provenance of a whole frame.
+    O_NONBLOCK ensures a FIFO substituted at open cannot hang the preflight.
+    """
     path = directory / filename
-    if path.is_symlink() or not path.is_file():
-        raise ValueError("missing or linked native VRAM snapshot")
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-    flags |= getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(path, flags)
+    flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) |
+             getattr(os, "O_NOFOLLOW", 0) |
+             getattr(os, "O_NONBLOCK", 0))
     try:
+        fd = os.open(path, flags)
+    except OSError:
+        raise ValueError("native VRAM snapshot unavailable or linked") from None
+    try:
+        def identity(info):
+            return (info.st_dev, info.st_ino, info.st_uid, info.st_mode,
+                    info.st_nlink, info.st_size, info.st_mtime_ns,
+                    info.st_ctime_ns)
+
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode) or info.st_size != VRAM_BYTES:
             raise ValueError("native VRAM snapshot has wrong type or size")
         address = (y * 1024 + x) * 2
-        os.lseek(fd, address, os.SEEK_SET)
-        raw = os.read(fd, 2)
-        if len(raw) != 2:
+        first = os.pread(fd, 2, address)
+        second = os.pread(fd, 2, address)
+        if len(first) != 2 or len(second) != 2:
             raise ValueError("truncated native VRAM pixel")
-        return int.from_bytes(raw, "little")
+        if (first != second or identity(os.fstat(fd)) != identity(info) or
+                identity(os.stat(path, follow_symlinks=False)) != identity(info)):
+            raise ValueError("native VRAM snapshot changed during sample")
+        return int.from_bytes(first, "little")
+    except OSError:
+        raise ValueError("native VRAM snapshot sample unavailable") from None
     finally:
         os.close(fd)
 
