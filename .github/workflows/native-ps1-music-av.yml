@@ -35,6 +35,8 @@ on:
       - 'tests/test_inspect_native_av_physical_screenshots.py'
       - 'tests/verify_native_av_physical_report.py'
       - 'tests/test_verify_native_av_physical_report.py'
+      - 'tests/verify_native_av_nro_manifest.py'
+      - 'tests/test_verify_native_av_nro_manifest.py'
       - 'tests/check_nro.py'
       - 'Makefile'
   pull_request:
@@ -58,6 +60,8 @@ on:
       - 'tests/test_inspect_native_av_physical_screenshots.py'
       - 'tests/verify_native_av_physical_report.py'
       - 'tests/test_verify_native_av_physical_report.py'
+      - 'tests/verify_native_av_nro_manifest.py'
+      - 'tests/test_verify_native_av_nro_manifest.py'
       - 'tests/native_seq_adsr_trace.c'
       - 'tools/generate_ps1_music_sd_fixture.py'
       - 'tests/test_generate_ps1_music_sd_fixture.py'
@@ -84,6 +88,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_inspect_native_av_physical_screenshots.py' -v
       - name: Test independent PNG/report rebinding with negative fixtures
         run: python -m unittest discover -s tests -p 'test_verify_native_av_physical_report.py' -v
+      - name: Test complete seven-NRO manifest and source commit policy
+        run: python -m unittest discover -s tests -p 'test_verify_native_av_nro_manifest.py' -v
 
   native-av:
     name: Compile original format SEQ VAB SPU plus video (no SDL2)
@@ -149,6 +155,7 @@ jobs:
             sha256sum --check native-ps1-av-nro-sha256.txt
             printf '%s\n' "$GITHUB_SHA" > native-ps1-av-source-commit.txt
           )
+          python3 tests/verify_native_av_nro_manifest.py build --expected-commit "$GITHUB_SHA"
 
       - name: Upload NRO without proprietary audio assets
         uses: actions/upload-artifact@v4
@@ -187,8 +194,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          (cd nros && sha256sum --check native-ps1-av-nro-sha256.txt)
-          test "$(cat nros/native-ps1-av-source-commit.txt)" = "$GITHUB_SHA"
+          python3 tests/verify_native_av_nro_manifest.py nros --expected-commit "$GITHUB_SHA"
 
       - name: Prepare isolated synthetic SD fixture (no game assets)
         shell: bash
