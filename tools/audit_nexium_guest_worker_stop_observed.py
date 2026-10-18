@@ -14,7 +14,7 @@ from pathlib import Path
 import sys
 
 from audit_nexium_guest_exit_timeline import (
-    ExitTimelineError, OBSERVED, SUBDIR, audit_guest_root,
+    ExitTimelineError, OBSERVED, SUBDIR, audit_guest_root as audit_guest_exit_root,
 )
 from audit_nexium_guest_last_buffer_return import (
     COMPLETE, audit_guest as audit_last_page,
@@ -94,7 +94,7 @@ def audit_worker_stop_csv(raw:bytes, exit_report:dict,
     return result
 
 
-def audit_guest_root(root:Path) -> tuple[dict,bytes | None]:
+def audit_worker_source_root(root:Path) -> tuple[dict,bytes | None]:
     if root.is_symlink() or not root.is_dir():
         raise ExitTimelineError("unsafe guest SD root")
     source=root/SUBDIR/FILE
@@ -110,18 +110,13 @@ def audit_guest_root(root:Path) -> tuple[dict,bytes | None]:
     if source.is_symlink() or not source.is_file() or (
             len(list((root/SUBDIR).glob("audio-exit-worker-stop-*.csv")))!=1):
         raise ExitTimelineError("ambiguous or symlinked original guest worker stop")
-    exit_r=audit_guest_root_exit(root)
+    exit_r=audit_guest_exit_root(root)
     page_r=audit_last_page(root)
     raw=source.read_bytes()
     r=audit_worker_stop_csv(raw,exit_r,page_r)
     r["original_worker_stop_source_observed"]=True
     r["original_worker_stop_source_path"]=str(SUBDIR/FILE)
     return r,raw
-
-
-# Separate alias avoids shadowing the auditor entrypoint's name.
-audit_guest_root_exit=audit_guest_root  # replaced below by source import
-from audit_nexium_guest_exit_timeline import audit_guest_root as audit_guest_root_exit
 
 
 def main(argv=None) -> int:
@@ -139,7 +134,7 @@ def main(argv=None) -> int:
         root=a.guest_root_file.read_text(encoding="utf-8").strip()
         if not root.startswith("/") or "\n" in root or "\x00" in root:
             raise ExitTimelineError("invalid guest SD root locator")
-        report,raw=audit_guest_root(Path(root))
+        report,raw=audit_worker_source_root(Path(root))
         if raw is not None:
             a.output_original.parent.mkdir(parents=True,exist_ok=True)
             with a.output_original.open("xb") as out:
