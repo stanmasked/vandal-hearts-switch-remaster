@@ -1,0 +1,34 @@
+name: MAP02 v135 private original US PS-X EXE/MIPS ELF source anchor gate
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v135-original-us-elf-gate.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/analyze_map02_v135_original_us_elf_pair.py'
+      - 'tests/test_map02_v135_original_us_elf_pair.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-anchored-original-gate:
+    name: independent synthetic original-provenance refusal (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test original US ELF anchors with self-generated private fixtures only
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          no_retail_psx_input_in_ci=1
+          readonly no_retail_psx_input_in_ci
+          test "$no_retail_psx_input_in_ci" = 1
+          python3 -m unittest discover -s tests -p 'test_map02_v135_original_us_elf_pair.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v134_dirfd_private_exe.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v133_nonblocking_private_exe.py' -v
+          echo "VH135_SYNTHETIC_ANCHORS_VERIFIED retail_bytes_present=0 original_gameplay_proven=0"
