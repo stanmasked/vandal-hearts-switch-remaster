@@ -21,7 +21,7 @@ jobs:
       - name: Checkout current strict original-source verifier
         uses: actions/checkout@v4
 
-      - name: Stage304 seven no-PCM archived-control ordering classification tests
+      - name: Stage304 no-PCM archived-control ordering classification tests
         run: python3 -m unittest discover -s tests -p 'test_classify_nexium_stage304_exit_control_order.py' -v
 
       - name: Download exact failed Stage322 original runtime artifact
@@ -163,6 +163,14 @@ jobs:
                       "adjacent_original_host_control_pairs"]
                   doc["original_nonmonotone_control_csv_source_replayed"]=derived[
                       "reproduces_nonmonotone_exit_control_source_refusal"]
+                  doc["archived_control_order_violation_kind"]=derived[
+                      "archived_control_order_violation_kind"]
+                  doc["archived_control_size_regression_pair_count"]=derived[
+                      "pcm_size_regression_pair_count"]
+                  doc["archived_control_host_clock_backward_pair_count"]=derived[
+                      "host_epoch_backward_pair_count"]
+                  doc["archived_control_host_clock_tie_pair_count"]=derived[
+                      "host_epoch_equal_pair_count"]
               except (OSError,ValueError,TypeError) as exc:
                   doc["original_control_pair_classifier_error"]=str(exc)[:200]
                   doc["original_nonmonotone_control_csv_source_replayed"]=False
@@ -192,6 +200,8 @@ jobs:
                            (", ".join(doc["ambiguous_archived_pinned_sources"])
                             or "none")+"\n")
               if "original_host_control_adjacent_pairs" in doc:
+                  output.write("- Archived control ordering violation: "+
+                               doc["archived_control_order_violation_kind"]+"\n")
                   output.write("- Original archived control pair deltas (bytes/ms): "+
                                str([(p["pcm_file_size_delta_bytes"],
                                      p["host_epoch_delta_ms"])
@@ -206,6 +216,20 @@ jobs:
                                str(any(x[1] for x in flags))+"\n")
               output.write("- An archived input missing now does not identify "+
                            "the original in-run failure cause.\n")
+          # A postmortem must never pass when its classification contradicts
+          # the exact original archived verifier or cannot be reproduced.
+          # The diagnostic artifact above is still uploaded on a failure.
+          if doc.get("archive_has_all_Stage304_pinned_sources"):
+              if "original_control_pair_classifier_error" in doc:
+                  raise SystemExit("Stage304 original archived CSV classifier failed")
+              replayed=doc.get("original_nonmonotone_control_csv_source_replayed")
+              invariant=doc.get("source_replay_invariant")
+              if (invariant=="nonmonotone exit-control snapshots" and
+                      replayed is not True):
+                  raise SystemExit("Stage304 replay/classifier source ordering contradiction")
+              if (doc["archive_replay_result"]=="ARCHIVE_STRICT_REPLAY_PASSED" and
+                      replayed is True):
+                  raise SystemExit("Stage304 strict acceptance/classifier contradiction")
           PY
 
       - name: Publish archive availability and replay classification only, never original PCM
