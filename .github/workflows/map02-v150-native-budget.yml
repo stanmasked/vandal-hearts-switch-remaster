@@ -1,0 +1,37 @@
+name: MAP02 v150 bounded native interpreter instruction gate
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v150-native-budget.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v150_native_instruction_budget.py'
+      - 'tests/test_map02_v150_native_instruction_budget.py'
+      - 'tools/run_map02_v149_bounded_guest.py'
+      - 'tests/test_map02_v149_bounded_guest.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  bounded-interpreter-guard:
+    name: compiled C gate and synthetic-only regression (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify compiled gate and private-retail refusal
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          no_retail_game_files=1
+          readonly no_retail_game_files
+          test "$no_retail_game_files" = 1
+          python3 -m compileall -q tools/apply_map02_v150_native_instruction_budget.py tests/test_map02_v150_native_instruction_budget.py
+          python3 -m unittest discover -s tests -p 'test_map02_v150_native_instruction_budget.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v149_bounded_guest.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v148_original_guest_boot.py' -v
+          echo 'VH150_COMPILED_GUARD_REGRESSIONS_PASS original_retail_executed=0 map02_rendered=0'
