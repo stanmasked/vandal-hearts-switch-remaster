@@ -399,7 +399,8 @@ static void audio_worker(void *unused) {
                 }
             }
             vh_audio_manual_finished_service(
-                &hardware_manual_transport,ready && rc==0);
+                &hardware_manual_transport,ready && rc==0,
+                atomic_load(&audout_buffers_completed));
             if(!ready || rc) {
                 atomic_store(&audio_fault,14);
                 break; /* do not synthesize/replay PCM on failure */
@@ -693,9 +694,13 @@ static void audio_worker(void *unused) {
             atomic_store(&audio_fault, 3);
             break;
         }
-        atomic_fetch_add(&audout_buffers_completed, 1u);
 #ifdef VH_AUDIO_HARDWARE_MANUAL_RESUME
-        vh_audio_manual_returned_pcm(&hardware_manual_transport);
+        const unsigned pages_returned=
+            atomic_fetch_add(&audout_buffers_completed,1u)+1u;
+        vh_audio_manual_returned_pcm(&hardware_manual_transport,
+                                     pages_returned);
+#else
+        atomic_fetch_add(&audout_buffers_completed, 1u);
 #endif
 #if defined(VH_AUDIO_GUEST_RESUME_AUTOTEST) || defined(VH_AUDIO_GUEST_RESUME_RETRY_AUTOTEST)
         /* Mark each action verified only AFTER the next real returned
@@ -1078,12 +1083,14 @@ int main(void) {
 #ifdef VH_AUDIO_HARDWARE_MANUAL_RESUME
         /* Only genuine physical button transitions are accepted.
          * Busy/failed requests are ignored, never silently queued. */
-        if (buttons_down & HidNpadButton_X)
-            (void)vh_audio_manual_request(
-                &hardware_manual_transport,VH_MANUAL_QUICK);
-        if (buttons_down & HidNpadButton_Y)
-            (void)vh_audio_manual_request(
-                &hardware_manual_transport,VH_MANUAL_REOPEN);
+        if (audio_active && atomic_load(&audio_fault)==0) {
+            if (buttons_down & HidNpadButton_X)
+                (void)vh_audio_manual_request(
+                    &hardware_manual_transport,VH_MANUAL_QUICK);
+            if (buttons_down & HidNpadButton_Y)
+                (void)vh_audio_manual_request(
+                    &hardware_manual_transport,VH_MANUAL_REOPEN);
+        }
 #endif
         if (vh_process_input(&state, actions, GRID_COLS, GRID_ROWS, 2))
             break;
