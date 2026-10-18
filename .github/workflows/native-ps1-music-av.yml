@@ -27,6 +27,8 @@ on:
       - 'tests/test_generate_ps1_music_sd_fixture.py'
       - 'tests/check_native_av_screenshot.py'
       - 'tests/test_check_native_av_screenshot.py'
+      - 'tests/verify_native_av_guest_witness.py'
+      - 'tests/test_verify_native_av_guest_witness.py'
       - 'tests/check_nro.py'
       - 'Makefile'
   pull_request:
@@ -42,6 +44,8 @@ on:
       - 'tests/test_native_vab_python_reference.py'
       - 'tests/test_native_spu_reverb_reference.py'
       - 'tests/test_native_seq_timing_adsr_reference.py'
+      - 'tests/verify_native_av_guest_witness.py'
+      - 'tests/test_verify_native_av_guest_witness.py'
       - 'tests/native_seq_adsr_trace.c'
       - 'tools/generate_ps1_music_sd_fixture.py'
       - 'tests/test_generate_ps1_music_sd_fixture.py'
