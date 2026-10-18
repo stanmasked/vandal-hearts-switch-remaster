@@ -1,0 +1,32 @@
+name: MAP02 v159 native fifth MIPS GP0 to GPU dispatch witness
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v159-native-gpu-sink.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v159_native_gpu_sink.py'
+      - 'tests/test_map02_v159_native_gpu_sink.py'
+      - 'tools/apply_map02_v158_native_gp0_fifth.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fifth-gpu-dispatch:
+    name: compiled synthetic fifth GP0 to GPU data dispatch (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate independent GPU dispatch and unchanged fifth opcode gate
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v159_native_gpu_sink.py tests/test_map02_v159_native_gpu_sink.py
+          python3 -m unittest discover -s tests -p 'test_map02_v159_native_gpu_sink.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v158_native_gp0_fifth.py' -v
+          echo 'VH159_COMPILED_GPU_SINK_PASS original_retail_executed=0 map02_rendered=0 gpu_plugin_consumption_verified=0'
