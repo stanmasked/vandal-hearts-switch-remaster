@@ -57,8 +57,20 @@ The generated report includes:
   the stop request.
 - SHA-256 hashes of the original PlayBuffer, exit, worker stop,
   last-page, and optical source files.
+- An **exact arithmetic partition** of the interval from main-thread
+  stop request until the last normal buffer's owner-side return:
+  time after the request **before** the final successful call,
+  time **inside** that call after the request, and time **after**
+  the call's return until the owner-side last-page witness.
+  All three nonnegative portions must sum exactly to the
+  source-measured stop-to-page interval. If the last call finished
+  before the stop request, its contribution is zero.
 
-**Thirteen adversarial synthetic tests** verify exact replays,
+This is a decomposition of timestamps, **not** a claim that any
+portion corresponds to audible sound, a single blocked hardware
+queue operation, or the cause of an audio dropout.
+
+**Sixteen adversarial synthetic tests** verify exact replays,
 source tampering, forged receipts, swapped optical images, missing,
 duplicated, symlinked and separated original sources, and strict
 non-audible evidence flags. They run under both Host SPU and the
