@@ -315,8 +315,10 @@ def main():
     args=p.parse_args()
     try:
         report=verify_capture(args.private_directory,target_frame=args.frame)
-    except (ValueError,OSError) as exc:
-        p.error(str(exc))
+    except (ValueError, OSError):
+        # Filesystem exceptions and untrusted JSON may contain private game
+        # paths; do not echo the exception payload into terminal/CI logs.
+        p.error("private native GPU capture verification unavailable")
     print(json.dumps(report,sort_keys=True,indent=2))
 
 if __name__=="__main__":
