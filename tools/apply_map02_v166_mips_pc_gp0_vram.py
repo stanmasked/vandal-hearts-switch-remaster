@@ -65,9 +65,16 @@ int vh166_arm_guest_sw_pc(unsigned stage) {
     return 0;
 }
 static void vh166_observe_guest_sw_pc(psxRegisters *regs,u32 address,u32 value) {
+    u32 physical=address&0x1fffffffu;
     if(!vh166_active) return;
+    /* The guest stage also stores a CPU RAM marker after GPU SWs.
+     * Ignore ordinary RAM, but count an unexpected GPU GP1 write. */
+    if(physical!=0x1f801810u) {
+        if((physical&0xfffffff8u)==0x1f801810u)
+            vh166_fault++;
+        return;
+    }
     if(!regs || vh166_count>=3u ||
-       (address&0x1fffffffu)!=0x1f801810u ||
        regs->code!=0xad090000u ||
        regs->pc!=vh166_expected_pc[vh166_stage][vh166_count]+4u ||
        value!=vh166_expected_words[vh166_stage][vh166_count]) {
