@@ -12,7 +12,7 @@ from tools.instrument_map02_gpu_native_events import PINNED_SOURCE
 from tools.prepare_map02_pcport import git_blob_sha1
 
 GUARD = "VH_MAP02_PRIVATE_FRAME_PIPE_TRACE"
-INSERT_AT = "#define VRAM_H 512\n"
+INSERT_AT = "unsigned s_drawFrame = 0; /* incremented per DrawOTag; ties prim log to VRAM dumps + libgte VH_GTE_LOG */\n"
 CALL_AFTER = ("    PC_MaybeDumpVram(); /* VH_VRAM_DUMP=N: snapshot VRAM "
               "to PPM for texture/CLUT triage */")
 CALL = """#if defined(VH_MAP02_PRIVATE_FRAME_PIPE_TRACE)
