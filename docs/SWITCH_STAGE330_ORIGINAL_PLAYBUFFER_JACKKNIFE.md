@@ -60,6 +60,38 @@ The independent GitHub Actions workflow
 downloads original source artifacts and publishes only a compact
 source-hash-bound summary after validating the original 15/16 calls.
 
+## Independently confirmed results
+
+[Original-source workflow #39172334832](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39172334832)
+**completed successfully** with all **12 Stage330 synthetic tests** and
+full independent replay of the two archived guest source captures,
+including exact Stage328/329 source fingerprints.
+
+| Leave-one-out software-call statistic | First NeXium | Second NeXium |
+| --- | ---: | ---: |
+| Previous-15 full lower median | 32,154,011 ns | 31,247,083 ns |
+| Previous-14 lower median: minimum | 31,803,177 ns | 29,928,490 ns |
+| Previous-14 lower median: maximum | 32,154,011 ns | 31,247,083 ns |
+| Leave-one-out median range | 350,834 ns | 1,318,593 ns |
+| Leave-one-out MAD minimum | 689,374 ns | 3,659,636 ns |
+| Leave-one-out MAD maximum | 1,040,208 ns | 6,615,625 ns |
+| Final-call first-possible rank minimum | 1 | 5 |
+| Final-call first-possible rank maximum | 1 | 6 |
+| Final call below all 15 deletion medians | yes | yes |
+
+The baseline remains higher than the last guest software call for
+each of the **fifteen leave-one-out variants in each original
+capture**. The first capture's final-call rank remains exactly first,
+whereas the second changes between fifth and sixth.
+
+A newer source implementation additionally preserves authentic
+sensitive cases instead of rejecting them merely because omitting one
+sample reverses the last-call-versus-median comparison. The original
+#39172334832 success predates this diagnostic behavior refinement.
+The [corrected workflow #39172527290](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39172527290)
+should be checked separately before claiming that refinement was
+validated by CI.
+
 ## Evidence limits
 
 These fifteen leave-one-out variants are mathematical sensitivity
