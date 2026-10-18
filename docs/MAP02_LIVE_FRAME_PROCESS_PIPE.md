@@ -741,3 +741,29 @@ The added asset-free integration tests verify that a missing source
 directory, readable receipt, symlinked receipt, shared source
 directory, duplicate original-source directories or a source alias
 to live output cannot start or publish a capture.
+
+### FT4/VRAM original-source identity pinned through replay
+
+The complete optional original-source preflight now returns a private
+in-memory role-identity witness. In addition to initial mode/type/owner
+checks it records the five role directories' device/inode, owner and
+permissions; both source receipt files also record their inode, link
+count, size, modification and change times. After the real native
+ELF GPU/frame capture, dual replays, and independent source-keyed
+FT4/GTE/VRAM analysis, the same seven inputs are reopened and compared
+against their **pre-launch** identities. A same-byte inode replacement,
+a re-created FT4 source directory, or in-place changes to receipt
+metadata therefore cause refusal even if SHA-256 claims happen to
+remain identical.
+
+For legitimate captures, the output and journal directories naturally
+gain files during the ELF run: their *directory* inode, owner and mode
+are pinned, not their changing size or mtime. The returned digest-only
+report includes
+`original_source_receipt_and_roles_stable_through_replay=true`
+only after all checks pass. Filesystem/inode identities are never
+published. Asset-free synthetic Linux ELF tests inject same-byte
+receipt replacement, directory reconstruction and receipt timestamp
+mutation during the mocked unavailable original-source witness.
+These checks do not authenticate original PS1 pixels or guarantee
+kernel-attested same-process FT4 event origin.
