@@ -269,7 +269,8 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
                        build_receipt_dir=None, build_bundle_dir=None,
                        krom_source=None, pc_preoverlay_dir=None,
                        stop_after_present=False,
-                       source_capture_dir=None, native_preview_dir=None):
+                       source_capture_dir=None, native_preview_dir=None,
+                       require_complete_preflight=False):
     """Run the given PC binary directly; never run a shell or create game data."""
     if not sys.platform.startswith("linux") or not Path("/proc/self/exe").exists():
         raise ValueError("observed executable launch requires Linux /proc")
@@ -282,6 +283,14 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
         raise ValueError("private RGB24 capture requires a source-bound cycle")
     if type(stop_after_present) is not bool:
         raise ValueError("MAP02 stop-after-present must be boolean")
+    if type(require_complete_preflight) is not bool:
+        raise ValueError("MAP02 strict full preflight option must be boolean")
+    if require_complete_preflight and (
+            source_capture_dir is None or native_preview_dir is None or
+            cycle is None or preoverlay is None or
+            build_receipt_dir is None or build_bundle_dir is None):
+        raise ValueError(
+            "strict MAP02 full preflight requires source, preview, cycle, RGB24 and build provenance")
     if stop_after_present and (cycle is None or preoverlay is None):
         raise ValueError("MAP02 clean stop requires cycle and private RGB24 capture")
     checked_dirs = ((handoff, native, scoped) +
@@ -312,6 +321,19 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
             native_preview_dir, preoverlay)
         if inspected["prelaunch_layout_ready"] is not True:
             raise ValueError("full MAP02 prelaunch layout was not verified")
+    if require_complete_preflight:
+        # Lazy import: the independent readiness audit reuses this launcher's
+        # pinned-image logic, so an eager import would create a module cycle.
+        from tools.check_map02_private_cycle_readiness import verify_private_cycle_readiness
+        readiness = verify_private_cycle_readiness(
+            source_capture_dir, native, scoped, handoff, cycle,
+            native_preview_dir, preoverlay,
+            pc_binary=pc_binary, owned_game_image=owned_game,
+            upstream_checkout=upstream,
+            build_receipt_dir=build_receipt_dir,
+            build_bundle_dir=build_bundle_dir, krom_source=krom_source)
+        if readiness["ready_for_controlled_local_launch"] is not True:
+            raise ValueError("strict source-bound MAP02 preflight not confirmed")
     plan_raw = private_file(handoff, PLAN, max_bytes=4096)
     plan = _validate_plan(plan_raw)
     x = number(x, "sample X", 0, 1023)
@@ -662,6 +684,8 @@ def main():
                    help="opt-in prelaunch seven-directory audit: prepared private source/GTE evidence")
     p.add_argument("--native-preview-dir", type=Path,
                    help="opt-in prelaunch seven-directory audit: empty private VRAM PNG directory")
+    p.add_argument("--require-complete-preflight", action="store_true",
+                   help="fail closed until full original PC ELF, disc, build receipt and seven folders pass no-exec readiness")
     p.add_argument("--stop-after-target-present", action="store_true",
                    help="opt-in clean process exit after selected native PC Present; requires cycle and RGB24")
     p.add_argument("--build-receipt-dir", type=Path,
@@ -689,13 +713,15 @@ def main():
                 pc_preoverlay_dir=a.pc_preoverlay_dir,
                 stop_after_present=a.stop_after_target_present,
                 source_capture_dir=a.source_capture_dir,
-                native_preview_dir=a.native_preview_dir)
+                native_preview_dir=a.native_preview_dir,
+                require_complete_preflight=a.require_complete_preflight)
         else:
             if (a.cycle_dir is not None or a.build_receipt_dir is not None or
                     a.build_bundle_dir is not None or
                     a.krom_source is not None or a.pc_preoverlay_dir is not None or
                     a.source_capture_dir is not None or
                     a.native_preview_dir is not None or
+                    a.require_complete_preflight or
                     a.stop_after_target_present):
                 raise ValueError("verify original cycle via separate private witness verifier")
             if forwarded:
