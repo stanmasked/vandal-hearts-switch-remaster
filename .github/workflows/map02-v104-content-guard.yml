@@ -188,6 +188,9 @@ on:
       - 'tools/check_map02_v147_native_generic_mmio.py'
       - 'tests/test_map02_v147_generic_native_mmio.py'
       - 'tools/prepare_map02_v148_original_guest_boot.py'
+      - 'tools/apply_map02_v150_native_instruction_budget.py'
+      - 'tests/test_map02_v150_native_instruction_budget.py'
+      - '.github/workflows/map02-v150-native-budget.yml'
       - 'tests/test_map02_v148_original_guest_boot.py'
       - '.github/workflows/map02-v148-original-guest-boot-plan.yml'
       - '.github/workflows/map02-v147-generic-native-mmio.yml'
@@ -313,6 +316,8 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v146_verified_fd_native.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v147_generic_native_mmio.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v148_original_guest_boot.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v149_bounded_guest.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v150_native_instruction_budget.py' -v
           python3 -m remaster.tools.check_map02_v147_native_bounded_c --cc "${{ matrix.cc }}" \
             | grep -Fx 'VH147_COMPILED_BOUNDED_NATIVE_PASS capacity=1024 generic=1 repeated_pc=1 overflow_refused=1 atomic_mode0600=1 no_overwrite=1 original_retail=0'
           python3 -m remaster.tools.check_map02_v144_native_challenge_c --cc "${{ matrix.cc }}" \
@@ -333,7 +338,9 @@ jobs:
           git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
           git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
-          python3 -m remaster.tools.apply_map02_v147_generic_native_mmio upstream-pcsx
+          python3 -m remaster.tools.apply_map02_v150_native_instruction_budget upstream-pcsx
+          grep -F 'if(!vh150_before(regs,pc)) return;' upstream-pcsx/libpcsxcore/psxinterpreter.c
+          grep -F 'VH150_NATIVE_BOUNDED_INTERPRETER_PASS' upstream-pcsx/frontend/main.c
           grep -F 'VH147_MAX_EVENTS 1024u' upstream-pcsx/libpcsxcore/psxmem.c
           grep -F 'VH147_NATIVE_BOUNDED_MMIO_PASS' upstream-pcsx/frontend/main.c
           grep -F 'VH144_CHALLENGE_NAME' upstream-pcsx/libpcsxcore/psxmem.c
@@ -1311,6 +1318,39 @@ jobs:
             --output proof/private/V129_SYNTHETIC.EXE
           test "$(stat -c %s proof/private/V129_SYNTHETIC.EXE)" -eq 10240
           chmod 600 proof/private/V129_SYNTHETIC.EXE
+          # v150: the pinned native MIPS interpreter, not the Python subset,
+          # must preempt the fourth instruction. Explicitly synthetic-only.
+          sha256sum proof/private/V129_SYNTHETIC.EXE > proof/private/v150-synthetic-before.sha256
+          mkdir -m 700 proof/v150-native-home
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v150-native-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh129-vblank-04 --vh150-bounded-instructions \
+            proof/private/V129_SYNTHETIC.EXE \
+            > proof/private/v150-native-bounded.log 2>&1 || {
+              tail -n 60 proof/private/v150-native-bounded.log
+              exit 1
+            }
+          grep -Fx 'VH150_NATIVE_BOUNDED_INTERPRETER_PASS steps=3 capped=1 synthetic_only=1 original_retail=0' \
+            proof/private/v150-native-bounded.log
+          mkdir -m 700 proof/v150-refusal-home
+          bad_rc=0
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v150-refusal-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh129-vblank-13 --vh150-bounded-instructions \
+            proof/private/V129_SYNTHETIC.EXE \
+            > proof/private/v150-native-refusal.log 2>&1 || bad_rc=$?
+          test "$bad_rc" -eq 54
+          grep -Fx 'VH150_SYNTHETIC_ONLY_REFUSED' proof/private/v150-native-refusal.log
+          if grep -Fq 'VH150_NATIVE_BOUNDED_INTERPRETER_PASS' \
+            proof/private/v150-native-refusal.log; then
+            echo 'VH150_NATIVE_FALSE_ACCEPT_REFUSED'
+            exit 1
+          fi
+          sha256sum -c proof/private/v150-synthetic-before.sha256
           sha256sum proof/private/V129_SYNTHETIC.EXE > proof/private/v131-same-exe.sha256
           python3 -m remaster.tools.analyze_map02_v131_private_mips_mmio \
             proof/private/V129_SYNTHETIC.EXE > proof/private/v131-static-candidates.json
@@ -1673,6 +1713,9 @@ jobs:
           report["v147_bounded_overflow_and_repeated_pc_tested"]=True
           report["v148_original_us_guest_entry_preflight_synthetic_tested"]=True
           report["v148_original_game_runtime_boot_unverified"]=True
+          report["v149_bounded_ram_only_synthetic_probe_tested"]=True
+          report["v150_native_real_interpreter_three_instructions_capped"]=True
+          report["v150_original_retail_execution_not_enabled"]=True
           report["retail_map02_gpu_rendering_verified"]=False
           Path("proof/public/v129-four-real-vblank-profiles-summary.json").write_text(
               json.dumps(report,sort_keys=True)+"\n")
