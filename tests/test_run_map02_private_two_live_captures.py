@@ -34,7 +34,40 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
                        '        if (bad_vram)')
         if PRODUCER.count(needle) != 1:
             raise RuntimeError("MAP02 synthetic GPU C11 fixture anchor drift")
-        source.write_text(PRODUCER.replace(needle, replacement), encoding="utf-8")
+        # Emit a valid altered JSONL event directly from the second
+        # synthetic child, leaving the final BGR555 output untouched.
+        # The test harness alters the *second launch only* to exercise
+        # diagnostic and strict mismatch handling for a pinned ELF.
+        updated = PRODUCER.replace(needle, replacement)
+        changes = (
+            ('static int log_event(FILE *stream, unsigned step, const char *phase, unsigned frame) {',
+             'static int log_event(FILE *stream, unsigned step, const char *phase, unsigned frame, int semi) {'),
+            (r'\"primitive_type\":4,\"semi\":0,\"window\"',
+             r'\"primitive_type\":4,\"semi\":%d,\"window\"'),
+            ('step, frame, phase, step) > 0;',
+             'step, frame, phase, step, semi) > 0;'),
+            ('int bad_vram = argc > 1 && !strcmp(argv[1], "bad-vram");',
+             'int bad_vram = argc > 1 && !strcmp(argv[1], "bad-vram");\n'
+             '    int alternate_event = argc > 1 && '
+             '(!strcmp(argv[1], "alternate-event") || '
+             '!strcmp(argv[1], "alternate-event-before"));'),
+            ('!log_event(events, 0, "before", wrong_frame ? 124 : 123)',
+             '!log_event(events, 0, "before", wrong_frame ? 124 : 123, alternate_event)'),
+            ('!log_event(events, 1, "after", wrong_frame ? 124 : 123)',
+             '!log_event(events, 1, "after", wrong_frame ? 124 : 123, alternate_event)'),
+        )
+        for old_c, new_c in changes:
+            if updated.count(old_c) != 1:
+                raise RuntimeError("MAP02 two-launch GPU event C11 anchor drift")
+            updated = updated.replace(old_c, new_c)
+        before = 'if (!write_image(dir, "gpu-0000-vram.bin")) return 43;'
+        if updated.count(before) != 1:
+            raise RuntimeError("MAP02 two-launch before-VRAM C11 anchor drift")
+        updated = updated.replace(
+            before,
+            'if (argc > 1 && !strcmp(argv[1], "alternate-event-before")) '
+            'native_vram[0][0] = 0x1234;\n        ' + before)
+        source.write_text(updated, encoding="utf-8")
         cc = os.environ.get("CC", "cc")
         if not shutil.which(cc):
             raise unittest.SkipTest("C compiler missing")
@@ -141,6 +174,62 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
         self.assertEqual(len(called), 2)
         self.assertEqual(len(list(self.dirs[0].iterdir())), 2)
         self.assertEqual(len(list(self.dirs[2].iterdir())), 2)
+
+    def _launch_with_different_second_gpu_event(self, variant, *, strict):
+        """Inject alternate arguments only after the first real C11 launch."""
+        real_capture = two_live.capture
+        calls = []
+        def change_second(*args, **kwargs):
+            calls.append(1)
+            if len(calls) == 2:
+                kwargs["args"] = (variant,)
+            return real_capture(*args, **kwargs)
+        with patch.object(two_live, "capture", side_effect=change_second):
+            if strict:
+                with self.assertRaisesRegex(ValueError, "not bit-exact"):
+                    self.run_two(require_identical_gpu_timeline=True)
+                result = None
+            else:
+                result = self.run_two()
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(list(self.dirs[0].iterdir())), 2)
+        self.assertEqual(len(list(self.dirs[2].iterdir())), 2)
+        return result
+
+    def test_two_launch_diagnostic_event_only_does_not_claim_strict_equality(self):
+        report = self._launch_with_different_second_gpu_event(
+            "alternate-event", strict=False)
+        self.assertTrue(report["repeated_native_frame_pixels_identical"])
+        self.assertTrue(report["repeated_full_gpu_vram_snapshot_sequence_identical"])
+        self.assertFalse(report["repeated_gpu_event_journal_identical"])
+        self.assertFalse(report["repeated_gpu_event_records_identical"])
+        self.assertEqual(report["first_joint_gpu_divergence_kind"], "event-only")
+        self.assertEqual(report["first_joint_gpu_divergence_index"], 0)
+        self.assertEqual(report["first_joint_gpu_divergence_phase"], "before")
+        self.assertFalse(report["strict_gpu_timeline_match_verified"])
+        self.assertFalse(report["hd_replacement_authorized"])
+        for folder in self.dirs:
+            self.assertNotIn(str(folder), json.dumps(report))
+
+    def test_two_launch_strict_rejects_event_only_difference(self):
+        self._launch_with_different_second_gpu_event(
+            "alternate-event", strict=True)
+
+    def test_two_launch_diagnostic_joint_difference_reconverges(self):
+        report = self._launch_with_different_second_gpu_event(
+            "alternate-event-before", strict=False)
+        self.assertTrue(report["repeated_native_frame_pixels_identical"])
+        self.assertFalse(report["repeated_full_gpu_vram_snapshot_sequence_identical"])
+        self.assertFalse(report["repeated_gpu_event_records_identical"])
+        self.assertEqual(report["first_joint_gpu_divergence_kind"], "event-and-vram")
+        self.assertEqual(report["first_joint_gpu_divergence_index"], 0)
+        self.assertEqual(report["first_different_gpu_vram_snapshot_index"], 0)
+        self.assertTrue(report["gpu_vram_reconverged_at_common_prefix_end"])
+        self.assertFalse(report["strict_gpu_timeline_match_verified"])
+
+    def test_two_launch_strict_rejects_joint_difference(self):
+        self._launch_with_different_second_gpu_event(
+            "alternate-event-before", strict=True)
 
     def test_strict_gpu_timeline_gate_rejects_missing_claims(self):
         good = self.run_two()
