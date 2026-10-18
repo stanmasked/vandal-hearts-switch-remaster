@@ -95,6 +95,8 @@ def publish_window_source_witness(source_dir, window_dir, *, compiler="gcc"):
         import os
         os.link(temporary, final)
         linked = True
+        # End staging hardlink lifetime before strict nlink=1 readback.
+        temporary.unlink()
         if private_file(source, MANIFEST, max_bytes=4096) != raw:
             raise ValueError("private source-window witness readback mismatch")
     except BaseException:
