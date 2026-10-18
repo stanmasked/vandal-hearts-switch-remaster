@@ -218,6 +218,24 @@ class PrivateFinalSealTests(unittest.TestCase):
         self.assertEqual((self.seal_dir / NAME).read_bytes(),
                          b"foreign-same-inode")
 
+    def test_postaudit_extra_directory_entry_blocks_success(self):
+        from tools.seal_map02_private_finalization import verify_final_seal
+        original_verify = verify_final_seal
+
+        def add_foreign_entry(*args, **kwargs):
+            result = original_verify(*args, **kwargs)
+            (self.seal_dir / "foreign-evidence").write_bytes(b"keep-me")
+            return result
+
+        with patch(
+                "tools.seal_map02_private_finalization.verify_final_seal",
+                side_effect=add_foreign_entry):
+            with self.assertRaisesRegex(ValueError, "directory entries changed"):
+                self.call()
+        self.assertEqual((self.seal_dir / "foreign-evidence").read_bytes(),
+                         b"keep-me")
+        self.assertFalse((self.seal_dir / NAME).exists())
+
     def test_missing_png_or_cd_proof_does_not_seal(self):
         (self.fixture.preview / "map02-native-vram-preview.png").unlink()
         with self.assertRaises(ValueError):
