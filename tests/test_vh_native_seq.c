@@ -441,6 +441,80 @@ static int resolve_with_missing(void *ctx, unsigned program,
     return resolve(ctx,program,note,velocity,volume,pan,out);
 }
 
+/* Keep the target branch's read-only coverage audit AND the newly
+ * backported scene-switch API working against the same native SEQ/SPU.
+ * Invalid switches are fully atomic; valid ones detach every voice
+ * from the old bank without clearing STUDIO_C's persistent wet tail.
+ */
+static int16_t next_scene_sample[64];
+static VhNativeSpu before_scene_spu, foreign_scene_spu;
+static int resolve_scene_reverb(void *ctx,unsigned program,unsigned note,
+                                unsigned velocity,unsigned volume,
+                                unsigned pan,VhSeqTone *tone) {
+    if(resolve(ctx,program,note,velocity,volume,pan,tone)) return -1;
+    tone->reverb_send=1u;
+    return 0;
+}
+static int resolve_next_scene(void *ctx,unsigned program,unsigned note,
+                              unsigned velocity,unsigned volume,
+                              unsigned pan,VhSeqTone *tone) {
+    if(resolve_scene_reverb(ctx,program,note,velocity,volume,pan,tone))
+        return -1;
+    tone->pcm=next_scene_sample;
+    return 0;
+}
+static void test_scene_switch_preserves_audit_and_wet_tail(void) {
+    setup();
+    for(unsigned i=0;i<64u;i++)
+        next_scene_sample[i]=(int16_t)(-10000+(int)i*23);
+    assert(vh_native_spu_set_reverb(&spu,1,0.5f)==0);
+    assert(vh_native_seq_init(&seq,controls_song,sizeof controls_song,
+                              &spu,resolve_scene_reverb,
+                              &log_state,1u)==0);
+    assert(vh_native_seq_advance_block(&seq)>0);
+    assert(spu.voice[0].pcm==sample && spu.voice[0].reverb_send);
+    vh_native_spu_render(&spu,pcm,VH_AUDIO_BLOCK_FRAMES);
+    const VhNativeSeq prior_seq=seq;
+    before_scene_spu=spu;
+    assert(spu.frames_rendered==VH_AUDIO_BLOCK_FRAMES);
+    assert(vh_native_seq_switch_scene(
+        &seq,invalid_data,sizeof invalid_data,&spu,
+        resolve_next_scene,&log_state,1u)==-1);
+    assert(!memcmp(&seq,&prior_seq,sizeof seq));
+    assert(!memcmp(&spu,&before_scene_spu,sizeof spu));
+    vh_native_spu_reset(&foreign_scene_spu);
+    assert(vh_native_seq_switch_scene(
+        &seq,controls_song,sizeof controls_song,&foreign_scene_spu,
+        resolve_next_scene,&log_state,1u)==-1);
+    assert(!memcmp(&seq,&prior_seq,sizeof seq));
+    assert(!memcmp(&spu,&before_scene_spu,sizeof spu));
+
+    VhSeqAudit audit={0};
+    assert(vh_native_seq_audit(controls_song,sizeof controls_song,
+                               resolve_next_scene,&log_state,&audit)==0);
+    assert(audit.note_events==1u && audit.resolved_notes==1u &&
+           audit.missing_notes==0u);
+    assert(!memcmp(&seq,&prior_seq,sizeof seq));
+    assert(!memcmp(&spu,&before_scene_spu,sizeof spu));
+
+    assert(vh_native_seq_switch_scene(
+        &seq,controls_song,sizeof controls_song,&spu,
+        resolve_next_scene,&log_state,1u)==0);
+    assert(seq.spu==&spu && seq.blocks_advanced==0u &&
+           seq.note_ons==0u);
+    assert(spu.frames_rendered==0u);
+    assert(spu.reverb_enabled && spu.reverb_depth==0.5f);
+    assert(!memcmp(&spu.reverb,&before_scene_spu.reverb,
+                   sizeof spu.reverb));
+    for(unsigned i=0;i<VH_NATIVE_MUSIC_VOICES;i++)
+        assert(!spu.voice[i].pcm && !spu.voice[i].active);
+    assert(vh_native_seq_advance_block(&seq)>0);
+    assert(spu.voice[0].pcm==next_scene_sample &&
+           spu.voice[0].reverb_send);
+    vh_native_spu_render(&spu,pcm,VH_AUDIO_BLOCK_FRAMES);
+    assert(spu.frames_rendered==VH_AUDIO_BLOCK_FRAMES);
+}
+
 static void test_preflight_instrument_coverage(void) {
     setup();
     VhSeqAudit info={0};
@@ -483,6 +557,7 @@ int main(void) {
     test_voice_stealing_stale_note_off();
     test_512_pcm_event_to_spu_fifo();
     test_preflight_instrument_coverage();
+    test_scene_switch_preserves_audit_and_wet_tail();
     puts("native pQES SEQ -> 20-voice SPU -> PCM ring: PASS");
     return 0;
 }
