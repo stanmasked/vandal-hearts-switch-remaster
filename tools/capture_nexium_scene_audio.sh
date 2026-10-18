@@ -5,6 +5,16 @@ set -euo pipefail
 : "${NEXIUM_BIN:?NeXium executable required}"
 : "${RUNNER_TEMP:?runner temporary directory required}"
 output="${1:-runtime-evidence}"
+# Existing capture remains identical by default. The optional experimental
+# mode must use a different NRO and SD root to avoid evidence crossover.
+: "${SCENE_NRO:=nros/vandal-hearts-prototype.nro}"
+: "${SCENE_CAPTURE_TAG:=}"
+case "$SCENE_CAPTURE_TAG" in
+  ""|wet-tail) ;;
+  *) echo "Invalid experimental scene capture tag" >&2; exit 2 ;;
+esac
+test -s "$SCENE_NRO"
+export SCENE_NRO
 mkdir -p "$output"
 export XDG_RUNTIME_DIR="$RUNNER_TEMP/vh-pulse-runtime"
 export PULSE_SERVER="unix:$XDG_RUNTIME_DIR/pulse/native"
@@ -18,7 +28,7 @@ pactl set-default-sink vh_nexium_capture
 # An isolated, runner-local emulated SD root is authoritative for this
 # session. It cannot pick up traces from previous CI runs or user data.
 # NeXium resolves guest sdmc:/ under NEXIUM_DATA_ROOT/sdmc.
-export NEXIUM_DATA_ROOT="${RUNNER_TEMP}/vh-nexium-stage266-${GITHUB_RUN_ID:-local}"
+export NEXIUM_DATA_ROOT="${RUNNER_TEMP}/vh-nexium-stage266-${GITHUB_RUN_ID:-local}${SCENE_CAPTURE_TAG:+-$SCENE_CAPTURE_TAG}"
 export SCENE_SD_DIR="$NEXIUM_DATA_ROOT/sdmc/switch/vandal-hearts-remake"
 mkdir -p "$SCENE_SD_DIR"
 printf '%s\n' "$NEXIUM_DATA_ROOT" > "$output/guest-sd-root.txt"
@@ -26,7 +36,6 @@ export SCENE_PCM="$output/nexium-scenes-s16le-48k.pcm"
 export SCENE_EVENTS="$output/scene-events.csv"
 export SCENE_LOG="$output/nexium-scenes-run.log"
 export SCENE_DIR="$output"
-export SCENE_NRO="nros/vandal-hearts-prototype.nro"
 : > "$SCENE_PCM"
 printf 'scene,pcm_bytes,epoch_ms\n' > "$SCENE_EVENTS"
 parec --device=vh_nexium_capture.monitor --rate=48000 \
