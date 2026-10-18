@@ -16,7 +16,6 @@ import json
 import os
 from pathlib import Path
 import re
-import shlex
 import shutil
 import subprocess
 import sys
@@ -52,7 +51,6 @@ def _sealed_fd(content, label):
 
 HEADER_LIMIT = 16 * 1024 * 1024
 COMPILER_LIMIT = 128 * 1024 * 1024
-DEPENDENCY_LIMIT = 2 * 1024 * 1024
 
 
 def _tracked_header_blobs(upstream):
@@ -238,22 +236,28 @@ def _compiler_evidence():
     return driver, evidence
 
 
-def _system_header_evidence(dependency_files, pc, stage):
-    """Hash actual -MD system-header dependencies without publishing paths."""
+def _system_header_evidence(preprocessed_files, pc, stage):
+    """Fingerprint system includes named by GCC in the sealed .i byte stream.
+
+    GNU cpp emits '# LINE "PATH"' markers. Ignore the pinned private tree
+    and pseudo-sources; refuse other unexpected checkout dependencies.
+    No file paths are disclosed in the returned aggregate evidence.
+    """
     systems = {}
     prefix = str(stage) + os.sep
-    for dependency_file in dependency_files:
+    for preprocessed in preprocessed_files:
         data = auditor._stable_regular_bytes(
-            dependency_file, max_bytes=DEPENDENCY_LIMIT)
-        try:
-            raw = data.decode("utf-8").replace(chr(92) + chr(10), " ")
-            target, sep, dependencies = raw.partition(": ")
-            paths = shlex.split(dependencies)
-        except (UnicodeError, ValueError) as exc:
-            raise ValueError("MAP02 system header dependency syntax invalid") from exc
-        if not sep or not target or not paths:
-            raise ValueError("MAP02 system header dependency inventory empty")
-        for value in paths:
+            preprocessed, max_bytes=MAX_OBJECT_BYTES)
+        labels = re.findall(rb'(?m)^#\\s+\\d+\\s+"([^"\\r\\n]+)"', data)
+        if not labels:
+            raise ValueError("MAP02 preprocessor produced no source locations")
+        for raw_label in labels:
+            try:
+                value = raw_label.decode("utf-8")
+            except UnicodeError as exc:
+                raise ValueError("MAP02 system include location invalid") from exc
+            if value.startswith("<") and value.endswith(">"):
+                continue
             if value.startswith("/proc/self/fd/"):
                 continue
             absolute = Path(value)
@@ -263,21 +267,20 @@ def _system_header_evidence(dependency_files, pc, stage):
             if str(absolute).startswith(prefix):
                 continue
             canonical = absolute.resolve(strict=True)
-            if (canonical == pc or pc in canonical.parents):
+            if canonical == pc or pc in canonical.parents:
                 raise ValueError("MAP02 unexpected PC checkout header dependency")
             if not canonical.is_file():
-                raise ValueError("MAP02 dependency is not a regular header")
-            sha = hashlib.sha256(auditor._stable_regular_bytes(
+                raise ValueError("MAP02 source location is not a regular file")
+            digest = hashlib.sha256(auditor._stable_regular_bytes(
                 canonical, max_bytes=HEADER_LIMIT)).hexdigest()
-            entry = str(canonical)
-            if entry in systems and systems[entry] != sha:
+            if str(canonical) in systems and systems[str(canonical)] != digest:
                 raise ValueError("MAP02 system header changed during collection")
-            systems[entry] = sha
+            systems[str(canonical)] = digest
     if not systems:
-        raise ValueError("MAP02 system header dependency inventory empty")
-    joined = chr(10).join(k + " " + v for k,v in sorted(systems.items()))
+        raise ValueError("MAP02 system header inventory empty")
+    merged = chr(10).join(k + " " + v for k, v in sorted(systems.items()))
     return {"count": len(systems),
-            "sha256": hashlib.sha256(joined.encode("utf-8")).hexdigest()}
+            "sha256": hashlib.sha256(merged.encode("utf-8")).hexdigest()}
 
 
 def compile_overlay(upstream, output, manifest, *, build_dir):
@@ -367,20 +370,13 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
                 "VH_MAP02_PRIVATE_PREPROCESS_DIR=" + temp,
                 "map02-private-gpu-preprocess",
             ])
-            run_make(base + [
-                "VH_MAP02_PRIVATE_GPU_C=" + fd_path(builder.GENERATED_GPU),
-                "VH_MAP02_PRIVATE_RASTER_C=" + fd_path(builder.GENERATED_RASTER),
-                "VH_MAP02_PRIVATE_INCLUDE_FLAGS=" + include_flags,
-                "VH_MAP02_PRIVATE_PREPROCESS_DIR=" + temp,
-                "map02-private-gpu-dependencies",
-            ])
             _check_header_watch(watch_fd)
             _recheck_headers(snapshot, staged_headers, files)
             _check_header_watch(watch_fd)
-            system_deps = tuple(
-                Path(temp) / (name + ".dependencies")
+            preprocessed_files = tuple(
+                Path(temp) / (name + ".i")
                 for name in ("libgpu", "pc_raster"))
-            system_headers = _system_header_evidence(system_deps, pc, snapshot)
+            system_headers = _system_header_evidence(preprocessed_files, pc, snapshot)
             preprocessed = {}
             for unit in ("libgpu", "pc_raster"):
                 source = auditor._stable_regular_bytes(
@@ -401,7 +397,7 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
             ])
             if _compiler_evidence() != (compiler, initial_compiler):
                 raise ValueError("MAP02 compiler binaries changed during Make build")
-            if _system_header_evidence(system_deps, pc, snapshot) != system_headers:
+            if _system_header_evidence(preprocessed_files, pc, snapshot) != system_headers:
                 raise ValueError("MAP02 system header dependencies changed during Make build")
     after = auditor.replay(upstream, output, manifest)
     if after != before:

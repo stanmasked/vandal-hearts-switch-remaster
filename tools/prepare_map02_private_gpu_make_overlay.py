@@ -92,13 +92,10 @@ VH_MAP02_PRIVATE_PREPROCESS_DIR ?=
 
 # First preprocess from the sealed C units using the exact GPU flags.
 # The wrapper seals both .i outputs before the real object recipes run.
-.PHONY: map02-private-gpu-preprocess map02-private-gpu-dependencies
+.PHONY: map02-private-gpu-preprocess
 map02-private-gpu-preprocess:
 	$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_PRIVATE_GPU_DEFINES) $(VH_MAP02_PRIVATE_INCLUDE_FLAGS) -g -E -x c -o $(VH_MAP02_PRIVATE_PREPROCESS_DIR)/libgpu.i $(VH_MAP02_PRIVATE_GPU_C)
 	$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_PRIVATE_GPU_DEFINES) $(VH_MAP02_PRIVATE_INCLUDE_FLAGS) -g -E -x c -o $(VH_MAP02_PRIVATE_PREPROCESS_DIR)/pc_raster.i $(VH_MAP02_PRIVATE_RASTER_C)
-map02-private-gpu-dependencies:
-	$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_PRIVATE_GPU_DEFINES) $(VH_MAP02_PRIVATE_INCLUDE_FLAGS) -M -MF $(VH_MAP02_PRIVATE_PREPROCESS_DIR)/libgpu.dependencies -x c $(VH_MAP02_PRIVATE_GPU_C)
-	$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_PRIVATE_GPU_DEFINES) $(VH_MAP02_PRIVATE_INCLUDE_FLAGS) -M -MF $(VH_MAP02_PRIVATE_PREPROCESS_DIR)/pc_raster.dependencies -x c $(VH_MAP02_PRIVATE_RASTER_C)
 
 $(BUILD_DIR)/libgpu.o: $(VH_MAP02_PRIVATE_GPU_C)
 \t@mkdir -p $(dir $@)
