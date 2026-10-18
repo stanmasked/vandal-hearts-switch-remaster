@@ -244,7 +244,7 @@ class GuestWitnessVerifierTests(unittest.TestCase):
         self.verify()
 
     def test_invalid_utf8_witness_is_rejected(self):
-        self.witness.write_bytes(b"\\xff\\xfe")
+        self.witness.write_bytes(bytes((0xff, 0xfe)))
         with self.assertRaisesRegex(ValueError, "guest witness is not valid UTF-8"):
             self.verify()
 
