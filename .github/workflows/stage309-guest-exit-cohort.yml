@@ -1,0 +1,93 @@
+name: Stage309 source-bound guest exit cohort
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage309-guest-exit-cohort.yml'
+      - 'tools/compare_nexium_guest_exit_cohort.py'
+      - 'tests/test_compare_nexium_guest_exit_cohort.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  guest-exit-cohort:
+    name: Compare real NeXium guest software exit epochs across runs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout comparison and original optical source decoders
+        uses: actions/checkout@v4
+
+      - name: Install Pillow in isolated environment
+        run: |
+          set -euxo pipefail
+          python3 -m venv /tmp/vh-stage309
+          /tmp/vh-stage309/bin/python -m pip install --disable-pip-version-check 'Pillow>=10,<13'
+
+      - name: Stage309 11 synthetic independent guest exit regressions
+        run: /tmp/vh-stage309/bin/python -m unittest discover -s tests -p 'test_compare_nexium_guest_exit_cohort.py' -v
+
+      - name: Retrieve original Stage307 NeXium virtual runtime evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39137949186
+          github-token: ${{ github.token }}
+          path: original-sources/39137949186
+
+      - name: Retrieve original Stage308 NeXium virtual runtime evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39138826525
+          github-token: ${{ github.token }}
+          path: original-sources/39138826525
+
+      - name: Independently decode original optical PNGs and compare guest exit receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p independent-guest-exit-evidence
+          /tmp/vh-stage309/bin/python tools/compare_nexium_guest_exit_cohort.py \
+            --capture 39137949186:original-sources/39137949186 \
+            --capture 39138826525:original-sources/39138826525 \
+            --output independent-guest-exit-evidence/stage309-software-exit-cohort.json
+          /tmp/vh-stage309/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path(
+              "independent-guest-exit-evidence/stage309-software-exit-cohort.json"
+          ).read_text())
+          if (report["result"]!="DISTINCT_GUEST_SOFTWARE_EXIT_RUNS_REPLAYED"
+                  or report["run_count"]!=2
+                  or report["distinct_workflow_runs"] is not True
+                  or report["distinct_optical_original_png_sha256"] is not True
+                  or report["distinct_exit_receipt_sha256"] is not True
+                  or report["all_guest_exit_milestones_observed_in_every_run"] is not True
+                  or report["host_pcm_and_guest_monotonic_clocks_not_calibrated"] is not True
+                  or report["guest_shutdown_is_not_audible_dropout_proof"] is not True
+                  or report["original_soundtrack_verified"] is not False
+                  or report["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage309 provenance / evidence scope failed")
+          for row in report["source_bound_rows"]:
+              print("Guest shutdown from original NeXium run",row["workflow_run_id"])
+              print("guest exit software intervals (ns)",
+                    row["guest_shutdown_durations_ns"])
+              print("optical CRC screenshot hash",row["optical_scene_png_sha256"])
+              print("guest original CSV bytes independently reaudited:",
+                    row["original_guest_csv_bytes_reverified"])
+          print("Across-run guest software shutdown interval bounds:",
+                report["per_milestone_duration_bounds"])
+          PY
+          echo "Stage309: independently re-decodes original CRC guest optical screenshots and compares capture-time verified guest exit SD reports from two distinct real NeXium runs. Old archives may contain audited JSON only: report truthfully distinguishes not re-reading missing original guest CSV. No host PCM, guest DAC or audible clock conflation." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload independent guest exit comparison JSON only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage309-guest-software-exit-cohort
+          path: independent-guest-exit-evidence/
+          if-no-files-found: warn
