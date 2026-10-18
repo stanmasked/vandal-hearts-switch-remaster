@@ -51,7 +51,7 @@ class CycleCdGpuJoinTests(unittest.TestCase):
         (self.source / MANIFEST).chmod(0o600)
         self.crc = "d31a04b7"  # synthetic-only CD checksum
         self.cd_raw = (json.dumps({
-            "schema": "vh.map02.original-cd-read.v1",
+            "schema": "vh.map02.original-cd-read.v2",
             "capture_session": self.nonce,
             "source": "original-CdRead-and-ContinueLoadingCdFile",
             "cdf": "CDF_M_MAP02_PRS",
@@ -60,6 +60,8 @@ class CycleCdGpuJoinTests(unittest.TestCase):
             "bytes": 12 * 2048,
             "raw_user_crc32": self.crc,
             "returned_user_crc32": self.crc,
+            "raw_user_sha256": "a" * 64,
+            "returned_user_sha256": "a" * 64,
             "loader_completed": True,
         }, sort_keys=True) + "\n").encode()
         (self.scoped / CD_READ).write_bytes(self.cd_raw)
@@ -159,7 +161,7 @@ class CycleCdGpuJoinTests(unittest.TestCase):
                 record[key] = ("0" * 8 if key.endswith("crc32") else "cd" * 16)
                 path = self.scoped / CD_READ
                 path.write_bytes((json.dumps(record, sort_keys=True) + "\n").encode())
-                with self.assertRaisesRegex(ValueError, "CRC32 and original CdRead receipt differ"):
+                with self.assertRaisesRegex(ValueError, "checksum and original CdRead receipt differ"):
                     _cycle_cd_pair(self.scoped, self.cycle, 7, self.digest)
                 path.write_bytes(self.cd_raw)
         self.mock.assert_not_called()
