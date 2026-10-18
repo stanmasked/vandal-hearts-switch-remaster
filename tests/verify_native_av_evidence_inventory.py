@@ -19,6 +19,30 @@ FILES = frozenset((
     "native-av-guest-witness.json",
 ))
 REQUIRED_NONEMPTY = FILES - {"nexium.log"}
+# Fail before Pillow can decode or the JSON reader can parse giant
+# downloaded artifacts. Limits exceed normal 1280x720 PNGs and logs.
+MAX_BYTES = {
+    "av-before.png": 16 * 1024 * 1024,
+    "av-after.png": 16 * 1024 * 1024,
+    "nexium.log": 16 * 1024 * 1024,
+    "native-av-guest-witness.json": 1024 * 1024,
+}
+PNG_PREFIX = bytes.fromhex("89504e470d0a1a0a0000000d49484452")
+FRAME_SIZE = (1280, 720)
+
+
+def verify_png_preflight(path):
+    # Preflight only: the existing pixel/witness verifier still performs
+    # full PNG decoding. Check IHDR before handing untrusted bytes to PIL.
+    with path.open("rb") as stream:
+        header = stream.read(24)
+    if len(header) != 24 or header[:16] != PNG_PREFIX:
+        raise ValueError("invalid PNG signature or IHDR: " + str(path))
+    size = (int.from_bytes(header[16:20], "big"),
+            int.from_bytes(header[20:24], "big"))
+    if size != FRAME_SIZE:
+        raise ValueError("unexpected PNG framebuffer dimensions: " +
+                         str(path) + ": " + repr(size))
 # These four guest-only controls have isolated EMPTY SD fixtures, even
 # though they exercise distinct synthetic audout fault paths.
 SD_MODE_BY_SCENARIO = {
@@ -106,8 +130,14 @@ def validate_inventory(root):
         for entry in contents:
             if entry.is_symlink() or not entry.is_file():
                 raise ValueError("non-regular or symlinked evidence file: " + str(entry))
-            if entry.name in REQUIRED_NONEMPTY and entry.stat().st_size == 0:
+            size = entry.stat().st_size
+            if entry.name in REQUIRED_NONEMPTY and size == 0:
                 raise ValueError("empty required evidence file: " + str(entry))
+            if entry.name in MAX_BYTES and size > MAX_BYTES[entry.name]:
+                raise ValueError("published evidence file exceeds size limit: " +
+                                 str(entry))
+            if entry.name in ("av-before.png", "av-after.png"):
+                verify_png_preflight(entry)
         scenario = folder.name[len(PREFIX):-len(SUFFIX)]
         verify_fixture_manifest(folder / "sd-fixture-manifest.json", scenario)
     return {"scenario_count": len(SCENARIOS),

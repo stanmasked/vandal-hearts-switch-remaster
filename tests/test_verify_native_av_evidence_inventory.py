@@ -8,7 +8,7 @@ import unittest
 
 from verify_native_av_evidence_inventory import (
     FILES, PREFIX, SCENARIOS, SUFFIX, SD_MODE_BY_SCENARIO,
-    expected_manifest, validate_inventory,
+    expected_manifest, validate_inventory, MAX_BYTES, PNG_PREFIX,
 )
 
 
@@ -27,7 +27,17 @@ class NeXiumPublishedInventoryTests(unittest.TestCase):
                         json.dumps(expected_manifest(SD_MODE_BY_SCENARIO[scenario])),
                         encoding="utf-8")
                 else:
-                    payload = b"" if name == "nexium.log" else b"synthetic-not-real-proof"
+                    if name == "nexium.log":
+                        payload = b""
+                    elif name in ("av-before.png", "av-after.png"):
+                        # Header-valid synthetic fixture for inventory only.
+                        # Downstream Pillow checks still decode real PNG.
+                        payload = (PNG_PREFIX +
+                                   (1280).to_bytes(4, "big") +
+                                   (720).to_bytes(4, "big") +
+                                   b"synthetic-not-a-decodable-PNG")
+                    else:
+                        payload = b"synthetic-not-real-proof"
                     (folder / name).write_bytes(payload)
 
     def folder(self, scenario="empty"):
@@ -154,6 +164,44 @@ class NeXiumPublishedInventoryTests(unittest.TestCase):
         manifest.write_bytes(b"\xff\xfe")
         with self.assertRaisesRegex(ValueError, "not valid UTF-8 JSON"):
             validate_inventory(self.root)
+
+    def test_png_signature_and_ihdr_must_be_present(self):
+        png = self.folder("full") / "av-before.png"
+        png.write_bytes(b"not-a-png")
+        with self.assertRaisesRegex(ValueError, "invalid PNG signature or IHDR"):
+            validate_inventory(self.root)
+        png.write_bytes(PNG_PREFIX[:12])
+        self.assertNotEqual(self.cli().returncode, 0)
+
+    def test_png_framebuffer_dimensions_must_be_1280_by_720(self):
+        png = self.folder("partial") / "av-after.png"
+        original = png.read_bytes()
+        png.write_bytes(original[:16] + (4096).to_bytes(4, "big") +
+                        original[20:])
+        with self.assertRaisesRegex(ValueError, "unexpected PNG framebuffer dimensions"):
+            validate_inventory(self.root)
+        png.write_bytes(original[:20] + (4096).to_bytes(4, "big") +
+                        original[24:])
+        self.assertNotEqual(self.cli().returncode, 0)
+
+    def test_oversized_png_rejected_before_decoder(self):
+        png = self.folder("zr") / "av-before.png"
+        with png.open("r+b") as out:
+            out.truncate(MAX_BYTES["av-before.png"] + 1)
+        with self.assertRaisesRegex(ValueError, "exceeds size limit"):
+            validate_inventory(self.root)
+
+    def test_oversized_witness_or_log_rejected(self):
+        witness = self.folder("empty") / "native-av-guest-witness.json"
+        with witness.open("r+b") as out:
+            out.truncate(MAX_BYTES["native-av-guest-witness.json"] + 1)
+        with self.assertRaisesRegex(ValueError, "exceeds size limit"):
+            validate_inventory(self.root)
+        witness.write_bytes(b"synthetic-witness")
+        log = self.folder("empty") / "nexium.log"
+        with log.open("r+b") as out:
+            out.truncate(MAX_BYTES["nexium.log"] + 1)
+        self.assertNotEqual(self.cli().returncode, 0)
 
     def test_reject_missing_or_symlinked_root(self):
         with self.assertRaisesRegex(ValueError, "non-symlink directory"):
