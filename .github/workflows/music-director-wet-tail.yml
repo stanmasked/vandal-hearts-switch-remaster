@@ -18,6 +18,8 @@ on:
       - "Makefile"
       - "tests/test_vh_music_scene.c"
       - "tests/test_vh_music_scene_soak.c"
+      - "tools/verify_switch_wet_tail_nro.py"
+      - "tests/test_verify_switch_wet_tail_nro.py"
       - ".github/workflows/music-director-wet-tail.yml"
   workflow_dispatch:
 
@@ -27,6 +29,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  wet-tail-nro-provenance:
+    name: Validate wet-tail NRO provenance negative controls
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify existing baseline provenance and new pair gate
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_verify_switch_runtime_nro.py' -v
+          python3 -m unittest discover -s tests \
+            -p 'test_verify_switch_wet_tail_nro.py' -v
+
   music-director-optin:
     name: Wet-tail director (${{ matrix.compiler }}; ASan + UBSan)
     runs-on: ubuntu-latest
