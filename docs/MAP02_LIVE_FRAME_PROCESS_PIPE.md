@@ -719,3 +719,25 @@ result types and the digest-only publication helper itself. These
 checks do not authenticate the original disc/console evidence or
 establish that independently acquired source traces were recorded by
 the same Linux child.
+
+### Early preflight for the optional FT4/VRAM source witness
+
+When all four additional original-source witness arguments are
+provided, the one-command joint capture now checks their **filesystem
+safety before starting the Linux ELF**. The two original-source
+evidence directories, live frame output, live GPU journal and claimed
+frame-pair directories must all be separate and owned by the invoking
+user, with no group/other permissions (normally mode `0700`).
+The launch receipt and preflight JSON must be existing, singly linked,
+owner-only regular files (mode `0600`, nonempty and at most 16 MiB).
+Direct symlinks, missing inputs, duplicated physical directory roles,
+and insecure file/directory permissions fail before a BGR555 output
+is published.
+
+This is a *readiness preflight*, not an original-disc authentication
+step: independent FT4/GTE/OT/VRAM validation still runs after the
+real one-shot capture and its full same-launch GPU replay checks.
+The added asset-free integration tests verify that a missing source
+directory, readable receipt, symlinked receipt, shared source
+directory, duplicate original-source directories or a source alias
+to live output cannot start or publish a capture.
