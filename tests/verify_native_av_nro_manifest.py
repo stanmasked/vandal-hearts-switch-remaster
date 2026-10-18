@@ -62,6 +62,11 @@ def check_nro_header(header, size, filename):
         # rodata/data entering that header region.
         if start < 0x80 and not (offset == 0x20 and start == 0):
             raise ValueError("NRO segment partially overlaps header: " + filename)
+        # elf2nro includes the startup stub and NRO0 header in the
+        # text segment when that segment starts at file offset zero.
+        # A shorter segment would leave a dangling part of the header.
+        if offset == 0x20 and start == 0 and length < 0x80:
+            raise ValueError("NRO text section does not cover header: " + filename)
         if start & 3:
             raise ValueError("unaligned NRO segment offset: " + filename)
         # A valid NRO has text, rodata and data in their specified

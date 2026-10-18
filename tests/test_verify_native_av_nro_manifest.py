@@ -215,6 +215,31 @@ class AvNroManifestTests(unittest.TestCase):
         self.assertEqual(self.cli("--expected-commit", COMMIT,
                                   "--exact-inventory").returncode, 0)
 
+    def test_text_starting_zero_must_cover_complete_header(self):
+        name = NRO_NAMES[2]
+        data = bytearray(self.files[name])
+        data[0x20:0x24] = (0).to_bytes(4, "little")
+        data[0x24:0x28] = (0x70).to_bytes(4, "little")
+        # Separate rodata/data still have legal ordered offsets;
+        # only the text length contradicts the embedded NRO0 header.
+        self.files[name] = bytes(data)
+        (self.root / name).write_bytes(data)
+        self.set_manifest()
+        with self.assertRaisesRegex(ValueError, "text section does not cover header"):
+            verify_bundle(self.root, COMMIT, exact_inventory=True)
+        self.assertNotEqual(self.cli("--exact-inventory").returncode, 0)
+
+    def test_zero_offset_text_with_header_length_exactly_0x80_is_allowed(self):
+        name = NRO_NAMES[3]
+        data = bytearray(self.files[name])
+        data[0x20:0x24] = (0).to_bytes(4, "little")
+        data[0x24:0x28] = (0x80).to_bytes(4, "little")
+        self.files[name] = bytes(data)
+        (self.root / name).write_bytes(data)
+        self.set_manifest()
+        self.assertEqual(
+            verify_bundle(self.root, COMMIT, exact_inventory=True)["nro_count"], 7)
+
     def test_rodata_cannot_begin_within_header_even_if_text_starts_zero(self):
         name = NRO_NAMES[1]
         data = bytearray(self.files[name])
