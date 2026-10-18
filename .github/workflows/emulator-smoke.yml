@@ -15,6 +15,8 @@ on:
       - 'source/vh_audout_queue_telemetry.h'
       - 'source/vh_audout_queue_export.c'
       - 'source/vh_audout_queue_export.h'
+      - 'tools/analyze_nexium_idle_switch_service_probes.py'
+      - 'tests/test_analyze_nexium_idle_switch_service_probes.py'
       - 'tests/test_vh_audout_queue_telemetry.c'
       - 'tests/test_vh_audout_queue_export.c'
       - 'tools/audit_nexium_audout_queue.py'
@@ -922,6 +924,45 @@ jobs:
           PY
           echo "Same-NRO idle control has zero guest scene changes and verified original guest SD." >> "$GITHUB_STEP_SUMMARY"
           echo "Guest API-call duration comparisons do not prove scene causality or actual speaker underruns." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify current-run original idle and switching service-probe comparison
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/analyze_nexium_idle_switch_service_probes.py \
+            --switch-probe-report runtime-evidence/scene-soak/soak-audout-probe-verification.json \
+            --switch-slow-report runtime-evidence/scene-soak/soak-audout-exact-slow-verification.json \
+            --idle-report runtime-evidence/idle-control/idle-audout-verification.json \
+            --idle-sd-root "$RUNNER_TEMP/vh-nexium-idle276-${GITHUB_RUN_ID}" \
+            --idle-evidence runtime-evidence/idle-control \
+            --output runtime-evidence/idle-control/idle-switch-service-probe-comparison.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          doc=json.loads(Path(
+              "runtime-evidence/idle-control/idle-switch-service-probe-comparison.json").read_text())
+          if (doc["result"]!="SAME_NRO_ORIGINAL_SD_TWO_MODE_PROBE_COMPARISON_RECONCILED"
+                  or doc["both_original_guest_sd_audited_this_workflow"] is not True
+                  or doc["queue_service_pre_submit_only"] is not True
+                  or doc["sampling_randomized"] is not False
+                  or doc["physical_console_audio_measured"] is not False
+                  or doc["scene_switch_causality_proven"] is not False
+                  or doc["operating_system_scheduler_events_measured"] is not False):
+              raise SystemExit("Stage290 two-source current-SD probe witness incomplete")
+          for mode in ("switching","idle"):
+              x=doc[mode]
+              if (x["query_success_count"]+x["query_failure_count"]
+                      !=x["sample_count"] or
+                      x["slow_call_sampled_ge40"]!=
+                          x["slow_call_sampled_40to50"]+
+                          x["slow_call_sampled_ge50"]):
+                  raise SystemExit("Stage290 mode probe accounting inconsistent")
+          print("Stage290 original-SD two-mode pre-submit service samples:",
+                {k:{m:doc[m][k] for m in ("switching","idle")} for k in
+                 ("sample_count","slow_call_sampled_ge40",
+                  "pre_submit_service_count_histogram")})
+          PY
+          echo "Stage290: independent original guest-SD switching + idle probe comparison verified; not DAC scheduler evidence." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Record audio capture boundary
         if: always()
