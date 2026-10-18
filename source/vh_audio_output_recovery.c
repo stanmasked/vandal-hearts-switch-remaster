@@ -568,7 +568,13 @@ int vh_audio_output_resume_recover(
     int force_reopen) {
     if (!ops || !stats || !ops->stop || !ops->close ||
         !ops->open || !ops->start ||
-        stats->resume_recoveries>stats->resume_restarts)
+        stats->resume_recoveries>stats->resume_restarts ||
+        /* Never call the live backend with an orphaned prior restart.
+         * Each completed reopen attempt has either a failure or a
+         * recovery; fast-start errors may add failures on their own. */
+        (uint64_t)stats->resume_restarts>
+            (uint64_t)stats->resume_failures+
+            (uint64_t)stats->resume_recoveries)
         return -1;
 
     /* On a saturated counter, refuse to begin a callback which
