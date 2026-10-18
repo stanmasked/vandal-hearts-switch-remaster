@@ -97,6 +97,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_stage329_guest_software_dispersion.py' -v
       - name: Stage330 original PlayBuffer guest last-tail median leave-one-out regressions
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_stage330_original_playbuffer_jackknife.py' -v
+      - name: Stage331 original guest PlayBuffer pair-omission source regression tests
+        run: python3 -m unittest discover -s tests -p 'test_audit_nexium_stage331_original_playbuffer_pair_deletion.py' -v
       - name: Stage305 strict buffered Plus/PCM terminal zero onset fence and baseline tests
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_pcm_plus_fence.py' -v
       - name: Stage307 guest software exit C11 timeline on GCC and Clang
