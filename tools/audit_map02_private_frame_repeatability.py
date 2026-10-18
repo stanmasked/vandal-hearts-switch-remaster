@@ -18,6 +18,7 @@ from tools.prepare_map02_private_frame_pair import (
     _directory, _check_directory, _private_raw, WIDTH, HEIGHT,
 )
 from tools.replay_map02_live_frame_receipt import replay
+from tools.verify_map02_native_gpu_capture import LOG, MAX_EVENT_BYTES, MAX_RECORDS
 
 SCHEMA = "vh.map02.private-two-elf-gpu-frame-repeatability.v1"
 REPLAY_SCHEMA = "vh.map02.live-child-pipe-gpu-replayed.v1"
@@ -96,6 +97,88 @@ def _private_difference(first, second):
         different += changes_here
         changed_lines += bool(changes_here)
     return different, changed_lines, stp_changes
+
+
+def _private_gpu_event_lines(directory_fd, expected_digest):
+    """Read a bounded original GPU JSONL journal through its held directory FD.
+
+    The original GPU verifier already validated each event and metadata
+    pair during the independent receipts' full replays. This pass compares
+    byte-exact *records*, not sensitive FT4 arrays, pixel locations or
+    user-supplied parsing directives.
+    """
+    fd = os.open(LOG, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK |
+                 os.O_CLOEXEC, dir_fd=directory_fd)
+    try:
+        before = os.fstat(fd)
+        if (not stat.S_ISREG(before.st_mode)
+                or before.st_uid != os.geteuid()
+                or stat.S_IMODE(before.st_mode) != 0o600
+                or before.st_nlink != 1
+                or not 0 < before.st_size <= MAX_EVENT_BYTES):
+            raise ValueError("MAP02 repeatability private GPU event log invalid")
+        raw = bytearray()
+        offset = 0
+        while offset < before.st_size:
+            chunk = os.pread(fd, min(65536, before.st_size - offset), offset)
+            if not chunk:
+                raise ValueError("MAP02 repeatability GPU event log truncated")
+            raw.extend(chunk)
+            offset += len(chunk)
+        after = os.fstat(fd)
+        routed = os.stat(LOG, dir_fd=directory_fd, follow_symlinks=False)
+        fields = ("st_dev", "st_ino", "st_uid", "st_mode",
+                  "st_nlink", "st_size", "st_mtime_ns", "st_ctime_ns")
+        if (tuple(getattr(before, k) for k in fields) !=
+                tuple(getattr(after, k) for k in fields)
+                or tuple(getattr(before, k) for k in fields) !=
+                   tuple(getattr(routed, k) for k in fields)
+                or hashlib.sha256(raw).hexdigest() != expected_digest):
+            raise ValueError("MAP02 repeatability GPU event evidence changed")
+        if (not raw.endswith(b"\n") or b"\r" in raw
+                or b"\x00" in raw):
+            raise ValueError("MAP02 repeatability GPU event log noncanonical")
+        lines = bytes(raw).split(b"\n")[:-1]
+        if (not 2 <= len(lines) <= MAX_RECORDS
+                or len(lines) % 2
+                or any(not item for item in lines)):
+            raise ValueError("MAP02 repeatability GPU event count invalid")
+        return lines
+    finally:
+        os.close(fd)
+
+
+def _gpu_event_differences(first_fd, second_fd, first_digest,
+                           second_digest, first_pairs, second_pairs,
+                           check_inventories):
+    left = _private_gpu_event_lines(first_fd, first_digest)
+    right = _private_gpu_event_lines(second_fd, second_digest)
+    if len(left) != 2 * first_pairs or len(right) != 2 * second_pairs:
+        raise ValueError("MAP02 repeatability GPU event count disagrees with replay")
+    common = min(len(left), len(right))
+    first_difference = None
+    changed = 0
+    for index in range(common):
+        if left[index] != right[index]:
+            changed += 1
+            if first_difference is None:
+                first_difference = index
+    check_inventories()
+    return {
+        "first_gpu_event_count": len(left),
+        "second_gpu_event_count": len(right),
+        "gpu_event_records_compared": common,
+        "different_gpu_event_records_in_common_prefix": changed,
+        "unmatched_gpu_event_records": abs(len(left) - len(right)),
+        "first_different_gpu_event_record_index": first_difference,
+        "first_different_gpu_event_pair_index": (
+            None if first_difference is None else first_difference // 2),
+        "first_different_gpu_event_phase": (
+            None if first_difference is None else (
+                "before" if first_difference % 2 == 0 else "after")),
+        "repeated_gpu_event_records_identical":
+            changed == 0 and len(left) == len(right),
+    }
 
 
 def _gpu_snapshot_differences(first_fd, second_fd, first_pairs,
@@ -251,6 +334,16 @@ def audit(first_frame, first_journal, second_frame, second_journal, executable):
             opened[1], opened[3],
             a["gpu_journal_pairs_verified"], b["gpu_journal_pairs_verified"],
             check_inventories)
+        event_records = _gpu_event_differences(
+            opened[1], opened[3],
+            a["gpu_journal_sha256"], b["gpu_journal_sha256"],
+            a["gpu_journal_pairs_verified"], b["gpu_journal_pairs_verified"],
+            check_inventories)
+        # A matching raw JSONL SHA is a global digest, while the new
+        # event-record comparison independently localizes any change.
+        if ((a["gpu_journal_sha256"] == b["gpu_journal_sha256"])
+                != event_records["repeated_gpu_event_records_identical"]):
+            raise ValueError("MAP02 GPU event digests disagree with records")
         check_inventories()
         for fd, (path, identity) in zip(opened, sessions):
             _check_directory(fd, path, identity)
@@ -268,6 +361,7 @@ def audit(first_frame, first_journal, second_frame, second_journal, executable):
             "changed_scanlines": lines,
             "stp_bit_differences": stp,
             **snapshots,
+            **event_records,
             "repeated_native_frame_pixels_identical": different == 0,
             "repeated_gpu_final_vram_identical": different == 0,
             "repeated_gpu_event_journal_identical":

@@ -79,6 +79,13 @@ def _require_bit_exact_gpu_timeline(report):
             or report.get("repeated_native_frame_pixels_identical") is not True
             or report.get("repeated_gpu_final_vram_identical") is not True
             or report.get("repeated_gpu_event_journal_identical") is not True
+            or report.get("repeated_gpu_event_records_identical") is not True
+            or type(report.get("different_gpu_event_records_in_common_prefix")) is not int
+            or report["different_gpu_event_records_in_common_prefix"] != 0
+            or type(report.get("unmatched_gpu_event_records")) is not int
+            or report["unmatched_gpu_event_records"] != 0
+            or type(report.get("gpu_event_records_compared")) is not int
+            or report["gpu_event_records_compared"] < 2
             or type(report.get("gpu_vram_snapshots_compared")) is not int
             or report["gpu_vram_snapshots_compared"] < 2
             or type(report.get("unmatched_gpu_vram_snapshots")) is not int

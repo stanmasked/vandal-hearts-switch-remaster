@@ -84,6 +84,10 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
         self.assertTrue(result["repeated_native_frame_pixels_identical"])
         self.assertTrue(result["repeated_gpu_final_vram_identical"])
         self.assertTrue(result["repeated_gpu_event_journal_identical"])
+        self.assertTrue(result["repeated_gpu_event_records_identical"])
+        self.assertEqual(result["different_gpu_event_records_in_common_prefix"], 0)
+        self.assertIsNone(result["first_different_gpu_event_record_index"])
+        self.assertEqual(result["gpu_event_records_compared"], 2)
         self.assertTrue(result["two_full_replays_per_capture_verified"])
         self.assertTrue(result["four_private_file_inventories_stable_through_replays"])
         self.assertTrue(result["repeated_full_gpu_vram_snapshot_sequence_identical"])
@@ -150,6 +154,7 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
         # post-draw VRAM pixels. The same two events can write different
         # pixels while the JSONL digest stays byte-identical.
         self.assertTrue(out["repeated_gpu_event_journal_identical"])
+        self.assertTrue(out["repeated_gpu_event_records_identical"])
 
     def test_transient_before_vram_difference_converges_to_same_final_frame(self):
         # The *same* compiled C11 ELF can create a different before-
@@ -273,6 +278,48 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
         self.assertEqual(report["gpu_vram_equal_different_state_transitions"], 0)
         self.assertFalse(report["gpu_vram_divergence_reappeared_after_reconvergence"])
         self.assertFalse(report["gpu_vram_reconverged_at_common_prefix_end"])
+
+    def test_first_changed_gpu_event_record_phase_is_aggregate_only(self):
+        first = (b'{"record":"a"}', b'{"record":"b"}',
+                 b'{"record":"c"}', b'{"record":"d"}')
+        second = (b'{"record":"a"}', b'{"record":"b"}',
+                  b'{"record":"c"}', b'{"record":"DIFFERENT"}')
+        def fake_lines(fd, digest):
+            return first if fd == 1 else second
+        checked = []
+        with patch.object(repeat, "_private_gpu_event_lines",
+                          side_effect=fake_lines):
+            report = repeat._gpu_event_differences(
+                1, 2, "a" * 64, "b" * 64, 2, 2,
+                lambda: checked.append(True))
+        self.assertEqual(len(checked), 1)
+        self.assertEqual(report["first_different_gpu_event_record_index"], 3)
+        self.assertEqual(report["first_different_gpu_event_pair_index"], 1)
+        self.assertEqual(report["first_different_gpu_event_phase"], "after")
+        self.assertEqual(report["different_gpu_event_records_in_common_prefix"], 1)
+        self.assertFalse(report["repeated_gpu_event_records_identical"])
+        self.assertNotIn("DIFFERENT", str(report))
+        self.assertNotIn("record", str(report))
+
+    def test_gpu_event_records_with_unmatched_tail_cannot_claim_equality(self):
+        first = (b"a", b"b")
+        second = (b"a", b"b", b"c", b"d")
+        with patch.object(repeat, "_private_gpu_event_lines",
+                          side_effect=lambda fd, digest: first if fd == 1 else second):
+            report = repeat._gpu_event_differences(
+                1, 2, "a" * 64, "b" * 64, 1, 2, lambda: None)
+        self.assertEqual(report["gpu_event_records_compared"], 2)
+        self.assertEqual(report["unmatched_gpu_event_records"], 2)
+        self.assertEqual(report["different_gpu_event_records_in_common_prefix"], 0)
+        self.assertIsNone(report["first_different_gpu_event_record_index"])
+        self.assertFalse(report["repeated_gpu_event_records_identical"])
+
+    def test_gpu_event_count_disagrees_with_verified_capture_refused(self):
+        with patch.object(repeat, "_private_gpu_event_lines",
+                          return_value=[b"a", b"b"]):
+            with self.assertRaisesRegex(ValueError, "count disagrees"):
+                repeat._gpu_event_differences(
+                    1, 2, "a" * 64, "b" * 64, 2, 1, lambda: None)
 
     def test_overlapping_capture_roles_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "directory roles overlap"):

@@ -74,6 +74,8 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
         self.assertFalse(result["strict_gpu_timeline_match_required"])
         self.assertFalse(result["strict_gpu_timeline_match_verified"])
         self.assertTrue(result["repeated_full_gpu_vram_snapshot_sequence_identical"])
+        self.assertTrue(result["repeated_gpu_event_records_identical"])
+        self.assertEqual(result["different_gpu_event_records_in_common_prefix"], 0)
         self.assertTrue(result["gpu_vram_timeline_commitments_identical"])
         self.assertEqual(result["first_gpu_vram_timeline_sha256"],
                          result["second_gpu_vram_timeline_sha256"])
@@ -155,6 +157,12 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not bit-exact"):
             two_live._require_bit_exact_gpu_timeline(
                 {**good, "first_gpu_vram_timeline_sha256": "G" * 64})
+        with self.assertRaisesRegex(ValueError, "not bit-exact"):
+            two_live._require_bit_exact_gpu_timeline(
+                {**good, "repeated_gpu_event_records_identical": False})
+        with self.assertRaisesRegex(ValueError, "not bit-exact"):
+            two_live._require_bit_exact_gpu_timeline(
+                {**good, "unmatched_gpu_event_records": 2})
 
     def test_strict_cli_flag_succeeds_with_two_real_synthetic_launches(self):
         cmd = [
