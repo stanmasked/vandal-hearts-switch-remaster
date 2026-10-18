@@ -64,6 +64,21 @@ def replay_original_history(stage321_inputs:tuple,
     if prior>0 and (baseline is None or final_duration-baseline!=
                     observed["final_minus_prior_lower_median_guest_ns"]):
         raise TraceError("final duration/baseline arithmetic disagrees with original software source")
+    # An empirical rank from the actual retained guest source, not a
+    # model-based percentile or a claim about the whole session.
+    # Discard failed attempts and the final successful call itself.
+    final_index=final["last_successful_PlayBuffer_attempt_index"]
+    prior_durations=[
+        row["duration_guest_ns"] for row in durations
+        if row["lease_returned"] and row["sequence"]<final_index
+    ] if observed["final_successful_call_in_recent_window"] else []
+    if len(prior_durations)!=prior:
+        raise TraceError("original prior successful-call count differs from source rows")
+    shorter=sum(x<final_duration for x in prior_durations)
+    equal=sum(x==final_duration for x in prior_durations)
+    longer=sum(x>final_duration for x in prior_durations)
+    if shorter+equal+longer!=prior:
+        raise TraceError("original guest prior-call rank cannot be conserved")
     return {
         "schema":SCHEMA,
         "result":VERIFIED,
@@ -90,6 +105,15 @@ def replay_original_history(stage321_inputs:tuple,
         "last_minus_prior_lower_median_guest_ns":
             observed["final_minus_prior_lower_median_guest_ns"],
         "has_source_verified_prior_call_baseline":prior>0,
+        "prior_successful_calls_shorter_than_last":shorter,
+        "prior_successful_calls_equal_to_last":equal,
+        "prior_successful_calls_longer_than_last":longer,
+        "last_call_ascending_rank_among_prior_plus_last":1+shorter if prior else None,
+        "last_call_faster_than_every_retained_prior_success":(
+            longer==prior and prior>0),
+        "last_call_slower_than_every_retained_prior_success":(
+            shorter==prior and prior>0),
+        "prior_successful_duration_rank_is_only_this_bounded_window":True,
         "guest_last_call_overlap_after_main_stop_guest_ns":
             prev["last_successful_PlayBuffer_overlap_after_stop_request_ns"],
         "original_guest_to_host_PCM_clock_fit_verified":False,
