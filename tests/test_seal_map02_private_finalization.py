@@ -359,8 +359,19 @@ class PrivateFinalSealTests(unittest.TestCase):
         receipt = self.seal_dir / NAME
         receipt.unlink()
         os.mkfifo(receipt, mode=0o600)
-        with self.assertRaisesRegex(ValueError, "regular file"):
-            self.call(action="verify")
+        real_open = os.open
+
+        def guarded_open(path, flags, *args, **kwargs):
+            if (os.fspath(path) == os.fspath(receipt) and
+                    not flags & os.O_NONBLOCK):
+                raise AssertionError("FIFO opened without O_NONBLOCK")
+            return real_open(path, flags, *args, **kwargs)
+
+        # A regression must fail immediately instead of blocking the runner.
+        with patch("tools.seal_map02_private_finalization.os.open",
+                   side_effect=guarded_open):
+            with self.assertRaisesRegex(ValueError, "regular file"):
+                self.call(action="verify")
 
     def test_symlink_and_hardlink_receipt_rejected(self):
         seal = self.seal_dir / NAME
