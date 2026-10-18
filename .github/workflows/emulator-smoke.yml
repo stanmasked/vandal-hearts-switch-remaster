@@ -2095,6 +2095,35 @@ jobs:
           PY
           echo "Stage334: new independent NeXium original guest-source / host-clock compact witness; Stage320/322/325 and strict Stage304/305 replayed; no original PCM or absolute timestamps in compact manifest; not guest-host clock mapping or physical Switch sound." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Stage336 bind fourth fresh genuine NeXium guest host sources to exact same-run NRO
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_stage336_capture_build_binding.py \
+            --evidence-root runtime-evidence \
+            --nro-preflight integrated-nro-preflight.json \
+            --git-sha "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --output runtime-evidence/source-capture-to-build-stage336.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path(
+              "runtime-evidence/source-capture-to-build-stage336.json"
+          ).read_text(encoding="utf-8"))
+          if (r["result"]!="ORIGINAL_NEXIUM_GUEST_HOST_SOURCES_BOUND_TO_SAME_RUN_NRO"
+                  or r["same_run_nro_bytes_and_host_monitor_source_digest_checked"] is not True
+                  or r["original_stage320_322_325_guest_host_receipts_replayed_again"] is not True
+                  or r["strict_original_stage304_305_receipts_preserved"] is not True
+                  or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage336 fresh independent NeXium source to NRO binding rejected")
+          print("Stage336 fresh NRO SHA-256:",r["source_nro_sha256"])
+          print("Stage336 guest source last normal software call:",
+                r["original_guest_last_software_duration_ns"])
+          PY
+          echo "Stage336: fourth fresh NeXium original guest/host evidence bound to same-run NRO source SHA and capture monitor without absolute timestamps, sample clock alignment, actual speakers or physical Switch claims." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Record audio capture boundary
         if: always()
         env:
