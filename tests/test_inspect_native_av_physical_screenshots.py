@@ -88,6 +88,7 @@ class PhysicalScreenshotPixelTests(unittest.TestCase):
         before=frame(b=1,f=1,p=True,x="yellow",y="yellow")
         out=self.images(before,frame(b=1,f=1,p=True,x="blue",y="yellow"))
         self.assertTrue(out["difference"]["new_x_return_pixels"])
+        self.assertEqual(out["after"]["variant_pixels"],"focus_manual")
         self.assertFalse(out["difference"]["new_y_return_pixels"])
         self.assertEqual(self.cli("--require-x-return-pixels").returncode,0)
         self.assertNotEqual(self.cli("--require-y-return-pixels").returncode,0)
@@ -100,16 +101,44 @@ class PhysicalScreenshotPixelTests(unittest.TestCase):
         out=self.images(frame(x="blue"),frame(x="blue"))
         self.assertFalse(out["difference"]["new_x_return_pixels"])
 
-    def test_mixing_focus_and_manual_nros_cannot_fake_x_or_y(self):
+    def test_mixing_focus_and_manual_nros_cannot_fake_any_outcome(self):
         focus_only=frame(x="not_present",y="not_present")
-        manual_after=frame(x="blue",y="blue")
-        out=self.images(focus_only,manual_after)
-        self.assertFalse(out["difference"]["new_x_return_pixels"])
-        self.assertFalse(out["difference"]["new_y_return_pixels"])
+        manual_after=frame(b=1,f=1,p=True,x="blue",y="blue")
+        with self.assertRaisesRegex(ValueError,"different focus NRO variants"):
+            self.images(focus_only,manual_after)
+        self.assertNotEqual(
+            self.cli("--require-focus-pixels").returncode,0)
         self.assertNotEqual(
             self.cli("--require-x-return-pixels").returncode,0)
         self.assertNotEqual(
             self.cli("--require-y-return-pixels").returncode,0)
+        with self.assertRaisesRegex(ValueError,"different focus NRO variants"):
+            self.images(manual_after,focus_only)
+
+    def test_partial_manual_tiles_fail_closed(self):
+        for x,y in (("not_present","yellow"),
+                    ("blue","not_present"),
+                    ("not_present","red"),
+                    ("unknown","blue")):
+            if x=="unknown":
+                image=frame(x="yellow",y=y)
+                image.putpixel((1125,702),(127,127,127))
+            else:
+                image=frame(x=x,y=y)
+            with self.subTest(x=x,y=y):
+                with self.assertRaisesRegex(
+                        ValueError,"incomplete or ambiguous X/Y"):
+                    observe_frame(image)
+
+    def test_both_focus_only_frames_are_accepted_as_pixel_observations(self):
+        before=frame(x="not_present",y="not_present")
+        after=frame(b=1,f=1,p=True,x="not_present",y="not_present")
+        out=self.images(before,after)
+        self.assertEqual(out["before"]["variant_pixels"],"focus")
+        self.assertEqual(out["after"]["variant_pixels"],"focus")
+        self.assertTrue(out["difference"]["new_focus_cycle_pixels"])
+        self.assertFalse(out["difference"]["new_x_return_pixels"])
+        self.assertEqual(self.cli("--require-focus-pixels").returncode,0)
 
     def test_no_manual_tiles_cannot_look_like_manual_return(self):
         out=self.images(frame(x="not_present",y="not_present"),
