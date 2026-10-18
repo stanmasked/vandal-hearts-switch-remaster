@@ -477,12 +477,13 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
     if checked["capture_session_linked"] is not True:
         raise ValueError("original GPU/scoped process session not linked")
     if cycle is not None:
-        # Imported lazily: cycle's independent final verifier also imports
-        # this process launcher through the original CD/GPU witness chain.
-        from tools.verify_map02_cycle_cd_gpu_join import _cycle_receipt
-        _, nonce_digest, _ = _cycle_receipt(cycle, frame)
-        if nonce_digest != checked["capture_session_sha256"]:
-            raise ValueError("single-process cycle nonce differs from GPU/scoped witness")
+        # This is a pre-publication gate, not a replacement for the full
+        # source/image/CD/GPU/process verification done by the final join.
+        # The original CdRead CRC, returned CRC and process nonce must all
+        # match the completed same-process order observer.
+        from tools.verify_map02_cycle_cd_gpu_join import _cycle_cd_pair
+        cycle_cd_proof = _cycle_cd_pair(
+            scoped, cycle, frame, checked["capture_session_sha256"])
     receipt = _validate_receipt({
         "schema": SCHEMA,
         "gpu_draw_frame": frame,
@@ -507,6 +508,10 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
     })
     raw = (json.dumps(receipt, sort_keys=True, separators=(",", ":"))
            + "\n").encode("utf-8")
+    if cycle is not None and _cycle_cd_pair(
+            scoped, cycle, frame, checked["capture_session_sha256"]
+    ) != cycle_cd_proof:
+        raise ValueError("cycle/CD observer receipts changed before process publication")
     _publish(handoff, RECEIPT, raw)
     return {
         "private_process_receipt_sha256": _sha(raw),
