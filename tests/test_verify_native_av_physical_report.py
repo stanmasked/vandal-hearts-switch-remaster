@@ -9,6 +9,8 @@ import unittest
 
 from inspect_native_av_physical_screenshots import inspect
 from test_inspect_native_av_physical_screenshots import frame
+from test_verify_native_av_nro_manifest import COMMIT, tiny_nro
+from verify_native_av_nro_manifest import COMMIT_FILE, MANIFEST, NRO_NAMES
 from verify_native_av_physical_report import verify
 
 
@@ -185,6 +187,93 @@ class PhysicalPixelReportVerificationTests(unittest.TestCase):
         self.assertIn("64 hexadecimal characters",invalid.stderr)
         self.assertFalse(json.loads(self.cli().stdout).get(
             "independent_nro_digest_matched",True))
+
+    def create_published_av_bundle(self):
+        bundle=Path(self.folder.name)/"published-bundle"
+        bundle.mkdir()
+        data={}
+        for i,name in enumerate(NRO_NAMES):
+            data[name]=tiny_nro(i)
+            (bundle/name).write_bytes(data[name])
+        (bundle/MANIFEST).write_text(
+            "".join(hashlib.sha256(data[name]).hexdigest()+"  "+name+"\\n"
+                    for name in NRO_NAMES),
+            encoding="ascii")
+        (bundle/COMMIT_FILE).write_text(COMMIT+"\\n",encoding="ascii")
+        return bundle
+
+    def test_manual_pixel_report_matches_only_published_manual_nro(self):
+        bundle=self.create_published_av_bundle()
+        nro=bundle/"libnx-ps1-music-av-focus-manual.nro"
+        self.write_report(inspect(self.before,self.after,
+                                  bind_png_hashes=True,nro_path=nro))
+        result=self.cli(flags=("--nro",str(nro),"--bundle",str(bundle),
+                               "--expected-commit",COMMIT,
+                               "--require-focus-pixels"))
+        self.assertEqual(result.returncode,0,result.stderr)
+        summary=json.loads(result.stdout)
+        self.assertTrue(summary["published_av_bundle_variant_matched"])
+        self.assertFalse(summary["physical_hardware_verified"])
+        self.assertFalse(summary["audible_audio_verified"])
+
+    def test_focus_only_pixel_report_matches_only_published_focus_nro(self):
+        bundle=self.create_published_av_bundle()
+        frame(x="not_present",y="not_present").save(self.before)
+        frame(b=1,f=1,p=True,x="not_present",y="not_present").save(self.after)
+        nro=bundle/"libnx-ps1-music-av-focus.nro"
+        self.write_report(inspect(self.before,self.after,
+                                  bind_png_hashes=True,nro_path=nro))
+        result=self.cli(flags=("--nro",str(nro),"--bundle",str(bundle),
+                               "--expected-commit",COMMIT,
+                               "--require-focus-pixels"))
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertTrue(json.loads(result.stdout)[
+            "published_av_bundle_variant_matched"])
+
+    def test_matching_report_but_wrong_focus_nro_variant_is_rejected(self):
+        bundle=self.create_published_av_bundle()
+        # Both PNGs contain X/Y tiles, but the supplied and SHA-bound
+        # NRO is the focus-only variant. Its file hash matches the bundle;
+        # the pixel/NRO diagnostic variants do NOT match.
+        wrong=bundle/"libnx-ps1-music-av-focus.nro"
+        self.write_report(inspect(self.before,self.after,
+                                  bind_png_hashes=True,nro_path=wrong))
+        valid_without_bundle=self.cli(flags=("--nro",str(wrong)))
+        self.assertEqual(valid_without_bundle.returncode,0,
+                         valid_without_bundle.stderr)
+        denied=self.cli(flags=("--nro",str(wrong),"--bundle",str(bundle),
+                               "--expected-commit",COMMIT))
+        self.assertNotEqual(denied.returncode,0)
+        self.assertIn("PNG diagnostic variant does not match",denied.stderr)
+
+    def test_published_bundle_mismatch_and_invalid_commit_rejected(self):
+        bundle=self.create_published_av_bundle()
+        nro=bundle/"libnx-ps1-music-av-focus-manual.nro"
+        self.write_report(inspect(self.before,self.after,
+                                  bind_png_hashes=True,nro_path=nro))
+        mismatched=self.cli(flags=("--nro",str(nro),"--bundle",str(bundle),
+                                   "--expected-commit","f"*40))
+        self.assertNotEqual(mismatched.returncode,0)
+        self.assertIn("independently expected commit",mismatched.stderr)
+        (bundle/MANIFEST).write_text("invalid manifest\\n",encoding="ascii")
+        damaged=self.cli(flags=("--nro",str(nro),"--bundle",str(bundle),
+                                "--expected-commit",COMMIT))
+        self.assertNotEqual(damaged.returncode,0)
+
+    def test_bundle_verification_requires_nro_and_expected_commit(self):
+        bundle=self.create_published_av_bundle()
+        missing_nro=self.cli(flags=("--bundle",str(bundle),
+                                    "--expected-commit",COMMIT))
+        self.assertNotEqual(missing_nro.returncode,0)
+        self.assertIn("requires --nro and --expected-commit",
+                      missing_nro.stderr)
+        nro=bundle/"libnx-ps1-music-av-focus-manual.nro"
+        missing_commit=self.cli(flags=("--nro",str(nro),
+                                       "--bundle",str(bundle)))
+        self.assertNotEqual(missing_commit.returncode,0)
+        extra_commit=self.cli(flags=("--expected-commit",COMMIT))
+        self.assertNotEqual(extra_commit.returncode,0)
+        self.assertIn("requires --bundle",extra_commit.stderr)
 
     def test_v2_report_rejects_unexpected_nro_binding(self):
         nro=Path(self.folder.name)/"mismatched.nro"

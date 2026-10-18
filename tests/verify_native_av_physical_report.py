@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 
 from inspect_native_av_physical_screenshots import inspect
+from verify_native_av_nro_manifest import verify_bundle
 
 
 def unique_json_object(pairs):
@@ -35,7 +36,15 @@ def canonical(value):
 def verify(report_path, before_path, after_path, *,
            require_focus_pixels=False, require_x_return_pixels=False,
            require_y_return_pixels=False, nro_path=None,
-           expected_nro_sha256=None):
+           expected_nro_sha256=None, bundle_path=None,
+           expected_commit=None):
+    # The bundle cross-check requires the original NRO and an expected
+    # commit obtained independently from the intended GitHub Actions run.
+    if bundle_path is not None:
+        if nro_path is None or expected_commit is None:
+            raise ValueError("published AV bundle verification requires --nro and --expected-commit")
+    elif expected_commit is not None:
+        raise ValueError("--expected-commit requires --bundle")
     # A digest supplied separately from the report can cross-check a
     # published build fingerprint. Never derive it from the same report.
     if expected_nro_sha256 is not None:
@@ -62,6 +71,21 @@ def verify(report_path, before_path, after_path, *,
             not hmac.compare_digest(observed["source_nro_sha256"],
                                     expected_nro_sha256.lower())):
         raise ValueError("NRO SHA-256 does not match independent expected digest")
+    if bundle_path is not None:
+        # A valid NRO alone does not establish which diagnostic variant
+        # produced the observed X/Y tiles. Require the digest of the
+        # matching variant in the complete published AV artifact.
+        bundle = verify_bundle(bundle_path, expected_commit,
+                               exact_inventory=True)
+        variant = observed["after"]["variant_pixels"]
+        variant_nro = {
+            "focus": "libnx-ps1-music-av-focus.nro",
+            "focus_manual": "libnx-ps1-music-av-focus-manual.nro",
+        }[variant]
+        if not hmac.compare_digest(observed["source_nro_sha256"],
+                                   bundle["nro_sha256"][variant_nro]):
+            raise ValueError("PNG diagnostic variant does not match published bundle NRO: " +
+                             variant_nro)
     # A structurally correct report is not automatically evidence of an
     # operator-requested event. Assert that specific pixel gate afresh.
     gates = observed["difference"]
@@ -90,6 +114,10 @@ def main():
                         help="require the original diagnostic NRO bound into the v3 report")
     parser.add_argument("--expected-nro-sha256",
                         help="independent 64-hex digest from a separately obtained build manifest (requires --nro)")
+    parser.add_argument("--bundle", type=Path,
+                        help="cross-check the matching focus NRO against an exact seven-NRO published bundle")
+    parser.add_argument("--expected-commit",
+                        help="independently obtained 40-hex GitHub Actions source commit (requires --bundle and --nro)")
     args = parser.parse_args()
     try:
         report = verify(
@@ -98,7 +126,9 @@ def main():
             require_x_return_pixels=args.require_x_return_pixels,
             require_y_return_pixels=args.require_y_return_pixels,
             nro_path=args.nro,
-            expected_nro_sha256=args.expected_nro_sha256)
+            expected_nro_sha256=args.expected_nro_sha256,
+            bundle_path=args.bundle,
+            expected_commit=args.expected_commit)
     except (ValueError, OSError, TypeError, json.JSONDecodeError) as exc:
         parser.error(str(exc))
     print(json.dumps({
@@ -106,6 +136,7 @@ def main():
         "source_png_sha256": report["source_png_sha256"],
         "source_nro_sha256": report.get("source_nro_sha256"),
         "independent_nro_digest_matched": args.expected_nro_sha256 is not None,
+        "published_av_bundle_variant_matched": args.bundle is not None,
         "required_pixel_conditions_reverified": [
             name for required, name in (
                 (args.require_focus_pixels, "new_focus_cycle_pixels"),
