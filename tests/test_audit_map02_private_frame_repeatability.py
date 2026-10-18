@@ -349,6 +349,81 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
                     repeat._require_gpu_snapshot_aggregate_consistency(
                         {**good, field: value})
 
+    def test_vram_recovery_history_matches_all_synthetic_two_pair_masks(self):
+        # Independent 4-position boolean timeline oracle: each GPU pair
+        # has a before and after VRAM snapshot, with all 16 possible
+        # equal/different histories. No private game bytes enter this test.
+        clean = b"\x00" * (1024 * 512 * 2)
+        changed = b"\x01" + clean[1:]
+        for mask in range(16):
+            with self.subTest(mask=mask):
+                different = tuple(bool(mask & (1 << n)) for n in range(4))
+                def source(fd, name):
+                    ordinal = int(name[4:8])
+                    raw = changed if fd == 2 and different[ordinal] else clean
+                    return raw, ("synthetic", ordinal)
+                with (patch.object(repeat, "_private_raw", side_effect=source),
+                      patch.object(repeat, "_private_difference",
+                                   return_value=(1, 1, 0))):
+                    report = repeat._gpu_snapshot_differences(
+                        1, 2, 2, 2, lambda: None)
+                repeat._require_gpu_snapshot_aggregate_consistency(report)
+                differing_ordinals = [i for i, value in enumerate(different)
+                                      if value]
+                first = differing_ordinals[0] if differing_ordinals else None
+                last = differing_ordinals[-1] if differing_ordinals else None
+                restored = (
+                    next((i for i in range(first + 1, 4)
+                          if not different[i]), None)
+                    if first is not None else None)
+                transitions = sum(different[i] != different[i - 1]
+                                  for i in range(1, 4))
+                self.assertEqual(
+                    report["different_gpu_vram_snapshots_in_common_prefix"],
+                    len(differing_ordinals))
+                self.assertEqual(report["first_different_gpu_vram_snapshot_index"],
+                                 first)
+                self.assertEqual(report["last_different_gpu_vram_snapshot_index"],
+                                 last)
+                self.assertEqual(report["first_reconverged_gpu_vram_snapshot_index"],
+                                 restored)
+                self.assertEqual(
+                    report["gpu_vram_equal_different_state_transitions"],
+                    transitions)
+                self.assertEqual(
+                    report["gpu_vram_divergence_reappeared_after_reconvergence"],
+                    restored is not None and last > restored)
+                self.assertEqual(
+                    report["gpu_vram_reconverged_at_common_prefix_end"],
+                    last is not None and last < 3)
+
+    def test_vram_recovery_transitions_cannot_fake_historical_reappearance(self):
+        # A valid difference/equality/difference/equality sequence has
+        # three transitions and a first recovery at ordinal one.
+        clean = b"\x00" * (1024 * 512 * 2)
+        changed = b"\x01" + clean[1:]
+        def source(fd, name):
+            ordinal = int(name[4:8])
+            return (changed if fd == 2 and ordinal in (0, 2) else clean), (
+                "synthetic", ordinal)
+        with (patch.object(repeat, "_private_raw", side_effect=source),
+              patch.object(repeat, "_private_difference",
+                           return_value=(1, 1, 0))):
+            good = repeat._gpu_snapshot_differences(
+                1, 2, 2, 2, lambda: None)
+        repeat._require_gpu_snapshot_aggregate_consistency(good)
+        for changed_report in (
+            {"gpu_vram_equal_different_state_transitions": 1},
+            {"gpu_vram_equal_different_state_transitions": 2},
+            {"first_reconverged_gpu_vram_snapshot_index": None,
+             "gpu_vram_divergence_reappeared_after_reconvergence": False},
+            {"first_different_gpu_vram_snapshot_index": 1},
+        ):
+            with self.subTest(changed_report=changed_report):
+                with self.assertRaisesRegex(ValueError, "aggregate inconsistent"):
+                    repeat._require_gpu_snapshot_aggregate_consistency(
+                        {**good, **changed_report})
+
     def test_two_replay_audit_rejects_corrupted_vram_phase_aggregate(self):
         # Verify the strict aggregate validator is actually applied during
         # the full independent two-run replay and not just in its own test.
