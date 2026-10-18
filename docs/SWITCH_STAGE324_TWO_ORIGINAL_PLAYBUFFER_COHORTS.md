@@ -42,8 +42,11 @@ is run on **another** GitHub Actions runner. It:
    original CRC-protected optical framebuffer PNG; all Stage307–Stage322
    source SHA/receipt constraints remain strict.
 4. Requires distinct real original workflow IDs and distinct guest
-   history, exit and optical SHA-256 digests to prevent a duplicated
-   capture from being mistaken for a second independent execution.
+   **timestamped history and exit CSV SHA-256 digests** to prevent
+   a duplicated capture from being mistaken for a second original
+   execution. Each capture's optical PNG is separately CRC/source
+   validated, but its digest is **allowed to match** between runs:
+   a deterministic scene can legitimately render identical pixels.
 5. Computes, for each capture on its **own guest software clock**,
    final call duration, preceding lower median, final-minus-own-median,
    and rank among up to 16 actual original successful call records.
@@ -57,7 +60,7 @@ New report (no raw music/audio data published):
 
 ## Source attack tests and strict limits
 
-Fifteen synthetic unit tests reject duplicate original workflows,
+Sixteen synthetic unit tests reject duplicate original workflows,
 duplicate optical/history/exit source hashes, forged prior-call
 medians and ranks, missing source-backed baselines, missing/invalid
 capture identity, guest-to-host PCM overclaims and invalid success
