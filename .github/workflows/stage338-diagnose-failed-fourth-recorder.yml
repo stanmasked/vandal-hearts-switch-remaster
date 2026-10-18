@@ -1,0 +1,78 @@
+name: Stage338 inspect failed fourth original NeXium recorder-stop archive without loosening Stage303
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage338-diagnose-failed-fourth-recorder.yml'
+      - 'tools/audit_nexium_stage338_failed_stage303_diagnostic.py'
+      - 'tests/test_audit_nexium_stage338_failed_stage303_diagnostic.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  original-failed-source-diagnostic:
+    name: Independently isolate original Stage303 strict recorder source failure
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout immutable source acceptance and separate diagnostic
+        uses: actions/checkout@v4
+      - name: Stage338 ten synthetic strict fail and canonical source controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/audit_nexium_stage338_failed_stage303_diagnostic.py tests/test_audit_nexium_stage338_failed_stage303_diagnostic.py
+          python3 -m unittest discover -s tests -p 'test_audit_nexium_stage338_failed_stage303_diagnostic.py' -v
+      - name: Confirm exact original fourth run did not pass Stage303
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/39177437951" --jq '.status')"
+          outcome="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/39177437951" --jq '.conclusion')"
+          test "$status" = completed
+          test "$outcome" = failure
+          echo "Fourth original NeXium run #39177437951 failed strict audio verification; NOT an accepted capture."
+      - name: Download failed original raw source artifact without modifying original acceptance
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39177437951
+          github-token: ${{ github.token }}
+          path: failed-fourth-original
+      - name: Diagnose original Stage303 failure gate with separate read-only analysis
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p stage338-failed-original-source
+          python3 tools/audit_nexium_stage338_failed_stage303_diagnostic.py \
+            --evidence-root failed-fourth-original/runtime-evidence \
+            --output stage338-failed-original-source/original-fourth-stage303-diagnostic.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path(
+              "stage338-failed-original-source/original-fourth-stage303-diagnostic.json"
+          ).read_text(encoding="utf-8"))
+          if (r["result"]!="STAGE303_ORIGINAL_CAPTURE_DIAGNOSTIC_ONLY"
+              or r["strict_Stage303_approval_not_replaced_by_diagnostic"] is not True
+              or r["failed_original_artifact_is_not_a_fourth_accepted_capture"] is not True
+              or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage338 source diagnostic or scope is invalid")
+          print("Stage338 original strict failure gate:",r["original_stop_verification"]["gate"])
+          print("Stage338 host stop source-byte delta:",
+              r["original_stop_verification"].get(
+                  "after_wait_minus_original_final_pcm_bytes"))
+          PY
+          echo "Stage338: original failed fourth NeXium capture analyzed without changing strict Stage303 acceptance. A diagnostic job PASS is NOT source capture acceptance." >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve compact reason-only report, not PCM or absolute epochs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage338-failed-original-fourth-recorder-diagnostic
+          path: stage338-failed-original-source/
+          if-no-files-found: warn
