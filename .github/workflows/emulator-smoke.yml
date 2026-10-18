@@ -11,6 +11,10 @@ on:
       - 'Makefile'
       - 'source/vh_switch_game_audio.c'
       - 'source/vh_switch_game_audio.h'
+      - 'source/vh_audio_exit_timeline.h'
+      - 'tools/audit_nexium_guest_exit_timeline.py'
+      - 'tests/test_audit_nexium_guest_exit_timeline.py'
+      - 'tests/test_vh_audio_exit_timeline.c'
       - 'source/vh_audout_queue_telemetry.c'
       - 'source/vh_audout_queue_telemetry.h'
       - 'source/vh_audout_queue_export.c'
@@ -748,6 +752,34 @@ jobs:
             --evidence-dir runtime-evidence
           python3 -m json.tool runtime-evidence/guest-scene-sd-verdict.json > /dev/null
           echo "Verified guest SD CSV is separate from host PCM and cannot prove DAC output." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage307 audit real guest-monotonic Plus and audout shutdown milestones
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_guest_exit_timeline.py \
+            --guest-root-file runtime-evidence/guest-sd-root.txt \
+            --output runtime-evidence/guest-audio-exit-timeline-stage307.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("runtime-evidence/guest-audio-exit-timeline-stage307.json").read_text())
+          if (r["schema"]!="vh-nexium-guest-exit-software-timeline/v1"
+                  or r["result"] not in {
+                      "NOT_OBSERVED_GUEST_SD_TRANSPORT",
+                      "GUEST_EXIT_SOFTWARE_MILESTONES_ORDERED",
+                      "GUEST_EXIT_EVENTS_INCOMPLETE"}
+                  or r["host_PCM_to_guest_timestamp_mapping_verified"] is not False
+                  or r["original_soundtrack_or_audible_dropout_verified"] is not False
+                  or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage307 guest timeline integrity/scope violation")
+          if r["result"]=="NOT_OBSERVED_GUEST_SD_TRANSPORT":
+              print("Stage307 guest SD transport unavailable: guest shutdown timing NOT VERIFIED")
+          else:
+              print("Stage307 actual guest exit software events:",r["result"])
+              print(r["guest_monotonic_timestamps_ns"])
+          PY
+          echo "Stage307: observed/missing guest exit event timeline explicitly distinguished. Neither guest monotonic events nor virtual PCM are a sample-exact cross-clock map or audible hardware proof." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Capture ten additional A/B transitions in isolated NeXium
         id: scene_soak_capture

@@ -9,6 +9,7 @@
 #endif
 #include "vh_audio_scene_trace.h"
 #include "vh_audio_scene_optical.h"
+#include "vh_audio_exit_timeline.h"
 
 #include <stdio.h>
 
@@ -55,6 +56,7 @@ static atomic_uint published_abandoned_sessions;
 /* Two producer threads reserve immutable slots, then release-publish.
  * No heap, locks or file I/O in this path. */
 static VhAudioSceneTrace scene_trace;
+static VhAudioExitTimeline exit_timeline; /* only once per audio start */
 /* Audout worker is the sole writer. Main reads after thread join. */
 static VhAudoutQueueTelemetry audout_telemetry;
 static atomic_ullong scene_trace_latest_ticket; /* serial << 32 | scene */
@@ -501,6 +503,8 @@ static void audio_worker(void *unused) {
     }
     if (state == -1) state = 0; /* clean stop requested by main thread */
 cleanup:
+    (void)vh_audio_exit_timeline_mark(&exit_timeline,
+        VH_EXIT_WORKER_CLEANUP_ENTERED,scene_trace_now_ns());
     /* A cooperative exit may send a SHORT last-sample-to-zero tail.
      * Never attempt output after HOME/focus loss: audout can already
      * be suspended, and a non-bounded submit could deadlock shutdown.
@@ -522,6 +526,8 @@ cleanup:
      */
     (void)output_stop(&recovery_backend);
     output_close(&recovery_backend);
+    (void)vh_audio_exit_timeline_mark(&exit_timeline,
+        VH_EXIT_AUDOUT_CLOSED,scene_trace_now_ns());
     memset(pcm_48000_page,0,sizeof(pcm_48000_page));
     /* All queued buffers have been invalidated with the session;
      * discard every borrowed bank/PCM voice pointer before freeing.
@@ -544,6 +550,7 @@ int vh_switch_game_audio_start(unsigned initial_scene) {
     if (thread_started || initial_scene > VH_GAME_MUSIC_HERO_SELECTED)
         return -1;
     vh_audio_scene_trace_init(&scene_trace);
+    vh_audio_exit_timeline_reset(&exit_timeline);
     vh_audout_queue_reset(&audout_telemetry);
     if(vh_audout_queue_set_probe_phase(&audout_telemetry,
                                       VH_AUDOUT_PROBE_PHASE)) return -1;
@@ -696,13 +703,28 @@ unsigned vh_switch_game_audio_bank_warnings(void) {
                                 memory_order_acquire);
 }
 
+void vh_switch_game_audio_exit_note_plus(void) {
+    if (thread_started)
+        (void)vh_audio_exit_timeline_mark(&exit_timeline,
+            VH_EXIT_PLUS_OBSERVED,scene_trace_now_ns());
+}
+
+int vh_switch_game_audio_exit_dump(FILE *stream) {
+    if (!stream || thread_started) return -1;
+    return vh_audio_exit_timeline_write_csv(&exit_timeline,stream);
+}
+
 void vh_switch_game_audio_stop(void) {
     if (!thread_started) return;
+    (void)vh_audio_exit_timeline_mark(&exit_timeline,
+        VH_EXIT_STOP_REQUESTED,scene_trace_now_ns());
     vh_game_music_mailbox_stop(&mailbox);
     /* The only blocking join happens at exit, never in the frame loop. */
     threadWaitForExit(&audio_thread);
     threadClose(&audio_thread);
     thread_started = 0;
+    (void)vh_audio_exit_timeline_mark(&exit_timeline,
+        VH_EXIT_WORKER_JOINED,scene_trace_now_ns());
 }
 
 unsigned vh_switch_game_audio_resume_latency_samples(void) {
