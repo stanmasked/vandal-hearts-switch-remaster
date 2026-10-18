@@ -57,3 +57,42 @@ python3 tools/analyze_nexium_slow_call_cycle_occupancy.py \
  --idle-verdict runtime-evidence/idle-control/idle-audout-verification.json \
  --output runtime-evidence/idle-control/idle-switch-16-call-cycle-occupancy.json
 ```
+
+## Verified Stage293 original-SD NeXium results — 2026-10-18
+
+The Stage293 code was committed in
+[`314510a3`](https://github.com/stanmasked/vandal-hearts-switch-remaster/commit/314510a3143e84bd315ae64a08cd840df877c84c).
+A syntax-only guard fix is recorded in
+[`8f79ec0e`](https://github.com/stanmasked/vandal-hearts-switch-remaster/commit/8f79ec0e018d06c3f8376d150d38de5f2bf7b0c9).
+
+**All CI checks passed on the fixed code commit**, including:
+
+- [Current-NRO independent guest-original-SD NeXium run 39118625048](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39118625048)
+- [Host C/Python and Switch toolchain 39118625040](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39118625040)
+- [Host SPU 39118625073](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39118625073)
+- [Native PCM 39118625054](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39118625054)
+
+The original same-NRO SD-source audout run produced the following
+**consecutive 16-attempt cycle** counts:
+
+| Guest software audout group count | Music switching | Idle control |
+| --- | ---: | ---: |
+| Total cycles (including last partial cycle) | 121 | 139 |
+| Cycles containing ≥1 call duration ≥40ms | **27** | **30** |
+| Cycles with ≥2 slow calls | 5 | 5 |
+| Slow-containing cycles with no slow call at sampled phase0 | **25** | **28** |
+| Individual slow calls at unqueried attempt phases 1–15 | **30** | **34** |
+
+Thus, phase0's **slow-call duration** falls below 40ms in most
+cycles that nevertheless have at least one slow call at another
+attempt index (25/27 and 28/30, respectively). This describes
+**call-index selection only**. It does NOT tell us that phase0's
+observed **queue count** was misleading about any other phase:
+**queue counts were never measured** on phases 1–15.
+
+Both sessions used a single verified NRO. The session with scene
+changes was recorded before idle, and guest-emulator host conditions
+were not randomized. These group counts are correlated views of the
+same source calls, not independent trials or evidence of real audio
+starvation. No real Switch speaker, hardware DAC, scheduler callback,
+or audible game soundtrack was tested.
