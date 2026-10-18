@@ -15,7 +15,7 @@ from pathlib import Path
 import re
 import sys
 
-from audit_nexium_guest_exit_timeline import OBSERVED, EVENTS, parse_exit_csv
+from audit_nexium_guest_exit_timeline import OBSERVED, EVENTS, ExitTimelineError, parse_exit_csv
 from audit_nexium_guest_optical_exit_clock import (
     BOTH, audit_guest_clocks,
 )
@@ -40,7 +40,10 @@ def check_guest_report(guest: dict, raw_original: bytes | None) -> dict:
             or guest.get("physical_Nintendo_Switch_audio_tested") is not False):
         raise TraceError("guest exit receipt overclaims music or DAC")
     if raw_original is not None:
-        fresh=parse_exit_csv(raw_original)
+        try:
+            fresh=parse_exit_csv(raw_original)
+        except ExitTimelineError as exc:
+            raise TraceError("original guest exit CSV cannot be re-audited") from exc
         for key,value in fresh.items():
             if key in guest and guest[key]!=value:
                 raise TraceError("archived guest exit receipt disagrees with original CSV")
