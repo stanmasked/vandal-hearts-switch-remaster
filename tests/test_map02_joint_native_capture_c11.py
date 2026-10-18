@@ -109,6 +109,27 @@ int main(int argc, char **argv) {
         native_vram[0][0] = 0x7fff;
     }
     if (vh_map02_frame_pipe_wait_release(STDIN_FILENO) != 0) return 42;
+    if (argc > 1 && !strcmp(argv[1], "replace-log-after-release")) {
+        char original[2048], backup[2300];
+        unsigned char piece[4096];
+        size_t got;
+        FILE *reader, *writer;
+        if (snprintf(original, sizeof(original), "%s/gpu-native-events.jsonl",
+                     dir) >= (int)sizeof(original) ||
+            snprintf(backup, sizeof(backup), "%s/swapped-log", dir) >=
+                    (int)sizeof(backup)) return 58;
+        if (rename(original, backup) != 0) return 59;
+        reader = fopen(backup, "rb");
+        writer = fopen(original, "wb");
+        if (!reader || !writer) return 60;
+        while ((got = fread(piece, 1, sizeof(piece), reader)) != 0) {
+            if (fwrite(piece, 1, got, writer) != got) return 61;
+        }
+        if (ferror(reader) || fclose(reader) || fclose(writer) ||
+            unlink(backup) != 0) return 62;
+        /* Same JSONL bytes, but a DIFFERENT inode than the one the
+         * pinned child held open when the launcher released stdout. */
+    }
     return vh_map02_frame_pipe_emit(STDOUT_FILENO, 123, 1024, 512,
                                     &native_vram[0][0], 1024) == 0 ? 0 : 50;
 }
@@ -237,6 +258,16 @@ class JointNativeCaptureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "evidence flags"):
             replay(self.out, executable=self.executable,
                    gpu_journal_dir=self.journal)
+
+    def test_same_bytes_new_gpu_journal_inode_after_child_gate_refused(self):
+        # The child held the real write fd at gate release, then replaces
+        # the journal pathname with another inode containing identical
+        # JSONL bytes. Hash-only replay would miss this substitution.
+        with self.assertRaisesRegex(ValueError, "inode changed after child fd observation"):
+            self.run_joint("replace-log-after-release")
+        self.assert_no_published_frame()
+        self.assertTrue((self.journal / "gpu-native-events.jsonl").is_file())
+        self.assertFalse((self.journal / "swapped-log").exists())
 
     def test_replay_requires_the_journal_for_v2_receipt(self):
         self.run_joint()
