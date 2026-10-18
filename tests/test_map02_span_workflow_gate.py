@@ -69,6 +69,8 @@ class SpanWorkflowGateTests(unittest.TestCase):
         self.assertIn("test_build_map02_private_gpu_make_overlay.py", private_build)
         self.assertIn('assert report["sealed_inputs"] == 6', private_build)
         self.assertIn('assert report["compiled_from_sealed_preprocessor_output"]', private_build)
+        self.assertIn('assert report["staged_header_hashes_verified"]', private_build)
+        self.assertIn('assert report["pinned_headers_checked"] >= 40', private_build)
         self.assertIn('assert not report["all_headers_sealed"]', private_build)
         self.assertIn("--build-dir build-map02-private-ci", private_build)
         self.assertNotIn("BUILD_DIR=build-map02-private-ci map02-private-gpu-objects",
