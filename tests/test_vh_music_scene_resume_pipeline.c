@@ -267,6 +267,15 @@ int main(void) {
         reference_hash=(reference_hash^hash_pcm(oracle_pcm,frames))*HASH_MULT;
         assert(dev.rolling_hash==reference_hash);
         assert(dev.accepted==block+1u);
+        if(block%12u==11u) {
+            /* A submit retry reopens audout AFTER the immutable page
+             * was prepared. Never re-ramp that page; arm the fade only
+             * for the NEXT newly synthesized PCM descriptor. */
+            assert(dev.opened && dev.playing && dev.failures_left==0u);
+            vh_audio_output_ramp_arm(&source_ramp);
+            vh_audio_output_ramp_arm(&oracle_ramp);
+            ramp_due=1u;
+        }
         if(block==13u || block==29u || block==48u) {
             const uint64_t old_pages=stats.pages_submitted;
             const uint64_t old_frames=stats.frames_submitted;
@@ -339,7 +348,9 @@ int main(void) {
             ramp_due=1u;
         }
     }
-    assert(ramp_exercised==4u);
+    /* Startup + five successful submit-recovery restarts +
+     * three explicit resumes; refused stops do not rearm the ramp. */
+    assert(ramp_exercised==9u);
     assert(switched && signalled>12u && silent>=4u);
     assert(stats.pages_submitted==BLOCKS &&
            stats.frames_submitted==returned_frames);
