@@ -265,6 +265,113 @@ static uint64_t opt_in_48k_comparison(void) {
     return fingerprint;
 }
 
+/* Controlled causal probe: after the same cue has excited both STUDIO_C
+ * engines, switch to a *valid* composition that contains NO note-on.
+ * Only the opt-in synth may emit remaining wet history. Unlike NeXium's
+ * two independently buffered virtual recordings, all PCM is generated
+ * in a single synchronous host process under identical inputs.
+ */
+static const uint8_t no_note_seq[]={
+    HDR,0,0xc0,7,0x81,0x70,0xff,0x2f
+};
+static uint64_t silent_second_cue_oracle(void) {
+    vh_native_spu_reset(&wet_spu);
+    vh_native_spu_reset(&dry_spu);
+    vh_music_scene_init(&wet_scene,&wet_spu);
+    vh_music_scene_init(&dry_scene,&dry_spu);
+    vh_audio_resample_reset(&wet_rate);
+    vh_audio_resample_reset(&dry_rate);
+    for(unsigned i=0u;i<128u;i++) {
+        opt_sample_a[i]=(int16_t)(-8000+(int)i*127);
+        opt_sample_b[i]=(int16_t)(9000-(int)i*123);
+    }
+    assert(vh_native_spu_set_interpolation(&wet_spu,VH_SPU_GAUSSIAN)==0);
+    assert(vh_native_spu_set_interpolation(&dry_spu,VH_SPU_GAUSSIAN)==0);
+    assert(vh_native_spu_set_reverb(&wet_spu,1,0.5f)==0);
+    assert(vh_native_spu_set_reverb(&dry_spu,1,0.5f)==0);
+    assert(vh_music_scene_set_reverb_continuity(&wet_scene,1)==0);
+    request_opt_pair(1u,0u);
+
+    /* The first 112 blocks are bit-identical: the only variable
+     * between the two directors is the inactive opt-in flag. */
+    for(unsigned block=0u;block<112u;block++) {
+        assert(vh_music_scene_render(&wet_scene,wet_raw)==0);
+        assert(vh_music_scene_render(&dry_scene,dry_raw)==0);
+        assert(!memcmp(wet_raw,dry_raw,sizeof wet_raw));
+        size_t wn=vh_audio_resample_process(
+            &wet_rate,wet_raw,512u,wet_48k,640u);
+        size_t dn=vh_audio_resample_process(
+            &dry_rate,dry_raw,512u,dry_48k,640u);
+        assert(wn==dn && wn>=555u && wn<=559u);
+        assert(!memcmp(wet_48k,dry_48k,wn*2u*sizeof(int16_t)));
+    }
+    unsigned prior_reverb_nonzero=0u;
+    for(unsigned i=0u;i<VH_REV_SAMPLES;i++)
+        prior_reverb_nonzero+=(wet_spu.reverb.work[i]!=0);
+    assert(prior_reverb_nonzero>0u);
+    const VhMusicCue empty_cue={
+        2u,no_note_seq,sizeof no_note_seq,0u,lookup_opt,NULL
+    };
+    assert(vh_music_scene_request(&wet_scene,&empty_cue,0u)==0);
+    assert(vh_music_scene_request(&dry_scene,&empty_cue,0u)==0);
+    assert(wet_scene.active.id==2u && dry_scene.active.id==2u);
+    assert(wet_scene.switches==2u && dry_scene.switches==2u);
+    /* An empty cue never produces voices; wet history is the sole
+     * possible output source after old PCM pointers are released. */
+    assert(!memcmp(wet_spu.reverb.work,dry_spu.reverb.work,
+                   0u)); /* no state access required for a zero-length check */
+    for(unsigned i=0u;i<VH_NATIVE_MUSIC_VOICES;i++) {
+        assert(!wet_spu.voice[i].pcm && !wet_spu.voice[i].active);
+        assert(!dry_spu.voice[i].pcm && !dry_spu.voice[i].active);
+    }
+    for(unsigned i=0u;i<VH_REV_SAMPLES;i++)
+        assert(dry_spu.reverb.work[i]==0);
+    unsigned preserved=0u;
+    for(unsigned i=0u;i<VH_REV_SAMPLES;i++)
+        preserved+=(wet_spu.reverb.work[i]!=0);
+    assert(preserved==prior_reverb_nonzero);
+
+    uint64_t wet_nonzero=0u;
+    uint64_t dry_nonzero=0u;
+    uint64_t hash=UINT64_C(1469598103934665603);
+    for(unsigned block=0u;block<96u;block++) {
+        assert(vh_music_scene_render(&wet_scene,wet_raw)==0);
+        assert(vh_music_scene_render(&dry_scene,dry_raw)==0);
+        assert(!wet_scene.seq.note_ons && !dry_scene.seq.note_ons);
+        assert(!memcmp(dry_raw,(int16_t[1024]){0},sizeof dry_raw));
+        const size_t wn=vh_audio_resample_process(
+            &wet_rate,wet_raw,512u,wet_48k,640u);
+        const size_t dn=vh_audio_resample_process(
+            &dry_rate,dry_raw,512u,dry_48k,640u);
+        assert(wn==dn && wn>=555u && wn<=559u);
+        assert(wet_rate.next_output_tick==dry_rate.next_output_tick &&
+               wet_rate.input_frames==dry_rate.input_frames);
+        for(size_t k=0u;k<wn*2u;k++) {
+            wet_nonzero+=(wet_48k[k]!=0);
+            if(block>=1u) {
+                dry_nonzero+=(dry_48k[k]!=0);
+                assert(dry_48k[k]==0);
+            }
+            hash^=(uint16_t)wet_48k[k];
+            hash*=UINT64_C(1099511628211);
+            hash^=(uint16_t)dry_48k[k];
+            hash*=UINT64_C(1099511628211);
+        }
+        for(unsigned i=0u;i<VH_NATIVE_MUSIC_VOICES;i++)
+            assert(!wet_spu.voice[i].pcm && !dry_spu.voice[i].pcm);
+    }
+    assert(wet_nonzero>0u && dry_nonzero==0u);
+    assert(vh_music_scene_detach(&wet_scene)==0);
+    assert(vh_music_scene_detach(&dry_scene)==0);
+    for(unsigned i=0u;i<VH_REV_SAMPLES;i++)
+        assert(!wet_spu.reverb.work[i] && !dry_spu.reverb.work[i]);
+    printf("isolated synchronous wet-tail -> silent SEQ: PASS %llu residual samples, %llu leaked dry, hash %016llx\n",
+           (unsigned long long)wet_nonzero,
+           (unsigned long long)dry_nonzero,
+           (unsigned long long)hash);
+    return hash;
+}
+
 int main(void) {
     for(unsigned i=0;i<128;i++)sample[i]=(int16_t)(
         (int)(i*237u%24000u)-12000);
@@ -313,5 +420,8 @@ int main(void) {
     const uint64_t first_run=opt_in_48k_comparison();
     const uint64_t replay=opt_in_48k_comparison();
     assert(first_run==replay); /* no hidden previous-bank state */
+    const uint64_t empty_first=silent_second_cue_oracle();
+    const uint64_t empty_replay=silent_second_cue_oracle();
+    assert(empty_first==empty_replay);
     return 0;
 }
