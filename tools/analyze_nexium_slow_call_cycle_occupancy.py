@@ -138,8 +138,8 @@ def analyse_cycle_occupancy(stage291:dict,stage290:dict,stage292:dict,
     expected=analyse_selection_gap(stage291,stage290)
     if stage292!=expected:
         raise CorrelationError("Stage292 source witness does not reproduce")
-    if stage291.get("result")!=
-            "ORIGINAL_SD_ALL_16_DETERMINISTIC_SAMPLE_PHASES_RECONCILED":
+    if (stage291.get("result") !=
+            "ORIGINAL_SD_ALL_16_DETERMINISTIC_SAMPLE_PHASES_RECONCILED"):
         raise CorrelationError("missing verified guest service sample phases")
     inputs={"switching":switching_calls,"idle":idle_calls}
     modes={}
