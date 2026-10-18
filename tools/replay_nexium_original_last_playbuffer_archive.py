@@ -45,7 +45,13 @@ def independently_replay(originals: tuple, worker_source: bytes,
             "ORIGINAL_GUEST_WORKER_STOP_AND_AUDOUT_SOURCES_INDEPENDENTLY_REPLAYED"):
         raise TraceError("earlier raw original guest source chain invalid")
     original_exit, original_page, original_png, guest307, guest308, guest310, guest313, guest314=originals
-    fresh=audit_last_call(original_call,guest307,guest313,stage317)
+    try:
+        fresh=audit_last_call(original_call,guest307,guest313,stage317)
+    except ExitTimelineError as exc:
+        # An invalid original CSV is an independent archive-source
+        # verification failure, not an uncaught parser exception.
+        # Keep the exact same strict Stage320 source checks.
+        raise TraceError("original PlayBuffer CSV cannot be independently re-audited") from exc
     if fresh["result"]!=PLAYBUFFER_VERIFIED:
         raise TraceError("no valid last normal PlayBuffer source")
     fresh["original_guest_playbuffer_source_observed"]=True
