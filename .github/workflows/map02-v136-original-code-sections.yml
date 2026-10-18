@@ -1,0 +1,35 @@
+name: MAP02 v136 original PS1 MIPS ELF executable section binding
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v136-original-code-sections.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/analyze_map02_v136_original_code_sections.py'
+      - 'tests/test_map02_v136_original_code_sections.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-authored-code-only-original-pair:
+    name: MIPS executable sections only (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject synthetic game data interpreted as MIPS code and forged ELF text
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          no_real_game_data_in_ci=1
+          readonly no_real_game_data_in_ci
+          test "$no_real_game_data_in_ci" = 1
+          python3 -m unittest discover -s tests -p 'test_map02_v136_original_code_sections.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v135_original_us_elf_pair.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v134_dirfd_private_exe.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v133_nonblocking_private_exe.py' -v
+          echo "VH136_SOURCE_AUTHORED_ELF_TEXT_PASS retail_code_executed=0 retail_image_present=0"
