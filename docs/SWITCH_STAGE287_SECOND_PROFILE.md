@@ -61,3 +61,49 @@ audout timings is **not identifying a particular soundtrack
 event or Switch OS scheduler stall**: no frame/event/DAC clock
 alignment or independent order-randomized control exists.
 No physical Switch listening test is implied.
+
+## Independently verified Stage287 CI — 2026-10-18
+
+All checks passed on code commit
+[`9074a80e`](https://github.com/stanmasked/vandal-hearts-switch-remaster/commit/9074a80e629f66f4c603bd6e7719ff4c92bbcbd3):
+
+- [Eight-pair independent original-SD-bound archived source audit 39085780895](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39085780895).
+- [Host SPU 39085780925](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39085780925).
+- [Native PCM Switch cross-compile 39085780872](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39085780872).
+- [Host C/Python tests and Switch toolchain 39085780878](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39085780878).
+
+The eight historical pairs produced the following **pooled-per-second
+switching-minus-idle rate differences**, each evaluated over exactly
+51 guest-audio-service seconds (seconds 1 through 51):
+
+| Software API slow-call duration class | Positive seconds | Negative seconds | Exact ties | Longest positive sequence | Top-five absolute L1 share |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 40 ms ≤ time < 50 ms | **29** | **22** | 0 | **7** | **23.414%** |
+| time ≥50 ms | 12 | 13 | 26 | 3 | 34.921% |
+| time ≥40 ms | 29 | 22 | 0 | 8 | 24.498% |
+
+For 40.. <50ms, the five **largest absolute** individual-second
+rate gaps were:
+
+| Relative guest-audio-service second | Absolute gap /1,000 attempts |
+| ---: | ---: |
+| 45 | 20.784128 |
+| 15 | 20.649609 |
+| 39 | 17.321917 |
+| 1 | 17.057997 |
+| 37 | 16.902557 |
+
+The top-five **23.414%** value is a fraction of the sum of absolute
+*individual-second rate gaps* (L1 mass, 395.984664 per 1,000 summed
+across seconds), not a fraction of total 40–<50ms API calls and **not**
+a decomposition of the full-duration pooled rate. The five seconds
+were selected **after observing** the trace; their peaks are not
+independent corroboration or a prespecified test statistic.
+
+**Interpretation:** The sign varies over individual seconds despite
+the positive archived window-level temporal contrast seen in
+Stages 284–286. This reflects different aggregation, denominators
+and temporal grouping, not a contradiction. The data neither align
+host scheduler events to guest seconds nor randomize switching
+versus idle capture order. No evidence establishes physical Switch
+audio glitches, DAC underruns or scene-switch causation.
