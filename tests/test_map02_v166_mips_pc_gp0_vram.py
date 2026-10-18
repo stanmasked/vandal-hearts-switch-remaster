@@ -57,6 +57,8 @@ class MipsPcGp0Vram166(unittest.TestCase):
         self.assertLess(patched.index("vh166_observe_guest_sw_pc(regs,mem,value)"),
                         patched.index("vh138_pc_observe(regs,mem,value);"))
         self.assertIn("if(vh166_active)",patched)
+        self.assertIn("if(physical!=0x1f801810u)",patched)
+        self.assertIn("if((physical&0xfffffff8u)==0x1f801810u)",patched)
         self.assertEqual(patched.count("vh166_expected_pc[5][3]"),1)
         with self.assertRaises(ValueError):
             patch_memory(patched)
@@ -115,6 +117,9 @@ int main(void) {
             psxMemWrite32(&r,0x1f801810u,
                           vh166_expected_words[stage][idx]);
         }
+        /* Each guest MIPS stage also stores a CPU RAM stage marker.
+         * This is not another GPU packet and must not cause a fault. */
+        psxMemWrite32(&r,0x80011100u+stage*4u,0x12100000u+stage);
         if(vh166_guest_sw_pc_count()!=3u ||
            vh166_guest_sw_pc_faults()) return 2;
         if(vh166_disarm_guest_sw_pc()!=0 ||
