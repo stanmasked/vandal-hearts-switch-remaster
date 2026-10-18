@@ -223,6 +223,37 @@ class PhysicalScreenshotPixelTests(unittest.TestCase):
             ValueError,"inconsistent B tally tile pixels"):
             observe_frame(tally)
 
+    def test_reject_damage_outside_original_three_pixel_probes(self):
+        # A single changed pixel anywhere in the solid interior must
+        # defeat an otherwise correct-looking three-point sample.
+        locations=(
+            ("N",(1002,638)), ("B",(1050,638)),
+            ("F",(1098,638)), ("P",(1146,638)),
+            ("R",(1194,638)), ("X",(1107,698)),
+            ("Y",(1162,698)),
+        )
+        for label,point in locations:
+            with self.subTest(tile=label):
+                image=frame(b=1,f=1,p=True)
+                image.putpixel(point,(127,127,127))
+                with self.assertRaisesRegex(
+                    ValueError,"inconsistent " + label + " tile pixels"):
+                    observe_frame(image)
+        # The edge of a 4x9 tally stroke was outside the old probes.
+        image=frame(b=1)
+        image.putpixel((1052,667),BACKGROUND)
+        with self.assertRaisesRegex(
+            ValueError,"inconsistent B tally tile pixels"):
+            observe_frame(image)
+
+    def test_reject_transparent_rgba_hidden_status_pixels(self):
+        image=frame().convert("RGBA")
+        image.putpixel((1005,640),(*BLUE,0))
+        image.save(self.a)
+        frame().save(self.b)
+        with self.assertRaisesRegex(ValueError,"fully opaque"):
+            inspect(self.a,self.b)
+
     def test_reject_decreasing_counts_and_invalid_resolution(self):
         with self.assertRaisesRegex(ValueError,"tally decreased"):
             self.images(frame(b=2,f=2),frame(b=1,f=1))
