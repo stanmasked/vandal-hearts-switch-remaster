@@ -46,3 +46,33 @@ and do not control changes in host load. Each capture has its OWN
 guest clock. Neither pre-submit service count nor call-duration
 statistics can prove causality, audio scheduler behavior, DAC
 underrun, audible correctness or physical Nintendo Switch output.
+
+## Confirmed corrected Stage296 original-SD result — 18 October 2026
+
+[Successful four-session NeXium CI 39123296150](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39123296150)
+completed on source commit
+[`4bf526b4`](https://github.com/stanmasked/vandal-hearts-switch-remaster/commit/4bf526b4a72d04b5f230dd531ff35976e809ac52).
+
+The complete original guest-SD audit confirmed:
+
+| Real service sample | 0 first | 8 first | 8 reversed | 0 reversed |
+| --- | ---: | ---: | ---: | ---: |
+| Total queries | 122 | 121 | 120 | 120 |
+| >=40ms calls ON queried attempts | 1 | 1 | 1 | 0 |
+| Nonzero service buffer-count results | 0 | 0 | 0 | 0 |
+
+All **483** actual pre-submit queue queries returned zero. There was
+no dropped service sample; each source was authenticated as a separate
+current-run original guest SD. The phase0-minus-phase8 normalized
+sampled >=40ms software API call rate was **−0.067741 per 1,000
+queried calls** in the first ordered pair and **−8.333333** in the
+reversed pair. These are descriptive contrasts across separate runs,
+not time-paired observations, randomization, evidence of
+audio-device starvation or a causal effect of the query phase.
+
+The preceding run [39122469138](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39122469138)
+had failed because the legacy parser incorrectly assumed a phase0
+sample on the partial final group of a phase8 capture.
+The fix and explicit regression are in `4bf526b4`, and the entire
+workflow then passed. No changes to synthesizer, PCM generation,
+SPU or physical-device behavior were made.
