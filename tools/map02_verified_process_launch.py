@@ -114,12 +114,12 @@ def _open_pinned_cycle_exec_fd(binary, expected_sha256, planned_stat):
         raise
 
 
-def _stable_owned_cycle_image(path):
-    """Bind the private disc-image pathname to one stable, twice-hashed inode.
+def _stable_owned_cycle_image(path, *, retain_fd=False):
+    """Verify private disc bytes twice; optionally retain the checked inode.
 
-    The child still opens the original pathname, so the final verification
-    must also compare this identity after it exits. This does not prove
-    consumption of any particular sector by the child.
+    Strict cycle launch passes the verified FD through /proc/self/fd/N to
+    the original PC CdMount. The named pathname is checked again after exit.
+    An inherited descriptor alone is NOT proof the child opened or read it.
     """
     path = Path(path)
     try:
@@ -153,11 +153,16 @@ def _stable_owned_cycle_image(path):
                 or _executable_identity(os.stat(path, follow_symlinks=False))
                 != _executable_identity(before)):
             raise ValueError("private MAP02 game-image pathname changed during hashing")
-        return _executable_identity(before), first
+        proof = (_executable_identity(before), first)
+        if retain_fd:
+            result_fd, fd = fd, -1
+            return proof, result_fd
+        return proof
     except OSError:
         raise ValueError("private MAP02 game-image verification unavailable") from None
     finally:
-        os.close(fd)
+        if fd >= 0:
+            os.close(fd)
 
 
 def _fingerprint_kernel_exe(pid):
@@ -186,11 +191,12 @@ def _fingerprint_kernel_exe(pid):
         os.close(fd)
 
 
-def _kernel_observes_game_fd(pid, expected):
-    """True iff the live child has a regular fd for the exact planned inode.
+def _kernel_observes_game_fd(pid, expected, *, excluded_fd=None):
+    """Observe an independent disc FD opened by the real child process.
 
-    No payload bytes, raw path or fd link target are persisted or printed.
-    An open descriptor alone does not prove bytes were consumed by gameplay.
+    The cycle launcher deliberately inherits a verified descriptor through
+    execve. That inherited descriptor must not be counted as child CdMount.
+    This remains FD-level evidence, NOT proof of sector consumption.
     """
     try:
         descriptors = os.scandir(f"/proc/{pid}/fd")
@@ -198,7 +204,8 @@ def _kernel_observes_game_fd(pid, expected):
         return False
     with descriptors as listing:
         for entry in listing:
-            if not entry.name.isdecimal():
+            if not entry.name.isdecimal() or (excluded_fd is not None and
+                    entry.name == str(excluded_fd)):
                 continue
             try:
                 observed = entry.stat(follow_symlinks=True)
@@ -367,17 +374,23 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
     game_fd_observed = False
     try:
         exec_fd = None
+        image_fd = None
         extra_exec_args = {}
-        if cycle is not None:
-            # The kernel executes this exact verified inode even if its
-            # pathname is swapped between the audit and subprocess.Popen.
-            exec_fd = _open_pinned_cycle_exec_fd(
-                binary, plan["pc_executable_sha256"], info)
-            extra_exec_args = {
-                "executable": f"/proc/self/fd/{exec_fd}",
-                "pass_fds": (exec_fd,),
-            }
         try:
+            if cycle is not None:
+                # Bind BOTH actual exec and CdMount to audited inodes; a
+                # between-checks pathname swap must not redirect either open.
+                exec_fd = _open_pinned_cycle_exec_fd(
+                    binary, plan["pc_executable_sha256"], info)
+                ready_image_proof, image_fd = _stable_owned_cycle_image(
+                    game_image, retain_fd=True)
+                if ready_image_proof != game_proof:
+                    raise ValueError("private MAP02 game-image changed before spawn")
+                env["VH_DISC_IMAGE"] = f"/proc/self/fd/{image_fd}"
+                extra_exec_args = {
+                    "executable": f"/proc/self/fd/{exec_fd}",
+                    "pass_fds": (exec_fd, image_fd),
+                }
             process = subprocess.Popen(
                 [str(binary), *arguments], shell=False,
                 env=env, stdin=subprocess.DEVNULL,
@@ -386,6 +399,8 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
         finally:
             if exec_fd is not None:
                 os.close(exec_fd)
+            if image_fd is not None:
+                os.close(image_fd)
         # A very short-lived program may exit before /proc can be sampled.
         # This must fail closed; it is NOT reason to synthesize an observation.
         deadline = time.monotonic() + min(5, timeout)
@@ -412,7 +427,8 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
         # Poll is bounded by the user's timeout, not a fixed boot duration.
         end = time.monotonic() + timeout
         while process.poll() is None:
-            if _kernel_observes_game_fd(process.pid, expected_game_fd):
+            if _kernel_observes_game_fd(
+                    process.pid, expected_game_fd, excluded_fd=image_fd):
                 game_fd_observed = True
             if time.monotonic() >= end:
                 raise ValueError("instrumented PC process timeout during disc observation")
