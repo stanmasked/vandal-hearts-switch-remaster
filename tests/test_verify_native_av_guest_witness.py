@@ -79,6 +79,42 @@ class GuestWitnessVerifierTests(unittest.TestCase):
         self.assertFalse(verified["hardware_attested"])
         self.assertFalse(verified["audible_audio_attested"])
 
+    def test_unexpected_root_field_fails_closed(self):
+        data = json.loads(self.witness.read_text())
+        data["physical_console_verified"] = True
+        self.witness.write_text(json.dumps(data))
+        with self.assertRaisesRegex(ValueError, "unexpected top-level fields"):
+            self.verify()
+
+    def test_duplicate_json_members_are_rejected_at_every_level(self):
+        original = self.witness.read_text()
+        try:
+            duplicate_root = original.replace(
+                '"format": ', '"format": "vh-native-av-guest-witness-v1", "format": ',
+                1)
+            self.assertNotEqual(duplicate_root, original)
+            self.witness.write_text(duplicate_root)
+            with self.assertRaisesRegex(ValueError, "duplicate JSON member: format"):
+                self.verify()
+
+            duplicate_nested = original.replace(
+                '"resume_retry": true',
+                '"resume_retry": true, "resume_retry": true', 1)
+            self.assertNotEqual(duplicate_nested, original)
+            self.witness.write_text(duplicate_nested)
+            with self.assertRaisesRegex(ValueError, "duplicate JSON member: resume_retry"):
+                self.verify()
+        finally:
+            self.witness.write_text(original)
+        self.verify()
+
+    def test_non_finite_json_number_is_rejected(self):
+        data = json.loads(self.witness.read_text())
+        data["github_run_id"] = float("nan")
+        self.witness.write_text(json.dumps(data))
+        with self.assertRaisesRegex(ValueError, "non-finite JSON number rejected"):
+            self.verify()
+
     def test_run_and_attempt_mismatch_fail_closed(self):
         with self.assertRaisesRegex(ValueError, "GitHub run ID mismatch"):
             verify(self.witness, self.before, self.after, self.nro,
