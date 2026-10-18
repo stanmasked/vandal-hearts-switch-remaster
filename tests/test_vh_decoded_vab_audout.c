@@ -74,6 +74,8 @@ static uint64_t hash_pcm(const int16_t *pcm,size_t frames) {
 typedef struct {
     unsigned open,playing;
     unsigned tries_this_page,failures_left;
+    unsigned fail_resume_stop_left,fail_resume_open_left;
+    unsigned fail_resume_start_left;
     uint64_t submitted,accepted,returned_hash;
     const int16_t *page_addr;
     size_t page_frames;
@@ -114,6 +116,10 @@ static int submit(void *ctx,const int16_t *pcm,size_t frames) {
 }
 static int stop(void *ctx) {
     SimOut *d=ctx;
+    if(d->fail_resume_stop_left) {
+        --d->fail_resume_stop_left;
+        return -1;
+    }
     d->playing=0u;
     return 0;
 }
@@ -125,12 +131,20 @@ static void close_out(void *ctx) {
 static int open_out(void *ctx) {
     SimOut *d=ctx;
     assert(!d->open);
+    if(d->fail_resume_open_left) {
+        --d->fail_resume_open_left;
+        return -1;
+    }
     d->open=1u;
     return 0;
 }
 static int start(void *ctx) {
     SimOut *d=ctx;
     assert(d->open && !d->playing);
+    if(d->fail_resume_start_left) {
+        --d->fail_resume_start_left;
+        return -1;
+    }
     d->playing=1u;
     return 0;
 }
@@ -215,8 +229,31 @@ int main(void) {
             const int16_t oracle_tail=oracle_spu.reverb.work[0];
             const uint64_t oracle_blocks=oracle_seq.blocks_advanced;
             assert(ops.stop(ops.context)==0);
+            const unsigned restart_before=recovery.resume_restarts;
+            const unsigned recoveries_before=recovery.resume_recoveries;
+            const unsigned failures_before=recovery.resume_failures;
+            /* Rotate through a failed stop, failed reopen and failed
+             * start at successive scene changes. Only the latter two
+             * can consume a second restart attempt; a failed stop
+             * must not be treated as permission to release PCM.
+             * No audio samples may be rendered or submitted here. */
+            if(scene%3u==0u) d.fail_resume_stop_left=1u;
+            if(scene%3u==1u) d.fail_resume_open_left=1u;
+            if(scene%3u==2u) d.fail_resume_start_left=1u;
+            if(scene%3u==0u)
+                assert(vh_audio_output_resume_recover(
+                    &ops,&recovery,1)==-1);
             assert(vh_audio_output_resume_recover(
                 &ops,&recovery,1)==0);
+            assert(!d.fail_resume_stop_left &&
+                   !d.fail_resume_open_left &&
+                   !d.fail_resume_start_left);
+            assert(recovery.resume_restarts==restart_before+
+                   (unsigned)(scene%3u==0u?1u:2u));
+            assert(recovery.resume_recoveries==recoveries_before+1u);
+            assert(recovery.resume_failures==failures_before+
+                   (unsigned)(scene%3u!=0u));
+            assert(d.open && d.playing);
             assert(d.submitted==prior_calls && d.returned_hash==prior_hash);
             assert(!memcmp(&d.timing,&saved_timing,sizeof saved_timing));
             assert(!memcmp(&seams,&saved_seams,sizeof saved_seams));
@@ -379,7 +416,8 @@ int main(void) {
     assert(boundaries==SCENES-1u && d.accepted==TOTAL);
     assert(expected_failed_attempts==15u);
     assert(recovery.resume_recoveries==boundaries &&
-           recovery.resume_restarts==boundaries);
+           recovery.resume_restarts==boundaries+8u &&
+           recovery.resume_failures==8u);
     assert(bank_hash[0]!=bank_hash[1]);
     assert(bank_hash[0]==oracle_bank_hash[0] &&
            bank_hash[1]==oracle_bank_hash[1]);
