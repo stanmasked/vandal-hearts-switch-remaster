@@ -11,7 +11,9 @@ from check_native_av_screenshot import AUDIO_OK
 from test_check_native_av_screenshot import make_frames
 from test_verify_native_av_nro_manifest import NRO_NAMES, tiny_nro
 from verify_native_av_nro_manifest import MANIFEST, COMMIT_FILE
-from verify_native_av_guest_witness import verify
+from verify_native_av_guest_witness import (
+    MAX_PNG_BYTES, MAX_WITNESS_BYTES, verify,
+)
 
 REVISION = "a" * 40
 GITHUB_RUN_ID = 39081974011
@@ -210,6 +212,41 @@ class GuestWitnessVerifierTests(unittest.TestCase):
             finally:
                 path.write_bytes(original)
         self.verify()
+
+    def test_oversized_standalone_witness_rejected_before_json_parse(self):
+        with self.witness.open("r+b") as stream:
+            stream.truncate(MAX_WITNESS_BYTES + 1)
+        with self.assertRaisesRegex(ValueError, "guest witness exceeds size limit"):
+            self.verify()
+
+    def test_oversized_standalone_png_rejected_before_decode(self):
+        with self.before.open("r+b") as stream:
+            stream.truncate(MAX_PNG_BYTES + 1)
+        with self.assertRaisesRegex(ValueError, "first PNG exceeds size limit"):
+            self.verify()
+
+    def test_symlinked_standalone_evidence_inputs_rejected(self):
+        for path, label in ((self.witness, "guest witness"),
+                            (self.before, "first PNG"),
+                            (self.after, "second PNG"),
+                            (self.nro, "guest NRO")):
+            with self.subTest(path=path.name):
+                backup = path.with_suffix(path.suffix + ".original")
+                path.rename(backup)
+                path.symlink_to(backup)
+                try:
+                    with self.assertRaisesRegex(ValueError,
+                                                "non-regular or symlinked " + label):
+                        self.verify()
+                finally:
+                    path.unlink()
+                    backup.rename(path)
+        self.verify()
+
+    def test_invalid_utf8_witness_is_rejected(self):
+        self.witness.write_bytes(b"\\xff\\xfe")
+        with self.assertRaisesRegex(ValueError, "guest witness is not valid UTF-8"):
+            self.verify()
 
     def test_wrong_case_commit_and_required_checks_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "source revision mismatch"):

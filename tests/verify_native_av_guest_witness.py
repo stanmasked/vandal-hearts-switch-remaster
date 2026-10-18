@@ -42,6 +42,9 @@ NRO_BY_SCENARIO = {
 
 HEX40 = re.compile(r"[0-9a-f]{40}\Z")
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
+MAX_WITNESS_BYTES = 1024 * 1024
+MAX_PNG_BYTES = 16 * 1024 * 1024
+
 WITNESS_FIELDS = frozenset({
     "format", "source_revision", "github_run_id", "github_run_attempt",
     "nro_sha256", "first_frame_sha256", "second_frame_sha256",
@@ -76,6 +79,31 @@ def require(condition, reason):
         raise ValueError(reason)
 
 
+def bounded_regular_file(path, label, maximum=None):
+    path = Path(path)
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("non-regular or symlinked " + label + ": " + str(path))
+    if maximum is not None and path.stat().st_size > maximum:
+        raise ValueError(label + " exceeds size limit: " + str(path))
+    return path
+
+
+def read_witness(path):
+    path = bounded_regular_file(path, "guest witness", MAX_WITNESS_BYTES)
+    # Read at most one byte beyond the bound: even if the file changes
+    # after stat(), verification will not read arbitrary-sized JSON.
+    with path.open("rb") as stream:
+        payload = stream.read(MAX_WITNESS_BYTES + 1)
+    if len(payload) > MAX_WITNESS_BYTES:
+        raise ValueError("guest witness exceeds size limit: " + str(path))
+    try:
+        serialized = payload.decode("utf-8")
+    except UnicodeError as exc:
+        raise ValueError("guest witness is not valid UTF-8") from exc
+    return json.loads(serialized, object_pairs_hook=unique_json_object,
+                      parse_constant=reject_nonfinite_json)
+
+
 def hash_file(path):
     hasher = hashlib.sha256()
     with path.open("rb") as stream:
@@ -89,10 +117,12 @@ def verify(witness, first, second, nro, revision, scenario,
     """Return recomputed observations; never trust the stored verdict alone."""
     require(scenario in SCENARIOS, "unknown guest scenario")
     require(HEX40.fullmatch(revision) is not None, "invalid source commit")
-    data = json.loads(
-        witness.read_text(encoding="utf-8"),
-        object_pairs_hook=unique_json_object,
-        parse_constant=reject_nonfinite_json)
+    # Enforce these protections during each standalone NeXium check,
+    # not only in the final seven-case artifact inventory audit.
+    first = bounded_regular_file(first, "first PNG", MAX_PNG_BYTES)
+    second = bounded_regular_file(second, "second PNG", MAX_PNG_BYTES)
+    nro = bounded_regular_file(nro, "guest NRO")
+    data = read_witness(witness)
     require(type(data) is dict, "witness must be an object")
     require(data.keys() == WITNESS_FIELDS,
             "witness has missing or unexpected top-level fields")
