@@ -57,7 +57,11 @@ def _private_evidence_snapshot(root, filename, *, max_bytes):
     """
     path = root / filename
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        # O_NONBLOCK prevents an attacker-controlled FIFO at the expected
+        # receipt path from blocking the verifier before fstat rejects it.
+        # It has no effect on regular-file pread semantics.
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK |
+                     os.O_NOFOLLOW | os.O_CLOEXEC)
     except OSError:
         raise ValueError("private MAP02 evidence input unavailable") from None
     try:
