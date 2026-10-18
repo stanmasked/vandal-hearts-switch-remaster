@@ -129,6 +129,30 @@ class ExternalCustodyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "fingerprint mismatch"):
             self.check(trusted_public_key_sha256="0" * 64)
 
+    def test_receipt_swapped_between_validation_and_request_read_rejected(self):
+        from unittest.mock import patch
+        original = custody.published.verify_published
+        def swapped(receipt, expected):
+            result = original(receipt, expected)
+            self.report.write_bytes(self.report.read_bytes() + b"modified")
+            return result
+        with patch.object(custody.published, "verify_published", side_effect=swapped):
+            with self.assertRaisesRegex(ValueError, "changed after initial verification"):
+                self.prepare_request()
+
+    def test_receipt_swapped_between_validation_and_signature_check_rejected(self):
+        from unittest.mock import patch
+        self.prepare_request()
+        self.sign()
+        original = custody.published.verify_published
+        def swapped(receipt, expected):
+            result = original(receipt, expected)
+            self.report.write_bytes(self.report.read_bytes() + b"modified")
+            return result
+        with patch.object(custody.published, "verify_published", side_effect=swapped):
+            with self.assertRaisesRegex(ValueError, "changed after initial verification"):
+                self.check()
+
     def test_missing_trust_anchor_refused(self):
         self.prepare_request()
         self.sign()

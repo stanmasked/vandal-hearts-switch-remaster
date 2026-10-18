@@ -111,7 +111,10 @@ def prepare(receipt, expected_sha256, *, commit, run_id, run_attempt):
            (run_id, run_attempt)):
         raise ValueError("MAP02 custody workflow run identity invalid")
     checked = published.verify_published(receipt, expected_sha256)
-    item = json.loads(_read(receipt).decode("utf-8"), object_pairs_hook=_pairs,
+    verified_bytes = _read(receipt)
+    if hashlib.sha256(verified_bytes).hexdigest() != checked["published_report_sha256"]:
+        raise ValueError("MAP02 custody receipt changed after initial verification")
+    item = json.loads(verified_bytes.decode("utf-8"), object_pairs_hook=_pairs,
                       parse_constant=_constant)
     request = {
         "schema": SCHEMA,
@@ -159,7 +162,10 @@ def verify(request_path, signature_path, public_key_path, *,
     verified = published.verify_published(receipt_path, expected_receipt_sha256)
     if verified["published_report_sha256"] != subject["receipt_sha256"]:
         raise ValueError("MAP02 custodian receipt hash mismatch")
-    report = json.loads(_read(receipt_path).decode("utf-8"),
+    verified_bytes = _read(receipt_path)
+    if hashlib.sha256(verified_bytes).hexdigest() != expected_receipt_sha256:
+        raise ValueError("MAP02 custody receipt changed after initial verification")
+    report = json.loads(verified_bytes.decode("utf-8"),
                         object_pairs_hook=_pairs, parse_constant=_constant)
     if report["linked"]["linked_object_sha256"] != subject["linked_elf_sha256"]:
         raise ValueError("MAP02 custody linked ELF hash mismatch")
