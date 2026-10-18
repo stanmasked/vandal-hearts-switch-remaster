@@ -118,8 +118,10 @@ class SpanWorkflowGateTests(unittest.TestCase):
         self.assertIn("uses: actions/download-artifact@v4", text)
         self.assertIn("uses: actions/attest@v4", private_build)
         self.assertIn("subject-path: /tmp/vh-map02-sealed-chain.json", private_build)
-        self.assertIn("id-token: write", private_build)
-        self.assertIn("attestations: write", private_build)
+        producer_job = text.split("  verify-trace-patch:", 1)[1].split(
+            "  verify-published-gpu-receipt:", 1)[0]
+        self.assertIn("id-token: write", producer_job)
+        self.assertIn("attestations: write", producer_job)
         self.assertIn("gh attestation verify", text)
         self.assertIn("--signer-workflow", text)
         self.assertIn("--source-digest", text)
