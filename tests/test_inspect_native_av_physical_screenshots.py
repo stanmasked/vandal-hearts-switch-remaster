@@ -133,16 +133,14 @@ class PhysicalScreenshotPixelTests(unittest.TestCase):
                                ("P",1164),("R",1212)):
             with self.subTest(label=label):
                 missing=frame(x="not_present",y="not_present")
-                for xx,yy in ((x_coord-15,640),(x_coord,645),
-                              (x_coord+14,655)):
-                    missing.putpixel((xx,yy),BACKGROUND)
+                ImageDraw.Draw(missing).rectangle(
+                    (x_coord-20,635,x_coord+19,660),fill=BACKGROUND)
                 with self.assertRaisesRegex(
                     ValueError,"missing or ambiguous " + label):
                     observe_frame(missing)
                 unknown=frame()
-                for xx,yy in ((x_coord-15,640),(x_coord,645),
-                              (x_coord+14,655)):
-                    unknown.putpixel((xx,yy),(127,127,127))
+                ImageDraw.Draw(unknown).rectangle(
+                    (x_coord-20,635,x_coord+19,660),fill=(127,127,127))
                 with self.assertRaisesRegex(
                     ValueError,"missing or ambiguous " + label):
                     observe_frame(unknown)
@@ -157,8 +155,8 @@ class PhysicalScreenshotPixelTests(unittest.TestCase):
                     ("unknown","blue")):
             if x=="unknown":
                 image=frame(x="yellow",y=y)
-                for point in ((1110,699),(1125,702),(1139,707)):
-                    image.putpixel(point,(127,127,127))
+                ImageDraw.Draw(image).rectangle(
+                    (1105,696,1144,710),fill=(127,127,127))
             else:
                 image=frame(x=x,y=y)
             with self.subTest(x=x,y=y):
@@ -184,13 +182,13 @@ class PhysicalScreenshotPixelTests(unittest.TestCase):
 
     def test_reject_inconsistent_or_noncontiguous_tally(self):
         broken=frame(b=1)
-        for point in ((1053,669),(1053,671),(1054,674)):
-            broken.putpixel(point,BACKGROUND)
+        ImageDraw.Draw(broken).rectangle(
+            (1052,667,1055,675),fill=BACKGROUND)
         with self.assertRaisesRegex(ValueError,"blue without any event strokes"):
             observe_frame(broken)
         broken=frame(b=2)
-        for point in ((1053,669),(1053,671),(1054,674)):
-            broken.putpixel(point,BACKGROUND)
+        ImageDraw.Draw(broken).rectangle(
+            (1052,667,1055,675),fill=BACKGROUND)
         with self.assertRaisesRegex(ValueError,"non-contiguous"):
             observe_frame(broken)
 
