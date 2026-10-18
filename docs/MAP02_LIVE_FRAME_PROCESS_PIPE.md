@@ -196,3 +196,73 @@ This workflow is an independent consistency gate only. The next required
 gate is a single instrumented session that emits both the terminal native
 frame and its source-verified GPU/FT4 ledger, with a fail-closed session
 boundary and no reliance on a caller-authored process label.
+
+## Joint native GPU journal + terminal BGR555 frame (experimental)
+
+The next opt-in diagnostic combines BOTH observers in one exact source-pinned
+GPU translation unit: tools/instrument_map02_joint_gpu_frame.py transforms
+the original pinned libgpu.c into a separate libgpu.joint.c. The build requires
+both -DVH_MAP02_PRIVATE_FRAME_PIPE_TRACE=1 and -DVH_MAP02_GPU_CAPTURE=1.
+Compiling with only the frame flag is an error. Normal, uninstrumented
+baseline object builds contain neither observer.
+
+The combined hook runs at the same post-DrawOTag completion boundary as
+the standalone frame hook. It refuses terminal output unless the native
+GPU recorder selected this frame and completed at least one even-numbered
+before/after pair WITHOUT reaching its 64-record hard cap. The
+native GPU recorder writes its bounded event journal and VRAM snapshots
+before this terminal hook emits its full 1024×512 BGR555 native VRAM.
+
+**One-launch private usage:**
+
+1. Build the generated PC GPU source in an isolated, private PC build
+   along with tools/map02_native_frame_pipe.c, with both diagnostic flags.
+   The ordinary PC port and Switch builds are not modified.
+2. Create TWO distinct initially empty, owner-only (0700) private
+   directories. One holds the stdout frame/receipt; the other receives
+   private journal snapshots.
+3. Use the SHA-pinned Linux ELF launcher with the exact full framebuffer
+   size, selecting the requested DrawOTag frame:
+
+       python3 -m tools.capture_map02_live_frame_pipe \
+         --executable PRIVATE_ELF \
+         --executable-sha256 EXPECTED_SHA256 \
+         --output-dir PRIVATE_FRAME_DIR \
+         --gpu-journal-dir PRIVATE_GPU_JOURNAL_DIR \
+         --frame 123 --width 1024 --height 512
+
+   The launcher passes the same selected frame to both capture variables
+   and the journal directory through a minimal environment, starts ONE
+   verified ELF, then checks the journal before publishing frame/receipt.
+   All child output files are owner-private under a 0077 umask.
+
+4. Independently replay the two inputs:
+
+       python3 -m tools.replay_map02_live_frame_receipt \
+         --live-frame PRIVATE_FRAME_DIR \
+         --gpu-journal-dir PRIVATE_GPU_JOURNAL_DIR \
+         --executable PRIVATE_ELF
+
+The strict audit verifies the GPU primitive/transfer before/after event
+metadata and 1-MiB VRAM snapshots, requires an uncapped journal with at
+least one DrawOTag primitive, a final post-draw event, exact journal
+inventory and **byte-for-byte equality** of its last post-draw native
+VRAM snapshot with the binary stdout frame. Subsequent offline replay
+requires the same journal hashes, image SHA-256, executable hash and
+receipt flags. Output reports never include original private pixels or
+file paths.
+
+Synthetic C11 tests exercise genuine host ELF execution, one full
+1024x512 native VRAM frame, C-written before/after journal snapshots,
+mismatch and tampering refusals using both GCC and Clang. Separately,
+the pinned-upstream CI compiles and relocatably links the combined
+original GPU translation unit on both host compilers without game assets.
+
+**Evidence boundary:** both artifacts are collected during a single
+launcher invocation, improving the *operational* process-session linkage.
+This is **not** a kernel-verifiable proof of which process wrote the
+journal files (another process with access to the private directory could
+intervene), nor does the source transcript authenticate the retail game,
+original disc assets, PS1 raster parity or completeness of every CPU VRAM
+write. It is specifically the **native PC renderer**, not PS1 hardware.
+No private game was launched in CI. Preserve Draft and HD-off.
