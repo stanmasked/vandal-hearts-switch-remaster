@@ -312,3 +312,35 @@ process writes the files. Inherited descriptors may be passed on by
 forked children, and same-user attackers could still obtain other
 access to the directory. All claims of kernel-authenticated journal
 writer and original PS1 rendering remain false.
+
+## Exclusive native journal file publication (joint source-pinned build)
+
+A diagnostic weakness remained inside the PC GPU observer itself: normal
+`fopen(...,"wb")` would truncate an existing snapshot file, and reopening
+the JSONL log in append mode for every GPU event would follow a substituted
+log pathname. For the **combined** source-pinned GPU/frame observer only,
+the transformed C unit now creates snapshot and upload files with
+`open(O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC, 0600)` and converts
+those descriptors into `FILE*` streams. Existing files and symlinks cannot
+be overwritten by the private diagnostic recorder.
+
+The JSONL log is also created **once**, exclusively, and its stream
+descriptor stays open across all captured events; after each completed
+JSON record the writer flushes the stream. The terminal frame hook now
+requires the number of successfully flushed records to equal the
+recorder's event counter. Failed or incomplete event writes must not be
+mistaken for a complete captured stream even when the counter is even.
+Ordinary PC-port builds and standalone GPU-only instrumentation retain
+their original compile-time behavior.
+
+The new native GCC/Clang publisher tests exercise actual owner-private
+file creation, overwriting refusal, symlink and hardlink rejection, and
+a live JSONL pathname replacement whose second event is still written
+to the pinned original log inode rather than a substituted file. Source
+transformer tests also reject missing or duplicated pinned write sites.
+
+**Boundary:** These measures reduce file replacement and truncation
+risks, but they do not authenticate a running game binary beyond the
+existing pinned ELF checks or prove the private journal writer's kernel
+identity. The test environment contains no actual game resources and
+no PlayStation hardware raster evidence. Keep HD replacement disabled.
