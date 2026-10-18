@@ -1,0 +1,33 @@
+name: MAP02 v162 native gpulib parse and read-status flush
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v162-native-parse-flush.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v162_gpulib_parse_flush.py'
+      - 'tests/test_map02_v162_gpulib_parse_flush.py'
+      - 'tools/apply_map02_v161_gpulib_queue.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  gpulib-parse:
+    name: synthetic gpulib parser and flush (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile exact gpulib parser and flush witness and regressions
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v162_gpulib_parse_flush.py tests/test_map02_v162_gpulib_parse_flush.py
+          python3 -m unittest discover -s tests -p 'test_map02_v162_gpulib_parse_flush.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v161_gpulib_queue.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v160_plugin_callback.py' -v
+          echo 'VH162_COMPILED_GPULIB_PARSE_PASS original_retail_executed=0 unai_rasterization_verified=0 map02_rendered=0'
