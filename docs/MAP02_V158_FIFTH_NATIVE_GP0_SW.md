@@ -12,6 +12,12 @@ A new narrow observer in `libpcsxcore/psxmem.c` records whether the fifth interp
 
 A negative test, `--vh158-mutate-fifth`, deliberately changes one byte of the fifth guest instruction **after** the first four valid dispatches and before the fifth native fetch. It must be refused before any GP0 MMIO write, producing `VH158_NATIVE_FIFTH_OPCODE_REFUSED matched=4 attempted=5 gp0_writes=0 original_retail=0` (exit 62). Missing register checks, invalid profiles and mixed earlier mutation modes must refuse before guest execution.
 
+## Native failure diagnosis and fix (18 October 2026)
+
+The first pinned-PCXS tests **failed** despite a correct source-derived opcode `0xAD090000`. A temporary privacy-safe native diagnostic showed `accepted=5 attempts=5 stop=1 fault=0 gp0=0 bad=0 t0_ok=1 t1_ok=1` on both GCC and Clang. This eliminated MIPS opcode, quota and register mismatches as causes. The defect was in the diagnostic observer placement: the v158 GP0 observer call had been inserted **inside** `vh138_pc_observe`, which returns immediately when the independent v138 diagnostic mode is inactive.
+
+The v158 call is now installed **at the unconditional entry to `psxMemWrite32`, ahead of its call to the optional v138 observer**. The existing v138/v139/v140/v142/v147 logic is deliberately unchanged. A new compiled test checks that the GP0 write is recorded with v138 disabled, along with a countercheck when v138 is enabled. This fixes an observability defect without changing the CPU interpreter, GP0 payload, guest RAM or GPU renderer. The final result must still be verified on the actual pinned PCSX native GCC/Clang matrix after the fix.
+
 ## Verification and limitations
 
 Independent GCC and Clang C harnesses test actual native five-word source matching, four-word legacy compatibility, exactly one GP0 observer callback and zero callbacks after fifth-word corruption. The full pinned PCSX ReARMed/Unai workflow tests the real native emulator and retains earlier VBlank/DMA/GP0, SHA-256 and MIPS-register regressions.
