@@ -27,6 +27,8 @@ on:
       - 'tools/verify_map02_private_capture_session.py'
       - 'tests/test_verify_map02_private_capture_session.py'
       - 'tools/run_map02_private_native_capture.py'
+      - 'tools/capture_map02_live_frame_pipe.py'
+      - 'tests/test_capture_map02_live_frame_pipe.py'
       - 'tools/verify_map02_private_capture_receipt.py'
       - 'tests/test_run_map02_private_native_capture.py'
       - 'tools/verify_map02_dda_native_spans.py'
@@ -64,3 +66,4 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_preflight_map02_private_dda_capture.py' -v
           python3 -m unittest discover -s tests -p 'test_verify_map02_private_capture_session.py' -v
           python3 -m unittest discover -s tests -p 'test_run_map02_private_native_capture.py' -v
+          python3 -m unittest discover -s tests -p 'test_capture_map02_live_frame_pipe.py' -v
