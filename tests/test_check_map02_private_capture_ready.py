@@ -359,6 +359,81 @@ class PrivateCapturePreflightTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "incomplete"):
             self.run_preflight()
 
+    def test_rejects_source_or_gpu_log_inode_swap_after_initial_audit(self):
+        for target in (self.source / "bundle.json",
+                       self.native / "gpu-native-events.jsonl"):
+            with self.subTest(name=target.name):
+                original_sample = preflight_module._snapshot_word
+                altered = [False]
+                backup = self.source.parent / ("old-" + target.name)
+
+                def substitute_during_vram_sample(*args, **kwargs):
+                    word = original_sample(*args, **kwargs)
+                    if not altered[0]:
+                        target.replace(backup)
+                        target.write_bytes(backup.read_bytes())
+                        altered[0] = True
+                    return word
+
+                with patch.object(preflight_module, "_snapshot_word",
+                                  side_effect=substitute_during_vram_sample):
+                    with self.assertRaisesRegex(ValueError,
+                                                "input changed during preflight"):
+                        self.run_preflight()
+                self.assertTrue(altered[0])
+                target.unlink()
+                backup.replace(target)
+
+    def test_rejects_manifest_metadata_drift_after_initial_audit(self):
+        target = self.source / "gpu-putpixel-ot.json"
+        original_sample = preflight_module._snapshot_word
+        touched = [False]
+
+        def touch_before_recheck(*args, **kwargs):
+            word = original_sample(*args, **kwargs)
+            if not touched[0]:
+                st = target.stat()
+                os.utime(target, ns=(st.st_atime_ns,
+                                     st.st_mtime_ns + 10**9))
+                touched[0] = True
+            return word
+
+        with patch.object(preflight_module, "_snapshot_word",
+                          side_effect=touch_before_recheck):
+            with self.assertRaisesRegex(ValueError,
+                                        "input changed during preflight"):
+                self.run_preflight()
+        self.assertTrue(touched[0])
+
+    def test_rejects_hardlinked_native_event_log(self):
+        target = self.native / "gpu-native-events.jsonl"
+        alias = self.source.parent / "hardlinked-gpu-event-log"
+        os.link(target, alias)
+        try:
+            with self.assertRaisesRegex(ValueError, "type, owner or size"):
+                self.run_preflight()
+        finally:
+            alias.unlink()
+        self.assertTrue(self.run_preflight()["structural_preflight_passed"])
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "requires POSIX FIFO")
+    def test_input_fifo_rejected_without_blocking(self):
+        target = self.native / "gpu-native-events.jsonl"
+        target.unlink()
+        os.mkfifo(target, mode=0o600)
+        original_open = os.open
+
+        def guard_open(path, flags, *args, **kwargs):
+            if (os.fspath(path) == os.fspath(target) and
+                    not flags & os.O_NONBLOCK):
+                raise AssertionError("FIFO input must open nonblocking")
+            return original_open(path, flags, *args, **kwargs)
+
+        with patch("tools.check_map02_private_capture_ready.os.open",
+                   side_effect=guard_open):
+            with self.assertRaisesRegex(ValueError, "type, owner or size"):
+                self.run_preflight()
+
     def test_rejects_aliased_or_nested_capture_roots(self):
         with self.assertRaisesRegex(ValueError, "directories overlap"):
             inspect_staged_capture(self.source, self.source)
