@@ -58,6 +58,30 @@ New report (no raw music/audio data published):
 
 `independent-stage324-comparison/dual-playbuffer-windows-stage324.json`
 
+## Completed original captures and independent replay
+
+Both original runtime workflows have now **completed successfully**:
+[Stage322 #39159226320](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39159226320)
+and [Stage324 #39162251380](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39162251380).
+The completely separate [Stage324 source replay #39162959331](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39162959331)
+also **passed all 16 synthetic tests**, downloaded both original
+source artifacts, independently replayed the original CSV/CRC chains
+and emitted `TWO_ORIGINAL_GUEST_PLAYBUFFER_WINDOWS_INDEPENDENTLY_REPLAYED`.
+
+| Verified original guest source | First run | Second run |
+| --- | ---: | ---: |
+| Guest last16 CSV SHA-256 | `98a1ef3e822a3521371dae63012b1ce5dd7aa6aefb7645314232635008fddec8` | `a55f3513c3de100da6ea1373643d4935d67e4b036f3b86f2e3a873f123aacb32` |
+| Final successful normal call (ns) | 18,385,781 | 18,548,385 |
+| Own preceding 15-success lower median (ns) | 31,775,052 | 27,374,375 |
+| Final minus preceding median (ns) | −13,389,271 | −8,825,990 |
+| Ascending final rank among all 16 | 4 | 7 |
+| Preceding shorter / tied / longer | 3 / 0 / 12 | 6 / 0 / 9 |
+
+The last call was below its **own** earlier-call median in each of
+the two original guest software captures. This does not demonstrate
+a statistical population effect, establish a physical audio latency
+or justify changing audio scheduling.
+
 ## Source attack tests and strict limits
 
 Sixteen synthetic unit tests reject duplicate original workflows,
