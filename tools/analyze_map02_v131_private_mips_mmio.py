@@ -59,8 +59,14 @@ def _read_exact(fd, count):
 def read_private_exe(path):
     """Same-inode, two-pass bounded private read; no path or hashes in output."""
     try:
+        # Never wait for a writer on an attacker-supplied FIFO, or acquire a
+        # controlling terminal from a character device. O_NONBLOCK is ignored
+        # for normal regular-file reads; the existing fstat test still refuses
+        # anything that is not a single-link private regular file.
         fd = os.open(Path(path), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) |
-                     getattr(os, "O_CLOEXEC", 0))
+                     getattr(os, "O_CLOEXEC", 0) |
+                     getattr(os, "O_NONBLOCK", 0) |
+                     getattr(os, "O_NOCTTY", 0))
     except OSError:
         raise Refused("private PS-X EXE cannot be safely opened") from None
     try:
