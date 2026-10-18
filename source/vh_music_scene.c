@@ -61,21 +61,22 @@ static int cue_is_valid(VhMusicScene *s, const VhMusicCue *cue) {
 }
 
 static int switch_to(VhMusicScene *s, const VhMusicCue *cue) {
-    /* Every outgoing voice and reverb buffer is now inaudible.
-     * Clear old pointers BEFORE the caller can release old bank PCM.
-     * The incoming track gets new channel and voice ownership.
+    /* Old voice/PCM ownership must end before the caller frees a bank.
+     * The optional branch preserves wet history, not borrowed samples.
      */
     if (s->keep_reverb_across_cues && cue && cue->id) {
-        /* Optional continuity between actual music cues only. First
-         * validate and stage the replacement, then detach old PCM
-         * voices without flushing the already accumulated wet tail. */
+        /* Validate then switch atomically, preserving the wet tail.
+         * Publish the new cue only after the SEQ/SPU switch succeeds. */
         if (vh_native_seq_switch_scene(&s->seq, cue->seq, cue->seq_size,
                                        s->spu, cue->resolver, cue->context,
                                        cue->repeats))
             return -1;
+        memset(&s->active, 0, sizeof(s->active));
+        s->active = *cue;
     } else {
-        /* Historical default: discard the old wet history, and ALWAYS
-         * clear it for explicit silence / bank unload. */
+        /* Preserve the original legacy error path exactly: reset wet
+         * state and clear active ownership before initializing a cue.
+         * This branch also handles every explicit request for silence. */
         const unsigned interpolation = s->spu->interpolation;
         const int reverb_on = s->spu->reverb_enabled;
         const float reverb_depth = s->spu->reverb_depth;
@@ -84,14 +85,15 @@ static int switch_to(VhMusicScene *s, const VhMusicCue *cue) {
             vh_native_spu_set_reverb(s->spu, reverb_on, reverb_depth))
             return -1;
         memset(&s->seq, 0, sizeof(s->seq));
-        if (cue && cue->id &&
-            vh_native_seq_init(&s->seq, cue->seq, cue->seq_size,
-                               s->spu, cue->resolver, cue->context,
-                               cue->repeats))
-            return -1;
+        memset(&s->active, 0, sizeof(s->active));
+        if (cue && cue->id) {
+            if (vh_native_seq_init(&s->seq, cue->seq, cue->seq_size,
+                                   s->spu, cue->resolver, cue->context,
+                                   cue->repeats))
+                return -1;
+            s->active = *cue;
+        }
     }
-    memset(&s->active, 0, sizeof(s->active));
-    if (cue && cue->id) s->active = *cue;
     ++s->switches;
     return 0;
 }
