@@ -60,6 +60,62 @@ def _require_owner_private_claimed_pair(frame_pair_dir):
         os.close(directory_fd)
 
 
+def _preflight_original_source_files(native_capture_dir, source_capture_dir,
+                                     launch_receipt, preflight_report,
+                                     output_dir, gpu_journal_dir,
+                                     frame_pair_dir):
+    """Validate private FT4/VRAM input roles before any child is launched.
+
+    The full independent source replay remains responsible for checking
+    authenticated contents. This preliminary check refuses missing files,
+    symlinks, public modes, shared roles, and incorrectly typed inputs so
+    a foreseeable source-input failure never publishes a new BGR555 frame.
+    """
+    identities = set()
+    expected_dirs = (
+        native_capture_dir, source_capture_dir,
+        output_dir, gpu_journal_dir, frame_pair_dir,
+    )
+    for value in expected_dirs:
+        directory = Path(value).absolute()
+        fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY |
+                     os.O_NOFOLLOW | os.O_CLOEXEC)
+        try:
+            info = os.fstat(fd)
+            path_info = os.stat(directory, follow_symlinks=False)
+            key = (info.st_dev, info.st_ino)
+            if (not stat.S_ISDIR(info.st_mode)
+                    or info.st_uid != os.geteuid()
+                    or stat.S_IMODE(info.st_mode) & 0o077
+                    or key != (path_info.st_dev, path_info.st_ino)):
+                raise ValueError("MAP02 original source directory is not private")
+            if key in identities:
+                raise ValueError("MAP02 original source directory roles overlap")
+            identities.add(key)
+        finally:
+            os.close(fd)
+    for value in (launch_receipt, preflight_report):
+        path = Path(value).absolute()
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW |
+                     os.O_NONBLOCK | os.O_CLOEXEC)
+        try:
+            info = os.fstat(fd)
+            path_info = os.stat(path, follow_symlinks=False)
+            key = (info.st_dev, info.st_ino)
+            if (not stat.S_ISREG(info.st_mode)
+                    or info.st_uid != os.geteuid()
+                    or stat.S_IMODE(info.st_mode) != 0o600
+                    or info.st_nlink != 1
+                    or not 0 < info.st_size <= 16 * 1024 * 1024
+                    or key != (path_info.st_dev, path_info.st_ino)):
+                raise ValueError("MAP02 original source witness file not private")
+            if key in identities:
+                raise ValueError("MAP02 original source roles overlap")
+            identities.add(key)
+        finally:
+            os.close(fd)
+
+
 def _session_inode_witness(output_dir, gpu_journal_dir, *,
                            held_output_fd=None, held_journal_fd=None):
     """Return private in-memory identity of both full replay inventories.
@@ -148,6 +204,11 @@ def run(executable, output_dir, gpu_journal_dir, *, frame, executable_sha256,
                 (not all(v is not None for v in source_inputs)
                  or frame_pair_dir is None))):
         raise ValueError("MAP02 original FT4/VRAM witness arguments incomplete")
+    if source_requested:
+        _preflight_original_source_files(
+            native_capture_dir, source_capture_dir,
+            launch_receipt, preflight_report,
+            output_dir, gpu_journal_dir, frame_pair_dir)
     # The optional claimed pair is independent of the same-launch frame.
     # Observe its inode inventory and exact claimed hashes BEFORE launching.
     # A comparison with an independently captured reference is informative
