@@ -63,6 +63,15 @@ def build_report(evidence_root, nro_root, revision, run_id, attempt, *,
             "evidence_sha256": evidence_end,
             "heartbeat_changed_pixels": heartbeat,
         })
+    # A later guest check must not be able to modify an earlier case
+    # AFTER that earlier case's own two digest snapshots were made.
+    for case in cases:
+        scenario = case["scenario"]
+        folder = evidence_root / (PREFIX + scenario + SUFFIX)
+        final_digests = snapshot_file_digests(folder, sorted(FILES))
+        if final_digests != case["evidence_sha256"]:
+            raise ValueError("previously verified NeXium evidence changed: " +
+                             scenario)
     # Check that even unused NRO variants and provenance metadata
     # are unchanged across the entire seven-scenario verification.
     nro_end = snapshot_file_digests(nro_root, all_bundle_files)

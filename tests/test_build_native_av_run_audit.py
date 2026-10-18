@@ -260,6 +260,22 @@ class SevenCaseDigestIndexTests(unittest.TestCase):
             build_report(self.evidence, self.nros, REVISION, RUN_ID,
                          ATTEMPT, verify_case=mutating_checker)
 
+    def test_later_case_cannot_modify_previously_verified_evidence(self):
+        def mutating_later_checker(witness, before, after, nro, revision,
+                                   scenario, run_id, attempt, *,
+                                   published_nro_dir):
+            # The empty scenario has completed its own pre/post checks
+            # by the time the full scenario runs.
+            if scenario == "full":
+                old = self.evidence / (PREFIX + "empty" + SUFFIX)
+                (old / "nexium.log").write_bytes(
+                    b"modified while a different scenario was checked")
+            return {"heartbeat_changed_pixels": 32}
+        with self.assertRaisesRegex(
+                ValueError, "previously verified NeXium evidence changed: empty"):
+            build_report(self.evidence, self.nros, REVISION, RUN_ID,
+                         ATTEMPT, verify_case=mutating_later_checker)
+
     def test_unused_focus_nro_mutation_during_guest_checks_fails_closed(self):
         def mutating_checker(witness, before, after, nro, revision,
                              scenario, run_id, attempt, *, published_nro_dir):
