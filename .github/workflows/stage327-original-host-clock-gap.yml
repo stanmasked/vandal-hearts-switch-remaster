@@ -1,0 +1,95 @@
+name: Stage327 independent original NeXium host clock discrepancy analysis
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage327-original-host-clock-gap.yml'
+      - 'tools/audit_nexium_stage327_clock_gap.py'
+      - 'tests/test_audit_nexium_stage327_clock_gap.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  verified-original-host-gaps:
+    name: Verify Stage327 host dual clock disagreement from successful original Stage326 sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout original clock discrepancy code
+        uses: actions/checkout@v4
+
+      - name: Stage327 ten negative and positive independent host clock tests
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/audit_nexium_stage327_clock_gap.py tests/test_audit_nexium_stage327_clock_gap.py
+          python3 -m unittest discover -s tests -p 'test_audit_nexium_stage327_clock_gap.py' -v
+
+      - name: Verify original Stage326 source replay really succeeded
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/39168578569" --jq '.status')"
+          conclusion="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/39168578569" --jq '.conclusion')"
+          test "$status" = completed
+          test "$conclusion" = success
+
+      - name: Download original Stage326 independently authenticated host-control report
+        uses: actions/download-artifact@v4
+        with:
+          name: stage326-two-original-host-clock-cohorts
+          run-id: 39168578569
+          github-token: ${{ github.token }}
+          path: original-stage326-report
+
+      - name: Stage327 classify wall versus monotonic discrepancy in authentic source cohort
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f original-stage326-report/two-cohort-host-clock-comparison.json
+          test ! -L original-stage326-report/two-cohort-host-clock-comparison.json
+          mkdir -p stage327-original-host-gap
+          python3 tools/audit_nexium_stage327_clock_gap.py \
+            --stage326 original-stage326-report/two-cohort-host-clock-comparison.json \
+            --output stage327-original-host-gap/clock-interval-disagreement.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          result=json.loads(Path(
+              "stage327-original-host-gap/clock-interval-disagreement.json"
+          ).read_text(encoding="utf-8"))
+          if (result["result"]!="STAGE327_TWO_ORIGINAL_HOST_CLOCK_INTERVAL_GAPS_CLASSIFIED"
+                  or result["all_original_stage326_source_scope_flags_conserved"] is not True
+                  or result["one_ms_threshold_is_heuristic_not_guaranteed_sampling_bound"] is not True
+                  or result["guest_audio_timing_or_clock_causality_proven"] is not False
+                  or result["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("original Stage327 host clock gap evidence rejected")
+          r=result["interval_disagreements"]
+          expected=[(-687151,303818),(209810,220257)]
+          if len(r)!=2 or [
+              (x["first_host_wall_minus_monotonic_interval_ns"],
+               x["second_host_wall_minus_monotonic_interval_ns"]) for x in r
+          ]!=expected:
+              raise SystemExit("real original NeXium clock discrepancies not reproduced")
+          if any(x["first_exceeds_illustrative_one_ms_gap"] or
+                 x["second_exceeds_illustrative_one_ms_gap"] for x in r):
+              raise SystemExit("original paired clock discrepancies unexpectedly exceeded illustrative heuristic")
+          print("Stage327 original two-cohort independent host clock gaps confirmed")
+          print("First cohort wall-minus-monotonic gaps (ns):",
+                [x["first_host_wall_minus_monotonic_interval_ns"] for x in r])
+          print("Second cohort wall-minus-monotonic gaps (ns):",
+                [x["second_host_wall_minus_monotonic_interval_ns"] for x in r])
+          PY
+          echo "Stage327: original source-derived host interval gaps only; one millisecond is illustrative, not a guaranteed clock-sync bound. No physical audio or guest latency proven." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload only the compact original-source derived clock gap report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage327-original-host-clock-gap
+          path: stage327-original-host-gap/
+          if-no-files-found: warn
