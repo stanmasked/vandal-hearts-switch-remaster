@@ -141,6 +141,9 @@ def compare_complete(stage296:dict,profiles:list[dict])->dict:
                 or src.get("slow_ge50_queried")!=
                    row["slow_ge50_on_queried_attempts"]):
             raise CorrelationError("one original source does not match verified order witness")
+        if (src["slow_ge50_all_calls"]>src["slow_ge40_all_calls"]
+                or src["slow_ge50_queried"]>src["slow_ge40_queried"]):
+            raise CorrelationError(">=50ms must be a subset of >=40ms calls")
         for band in ("ge40","ge50"):
             observed=src["slow_"+band+"_queried"]
             total=src["slow_"+band+"_all_calls"]
