@@ -129,6 +129,61 @@ int main(int argc, char **argv) {
         with self.assertRaisesRegex(ValueError, "already exists"):
             self.run_capture()
 
+    def test_original_pc_launcher_rejects_equal_content_plan_inode_swap_during_child(self):
+        plan = self.handoff / "gpu-local-capture-plan.json"
+        saved = self.handoff.parent / "original-private-plan-inode"
+        real_spawn = subprocess.Popen
+        exchanged = []
+
+        def substitute_plan_at_spawn(*args, **kwargs):
+            original = plan.read_bytes()
+            before = plan.stat().st_ino
+            plan.replace(saved)
+            plan.write_bytes(original)
+            plan.chmod(0o600)
+            self.assertNotEqual(plan.stat().st_ino, before)
+            exchanged.append(True)
+            return real_spawn(*args, **kwargs)
+
+        try:
+            with patch("tools.map02_verified_process_launch.subprocess.Popen",
+                       side_effect=substitute_plan_at_spawn):
+                with self.assertRaisesRegex(ValueError, "plan changed during run"):
+                    self.run_capture()
+        finally:
+            if saved.exists():
+                plan.unlink(missing_ok=True)
+                saved.replace(plan)
+        self.assertTrue(exchanged)
+        self.assertFalse((self.handoff / RECEIPT).exists())
+
+    def test_original_pc_launcher_rejects_equal_content_plan_inode_swap_before_receipt(self):
+        plan = self.handoff / "gpu-local-capture-plan.json"
+        saved = self.handoff.parent / "prepublish-private-plan-inode"
+        exchanged = []
+
+        def substitute_after_gpu_join(*args, **kwargs):
+            original = plan.read_bytes()
+            before = plan.stat().st_ino
+            plan.replace(saved)
+            plan.write_bytes(original)
+            plan.chmod(0o600)
+            self.assertNotEqual(plan.stat().st_ino, before)
+            exchanged.append(True)
+            return self.checked
+
+        try:
+            with patch("tools.map02_verified_process_launch.verify_window_scoped_join",
+                       side_effect=substitute_after_gpu_join):
+                with self.assertRaisesRegex(ValueError, "plan inode changed before process receipt"):
+                    self.run_capture()
+        finally:
+            if saved.exists():
+                plan.unlink(missing_ok=True)
+                saved.replace(plan)
+        self.assertTrue(exchanged)
+        self.assertFalse((self.handoff / RECEIPT).exists())
+
     def test_rejects_replacement_before_exec(self):
         self.binary.write_bytes(self.binary.read_bytes() + b" appended")
         with self.assertRaisesRegex(ValueError, "differs from plan"):
