@@ -1,0 +1,33 @@
+name: MAP02 v160 synthetic MIPS GPU plugin callback entry and return
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v160-native-plugin-callback.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v160_plugin_callback.py'
+      - 'tests/test_map02_v160_plugin_callback.py'
+      - 'tools/apply_map02_v159_native_gpu_sink.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fifth-plugin-callback:
+    name: compiled fifth synthetic MIPS plugin callback (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check callback pointer and previous native GPU MMIO guards
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v160_plugin_callback.py tests/test_map02_v160_plugin_callback.py
+          python3 -m unittest discover -s tests -p 'test_map02_v160_plugin_callback.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v159_native_gpu_sink.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v158_native_gp0_fifth.py' -v
+          echo 'VH160_COMPILED_CALLBACK_PASS original_retail_executed=0 map02_rendered=0 pixel_parity_verified=0'
