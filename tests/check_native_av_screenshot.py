@@ -5,7 +5,9 @@ This checks graphics and animation only. A green audout status is a
 synchronous initialization/worker indicator, never proof of heard audio.
 """
 import argparse
+import hashlib
 import json
+import re
 from pathlib import Path
 from PIL import Image
 
@@ -202,6 +204,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("before", type=Path)
     parser.add_argument("after", type=Path)
+    parser.add_argument("--witness-out", type=Path,
+                        help="create a new SHA-256-bound JSON witness only after all checks")
+    parser.add_argument("--nro-file", type=Path,
+                        help="NRO whose exact bytes were launched for these screenshots")
+    parser.add_argument("--source-revision",
+                        help="40-digit lowercase Git commit associated with this NRO")
     parser.add_argument("--require-synthetic-source", action="store_true",
                         help="legacy empty SD fixture check")
     parser.add_argument("--require-audio-source",
@@ -289,6 +297,42 @@ def main():
                     report["audio_pipeline_progress"] != "buffers_returned" or
                     report["audio_source"] != "synthetic"):
                 raise ValueError("guest ZR recovery not confirmed on both frames")
+        if args.witness_out is not None:
+            if args.nro_file is None or not args.source_revision:
+                raise ValueError("witness requires --nro-file and --source-revision")
+            if re.fullmatch(r"[0-9a-f]{40}",args.source_revision) is None:
+                raise ValueError("source revision must be exactly 40 lowercase hex characters")
+            if args.witness_out.exists():
+                raise ValueError("refusing to overwrite existing witness")
+            # File hashes bind the derived verdict to the exact PNG/NRO
+            # artifact bytes. These hashes are NOT a hardware attestation.
+            digest=lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+            witness={
+                "format": "vh-native-av-guest-witness-v1",
+                "source_revision": args.source_revision,
+                "nro_sha256": digest(args.nro_file),
+                "first_frame_sha256": digest(args.before),
+                "second_frame_sha256": digest(args.after),
+                "required_checks": {
+                    "audio_source": expected_source,
+                    "audout_status": args.require_audout_status,
+                    "audio_pipeline": args.require_audio_pipeline,
+                    "synthetic_scene_switches": args.require_synthetic_scene_switches,
+                    "no_synthetic_scene_switches": args.require_no_synthetic_switches,
+                    "zr_recovery": args.require_guest_zr_recovery,
+                    "zl_no_replay": args.require_guest_zl_no_replay,
+                    "resume_continuation": args.require_guest_resume_continuation,
+                    "resume_retry": args.require_guest_resume_retry,
+                },
+                "observation": report,
+                "audible_audio_verified": False,
+                "physical_switch_verified": False,
+            }
+            # Exclusive create prevents accidentally recycling evidence
+            # left by a previous run or partially overriding a witness.
+            with args.witness_out.open("x",encoding="utf-8") as out:
+                json.dump(witness,out,indent=2,sort_keys=True)
+                out.write("\n")
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
     print(json.dumps(report, indent=2))
