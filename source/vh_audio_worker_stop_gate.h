@@ -21,6 +21,11 @@ static inline int vh_audio_worker_stop_gate_continue(
         VhAudioWorkerGuestClockNow now) {
     /* Exactly one existing atomic running-flag read per outer
      * audio-loop iteration, and no clock call while producing PCM. */
+    /* Missing mailbox has no observed stop transition. Leave audio
+     * safely, but DO NOT manufacture a timestamp for nonexistent
+     * input state. On the real nonnull mailbox this retains the
+     * original single running-flag atomic read. */
+    if (!box) return 0;
     if (vh_game_music_mailbox_running(box))
         return 1;
     /* A missing clock is an unobserved timestamp, not a forged one.
