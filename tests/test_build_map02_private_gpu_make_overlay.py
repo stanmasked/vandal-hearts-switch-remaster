@@ -335,6 +335,19 @@ class SealedMakeOverlayTests(unittest.TestCase):
                 self.run_build("build-map02-system-header-tamper")
         self.assertEqual(len(count), 2)
 
+    def test_system_header_line_markers_from_preprocessed_bytes(self):
+        system = self.root / "external-system.h"
+        system.write_text("#define HOST_VALUE 9\n")
+        preprocessed = self.root / "sample.i"
+        preprocessed.write_text(
+            '# 0 "<built-in>"\n'
+            '# 1 "' + str(system) + '" 1 3 4\n'
+            'int x;\n')
+        evidence = sealed._system_header_evidence(
+            (preprocessed,), self.pc, self.root / "private-headers")
+        self.assertEqual(evidence["count"], 1)
+        self.assertEqual(len(evidence["sha256"]), 64)
+
     def test_invalid_and_existing_build_directories_fail_closed(self):
         for name in ("build", "build-map02-", "build-map02-x/../y",
                      "build-map02-sneaky path"):

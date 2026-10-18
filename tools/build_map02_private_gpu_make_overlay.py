@@ -248,7 +248,7 @@ def _system_header_evidence(preprocessed_files, pc, stage):
     for preprocessed in preprocessed_files:
         data = auditor._stable_regular_bytes(
             preprocessed, max_bytes=MAX_OBJECT_BYTES)
-        labels = re.findall(rb'(?m)^#\\s+\\d+\\s+"([^"\\r\\n]+)"', data)
+        labels = re.findall(rb'(?m)^#\s+\d+\s+"([^"\r\n]+)"', data)
         if not labels:
             raise ValueError("MAP02 preprocessor produced no source locations")
         for raw_label in labels:
