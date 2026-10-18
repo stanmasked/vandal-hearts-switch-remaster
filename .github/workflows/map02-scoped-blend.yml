@@ -33,6 +33,8 @@ on:
       - 'tests/test_verify_map02_final_pc_frame_join.py'
       - 'tools/finalize_map02_private_capture.py'
       - 'tests/test_finalize_map02_private_capture.py'
+      - 'tools/seal_map02_private_finalization.py'
+      - 'tests/test_seal_map02_private_finalization.py'
       - 'tools/map02_pc_preoverlay_capture.c'
       - 'tools/map02_pc_preoverlay_capture.h'
       - 'tools/instrument_map02_pc_preoverlay_capture.py'
@@ -154,6 +156,8 @@ on:
       - 'tests/test_verify_map02_final_pc_frame_join.py'
       - 'tools/finalize_map02_private_capture.py'
       - 'tests/test_finalize_map02_private_capture.py'
+      - 'tools/seal_map02_private_finalization.py'
+      - 'tests/test_seal_map02_private_finalization.py'
       - 'tools/map02_pc_preoverlay_capture.c'
       - 'tools/map02_pc_preoverlay_capture.h'
       - 'tools/instrument_map02_pc_preoverlay_capture.py'
@@ -283,6 +287,7 @@ jobs:
             tests.test_verify_map02_pc_preoverlay_session \
             tests.test_verify_map02_final_pc_frame_join \
             tests.test_finalize_map02_private_capture \
+            tests.test_seal_map02_private_finalization \
             tests.test_check_map02_pc_present_rgb24_source \
             tests.test_instrument_map02_pc_preoverlay_capture \
             tests.test_map02_pc_preoverlay_capture \
