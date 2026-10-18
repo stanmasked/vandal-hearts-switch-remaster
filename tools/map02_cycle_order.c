@@ -170,7 +170,7 @@ static struct {
 } published;
 
 static void revoke_invalid_cycle_at_exit(void) {
-    struct stat directory, named, seal_baseline, seal_named;
+    struct stat directory, named, seal_baseline = {0}, seal_named;
     int fd = -1, seal_fd = -1, seal_created = 0, clean = 0, n;
     char data[512];
     if (!published.armed) return;
