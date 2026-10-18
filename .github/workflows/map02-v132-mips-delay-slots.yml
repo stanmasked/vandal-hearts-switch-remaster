@@ -1,0 +1,31 @@
+name: MAP02 v132 MIPS-I branch delay-slot GPU DMA candidates
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v132-mips-delay-slots.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/analyze_map02_v132_mips_delay_slots.py'
+      - 'tests/test_map02_v132_mips_delay_slots.py'
+      - 'tools/analyze_map02_v131_private_mips_mmio.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real-ps1-mips-delay-slot-fixtures:
+    name: delay-slot candidate guard (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify MIPS delay slots and prior private header/reader guards
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_map02_v132_mips_delay_slots.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v131_private_mips_mmio.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v130_native_bounds.py' -v
