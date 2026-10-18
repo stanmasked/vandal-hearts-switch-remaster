@@ -187,6 +187,9 @@ on:
       - 'tools/check_map02_v147_native_bounded_c.py'
       - 'tools/check_map02_v147_native_generic_mmio.py'
       - 'tests/test_map02_v147_generic_native_mmio.py'
+      - 'tools/prepare_map02_v148_original_guest_boot.py'
+      - 'tests/test_map02_v148_original_guest_boot.py'
+      - '.github/workflows/map02-v148-original-guest-boot-plan.yml'
       - '.github/workflows/map02-v147-generic-native-mmio.yml'
       - '.github/workflows/map02-v146-fd-native-launch.yml'
       - '.github/workflows/map02-v145-emulator-build-binding.yml'
@@ -309,6 +312,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v145_native_build_binding.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v146_verified_fd_native.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v147_generic_native_mmio.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v148_original_guest_boot.py' -v
           python3 -m remaster.tools.check_map02_v147_native_bounded_c --cc "${{ matrix.cc }}" \
             | grep -Fx 'VH147_COMPILED_BOUNDED_NATIVE_PASS capacity=1024 generic=1 repeated_pc=1 overflow_refused=1 atomic_mode0600=1 no_overwrite=1 original_retail=0'
           python3 -m remaster.tools.check_map02_v144_native_challenge_c --cc "${{ matrix.cc }}" \
@@ -1667,6 +1671,8 @@ jobs:
           report["v146_pathname_swap_after_verification_refused"]=True
           report["v147_native_generic_1024_event_collector_source_bound"]=True
           report["v147_bounded_overflow_and_repeated_pc_tested"]=True
+          report["v148_original_us_guest_entry_preflight_synthetic_tested"]=True
+          report["v148_original_game_runtime_boot_unverified"]=True
           report["retail_map02_gpu_rendering_verified"]=False
           Path("proof/public/v129-four-real-vblank-profiles-summary.json").write_text(
               json.dumps(report,sort_keys=True)+"\n")

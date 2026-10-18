@@ -1,0 +1,34 @@
+name: MAP02 v148 private original PS-X guest entry and memory preflight
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v148-original-guest-boot-plan.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/prepare_map02_v148_original_guest_boot.py'
+      - 'tests/test_map02_v148_original_guest_boot.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  private-source-guest-entry:
+    name: synthetic-only guest entry, BSS and RAM safety (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check source-bound PS-X boot plan, enforce original-only CLI
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          no_retail_exe_in_public_tests=1
+          readonly no_retail_exe_in_public_tests
+          test "$no_retail_exe_in_public_tests" = 1
+          python3 -m unittest discover -s tests -p 'test_map02_v148_original_guest_boot.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v147_generic_native_mmio.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v136_original_code_sections.py' -v
+          echo "VH148_SYNTHETIC_GUEST_ENTRY_PREFLIGHT_PASS original_retail_executed=0"
