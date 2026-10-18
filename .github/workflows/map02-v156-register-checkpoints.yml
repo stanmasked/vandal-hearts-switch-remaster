@@ -1,0 +1,35 @@
+name: MAP02 v156 four-opcode native MIPS register effect checkpoints
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v156-register-checkpoints.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v156_register_checkpoints.py'
+      - 'tests/test_map02_v156_register_checkpoints.py'
+      - 'tools/apply_map02_v155_four_instruction_native.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  register-effects:
+    name: compiled native register effects (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile native MIPS-I register checkpoints and prior regressions
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v156_register_checkpoints.py tests/test_map02_v156_register_checkpoints.py
+          python3 -m unittest discover -s tests -p 'test_map02_v156_register_checkpoints.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v155_four_instruction_native.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v154_third_instruction_mutation.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v153_second_instruction_mutation.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v152_fetch_opcode_witness.py' -v
+          echo 'VH156_NATIVE_REGISTER_REGRESSIONS_PASS original_retail_executed=0 map02_rendered=0'
