@@ -86,15 +86,30 @@ def patch_frontend(source: str) -> str:
         "\textern unsigned vh162_gpu_parse_faults(void);\n"
         "\textern int vh162_disarm_gpu_parser(void);\n",
         "declare genuine gpulib parser and flush witness")
+    # Earlier synthetic modes may leave unrelated pending GPU state input.
+    # Drain it BEFORE v161 takes its starting queue index; otherwise v161
+    # would falsely regard a valid new store as an index mismatch.
+    source=once(source,
+        "                    if(vh161_arm_gpu_queue()!=0){\n",
+        "                    /* Synthetic-only preflight: drain unrelated prior\n"
+        "                     * GP0 input before arming exact-one observers. */\n"
+        "                    if(!GPU_readStatus){\n"
+        '                        SysPrintf("VH162_GPU_PREFLIGHT_REFUSED\\\n");\\n'
+        "                        (void)vh160_disarm_plugin_callback();\n"
+        "                        ClosePlugins();SysClose();menu_finish();plat_finish();return 66;\n"
+        "                    }\n"
+        "                    (void)GPU_readStatus();\n"
+        "                    if(vh161_arm_gpu_queue()!=0){\n",
+        "normalize pending synthetic GPU command input before v161")
     arm=(
         "                    if(vh161_arm_gpu_queue()!=0){\n"
-        '                        SysPrintf("VH161_QUEUE_ARM_REFUSED\\n");\n'
+        '                        SysPrintf("VH161_QUEUE_ARM_REFUSED\n");\n'
         "                        (void)vh160_disarm_plugin_callback();\n"
         "                        ClosePlugins();SysClose();menu_finish();plat_finish();return 64;\n"
         "                    }\n")
     source=once(source,arm,arm+
         "                    if(vh162_arm_gpu_parser()!=0){\n"
-        '                        SysPrintf("VH162_PARSER_ARM_REFUSED\\n");\n'
+        '                        SysPrintf("VH162_PARSER_ARM_REFUSED\n");\n'
         "                        (void)vh161_disarm_gpu_queue();\n"
         "                        (void)vh160_disarm_plugin_callback();\n"
         "                        ClosePlugins();SysClose();menu_finish();plat_finish();return 65;\n"
@@ -104,7 +119,7 @@ def patch_frontend(source: str) -> str:
         "                    /* Synthetic test only: original GPU read-status\n"
         "                     * flushes the genuine gpulib command buffer. */\n"
         "                    if(!GPU_readStatus){\n"
-        '                        SysPrintf("VH162_GPU_STATUS_CALLBACK_REFUSED\\n");\n'
+        '                        SysPrintf("VH162_GPU_STATUS_CALLBACK_REFUSED\n");\n'
         "                        ClosePlugins();SysClose();menu_finish();plat_finish();return 66;\n"
         "                    }\n"
         "                    (void)GPU_readStatus();\n"
@@ -134,13 +149,13 @@ def patch_frontend(source: str) -> str:
     source=once(source,
         '                        SysPrintf("VH161_NATIVE_FIFTH_QUEUE_REFUSED"',
         '                        SysPrintf("VH162_NATIVE_FIFTH_PARSE_REFUSED"'
-        '" parsed=0 flushed=0 original_retail=0\\n");\n'
+        '" parsed=0 flushed=0 original_retail=0\n");\n'
         '                        SysPrintf("VH161_NATIVE_FIFTH_QUEUE_REFUSED"',
         "emit strict corrupted-fifth parser absence marker")
     source=once(source,
         '                    SysPrintf("VH161_NATIVE_GPULIB_QUEUE_PASS"',
         '                    SysPrintf("VH162_NATIVE_GPULIB_PARSE_FLUSH_PASS"'
-        '" parsed=1 flushed=1 original_retail=0\\n");\n'
+        '" parsed=1 flushed=1 original_retail=0\n");\n'
         '                    SysPrintf("VH161_NATIVE_GPULIB_QUEUE_PASS"',
         "emit native parse and buffer drain success marker")
     return source
