@@ -174,10 +174,20 @@ class SealedMakeOverlayTests(unittest.TestCase):
 
     def test_tracked_header_tamper_rejected_before_make(self):
         (self.pc / "src/map02_fixture.h").write_text("#define VH_TEST_GPU 999\n")
-        with patch.object(sealed.subprocess, "run") as spy:
+        actual_run = subprocess.run
+        make_invoked = []
+        def only_allow_compiler_queries(args, **kwargs):
+            if ("map02-private-gpu-preprocess" in args
+                    or "map02-private-gpu-dependencies" in args
+                    or "map02-private-gpu-objects" in args):
+                make_invoked.append(True)
+                raise AssertionError("Make ran after a failed header audit")
+            return actual_run(args, **kwargs)
+        with patch.object(sealed.subprocess, "run",
+                          side_effect=only_allow_compiler_queries):
             with self.assertRaisesRegex(ValueError, "header differs from Git blob"):
                 self.run_build("build-map02-header-corrupt")
-            spy.assert_not_called()
+        self.assertFalse(make_invoked)
 
     def test_staged_header_mutation_is_refused(self):
         check = sealed._recheck_headers

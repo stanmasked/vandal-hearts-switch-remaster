@@ -367,6 +367,13 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
                 "VH_MAP02_PRIVATE_PREPROCESS_DIR=" + temp,
                 "map02-private-gpu-preprocess",
             ])
+            run_make(base + [
+                "VH_MAP02_PRIVATE_GPU_C=" + fd_path(builder.GENERATED_GPU),
+                "VH_MAP02_PRIVATE_RASTER_C=" + fd_path(builder.GENERATED_RASTER),
+                "VH_MAP02_PRIVATE_INCLUDE_FLAGS=" + include_flags,
+                "VH_MAP02_PRIVATE_PREPROCESS_DIR=" + temp,
+                "map02-private-gpu-dependencies",
+            ])
             _check_header_watch(watch_fd)
             _recheck_headers(snapshot, staged_headers, files)
             _check_header_watch(watch_fd)
