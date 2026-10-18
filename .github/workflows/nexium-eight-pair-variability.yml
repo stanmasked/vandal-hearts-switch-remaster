@@ -8,6 +8,8 @@ on:
       - .github/workflows/nexium-eight-pair-variability.yml
       - tools/analyze_nexium_idle_switch_variability.py
       - tools/analyze_nexium_steady_state.py
+      - tools/analyze_nexium_steady_segments.py
+      - tests/test_analyze_nexium_steady_segments.py
       - tests/test_analyze_nexium_steady_state.py
       - tests/test_analyze_nexium_idle_switch_variability.py
   workflow_dispatch:
@@ -138,6 +140,29 @@ jobs:
           print("Common guest seconds 1-51 per mode:",
                 record["steady_pair_verdict"]["totals"],
                 record["steady_pair_verdict"]["rates"])
+          PY
+          python3 tools/analyze_nexium_steady_segments.py \
+            --verified-steady-state verified-pairs/steady-state-only-s1-to-s51.json \
+            --output verified-pairs/steady-state-three-17s-segments.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path("verified-pairs")
+          full=json.loads((root/"steady-state-only-s1-to-s51.json").read_text())
+          result=json.loads((root/"steady-state-three-17s-segments.json").read_text())
+          if (result["result"]!="STAGE279_VERIFIED_TEMPORAL_THIRDS_RECONCILED"
+                  or result["pair_count"]!=8
+                  or result["segment_count"]!=3
+                  or [(s["first_guest_second"],s["last_guest_second"])
+                      for s in result["segments"]] != [(1,17),(18,34),(35,51)]
+                  or result["physical_switch_tested"] is not False
+                  or result["music_switch_causal_effect_proven"] is not False):
+              raise SystemExit("invalid Stage280 temporal sensitivity report")
+          for key,value in full["steady_pair_verdict"]["totals"].items():
+              if sum(s["totals"][key] for s in result["segments"])!=value:
+                  raise SystemExit("Stage280 partitions lost complete-window counts")
+          print("Per-third switching minus idle audout rates:",
+                [s["switch_minus_idle_per_1000"] for s in result["segments"]])
           PY
           sha256sum "$RUNNER_TEMP/neXium-eight/"*.zip \
             > verified-pairs/repacked-source-archives.sha256

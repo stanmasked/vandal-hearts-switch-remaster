@@ -64,6 +64,12 @@ def subwindow(raw_latency:bytes,raw_clock:bytes,raw_slow:bytes)->dict:
     first_slow=[c for c in startup if c["attempt"]==1]
     return {
         **counts,
+        # Already checked against the independent exact slow-call timestamps.
+        "per_second":[{
+            "second":b["second"],"attempts":b["attempts"],
+            "ge40":b["from40to50ms"]+b["ge50ms"],
+            "ge50":b["ge50ms"],
+        } for b in selected],
         "first_guest_second":BEGIN_SECOND,
         "last_guest_second":END_SECOND,
         "seconds_compared":WINDOW_COUNT,
