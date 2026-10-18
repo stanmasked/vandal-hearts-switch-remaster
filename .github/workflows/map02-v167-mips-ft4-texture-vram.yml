@@ -1,0 +1,33 @@
+name: MAP02 v167 MIPS GP0 A0 upload FT4 STP ABR native VRAM
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v167-mips-ft4-texture-vram.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v167_mips_ft4_texture_vram.py'
+      - 'tests/test_map02_v167_mips_ft4_texture_vram.py'
+      - 'tools/make_map02_v72_ft4_mips_exe.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  mips-ft4-texture:
+    name: guest MIPS GP0 A0 and textured FT4 proof (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile 72 GP0 word MMIO source-PC positive/negative cases
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v167_mips_ft4_texture_vram.py tests/test_map02_v167_mips_ft4_texture_vram.py
+          python3 -m unittest discover -s tests -p 'test_map02_v167_mips_ft4_texture_vram.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v72_ft4_oracle.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v166_mips_pc_gp0_vram.py' -v
+          echo 'VH167_COMPILED_MIPS_FT4_PASS original_retail_executed=0 source_authored_gp0_words=72 switch_hd_parity=0'
