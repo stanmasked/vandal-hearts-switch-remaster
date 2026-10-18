@@ -166,6 +166,9 @@ int main(void) {
             "--vh165-mips-gp0-vram-bound",
             "VH165_GUEST_MIPS_GP0_VRAM_BOUND_PASS",
             "VH165_GP0_TRIPLET_REFUSED",
+            "VH165_GP0_TRIPLET_REFUSED phase=0",
+            "V165_BAD_COLOR.EXE",
+            "ops[index]^1",
             "VH121_EXE_REFUSED",
         ):
             self.assertIn(marker,native)
