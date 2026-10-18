@@ -39,6 +39,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_analyze_nexium_steady_segments.py' -v
       - name: Stage 281 leave-one-pair-out three-window sensitivity regressions
         run: python3 -m unittest discover -s tests -p 'test_analyze_nexium_steady_segment_sensitivity.py' -v
+      - name: Stage 282 same-pair temporal contrast and drift regressions
+        run: python3 -m unittest discover -s tests -p 'test_analyze_nexium_steady_temporal_contrasts.py' -v
       - name: Statistical sensitivity of complete paired NeXium audio sessions
         run: python3 -m unittest discover -s tests -p 'test_analyze_nexium_idle_switch_variability.py' -v
       - name: Multi-pair no-switch original-SD archive negative controls
