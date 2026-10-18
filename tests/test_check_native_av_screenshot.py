@@ -70,6 +70,52 @@ class NativeAVScreenshotTests(unittest.TestCase):
             self.assertNotEqual(denied.returncode, 0)
             self.assertIn("scene-switch marker not confirmed", denied.stderr)
 
+    def test_retry_marker_is_separate_from_clean_resume(self):
+        before,after=make_frames(synthetic_switches=AUDIO_OK)
+        before.putpixel((1050,545),AUDIO_OK)
+        after.putpixel((1050,545),AUDIO_OK)
+        before.putpixel((1180,545),AUDIO_OK)
+        after.putpixel((1180,545),AUDIO_OK)
+        result=inspect_images(before,after)
+        self.assertEqual(result["guest_resume_retry_after_fake_open_failure"],"confirmed")
+        self.assertFalse(result["audible_audio_verified"])
+        with tempfile.TemporaryDirectory() as directory:
+            a=Path(directory)/"before.png"
+            b=Path(directory)/"after.png"
+            cmd=[sys.executable,"tests/check_native_av_screenshot.py",
+                 str(a),str(b),"--require-guest-resume-continuation",
+                 "--require-guest-resume-retry",
+                 "--require-audio-source","synthetic"]
+            before.save(a)
+            after.save(b)
+            accepted=subprocess.run(cmd,capture_output=True,text=True)
+            self.assertEqual(accepted.returncode,0,accepted.stderr)
+            after.putpixel((1180,545),(255,219,102))
+            after.save(b)
+            rejected=subprocess.run(cmd,capture_output=True,text=True)
+            self.assertNotEqual(rejected.returncode,0)
+            self.assertIn("guest synthetic failed-open retry not confirmed",rejected.stderr)
+            before.putpixel((1180,545),AUDIO_FAIL)
+            before.save(a)
+            rejected=subprocess.run(cmd,capture_output=True,text=True)
+            self.assertNotEqual(rejected.returncode,0)
+
+    def test_clean_resume_marker_cannot_fake_failed_open(self):
+        before,after=make_frames(synthetic_switches=AUDIO_OK)
+        before.putpixel((1050,545),AUDIO_OK)
+        after.putpixel((1050,545),AUDIO_OK)
+        with tempfile.TemporaryDirectory() as directory:
+            a=Path(directory)/"before.png"
+            b=Path(directory)/"after.png"
+            before.save(a)
+            after.save(b)
+            rejected=subprocess.run(
+                [sys.executable,"tests/check_native_av_screenshot.py",
+                 str(a),str(b),"--require-guest-resume-retry"],
+                capture_output=True,text=True)
+            self.assertNotEqual(rejected.returncode,0)
+            self.assertIn("guest synthetic failed-open retry not confirmed",rejected.stderr)
+
     def test_guest_x_y_resume_requires_real_pcm_after_each_roundtrip(self):
         before,after=make_frames(synthetic_switches=AUDIO_OK)
         before.putpixel((1050,545),AUDIO_OK)
