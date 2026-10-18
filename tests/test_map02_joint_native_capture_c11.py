@@ -17,12 +17,14 @@ from tools.capture_map02_live_frame_pipe import capture
 from tools.replay_map02_live_frame_receipt import replay
 
 PRODUCER = r'''
+#define _POSIX_C_SOURCE 200809L
 #include "map02_native_frame_pipe.h"
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/stat.h>
 static uint16_t native_vram[512][1024];
 
 static int write_image(const char *dir, const char *name) {
@@ -64,6 +66,18 @@ int main(int argc, char **argv) {
     /* Require the launcher to hand us a pinned inherited directory FD,
      * not a mutable journal pathname or a caller-authored output route. */
     if (strncmp(dir, "/proc/self/fd/", 14) != 0) return 51;
+    if (argc > 1 && !strcmp(argv[1], "swap-journal-path")) {
+        char realpath[2048], parked[2300], redirect[2300];
+        ssize_t n = readlink(dir, realpath, sizeof(realpath) - 1);
+        if (n <= 0) return 52;
+        realpath[n] = '\0';
+        if (snprintf(parked, sizeof(parked), "%s-parked", realpath) >=
+            (int)sizeof(parked) ||
+            snprintf(redirect, sizeof(redirect), "%s-redirect", realpath) >=
+            (int)sizeof(redirect)) return 53;
+        if (rename(realpath, parked) || mkdir(redirect, 0700) ||
+            symlink(redirect, realpath)) return 54;
+    }
     if (vh_map02_frame_pipe_wait_release(STDIN_FILENO) != 0) return 42;
     if (!omit_journal) {
         if (!write_image(dir, "gpu-0000-vram.bin")) return 43;
@@ -158,6 +172,20 @@ class JointNativeCaptureTests(unittest.TestCase):
         receipt = self.run_joint()
         self.assertTrue(receipt["terminal_after_vram_matched"])
         self.assertTrue((self.journal / "gpu-native-events.jsonl").is_file())
+
+    def test_mutable_journal_path_swap_never_redirects_native_writes(self):
+        # The ELF renames the directory and substitutes a symlink after
+        # launch. Writes via /proc/self/fd/N remain in the original inode.
+        # The parent refuses publication when its original pathname
+        # ceases to resolve to the held journal directory.
+        with self.assertRaises(OSError):
+            self.run_joint("swap-journal-path")
+        self.assert_no_published_frame()
+        parked = self.journal.with_name(self.journal.name + "-parked")
+        redirect = self.journal.with_name(self.journal.name + "-redirect")
+        self.assertTrue((parked / "gpu-native-events.jsonl").is_file())
+        self.assertEqual(list(redirect.iterdir()), [])
+        self.assertTrue(self.journal.is_symlink())
 
     def test_wrong_event_frame_refused(self):
         with self.assertRaisesRegex(ValueError, "frame"):
