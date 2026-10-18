@@ -1,0 +1,112 @@
+name: Stage318 independent original guest worker stop source replay
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage318-independent-original-worker-stop.yml'
+      - 'tools/replay_nexium_original_worker_stop_archive.py'
+      - 'tests/test_replay_nexium_original_worker_stop_archive.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  independent-worker-stop:
+    name: Reaudit original guest stop-observed mailbox source, last page, exit and optical
+    runs-on: ubuntu-latest
+    timeout-minutes: 48
+    steps:
+      - name: Checkout current source CRC and guest monotonic auditors
+        uses: actions/checkout@v4
+
+      - name: Install isolated image decoder
+        run: |
+          set -euxo pipefail
+          python3 -m venv /tmp/vh-stage318
+          /tmp/vh-stage318/bin/python -m pip install --disable-pip-version-check 'Pillow>=10,<13'
+
+      - name: Stage318 14 original worker stop source attack and replay controls
+        run: /tmp/vh-stage318/bin/python -m unittest discover -s tests -p 'test_replay_nexium_original_worker_stop_archive.py' -v
+
+      - name: Require exact Stage317 original NeXium producer completed successfully
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # The independent receipt MUST never accept partial source
+          # artifacts or a producer that failed after recording a CSV.
+          for attempt in $(seq 1 150); do
+            status="$(gh api repos/${GITHUB_REPOSITORY}/actions/runs/39150385701 --jq '.status')"
+            conclusion="$(gh api repos/${GITHUB_REPOSITORY}/actions/runs/39150385701 --jq '.conclusion // "pending"')"
+            if [[ "$status" == completed ]]; then
+              test "$conclusion" == success || {
+                echo "Stage317 original guest source run failed: $conclusion" >&2
+                exit 1
+              }
+              echo "Stage317 real NeXium original source run successfully completed"
+              break
+            fi
+            if (( attempt == 150 )); then
+              echo "Stage317 original guest source not published during bounded check" >&2
+              exit 1
+            fi
+            sleep 15
+          done
+
+      - name: Download exact original Stage317 NeXium evidence archive
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39150385701
+          github-token: ${{ github.token }}
+          path: original-stage317-neXium
+
+      - name: Independently replay original worker stop, audout, exit and guest optical CRC
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p independently-reaudited-stage318
+          /tmp/vh-stage318/bin/python tools/replay_nexium_original_worker_stop_archive.py \
+            --original-run-id 39150385701 \
+            --archive original-stage317-neXium \
+            --output independently-reaudited-stage318/worker-stop-original-stage318.json
+          /tmp/vh-stage318/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path(
+              "independently-reaudited-stage318/worker-stop-original-stage318.json").read_text())
+          if (r["schema"]!="vh-original-guest-worker-stop-independent-archive-replay/v1"
+                  or r["result"]!="ORIGINAL_GUEST_WORKER_STOP_AND_AUDOUT_SOURCES_INDEPENDENTLY_REPLAYED"
+                  or r["original_neXium_workflow_run_id"]!=39150385701
+                  or r["original_guest_worker_stop_source_bytes_independently_reaudited"] is not True
+                  or r["original_guest_exit_and_last_page_bytes_independently_reaudited"] is not True
+                  or r["original_guest_crc_optical_frame_independently_replayed"] is not True
+                  or r["original_stage307_308_310_313_314_receipts_reproduced"] is not True
+                  or r["original_stage317_receipt_reproduced"] is not True
+                  or r["guest_last_page_return_to_worker_stop_observed_ns"]<0
+                  or r["guest_worker_stop_observed_to_cleanup_ns"]<0
+                  or r["guest_mailbox_stop_not_physical_DAC_stop"] is not True
+                  or r["guest_monotonic_not_synchronized_with_host_PCM"] is not True
+                  or r["plus_causes_audible_dropout_verified"] is not False
+                  or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage318 original worker-stop source provenance failure")
+          print("Stage318 independently reaudited worker stop original SHA:",
+                r["original_guest_worker_stop_csv_sha256"])
+          print("Stage318 guest software stop request->last buffer return:",
+                r["guest_stop_request_to_last_page_return_ns"],"ns")
+          print("Stage318 last returned buffer->worker reads stop:",
+                r["guest_last_page_return_to_worker_stop_observed_ns"],"ns")
+          print("Stage318 worker reads stop->enters cleanup:",
+                r["guest_worker_stop_observed_to_cleanup_ns"],"ns")
+          PY
+          echo "Stage318: independently reread ORIGINAL guest-created worker-stop, audout last page, and exit CSV bytes and the original optical CRC source on a separate runner; reproduced Stage307/308/310/313/314/317 reports. Software only, no calibrated host PCM/DAC or audible speaker proof." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish independent SHA-bound report only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage318-independent-original-worker-stop
+          path: independently-reaudited-stage318/
+          if-no-files-found: warn
