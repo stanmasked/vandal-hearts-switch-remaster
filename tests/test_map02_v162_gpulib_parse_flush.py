@@ -25,7 +25,7 @@ from tools.apply_map02_v162_gpulib_parse_flush import (
 def gpu_fixture():
     return r"""
 struct psx_gpu gpu;
-static int do_cmd_buffer(struct psx_gpu *state, uint32_t *data, int count,
+static int do_cmd_buffer(struct psx_gpu *gpu, uint32_t *data, int count,
     int *cycles_sum, int *cycles_last)
 {
     int cmd, pos;
@@ -35,7 +35,7 @@ static int do_cmd_buffer(struct psx_gpu *state, uint32_t *data, int count,
     switch(cmd & 0xe0) {
       case 0xe0:
         if(cmd < 0xe8) {
-          if(state->ex_regs[cmd & 7]==LE32TOH(data[pos])) {
+          if(gpu->ex_regs[cmd & 7]==LE32TOH(data[pos])) {
             pos++;
             continue;
           }
@@ -47,11 +47,11 @@ static int do_cmd_buffer(struct psx_gpu *state, uint32_t *data, int count,
     }
     return count-pos;
 }
-static void flush_cmd_buffer(struct psx_gpu *state)
+static void flush_cmd_buffer(struct psx_gpu *gpu)
 {
   int dummy=0, cycles_last=0, left;
   left = do_cmd_buffer(gpu, gpu->cmd_buffer, gpu->cmd_len, &dummy, &cycles_last);
-  state->cmd_len=left;
+  gpu->cmd_len=left;
 }
 static void GPUwriteData(uint32_t data) {
   gpu.cmd_buffer[gpu.cmd_len++] = HTOLE32(data);
@@ -60,17 +60,12 @@ static uint32_t GPUreadStatus(void) {
   if(gpu.cmd_len>0) flush_cmd_buffer(&gpu);
   return 0;
 }
-""".replace("left = do_cmd_buffer(gpu, gpu->cmd_buffer, gpu->cmd_len, &dummy, &cycles_last);",
-              "left = do_cmd_buffer(state, state->cmd_buffer, state->cmd_len, &dummy, &cycles_last);")
+"""
 
 
 class NativeGpulibParseFlush162(unittest.TestCase):
     def test_exact_parser_and_flush_anchors(self):
-        # The runtime uses the pointer name gpu at this location, but the
-        # compiled fixture uses state; preserve this exact anchor in tests.
-        src=gpu_fixture().replace(
-            "left = do_cmd_buffer(state, state->cmd_buffer, state->cmd_len, &dummy, &cycles_last);",
-            FLUSH_ANCHOR)
+        src=gpu_fixture()
         patched=patch_gpu(src)
         self.assertIn("vh162_note_gpu_parse(gpu, data, pos, count, cmd);",patched)
         self.assertIn("vh162_note_gpu_flush(gpu, left);",patched)
@@ -112,9 +107,7 @@ class NativeGpulibParseFlush162(unittest.TestCase):
         cc=os.environ.get("CC","cc")
         if not shutil.which(cc):
             self.skipTest("no C compiler")
-        fixture=gpu_fixture().replace(
-            "left = do_cmd_buffer(state, state->cmd_buffer, state->cmd_len, &dummy, &cycles_last);",
-            FLUSH_ANCHOR)
+        fixture=gpu_fixture()
         c=r"""
 #include <stdint.h>
 #include <stdio.h>
