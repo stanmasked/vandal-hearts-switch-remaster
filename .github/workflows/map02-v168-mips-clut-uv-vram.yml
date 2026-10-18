@@ -1,0 +1,33 @@
+name: MAP02 v168 self-authored MIPS 4bpp 8bpp CLUT UV E2 to Unai VRAM
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v168-mips-clut-uv-vram.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v168_mips_clut_uv_vram.py'
+      - 'tests/test_map02_v168_mips_clut_uv_vram.py'
+      - 'tools/make_map02_v74_indexed_clut_exe.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  indexed-clut-uv:
+    name: actual guest MIPS 4bpp 8bpp CLUT origin checks (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile indexed FT4 GPU source-PC, CLUT and E2 negative cases
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v168_mips_clut_uv_vram.py tests/test_map02_v168_mips_clut_uv_vram.py
+          python3 -m unittest discover -s tests -p 'test_map02_v168_mips_clut_uv_vram.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v74_indexed_clut.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v167_mips_ft4_texture_vram.py' -v
+          echo 'VH168_COMPILED_GUEST_CLUT_UV_PASS original_retail_executed=0 gp0_words=211 texture_mode_4bpp=1 texture_mode_8bpp=1 switch_hd_parity=0'

@@ -206,6 +206,9 @@ on:
       - 'tools/apply_map02_v165_guest_gp0_pixel_binding.py'
       - 'tools/apply_map02_v166_mips_pc_gp0_vram.py'
       - 'tools/apply_map02_v167_mips_ft4_texture_vram.py'
+      - 'tools/apply_map02_v168_mips_clut_uv_vram.py'
+      - 'tests/test_map02_v168_mips_clut_uv_vram.py'
+      - '.github/workflows/map02-v168-mips-clut-uv-vram.yml'
       - 'tests/test_map02_v167_mips_ft4_texture_vram.py'
       - '.github/workflows/map02-v167-mips-ft4-texture-vram.yml'
       - 'tests/test_map02_v166_mips_pc_gp0_vram.py'
@@ -386,6 +389,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v165_guest_gp0_pixel_binding.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v166_mips_pc_gp0_vram.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v167_mips_ft4_texture_vram.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v168_mips_clut_uv_vram.py' -v
           python3 -m remaster.tools.check_map02_v147_native_bounded_c --cc "${{ matrix.cc }}" \
             | grep -Fx 'VH147_COMPILED_BOUNDED_NATIVE_PASS capacity=1024 generic=1 repeated_pc=1 overflow_refused=1 atomic_mode0600=1 no_overwrite=1 original_retail=0'
           python3 -m remaster.tools.check_map02_v144_native_challenge_c --cc "${{ matrix.cc }}" \
@@ -406,7 +410,10 @@ jobs:
           git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
           git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
-          python3 -m remaster.tools.apply_map02_v167_mips_ft4_texture_vram upstream-pcsx
+          python3 -m remaster.tools.apply_map02_v168_mips_clut_uv_vram upstream-pcsx
+          grep -F 'vh168_note_clut_mips_sw(regs,mem,value)' upstream-pcsx/libpcsxcore/psxmem.c
+          grep -F 'VH168_GUEST_MIPS_CLUT_UV_VRAM_PASS' upstream-pcsx/frontend/main.c
+          grep -F 'VH168_CLUT_MIPS_GP0_REFUSED' upstream-pcsx/frontend/main.c
           grep -F 'vh167_observe_ft4_origin(regs,mem,value)' upstream-pcsx/libpcsxcore/psxmem.c
           grep -F 'VH167_GUEST_MIPS_FT4_VRAM_PASS' upstream-pcsx/frontend/main.c
           grep -F 'VH167_FT4_MIPS_GP0_REFUSED' upstream-pcsx/frontend/main.c
@@ -1266,6 +1273,65 @@ jobs:
           if grep -Fq 'VH167_GUEST_MIPS_FT4_VRAM_PASS' \
               proof/private/v167-bad-ft4.log; then
             echo 'VH167_BAD_FT4_GPU_FALSE_ACCEPT_REFUSED'
+            exit 1
+          fi
+          # Indexed PS1 4bpp/8bpp CLUT, UV, TPage, E2 texture window
+          # and palette index0 transparent FT4, all authored by guest
+          # MIPS SW. Full 211-word PC provenance + 399 native VRAM pixels.
+          python3 -m remaster.tools.make_map02_v74_indexed_clut_exe \
+            --output proof/private/V168_SYNTHETIC.EXE
+          mkdir -m 700 proof/v168-clut-home
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v168-clut-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh168-mips-clut-uv-vram proof/private/V168_SYNTHETIC.EXE \
+            > proof/private/v168-clut-uv.log 2>&1 || {
+              tail -n 90 proof/private/v168-clut-uv.log
+              exit 1
+            }
+          grep -Fx 'VH168_GUEST_MIPS_CLUT_UV_VRAM_PASS gp0_words=211 gp1_words=1 a0_uploads=4 ft4=4 pixels_checked=399 clut4=16 clut8=16 e2_window=16 transparent=16 guard=335 original_retail=0' \
+            proof/private/v168-clut-uv.log
+          grep -Fx 'VH74_VRAM_PASS checked=399 clut4=16 clut8=16 window=16 transparent=16 guard=335' \
+            proof/private/v168-clut-uv.log
+          # Change exactly one source-authored MIPS LUI that sets the
+          # first opaque FT4 GP0(2D) to semi FT4 GP0(2F).
+          # Synthetic EXE identity tag remains intact. The MIPS
+          # source/GP0 observer must reject it BEFORE VRAM credit.
+          python3 - <<'PY'
+          from pathlib import Path
+          from struct import pack
+          from remaster.tools.make_map02_v74_indexed_clut_exe import (
+              build,GP0_SEQUENCE,HEADER_SIZE,lui
+          )
+          raw,end,opcodes=build()
+          assert raw==Path("proof/private/V168_SYNTHETIC.EXE").read_bytes()
+          first=next(i for i,w in enumerate(GP0_SEQUENCE) if w==0x2d000000)
+          assert first==170
+          index=6+3*first
+          assert opcodes[index]==lui(9,0x2d00)
+          altered=bytearray(raw)
+          altered[HEADER_SIZE+4*index:HEADER_SIZE+4*index+4]=pack(
+              "<I",opcodes[index]^0x0200)
+          assert altered[0x4c:0x54]==b"VH74SYN!"
+          assert len(altered)==len(raw)
+          target=Path("proof/private/V168_BAD_CLUT.EXE")
+          assert not target.exists()
+          target.write_bytes(altered)
+          PY
+          mkdir -m 700 proof/v168-bad-clut-home
+          vh168_bad_rc=0
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v168-bad-clut-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh168-mips-clut-uv-vram proof/private/V168_BAD_CLUT.EXE \
+            > proof/private/v168-bad-clut.log 2>&1 || vh168_bad_rc=$?
+          test "$vh168_bad_rc" -eq 74
+          grep -F 'VH168_CLUT_MIPS_GP0_REFUSED' proof/private/v168-bad-clut.log
+          if grep -Fq 'VH168_GUEST_MIPS_CLUT_UV_VRAM_PASS' \
+              proof/private/v168-bad-clut.log; then
+            echo 'VH168_BAD_FT4_CLUT_FALSE_ACCEPT_REFUSED'
             exit 1
           fi
           # Retain valid signed synthetic EXE / CPU stage markers, but
@@ -2528,6 +2594,12 @@ jobs:
           report["v167_native_ft4_quad_count"]=4
           report["v167_exact_vram_pixels_checked"]=378
           report["v167_original_retail_map02_unverified"]=True
+          report["v168_guest_mips_indexed_clut_gp0_words"]=211
+          report["v168_guest_mips_gp1_reset"]=1
+          report["v168_guest_clut_palette_uploads"]=4
+          report["v168_guest_indexed_textured_quads"]=4
+          report["v168_indexed_clut_uv_pixels_checked"]=399
+          report["v168_original_retail_map02_unverified"]=True
           report["retail_map02_gpu_rendering_verified"]=False
           Path("proof/public/v129-four-real-vblank-profiles-summary.json").write_text(
               json.dumps(report,sort_keys=True)+"\n")
