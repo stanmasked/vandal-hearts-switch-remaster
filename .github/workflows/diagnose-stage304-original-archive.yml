@@ -194,7 +194,14 @@ jobs:
                                str([(p["pcm_file_size_delta_bytes"],
                                      p["host_epoch_delta_ms"])
                                     for p in doc["original_host_control_adjacent_pairs"]])+
-                               "\\n")
+                               "\n")
+                  flags = [(p["original_buffer_size_decreased"],
+                            p["host_epoch_was_not_strictly_increasing"])
+                           for p in doc["original_host_control_adjacent_pairs"]]
+                  output.write("- File size decreased in adjacent pair: "+
+                               str(any(x[0] for x in flags))+"\n")
+                  output.write("- Host timestamp non-increasing in adjacent pair: "+
+                               str(any(x[1] for x in flags))+"\n")
               output.write("- An archived input missing now does not identify "+
                            "the original in-run failure cause.\n")
           PY
