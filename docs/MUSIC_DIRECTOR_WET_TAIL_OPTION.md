@@ -88,6 +88,28 @@ not evidence of hardware audio playback. Neither variant bundles
 original PS1 SEQ, VAB or PCM assets. The normal build and its current
 libnx audout smoke target remain untouched by the opt-in flag.
 
+### Experimental NeXium runtime validation
+
+The existing `.github/workflows/emulator-smoke.yml` now builds a
+**third, isolated** `build-wet-tail-1` NRO alongside the historical
+default and phase8 diagnostic versions. It publishes the experimental
+NRO with a JSON manifest containing the exact Git commit SHA, workflow
+run/attempt, 1-mode flag, NRO byte size, SHA256 and legacy baseline
+SHA256. The emulator runner rechecks these values against the downloaded
+NRO before launch.
+
+The existing NeXium runner attempts the same framebuffer and tactical
+input smoke probes against both the legacy NRO and the opt-in NRO.
+Screenshots and guest process logs are retained in the existing
+`nexium-runtime-evidence` artifact. The experimental build does
+**not** include copyrighted source-game assets, and the identical input
+probe does not establish STUDIO_C audio correctness.
+
+**Do not call this test passed based on a queued workflow or a compiled
+NRO.** Require a completed, successful NeXium run and examine the
+per-mode screenshots/logs. Even a successful virtual launch does not
+establish actual speaker or handheld Switch output.
+
 ## Verification and limitations
 
 The synthetic regression compares an opt-in director with an unmodified
