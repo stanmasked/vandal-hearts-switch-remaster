@@ -48,9 +48,13 @@ on:
       - 'tests/test_audit_nexium_audout_repeatability.py'
       - 'tools/verify_switch_runtime_nro.py'
       - 'tests/test_verify_switch_runtime_nro.py'
+      - 'tools/verify_switch_wet_tail_nro.py'
+      - 'tests/test_verify_switch_wet_tail_nro.py'
       - 'tests/test_audit_nexium_audout_queue.py'
       - 'tests/check_nro.py'
       - 'tools/analyze_nexium_scene_audio.py'
+      - 'tools/audit_nexium_wet_tail_scene_pair.py'
+      - 'tests/test_audit_nexium_wet_tail_scene_pair.py'
       - 'tools/analyze_nexium_pcm_stream_integrity.py'
       - 'tools/analyze_nexium_pcm_scene_silence.py'
       - 'tests/test_analyze_nexium_pcm_scene_silence.py'
@@ -118,6 +122,7 @@ jobs:
           python3 -m unittest discover -s tests -p "test_audit_nexium_audout_repeatability.py" -v
           python3 -m unittest discover -s tests -p "test_analyze_nexium_audout_window_maxima.py" -v
           python3 -m unittest discover -s tests -p "test_verify_switch_runtime_nro.py" -v
+          python3 -m unittest discover -s tests -p "test_verify_switch_wet_tail_nro.py" -v
           python3 -m unittest discover -s tests -p "test_analyze_nexium_transition_timing.py" -v
           python3 -m unittest discover -s tests -p "test_audit_nexium_guest_sd_handoff.py" -v
           bash -n tools/capture_nexium_scene_soak.sh
@@ -136,6 +141,10 @@ jobs:
           # Keep artifact's root at build/ so the historical NRO path
           # nros/vandal-hearts-prototype.nro does not change.
           cp build-phase8/vandal-hearts-prototype.nro build/vandal-hearts-phase8.nro
+          # Strictly separate variant from baseline and phase8.
+          make BUILD=build-wet-tail-1 GAME_AUDIO_WET_TAIL=1 all
+          test -s build-wet-tail-1/vandal-hearts-prototype.nro
+          cp build-wet-tail-1/vandal-hearts-prototype.nro build/vandal-hearts-wet-tail.nro
 
       - name: Bind NRO bytes to current source revision and workflow run
         shell: bash
@@ -173,7 +182,25 @@ jobs:
               raise SystemExit("phase8 NRO is identical to phase0 baseline")
           Path("build/runtime-phase8-manifest.json").write_text(
               json.dumps(phase8,sort_keys=True)+"\n",encoding="ascii")
-          print(json.dumps({"baseline":record,"experiment":phase8},sort_keys=True))
+          wet_nro=Path("build/vandal-hearts-wet-tail.nro")
+          wet_bytes=wet_nro.read_bytes()
+          wet={
+              "schema":"vh-switch-explicit-wet-tail/v1",
+              "git_sha":os.environ["GITHUB_SHA"],
+              "run_id":int(os.environ["GITHUB_RUN_ID"]),
+              "run_attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "mode":1,
+              "nro_name":wet_nro.name,
+              "nro_bytes":len(wet_bytes),
+              "nro_sha256":hashlib.sha256(wet_bytes).hexdigest(),
+              "baseline_sha256":record["nro_sha256"],
+          }
+          if wet["nro_sha256"]==record["nro_sha256"]:
+              raise SystemExit("wet-tail NRO identical to legacy baseline")
+          Path("build/runtime-wet-tail-manifest.json").write_text(
+              json.dumps(wet,sort_keys=True)+"\n",encoding="ascii")
+          print(json.dumps({"baseline":record,"experiment":phase8,
+                            "wet_tail":wet},sort_keys=True))
           PY
 
       - name: Upload NROs for emulator smoke test
@@ -192,6 +219,15 @@ jobs:
           path: |
             build/vandal-hearts-phase8.nro
             build/runtime-phase8-manifest.json
+          if-no-files-found: error
+
+      - name: Upload opt-in wet-tail NRO from this same run
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-smoke-wet-tail
+          path: |
+            build/vandal-hearts-wet-tail.nro
+            build/runtime-wet-tail-manifest.json
           if-no-files-found: error
 
   run-in-emulator:
@@ -214,6 +250,22 @@ jobs:
         with:
           name: runtime-smoke-phase8
           path: phase8
+
+      - name: Download same-run experimental wet-tail NRO
+        uses: actions/download-artifact@v4
+        with:
+          name: runtime-smoke-wet-tail
+          path: wet-tail
+
+      - name: Verify wet-tail pair with tampering-tested, same-run gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/verify_switch_wet_tail_nro.py nros wet-tail \
+            --git-sha "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            | tee wet-tail-pair-preflight.json
 
       - name: Require NRO from current run, commit and attempt
         shell: bash
@@ -535,6 +587,9 @@ jobs:
           }
 
           run_probe "nros/vandal-hearts-prototype.nro" "libnx-framebuffer" "1"
+          # Capture the opted-in version through the same NeXium and
+          # input probe. No assertions about audible speaker output.
+          run_probe "wet-tail/vandal-hearts-wet-tail.nro" "libnx-wet-tail" "1"
           exit "$result"
 
       - name: Capture guest audio through isolated PulseAudio monitor
@@ -668,6 +723,85 @@ jobs:
             runtime-evidence/scene-events.csv \
             --output runtime-evidence/scene-transition-observations.json
           python3 -m json.tool runtime-evidence/scene-transition-observations.json > /dev/null
+
+      - name: Capture experimental wet-tail virtual PCM across A/B scenes
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n tools/capture_nexium_scene_audio.sh
+          # Reuse the SAME verified research NRO as the optical smoke.
+          # Separate SD and output paths from the original baseline.
+          SCENE_CAPTURE_TAG=wet-tail \
+          SCENE_NRO=wet-tail/vandal-hearts-wet-tail.nro \
+            bash tools/capture_nexium_scene_audio.sh runtime-evidence/wet-tail-scenes
+          python3 tools/analyze_nexium_transition_timing.py \
+            runtime-evidence/wet-tail-scenes/nexium-scenes-s16le-48k.pcm \
+            runtime-evidence/wet-tail-scenes/scene-events.csv \
+            --output runtime-evidence/wet-tail-scenes/transition-timing.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image,ImageChops
+          root=Path("runtime-evidence/wet-tail-scenes")
+          report=json.loads((root/"scene-audio-report.json").read_text())
+          timing=json.loads((root/"transition-timing.json").read_text())
+          source=json.loads(Path("wet-tail-pair-preflight.json").read_text())
+          labels=("field_initial","focus_1","field_1","focus_2","field_2")
+          screenshots=[Image.open(root/f"scene-{label}.png").convert("RGB")
+                       for label in labels]
+          if (any(img.size!=(1280,720) for img in screenshots)
+                  or report["schema"]!="vh-nexium-scene-audio/v1"
+                  or len(report["intervals"])!=5
+                  or [x["scene"] for x in report["intervals"]]!=list(labels)
+                  or report["result"]!="REPEATED_SCENE_CORRELATED_PCM_CHANGE"
+                  or report["hardware_status"]!="HARDWARE NOT TESTED"
+                  or report["audible_music_confirmed"] is not False
+                  or timing["pcm_sha256"]!=report["pcm_sha256"]
+                  or timing["timing_result"]!="HOST_RELATIVE_DETECTION_ONLY"
+                  or len(timing["transitions"])!=4
+                  or not all(x["stable_expected_scene_detected"]
+                             for x in timing["transitions"])
+                  or source["result"]!="SAME_RUN_WET_TAIL_NRO_PAIR_VERIFIED"):
+              raise SystemExit("opt-in wet-tail scene PCM or source evidence insufficient")
+          pixels=[]
+          for before,after in zip(screenshots,screenshots[1:]):
+              delta=ImageChops.difference(
+                  before.crop((960,600,1140,638)),
+                  after.crop((960,600,1140,638)))
+              pixels.append(sum(1 for rgb in delta.getdata()
+                                if max(rgb)>24))
+          if min(pixels)<25:
+              raise SystemExit("opt-in screenshot music labels did not toggle")
+          result={
+              "schema":"vh-nexium-opt-in-scene-pcm/v1",
+              "result":"SAME_RUN_OPT_IN_VIRTUAL_PCM_SCENES_OBSERVED",
+              "git_sha":source["git_sha"],
+              "run_id":source["run_id"],
+              "wet_tail_nro_sha256":source["wet_tail_sha256"],
+              "scene_pcm_sha256":report["pcm_sha256"],
+              "music_label_changed_pixels":pixels,
+              "hardware_status":"HARDWARE NOT TESTED",
+              "speaker_audio_not_verified":True,
+              "host_timing_not_guest_sample_accurate":True,
+              "wet_tail_effect_causality_not_proven":True
+          }
+          (root/"opt-in-scene-witness.json").write_text(
+              json.dumps(result,sort_keys=True,indent=2)+"\n")
+          print(json.dumps(result,sort_keys=True))
+          PY
+
+      - name: Audit independent baseline versus wet-tail virtual PCM scenes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_nexium_wet_tail_scene_pair.py' -v
+          python3 tools/audit_nexium_wet_tail_scene_pair.py \
+            runtime-evidence wet-tail-pair-preflight.json \
+            --output runtime-evidence/wet-tail-scene-pair-summary.json
+          python3 -m json.tool \
+            runtime-evidence/wet-tail-scene-pair-summary.json >/dev/null
+          echo "Two independently buffered virtual PCM scene captures validated; not sample-aligned and no wet-tail causality claim." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify observed framebuffer music labels and scene evidence
         shell: bash
@@ -1516,4 +1650,5 @@ jobs:
           path: |
             runtime-evidence/
             integrated-nro-preflight.json
+            wet-tail-pair-preflight.json
           if-no-files-found: warn

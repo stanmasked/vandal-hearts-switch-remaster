@@ -7,6 +7,14 @@
 #if VH_AUDOUT_PROBE_PHASE < 0 || VH_AUDOUT_PROBE_PHASE >= 16
 #error "VH_AUDOUT_PROBE_PHASE must be in [0,15]"
 #endif
+/* Only research NROs may enable the optional inter-cue STUDIO_C tail.
+ * Ordinary game builds always retain the historical reset behavior. */
+#ifndef VH_GAME_AUDIO_WET_TAIL
+#define VH_GAME_AUDIO_WET_TAIL 0
+#endif
+#if VH_GAME_AUDIO_WET_TAIL != 0 && VH_GAME_AUDIO_WET_TAIL != 1
+#error "VH_GAME_AUDIO_WET_TAIL must be 0 or 1"
+#endif
 #include "vh_audio_scene_trace.h"
 #include "vh_audio_scene_optical.h"
 
@@ -321,6 +329,14 @@ static void audio_worker(void *unused) {
         synth_samples[i] = (int16_t)((int)(i * 127u % 18000u) - 9000);
     vh_native_spu_reset(&spu);
     vh_music_scene_init(&director, &spu);
+#if VH_GAME_AUDIO_WET_TAIL
+    /* This worker owns the director; opt in ONLY before audout starts
+     * or any first cue can be requested. Failed setup is fatal. */
+    if (vh_music_scene_set_reverb_continuity(&director, 1)) {
+        state = -11;
+        goto cleanup;
+    }
+#endif
     vh_audio_resample_reset(&rate_converter);
     if (vh_native_spu_set_interpolation(&spu, VH_SPU_GAUSSIAN) ||
         vh_native_spu_set_reverb(&spu, 1, 0.5f))

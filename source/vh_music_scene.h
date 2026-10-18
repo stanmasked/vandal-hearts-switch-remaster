@@ -38,9 +38,18 @@ typedef struct {
     uint64_t blocks_rendered;
     uint32_t switches;
     int last_error;
+    unsigned keep_reverb_across_cues; /* opt-in; defaults to 0 */
 } VhMusicScene;
 
 void vh_music_scene_init(VhMusicScene *scene, VhNativeSpu *spu);
+
+/* Opt in to preserving STUDIO_C tail between two NON-SILENT music cues.
+ * Legacy default (0) resets wet history, and explicit silence/detach
+ * always resets it. Must be configured on a silent, idle director before
+ * any music request; caller must serialize with the audio producer.
+ * Returns -1 without mutation for invalid/busy scenes or flag values.
+ */
+int vh_music_scene_set_reverb_continuity(VhMusicScene *scene, int enabled);
 
 /* cue==NULL: stop music. A repeated active scene ID does not restart.
  * Validate any new pQES before mutating the current scene/synth.

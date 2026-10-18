@@ -275,6 +275,27 @@ int vh_native_seq_init(VhNativeSeq *s, const uint8_t *bytes, size_t length,
     return 0;
 }
 
+int vh_native_seq_switch_scene(VhNativeSeq *seq,
+                               const uint8_t *bytes, size_t length,
+                               VhNativeSpu *spu, VhSeqResolve resolve,
+                               void *context, unsigned repeat_count) {
+    if (!seq || !spu || (seq->spu && seq->spu != spu)) return -1;
+
+    /* Initialization validates the complete first SEQ pass without
+     * changing SPU or current playback. Never clear voices for bad music.
+     */
+    VhNativeSeq prepared;
+    if (vh_native_seq_init(&prepared, bytes, length, spu, resolve,
+                           context, repeat_count))
+        return -1;
+
+    if (seq->spu == spu)
+        vh_native_seq_stop(seq);
+    vh_native_spu_clear_voices_keep_reverb(spu);
+    *seq = prepared;
+    return 0;
+}
+
 int vh_native_seq_advance_block(VhNativeSeq *s) {
     if (!s || !s->spu || !s->resolver || s->last_error) return -1;
     if (!s->playing) return 0;

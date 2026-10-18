@@ -9,6 +9,15 @@ void vh_music_scene_init(VhMusicScene *scene, VhNativeSpu *spu) {
     scene->spu = spu;
 }
 
+int vh_music_scene_set_reverb_continuity(VhMusicScene *s, int enabled) {
+    if (!s || !s->spu || (enabled != 0 && enabled != 1) ||
+        s->stage != VH_MUSIC_SILENT || s->active.id || s->pending.id ||
+        s->last_error)
+        return -1;
+    s->keep_reverb_across_cues = (unsigned)enabled;
+    return 0;
+}
+
 int vh_music_scene_detach(VhMusicScene *s) {
     if (!s || !s->spu) return -1;
     /* This is the explicit point where caller-owned SEQ/VAB/PCM can
@@ -52,25 +61,40 @@ static int cue_is_valid(VhMusicScene *s, const VhMusicCue *cue) {
 }
 
 static int switch_to(VhMusicScene *s, const VhMusicCue *cue) {
-    /* Every outgoing voice and reverb buffer is now inaudible.
-     * Clear old pointers BEFORE the caller can release old bank PCM.
-     * The incoming track gets new channel and voice ownership.
+    /* Old voice/PCM ownership must end before the caller frees a bank.
+     * The optional branch preserves wet history, not borrowed samples.
      */
-    const unsigned interpolation = s->spu->interpolation;
-    const int reverb_on = s->spu->reverb_enabled;
-    const float reverb_depth = s->spu->reverb_depth;
-    vh_native_spu_reset(s->spu);
-    if (vh_native_spu_set_interpolation(s->spu, interpolation) ||
-        vh_native_spu_set_reverb(s->spu, reverb_on, reverb_depth))
-        return -1;
-    memset(&s->seq, 0, sizeof(s->seq));
-    memset(&s->active, 0, sizeof(s->active));
-    if (cue && cue->id) {
-        if (vh_native_seq_init(&s->seq, cue->seq, cue->seq_size,
-                               s->spu, cue->resolver, cue->context,
-                               cue->repeats))
+    if (s->keep_reverb_across_cues && s->active.id &&
+        cue && cue->id) {
+        /* Preserve the wet tail ONLY between two active music cues.
+         * Starting from silence must clear any prior owner/old state.
+         * Validate then switch atomically and publish only on success. */
+        if (vh_native_seq_switch_scene(&s->seq, cue->seq, cue->seq_size,
+                                       s->spu, cue->resolver, cue->context,
+                                       cue->repeats))
             return -1;
+        memset(&s->active, 0, sizeof(s->active));
         s->active = *cue;
+    } else {
+        /* Preserve the original legacy error path exactly: reset wet
+         * state and clear active ownership before initializing a cue.
+         * This branch also handles every explicit request for silence. */
+        const unsigned interpolation = s->spu->interpolation;
+        const int reverb_on = s->spu->reverb_enabled;
+        const float reverb_depth = s->spu->reverb_depth;
+        vh_native_spu_reset(s->spu);
+        if (vh_native_spu_set_interpolation(s->spu, interpolation) ||
+            vh_native_spu_set_reverb(s->spu, reverb_on, reverb_depth))
+            return -1;
+        memset(&s->seq, 0, sizeof(s->seq));
+        memset(&s->active, 0, sizeof(s->active));
+        if (cue && cue->id) {
+            if (vh_native_seq_init(&s->seq, cue->seq, cue->seq_size,
+                                   s->spu, cue->resolver, cue->context,
+                                   cue->repeats))
+                return -1;
+            s->active = *cue;
+        }
     }
     ++s->switches;
     return 0;

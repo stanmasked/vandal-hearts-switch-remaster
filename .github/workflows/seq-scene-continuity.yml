@@ -1,0 +1,44 @@
+name: Atomic SEQ scene-bank continuity
+
+on:
+  push:
+    branches:
+      - integration/ps1-seq-wet-tail-backport-20261018
+  pull_request:
+    paths:
+      - "source/vh_native_seq.c"
+      - "source/vh_native_seq.h"
+      - "source/vh_native_spu.c"
+      - "source/vh_native_spu.h"
+      - "tests/test_vh_native_seq.c"
+      - ".github/workflows/seq-scene-continuity.yml"
+  workflow_dispatch:
+
+jobs:
+  atomic-scene-switch:
+    name: Native SEQ continuity (${{ matrix.compiler }}; ASan + UBSan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - name: Check out exact source revision
+        uses: actions/checkout@v4
+      - name: Build sanitizer-backed native SEQ and SPU tests
+        run: |
+          mkdir -p build
+          ${{ matrix.compiler }} -std=c11 -Wall -Wextra -Werror -O1 -g \
+            -fsanitize=address,undefined -fno-sanitize-recover=all \
+            -fno-omit-frame-pointer -Isource \
+            tests/test_vh_native_seq.c \
+            source/vh_native_seq.c source/vh_native_spu.c \
+            source/vh_spu_reverb.c source/vh_spu_gaussian.c \
+            source/vh_audio_stream.c -lm \
+            -o build/test_vh_native_seq_continuity
+      - name: Validate 32 bank changes with real SEQ preflight and retained reverb
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ./build/test_vh_native_seq_continuity
