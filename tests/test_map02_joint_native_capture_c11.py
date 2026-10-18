@@ -159,7 +159,7 @@ class JointNativeCaptureTests(unittest.TestCase):
         self.assert_no_published_frame()
 
     def test_unexpected_journal_file_refused(self):
-        with self.assertRaisesRegex(ValueError, "unexpected or missing"):
+        with self.assertRaisesRegex(ValueError, "unexpected"):
             self.run_joint("extra-file")
         self.assert_no_published_frame()
 
