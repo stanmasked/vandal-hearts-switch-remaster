@@ -50,9 +50,10 @@ complete omission conservation, uniform and heterogeneous sample
 tails, source hash or Stage320/322 report tampering, and an
 important counterexample: the last call can be shorter than the
 *full* earlier median without being shorter than every median
-after removing one of the earlier observations. The strict
-auditor rejects this variant as not satisfying the stronger
-required claim.
+after removing one of the earlier observations. The auditor
+**preserves this authentic sensitive observation**, reports its
+Boolean stability flag as false, and does not improperly convert
+an exploratory diagnostic into a strict source rejection.
 
 The independent GitHub Actions workflow
 `.github/workflows/stage330-original-playbuffer-jackknife.yml`
