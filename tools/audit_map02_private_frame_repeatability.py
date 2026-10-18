@@ -288,6 +288,25 @@ def _joint_gpu_vram_first_divergence(snapshots, events):
     the same verified GPU pair. Compare ordinals, never private content.
     An unmatched tail is a mismatch even if every common entry agrees.
     """
+    # Validate the aggregate replay witness before composing it. A
+    # refactor must not turn malformed/odd counts or missing first-change
+    # evidence into an apparent bit-exact pair of private captures.
+    fields = (
+        (events, "first_gpu_event_count", True),
+        (events, "second_gpu_event_count", True),
+        (events, "gpu_event_records_compared", True),
+        (events, "unmatched_gpu_event_records", False),
+        (snapshots, "first_gpu_vram_snapshot_count", True),
+        (snapshots, "second_gpu_vram_snapshot_count", True),
+        (snapshots, "gpu_vram_snapshots_compared", True),
+        (snapshots, "unmatched_gpu_vram_snapshots", False),
+    )
+    if (type(events) is not dict or type(snapshots) is not dict
+            or any(type(report.get(key)) is not int
+                   or not (2 if paired else 0) <= report[key] <= MAX_RECORDS
+                   or report[key] % 2
+                   for report, key, paired in fields)):
+        raise ValueError("MAP02 GPU event and VRAM timeline counts invalid")
     first_count = events["first_gpu_event_count"]
     second_count = events["second_gpu_event_count"]
     common = events["gpu_event_records_compared"]
@@ -301,6 +320,17 @@ def _joint_gpu_vram_first_divergence(snapshots, events):
         raise ValueError("MAP02 GPU event and VRAM timeline counts disagree")
     first_event = events["first_different_gpu_event_record_index"]
     first_vram = snapshots["first_different_gpu_vram_snapshot_index"]
+    # First-divergence ordinals must agree with the independently counted
+    # common-prefix differences. Never silently accept "no first change"
+    # when the replay auditor has counted one or more differences.
+    for report, changed_key, first_index in (
+        (events, "different_gpu_event_records_in_common_prefix", first_event),
+        (snapshots, "different_gpu_vram_snapshots_in_common_prefix", first_vram),
+    ):
+        changed = report.get(changed_key)
+        if (type(changed) is not int or not 0 <= changed <= common
+                or (first_index is None) != (changed == 0)):
+            raise ValueError("MAP02 GPU divergence count/first index disagree")
     for index in (first_event, first_vram):
         if index is not None and (type(index) is not int
                                   or not 0 <= index < common):
