@@ -164,6 +164,10 @@ on:
       - 'tools/apply_map02_v139_mips_word_stages.py'
       - 'tools/check_map02_v139_native_words.py'
       - 'tests/test_map02_v139_native_words.py'
+      - 'tools/apply_map02_v140_mmio_effects.py'
+      - 'tools/check_map02_v140_native_mmio_effects.py'
+      - 'tests/test_map02_v140_native_mmio_effects.py'
+      - '.github/workflows/map02-v140-native-mmio-effects.yml'
       - '.github/workflows/map02-v139-native-words.yml'
       - '.github/workflows/map02-v138-interpreter-pc.yml'
       - '.github/workflows/map02-v137-private-pc-sites.yml'
@@ -270,6 +274,8 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v137_private_mips_pc_sites.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v138_interpreter_pc.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v139_native_words.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v140_native_mmio_effects.py' -v
+          python3 -m remaster.tools.check_map02_v140_native_mmio_effects --cc "${{ matrix.cc }}"
           python3 -m remaster.tools.check_map02_v139_native_words --cc "${{ matrix.cc }}"
           python3 -m remaster.tools.check_map02_v138_native_pc_observer --cc "${{ matrix.cc }}"
           python3 -m remaster.tools.check_map02_v130_native_bounds --cc "${{ matrix.cc }}"
@@ -283,7 +289,8 @@ jobs:
           git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
           git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
-          python3 -m remaster.tools.apply_map02_v139_mips_word_stages upstream-pcsx
+          python3 -m remaster.tools.apply_map02_v140_mmio_effects upstream-pcsx
+          grep -F 'VH140_NATIVE_MMIO_VALUES_PASS' upstream-pcsx/frontend/main.c
           grep -F 'VH139_NATIVE_MIPS_WORDS_PASS' upstream-pcsx/frontend/main.c
           grep -F 'vh138_pc_observe(regs,mem,value)' upstream-pcsx/libpcsxcore/psxmem.c
           grep -F 'VH138_NATIVE_INTERPRETER_PC_PASS' upstream-pcsx/frontend/main.c
@@ -1393,6 +1400,52 @@ jobs:
           fi
           sha256sum -c proof/private/native.sha256
           sha256sum -c proof/private/v131-same-exe.sha256
+          # Verify full source-authored effective MMIO addresses and written
+          # values from real native interpreted MIPS SW on a SIXTH proof
+          # dimension. Deliberate expected-value corruption must refuse.
+          sha256sum -c proof/private/v131-same-exe.sha256
+          mkdir -m 700 proof/v140-native-home
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v140-native-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh129-vblank-04 --vh138-interpreter-pc \
+            --vh139-codewords --vh140-mmio-values \
+            proof/private/V129_SYNTHETIC.EXE \
+            > proof/private/v140-native-values.log 2>&1 || {
+              tail -n 60 proof/private/v140-native-values.log
+              exit 1
+            }
+          grep -Fx 'VH140_NATIVE_MMIO_VALUES_PASS matched=19 gp0=6 dma2_starts=3 stages=4 original_retail=0' \
+            proof/private/v140-native-values.log
+          grep -Fx 'VH139_NATIVE_MIPS_WORDS_PASS matched=19 stages=4 exact_words=19 original_retail=0' \
+            proof/private/v140-native-values.log
+          grep -Fx 'VH138_NATIVE_INTERPRETER_PC_PASS matched=19 real_interpreter_sw=1 original_retail=0' \
+            proof/private/v140-native-values.log
+          grep -F 'VH129_REAL_VBLANK_PROFILES_PASS mode=0 ' \
+            proof/private/v140-native-values.log
+          sha256sum -c proof/private/native.sha256
+          sha256sum -c proof/private/v131-same-exe.sha256
+          mkdir -m 700 proof/v140-corrupt-home
+          bad_rc=0
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v140-corrupt-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh129-vblank-04 --vh138-interpreter-pc \
+            --vh139-codewords --vh140-mmio-values \
+            --vh140-corrupt-value-witness \
+            proof/private/V129_SYNTHETIC.EXE \
+            > proof/private/v140-corrupt-values.log 2>&1 || bad_rc=$?
+          test "$bad_rc" -eq 50
+          grep -Fx 'VH140_NATIVE_MMIO_VALUE_REFUSED' proof/private/v140-corrupt-values.log
+          if grep -Fq 'VH140_NATIVE_MMIO_VALUES_PASS' \
+              proof/private/v140-corrupt-values.log; then
+            echo 'VH140_FALSE_VALUE_PASS_REFUSED'
+            exit 1
+          fi
+          sha256sum -c proof/private/native.sha256
+          sha256sum -c proof/private/v131-same-exe.sha256
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -1417,6 +1470,8 @@ jobs:
           report["v138_deliberately_corrupted_native_pc_witness_refused"]=True
           report["v139_executed_synthetic_mips_word_and_four_stage_prefix_bound"]=True
           report["v139_mutated_expected_word_native_refused"]=True
+          report["v140_exact_synthetic_mmio_addr_value_runtime_bound"]=True
+          report["v140_corrupted_expected_gp0_value_native_refused"]=True
           report["retail_map02_gpu_rendering_verified"]=False
           Path("proof/public/v129-four-real-vblank-profiles-summary.json").write_text(
               json.dumps(report,sort_keys=True)+"\n")
