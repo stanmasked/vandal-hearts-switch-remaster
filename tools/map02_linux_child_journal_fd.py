@@ -13,7 +13,7 @@ from tools.verify_map02_native_gpu_capture import LOG
 
 
 def observe_child_gpu_journal_fd(pid, journal_fd, process, deadline):
-    """Fail closed until an actual child writable fd matches journal inode.
+    """Return stable (device, inode) for an actual writable child journal FD.
 
     Caller must have already independently confirmed /proc/<pid>/exe
     matches its pinned ELF descriptor. Requires procfs with fdinfo.
@@ -66,7 +66,7 @@ def observe_child_gpu_journal_fd(pid, journal_fd, process, deadline):
                             (fixed.st_dev, fixed.st_ino) ==
                             (journal.st_dev, journal.st_ino)
                             and process.poll() is None):
-                        return True
+                        return (fixed.st_dev, fixed.st_ino)
             except (FileNotFoundError, ProcessLookupError, PermissionError):
                 # Per-fd close/open can race with /proc enumerations.
                 continue
