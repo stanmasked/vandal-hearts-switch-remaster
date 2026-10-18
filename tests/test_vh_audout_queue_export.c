@@ -62,6 +62,17 @@ int main(void) {
     assert(vh_audout_slow_export(&t,dir,second,sizeof second)==0);
     assert(strstr(second,"audio-audout-slow-0001.csv"));
     assert(unlink(second)==0 && unlink(slow)==0);
+    /* Separate, exclusive, byte-readback checked Stage289 probe CSV.
+     * Never overwrite the prior queue, clock, latency or slow files. */
+    char probe[VH_AUDOUT_QUEUE_EXPORT_PATH_CAP];
+    assert(vh_audout_probe_export(&t,dir,probe,sizeof probe)==0);
+    assert(strstr(probe,"audio-audout-probe-0000.csv"));
+    f=fopen(probe,"rb");
+    assert(f && vh_audout_probe_verify_csv(&t,f)==0);
+    fclose(f);
+    assert(vh_audout_probe_export(&t,dir,second,sizeof second)==0);
+    assert(strstr(second,"audio-audout-probe-0001.csv"));
+    assert(unlink(second)==0 && unlink(probe)==0);
     assert(unlink(first)==0);
     char path[VH_AUDOUT_QUEUE_EXPORT_PATH_CAP];
     snprintf(path,sizeof path,"%s/audio-audout-queue-0001.csv",dir);

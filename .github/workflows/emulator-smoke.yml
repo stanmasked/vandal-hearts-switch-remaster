@@ -795,6 +795,26 @@ jobs:
           python3 -m json.tool runtime-evidence/scene-soak/soak-audout-exact-slow-verification.json >/dev/null
           echo "Actual >=40ms guest call begin/end ns recorded; temporal input ordering is not scene causality or audio output." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Verify current-run original guest SD pre-submit service probe chronology
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s runtime-evidence/scene-soak/soak-audout-probe-unverified.csv
+          test -s runtime-evidence/scene-soak/soak-audout-probe-export-result.txt
+          python3 tools/audit_nexium_audout_service_probes.py \\
+            --source runtime-evidence/scene-soak/soak-audout-probe-unverified.csv \\
+            --locations runtime-evidence/scene-soak/soak-audout-probe-locations.txt \\
+            --receipt runtime-evidence/scene-soak/soak-audout-probe-export-result.txt \\
+            --sd-root "$RUNNER_TEMP/vh-nexium-stage268-${GITHUB_RUN_ID}" \\
+            --queue-csv runtime-evidence/scene-soak/soak-audout-sd-unverified.csv \\
+            --clock-csv runtime-evidence/scene-soak/soak-audout-clock-unverified.csv \\
+            --latency-csv runtime-evidence/scene-soak/soak-audout-latency-unverified.csv \\
+            --slow-csv runtime-evidence/scene-soak/soak-audout-slow-unverified.csv \\
+            --scene-csv runtime-evidence/scene-soak/soak-guest-optical.csv \\
+            --output runtime-evidence/scene-soak/soak-audout-probe-verification.json
+          python3 -m json.tool runtime-evidence/scene-soak/soak-audout-probe-verification.json >/dev/null
+          echo "Stage289: original-SD-bound timestamped existing service probes verified. Not OS scheduler, DAC or audible playback telemetry." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Capture sustained no-switch audout control from identical NRO
         id: idle_audio_control
         shell: bash

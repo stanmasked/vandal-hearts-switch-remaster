@@ -212,17 +212,17 @@ fi
 
 # Stage289: independently captured original guest service-probe timeline.
 # This is not a host scheduler timeline or proof of audible underruns.
-find "$SOAK_SD_DIR" -maxdepth 1 -type f -name 'audio-audout-probe-*.csv' \\
+find "$SOAK_SD_DIR" -maxdepth 1 -type f -name 'audio-audout-probe-*.csv' \
   -print | sort > "$output/soak-audout-probe-locations.txt"
 mapfile -t probe_captures < "$output/soak-audout-probe-locations.txt"
-if (( ${#probe_captures[@]} == 1 )) && \\
+if (( ${#probe_captures[@]} == 1 )) && \
    [[ ! -e "$output/soak-audout-probe-unverified.csv" ]]; then
-  cp --no-clobber -- "${probe_captures[0]}" \\
+  cp --no-clobber -- "${probe_captures[0]}" \
      "$output/soak-audout-probe-unverified.csv"
 fi
 if [[ -f "$SOAK_SD_DIR/audio-audout-probe-export-result.txt" &&
       ! -L "$SOAK_SD_DIR/audio-audout-probe-export-result.txt" ]]; then
-  cp --no-clobber -- "$SOAK_SD_DIR/audio-audout-probe-export-result.txt" \\
+  cp --no-clobber -- "$SOAK_SD_DIR/audio-audout-probe-export-result.txt" \
     "$output/soak-audout-probe-export-result.txt"
 fi
 

@@ -98,6 +98,49 @@ int main(void) {
     rewind(f);
     assert(vh_audout_clock_verify_csv(&q,f)==-1);
     fclose(f);
+    /* Stage289: pre-submit service probes use the exact timestamp
+     * already taken at the audout submit boundary. No extra query. */
+    VhAudoutQueueTelemetry probes;
+    vh_audout_queue_reset(&probes);
+    const uint64_t pc=UINT64_C(3000000000);
+    for(unsigned i=0;i<34;i++) {
+        const int due=vh_audout_queue_probe_due(&probes);
+        const uint64_t begin=pc+(uint64_t)i*UINT64_C(20000000);
+        vh_audout_queue_record(&probes,begin,begin+UINT64_C(1000000),
+                              1,due ? (i==16 ? 0 : 1) : -1,
+                              due && i!=16 ? i%4 : 0);
+    }
+    assert(probes.probe_count==3 && probes.probe_dropped==0);
+    assert(probes.probe[0].attempt==1u &&
+           probes.probe[1].attempt==17u &&
+           probes.probe[2].attempt==33u);
+    assert(probes.probe[0].submit_begin_ns==pc);
+    assert(probes.probe[1].queue_count==0 &&
+           probes.probe[1].queue_status==0);
+    assert(probes.queue_ok==2 && probes.queue_errors==1);
+    f=tmpfile();
+    assert(f && vh_audout_probe_write_csv(&probes,f)==3);
+    rewind(f);
+    assert(vh_audout_probe_verify_csv(&probes,f)==0);
+    assert(!fseek(f,0,SEEK_END) && fputc('X',f)!=EOF);
+    rewind(f);
+    assert(vh_audout_probe_verify_csv(&probes,f)==-1);
+    fclose(f);
+    /* More than 256 probes: fail closed in the Python auditor and
+     * never silently overwrite the first 256 measurements. */
+    VhAudoutQueueTelemetry overflow;
+    vh_audout_queue_reset(&overflow);
+    for(unsigned i=0;i<VH_AUDOUT_PROBE_CAP*16u+1u;i++) {
+        const int due=vh_audout_queue_probe_due(&overflow);
+        const uint64_t begin=pc+(uint64_t)i*UINT64_C(1000000);
+        vh_audout_queue_record(&overflow,begin,begin+UINT64_C(1000),
+                              1,due ? 1:-1,0);
+    }
+    assert(overflow.probe_count==VH_AUDOUT_PROBE_CAP &&
+           overflow.probe_dropped==1 &&
+           overflow.probe[0].attempt==1 &&
+           overflow.probe[VH_AUDOUT_PROBE_CAP-1].attempt==
+                1u+16u*(VH_AUDOUT_PROBE_CAP-1u));
     VhAudoutQueueTelemetry empty;
     vh_audout_queue_reset(&empty);
     f=tmpfile();

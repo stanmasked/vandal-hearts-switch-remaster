@@ -513,7 +513,7 @@ int main(int argc, char **argv) {
         if(probe_receipt_fd>=0) {
             char message[160];
             const int n=snprintf(message,sizeof message,
-                "export_status=%d\\npath_present=%u\\nfile_size=%llu\\n",
+                "export_status=%d\npath_present=%u\nfile_size=%llu\n",
                 (int)probe_saved,probe_seen?1u:0u,
                 probe_seen ? (unsigned long long)probe_stat.st_size:0ull);
             if(n>0 && (size_t)n<sizeof message)
@@ -522,7 +522,7 @@ int main(int argc, char **argv) {
         }
         if(probe_saved!=VH_AUDOUT_QUEUE_EXPORT_OK || !probe_seen) {
             fprintf(stderr,
-                "audout probe journal SD export failed: %d, path_present=%d\\n",
+                "audout probe journal SD export failed: %d, path_present=%d\n",
                 (int)probe_saved,probe_seen);
             export_status=2;
         }
