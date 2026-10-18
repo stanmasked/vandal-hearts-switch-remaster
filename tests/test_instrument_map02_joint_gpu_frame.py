@@ -16,6 +16,8 @@ COMPOSED = (
     "static unsigned long vh_capture_frame;\n"
     "static int vh_capture_init;\n"
     "#define VH_CAPTURE_LIMIT 64u\n"
+    + "\n".join(joint.PRIVATE_FILE_OPENERS) + "\n"
+    + joint.EVENT_ANCHOR + "\n"
     + joint.ORIGINAL_GPU_MARKER + "\n"
     "void DrawOTag(unsigned int *p) {}\n"
 )
@@ -42,6 +44,42 @@ class CombinedMap02GpuFrameTests(unittest.TestCase):
         self.assertIn("    if (!VH_Map02JointGpuSessionReady())\n        _exit(96);", result)
         self.assertLess(result.index("static int vh_capture_init;"),
                         result.index("static int VH_Map02JointGpuSessionReady(void)\n{"))
+
+
+    def test_secure_exclusive_snapshot_and_persistent_event_log(self):
+        result = self.generate()
+        self.assertIn("O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600", result)
+        self.assertIn("file = VH_Map02SecureFile(snapshot_path);", result)
+        self.assertIn("file = VH_Map02SecureFile(upload_path);", result)
+        self.assertIn("log = VH_Map02SecureLog(log_path);", result)
+        self.assertIn("static FILE *vh_map02_joint_log;", result)
+        self.assertIn("vh_map02_joint_events_completed == vh_capture_seq", result)
+        self.assertIn("if (VH_Map02FlushLog(log) == 0)", result)
+        self.assertIn("++vh_map02_joint_events_completed;", result)
+        self.assertEqual(result.count("file = fopen(snapshot_path, \"wb\");"), 1)
+        self.assertEqual(result.count("log = fopen(log_path, \"ab\");"), 1)
+        self.assertIn("#else\n    log = fopen(log_path, \"ab\");", result)
+
+    def test_missing_snapshot_open_site_refused(self):
+        with self.assertRaisesRegex(ValueError, "anchor changed"):
+            self.generate(COMPOSED.replace(joint.PRIVATE_FILE_OPENERS[0], ""))
+
+    def test_missing_upload_open_site_refused(self):
+        with self.assertRaisesRegex(ValueError, "anchor changed"):
+            self.generate(COMPOSED.replace(joint.PRIVATE_FILE_OPENERS[1], ""))
+
+    def test_missing_event_log_open_site_refused(self):
+        with self.assertRaisesRegex(ValueError, "anchor changed"):
+            self.generate(COMPOSED.replace(joint.PRIVATE_FILE_OPENERS[2], ""))
+
+    def test_missing_persistent_log_close_site_refused(self):
+        with self.assertRaisesRegex(ValueError, "anchor changed"):
+            self.generate(COMPOSED.replace(joint.PRIVATE_FILE_OPENERS[3], ""))
+
+    def test_duplicate_journal_open_site_refused(self):
+        with self.assertRaisesRegex(ValueError, "anchor changed"):
+            self.generate(COMPOSED.replace(joint.PRIVATE_FILE_OPENERS[2],
+                                          joint.PRIVATE_FILE_OPENERS[2] * 2))
 
     def test_rejects_unpinned_source(self):
         with self.assertRaisesRegex(ValueError, "exact original"):
