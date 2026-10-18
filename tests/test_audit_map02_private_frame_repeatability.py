@@ -74,6 +74,7 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
         self.assertTrue(result["repeated_native_frame_pixels_identical"])
         self.assertTrue(result["repeated_gpu_event_journal_identical"])
         self.assertTrue(result["two_full_replays_per_capture_verified"])
+        self.assertTrue(result["four_private_file_inventories_stable_through_replays"])
         self.assertEqual(result["different_bgr555_pixels"], 0)
         self.assertEqual(result["first_gpu_pairs_verified"], 1)
         self.assertFalse(result["ps1_hardware_pixel_equivalence_verified"])
@@ -127,6 +128,23 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
             return receipt
         with patch.object(repeat, "replay", side_effect=swap):
             with self.assertRaises(ValueError):
+                self.run_repeat()
+
+    def test_same_byte_gpu_event_inode_swap_refused_even_if_hash_identical(self):
+        real = repeat.replay
+        seen = []
+        def swap(*args, **kwargs):
+            receipt = real(*args, **kwargs)
+            seen.append(1)
+            if len(seen) == 1:
+                target = self.j1 / "gpu-native-events.jsonl"
+                replacement = self.j1 / "replacement-events"
+                replacement.write_bytes(target.read_bytes())
+                replacement.chmod(0o600)
+                os.replace(replacement, target)
+            return receipt
+        with patch.object(repeat, "replay", side_effect=swap):
+            with self.assertRaisesRegex(ValueError, "file identity changed"):
                 self.run_repeat()
 
     def test_cli_report_contains_only_hashes_and_counts(self):

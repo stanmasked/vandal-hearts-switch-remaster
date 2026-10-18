@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import stat
 
 from tools.prepare_map02_private_frame_pair import (
     _directory, _check_directory, _private_raw, WIDTH, HEIGHT,
@@ -44,6 +45,36 @@ def _require_replay(data):
             raise ValueError("MAP02 repeated capture digest format invalid")
     if data["image_sha256"] != data["terminal_gpu_after_vram_sha256"]:
         raise ValueError("MAP02 replayed terminal frame differs from final VRAM")
+
+
+def _pinned_inventory(fd):
+    """Capture every regular file's identity before any replay begins.
+
+    Replaying a valid digest alone cannot detect a fully replaced same-byte
+    file if a new inode is installed before the first post-replay read.
+    Directory descriptors are held through the entire two-run comparison.
+    """
+    root = os.fstat(fd)
+    names = os.listdir(fd)
+    if not names or len(names) > 129:
+        raise ValueError("MAP02 repeatability private inventory invalid")
+    identities = []
+    for name in sorted(names):
+        if name in ("", ".", "..") or "/" in name or "\\" in name:
+            raise ValueError("MAP02 repeatability private filename invalid")
+        st = os.stat(name, dir_fd=fd, follow_symlinks=False)
+        if (not stat.S_ISREG(st.st_mode) or st.st_uid != os.geteuid()
+                or stat.S_IMODE(st.st_mode) != 0o600 or st.st_nlink != 1):
+            raise ValueError("MAP02 repeatability evidence file not private")
+        identities.append((
+            name, st.st_dev, st.st_ino, st.st_uid, st.st_mode,
+            st.st_nlink, st.st_size, st.st_mtime_ns, st.st_ctime_ns))
+    after = os.fstat(fd)
+    if (root.st_dev, root.st_ino, root.st_mtime_ns, root.st_ctime_ns) != (
+            after.st_dev, after.st_ino, after.st_mtime_ns, after.st_ctime_ns
+    ) or set(os.listdir(fd)) != set(names):
+        raise ValueError("MAP02 repeatability private inventory changed")
+    return tuple(identities)
 
 
 def _private_difference(first, second):
@@ -80,18 +111,27 @@ def audit(first_frame, first_journal, second_frame, second_journal, executable):
         if len({identity[:2] for _, identity in sessions}) != 4:
             raise ValueError("MAP02 independent run directory roles overlap")
 
+        # Pin all four complete inventories BEFORE any independent replay,
+        # including nonterminal GPU snapshots and JSONL journal inodes.
+        inventory_before = tuple(_pinned_inventory(fd) for fd in opened)
+        def check_inventories():
+            if tuple(_pinned_inventory(fd) for fd in opened) != inventory_before:
+                raise ValueError("MAP02 independent GPU/frame file identity changed")
+
         evidence = []
         for index in (0, 1):
             image_dir, journal_dir = folders[index*2:index*2+2]
             first = replay(image_dir, executable=executable,
                            gpu_journal_dir=journal_dir)
             _require_replay(first)
+            check_inventories()
             raw, original_identity = _private_raw(
                 opened[index*2], "process-frame.bgr555")
             if hashlib.sha256(raw).hexdigest() != first["image_sha256"]:
                 raise ValueError("MAP02 independent native frame bytes changed")
             second = replay(image_dir, executable=executable,
                             gpu_journal_dir=journal_dir)
+            check_inventories()
             raw_again, confirmed_identity = _private_raw(
                 opened[index*2], "process-frame.bgr555")
             if (first != second or original_identity != confirmed_identity
@@ -105,6 +145,7 @@ def audit(first_frame, first_journal, second_frame, second_journal, executable):
             raise ValueError("MAP02 independent runs differ in frame or ELF identity")
         different, lines, stp = _private_difference(
             evidence[0][1], evidence[1][1])
+        check_inventories()
         for fd, (path, identity) in zip(opened, sessions):
             _check_directory(fd, path, identity)
         return {
@@ -124,6 +165,7 @@ def audit(first_frame, first_journal, second_frame, second_journal, executable):
             "repeated_gpu_event_journal_identical":
                 a["gpu_journal_sha256"] == b["gpu_journal_sha256"],
             "two_full_replays_per_capture_verified": True,
+            "four_private_file_inventories_stable_through_replays": True,
             "actual_gameplay_rendering_authenticated": False,
             "ps1_hardware_pixel_equivalence_verified": False,
             "gpu_journal_writer_kernel_authenticated": False,
