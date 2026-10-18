@@ -17,12 +17,14 @@ from audit_nexium_host_clock_pairs import ClockPairError
 
 SCHEMA="vh-stage327-host-clock-interval-disagreement/v1"
 STAGE326_RESULT="TWO_DISTINCT_ORIGINAL_NEXIUM_HOST_CLOCK_COHORTS_REPLAYED"
+STAGE326_SCHEMA="vh-stage326-original-neXium-two-cohort-host-clock-comparison/v1"
 THRESHOLD_NS=1_000_000  # Diagnostic heuristic only; not a physical bound.
 EVENTS=("before_plus_down","after_plus_up","control_sequence_end")
 
 
 def audit_stage326_clock_disagreement(original:dict)->dict:
     if (not isinstance(original,dict)
+            or original.get("schema")!=STAGE326_SCHEMA
             or original.get("result")!=STAGE326_RESULT
             or original.get("each_original_stage325_receipt_recomputed_from_original_csv") is not True
             or original.get("each_original_stage304_host_controls_matched_strict_receipt") is not True
