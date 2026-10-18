@@ -34,8 +34,29 @@ speaker problem.
    reporting adjacent file-size **deltas** and host-millisecond
    **deltas**. It does not expose absolute host epoch values, dump
    audio, or alter the strict Stage304 acceptance criteria.
-   Seven synthetic negative/positive cases are included; new
-   archival CI is pending.
+   The latest independent [postmortem #39164847668](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39164847668)
+   **passed** all seven original synthetic classifier tests, replayed
+   the original archived CSV, and established an exact violation:
+
+   | Adjacent original archived events | PCM file delta | Host epoch delta |
+   | --- | ---: | ---: |
+   | `before_plus_down` → `after_plus_up` | +59,368 bytes | **−347 ms** |
+   | `after_plus_up` → `control_sequence_end` | +818,916 bytes | +4,214 ms |
+
+   Neither PCM-size delta is negative. The archived Stage304 strict
+   source check rejected **the backwards host wall-clock epoch in the
+   first adjacent pair**, not a decreasing recorded PCM file length.
+   This classification concerns **only the archived host CSV**.
+   Without an independent monotonic-clock witness it does NOT prove
+   that the host clock was corrected by NTP, that the original live
+   Stage304 job failed for precisely this reason, or that the guest
+   music / audout output contained a dropout.
+
+   Follow-up source diagnostics now additionally distinguish backwards
+   host epoch, tied host epoch, decreasing file size and simultaneous
+   failures. Synthetic tests replay these archived **deltas** without
+   embedding original absolute host timestamps or PCM. CI fails closed
+   on a contradiction with the strict Stage304 archived replay.
 
 ## Strict separation of evidence
 
