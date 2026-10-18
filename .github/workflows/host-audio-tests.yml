@@ -63,6 +63,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_analyze_nexium_phase_selection_gap.py' -v
       - name: Stage 293 exact 16-call slow-latency group occupancy regressions
         run: python3 -m unittest discover -s tests -p 'test_analyze_nexium_slow_call_cycle_occupancy.py' -v
+      - name: Stage295 compare two REAL guest service queue sample phases with synthetic negatives
+        run: python3 -m unittest discover -s tests -p 'test_compare_nexium_real_queue_phases.py' -v
       - name: Statistical sensitivity of complete paired NeXium audio sessions
         run: python3 -m unittest discover -s tests -p 'test_analyze_nexium_idle_switch_variability.py' -v
       - name: Multi-pair no-switch original-SD archive negative controls

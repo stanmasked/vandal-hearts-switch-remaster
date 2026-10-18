@@ -18,6 +18,8 @@ on:
       - 'tools/analyze_nexium_idle_switch_service_probes.py'
       - 'tools/analyze_nexium_probe_phase_sensitivity.py'
       - 'tools/analyze_nexium_phase_selection_gap.py'
+      - 'tools/compare_nexium_real_queue_phases.py'
+      - 'tests/test_compare_nexium_real_queue_phases.py'
       - 'tools/analyze_nexium_slow_call_cycle_occupancy.py'
       - 'tests/test_analyze_nexium_slow_call_cycle_occupancy.py'
       - 'tests/test_analyze_nexium_phase_selection_gap.py'
@@ -1206,6 +1208,43 @@ jobs:
                  "slow_at_query":len(r["probed_slow_calls"])})
           PY
           echo "Stage294 alternate phase8 guest-SD probe audit passed; phase0 baseline unchanged. No physical DAC or scheduler evidence." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage295 compare original-SD-bound real phase0 and phase8 service observations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/compare_nexium_real_queue_phases.py \
+            --phase0-probe runtime-evidence/scene-soak/soak-audout-probe-verification.json \
+            --phase8-probe runtime-evidence/scene-soak-phase8/phase8-original-SD-probe-audit.json \
+            --phase0-manifest nros/runtime-nro-manifest.json \
+            --phase8-manifest phase8/runtime-phase8-manifest.json \
+            --output runtime-evidence/scene-soak-phase8/phase0-phase8-real-service-comparison.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path(
+              "runtime-evidence/scene-soak-phase8/phase0-phase8-real-service-comparison.json"
+              ).read_text())
+          if (r["result"]!="REAL_DISTINCT_NRO_ORIGINAL_GUEST_SD_PHASE0_AND_PHASE8_RECONCILED"
+                  or r["both_modes_have_real_pre_submit_queue_observations"] is not True
+                  or r["phase0"]["phase"]!=0 or r["phase8"]["phase"]!=8
+                  or r["no_unqueried_phase_service_occupancy_imputed"] is not True
+                  or r["causal_effect_of_query_phase_proven"] is not False
+                  or r["physical_switch_or_audible_playback_confirmed"] is not False):
+              raise SystemExit("Stage295 phase comparison source evidence failed")
+          for phase in ("phase0","phase8"):
+              p=r[phase]
+              if (p["service_query_count"] !=
+                  p["service_query_success"] + p["service_query_failure"]):
+                  raise SystemExit("Stage295 lost some current-SD service query results")
+          print("Stage295 two real service query distributions:",
+                {p:{k:r[p][k] for k in (
+                    "service_query_count",
+                    "measured_queue_count_histogram",
+                    "slow_ge40_on_queried_attempts",
+                    "slow_ge50_on_queried_attempts")} for p in ("phase0","phase8")})
+          PY
+          echo "Stage295: two truly queried separate-NRO service phases compared with original-SD provenance; NOT a causal DAC/audio experiment." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Record audio capture boundary
         if: always()
