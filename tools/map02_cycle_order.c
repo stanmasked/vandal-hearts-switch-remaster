@@ -224,6 +224,7 @@ static void revoke_invalid_cycle_at_exit(void) {
         !verify_published_fd(published.dirfd, seal_fd, SEAL_NAME,
                              data, (size_t)n, &seal_baseline) ||
         fsync(published.dirfd) ||
+        !published_directory_still_named() ||
         !verify_published_fd(published.dirfd, seal_fd, SEAL_NAME,
                              data, (size_t)n, &seal_baseline) ||
         !verify_published_fd(published.dirfd, fd, OUTPUT_NAME,
