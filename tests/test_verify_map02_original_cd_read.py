@@ -33,13 +33,15 @@ class OriginalCdReadReceiptTests(unittest.TestCase):
         self.scoped.mkdir(mode=0o700)
         self.native.mkdir(mode=0o700)
         crc = 0
+        payload_sha = hashlib.sha256()
         with fixture.image.open("rb") as fd:
             for lba in range(0x1bcc, 0x1bcc + 12):
                 fd.seek(lba * 2352)
                 block = fd.read(2352)
                 crc = zlib.crc32(block[24:24 + 2048], crc)
+                payload_sha.update(block[24:24 + 2048])
         self.event = {
-            "schema": "vh.map02.original-cd-read.v1",
+            "schema": "vh.map02.original-cd-read.v2",
             "capture_session": "bc" * 16,
             "source": "original-CdRead-and-ContinueLoadingCdFile",
             "cdf": "CDF_M_MAP02_PRS",
@@ -48,6 +50,8 @@ class OriginalCdReadReceiptTests(unittest.TestCase):
             "bytes": 24576,
             "raw_user_crc32": f"{crc:08x}",
             "returned_user_crc32": f"{crc:08x}",
+            "raw_user_sha256": payload_sha.hexdigest(),
+            "returned_user_sha256": payload_sha.hexdigest(),
             "loader_completed": True,
         }
         self.save()
