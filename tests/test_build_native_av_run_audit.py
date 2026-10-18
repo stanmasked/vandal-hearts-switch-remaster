@@ -7,7 +7,9 @@ import unittest
 import zlib
 
 from build_native_av_run_audit import build_report, write_report
-from verify_native_av_run_audit import MAX_AUDIT_BYTES, verify_audit
+from verify_native_av_run_audit import (
+    MAX_AUDIT_BYTES, verify_audit, verify_audit_with_producer_attempt,
+)
 from test_verify_native_av_nro_manifest import NRO_NAMES, tiny_nro
 from verify_native_av_evidence_inventory import (
     FILES, PNG_PREFIX, PREFIX, SCENARIOS, SUFFIX,
@@ -138,6 +140,44 @@ class SevenCaseDigestIndexTests(unittest.TestCase):
                               ATTEMPT, verify_case=self.fake_verified)
         self.assertEqual(report["scenario_count"], 7)
         self.assertFalse(report["audible_audio_verified"])
+
+    def test_failed_consumer_job_can_reverify_original_producer_attempt(self):
+        audit = self.audit_path()
+        self.visited.clear()
+        # The producer ran once; GitHub reran only the consumer job.
+        result = verify_audit_with_producer_attempt(
+            audit, self.evidence, self.nros, REVISION, RUN_ID, ATTEMPT + 1,
+            verify_case=self.fake_verified)
+        self.assertEqual(result["github_run_attempt"], ATTEMPT)
+        self.assertEqual(self.visited, list(SCENARIOS))
+
+    def test_retry_cannot_accept_future_or_malformed_producer_attempt(self):
+        audit = self.audit_path()
+        data = self.report()
+        for wrong in (ATTEMPT + 2, 0, True, "1"):
+            with self.subTest(wrong=wrong):
+                data["github_run_attempt"] = wrong
+                audit.write_text(json.dumps(data, sort_keys=True, indent=2) + "\n")
+                with self.assertRaisesRegex(
+                        ValueError, "published producer attempt outside"):
+                    verify_audit_with_producer_attempt(
+                        audit, self.evidence, self.nros, REVISION, RUN_ID,
+                        ATTEMPT + 1, verify_case=self.fake_verified)
+
+    def test_retry_keeps_independent_run_and_digest_binding(self):
+        audit = self.audit_path()
+        with self.assertRaisesRegex(ValueError, "independently regenerated"):
+            verify_audit_with_producer_attempt(
+                audit, self.evidence, self.nros, REVISION, RUN_ID + 1,
+                ATTEMPT + 1, verify_case=lambda *a, **kw:
+                {"heartbeat_changed_pixels": 32})
+        data = self.report()
+        data["cases"][0]["evidence_sha256"]["av-before.png"] = "0" * 64
+        audit.write_text(json.dumps(data, sort_keys=True, indent=2) + "\n")
+        with self.assertRaisesRegex(ValueError, "independently regenerated"):
+            verify_audit_with_producer_attempt(
+                audit, self.evidence, self.nros, REVISION, RUN_ID,
+                ATTEMPT + 1, verify_case=self.fake_verified)
 
     def test_reject_modified_digest_even_if_json_is_well_formed(self):
         file = self.audit_path()
