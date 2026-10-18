@@ -77,6 +77,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_analyze_nexium_pcm_scene_silence.py' -v
       - name: Stage301 independent marker envelope conservation and forgery controls
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_pcm_marker_uncertainty.py' -v
+      - name: Stage302 recording boundary-censored PCM silence synthetic tests
+        run: python3 -m unittest discover -s tests -p 'test_audit_nexium_pcm_terminal_silence.py' -v
       - name: Statistical sensitivity of complete paired NeXium audio sessions
         run: python3 -m unittest discover -s tests -p 'test_analyze_nexium_idle_switch_variability.py' -v
       - name: Multi-pair no-switch original-SD archive negative controls
