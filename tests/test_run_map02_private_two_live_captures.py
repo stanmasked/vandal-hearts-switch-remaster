@@ -70,6 +70,7 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
         self.assertEqual(result["schema"], two_live.SCHEMA)
         self.assertTrue(result["two_native_elf_captures_and_complete_replays_verified"])
         self.assertTrue(result["same_elf_arguments_used_for_both_launches"])
+        self.assertTrue(result["same_executable_inode_and_sha_pinned_through_both_launches"])
         self.assertFalse(result["strict_gpu_timeline_match_required"])
         self.assertFalse(result["strict_gpu_timeline_match_verified"])
         self.assertTrue(result["repeated_full_gpu_vram_snapshot_sequence_identical"])
@@ -164,6 +165,55 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
         self.assertTrue(output["strict_gpu_timeline_match_required"])
         self.assertTrue(output["strict_gpu_timeline_match_verified"])
         self.assertNotIn(str(self.executable), completed.stdout)
+
+    def test_same_byte_executable_inode_swap_between_launches_refused(self):
+        # Operate on a per-test ELF copy, never on the class shared C11 ELF.
+        old = self.executable
+        self.executable = self.dirs[0].parent / "local-copy-elf"
+        shutil.copy2(old, self.executable)
+        calls = []
+        def swap_after_first(*args, **kwargs):
+            result = original_capture(*args, **kwargs)
+            calls.append(1)
+            if len(calls) == 1:
+                replacement = self.executable.with_name("replacement-elf")
+                shutil.copy2(self.executable, replacement)
+                os.replace(replacement, self.executable)
+            return result
+        with patch.object(two_live, "capture", side_effect=swap_after_first):
+            with self.assertRaisesRegex(ValueError, "ELF identity changed"):
+                self.run_two()
+        self.assertEqual(calls, [1])
+        self.assertEqual(len(list(self.dirs[0].iterdir())), 2)
+        self.assertEqual(list(self.dirs[2].iterdir()), [])
+        self.assertEqual(list(self.dirs[3].iterdir()), [])
+
+    def test_inplace_executable_mtime_mutation_between_runs_refused(self):
+        old = self.executable
+        self.executable = self.dirs[0].parent / "local-copy-elf"
+        shutil.copy2(old, self.executable)
+        calls = []
+        def change_mtime_after_first(*args, **kwargs):
+            result = original_capture(*args, **kwargs)
+            calls.append(1)
+            if len(calls) == 1:
+                info = self.executable.stat()
+                os.utime(self.executable,
+                         ns=(info.st_atime_ns, info.st_mtime_ns + 1_000_000_000))
+            return result
+        with patch.object(two_live, "capture", side_effect=change_mtime_after_first):
+            with self.assertRaisesRegex(ValueError, "ELF identity changed"):
+                self.run_two()
+        self.assertEqual(calls, [1])
+        self.assertEqual(list(self.dirs[2].iterdir()), [])
+
+    def test_symlink_executable_refused_before_both_launches(self):
+        alias = self.dirs[0].parent / "private-elf-link"
+        alias.symlink_to(self.executable)
+        with self.assertRaises(OSError):
+            two_live.run(alias, *self.dirs, frame=123,
+                         executable_sha256=self.digest)
+        self.assertTrue(all(not list(folder.iterdir()) for folder in self.dirs))
 
     def test_duplicated_output_role_fails_before_any_launch(self):
         with self.assertRaisesRegex(ValueError, "directory roles overlap"):

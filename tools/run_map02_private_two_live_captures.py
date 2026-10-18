@@ -10,9 +10,11 @@ import argparse
 import json
 import os
 from pathlib import Path
+import stat
 import subprocess
 
-from tools.capture_map02_live_frame_pipe import capture
+from tools.capture_map02_live_frame_pipe import capture, _fingerprint_fd
+from tools.map02_linux_elf_process_image import require_elf_image
 from tools.audit_map02_private_frame_repeatability import audit
 from tools.prepare_map02_private_frame_pair import _directory, _check_directory, WIDTH, HEIGHT
 from tools.run_map02_private_joint_capture_audit import _session_inode_witness
@@ -20,6 +22,38 @@ from tools.run_map02_private_joint_capture_audit import _session_inode_witness
 SCHEMA = "vh.map02.private-two-live-elf-gpu-runs.v1"
 CAPTURE_SCHEMA = "vh.map02.live-child-pipe-bgr555-gpu.v1"
 AUDIT_SCHEMA = "vh.map02.private-two-elf-gpu-frame-repeatability.v1"
+
+
+def _elf_file_identity(info):
+    return tuple(getattr(info, field) for field in (
+        "st_dev", "st_ino", "st_size", "st_mode", "st_uid", "st_gid",
+        "st_nlink", "st_mtime_ns", "st_ctime_ns"))
+
+
+def _require_held_elf_image(fd, path, expected_sha256, original_identity=None):
+    """Read and pin one ELF inode, not only its re-creatable SHA-256 bytes.
+
+    The same descriptor remains open during both real child launches and
+    the full native GPU/VRAM audit. A same-byte path swap between launches
+    is rejected before the second run can be issued.
+    """
+    held = os.fstat(fd)
+    observed = os.stat(path, follow_symlinks=False)
+    identity = _elf_file_identity(held)
+    if (not stat.S_ISREG(held.st_mode) or not held.st_mode & 0o111
+            or not 0 < held.st_size <= 1024 * 1024 * 1024
+            or identity != _elf_file_identity(observed)
+            or (original_identity is not None and identity != original_identity)):
+        raise ValueError("MAP02 pinned two-run ELF identity changed or invalid")
+    require_elf_image(fd)
+    size, sha = _fingerprint_fd(fd)
+    if sha != expected_sha256 or size != held.st_size:
+        raise ValueError("MAP02 pinned two-run ELF SHA-256 mismatch")
+    if (_elf_file_identity(os.fstat(fd)) != identity
+            or _elf_file_identity(os.stat(path, follow_symlinks=False))
+            != identity):
+        raise ValueError("MAP02 pinned two-run ELF changed during verification")
+    return identity
 
 
 def _require_bit_exact_gpu_timeline(report):
@@ -70,6 +104,7 @@ def run(executable, first_frame, first_journal, second_frame, second_journal,
     folders = tuple(Path(p).absolute() for p in (
         first_frame, first_journal, second_frame, second_journal))
     opened, identities = [], []
+    exe_fd = None
     try:
         # Check ALL destinations before executing either child. Aliasing a
         # second journal to the first frame path must not publish anything.
@@ -80,8 +115,17 @@ def run(executable, first_frame, first_journal, second_frame, second_journal,
         if len({identity[:2] for identity in identities}) != 4:
             raise ValueError("MAP02 two-run private directory roles overlap")
 
+        # Pin exactly one actual executable inode BEFORE the first launch,
+        # and keep its FD for the entire two-run audit.
+        exe_fd = os.open(executable, os.O_RDONLY | os.O_NOFOLLOW |
+                         os.O_CLOEXEC | os.O_NONBLOCK)
+        elf_identity = _require_held_elf_image(
+            exe_fd, executable, executable_sha256)
+
         witnesses = []
         for offset in (0, 2):
+            _require_held_elf_image(exe_fd, executable, executable_sha256,
+                                    original_identity=elf_identity)
             frame_dir, journal_dir = folders[offset:offset + 2]
             published = []
             def pin(held_output_fd, held_journal_fd):
@@ -112,6 +156,8 @@ def run(executable, first_frame, first_journal, second_frame, second_journal,
             if witness != published[0]:
                 raise ValueError("MAP02 two-run published frame/GPU files changed")
             witnesses.append(witness)
+            _require_held_elf_image(exe_fd, executable, executable_sha256,
+                                    original_identity=elf_identity)
 
         def verify_all_published():
             for offset, witness in zip((0, 2), witnesses):
@@ -132,6 +178,8 @@ def run(executable, first_frame, first_journal, second_frame, second_journal,
                 or report.get("hd_replacement_authorized") is not False):
             raise ValueError("MAP02 two-run native repeatability witness invalid")
         verify_all_published()
+        _require_held_elf_image(exe_fd, executable, executable_sha256,
+                                original_identity=elf_identity)
         for fd, path, identity in zip(opened, folders, identities):
             _check_directory(fd, path, identity)
         # In normal mode a different but independently replay-verified
@@ -145,6 +193,7 @@ def run(executable, first_frame, first_journal, second_frame, second_journal,
             "schema": SCHEMA,
             "same_elf_arguments_used_for_both_launches": True,
             "two_native_elf_captures_and_complete_replays_verified": True,
+            "same_executable_inode_and_sha_pinned_through_both_launches": True,
             "strict_gpu_timeline_match_required": require_identical_gpu_timeline,
             "strict_gpu_timeline_match_verified": require_identical_gpu_timeline,
             "original_ps1_reference_authenticated": False,
@@ -152,6 +201,8 @@ def run(executable, first_frame, first_journal, second_frame, second_journal,
             "hd_replacement_authorized": False,
         }
     finally:
+        if exe_fd is not None:
+            os.close(exe_fd)
         for fd in reversed(opened):
             os.close(fd)
 
