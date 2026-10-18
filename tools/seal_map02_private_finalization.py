@@ -123,6 +123,7 @@ def _publish(directory, raw):
     fd = -1
     created = None
     completed = None
+    known_owned = None
     try:
         original_dir = os.fstat(dfd)
         if (stat.S_IMODE(original_dir.st_mode) != 0o700 or
@@ -134,15 +135,22 @@ def _publish(directory, raw):
             raise ValueError("private final-seal directory must start empty")
         fd = os.open(NAME, os.O_RDWR | os.O_CREAT | os.O_EXCL |
                      os.O_CLOEXEC | os.O_NOFOLLOW, 0o600, dir_fd=dfd)
-        created = _identity(os.fstat(fd))
+        opened = os.fstat(fd)
+        created = _identity(opened)
+        known_owned = _complete_identity(opened)
         os.fchmod(fd, 0o600)
-        created = _identity(os.fstat(fd))
+        configured = os.fstat(fd)
+        created = _identity(configured)
+        known_owned = _complete_identity(configured)
         done = 0
         while done < len(raw):
             n = os.write(fd, raw[done:])
             if n <= 0:
                 raise ValueError("incomplete private seal write")
             done += n
+            # Track the last metadata snapshot actually produced by
+            # our write; only that exact object may be rolled back.
+            known_owned = _complete_identity(os.fstat(fd))
         os.fsync(fd)
         completed = os.fstat(fd)
         if (not stat.S_ISREG(completed.st_mode) or
@@ -162,10 +170,13 @@ def _publish(directory, raw):
         os.fsync(dfd)
         return _complete_identity(completed), _dir_identity(original_dir)
     except BaseException:
-        if created is not None and completed is not None:
+        if created is not None and known_owned is not None:
             try:
-                # A failed readback does not authorize deleting a modified
-                # same-inode file: require its full post-write identity.
+                # Permit cleanup before fsync/readback as well, but only
+                # if no writer replaced or modified our last known inode.
+                # Prefer the completed post-fsync snapshot if available.
+                expected = (_complete_identity(completed)
+                            if completed is not None else known_owned)
                 latest = os.stat(NAME, dir_fd=dfd, follow_symlinks=False)
                 if (stat.S_ISREG(latest.st_mode) and
                         _dir_identity(os.fstat(dfd)) ==
@@ -173,10 +184,8 @@ def _publish(directory, raw):
                         _dir_identity(os.stat(directory,
                                               follow_symlinks=False)) ==
                         _dir_identity(original_dir) and
-                        _complete_identity(latest) ==
-                        _complete_identity(completed) and
-                        _complete_identity(os.fstat(fd)) ==
-                        _complete_identity(completed) and
+                        _complete_identity(latest) == expected and
+                        _complete_identity(os.fstat(fd)) == expected and
                         _identity(latest) == created):
                     os.unlink(NAME, dir_fd=dfd)
             except OSError:
