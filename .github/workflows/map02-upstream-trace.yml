@@ -188,6 +188,10 @@ on:
       - 'tests/test_capture_map02_runtime.py'
       - 'tests/test_make_map02_trace_patch.py'
       - 'tests/test_map02_trace_c_emitter.py'
+      - 'tools/instrument_map02_joint_gpu_frame.py'
+      - 'tests/test_instrument_map02_joint_gpu_frame.py'
+      - 'tools/audit_map02_joint_gpu_frame.py'
+      - 'tests/test_map02_joint_native_capture_c11.py'
       - '.github/workflows/map02-upstream-trace.yml'
   workflow_dispatch:
 
@@ -568,6 +572,37 @@ jobs:
           )
           test -z "$(cd upstream && git status --porcelain -- src/core/graphics.c platform/pc/src/libgte.c)"
 
+      - name: Compile pinned combined GPU journal and terminal-frame observer
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd remaster && python3 -m unittest discover -s tests -p 'test_instrument_map02_joint_gpu_frame.py' -v)
+          mkdir -p /tmp/vh-map02-joint-gpu
+          PYTHONPATH=remaster python3 -m tools.instrument_map02_joint_gpu_frame upstream/platform/pc/src/libgpu.c --output /tmp/vh-map02-joint-gpu/libgpu.joint.c
+          (
+            cd upstream/platform/pc
+            flags=(-m64 -std=gnu89 -fno-builtin-csqrt -DPERMUTER -DPC_PORT -DPC_FEAT -DVH_REGION_US '-Dasm(x)=' -Ibuild/include_stage -Iinclude -I../.. -include pc_forward_decls.h -Wno-incompatible-pointer-types -Wno-builtin-declaration-mismatch -Wno-discarded-qualifiers -Wno-pointer-to-int-cast -Wno-int-to-pointer-cast -Wno-int-conversion -Isrc -I"$GITHUB_WORKSPACE/remaster/tools")
+            mkdir -p build/map02-joint-gpu
+            for cc in gcc clang; do
+              "$cc" "${flags[@]}" -DVH_MAP02_PRIVATE_FRAME_PIPE_TRACE=1 -DVH_MAP02_GPU_CAPTURE=1 -c /tmp/vh-map02-joint-gpu/libgpu.joint.c -o "build/map02-joint-gpu/observer.${cc}.o"
+              "$cc" "${flags[@]}" -c /tmp/vh-map02-joint-gpu/libgpu.joint.c -o "build/map02-joint-gpu/baseline.${cc}.o"
+              "$cc" -std=c11 -Wall -Wextra -Werror -DVH_MAP02_PRIVATE_FRAME_PIPE_TRACE=1 -c "$GITHUB_WORKSPACE/remaster/tools/map02_native_frame_pipe.c" -o "build/map02-joint-gpu/pipe.${cc}.o"
+              ld -r "build/map02-joint-gpu/observer.${cc}.o" "build/map02-joint-gpu/pipe.${cc}.o" -o "build/map02-joint-gpu/linked.${cc}.o"
+              nm -a "build/map02-joint-gpu/observer.${cc}.o" | grep -q VH_Map02JointGpuSessionReady
+              nm -a "build/map02-joint-gpu/observer.${cc}.o" | grep -q VH_CaptureEvent
+              nm -a "build/map02-joint-gpu/observer.${cc}.o" | grep -q VH_Map02PrivateFrameFlush
+              nm -a "build/map02-joint-gpu/linked.${cc}.o" | grep -q vh_map02_frame_pipe_emit
+              if nm -a "build/map02-joint-gpu/baseline.${cc}.o" | grep -E 'VH_Map02JointGpuSessionReady|VH_CaptureEvent|VH_Map02PrivateFrameFlush|vh_map02_frame_pipe_emit'; then
+                echo 'Combined native MAP02 observer leaked into baseline' >&2
+                exit 1
+              fi
+              if "$cc" "${flags[@]}" -DVH_MAP02_PRIVATE_FRAME_PIPE_TRACE=1 -c /tmp/vh-map02-joint-gpu/libgpu.joint.c -o "build/map02-joint-gpu/unpaired.${cc}.o" 2>/dev/null; then
+                echo 'Combined native MAP02 observer allowed frame-only instrumentation' >&2
+                exit 1
+              fi
+            done
+          )
+          test -z "$(cd upstream && git status --porcelain -- platform/pc/src/libgpu.c)"
       - name: Compile pinned MAP02 frame-flush source with GCC and Clang
         shell: bash
         run: |
