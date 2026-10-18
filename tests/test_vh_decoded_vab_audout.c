@@ -463,6 +463,48 @@ int main(void) {
             }
             assert(ops.stop(ops.context)==0);
             assert(d.open && !d.playing);
+            /* Exhaust BOTH available reopen attempts while music
+             * playback is between pages, with both failure stages
+             * covered. Explicit later retry must be the only path
+             * to the next delivered PCM page. */
+            const unsigned exhausted=mode==2u &&
+                (cycle==2u || cycle==6u);
+            if(exhausted) {
+                if(cycle==2u)
+                    d.fail_resume_open_left=VH_AUDIO_OUTPUT_RESTART_LIMIT;
+                else
+                    d.fail_resume_start_left=VH_AUDIO_OUTPUT_RESTART_LIMIT;
+                assert(vh_audio_output_resume_recover(
+                    &ops,&recovery,1)==-1);
+                assert(!d.playing &&
+                       !d.fail_resume_open_left &&
+                       !d.fail_resume_start_left);
+                assert(recovery.resume_restarts==
+                       saved_recovery.resume_restarts+
+                       VH_AUDIO_OUTPUT_RESTART_LIMIT);
+                assert(recovery.resume_failures==
+                       saved_recovery.resume_failures+
+                       VH_AUDIO_OUTPUT_RESTART_LIMIT);
+                assert(recovery.resume_recoveries==
+                       saved_recovery.resume_recoveries);
+                assert(d.submitted==saved_submitted &&
+                       d.accepted==saved_accepted &&
+                       d.returned_hash==saved_hash);
+                assert(hash_pcm(dst,frames)==saved_pcm_hash);
+                assert(!memcmp(&seq,&saved_seq,sizeof seq));
+                assert(!memcmp(&oracle_seq,&saved_oracle_seq,
+                               sizeof oracle_seq));
+                assert(!memcmp(&resampler,&saved_rate,
+                               sizeof resampler));
+                assert(!memcmp(&oracle_resampler,&saved_oracle_rate,
+                               sizeof oracle_resampler));
+                assert(!memcmp(&d.timing,&saved_timing,
+                               sizeof d.timing));
+                assert(!memcmp(&waits,&saved_waits,sizeof waits));
+                assert(!memcmp(&seams,&saved_seams,sizeof seams));
+                assert(!memcmp(&joint,&saved_joint,sizeof joint));
+                assert(!memcmp(&marks,&saved_marks,sizeof marks));
+            }
             if(mode==1u)
                 d.fail_resume_start_left=1u; /* quick path fails */
             if(mode==3u) {
@@ -472,9 +514,10 @@ int main(void) {
             const unsigned forced=(unsigned)(mode>=2u);
             assert(vh_audio_output_resume_recover(
                 &ops,&recovery,(int)forced)==0);
-            const unsigned extra_restarts=mode==0u?0u:
-                mode==3u?2u:1u;
-            const unsigned extra_failures=mode==1u || mode==3u;
+            const unsigned extra_restarts=(mode==0u?0u:
+                mode==3u?2u:1u)+exhausted*VH_AUDIO_OUTPUT_RESTART_LIMIT;
+            const unsigned extra_failures=(mode==1u || mode==3u)+
+                exhausted*VH_AUDIO_OUTPUT_RESTART_LIMIT;
             const unsigned extra_recoveries=mode!=0u;
             midscene_restarts+=extra_restarts;
             midscene_failures+=extra_failures;
@@ -525,8 +568,8 @@ int main(void) {
                 TOTAL,BLOCKS,0)==0);
         }
     }
-    assert(midscene_cycles==24u && midscene_restarts==24u &&
-           midscene_failures==12u && midscene_recoveries==18u);
+    assert(midscene_cycles==24u && midscene_restarts==28u &&
+           midscene_failures==16u && midscene_recoveries==18u);
     assert(boundaries==SCENES-1u && d.accepted==TOTAL);
     assert(expected_failed_attempts==15u);
     assert(recovery.resume_recoveries==boundaries+midscene_recoveries &&
