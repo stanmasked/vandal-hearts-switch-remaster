@@ -1,0 +1,35 @@
+name: MAP02 v154 third synthetic MIPS opcode mutation refusal
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v154-third-instruction-mutation.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v154_third_instruction_mutation.py'
+      - 'tests/test_map02_v154_third_instruction_mutation.py'
+      - 'tools/apply_map02_v153_second_instruction_mutation.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  third-instruction-refusal:
+    name: compiled third synthetic opcode refusal (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile native third-opcode witness and v150-v153 regressions
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v154_third_instruction_mutation.py tests/test_map02_v154_third_instruction_mutation.py
+          python3 -m unittest discover -s tests -p 'test_map02_v154_third_instruction_mutation.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v153_second_instruction_mutation.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v152_fetch_opcode_witness.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v151_native_ram_identity.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v150_native_instruction_budget.py' -v
+          echo 'VH154_COMPILED_THIRD_WORD_REFUSAL_PASS original_retail_executed=0 map02_rendered=0'
