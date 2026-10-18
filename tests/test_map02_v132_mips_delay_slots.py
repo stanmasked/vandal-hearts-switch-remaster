@@ -123,8 +123,11 @@ class MipsDelaySlotSafeCandidates(unittest.TestCase):
             self.assertFalse(report["physical_PS1_verified"])
             self.assertFalse(report["HD_replacement_approved"])
             public=json.dumps(report)
+            self.assertFalse(report["private_program_bytes_exported"])
             for secret in (str(private),"PS-X EXE","sha256","0x1f8010a8",
-                           "program_bytes","raw_instructions","SLUS_004.47"):
+                           '"program_bytes":','"raw_instructions":',
+                           '"private_exe_path":','"mips_source":',
+                           "SLUS_004.47"):
                 self.assertNotIn(secret,public)
 
     def test_new_ci_runs_actual_synthetic_exe_in_same_native_process_matrix(self):
