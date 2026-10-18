@@ -505,13 +505,52 @@ int main(void) {
                 assert(!memcmp(&joint,&saved_joint,sizeof joint));
                 assert(!memcmp(&marks,&saved_marks,sizeof marks));
             }
+            /* Two more inter-page cases: a failed fast start
+             * followed by a FAILED stop inside its fallback path.
+             * Since stop was refused, the callback may not close,
+             * reopen, increment a restart, or deliver any PCM.
+             * Only an explicit later forced retry may resume. */
+            const unsigned fast_fallback_stop_failed=
+                mode==1u && (cycle==1u || cycle==5u);
             if(mode==1u)
                 d.fail_resume_start_left=1u; /* quick path fails */
+            if(fast_fallback_stop_failed) {
+                d.fail_resume_stop_left=1u;
+                assert(vh_audio_output_resume_recover(
+                    &ops,&recovery,0)==-1);
+                assert(d.open && !d.playing);
+                assert(!d.fail_resume_start_left &&
+                       !d.fail_resume_stop_left);
+                assert(recovery.resume_restarts==
+                       saved_recovery.resume_restarts);
+                assert(recovery.resume_failures==
+                       saved_recovery.resume_failures+1u);
+                assert(recovery.resume_recoveries==
+                       saved_recovery.resume_recoveries);
+                assert(d.submitted==saved_submitted &&
+                       d.accepted==saved_accepted &&
+                       d.returned_hash==saved_hash);
+                assert(hash_pcm(dst,frames)==saved_pcm_hash);
+                assert(!memcmp(&seq,&saved_seq,sizeof seq));
+                assert(!memcmp(&oracle_seq,&saved_oracle_seq,
+                               sizeof oracle_seq));
+                assert(!memcmp(&resampler,&saved_rate,
+                               sizeof resampler));
+                assert(!memcmp(&oracle_resampler,&saved_oracle_rate,
+                               sizeof oracle_resampler));
+                assert(!memcmp(&d.timing,&saved_timing,
+                               sizeof d.timing));
+                assert(!memcmp(&waits,&saved_waits,sizeof waits));
+                assert(!memcmp(&seams,&saved_seams,sizeof seams));
+                assert(!memcmp(&joint,&saved_joint,sizeof joint));
+                assert(!memcmp(&marks,&saved_marks,sizeof marks));
+            }
             if(mode==3u) {
                 if((cycle/4u)%2u==0u) d.fail_resume_open_left=1u;
                 else d.fail_resume_start_left=1u;
             }
-            const unsigned forced=(unsigned)(mode>=2u);
+            const unsigned forced=(unsigned)(
+                mode>=2u || fast_fallback_stop_failed);
             assert(vh_audio_output_resume_recover(
                 &ops,&recovery,(int)forced)==0);
             const unsigned extra_restarts=(mode==0u?0u:
