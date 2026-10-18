@@ -145,6 +145,43 @@ RGB24-байты, а не оригинальную сцену игры.
 метаданные и SHA-256 и **не удостоверяет** ни подлинность источника RGB24,
 ни изображение системного окна, ни сцену MAP02 на PS1.
 
+## Финальная независимая связь CD/GPU/process с RGB24/PNG
+
+Команда `tools.verify_map02_final_pc_frame_join` ничего не запускает
+и не публикует. Она принимает семь **раздельных непересекающихся**
+приватных каталогов: source CD/GPU/GTE witness, GPU VRAM windows,
+scoped CdRead/PutPixel, process handoff, cycle-order v5, PNG и RGB24.
+Отдельно указываются проверенный собственный диск, закреплённый
+PC-upstream и исходно-подтверждённый диагностический ELF.
+
+```bash
+python3 -m tools.verify_map02_final_pc_frame_join \
+  /private/map02/source /private/map02/native-windows \
+  /private/map02/scoped /private/map02/handoff \
+  /private/map02/cycle /private/map02/native-preview \
+  /private/map02/preoverlay /private/map02/owned-disc.bin \
+  --upstream-checkout /private/map02/VandalHearts-PcPort \
+  --pc-binary /private/map02/instrumented-pc-port --frame 7
+```
+
+Проверка требует, чтобы SHA-256 `gpu-local-executed-process.json`
+действительно совпадал с `observed_process_receipt_sha256`
+из уже сформированного оригинального CD/GPU/process-witness; номера
+кадров и хеш nonce должны совпасть с обеими отдельными квитанциями.
+Затем **заново** запускаются полноценный CD/GPU/GTE/OS-process
+верификатор и независимое побайтовое сравнение native VRAM ↔
+RGB24 (bottom-up) ↔ PNG. Файлы обеих цепочек до и после проверяются
+на байты, inode и метаданные. Отклоняются вложенные каталоги, чужие
+квитанции, заменённые файлы, неполные GPU-команды, hi-res и неверная
+цветовая конверсия.
+
+Это **сводный отчёт о согласованности**, а не подпись производителя,
+не снимок окна ОС и не подтверждение настоящей сцены MAP02. В отчёте
+нет текстовых путей, бинарных игровых ресурсов или пикселей, только
+выбранный кадр, границы, количество DRAW-примитивов и SHA-256.
+Все тесты публичного CI используют искусственные данные; неподтверждённое
+происхождение изображения явно помечено как `false`.
+
 Формат каждого исходного пикселя — 16-битный little-endian PS1/PC
 BGR555: пять младших битов — красный, следующие пять — зелёный,
 следующие пять — синий. Каналы расширяются до RGB888 без фильтрации;
