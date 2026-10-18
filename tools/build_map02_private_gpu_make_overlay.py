@@ -393,16 +393,16 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
                     source, "vh-map02-preprocessed-" + unit)
                 stack.callback(os.close, files[unit + "-preprocessed"])
 
-        run_make(base + [
-            "VH_MAP02_PRIVATE_INPUT_LANG=cpp-output",
-            "VH_MAP02_PRIVATE_GPU_C=" + fd_path("libgpu-preprocessed"),
-            "VH_MAP02_PRIVATE_RASTER_C=" + fd_path("pc_raster-preprocessed"),
-            "map02-private-gpu-objects",
-        ])
-        if _compiler_evidence() != (compiler, initial_compiler):
-            raise ValueError("MAP02 compiler binaries changed during Make build")
-        if _system_header_evidence(system_deps, pc, snapshot) != system_headers:
-            raise ValueError("MAP02 system header dependencies changed during Make build")
+            run_make(base + [
+                "VH_MAP02_PRIVATE_INPUT_LANG=cpp-output",
+                "VH_MAP02_PRIVATE_GPU_C=" + fd_path("libgpu-preprocessed"),
+                "VH_MAP02_PRIVATE_RASTER_C=" + fd_path("pc_raster-preprocessed"),
+                "map02-private-gpu-objects",
+            ])
+            if _compiler_evidence() != (compiler, initial_compiler):
+                raise ValueError("MAP02 compiler binaries changed during Make build")
+            if _system_header_evidence(system_deps, pc, snapshot) != system_headers:
+                raise ValueError("MAP02 system header dependencies changed during Make build")
     after = auditor.replay(upstream, output, manifest)
     if after != before:
         raise ValueError("MAP02 private overlay changed during sealed Make build")
