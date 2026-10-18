@@ -482,7 +482,7 @@ int main(int argc, char **argv) {
                 "tools.map02_cycle_build_provenance.verify_build_receipt",
                 return_value={"source_pinned_full_elf_bytes_checked": True}) as build_verified, patch(
                 "tools.verify_map02_cycle_cd_gpu_join._cycle_receipt",
-                return_value=(b"synthetic-only", "b" * 64)) as receipt:
+                return_value=(b"synthetic-only", "b" * 64, ())) as receipt:
             with patch.dict(os.environ, {
                     "VH_HD_PACK": "/untrusted/hd-backgrounds",
                     "VH_HD_VIDEOS": "/untrusted/hd-video",
@@ -630,7 +630,7 @@ int main(int argc, char **argv) {
                 "tools.map02_cycle_build_provenance.verify_build_receipt",
                 return_value={"source_pinned_full_elf_bytes_checked": True}), patch(
                 "tools.verify_map02_cycle_cd_gpu_join._cycle_receipt",
-                return_value=(b"synthetic-only", "f" * 64)):
+                return_value=(b"synthetic-only", "f" * 64, ())):
             with self.assertRaisesRegex(ValueError, "cycle nonce differs"):
                 launch_observed_pc(
                     self.handoff, self.native, self.scoped,
