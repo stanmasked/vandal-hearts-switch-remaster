@@ -36,7 +36,7 @@ STAGED_BLEND = "blendg1-native-events.pending.jsonl"
 STAGED_EDGES = "vram-edges-native-events.pending.jsonl"
 
 
-def _snapshot_word(directory, filename, x, y):
+def _snapshot_word(directory, filename, x, y, *, observed=None):
     """Read one native VRAM sample without accepting an inode substitution.
 
     This checks only a two-byte sample, NOT the provenance of a whole frame.
@@ -77,6 +77,12 @@ def _snapshot_word(directory, filename, x, y):
         if (first != second or identity(os.fstat(fd)) != identity(info) or
                 identity(os.stat(path, follow_symlinks=False)) != identity(info)):
             raise ValueError("native VRAM snapshot changed during sample")
+        if observed is not None:
+            # Bind all visits to this capture snapshot to one exact inode,
+            # not just two reads within each individual visit.
+            if filename in observed and observed[filename] != identity(info):
+                raise ValueError("native VRAM snapshot changed between samples")
+            observed[filename] = identity(info)
         return int.from_bytes(first, "little")
     except OSError:
         raise ValueError("native VRAM snapshot sample unavailable") from None
@@ -208,11 +214,17 @@ def inspect_staged_capture(source_dir, native_dir):
     if len(events) > len(native_draws):
         raise ValueError("source-keyed FT4 submissions exceed captured native draws")
     x, y = edges[0]["x"], edges[0]["y"]
+    sampled_inodes = {}
+
+    def sample(filename):
+        return _snapshot_word(native, filename, x, y,
+                              observed=sampled_inodes)
+
     # Every snapshot referenced by transfer AND draw pairs must exist, be
     # regular and be full-size. Read only the selected native word.
     for before, after in pairs:
-        _snapshot_word(native, before["snapshot"], x, y)
-        _snapshot_word(native, after["snapshot"], x, y)
+        sample(before["snapshot"])
+        sample(after["snapshot"])
         if before["operation"] == "load" and after["upload"]:
             rect = after["rect"]
             area = rect[2] * rect[3]
@@ -225,9 +237,14 @@ def inspect_staged_capture(source_dir, native_dir):
                 before["frame"] != edge["frame"] or
                 edge["primitive_ordinal"] != ordinal):
             raise ValueError("direct edge differs from GPU draw-pair identity")
-        if (_snapshot_word(native, before["snapshot"], x, y) != edge["before"] or
-                _snapshot_word(native, after["snapshot"], x, y) != edge["after"]):
+        if (sample(before["snapshot"]) != edge["before"] or
+                sample(after["snapshot"]) != edge["after"]):
             raise ValueError("edge differs from independent full native VRAM snapshot")
+
+    # A final revisit also catches inode swaps after a snapshot's last
+    # draw-edge comparison but before the structural result is returned.
+    for filename in tuple(sampled_inodes):
+        sample(filename)
 
     # Source files may still be synthetic despite perfect hashes.
     return {
