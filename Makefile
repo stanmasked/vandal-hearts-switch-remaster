@@ -398,3 +398,22 @@ $(BUILD)/libnx-ps1-music-av-resume-retry.nro: $(BUILD)/libnx-ps1-music-av-resume
 
 ps1-music-av-resume-retry-probe: $(BUILD)/libnx-ps1-music-av-resume-retry.nro
 	python3 tests/check_nro.py $<
+
+# Console-only HOME/sleep focus-event instrumentation. No automatic
+# stop/reopen or simulated inputs; requires manual physical testing.
+.PHONY: ps1-music-av-focus-probe
+
+$(BUILD)/libnx-ps1-music-av-focus.elf: $(PS1_MUSIC_AV_SOURCES) \
+	source/vh_audio_output_recovery.h source/game_renderer.h \
+	source/game_state.h | $(BUILD)
+	$(CC) $(CFLAGS) -std=c11 -DVH_AUDIO_HARDWARE_FOCUS_TRACE=1 -Isource \
+		$(LDFLAGS) $(PS1_MUSIC_AV_SOURCES) -o $@ $(LDLIBS) -lm
+
+$(BUILD)/libnx-ps1-music-av-focus.nacp: | $(BUILD)
+	$(NACPTOOL) --create "Vandal Hearts AV Focus Trace" "$(APP_AUTHOR)" "$(APP_VERSION)" $@
+
+$(BUILD)/libnx-ps1-music-av-focus.nro: $(BUILD)/libnx-ps1-music-av-focus.elf $(BUILD)/libnx-ps1-music-av-focus.nacp
+	$(ELF2NRO) $< $@ --nacp=$(BUILD)/libnx-ps1-music-av-focus.nacp
+
+ps1-music-av-focus-probe: $(BUILD)/libnx-ps1-music-av-focus.nro
+	python3 tests/check_nro.py $<
