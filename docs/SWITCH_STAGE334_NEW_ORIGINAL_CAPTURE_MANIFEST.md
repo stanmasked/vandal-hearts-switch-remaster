@@ -10,4 +10,10 @@ The manifest records **all four newly observed original source SHA-256 hashes**,
 
 Unlike Stages328–333, Stage334 **does not require the new capture's final call to be shorter than its prior-call median**. Such a disagreement is valuable authentic new data, not a synthetic verification failure. Ten synthetic acceptance/rejection tests cover unchanged original sources, a slower new call, altered source bytes, forged prior receipts, mismatched Stage304 and the absence of absolute clock epochs in the compact report.
 
-Modifying `.github/workflows/emulator-smoke.yml` triggers an actual separate GitHub Actions NeXium run for this branch. A queued/running workflow does **not** prove a new real capture; Stage334 success and new measurements must be checked in its completed job logs and downloaded artifact. The old two captures and their evidence remain unchanged. No original PS1 soundtrack, audible dropout or real Switch audio claim is made.
+The actual new [NeXium workflow #39175592570](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39175592570) **completed successfully**, with the original NRO guest execution, host PCM capture, strict Stage304/305, unchanged Stage325 clock source and the final Stage334 source receipt all independently successful.
+
+New original guest normal `PlayBuffer` last-call service bracket: **18,486,979 guest software ns**. Lower median of preceding successful retained calls: **32,374,948 guest software ns**. Host wall event intervals: **324 ms / 4,221 ms**; host monotonic intervals: **324,470,642 ns / 4,220,779,386 ns**. Host PCM file-size deltas: **63,436 / 820,420 bytes**. No guest-host timing synchronization follows.
+
+Subsequently, the [independent three-original source replay #39176524278](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39176524278) also **passed 13/13 source and negative-control tests** and independently recomputed the third original archived Stage334 receipt exactly. Its source pins and side-by-side three-run software measurements are documented in `docs/SWITCH_STAGE335_THREE_ORIGINAL_NEXIUM_CAPTURE_COHORTS.md`.
+
+The older two source archives remain unchanged. Original PS1 soundtrack fidelity, audible dropout and real Nintendo Switch speaker audio are still **unverified**.
