@@ -113,8 +113,8 @@ class OpticalGuestExitSynthetic(unittest.TestCase):
             altered=source.copy()
         bit_index=200
         col,row=bit_index % 112,bit_index // 112
-        px=250+7+col*7+3
-        py=160+7+row*7+3
+        px=250+round((col+1.5)*798/114)
+        py=160+round((row+1.5)*476/68)
         original=altered.getpixel((px,py))
         altered.putpixel((px,py),
                          (0,0,0) if min(original)>=177 else (255,255,255))
