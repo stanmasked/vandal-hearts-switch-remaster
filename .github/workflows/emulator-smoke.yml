@@ -1606,6 +1606,48 @@ jobs:
           PY
           echo "Stage303: captured original Parec before-SIGINT and after-wait PCM byte snapshots; independently source-bound and byte/frame-intersected with EOF silence. Buffered host snapshots do NOT prove audible/guest shutdown." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Stage304 source-bound real Plus exit control host PCM timeline
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_pcm_exit_controls.py \
+            --monitor runtime-evidence/nexium-monitor-s16le-48k.pcm \
+            --monitor-report runtime-evidence/pcm-quality-report.json \
+            --scenes runtime-evidence/nexium-scenes-s16le-48k.pcm \
+            --scene-report runtime-evidence/scene-audio-report.json \
+            --events runtime-evidence/scene-events.csv \
+            --stage299 runtime-evidence/pcm-stream-integrity-stage299.json \
+            --stage300 runtime-evidence/pcm-scene-silence-stage300.json \
+            --stage301 runtime-evidence/pcm-marker-envelopes-stage301.json \
+            --stage302 runtime-evidence/pcm-recording-edge-silence-stage302.json \
+            --stage303 runtime-evidence/pcm-recorder-stop-stage303.json \
+            --stop-csv runtime-evidence/scene-recorder-stop.csv \
+            --control-csv runtime-evidence/scene-exit-controls.csv \
+            --output runtime-evidence/pcm-exit-controls-stage304.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("runtime-evidence/pcm-exit-controls-stage304.json").read_text())
+          es=r["exit_control_snapshots"]
+          if (r["result"]!="SOURCE_BOUND_BUFFERED_EXIT_CONTROL_TIMELINE_RECONCILED"
+                  or [e["event"] for e in es]!=[
+                    "before_plus_down","after_plus_up","control_sequence_end"]
+                  or r["all_original_source_witnesses_replayed"] is not True
+                  or r["host_pcm_file_size_snapshots_not_sample_exact"] is not True
+                  or r["plus_input_to_guest_music_stop_causality_proven"] is not False
+                  or r["audio_dropout_or_original_soundtrack_verified"] is not False
+                  or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage304 source-bound host control timeline not verified")
+          for before,after in zip(es,es[1:]):
+              if (before["pcm_bytes"]>after["pcm_bytes"]
+                      or before["host_epoch_ms"]>=after["host_epoch_ms"]):
+                  raise SystemExit("Stage304 non-monotone host Plus control snapshots")
+          print("Stage304 terminal zero frames observed at buffered control snapshots:",
+                [(e["event"],e.get("terminal_zero_frames_observed_by_snapshot_min"),
+                  e.get("terminal_zero_frames_observed_by_snapshot_max")) for e in es])
+          PY
+          echo "Stage304: source-bound buffered PCM snapshots around actual Plus control and optical exit sequence; does not prove guest music transition, audible glitch, or physical hardware behavior." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Record audio capture boundary
         if: always()
         env:
