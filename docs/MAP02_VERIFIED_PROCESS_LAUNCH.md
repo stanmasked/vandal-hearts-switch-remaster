@@ -178,6 +178,48 @@ SHA-256 уже самой process receipt через оригинальный CD
 подлинная MAP02 уже исполнялась. В CI используются только
 синтетические процессы и пиксели.
 
+## Детерминированное штатное завершение после нативного кадра
+
+Для диагностической сессии, в которой оригинальная игра может
+продолжать главный цикл после выбранного кадра и потому не завершаться
+сама, добавлена опциональная опция `--stop-after-target-present`.
+Она доступна **только** вместе с `--cycle-dir` и
+`--pc-preoverlay-dir` в source-bound Linux запуске:
+
+```bash
+python3 -m tools.map02_verified_process_launch run \
+  /private/map02/handoff /private/map02/native-windows \
+  /private/map02/scoped \
+  --pc-binary /private/map02/instrumented-pc-port \
+  --owned-game-image /private/map02/owned-disc.bin \
+  --upstream-checkout /private/map02/VandalHearts-PcPort \
+  --cycle-dir /private/map02/cycle \
+  --pc-preoverlay-dir /private/map02/preoverlay \
+  --build-receipt-dir /private/map02/build-receipt \
+  --build-bundle-dir /private/map02/build-bundle \
+  --krom-source /private/map02/owned-KROMDAT.BIN \
+  --x 10 --y 20 --stop-after-target-present
+```
+
+Опция передаётся в дочерний процесс как строгое значение
+`VH_MAP02_STOP_AFTER_PRESENT=1`. Исходно-закреплённый перехватчик
+вызывает обычный `exit(EXIT_SUCCESS)` **только после** завершённого
+`DrawOTag`, возврата **обычного** `PC_GpuPresent` и успешной
+эксклюзивной записи процессной квитанции порядка CD→GPU. Поэтому
+срабатывает существующий `atexit`-контроль и появляется отдельный
+clean-exit seal. Для неверного порядка CD/GPU, пустого/незащищённого
+каталога или `HiresPresent` завершение происходит с ошибкой, без
+положительного подтверждения. `_exit`, `SIGKILL` и подмена игрового
+процесса не используются.
+
+Опция не генерирует событий MAP02 и не перемещает игру к нужной
+сцене: оригинальный код **должен самостоятельно достичь** выбранного
+кадра. Если этого не произошло до timeout, запуск не подтверждается.
+При отказе `atexit`-проверки может быть удалена предварительная
+квитанция, и независимые верификаторы также откажут. Это не
+подтверждение работоспособности оригинальной карты на реальных данных;
+в CI используется синтетический нативный C-harness и тестовый ELF.
+
 ## Ограничения и приватность
 
 Этот режим **не умеет** доказать, что процесс потребил конкретный

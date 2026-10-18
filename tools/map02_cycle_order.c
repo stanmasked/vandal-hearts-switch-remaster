@@ -371,11 +371,28 @@ void vh_map02_cycle_present_finish(unsigned frame, int x, int y, int w,
         observed.failed = 1;
     }
     transition(6, 7);
-    if (observed.failed) return;
+    /* An explicit, local diagnostic-only stop allows the clean atexit
+     * seal to be created immediately after the observed native Present
+     * returns. A forced SIGKILL/_exit would lose that evidence. This
+     * option must never turn an invalid observation into exit status 0. */
+    const char *stop_setting = getenv("VH_MAP02_STOP_AFTER_PRESENT");
+    int stop_after_present = stop_setting && strcmp(stop_setting, "1") == 0;
+    if (observed.failed) {
+        if (stop_after_present) exit(EXIT_FAILURE);
+        return;
+    }
+    if (stop_after_present && hires) {
+        observed.failed = 1;
+        exit(EXIT_FAILURE);
+    }
     observed.present_x = x;
     observed.present_y = y;
     observed.present_w = w;
     observed.present_h = h;
     observed.present_hires = hires;
     publish_if_requested();
+    /* exit() executes the ordinary clean-exit seal guard. Only the
+     * verified, exclusive provisional receipt may lead to success. */
+    if (stop_after_present)
+        exit(!observed.failed && published.armed ? EXIT_SUCCESS : EXIT_FAILURE);
 }

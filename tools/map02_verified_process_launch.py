@@ -267,7 +267,8 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
                        owned_game, *, upstream, x, y, timeout=900,
                        arguments=(), cycle_dir=None,
                        build_receipt_dir=None, build_bundle_dir=None,
-                       krom_source=None, pc_preoverlay_dir=None):
+                       krom_source=None, pc_preoverlay_dir=None,
+                       stop_after_present=False):
     """Run the given PC binary directly; never run a shell or create game data."""
     if not sys.platform.startswith("linux") or not Path("/proc/self/exe").exists():
         raise ValueError("observed executable launch requires Linux /proc")
@@ -278,6 +279,10 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
                   if pc_preoverlay_dir is not None else None)
     if preoverlay is not None and cycle is None:
         raise ValueError("private RGB24 capture requires a source-bound cycle")
+    if type(stop_after_present) is not bool:
+        raise ValueError("MAP02 stop-after-present must be boolean")
+    if stop_after_present and (cycle is None or preoverlay is None):
+        raise ValueError("MAP02 clean stop requires cycle and private RGB24 capture")
     checked_dirs = ((handoff, native, scoped) +
                     ((cycle,) if cycle is not None else ()) +
                     ((preoverlay,) if preoverlay is not None else ()))
@@ -393,6 +398,8 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
         env["VH_MAP02_CYCLE_OUTPUT_DIR"] = str(cycle)
         if preoverlay is not None:
             env["VH_MAP02_PC_PREOVERLAY_OUTPUT_DIR"] = str(preoverlay)
+        if stop_after_present:
+            env["VH_MAP02_STOP_AFTER_PRESENT"] = "1"
     process = None
     observed = None
     game_fd_observed = False
@@ -635,6 +642,8 @@ def main():
                    help="optional private empty 0700 directory for in-process CD->GPU order")
     p.add_argument("--pc-preoverlay-dir", type=Path,
                    help="separate empty 0700 native RGB24 capture directory, valid only with --cycle-dir")
+    p.add_argument("--stop-after-target-present", action="store_true",
+                   help="opt-in clean process exit after selected native PC Present; requires cycle and RGB24")
     p.add_argument("--build-receipt-dir", type=Path,
                    help="private local full-ELF build receipt directory")
     p.add_argument("--build-bundle-dir", type=Path,
@@ -657,11 +666,13 @@ def main():
                 build_receipt_dir=a.build_receipt_dir,
                 build_bundle_dir=a.build_bundle_dir,
                 krom_source=a.krom_source,
-                pc_preoverlay_dir=a.pc_preoverlay_dir)
+                pc_preoverlay_dir=a.pc_preoverlay_dir,
+                stop_after_present=a.stop_after_target_present)
         else:
             if (a.cycle_dir is not None or a.build_receipt_dir is not None or
                     a.build_bundle_dir is not None or
-                    a.krom_source is not None or a.pc_preoverlay_dir is not None):
+                    a.krom_source is not None or a.pc_preoverlay_dir is not None or
+                    a.stop_after_target_present):
                 raise ValueError("verify original cycle via separate private witness verifier")
             if forwarded:
                 raise ValueError("verify does not accept executable arguments")

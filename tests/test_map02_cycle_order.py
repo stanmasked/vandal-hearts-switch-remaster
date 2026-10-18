@@ -370,7 +370,8 @@ class CycleOrderTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.temp.cleanup()
 
-    def run_mode(self, mode, *, frame="73", directory=None, fault=None):
+    def run_mode(self, mode, *, frame="73", directory=None, fault=None,
+                 stop_after_present=False):
         env = dict(os.environ)
         env["VH_MAP02_PROBE_FRAME"] = frame
         if directory is not None:
@@ -378,6 +379,9 @@ class CycleOrderTests(unittest.TestCase):
         else:
             env.pop("VH_MAP02_CYCLE_OUTPUT_DIR", None)
         env.pop("VH_MAP02_TEST_FAULT", None)
+        env.pop("VH_MAP02_STOP_AFTER_PRESENT", None)
+        if stop_after_present:
+            env["VH_MAP02_STOP_AFTER_PRESENT"] = "1"
         if fault is not None:
             env["VH_MAP02_TEST_FAULT"] = fault
             env["LD_PRELOAD"] = str(self.fault_library)
@@ -422,6 +426,49 @@ class CycleOrderTests(unittest.TestCase):
                 proc = self.run_mode(mode)
                 self.assertEqual(proc.returncode, 0, proc.stderr)
                 self.assertIn("receipt=0", proc.stdout)
+
+    def test_opt_in_clean_stop_seals_only_verified_native_presentation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "private"
+            out.mkdir(mode=0o700)
+            proc = self.run_mode("post-publish-cycle-extra-draw",
+                                 directory=out, stop_after_present=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            # Exit occurs within Present, not after our synthetic late hook.
+            self.assertEqual(proc.stdout, "")
+            receipt = out / "map02-single-process-cycle.jsonl"
+            seal = out / "map02-cycle-clean-exit.jsonl"
+            self.assertEqual(receipt.read_bytes(), seal.read_bytes())
+            self.assertNotEqual(receipt.stat().st_ino, seal.stat().st_ino)
+            self.assertEqual(receipt.stat().st_mode & 0o777, 0o600)
+            data = json.loads(receipt.read_text())
+            self.assertEqual(data["gpu_draw_frame"], 73)
+            self.assertTrue(data["pc_present_call_returned"])
+            self.assertFalse(data["present_backend_is_hires"])
+            self.assertFalse(data["original_map02_rendering_proven"])
+
+    def test_opt_in_stop_rejects_failed_hires_or_unsealed_capture(self):
+        for mode in ("draw-zero-primitives", "broken-ot",
+                     "present-zero-width", "present-hires",
+                     "present-before-draw"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                out = Path(tmp) / "private"
+                out.mkdir(mode=0o700)
+                proc = self.run_mode(mode, directory=out,
+                                     stop_after_present=True)
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertFalse(
+                    (out / "map02-cycle-clean-exit.jsonl").exists())
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "missing-private-dir"
+            proc = self.run_mode("good", directory=out,
+                                 stop_after_present=True)
+            self.assertNotEqual(proc.returncode, 0)
+
+    def test_opt_in_stop_never_changes_unselected_frame(self):
+        proc = self.run_mode("good", frame="72", stop_after_present=True)
+        self.assertEqual(proc.returncode, 0)
+        self.assertIn("receipt=0", proc.stdout)
 
     def test_hires_present_is_distinct_from_native_vram(self):
         proc = self.run_mode("present-hires")

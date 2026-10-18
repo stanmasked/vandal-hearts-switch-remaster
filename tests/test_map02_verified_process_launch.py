@@ -727,6 +727,26 @@ int main(int argc, char **argv) {
                     build_bundle_dir=self.handoff.parent / "bundle")
         self.assertFalse((self.handoff / RECEIPT).exists())
 
+    def test_stop_after_present_requires_private_cycle_and_rgb24(self):
+        cycle = self.handoff.parent / "cycle-stop"
+        rgb = self.handoff.parent / "rgb-stop"
+        cycle.mkdir(mode=0o700)
+        rgb.mkdir(mode=0o700)
+        cases = (
+            {"stop_after_present": True},
+            {"stop_after_present": True, "cycle_dir": cycle},
+            {"stop_after_present": True, "pc_preoverlay_dir": rgb},
+            {"stop_after_present": "1", "cycle_dir": cycle,
+             "pc_preoverlay_dir": rgb},
+        )
+        for options in cases:
+            with self.subTest(options=options), self.assertRaises(ValueError):
+                launch_observed_pc(
+                    self.handoff, self.native, self.scoped,
+                    self.binary, self.owned, upstream=self.upstream,
+                    x=10, y=20, timeout=8, **options)
+        self.assertFalse((self.handoff / RECEIPT).exists())
+
     def test_real_synthetic_child_publishes_v3_bound_rgb24_digests(self):
         cycle = self.handoff.parent / "cycle-with-rgb24"
         rgb = self.handoff.parent / "preoverlay-process-v3"
@@ -772,12 +792,13 @@ int main(int argc, char **argv) {
                     x=10, y=20, timeout=8, cycle_dir=cycle,
                     build_receipt_dir=self.handoff.parent / "v3-build-receipt",
                     build_bundle_dir=self.handoff.parent / "v3-build-bundle",
-                    pc_preoverlay_dir=rgb)
+                    pc_preoverlay_dir=rgb, stop_after_present=True)
         self.assertEqual(build.call_count, 2)
         self.assertEqual(rgb_verified.call_count, 2)
         self.assertEqual(cycle_verified.call_count, 2)
         self.assertEqual(len(child_environments), 1)
         self.assertNotIn("LD_PRELOAD", child_environments[0])
+        self.assertEqual(child_environments[0]["VH_MAP02_STOP_AFTER_PRESENT"], "1")
         self.assertTrue(result["pc_preoverlay_capture_session_bound"])
         self.assertEqual(result["pc_preoverlay_image_sha256"], "d" * 64)
         self.assertEqual(result["pc_preoverlay_receipt_sha256"], "e" * 64)
