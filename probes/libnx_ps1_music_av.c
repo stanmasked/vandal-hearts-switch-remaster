@@ -19,6 +19,12 @@
 #ifdef VH_AUDIO_HARDWARE_FOCUS_TRACE
 #include "vh_audio_focus_trace.h"
 #endif
+#ifdef VH_AUDIO_HARDWARE_MANUAL_RESUME
+#include "vh_audio_manual_transport.h"
+#ifndef VH_AUDIO_HARDWARE_FOCUS_TRACE
+#error Manual X/Y recovery must be isolated in the physical focus diagnostic
+#endif
+#endif
 #include "vh_native_seq.h"
 #include "vh_native_spu.h"
 
@@ -68,6 +74,9 @@ static atomic_uint audout_failed_returns;
 static AppletHookCookie hardware_focus_cookie;
 static atomic_int hardware_focus_notify_mode;
 static VhAudioFocusTrace hardware_focus_trace;
+#ifdef VH_AUDIO_HARDWARE_MANUAL_RESUME
+static VhAudioManualTransport hardware_manual_transport;
+#endif
 static void hardware_focus_event(AppletHookType kind, void *param) {
     (void)param;
     if (kind==AppletHookType_OnFocusState) {
@@ -369,6 +378,34 @@ static void audio_worker(void *unused) {
     (void)unused;
     unsigned rendered_blocks=0, fixture_b=0;
     while (!atomic_load(&audio_stop)) {
+#ifdef VH_AUDIO_HARDWARE_MANUAL_RESUME
+        /* Consume REAL X/Y button requests on the owning audio thread,
+         * between fully returned pages; never in applet callbacks.
+         * A success marker requires the NEXT returned PCM descriptor. */
+        const VhAudioManualAction manual_action=
+            vh_audio_manual_take(&hardware_manual_transport);
+        if(manual_action!=VH_MANUAL_NONE) {
+            const int ready=native_output.initialized &&
+                native_output.started &&
+                vh_audio_page_lease_ready(&native_output.lease);
+            int rc=-1;
+            if(ready) {
+                if(manual_action==VH_MANUAL_QUICK) {
+                    if(!native_stop(&native_output))
+                        rc=native_start(&native_output);
+                } else if(manual_action==VH_MANUAL_REOPEN) {
+                    rc=vh_audio_output_resume_recover(
+                        &output_ops,&output_recovery,1);
+                }
+            }
+            vh_audio_manual_finished_service(
+                &hardware_manual_transport,ready && rc==0);
+            if(!ready || rc) {
+                atomic_store(&audio_fault,14);
+                break; /* do not synthesize/replay PCM on failure */
+            }
+        }
+#endif
 #if defined(VH_AUDIO_GUEST_RESUME_AUTOTEST) || defined(VH_AUDIO_GUEST_RESUME_RETRY_AUTOTEST)
         /* Run X-equivalent stop/start after exactly 16 real returned
          * buffers; later exercise Y-equivalent stop/close/open/start at
@@ -657,6 +694,9 @@ static void audio_worker(void *unused) {
             break;
         }
         atomic_fetch_add(&audout_buffers_completed, 1u);
+#ifdef VH_AUDIO_HARDWARE_MANUAL_RESUME
+        vh_audio_manual_returned_pcm(&hardware_manual_transport);
+#endif
 #if defined(VH_AUDIO_GUEST_RESUME_AUTOTEST) || defined(VH_AUDIO_GUEST_RESUME_RETRY_AUTOTEST)
         /* Mark each action verified only AFTER the next real returned
          * PCM descriptor; a successful stop/start alone is insufficient. */
@@ -950,6 +990,30 @@ static void paint(VhCanvas *canvas, const VhGameState *state,
                 1004+(int)tile_idx*48+(int)tally*7,
                 667,4,9,hero);
     }
+#ifdef VH_AUDIO_HARDWARE_MANUAL_RESUME
+    /* X and Y are explicitly operator-initiated transport tests.
+     * Blue=actual post-action PCM return, yellow=pending/untested,
+     * red=service error. Never treat these as proof of heard audio. */
+    const int x=atomic_load(&hardware_manual_transport.quick_result);
+    const int y=atomic_load(&hardware_manual_transport.reopen_result);
+    const uint32_t control_colors[2]={
+        x==2 ? hero : x<0 ? sound_fail : source_missing,
+        y==2 ? hero : y<0 ? sound_fail : source_missing
+    };
+    static const uint8_t control_glyphs[2][7]={
+        {0x11,0x11,0x0a,0x04,0x0a,0x11,0x11}, /* X */
+        {0x11,0x11,0x0a,0x04,0x04,0x04,0x04}  /* Y */
+    };
+    for(unsigned tile=0u;tile<2u;tile++) {
+        const int x0=1105+(int)tile*55;
+        for(unsigned yy=0u;yy<7u;yy++)
+            for(unsigned xx=0u;xx<5u;xx++)
+                if(control_glyphs[tile][yy] & (0x10u>>xx))
+                    vh_canvas_fill_rect(canvas,x0+9+(int)xx*4,
+                                        680+(int)yy*2,3,2,hero);
+        vh_canvas_fill_rect(canvas,x0,696,40,15,control_colors[tile]);
+    }
+#endif
 #endif
 }
 
@@ -994,6 +1058,9 @@ int main(void) {
     atomic_store(&hardware_focus_notify_mode,
                  R_SUCCEEDED(notify_rc) ? 1 : -1);
 #endif
+#ifdef VH_AUDIO_HARDWARE_MANUAL_RESUME
+    vh_audio_manual_init(&hardware_manual_transport);
+#endif
     audio_active = music_ready ? start_native_audio() : 0;
     VhGameState state = {1, 2, 1, 2, 6, 3, 0};
     uint32_t tick = 0;
@@ -1008,6 +1075,16 @@ int main(void) {
         if (buttons_down & HidNpadButton_A) actions |= VH_INPUT_CONFIRM;
         if (buttons_down & HidNpadButton_B) actions |= VH_INPUT_CANCEL;
         if (buttons_down & HidNpadButton_Plus) actions |= VH_INPUT_QUIT;
+#ifdef VH_AUDIO_HARDWARE_MANUAL_RESUME
+        /* Only genuine physical button transitions are accepted.
+         * Busy/failed requests are ignored, never silently queued. */
+        if (buttons_down & HidNpadButton_X)
+            (void)vh_audio_manual_request(
+                &hardware_manual_transport,VH_MANUAL_QUICK);
+        if (buttons_down & HidNpadButton_Y)
+            (void)vh_audio_manual_request(
+                &hardware_manual_transport,VH_MANUAL_REOPEN);
+#endif
         if (vh_process_input(&state, actions, GRID_COLS, GRID_ROWS, 2))
             break;
 
