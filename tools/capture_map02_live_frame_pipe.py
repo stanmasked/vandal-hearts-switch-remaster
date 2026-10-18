@@ -126,7 +126,9 @@ def capture(executable, output_dir, *, frame, width, height,
         deadline = time.monotonic() + timeout
         proc = subprocess.Popen(
             [str(exe), *args], executable=f"/proc/self/fd/{fd}",
-            pass_fds=(fd,), cwd=exe.parent, env={"LC_ALL": "C"},
+            pass_fds=(fd,), cwd=exe.parent,
+            env={"LC_ALL": "C",
+                 "VH_MAP02_PRIVATE_FRAME_PIPE_FRAME": str(frame)},
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL, shell=False,
         )
