@@ -464,7 +464,7 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
         # Imported lazily: cycle's independent final verifier also imports
         # this process launcher through the original CD/GPU witness chain.
         from tools.verify_map02_cycle_cd_gpu_join import _cycle_receipt
-        _, nonce_digest = _cycle_receipt(cycle, frame)
+        _, nonce_digest, _ = _cycle_receipt(cycle, frame)
         if nonce_digest != checked["capture_session_sha256"]:
             raise ValueError("single-process cycle nonce differs from GPU/scoped witness")
     receipt = _validate_receipt({
