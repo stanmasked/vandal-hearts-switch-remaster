@@ -188,6 +188,51 @@ class AvNroManifestTests(unittest.TestCase):
             verify_bundle(self.root,COMMIT)
         self.assertNotEqual(self.cli().returncode,0)
 
+    def test_nro_text_must_start_after_full_header(self):
+        name = NRO_NAMES[2]
+        data = bytearray(self.files[name])
+        data[0x20:0x24] = (0x70).to_bytes(4, "little")
+        # All three segments remain disjoint and within declared size,
+        # but the first one overwrites the NRO's 0x80-byte header.
+        self.files[name] = bytes(data)
+        (self.root / name).write_bytes(data)
+        self.set_manifest()
+        with self.assertRaisesRegex(ValueError, "NRO segment overlaps header"):
+            verify_bundle(self.root, COMMIT, exact_inventory=True)
+        self.assertNotEqual(self.cli("--exact-inventory").returncode, 0)
+
+    def test_unaligned_data_offset_with_updated_hash_rejected(self):
+        name = NRO_NAMES[4]
+        data = bytearray(self.files[name])
+        data[0x30:0x34] = (0xA1).to_bytes(4, "little")
+        self.files[name] = bytes(data)
+        (self.root / name).write_bytes(data)
+        self.set_manifest()
+        with self.assertRaisesRegex(ValueError, "unaligned NRO segment offset"):
+            verify_bundle(self.root, COMMIT)
+        self.assertNotEqual(self.cli().returncode, 0)
+
+    def test_unaligned_rodata_offset_in_nonoverlapping_gap_rejected(self):
+        name = NRO_NAMES[5]
+        data = bytearray(self.files[name])
+        data[0x28:0x2c] = (0x91).to_bytes(4, "little")
+        data[0x2c:0x30] = (0x0f).to_bytes(4, "little")
+        self.files[name] = bytes(data)
+        (self.root / name).write_bytes(data)
+        self.set_manifest()
+        with self.assertRaisesRegex(ValueError, "unaligned NRO segment offset"):
+            verify_bundle(self.root)
+
+    def test_aligned_nonoverlapping_gaps_are_accepted(self):
+        name = NRO_NAMES[1]
+        data = bytearray(self.files[name])
+        data[0x28:0x2c] = (0xA0).to_bytes(4, "little")
+        data[0x30:0x34] = (0xC0).to_bytes(4, "little")
+        self.files[name] = bytes(data)
+        (self.root / name).write_bytes(data)
+        self.set_manifest()
+        self.assertEqual(verify_bundle(self.root, COMMIT)["nro_count"], 7)
+
     def test_metadata_limits_match_valid_exact_fixture_sizes(self):
         self.assertEqual((self.root / COMMIT_FILE).stat().st_size,
                          COMMIT_MARKER_BYTES)
