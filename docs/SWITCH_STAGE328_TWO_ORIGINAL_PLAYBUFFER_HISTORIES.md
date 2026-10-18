@@ -11,6 +11,12 @@ Sources:
 - First successful NeXium [#39166023593](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39166023593), original `audio-playbuffer-history-000.csv` SHA-256 `72eb03e4508e2f8f7814f8b059aa5bfba69c71bbdac9f495ffab447d23fc345d`.
 - Second successful NeXium [#39167324026](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39167324026), original SHA-256 `795c751e11449b0d0e0938031c540890eac23058e3a50c49ac2be9f622950a07`.
 
+Original Stage320 last-success CSV SHA-256 values are
+`fdc3ab8bcc5908ccb61c149ba185435fb5ab4a6409d33a43c02e7a179caf4aec`
+(first) and
+`2559938d1f86f8812405e2d3b1573398109450663188000bf1d58c8c965031e9`
+(second), independently anchored to the exact successful source run logs.
+
 ## Original software-call observations
 
 | Source-only guest measurement | First NeXium | Second NeXium |
@@ -39,7 +45,8 @@ NeXium run:
 - `guest-last-playbuffer-stage320.json` — original source-bound last-call evidence
 - `guest-playbuffer-history-stage322.json` — original bounded sixteen-call audit
 
-It pins the original history hashes, checks original last-call CSV SHA,
+It pins the two original history hashes **and independently pins both
+original last-call CSV hashes**, checks original last-call source identity,
 success and evidence-scope flags, then **re-runs** the pure Stage322
 source verifier against each exact original history, requiring the
 entire recomputed Stage322 receipt to match the original report
@@ -49,8 +56,8 @@ previous successes and no fabricated earlier baseline. Source files
 that are missing, ambiguous, symlinked, oversized, altered, or have
 mismatched Stage320/322 witnesses are rejected.
 
-Twelve synthetic regression methods cover those acceptance and
-rejection conditions. The independent GitHub Actions workflow
+Thirteen synthetic regression methods cover those acceptance and
+rejection conditions, including a forged last-call SHA-256 pin. The independent GitHub Actions workflow
 `.github/workflows/stage328-compare-real-playbuffer-histories.yml`
 downloads the two **authentic NeXium artifacts** from their pinned
 successful workflow IDs. A compact result contains only source hashes,
