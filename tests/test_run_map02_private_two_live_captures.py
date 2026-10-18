@@ -99,6 +99,8 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
         self.assertTrue(result["repeated_full_gpu_vram_snapshot_sequence_identical"])
         self.assertTrue(result["repeated_gpu_event_journal_identical"])
         self.assertEqual(result["unmatched_gpu_vram_snapshots"], 0)
+        self.assertIsNone(result["first_joint_gpu_divergence_index"])
+        self.assertIsNone(result["first_joint_gpu_divergence_kind"])
 
     def test_invalid_strict_mode_type_refused_before_launch(self):
         with self.assertRaisesRegex(ValueError, "arguments invalid"):
@@ -163,6 +165,25 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not bit-exact"):
             two_live._require_bit_exact_gpu_timeline(
                 {**good, "unmatched_gpu_event_records": 2})
+        # Reports that silently omit or falsify joint-localization fields
+        # must fail closed, even if the legacy digest/equality bits say yes.
+        for changed in (
+            {"first_joint_gpu_divergence_kind": "event-only"},
+            {"first_joint_gpu_divergence_index": 0},
+            {"first_joint_gpu_divergence_pair_index": 0},
+            {"first_joint_gpu_divergence_phase": "before"},
+            {"first_gpu_event_count": True},
+            {"second_gpu_event_count": good["first_gpu_event_count"] + 2},
+            {"second_gpu_vram_snapshot_count":
+                 good["first_gpu_vram_snapshot_count"] + 2},
+        ):
+            with self.subTest(changed=changed):
+                with self.assertRaisesRegex(ValueError, "not bit-exact"):
+                    two_live._require_bit_exact_gpu_timeline({**good, **changed})
+        without_field = dict(good)
+        del without_field["first_joint_gpu_divergence_kind"]
+        with self.assertRaisesRegex(ValueError, "not bit-exact"):
+            two_live._require_bit_exact_gpu_timeline(without_field)
 
     def test_strict_cli_flag_succeeds_with_two_real_synthetic_launches(self):
         cmd = [
