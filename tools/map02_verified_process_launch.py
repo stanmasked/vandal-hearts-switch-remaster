@@ -268,7 +268,8 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
                        arguments=(), cycle_dir=None,
                        build_receipt_dir=None, build_bundle_dir=None,
                        krom_source=None, pc_preoverlay_dir=None,
-                       stop_after_present=False):
+                       stop_after_present=False,
+                       source_capture_dir=None, native_preview_dir=None):
     """Run the given PC binary directly; never run a shell or create game data."""
     if not sys.platform.startswith("linux") or not Path("/proc/self/exe").exists():
         raise ValueError("observed executable launch requires Linux /proc")
@@ -296,6 +297,21 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
         raise ValueError("native GPU, scoped and cycle capture folders must start empty")
     if (handoff / RECEIPT).exists() or (handoff / RECEIPT).is_symlink():
         raise ValueError("local execution receipt already exists")
+    # The full end-to-end capture involves two more private directories:
+    # source/GTE evidence and the eventual native VRAM PNG. An explicitly
+    # requested full-layout audit must run BEFORE any executable is started
+    # and must not silently accept only one of those two paths.
+    if (source_capture_dir is None) != (native_preview_dir is None):
+        raise ValueError("full MAP02 prelaunch audit requires both source and preview directories")
+    if source_capture_dir is not None:
+        if cycle is None or preoverlay is None:
+            raise ValueError("full MAP02 prelaunch audit requires cycle and RGB24 capture")
+        from tools.check_map02_private_launch_layout import inspect_private_launch_layout
+        inspected = inspect_private_launch_layout(
+            source_capture_dir, native, scoped, handoff, cycle,
+            native_preview_dir, preoverlay)
+        if inspected["prelaunch_layout_ready"] is not True:
+            raise ValueError("full MAP02 prelaunch layout was not verified")
     plan_raw = private_file(handoff, PLAN, max_bytes=4096)
     plan = _validate_plan(plan_raw)
     x = number(x, "sample X", 0, 1023)
@@ -642,6 +658,10 @@ def main():
                    help="optional private empty 0700 directory for in-process CD->GPU order")
     p.add_argument("--pc-preoverlay-dir", type=Path,
                    help="separate empty 0700 native RGB24 capture directory, valid only with --cycle-dir")
+    p.add_argument("--source-capture-dir", type=Path,
+                   help="opt-in prelaunch seven-directory audit: prepared private source/GTE evidence")
+    p.add_argument("--native-preview-dir", type=Path,
+                   help="opt-in prelaunch seven-directory audit: empty private VRAM PNG directory")
     p.add_argument("--stop-after-target-present", action="store_true",
                    help="opt-in clean process exit after selected native PC Present; requires cycle and RGB24")
     p.add_argument("--build-receipt-dir", type=Path,
@@ -667,11 +687,15 @@ def main():
                 build_bundle_dir=a.build_bundle_dir,
                 krom_source=a.krom_source,
                 pc_preoverlay_dir=a.pc_preoverlay_dir,
-                stop_after_present=a.stop_after_target_present)
+                stop_after_present=a.stop_after_target_present,
+                source_capture_dir=a.source_capture_dir,
+                native_preview_dir=a.native_preview_dir)
         else:
             if (a.cycle_dir is not None or a.build_receipt_dir is not None or
                     a.build_bundle_dir is not None or
                     a.krom_source is not None or a.pc_preoverlay_dir is not None or
+                    a.source_capture_dir is not None or
+                    a.native_preview_dir is not None or
                     a.stop_after_target_present):
                 raise ValueError("verify original cycle via separate private witness verifier")
             if forwarded:
