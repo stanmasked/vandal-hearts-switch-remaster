@@ -10,7 +10,9 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
+from tools import audit_map02_joint_gpu_frame as native_audit
 from tools.capture_map02_live_frame_pipe import capture
 from tools.replay_map02_live_frame_receipt import replay
 
@@ -190,6 +192,56 @@ class JointNativeCaptureTests(unittest.TestCase):
         (self.journal / "old").write_bytes(b"x")
         with self.assertRaisesRegex(ValueError, "empty"):
             self.run_joint()
+        self.assert_no_published_frame()
+
+    def test_world_readable_native_journal_snapshot_rejected(self):
+        # A private journal that leaked permissions must never publish
+        # a successful frame/receipt, even if its bytes match.
+        # First produce a valid journal; reject at independent replay.
+        self.run_joint()
+        image = self.journal / "gpu-0001-vram.bin"
+        image.chmod(0o644)
+        with self.assertRaisesRegex(ValueError, "mode"):
+            replay(self.out, executable=self.executable,
+                   gpu_journal_dir=self.journal)
+
+    def test_native_journal_hardlink_refused(self):
+        self.run_joint()
+        target = self.journal / "gpu-0001-vram.bin"
+        alias = self.journal.parent / "outside-linked-vram.bin"
+        os.link(target, alias)
+        with self.assertRaisesRegex(ValueError, "mode"):
+            replay(self.out, executable=self.executable,
+                   gpu_journal_dir=self.journal)
+
+    def test_symlinked_native_journal_file_refused(self):
+        self.run_joint()
+        original = self.journal / "gpu-0001-vram.bin"
+        destination = self.journal.parent / "moved-vram.bin"
+        original.rename(destination)
+        original.symlink_to(destination)
+        with self.assertRaises(OSError):
+            replay(self.out, executable=self.executable,
+                   gpu_journal_dir=self.journal)
+
+    def test_same_bytes_different_inode_during_gpu_replay_rejected(self):
+        original_verify = native_audit.verify_capture
+        calls = [0]
+        def swap_after_first(*a, **kw):
+            result = original_verify(*a, **kw)
+            calls[0] += 1
+            if calls[0] == 1:
+                target = self.journal / "gpu-0000-vram.bin"
+                other = self.journal / "replacement.bin"
+                other.write_bytes(target.read_bytes())
+                other.chmod(0o600)
+                other.replace(target)
+            return result
+        with patch.object(native_audit, "verify_capture",
+                          side_effect=swap_after_first):
+            with self.assertRaisesRegex(ValueError, "files/directory changed"):
+                self.run_joint()
+        self.assertEqual(calls[0], 2)
         self.assert_no_published_frame()
 
     def test_joint_mode_wrong_geometry_refused(self):
