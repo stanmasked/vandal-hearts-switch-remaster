@@ -59,3 +59,30 @@ intervals. Neither NeXium software-call timing nor any synthetic
 regression measures Switch DAC starvation, real speakers, music
 authenticity or actual human-audible glitches. No Stage281 CI result
 should be called successful before the new commit's run completes.
+
+## Accepted independent CI result (2026-10-18)
+
+[GitHub Actions 39082024765](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39082024765)
+**successfully completed** the eight original-SD-bound archive
+revalidation and the Stage281 whole-pair sensitivity calculation at
+commit `1ee92af4579757e8ecfec9bb3022ea398fae9ce8`.
+
+The observed ≥40 ms *switch-minus-idle* software call rate differences
+and leave-one-whole-pair-out extrema, per 1,000 calls, were:
+
+| Relative guest-audio seconds | Observed difference | Leave-one-pair-out min…max |
+| --- | ---: | ---: |
+| 1–17 | +0.370955 | −0.944880…+2.225485 |
+| 18–34 | +3.276119 | +1.022605…+4.432605 |
+| 35–51 | −1.154981 | −2.951397…+0.457038 |
+
+The **middle 17-second interval** stayed positive in each of eight
+leave-one-pair-out aggregates, but the fixed switch-before-idle
+capture ordering, emulator scheduling, and host variability remain.
+A positive leave-one-out range does **not** establish statistical
+significance or music-switch causality. The user-facing full-duration
+hardware listening and original game audio fidelity are still untested.
+
+The associated [Host SPU workflow 39082024770](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39082024770)
+and [Switch readiness workflow 39082024799](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39082024799)
+also completed successfully for that source commit.

@@ -106,7 +106,10 @@ def analyze_contrasts(steady:dict,temporal:dict,
                 -sensitivity["thirds"][second]["bands"][threshold][
                     "aggregate_switch_minus_idle_per_1000"]
             )
-            if round(aggregate,6)!=round(reported,6):
+            # Stage281 serializes the two rates separately to six decimals.
+            # Their subtraction may differ from the unrounded contrast
+            # by up to one unit in the sixth decimal place.
+            if abs(aggregate-reported)>0.000001000001:
                 raise CorrelationError("Stage281 differences contradict temporal contrast")
             bands[threshold]={
                 "aggregate_earlier_minus_later_per_1000":round(aggregate,6),
