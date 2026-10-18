@@ -67,12 +67,105 @@ static void test_capacity_and_restart(void) {
     assert(left.input_frames==0 && left.next_output_tick==0);
 }
 
+
+/* Ten seconds of independently generated stereo data. Compare exact output
+ * across fixed 512-frame input blocks and two different irregular schedules.
+ * This exercises frame-to-frame phase continuity across many boundaries and
+ * includes deliberately failed-capacity calls that must not consume PCM. */
+#define LONG_SOURCE_FRAMES (10u * VH_AUDIO_SAMPLE_RATE)
+static int16_t long_input[VH_AUDIO_BLOCK_FRAMES * 2u];
+static int16_t long_output[VH_AUDIO_RESAMPLE_MAX_FRAMES * 2u];
+
+typedef struct {
+    uint64_t pcm_hash;
+    size_t output_frames;
+    VhAudioResample state;
+} VhLongStreamResult;
+
+static uint64_t hash_pcm(uint64_t hash, const int16_t *pcm, size_t frames) {
+    for (size_t i = 0; i < frames * 2u; ++i) {
+        const uint16_t sample = (uint16_t)pcm[i];
+        hash ^= (uint8_t)sample;
+        hash *= UINT64_C(1099511628211);
+        hash ^= (uint8_t)(sample >> 8u);
+        hash *= UINT64_C(1099511628211);
+    }
+    return hash;
+}
+
+static VhLongStreamResult stream_ten_seconds(unsigned schedule) {
+    static const size_t uneven[] = {1u, 7u, 31u, 127u, 255u,
+                                     511u, 2u, 63u, 512u, 3u};
+    VhAudioResample state;
+    vh_audio_resample_reset(&state);
+    uint64_t hash = UINT64_C(14695981039346656037);
+    size_t total_output = 0u;
+    unsigned failed_capacity_checks = 0u;
+    for (size_t pos = 0u, step = 0u; pos < LONG_SOURCE_FRAMES; ++step) {
+        size_t chunk = VH_AUDIO_BLOCK_FRAMES;
+        if (schedule == 1u) {
+            chunk = uneven[step % (sizeof uneven / sizeof uneven[0])];
+        } else if (schedule == 2u) {
+            chunk = 1u + (step * 73u) % VH_AUDIO_BLOCK_FRAMES;
+        }
+        if (chunk > LONG_SOURCE_FRAMES - pos)
+            chunk = LONG_SOURCE_FRAMES - pos;
+        for (size_t i = 0; i < chunk; ++i) {
+            const size_t frame = pos + i;
+            const int left_sample = (int)((frame * 73u + 13u) & 65535u) - 32768;
+            const int right_sample = (int)((frame * 151u + 491u) & 65535u) - 32768;
+            long_input[2u * i] = (int16_t)left_sample;
+            long_input[2u * i + 1u] = (int16_t)right_sample;
+        }
+        if (schedule == 2u && step % 29u == 0u) {
+            /* Even a 1-frame input block needs more than one unit of
+             * conservative output capacity. A rejected attempt must be
+             * completely retryable, without phase or PCM writes. */
+            const VhAudioResample snapshot = state;
+            long_output[0] = 12345;
+            assert(vh_audio_resample_process(
+                &state, long_input, chunk, long_output, 1u) == 0u);
+            assert(memcmp(&state, &snapshot, sizeof state) == 0);
+            assert(long_output[0] == 12345);
+            ++failed_capacity_checks;
+        }
+        const size_t n = vh_audio_resample_process(
+            &state, long_input, chunk, long_output,
+            VH_AUDIO_RESAMPLE_MAX_FRAMES);
+        assert(n <= VH_AUDIO_RESAMPLE_MAX_FRAMES);
+        hash = hash_pcm(hash, long_output, n);
+        total_output += n;
+        pos += chunk;
+    }
+    if (schedule == 2u) assert(failed_capacity_checks >= 10u);
+    assert(state.input_frames == LONG_SOURCE_FRAMES);
+    VhLongStreamResult result = {hash, total_output, state};
+    return result;
+}
+
+static void test_ten_second_stream_phase_invariance(void) {
+    const VhLongStreamResult fixed = stream_ten_seconds(0u);
+    const VhLongStreamResult irregular = stream_ten_seconds(1u);
+    const VhLongStreamResult retried = stream_ten_seconds(2u);
+    /* Without an explicit end-of-stream flush, the last fractional
+     * sample needs one more input frame. 10 s at 44.1 kHz therefore
+     * produces 479999 complete interpolated frames, not 480000. */
+    assert(fixed.output_frames == 479999u);
+    assert(irregular.output_frames == fixed.output_frames);
+    assert(retried.output_frames == fixed.output_frames);
+    assert(irregular.pcm_hash == fixed.pcm_hash);
+    assert(retried.pcm_hash == fixed.pcm_hash);
+    assert(memcmp(&fixed.state, &irregular.state, sizeof fixed.state) == 0);
+    assert(memcmp(&fixed.state, &retried.state, sizeof fixed.state) == 0);
+}
+
 int main(void) {
     assert(VH_NATIVE_AUDOUT_RATE==48000u);
     assert(VH_AUDIO_SAMPLE_RATE==44100u);
     test_dc_and_first_linear_frames();
     test_chunk_invariance_and_stereo();
     test_capacity_and_restart();
-    puts("44.1k -> 48k stateful stereo resampler: PASS");
+    test_ten_second_stream_phase_invariance();
+    puts("44.1k -> 48k stateful stereo resampler: PASS (10s phase and chunk invariance)");
     return 0;
 }
