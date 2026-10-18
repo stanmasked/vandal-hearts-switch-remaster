@@ -81,7 +81,7 @@ class NativeAVScreenshotTests(unittest.TestCase):
             b=Path(folder)/"after.png"
             nro=Path(folder)/"guest.nro"
             witness=Path(folder)/"witness.json"
-            a_before=before.save(a)
+            before.save(a)
             after.save(b)
             nro.write_bytes(b"NRO0 generated test fixture")
             cmd=[sys.executable,"tests/check_native_av_screenshot.py",
@@ -137,7 +137,7 @@ class NativeAVScreenshotTests(unittest.TestCase):
             after.putpixel((1180,545),AUDIO_OK)
             before.save(a)
             after.save(b)
-            rejected=subprocess.run(cmd[:-1],capture_output=True,text=True)
+            rejected=subprocess.run(cmd[:-2],capture_output=True,text=True)
             self.assertNotEqual(rejected.returncode,0)
             self.assertFalse(witness.exists())
 
