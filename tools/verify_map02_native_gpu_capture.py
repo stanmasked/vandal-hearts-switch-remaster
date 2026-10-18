@@ -23,7 +23,8 @@ MAX_RECORDS = 64
 MAX_EVENT_BYTES = 128 * 1024
 
 
-def private_file(root: Path, name: str, *, expected=None, max_bytes=None):
+def private_file(root: Path, name: str, *, expected=None, max_bytes=None,
+                 _with_identity=False):
     """Double-read a bounded native GPU input from a pinned regular inode.
 
     The recorder may be audited after a private process exits; refuse links,
@@ -61,7 +62,7 @@ def private_file(root: Path, name: str, *, expected=None, max_bytes=None):
                 identity(os.stat(path, follow_symlinks=False)) !=
                 identity(before)):
             raise ValueError(f"{name}: input changed during private read")
-        return first
+        return (first, identity(before)) if _with_identity else first
     except OSError:
         raise ValueError(f"{name}: private input verification unavailable") from None
     finally:
@@ -199,7 +200,22 @@ def verify_capture(directory: Path, *, target_frame: int):
     if directory.is_symlink() or not directory.is_dir():
         raise ValueError("capture directory is missing or is a symlink")
     number(target_frame,"target DrawOTag frame",1,2**32-1)
-    log_raw=private_file(directory,LOG,max_bytes=MAX_EVENT_BYTES)
+    # Track both complete bytes and the precise inode used by the audit.
+    # Checks inside private_file alone cannot detect replacement after
+    # one capture file was audited but before the final positive report.
+    evidence={}
+
+    def read_evidence(name, *, expected=None, max_bytes=None):
+        raw, identity = private_file(
+            directory, name, expected=expected, max_bytes=max_bytes,
+            _with_identity=True)
+        token=(sha(raw), identity, expected, max_bytes)
+        if name in evidence and evidence[name] != token:
+            raise ValueError("native GPU evidence changed between audit passes")
+        evidence[name]=token
+        return raw
+
+    log_raw=read_evidence(LOG,max_bytes=MAX_EVENT_BYTES)
     lines=log_raw.splitlines()
     if (len(lines)<2 or len(lines)>MAX_RECORDS or len(lines)%2 or
             any(not line.strip() for line in lines)):
@@ -216,8 +232,8 @@ def verify_capture(directory: Path, *, target_frame: int):
                     "semi","ft4","draw_env"):
             if before.get(key)!=after.get(key):
                 raise ValueError(f"GPU event {i}: before/after metadata diverges ({key})")
-        a=private_file(directory,before["snapshot"],expected=VRAM_BYTES)
-        b=private_file(directory,after["snapshot"],expected=VRAM_BYTES)
+        a=read_evidence(before["snapshot"],expected=VRAM_BYTES)
+        b=read_evidence(after["snapshot"],expected=VRAM_BYTES)
         snapshot_hashes.extend((sha(a),sha(b)))
         changed=sum(a[j:j+2]!=b[j:j+2] for j in range(0,VRAM_BYTES,2))
         assignments+=changed
@@ -239,7 +255,7 @@ def verify_capture(directory: Path, *, target_frame: int):
                     area=rect[2]*rect[3]
                     if not 0<area<=16384:
                         raise ValueError("LoadImage payload exists for invalid/oversized rectangle")
-                    private_file(directory,upload,expected=area*2)
+                    read_evidence(upload,expected=area*2)
             elif kind=="move":
                 moves+=1
             elif kind=="clear":
@@ -249,6 +265,7 @@ def verify_capture(directory: Path, *, target_frame: int):
     # supplied, it must agree with every observed native GPU event and cap.
     status_path = directory / STATUS
     if status_path.exists() or status_path.is_symlink():
+        read_evidence(STATUS,max_bytes=4096)
         status_report = verify_capture_receipt(
             directory, target_frame=target_frame, events=events)
     else:
@@ -257,6 +274,14 @@ def verify_capture(directory: Path, *, target_frame: int):
             "capture_window_closed_without_detected_loss": False,
             "full_original_gameplay_frame_proven": False,
         }
+    # Re-open every manifest, event stream, VRAM snapshot and upload. Hashes
+    # and inode/metadata must match the exact files used for the result.
+    for name,(digest,identity,expected,max_bytes) in evidence.items():
+        rechecked,latest = private_file(
+            directory,name,expected=expected,max_bytes=max_bytes,
+            _with_identity=True)
+        if sha(rechecked)!=digest or latest!=identity:
+            raise ValueError("native GPU evidence changed during full audit")
     return {
         **status_report,
         "native_gpu_events_sha256":sha(log_raw),
