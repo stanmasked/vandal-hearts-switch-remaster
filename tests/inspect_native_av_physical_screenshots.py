@@ -126,11 +126,14 @@ def comparison(before, after):
             increment["F"] == "observed" and
             after["indicators"]["P"] == "blue"
         ),
+        # Manual worker failures are sticky for the lifetime of the
+        # diagnostic NRO. Red -> blue would require a new session or
+        # impossible state transition, not a recovered X/Y trial.
         "new_x_return_pixels": (
-            before["indicators"]["X"] in ("yellow", "red") and
+            before["indicators"]["X"] == "yellow" and
             after["indicators"]["X"] == "blue"),
         "new_y_return_pixels": (
-            before["indicators"]["Y"] in ("yellow", "red") and
+            before["indicators"]["Y"] == "yellow" and
             after["indicators"]["Y"] == "blue"),
     }
 
