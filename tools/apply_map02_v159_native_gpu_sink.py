@@ -12,7 +12,11 @@ from pathlib import Path
 from .apply_map02_v158_native_gp0_fifth import apply as apply_v158
 from .apply_map02_v69_pcsx_rearmed import once
 
-GPU_DISPATCH = "case 0x1810: GPU_writeData(value); return;"
+GPU_DISPATCH = ("\tcase 0x1810:\n"
+                "#ifdef VH_MAP02_V66_PCSX_PROBE\n"
+                "\t\t(void)vh68_pcsx_gp0_mmio_observe(value);\n"
+                "#endif\n"
+                "\t\tGPU_writeData(value); return;")
 
 
 def sink_observer_c() -> str:
@@ -51,12 +55,13 @@ def patch_hardware(source: str) -> str:
         "add GPU dispatch observer on original native psxHwWrite32",
     )
     return once(source, GPU_DISPATCH,
-        """case 0x1810:
+        """\tcase 0x1810:
 #ifdef VH_MAP02_V66_PCSX_PROBE
-        if(vh159_sink_active) vh159_capture_sink(regs,add,value);
+\t\t(void)vh68_pcsx_gp0_mmio_observe(value);
+\t\tif(vh159_sink_active) vh159_capture_sink(regs,add,value);
 #endif
-        GPU_writeData(value); return;""",
-        "observe real GP0 case immediately before actual GPU_writeData call")
+\t\tGPU_writeData(value); return;""",
+        "observe original v68 GP0 bridge immediately before actual GPU_writeData")
 
 
 def patch_frontend(source: str) -> str:
