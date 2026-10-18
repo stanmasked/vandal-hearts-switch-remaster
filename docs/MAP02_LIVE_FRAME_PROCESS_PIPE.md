@@ -433,3 +433,33 @@ and any separate original-source witness may be from another run.
 Despite observing a writable journal FD, the pipeline does not
 authenticate the process which wrote every journal byte, physical
 PlayStation pixels, or permission to replace HD assets.
+
+## Private claimed-frame inode continuity during source-native replay
+
+The independent `bridge_map02_private_frame_native.bridge` formerly
+compared the **same report** before and after the original FT4/VRAM audit.
+A local same-byte replacement of `reference.bgr555`,
+`candidate.bgr555` or `frames.json` could produce exactly the same
+SHA-256 and pixel statistics on both passes while changing the files
+used as the claimed evidence.
+
+The private bridge now snapshots the identity of all three files and
+the containing directory using an owner-held, no-follow directory FD.
+Device, inode, mode, link count, size and modification/change times
+must remain identical before comparison, after that comparison, and
+after the source-native audit and second comparison. Symlink and
+multi-linked candidate/reference/manifest files are refused. Only
+internal snapshots hold these identifiers: **public digest reports
+continue to exclude private inode and path information**.
+
+Synthetic tests replace the candidate, reference, manifest and full
+directory with byte-identical copies during the native witness,
+as well as present a hardlinked image. All are refused. A full-size
+C11 ELF → native GPU JSONL → terminal BGR555 → private comparison →
+FT4/VRAM bridge integration test also deliberately swaps the claimed
+candidate's inode without changing a pixel or manifest hash.
+
+This prevents an undetected local file-identity change **during the
+bounded audit window**, not changes after that window or forged PS1
+source labels. Retail/gameplay authenticity and HD substitution
+remain unproven and disabled respectively.
