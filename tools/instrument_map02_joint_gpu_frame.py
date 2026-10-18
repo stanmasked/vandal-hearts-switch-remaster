@@ -30,7 +30,8 @@ static int VH_Map02JointGpuSessionReady(void)
     return vh_capture_init && vh_capture_frame != 0 &&
         vh_capture_frame == (unsigned long)s_drawFrame &&
         vh_capture_seq >= 2u && vh_capture_seq < VH_CAPTURE_LIMIT &&
-        (vh_capture_seq % 2u) == 0u;
+        (vh_capture_seq % 2u) == 0u &&
+        vh_map02_joint_events_completed == vh_capture_seq;
 }
 #endif
 '''
@@ -39,6 +40,50 @@ COMPILE_GUARD = r'''
 #error "joint MAP02 frame flush requires native GPU journal instrumentation"
 #endif
 '''
+
+PRIVATE_FILE_OPENERS = (
+    '    file = fopen(snapshot_path, "wb");',
+    '        file = fopen(upload_path, "wb");',
+    '    log = fopen(log_path, "ab");',
+    '    fclose(log);',
+)
+EVENT_ANCHOR = 'static void VH_CaptureEvent('
+
+SECURE_JOURNAL = r'''
+#if defined(VH_MAP02_PRIVATE_FRAME_PIPE_TRACE)
+/* Native PC GPU joint observer: every output is exclusive, owner-private
+ * and no-follow. Hold the JSONL fd for the entire one-shot session so an
+ * on-disk journal name cannot redirect later events to a replacement inode. */
+#include <fcntl.h>
+#include <unistd.h>
+static FILE *vh_map02_joint_log;
+static unsigned vh_map02_joint_events_completed;
+static FILE *VH_Map02SecureFile(const char *path)
+{
+    int fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
+    FILE *output;
+    if (fd == -1)
+        return NULL;
+    output = fdopen(fd, "wb");
+    if (!output)
+        close(fd);
+    return output;
+}
+static FILE *VH_Map02SecureLog(const char *path)
+{
+    if (!vh_map02_joint_log)
+        vh_map02_joint_log = VH_Map02SecureFile(path);
+    return vh_map02_joint_log;
+}
+static int VH_Map02FlushLog(FILE *log)
+{
+    if (!log || ferror(log) || fflush(log) != 0 || ferror(log))
+        return -1;
+    return 0;
+}
+#endif
+'''
+
 ORIGINAL_GPU_MARKER = '/* ---- GetTPage / GetClut (psx-spx "Texpage Attribute" / "Clut Attribute") */'
 FRAME_FUNCTION = "static int vh_frame_pipe_selected;"
 RELEASE = "    if (fflush(NULL) != 0)\n        _exit(93);"
@@ -50,7 +95,8 @@ def instrument(original: bytes) -> str:
     # Each original probe injects into different source anchors; compose
     # the unmodified pinned byte input once, then its GPU observer.
     combined = gpu_instrument(frame_instrument(original))
-    for anchor in (FRAME_FUNCTION, ORIGINAL_GPU_MARKER, RELEASE):
+    for anchor in (FRAME_FUNCTION, ORIGINAL_GPU_MARKER, RELEASE,
+                   EVENT_ANCHOR, *PRIVATE_FILE_OPENERS):
         if combined.count(anchor) != 1:
             raise ValueError("joint MAP02 private GPU hook anchor changed")
     combined = combined.replace(
@@ -60,6 +106,32 @@ def instrument(original: bytes) -> str:
         RELEASE,
         "    if (!VH_Map02JointGpuSessionReady())\n"
         "        _exit(96);\n" + RELEASE, 1)
+    # Only the joint instrumentation gets exclusive 0600/O_NOFOLLOW
+    # publication; normal PC GPU and the independent opt-in probe are
+    # unchanged. Preserve GPU_CAPTURE-only builds with preprocessor arms.
+    combined = combined.replace(EVENT_ANCHOR,
+                                SECURE_JOURNAL + "\n" + EVENT_ANCHOR, 1)
+    file_names = ("snapshot_path", "upload_path")
+    for i, name in enumerate(file_names):
+        source_line = PRIVATE_FILE_OPENERS[i]
+        replacement_line = (
+            "#if defined(VH_MAP02_PRIVATE_FRAME_PIPE_TRACE)\n"
+            + source_line.split("file =", 1)[0]
+            + "file = VH_Map02SecureFile(" + name + ");\n"
+            + "#else\n" + source_line + "\n#endif"
+        )
+        combined = combined.replace(source_line, replacement_line, 1)
+    combined = combined.replace(
+        PRIVATE_FILE_OPENERS[2],
+        "#if defined(VH_MAP02_PRIVATE_FRAME_PIPE_TRACE)\n"
+        "    log = VH_Map02SecureLog(log_path);\n"
+        "#else\n" + PRIVATE_FILE_OPENERS[2] + "\n#endif", 1)
+    combined = combined.replace(
+        PRIVATE_FILE_OPENERS[3],
+        "#if defined(VH_MAP02_PRIVATE_FRAME_PIPE_TRACE)\n"
+        "    if (VH_Map02FlushLog(log) == 0)\n"
+        "        ++vh_map02_joint_events_completed;\n"
+        "#else\n" + PRIVATE_FILE_OPENERS[3] + "\n#endif", 1)
     combined = combined.replace(
         ORIGINAL_GPU_MARKER, SESSION_CHECK + "\n" + ORIGINAL_GPU_MARKER, 1)
     return COMPILE_GUARD + "\n" + combined
