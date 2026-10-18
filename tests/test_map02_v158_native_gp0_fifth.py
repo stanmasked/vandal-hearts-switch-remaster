@@ -32,7 +32,9 @@ class NativeSyntheticGp0Fifth(unittest.TestCase):
     def test_source_authored_fifth_is_sw_t1_zero_t0(self):
         words=five_source_words()
         self.assertEqual(len(words),5)
-        self.assertEqual(words[4],0xac090000)
+        self.assertEqual(words[4],0xad090000)
+        self.assertEqual((words[4]>>21)&31,8)  # MIPS base register t0
+        self.assertEqual((words[4]>>16)&31,9)  # source register t1
         code=source_core()
         self.assertIn("static const u32 vh152_words[5]",code)
         self.assertIn("vh158_five_enabled ? 5u :",code)
@@ -52,7 +54,7 @@ class NativeSyntheticGp0Fifth(unittest.TestCase):
         self.assertIn("static void vh158_capture_gp0(",patched)
         self.assertIn("vh158_gp0_active) vh158_capture_gp0(regs,addr,value)",patched)
         self.assertIn("regs->pc!=0x80010014u",patched)
-        self.assertIn("regs->code!=0xac090000u",patched)
+        self.assertIn("regs->code!=0xad090000u",patched)
         with self.assertRaises(ValueError):
             patch_memory(patched)
 
