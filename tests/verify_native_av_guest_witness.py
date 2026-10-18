@@ -16,6 +16,7 @@ from check_native_av_screenshot import (
     inspect_images, inspect_zl_marker, inspect_zr_marker,
     inspect_resume_marker, inspect_resume_retry_marker,
 )
+from verify_native_av_nro_manifest import verify_bundle
 
 SCENARIOS = {
     "empty": ("synthetic", "initialized", "buffers_returned"),
@@ -25,6 +26,18 @@ SCENARIOS = {
     "zl": ("synthetic", "unavailable_or_error", "inactive_or_error"),
     "resume": ("synthetic", "initialized", "buffers_returned"),
     "resume_retry": ("synthetic", "initialized", "buffers_returned"),
+}
+
+# Bind the emulator scenario to the exact NRO image published in this
+# build, rather than accepting any valid NRO digest in its own witness.
+NRO_BY_SCENARIO = {
+    "empty": "libnx-ps1-music-av.nro",
+    "full": "libnx-ps1-music-av.nro",
+    "partial": "libnx-ps1-music-av.nro",
+    "zr": "libnx-ps1-music-av-zr.nro",
+    "zl": "libnx-ps1-music-av-zl.nro",
+    "resume": "libnx-ps1-music-av-resume.nro",
+    "resume_retry": "libnx-ps1-music-av-resume-retry.nro",
 }
 
 HEX40 = re.compile(r"[0-9a-f]{40}\Z")
@@ -65,7 +78,7 @@ def hash_file(path):
 
 
 def verify(witness, first, second, nro, revision, scenario,
-           github_run_id, github_run_attempt):
+           github_run_id, github_run_attempt, *, published_nro_dir=None):
     """Return recomputed observations; never trust the stored verdict alone."""
     require(scenario in SCENARIOS, "unknown guest scenario")
     require(HEX40.fullmatch(revision) is not None, "invalid source commit")
@@ -97,6 +110,12 @@ def verify(witness, first, second, nro, revision, scenario,
         require(type(claim) is str and HEX64.fullmatch(claim) is not None,
                 "invalid " + label)
         require(hash_file(path) == claim, label + " mismatch")
+    if published_nro_dir is not None:
+        bundle = verify_bundle(published_nro_dir, revision, exact_inventory=True)
+        expected_digest = bundle["nro_sha256"][NRO_BY_SCENARIO[scenario]]
+        require(hash_file(nro) == expected_digest,
+                "published NRO variant digest does not match guest scenario: " +
+                scenario)
     require(data.get("physical_switch_verified") is False,
             "hardware evidence incorrectly claimed")
     require(data.get("audible_audio_verified") is False,
@@ -184,11 +203,14 @@ def main():
     parser.add_argument("--scenario", required=True, choices=SCENARIOS)
     parser.add_argument("--github-run-id", required=True, type=int)
     parser.add_argument("--github-run-attempt", required=True, type=int)
+    parser.add_argument("--published-nro-dir", type=Path,
+                        help="require the NRO to match this scenario's binary in a full published artifact bundle")
     args = parser.parse_args()
     try:
         result = verify(args.witness, args.before, args.after, args.nro,
                         args.revision, args.scenario,
-                        args.github_run_id, args.github_run_attempt)
+                        args.github_run_id, args.github_run_attempt,
+                        published_nro_dir=args.published_nro_dir)
     except (ValueError, OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
         parser.error(str(exc))
     print(json.dumps({

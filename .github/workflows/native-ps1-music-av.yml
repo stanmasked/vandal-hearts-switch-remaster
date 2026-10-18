@@ -351,7 +351,8 @@ jobs:
             --before "$SHOT1" --after "$SHOT2" --nro "$NRO" \
             --revision "$GITHUB_SHA" --scenario "${{ matrix.sd_case }}" \
             --github-run-id "$GITHUB_RUN_ID" \
-            --github-run-attempt "$GITHUB_RUN_ATTEMPT"
+            --github-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --published-nro-dir nros
 
       - name: Publish validated AV guest evidence
         if: success()
@@ -420,5 +421,6 @@ jobs:
               --after "$folder/av-after.png" \
               --nro "$nro" --revision "$GITHUB_SHA" --scenario "$scenario" \
               --github-run-id "$GITHUB_RUN_ID" \
-              --github-run-attempt "$GITHUB_RUN_ATTEMPT"
+              --github-run-attempt "$GITHUB_RUN_ATTEMPT" \
+              --published-nro-dir nros
           done

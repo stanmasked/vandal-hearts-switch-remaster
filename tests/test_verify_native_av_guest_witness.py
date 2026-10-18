@@ -9,6 +9,8 @@ from pathlib import Path
 
 from check_native_av_screenshot import AUDIO_OK
 from test_check_native_av_screenshot import make_frames
+from test_verify_native_av_nro_manifest import NRO_NAMES, tiny_nro
+from verify_native_av_nro_manifest import MANIFEST, COMMIT_FILE
 from verify_native_av_guest_witness import verify
 
 REVISION = "a" * 40
@@ -78,6 +80,62 @@ class GuestWitnessVerifierTests(unittest.TestCase):
         self.assertEqual(verified["verification"], "passed")
         self.assertFalse(verified["hardware_attested"])
         self.assertFalse(verified["audible_audio_attested"])
+
+    def published_bundle(self):
+        folder = Path(self.temp.name) / "published-nros"
+        folder.mkdir()
+        files = {}
+        for i, name in enumerate(NRO_NAMES):
+            files[name] = tiny_nro(i)
+            (folder / name).write_bytes(files[name])
+        (folder / MANIFEST).write_text(
+            "".join(hashlib.sha256(files[name]).hexdigest() +
+                    "  " + name + chr(10) for name in NRO_NAMES),
+            encoding="ascii")
+        (folder / COMMIT_FILE).write_text(REVISION + chr(10),
+                                          encoding="ascii")
+        return folder
+
+    def test_published_variant_matches_resume_retry_scenario(self):
+        bundle = self.published_bundle()
+        self.nro = bundle / "libnx-ps1-music-av-resume-retry.nro"
+        self.build_witness()
+        observed = verify(
+            self.witness, self.before, self.after, self.nro,
+            REVISION, "resume_retry", GITHUB_RUN_ID, GITHUB_RUN_ATTEMPT,
+            published_nro_dir=bundle)
+        self.assertEqual(observed["guest_resume_retry_after_fake_open_failure"],
+                         "confirmed")
+        self.assertFalse(observed["audible_audio_verified"])
+
+    def test_other_valid_published_nro_cannot_masquerade_as_resume_retry(self):
+        bundle = self.published_bundle()
+        self.nro = bundle / "libnx-ps1-music-av-resume.nro"
+        self.build_witness()
+        # Exact NRO and PNG digests in the witness still agree. Only
+        # external binding to the scenario makes this fail.
+        self.verify()
+        with self.assertRaisesRegex(ValueError, "variant digest does not match"):
+            verify(self.witness, self.before, self.after, self.nro,
+                   REVISION, "resume_retry", GITHUB_RUN_ID,
+                   GITHUB_RUN_ATTEMPT, published_nro_dir=bundle)
+
+    def test_published_bundle_tampering_and_commit_mismatch_rejected(self):
+        bundle = self.published_bundle()
+        self.nro = bundle / "libnx-ps1-music-av-resume-retry.nro"
+        self.build_witness()
+        (bundle / COMMIT_FILE).write_text("f" * 40 + chr(10), encoding="ascii")
+        with self.assertRaisesRegex(ValueError, "independently expected commit"):
+            verify(self.witness, self.before, self.after, self.nro,
+                   REVISION, "resume_retry", GITHUB_RUN_ID,
+                   GITHUB_RUN_ATTEMPT, published_nro_dir=bundle)
+        (bundle / COMMIT_FILE).write_text(REVISION + chr(10),
+                                          encoding="ascii")
+        (bundle / "rogue.nro").write_bytes(tiny_nro(25))
+        with self.assertRaisesRegex(ValueError, "inventory mismatch"):
+            verify(self.witness, self.before, self.after, self.nro,
+                   REVISION, "resume_retry", GITHUB_RUN_ID,
+                   GITHUB_RUN_ATTEMPT, published_nro_dir=bundle)
 
     def test_unexpected_root_field_fails_closed(self):
         data = json.loads(self.witness.read_text())
