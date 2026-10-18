@@ -70,6 +70,7 @@ class CycleCdGpuJoinTests(unittest.TestCase):
             "schema": CYCLE_SCHEMA,
             "original_cd_raw_user_crc32": self.crc,
             "original_cd_raw_user_sha256": "a" * 64,
+            "observed_draw_primitive_count": 2,
             "capture_session": self.nonce,
             "gpu_draw_frame": 7,
             "ordered_source_hooks_observed": True,
@@ -83,6 +84,12 @@ class CycleCdGpuJoinTests(unittest.TestCase):
             return_value={"private_map02_cd_final_sha256": sha(self.manifest_raw)})
         self.mock = self.verifier.start()
         self.addCleanup(self.verifier.stop)
+        self.native_verifier = patch(
+            "tools.verify_map02_cycle_cd_gpu_join.verify_native_windows",
+            return_value={"capture_session_sha256": self.digest,
+                          "native_draw_pairs": 2})
+        self.native_mock = self.native_verifier.start()
+        self.addCleanup(self.native_verifier.stop)
 
     def write_cycle(self):
         raw = (json.dumps(self.receipt, sort_keys=True,
@@ -109,6 +116,8 @@ class CycleCdGpuJoinTests(unittest.TestCase):
         self.assertFalse(result["original_map02_rendering_proven"])
         self.assertFalse(result["full_original_gameplay_authenticated"])
         self.assertFalse(result["physical_ps1_equivalence_proven"])
+        self.assertTrue(result["same_process_draw_primitive_count_matches_native_gpu_windows"])
+        self.assertEqual(result["verified_draw_primitive_count"], 2)
         self.assertNotIn(self.nonce, json.dumps(result))
         self.mock.assert_called_once()
 
@@ -266,6 +275,10 @@ class CycleCdGpuJoinTests(unittest.TestCase):
             {"original_cd_raw_user_sha256": "b" * 63},
             {"original_cd_raw_user_sha256": "G" * 64},
             {"original_cd_raw_user_sha256": 123},
+            {"observed_draw_primitive_count": 0},
+            {"observed_draw_primitive_count": 64},
+            {"observed_draw_primitive_count": True},
+            {"observed_draw_primitive_count": 1.5},
             {"ordered_source_hooks_observed": False},
             {"ordered_source_hooks_observed": 1},
             {"cd_payload_verified_by_this_receipt": True},
@@ -326,6 +339,20 @@ class CycleCdGpuJoinTests(unittest.TestCase):
             "private_map02_cd_final_sha256": "0" * 64}
         with self.assertRaisesRegex(ValueError, "SHA differs"):
             self.check()
+
+    def test_mismatched_draw_primitive_count_rejected_before_full_audit(self):
+        self.receipt["observed_draw_primitive_count"] = 3
+        self.write_cycle()
+        with self.assertRaisesRegex(ValueError, "primitive count and GPU windows differ"):
+            self.check()
+        self.mock.assert_not_called()
+
+    def test_gpu_window_session_mismatch_rejected_before_full_audit(self):
+        self.native_mock.return_value = {
+            "capture_session_sha256": "f" * 64, "native_draw_pairs": 2}
+        with self.assertRaisesRegex(ValueError, "primitive count and GPU windows differ"):
+            self.check()
+        self.mock.assert_not_called()
 
     def test_mismatched_crc_is_rejected_before_original_disc_verification(self):
         self.receipt["original_cd_raw_user_crc32"] = "0" * 8
@@ -465,11 +492,16 @@ class CycleCdGpuSyntheticIntegrationTests(unittest.TestCase):
         fixture.publish()
         cycle = fixture.source.parent / "cycle-gate"
         cycle.mkdir(mode=0o700)
+        # Full integration uses the REAL native window verifier, not the
+        # narrow unit-test mock. The original-game image remains synthetic.
+        from tools.verify_map02_native_gpu_windows import verify_native_windows
+        recorded = verify_native_windows(fixture.native, target_frame=7)
         event = {
             "schema": CYCLE_SCHEMA,
             "capture_session": fixture.cd_receipt["capture_session"],
             "original_cd_raw_user_crc32": fixture.cd_receipt["raw_user_crc32"],
             "original_cd_raw_user_sha256": fixture.cd_receipt["raw_user_sha256"],
+            "observed_draw_primitive_count": recorded["native_draw_pairs"],
             "gpu_draw_frame": 7,
             "ordered_source_hooks_observed": True,
             "cd_payload_verified_by_this_receipt": False,

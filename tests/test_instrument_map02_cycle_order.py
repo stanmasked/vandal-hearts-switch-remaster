@@ -43,6 +43,7 @@ void CdRead(void) {
 
 GPU = """void DrawOTag(unsigned int *p) {
     s_drawFrame++;
+        nextTok = rawTagOfCur;
     TrcFrameEnd();
 }
 """
@@ -83,6 +84,10 @@ class CycleHookCompositionTests(unittest.TestCase):
                         result.index("vh_map02_cycle_draw_start(s_drawFrame)"))
         self.assertLess(result.index("vh_map02_cycle_draw_start(s_drawFrame)"),
                         result.index("TrcFrameEnd();"))
+        self.assertLess(result.index("vh_map02_cycle_draw_primitive(s_drawFrame)"),
+                        result.index("nextTok = rawTagOfCur;"))
+        self.assertLess(result.index("vh_map02_cycle_draw_primitive(s_drawFrame)"),
+                        result.index("vh_map02_cycle_draw_finish(s_drawFrame, nextTok == 0)"))
         self.assertLess(result.index("vh_map02_cycle_draw_finish(s_drawFrame, nextTok == 0)"),
                         result.index("TrcFrameEnd();"))
 

@@ -75,6 +75,20 @@ def patch_gpu(original):
     src = inject(src, '    s_drawFrame++;',
                  '    s_drawFrame++;\n#ifdef VH_MAP02_CYCLE_ORDER\n'
                  '    vh_map02_cycle_draw_start(s_drawFrame);\n#endif')
+    # Emit the count only AFTER the native DrawOTag switch has dispatched
+    # the packet. Buckets, DR_MODE and unknown types do not count.
+    src = inject(src, '        nextTok = rawTagOfCur;',
+                 '#ifdef VH_MAP02_CYCLE_ORDER\n'
+                 '        if (!isBucket) {\n'
+                 '            int vh_cycle_type = PC_GPU_PRIM_TYPE((P_TAG *)cur);\n'
+                 '            if (vh_cycle_type == PC_GPU_PRIM_POLY_F4 ||\n'
+                 '                vh_cycle_type == PC_GPU_PRIM_POLY_FT4 ||\n'
+                 '                vh_cycle_type == PC_GPU_PRIM_SPRT ||\n'
+                 '                vh_cycle_type == PC_GPU_PRIM_TILE)\n'
+                 '                vh_map02_cycle_draw_primitive(s_drawFrame);\n'
+                 '        }\n'
+                 '#endif\n'
+                 '        nextTok = rawTagOfCur;')
     src = inject(src, '    TrcFrameEnd();',
                  '#ifdef VH_MAP02_CYCLE_ORDER\n'
                  '    vh_map02_cycle_draw_finish(s_drawFrame, nextTok == 0);\n'

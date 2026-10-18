@@ -21,8 +21,12 @@
 
 static struct {
     int step, failed;
-    unsigned frame;
+    unsigned frame, draw_primitives;
 } observed;
+
+/* Two 64-event native windows hold fewer than 128 events; every supported
+ * DRAW needs paired before/after snapshots. Bound to 63 complete pairs. */
+#define MAP02_MAX_DRAW_PAIRS 63u
 
 static int overlaps_map02_extent(int lba, int sectors) {
     int64_t start = (int64_t)lba;
@@ -81,6 +85,16 @@ void vh_map02_cycle_draw_start(unsigned frame) {
     if (!selected_frame(frame)) return;
     transition(4, 5);
     observed.frame = frame;
+    observed.draw_primitives = 0;
+}
+void vh_map02_cycle_draw_primitive(unsigned frame) {
+    if (!selected_frame(frame)) return;
+    if (observed.step != 5 || observed.frame != frame ||
+            observed.draw_primitives >= MAP02_MAX_DRAW_PAIRS) {
+        observed.failed = 1;
+        return;
+    }
+    ++observed.draw_primitives;
 }
 int vh_map02_cycle_failed(void) {
     char cd_receipt[512];
@@ -94,7 +108,9 @@ int vh_map02_cycle_format_jsonl(char *out, size_t capacity) {
     unsigned raw_crc32;
     char raw_sha256[65];
     int n;
-    if (observed.failed || observed.step != 6 || !out || !capacity)
+    if (observed.failed || observed.step != 6 || !out || !capacity ||
+            !observed.draw_primitives ||
+            observed.draw_primitives > MAP02_MAX_DRAW_PAIRS)
         return 0;
     /* This receipt can only be published after BOTH observers agree:
      * 12 consecutive original sectors copied without CRC modification,
@@ -108,15 +124,17 @@ int vh_map02_cycle_format_jsonl(char *out, size_t capacity) {
     token = vh_map02_capture_session_token();
     if (!token || strlen(token) != 32u) return 0;
     n = snprintf(out, capacity,
-        "{\"schema\":\"vh.map02.cycle-order.v3\","
+        "{\"schema\":\"vh.map02.cycle-order.v4\","
         "\"capture_session\":\"%s\",\"gpu_draw_frame\":%u,"
         "\"original_cd_raw_user_crc32\":\"%08x\","
         "\"original_cd_raw_user_sha256\":\"%s\","
+        "\"observed_draw_primitive_count\":%u,"
         "\"ordered_source_hooks_observed\":true,"
         "\"cd_payload_verified_by_this_receipt\":false,"
         "\"original_map02_rendering_proven\":false,"
         "\"physical_ps1_equivalence_proven\":false}\n",
-        token, observed.frame, raw_crc32, raw_sha256);
+        token, observed.frame, raw_crc32, raw_sha256,
+        observed.draw_primitives);
     return n > 0 && (size_t)n < capacity ? n : 0;
 }
 /* Identity is checked both via the opened file descriptor and the
@@ -327,7 +345,8 @@ done:
 }
 void vh_map02_cycle_draw_finish(unsigned frame, int walk_complete) {
     if (!selected_frame(frame)) return;
-    if (frame != observed.frame || !walk_complete) observed.failed = 1;
+    if (frame != observed.frame || !walk_complete ||
+            !observed.draw_primitives) observed.failed = 1;
     transition(5, 6);
     if (!observed.failed) publish_if_requested();
 }

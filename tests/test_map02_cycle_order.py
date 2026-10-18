@@ -33,6 +33,8 @@ int main(int argc, char **argv) {
     for (i = 0; i < (int)sizeof sectors; ++i)
         sectors[i] = (unsigned char)(i ^ (i >> 8));
     memcpy(returned, sectors, sizeof sectors);
+    if (!strcmp(argv[1], "draw-primitive-before-start"))
+        vh_map02_cycle_draw_primitive(73);
     if (!strcmp(argv[1], "draw-early")) {
         vh_map02_cycle_draw_start(73);
         vh_map02_cycle_draw_finish(73, 1);
@@ -110,6 +112,16 @@ int main(int argc, char **argv) {
         vh_map02_cycle_loader_complete(42, 42, 99);
     if (strcmp(argv[1], "no-draw")) {
         vh_map02_cycle_draw_start(73);
+        if (!strcmp(argv[1], "draw-unselected-frame"))
+            vh_map02_cycle_draw_primitive(72); /* ignored */
+        if (strcmp(argv[1], "draw-zero-primitives")) {
+            vh_map02_cycle_draw_primitive(73);
+            vh_map02_cycle_draw_primitive(73);
+        }
+        if (!strcmp(argv[1], "draw-overflow")) {
+            for (i = 0; i < 62; ++i)
+                vh_map02_cycle_draw_primitive(73);
+        }
         vh_map02_cycle_draw_finish(73,
             strcmp(argv[1], "broken-ot") != 0);
     }
@@ -127,6 +139,8 @@ int main(int argc, char **argv) {
         vh_map02_cycle_load(42, 42, 0x1bcc, 12);
     if (!strcmp(argv[1], "post-publish-cycle-extra-draw"))
         vh_map02_cycle_draw_finish(73, 1);
+    if (!strcmp(argv[1], "post-publish-cycle-extra-primitive"))
+        vh_map02_cycle_draw_primitive(73);
     if (!strcmp(argv[1], "post-publish-unrelated-cd")) {
         vh_map02_cd_read_sector(0x1bcb, sectors);
         vh_map02_cd_read_finish(0x1bca, 1, returned);
@@ -362,7 +376,8 @@ class CycleOrderTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("failed=0 receipt=1", proc.stdout)
         self.assertIn('"gpu_draw_frame":73', proc.stdout)
-        self.assertIn('"schema":"vh.map02.cycle-order.v3"', proc.stdout)
+        self.assertIn('"schema":"vh.map02.cycle-order.v4"', proc.stdout)
+        self.assertIn('"observed_draw_primitive_count":2', proc.stdout)
         expected_sector_data = bytes((i ^ (i >> 8)) & 255
                                      for i in range(12 * 2048))
         expected_crc = zlib.crc32(expected_sector_data)
@@ -382,11 +397,18 @@ class CycleOrderTests(unittest.TestCase):
     def test_fail_closed_for_out_of_order_or_duplicate(self):
         for mode in ("draw-early", "finish-first", "duplicate-claim",
                      "missing-completion", "duplicate-completion",
-                     "broken-ot", "no-draw"):
+                     "broken-ot", "no-draw", "draw-zero-primitives",
+                      "draw-overflow", "draw-primitive-before-start"):
             with self.subTest(mode=mode):
                 proc = self.run_mode(mode)
                 self.assertEqual(proc.returncode, 0, proc.stderr)
                 self.assertIn("receipt=0", proc.stdout)
+
+    def test_unselected_frame_draw_hook_is_ignored(self):
+        proc = self.run_mode("draw-unselected-frame")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("failed=0 receipt=1", proc.stdout)
+        self.assertIn('"observed_draw_primitive_count":2', proc.stdout)
 
     def test_overflow_safe_extent_filter_for_unrelated_and_malformed_reads(self):
         unrelated = self.run_mode("overflow-unrelated-read")
@@ -410,7 +432,8 @@ class CycleOrderTests(unittest.TestCase):
         self.assertEqual(cd["raw_user_sha256"], sha)
         self.assertEqual(cd["returned_user_sha256"], sha)
         cycle_receipt = json.loads(proc.stdout.splitlines()[-1])
-        self.assertEqual(cycle_receipt["schema"], "vh.map02.cycle-order.v3")
+        self.assertEqual(cycle_receipt["schema"], "vh.map02.cycle-order.v4")
+        self.assertEqual(cycle_receipt["observed_draw_primitive_count"], 2)
         self.assertEqual(cycle_receipt["original_cd_raw_user_sha256"], sha)
         self.assertEqual(cd["raw_user_crc32"], f"{zlib.crc32(expected):08x}")
         self.assertEqual(cd["returned_user_crc32"], f"{zlib.crc32(expected):08x}")
@@ -475,7 +498,8 @@ class CycleOrderTests(unittest.TestCase):
         for mode in ("post-publish-cd-duplicate-claim",
                      "post-publish-cd-sector",
                      "post-publish-cycle-extra-load",
-                     "post-publish-cycle-extra-draw"):
+                     "post-publish-cycle-extra-draw",
+                     "post-publish-cycle-extra-primitive"):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
                 out = Path(tmp) / "private"
                 out.mkdir(mode=0o700)
@@ -503,7 +527,7 @@ class CycleOrderTests(unittest.TestCase):
             current = out / "map02-single-process-cycle.jsonl"
             original = out / "prior-original-receipt"
             self.assertEqual(current.read_bytes(), b"foreign-not-to-delete")
-            self.assertIn(b"cycle-order.v3", original.read_bytes())
+            self.assertIn(b"cycle-order.v4", original.read_bytes())
             self.assertNotEqual(current.stat().st_ino, original.stat().st_ino)
 
     def test_normal_exit_refuses_renamed_or_symlinked_output_directory(self):
@@ -586,7 +610,7 @@ class CycleOrderTests(unittest.TestCase):
                 self.assertFalse((out / "map02-cycle-clean-exit.jsonl").exists())
                 alias = out / "seal-hardlink-alias"
                 self.assertTrue(alias.is_file())
-                self.assertIn(b"vh.map02.cycle-order.v3", alias.read_bytes())
+                self.assertIn(b"vh.map02.cycle-order.v4", alias.read_bytes())
                 self.assertEqual(alias.stat().st_nlink, 1)
 
     def test_clean_exit_fsync_failure_revokes_both_private_receipts(self):
@@ -621,7 +645,7 @@ class CycleOrderTests(unittest.TestCase):
                 self.assertFalse((out / "map02-single-process-cycle.jsonl").exists())
                 seal = out / "map02-cycle-clean-exit.jsonl"
                 self.assertTrue(seal.is_file(), "foreign seal inode was deleted")
-                self.assertIn(b"vh.map02.cycle-order.v3", seal.read_bytes())
+                self.assertIn(b"vh.map02.cycle-order.v4", seal.read_bytes())
 
     def test_private_exclusive_receipt_and_no_overwrite(self):
         with tempfile.TemporaryDirectory() as tmp:
