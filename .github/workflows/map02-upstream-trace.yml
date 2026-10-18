@@ -289,6 +289,8 @@ jobs:
           assert sorted(report["preprocessed_sha256"]) == ["libgpu", "pc_raster"]
           assert report["pinned_headers_checked"] >= 40
           assert report["pinned_headers_sealed"] == report["pinned_headers_checked"]
+          assert report["header_include_directory_watches"] >= 4
+          assert report["header_path_mutations_rejected"]
           assert report["staged_header_hashes_verified"]
           assert report["compiled_from_sealed_preprocessor_output"]
           assert report["verified_source_bytes_used_for_compilation"]

@@ -79,6 +79,7 @@ class SpanWorkflowGateTests(unittest.TestCase):
         self.assertIn('assert report["sealed_inputs"] == 6 + report["pinned_headers_checked"]', private_build)
         self.assertIn('assert report["pinned_headers_sealed"] == report["pinned_headers_checked"]',
                       private_build)
+        self.assertIn('assert report["header_path_mutations_rejected"]', private_build)
         self.assertIn('assert report["compiled_from_sealed_preprocessor_output"]', private_build)
         self.assertIn('assert report["staged_header_hashes_verified"]', private_build)
         self.assertIn('assert report["pinned_headers_checked"] >= 40', private_build)
