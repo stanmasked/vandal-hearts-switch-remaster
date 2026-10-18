@@ -112,6 +112,19 @@ def _stage_headers(upstream, stage):
 
 
 def _recheck_headers(stage, digests):
+    """Reject untracked additions and symlinks, not only edited pinned files."""
+    observed = set()
+    for current, directories, filenames in os.walk(stage, followlinks=False):
+        for directory in directories:
+            if (Path(current) / directory).is_symlink():
+                raise ValueError("MAP02 staged header inventory changed")
+        for filename in filenames:
+            file = Path(current) / filename
+            if file.is_symlink() or not file.is_file():
+                raise ValueError("MAP02 staged header inventory changed")
+            observed.add(file.relative_to(stage).as_posix())
+    if observed != set(digests):
+        raise ValueError("MAP02 staged header inventory changed")
     for relative, digest in digests.items():
         content = auditor._stable_regular_bytes(
             stage / relative, max_bytes=HEADER_LIMIT)

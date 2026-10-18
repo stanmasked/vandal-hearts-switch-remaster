@@ -184,6 +184,30 @@ class SealedMakeOverlayTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "staged header changed"):
                 self.run_build("build-map02-header-staged-tamper")
 
+    def test_extra_header_in_snapshot_is_refused(self):
+        check = sealed._recheck_headers
+
+        def inject(stage, digests):
+            (stage / "platform/pc/src/unrecorded.h").write_text(
+                "#define SECRET_OVERRIDE 1\n")
+            return check(stage, digests)
+
+        with patch.object(sealed, "_recheck_headers", side_effect=inject):
+            with self.assertRaisesRegex(ValueError, "header inventory changed"):
+                self.run_build("build-map02-untracked-header")
+
+    def test_symlinked_header_in_snapshot_is_refused(self):
+        check = sealed._recheck_headers
+
+        def inject(stage, digests):
+            destination = stage / "platform/pc/src/unrecorded.h"
+            destination.symlink_to(stage / "platform/pc/src/map02_fixture.h")
+            return check(stage, digests)
+
+        with patch.object(sealed, "_recheck_headers", side_effect=inject):
+            with self.assertRaisesRegex(ValueError, "header inventory changed"):
+                self.run_build("build-map02-symlink-header")
+
     def test_invalid_and_existing_build_directories_fail_closed(self):
         for name in ("build", "build-map02-", "build-map02-x/../y",
                      "build-map02-sneaky path"):
