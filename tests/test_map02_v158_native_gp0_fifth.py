@@ -170,6 +170,67 @@ int main(void){
             self.assertEqual(done.returncode,0,done.stderr)
             self.assertIn("VH158_COMPILED_NATIVE_GP0_PASS",done.stdout)
 
+    def test_compiled_gp0_observer_rejects_wrong_address_data_pc_opcode(self):
+        cc=os.environ.get("CC","cc")
+        if not shutil.which(cc):
+            self.skipTest("native C compiler unavailable")
+        program=r'''
+#include <stdint.h>
+#include <stdio.h>
+typedef uint32_t u32;
+typedef struct {
+    u32 pc,code;
+} psxRegisters;
+'''+gp0_observer_c()+r'''
+int main(void){
+    psxRegisters r={0x80010014u,0xad090000u};
+    unsigned i;
+    static const u32 wrong_address[2]={0x1f801814u,0x1f80180cu};
+    if(vh158_gp0_writes() || vh158_gp0_faults()) return 1;
+    /* Inactive observer must never record any native caller event. */
+    vh158_capture_gp0(&r,0x1f801810u,0xe3000000u);
+    if(vh158_gp0_writes() || vh158_gp0_faults()) return 2;
+    vh158_arm_gp0();
+    vh158_capture_gp0(&r,0x1f801810u,0xe3000000u);
+    if(vh158_gp0_writes()!=1u || vh158_gp0_faults()) return 3;
+    /* An extra correct MMIO write must never be confused with one write. */
+    vh158_capture_gp0(&r,0x1f801810u,0xe3000000u);
+    if(vh158_gp0_writes()!=2u || vh158_gp0_faults()) return 4;
+    vh158_arm_gp0();
+    for(i=0u;i<2u;i++)
+        vh158_capture_gp0(&r,wrong_address[i],0xe3000000u);
+    if(vh158_gp0_writes()!=0u || vh158_gp0_faults()!=2u) return 5;
+    vh158_arm_gp0();
+    vh158_capture_gp0(&r,0x1f801810u,0xe3000001u);
+    if(vh158_gp0_writes()!=0u || vh158_gp0_faults()!=1u) return 6;
+    vh158_arm_gp0();
+    r.pc=0x80010010u;
+    vh158_capture_gp0(&r,0x1f801810u,0xe3000000u);
+    if(vh158_gp0_writes()!=0u || vh158_gp0_faults()!=1u) return 7;
+    vh158_arm_gp0();
+    r.pc=0x80010014u; r.code=0xac090000u; /* wrong SW base t0 */
+    vh158_capture_gp0(&r,0x1f801810u,0xe3000000u);
+    if(vh158_gp0_writes()!=0u || vh158_gp0_faults()!=1u) return 8;
+    vh158_disarm_gp0();
+    vh158_capture_gp0(&r,0x1f801810u,0xe3000000u);
+    if(vh158_gp0_writes()!=0u || vh158_gp0_faults()!=1u) return 9;
+    puts("VH158_COMPILED_GP0_EXACT_MATCH_PASS valid=1 duplicate_detected=1 wrong_address=2 wrong_value=1 wrong_pc=1 wrong_opcode=1 inactive=1");
+    return 0;
+}
+'''
+        with tempfile.TemporaryDirectory(prefix="vh158-gp0-strict-") as td:
+            p=Path(td)
+            (p/"observer.c").write_text(program)
+            exe=p/"observer"
+            built=subprocess.run([cc,"-std=c99","-Wall","-Wextra","-Werror",
+                                  "-pedantic",str(p/"observer.c"),"-o",str(exe)],
+                                 capture_output=True,text=True,timeout=35)
+            self.assertEqual(built.returncode,0,built.stderr)
+            result=subprocess.run([str(exe)],capture_output=True,
+                                  text=True,timeout=10)
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertIn("VH158_COMPILED_GP0_EXACT_MATCH_PASS",result.stdout)
+
     def test_frontend_requires_strict_source_synthetic_mode(self):
         fixture=(
             "\tint vh157_corrupt_t1_fourth = 0;\n"
