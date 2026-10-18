@@ -27,7 +27,7 @@ jobs:
           python3 -m venv /tmp/vh-stage324
           /tmp/vh-stage324/bin/python -m pip install --disable-pip-version-check 'Pillow>=10,<13'
 
-      - name: Stage324 15 distinct-source, provenance, rank and audible overclaim controls
+      - name: Stage324 16 distinct-source, deterministic-frame, rank and audible overclaim controls
         run: /tmp/vh-stage324/bin/python -m unittest discover -s tests -p 'test_compare_nexium_two_original_playbuffer_windows.py' -v
 
       - name: Verify BOTH exact original captures completed successfully
