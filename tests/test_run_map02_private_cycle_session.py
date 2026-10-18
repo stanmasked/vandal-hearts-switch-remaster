@@ -92,6 +92,47 @@ class PrivateOneShotCycleTests(unittest.TestCase):
         self.assertEqual(
             self.mocks["verify_final_seal"].call_count, 1)
 
+    def test_stage_callback_tracks_only_fixed_public_diagnostic_stages(self):
+        recorded = []
+        result = self.execute(stage_callback=recorded.append)
+        self.assertTrue(result["private_completion_seal_independently_reverified"])
+        self.assertEqual(recorded, list(runner.SAFE_STAGES))
+        self.assertNotIn(str(self.elf), repr(recorded))
+        self.assertNotIn(str(self.disc), repr(recorded))
+
+    def test_cli_failed_stages_do_not_disclose_original_paths_or_exceptions(self):
+        private = "/private/owned-original/SLUS_004.47"
+        args = ["private-one-shot"] + [str(x) for x in self.folders] + [
+            str(self.disc), "--upstream-checkout", str(self.upstream),
+            "--pc-binary", str(self.elf), "--build-receipt-dir",
+            str(self.receipt), "--build-bundle-dir", str(self.bundle),
+            "--frame", "12", "--x", "10", "--y", "20",
+            "--allow-local-completion"]
+        for function, phase in (
+            ("verify_private_cycle_readiness", "full-preflight"),
+            ("launch_observed_pc", "observed-process"),
+            ("finalize_private_capture", "capture-finalization"),
+            ("seal_final_capture", "seal-publication"),
+            ("verify_final_seal", "seal-verification"),
+        ):
+            with self.subTest(phase=phase):
+                stderr = io.StringIO()
+                original = self.mocks[function].side_effect
+                self.mocks[function].side_effect = ValueError(
+                    "private source unavailable: " + private)
+                try:
+                    with patch("sys.argv", args), redirect_stderr(stderr):
+                        with self.assertRaises(SystemExit) as exit_result:
+                            runner.main()
+                    self.assertEqual(exit_result.exception.code, 2)
+                    self.assertIn("stage=" + phase, stderr.getvalue())
+                    self.assertIn("one-shot execution/finalization unavailable",
+                                  stderr.getvalue())
+                    self.assertNotIn(private, stderr.getvalue())
+                    self.assertNotIn(str(self.elf), stderr.getvalue())
+                finally:
+                    self.mocks[function].side_effect = original
+
     def test_local_completion_requires_explicit_consent_before_process(self):
         with self.assertRaisesRegex(ValueError, "explicit private"):
             self.execute(allow_local_completion=False)
