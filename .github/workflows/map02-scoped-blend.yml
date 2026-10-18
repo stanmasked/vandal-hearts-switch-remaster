@@ -27,6 +27,8 @@ on:
       - 'tests/test_export_map02_native_vram_preview.py'
       - 'tools/verify_map02_pc_present_rgb24.py'
       - 'tests/test_verify_map02_pc_present_rgb24.py'
+      - 'tools/verify_map02_pc_preoverlay_session.py'
+      - 'tests/test_verify_map02_pc_preoverlay_session.py'
       - 'tools/map02_pc_preoverlay_capture.c'
       - 'tools/map02_pc_preoverlay_capture.h'
       - 'tools/instrument_map02_pc_preoverlay_capture.py'
@@ -142,6 +144,8 @@ on:
       - 'tests/test_export_map02_native_vram_preview.py'
       - 'tools/verify_map02_pc_present_rgb24.py'
       - 'tests/test_verify_map02_pc_present_rgb24.py'
+      - 'tools/verify_map02_pc_preoverlay_session.py'
+      - 'tests/test_verify_map02_pc_preoverlay_session.py'
       - 'tools/map02_pc_preoverlay_capture.c'
       - 'tools/map02_pc_preoverlay_capture.h'
       - 'tools/instrument_map02_pc_preoverlay_capture.py'
@@ -268,6 +272,7 @@ jobs:
             tests.test_verify_map02_native_gpu_windows \
             tests.test_export_map02_native_vram_preview \
             tests.test_verify_map02_pc_present_rgb24 \
+            tests.test_verify_map02_pc_preoverlay_session \
             tests.test_check_map02_pc_present_rgb24_source \
             tests.test_instrument_map02_pc_preoverlay_capture \
             tests.test_map02_pc_preoverlay_capture \

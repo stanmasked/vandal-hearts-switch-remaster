@@ -254,18 +254,27 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
                        owned_game, *, upstream, x, y, timeout=900,
                        arguments=(), cycle_dir=None,
                        build_receipt_dir=None, build_bundle_dir=None,
-                       krom_source=None):
+                       krom_source=None, pc_preoverlay_dir=None):
     """Run the given PC binary directly; never run a shell or create game data."""
     if not sys.platform.startswith("linux") or not Path("/proc/self/exe").exists():
         raise ValueError("observed executable launch requires Linux /proc")
     handoff, native, scoped = (_private_directory(p) for p in
                                (handoff_dir, native_dir, scoped_dir))
     cycle = _private_directory(cycle_dir) if cycle_dir is not None else None
-    checked_dirs = (handoff, native, scoped) + ((cycle,) if cycle is not None else ())
-    if len({p.resolve() for p in checked_dirs}) != len(checked_dirs):
-        raise ValueError("execution evidence folders must be distinct")
+    preoverlay = (_private_directory(pc_preoverlay_dir)
+                  if pc_preoverlay_dir is not None else None)
+    if preoverlay is not None and cycle is None:
+        raise ValueError("private RGB24 capture requires a source-bound cycle")
+    checked_dirs = ((handoff, native, scoped) +
+                    ((cycle,) if cycle is not None else ()) +
+                    ((preoverlay,) if preoverlay is not None else ()))
+    roots = tuple(p.resolve() for p in checked_dirs)
+    if any(a == b or a in b.parents or b in a.parents
+           for i, a in enumerate(roots) for b in roots[i + 1:]):
+        raise ValueError("execution evidence folders must be separate and nonnested")
     if any(any(p.iterdir()) for p in (native, scoped) +
-           ((cycle,) if cycle is not None else ())):
+           ((cycle,) if cycle is not None else ()) +
+           ((preoverlay,) if preoverlay is not None else ())):
         raise ValueError("native GPU, scoped and cycle capture folders must start empty")
     if (handoff / RECEIPT).exists() or (handoff / RECEIPT).is_symlink():
         raise ValueError("local execution receipt already exists")
@@ -369,6 +378,8 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
         # The inherited VH_MAP02_* environment was cleared above: opt-in
         # directories must only come from validated launcher arguments.
         env["VH_MAP02_CYCLE_OUTPUT_DIR"] = str(cycle)
+        if preoverlay is not None:
+            env["VH_MAP02_PC_PREOVERLAY_OUTPUT_DIR"] = str(preoverlay)
     process = None
     observed = None
     game_fd_observed = False
@@ -484,6 +495,11 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
         from tools.verify_map02_cycle_cd_gpu_join import _cycle_cd_pair
         cycle_cd_proof = _cycle_cd_pair(
             scoped, cycle, frame, checked["capture_session_sha256"])
+    if preoverlay is not None:
+        from tools.verify_map02_pc_preoverlay_session import verify_preoverlay_session
+        preoverlay_proof = verify_preoverlay_session(
+            preoverlay, cycle, frame=frame,
+            expected_session_sha256=checked["capture_session_sha256"])
     receipt = _validate_receipt({
         "schema": SCHEMA,
         "gpu_draw_frame": frame,
@@ -512,8 +528,13 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
             scoped, cycle, frame, checked["capture_session_sha256"]
     ) != cycle_cd_proof:
         raise ValueError("cycle/CD observer receipts changed before process publication")
+    if preoverlay is not None and verify_preoverlay_session(
+            preoverlay, cycle, frame=frame,
+            expected_session_sha256=checked["capture_session_sha256"]
+    ) != preoverlay_proof:
+        raise ValueError("PC pre-overlay process capture changed before publication")
     _publish(handoff, RECEIPT, raw)
-    return {
+    result = {
         "private_process_receipt_sha256": _sha(raw),
         "kernel_executable_hash_matched": True,
         "game_image_fd_observed": True,
@@ -523,6 +544,11 @@ def launch_observed_pc(handoff_dir, native_dir, scoped_dir, pc_binary,
         "original_gameplay_authenticated": False,
         "physical_ps1_equivalence_proven": False,
     }
+    if preoverlay is not None:
+        result["pc_preoverlay_capture_session_bound"] = True
+        result["pc_preoverlay_image_sha256"] = preoverlay_proof["pc_rgb24_image_sha256"]
+        result["pc_preoverlay_receipt_sha256"] = preoverlay_proof["pc_rgb24_receipt_sha256"]
+    return result
 
 
 def verify_observed_process(handoff_dir, native_dir, scoped_dir, pc_binary,
@@ -587,6 +613,8 @@ def main():
     p.add_argument("--timeout", type=int, default=900)
     p.add_argument("--cycle-dir", type=Path,
                    help="optional private empty 0700 directory for in-process CD->GPU order")
+    p.add_argument("--pc-preoverlay-dir", type=Path,
+                   help="separate empty 0700 native RGB24 capture directory, valid only with --cycle-dir")
     p.add_argument("--build-receipt-dir", type=Path,
                    help="private local full-ELF build receipt directory")
     p.add_argument("--build-bundle-dir", type=Path,
@@ -608,11 +636,12 @@ def main():
                 cycle_dir=a.cycle_dir,
                 build_receipt_dir=a.build_receipt_dir,
                 build_bundle_dir=a.build_bundle_dir,
-                krom_source=a.krom_source)
+                krom_source=a.krom_source,
+                pc_preoverlay_dir=a.pc_preoverlay_dir)
         else:
             if (a.cycle_dir is not None or a.build_receipt_dir is not None or
                     a.build_bundle_dir is not None or
-                    a.krom_source is not None):
+                    a.krom_source is not None or a.pc_preoverlay_dir is not None):
                 raise ValueError("verify original cycle via separate private witness verifier")
             if forwarded:
                 raise ValueError("verify does not accept executable arguments")

@@ -295,6 +295,57 @@ int main(int argc, char **argv) {
         self.assertFalse(
             (self.handoff / "gpu-local-capture-handoff.json").exists())
 
+    def test_private_preoverlay_requires_cycle_and_empty_owner_only_folder(self):
+        capture = self.handoff.parent / "rgb24-capture-gate"
+        capture.mkdir(mode=0o700)
+        with self.assertRaisesRegex(ValueError, "requires a source-bound cycle"):
+            launch_observed_pc(
+                self.handoff, self.native, self.scoped, self.binary, self.owned,
+                upstream=self.upstream, x=10, y=20, timeout=8,
+                pc_preoverlay_dir=capture)
+        cycle = self.handoff.parent / "cycle-rgb24-gate"
+        cycle.mkdir(mode=0o700)
+        (capture / "stale-rgb.bin").write_bytes(b"old")
+        with self.assertRaisesRegex(ValueError, "start empty"):
+            launch_observed_pc(
+                self.handoff, self.native, self.scoped, self.binary, self.owned,
+                upstream=self.upstream, x=10, y=20, timeout=8,
+                cycle_dir=cycle, pc_preoverlay_dir=capture)
+        (capture / "stale-rgb.bin").unlink()
+        capture.chmod(0o755)
+        with self.assertRaisesRegex(ValueError, "private"):
+            launch_observed_pc(
+                self.handoff, self.native, self.scoped, self.binary, self.owned,
+                upstream=self.upstream, x=10, y=20, timeout=8,
+                cycle_dir=cycle, pc_preoverlay_dir=capture)
+        capture.chmod(0o700)
+        with self.assertRaisesRegex(ValueError, "separate and nonnested"):
+            launch_observed_pc(
+                self.handoff, self.native, self.scoped, self.binary, self.owned,
+                upstream=self.upstream, x=10, y=20, timeout=8,
+                cycle_dir=cycle, pc_preoverlay_dir=cycle)
+        self.assertFalse((self.handoff / RECEIPT).exists())
+
+    def test_strict_rgb24_gate_cannot_publish_without_process_capture(self):
+        capture = self.handoff.parent / "rgb24-empty"
+        cycle = self.handoff.parent / "cycle-rgb24-empty"
+        capture.mkdir(mode=0o700)
+        cycle.mkdir(mode=0o700)
+        with patch("tools.check_map02_cycle_elf.audit_cycle_elf",
+                   return_value={"required_symbols_present": 22}), patch(
+                "tools.map02_cycle_build_provenance.verify_build_receipt",
+                return_value={"source_pinned_full_elf_bytes_checked": True}):
+            # No instrumented cycle/PC scratch in synthetic child: fail closed
+            # before the process launch can claim real MAP02 output.
+            with self.assertRaises(ValueError):
+                launch_observed_pc(
+                    self.handoff, self.native, self.scoped, self.binary,
+                    self.owned, upstream=self.upstream, x=10, y=20,
+                    timeout=8, cycle_dir=cycle, pc_preoverlay_dir=capture,
+                    build_receipt_dir=self.handoff.parent / "private-receipt",
+                    build_bundle_dir=self.handoff.parent / "private-bundle")
+        self.assertFalse((self.handoff / RECEIPT).exists())
+
     def test_opt_in_cycle_requires_private_empty_directory(self):
         cycle = self.handoff.parent / "cycle-launch"
         cycle.mkdir(mode=0o700)

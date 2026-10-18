@@ -115,6 +115,54 @@ python3 -m tools.map02_verified_process_launch verify \
 `tools.map02_local_capture_handoff seal` для отдельной
 подписанной хешами связи с исходной MAP02.
 
+## Дополнительный приватный захват PC RGB24
+
+Строгий source-bound запуск (`--cycle-dir` и проверенные
+`--build-receipt-dir`, `--build-bundle-dir`) теперь поддерживает
+необязательный `--pc-preoverlay-dir` для отдельного **пустого**
+каталога `0700`. Используйте его только с собственными ресурсами,
+не загружая ни игровой образ, ни ELF, ни RGB24 в GitHub:
+
+~~~sh
+mkdir -m 700 /private/map02/preoverlay
+python3 -m tools.map02_verified_process_launch run \
+  /private/map02/handoff /private/map02/native-windows /private/map02/scoped \
+  --pc-binary /private/map02/pc-port-instrumented \
+  --owned-game-image /private/map02/owned-game-image.bin \
+  --upstream-checkout /private/map02/VandalHearts-PcPort \
+  --cycle-dir /private/map02/cycle \
+  --build-receipt-dir /private/map02/build-receipt \
+  --build-bundle-dir /private/map02/build-bundle \
+  --krom-source /private/map02/owned-KROMDAT.BIN \
+  --pc-preoverlay-dir /private/map02/preoverlay \
+  --x 10 --y 20
+~~~
+
+Для запуска параметры должны отражать ваш фактический локальный
+каталог, подтверждённый исходный образ и индекс целевого кадра
+из ранее сохранённого плана. Каталог RGB24 не должен совпадать
+с handoff, GPU, scoped или cycle и не может быть вложен в них;
+он создаётся заранее и должен быть пуст.
+
+Запуск явным образом передаёт дочернему процессу
+`VH_MAP02_PC_PREOVERLAY_OUTPUT_DIR` через свой allowlist окружения.
+До публикации process receipt независимо проверяются байты
+`map02-pc-present-preoverlay-receipt.jsonl` и
+`map02-pc-present-preoverlay-rgb24.bin`, одноразовый nonce той же
+сессии, совпадение frame/width/height с запечатанной квитанцией
+`cycle-order.v5`, режим без FMV и hi-res и неизменность файлов
+при повторном чтении. Отсутствие хотя бы одного файла блокирует
+успешную квитанцию запуска. Полный PNG/pixel-audit выполняется
+позже отдельно посредством
+`tools.verify_map02_pc_present_rgb24`.
+
+Структурный аудит полного ELF также требует `PC_GpuPresent`,
+`vh_map02_pc_capture_preoverlay` и
+`vh_map02_cycle_present_finish`. Это **проверка присутствия
+символов и совпадения локальной сборки**, не утверждение, что
+подлинная MAP02 уже исполнялась. В CI используются только
+синтетические процессы и пиксели.
+
 ## Ограничения и приватность
 
 Этот режим **не умеет** доказать, что процесс потребил конкретный
