@@ -96,6 +96,17 @@ jobs:
           done
       - name: Stage307 optional guest SD exit timeline provenance tests
         run: python3 -m unittest discover -s tests -p 'test_audit_nexium_guest_exit_timeline.py' -v
+      - name: Stage313 last audout page-release/taper C11 witness GCC and Clang
+        run: |
+          set -euxo pipefail
+          for cc in gcc clang; do
+            "$cc" -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+              tests/test_vh_audio_exit_output_witness.c \
+              -o "/tmp/vh-last-page-$cc"
+            "/tmp/vh-last-page-$cc"
+          done
+      - name: Stage313 guest last returned buffer source and exit chronology tests
+        run: python3 -m unittest discover -s tests -p 'test_audit_nexium_guest_last_buffer_return.py' -v
       - name: Stage308 CRC optical/guest exit source tests with Pillow
         run: |
           set -euxo pipefail
