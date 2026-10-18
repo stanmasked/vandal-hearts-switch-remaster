@@ -128,18 +128,18 @@ int main(void) {
     fclose(f);
     /* More than 256 probes: fail closed in the Python auditor and
      * never silently overwrite the first 256 measurements. */
-    VhAudoutQueueTelemetry overflow;
-    vh_audout_queue_reset(&overflow);
+    VhAudoutQueueTelemetry probe_overflow;
+    vh_audout_queue_reset(&probe_overflow);
     for(unsigned i=0;i<VH_AUDOUT_PROBE_CAP*16u+1u;i++) {
-        const int due=vh_audout_queue_probe_due(&overflow);
+        const int due=vh_audout_queue_probe_due(&probe_overflow);
         const uint64_t begin=pc+(uint64_t)i*UINT64_C(1000000);
-        vh_audout_queue_record(&overflow,begin,begin+UINT64_C(1000),
+        vh_audout_queue_record(&probe_overflow,begin,begin+UINT64_C(1000),
                               1,due ? 1:-1,0);
     }
-    assert(overflow.probe_count==VH_AUDOUT_PROBE_CAP &&
-           overflow.probe_dropped==1 &&
-           overflow.probe[0].attempt==1 &&
-           overflow.probe[VH_AUDOUT_PROBE_CAP-1].attempt==
+    assert(probe_overflow.probe_count==VH_AUDOUT_PROBE_CAP &&
+           probe_overflow.probe_dropped==1 &&
+           probe_overflow.probe[0].attempt==1 &&
+           probe_overflow.probe[VH_AUDOUT_PROBE_CAP-1].attempt==
                 1u+16u*(VH_AUDOUT_PROBE_CAP-1u));
     VhAudoutQueueTelemetry empty;
     vh_audout_queue_reset(&empty);
