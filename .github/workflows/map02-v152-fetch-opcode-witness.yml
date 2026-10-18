@@ -1,0 +1,35 @@
+name: MAP02 v152 fetched native MIPS opcode and post-SHA RAM integrity
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v152-fetch-opcode-witness.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v152_fetch_opcode_witness.py'
+      - 'tests/test_map02_v152_fetch_opcode_witness.py'
+      - 'tools/apply_map02_v151_native_ram_identity.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fetched-mips-witness:
+    name: compiled post-SHA MIPS check (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile true C witness and regress v148-v151
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v152_fetch_opcode_witness.py tests/test_map02_v152_fetch_opcode_witness.py
+          python3 -m unittest discover -s tests -p 'test_map02_v152_fetch_opcode_witness.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v151_native_ram_identity.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v150_native_instruction_budget.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v149_bounded_guest.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v148_original_guest_boot.py' -v
+          echo 'VH152_COMPILED_FETCH_WITNESS_PASS original_retail_executed=0 map02_rendered=0'
