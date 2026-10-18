@@ -169,7 +169,8 @@ def audit(*,source:Path,locations:Path,receipt:Path,
         raise CorrelationError("original and copied guest service probes differ")
     receipt_evidence=bind_export_receipt(receipt,len(raw))
     origin=parse_clock(stable_guest_bytes(clock_csv))
-    queue=parse_telemetry(stable_guest_bytes(queue_csv))
+    queue=parse_telemetry(stable_guest_bytes(queue_csv),
+                          phase=expected_phase)
     latency=parse_latency(stable_guest_bytes(latency_csv))
     slow=parse_slow(stable_guest_bytes(slow_csv),
                     origin["origin_ns"],latency)

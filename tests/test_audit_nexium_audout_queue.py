@@ -54,6 +54,28 @@ class TestAudoutSdAudit(unittest.TestCase):
         rows[1][6] = 343
         self.assert_parses(rows, False)
 
+    def test_phase8_last_partial_block_has_no_ninth_attempt(self):
+        # 5505 = 344 complete 16-attempt groups + a final single
+        # attempt. Actual phase8 service queries = 344, not phase0's
+        # 345. An off-by-one must fail the default legacy phase0 audit.
+        rows = make_rows()
+        rows[-1][2] += 5
+        rows[-1][3] += 5
+        rows[1][2] += 5
+        rows[1][3] += 5
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/"phase8-5505.csv"
+            with path.open("w",newline="",encoding="ascii") as out:
+                csv.writer(out,lineterminator="\n").writerows(rows)
+            from audit_nexium_audout_queue import parse_telemetry
+            raw=path.read_bytes()
+            self.assertEqual(parse_telemetry(raw,phase=8)["attempts"],5505)
+            with self.assertRaisesRegex(ValueError,"expected 1/16"):
+                parse_telemetry(raw,phase=0)
+            for invalid in (-1,16,True,8.0):
+                with self.subTest(invalid=invalid),self.assertRaises(ValueError):
+                    parse_telemetry(raw,phase=invalid)
+
     def test_queue_unavailable_is_not_an_underrun(self):
         rows = make_rows()
         rows[1][7] = rows[1][6]

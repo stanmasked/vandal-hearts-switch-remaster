@@ -91,7 +91,12 @@ def bind_export_receipt(receipt_path: Path, csv_length: int) -> dict:
 def read_telemetry(path: Path) -> dict:
     return parse_telemetry(stable_guest_bytes(path))
 
-def parse_telemetry(raw: bytes) -> dict:
+def parse_telemetry(raw: bytes, *, phase: int = 0) -> dict:
+    # Stage296: an explicit phase8 query is not owed until attempt9,
+    # even if the capture ends at attempts 1..8 of its last 16-call
+    # block. Phase0 remains the default for all historical audits.
+    if type(phase) is not int or not 0 <= phase < 16:
+        raise ValueError("invalid pre-submit query phase")
     if b"\r" in raw or not raw.endswith(b"\n"):
         raise ValueError("noncanonical audout CSV line endings")
     rows = list(csv.reader(io.StringIO(raw.decode("ascii"), newline=""),
@@ -138,7 +143,7 @@ def parse_telemetry(raw: bytes) -> dict:
             raise ValueError("window totals mismatch: " + key)
     if total["attempts"] < 100:
         raise ValueError("insufficient audout attempts for 50-second test")
-    expected_probes = (total["attempts"] + 15) // 16
+    expected_probes = max(0, (total["attempts"] + 15 - phase) // 16)
     if total["queue_ok"] + total["queue_errors"] != expected_probes:
         raise ValueError("expected 1/16 pre-submit service queries")
     if max(w["max_call_us"] for w in windows) != total["max_call_us"]:
