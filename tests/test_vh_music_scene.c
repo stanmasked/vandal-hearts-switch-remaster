@@ -300,12 +300,113 @@ static void test_forced_bank_detach_in_all_fade_stages(void) {
     assert_scene_fully_detached();
 }
 
+/* The old director deliberately reset STUDIO_C between cues. Make
+ * continuity opt-in so installed gameplay keeps the historical behavior.
+ * All PCM and SEQ bytes in these regressions are synthetic. */
+static VhSpuReverb switch_tail_before;
+static int wet_nonzero(const VhSpuReverb *tail) {
+    for(unsigned i=0;i<VH_REV_SAMPLES;i++)
+        if(tail->work[i]!=0) return 1;
+    return 0;
+}
+static void test_optional_wet_tail_direct_switch(void) {
+    setup();
+    VhMusicCue first=cue_a(),second=cue_b();
+    assert(scene.keep_reverb_across_cues==0u);
+    assert(vh_music_scene_set_reverb_continuity(NULL,1)==-1);
+    assert(vh_music_scene_set_reverb_continuity(&scene,-1)==-1);
+    assert(vh_music_scene_set_reverb_continuity(&scene,2)==-1);
+    assert(scene.keep_reverb_across_cues==0u);
+    assert(vh_music_scene_set_reverb_continuity(&scene,1)==0);
+    assert(scene.keep_reverb_across_cues==1u);
+    assert(vh_music_scene_request(&scene,&first,0u)==0);
+    assert(vh_music_scene_set_reverb_continuity(&scene,0)==-1);
+    for(unsigned frame=0;frame<64u;frame++)
+        assert(vh_music_scene_render(&scene,out)==0);
+    assert(vh_music_scene_active_id(&scene)==101u &&
+           scene.seq.note_ons==1u &&
+           synth.voice[0].pcm==pcm_a &&
+           wet_nonzero(&synth.reverb));
+    switch_tail_before=synth.reverb;
+    VhMusicCue invalid={303u,broken,sizeof broken,1u,resolve,NULL};
+    assert(vh_music_scene_request(&scene,&invalid,0u)==-1);
+    assert(scene.active.id==101u && !scene.last_error);
+    assert(!memcmp(&synth.reverb,&switch_tail_before,
+                   sizeof switch_tail_before));
+    assert(vh_music_scene_request(&scene,&second,0u)==0);
+    assert(scene.active.id==202u && scene.stage==VH_MUSIC_PLAYING &&
+           scene.switches==2u && scene.seq.note_ons==0u);
+    assert(!memcmp(&synth.reverb,&switch_tail_before,
+                   sizeof switch_tail_before));
+    assert(synth.interpolation==VH_SPU_GAUSSIAN &&
+           synth.reverb_enabled && synth.reverb_depth==0.5f);
+    for(unsigned i=0;i<VH_NATIVE_MUSIC_VOICES;i++)
+        assert(!synth.voice[i].active && synth.voice[i].pcm==NULL);
+    assert(vh_music_scene_render(&scene,out)==0);
+    assert(scene.seq.note_ons==1u && synth.voice[0].pcm==pcm_b);
+    assert(vh_music_scene_request(&scene,NULL,0u)==0);
+    assert(scene.stage==VH_MUSIC_SILENT && !wet_nonzero(&synth.reverb));
+    assert(scene.keep_reverb_across_cues==1u);
+    assert(vh_music_scene_detach(&scene)==0);
+    assert(scene.keep_reverb_across_cues==1u);
+    assert(vh_music_scene_set_reverb_continuity(&scene,0)==0);
+    assert(scene.keep_reverb_across_cues==0u);
+}
+
+static void test_default_reset_and_opted_fade_comparison(void) {
+    setup();
+    VhMusicCue first=cue_a(),second=cue_b();
+    vh_native_spu_reset(&reference_synth);
+    assert(vh_native_spu_set_interpolation(
+        &reference_synth,VH_SPU_GAUSSIAN)==0);
+    assert(vh_native_spu_set_reverb(&reference_synth,1,0.5f)==0);
+    vh_music_scene_init(&reference_scene,&reference_synth);
+    assert(vh_music_scene_set_reverb_continuity(&scene,1)==0);
+    assert(!reference_scene.keep_reverb_across_cues);
+    assert(vh_music_scene_request(&scene,&first,0u)==0);
+    assert(vh_music_scene_request(&reference_scene,&first,0u)==0);
+    for(unsigned block=0u;block<64u;block++) {
+        assert(vh_music_scene_render(&scene,out)==0);
+        assert(vh_music_scene_render(&reference_scene,reference)==0);
+        assert(!memcmp(out,reference,sizeof out));
+    }
+    assert(wet_nonzero(&synth.reverb));
+    assert(!memcmp(&synth.reverb,&reference_synth.reverb,
+                   sizeof synth.reverb));
+    assert(vh_music_scene_request(&scene,&second,2u)==0);
+    assert(vh_music_scene_request(&reference_scene,&second,2u)==0);
+    for(unsigned block=0u;block<2u;block++) {
+        assert(vh_music_scene_render(&scene,out)==0);
+        assert(vh_music_scene_render(&reference_scene,reference)==0);
+        assert(!memcmp(out,reference,sizeof out));
+    }
+    assert(scene.stage==VH_MUSIC_SWITCH_PENDING &&
+           reference_scene.stage==VH_MUSIC_SWITCH_PENDING);
+    assert(wet_nonzero(&synth.reverb));
+    assert(vh_music_scene_render(&scene,out)==0);
+    assert(vh_music_scene_render(&reference_scene,reference)==0);
+    assert(scene.stage==VH_MUSIC_FADE_IN &&
+           reference_scene.stage==VH_MUSIC_FADE_IN);
+    assert(scene.active.id==202u && reference_scene.active.id==202u);
+    assert(synth.voice[0].pcm==pcm_b &&
+           reference_synth.voice[0].pcm==pcm_b);
+    assert(wet_nonzero(&synth.reverb));
+    assert(memcmp(&synth.reverb,&reference_synth.reverb,
+                  sizeof synth.reverb)!=0);
+    assert(vh_music_scene_detach(&scene)==0);
+    assert(vh_music_scene_detach(&reference_scene)==0);
+    assert(!wet_nonzero(&synth.reverb) &&
+           !wet_nonzero(&reference_synth.reverb));
+}
+
 int main(void) {
     test_validation_and_zero_fade_restart();
     test_two_block_fade_and_silence();
     test_fade_ramp_matches_unscaled_audio();
     test_pending_corruption_fails_closed();
     test_forced_bank_detach_in_all_fade_stages();
+    test_optional_wet_tail_direct_switch();
+    test_default_reset_and_opted_fade_comparison();
     puts("game scene music cues: fade / switch / silence / validation PASS");
     return 0;
 }
