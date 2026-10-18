@@ -80,6 +80,7 @@ class Stage327ClockGapTests(unittest.TestCase):
             ("sound_latency_or_dropout_verified",True),
             ("physical_Nintendo_Switch_audio_tested",True),
             ("result","FAKE_SUCCESS"),
+            ("schema","FAKE_STAGE326_SCHEMA"),
         )
         for field,value in cases:
             changed=copy.deepcopy(self.source)
