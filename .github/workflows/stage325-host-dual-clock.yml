@@ -1,0 +1,58 @@
+name: Stage325 paired host wall and monotonic clock witnesses
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage325-host-dual-clock.yml'
+      - 'tools/audit_nexium_host_clock_pairs.py'
+      - 'tests/test_audit_nexium_host_clock_pairs.py'
+      - 'tools/capture_nexium_scene_audio.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  source-clock-tests:
+    name: Independently validate host Plus control paired clocks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check new source capture path
+        run: |
+          set -euo pipefail
+          bash -n tools/capture_nexium_scene_audio.sh
+          python3 -m py_compile tools/audit_nexium_host_clock_pairs.py tests/test_audit_nexium_host_clock_pairs.py
+      - name: Stage325 eleven synthetic paired host clock source tests
+        run: python3 -m unittest discover -s tests -p 'test_audit_nexium_host_clock_pairs.py' -v
+      - name: Verify CLI generates matching original and monotonic files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/vh-stage325
+          : > /tmp/vh-stage325/empty-test.pcm
+          printf 'event,pcm_bytes,host_epoch_ms\n' > /tmp/vh-stage325/old.csv
+          printf 'event,pcm_bytes,host_epoch_ms,host_monotonic_ns\n' > /tmp/vh-stage325/dual.csv
+          for event in before_plus_down after_plus_up control_sequence_end; do
+            python3 tools/audit_nexium_host_clock_pairs.py record \
+              --event "$event" \
+              --pcm /tmp/vh-stage325/empty-test.pcm \
+              --legacy /tmp/vh-stage325/old.csv \
+              --dual /tmp/vh-stage325/dual.csv
+            sleep 0.01
+          done
+          python3 tools/audit_nexium_host_clock_pairs.py audit \
+            --legacy /tmp/vh-stage325/old.csv \
+            --dual /tmp/vh-stage325/dual.csv \
+            --output /tmp/vh-stage325/report.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('/tmp/vh-stage325/report.json').read_text())
+          assert r['result']=='ORIGINAL_HOST_DUAL_CLOCK_CSVS_INDEPENDENTLY_MATCHED'
+          assert r['all_monotonic_intervals_positive'] is True
+          assert r['legacy_stage304_strict_ordering_not_relaxed'] is True
+          assert r['physical_Nintendo_Switch_audio_tested'] is False
+          print('Stage325 synthetic paired host CSV CLI verified; not game or DAC audio')
+          PY
