@@ -72,10 +72,13 @@ void vh152_disarm(void) {vh152_state=0u;}
 
 
 def patch_interpreter(source: str):
-    source=once(source,
-        "static inline void execI_(\n",
-        native_opcode_witness()+"static inline void execI_(\n",
-        "install test-only actual fetched MIPS instruction witness")
+    decl=("static inline void execI_(\n"
+          "\tu32 (INT_ATTR *fetch)(struct psxRegisters *r, "
+          "const uintptr_t *luts, u32 pc),\n"
+          "\tconst uintptr_t *memRLUT, psxRegisters *regs);")
+    source=once(source,decl,
+                native_opcode_witness()+decl,
+                "install native fetched-opcode witness at unique pinned prototype")
     anchor=("\tregs->code = fetch(regs, memRLUT, pc);\n"
             "\tpsxBSC[regs->code >> 26](regs, regs->code);")
     if source.count(anchor)!=2:
