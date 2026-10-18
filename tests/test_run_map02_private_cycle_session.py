@@ -1,6 +1,7 @@
 """Synthetic one-shot MAP02 execution sequencing; never launch owned game."""
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 import io
+import json
 from pathlib import Path
 import subprocess
 import tempfile
@@ -132,6 +133,69 @@ class PrivateOneShotCycleTests(unittest.TestCase):
                     self.assertNotIn(str(self.elf), stderr.getvalue())
                 finally:
                     self.mocks[function].side_effect = original
+
+    def test_dry_run_reuses_private_readiness_but_never_starts_game(self):
+        milestones = []
+        status = self.execute(
+            dry_run=True, allow_local_completion=False,
+            stage_callback=milestones.append)
+        self.assertEqual(status["schema"], "vh.map02.private-one-shot-dry-run.v1")
+        self.assertEqual(status["gpu_draw_frame"], 12)
+        self.assertTrue(status["ready_for_controlled_local_launch"])
+        self.assertTrue(status["full_private_original_elf_disc_preflight_checked"])
+        for key in ("gameplay_process_started", "private_witnesses_written",
+                    "private_final_seal_published",
+                    "original_map02_rendering_proven",
+                    "physical_ps1_equivalence_proven",
+                    "private_game_files_uploaded"):
+            self.assertFalse(status[key])
+        self.assertEqual(milestones, list(runner.SAFE_STAGES[:4]) + ["complete"])
+        self.mocks["verify_private_cycle_readiness"].assert_called_once()
+        self.assertEqual(self.mocks["private_file"].call_count, 2)
+        for name in ("launch_observed_pc", "finalize_private_capture",
+                     "seal_final_capture", "verify_final_seal"):
+            self.mocks[name].assert_not_called()
+        self.assertFalse(list(self.folders[-1].iterdir()))
+
+    def test_dry_run_is_fail_closed_when_private_plan_or_seal_is_wrong(self):
+        with self.assertRaisesRegex(ValueError, "requested frame differs"):
+            self.execute(frame=13, dry_run=True, allow_local_completion=False)
+        self.mocks["verify_private_cycle_readiness"].return_value = {
+            "ready_for_controlled_local_launch": False}
+        with self.assertRaisesRegex(ValueError, "preflight was not confirmed"):
+            self.execute(dry_run=True, allow_local_completion=False)
+        self.mocks["verify_private_cycle_readiness"].return_value = {
+            "ready_for_controlled_local_launch": True}
+        extra = self.folders[-1] / "unexpected"
+        extra.write_bytes(b"synthetic")
+        with self.assertRaisesRegex(ValueError, "must be empty"):
+            self.execute(dry_run=True, allow_local_completion=False)
+        self.mocks["launch_observed_pc"].assert_not_called()
+        self.mocks["seal_final_capture"].assert_not_called()
+
+    def test_dry_run_and_publish_permission_mutually_exclusive(self):
+        with self.assertRaisesRegex(ValueError, "forbids local completion"):
+            self.execute(dry_run=True)
+        with self.assertRaisesRegex(ValueError, "must be boolean"):
+            self.execute(dry_run="true", allow_local_completion=False)
+        self.mocks["verify_private_cycle_readiness"].assert_not_called()
+        self.mocks["launch_observed_pc"].assert_not_called()
+
+    def test_dry_run_cli_emits_only_safe_status_not_game_paths(self):
+        args = ["private-one-shot"] + [str(x) for x in self.folders] + [
+            str(self.disc), "--upstream-checkout", str(self.upstream),
+            "--pc-binary", str(self.elf), "--build-receipt-dir",
+            str(self.receipt), "--build-bundle-dir", str(self.bundle),
+            "--frame", "12", "--x", "10", "--y", "20", "--dry-run"]
+        output = io.StringIO()
+        with patch("sys.argv", args), redirect_stdout(output):
+            runner.main()
+        result = json.loads(output.getvalue())
+        self.assertTrue(result["ready_for_controlled_local_launch"])
+        self.assertFalse(result["gameplay_process_started"])
+        self.assertNotIn(str(self.disc), output.getvalue())
+        self.assertNotIn(str(self.elf), output.getvalue())
+        self.mocks["launch_observed_pc"].assert_not_called()
 
     def test_local_completion_requires_explicit_consent_before_process(self):
         with self.assertRaisesRegex(ValueError, "explicit private"):
