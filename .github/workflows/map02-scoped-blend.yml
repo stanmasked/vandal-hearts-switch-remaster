@@ -27,6 +27,11 @@ on:
       - 'tests/test_export_map02_native_vram_preview.py'
       - 'tools/verify_map02_pc_present_rgb24.py'
       - 'tests/test_verify_map02_pc_present_rgb24.py'
+      - 'tools/map02_pc_preoverlay_capture.c'
+      - 'tools/map02_pc_preoverlay_capture.h'
+      - 'tools/instrument_map02_pc_preoverlay_capture.py'
+      - 'tests/test_instrument_map02_pc_preoverlay_capture.py'
+      - 'tests/test_map02_pc_preoverlay_capture.py'
       - 'tools/check_map02_pc_present_rgb24_source.py'
       - 'tests/test_check_map02_pc_present_rgb24_source.py'
       - 'docs/MAP02_NATIVE_VRAM_PREVIEW.md'
@@ -137,6 +142,11 @@ on:
       - 'tests/test_export_map02_native_vram_preview.py'
       - 'tools/verify_map02_pc_present_rgb24.py'
       - 'tests/test_verify_map02_pc_present_rgb24.py'
+      - 'tools/map02_pc_preoverlay_capture.c'
+      - 'tools/map02_pc_preoverlay_capture.h'
+      - 'tools/instrument_map02_pc_preoverlay_capture.py'
+      - 'tests/test_instrument_map02_pc_preoverlay_capture.py'
+      - 'tests/test_map02_pc_preoverlay_capture.py'
       - 'tools/check_map02_pc_present_rgb24_source.py'
       - 'tests/test_check_map02_pc_present_rgb24_source.py'
       - 'docs/MAP02_NATIVE_VRAM_PREVIEW.md'
@@ -259,6 +269,8 @@ jobs:
             tests.test_export_map02_native_vram_preview \
             tests.test_verify_map02_pc_present_rgb24 \
             tests.test_check_map02_pc_present_rgb24_source \
+            tests.test_instrument_map02_pc_preoverlay_capture \
+            tests.test_map02_pc_preoverlay_capture \
             tests.test_map02_source_native_windows \
             tests.test_verify_map02_window_scoped_join \
             tests.test_publish_map02_window_scoped_witness \
@@ -350,9 +362,11 @@ jobs:
               build-map02-cycle/libcd.o \
               build-map02-cycle/libgpu.o \
               build-map02-cycle/pc_raster.o \
+              build-map02-cycle/pc_gpu_window.o \
               build-map02-cycle/map02_cycle_order.o \
               build-map02-cycle/map02_cd_read_probe.o \
               build-map02-cycle/map02_capture_session.o \
+              build-map02-cycle/map02_pc_preoverlay_capture.o \
               build-map02-cycle/map02_scoped_blend_sink.o \
               build-map02-cycle/map02_scoped_blend_stage.o \
               build-map02-cycle/map02_vram_edges.o
@@ -361,9 +375,11 @@ jobs:
               build-map02-cycle/libcd.o \
               build-map02-cycle/libgpu.o \
               build-map02-cycle/pc_raster.o \
+              build-map02-cycle/pc_gpu_window.o \
               build-map02-cycle/map02_cycle_order.o \
               build-map02-cycle/map02_cd_read_probe.o \
               build-map02-cycle/map02_capture_session.o \
+              build-map02-cycle/map02_pc_preoverlay_capture.o \
               build-map02-cycle/map02_scoped_blend_sink.o \
               build-map02-cycle/map02_scoped_blend_stage.o \
               build-map02-cycle/map02_vram_edges.o \
@@ -371,7 +387,8 @@ jobs:
             for symbol in LoadCdFile ContinueLoadingCdFile CdRead DrawOTag \
                 vh_map02_cycle_load vh_map02_cycle_draw_start \
                 vh_map02_stage_private_pair vh_map02_scope_begin_frame \
-                vh_map02_edges_begin_frame; do
+                vh_map02_edges_begin_frame \
+                vh_map02_pc_capture_preoverlay; do
               nm -g --defined-only "${RUNNER_TEMP}/map02-cycle-three-original-units.o" \
                 | awk '{ print $NF }' | grep -Fx "${symbol}"
             done

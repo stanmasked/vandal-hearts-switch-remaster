@@ -18,10 +18,11 @@ def valid_dry_run(root):
     original = [
         "src/core/cd.o", "src/core/graphics.o",
         *("src/core/extras_%02d.o" % i for i in range(88)),
-        "libcd.o", "libgpu.o", "pc_raster.o", "pc_kanji_font.o", "generated_data.o",
+        "libcd.o", "libgpu.o", "pc_raster.o", "pc_gpu_window.o", "pc_kanji_font.o", "generated_data.o",
         "pc_battle_data.o", "pc_string_table.o",
         "map02_cycle_order.o", "map02_cd_read_probe.o",
-        "map02_capture_session.o", "map02_scoped_blend_sink.o",
+        "map02_capture_session.o", "map02_pc_preoverlay_capture.o",
+        "map02_scoped_blend_sink.o",
         "map02_scoped_blend_stage.o", "map02_vram_edges.o",
     ]
     lines = [
@@ -35,6 +36,8 @@ def valid_dry_run(root):
         str(root / "libgpu.c") + " -o " + build + "libgpu.o",
         "cc -DVH_MAP02_SCOPED_BLEND_PROBE -c " +
         str(root / "pc_raster.c") + " -o " + build + "pc_raster.o",
+        "cc -DVH_MAP02_PC_PREOVERLAY_CAPTURE -c " +
+        str(root / "pc_gpu_window.c") + " -o " + build + "pc_gpu_window.o",
         "VH_REGION=us VH_GENERATED_OUT=" + build +
         "map02_pinned_kanji_font.c python3 -I " +
         str(root / maker.FONT_GENERATOR_SNAPSHOT),
@@ -88,7 +91,7 @@ class CycleMakePlanTests(unittest.TestCase):
 
     def test_full_game_link_graph_reports_only_dry_run(self):
         result = check.verify_dry_run(valid_dry_run(self.output), self.output)
-        self.assertEqual(result["private_source_compile_rules_verified"], 4)
+        self.assertEqual(result["private_source_compile_rules_verified"], 5)
         self.assertGreaterEqual(result["original_and_diagnostic_required_objects"], 14)
         self.assertFalse(result["fully_linked_executable_created"])
         self.assertFalse(result["original_map02_rendering_proven"])

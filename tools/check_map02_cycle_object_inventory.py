@@ -30,8 +30,9 @@ MIN_BACKEND = 30
 BIOS_FONT_OBJECT = 'pc_kanji_font.o'
 REQUIRED = {
     "src/core/cd.o", "libcd.o", "libgpu.o", "pc_raster.o",
-    "map02_cycle_order.o", "map02_cd_read_probe.o",
-    "map02_capture_session.o", "map02_scoped_blend_sink.o",
+    "pc_gpu_window.o", "map02_cycle_order.o", "map02_cd_read_probe.o",
+    "map02_capture_session.o", "map02_pc_preoverlay_capture.o",
+    "map02_scoped_blend_sink.o",
     "map02_scoped_blend_stage.o", "map02_vram_edges.o",
 }
 SUPPORT_OBJS = {

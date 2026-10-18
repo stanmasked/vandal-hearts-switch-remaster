@@ -26,6 +26,7 @@ REQUIRED_SYMBOLS = (
     "vh_map02_cycle_load", "vh_map02_cycle_draw_start",
     "vh_map02_cd_read_finish", "vh_map02_stage_private_pair",
     "vh_map02_scope_begin_frame", "vh_map02_edges_begin_frame",
+    "vh_map02_pc_capture_preoverlay",
 )
 
 

@@ -10,7 +10,8 @@ from tests.test_export_map02_native_vram_preview import (
     CycleBoundNativeVramPreviewTests,
 )
 from tools.verify_map02_pc_present_rgb24 import (
-    RGB24_NAME, SCHEMA, compare_native_present_rgb24, pc_present_bottom_up,
+    RGB24_NAME, RGB24_RECEIPT, SCHEMA, compare_native_present_rgb24,
+    pc_present_bottom_up,
 )
 from tools.export_map02_native_vram_preview import PNG_NAME
 from tools.verify_map02_native_gpu_windows import verify_native_windows
@@ -56,6 +57,21 @@ class PrivatePcPresentEvidenceTests(unittest.TestCase):
         self.rgbfile.write_bytes(
             pc_present_bottom_up(base.fixture.snapshots[-1], [0, 0, 1, 1]))
         self.rgbfile.chmod(0o600)
+        self.receipt = {
+            "schema": "vh.map02.pc-preoverlay-capture.v1",
+            "capture_session": self.base.token,
+            "gpu_draw_frame": 7, "width": 1, "height": 1,
+            "bytes": 3, "pixel_format": "rgb24-bottom-up",
+            "movie_overlay_active": False, "hires_active": False,
+            "source_pinned": True,
+            "presented_window_authenticated": False,
+        }
+        self.save_receipt()
+
+    def save_receipt(self):
+        p = self.rgbdir / RGB24_RECEIPT
+        p.write_text(json.dumps(self.receipt, sort_keys=True) + "\n")
+        p.chmod(0o600)
 
     def check(self):
         return compare_native_present_rgb24(
@@ -69,6 +85,7 @@ class PrivatePcPresentEvidenceTests(unittest.TestCase):
         self.assertEqual(result["native_draw_pairs"], 2)
         self.assertTrue(result["bottom_up_pc_rgb24_matches_native_vram"])
         self.assertTrue(result["private_png_matches_native_vram"])
+        self.assertTrue(result["same_process_rgb24_receipt_matches_cycle_nonce_and_frame"])
         self.assertEqual(result["private_pc_preoverlay_rgb24_sha256"],
                          hashlib.sha256(self.rgbfile.read_bytes()).hexdigest())
         self.assertFalse(result["external_rgb24_source_provenance_authenticated"])
@@ -108,6 +125,30 @@ class PrivatePcPresentEvidenceTests(unittest.TestCase):
             self.base.event = original
         self.base.save_cycle()
 
+    def test_capture_receipt_wrong_nonce_frame_dimensions_or_mode_rejected(self):
+        for changes in (
+            {"capture_session": "ef" * 16},
+            {"gpu_draw_frame": 8}, {"width": 2}, {"bytes": 6},
+            {"movie_overlay_active": True}, {"hires_active": True},
+            {"pixel_format": "rgb24-top-down"}, {"source_pinned": False},
+            {"presented_window_authenticated": True}):
+            original = dict(self.receipt)
+            self.receipt.update(changes)
+            self.save_receipt()
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                self.check()
+            self.receipt = original
+        self.save_receipt()
+
+    def test_missing_or_modified_rgb_capture_receipt_rejected(self):
+        (self.rgbdir / RGB24_RECEIPT).unlink()
+        with self.assertRaises(ValueError):
+            self.check()
+        self.save_receipt()
+        (self.rgbdir / RGB24_RECEIPT).write_bytes(b"invalid json")
+        with self.assertRaises(ValueError):
+            self.check()
+
     def test_missing_clean_exit_seal_rejected(self):
         (self.base.cycle / "map02-cycle-clean-exit.jsonl").unlink()
         with self.assertRaises(ValueError):
@@ -119,6 +160,23 @@ class PrivatePcPresentEvidenceTests(unittest.TestCase):
         os.link(self.rgbfile, twin)
         with self.assertRaisesRegex(ValueError, "owner-only 0600 regular"):
             self.check()
+
+    def test_capture_receipt_replacement_between_audits_rejected(self):
+        from tools.verify_map02_pc_present_rgb24 import _private_evidence_snapshot
+        original = _private_evidence_snapshot(
+            self.rgbdir, RGB24_RECEIPT, max_bytes=1024)
+        altered = (original[0] + b" ", original[1])
+        real = _private_evidence_snapshot
+        def changed(root, name, *, max_bytes):
+            if name == RGB24_RECEIPT:
+                self.calls += 1
+                return original if self.calls == 1 else altered
+            return real(root, name, max_bytes=max_bytes)
+        self.calls = 0
+        with patch("tools.verify_map02_pc_present_rgb24._private_evidence_snapshot",
+                   side_effect=changed):
+            with self.assertRaisesRegex(ValueError, "changed during comparison"):
+                self.check()
 
     def test_capture_replacement_between_audits_rejected(self):
         original = verify_native_windows(self.base.fixture.root, target_frame=7)

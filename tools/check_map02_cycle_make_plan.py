@@ -27,10 +27,11 @@ OUTPUT_NAME = "vandalhearts_pc"
 BUILD = "build-map02-cycle"
 REQUIRED_OBJECTS = (
     "src/core/cd.o", "src/core/graphics.o",
-    "libcd.o", "libgpu.o", "pc_raster.o", "pc_kanji_font.o",
+    "libcd.o", "libgpu.o", "pc_raster.o", "pc_gpu_window.o", "pc_kanji_font.o",
     "generated_data.o", "pc_battle_data.o", "pc_string_table.o",
     "map02_cycle_order.o", "map02_cd_read_probe.o",
-    "map02_capture_session.o", "map02_scoped_blend_sink.o",
+    "map02_capture_session.o", "map02_pc_preoverlay_capture.o",
+    "map02_scoped_blend_sink.o",
     "map02_scoped_blend_stage.o", "map02_vram_edges.o",
 )
 REQUIRED_COPY_OBJECTS = (
@@ -38,6 +39,7 @@ REQUIRED_COPY_OBJECTS = (
     ("libcd.c", "libcd.o"),
     ("libgpu.c", "libgpu.o"),
     ("pc_raster.c", "pc_raster.o"),
+    ("pc_gpu_window.c", "pc_gpu_window.o"),
 )
 # GNU Make reads MAKEFILES and command-line options from its inherited
 # environment before the explicitly specified -f files. Never allow caller
@@ -70,6 +72,7 @@ MACROS = (
     "-DVH_MAP02_GPU_CAPTURE", "-DVH_MAP02_POSIX_CAPTURE_WINDOWS",
     "-DVH_MAP02_SCOPED_BLEND_PROBE", "-DVH_MAP02_VRAM_EDGE_PROBE",
     "-DVH_MAP02_POSIX_STAGE", "-DVH_MAP02_CAPTURE_SESSION",
+    "-DVH_MAP02_PC_PREOVERLAY_CAPTURE",
 )
 
 
@@ -146,7 +149,7 @@ def preflight(upstream, output):
 
 
 def verify_dry_run(text, output):
-    """Parse ONLY the final link and four patched compile recipes."""
+    """Parse ONLY the final link and source-pinned patched compile recipes."""
     # Original GNU Make emits the multi-line CC link recipe with \\ continuations.
     normalized = text.replace("\\\n", " ")
     commands = [line.strip() for line in normalized.splitlines()]

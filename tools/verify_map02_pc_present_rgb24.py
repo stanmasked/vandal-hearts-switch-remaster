@@ -18,11 +18,16 @@ from tools.publish_map02_blendg1_witness import _private_directory
 from tools.verify_map02_cycle_cd_gpu_join import (
     CYCLE_RECEIPT, _cycle_receipt, _private_evidence_snapshot,
 )
-from tools.verify_map02_frame_bundle import number, parse_json
+from tools.verify_map02_frame_bundle import fields, number, parse_json
 from tools.verify_map02_native_gpu_windows import verify_native_windows
 
 RGB24_NAME = "map02-pc-present-preoverlay-rgb24.bin"
-SCHEMA = "vh.map02.pc-present-rgb24-compare.v1"
+RGB24_RECEIPT = "map02-pc-present-preoverlay-receipt.jsonl"
+CAPTURE_SCHEMA = "vh.map02.pc-preoverlay-capture.v1"
+SCHEMA = "vh.map02.pc-present-rgb24-compare.v2"
+CAPTURE_KEYS = ("schema", "capture_session", "gpu_draw_frame", "width",
+                "height", "bytes", "pixel_format", "movie_overlay_active",
+                "hires_active", "source_pinned", "presented_window_authenticated")
 
 
 def pc_present_bottom_up(vram, rect):
@@ -71,7 +76,7 @@ def compare_native_present_rgb24(native_dir, cycle_dir, preview_dir,
         raise ValueError("MAP02 evidence, preview and RGB24 directories must be separate")
     if {p.name for p in preview.iterdir()} != {PNG_NAME}:
         raise ValueError("private MAP02 preview directory has unexpected entries")
-    if {p.name for p in rgbdir.iterdir()} != {RGB24_NAME}:
+    if {p.name for p in rgbdir.iterdir()} != {RGB24_NAME, RGB24_RECEIPT}:
         raise ValueError("private PC-present RGB24 directory has unexpected entries")
 
     proof = _cycle_receipt(cycle, frame)
@@ -79,6 +84,33 @@ def compare_native_present_rgb24(native_dir, cycle_dir, preview_dir,
     if event["present_backend_is_hires"]:
         raise ValueError("hi-res PC present buffer is not native VRAM RGB24")
     rect = event["display_source_rect"]
+    receipt = _private_evidence_snapshot(rgbdir, RGB24_RECEIPT, max_bytes=1024)
+    if (receipt[0].count(b"\\n") != 1 or not receipt[0].endswith(b"\\n")
+            or b"\\r" in receipt[0]):
+        raise ValueError("noncanonical private PC RGB24 capture receipt")
+    captured = parse_json(receipt[0][:-1], RGB24_RECEIPT)
+    fields(captured, CAPTURE_KEYS, RGB24_RECEIPT)
+    if (captured["schema"] != CAPTURE_SCHEMA or
+            captured["pixel_format"] != "rgb24-bottom-up" or
+            captured["movie_overlay_active"] is not False or
+            captured["hires_active"] is not False or
+            captured["source_pinned"] is not True or
+            captured["presented_window_authenticated"] is not False):
+        raise ValueError("unsupported or overstated private PC RGB24 capture receipt")
+    token = captured["capture_session"]
+    if (type(token) is not str or len(token) != 32 or
+            any(ch not in "0123456789abcdef" for ch in token) or
+            hashlib.sha256(token.encode("ascii")).hexdigest() != proof[1]):
+        raise ValueError("private PC RGB24 capture session differs from sealed cycle")
+    if (number(captured["gpu_draw_frame"], "captured PC frame", 1, 2**32-1)
+            != frame or
+            number(captured["width"], "captured width", 1, WIDTH)
+            != rect[2] or
+            number(captured["height"], "captured height", 1, 512)
+            != rect[3] or
+            number(captured["bytes"], "captured RGB24 bytes", 3, WIDTH * 512 * 3)
+            != rect[2] * rect[3] * 3):
+        raise ValueError("private PC RGB24 capture frame or dimensions differ")
     audit = verify_native_windows(native, target_frame=frame)
     if (audit["capture_session_sha256"] != proof[1] or
             audit["native_draw_pairs"] !=
@@ -111,6 +143,8 @@ def compare_native_present_rgb24(native_dir, cycle_dir, preview_dir,
             _private_evidence_snapshot(
                 rgbdir, RGB24_NAME, max_bytes=WIDTH * 512 * 3) != actual_rgb or
             _private_evidence_snapshot(
+                rgbdir, RGB24_RECEIPT, max_bytes=1024) != receipt or
+            _private_evidence_snapshot(
                 preview, PNG_NAME, max_bytes=WIDTH * 512 * 4) != actual_png):
         raise ValueError("MAP02 RGB24/VRAM/PNG evidence changed during comparison")
     return {
@@ -125,6 +159,8 @@ def compare_native_present_rgb24(native_dir, cycle_dir, preview_dir,
             hashlib.sha256(actual_rgb[0]).hexdigest(),
         "compared_source_pixels": rect[2] * rect[3],
         "bottom_up_pc_rgb24_matches_native_vram": True,
+        "same_process_rgb24_receipt_matches_cycle_nonce_and_frame": True,
+        "pc_preoverlay_source_pinned_receipt_observed": True,
         "private_png_matches_native_vram": True,
         "external_rgb24_source_provenance_authenticated": False,
         "presented_host_window_authenticated": False,

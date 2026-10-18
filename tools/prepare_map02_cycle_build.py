@@ -19,6 +19,8 @@ from tools.instrument_map02_cycle_order import (
 from tools.prepare_map02_pcport import PINNED_BLOB_SHA1, git_blob_sha1
 from tools.instrument_map02_cd_read import SOURCE_CD, SOURCE_LIBCD
 from tools.instrument_map02_gpu_native_events import PINNED_SOURCE
+from tools.instrument_map02_pc_preoverlay_capture import instrument as patch_pc_present
+from tools.check_map02_pc_present_rgb24_source import BLOB_SHA1 as PC_PRESENT_SOURCE
 from tools.check_map02_private_pc_inputs import (FONT_GENERATOR,
     FONT_GENERATOR_BLOB_SHA1)
 
@@ -28,11 +30,14 @@ SOURCE_MAP = {
     "libgpu.c": ("platform/pc/src/libgpu.c", PINNED_SOURCE, patch_gpu),
     "pc_raster.c": ("platform/pc/src/pc_raster.c",
                     "ba8a05d161ad778c0b75e452ff0a11ed163c65cd", patch_raster),
+    "pc_gpu_window.c": ("platform/pc/src/pc_gpu_window.c",
+                        PC_PRESENT_SOURCE, patch_pc_present),
 }
 SUPPORT_FILES = (
     "map02_cycle_order.c", "map02_cycle_order.h",
     "map02_cd_read_probe.c", "map02_cd_read_probe.h",
     "map02_capture_session.c", "map02_capture_session.h",
+    "map02_pc_preoverlay_capture.c", "map02_pc_preoverlay_capture.h",
     "map02_scoped_blend_sink.c", "map02_scoped_blend_sink.h",
     "map02_scoped_blend_stage.c", "map02_scoped_blend_stage.h",
     "map02_vram_edges.c", "map02_vram_edges.h",
@@ -43,6 +48,7 @@ MAKE_ANCHORS = (
     "$(BUILD_DIR)/libcd.o: src/libcd.c",
     "$(BUILD_DIR)/libgpu.o: src/libgpu.c",
     "$(BUILD_DIR)/pc_raster.o: src/pc_raster.c",
+    "$(BUILD_DIR)/pc_gpu_window.o: src/pc_gpu_window.c",
     "link: $(DATA_OBJS)",
     "$(BUILD_DIR)/src/%.o: $(SRC_DIR)/%.c | stage",
 )
@@ -91,6 +97,7 @@ endif
 VH_MAP02_CYCLE_DEFS := -DVH_MAP02_CYCLE_ORDER -DVH_MAP02_CD_READ_PROBE
 VH_MAP02_GPU_DEFS := -DVH_MAP02_CYCLE_ORDER -DVH_MAP02_GPU_CAPTURE -DVH_MAP02_POSIX_CAPTURE_WINDOWS -DVH_MAP02_SCOPED_BLEND_PROBE -DVH_MAP02_VRAM_EDGE_PROBE -DVH_MAP02_POSIX_STAGE -DVH_MAP02_CAPTURE_SESSION
 VH_MAP02_STAGE_DEFS := -DVH_MAP02_CD_READ_PROBE -DVH_MAP02_VRAM_EDGE_PROBE -DVH_MAP02_CAPTURE_SESSION
+VH_MAP02_PC_PRESENT_DEFS := -DVH_MAP02_PC_PREOVERLAY_CAPTURE
 VH_MAP02_CYCLE_INCLUDES := -I$(VH_MAP02_CYCLE_ROOT)
 # Only the source-pinned private snapshot is allowed to read owned KROM data.
 # This shadow target prevents GNU Make from invoking its inherited source
@@ -105,7 +112,7 @@ $(BUILD_DIR)/map02_pinned_kanji_font.c: $(VH_MAP02_CYCLE_ROOT)/{FONT_GENERATOR_S
 $(BUILD_DIR)/pc_kanji_font.o: $(BUILD_DIR)/map02_pinned_kanji_font.c
 	@mkdir -p $(dir $@)
 	$(CC) $(M32) $(SAN) $(PORT_WARN) -Iinclude -g -MMD -MP -c -o $@ $(BUILD_DIR)/map02_pinned_kanji_font.c
-VH_MAP02_CYCLE_SUPPORT := $(addprefix $(BUILD_DIR)/,map02_cycle_order.o map02_cd_read_probe.o map02_capture_session.o map02_scoped_blend_sink.o map02_scoped_blend_stage.o map02_vram_edges.o)
+VH_MAP02_CYCLE_SUPPORT := $(addprefix $(BUILD_DIR)/,map02_cycle_order.o map02_cd_read_probe.o map02_capture_session.o map02_pc_preoverlay_capture.o map02_scoped_blend_sink.o map02_scoped_blend_stage.o map02_vram_edges.o)
 BACKEND_OBJS += $(VH_MAP02_CYCLE_SUPPORT)
 link: $(VH_MAP02_CYCLE_SUPPORT)
 # Some original public C files include retail-generated assets/*.inc.
@@ -137,6 +144,10 @@ $(BUILD_DIR)/pc_raster.o: $(VH_MAP02_CYCLE_ROOT)/pc_raster.c
 	@mkdir -p $(dir $@)
 	$(CC) $(M32) $(SAN) $(PORT_WARN) -DVH_MAP02_SCOPED_BLEND_PROBE $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -Isrc -g -MMD -MP -c -o $@ $(VH_MAP02_CYCLE_ROOT)/pc_raster.c
 
+$(BUILD_DIR)/pc_gpu_window.o: $(VH_MAP02_CYCLE_ROOT)/pc_gpu_window.c
+	@mkdir -p $(dir $@)
+	$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_PC_PRESENT_DEFS) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -Isrc -g -MMD -MP -c -o $@ $(VH_MAP02_CYCLE_ROOT)/pc_gpu_window.c
+
 $(BUILD_DIR)/map02_cycle_order.o: $(VH_MAP02_CYCLE_ROOT)/map02_cycle_order.c
 	@mkdir -p $(dir $@)
 	$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -g -MMD -MP -c -o $@ $<
@@ -146,6 +157,10 @@ $(BUILD_DIR)/map02_cd_read_probe.o: $(VH_MAP02_CYCLE_ROOT)/map02_cd_read_probe.c
 	$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -g -MMD -MP -c -o $@ $<
 
 $(BUILD_DIR)/map02_capture_session.o: $(VH_MAP02_CYCLE_ROOT)/map02_capture_session.c
+	@mkdir -p $(dir $@)
+	$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -g -MMD -MP -c -o $@ $<
+
+$(BUILD_DIR)/map02_pc_preoverlay_capture.o: $(VH_MAP02_CYCLE_ROOT)/map02_pc_preoverlay_capture.c
 	@mkdir -p $(dir $@)
 	$(CC) $(M32) $(SAN) $(PORT_WARN) $(VH_MAP02_CYCLE_INCLUDES) -Iinclude -g -MMD -MP -c -o $@ $<
 
