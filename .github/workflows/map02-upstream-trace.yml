@@ -127,6 +127,8 @@ on:
       - 'tests/test_prepare_map02_private_gpu_make_overlay.py'
       - 'tests/test_verify_map02_private_gpu_make_overlay.py'
       - 'tests/test_build_map02_private_gpu_make_overlay.py'
+      - 'tools/consume_map02_sealed_gpu_objects.py'
+      - 'tests/test_consume_map02_sealed_gpu_objects.py'
       - 'tools/audit_map02_putpixel_samples.py'
       - 'tools/verify_map02_camera_capture.py'
       - 'tools/verify_map02_frame_bundle.py'
@@ -258,6 +260,7 @@ jobs:
             python3 -m unittest discover -s tests -p 'test_prepare_map02_private_gpu_make_overlay.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_private_gpu_make_overlay.py' -v
             python3 -m unittest discover -s tests -p 'test_build_map02_private_gpu_make_overlay.py' -v
+            python3 -m unittest discover -s tests -p 'test_consume_map02_sealed_gpu_objects.py' -v
           )
           PYTHONPATH=remaster python3 -m tools.prepare_map02_private_gpu_make_overlay \
             upstream --output-dir /tmp/vh-map02-pinned-private-make \
@@ -325,21 +328,26 @@ jobs:
           assert sorted(report["objects_sha256"]) == ["libgpu.o", "pc_raster.o"]
           assert not report["all_headers_sealed"] and not report["hd_replacement_authorized"]
           PY
+          PYTHONPATH=remaster python3 -m tools.consume_map02_sealed_gpu_objects \
+            --pc-dir upstream/platform/pc --build-dir build-map02-private-ci \
+            --primary-receipt /tmp/vh-map02-sealed-make.json \
+            > /tmp/vh-map02-sealed-link.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          original = json.loads(Path("/tmp/vh-map02-sealed-make.json").read_text())
+          linked = json.loads(Path("/tmp/vh-map02-sealed-link.json").read_text())
+          assert linked["schema"] == "vh.map02.sealed-linked-gpu-object.v1"
+          assert linked["source_objects_sha256"] == original["objects_sha256"]
+          assert linked["source_objects_match_primary_receipt"]
+          assert linked["sealed_object_inputs"] == 2
+          assert linked["binutils_consumed_sealed_objects"]
+          assert len(linked["linked_object_sha256"]) == 64
+          assert linked["linked_output_path_stays_mutable"]
+          assert not linked["hd_replacement_authorized"]
+          PY
           (
             cd upstream/platform/pc
-            test -s build-map02-private-ci/libgpu.o
-            test -s build-map02-private-ci/pc_raster.o
-            for symbol in VH_CaptureEvent VH_Map02PixelScopeSet \
-              VH_Map02PixelScopeClear VH_PixelSampleRecord \
-              VH_Map02SkipAt VH_Map02SpanObserve; do
-              nm -a build-map02-private-ci/libgpu.o \
-                build-map02-private-ci/pc_raster.o | grep -F "$symbol"
-            done
-            strings build-map02-private-ci/pc_raster.o | grep -F VH_MAP02_PUTPIXEL_X2
-            strings build-map02-private-ci/pc_raster.o | grep -F VH_MAP02_PUTPIXEL_Y2
-            ld -r -o build-map02-private-ci/gpu-two-word-dda.o \
-              build-map02-private-ci/libgpu.o build-map02-private-ci/pc_raster.o
-            test -s build-map02-private-ci/gpu-two-word-dda.o
             if make -f Makefile -f /tmp/vh-map02-pinned-private-make/map02_private_gpu.mk \
               BUILD_DIR=build map02-private-gpu-objects > /tmp/vh-map02-unsafe-make.log 2>&1; then
               echo "Unsafe reuse of baseline PC build directory allowed" >&2

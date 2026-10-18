@@ -105,6 +105,9 @@ class SpanWorkflowGateTests(unittest.TestCase):
         pr_paths = text.split("  pull_request:\n    paths:", 1)[1].split("\njobs:", 1)[0]
         self.assertIn("'tools/build_map02_private_gpu_make_overlay.py'", pr_paths)
         self.assertIn("'tests/test_build_map02_private_gpu_make_overlay.py'", pr_paths)
+        self.assertIn("'tools/consume_map02_sealed_gpu_objects.py'", pr_paths)
+        self.assertIn("'tests/test_consume_map02_sealed_gpu_objects.py'", pr_paths)
+        self.assertIn('assert linked["binutils_consumed_sealed_objects"]', private_build)
 
     def test_trigger_includes_observer_and_test(self):
         text = WORKFLOW.read_text(encoding="utf-8")
