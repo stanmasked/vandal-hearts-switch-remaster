@@ -189,6 +189,61 @@ class PrivateJointOneShotAuditTests(unittest.TestCase):
             self.run_capture(frame_pair_dir=pair)
         self.assertEqual(list(self.output.iterdir()), [])
 
+    def prepare_two_pass_inventory(self):
+        # Minimal local on-disk inventory: no ELF execution necessary to
+        # exercise the owner and stability checks on actual held dir FDs.
+        for name in ("process-frame.bgr555", "process-frame.json"):
+            path = self.output / name
+            path.write_bytes(b"local-only-inventory")
+            path.chmod(0o600)
+        journal_file = self.journal / "gpu-native-events.jsonl"
+        journal_file.write_bytes(b"local-only-inventory")
+        journal_file.chmod(0o600)
+
+    def test_two_pass_inventory_requires_owner_directory(self):
+        self.prepare_two_pass_inventory()
+        with patch.object(joint_runner.os, "getuid",
+                          return_value=os.getuid() + 1):
+            with self.assertRaisesRegex(ValueError, "directory is not owner-private"):
+                joint_runner._session_inode_witness(self.output, self.journal)
+
+    def test_two_pass_inventory_requires_owner_file(self):
+        self.prepare_two_pass_inventory()
+        real_getuid = os.getuid
+        real_stat = os.stat
+        def simulate_other_owner(name, *args, **kwargs):
+            info = real_stat(name, *args, **kwargs)
+            if (name == "process-frame.bgr555"
+                    and kwargs.get("dir_fd") is not None):
+                values = list(info)
+                # os.stat_result positional tuples contain the uid at 4.
+                values[4] = real_getuid() + 1
+                return os.stat_result(values)
+            return info
+        with patch.object(joint_runner.os, "stat",
+                          side_effect=simulate_other_owner):
+            with self.assertRaisesRegex(ValueError, "file not owner-private"):
+                joint_runner._session_inode_witness(self.output, self.journal)
+
+    def test_two_pass_inventory_detects_metadata_change_mid_scan(self):
+        self.prepare_two_pass_inventory()
+        real_stat = os.stat
+        mutated = []
+        def alter_after_read(name, *args, **kwargs):
+            info = real_stat(name, *args, **kwargs)
+            if (not mutated and name == "process-frame.bgr555"
+                    and kwargs.get("dir_fd") is not None):
+                mutated.append(True)
+                # Keep the contents/inode/0600 unchanged; update only the
+                # file timestamp between the first and second FD scans.
+                os.utime(self.output / name,
+                         ns=(info.st_atime_ns, info.st_mtime_ns + 2_000_000_000))
+            return info
+        with patch.object(joint_runner.os, "stat", side_effect=alter_after_read):
+            with self.assertRaisesRegex(ValueError, "changed during inventory"):
+                joint_runner._session_inode_witness(self.output, self.journal)
+        self.assertEqual(mutated, [True])
+
     def test_one_real_synthetic_child_two_complete_private_replays(self):
         result = self.run_capture()
         self.assertEqual(result["schema"], joint_runner.SCHEMA)
