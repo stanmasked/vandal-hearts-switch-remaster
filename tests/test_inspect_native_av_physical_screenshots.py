@@ -98,17 +98,50 @@ class PhysicalScreenshotPixelTests(unittest.TestCase):
         self.assertFalse(out["audible_audio_verified"])
 
     def test_terminal_red_manual_error_cannot_turn_into_success(self):
-        before=frame(b=1,f=1,p=True,x="red",y="red")
-        after=frame(b=1,f=1,p=True,x="blue",y="blue")
-        out=self.images(before,after)
-        self.assertFalse(out["difference"]["new_x_return_pixels"])
-        self.assertFalse(out["difference"]["new_y_return_pixels"])
-        self.assertNotEqual(self.cli("--require-x-return-pixels").returncode,0)
-        self.assertNotEqual(self.cli("--require-y-return-pixels").returncode,0)
-        # Both still look like manual interface screenshots, but their
-        # colors cannot establish a continuous successful run.
-        self.assertEqual(out["before"]["variant_pixels"],"focus_manual")
-        self.assertEqual(out["after"]["variant_pixels"],"focus_manual")
+        for label, initial, later in (
+            ("X", frame(x="red"), frame(x="blue")),
+            ("Y", frame(y="red"), frame(y="yellow")),
+        ):
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(
+                        ValueError,"terminal " + label + " error changed"):
+                    self.images(initial,later)
+                self.assertNotEqual(
+                    self.cli("--require-x-return-pixels").returncode,0)
+                self.assertNotEqual(
+                    self.cli("--require-y-return-pixels").returncode,0)
+
+    def test_notification_mode_cannot_flip_in_one_nro_session(self):
+        for previous, current in (("red","blue"),("blue","red")):
+            with self.subTest(previous=previous,current=current):
+                with self.assertRaisesRegex(
+                        ValueError,"notification-mode indicator changed"):
+                    self.images(frame(n=previous),frame(n=current))
+                self.assertNotEqual(
+                    self.cli("--require-focus-pixels").returncode,0)
+        # A red N may be compared with itself for observation, but no
+        # HOME/focus cycle can be certified when notification mode failed.
+        out=self.images(frame(n="red"),frame(n="red",b=1,f=1,p=True))
+        self.assertFalse(out["difference"]["new_focus_cycle_pixels"])
+
+    def test_reject_nonuniform_shades_within_one_palette_class(self):
+        image=frame(b=1)
+        # Both RGB values are individually close enough to BLUE to be
+        # classified as blue, but the solid-color fill is inconsistent.
+        image.putpixel((1051,637),(BLUE[0]+20,BLUE[1],BLUE[2]))
+        with self.assertRaisesRegex(
+                ValueError,"inconsistent B tile shades"):
+            observe_frame(image)
+        tally=frame(b=1)
+        tally.putpixel((1052,667),(BLUE[0]+20,BLUE[1],BLUE[2]))
+        with self.assertRaisesRegex(
+                ValueError,"inconsistent B tally tile shades"):
+            observe_frame(tally)
+
+    def test_small_uniform_capture_noise_is_accepted(self):
+        image=frame(b=1)
+        image.putpixel((1051,637),(BLUE[0]+3,BLUE[1]-2,BLUE[2]))
+        self.assertEqual(observe_frame(image)["indicators"]["B"],"blue")
 
     def test_old_blue_x_is_not_a_new_x_confirmation(self):
         out=self.images(frame(x="blue"),frame(x="blue"))
