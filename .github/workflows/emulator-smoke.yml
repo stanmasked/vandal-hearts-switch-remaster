@@ -16,6 +16,8 @@ on:
       - 'source/vh_audout_queue_export.c'
       - 'source/vh_audout_queue_export.h'
       - 'tools/analyze_nexium_idle_switch_service_probes.py'
+      - 'tools/analyze_nexium_probe_phase_sensitivity.py'
+      - 'tests/test_analyze_nexium_probe_phase_sensitivity.py'
       - 'tests/test_analyze_nexium_idle_switch_service_probes.py'
       - 'tests/test_vh_audout_queue_telemetry.c'
       - 'tests/test_vh_audout_queue_export.c'
@@ -963,6 +965,49 @@ jobs:
                   "pre_submit_service_count_histogram")})
           PY
           echo "Stage290: independent original guest-SD switching + idle probe comparison verified; not DAC scheduler evidence." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify original slow-call count sensitivity to every sixteenth probe phase
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/analyze_nexium_probe_phase_sensitivity.py \
+            --switch-sd-root "$RUNNER_TEMP/vh-nexium-stage268-${GITHUB_RUN_ID}" \
+            --idle-sd-root "$RUNNER_TEMP/vh-nexium-idle276-${GITHUB_RUN_ID}" \
+            --switch-evidence runtime-evidence/scene-soak \
+            --idle-evidence runtime-evidence/idle-control \
+            --stage290-report runtime-evidence/idle-control/idle-switch-service-probe-comparison.json \
+            --switch-slow-report runtime-evidence/scene-soak/soak-audout-exact-slow-verification.json \
+            --idle-verdict runtime-evidence/idle-control/idle-audout-verification.json \
+            --output runtime-evidence/idle-control/idle-switch-phase-sensitivity.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          doc=json.loads(Path(
+              "runtime-evidence/idle-control/idle-switch-phase-sensitivity.json").read_text())
+          if (doc["result"]!="ORIGINAL_SD_ALL_16_DETERMINISTIC_SAMPLE_PHASES_RECONCILED"
+                  or len(doc["same_phase_comparisons"])!=16
+                  or doc["observed_real_queue_query_phase"]!=0
+                  or doc["both_original_guest_sd_reopened_this_workflow"] is not True
+                  or doc["other_phase_queue_counts_are_NOT_measured"] is not True
+                  or doc["full_slow_call_histogram_exactly_partitioned"] is not True
+                  or doc["scene_causality_proven"] is not False
+                  or doc["physical_switch_tested"] is not False):
+              raise SystemExit("Stage291 16-phase slow-call original guest SD audit failed")
+          for mode in ("switching","idle"):
+              x=doc[mode]
+              if (len(x["phase_table"])!=16
+                      or sum(z["source_slow_ge40"] for z in x["phase_table"])
+                         !=x["slow_ge40"]
+                      or sum(z["sampled_attempts_for_this_phase"]
+                             for z in x["phase_table"])!=x["attempts"]):
+                  raise SystemExit("Stage291 lost source audout attempts/slow calls")
+          print("Stage291 1-in-16 systematic slow-call phase sensitivity:",
+                {"positive":doc["phase_positive_count"],
+                 "negative":doc["phase_negative_count"],
+                 "zero":doc["phase_exact_tie_count"],
+                 "observed":doc["same_phase_comparisons"][0]})
+          PY
+          echo "Stage291: all 16 exact slow-call call-index phases from original guest SD verified; only phase0 measured queue." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Record audio capture boundary
         if: always()
