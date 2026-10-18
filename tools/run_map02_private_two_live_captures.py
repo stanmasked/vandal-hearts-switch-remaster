@@ -142,6 +142,12 @@ def run(executable, first_frame, first_journal, second_frame, second_journal,
             or any(type(arg) is not str or "\x00" in arg for arg in args)):
         raise ValueError("MAP02 two-run launch arguments invalid")
 
+    # Preserve the same argv VALUE for both child processes, even when the
+    # caller provides a mutable list and alters it while the first capture
+    # runs. A single SHA-pinned ELF is not sufficient if the launch inputs
+    # can silently change between independent captures.
+    args = tuple(args)
+
     executable = Path(executable).absolute()
     folders = tuple(Path(p).absolute() for p in (
         first_frame, first_journal, second_frame, second_journal))
