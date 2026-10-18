@@ -61,6 +61,38 @@ audit immediately after new scene capture; a failed pair audit stops
 the workflow. The existing Stage304 audit remains a separate strict
 step and cannot be bypassed by Stage325.
 
+## First successful genuine NeXium guest/host capture
+
+Independent synthetic workflow
+[39166273860](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39166273860)
+completed successfully with all 11 tests and a three-record CLI smoke test.
+
+The actual [NeXium capture 39166023593](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39166023593)
+then completed successfully. The source-based Stage325 audit logged these
+**real host** intervals from the unchanged event order:
+
+| Consecutive host control events | Wall epoch | Monotonic host clock |
+| --- | ---: | ---: |
+| `before_plus_down` → `after_plus_up` | +357 ms | +357,687,151 ns |
+| `after_plus_up` → `control_sequence_end` | +4,270 ms | +4,269,790,190 ns |
+
+The original legacy host CSV SHA-256 was
+`cd3b6a7e42d531310ae930969c3612b63697c13b840726056bde701ceffe3f2d`.
+The independently created monotonic companion CSV SHA-256 was
+`302efc3b5c722f70956a0a6208c8e0b5e3e375aaa89fee73f6fff78b38f4d4c4`.
+
+This NeXium run also passed the **unchanged** Stage304 and Stage305
+checks. The original Stage304 archive's negative 347 ms wall-clock
+interval was **not** reproduced in this particular successful sample.
+
+For another independent source replay, the isolated workflow
+`.github/workflows/stage325-independent-original-clock-replay.yml`
+authenticates the exact successful original run and downloads its
+actual runtime evidence. It must independently recompute both source
+hashes, both clock intervals and the agreement with original Stage304
+and Stage305 receipts. Its success is a separate pending claim until
+that workflow itself passes.
+
 ## Evidentiary limits
 
 - Historical runs do not contain this supplemental monotonic CSV:
