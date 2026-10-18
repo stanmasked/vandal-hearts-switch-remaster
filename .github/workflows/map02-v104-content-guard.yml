@@ -289,7 +289,8 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v141_private_original_mmio_claims.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v142_native_private_receipt.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v143_atomic_private_receipt.py' -v
-          python3 -m remaster.tools.check_map02_v143_atomic_receipt --cc "${{ matrix.cc }}"
+          python3 -m remaster.tools.check_map02_v143_atomic_receipt --cc "${{ matrix.cc }}" \
+            | grep -Fx 'VH143_COMPILED_ATOMIC_PRIVATE_RECEIPT_PASS events=19 atomic_publish=1 full_ancestor_nofollow=1 overwrite_refused=1 writable_ancestor_refused=1 symlink_and_stale_stage_refused=1 original_retail=0'
           python3 -m remaster.tools.check_map02_v140_native_mmio_effects --cc "${{ matrix.cc }}"
           python3 -m remaster.tools.check_map02_v139_native_words --cc "${{ matrix.cc }}"
           python3 -m remaster.tools.check_map02_v138_native_pc_observer --cc "${{ matrix.cc }}"
