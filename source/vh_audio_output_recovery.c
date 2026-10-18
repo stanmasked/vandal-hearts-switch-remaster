@@ -462,10 +462,15 @@ int vh_audio_output_verify_run(
         recovery->recoveries>completed_pages ||
         recovery->restart_attempts<recovery->recoveries ||
         recovery->restart_attempts>recovery->submit_failures ||
-        /* Session restarts never return PCM pages. A recovery can
-         * occur only after one counted session restart, separately
-         * from a regular audout page-retry recovery. */
+        /* Session restarts never return PCM pages. Every recorded
+         * reopen attempt must end as either a failed open/start or
+         * a successful recovery. A failed FAST start may add one
+         * extra failure without reopening. Cast before addition so
+         * large synthetic counters cannot wrap unsigned arithmetic. */
         recovery->resume_recoveries>recovery->resume_restarts ||
+        (uint64_t)recovery->resume_restarts>
+            (uint64_t)recovery->resume_recoveries+
+            (uint64_t)recovery->resume_failures ||
         retry_pages>timing->failed_submissions ||
         /* Every page retried then delivered increments recoveries
          * exactly once. A retried page not recovered must be a
