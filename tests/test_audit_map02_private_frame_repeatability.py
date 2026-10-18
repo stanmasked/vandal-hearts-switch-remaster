@@ -34,12 +34,36 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
         if PRODUCER.count(needle) != 1:
             raise RuntimeError("MAP02 C11 producer anchor drift")
         updated = PRODUCER.replace(needle, replacement)
+        # Modify valid JSONL metadata inside the actual child process,
+        # keeping the same compiled ELF and replaying both source captures.
+        changes = (
+            ('static int log_event(FILE *stream, unsigned step, const char *phase, unsigned frame) {',
+             'static int log_event(FILE *stream, unsigned step, const char *phase, unsigned frame, int semi) {'),
+            (r'\"primitive_type\":4,\"semi\":0,\"window\"',
+             r'\"primitive_type\":4,\"semi\":%d,\"window\"'),
+            ('step, frame, phase, step) > 0;',
+             'step, frame, phase, step, semi) > 0;'),
+            ('int bad_vram = argc > 1 && !strcmp(argv[1], "bad-vram");',
+             'int bad_vram = argc > 1 && !strcmp(argv[1], "bad-vram");\n'
+             '    int alternate_event = argc > 1 && '
+             '(!strcmp(argv[1], "alternate-event") || '
+             '!strcmp(argv[1], "alternate-event-before"));'),
+            ('!log_event(events, 0, "before", wrong_frame ? 124 : 123)',
+             '!log_event(events, 0, "before", wrong_frame ? 124 : 123, alternate_event)'),
+            ('!log_event(events, 1, "after", wrong_frame ? 124 : 123)',
+             '!log_event(events, 1, "after", wrong_frame ? 124 : 123, alternate_event)'),
+        )
+        for old_c, new_c in changes:
+            if updated.count(old_c) != 1:
+                raise RuntimeError("MAP02 synthetic GPU event anchor drift")
+            updated = updated.replace(old_c, new_c)
         before = 'if (!write_image(dir, "gpu-0000-vram.bin")) return 43;'
         if updated.count(before) != 1:
             raise RuntimeError("MAP02 C11 before-snapshot anchor drift")
         updated = updated.replace(
             before,
-            'if (argc > 1 && !strcmp(argv[1], "alternate-before")) '
+            'if (argc > 1 && (!strcmp(argv[1], "alternate-before") || '
+            '!strcmp(argv[1], "alternate-event-before"))) '
             'native_vram[0][0] = 0x1234;\n        '
             'if (argc > 1 && !strcmp(argv[1], "alternate-before-stp")) '
             'native_vram[0][0] = 0x8000;\n        ' + before)
@@ -327,6 +351,41 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "count disagrees"):
                 repeat._gpu_event_differences(
                     1, 2, "a" * 64, "b" * 64, 2, 1, lambda: None)
+
+    def test_two_real_c11_captures_event_only_change_without_vram_change(self):
+        for folder in (self.f2, self.j2):
+            for path in folder.iterdir():
+                path.unlink()
+        self.capture(self.f2, self.j2, "alternate-event")
+        out = self.run_repeat()
+        self.assertTrue(out["repeated_native_frame_pixels_identical"])
+        self.assertTrue(out["repeated_full_gpu_vram_snapshot_sequence_identical"])
+        self.assertFalse(out["repeated_gpu_event_journal_identical"])
+        self.assertFalse(out["repeated_gpu_event_records_identical"])
+        self.assertEqual(out["different_gpu_event_records_in_common_prefix"], 2)
+        self.assertEqual(out["first_different_gpu_event_record_index"], 0)
+        self.assertEqual(out["first_joint_gpu_divergence_kind"], "event-only")
+        self.assertEqual(out["first_joint_gpu_divergence_index"], 0)
+        self.assertEqual(out["first_joint_gpu_divergence_phase"], "before")
+        self.assertEqual(out["different_gpu_vram_snapshots_in_common_prefix"], 0)
+        self.assertNotIn('"semi":', json.dumps(out))
+
+    def test_two_real_c11_captures_event_and_before_vram_change(self):
+        for folder in (self.f2, self.j2):
+            for path in folder.iterdir():
+                path.unlink()
+        self.capture(self.f2, self.j2, "alternate-event-before")
+        out = self.run_repeat()
+        self.assertTrue(out["repeated_native_frame_pixels_identical"])
+        self.assertFalse(out["repeated_full_gpu_vram_snapshot_sequence_identical"])
+        self.assertFalse(out["repeated_gpu_event_records_identical"])
+        self.assertEqual(out["first_different_gpu_event_record_index"], 0)
+        self.assertEqual(out["first_different_gpu_vram_snapshot_index"], 0)
+        self.assertEqual(out["first_joint_gpu_divergence_kind"], "event-and-vram")
+        self.assertEqual(out["first_joint_gpu_divergence_index"], 0)
+        self.assertEqual(out["first_joint_gpu_divergence_pair_index"], 0)
+        self.assertEqual(out["first_joint_gpu_divergence_phase"], "before")
+        self.assertFalse(out["ps1_hardware_pixel_equivalence_verified"])
 
     def test_first_joint_gpu_divergence_classifies_events_and_vram(self):
         # All indices are ordinal event/snapshot positions (two per pair).
