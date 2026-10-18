@@ -399,6 +399,51 @@ static void test_default_reset_and_opted_fade_comparison(void) {
            !wet_nonzero(&reference_synth.reverb));
 }
 
+/* A queued cue may change in caller-owned storage between request and
+ * the actual 512-frame transition. With continuity enabled, a corrupted
+ * pending SEQ must be rejected BEFORE detaching the current PCM voices
+ * or altering the precharged wet tail. Teardown is still permitted. */
+static VhNativeSpu opted_failure_spu;
+static VhNativeSeq opted_failure_seq;
+static void test_opted_pending_corruption_preserves_active_bank(void) {
+    setup();
+    VhMusicCue first=cue_a();
+    assert(vh_music_scene_set_reverb_continuity(&scene,1)==0);
+    assert(vh_music_scene_request(&scene,&first,0u)==0);
+    for(unsigned i=0;i<64u;i++)
+        assert(vh_music_scene_render(&scene,out)==0);
+    assert(scene.seq.note_ons==1u &&
+           synth.voice[0].pcm==pcm_a &&
+           wet_nonzero(&synth.reverb));
+    uint8_t bytes[sizeof song_b];
+    memcpy(bytes,song_b,sizeof bytes);
+    VhMusicCue pending=cue_b();
+    pending.seq=bytes;
+    assert(vh_music_scene_request(&scene,&pending,1u)==0);
+    assert(scene.stage==VH_MUSIC_FADE_OUT);
+    assert(vh_music_scene_render(&scene,out)==0);
+    assert(scene.stage==VH_MUSIC_SWITCH_PENDING);
+    bytes[0]='X'; /* simulated caller mutation after preflight */
+    opted_failure_spu=synth;
+    opted_failure_seq=scene.seq;
+    memset(out,0x7f,sizeof out);
+    assert(vh_music_scene_render(&scene,out)==-1);
+    assert(scene.last_error && !has_signal(out));
+    assert(scene.active.id==101u && scene.pending.id==202u);
+    assert(!memcmp(&scene.seq,&opted_failure_seq,
+                   sizeof opted_failure_seq));
+    assert(!memcmp(&synth,&opted_failure_spu,
+                   sizeof opted_failure_spu));
+    assert(vh_music_scene_request(&scene,&first,0u)==-1);
+    assert(vh_music_scene_detach(&scene)==0);
+    assert(scene.stage==VH_MUSIC_SILENT &&
+           !scene.active.id && !scene.pending.id &&
+           scene.keep_reverb_across_cues==1u);
+    for(unsigned i=0;i<VH_NATIVE_MUSIC_VOICES;i++)
+        assert(!synth.voice[i].active && synth.voice[i].pcm==NULL);
+    assert(!wet_nonzero(&synth.reverb));
+}
+
 int main(void) {
     test_validation_and_zero_fade_restart();
     test_two_block_fade_and_silence();
@@ -407,6 +452,7 @@ int main(void) {
     test_forced_bank_detach_in_all_fade_stages();
     test_optional_wet_tail_direct_switch();
     test_default_reset_and_opted_fade_comparison();
+    test_opted_pending_corruption_preserves_active_bank();
     puts("game scene music cues: fade / switch / silence / validation PASS");
     return 0;
 }
