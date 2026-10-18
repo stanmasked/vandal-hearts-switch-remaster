@@ -455,6 +455,36 @@ class CycleCdGpuJoinTests(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.mock.assert_not_called()
 
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "requires POSIX FIFO")
+    def test_cycle_receipt_fifo_rejected_by_nonblocking_inode_snapshot(self):
+        target = self.cycle / CYCLE_RECEIPT
+        target.unlink()
+        os.mkfifo(target, mode=0o600)
+        real_open = os.open
+        with patch.object(cycle_module.os, "open", wraps=real_open) as opened:
+            with self.assertRaisesRegex(ValueError, "regular file"):
+                self.check()
+        calls = [c for c in opened.call_args_list
+                 if c.args and os.fspath(c.args[0]) == os.fspath(target)]
+        self.assertTrue(calls, "cycle FIFO must be opened for inode validation")
+        self.assertTrue(calls[0].args[1] & os.O_NONBLOCK)
+        self.mock.assert_not_called()
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "requires POSIX FIFO")
+    def test_original_cd_receipt_fifo_rejected_before_expensive_recheck(self):
+        target = self.scoped / CD_READ
+        target.unlink()
+        os.mkfifo(target, mode=0o600)
+        real_open = os.open
+        with patch.object(cycle_module.os, "open", wraps=real_open) as opened:
+            with self.assertRaisesRegex(ValueError, "regular file"):
+                _cycle_cd_pair(self.scoped, self.cycle, 7, self.digest)
+        calls = [c for c in opened.call_args_list
+                 if c.args and os.fspath(c.args[0]) == os.fspath(target)]
+        self.assertTrue(calls, "CdRead FIFO must be opened for inode validation")
+        self.assertTrue(calls[0].args[1] & os.O_NONBLOCK)
+        self.mock.assert_not_called()
+
     def test_file_hardlink_and_wrong_owner_permissions_are_rejected(self):
         target = self.cycle / CYCLE_RECEIPT
         twin = self.cycle.parent / "cycle-linked-copy"
