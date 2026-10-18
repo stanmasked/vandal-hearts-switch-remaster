@@ -49,6 +49,27 @@ an active SEQ/SPU/ring unchanged. This is an initial compatibility
 port only. Both APIs must still pass the full host and native CI on
 the eventual integration branch.
 
+## Cross-module synthetic playback bridge
+
+Added `tests/test_vh_music_scene_resume_pipeline.c` and a separate ASan+
+UBSan step in `target-audio-compat`. This checks one combined diagnostic
+pipeline with two synthetic music cues, 64 render blocks, a three-block
+fade between cues, a fade to silence and a new fade-in; each block passes
+through 44.1-to-48-kHz resampling and the target-side 192-frame output
+ramp before a bounded mock audout submission. A separate callback-free
+reference processes the same cue sequence and compares every output
+page, rate phase and cumulative checksum. The mock injects repeated
+submit errors, then explicit quick-start and forced reopen events
+(including an open failure). It also checks that recovery touches no
+SEQ/SPU/rate state and delivers one logical PCM page exactly once.
+
+This bridge is a **host-only synthetic integration regression**, not a
+replacement for the real libnx producer or its ownership model. Do not
+enable the director/ramp in the NRO until this new ASan/UBSan job passes
+and the full service lifecycle and physical playback can be evaluated.
+The mock `close` operation is intentionally idempotent to represent a
+retry after `open` fails, matching native audout teardown semantics.
+
 ## Required integration gates
 
 1. Create a disposable integration branch at the **current target HEAD**;
