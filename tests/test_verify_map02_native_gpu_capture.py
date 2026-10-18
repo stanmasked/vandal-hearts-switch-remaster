@@ -181,7 +181,7 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
             written_hooks=4,limit_reached=False,walk_finished=True,
             hooks_balanced=True,observed_window_closed_without_detected_loss=True)
         target=self.root/"gpu-native-capture-status.json"
-        target.write_text(json.dumps(receipt)+"\\n",encoding="utf-8")
+        target.write_text(json.dumps(receipt)+"\n",encoding="utf-8")
         original=gpu_module.verify_capture_receipt
         swapped=[False]
 
