@@ -108,7 +108,12 @@ int main(void) {
     def test_native_frontend_path_is_strictly_synthetic(self):
         example=('\tint vh147_generic_trace = 0;\n'
             '\t\telse if (!strcmp(argv[i], "--vh147-bounded-mmio"))\n'
+            '    if(vh125_mips_variable_dma_smoke) {\n'
+            '        /* Execute GPU setup as an original interpreted MIPS stage. */\n'
+            '        psxCpu->ExecuteBlock(&psxRegs,EXEC_CALLER_OTHER);\n'
+            '    }\n'
             '    if(vh129_vblank_mode>=0) {\n'
+            '        memcmp(tag,"VH129SY!",sizeof(tag))==0;\n'
             '        /* Execute GPU setup as an original interpreted MIPS stage. */\n'
             '        psxCpu->ExecuteBlock(&psxRegs,EXEC_CALLER_OTHER);\n')
         result=patch_frontend(example)
@@ -118,8 +123,12 @@ int main(void) {
         self.assertIn("vh150_bounded_instructions && vh129_vblank_mode!=0",result)
         self.assertIn("VH150_NATIVE_BOUNDED_INTERPRETER_PASS",result)
         self.assertIn("original_retail=0",result)
-        self.assertLess(result.index("vh150_arm("),
-                        result.index("psxCpu->ExecuteBlock"))
+        native=result.index("    if(vh129_vblank_mode>=0) {")
+        self.assertLess(result.index("vh150_arm(",native),
+                        result.index("psxCpu->ExecuteBlock",native))
+        self.assertEqual(result.count("psxCpu->ExecuteBlock"),2)
+        self.assertLess(result.index("vh125_mips_variable_dma_smoke"),
+                        result.index("vh150_arm("))
         with self.assertRaises(ValueError):
             patch_frontend(result)
 
