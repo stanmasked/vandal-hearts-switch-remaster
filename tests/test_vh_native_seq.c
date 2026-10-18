@@ -72,6 +72,21 @@ static const uint8_t full_voice_scene_song[]={
     0,77,100, 0,78,100, 0,79,100,
     0x87,0x68,0xff,0x2f
 };
+/* A SEQ which first contains a plausible complete NOTE-ON event
+ * sequence, then an incomplete tempo payload without terminal EOT.
+ * A preflight which inspected only the first notes could incorrectly
+ * clear all twenty live voices before discovering the corruption. */
+static const uint8_t late_invalid_scene_song[]={
+    HEADER,
+    0,0xc0,7,
+    0,0x90,60,100,
+    0,61,100, 0,62,100, 0,63,100, 0,64,100,
+    0,65,100, 0,66,100, 0,67,100, 0,68,100,
+    0,69,100, 0,70,100, 0,71,100, 0,72,100,
+    0,73,100, 0,74,100, 0,75,100, 0,76,100,
+    0,77,100, 0,78,100, 0,79,100,
+    0x81,0x70,0xff,0x51,0x03
+};
 static const uint8_t invalid_status[] = {HEADER,0,60,100,0,0xff,0x2f};
 static const uint8_t invalid_tempo[] = {HEADER,0,0xff,0x51,0x03};
 static const uint8_t invalid_vlq[] = {HEADER,0x81,0x80,0x80,0x80,0,0xff,0x2f};
@@ -612,13 +627,15 @@ static void test_full_twenty_voice_scene_switch_detaches_bank(void) {
     const VhNativeSeq saved=seq;
     before_scene_spu=spu;
     const uint8_t *bad_songs[]={
-        invalid_status,invalid_tempo,invalid_vlq,invalid_data
+        invalid_status,invalid_tempo,invalid_vlq,invalid_data,
+        late_invalid_scene_song
     };
     const size_t bad_sizes[]={
         sizeof invalid_status,sizeof invalid_tempo,
-        sizeof invalid_vlq,sizeof invalid_data
+        sizeof invalid_vlq,sizeof invalid_data,
+        sizeof late_invalid_scene_song
     };
-    for(unsigned bad=0u;bad<4u;bad++) {
+    for(unsigned bad=0u;bad<5u;bad++) {
         assert(vh_native_seq_switch_scene(
             &seq,bad_songs[bad],bad_sizes[bad],&spu,
             resolve_next_scene,&log_state,1u)==-1);
@@ -628,6 +645,11 @@ static void test_full_twenty_voice_scene_switch_detaches_bank(void) {
     assert(vh_native_seq_switch_scene(
         &seq,controls_song,sizeof controls_song,&spu,
         resolve_next_scene,&log_state,VH_SEQ_MAX_REPEATS+1u)==-1);
+    /* An infinitely repeated zero-length track is invalid; rejecting
+     * it must not change even a fully occupied live SPU. */
+    assert(vh_native_seq_switch_scene(
+        &seq,zero_loop,sizeof zero_loop,&spu,
+        resolve_next_scene,&log_state,0u)==-1);
     assert(vh_native_seq_switch_scene(
         &seq,controls_song,sizeof controls_song,&spu,
         NULL,&log_state,1u)==-1);
