@@ -10,6 +10,7 @@ and never alter simulated CPU/GPU/DMA state. No retail game content.
 from pathlib import Path
 from .apply_map02_v138_interpreter_pc import (
     apply as apply_v138,expected_pc_events,MIPS_START,
+    modified_native_oracle,
 )
 from .apply_map02_v69_pcsx_rearmed import once
 from .make_map02_v129_four_vblank_exe import build
@@ -150,8 +151,14 @@ def apply(root:Path):
         '\t\t\tvh139_corrupt_word=1;\n'
         '\t\telse if (!strcmp(argv[i], "--vh138-interpreter-pc"))\n',
         "additional opt-in word-by-word native MIPS execution checks")
-    # Only alter the previously proven v138 native oracle, not game code.
-    front=modify_oracle(front,len(events))
+    # The historical v125-v129 observer stack has several byte-identical
+    # ExecuteBlock call sites. Narrow the transformation to the complete
+    # single already-generated v138 oracle, never a global token replace.
+    _exe,_stops,_ops,_starts,_wait=build()
+    original=modified_native_oracle(_stops,_wait,len(events))
+    upgraded=modify_oracle(original,len(events))
+    front=once(front,original,upgraded,
+        "exact uniquely scoped v138 synthetic native CPU oracle")
     memfile.write_text(mem)
     frontfile.write_text(front)
     return dict(previous,
