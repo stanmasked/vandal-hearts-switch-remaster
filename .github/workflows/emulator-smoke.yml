@@ -1495,6 +1495,44 @@ jobs:
           PY
           echo "Stage300: original virtual scene PCM exact-zero frames mapped to host-buffered scene-marker guards and settled intervals, not audible dropout proof." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Stage301 exact-zero frame sensitivity to hypothetical host-marker envelopes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_pcm_marker_uncertainty.py \
+            --monitor runtime-evidence/nexium-monitor-s16le-48k.pcm \
+            --monitor-report runtime-evidence/pcm-quality-report.json \
+            --scenes runtime-evidence/nexium-scenes-s16le-48k.pcm \
+            --scene-report runtime-evidence/scene-audio-report.json \
+            --events runtime-evidence/scene-events.csv \
+            --stage299 runtime-evidence/pcm-stream-integrity-stage299.json \
+            --stage300 runtime-evidence/pcm-scene-silence-stage300.json \
+            --output runtime-evidence/pcm-marker-envelopes-stage301.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("runtime-evidence/pcm-marker-envelopes-stage301.json").read_text())
+          profiles=r["profiles"]
+          if (r["result"]!="SOURCE_BOUND_HYPOTHETICAL_MARKER_ENVELOPES_RECONCILED"
+                  or len(profiles)!=3
+                  or [p["hypothetical_radius_ms"] for p in profiles]!=[250,500,1000]
+                  or r["marker_offset_error_measured"] is not False
+                  or r["hypothetical_windows_are_not_confidence_intervals"] is not True
+                  or r["audio_dropout_or_scene_causality_proven"] is not False
+                  or r["physical_speaker_output_or_original_soundtrack_verified"] is not False):
+              raise SystemExit("Stage301 source and evidence boundary check failed")
+          for p in profiles:
+              if (len(p["envelopes"])!=5
+                      or p["exact_zero_frames_inside"]+p["exact_zero_frames_outside"]!=r["exact_zero_frames_total"]
+                      or p["long_run_zero_frames_inside"]+p["long_run_zero_frames_outside"]!=r["long_run_zero_frames_total"]
+                      or p["envelope_frames"]+p["outside_envelope_frames"]!=r["total_pcm_frames"]):
+                  raise SystemExit("Stage301 envelope frame conservation failed")
+          print("Stage301 hypothetical zero-frame overlap:",
+                {p["hypothetical_radius_ms"]:p["exact_zero_frames_inside"]
+                 for p in profiles})
+          PY
+          echo "Stage301: revalidated virtual PCM and estimated scene markers at hypothetical +/-250/500/1000ms windows; no measured event timing error, dropout or physical audio evidence." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Record audio capture boundary
         if: always()
         env:
