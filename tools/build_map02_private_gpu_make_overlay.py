@@ -303,11 +303,12 @@ def _compiler_dynamic_evidence(driver):
     summary = chr(10).join(k + " " + v for k,v in sorted(loaded.items()))
     return {"count": len(loaded),
             "sha256": hashlib.sha256(summary.encode("utf-8")).hexdigest(),
-            "_resolved_files": loaded}
+            "_resolved_files": loaded,
+            "_resolved_tools": dict(zip(("driver", "cc1", "as"), tools))}
 
 
 
-def _runtime_loader_evidence(directory, driver, expected):
+def _runtime_loader_evidence(directory, driver, expected, expected_tools=None):
     """Audit LD_DEBUG observations from the actual Make compiler processes.
 
     Not a trusted kernel attestation: an unobserved/deliberately altered
@@ -321,11 +322,21 @@ def _runtime_loader_evidence(directory, driver, expected):
     for log in log_files:
         if not re.fullmatch(r"trace[.][0-9]+", log.name):
             raise ValueError("MAP02 compiler runtime loader log name invalid")
+        pid = int(log.name.split(".", 1)[1])
+        if pid < 1:
+            raise ValueError("MAP02 compiler runtime loader PID invalid")
         payload = auditor._stable_regular_bytes(log, max_bytes=2 * 1024 * 1024)
         try:
             text = payload.decode("utf-8")
         except UnicodeError as exc:
             raise ValueError("MAP02 compiler runtime loader log encoding invalid") from exc
+        # The loader prefixes its records with their originating process PID.
+        for line in text.splitlines():
+            if not line.strip():
+                continue
+            prefix = re.match(r"^\s*([0-9]+):", line)
+            if not prefix or int(prefix.group(1)) != pid:
+                raise ValueError("MAP02 compiler runtime loader PID mismatch")
         programs = re.findall(r"initialize program:\s*(\S+)", text)
         if not programs:
             continue  # A loader invocation without a program initializer.
@@ -341,6 +352,15 @@ def _runtime_loader_evidence(directory, driver, expected):
             role = "as"
         else:
             continue  # Parent Make/shell and unrelated system utilities.
+        if expected_tools is not None:
+            # A forged /tmp/.../cc1 must never match merely by basename.
+            if set(expected_tools) != {"driver", "cc1", "as"}:
+                raise ValueError("MAP02 compiler runtime tool inventory invalid")
+            if not name.startswith("/"):
+                raise ValueError("MAP02 compiler runtime executable identity mismatch")
+            if str(Path(name).resolve(strict=True)) != str(
+                    Path(expected_tools[role]).resolve(strict=True)):
+                raise ValueError("MAP02 compiler runtime executable identity mismatch")
         matches = re.findall(r"calling init:\s*(/\S+)", text)
         if not matches:
             raise ValueError("MAP02 compiler runtime mapped objects absent")
@@ -543,7 +563,8 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
             if _compiler_dynamic_evidence(compiler) != runtime_objects:
                 raise ValueError("MAP02 compiler shared objects changed during Make build")
             runtime_loaded = _runtime_loader_evidence(
-                runtime_dir, compiler, runtime_objects["_resolved_files"])
+                runtime_dir, compiler, runtime_objects["_resolved_files"],
+                runtime_objects["_resolved_tools"])
             if _system_header_evidence(preprocessed_files, pc, snapshot) != system_headers:
                 raise ValueError("MAP02 system header dependencies changed during Make build")
     after = auditor.replay(upstream, output, manifest)
@@ -577,6 +598,8 @@ def compile_overlay(upstream, output, manifest, *, build_dir):
         "compiler_runtime_loaded_object_count": runtime_loaded["loaded_object_count"],
         "compiler_runtime_loaded_object_set_sha256": runtime_loaded["loaded_object_set_sha256"],
         "compiler_runtime_mappings_correlated_to_resolved_files": True,
+        "compiler_runtime_log_pids_verified": True,
+        "compiler_runtime_executables_bound_to_selected_tools": True,
         "system_header_count": system_headers["count"],
         "system_header_set_sha256": system_headers["sha256"],
         "system_header_bytes_before_after_match": True,

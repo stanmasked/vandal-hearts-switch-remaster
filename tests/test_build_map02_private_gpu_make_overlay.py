@@ -357,6 +357,38 @@ class SealedMakeOverlayTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "shared-object record malformed"):
                 sealed._compiler_dynamic_evidence(driver)
 
+    def test_runtime_loader_refuses_pid_mismatch_despite_valid_libraries(self):
+        witness = self.root / "runtime-foreign-pid"
+        witness.mkdir()
+        library = self.root / "known-library.so"
+        library.write_bytes(b"known contents")
+        (witness / "trace.123").write_text(
+            "456: initialize program: /usr/bin/gcc\n"
+            "456: calling init: " + str(library) + "\n")
+        with self.assertRaisesRegex(ValueError, "loader PID mismatch"):
+            sealed._runtime_loader_evidence(
+                witness, "/usr/bin/gcc", {
+                    str(library): hashlib.sha256(library.read_bytes()).hexdigest()})
+
+    def test_runtime_loader_refuses_spoofed_cc1_basename(self):
+        witness = self.root / "runtime-wrong-cc1"
+        witness.mkdir()
+        tools = self.root / "other-tools"
+        tools.mkdir()
+        foreign = tools / "cc1"
+        foreign.write_bytes(b"untrusted executable")
+        library = self.root / "runtime-good-library.so"
+        library.write_bytes(b"known contents")
+        (witness / "trace.321").write_text(
+            "321: initialize program: " + str(foreign) + "\n"
+            "321: calling init: " + str(library) + "\n")
+        with self.assertRaisesRegex(ValueError, "executable identity mismatch"):
+            sealed._runtime_loader_evidence(
+                witness, "/usr/bin/gcc", {
+                    str(library): hashlib.sha256(library.read_bytes()).hexdigest()},
+                {"driver": "/usr/bin/gcc", "cc1": "/usr/bin/gcc",
+                 "as": "/usr/bin/as"})
+
     def test_runtime_loader_refuses_missing_assembler_process(self):
         witness = self.root / "runtime-missing-as"
         witness.mkdir()

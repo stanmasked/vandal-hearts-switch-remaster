@@ -85,6 +85,9 @@ class SpanWorkflowGateTests(unittest.TestCase):
                       private_build)
         self.assertIn('assert report["compiler_runtime_mappings_correlated_to_resolved_files"]',
                       private_build)
+        self.assertIn('assert report["compiler_runtime_log_pids_verified"]', private_build)
+        self.assertIn('assert report["compiler_runtime_executables_bound_to_selected_tools"]',
+                      private_build)
         self.assertIn('assert report["system_header_bytes_before_after_match"]', private_build)
         self.assertIn('assert report["compiled_from_sealed_preprocessor_output"]', private_build)
         self.assertIn('assert report["staged_header_hashes_verified"]', private_build)
