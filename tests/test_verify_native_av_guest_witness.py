@@ -99,6 +99,10 @@ class GuestWitnessVerifierTests(unittest.TestCase):
     def test_published_variant_matches_resume_retry_scenario(self):
         bundle = self.published_bundle()
         self.nro = bundle / "libnx-ps1-music-av-resume-retry.nro"
+        # The witness writer intentionally refuses an existing output.
+        # Each test discards only its own synthetic setup fixture before
+        # binding a different NRO; production overwrite protection stays.
+        self.witness.unlink()
         self.build_witness()
         observed = verify(
             self.witness, self.before, self.after, self.nro,
@@ -111,6 +115,10 @@ class GuestWitnessVerifierTests(unittest.TestCase):
     def test_other_valid_published_nro_cannot_masquerade_as_resume_retry(self):
         bundle = self.published_bundle()
         self.nro = bundle / "libnx-ps1-music-av-resume.nro"
+        # The witness writer intentionally refuses an existing output.
+        # Each test discards only its own synthetic setup fixture before
+        # binding a different NRO; production overwrite protection stays.
+        self.witness.unlink()
         self.build_witness()
         # Exact NRO and PNG digests in the witness still agree. Only
         # external binding to the scenario makes this fail.
@@ -123,6 +131,10 @@ class GuestWitnessVerifierTests(unittest.TestCase):
     def test_published_bundle_tampering_and_commit_mismatch_rejected(self):
         bundle = self.published_bundle()
         self.nro = bundle / "libnx-ps1-music-av-resume-retry.nro"
+        # The witness writer intentionally refuses an existing output.
+        # Each test discards only its own synthetic setup fixture before
+        # binding a different NRO; production overwrite protection stays.
+        self.witness.unlink()
         self.build_witness()
         (bundle / COMMIT_FILE).write_text("f" * 40 + chr(10), encoding="ascii")
         with self.assertRaisesRegex(ValueError, "independently expected commit"):
