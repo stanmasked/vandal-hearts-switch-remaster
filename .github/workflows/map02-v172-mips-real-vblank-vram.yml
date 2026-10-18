@@ -28,6 +28,6 @@ jobs:
           set -euo pipefail
           python3 -m compileall -q tools/apply_map02_v172_mips_real_vblank_vram.py tests/test_map02_v172_mips_real_vblank_vram.py
           python3 -m unittest discover -s tests -p 'test_map02_v172_mips_real_vblank_vram.py' -v
-          python3 -m unittest discover -s tests -p 'test_map02_v78_vblank_mips.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v78_observed_vblank.py' -v
           python3 -m unittest discover -s tests -p 'test_map02_v171_mips_multiphase_vram.py' -v
           echo 'VH172_COMPILED_NATIVE_VBLANK_ORIGIN_PASS gp0_words=72 gp1_writes=3 four_native_vblank_edges_required=1 console_frame_parity=0 original_retail_executed=0'
