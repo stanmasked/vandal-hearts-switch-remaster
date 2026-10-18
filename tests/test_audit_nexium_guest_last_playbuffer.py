@@ -98,6 +98,8 @@ class LastPlayBufferSoftwareCall(unittest.TestCase):
                   csv(attempts=380,success=381),
                   csv(attempts=380,success=370,failed=9),
                   csv(attempts=380,index=381),
+                  csv(attempts=380,index=379),
+                  csv(attempts=390,success=380,failed=10,index=379),
                   csv(rejected=1))
         for data in variants:
             with self.subTest(data=data[:80]),self.assertRaises(ExitTimelineError):
