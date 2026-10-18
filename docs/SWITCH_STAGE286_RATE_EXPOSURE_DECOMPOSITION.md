@@ -64,3 +64,39 @@ All eight historical captures used switching before idle and
 overlapping windows, so independence, randomization and device
 inference remain unsupported. No Switch speakers, DAC starvation,
 audible glitches or authentic game soundtrack are evaluated.
+
+## Verified Stage286 CI — 2026-10-18
+
+The Stage286 implementation commit
+[`8f473c89`](https://github.com/stanmasked/vandal-hearts-switch-remaster/commit/8f473c89b9170bfcd8e4c66f7363193ad655134e)
+passed all required checks:
+
+- [Eight-pair original-SD archive re-verification 39085333522](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39085333522),
+  including exact Stage279→286 reconciliation.
+- [Host SPU 39085333526](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39085333526).
+- [Native PCM cross-compile 39085333518](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39085333518).
+- [Switch toolchain and host C/Python 39085333500](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39085333500).
+
+Observed **5 shifts × 8 whole-pair omissions = 40 overlapping
+source-cohort cells**, per disjoint duration band. All numbers
+are **signed contributions to the temporal switch-minus-idle contrast
+per 1,000 audout attempts**:
+
+| Band | Positive count effects | Count effect min…max | Positive denominator effects | Denominator effect min…max |
+| --- | ---: | ---: | ---: | ---: |
+| 40 ms ≤ time < 50 ms | **40/40** | **+0.910639…+8.214194** | 38/40 | −0.025890…+0.196611 |
+| time ≥50 ms | 9/40 | −1.142761…+0.685636 | 38/40 | −0.003539…+0.015514 |
+| time ≥40 ms | 40/40 | +0.455266…+7.985936 | 38/40 | −0.028395…+0.211732 |
+
+The count component is substantially larger than the denominator
+component for the positive 40..<50ms contrast in all 40 archived
+cells. This narrows the **arithmetic origin** of the rate difference
+to more calls in that duration class, rather than exposure-only
+denominator changes. It does not explain *why* those software
+calls had that measured blocking duration.
+
+Both decomposition terms are derived from the same historical
+data and are correlated. Neither their magnitude nor 40/40 signs
+measure statistical significance; the sessions were never
+order-randomized. The tests still do not measure real console
+audio, sound authenticity or DAC starvation.
