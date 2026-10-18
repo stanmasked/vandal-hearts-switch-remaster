@@ -17,7 +17,11 @@ Stage322 introduced a fixed-size 16-entry original guest source history using th
 
 It first independently replays the complete original Stage321 source chain, then decodes the Stage322 history CSV, recomputes its SHA-256 and regenerates the **exact** Stage322 receipt. Both original CSV and derived capture receipt must agree; the analysis never reconstructs original data from JSON.
 
-Only if the authentic 16-call window contains the final successful call **and** earlier successful calls does the report include the earlier lower-median duration and the final-minus-median difference. Otherwise it explicitly reports that the prior baseline is absent. A comparison is not an inference of entire-session latency or causation.
+Only if the authentic 16-call window contains the final successful call **and** earlier successful calls does the report include the earlier lower-median duration and the final-minus-median difference. Otherwise it explicitly reports that the prior baseline is absent.
+
+The independently replayed report also counts strictly **shorter**, **equal**, and **longer** preceding successful calls than the final call, excluding failed service attempts and the final call itself. It reports the ascending rank of the final call inside **this one retained window**, with ties assigned the lowest rank. Counts must sum exactly to the original number of preceding successful calls. This ranking is descriptive and is not a statistical percentile or inference about all game sessions.
+
+For the original Stage322 guest capture [#39159226320](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39159226320), the independently verified Stage323 source replay [#39159251998](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39159251998) reproduced the final normal call duration of **18,385,781 ns**, versus a lower median of **31,775,052 ns** among **15** earlier successful calls. The final call was **13,389,271 ns shorter** than that median. This supports a within-capture comparison, not a universal stopping-performance claim.
 
 Independent output:
 
@@ -27,7 +31,7 @@ The new read-only workflow publishes only its newly computed JSON result, not ra
 
 ## Tests
 
-Fourteen synthetic adversarial cases cover original-byte mutations, fake SHA receipts, mismatched final successful call, missing/duplicate/relocated/symlinked guest sources, invalid capture identifiers and unsupported physical-audio conclusions. Tests run both in Host SPU and the new standalone Stage323 runner with isolated Pillow.
+Sixteen synthetic adversarial cases cover original-byte mutations, fake SHA receipts, mismatched final successful call, missing/duplicate/relocated/symlinked guest sources, invalid capture identifiers and unsupported physical-audio conclusions. Tests run both in Host SPU and the new standalone Stage323 runner with isolated Pillow.
 
 ## Scope
 
