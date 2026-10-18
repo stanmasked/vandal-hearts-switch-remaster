@@ -58,6 +58,36 @@ and old-bank pointer ownership are preserved until explicit teardown.
 The renderer returns an error and silences that output block; callers must
 not assume that the old cue can continue automatically after such an error.
 
+## Integrated Nintendo Switch research build
+
+The tactical audout worker can opt into this mode **only at startup**.
+Normal gameplay builds are unchanged; the build-time value defaults to 0.
+
+```sh
+# Normal/legacy tactical NRO (wet history reset on each cue change)
+make BUILD=build/wet-tail-0 GAME_AUDIO_WET_TAIL=0 all
+
+# Explicit research NRO (retain tail on music-to-music changes)
+make BUILD=build/wet-tail-1 GAME_AUDIO_WET_TAIL=1 all
+```
+
+These produce separate
+`build/wet-tail-{0,1}/vandal-hearts-prototype.nro` files. Isolated
+build directories are **required** because make does not consider changed
+preprocessor flags when deciding whether an existing ELF is stale.
+`source/vh_switch_game_audio.c` rejects all build values other than
+0 and 1. It configures the director before music requests or audout
+start, and fails closed if setup fails. The code does **not** expose an
+on-the-fly UI or change audout descriptor ownership, fade clocks,
+resume handling, or release/reset behavior on exit.
+
+The PR's `Music director optional wet-tail regression` workflow now
+cross-compiles **both** modes in devkitPro and records SHA256s of their
+individual NROs. These are compile-only synthetic-resource artifacts,
+not evidence of hardware audio playback. Neither variant bundles
+original PS1 SEQ, VAB or PCM assets. The normal build and its current
+libnx audout smoke target remain untouched by the opt-in flag.
+
 ## Verification and limitations
 
 The synthetic regression compares an opt-in director with an unmodified
