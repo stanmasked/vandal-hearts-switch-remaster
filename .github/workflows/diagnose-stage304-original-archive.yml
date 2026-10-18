@@ -141,6 +141,28 @@ jobs:
                   # A failure from reconstructed archive files can differ
                   # from the original in-run failure even if replay refused.
                   doc["original_capture_failure_reason_established"]=False
+          # Separate exact original host-control pair diagnostics.
+          # Stage304 acceptance remains strictly unchanged. Distinguish
+          # file-size regression from same-millisecond or backward
+          # host epochs using only the original small CSV, never PCM.
+          if doc.get("archive_has_all_Stage304_pinned_sources"):
+              from tools.classify_nexium_stage304_exit_control_order import (
+                  classify_original_host_controls)
+              from analyze_nexium_pcm_stream_integrity import VirtualPcmEvidenceError
+              import sys
+              # Independent tool imports other tools from its own directory.
+              # Adding the known in-repo tools path is not an input source.
+              sys.path.insert(0,str(Path("tools").resolve()))
+              csvpath=root/doc["archived_pinned_source_files"]["control-csv"]["relative_archive_path"]
+              try:
+                  derived=classify_original_host_controls(csvpath.read_bytes())
+                  doc["original_host_control_adjacent_pairs"]=derived[
+                      "adjacent_original_host_control_pairs"]
+                  doc["original_nonmonotone_control_csv_source_replayed"]=derived[
+                      "reproduces_nonmonotone_exit_control_source_refusal"]
+              except (OSError,ValueError,TypeError) as exc:
+                  doc["original_control_pair_classifier_error"]=str(exc)[:200]
+                  doc["original_nonmonotone_control_csv_source_replayed"]=False
           doc["replay_of_archived_source_not_proof_of_original_exit"]=True
           dest=folder/"source-inventory-and-replay.json"
           dest.write_text(json.dumps(doc,indent=2,sort_keys=True)+"\n")
@@ -154,6 +176,8 @@ jobs:
                 doc.get("source_replay_error_kind","none"))
           print("Strict archived Stage304 replay rejected source invariant:",
                 doc.get("source_replay_invariant","none"))
+          print("Original host controls byte/host epoch adjacent-pair differences:",
+                doc.get("original_host_control_adjacent_pairs","not available"))
           with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as output:
               output.write("### Stage304 prior failed NeXium archive postmortem\n\n")
               output.write("- Original run **39157976877 failed**; not promoted to success.\n")
@@ -164,6 +188,12 @@ jobs:
               output.write("- Ambiguous archived inputs: "+
                            (", ".join(doc["ambiguous_archived_pinned_sources"])
                             or "none")+"\n")
+              if "original_host_control_adjacent_pairs" in doc:
+                  output.write("- Original archived control pair deltas (bytes/ms): "+
+                               str([(p["pcm_file_size_delta_bytes"],
+                                     p["host_epoch_delta_ms"])
+                                    for p in doc["original_host_control_adjacent_pairs"]])+
+                               "\\n")
               output.write("- An archived input missing now does not identify "+
                            "the original in-run failure cause.\n")
           PY
