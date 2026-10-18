@@ -13,6 +13,7 @@ from unittest.mock import patch
 from test_map02_joint_native_capture_c11 import PRODUCER
 from tools import run_map02_private_joint_capture_audit as joint_runner
 from tools import compare_map02_private_bgr555_frames as frame_compare
+from tools import bridge_map02_private_frame_native as native_bridge
 
 
 class PrivateJointOneShotAuditTests(unittest.TestCase):
@@ -243,6 +244,105 @@ class PrivateJointOneShotAuditTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "changed during inventory"):
                 joint_runner._session_inode_witness(self.output, self.journal)
         self.assertEqual(mutated, [True])
+
+    def synthetic_original_ft4_witness(self, *args, **kwargs):
+        self.assertIs(kwargs["require_native_elf_image"], True)
+        self.assertIs(kwargs["require_native_probe_symbols"], True)
+        return {
+            "schema": "vh.map02.private-launch-two-word-join.v1",
+            "source_frame": 123,
+            "native_gpu_frame": 123,
+            "source_keyed_ft4_draws_checked": 1,
+            "original_launch_receipt_sha256": "1" * 64,
+            "two_word_manifest_sha256": "2" * 64,
+            "native_gpu_event_log_sha256": "3" * 64,
+            **{field: True for field in native_bridge.TRUE_FIELDS},
+            **{field: False for field in native_bridge.FALSE_FIELDS},
+        }
+
+    def source_witness_kwargs(self):
+        return {
+            "native_capture_dir": Path(self.temp.name) / "source-native",
+            "source_capture_dir": Path(self.temp.name) / "source-ft4",
+            "launch_receipt": Path(self.temp.name) / "launch.json",
+            "preflight_report": Path(self.temp.name) / "preflight.json",
+        }
+
+    def test_all_four_source_witness_inputs_required_before_launch(self):
+        pair = self.make_claimed_private_frame_pair()
+        args = self.source_witness_kwargs()
+        for missing in args:
+            partial = {k: v for k, v in args.items() if k != missing}
+            with self.subTest(missing=missing):
+                with self.assertRaisesRegex(ValueError, "arguments incomplete"):
+                    self.run_capture(frame_pair_dir=pair, **partial)
+                self.assertEqual(list(self.output.iterdir()), [])
+                self.assertEqual(list(self.journal.iterdir()), [])
+        with self.assertRaisesRegex(ValueError, "arguments incomplete"):
+            self.run_capture(**args)
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def test_invalid_source_compiler_rejected_before_native_execution(self):
+        pair = self.make_claimed_private_frame_pair()
+        with self.assertRaisesRegex(ValueError, "arguments incomplete"):
+            self.run_capture(frame_pair_dir=pair, compiler="invalid")
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def test_original_ft4_gpu_witness_joined_to_actual_child_and_claimed_frame(self):
+        pair = self.make_claimed_private_frame_pair(different_reference=True)
+        with patch.object(native_bridge, "audit_launch_two_word",
+                          side_effect=self.synthetic_original_ft4_witness) as audit:
+            result = self.run_capture(
+                frame_pair_dir=pair, **self.source_witness_kwargs())
+        self.assertEqual(audit.call_count, 1)
+        self.assertTrue(result["source_keyed_native_ft4_vram_independently_replayed"])
+        self.assertEqual(result["source_original_launch_receipt_sha256"], "1" * 64)
+        self.assertEqual(result["source_native_gpu_event_log_sha256"], "3" * 64)
+        self.assertEqual(result["claimed_reference_different_bgr555_pixels"], 1)
+        self.assertFalse(
+            result["source_original_trace_same_session_as_live_elf_authenticated"])
+        self.assertFalse(result["retail_gameplay_or_ps1_pixels_authenticated"])
+        self.assertFalse(result["hd_replacement_authorized"])
+        self.assertNotIn(str(pair), json.dumps(result))
+
+    def test_source_native_gpu_wrong_frame_rejected_not_label_joined(self):
+        pair = self.make_claimed_private_frame_pair()
+        def bad_source(*args, **kwargs):
+            witness = self.synthetic_original_ft4_witness(*args, **kwargs)
+            witness["native_gpu_frame"] += 1
+            return witness
+        with patch.object(native_bridge, "audit_launch_two_word",
+                          side_effect=bad_source):
+            with self.assertRaisesRegex(ValueError, "labels differ"):
+                self.run_capture(frame_pair_dir=pair,
+                                 **self.source_witness_kwargs())
+
+    def test_source_native_provenance_forgery_rejected(self):
+        pair = self.make_claimed_private_frame_pair()
+        def false_provenance(*args, **kwargs):
+            witness = self.synthetic_original_ft4_witness(*args, **kwargs)
+            witness[next(iter(native_bridge.FALSE_FIELDS))] = True
+            return witness
+        with patch.object(native_bridge, "audit_launch_two_word",
+                          side_effect=false_provenance):
+            with self.assertRaisesRegex(ValueError, "unexpectedly asserted"):
+                self.run_capture(frame_pair_dir=pair,
+                                 **self.source_witness_kwargs())
+
+    def test_same_byte_claimed_reference_swap_during_source_replay_refused(self):
+        pair = self.make_claimed_private_frame_pair()
+        def swap(*args, **kwargs):
+            path = pair / "reference.bgr555"
+            other = pair / "reference-new.bgr555"
+            other.write_bytes(path.read_bytes())
+            other.chmod(0o600)
+            os.replace(other, path)
+            return self.synthetic_original_ft4_witness(*args, **kwargs)
+        with patch.object(native_bridge, "audit_launch_two_word",
+                          side_effect=swap):
+            with self.assertRaisesRegex(ValueError, "changed during native witness"):
+                self.run_capture(frame_pair_dir=pair,
+                                 **self.source_witness_kwargs())
 
     def test_one_real_synthetic_child_two_complete_private_replays(self):
         result = self.run_capture()
