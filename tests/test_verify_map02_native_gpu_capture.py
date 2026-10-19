@@ -130,6 +130,69 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
                                     "ClearImage post-VRAM"):
             verify_capture(self.root, target_frame=12)
 
+    def test_private_joint_gpu_audit_accepts_only_pinned_valid_terminal_status(self):
+        # End-to-end regression: source-pinned native recorder adds a
+        # terminal status JSON alongside VRAM snapshots and the event log.
+        # A valid 0600 status is evidence, not an unexpected public file.
+        from tools.audit_map02_joint_gpu_frame import audit
+        from tools.verify_map02_native_gpu_capture import STATUS
+
+        for name in ("gpu-native-events.jsonl",) + tuple(
+                f"gpu-{step:04d}-vram.bin" for step in range(4)):
+            (self.root / name).chmod(0o600)
+        pixels = bytes(self.post)
+        baseline = audit(self.root, frame=12, final_pixels=pixels)
+        self.assertTrue(baseline["terminal_after_vram_exactly_matches_live_pipe"])
+        self.assertFalse(baseline["hd_replacement_authorized"])
+
+        receipt = {
+            "schema": "vh.map02.native-capture-status.v1",
+            "gpu_draw_frame": 12,
+            "observed_hooks": 4,
+            "before_hooks": 2,
+            "after_hooks": 2,
+            "draw_before_hooks": 1,
+            "transfer_before_hooks": 1,
+            "indexed_hooks": 4,
+            "written_hooks": 4,
+            "limit_reached": False,
+            "walk_finished": True,
+            "hooks_balanced": True,
+            "observed_window_closed_without_detected_loss": True,
+        }
+        status = self.root / STATUS
+        status.write_text(json.dumps(receipt), encoding="utf-8")
+        status.chmod(0o600)
+        verified = audit(self.root, frame=12, final_pixels=pixels)
+        self.assertEqual(verified["gpu_pairs_verified"], 2)
+        self.assertEqual(verified["gpu_draw_pairs_verified"], 1)
+        self.assertTrue(verified["private_journal_fd_inventory_stable"])
+        self.assertFalse(verified["actual_gameplay_or_ps1_pixels_authenticated"])
+        self.assertFalse(verified["hd_replacement_authorized"])
+
+        # The report may never bypass terminal hook-count reconciliation.
+        receipt["written_hooks"] = 3
+        status.write_text(json.dumps(receipt), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "receipt count/log divergence"):
+            audit(self.root, frame=12, final_pixels=pixels)
+        receipt["written_hooks"] = 4
+        status.write_text(json.dumps(receipt), encoding="utf-8")
+
+        # Even a byte-valid signed-off status must remain private and
+        # owned by the same held journal inode across the replay.
+        status.chmod(0o644)
+        with self.assertRaisesRegex(ValueError, "file type, mode or size invalid"):
+            audit(self.root, frame=12, final_pixels=pixels)
+        status.chmod(0o600)
+
+        # Unknown additional data is still forbidden: accepting the
+        # exact terminal receipt must not widen the journal inventory.
+        extra = self.root / "gpu-unexpected.json"
+        extra.write_bytes(b"{}")
+        extra.chmod(0o600)
+        with self.assertRaisesRegex(ValueError, "unexpected file name"):
+            audit(self.root, frame=12, final_pixels=pixels)
+
     def test_missing_drawenv_on_both_phases_is_legacy_not_corruption(self):
         # Historic native logs have no DRAWENV, but their original
         # source-keyed VRAM and FT4 replay must still validate. A mixed
