@@ -6,6 +6,7 @@ on:
       - 'work/map02-dda-coverage-independent-audit'
       - 'work/map02-pr55-receipt-compatibility'
       - 'work/map02-pr55-native-recorder-compat'
+      - 'work/map02-pr55-drawenv-optional-fix'
   pull_request:
     paths:
       - 'tools/make_map02_trace_patch.py'
