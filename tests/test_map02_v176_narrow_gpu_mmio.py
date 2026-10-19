@@ -33,10 +33,10 @@ u32 psxMemRead32(psxRegisters *regs, u32 mem) {
  (void)regs;(void)mem;
  return 0;
 }
-void psxMemWrite8(psxRegisters *regs,u32 mem,u32 value) {
+void psxMemWrite8(psxRegisters *regs, u32 mem, u32 value) {
  (void)regs;(void)mem;(void)value;
 }
-void psxMemWrite16(psxRegisters *regs,u32 mem,u32 value) {
+void psxMemWrite16(psxRegisters *regs, u32 mem, u32 value) {
  (void)regs;(void)mem;(void)value;
 }
 void vh140_mmio_enable(unsigned mutate_expected) {
