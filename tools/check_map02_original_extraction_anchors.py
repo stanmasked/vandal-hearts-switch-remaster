@@ -204,6 +204,16 @@ def compare_loaded_sections(exe_path, elf_path):
 
             if not mapped:
                 raise ValueError("original ELF has no mapped initialized PS-X sections")
+            # Distinct runtime address ranges cannot reuse the same
+            # on-disk ELF payload. Otherwise identical data at different
+            # PS-X addresses can be counted as independent extraction
+            # evidence even when one ELF section aliases another.
+            file_ranges = sorted(
+                (offset, offset + end - begin) for begin, end, offset in mapped)
+            for i in range(1, len(file_ranges)):
+                if file_ranges[i][0] < file_ranges[i - 1][1]:
+                    raise ValueError(
+                        "original ELF initialized sections overlap file payload")
             mapped.sort()
             total = 0
             previous_end = exe_load
