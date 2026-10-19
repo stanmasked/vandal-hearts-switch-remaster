@@ -854,6 +854,101 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
                 self.assertEqual(len(list(self.dirs[1].iterdir())), 3)
                 self.assertEqual(len(list(self.dirs[3].iterdir())), 3)
 
+    def test_dry_run_private_preflight_is_read_only_and_unattested(self):
+        # The exact four 0700 paths and ELF digest can be checked without
+        # running the synthetic C11 producer, creating GPU files, or issuing
+        # a report that claims any live capture has been authenticated.
+        args = ["two-pair"]
+        with (patch.object(two_live, "capture",
+                           side_effect=AssertionError("unexpected launch")),
+              patch.object(two_live, "audit",
+                           side_effect=AssertionError("unexpected replay"))):
+            report = two_live.preflight(
+                self.executable, *self.dirs, frame=123,
+                executable_sha256=self.digest, args=args,
+                timeout=8, require_identical_gpu_timeline=True)
+        self.assertEqual(report["schema"],
+                         "vh.map02.private-two-live-elf-preflight.v1")
+        self.assertEqual(report["executable_sha256"], self.digest)
+        self.assertTrue(report[
+            "four_owner_private_empty_directory_roles_verified"])
+        self.assertTrue(report["same_elf_arguments_validated"])
+        self.assertTrue(report["strict_gpu_timeline_match_requested"])
+        for key in ("native_elf_launched",
+                    "two_native_elf_captures_and_complete_replays_verified",
+                    "strict_gpu_timeline_match_verified",
+                    "actual_gameplay_rendering_authenticated",
+                    "ps1_hardware_pixel_equivalence_verified",
+                    "hd_replacement_authorized",
+                    "private_pixel_bytes_or_paths_emitted"):
+            self.assertFalse(report[key], key)
+        self.assertTrue(all(not list(folder.iterdir()) for folder in self.dirs))
+        for folder in self.dirs:
+            self.assertNotIn(str(folder), json.dumps(report))
+        self.assertNotIn(str(self.executable), json.dumps(report))
+        self.assertNotIn("two-pair", json.dumps(report))
+        # A later real capture must still validate inputs independently.
+        result = self.run_two(args=args, require_identical_gpu_timeline=True)
+        self.assertTrue(result["strict_gpu_timeline_match_verified"])
+
+    def test_dry_run_refuses_wrong_sha_aliases_and_nonempty_destinations(self):
+        call = lambda *paths, **kw: two_live.preflight(
+            self.executable, *paths, frame=123,
+            executable_sha256=kw.pop("sha", self.digest), **kw)
+        with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
+            call(*self.dirs, sha="0" * 64)
+        with self.assertRaisesRegex(ValueError, "roles overlap"):
+            call(self.dirs[0], self.dirs[1], self.dirs[0], self.dirs[3])
+        with self.assertRaisesRegex(ValueError, "arguments invalid"):
+            call(*self.dirs, args=["ok", "\x00"])
+        with self.assertRaisesRegex(ValueError, "arguments invalid"):
+            call(*self.dirs, require_identical_gpu_timeline="true")
+        symlink = self.dirs[0].parent / "symlink-journal"
+        symlink.symlink_to(self.dirs[3], target_is_directory=True)
+        with self.assertRaises(OSError):
+            call(self.dirs[0], self.dirs[1], self.dirs[2], symlink)
+        self.assertTrue(all(not list(folder.iterdir()) for folder in self.dirs))
+        (self.dirs[3] / "preexisting-private.txt").write_text(
+            "must remain unchanged", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "not empty"):
+            call(*self.dirs)
+        self.assertEqual(
+            (self.dirs[3] / "preexisting-private.txt").read_text(
+                encoding="utf-8"), "must remain unchanged")
+        self.assertTrue(all(not list(folder.iterdir()) for folder in self.dirs[:3]))
+
+    def test_dry_run_cli_prints_only_safe_readiness_fields(self):
+        cmd = [
+            sys.executable, "-m", "tools.run_map02_private_two_live_captures",
+            "--executable", str(self.executable),
+            "--executable-sha256", self.digest,
+            "--first-frame", str(self.dirs[0]),
+            "--first-journal", str(self.dirs[1]),
+            "--second-frame", str(self.dirs[2]),
+            "--second-journal", str(self.dirs[3]),
+            "--frame", "123", "--dry-run",
+            "--require-identical-gpu-timeline",
+        ]
+        completed = subprocess.run(cmd, text=True, capture_output=True,
+                                   timeout=16)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        report = json.loads(completed.stdout)
+        self.assertFalse(report["native_elf_launched"])
+        self.assertTrue(report["strict_gpu_timeline_match_requested"])
+        self.assertFalse(report["strict_gpu_timeline_match_verified"])
+        self.assertTrue(all(not list(folder.iterdir()) for folder in self.dirs))
+        for folder in (*self.dirs, self.executable):
+            self.assertNotIn(str(folder), completed.stdout)
+            self.assertNotIn(str(folder), completed.stderr)
+        cmd[cmd.index("--executable") + 1] = str(
+            self.dirs[0].parent / "private-missing-game-elf")
+        failed = subprocess.run(cmd, text=True, capture_output=True,
+                                timeout=12)
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertIn("failed verification", failed.stderr)
+        self.assertNotIn(str(self.dirs[0].parent), failed.stderr)
+        self.assertTrue(all(not list(folder.iterdir()) for folder in self.dirs))
+
     def test_strict_cli_flag_succeeds_with_two_real_synthetic_launches(self):
         cmd = [
             sys.executable, "-m", "tools.run_map02_private_two_live_captures",
