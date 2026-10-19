@@ -107,6 +107,36 @@ int main(int argc, char **argv) {
                 self.assertIn("execution unavailable", output.getvalue())
                 self.assertNotIn(private_path, output.getvalue())
 
+    def test_launcher_cli_redacts_sensitive_valueerrors_on_run_and_verify(self):
+        private_path = str(self.binary)
+        for operation, handler in (
+            ("run", "launch_observed_pc"),
+            ("verify", "verify_observed_process"),
+        ):
+            with self.subTest(operation=operation):
+                args = [
+                    "map02-process", operation, str(self.handoff),
+                    str(self.native), str(self.scoped),
+                    "--pc-binary", private_path,
+                    "--owned-game-image", str(self.owned),
+                    "--upstream-checkout", str(self.upstream),
+                ]
+                if operation == "run":
+                    args.extend(("--x", "10", "--y", "20"))
+                error = ValueError(
+                    "source-bound private binary differs: " + private_path)
+                output = io.StringIO()
+                with (patch("sys.argv", args),
+                      patch.object(launcher, handler, side_effect=error),
+                      redirect_stderr(output)):
+                    with self.assertRaises(SystemExit) as caught:
+                        launcher.main()
+                self.assertEqual(caught.exception.code, 2)
+                self.assertIn("source-bound check failed", output.getvalue())
+                for path in (private_path, str(self.owned),
+                             str(self.handoff), str(self.upstream)):
+                    self.assertNotIn(path, output.getvalue())
+
     def test_genuine_child_elf_checked_against_prepared_binary(self):
         result = self.run_capture()
         self.assertTrue(result["kernel_executable_hash_matched"])
