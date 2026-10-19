@@ -1,0 +1,71 @@
+name: Stage363 independently replay original successful NeXium Stage362 dual-clock sources
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage363-original-dual-clock-replay.yml'
+      - 'tools/audit_nexium_stage363_authentic_guest_host_dual.py'
+      - 'tests/test_audit_nexium_stage363_authentic_guest_host_dual.py'
+      - 'tools/audit_nexium_recorder_stop_dual_clock_stage362.py'
+      - 'tools/audit_nexium_guest_exit_probe_context_stage360.py'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  original-dual-clock-replay:
+    name: SHA-pinned Stage303 Stage362 and Stage348 Stage351 Stage357 Stage360 sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Independent source forgery and historical receipt regression tests
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_nexium_stage363_authentic_guest_host_dual.py' -v
+          python3 -m py_compile tools/audit_nexium_stage363_authentic_guest_host_dual.py
+      - name: Download exact original fully successful NeXium artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 39340120727 --repo stanmasked/vandal-hearts-switch-remaster \
+            --name nexium-runtime-evidence --dir archived-original-stage362
+      - name: Recompute exact original host clocks PCM digest and guest exit receipts
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_stage363_authentic_guest_host_dual.py \
+            --archive-root archived-original-stage362 \
+            --output stage363-authentic-success-dual-clock.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("stage363-authentic-success-dual-clock.json").read_text())
+          if (r["result"]!="STAGE363_AUTHENTIC_DUAL_CLOCK_AND_GUEST_EXIT_SOURCE_REAUDITED"
+              or r["original_neXium_run_id"]!=39340120727
+              or r["original_strict_stage303_success"] is not True
+              or r["original_stage362_host_recorder_wall_ms"]!=21
+              or r["original_stage362_host_recorder_monotonic_ns"]!=20788687
+              or r["original_stage303_pcm_bytes"]!=8804896
+              or r["original_stage362_host_pcm_size_delta_bytes"]!=0
+              or r["guest_tail_reason_code"]!=7
+              or r["guest_audout_wait_raw_result"]!=0
+              or r["guest_lease_pages_acquired"]!=1438
+              or r["guest_lease_pages_released"]!=1438
+              or r["guest_abandoned_sessions"]!=0
+              or r["old_probe_age_at_tail_begin_ns"]!=369284375
+              or r["old_probe_age_at_tail_end_ns_derived"]!=381019843
+              or r["software_tail_elapsed_ns"]!=11735468
+              or r["original_guest_exit_queue_depth_directly_measured"] is not False
+              or r["old_failed_run_host_clocks_retroactively_fixed"] is not False
+              or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage363 original-source proof or its safety boundary failed")
+          print("Stage363: authentic host wall +21ms, monotonic +20788687ns, Stage303 strict success, guest wait Result 0.")
+          PY
+          echo "Stage363 authentic NeXium #39340120727: SHA-bound original strict Stage303 + dual host clocks + guest software tail. Old failed archive not retroactively fixed; no direct exit queue / DAC evidence." >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload compact independent original-source verdict
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage363-authentic-original-dual-clock-host-guest
+          path: stage363-authentic-success-dual-clock.json
+          if-no-files-found: error
