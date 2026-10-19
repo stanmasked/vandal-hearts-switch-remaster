@@ -23,6 +23,7 @@ from tools.check_map02_private_pc_inputs import (
 )
 from tools.check_map02_original_extraction_anchors import (
     ANCHORS, LOAD_VRAM, PSX_HEADER, compare_data_ranges,
+    compare_loaded_sections,
 )
 from tools.check_map02_original_inc_provenance import (
     _original_blob_sha1, check_original_includes,
@@ -119,6 +120,73 @@ for name, offset, size in [
         self.fonthash.start()
         self.addCleanup(self.exehash.stop)
         self.addCleanup(self.fonthash.stop)
+
+    def add_synthetic_loaded_section(self, address=None, *, size=16):
+        """Append one initialized section without relying on copyrighted data."""
+        if address is None:
+            address = LOAD_VRAM + 0x100
+        original = bytearray(self.elf.read_bytes())
+        old_shoff = struct.unpack_from("<I", original, 32)[0]
+        old_count = struct.unpack_from("<H", original, 48)[0]
+        headers = bytearray(original[old_shoff:old_shoff + old_count * 40])
+        data_offset = len(original)
+        exe_offset = PSX_HEADER + address - LOAD_VRAM
+        data = self.exe.read_bytes()[exe_offset:exe_offset + size]
+        if len(data) != size:
+            data = bytes(size)
+        original.extend(data)
+        new_shoff = len(original)
+        headers.extend(bytes(40))
+        struct.pack_into("<IIIIIIIIII", headers, old_count * 40,
+                         0, 1, 2, address, data_offset, size, 0, 0, 1, 0)
+        original.extend(headers)
+        struct.pack_into("<I", original, 32, new_shoff)
+        struct.pack_into("<H", original, 48, old_count + 1)
+        self.elf.write_bytes(original)
+        return data_offset
+
+    def test_all_mapped_initialized_sections_checked_beyond_three_anchors(self):
+        default = compare_loaded_sections(self.exe, self.elf)
+        self.assertEqual(default["original_allocated_sections_compared"], 3)
+        self.assertEqual(default["original_allocated_section_bytes_compared"], 1216)
+        self.assertEqual(default["unmapped_allocated_sections_not_authenticated"], 0)
+        extra = self.add_synthetic_loaded_section()
+        report = verify_private_pc_inputs(self.root)
+        self.assertTrue(report["original_exe_and_mips_elf_loaded_sections_match"])
+        self.assertEqual(report["original_allocated_sections_compared"], 4)
+        self.assertEqual(report["original_allocated_section_bytes_compared"], 1232)
+        self.assertFalse(report["original_map02_rendering_proven"])
+        tampered = bytearray(self.elf.read_bytes())
+        tampered[extra] ^= 0x80
+        self.elf.write_bytes(tampered)
+        # The three original named anchors still match, but a fourth
+        # ordinary loaded section must block the full private preflight.
+        self.assertTrue(compare_data_ranges(self.exe, self.elf)[
+            "original_exe_and_mips_elf_data_anchors_match"])
+        with self.assertRaisesRegex(ValueError, "loaded section differs"):
+            verify_private_pc_inputs(self.root)
+
+    def test_mapped_section_overlap_and_boundary_rejected(self):
+        self.add_synthetic_loaded_section(ANCHORS[0][1], size=16)
+        with self.assertRaisesRegex(ValueError, "overlapping allocated"):
+            compare_loaded_sections(self.exe, self.elf)
+        # Reset to the original synthetic ELF structure by removing the
+        # newly appended duplicate section header from the index.
+        elf = bytearray(self.elf.read_bytes())
+        shoff = struct.unpack_from("<I", elf, 32)[0]
+        struct.pack_into("<I", elf, shoff + 4 * 40 + 12,
+                         LOAD_VRAM + len(self.exe.read_bytes()) - PSX_HEADER - 4)
+        self.elf.write_bytes(elf)
+        with self.assertRaisesRegex(ValueError, "crosses PS-X extent"):
+            compare_loaded_sections(self.exe, self.elf)
+
+    def test_unmapped_allocated_section_is_not_claimed_authenticated(self):
+        self.add_synthetic_loaded_section(LOAD_VRAM + 0x02000000, size=16)
+        report = compare_loaded_sections(self.exe, self.elf)
+        self.assertEqual(report["original_allocated_sections_compared"], 3)
+        self.assertEqual(report["original_allocated_section_bytes_compared"], 1216)
+        self.assertEqual(report["unmapped_allocated_sections_not_authenticated"], 1)
+        self.assertFalse(report["complete_matching_decomp_proven"])
 
     def test_synthetic_US_input_bundle_passes_structure_only(self):
         report = verify_private_pc_inputs(self.root)
