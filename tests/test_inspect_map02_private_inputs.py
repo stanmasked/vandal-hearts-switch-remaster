@@ -163,6 +163,52 @@ class Map02PrivateInputInventoryTests(unittest.TestCase):
         self.handoff.chmod(0o700)
         self.assertTrue(self.inspect()["all_prerequisite_paths_present"])
 
+    def test_unreadable_owned_source_and_krom_are_not_present(self):
+        self.populate()
+        self.assertTrue(self.inspect()["all_prerequisite_paths_present"])
+        for candidate, field in (
+            (self.upstream / EXE, "original_us_psx_executable_path_present"),
+            (self.upstream / "build" / (EXE + ".elf"),
+             "extracted_original_mips_elf_path_present"),
+            (self.krom, "owned_krom_or_ps1_bios_path_present"),
+            (self.upstream / "platform/pc" / BUILD / "vandalhearts_pc",
+             "full_pc_elf_executable_path_present"),
+        ):
+            with self.subTest(file=field):
+                original_mode = candidate.stat().st_mode & 0o777
+                candidate.chmod(original_mode & ~0o400)
+                try:
+                    report = self.inspect()
+                    self.assertIs(report[field], False)
+                    self.assertFalse(report["all_prerequisite_paths_present"])
+                finally:
+                    candidate.chmod(original_mode)
+                self.assertTrue(self.inspect()["all_prerequisite_paths_present"])
+
+    def test_nontraversable_source_parent_does_not_count_nested_files(self):
+        self.populate()
+        for relative, field in (
+            ("assets", "original_asset_include_paths_present"),
+            ("build", "extracted_original_mips_elf_path_present"),
+            ("platform/pc/tools", "pinned_font_generator_path_present"),
+            ("platform/pc/build-map02-cycle",
+             "full_pc_elf_executable_path_present"),
+        ):
+            with self.subTest(relative=relative):
+                directory = self.upstream / relative
+                old_mode = directory.stat().st_mode & 0o777
+                directory.chmod(0o600)  # owner can list but cannot traverse
+                try:
+                    report = self.inspect()
+                    self.assertFalse(report["all_prerequisite_paths_present"])
+                    if field == "original_asset_include_paths_present":
+                        self.assertEqual(report[field], 0)
+                    else:
+                        self.assertIs(report[field], False)
+                finally:
+                    directory.chmod(old_mode)
+                self.assertTrue(self.inspect()["all_prerequisite_paths_present"])
+
     def test_cli_emits_only_safe_status_fields_not_private_arguments(self):
         self.populate()
         import sys
