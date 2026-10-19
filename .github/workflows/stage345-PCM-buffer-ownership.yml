@@ -1,0 +1,50 @@
+name: Stage345 exact PCM page lease and long-run retry continuity
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage345-PCM-buffer-ownership.yml'
+      - 'tests/test_vh_audio_page_continuity_stage345.c'
+      - 'source/vh_audio_buffer_lease.c'
+      - 'source/vh_audio_buffer_lease.h'
+      - 'source/vh_audio_output_recovery.c'
+      - 'source/vh_audio_output_recovery.h'
+
+permissions:
+  contents: read
+
+jobs:
+  native-pcm-ownership-stress:
+    name: Independently replay 512 synthesized host PCM pages with exact descriptor releases
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: GCC and Clang release-mode long page hash/ownership regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          for cc in gcc clang; do
+            "$cc" -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+              tests/test_vh_audio_page_continuity_stage345.c \
+              source/vh_audio_buffer_lease.c source/vh_audio_output_recovery.c \
+              -o "build/stage345-$cc"
+            "./build/stage345-$cc"
+          done
+      - name: GCC and Clang UBSan native ownership and retry conservation
+        shell: bash
+        env:
+          UBSAN_OPTIONS: halt_on_error=1
+        run: |
+          set -euo pipefail
+          for cc in gcc clang; do
+            "$cc" -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+              -fsanitize=undefined -fno-omit-frame-pointer \
+              tests/test_vh_audio_page_continuity_stage345.c \
+              source/vh_audio_buffer_lease.c source/vh_audio_output_recovery.c \
+              -o "build/stage345-ubsan-$cc"
+            "./build/stage345-ubsan-$cc"
+          done
+          echo "Stage345 host-only page ownership and no-mutation retry test passed on both compilers. Real device queue, DAC, game NRO and audible PCM dropout are not established." >> "$GITHUB_STEP_SUMMARY"

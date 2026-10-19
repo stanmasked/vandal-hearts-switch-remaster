@@ -413,6 +413,29 @@ jobs:
              source/vh_audio_buffer_lease.c source/vh_audio_output_recovery.c \
              -o build/test_vh_audio_buffer_lease
           ./build/test_vh_audio_buffer_lease
+      - name: Stage345 512-page audio ownership and PCM retry continuity stress on GCC and Clang
+        run: |
+          set -euo pipefail
+          for cc in gcc clang; do
+            "$cc" -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+              tests/test_vh_audio_page_continuity_stage345.c \
+              source/vh_audio_buffer_lease.c source/vh_audio_output_recovery.c \
+              -o "build/test_vh_audio_page_continuity_stage345-$cc"
+            "build/test_vh_audio_page_continuity_stage345-$cc"
+          done
+      - name: Stage345 native PCM page ownership under UBSan
+        env:
+          UBSAN_OPTIONS: halt_on_error=1
+        run: |
+          set -euo pipefail
+          for cc in gcc clang; do
+            "$cc" -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+              -fsanitize=undefined -fno-omit-frame-pointer \
+              tests/test_vh_audio_page_continuity_stage345.c \
+              source/vh_audio_buffer_lease.c source/vh_audio_output_recovery.c \
+              -o "build/test_vh_audio_page_continuity_stage345-ubsan-$cc"
+            "build/test_vh_audio_page_continuity_stage345-ubsan-$cc"
+          done
       - name: Audout page ownership under ASan and UBSan
         env:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
