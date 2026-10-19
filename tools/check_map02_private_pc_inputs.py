@@ -217,6 +217,12 @@ def verify_private_pc_inputs(upstream, *, krom_source=None):
             mapped_sections["original_allocated_sections_compared"],
         "original_allocated_section_bytes_compared":
             mapped_sections["original_allocated_section_bytes_compared"],
+        "original_psx_loaded_payload_bytes":
+            mapped_sections["original_psx_loaded_payload_bytes"],
+        "original_psx_loaded_bytes_not_covered_by_elf_sections":
+            mapped_sections["original_psx_loaded_bytes_not_covered_by_elf_sections"],
+        "original_psx_loaded_payload_fully_covered":
+            mapped_sections["original_psx_loaded_payload_fully_covered"],
         "unmapped_allocated_sections_not_authenticated":
             mapped_sections["unmapped_allocated_sections_not_authenticated"],
         "original_resource_includes_present": len(ASSETS),
