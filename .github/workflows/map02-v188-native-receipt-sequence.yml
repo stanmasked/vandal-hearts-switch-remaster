@@ -1,0 +1,31 @@
+name: MAP02 v188 strict native VBlank and RAM receipt sequence verifier
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v188-native-receipt-sequence.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/check_map02_v188_native_ram_receipts.py'
+      - 'tests/test_map02_v188_native_ram_receipts.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  sequence-regression:
+    name: Fail-closed VBlank and RAM log transcript audit (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate strict numeric logs and all malformed receipt cases
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/check_map02_v188_native_ram_receipts.py tests/test_map02_v188_native_ram_receipts.py
+          python3 -m unittest discover -s tests -p 'test_map02_v188_native_ram_receipts.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v187_native_ram_snapshots.py' -v
+          echo 'VH188_INDEPENDENT_RECEIPT_SEQUENCE_PASS modes=10 corruptions=9 original_retail_executed=0'
