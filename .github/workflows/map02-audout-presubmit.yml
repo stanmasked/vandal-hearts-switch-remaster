@@ -1,0 +1,79 @@
+name: MAP02 opt-in audout pre-submit page witness
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-audout-presubmit.yml'
+      - 'source/vh_audout_presubmit_witness.*'
+      - 'source/vh_switch_game_audio.c'
+      - 'source/vh_switch_game_audio.h'
+      - 'source/main.c'
+      - 'tests/test_vh_audout_presubmit_witness.c'
+      - 'Makefile.map02-audio'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VH_EXACT_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  host-witness:
+    name: Fail-closed dual PCM digest and retry checks (${{ matrix.compiler }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_SOURCE_SHA }}
+      - name: Reject unintended temporary PR merge commit
+        run: test "$(git rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
+      - name: Run generated-only host witness with sanitizers
+        shell: bash
+        run: |
+          set -euo pipefail
+          "${{ matrix.compiler }}" -std=c11 -O1 -g -Wall -Wextra -Werror \
+            -fsanitize=address,undefined -fno-sanitize-recover=all \
+            -fno-omit-frame-pointer -Isource \
+            tests/test_vh_audout_presubmit_witness.c \
+            source/vh_audout_presubmit_witness.c \
+            -o /tmp/vh-audout-presubmit-test
+          ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+            /tmp/vh-audout-presubmit-test
+
+  research-nro:
+    name: Build separately opt-in libnx audout pre-submit witness NRO
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_SOURCE_SHA }}
+      - name: Verify exact source commit inside devkitPro
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
+      - name: Build gated native research-only NRO
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO=/opt/devkitpro
+          export DEVKITA64=/opt/devkitpro/devkitA64
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          make -f Makefile -f Makefile.map02-audio \
+            MAP02_AUDIO_BUILD=build/map02-presubmit \
+            MAP02_AUDIO_PRESUBMIT_WITNESS=1 map02-audio-nro
+          test -s build/map02-presubmit/vandal-hearts-map02-audio.nro
+          sha256sum build/map02-presubmit/vandal-hearts-map02-audio.nro
+      - uses: actions/upload-artifact@v4
+        with:
+          name: map02-audout-presubmit-research-nro
+          path: build/map02-presubmit/vandal-hearts-map02-audio.nro
+          if-no-files-found: error
