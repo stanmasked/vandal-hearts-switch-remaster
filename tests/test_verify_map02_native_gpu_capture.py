@@ -545,9 +545,9 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
         ]
         self.save()
         corrected = bytearray(self.pre)
-        corrected[:2] = b"\\x1f\\x00"
+        corrected[:2] = b"\x1f\x00"
         (self.root/"gpu-0001-vram.bin").write_bytes(corrected)
-        (self.root/"gpu-0001-upload.bin").write_bytes(b"\\x1f\\x00")
+        (self.root/"gpu-0001-upload.bin").write_bytes(b"\x1f\x00")
         window = self.root/"window-001"
         window.mkdir(mode=0o700)
         for name in ("gpu-0000-vram.bin", "gpu-0001-vram.bin",
@@ -562,9 +562,9 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
         # Old buggy recorder named the upload by global step 65,
         # but falsely declared an otherwise valid local step 1.
         self.events[1]["upload"] = "gpu-0065-upload.bin"
-        (window/"gpu-0065-upload.bin").write_bytes(b"\\x1f\\x00")
+        (window/"gpu-0065-upload.bin").write_bytes(b"\x1f\x00")
         (window/"gpu-native-events.jsonl").write_text(
-            "".join(json.dumps(e,sort_keys=True)+"\\n"
+            "".join(json.dumps(e,sort_keys=True)+"\n"
                     for e in self.events), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "unexpected upload filename"):
             verify_capture(window, target_frame=12)
