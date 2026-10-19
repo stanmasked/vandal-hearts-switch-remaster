@@ -130,6 +130,34 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
                                     "ClearImage post-VRAM"):
             verify_capture(self.root, target_frame=12)
 
+    def test_missing_drawenv_on_both_phases_is_legacy_not_corruption(self):
+        # Historic native logs have no DRAWENV, but their original
+        # source-keyed VRAM and FT4 replay must still validate. A mixed
+        # before/after schema, however, is never a valid single GPU event.
+        self.assertTrue(all("draw_env" not in event for event in self.events))
+        report = verify_capture(self.root, target_frame=12)
+        self.assertEqual(report["native_gpu_pairs_verified"], 2)
+        self.assertFalse(report["real_gameplay_authenticated"])
+        self.assertFalse(report["ps1_hardware_pixels_verified"])
+
+        clip = [0, 0, 1024, 512, 0, 0]
+        self.events[2]["draw_env"] = clip[:]
+        self.save()
+        with self.assertRaisesRegex(ValueError,
+                                    "before/after metadata diverges \\(draw_env\\)"):
+            verify_capture(self.root, target_frame=12)
+
+        self.events[3]["draw_env"] = clip[:]
+        self.save()
+        self.assertEqual(verify_capture(self.root, target_frame=12)[
+            "draw_otag_primitive_pairs"], 1)
+
+        del self.events[2]["draw_env"]
+        self.save()
+        with self.assertRaisesRegex(ValueError,
+                                    "before/after metadata diverges \\(draw_env\\)"):
+            verify_capture(self.root, target_frame=12)
+
     def test_main_drawenv_metadata_checked_without_dropping_ft4_checks(self):
         for event in self.events:
             event["draw_env"] = [0, 0, 1024, 512, -30, 25]
