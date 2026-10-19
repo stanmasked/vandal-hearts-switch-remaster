@@ -1,0 +1,33 @@
+name: MAP02 v177 attest all guest GP0 GP1 byte and halfword lanes
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v177-narrow-gpu-lanes.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tests/test_map02_v177_narrow_gpu_lanes.py'
+      - 'tools/apply_map02_v176_narrow_gpu_mmio.py'
+      - 'tools/make_map02_v78_vblank_mips_exe.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  gpu-lane-attestation:
+    name: compiled all 24 GPU byte/halfword lanes (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cover GP0 GP1 byte and halfword lanes, aliases, and VBlank lifecycle
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tests/test_map02_v177_narrow_gpu_lanes.py
+          python3 -m unittest discover -s tests -p 'test_map02_v177_narrow_gpu_lanes.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v176_narrow_gpu_mmio.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v175_dual_gpu_read_ports.py' -v
+          echo 'VH177_COMPILED_ALL_GPU_LANES_PASS lanes=24 native_interpreter_pending=1 original_retail_executed=0'
