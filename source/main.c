@@ -18,6 +18,8 @@
 #endif
 #if VH_MAP02_AUDIO_EXPERIMENT
 #include "vh_switch_game_audio.h"
+/* Only accessed by the gameplay/framebuffer thread. */
+static int g_map02_audio_started;
 #endif
 
 #define FB_WIDTH 1280
@@ -319,7 +321,8 @@ static void draw_frame(u32 *pixels, u32 stride, int cursor_x, int cursor_y,
 
 #if VH_MAP02_AUDIO_EXPERIMENT
     /* Guest-status observation only: not proof of audible speaker output. */
-    const int audio_state = vh_switch_game_audio_status();
+    const int audio_state = g_map02_audio_started
+        ? vh_switch_game_audio_status() : -1;
     draw_text(pixels, stride, 970, 92,
               audio_state == 1 ? "AUDIO ACTIVE" :
               audio_state == 2 ? "AUDIO PAUSED" :
@@ -368,6 +371,7 @@ int main(int argc, char **argv) {
     /* Audio has its own owner thread and never blocks the MAP02 frame loop. */
     const int audio_started = vh_switch_game_audio_start(
         vh_game_music_for_state(&state)) == 0;
+    g_map02_audio_started = audio_started;
     AppletHookCookie audio_focus_hook = {0};
     int audio_resume_message_enabled = 0;
     if (audio_started) {
