@@ -40,22 +40,35 @@ recorder=$!
 # Host-only recorder stop lifecycle. Byte lengths are buffered file snapshots,
 # never sample-exact timestamps or proof that the guest audio has stopped.
 SCENE_RECORDER_STOP="$output/scene-recorder-stop.csv"
+SCENE_RECORDER_STOP_DUAL="$output/scene-recorder-stop-monotonic.csv"
 cleanup() {
-  local pre_bytes pre_ms post_bytes post_ms signal_success
+  local pre_bytes pre_ms pre_mono post_bytes post_ms post_mono signal_success clocks
   pre_bytes="$(stat -c %s "$SCENE_PCM")"
-  pre_ms="$(date +%s%3N)"
+  # Stage362: sample host wall+monotonic clocks in one Python process.
+  # The legacy strict Stage303 CSV retains its unchanged four columns.
+  # This only instruments the host recorder; no guest/audout service call.
+  clocks="$(python3 -c 'import time; print(time.time_ns()//1000000, time.monotonic_ns())')"
+  read -r pre_ms pre_mono <<< "$clocks"
   signal_success=0
   if kill -INT "$recorder" 2>/dev/null; then
     signal_success=1
   fi
   wait "$recorder" 2>/dev/null || true
   post_bytes="$(stat -c %s "$SCENE_PCM")"
-  post_ms="$(date +%s%3N)"
+  clocks="$(python3 -c 'import time; print(time.time_ns()//1000000, time.monotonic_ns())')"
+  read -r post_ms post_mono <<< "$clocks"
   {
     printf 'event,pcm_bytes,host_epoch_ms,signal_success\n'
     printf 'before_sigint,%s,%s,%s\n' "$pre_bytes" "$pre_ms" "$signal_success"
     printf 'after_wait,%s,%s,%s\n' "$post_bytes" "$post_ms" "$signal_success"
   } > "$SCENE_RECORDER_STOP"
+  # Independent companion: exactly the same old fields plus the sampled
+  # host monotonic clock; cannot compensate for backward old wall epochs.
+  {
+    printf 'event,pcm_bytes,host_epoch_ms,host_monotonic_ns,signal_success\n'
+    printf 'before_sigint,%s,%s,%s,%s\n' "$pre_bytes" "$pre_ms" "$pre_mono" "$signal_success"
+    printf 'after_wait,%s,%s,%s,%s\n' "$post_bytes" "$post_ms" "$post_mono" "$signal_success"
+  } > "$SCENE_RECORDER_STOP_DUAL"
 }
 trap cleanup EXIT
 sleep 1
