@@ -2,6 +2,8 @@
 """Stage351 synthetic source mutation tests; not original NeXium evidence."""
 import hashlib
 import json
+import contextlib
+import io
 import sys
 import tempfile
 import unittest
@@ -159,6 +161,67 @@ class Stage351Tests(unittest.TestCase):
             stage351)
         self.assertIn(
             "prior_stage313_and_stage348_original_bytes_reaudited",stage351)
+
+    def test_cli_missing_source_reports_input_phase_without_guest_claim(self):
+        raw,a,b=self.fixture()
+        (self.directory/"audio-exit-tail-reason-000.csv").write_bytes(raw)
+        locator=self.root/"source-root.txt"
+        locator.write_text(str(self.root),encoding="utf-8")
+        stage313=self.root/"313.json";stage313.write_text(json.dumps(a))
+        stage348=self.root/"348.json";stage348.write_text(json.dumps(b))
+        argv=["--guest-root-file",str(locator),
+              "--stage313",str(stage313),"--stage348",str(stage348),
+              "--stage313-original",str(self.root/"missing313.csv"),
+              "--stage348-original",str(self.root/"missing348.csv"),
+              "--output",str(self.root/"out.json"),
+              "--output-original",str(self.root/"out.csv")]
+        buf=io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            status=main(argv)
+        self.assertEqual(status,2)
+        diagnostic=json.loads(buf.getvalue())
+        self.assertEqual(diagnostic["failed_phase"],"required-input-files")
+        self.assertFalse(diagnostic["stage351_reason_code_validated"])
+        self.assertFalse((self.root/"out.json").exists())
+
+    def test_cli_mismatched_guest_reason_reports_distinct_phase(self):
+        raw,a,b=self.fixture()
+        first,second=self.original_sources(a,b)
+        r313=self.root/"313.json";r313.write_text(json.dumps(a))
+        r348=self.root/"348.json";r348.write_text(json.dumps(b))
+        old313=self.root/"old313.csv";old313.write_bytes(first)
+        old348=self.root/"old348.csv";old348.write_bytes(second)
+        locator=self.root/"source-root.txt"
+        locator.write_text(str(self.root),encoding="utf-8")
+        forged=raw.replace(b"tail_reason_code,4\\n",b"tail_reason_code,7\\n")
+        (self.directory/"audio-exit-tail-reason-000.csv").write_bytes(forged)
+        argv=["--guest-root-file",str(locator),
+              "--stage313",str(r313),"--stage348",str(r348),
+              "--stage313-original",str(old313),
+              "--stage348-original",str(old348),
+              "--output",str(self.root/"out.json"),
+              "--output-original",str(self.root/"out.csv")]
+        buf=io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            status=main(argv)
+        self.assertEqual(status,2)
+        diagnostic=json.loads(buf.getvalue())
+        self.assertEqual(diagnostic["failed_phase"],"stage351-guest-source-reaudit")
+        self.assertFalse(diagnostic["stage351_reason_code_validated"])
+        self.assertFalse((self.root/"out.csv").exists())
+
+    def test_workflow_quarantine_only_follows_failed_stage351(self):
+        workflow=(Path(__file__).resolve().parents[1]/
+                  ".github"/"workflows"/"emulator-smoke.yml").read_text(
+                      encoding="utf-8")
+        self.assertEqual(workflow.count("id: stage351_audit"),1)
+        self.assertEqual(workflow.count(
+            "if: ${{ failure() && steps.stage351_audit.outcome == 'failure' }}"),1)
+        source=workflow.index("- name: Stage351 verify original")
+        quarantine=workflow.index("- name: Preserve bounded unverified")
+        self.assertLess(source,quarantine)
+        self.assertLess(quarantine,workflow.index(
+            "- name: Capture ten additional A/B transitions"))
 
     def test_each_code_is_source_consistent(self):
         for code in range(len(REASONS)):

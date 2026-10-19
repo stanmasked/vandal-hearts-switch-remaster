@@ -1142,6 +1142,7 @@ jobs:
           echo "Stage314: copied ORIGINAL guest audout last-return CSV byte-for-byte, re-audited against original Stage307/310 exit source and Stage313 source, preserved separate audit hash. No DAC/speaker playback proof or guest-to-host PCM timing claims." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Stage351 verify original post-join tail failure cause against old source receipts
+        id: stage351_audit
         shell: bash
         run: |
           set -euo pipefail
@@ -1181,7 +1182,7 @@ jobs:
           echo "Stage351: original guest exit-tail service cause independently source-audited after join; not proof of DAC/speaker audio." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Preserve bounded unverified guest Stage351 source on strict audit failure
-        if: failure()
+        if: ${{ failure() && steps.stage351_audit.outcome == 'failure' }}
         shell: bash
         run: |
           # Forensic fallback only. This does not turn a failed Stage351 audit

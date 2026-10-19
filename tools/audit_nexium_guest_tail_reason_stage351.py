@@ -216,26 +216,32 @@ def main(argv=None):
     p.add_argument("--output",required=True,type=Path)
     p.add_argument("--output-original",required=True,type=Path)
     a = p.parse_args(argv)
+    phase="destination-preflight"
     try:
         for path in (a.output,a.output_original):
             if path.exists() or path.is_symlink():
                 raise ExitTimelineError("refuse overwrite Stage351 evidence")
+        phase="required-input-files"
         for path in (a.guest_root_file,a.stage313,a.stage348,
                      a.stage313_original,a.stage348_original):
             if not _regular_unlinked(path):
                 raise ExitTimelineError("Stage351 original source dependency unavailable")
+        phase="read-input-receipts"
         root = a.guest_root_file.read_text(encoding="utf-8").strip()
         if not root.startswith("/") or "\n" in root or "\x00" in root:
             raise ExitTimelineError("invalid NeXium guest SD locator")
         report313=json.loads(a.stage313.read_text(encoding="utf-8"))
         report348=json.loads(a.stage348.read_text(encoding="utf-8"))
+        phase="prior-original-source-reaudit"
         prior=audit_existing_original_sources(
             a.stage313_original.read_bytes(),
             a.stage348_original.read_bytes(),
             report313,report348,
         )
+        phase="stage351-guest-source-reaudit"
         doc, raw = audit_guest(Path(root),report313,report348)
         doc.update(prior)
+        phase="preserve-verified-source"
         a.output.parent.mkdir(parents=True,exist_ok=True)
         a.output_original.parent.mkdir(parents=True,exist_ok=True)
         with a.output_original.open("xb") as out:
@@ -256,6 +262,8 @@ def main(argv=None):
         print(json.dumps({
             "result":"ORIGINAL_GUEST_EXIT_TAIL_REASON_NOT_VERIFIED",
             "error_kind":type(exc).__name__,
+            "failed_phase":phase,
+            "stage351_reason_code_validated":False,
             "physical_Nintendo_Switch_audio_tested":False,
         },sort_keys=True))
         return 2
