@@ -206,6 +206,47 @@ class PrivateFullPcBuildTests(unittest.TestCase):
         run.assert_not_called()
         self.assertFalse(any(redirected.iterdir()))
 
+    def test_stale_generic_object_blocks_full_link_before_compiler(self):
+        # A prior native object could have a future timestamp and satisfy
+        # Make even though it belongs to a different source instrumentation
+        # build. Refuse the entire preexisting directory inventory.
+        build = self.exe.parent
+        build.mkdir(parents=True, exist_ok=True)
+        build.chmod(0o700)
+        stale = build / "libgpu.o"
+        stale.write_bytes(b"synthetic stale-object never from retail code")
+        with patch("tools.build_map02_cycle_pc_local.subprocess.run") as run:
+            with self.assertRaisesRegex(
+                    ValueError, "build directory must be empty"):
+                build_full_pc(self.upstream, self.bundle)
+        run.assert_not_called()
+        self.assertEqual(
+            stale.read_bytes(), b"synthetic stale-object never from retail code")
+
+    def test_stale_dependency_subdirectory_and_link_cannot_be_reused(self):
+        build = self.exe.parent
+        build.mkdir(parents=True, exist_ok=True)
+        build.chmod(0o700)
+        existing = build / "leftover"
+        existing.mkdir()
+        with patch("tools.build_map02_cycle_pc_local.subprocess.run") as run:
+            with self.assertRaisesRegex(
+                    ValueError, "build directory must be empty"):
+                build_full_pc(self.upstream, self.bundle)
+        run.assert_not_called()
+        self.assertTrue(existing.is_dir())
+        existing.rmdir()
+        target = self.bundle / "map02_cycle.mk"
+        linked = build / "borrowed-object.o"
+        linked.symlink_to(target)
+        with patch("tools.build_map02_cycle_pc_local.subprocess.run") as run:
+            with self.assertRaisesRegex(
+                    ValueError, "build directory must be empty"):
+                build_full_pc(self.upstream, self.bundle)
+        run.assert_not_called()
+        self.assertTrue(linked.is_symlink())
+        self.assertEqual(target.read_text(), "private overlay\n")
+
     def test_preexisting_font_object_or_symlink_prevents_stale_reuse(self):
         font_object = self.exe.parent / "pc_kanji_font.o"
         font_object.parent.mkdir(parents=True, exist_ok=True)
