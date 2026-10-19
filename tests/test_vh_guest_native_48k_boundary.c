@@ -16,6 +16,13 @@ static unsigned count_nonzero(const int16_t *p,size_t frames) {
     for(size_t i=0;i<frames*2u;i++) nonzero+=(p[i]!=0);
     return nonzero;
 }
+/* Counts from the independent integer tick clock, not PCM contents. */
+static uint32_t expected_frames(unsigned blocks) {
+    if(!blocks) return 0u;
+    const uint64_t input=(uint64_t)blocks*VH_AUDIO_BLOCK_FRAMES;
+    return (uint32_t)(((input-1u)*VH_NATIVE_AUDOUT_RATE)/
+                      VH_AUDIO_SAMPLE_RATE+1u);
+}
 
 int main(void) {
     for(size_t i=0;i<VH_AUDIO_BLOCK_FRAMES;i++) {
@@ -32,17 +39,19 @@ int main(void) {
             const size_t n=vh_audio_resample_process(&converter,
                 constant,VH_AUDIO_BLOCK_FRAMES,output,
                 VH_AUDIO_RESAMPLE_MAX_FRAMES);
+            assert(n==expected_frames(block+1u)-expected_frames(block));
             assert(n>0 && n<=VH_AUDIO_RESAMPLE_MAX_FRAMES);
             assert(vh_audio_output_ramp_apply(&ramp,output,n)==0);
             accumulated+=(unsigned)n;
         }
-        assert(accumulated>35520 && accumulated<35776);
+        assert(accumulated==35665u);
         assert(converter.input_frames==64u*VH_AUDIO_BLOCK_FRAMES);
         assert(ramp.position==VH_AUDIO_OUTPUT_RAMP_FRAMES);
         /* At THIS exact synthetic musical boundary the next output
          * tick interpolates prior 10000 into current zero at 10500/48000. */
         const size_t n=vh_audio_resample_process(&converter,
             silence,VH_AUDIO_BLOCK_FRAMES,output,VH_AUDIO_RESAMPLE_MAX_FRAMES);
+        assert(n==expected_frames(65u)-expected_frames(64u));
         assert(n>0 && n<=VH_AUDIO_RESAMPLE_MAX_FRAMES);
         assert(vh_audio_output_ramp_apply(&ramp,output,n)==0);
         assert(output[0]==7812 && output[1]==-7812);
@@ -50,10 +59,13 @@ int main(void) {
         for(unsigned next=0;next<47;next++) {
             const size_t m=vh_audio_resample_process(&converter,
                 silence,VH_AUDIO_BLOCK_FRAMES,output,VH_AUDIO_RESAMPLE_MAX_FRAMES);
+            assert(m==expected_frames(66u+next)-expected_frames(65u+next));
             assert(m>0);
             assert(vh_audio_output_ramp_apply(&ramp,output,m)==0);
             assert(count_nonzero(output,m)==0u);
         }
+        assert(converter.input_frames==112u*VH_AUDIO_BLOCK_FRAMES);
+        assert(expected_frames(112u)-expected_frames(64u)==26750u);
     }
     /* Guard against overfitting to the 64-block phase. The production
      * stateful converter has different source fractions across cue
@@ -144,6 +156,7 @@ int main(void) {
     }
     puts("PASS: small-amplitude cue transient rounds to 0 signed PCM sample values");
     puts("PASS: 17 native 48k phase-specific output frame counts and exact stereo transient amplitudes");
+    puts("PASS: all 112 native 48k pages obey the independent integer clock, repeated 2/2");
     puts("PASS: exact 64x512 cue-boundary has 2 transient signed samples, no later PCM; replay 2/2");
     return 0;
 }
