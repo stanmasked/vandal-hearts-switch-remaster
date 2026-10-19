@@ -116,6 +116,35 @@ class SingleElfBuildOverlayTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "NEW directory"):
             mod.prepare(self.upstream, self.output)
 
+    def test_partial_bundle_write_failure_preserves_other_private_files(self):
+        # Another local process can create a file inside the just-created
+        # output directory while the overlay writer is running. A recursive
+        # rollback would wrongly delete that independent file.
+        original_open = Path.open
+        sentinel_name = "external-owner-file"
+
+        def simulate_failed_write(path, mode="r", *args, **kwargs):
+            if Path(path) == self.output / "map02_cycle.mk" and mode == "xb":
+                sentinel = self.output / sentinel_name
+                sentinel.write_bytes(b"not created by MAP02 builder")
+                sentinel.chmod(0o600)
+                raise OSError("synthetic interrupted private bundle write")
+            return original_open(path, mode, *args, **kwargs)
+
+        with patch.object(Path, "open", autospec=True,
+                          side_effect=simulate_failed_write):
+            with self.assertRaisesRegex(
+                    OSError, "synthetic interrupted private bundle write"):
+                mod.prepare(self.upstream, self.output)
+
+        self.assertEqual(
+            (self.output / sentinel_name).read_bytes(),
+            b"not created by MAP02 builder")
+        self.assertEqual(self.output.stat().st_mode & 0o777, 0o700)
+        # An incomplete bundle must not be retried over the same location.
+        with self.assertRaisesRegex(ValueError, "NEW directory"):
+            mod.prepare(self.upstream, self.output)
+
     def test_source_or_makefile_drift_rejected_without_output(self):
         self.source.write_text("void altered(void) {}\n")
         with self.assertRaisesRegex(ValueError, "original pinned source changed"):
