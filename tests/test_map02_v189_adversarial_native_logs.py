@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -69,6 +70,29 @@ class V189NativeLogReplay(unittest.TestCase):
             self.assertEqual(audit_replay(root), (10, 21, 159))
             for name, content in originals.items():
                 self.assertEqual((root / name).read_bytes(), content)
+
+            # Simulate a future bad recipe naming the same mutation twice:
+            # the verifier must reject identical transcript *content* even
+            # when the recipe label is different.
+            original_generator = replay_mutations
+
+            def forged_duplicate_body(raw, mode):
+                recipes = list(original_generator(raw, mode))
+                for index, (label, mutated) in enumerate(recipes):
+                    if index == 1:
+                        yield ("other-label-same-body", recipes[0][1])
+                    else:
+                        yield (label, mutated)
+
+            with patch(
+                "tools.check_map02_v189_adversarial_native_logs.replay_mutations",
+                side_effect=forged_duplicate_body,
+            ):
+                with self.assertRaisesRegex(ValueError, "overlapping"):
+                    audit_replay(root)
+            for name, content in originals.items():
+                self.assertEqual((root / name).read_bytes(), content)
+
             (root / "v186-9.log").unlink()
             with self.assertRaises(ValueError):
                 audit_replay(root)
