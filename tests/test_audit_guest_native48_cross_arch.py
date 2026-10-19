@@ -20,7 +20,7 @@ class Native48ParityTests(unittest.TestCase):
         self.clang=root/"clang.txt"
         self.guests=[root/"guest0.json",root/"guest1.json"]
         self.line=("native48 pre=1111222233334444 wet=9950037014a7e866 "
-                   "reset=f5edab31b6802325 prefix_frames=35657 tail_frames=26750 "
+                   "reset=f5edab31b6802325 prefix_frames=35665 tail_frames=26750 "
                    "different_pages=48 wet_nonzero=49000 reset_first=2 reset_later=0")
         for file in (self.gcc,self.clang):
             file.write_text("PASS: guest synthetic DSP\n"+self.line+"\n")
@@ -31,7 +31,7 @@ class Native48ParityTests(unittest.TestCase):
                 "pre_switch_native_fnv1a64":"1111222233334444",
                 "wet_native_fnv1a64":"9950037014a7e866",
                 "reset_native_fnv1a64":"f5edab31b6802325",
-                "pre_switch_native_frames":35657,
+                "pre_switch_native_frames":35665,
                 "post_switch_native_frames":26750,
                 "different_post_switch_native_pages":48,
                 "retained_tail_nonzero_sample_values":49000,
