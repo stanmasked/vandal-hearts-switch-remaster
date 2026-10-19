@@ -180,8 +180,7 @@ class PrivateOneShotCycleTests(unittest.TestCase):
             "ready_for_controlled_local_launch": False}
         with self.assertRaisesRegex(ValueError, "preflight was not confirmed"):
             self.execute(dry_run=True, allow_local_completion=False)
-        self.mocks["verify_private_cycle_readiness"].return_value = {
-            "ready_for_controlled_local_launch": True}
+        self.mocks["verify_private_cycle_readiness"].return_value = self.ready_report
         extra = self.folders[-1] / "unexpected"
         extra.write_bytes(b"synthetic")
         with self.assertRaisesRegex(ValueError, "must be empty"):
