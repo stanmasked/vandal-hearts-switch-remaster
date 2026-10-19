@@ -46,8 +46,12 @@ SYMBOLS = (
 )
 
 def _run(exe, path):
-    command = (["readelf", "-h", str(path)] if exe == "readelf"
-               else ["nm", "-g", "-S", "--defined-only", "--", str(path)])
+    if exe == "readelf":
+        command = ["readelf", "-h", "--", str(path)]
+    elif exe == "segments":
+        command = ["readelf", "-lW", "--", str(path)]
+    else:
+        command = ["nm", "-g", "-S", "--defined-only", "--", str(path)]
     try:
         result = subprocess.run(
             command, capture_output=True, text=True, timeout=30, check=False)
@@ -58,6 +62,36 @@ def _run(exe, path):
     if result.returncode:
         raise ValueError("MAP02 ELF introspection failed: " + exe)
     return result.stdout
+
+def _require_entry_in_executable_load(segments, entry, file_size):
+    """Validate kernel-loadable entry bytes without executing the game.
+
+    Inspect readelf -lW LOAD rows. A named function in nm is insufficient:
+    the ELF entry address must reside in initialized, executable PT_LOAD
+    file bytes, not in BSS, metadata or an unrelated virtual range.
+    """
+    loads = 0
+    entry_mapped = False
+    for line in segments.splitlines():
+        parts = line.split()
+        if not parts or parts[0] != "LOAD":
+            continue
+        if len(parts) < 8:
+            raise ValueError("MAP02 PC ELF has malformed load program headers")
+        try:
+            offset, vaddr, file_bytes, mem_bytes = (
+                int(parts[i], 16) for i in (1, 2, 4, 5))
+        except ValueError:
+            raise ValueError("MAP02 PC ELF has malformed load program headers") from None
+        if (file_bytes > mem_bytes or offset + file_bytes > file_size or
+                vaddr + mem_bytes > 1 << 64 or file_bytes == 0):
+            raise ValueError("MAP02 PC ELF has invalid executable load extent")
+        loads += 1
+        if "E" in parts[6:-1] and vaddr <= entry < vaddr + file_bytes:
+            entry_mapped = True
+    if not loads or not entry_mapped:
+        raise ValueError("MAP02 PC ELF entry is not in executable loaded file bytes")
+
 
 def audit_cycle_elf(path):
     binary = Path(path).absolute()
@@ -77,6 +111,8 @@ def audit_cycle_elf(path):
         raise ValueError("MAP02 cycle ELF has no executable entry point")
     if not re.search(r"^\s*Machine:\s+.*(X86-64|80386|AArch64)", header, re.M):
         raise ValueError("unsupported MAP02 PC ELF architecture")
+    _require_entry_in_executable_load(
+        _run("segments", binary), int(entry.group(1), 16), st.st_size)
     symbols = set()
     initialized_data = {}
     for line in _run("nm", binary).splitlines():
