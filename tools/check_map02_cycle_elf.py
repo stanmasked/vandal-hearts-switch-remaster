@@ -93,12 +93,12 @@ def _require_entry_in_executable_load(segments, entry, file_size):
         raise ValueError("MAP02 PC ELF entry is not in executable loaded file bytes")
 
 
-def _require_available_elf_interpreter(segments, file_size):
-    """Check the named ELF PT_INTERP without invoking its loader or the game.
+def _require_available_elf_interpreter(segments, file_size, binary):
+    """Read the actual PT_INTERP bytes and validate the host loader ABI.
 
-    Static binaries have no PT_INTERP. Dynamic binaries must name exactly
-    one existing executable host interpreter. This is a local availability
-    check only: it neither loads dependencies nor authenticates the loader.
+    This check never invokes the interpreter, ldd, or the original game. It
+    establishes only current file identity and compatible ELF32/64 headers;
+    the dynamic linker may still be unable to find shared dependencies.
     """
     interp_rows = [line.split() for line in segments.splitlines()
                    if line.split() and line.split()[0] == "INTERP"]
@@ -126,13 +126,43 @@ def _require_available_elf_interpreter(segments, file_size):
     if (not interpreter.startswith("/") or "\x00" in interpreter or
             interpreter != interpreter.strip()):
         raise ValueError("MAP02 PC ELF interpreter path is invalid")
+
+    # Do not trust readelf's human-readable path alone: bind it to exactly
+    # the NUL-terminated PT_INTERP bytes of the selected binary inode.
     try:
-        info = os.stat(interpreter)
+        fd = os.open(binary, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            source_stat = os.fstat(fd)
+            source_header = os.pread(fd, 20, 0)
+            raw = os.pread(fd, file_bytes, offset)
+            if source_stat.st_size != file_size or len(raw) != file_bytes:
+                raise ValueError("MAP02 PC ELF interpreter bytes are incomplete")
+        finally:
+            os.close(fd)
+    except OSError:
+        raise ValueError("MAP02 PC ELF interpreter bytes unavailable") from None
+    if (b"\x00" not in raw or
+            raw.split(b"\x00", 1)[0] != interpreter.encode("utf-8") or
+            any(raw.split(b"\x00", 1)[1])):
+        raise ValueError("MAP02 PC ELF interpreter bytes differ from metadata")
+
+    # A non-ELF or foreign-architecture executable is not a compatible
+    # system dynamic linker, despite having an executable filesystem mode.
+    try:
+        with open(interpreter, "rb") as stream:
+            info = os.fstat(stream.fileno())
+            loader_header = os.pread(stream.fileno(), 20, 0)
+            if (not stat.S_ISREG(info.st_mode) or
+                    not os.access(interpreter, os.X_OK)):
+                raise ValueError("MAP02 PC ELF system interpreter is unavailable")
     except OSError:
         raise ValueError("MAP02 PC ELF system interpreter is unavailable") from None
-    if not stat.S_ISREG(info.st_mode) or not os.access(interpreter, os.X_OK):
-        raise ValueError("MAP02 PC ELF system interpreter is unavailable")
-
+    if (len(source_header) != 20 or len(loader_header) != 20 or
+            source_header[:4] != b"\x7fELF" or
+            loader_header[:4] != b"\x7fELF" or
+            source_header[4:6] != loader_header[4:6] or
+            source_header[18:20] != loader_header[18:20]):
+        raise ValueError("MAP02 PC ELF system interpreter ABI mismatch")
 
 
 def audit_cycle_elf(path):
@@ -156,7 +186,7 @@ def audit_cycle_elf(path):
     segments = _run("segments", binary)
     _require_entry_in_executable_load(
         segments, int(entry.group(1), 16), st.st_size)
-    _require_available_elf_interpreter(segments, st.st_size)
+    _require_available_elf_interpreter(segments, st.st_size, binary)
     symbols = set()
     initialized_data = {}
     for line in _run("nm", binary).splitlines():
