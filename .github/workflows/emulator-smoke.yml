@@ -1044,6 +1044,8 @@ jobs:
             --guest-root-file runtime-evidence/guest-sd-root.txt \
             --stage313 runtime-evidence/guest-last-audout-release-stage313.json \
             --stage348 runtime-evidence/guest-lease-reconciliation-stage348.json \
+            --stage313-original runtime-evidence/audio-exit-output-000.csv \
+            --stage348-original runtime-evidence/audio-lease-reconciliation-000.csv \
             --output runtime-evidence/guest-exit-tail-reason-stage351.json \
             --output-original runtime-evidence/audio-exit-tail-reason-000.csv
           python3 - <<'PY'
@@ -1059,6 +1061,7 @@ jobs:
               or doc["original_guest_tail_reason_bytes_preserved"] is not True
               or doc["bound_to_original_stage313_tail_observation"] is not True
               or doc["bound_to_original_stage348_lease_observation"] is not True
+              or doc["prior_stage313_and_stage348_original_bytes_reaudited"] is not True
               or doc["one_to_one_causal_attribution_proven"] is not False
               or doc["physical_Nintendo_Switch_audio_tested"] is not False
               or not original.is_file() or original.is_symlink()
