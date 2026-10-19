@@ -231,6 +231,37 @@ class Stage351Tests(unittest.TestCase):
         with self.assertRaises(ExitTimelineError):
             audit_guest(link,a,b)
 
+    def test_reject_indirect_guest_root_symlink_escape(self):
+        raw,a,b=self.fixture()
+        (self.directory/"audio-exit-tail-reason-000.csv").write_bytes(raw)
+        linked=self.root/"linked-parent"
+        linked.symlink_to(self.root,target_is_directory=True)
+        with self.assertRaises(ExitTimelineError):
+            audit_guest(linked/SUBDIR.parent,a,b)
+
+    def test_reject_symlinked_ancestor_of_original_receipt(self):
+        raw,a,b=self.fixture()
+        (self.directory/"audio-exit-tail-reason-000.csv").write_bytes(raw)
+        first,second=self.original_sources(a,b)
+        src313=self.root/"source313.csv";src313.write_bytes(first)
+        src348=self.root/"source348.csv";src348.write_bytes(second)
+        receipt313=self.root/"313.json";receipt313.write_text(json.dumps(a))
+        receipt348=self.root/"348.json";receipt348.write_text(json.dumps(b))
+        locator=self.root/"guest.txt";locator.write_text(str(self.root))
+        linked=self.root/"linked-root"
+        linked.symlink_to(self.root,target_is_directory=True)
+        argv=[
+            "--guest-root-file",str(locator),
+            "--stage313",str(linked/"313.json"),
+            "--stage348",str(receipt348),
+            "--stage313-original",str(src313),
+            "--stage348-original",str(src348),
+            "--output",str(self.root/"new.json"),
+            "--output-original",str(self.root/"new.csv"),
+        ]
+        self.assertEqual(main(argv),2)
+        self.assertFalse((self.root/"new.csv").exists())
+
     def test_cli_preserves_original_bytes_no_overwrite(self):
         raw,a,b=self.fixture()
         (self.directory/"audio-exit-tail-reason-000.csv").write_bytes(raw)
