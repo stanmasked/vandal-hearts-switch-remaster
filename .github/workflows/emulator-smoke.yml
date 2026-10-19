@@ -1911,6 +1911,33 @@ jobs:
           PY
           echo "Stage302: independently re-count original PCM zero runs by recording-start, interior, EOF and whole-recording censoring; EOF is NOT evidence of guest shutdown or audible dropout." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Stage339 show relative original host recorder stop clock diagnostics before immutable Stage303
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,sys
+          from pathlib import Path
+          sys.path.insert(0,str(Path("tools").resolve()))
+          from audit_nexium_pcm_recorder_stop import read_stop_events
+          from audit_nexium_stage338_failed_stage303_diagnostic import inspect_invalid_original_stop_csv
+          raw=Path("runtime-evidence/scene-recorder-stop.csv").read_bytes()
+          try:
+              rows=read_stop_events(raw)
+          except (ValueError,TypeError,KeyError):
+              reason=inspect_invalid_original_stop_csv(raw)
+              print("Stage339 original host recorder stop noncanonical:",reason)
+              # A read-only diagnosis cannot rescue invalid original source.
+              # The following strict Stage303 step is UNCHANGED and still fails.
+          else:
+              print("Stage339 original host recorder stop source canonical.",
+                    "Host recorder stop wall delta (ms):",
+                    rows[1]["host_epoch_ms"]-rows[0]["host_epoch_ms"],
+                    "Buffered recorder byte delta:",
+                    rows[1]["pcm_bytes"]-rows[0]["pcm_bytes"])
+          PY
+          echo "Stage339: recorded relative original host recorder stop wall and PCM byte deltas ahead of strict Stage303. No waiver of chronological evidence, no absolute host/guest epochs, no DAC or physical audio claim." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Stage303 original host recorder SIGINT snapshots versus exact terminal PCM
         shell: bash
         run: |

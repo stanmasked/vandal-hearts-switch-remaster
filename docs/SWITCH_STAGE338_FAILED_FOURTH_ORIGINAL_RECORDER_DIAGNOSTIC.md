@@ -13,3 +13,13 @@ Once the exact gate is identified, fix the data capture lifecycle only if the so
 [Independent diagnostic #39178525841](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39178525841) completed successfully with ten original synthetic tests and re-read the original failed fourth-run artifact. Its first failing strict source stage was **`stage303_stop_csv_invalid`**: strict Stage299–302 checks reproduced the saved originals. The fourth capture remains **rejected**.
 
 The refined read-only diagnostic distinguishes a wrong event schema/order, noncanonical numeric input, missing/failed SIGINT-success flag, host wall-clock reversal, and PCM byte-count regression within the original `scene-recorder-stop.csv`. It publishes only event flags and *relative* wall/PCM deltas, never absolute wall times or PCM content. This refinement does not alter or weaken `tools/audit_nexium_pcm_recorder_stop.py`; its successful diagnostic CI will not make the original failed capture valid.
+
+## Precise original recorder-stop failure confirmed
+
+The refined [Stage338 diagnostic #39178879129](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39178879129) **passed 15/15 tests**, recovered the original failed fourth-run `scene-recorder-stop.csv`, and independently pinpointed `stop_csv_host_wall_clock_regression`:
+
+- Original SIGINT source event flags **1 / 1**: both signal operations were reported successful.
+- Original post-wait minus pre-SIGINT PCM size **0 bytes**: no source size regression in this stopped recorder snapshot pair.
+- Original wall-clock delta from `before_sigint` to `after_wait`: **−87 ms**: the system wall clock regressed and violates the immutable Stage303 monotonic host-time requirement.
+
+**Action:** The fourth archive stays rejected. A separate read-only pre-Stage303 diagnostic for subsequent fresh NRO captures prints only relative wall and PCM deltas so this source failure is visible immediately. The existing Stage303 original source audit remains unchanged; a new actual NeXium NRO run is needed to obtain valid independent fourth evidence. Monotonic clock telemetry elsewhere cannot override a backwards legacy wall source when strict original chronology requires it.

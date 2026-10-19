@@ -11,3 +11,9 @@ Its compact `runtime-evidence/source-capture-to-build-stage336.json` is included
 Eleven negative/positive tests cover authentic original captures, guest software ordering changing between runs, tampered guest sources, forged Stage334 source receipts, incorrect run/attempt/commit, wrong NRO/monitor source SHA, and prohibited physical audio claims. These run under the existing Host SPU matrix. Once the new workflow passes, its report can be compared with the prior third capture while clearly accounting for potentially changed NRO binaries.
 
 Do not claim Stage336 success or fourth original timings until the new independent NRO runtime job finishes.
+
+## Outcome of the initial fourth capture, and strict retry
+
+[NeXium #39177437951](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39177437951) failed the **unchanged Stage303** original PCM recorder SIGINT chronology audit. Its original stop CSV has **−87 ms host wall delta** between two signaled-success events; no recorded PCM byte regression. This archive is NOT an accepted fourth capture, and Stage336's final source-to-NRO binding was never reached. The first three accepted capture records remain separate and unchanged.
+
+The updated emulator workflow adds only a read-only **Stage339 relative stop chronology diagnostic** before Stage303 and triggers a distinct fresh actual NeXium execution. Its original Stage303–305 acceptance requirements and Stage334/336 steps are unchanged. A successful new run may be counted as fourth verified source only after the entire strict chain and source/NRO binding completes. This is not a physical hardware audio or soundtrack correctness claim.
