@@ -100,7 +100,11 @@ class PixelToOriginalPrimitiveTests(unittest.TestCase):
                     "original_gameplay_authenticated","raw_game_data_emitted"):
             self.assertFalse(result[key])
         public=json.dumps(result)
-        for private in ('"x"','"y"',"front","before","tpage","clut","0x801f"):
+        # The public bin keys may legitimately contain descriptive words
+        # such as front_equal_after; never allow the raw private
+        # before/front pixel *fields* or coordinate/texture words.
+        for private in ('"x"','"y"','"front"','"before"',
+                        '"tpage"','"clut"',"0x801f"):
             self.assertNotIn(private,public)
 
     def test_same_color_call_is_credited_but_not_vram_delta(self):
