@@ -27,9 +27,13 @@ def build_full_pc(upstream, bundle, *, timeout=1200, make="make", report_dir=Non
     if not 30 <= timeout <= 7200:
         raise ValueError("full PC link timeout must be between 30 and 7200 seconds")
     upstream, bundle = Path(upstream).absolute(), Path(bundle).absolute()
-    planned = audit(upstream, bundle, make=make)
+    # Validate the original US EXE, extracted MIPS ELF, asset includes and
+    # KROM/BIOS BEFORE invoking GNU Make even in -nB dry-run mode. GNU Make
+    # may execute certain recursive/+ recipes despite -n, so an unchecked
+    # retail input must never reach that subprocess.
     from tools.check_map02_private_pc_inputs import verify_private_pc_inputs
     original_inputs = verify_private_pc_inputs(upstream, krom_source=krom_source)
+    planned = audit(upstream, bundle, make=make)
     pc = upstream / "platform/pc"
     build_dir = pc / BUILD
     if build_dir.is_symlink():
