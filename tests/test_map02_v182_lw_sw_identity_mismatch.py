@@ -136,12 +136,14 @@ int main(void) {{
            vh181_arm(kind,0u)!=0)return 5;
         r.code=words[kind];
         r.pc={wait_pc+8}u;touch(&r,kind,0u);
-        r.pc={wait_pc+4}u;touch(&r,kind,1u);
         if(vh181_count()!=0u || vh181_faults()!=0u)return 6;
+        r.pc={wait_pc+4}u;touch(&r,kind,1u);
+        /* Wrong RAM address must be reported as an explicit bad event. */
+        if(vh181_count()!=0u || vh181_faults()!=1u)return 7;
         touch(&r,kind,0u);
-        if(vh181_count()!=1u || vh181_faults()!=0u ||
+        if(vh181_count()!=1u || vh181_faults()!=1u ||
            vh176_narrow_total()!=0u ||
-           vh173_wait_mmio_faults()!=0u)return 7;
+           vh173_wait_mmio_faults()!=0u)return 8;
         if(vh181_disarm(kind,0u)!=0 ||
            vh176_disarm_narrow(0u)!=0 ||
            vh175_disarm_read_ports(0u)!=0 ||
