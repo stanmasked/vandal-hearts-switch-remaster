@@ -16,6 +16,8 @@ on:
       - "tests/test_decode_guest_sync_studio_c.py"
       - "tools/decode_guest_sync_studio_c.py"
       - "docs/MAP02_GUEST_SYNCHRONIZED_STUDIO_C.md"
+      - "tools/audit_guest_sync_cross_arch.py"
+      - "tests/test_audit_guest_sync_cross_arch.py"
       - ".github/workflows/map02-guest-sync-studio-c.yml"
       - "source/vh_map02_pcm_metrics.c"
       - "source/vh_map02_pcm_metrics.h"
@@ -52,10 +54,13 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_decode_map02_guest_pcm_metrics.py' -v
       - name: Verify the same bounded guest synthetic replay packet rejects forged claims
         run: python3 -m unittest discover -s tests -p 'test_decode_guest_sync_studio_c.py' -v
+      - name: Fail-closed GCC / Clang / guest parity auditor fixtures
+        run: python3 -m unittest discover -s tests -p 'test_audit_guest_sync_cross_arch.py' -v
       - name: Re-run guest exact-clock DSP source under GCC and Clang sanitizer
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p build/host-sync
           for cc in gcc clang; do
             "$cc" -std=c11 -O1 -g -Wall -Wextra -Werror -Isource \
               -fsanitize=address,undefined -fno-sanitize-recover=all \
@@ -69,7 +74,7 @@ jobs:
               source/vh_audio_scene_trace.c -lm \
               -o "/tmp/test-map02-guest-sync-$cc"
             ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
-              "/tmp/test-map02-guest-sync-$cc"
+              "/tmp/test-map02-guest-sync-$cc" | tee "build/host-sync/$cc.txt"
           done
       - name: Test C11 PCM witness event kinds and optical byte serialization
         shell: bash
@@ -92,6 +97,13 @@ jobs:
             ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
               "/tmp/map02-pcm-metrics-$cc"
           done
+
+      - name: Archive original GCC/Clang exact-clock fingerprints
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-exact-clock-gcc-clang-reference
+          path: build/host-sync/
+          if-no-files-found: error
 
   paired-trace-nro:
     name: Build distinct 0/1 NRO binaries with diagnostic post-join display
@@ -156,6 +168,10 @@ jobs:
         with:
           name: map02-wet-tail-guest-optical-trace-nros
           path: nros
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-exact-clock-gcc-clang-reference
+          path: host-sync
       - name: Validate NRO byte identity and same-run origin
         shell: bash
         run: |
@@ -322,6 +338,13 @@ jobs:
           (root/"wet-tail-quantitative-contrast.json").write_text(
               json.dumps(out,sort_keys=True,indent=2)+"\n")
           PY
+          python3 tools/audit_guest_sync_cross_arch.py \
+            --gcc host-sync/gcc.txt --clang host-sync/clang.txt \
+            --guest0 runtime-evidence/wet-tail-0-synced.json \
+            --guest1 runtime-evidence/wet-tail-1-synced.json \
+            --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" \
+            --sha "$GITHUB_SHA" \
+            --out runtime-evidence/guest-host-cross-architecture-parity.json
       - name: Always archive guest receipts, PNG screenshots and logs
         if: always()
         uses: actions/upload-artifact@v4
