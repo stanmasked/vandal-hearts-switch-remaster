@@ -619,13 +619,13 @@ int main(int argc, char **argv) {
          * EXISTING pre-submit audout query history and tail timestamps.
          * No queue query is made at shutdown. */
         int probe_fd=-1;
-        char probe_path[256];
+        char exit_probe_path[256];
         for(unsigned slot=0;slot<32u;slot++) {
-            const int n=snprintf(probe_path,sizeof probe_path,
+            const int n=snprintf(exit_probe_path,sizeof exit_probe_path,
                 VH_SCENE_TRACE_SD_DIRECTORY
                 "/audio-exit-probe-context-%03u.csv",slot);
-            if(n<=0 || (size_t)n>=sizeof probe_path) break;
-            probe_fd=open(probe_path,O_WRONLY|O_CREAT|O_EXCL,0600);
+            if(n<=0 || (size_t)n>=sizeof exit_probe_path) break;
+            probe_fd=open(exit_probe_path,O_WRONLY|O_CREAT|O_EXCL,0600);
             if(probe_fd>=0) break;
             if(errno!=EEXIST) break;
         }
@@ -633,14 +633,14 @@ int main(int argc, char **argv) {
             FILE *probe_stream=fdopen(probe_fd,"w");
             if(!probe_stream) {
                 (void)close(probe_fd);
-                (void)unlink(probe_path);
+                (void)unlink(exit_probe_path);
             } else {
                 const int rows=vh_switch_game_audio_exit_probe_context_dump(
                     probe_stream);
                 const int flushed=fflush(probe_stream);
                 const int closed=fclose(probe_stream);
                 if(rows!=13 || flushed!=0 || closed!=0)
-                    (void)unlink(probe_path);
+                    (void)unlink(exit_probe_path);
             }
         }
         char scene_path[VH_SCENE_TRACE_EXPORT_PATH_CAP];
