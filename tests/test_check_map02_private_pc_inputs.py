@@ -49,8 +49,10 @@ class PrivateOriginalRetailBuildInputsTests(unittest.TestCase):
             executable[j] = (j * 31 + 13) % 256
         self.exe.write_bytes(executable)
         elf = bytearray(256 + sum(length for _, _, length in ANCHORS))
-        elf[:6] = b"\x7fELF\x01\x01"
+        elf[:7] = b"\x7fELF\x01\x01\x01"
         struct.pack_into("<H", elf, 18, 8)   # ELF32 MIPS
+        struct.pack_into("<I", elf, 20, 1)   # current ELF header version
+        struct.pack_into("<H", elf, 40, 52)  # ELF32 file header size
         struct.pack_into("<I", elf, 32, 64)  # section headers
         struct.pack_into("<HH", elf, 46, 40, len(ANCHORS) + 1)
         offset = 256
@@ -290,6 +292,43 @@ for name, offset, size in [
             compare_loaded_sections(self.exe, self.elf)
         with self.assertRaisesRegex(ValueError, "aliases ELF metadata"):
             verify_private_pc_inputs(self.root)
+
+    def test_corrupt_elf32_header_version_or_size_blocks_full_input_preflight(self):
+        source = self.elf.read_bytes()
+        for description, offset, width, changed in (
+            ("e_ident version", 6, 1, 0),
+            ("e_version", 20, 4, 2),
+            ("e_ehsize", 40, 2, 51),
+        ):
+            with self.subTest(description=description):
+                forged = bytearray(source)
+                forged[offset:offset + width] = changed.to_bytes(width, "little")
+                self.elf.write_bytes(forged)
+                self.assertTrue(compare_data_ranges(self.exe, self.elf)[
+                    "original_exe_and_mips_elf_data_anchors_match"])
+                with self.assertRaisesRegex(
+                    ValueError, "invalid header version or size"
+                ):
+                    compare_loaded_sections(self.exe, self.elf)
+                with self.assertRaisesRegex(
+                    ValueError, "invalid header version or size"
+                ):
+                    verify_private_pc_inputs(self.root)
+        self.elf.write_bytes(source)
+
+    def test_overlapping_elf_program_and_section_tables_rejected(self):
+        source = self.elf.read_bytes()
+        forged = bytearray(source)
+        # Section header table occupies [64, 224). A 32-byte program
+        # header table beginning at 208 overlaps its final 16 bytes.
+        struct.pack_into("<I", forged, 28, 208)
+        struct.pack_into("<HH", forged, 42, 32, 1)
+        self.elf.write_bytes(forged)
+        with self.assertRaisesRegex(ValueError, "header tables overlap"):
+            compare_loaded_sections(self.exe, self.elf)
+        self.elf.write_bytes(source)
+        self.assertTrue(compare_loaded_sections(self.exe, self.elf)[
+            "original_exe_and_mips_elf_loaded_sections_match"])
 
     def test_malformed_elf_program_header_table_fails_closed(self):
         original = self.elf.read_bytes()
