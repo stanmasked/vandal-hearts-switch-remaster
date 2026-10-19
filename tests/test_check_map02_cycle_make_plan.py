@@ -201,6 +201,20 @@ class CycleMakePlanTests(unittest.TestCase):
                 self.assertIn("command verification failed", output.getvalue())
                 self.assertNotIn(private_path, output.getvalue())
 
+    def test_make_plan_cli_redacts_private_paths_from_value_error(self):
+        private_path = str(self.upstream / "SLUS_004.47")
+        args = ["make-plan", str(self.upstream), str(self.output)]
+        output = io.StringIO()
+        with (patch("sys.argv", args),
+              patch.object(check, "audit",
+                           side_effect=ValueError("Make input " + private_path)),
+              redirect_stderr(output)):
+            with self.assertRaises(SystemExit) as caught:
+                check.main()
+        self.assertEqual(caught.exception.code, 2)
+        self.assertIn("Make plan or source verification failed", output.getvalue())
+        self.assertNotIn(private_path, output.getvalue())
+
     def test_missing_macro_and_hd_codec_libraries_rejected(self):
         cmd = valid_dry_run(self.output)
         with self.assertRaisesRegex(ValueError, "diagnostics flag"):
