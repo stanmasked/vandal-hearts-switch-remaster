@@ -1,0 +1,79 @@
+name: Stage359 original NeXium same-source 12ms timeout versus return comparison
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage359-same-source-outcomes.yml'
+      - 'tools/audit_nexium_stage359_same_source_tail_outcomes.py'
+      - 'tests/test_audit_nexium_stage359_same_source_tail_outcomes.py'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  original-pair:
+    name: Re-audit two authentic guest 4-CSV/5-receipt source families
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run independent synthetic mutation and source verification tests
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_nexium_stage359_same_source_tail_outcomes.py' -v
+          python3 -m py_compile tools/audit_nexium_stage359_same_source_tail_outcomes.py
+      - name: Confirm BOTH ORIGINAL NRO commits used identical audio worker source blob
+        run: |
+          set -euo pipefail
+          failed=$(git rev-parse 3ecf5933d913b449148edd510f21e7bde7af4e90:source/vh_switch_game_audio.c)
+          success=$(git rev-parse 95b40a11d4dd98bbbe8c0f73e11486d7dd57ef69:source/vh_switch_game_audio.c)
+          test "$failed" = 12c02352ac8b34e6357e68cac31e20e9a4630520
+          test "$success" = "$failed"
+          git show 3ecf5933d913b449148edd510f21e7bde7af4e90:source/vh_switch_game_audio.c \
+            | grep -F '        &released,&released_count,UINT64_C(12000000));'
+          printf '%s\n' "$failed" > stage359-worker-failed-blob.txt
+          printf '%s\n' "$success" > stage359-worker-success-blob.txt
+      - name: Download ORIGINAL previously completed NRO guest evidence from both runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 39325440778 --repo stanmasked/vandal-hearts-switch-remaster \
+            --name nexium-runtime-evidence --dir stage359-original-timeout
+          gh run download 39326719578 --repo stanmasked/vandal-hearts-switch-remaster \
+            --name nexium-runtime-evidence --dir stage359-original-return
+      - name: Independently verify original source bytes, numeric wait Result, and noncausal comparison
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_stage359_same_source_tail_outcomes.py \
+            --failure-root stage359-original-timeout \
+            --success-root stage359-original-return \
+            --first-worker-blob "$(cat stage359-worker-failed-blob.txt)" \
+            --second-worker-blob "$(cat stage359-worker-success-blob.txt)" \
+            --output stage359-original-same-worker-comparison.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("stage359-original-same-worker-comparison.json").read_text())
+          if (r["result"]!="TWO_ORIGINAL_NEIXUM_TAIL_RESULTS_ON_IDENTICAL_12MS_WORKER_REAUDITED"
+              or r["original_failed"]["raw_result"]!=59905
+              or r["original_succeeded"]["raw_result"]!=0
+              or r["both_original_tail_wait_bound_ns"]!=12000000
+              or r["both_original_audio_worker_git_blob"]!="12c02352ac8b34e6357e68cac31e20e9a4630520"
+              or r["failed_tail_actual_return_timestamp_observed"] is not False
+              or r["causal_scheduler_explanation_proven"] is not False
+              or r["matched_controlled_experiment_completed"] is not False
+              or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("stage359 original sources did not support claim")
+          print("Stage359: identical worker source and timeout, different original software exit results")
+          print("Stage359: queue state/scheduling NOT controlled or causally proven")
+          PY
+          echo "Stage359 independently re-audited two real guests, identical 12ms wait source, 0xEA01 timeout vs 0 success. No matched queue or audible hardware claims." >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish compact verified result only, never original guest PCM/music
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage359-two-original-identical-worker-exit-outcomes
+          path: stage359-original-same-worker-comparison.json
+          if-no-files-found: error
