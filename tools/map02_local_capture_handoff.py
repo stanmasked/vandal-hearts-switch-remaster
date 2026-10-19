@@ -377,8 +377,12 @@ def main():
                 a.native_windows, a.scoped_capture,
                 a.pc_binary, a.owned_game_image,
                 upstream=a.upstream_checkout, compiler=a.compiler)
-    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
-        p.error(str(exc))
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        # Exceptions from private source, executable, image and capture paths
+        # may expose caller-owned locations; preserve only a fixed message.
+        # The underlying Python API still raises the original exception for
+        # local debugging without printing sensitive bytes to CI/terminal.
+        p.error("private MAP02 capture handoff preparation or verification failed")
     print(json.dumps(result, sort_keys=True, indent=2))
 
 
