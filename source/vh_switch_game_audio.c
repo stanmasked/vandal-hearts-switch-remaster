@@ -15,6 +15,7 @@
 #include "vh_audio_worker_stop_gate.h"
 #include "vh_audio_last_playbuffer_call.h"
 #include "vh_audio_playbuffer_history.h"
+#include "vh_audio_exit_tail_reason_stage351.h"
 
 #include <stdio.h>
 
@@ -70,6 +71,7 @@ static VhAudioExitOutputWitness exit_output_witness; /* audio owner only */
 static VhAudioExitWorkerStopWitness worker_stop_witness;
 static VhAudioLastPlayBufferCall last_playbuffer_call; /* same owner, existing clocks */
 static VhPlayBufferHistory last_playbuffer_history; /* last 16 real calls */
+static VhAudioExitTailReason exit_tail_reason; /* written only on cleanup */
 /* Audout worker is the sole writer. Main reads after thread join. */
 static VhAudoutQueueTelemetry audout_telemetry;
 static atomic_ullong scene_trace_latest_ticket; /* serial << 32 | scene */
@@ -252,22 +254,44 @@ static int output_start(void *opaque) {
  */
 static int output_tail_submit_bounded(VhSwitchOutput *s, size_t frames) {
     if (!s || !*s->opened || !*s->playing ||
-        !frames || frames>VH_AUDIO_STOP_TAIL_FRAMES ||
-        vh_audio_buffer_lease_begin(&s->lease,s->buffer))
+        !frames || frames>VH_AUDIO_STOP_TAIL_FRAMES) {
+        vh_audio_tail_reason_record(
+            &exit_tail_reason,VH_TAIL_PRECONDITION_FAILED);
         return -1;
+    }
+    if (vh_audio_buffer_lease_begin(&s->lease,s->buffer)) {
+        vh_audio_tail_reason_record(&exit_tail_reason,VH_TAIL_LEASE_BUSY);
+        return -1;
+    }
     s->buffer->next=NULL;
     s->buffer->data_offset=0;
     s->buffer->data_size=frames*2u*sizeof(int16_t);
-    if (R_FAILED(audoutAppendAudioOutBuffer(s->buffer))) return -1;
+    if (R_FAILED(audoutAppendAudioOutBuffer(s->buffer))) {
+        vh_audio_tail_reason_record(&exit_tail_reason,VH_TAIL_APPEND_FAILED);
+        return -1;
+    }
     AudioOutBuffer *released=NULL;
     u32 released_count=0;
-    /* 2-ms buffer and generous <=12-ms wait; never infinite after
-     * the main loop has requested that the audio worker stop. */
-    if (R_FAILED(audoutWaitPlayFinish(
-            &released,&released_count,UINT64_C(12000000))) ||
-        !released_count)
+    /* Existing 12-ms bound unchanged. Failure does not release the
+     * lease, and audoutExit remains responsible for session discard. */
+    const Result wait_result=audoutWaitPlayFinish(
+        &released,&released_count,UINT64_C(12000000));
+    if (R_FAILED(wait_result)) {
+        vh_audio_tail_reason_record(&exit_tail_reason,VH_TAIL_WAIT_FAILED);
         return -1;
-    return vh_audio_buffer_lease_release(&s->lease,released);
+    }
+    if (!released_count) {
+        vh_audio_tail_reason_record(&exit_tail_reason,VH_TAIL_WAIT_EMPTY);
+        return -1;
+    }
+    if (vh_audio_buffer_lease_release(&s->lease,released)) {
+        vh_audio_tail_reason_record(
+            &exit_tail_reason,VH_TAIL_RELEASE_MISMATCH);
+        return -1;
+    }
+    vh_audio_tail_reason_record(
+        &exit_tail_reason,VH_TAIL_RETURN_CONFIRMED);
+    return 0;
 }
 
 /* Called by the single audio owner; the render thread only takes
@@ -595,6 +619,7 @@ int vh_switch_game_audio_start(unsigned initial_scene) {
     vh_audio_exit_worker_stop_reset(&worker_stop_witness);
     vh_audio_last_playbuffer_reset(&last_playbuffer_call);
     vh_playbuffer_history_reset(&last_playbuffer_history);
+    vh_audio_tail_reason_reset(&exit_tail_reason);
     vh_audout_queue_reset(&audout_telemetry);
     if(vh_audout_queue_set_probe_phase(&audout_telemetry,
                                       VH_AUDOUT_PROBE_PHASE)) return -1;
@@ -788,6 +813,18 @@ int vh_switch_game_audio_lease_reconciliation_dump(FILE *stream) {
     VhAudioDiagnostics final={0};
     vh_switch_game_audio_diagnostics(&final);
     return vh_audio_lease_reconciliation_write(&final,stream);
+}
+
+/* Stage351: independent software-only reason for optional exit tail.
+ * The classification was recorded on cleanup without changing service
+ * behavior; it is readable/exportable only after audio thread join.
+ */
+int vh_switch_game_audio_tail_reason_dump(FILE *stream) {
+    if (!stream || thread_started) return -1;
+    VhAudioDiagnostics final={0};
+    vh_switch_game_audio_diagnostics(&final);
+    return vh_audio_tail_reason_write_csv(
+        &exit_tail_reason,&exit_output_witness,&final,stream);
 }
 
 void vh_switch_game_audio_stop(void) {
