@@ -11,7 +11,6 @@ import hashlib
 import json
 from pathlib import Path
 import re
-import shutil
 
 from tools.instrument_map02_cycle_order import (
     patch_core, patch_gpu, patch_libcd, patch_raster,
@@ -235,16 +234,16 @@ def prepare(upstream: Path, output: Path, *, support=None):
     }
     rendered["map02_cycle_build_inputs.json"] = (
         json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    # On partial failure, preserve this freshly created directory instead
+    # of recursively deleting it: another process may have populated it in
+    # the meantime. A failed bundle is never reused because _validate_paths
+    # requires a *new* output pathname on the next attempt.
     output.mkdir(parents=True, mode=0o700)
-    try:
-        for name, data in rendered.items():
-            target = output / name
-            with target.open("xb") as f:
-                f.write(data)
-            target.chmod(0o600)
-    except BaseException:
-        shutil.rmtree(output)
-        raise
+    for name, data in rendered.items():
+        target = output / name
+        with target.open("xb") as f:
+            f.write(data)
+        target.chmod(0o600)
     return output / "map02_cycle.mk"
 
 
