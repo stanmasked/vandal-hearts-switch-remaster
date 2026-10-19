@@ -244,6 +244,7 @@ class PrivateCapturePreflightTests(unittest.TestCase):
         draw = json.loads(self.native_events.splitlines()[0])
         self.assertIsNotNone(draw["ft4"])
         transfer = dict(draw, operation="load", primitive_type=0,
+                        frame=self.frame - 1,
                         rect=[0, 0, 1, 1], semi=0, upload="")
         with self.assertRaisesRegex(ValueError, "transfer requires RECT"):
             validate_meta(transfer, 0, self.frame)
