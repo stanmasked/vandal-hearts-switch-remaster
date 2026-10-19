@@ -582,6 +582,9 @@ int vh_switch_game_audio_start(unsigned initial_scene) {
     if (thread_started || initial_scene > VH_GAME_MUSIC_HERO_SELECTED)
         return -1;
     vh_audio_scene_trace_init(&scene_trace);
+#if VH_MAP02_AUDIO_PCM_METRICS
+    vh_map02_pcm_metrics_init(&first_page_metrics);
+#endif
     vh_audout_queue_reset(&audout_telemetry);
     if(vh_audout_queue_set_probe_phase(&audout_telemetry,
                                       VH_AUDOUT_PROBE_PHASE)) return -1;
