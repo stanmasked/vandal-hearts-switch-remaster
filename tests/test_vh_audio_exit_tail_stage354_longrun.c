@@ -44,9 +44,27 @@ static void check_csv(const VhAudioExitTailReason *reason,
     assert(fgets(line,sizeof line,f) &&
            sscanf(line,"tail_reason_code,%u",&code)==1);
     assert(code==expected_code);
-    unsigned rows=0;
-    while(fgets(line,sizeof line,f)) ++rows;
-    assert(rows==6u && !ferror(f));
+    unsigned attempted=99u,returned=99u,owned=99u;
+    assert(fgets(line,sizeof line,f) &&
+           sscanf(line,"tail_attempted,%u",&attempted)==1);
+    assert(fgets(line,sizeof line,f) &&
+           sscanf(line,"tail_descriptor_return_confirmed,%u",&returned)==1);
+    assert(fgets(line,sizeof line,f) &&
+           sscanf(line,"tail_lease_acquired,%u",&owned)==1);
+    assert(attempted==1u && owned==1u);
+    assert(returned==(unsigned)(expected_code==VH_TAIL_RETURN_CONFIRMED));
+    unsigned long long acquired=0, released=0;
+    unsigned abandoned=99u;
+    assert(fgets(line,sizeof line,f) &&
+           sscanf(line,"lease_pages_acquired,%llu",&acquired)==1);
+    assert(fgets(line,sizeof line,f) &&
+           sscanf(line,"lease_pages_released,%llu",&released)==1);
+    assert(fgets(line,sizeof line,f) &&
+           sscanf(line,"abandoned_sessions,%u",&abandoned)==1);
+    assert(acquired==(unsigned long long)lease->pages_leased);
+    assert(released==(unsigned long long)lease->pages_released);
+    assert(abandoned==lease->abandoned_sessions);
+    assert(fgetc(f)==EOF && !ferror(f));
     fclose(f);
 }
 static void stress(unsigned phase) {
