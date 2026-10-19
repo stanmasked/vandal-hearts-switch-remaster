@@ -815,6 +815,69 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
                 self.assertEqual(list(self.dirs[2].iterdir()), [])
                 self.assertEqual(list(self.dirs[3].iterdir()), [])
 
+    def test_public_audit_summary_refuses_private_data_and_unknown_fields(self):
+        # Independently verified synthetic C11/VRAM captures produce a
+        # digest-only summary, which is the ONLY approved public egress
+        # schema. Neither mode may forward private paths, raw pixel bytes,
+        # arbitrary new keys or malformed/overstated claim types.
+        valid = self.run_two(require_identical_gpu_timeline=True)
+        # Reconstruct the original auditor-shaped part (the runner adds
+        # only its own small set of explicit receipt claims).
+        raw = {key: valid[key] for key in two_live._AUDIT_SAFE_KEYS}
+        two_live._require_safe_public_audit_summary(raw)
+        cases = (
+            ("path", {"private_raw_frame_path":
+                      str(self.dirs[0] / "process-frame.bgr555")}),
+            ("bytes", {"private_raw_pixels": b"\x01\x02"}),
+            ("list", {"private_gpu_records": [{"hex": "abcdef"}]}),
+            ("boolean-int", {"gpu_event_records_compared": True}),
+            ("malformed-sha", {"first_gpu_journal_sha256": "x" * 64}),
+            ("negative-index", {"first_joint_gpu_divergence_index": -1}),
+            ("forged-provenance", {"private_pixel_bytes_or_paths_emitted": True}),
+            ("bad-enum", {"first_joint_gpu_divergence_kind":
+                          "/private/retail-game"}),
+            ("missing-key", None),
+        )
+        for title, mutation in cases:
+            with self.subTest(title=title):
+                altered = dict(raw)
+                if mutation is None:
+                    del altered["private_pixel_bytes_or_paths_emitted"]
+                else:
+                    altered.update(mutation)
+                with self.assertRaisesRegex(ValueError, "summary fields unsafe"):
+                    two_live._require_safe_public_audit_summary(altered)
+
+    def test_full_two_run_never_emits_unapproved_audit_fields(self):
+        # Repeat two real ELF captures and independent GPU replays.
+        # Falsify only the *returned* post-audit summary to simulate a
+        # future accidental addition of user-private data; on-disk native
+        # evidence remains intact. Test both diagnostic and strict paths.
+        real_audit = two_live.audit
+        for strict in (False, True):
+            with self.subTest(strict=strict):
+                for folder in self.dirs:
+                    for entry in folder.iterdir():
+                        entry.unlink()
+                def leak_after_replay(*args, **kwargs):
+                    actual = real_audit(*args, **kwargs)
+                    return {
+                        **actual,
+                        "private_gpu_events_path":
+                            str(self.dirs[1] / "gpu-native-events.jsonl"),
+                    }
+                with patch.object(two_live, "audit",
+                                  side_effect=leak_after_replay):
+                    with self.assertRaisesRegex(
+                            ValueError, "summary fields unsafe") as caught:
+                        self.run_two(
+                            require_identical_gpu_timeline=strict)
+                self.assertNotIn(str(self.dirs[1]), str(caught.exception))
+                self.assertEqual(len(list(self.dirs[0].iterdir())), 2)
+                self.assertEqual(len(list(self.dirs[1].iterdir())), 3)
+                self.assertEqual(len(list(self.dirs[2].iterdir())), 2)
+                self.assertEqual(len(list(self.dirs[3].iterdir())), 3)
+
     def test_native_launch_receipts_reject_forged_post_replay_source_labels(self):
         # Both actual Linux C11 captures and both full replays are valid.
         # Mutate ONLY the returned source-labelled audit claims, after
