@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch
 
 import tools.check_map02_private_cycle_readiness as readiness
+import tools.run_map02_private_cycle_session as one_shot
 from tools.map02_local_capture_handoff import (
     PLAN, PLAN_SCHEMA, PINNED_UPSTREAM_REF, REQUIRED_DIAGNOSTIC_MACROS,
 )
@@ -96,6 +97,90 @@ class PrivateCycleReadinessTests(unittest.TestCase):
         self.assertEqual(self.mocks[1].call_count, 2)
         self.assertEqual(self.mocks[3].call_count, 2)
         self.assertEqual(self.mocks[4].call_count, 2)
+
+    def test_real_seven_folder_preflight_composes_with_one_shot_dry_run(self):
+        # Exercise the actual orchestrator + readiness module + owner-private
+        # directory scanner + plan and receipt readers. Only heavyweight
+        # original-source/ELF/disc audits use synthetic, mocked results.
+        self.binary.write_bytes(b"synthetic-PC-ELF-not-executable-game")
+        self.binary.chmod(0o700)
+        self.image.write_bytes(b"synthetic-owned-disc-with-no-retail-bytes")
+        self.image.chmod(0o600)
+        seal = self.root / "seal"
+        seal.mkdir(mode=0o700)
+        before = {
+            str(path.relative_to(self.root)): (
+                path.read_bytes(), path.stat().st_mode,
+                path.stat().st_mtime_ns, path.stat().st_ctime_ns)
+            for path in self.root.rglob("*") if path.is_file()
+        }
+        original_plan = (self.dirs["handoff"] / PLAN).read_bytes()
+        original_receipt = (self.receipt / BUILD_RECEIPT).read_bytes()
+        folders = [self.dirs[role] for role in self.roles]
+        with (patch.object(one_shot, "launch_observed_pc",
+                           side_effect=AssertionError("game must not start")) as launch,
+              patch.object(one_shot, "finalize_private_capture",
+                           side_effect=AssertionError("no witness allowed")) as finalize,
+              patch.object(one_shot, "seal_final_capture",
+                           side_effect=AssertionError("no seal allowed")) as publish,
+              patch("subprocess.Popen",
+                    side_effect=AssertionError("no executable process"))):
+            report = one_shot.execute_private_map02_cycle(
+                *folders, seal, self.image, self.upstream, self.binary,
+                self.receipt, self.bundle, frame=12, x=10, y=20,
+                dry_run=True, allow_local_completion=False)
+        self.assertEqual(report["schema"], "vh.map02.private-one-shot-dry-run.v1")
+        self.assertTrue(report["ready_for_controlled_local_launch"])
+        self.assertFalse(report["gameplay_process_started"])
+        self.assertFalse(report["private_witnesses_written"])
+        self.assertFalse(report["private_final_seal_published"])
+        launch.assert_not_called()
+        finalize.assert_not_called()
+        publish.assert_not_called()
+        self.assertEqual((self.dirs["handoff"] / PLAN).read_bytes(), original_plan)
+        self.assertEqual((self.receipt / BUILD_RECEIPT).read_bytes(), original_receipt)
+        self.assertFalse(tuple(seal.iterdir()))
+        after = {
+            str(path.relative_to(self.root)): (
+                path.read_bytes(), path.stat().st_mode,
+                path.stat().st_mtime_ns, path.stat().st_ctime_ns)
+            for path in self.root.rglob("*") if path.is_file()
+        }
+        self.assertEqual(before, after)
+
+    def test_integrated_dry_run_detects_late_owned_disc_edit_before_return(self):
+        self.binary.write_bytes(b"synthetic-not-retail-PC-ELF")
+        self.binary.chmod(0o700)
+        self.image.write_bytes(b"synthetic-not-retail-disc")
+        self.image.chmod(0o600)
+        seal = self.root / "seal"
+        seal.mkdir(mode=0o700)
+        folders = [self.dirs[role] for role in self.roles]
+        scanner = one_shot.inspect_private_launch_layout
+        calls = [0]
+
+        def mutate_disc_after_final_layout(*args):
+            report = scanner(*args)
+            calls[0] += 1
+            self.image.write_bytes(
+                self.image.read_bytes() + b"-edited-after-preflight")
+            return report
+
+        with (patch.object(one_shot, "inspect_private_launch_layout",
+                           side_effect=mutate_disc_after_final_layout),
+              patch.object(one_shot, "launch_observed_pc",
+                           side_effect=AssertionError("game must not start")) as launch,
+              patch.object(one_shot, "seal_final_capture",
+                           side_effect=AssertionError("no seal allowed")) as publish):
+            with self.assertRaisesRegex(ValueError, "changed after preflight"):
+                one_shot.execute_private_map02_cycle(
+                    *folders, seal, self.image, self.upstream, self.binary,
+                    self.receipt, self.bundle, frame=12, x=10, y=20,
+                    dry_run=True, allow_local_completion=False)
+        self.assertEqual(calls[0], 1)
+        launch.assert_not_called()
+        publish.assert_not_called()
+        self.assertFalse(tuple(seal.iterdir()))
 
     def test_rejects_source_executable_and_image_drift_from_plan(self):
         for index, bad, phrase in (
