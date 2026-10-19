@@ -806,6 +806,42 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "published files changed"):
                 self.run_two()
 
+    def test_identical_byte_native_gpu_file_swaps_after_second_publication_fail(self):
+        # A SHA-256-only comparison could accept a newly published inode
+        # containing identical GPU bytes. The two-live-run orchestrator
+        # instead pins each journal's entire original inode inventory.
+        # Replace only a single GPU file AFTER the second real C11 child
+        # has completed, before the independent replay receives evidence.
+        for name in ("gpu-native-events.jsonl", "gpu-0000-vram.bin",
+                     "gpu-0001-vram.bin"):
+            with self.subTest(target=name):
+                for folder in self.dirs:
+                    for entry in folder.iterdir():
+                        entry.unlink()
+                calls = []
+                def swap_first_journal_after_second(*args, **kwargs):
+                    receipt = original_capture(*args, **kwargs)
+                    calls.append(1)
+                    if len(calls) == 2:
+                        target = self.dirs[1] / name
+                        replacement = self.dirs[1] / "new-identical-inode"
+                        replacement.write_bytes(target.read_bytes())
+                        replacement.chmod(0o600)
+                        os.replace(replacement, target)
+                    return receipt
+                with patch.object(two_live, "capture",
+                                  side_effect=swap_first_journal_after_second):
+                    with self.assertRaisesRegex(
+                            ValueError, "published files changed"):
+                        self.run_two(require_identical_gpu_timeline=True)
+                self.assertEqual(calls, [1, 1])
+                self.assertEqual(len(list(self.dirs[0].iterdir())), 2)
+                self.assertEqual(len(list(self.dirs[2].iterdir())), 2)
+                self.assertEqual(len(list(self.dirs[1].iterdir())), 3)
+                self.assertEqual(len(list(self.dirs[3].iterdir())), 3)
+                # Refusal happens before any successful strict receipt.
+                # The user-private capture files remain for diagnosis.
+
     def test_forged_provenance_flags_cannot_pass_final_join(self):
         real_audit = two_live.audit
         def falsify(*args, **kwargs):
