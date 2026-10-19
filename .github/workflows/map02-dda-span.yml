@@ -11,6 +11,7 @@ on:
       - 'work/map02-main-merge-candidate'
       - 'work/map02-main-blend-compat'
       - 'work/map02-main-dda-fixture-compat'
+      - 'work/map02-main-transfer-fixture-compat'
   pull_request:
     paths:
       - 'tools/map02_dda_coverage.py'
