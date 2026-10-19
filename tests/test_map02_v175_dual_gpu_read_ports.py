@@ -11,7 +11,26 @@ import unittest
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
-from tests.test_map02_v174_vblank_read_quiet import fake_mem, fake_front
+def fake_mem():
+    return """u32 psxMemRead32(psxRegisters *regs, u32 mem) {
+ (void)regs;(void)mem;
+ return 0;
+}
+void vh140_mmio_enable(unsigned mutate_expected) {
+ (void)mutate_expected;
+}
+void psxMemWrite32(psxRegisters *regs,u32 mem,u32 value){
+#ifdef VH_MAP02_V66_PCSX_PROBE
+    vh138_pc_observe(regs,mem,value);
+#endif
+}
+"""
+
+def fake_front():
+    return ('\tint vh174_mips_vblank_read_quiet_smoke = 0;\n'
+            '\t\telse if (!strcmp(argv[i], "--vh174-mips-vblank-read-quiet"))\n'
+            '\tif (loadst_f) {\n')
+
 from tools.apply_map02_v173_vblank_quiet_mmio import patch_memory as v173_mem
 from tools.apply_map02_v174_vblank_read_quiet import patch_memory as v174_mem
 from tools.apply_map02_v175_dual_gpu_read_ports import (
@@ -52,12 +71,7 @@ class NativeGPUReadPorts175(unittest.TestCase):
         with self.assertRaises(ValueError):patch_memory(fake_mem())
 
     def test_native_oracle_is_separate_and_refuses_before_pixels(self):
-        # v174 fixture is deliberately not enough for the nested v175 CLI
-        f=fake_front().replace(
-            '\tint vh173_mips_vblank_quiet_smoke = 0;\n',
-            '\tint vh174_mips_vblank_read_quiet_smoke = 0;\n')
-        f=f.replace('--vh173-mips-vblank-quiet','--vh174-mips-vblank-read-quiet')
-        src=patch_frontend(f)
+        src=patch_frontend(fake_front())
         oracle=protected_dual_port_oracle()
         self.assertIn("if(vh175_mips_vblank_dual_ports_smoke) {",oracle)
         self.assertNotIn("if(vh174_mips_vblank_read_quiet_smoke) {",oracle)
