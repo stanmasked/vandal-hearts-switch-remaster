@@ -19,6 +19,9 @@ on:
       - "tests/test_guest_sync_studio_c.c"
       - "tests/test_decode_guest_sync_studio_c.py"
       - "tools/decode_guest_sync_studio_c.py"
+      - "tools/decode_guest_native_48k.py"
+      - "tests/test_decode_guest_native_48k.py"
+      - "docs/MAP02_GUEST_48K_BRIDGE.md"
       - "docs/MAP02_GUEST_SYNCHRONIZED_STUDIO_C.md"
       - "tools/audit_guest_sync_cross_arch.py"
       - "tests/test_audit_guest_sync_cross_arch.py"
@@ -60,6 +63,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_decode_guest_sync_studio_c.py' -v
       - name: Fail-closed GCC / Clang / guest parity auditor fixtures
         run: python3 -m unittest discover -s tests -p 'test_audit_guest_sync_cross_arch.py' -v
+      - name: Reject corrupted 48-kHz resampler/ramp guest receipts
+        run: python3 -m unittest discover -s tests -p 'test_decode_guest_native_48k.py' -v
       - name: Re-run guest exact-clock DSP source under GCC and Clang sanitizer
         shell: bash
         run: |
@@ -293,6 +298,9 @@ jobs:
               sleep 10
               import -window "$window" "$ROOT/wet-tail-$MODE-synced.png"
               test -s "$ROOT/wet-tail-$MODE-synced.png"
+              sleep 8
+              import -window "$window" "$ROOT/wet-tail-$MODE-native48.png"
+              test -s "$ROOT/wet-tail-$MODE-native48.png"
               kill -INT "$guest" 2>/dev/null || true
               sleep 1
               kill -KILL "$guest" 2>/dev/null || true
@@ -310,6 +318,10 @@ jobs:
               --image "runtime-evidence/wet-tail-$mode-synced.png" \
               --mode "$mode" \
               --output "runtime-evidence/wet-tail-$mode-synced.json"
+            python3 tools/decode_guest_native_48k.py \
+              --image "runtime-evidence/wet-tail-$mode-native48.png" \
+              --mode "$mode" \
+              --output "runtime-evidence/wet-tail-$mode-native48.json"
           done
           python3 - <<'PY'
           import json
@@ -317,6 +329,24 @@ jobs:
           root=Path("runtime-evidence")
           pair=[json.loads((root/f"wet-tail-{i}-metrics.json").read_text()) for i in (0,1)]
           synced=[json.loads((root/f"wet-tail-{i}-synced.json").read_text()) for i in (0,1)]
+          native=[json.loads((root/f"wet-tail-{i}-native48.json").read_text()) for i in (0,1)]
+          assert all(x["result"]=="GUEST_NATIVE_48K_SYNCHRONIZED_TAIL_OBSERVED" for x in native)
+          for key in ("pre_switch_native_fnv1a64", "wet_native_fnv1a64",
+                      "reset_native_fnv1a64","post_switch_native_frames",
+                      "different_post_switch_native_pages","retained_tail_nonzero_sample_values",
+                      "reset_first_page_nonzero_sample_values",
+                      "reset_later_pages_nonzero_sample_values"):
+              assert native[0][key]==native[1][key], (
+                  f"48k synthetic output differs between outer NRO modes: {key}")
+          (root/"guest-synchronized-48k-bridge.json").write_text(
+              json.dumps({"schema":"vh-map02-same-clock-native-48k-bridge/v1",
+                          "both_guests_agree":True,
+                          "native_48000_hz_converter_and_ramp_used":True,
+                          "reset_later_pages_are_zero":True,
+                          "one_interpolation_stereo_boundary_frame_allowed":True,
+                          "live_music_audout_sample_aligned":False,
+                          "physical_switch_audio_tested":False,
+                          "results":native},indent=2,sort_keys=True)+"\n")
           assert all(x["result"]=="GUEST_SYNCHRONIZED_SYNTHETIC_STUDIO_C_TAIL_PROVEN" for x in synced)
           for key in ("pre_switch_pcm_fnv1a64", "retained_tail_pcm_fnv1a64",
                       "reset_tail_pcm_fnv1a64", "wet_nonzero_sample_values",
