@@ -1,0 +1,31 @@
+name: MAP02 v184 verify all late RAM data-chain failures
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v184-ram-data-chain-refusals.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/make_map02_v184_ram_chain_negatives.py'
+      - 'tests/test_map02_v184_ram_data_chain_refusals.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  signed-guest-negatives:
+    name: signed MIPS RAM dependency negative controls (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check signed guest one-word MIPS changes and wrong RAM values
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/make_map02_v184_ram_chain_negatives.py tests/test_map02_v184_ram_data_chain_refusals.py
+          python3 -m unittest discover -s tests -p 'test_map02_v184_ram_data_chain_refusals.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v183_native_ram_values.py' -v
+          echo 'VH184_INDEPENDENT_RAM_CHAIN_REFUSALS_PASS cases=3 original_retail_executed=0'
