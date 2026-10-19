@@ -55,6 +55,40 @@ int main(void) {
             assert(count_nonzero(output,m)==0u);
         }
     }
+    /* Guard against overfitting to the 64-block phase. The production
+     * stateful converter has different source fractions across cue
+     * boundaries. Each case gets its own independent resampler/ramp. */
+    const unsigned prefix_lengths[]={
+        1u,2u,3u,7u,8u,15u,16u,31u,32u,63u,64u,65u,127u,128u
+    };
+    for(size_t c=0;c<sizeof prefix_lengths/sizeof prefix_lengths[0];c++) {
+        VhAudioResample converter;
+        VhAudioOutputRamp ramp;
+        vh_audio_resample_reset(&converter);
+        vh_audio_output_ramp_arm(&ramp);
+        for(unsigned block=0;block<prefix_lengths[c];block++) {
+            const size_t frames=vh_audio_resample_process(&converter,
+                constant,VH_AUDIO_BLOCK_FRAMES,output,
+                VH_AUDIO_RESAMPLE_MAX_FRAMES);
+            assert(frames>0);
+            assert(vh_audio_output_ramp_apply(&ramp,output,frames)==0);
+        }
+        const size_t first_frames=vh_audio_resample_process(&converter,
+            silence,VH_AUDIO_BLOCK_FRAMES,output,VH_AUDIO_RESAMPLE_MAX_FRAMES);
+        assert(first_frames>0);
+        assert(vh_audio_output_ramp_apply(&ramp,output,first_frames)==0);
+        assert(count_nonzero(output,first_frames)==2u);
+        assert(output[0]>0 && output[1]==-output[0]);
+        for(unsigned tail=0;tail<5u;tail++) {
+            const size_t frames=vh_audio_resample_process(&converter,
+                silence,VH_AUDIO_BLOCK_FRAMES,output,
+                VH_AUDIO_RESAMPLE_MAX_FRAMES);
+            assert(frames>0);
+            assert(vh_audio_output_ramp_apply(&ramp,output,frames)==0);
+            assert(count_nonzero(output,frames)==0u);
+        }
+    }
+    puts("PASS: 14 additional source-clock cue boundary phases stay within one stereo transient");
     puts("PASS: exact 64x512 cue-boundary has 2 transient signed samples, no later PCM; replay 2/2");
     return 0;
 }
