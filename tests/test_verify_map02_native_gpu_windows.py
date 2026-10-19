@@ -137,6 +137,46 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
                     "transfer appears after DrawOTag across window boundary"):
                 self.verify()
 
+    def test_preframe_transfers_then_target_draw_may_cross_window_boundary(self):
+        # The chronological transition from frame-6 ClearImage operations
+        # to a frame-7 F4 DrawOTag is valid even at the rollover. This
+        # guards against a validator that indiscriminately rejects all
+        # transfer-to-draw window boundaries.
+        self.events = [
+            dict(event, frame=6, operation="clear", primitive_type=0,
+                 rect=[0, 0, 0, 0], semi=0)
+            for event in self.events
+        ]
+        empty = bytes(VRAM_BYTES)
+        for step, event in enumerate(self.events):
+            (self.window / event["snapshot"]).write_bytes(empty)
+        (self.window / "gpu-native-events.jsonl").write_bytes(
+            b"".join(jsonline(event) for event in self.events))
+        next_window = self.root / "window-001"
+        next_window.mkdir(mode=0o700)
+        before = dict(self.events[0], step=0, frame=7,
+                      operation="draw", primitive_type=1,
+                      rect=None, snapshot="gpu-0000-vram.bin")
+        after = dict(before, step=1, phase="after",
+                     snapshot="gpu-0001-vram.bin")
+        changed = bytearray(VRAM_BYTES)
+        changed[0] = 1
+        (next_window / before["snapshot"]).write_bytes(empty)
+        (next_window / after["snapshot"]).write_bytes(changed)
+        (next_window / "gpu-native-events.jsonl").write_bytes(
+            jsonline(before) + jsonline(after))
+        self.status.update(window_capacity_events=4, windows_written=2,
+                           observed_hooks=6, before_hooks=3, after_hooks=3,
+                           draw_before_hooks=1, transfer_before_hooks=2,
+                           indexed_hooks=6, written_hooks=6)
+        self.save_status()
+        with patch("tools.verify_map02_native_gpu_windows.MAX_RECORDS", 4):
+            result = self.verify()
+            self.assertEqual(result["globally_ordered_native_gpu_events"], 6)
+            self.assertEqual(result["native_draw_pairs"], 1)
+            self.assertEqual(result["native_transfer_pairs"], 2)
+            self.assertFalse(result["whole_original_gameplay_frame_proven"])
+
     def test_rejects_oversubscribed_or_counterfeit_completion(self):
         for change in (
             {"observed_hooks": 6},
