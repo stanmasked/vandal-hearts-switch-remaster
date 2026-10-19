@@ -771,6 +771,84 @@ for name, offset, size in [
             with self.assertRaisesRegex(ValueError, "private original input changed"):
                 verify_private_pc_inputs(self.root)
 
+    def test_original_checkout_symlinked_parent_fails_before_regeneration(self):
+        # No retail image, BIOS or original resource is used here; these
+        # test fixtures are generated in setUp from arbitrary synthetic bytes.
+        for relative in (
+            "assets", "build", "platform/pc/tools",
+            "external/psy-q/3.6/PSYQ/BIN",
+        ):
+            with self.subTest(relative=relative):
+                parent = self.root / relative
+                archived = self.root.parent / (
+                    "moved-original-" + relative.replace("/", "-"))
+                parent.rename(archived)
+                parent.symlink_to(archived, target_is_directory=True)
+                try:
+                    with patch.object(private_inputs, "check_original_includes") as regenerate:
+                        with self.assertRaisesRegex(
+                                ValueError, "directory linked or inaccessible"):
+                            verify_private_pc_inputs(self.root)
+                    regenerate.assert_not_called()
+                finally:
+                    parent.unlink()
+                    archived.rename(parent)
+        self.assertTrue(
+            verify_private_pc_inputs(self.root)["us_ps1_font_charset_verified"])
+
+    def test_default_krom_checkout_symlink_differs_from_explicit_owned_override(self):
+        overridden = self.root.parent / "owned-synthetic-krom.bin"
+        overridden.write_bytes(self.glyph)
+        folder = self.root / "external/psy-q"
+        saved = self.root.parent / "redirected-default-krom-parent"
+        folder.rename(saved)
+        folder.symlink_to(saved, target_is_directory=True)
+        try:
+            with self.assertRaisesRegex(
+                    ValueError, "directory linked or inaccessible"):
+                verify_private_pc_inputs(self.root)
+            # User-provided --krom-source does not have to live in the
+            # checkout. Its bytes are independently validated by _krom_font.
+            result = verify_private_pc_inputs(
+                self.root, krom_source=overridden)
+            self.assertTrue(result["us_ps1_font_charset_verified"])
+        finally:
+            folder.unlink()
+            saved.rename(folder)
+
+    def test_original_source_parent_requires_owner_search_permission(self):
+        folder = self.root / "assets"
+        old_mode = folder.stat().st_mode & 0o777
+        folder.chmod(0o600)
+        try:
+            with patch.object(private_inputs, "check_original_includes") as regenerate:
+                with self.assertRaisesRegex(
+                        ValueError, "directory linked or inaccessible"):
+                    verify_private_pc_inputs(self.root)
+            regenerate.assert_not_called()
+        finally:
+            folder.chmod(old_mode)
+
+    def test_private_input_cli_valueerror_redacts_owned_path(self):
+        output = io.StringIO()
+        for problem in (
+            ValueError("source root rejected " + str(self.root)),
+            ValueError("private owned executable rejected " + str(self.exe)),
+        ):
+            with self.subTest(problem=type(problem).__name__):
+                output = io.StringIO()
+                with patch("sys.argv", ["private-inputs", str(self.root)]), \
+                        patch.object(private_inputs, "verify_private_pc_inputs",
+                                     side_effect=problem), \
+                        redirect_stderr(output):
+                    with self.assertRaises(SystemExit) as caught:
+                        private_inputs.main()
+                self.assertEqual(caught.exception.code, 2)
+                self.assertIn(
+                    "private original input verification failed",
+                    output.getvalue())
+                self.assertNotIn(str(self.root), output.getvalue())
+
     def test_private_input_cli_oserror_redacts_owned_path(self):
         output = io.StringIO()
         with patch("sys.argv", ["private-inputs", str(self.root)]), \
