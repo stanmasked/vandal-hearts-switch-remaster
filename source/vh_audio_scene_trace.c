@@ -62,6 +62,8 @@ static const char *name(unsigned kind) {
     case VH_SCENE_TRACE_SUBMIT_CALL: return "SUBMIT_CALL";
     case VH_SCENE_TRACE_RELEASE_RETURN: return "RELEASE_RETURN";
     case VH_SCENE_TRACE_SUBMIT_ERROR: return "SUBMIT_ERROR";
+    case VH_SCENE_TRACE_PCM_PAGE_NONZERO: return "PCM_PAGE_NONZERO";
+    case VH_SCENE_TRACE_PCM_PAGE_SILENT: return "PCM_PAGE_SILENT";
     default: return "INVALID";
     }
 }
