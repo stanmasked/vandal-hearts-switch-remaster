@@ -178,7 +178,12 @@ static Result trial(void) {
 int main(void) {
     const Result first=trial();
     const Result second=trial();
-    assert(!memcmp(&first,&second,sizeof first));
+    assert(first.initial_hash==second.initial_hash &&
+           first.retained_hash==second.retained_hash &&
+           first.reset_hash==second.reset_hash &&
+           first.different_blocks==second.different_blocks &&
+           first.retained_nonzero==second.retained_nonzero &&
+           first.reset_nonzero==second.reset_nonzero);
     printf("MAP02 synchronized STUDIO_C: PASS "
            "initial=%016llx wet=%016llx reset=%016llx "
            "differing_blocks=%u wet_nonzero=%u reset_nonzero=%u\n",
