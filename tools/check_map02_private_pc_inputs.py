@@ -37,9 +37,16 @@ def _checked_file(path, category, *, max_size=128 * 1024 * 1024):
     if path.is_symlink() or not path.is_file():
         raise ValueError("missing or linked private original input: " + category)
     st = path.stat()
+    # Keep the full byte-audit preflight at least as strict as the
+    # metadata-only inventory. Hardlinked originals can be rewritten
+    # through an alias outside the pinned checkout while preserving the
+    # checkout pathname; reject them before reading/compiling retail data.
     if (not stat.S_ISREG(st.st_mode) or st.st_uid != os.geteuid()
+            or st.st_nlink != 1
+            or not stat.S_IMODE(st.st_mode) & stat.S_IRUSR
             or st.st_size <= 0 or st.st_size > max_size):
-        raise ValueError("invalid owner, type or size for original input: " + category)
+        raise ValueError("invalid owner, type, links, access or size for original input: " +
+                         category)
     return path
 
 
