@@ -24,19 +24,28 @@ def read_sentinel():
     return r"""
 /* v174 is observational: the memory read still reaches PCSX unmodified.
  * Count guest MIPS GPU-port reads only during the v173 armed wait. */
-static unsigned vh174_wait_read_bad;
+static unsigned vh174_wait_read_bad,vh174_read_armed,vh174_read_phase;
 int vh174_arm_wait_read(unsigned phase) {
-    if (!vh173_wait_active || vh173_wait_phase!=phase || phase>=4u) return -1;
+    if (!vh173_wait_active || vh173_wait_phase!=phase ||
+        phase>=4u || vh174_read_armed) return -1;
     vh174_wait_read_bad=0u;
+    vh174_read_armed=1u;
+    vh174_read_phase=phase;
     return 0;
 }
 static void vh174_observe_wait_read(u32 address) {
     u32 physical=address&0x1fffffffu;
-    if (vh173_wait_active &&
+    if (vh174_read_armed && vh173_wait_active &&
         (physical==0x1f801810u || physical==0x1f801814u))
         vh174_wait_read_bad++;
 }
 unsigned vh174_wait_read_faults(void) {return vh174_wait_read_bad;}
+int vh174_disarm_wait_read(unsigned phase) {
+    if (!vh174_read_armed || !vh173_wait_active ||
+        vh174_read_phase!=phase || vh173_wait_phase!=phase) return -1;
+    vh174_read_armed=0u;
+    return 0;
+}
 """
 
 def patch_memory(source:str):
@@ -71,11 +80,12 @@ def read_provenance_oracle():
     disarm="int vh173_quiet_disarmed=vh173_disarm_wait_quiet(phase);"
     s=once(s,disarm,
         "unsigned int vh174_read_faults=vh174_wait_read_faults();\n"
+        "\t\t\tint vh174_read_disarmed=vh174_disarm_wait_read(phase);\n"
         "\t\t\t"+disarm,
-        "sample read count before wait disarms")
+        "sample read count and disarm before inherited wait teardown")
     window="vh173_quiet_windows++;"
     s=once(s,window,
-        'if(vh174_read_faults!=0u){\n'
+        'if(vh174_read_disarmed!=0 || vh174_read_faults!=0u){\n'
         '                SysPrintf("VH174_VBLANK_WAIT_READ_REFUSED phase=%u forbidden=%u\\n",phase,vh174_read_faults);\n'
         "\t\t\t\tClosePlugins();SysClose();menu_finish();plat_finish();return 80;\n"
         "\t\t\t}\n\t\t\tvh174_read_windows++;\n\t\t\t"+window,
@@ -100,7 +110,8 @@ def patch_frontend(source:str):
     s=once(source,FRONT_FLAG,FRONT_FLAG+
         "\tint vh174_mips_vblank_read_quiet_smoke = 0;\n"
         "\textern int vh174_arm_wait_read(unsigned);\n"
-        "\textern unsigned vh174_wait_read_faults(void);\n",
+        "\textern unsigned vh174_wait_read_faults(void);\n"
+        "\textern int vh174_disarm_wait_read(unsigned);\n",
         "v174 no-write-side-effect GPU register read declarations")
     s=once(s,FRONT_CLI,
         '\t\telse if (!strcmp(argv[i], "--vh174-mips-vblank-read-quiet"))\n'
