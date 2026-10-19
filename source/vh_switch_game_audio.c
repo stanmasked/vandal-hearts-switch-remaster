@@ -16,6 +16,7 @@
 #include "vh_audio_last_playbuffer_call.h"
 #include "vh_audio_playbuffer_history.h"
 #include "vh_audio_exit_tail_reason_stage351.h"
+#include "vh_audio_exit_tail_checks_stage353.h"
 
 #include <stdio.h>
 
@@ -266,32 +267,21 @@ static int output_tail_submit_bounded(VhSwitchOutput *s, size_t frames) {
     s->buffer->next=NULL;
     s->buffer->data_offset=0;
     s->buffer->data_size=frames*2u*sizeof(int16_t);
-    if (R_FAILED(audoutAppendAudioOutBuffer(s->buffer))) {
-        vh_audio_tail_reason_record(&exit_tail_reason,VH_TAIL_APPEND_FAILED);
+    /* Same one libnx append and same fail-closed ownership policy.
+     * Stage353 helper makes this exact decision independently testable. */
+    if (vh_audio_tail_stage353_append_checked(
+            &exit_tail_reason,
+            R_FAILED(audoutAppendAudioOutBuffer(s->buffer))))
         return -1;
-    }
     AudioOutBuffer *released=NULL;
     u32 released_count=0;
     /* Existing 12-ms bound unchanged. Failure does not release the
      * lease, and audoutExit remains responsible for session discard. */
     const Result wait_result=audoutWaitPlayFinish(
         &released,&released_count,UINT64_C(12000000));
-    if (R_FAILED(wait_result)) {
-        vh_audio_tail_reason_record(&exit_tail_reason,VH_TAIL_WAIT_FAILED);
-        return -1;
-    }
-    if (!released_count) {
-        vh_audio_tail_reason_record(&exit_tail_reason,VH_TAIL_WAIT_EMPTY);
-        return -1;
-    }
-    if (vh_audio_buffer_lease_release(&s->lease,released)) {
-        vh_audio_tail_reason_record(
-            &exit_tail_reason,VH_TAIL_RELEASE_MISMATCH);
-        return -1;
-    }
-    vh_audio_tail_reason_record(
-        &exit_tail_reason,VH_TAIL_RETURN_CONFIRMED);
-    return 0;
+    return vh_audio_tail_stage353_wait_checked(
+        &exit_tail_reason,&s->lease,
+        R_FAILED(wait_result),released_count,released);
 }
 
 /* Called by the single audio owner; the render thread only takes
