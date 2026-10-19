@@ -5,6 +5,9 @@ on:
     paths:
       - '.github/workflows/map02-audout-presubmit.yml'
       - 'source/vh_audout_presubmit_witness.*'
+      - 'source/vh_audout_presubmit_optical.*'
+      - 'tools/decode_map02_audout_presubmit.py'
+      - 'tests/test_decode_map02_audout_presubmit.py'
       - 'source/vh_switch_game_audio.c'
       - 'source/vh_switch_game_audio.h'
       - 'source/main.c'
@@ -32,6 +35,8 @@ jobs:
           ref: ${{ env.VH_EXACT_SOURCE_SHA }}
       - name: Reject unintended temporary PR merge commit
         run: test "$(git rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
+      - name: Reject forged and damaged guest optical packets
+        run: python3 -m unittest discover -s tests -p 'test_decode_map02_audout_presubmit.py' -v
       - name: Run generated-only host witness with sanitizers
         shell: bash
         run: |
@@ -41,6 +46,7 @@ jobs:
             -fno-omit-frame-pointer -Isource \
             tests/test_vh_audout_presubmit_witness.c \
             source/vh_audout_presubmit_witness.c \
+            source/vh_audout_presubmit_optical.c \
             -o /tmp/vh-audout-presubmit-test
           ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
             /tmp/vh-audout-presubmit-test
@@ -71,9 +77,163 @@ jobs:
             MAP02_AUDIO_BUILD=build/map02-presubmit \
             MAP02_AUDIO_PRESUBMIT_WITNESS=1 map02-audio-nro
           test -s build/map02-presubmit/vandal-hearts-map02-audio.nro
-          sha256sum build/map02-presubmit/vandal-hearts-map02-audio.nro
+          sha256sum build/map02-presubmit/vandal-hearts-map02-audio.nro \
+            > build/map02-presubmit/nro.sha256
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          root=Path('build/map02-presubmit')
+          binary=(root/'vandal-hearts-map02-audio.nro').read_bytes()
+          assert binary[16:20]==b'NRO0'
+          receipt={'schema':'vh-map02-presubmit-guest-nro/v1',
+                   'source_sha':os.environ['VH_EXACT_SOURCE_SHA'],
+                   'event_sha':os.environ['GITHUB_SHA'],
+                   'run_id':int(os.environ['GITHUB_RUN_ID']),
+                   'attempt':int(os.environ['GITHUB_RUN_ATTEMPT']),
+                   'nro_sha256':hashlib.sha256(binary).hexdigest()}
+          (root/'manifest.json').write_text(
+              json.dumps(receipt,sort_keys=True,indent=2)+'\n')
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: map02-audout-presubmit-research-nro
-          path: build/map02-presubmit/vandal-hearts-map02-audio.nro
+          path: |
+            build/map02-presubmit/vandal-hearts-map02-audio.nro
+            build/map02-presubmit/nro.sha256
+            build/map02-presubmit/manifest.json
           if-no-files-found: error
+
+  nexiom-presubmit:
+    name: Verify actual opt-in NRO's eight-page optical receipt in NeXium
+    needs: [host-witness, research-nro]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_SOURCE_SHA }}
+      - name: Verify precise commit
+        run: test "$(git rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
+      - uses: actions/download-artifact@v4
+        with:
+          name: map02-audout-presubmit-research-nro
+          path: nros
+      - name: Verify same-run opt-in executable identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          root=Path('nros')
+          manifest=json.loads((root/'manifest.json').read_text())
+          assert manifest['schema']=='vh-map02-presubmit-guest-nro/v1'
+          assert manifest['source_sha']==os.environ['VH_EXACT_SOURCE_SHA']
+          assert manifest['event_sha']==os.environ['GITHUB_SHA']
+          assert manifest['run_id']==int(os.environ['GITHUB_RUN_ID'])
+          assert manifest['attempt']==int(os.environ['GITHUB_RUN_ATTEMPT'])
+          binary=(root/'vandal-hearts-map02-audio.nro').read_bytes()
+          assert binary[16:20]==b'NRO0'
+          digest=hashlib.sha256(binary).hexdigest()
+          assert manifest['nro_sha256']==digest
+          assert (root/'nro.sha256').read_text().split()[0]==digest
+          PY
+      - name: Prepare headless graphics, Python imaging and Vulkan
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl jq xvfb xauth xdotool imagemagick python3-pil \
+            libgtk-3-0t64 libasound2t64 libudev1 libxkbcommon0 libxkbcommon-x11-0 \
+            libx11-xcb1 libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
+            libvulkan1 mesa-vulkan-drivers pulseaudio pulseaudio-utils libasound2-plugins
+      - name: Download pinned NeXium nightly asset
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release="$(curl -fsSL --retry 3 --retry-all-errors \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/nexium-emu/nexium-nightly/releases/tags/nightly)"
+          url="$(printf '%s' "$release" | jq -r \
+            '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
+          test -n "$url"
+          curl -fL --retry 3 --retry-all-errors "$url" \
+            -o /tmp/nexium-presubmit.tar.gz
+          mkdir -p /tmp/nexium-presubmit
+          tar -xzf /tmp/nexium-presubmit.tar.gz -C /tmp/nexium-presubmit
+          emulator="$(find /tmp/nexium-presubmit -type f -executable \
+            \( -name nexium-gui -o -name nexium \) -print -quit)"
+          test -n "$emulator"
+          echo "NEXIUM_BIN=$emulator" >> "$GITHUB_ENV"
+      - name: Run opt-in NRO and capture its guest framebuffer proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime-evidence
+          cp nros/manifest.json runtime-evidence/
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+          export ROOT="$PWD/runtime-evidence"
+          export NRO="$PWD/nros/vandal-hearts-map02-audio.nro"
+          timeout --kill-after=5s 45s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
+            set -euo pipefail
+            "$NEXIUM_BIN" "$NRO" >"$ROOT/nexium-presubmit.log" 2>&1 &
+            guest=$!
+            trap "kill -KILL $guest 2>/dev/null || true" EXIT
+            window=""
+            for n in $(seq 1 30); do
+              sleep 1
+              window="$(xdotool search --onlyvisible --name NeXium 2>/dev/null | tail -n1 || true)"
+              [ -z "$window" ] || break
+              kill -0 "$guest" 2>/dev/null || exit 1
+            done
+            test -n "$window"
+            sleep 4
+            timeout 3 xdotool windowfocus --sync "$window" || true
+            timeout 3 xdotool keydown --window "$window" c
+            sleep 0.15
+            timeout 3 xdotool keyup --window "$window" c
+            sleep 3
+            timeout 3 xdotool keydown --window "$window" x
+            sleep 0.15
+            timeout 3 xdotool keyup --window "$window" x
+            sleep 3
+            timeout 3 xdotool keydown --window "$window" m
+            sleep 0.15
+            timeout 3 xdotool keyup --window "$window" m
+            sleep 3
+            import -window "$window" "$ROOT/presubmit-guest.png"
+            test -s "$ROOT/presubmit-guest.png"
+            kill -INT "$guest" 2>/dev/null || true
+            wait "$guest" 2>/dev/null || true
+          '
+      - name: Decode actual guest CRC and assert eight descriptor identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/decode_map02_audout_presubmit.py \
+            --image runtime-evidence/presubmit-guest.png \
+            --output runtime-evidence/presubmit-guest.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path('runtime-evidence/presubmit-guest.json').read_text())
+          assert report['result']=='GUEST_PRESUBMIT_PCM_PAGES_MATCHED'
+          assert report['observed_pages']==8
+          assert report['mismatches']==0
+          assert all(p['descriptor_released_returns']==1 for p in report['pages'])
+          assert not report['live_dac_samples_proven']
+          assert not report['physical_switch_speaker_audio_verified']
+          PY
+      - name: Archive actual guest evidence even if decode fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-presubmit-nexium-guest-proof
+          path: runtime-evidence/
+          if-no-files-found: warn
