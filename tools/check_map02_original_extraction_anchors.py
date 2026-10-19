@@ -215,6 +215,8 @@ def main():
     try:
         result = compare_data_ranges(args.original_psx_executable,
                                      args.original_extracted_mips_elf)
+        result.update(compare_loaded_sections(
+            args.original_psx_executable, args.original_extracted_mips_elf))
     except ValueError as exc:
         parser.error(str(exc))
     except OSError:
