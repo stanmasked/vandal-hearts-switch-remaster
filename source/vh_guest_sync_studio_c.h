@@ -16,6 +16,8 @@ typedef struct {
 } VhGuestSyncStudioC;
 
 int vh_guest_sync_studio_c_run(VhGuestSyncStudioC *result);
+int vh_guest_sync_studio_c_encode(const VhGuestSyncStudioC *metrics,
+    uint8_t packet[924]);
 int vh_guest_sync_studio_c_draw(VhCanvas *canvas,
     const VhGuestSyncStudioC *metrics,
     uint32_t black, uint32_t white, uint32_t marker);
