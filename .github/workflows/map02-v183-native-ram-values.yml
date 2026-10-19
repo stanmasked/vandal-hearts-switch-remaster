@@ -1,0 +1,31 @@
+name: MAP02 v183 genuine guest RAM SW LW data dependency
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v183-native-ram-values.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v183_native_ram_values.py'
+      - 'tests/test_map02_v183_native_ram_values.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ram-data:
+    name: synthetic guest MIPS RAM data and load delay (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify actual MIPS word sequence and independent RAM value oracle
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v183_native_ram_values.py tests/test_map02_v183_native_ram_values.py
+          python3 -m unittest discover -s tests -p 'test_map02_v183_native_ram_values.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v182_lw_sw_identity_mismatch.py' -v
+          echo 'VH183_INDEPENDENT_RAM_VALUES_PASS variants=3 guest_words=9 original_retail_executed=0'
