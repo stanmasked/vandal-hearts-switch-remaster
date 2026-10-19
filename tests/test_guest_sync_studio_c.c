@@ -59,5 +59,13 @@ int main(void) {
            (unsigned long long)a.initial_hash,
            (unsigned long long)a.wet_hash,
            (unsigned long long)a.reset_hash,a.wet_nonzero);
+    printf("native48 pre=%016llx wet=%016llx reset=%016llx prefix_frames=%u tail_frames=%u different_pages=%u wet_nonzero=%u reset_first=%u reset_later=%u\n",
+           (unsigned long long)a.native48.prefix_hash,
+           (unsigned long long)a.native48.wet_hash,
+           (unsigned long long)a.native48.reset_hash,
+           a.native48.prefix_frames,a.native48.tail_frames,
+           a.native48.different_pages,a.native48.wet_nonzero,
+           a.native48.reset_first_page_nonzero,
+           a.native48.reset_later_nonzero);
     return 0;
 }
