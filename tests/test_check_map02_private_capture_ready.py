@@ -250,7 +250,7 @@ class PrivateCapturePreflightTests(unittest.TestCase):
         move0 = dict(draw0, step=0, frame=6, phase="before",
                      operation="load", snapshot="gpu-0000-vram.bin",
                      rect=[0, 0, 1, 1], primitive_type=0, semi=0,
-                     upload="")
+                     ft4=None, upload="")
         move1 = dict(move0, step=1, phase="after",
                      snapshot="gpu-0001-vram.bin", upload="gpu-0001-upload.bin")
         self.native_file("gpu-0000-vram.bin", bytes(VRAM_BYTES))
