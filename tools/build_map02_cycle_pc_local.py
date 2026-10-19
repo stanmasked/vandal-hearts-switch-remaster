@@ -57,6 +57,13 @@ def build_full_pc(upstream, bundle, *, timeout=1200, make="make", report_dir=Non
     # of the new pinned font C even though its source file is freshly built.
     if font_object.exists() or font_object.is_symlink():
         raise ValueError("private KROM object already exists; no reuse allowed")
+    # This dedicated build MUST begin empty. Otherwise GNU Make may reuse an
+    # old object whose timestamp is newer than its freshly prepared source
+    # without actually compiling all source-pinned observers. Checking only
+    # the resulting ELF symbols cannot independently certify every .o byte.
+    # Never delete or overwrite caller-owned files on a reused build attempt.
+    if any(build_dir.iterdir()):
+        raise ValueError("private MAP02 build directory must be empty before full link")
     command = [
         make, "-j1", "-f", "Makefile", "-f", str(bundle / "map02_cycle.mk"),
         "link", "BUILD_DIR=" + BUILD, "REGION=us",
