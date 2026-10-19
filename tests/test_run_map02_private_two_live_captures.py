@@ -874,6 +874,11 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
             ("nested-flag", {"strict_gpu_timeline_match_verified": [True]}),
             ("false-retail-auth", {"retail_gameplay_authenticated": True}),
             ("false-source-auth", {"original_ps1_reference_authenticated": True}),
+            ("false-gpu-writer-auth", {"gpu_journal_writer_kernel_authenticated": True}),
+            ("false-hardware-parity", {"ps1_hardware_pixel_equivalence_verified": True}),
+            ("unproved-replay", {"two_full_replays_per_capture_verified": False}),
+            ("unproved-file-integrity",
+             {"four_private_file_inventories_stable_through_replays": False}),
             ("disagreeing-strict-flags",
              {"strict_gpu_timeline_match_verified": False}),
             ("wrong-outer-schema", {"schema": two_live.AUDIT_SCHEMA}),
@@ -889,6 +894,43 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
                 with self.assertRaises(ValueError) as caught:
                     two_live._require_safe_public_two_run_receipt(altered)
                 self.assertNotIn(str(self.dirs[1]), str(caught.exception))
+
+    def test_final_strict_gate_cannot_modify_accepted_public_audit(self):
+        # The real strict GPU classifier runs AFTER initial audit validation.
+        # A late callback must not publish even a correctly typed but forged
+        # digest/provenance claim, nor an extra path or raw private bytes.
+        original_gate = two_live._require_bit_exact_gpu_timeline
+        cases = (
+            ("late-private-path", {"private_gpu_events_path":
+                                   str(self.dirs[1] / "gpu-native-events.jsonl")}),
+            ("late-private-bytes", {"private_frame": b"\\x01\\x02"}),
+            ("late-forged-provenance", {"retail_gameplay_authenticated": True}),
+            ("late-forged-hardware", {"ps1_hardware_pixel_equivalence_verified": True}),
+            ("late-forged-digest", {"first_image_sha256": "0" * 64}),
+            ("late-invalid-replay", {"two_full_replays_per_capture_verified": False}),
+        )
+        for scenario, mutation in cases:
+            with self.subTest(scenario=scenario):
+                for folder in self.dirs:
+                    for entry in folder.iterdir():
+                        entry.unlink()
+                calls = []
+                def tamper_after_successful_strict_gate(report):
+                    original_gate(report)
+                    calls.append(1)
+                    report.update(mutation)
+                with patch.object(
+                        two_live, "_require_bit_exact_gpu_timeline",
+                        side_effect=tamper_after_successful_strict_gate):
+                    with self.assertRaisesRegex(
+                            ValueError, "changed after validation") as caught:
+                        self.run_two(require_identical_gpu_timeline=True)
+                self.assertEqual(calls, [1])
+                self.assertNotIn(str(self.dirs[1]), str(caught.exception))
+                self.assertEqual(len(list(self.dirs[0].iterdir())), 2)
+                self.assertEqual(len(list(self.dirs[1].iterdir())), 3)
+                self.assertEqual(len(list(self.dirs[2].iterdir())), 2)
+                self.assertEqual(len(list(self.dirs[3].iterdir())), 3)
 
     def test_full_two_run_never_emits_unapproved_audit_fields(self):
         # Repeat two real ELF captures and independent GPU replays.
