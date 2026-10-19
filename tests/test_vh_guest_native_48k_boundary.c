@@ -59,7 +59,8 @@ int main(void) {
      * stateful converter has different source fractions across cue
      * boundaries. Each case gets its own independent resampler/ramp. */
     const unsigned prefix_lengths[]={
-        1u,2u,3u,7u,8u,15u,16u,31u,32u,63u,64u,65u,127u,128u
+        1u,2u,3u,7u,8u,15u,16u,31u,32u,63u,64u,65u,127u,128u,
+        147u,176u,294u
     };
     for(size_t c=0;c<sizeof prefix_lengths/sizeof prefix_lengths[0];c++) {
         VhAudioResample converter;
@@ -123,7 +124,7 @@ int main(void) {
         }
     }
     puts("PASS: small-amplitude cue transient rounds to 0 signed PCM sample values");
-    puts("PASS: 14 additional source-clock cue boundary phases stay within one stereo transient");
+    puts("PASS: 17 source-clock cue boundary phases stay within one stereo transient");
     puts("PASS: exact 64x512 cue-boundary has 2 transient signed samples, no later PCM; replay 2/2");
     return 0;
 }
