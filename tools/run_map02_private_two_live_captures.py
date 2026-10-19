@@ -662,6 +662,16 @@ def run(executable, first_frame, first_journal, second_frame, second_journal,
         for fd in reversed(opened):
             os.close(fd)
 
+def _serialize_public_cli_receipt(report, *, dry_run):
+    """Final fail-closed check at actual stdout egress, after operation."""
+    if type(dry_run) is not bool:
+        raise ValueError("MAP02 public CLI mode invalid")
+    if dry_run:
+        _require_safe_public_preflight(report)
+    else:
+        _require_safe_public_two_run_receipt(report)
+    return json.dumps(report, indent=2, sort_keys=True, allow_nan=False)
+
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
@@ -689,9 +699,10 @@ def main():
             frame=ns.frame, executable_sha256=ns.executable_sha256,
             args=tuple(ns.elf_arg), timeout=ns.timeout,
             require_identical_gpu_timeline=ns.require_identical_gpu_timeline)
+        public_json = _serialize_public_cli_receipt(report, dry_run=ns.dry_run)
     except (ValueError, OSError, subprocess.TimeoutExpired):
         p.error("MAP02 two independent private ELF captures failed verification")
-    print(json.dumps(report, indent=2, sort_keys=True))
+    print(public_json)
 
 
 if __name__ == "__main__":
