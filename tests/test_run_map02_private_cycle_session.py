@@ -173,6 +173,25 @@ class PrivateOneShotCycleTests(unittest.TestCase):
             self.mocks[name].assert_not_called()
         self.assertFalse(list(self.folders[-1].iterdir()))
 
+    def test_dry_run_does_not_mutate_any_private_directory(self):
+        # Synthetic preflight return values are mocked; the coordinator
+        # itself must not write even a temporary file to any private root.
+        def snapshot():
+            return tuple((
+                folder.stat().st_dev, folder.stat().st_ino,
+                folder.stat().st_mode, folder.stat().st_mtime_ns,
+                folder.stat().st_ctime_ns,
+                tuple(sorted(child.name for child in folder.iterdir())),
+            ) for folder in self.folders)
+
+        before = snapshot()
+        result = self.execute(dry_run=True, allow_local_completion=False)
+        self.assertTrue(result["ready_for_controlled_local_launch"])
+        self.assertEqual(snapshot(), before)
+        for name in ("launch_observed_pc", "finalize_private_capture",
+                     "seal_final_capture", "verify_final_seal"):
+            self.mocks[name].assert_not_called()
+
     def test_dry_run_is_fail_closed_when_private_plan_or_seal_is_wrong(self):
         with self.assertRaisesRegex(ValueError, "requested frame differs"):
             self.execute(frame=13, dry_run=True, allow_local_completion=False)
