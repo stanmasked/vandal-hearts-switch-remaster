@@ -47,6 +47,10 @@ class PrivateOneShotCycleTests(unittest.TestCase):
             "game_content_emitted": False,
         }
         simulated = {
+            # Original game inputs are not present in synthetic CI. These
+            # identities are mocked like the existing complete preflight;
+            # targeted tests independently exercise drift rejection.
+            "_private_input_identity": (1, 21, 22, 0o100600, 1, 256, 3, 4),
             "private_file": (self.plan, self.plan_identity),
             "_validate_plan": {"target_gpu_draw_frame": 12},
             "verify_private_cycle_readiness": self.ready_report,
@@ -381,6 +385,50 @@ class PrivateOneShotCycleTests(unittest.TestCase):
             (original_dir.st_dev, original_dir.st_ino, original_dir.st_mtime_ns,
              original_dir.st_ctime_ns))
         self.mocks["launch_observed_pc"].assert_not_called()
+        self.mocks["seal_final_capture"].assert_not_called()
+
+    def test_dry_run_rejects_input_inode_drift_after_final_layout_scan(self):
+        for drifted in (self.elf, self.disc,
+                        self.receipt / runner.BUILD_RECEIPT_NAME):
+            with self.subTest(input=str(drifted.name)):
+                count = [0]
+                stable = (1, 21, 22, 0o100600, 1, 256, 3, 4)
+                replaced = (1, 99, 22, 0o100600, 1, 256, 3, 4)
+
+                def changed_after_preflight(path, category):
+                    if Path(path) == Path(drifted):
+                        count[0] += 1
+                        return stable if count[0] == 1 else replaced
+                    return stable
+
+                self.mocks["_private_input_identity"].side_effect = changed_after_preflight
+                try:
+                    with self.assertRaisesRegex(
+                            ValueError, "changed after preflight"):
+                        self.execute(dry_run=True, allow_local_completion=False)
+                    self.mocks["launch_observed_pc"].assert_not_called()
+                    self.mocks["finalize_private_capture"].assert_not_called()
+                    self.mocks["seal_final_capture"].assert_not_called()
+                finally:
+                    self.mocks["_private_input_identity"].side_effect = None
+                self.assertFalse(list(self.folders[-1].iterdir()))
+
+    def test_real_one_shot_rejects_changed_owned_input_before_child_launch(self):
+        baseline = (1, 21, 22, 0o100600, 1, 256, 3, 4)
+        modified = (1, 21, 22, 0o100600, 1, 256, 3, 5)
+        count = [0]
+
+        def changed_image_during_preflight(path, category):
+            if Path(path) == self.disc:
+                count[0] += 1
+                return baseline if count[0] == 1 else modified
+            return baseline
+
+        self.mocks["_private_input_identity"].side_effect = changed_image_during_preflight
+        with self.assertRaisesRegex(ValueError, "changed after preflight"):
+            self.execute()
+        self.mocks["launch_observed_pc"].assert_not_called()
+        self.mocks["finalize_private_capture"].assert_not_called()
         self.mocks["seal_final_capture"].assert_not_called()
 
     def test_dry_run_and_publish_permission_mutually_exclusive(self):
