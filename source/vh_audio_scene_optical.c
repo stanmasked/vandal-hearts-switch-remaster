@@ -39,7 +39,7 @@ int vh_audio_scene_optical_encode(
         VhAudioSceneTraceSlot entry;
         if(vh_audio_scene_trace_snapshot(trace,i,&entry)!=1 ||
            entry.kind<VH_SCENE_TRACE_INPUT ||
-           entry.kind>VH_SCENE_TRACE_SUBMIT_ERROR ||
+           entry.kind>VH_SCENE_TRACE_PCM_PAGE_SILENT ||
            entry.scene>2u)
             return -1;
         const unsigned offset=VH_SCENE_OPTICAL_ROW_START+i*VH_SCENE_OPTICAL_ROW_BYTES;
