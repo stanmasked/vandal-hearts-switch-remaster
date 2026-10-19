@@ -16,6 +16,10 @@ on:
       - 'source/vh_audio_exit_worker_stop_witness.h'
       - 'source/vh_audio_last_playbuffer_call.h'
       - 'source/vh_audio_playbuffer_history.h'
+      - 'tools/audit_nexium_guest_lease_reconciliation_stage348.py'
+      - 'tests/test_audit_nexium_guest_lease_reconciliation_stage348.py'
+      - 'source/vh_audio_lease_reconciliation.h'
+      - 'tests/test_vh_audio_lease_reconciliation_stage347.c'
       - 'tools/audit_nexium_guest_playbuffer_history.py'
       - 'tests/test_audit_nexium_guest_playbuffer_history.py'
       - 'tests/test_vh_audio_playbuffer_history.c'
@@ -986,6 +990,47 @@ jobs:
                 r["prior_successful_duration_lower_median_guest_ns"])
           PY
           echo "Stage322: real original guest last16 normal PlayBuffer software-call brackets preserved byte-exact, SHA-256 audited, compared with original Stage320 last success. Earlier baseline only when actual earlier successes exist. Reuses existing clocks; not DAC or audible music." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage348 independently verify actual Stage347 post-join guest software lease source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_guest_lease_reconciliation_stage348.py \
+            --guest-root-file runtime-evidence/guest-sd-root.txt \
+            --output runtime-evidence/guest-lease-reconciliation-stage348.json \
+            --output-original runtime-evidence/audio-lease-reconciliation-000.csv
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          report=Path("runtime-evidence/guest-lease-reconciliation-stage348.json")
+          source=Path("runtime-evidence/audio-lease-reconciliation-000.csv")
+          r=json.loads(report.read_text(encoding="utf-8"))
+          if (r["schema"]!="vh-stage348-original-software-lease-reconciliation/v1"
+              or r["result"]!="ORIGINAL_GUEST_SOFTWARE_PCM_LEASE_BALANCE_SOURCE_VERIFIED"
+              or r["original_guest_software_lease_source_observed"] is not True
+              or r["original_guest_software_lease_bytes_preserved"] is not True
+              or r["only_software_owner_counters_checked"] is not True
+              or r["playback_at_DAC_or_speaker_verified"] is not False
+              or r["original_PS1_soundtrack_verified"] is not False
+              or r["physical_Nintendo_Switch_audio_tested"] is not False
+              or not source.is_file() or source.is_symlink()
+              or hashlib.sha256(source.read_bytes()).hexdigest()!=
+                 r["original_guest_software_lease_csv_sha256"]
+              or r["lease_pages_acquired"]<=0
+              or r["lease_pages_acquired"]!=
+                 r["lease_pages_released"]+r["abandoned_sessions"]
+              or r["accepted_pages_submitted"]>r["lease_pages_released"]):
+              raise SystemExit("Stage348 original guest PCM lease source not verified")
+          print("Stage348 original software PCM pages acquired:",
+                r["lease_pages_acquired"])
+          print("Stage348 original software PCM pages released:",
+                r["lease_pages_released"])
+          print("Stage348 abandoned full sessions:",
+                r["abandoned_sessions"])
+          print("Stage348 original software guest source SHA256:",
+                r["original_guest_software_lease_csv_sha256"])
+          PY
+          echo "Stage348: independently SHA256 rechecked original guest post-join PCM software lease accounting. NOT device queue depth, audible fidelity or physical Nintendo Switch sound." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Stage308 independently source-verify guest optical scene clocks versus guest exit
         shell: bash
