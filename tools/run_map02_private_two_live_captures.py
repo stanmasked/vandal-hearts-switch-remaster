@@ -420,6 +420,15 @@ def run(executable, first_frame, first_journal, second_frame, second_journal,
         # terminal frame AND the separate native GPU event JSONL to match.
         if require_identical_gpu_timeline:
             _require_bit_exact_gpu_timeline(report)
+        # The strict predicate (or another late acceptance callback) runs
+        # AFTER the last independent replay and can consume time. Recheck
+        # publication provenance and exact pinned file identities once
+        # more at the final point where a successful receipt is issued.
+        verify_all_published()
+        _require_held_elf_image(exe_fd, executable, executable_sha256,
+                                original_identity=elf_identity)
+        for fd, path, identity in zip(opened, folders, identities):
+            _check_directory(fd, path, identity)
         return {
             **report,
             "schema": SCHEMA,
