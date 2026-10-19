@@ -24,6 +24,15 @@ static unsigned nonzero(const int16_t *pcm,size_t frames) {
     for(size_t i=0;i<frames*2u;i++) n+=(pcm[i]!=0);
     return n;
 }
+/* Integer output-clock oracle, independent of converter counters.
+ * A completed input prefix can emit output ticks through the last
+ * available source frame, but not a fractional look-ahead beyond it. */
+static uint32_t expected_native_frames(unsigned complete_blocks) {
+    if(!complete_blocks) return 0u;
+    const uint64_t end=(uint64_t)complete_blocks*VH_AUDIO_BLOCK_FRAMES;
+    return (uint32_t)(((end-1u)*VH_NATIVE_AUDOUT_RATE)/
+                      VH_AUDIO_SAMPLE_RATE+1u);
+}
 void vh_guest_native_48k_init(VhGuestNative48k *result) {
     if(!result) return;
     memset(result,0,sizeof *result);
@@ -39,12 +48,25 @@ int vh_guest_native_48k_observe(VhGuestNative48k *result,
     const int16_t *wet_pcm,const int16_t *reset_pcm,
     unsigned tail,unsigned tail_index) {
     if(!result || !wet_pcm || !reset_pcm || (tail!=0u && tail!=1u) ||
-       (tail && tail_index>=48u)) return -1;
+       tail_index>=(tail ? 48u : 64u)) return -1;
+    const unsigned block=(tail ? 64u : 0u)+tail_index;
+    const uint32_t before=expected_native_frames(block);
+    const uint32_t after=expected_native_frames(block+1u);
+    const uint64_t source_before=(uint64_t)block*VH_AUDIO_BLOCK_FRAMES;
+    const uint64_t tick_before=(uint64_t)before*VH_AUDIO_SAMPLE_RATE;
+    /* Forbid skipped, duplicated, reordered and early post-switch blocks,
+     * even when their final total number of frames could appear valid. */
+    if((uint64_t)result->prefix_frames+result->tail_frames!=before ||
+       wet_converter.input_frames!=source_before ||
+       reset_converter.input_frames!=source_before ||
+       wet_converter.next_output_tick!=tick_before ||
+       reset_converter.next_output_tick!=tick_before) return -1;
     const size_t w=vh_audio_resample_process(&wet_converter,wet_pcm,
         VH_AUDIO_BLOCK_FRAMES,wet_page,VH_AUDIO_RESAMPLE_MAX_FRAMES);
     const size_t d=vh_audio_resample_process(&reset_converter,reset_pcm,
         VH_AUDIO_BLOCK_FRAMES,reset_page,VH_AUDIO_RESAMPLE_MAX_FRAMES);
-    if(!w || w!=d || w>VH_AUDIO_RESAMPLE_MAX_FRAMES ||
+    if(!w || w!=d || w!=(size_t)(after-before) ||
+       w>VH_AUDIO_RESAMPLE_MAX_FRAMES ||
        vh_audio_output_ramp_apply(&wet_ramp,wet_page,w) ||
        vh_audio_output_ramp_apply(&reset_ramp,reset_page,d))
         return -1;
