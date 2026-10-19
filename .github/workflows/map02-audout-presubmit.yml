@@ -181,6 +181,25 @@ jobs:
           set -euo pipefail
           mkdir -p runtime-evidence
           cp nros/manifest.json runtime-evidence/
+          # NeXium must see a functioning 48-kHz device. Mirror the
+          # already-green STUDIO_C virtual audout environment; otherwise
+          # audio initialization can fail before the eight-page witness.
+          rt="$RUNNER_TEMP/vh-map02-presubmit-pulse"
+          mkdir -p "$rt"
+          chmod 700 "$rt"
+          export XDG_RUNTIME_DIR="$rt"
+          pulseaudio --daemonize=yes --exit-idle-time=-1 \
+            --log-target=file:runtime-evidence/pulseaudio.log
+          export PULSE_SERVER="unix:$rt/pulse/native"
+          pactl load-module module-null-sink sink_name=vh_map02_presubmit \
+            rate=48000 channels=2 >runtime-evidence/pulse-module-id.txt
+          pactl set-default-sink vh_map02_presubmit
+          cat >"$RUNNER_TEMP/map02-presubmit-asound.conf" <<'ASOUND'
+          pcm.!default { type pulse }
+          ctl.!default { type pulse }
+          ASOUND
+          export ALSA_CONFIG_PATH="$RUNNER_TEMP/map02-presubmit-asound.conf"
+          export SDL_AUDIODRIVER=pulse
           icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
           test -n "$icd"
           export VK_ICD_FILENAMES="$icd"
