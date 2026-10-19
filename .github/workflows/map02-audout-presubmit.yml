@@ -8,6 +8,7 @@ on:
       - 'source/vh_audout_presubmit_optical.*'
       - 'tools/decode_map02_audout_presubmit.py'
       - 'tests/test_decode_map02_audout_presubmit.py'
+      - 'tests/test_presubmit_optical_pixels.py'
       - 'source/vh_switch_game_audio.c'
       - 'source/vh_switch_game_audio.h'
       - 'source/main.c'
@@ -148,6 +149,11 @@ jobs:
             libx11-xcb1 libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
             libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
             libvulkan1 mesa-vulkan-drivers pulseaudio pulseaudio-utils libasound2-plugins
+      - name: Validate generated optical pixels and calibrated PNG decoding
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_presubmit_optical_pixels.py' -v
       - name: Download pinned NeXium nightly asset
         shell: bash
         env:
