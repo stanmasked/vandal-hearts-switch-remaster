@@ -40,30 +40,30 @@ static void check_csv(const VhAudioExitTailReason *reason,
     assert(fgets(line,sizeof line,f) && !strcmp(line,"scope,value\n"));
     assert(fgets(line,sizeof line,f) &&
            !strcmp(line,"software_exit_tail_reason_only,1\n"));
-    unsigned code=99u;
-    assert(fgets(line,sizeof line,f) &&
-           sscanf(line,"tail_reason_code,%u",&code)==1);
-    assert(code==expected_code);
-    unsigned attempted=99u,returned=99u,owned=99u;
-    assert(fgets(line,sizeof line,f) &&
-           sscanf(line,"tail_attempted,%u",&attempted)==1);
-    assert(fgets(line,sizeof line,f) &&
-           sscanf(line,"tail_descriptor_return_confirmed,%u",&returned)==1);
-    assert(fgets(line,sizeof line,f) &&
-           sscanf(line,"tail_lease_acquired,%u",&owned)==1);
-    assert(attempted==1u && owned==1u);
-    assert(returned==(unsigned)(expected_code==VH_TAIL_RETURN_CONFIRMED));
-    unsigned long long acquired=0, released=0;
-    unsigned abandoned=99u;
-    assert(fgets(line,sizeof line,f) &&
-           sscanf(line,"lease_pages_acquired,%llu",&acquired)==1);
-    assert(fgets(line,sizeof line,f) &&
-           sscanf(line,"lease_pages_released,%llu",&released)==1);
-    assert(fgets(line,sizeof line,f) &&
-           sscanf(line,"abandoned_sessions,%u",&abandoned)==1);
-    assert(acquired==(unsigned long long)lease->pages_leased);
-    assert(released==(unsigned long long)lease->pages_released);
-    assert(abandoned==lease->abandoned_sessions);
+    char expected[96];
+    assert(fgets(line,sizeof line,f));
+    assert(snprintf(expected,sizeof expected,"tail_reason_code,%u\n",
+                    expected_code)>0);
+    assert(!strcmp(line,expected));
+    assert(fgets(line,sizeof line,f) && !strcmp(line,"tail_attempted,1\n"));
+    assert(fgets(line,sizeof line,f));
+    assert(snprintf(expected,sizeof expected,
+                    "tail_descriptor_return_confirmed,%u\n",
+                    (unsigned)(expected_code==VH_TAIL_RETURN_CONFIRMED))>0);
+    assert(!strcmp(line,expected));
+    assert(fgets(line,sizeof line,f) && !strcmp(line,"tail_lease_acquired,1\n"));
+    assert(fgets(line,sizeof line,f));
+    assert(snprintf(expected,sizeof expected,"lease_pages_acquired,%llu\n",
+                    (unsigned long long)lease->pages_leased)>0);
+    assert(!strcmp(line,expected));
+    assert(fgets(line,sizeof line,f));
+    assert(snprintf(expected,sizeof expected,"lease_pages_released,%llu\n",
+                    (unsigned long long)lease->pages_released)>0);
+    assert(!strcmp(line,expected));
+    assert(fgets(line,sizeof line,f));
+    assert(snprintf(expected,sizeof expected,"abandoned_sessions,%u\n",
+                    lease->abandoned_sessions)>0);
+    assert(!strcmp(line,expected));
     assert(fgetc(f)==EOF && !ferror(f));
     fclose(f);
 }
