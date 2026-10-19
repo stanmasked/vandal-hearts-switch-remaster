@@ -101,6 +101,27 @@ def bind_sources(source:dict,saved:dict,preflight:dict,monitor:dict,
     }
 
 
+
+def verify_monitor_quality(monitor:dict,quality:dict)->None:
+    """Cross-check original NRO-bearing monitor metadata against later PCM analysis.
+
+    The source capture report and the derived quality report have different
+    schemas. The quality analysis alone does not contain an NRO source hash.
+    """
+    digest=quality.get("pcm_sha256")
+    if (monitor.get("schema")!="vh-nexium-pcm-monitor/v1"
+            or quality.get("schema")!="vh-nexium-pcm-quality/v1"
+            or quality.get("hardware_status")!="HARDWARE NOT TESTED"
+            or quality.get("format")!="s16le stereo 48000 Hz"
+            or quality.get("bytes")!=monitor.get("raw_bytes")
+            or type(quality.get("bytes")) is not int
+            or quality["bytes"]<=0 or quality["bytes"]%4
+            or not isinstance(digest,str) or not HEX64.fullmatch(digest)
+            or quality.get("audible_music_confirmed") is not False
+            or quality.get("original_soundtrack_confirmed") is not False):
+        raise ExitTimelineError("original NRO-bearing monitor and independent PCM quality receipts disagree")
+
+
 def read_json(path:Path,*,max_bytes:int=64_000)->dict:
     if (path.is_symlink() or not path.is_file()
             or not 0<path.stat().st_size<=max_bytes):
@@ -128,8 +149,11 @@ def main()->int:
             source,
             read_json(a.evidence_root/"source-guest-host-stage334.json"),
             read_json(a.nro_preflight,max_bytes=4096),
-            read_json(a.evidence_root/"pcm-quality-report.json"),
+            read_json(a.evidence_root/"pcm-monitor-report.json"),
             git_sha=a.git_sha,run_id=a.run_id,run_attempt=a.run_attempt)
+        verify_monitor_quality(
+            read_json(a.evidence_root/"pcm-monitor-report.json"),
+            read_json(a.evidence_root/"pcm-quality-report.json"))
         a.output.parent.mkdir(parents=True,exist_ok=True)
         with a.output.open("x",encoding="utf-8") as f:
             json.dump(doc,f,sort_keys=True,indent=2)
