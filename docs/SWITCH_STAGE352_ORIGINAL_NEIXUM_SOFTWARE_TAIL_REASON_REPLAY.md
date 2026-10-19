@@ -22,6 +22,16 @@ The successful original guest Stage351 check was integrated into the full run, n
 
 The [dedicated Stage352 workflow](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/workflows/stage352-original-tail-reason-replay.yml) independently downloads the completed NeXium #39308380160 artifact and refuses any conclusion unless the three SHA-pinned original files and receipts all agree on **code 7, 1441/1441/0**. The workflow produces only a compact JSON outcome and never republishes copyrighted PCM samples, banks or original music. Report the independent replay as complete **only after both jobs pass**.
 
+## Completed GitHub Actions source replay
+
+[Stage352 run #39313572314](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39313572314) has now **completed successfully in both independent jobs**:
+
+- The first job ran and passed **15 synthetic tamper/receipt regressions**.
+- The second job downloaded the `nexium-runtime-evidence` artifact **from real NeXium #39308380160**, reopened original Stage313, Stage348 and Stage351 guest CSVs against their three fixed SHA-256 pins and four original receipts, and emitted `THREE_ORIGINAL_GUEST_PCM_TAIL_SOFTWARE_SOURCES_REAUDITED`.
+- The replayed source agreed on **code 7 (`return_confirmed`)**, **1441 acquired**, **1441 released**, and **0 abandoned**. The workflow archived only its compact Stage352 verification JSON, not any original soundtrack or guest PCM samples.
+
+This successful replay establishes preservation and self-consistency of these specific *original guest software* source bytes. The source replay is now a completed CI result, rather than merely a proposed procedure. It is **not** the missing historical Stage351 reason code for the separate older guest run that had one abandoned software buffer.
+
 ## Strict interpretation
 
 Earlier real Stage350 source pairs included a failed tail return with one abandoned descriptor, but those older captures **preceded** the Stage351 0–7 reason classifier. Therefore this successful run does **not retroactively tell us** whether their failure was `audoutAppendAudioOutBuffer`, `audoutWaitPlayFinish`, an empty wait or a mismatched descriptor. A new true failed-return source captured under Stage351 is required to attribute its distinct branch.
