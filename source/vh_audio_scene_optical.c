@@ -85,5 +85,16 @@ int vh_audio_scene_optical_draw_packet(VhCanvas *canvas,
                 VH_SCENE_OPTICAL_MODULE,VH_SCENE_OPTICAL_MODULE,black);
         }
     }
+    return 0;
+}
+int vh_audio_scene_optical_draw(VhCanvas *canvas,
+                                const VhAudioSceneTrace *trace,
+                                uint32_t black,uint32_t white,
+                                uint32_t marker) {
+    uint8_t packet[VH_SCENE_OPTICAL_PACKET_BYTES];
+    const int rows=vh_audio_scene_optical_encode(trace,packet);
+    if(rows<0) return -1;
+    if(vh_audio_scene_optical_draw_packet(canvas,packet,black,white,marker))
+        return -1;
     return rows;
 }
