@@ -62,6 +62,24 @@ int main(void) {
         1u,2u,3u,7u,8u,15u,16u,31u,32u,63u,64u,65u,127u,128u,
         147u,176u,294u
     };
+    /* Independent integer output-clock oracle, not resampler output:
+     * source sample n is stamped at tick n*48000, and each output
+     * advances by exactly 44100 ticks. The earliest pending output
+     * at each prefix interpolates sample (boundary-1) into zero.
+     * Importantly 147 and 294 still have pending fractional samples,
+     * even though the boundary itself is divisible by 147. */
+    const int16_t expected_first_left[]={
+        2562,5125,7687,8750,2125,1687,4250,5937,8500,
+        5250,7812,1187,3875,6437,9187,812,9187
+    };
+    const size_t expected_first_frames[]={
+        557u,557u,558u,558u,557u,557u,557u,557u,558u,
+        557u,558u,557u,557u,557u,558u,557u,558u
+    };
+    assert(sizeof prefix_lengths/sizeof prefix_lengths[0] ==
+           sizeof expected_first_left/sizeof expected_first_left[0]);
+    assert(sizeof prefix_lengths/sizeof prefix_lengths[0] ==
+           sizeof expected_first_frames/sizeof expected_first_frames[0]);
     for(size_t c=0;c<sizeof prefix_lengths/sizeof prefix_lengths[0];c++) {
         VhAudioResample converter;
         VhAudioOutputRamp ramp;
@@ -76,10 +94,11 @@ int main(void) {
         }
         const size_t first_frames=vh_audio_resample_process(&converter,
             silence,VH_AUDIO_BLOCK_FRAMES,output,VH_AUDIO_RESAMPLE_MAX_FRAMES);
-        assert(first_frames>0);
+        assert(first_frames==expected_first_frames[c]);
         assert(vh_audio_output_ramp_apply(&ramp,output,first_frames)==0);
         assert(count_nonzero(output,first_frames)==2u);
-        assert(output[0]>0 && output[1]==-output[0]);
+        assert(output[0]==expected_first_left[c]);
+        assert(output[1]==-expected_first_left[c]);
         for(unsigned tail=0;tail<5u;tail++) {
             const size_t frames=vh_audio_resample_process(&converter,
                 silence,VH_AUDIO_BLOCK_FRAMES,output,
@@ -124,7 +143,7 @@ int main(void) {
         }
     }
     puts("PASS: small-amplitude cue transient rounds to 0 signed PCM sample values");
-    puts("PASS: 17 source-clock cue boundary phases stay within one stereo transient");
+    puts("PASS: 17 native 48k phase-specific output frame counts and exact stereo transient amplitudes");
     puts("PASS: exact 64x512 cue-boundary has 2 transient signed samples, no later PCM; replay 2/2");
     return 0;
 }
