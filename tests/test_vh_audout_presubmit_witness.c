@@ -1,5 +1,6 @@
 /* Bounded, generated-only PCM page identity and retry order probes. */
 #include "vh_audout_presubmit_witness.h"
+#include "vh_audout_presubmit_optical.h"
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -63,6 +64,19 @@ int main(void) {
     assert(w.mismatches==2u);
     assert(w.page[1].fnv1a64==UINT64_C(0xf53cd6dfed5657df));
     assert(w.page[1].crc32==UINT32_C(0x667ef4d2));
+    static uint8_t packet[VH_SCENE_OPTICAL_PACKET_BYTES];
+    assert(vh_audout_presubmit_optical_encode(&w,packet)==-1);
+    w.mismatches=0u;
+    assert(vh_audout_presubmit_optical_encode(&w,packet)==0);
+    assert(memcmp(packet,"VHPRE001",8)==0);
+    assert(packet[8]==VH_AUDOUT_PRESUBMIT_CAP && packet[9]==0);
+    assert(packet[16]==(uint8_t)557u && packet[17]==2u);
+    assert(packet[20]==2u && packet[24]==1u);
+    assert(packet[28]==(uint8_t)first_hash);
+    assert(packet[36]==(uint8_t)first_crc);
+    w.pending=1u;
+    assert(vh_audout_presubmit_optical_encode(&w,packet)==-1);
+    w.pending=0u;
     vh_audout_presubmit_reset(&w);
     assert(w.count==0u && w.mismatches==0u && !w.pending);
     fill(7u);
