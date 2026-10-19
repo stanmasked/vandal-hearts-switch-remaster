@@ -11,6 +11,10 @@ on:
       - "source/vh_audio_scene_optical.h"
       - "source/vh_guest_sync_studio_c.c"
       - "source/vh_guest_sync_studio_c.h"
+      - "source/vh_guest_native_48k.c"
+      - "tools/decode_guest_native_48k.py"
+      - "tests/test_decode_guest_native_48k.py"
+      - "docs/MAP02_GUEST_48K_BRIDGE.md"
       - "Makefile.map02-guest-sync-tail"
       - "tests/test_guest_sync_studio_c.c"
       - "tests/test_decode_guest_sync_studio_c.py"
@@ -32,10 +36,18 @@ on:
       - "tests/test_decode_map02_guest_scene_trace.py"
       - ".github/workflows/map02-guest-scene-trace.yml"
       - "docs/MAP02_GUEST_SCENE_TRACE.md"
+      - "tools/audit_guest_native48_cross_arch.py"
+      - "tests/test_audit_guest_native48_cross_arch.py"
+      - "tests/test_vh_guest_native_48k_boundary.c"
   workflow_dispatch:
 
 permissions:
   contents: read
+
+# pull_request GITHUB_SHA refers to GitHub's temporary merge commit, not
+# necessarily to the actual PR head. Compile and audit the explicit source SHA.
+env:
+  VH_EXACT_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
   decoder-regressions:
@@ -44,6 +56,15 @@ jobs:
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_SOURCE_SHA }}
+      - name: Reject non-head checkout (not the PR merge ref)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Container image uid may differ from actions/checkout owner. Trust
+          # only this workspace for this one git command (no global config).
+          test "$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
       - name: Install Pillow from Ubuntu packages
         run: |
           sudo apt-get update
@@ -56,6 +77,10 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_decode_guest_sync_studio_c.py' -v
       - name: Fail-closed GCC / Clang / guest parity auditor fixtures
         run: python3 -m unittest discover -s tests -p 'test_audit_guest_sync_cross_arch.py' -v
+      - name: Reject corrupted 48-kHz resampler/ramp guest receipts
+        run: python3 -m unittest discover -s tests -p 'test_decode_guest_native_48k.py' -v
+      - name: Reject mismatched 48-kHz native output fingerprints
+        run: python3 -m unittest discover -s tests -p 'test_audit_guest_native48_cross_arch.py' -v
       - name: Re-run guest exact-clock DSP source under GCC and Clang sanitizer
         shell: bash
         run: |
@@ -66,15 +91,30 @@ jobs:
               -fsanitize=address,undefined -fno-sanitize-recover=all \
               -fno-omit-frame-pointer \
               tests/test_guest_sync_studio_c.c \
-              source/vh_guest_sync_studio_c.c \
+              source/vh_guest_sync_studio_c.c source/vh_guest_native_48k.c \
               source/vh_game_music_mailbox.c source/vh_music_scene.c \
               source/vh_native_seq.c source/vh_native_spu.c \
               source/vh_spu_reverb.c source/vh_spu_gaussian.c \
-              source/vh_audio_stream.c source/vh_audio_scene_optical.c \
+              source/vh_audio_stream.c source/vh_audio_resample.c \
+              source/vh_audio_output_ramp.c source/vh_audio_scene_optical.c \
               source/vh_audio_scene_trace.c -lm \
               -o "/tmp/test-map02-guest-sync-$cc"
             ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
               "/tmp/test-map02-guest-sync-$cc" | tee "build/host-sync/$cc.txt"
+          done
+      - name: Independently check production resampler at exact 64x512 cue boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for cc in gcc clang; do
+            "$cc" -std=c11 -O1 -g -Wall -Wextra -Werror -Isource \
+              -fsanitize=address,undefined -fno-sanitize-recover=all \
+              -fno-omit-frame-pointer \
+              tests/test_vh_guest_native_48k_boundary.c \
+              source/vh_audio_resample.c source/vh_audio_output_ramp.c \
+              -o "/tmp/test-map02-48k-boundary-$cc"
+            ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+              "/tmp/test-map02-48k-boundary-$cc"
           done
       - name: Test C11 PCM witness event kinds and optical byte serialization
         shell: bash
@@ -113,6 +153,15 @@ jobs:
     timeout-minutes: 18
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_SOURCE_SHA }}
+      - name: Reject non-head checkout (not the PR merge ref)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Container image uid may differ from actions/checkout owner. Trust
+          # only this workspace for this one git command (no global config).
+          test "$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
       - name: Cross-compile exact two guest trace receipts
         shell: bash
         run: |
@@ -141,7 +190,8 @@ jobs:
               hashes[str(mode)]=hashlib.sha256(data).hexdigest()
           assert hashes["0"]!=hashes["1"]
           receipt={"schema":"vh-map02-post-join-guest-trace/v1",
-                   "git_sha":os.environ["GITHUB_SHA"],
+                   "git_sha":os.environ["VH_EXACT_SOURCE_SHA"],
+                   "workflow_event_sha":os.environ["GITHUB_SHA"],
                    "run_id":int(os.environ["GITHUB_RUN_ID"]),
                    "attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
                    "trace_receipt_enabled":True,
@@ -164,6 +214,15 @@ jobs:
     timeout-minutes: 18
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_SOURCE_SHA }}
+      - name: Reject non-head checkout (not the PR merge ref)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Container image uid may differ from actions/checkout owner. Trust
+          # only this workspace for this one git command (no global config).
+          test "$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
       - uses: actions/download-artifact@v4
         with:
           name: map02-wet-tail-guest-optical-trace-nros
@@ -182,7 +241,8 @@ jobs:
           root=Path("nros")
           m=json.loads((root/"manifest.json").read_text())
           assert m["schema"]=="vh-map02-post-join-guest-trace/v1"
-          assert m["git_sha"]==os.environ["GITHUB_SHA"]
+          assert m["git_sha"]==os.environ["VH_EXACT_SOURCE_SHA"]
+          assert m["workflow_event_sha"]==os.environ["GITHUB_SHA"]
           assert m["run_id"]==int(os.environ["GITHUB_RUN_ID"])
           assert m["attempt"]==int(os.environ["GITHUB_RUN_ATTEMPT"])
           assert m["trace_receipt_enabled"]
@@ -288,6 +348,9 @@ jobs:
               sleep 10
               import -window "$window" "$ROOT/wet-tail-$MODE-synced.png"
               test -s "$ROOT/wet-tail-$MODE-synced.png"
+              sleep 8
+              import -window "$window" "$ROOT/wet-tail-$MODE-native48.png"
+              test -s "$ROOT/wet-tail-$MODE-native48.png"
               kill -INT "$guest" 2>/dev/null || true
               sleep 1
               kill -KILL "$guest" 2>/dev/null || true
@@ -305,6 +368,10 @@ jobs:
               --image "runtime-evidence/wet-tail-$mode-synced.png" \
               --mode "$mode" \
               --output "runtime-evidence/wet-tail-$mode-synced.json"
+            python3 tools/decode_guest_native_48k.py \
+              --image "runtime-evidence/wet-tail-$mode-native48.png" \
+              --mode "$mode" \
+              --output "runtime-evidence/wet-tail-$mode-native48.json"
           done
           python3 - <<'PY'
           import json
@@ -312,6 +379,24 @@ jobs:
           root=Path("runtime-evidence")
           pair=[json.loads((root/f"wet-tail-{i}-metrics.json").read_text()) for i in (0,1)]
           synced=[json.loads((root/f"wet-tail-{i}-synced.json").read_text()) for i in (0,1)]
+          native=[json.loads((root/f"wet-tail-{i}-native48.json").read_text()) for i in (0,1)]
+          assert all(x["result"]=="GUEST_NATIVE_48K_SYNCHRONIZED_TAIL_OBSERVED" for x in native)
+          for key in ("pre_switch_native_fnv1a64", "wet_native_fnv1a64",
+                      "reset_native_fnv1a64","post_switch_native_frames",
+                      "different_post_switch_native_pages","retained_tail_nonzero_sample_values",
+                      "reset_first_page_nonzero_sample_values",
+                      "reset_later_pages_nonzero_sample_values"):
+              assert native[0][key]==native[1][key], (
+                  f"48k synthetic output differs between outer NRO modes: {key}")
+          (root/"guest-synchronized-48k-bridge.json").write_text(
+              json.dumps({"schema":"vh-map02-same-clock-native-48k-bridge/v1",
+                          "both_guests_agree":True,
+                          "native_48000_hz_converter_and_ramp_used":True,
+                          "reset_later_pages_are_zero":True,
+                          "one_interpolation_stereo_boundary_frame_allowed":True,
+                          "live_music_audout_sample_aligned":False,
+                          "physical_switch_audio_tested":False,
+                          "results":native},indent=2,sort_keys=True)+"\n")
           assert all(x["result"]=="GUEST_SYNCHRONIZED_SYNTHETIC_STUDIO_C_TAIL_PROVEN" for x in synced)
           for key in ("pre_switch_pcm_fnv1a64", "retained_tail_pcm_fnv1a64",
                       "reset_tail_pcm_fnv1a64", "wet_nonzero_sample_values",
@@ -343,8 +428,15 @@ jobs:
             --guest0 runtime-evidence/wet-tail-0-synced.json \
             --guest1 runtime-evidence/wet-tail-1-synced.json \
             --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" \
-            --sha "$GITHUB_SHA" \
+            --sha "$VH_EXACT_SOURCE_SHA" \
             --out runtime-evidence/guest-host-cross-architecture-parity.json
+          python3 tools/audit_guest_native48_cross_arch.py \
+            --gcc host-sync/gcc.txt --clang host-sync/clang.txt \
+            --guest0 runtime-evidence/wet-tail-0-native48.json \
+            --guest1 runtime-evidence/wet-tail-1-native48.json \
+            --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" \
+            --sha "$VH_EXACT_SOURCE_SHA" \
+            --out runtime-evidence/guest-native48-cross-architecture-parity.json
       - name: Always archive guest receipts, PNG screenshots and logs
         if: always()
         uses: actions/upload-artifact@v4

@@ -27,6 +27,10 @@ on:
 permissions:
   contents: read
 
+# Pin all three jobs to the source commit, not the ephemeral PR merge ref.
+env:
+  VH_EXACT_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
 jobs:
   decoder-regressions:
     name: Optical packet CRC, serial and PCM receipt negative tests
@@ -34,6 +38,13 @@ jobs:
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_SOURCE_SHA }}
+      - name: Verify exact source checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
       - name: Install Pillow from Ubuntu packages
         run: |
           sudo apt-get update
@@ -72,6 +83,13 @@ jobs:
     timeout-minutes: 18
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_SOURCE_SHA }}
+      - name: Verify exact source checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
       - name: Cross-compile exact two guest trace receipts
         shell: bash
         run: |
@@ -100,7 +118,8 @@ jobs:
               hashes[str(mode)]=hashlib.sha256(data).hexdigest()
           assert hashes["0"]!=hashes["1"]
           receipt={"schema":"vh-map02-post-join-guest-trace/v1",
-                   "git_sha":os.environ["GITHUB_SHA"],
+                   "git_sha":os.environ["VH_EXACT_SOURCE_SHA"],
+                   "workflow_event_sha":os.environ["GITHUB_SHA"],
                    "run_id":int(os.environ["GITHUB_RUN_ID"]),
                    "attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
                    "trace_receipt_enabled":True,
@@ -123,6 +142,13 @@ jobs:
     timeout-minutes: 18
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_SOURCE_SHA }}
+      - name: Verify exact source checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
       - uses: actions/download-artifact@v4
         with:
           name: map02-wet-tail-guest-optical-trace-nros
@@ -137,7 +163,8 @@ jobs:
           root=Path("nros")
           m=json.loads((root/"manifest.json").read_text())
           assert m["schema"]=="vh-map02-post-join-guest-trace/v1"
-          assert m["git_sha"]==os.environ["GITHUB_SHA"]
+          assert m["git_sha"]==os.environ["VH_EXACT_SOURCE_SHA"]
+          assert m["workflow_event_sha"]==os.environ["GITHUB_SHA"]
           assert m["run_id"]==int(os.environ["GITHUB_RUN_ID"])
           assert m["attempt"]==int(os.environ["GITHUB_RUN_ATTEMPT"])
           assert m["trace_receipt_enabled"]

@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "vh_guest_sync_studio_c.h"
+#include "vh_audio_stream.h"
 static uint32_t crc32(const uint8_t *buf,unsigned count) {
     uint32_t crc=UINT32_C(0xffffffff);
     for(unsigned i=0;i<count;i++) {
@@ -16,6 +17,9 @@ static uint32_t crc32(const uint8_t *buf,unsigned count) {
 static uint32_t le32(const uint8_t *p) {
     return (uint32_t)p[0]|((uint32_t)p[1]<<8)|
            ((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24);
+}
+static uint64_t le64(const uint8_t *p) {
+    return (uint64_t)le32(p)|((uint64_t)le32(p+4u)<<32);
 }
 int main(void) {
     VhGuestSyncStudioC a,b;
@@ -30,6 +34,33 @@ int main(void) {
     assert(a.initial_hash==b.initial_hash && a.wet_hash==b.wet_hash &&
            a.reset_hash==b.reset_hash && a.wet_nonzero==b.wet_nonzero);
     assert(a.wet_hash!=a.reset_hash);
+    assert(a.native48.different_pages==48);
+    assert(a.native48.prefix_frames==35665u);
+    assert(a.native48.tail_frames==26750u);
+    assert(a.native48.wet_nonzero>0u);
+    assert(a.native48.reset_first_page_nonzero<=2u);
+    assert(a.native48.reset_later_nonzero==0u);
+    assert(a.native48.verified_roundtrips==2u);
+    assert(a.native48.prefix_hash==b.native48.prefix_hash);
+    assert(a.native48.wet_hash==b.native48.wet_hash);
+    assert(a.native48.reset_hash==b.native48.reset_hash);
+    assert(a.native48.wet_hash!=a.native48.reset_hash);
+    assert(vh_guest_native_48k_encode(&a,packet)==0);
+    assert(!memcmp(packet,"VH48K001",8));
+    assert(packet[8]==1u && packet[9]==0u && packet[10]==15u);
+    /* Check all 9 encoded numbers/fingerprints directly, not only CRC.
+     * Decoder and cross-architecture auditor remain separate gates. */
+    assert(le32(packet+12)==35665u);
+    assert(le32(packet+16)==26750u);
+    assert(le32(packet+20)==48u);
+    assert(le32(packet+24)==a.native48.wet_nonzero);
+    assert(le32(packet+28)==a.native48.reset_first_page_nonzero);
+    assert(le32(packet+32)==0u);
+    assert(le64(packet+40)==a.native48.prefix_hash);
+    assert(le64(packet+48)==a.native48.wet_hash);
+    assert(le64(packet+56)==a.native48.reset_hash);
+    assert(le32(packet+64)==2u);
+    assert(le32(packet+909)==crc32(packet,909u));
     assert(vh_guest_sync_studio_c_encode(&a,packet)==0);
     assert(memcmp(packet,"VHSYNC01",8)==0);
     assert(packet[8]==1u && packet[9]==0u && packet[10]==15u);
@@ -37,10 +68,75 @@ int main(void) {
     assert(le32(packet+20)==48u && le32(packet+24)==a.wet_nonzero);
     assert(le32(packet+28)==0u && le32(packet+64)==2u);
     assert(le32(packet+909)==crc32(packet,909u));
+    /* Negative sequential-page cases use generated silence only. The
+     * recorder must fail before consuming resampler state on invalid order. */
+    {
+        static const int16_t quiet[VH_AUDIO_BLOCK_FRAMES*2u]={0};
+        VhGuestNative48k probe;
+        vh_guest_native_48k_init(&probe);
+        assert(vh_guest_native_48k_observe(&probe,quiet,quiet,0u,1u)==-1);
+        assert(vh_guest_native_48k_observe(&probe,quiet,quiet,1u,0u)==-1);
+        assert(vh_guest_native_48k_observe(&probe,quiet,quiet,0u,64u)==-1);
+        assert(vh_guest_native_48k_observe(&probe,quiet,quiet,1u,48u)==-1);
+        assert(vh_guest_native_48k_observe(&probe,quiet,quiet,0u,0u)==0);
+        assert(probe.prefix_frames==557u);
+        assert(vh_guest_native_48k_observe(&probe,quiet,quiet,0u,0u)==-1);
+        assert(vh_guest_native_48k_observe(&probe,quiet,quiet,0u,2u)==-1);
+        assert(vh_guest_native_48k_observe(&probe,quiet,quiet,0u,1u)==0);
+        assert(probe.prefix_frames==1114u);
+        /* Exercise every other prefix page, not only the first two.
+         * The test's literal-rate oracle is independent of the recorder. */
+        for(unsigned i=2u;i<64u;i++) {
+            if(i==16u) {
+                ++probe.prefix_frames; /* forged one-frame accumulated drift */
+                assert(vh_guest_native_48k_observe(&probe,quiet,quiet,0u,i)==-1);
+                --probe.prefix_frames;
+            }
+            const uint64_t source=(uint64_t)(i+1u)*512u;
+            const uint32_t expected=(uint32_t)(
+                ((source-1u)*48000u)/44100u+1u);
+            assert(vh_guest_native_48k_observe(&probe,quiet,quiet,0u,i)==0);
+            assert(probe.prefix_frames==expected);
+            assert(probe.tail_frames==0u);
+        }
+        assert(probe.prefix_frames==35665u);
+        assert(vh_guest_native_48k_observe(&probe,quiet,quiet,0u,63u)==-1);
+        assert(vh_guest_native_48k_observe(&probe,quiet,quiet,1u,1u)==-1);
+        /* All 48 post-switch pages must follow that same cumulative clock. */
+        for(unsigned i=0u;i<48u;i++) {
+            if(i==17u) {
+                ++probe.tail_frames; /* forged tail clock drift */
+                assert(vh_guest_native_48k_observe(&probe,quiet,quiet,1u,i)==-1);
+                --probe.tail_frames;
+            }
+            const uint64_t source=(uint64_t)(65u+i)*512u;
+            const uint32_t total=(uint32_t)(
+                ((source-1u)*48000u)/44100u+1u);
+            assert(vh_guest_native_48k_observe(&probe,quiet,quiet,1u,i)==0);
+            assert(probe.prefix_frames==35665u);
+            assert(probe.tail_frames==total-35665u);
+        }
+        assert(probe.tail_frames==26750u);
+        assert(probe.different_pages==0u);
+        assert(probe.wet_nonzero==0u);
+        assert(probe.reset_first_page_nonzero==0u);
+        assert(probe.reset_later_nonzero==0u);
+        assert(vh_guest_native_48k_observe(&probe,quiet,quiet,1u,47u)==-1);
+    }
+    puts("PASS: 112 native 48k observer pages preserve the exact integer clock");
+    puts("PASS: native 48k observer rejects skipped/replayed pages, early tail and forged +/-1 frame drift");
     puts("PASS: synchronized guest DSP replay: 64 identical prefix, 48/48 different tail blocks, 0 reset samples");
     printf("initial=%016llx wet=%016llx reset=%016llx wet_nonzero=%u\n",
            (unsigned long long)a.initial_hash,
            (unsigned long long)a.wet_hash,
            (unsigned long long)a.reset_hash,a.wet_nonzero);
+    printf("native48 pre=%016llx wet=%016llx reset=%016llx prefix_frames=%u tail_frames=%u different_pages=%u wet_nonzero=%u reset_first=%u reset_later=%u\n",
+           (unsigned long long)a.native48.prefix_hash,
+           (unsigned long long)a.native48.wet_hash,
+           (unsigned long long)a.native48.reset_hash,
+           a.native48.prefix_frames,a.native48.tail_frames,
+           a.native48.different_pages,a.native48.wet_nonzero,
+           a.native48.reset_first_page_nonzero,
+           a.native48.reset_later_nonzero);
     return 0;
 }
