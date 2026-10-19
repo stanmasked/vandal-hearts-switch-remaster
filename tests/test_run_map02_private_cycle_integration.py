@@ -1,6 +1,7 @@
 """Cross-module MAP02 coordinator integration with real SYNTHETIC evidence.
 
-Only strict readiness and the unavailable original PC child are mocked.
+Only strict readiness, unavailable original PC child, and original-file
+identity checks are mocked. Actual finalization and sealing use test assets.
 Finalization, CD/GPU/RGB24/PNG matching, final seal and re-verification
 execute their real production verifiers against generated synthetic files.
 """
@@ -37,6 +38,21 @@ class PrivateOneShotIntegratedEvidenceTests(unittest.TestCase):
         self.binary = Path("/not-a-real-pc-elf")
         self.build_receipt = Path("/no-private-build-receipt")
         self.build_bundle = Path("/no-original-source-overlay")
+        # This suite exercises real post-process CD/GPU/RGB24 finalization
+        # with synthetic evidence, but has no retail ELF/disc/receipt.
+        # Source-bound file/inode checks are exercised with real disposable
+        # files in test_check_map02_private_cycle_readiness; keep them
+        # synthetic here instead of opening nonexistent original inputs.
+        self.file_identity = patch(
+            "tools.run_map02_private_cycle_session._private_input_identity",
+            return_value=(1, 21, 22, 0o100600, 1, 256, 3, 4))
+        self.file_identity.start()
+        self.addCleanup(self.file_identity.stop)
+        self.receipt_dir_identity = patch(
+            "tools.run_map02_private_cycle_session._receipt_directory_identity",
+            return_value=(1, 33, 22, 0o40700, 3, 4))
+        self.receipt_dir_identity.start()
+        self.addCleanup(self.receipt_dir_identity.stop)
         self.preflight = patch(
             "tools.run_map02_private_cycle_session.verify_private_cycle_readiness",
             return_value={
