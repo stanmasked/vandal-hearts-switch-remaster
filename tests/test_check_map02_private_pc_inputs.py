@@ -166,6 +166,25 @@ for name, offset, size in [
         with self.assertRaisesRegex(ValueError, "loaded section differs"):
             verify_private_pc_inputs(self.root)
 
+    def test_large_loaded_section_checks_every_64k_chunk(self):
+        offset = self.add_synthetic_loaded_section(size=70000)
+        result = compare_loaded_sections(self.exe, self.elf)
+        self.assertEqual(result["original_allocated_sections_compared"], 4)
+        self.assertEqual(result["original_allocated_section_bytes_compared"], 71216)
+        bad = bytearray(self.elf.read_bytes())
+        bad[offset + 66000] ^= 1
+        self.elf.write_bytes(bad)
+        with self.assertRaisesRegex(ValueError, "loaded section differs"):
+            compare_loaded_sections(self.exe, self.elf)
+
+    def test_no_mapped_original_elf_sections_fails_closed(self):
+        changed = bytearray(self.elf.read_bytes())
+        for index in range(1, 4):
+            struct.pack_into("<I", changed, 64 + index * 40 + 8, 0)
+        self.elf.write_bytes(changed)
+        with self.assertRaisesRegex(ValueError, "no mapped initialized"):
+            compare_loaded_sections(self.exe, self.elf)
+
     def test_mapped_section_overlap_and_boundary_rejected(self):
         self.add_synthetic_loaded_section(ANCHORS[0][1], size=16)
         with self.assertRaisesRegex(ValueError, "overlapping allocated"):
