@@ -126,6 +126,87 @@ def compare_data_ranges(exe_path, elf_path):
     }
 
 
+
+def compare_loaded_sections(exe_path, elf_path):
+    """Compare ALL file-backed, allocated ELF sections inside the PS-X load image.
+
+    This is deliberately separate from the three pinned data anchors. It
+    checks the mapped sections it can find, not uncovered gaps, zero-fill
+    sections, external allocations, or a matching source-level decompilation.
+    Only aggregate counts leave this verifier; private bytes remain local.
+    """
+    with _stable_source(exe_path, "US PS-X EXE") as (exe, exe_size):
+        with _stable_source(elf_path, "MIPS ELF") as (elf, elf_size):
+            header = _read_at(exe, PSX_HEADER, 0)
+            if len(header) != PSX_HEADER or header[:8] != b"PS-X EXE":
+                raise ValueError("original US EXE does not have a full PS-X header")
+            exe_load, payload_size = struct.unpack_from("<II", header, 0x18)
+            if (exe_load != LOAD_VRAM or payload_size == 0 or
+                    payload_size > exe_size - PSX_HEADER or
+                    exe_load + payload_size > 0x100000000):
+                raise ValueError("original PS-X executable has invalid load extent")
+            end_of_image = exe_load + payload_size
+
+            elf_header = _read_at(elf, 52, 0)
+            if (len(elf_header) != 52 or elf_header[:6] != b"\\x7fELF\\x01\\x01" or
+                    struct.unpack_from("<H", elf_header, 18)[0] != 8):
+                raise ValueError("extracted original MIPS ELF has invalid ELF32 header")
+            shoff = struct.unpack_from("<I", elf_header, 32)[0]
+            entsize, count = struct.unpack_from("<HH", elf_header, 46)
+            if (shoff < 52 or entsize < 40 or not (1 <= count <= 512)
+                    or shoff + entsize * count > elf_size):
+                raise ValueError("original ELF section headers are invalid")
+
+            mapped = []
+            outside = 0
+            for index in range(count):
+                record = _read_at(elf, entsize, shoff + entsize * index)
+                if len(record) != entsize:
+                    raise ValueError("original ELF section header read incomplete")
+                _, kind, flags, address, offset, size = struct.unpack_from(
+                    "<IIIIII", record)
+                if kind != 1 or not (flags & 0x2) or size == 0:
+                    continue  # not initialized runtime bytes (e.g. .bss)
+                if offset + size > elf_size or address + size > 0x100000000:
+                    raise ValueError("original ELF loaded section has invalid bounds")
+                if address >= end_of_image or address + size <= exe_load:
+                    outside += 1
+                    continue
+                if address < exe_load or address + size > end_of_image:
+                    raise ValueError("original ELF loaded section crosses PS-X extent")
+                mapped.append((address, address + size, offset))
+
+            if not mapped:
+                raise ValueError("original ELF has no mapped initialized PS-X sections")
+            mapped.sort()
+            total = 0
+            previous_end = exe_load
+            for begin, end, offset in mapped:
+                if begin < previous_end:
+                    raise ValueError("original ELF has overlapping allocated sections")
+                previous_end = end
+                length = end - begin
+                for start in range(0, length, 65536):
+                    chunk_size = min(65536, length - start)
+                    original = _read_at(
+                        exe, chunk_size, PSX_HEADER + begin - exe_load + start)
+                    extracted = _read_at(elf, chunk_size, offset + start)
+                    if (len(original) != chunk_size or
+                            len(extracted) != chunk_size or
+                            original != extracted):
+                        raise ValueError(
+                            "extracted ELF loaded section differs from original PS-X bytes")
+                total += length
+    return {
+        "original_exe_and_mips_elf_loaded_sections_match": True,
+        "original_allocated_sections_compared": len(mapped),
+        "original_allocated_section_bytes_compared": total,
+        "unmapped_allocated_sections_not_authenticated": outside,
+        "complete_matching_decomp_proven": False,
+        "actual_gameplay_executed": False,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("original_psx_executable", type=Path)
