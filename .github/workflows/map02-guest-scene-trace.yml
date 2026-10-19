@@ -200,6 +200,8 @@ jobs:
               import -window "$window" "$ROOT/wet-tail-$MODE-trace.png"
               test -s "$ROOT/wet-tail-$MODE-trace.png"
               kill -INT "$guest" 2>/dev/null || true
+              sleep 1
+              kill -KILL "$guest" 2>/dev/null || true
               wait "$guest" 2>/dev/null || true
             '
             python3 tools/decode_map02_guest_scene_trace.py \
