@@ -29,11 +29,27 @@ class PrivateOneShotCycleTests(unittest.TestCase):
         self.plan = b'{"test":"only synthetic input"}\n'
         self.plan_identity = (1, 11, 22, 0o100600, 1, len(self.plan), 3, 4)
         self.mocks = {}
+        self.ready_report = {
+            "schema": "vh.map02.private-pc-cycle-readiness.v1",
+            "private_directories_checked": 7,
+            "capture_folders_empty": 5,
+            "source_bound_plan_checked": True,
+            "original_pc_source_identity_checked": True,
+            "complete_pc_elf_symbols_checked": True,
+            "complete_pc_elf_bytes_checked": True,
+            "private_original_image_bytes_checked": True,
+            "pinned_full_elf_build_receipt_checked": True,
+            "prelaunch_inputs_stable_across_checks": True,
+            "ready_for_controlled_local_launch": True,
+            "gameplay_process_started": False,
+            "original_map02_rendering_proven": False,
+            "hardware_ps1_equivalence_proven": False,
+            "game_content_emitted": False,
+        }
         simulated = {
             "private_file": (self.plan, self.plan_identity),
             "_validate_plan": {"target_gpu_draw_frame": 12},
-            "verify_private_cycle_readiness": {
-                "ready_for_controlled_local_launch": True},
+            "verify_private_cycle_readiness": self.ready_report,
             "launch_observed_pc": {
                 "kernel_executable_hash_matched": True,
                 "same_process_gpu_scoped_nonce_checked": True,
@@ -181,7 +197,7 @@ class PrivateOneShotCycleTests(unittest.TestCase):
         def replace_folder(*args, **kwargs):
             source.rename(archived)
             source.mkdir(mode=0o700)
-            return {"ready_for_controlled_local_launch": True}
+            return self.ready_report
 
         self.mocks["verify_private_cycle_readiness"].side_effect = replace_folder
         with self.assertRaisesRegex(ValueError, "capture folders changed"):
@@ -197,7 +213,7 @@ class PrivateOneShotCycleTests(unittest.TestCase):
 
         def inject_output(*args, **kwargs):
             (native / "unexpected-synthetic-output").write_bytes(b"synthetic")
-            return {"ready_for_controlled_local_launch": True}
+            return self.ready_report
 
         self.mocks["verify_private_cycle_readiness"].side_effect = inject_output
         with self.assertRaisesRegex(ValueError, "capture folders changed"):
@@ -212,13 +228,36 @@ class PrivateOneShotCycleTests(unittest.TestCase):
         def replace_handoff(*args, **kwargs):
             handoff.rename(archived)
             handoff.mkdir(mode=0o700)
-            return {"ready_for_controlled_local_launch": True}
+            return self.ready_report
 
         self.mocks["verify_private_cycle_readiness"].side_effect = replace_handoff
         with self.assertRaisesRegex(ValueError, "capture folders changed"):
             self.execute()
         self.mocks["launch_observed_pc"].assert_not_called()
         self.mocks["finalize_private_capture"].assert_not_called()
+
+    def test_readiness_contract_rejects_forged_or_partial_reports(self):
+        # A single ready=True field must never become process authorization.
+        cases = (
+            {"ready_for_controlled_local_launch": True},
+            {**self.ready_report, "schema": "foreign-schema"},
+            {**self.ready_report, "private_directories_checked": True},
+            {**self.ready_report, "capture_folders_empty": 4},
+            {**self.ready_report, "complete_pc_elf_bytes_checked": False},
+            {**self.ready_report, "prelaunch_inputs_stable_across_checks": None},
+            {**self.ready_report, "gameplay_process_started": True},
+            {**self.ready_report, "game_content_emitted": True},
+            {**self.ready_report, "original_map02_rendering_proven": True},
+            {**self.ready_report, "hardware_ps1_equivalence_proven": True},
+        )
+        for report in cases:
+            with self.subTest(report=report):
+                self.mocks["verify_private_cycle_readiness"].return_value = report
+                with self.assertRaisesRegex(ValueError, "report contract mismatch"):
+                    self.execute(dry_run=True, allow_local_completion=False)
+        self.mocks["launch_observed_pc"].assert_not_called()
+        self.mocks["seal_final_capture"].assert_not_called()
+        self.assertFalse(list(self.folders[-1].iterdir()))
 
     def test_dry_run_and_publish_permission_mutually_exclusive(self):
         with self.assertRaisesRegex(ValueError, "forbids local completion"):
