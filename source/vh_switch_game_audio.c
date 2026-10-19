@@ -466,6 +466,21 @@ static void audio_worker(void *unused) {
             state = -7;
             break;
         }
+#if VH_MAP02_AUDIO_PCM_WITNESS
+        /* Optional post-render per-ticket witness: inspect exactly the
+         * FIRST 48-kHz stereo page rendered AFTER this scene is accepted,
+         * following the actual output ramp. Only a zero/nonzero flag is
+         * recorded: no sample payload, file I/O or DSP state mutation.
+         * The page has not yet been submitted to audout at this point. */
+        if (pending_trace_page) {
+            unsigned nonzero = 0u;
+            for (size_t sample=0; sample<count*2u; ++sample)
+                nonzero |= pcm_48000_page[sample] != 0;
+            scene_trace_emit(nonzero ? VH_SCENE_TRACE_PCM_PAGE_NONZERO
+                                     : VH_SCENE_TRACE_PCM_PAGE_SILENT,
+                             pending_trace_serial,pending_trace_scene);
+        }
+#endif
         /* If audout rejects the page, reinitialize the device and
          * retry exactly these samples. Never re-run scene/render or
          * resampler for the same page (that would skip musical time).
