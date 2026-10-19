@@ -15,7 +15,7 @@ import sys
 import tempfile
 
 from tools.preflight_map02_private_dda_capture import (
-    preflight, _executable_fingerprint, DIR_KEYS,
+    preflight, _executable_fingerprint, _require_outside_git_checkout, DIR_KEYS,
 )
 from tools.verify_map02_private_capture_session import verify_session
 from tools.map02_linux_elf_process_image import require_elf_image, observe_live_elf_image
@@ -270,6 +270,11 @@ def capture(executable, preflight_report, summary_report, *,
                     receipt["failure_category"] = "native_elf_required"
             if receipt["failure_category"] is None:
                 try:
+                    # Git can be initialized after the read-only preflight
+                    # or while the preflight receipt is being written. Recheck
+                    # both native output paths immediately before child exec.
+                    for key in DIR_KEYS:
+                        _require_outside_git_checkout(env[key])
                     # Linux exec resolves the already-checked descriptor,
                     # never the pathname. Synthetic shebang fixtures still
                     # run when the strict ELF gate is not requested.
@@ -329,6 +334,10 @@ def capture(executable, preflight_report, summary_report, *,
                 env[DIR_KEYS[0]], native_frame=config["capture_frame"],
                 preflight_report=preflight_report, executable=executable,
             )
+            # Independent native GPU journal verification may be slow. A
+            # late .git marker still forbids issuing a positive receipt.
+            for key in DIR_KEYS:
+                _require_outside_git_checkout(env[key])
             receipt["capture_verified"] = True
         except (ValueError, OSError):
             receipt["failure_category"] = "incomplete_or_invalid_private_capture"
