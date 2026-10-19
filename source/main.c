@@ -557,6 +557,35 @@ int main(int argc, char **argv) {
                     (void)unlink(lease_path);
             }
         }
+        /* Stage351: own exclusive post-join exit-tail reason evidence.
+         * The previous Stage313 and Stage347 CSV files stay identical.
+         * A failed partial source is never left as a valid observation.
+         */
+        int reason_fd=-1;
+        char reason_path[256];
+        for(unsigned slot=0;slot<32u;slot++) {
+            const int n=snprintf(reason_path,sizeof reason_path,
+                VH_SCENE_TRACE_SD_DIRECTORY
+                "/audio-exit-tail-reason-%03u.csv",slot);
+            if(n<=0 || (size_t)n>=sizeof reason_path) break;
+            reason_fd=open(reason_path,O_WRONLY|O_CREAT|O_EXCL,0600);
+            if(reason_fd>=0) break;
+            if(errno!=EEXIST) break;
+        }
+        if(reason_fd>=0) {
+            FILE *reason_stream=fdopen(reason_fd,"w");
+            if(!reason_stream) {
+                (void)close(reason_fd);
+                (void)unlink(reason_path);
+            } else {
+                const int rows=vh_switch_game_audio_tail_reason_dump(
+                    reason_stream);
+                const int flushed=fflush(reason_stream);
+                const int closed=fclose(reason_stream);
+                if(rows!=8 || flushed!=0 || closed!=0)
+                    (void)unlink(reason_path);
+            }
+        }
         char scene_path[VH_SCENE_TRACE_EXPORT_PATH_CAP];
         const VhSceneExportResult saved=vh_switch_game_audio_trace_export(
             scene_path,sizeof scene_path);
