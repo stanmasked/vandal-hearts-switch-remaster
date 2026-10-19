@@ -1,0 +1,50 @@
+# Additive opt-in NRO. Invoke: make -f Makefile -f Makefile.map02-audio map02-audio-nro
+# The existing main Makefile and default MAP02 NRO remain unchanged.
+# Generated fixtures only: NO original SEQ/VAB samples are committed.
+MAP02_AUDIO_BUILD ?= build/map02-audio
+MAP02_AUDIO_WET_TAIL ?= 0
+MAP02_AUDIO_TARGET := vandal-hearts-map02-audio
+
+MAP02_AUDIO_SOURCES := \
+  $(SOURCES)/main.c \
+  $(SOURCES)/vh_switch_game_audio.c \
+  $(SOURCES)/vh_audio_scene_trace.c \
+  $(SOURCES)/vh_audio_scene_trace_export.c \
+  $(SOURCES)/vh_audio_scene_optical.c \
+  $(SOURCES)/vh_game_music_banks.c \
+  $(SOURCES)/vh_audio_assets.c \
+  $(SOURCES)/vh_native_vab.c \
+  $(SOURCES)/vh_spu_adpcm.c \
+  $(SOURCES)/vh_game_music_mailbox.c \
+  $(SOURCES)/vh_music_scene.c \
+  $(SOURCES)/vh_native_seq.c \
+  $(SOURCES)/vh_native_spu.c \
+  $(SOURCES)/vh_spu_reverb.c \
+  $(SOURCES)/vh_spu_gaussian.c \
+  $(SOURCES)/vh_audio_resample.c \
+  $(SOURCES)/vh_audio_output_recovery.c \
+  $(SOURCES)/vh_audio_buffer_lease.c \
+  $(SOURCES)/vh_audout_queue_telemetry.c \
+  $(SOURCES)/vh_audout_queue_export.c \
+  $(SOURCES)/vh_audio_output_ramp.c \
+  $(SOURCES)/vh_audio_output_edges.c \
+  $(SOURCES)/vh_audio_diagnostics.c \
+  $(SOURCES)/vh_audio_diag_journal.c \
+  $(SOURCES)/vh_audio_diag_export.c \
+  $(SOURCES)/vh_audio_stream.c
+
+.PHONY: map02-audio-nro
+map02-audio-nro: $(MAP02_AUDIO_BUILD)/$(MAP02_AUDIO_TARGET).nro
+
+$(MAP02_AUDIO_BUILD):
+	mkdir -p $@
+
+$(MAP02_AUDIO_BUILD)/$(MAP02_AUDIO_TARGET).elf: $(MAP02_AUDIO_SOURCES) $(wildcard $(SOURCES)/vh_*.h) | $(MAP02_AUDIO_BUILD)
+	$(CC) $(CFLAGS) -std=c11 -DVH_MAP02_AUDIO_EXPERIMENT=1 -DVH_GAME_AUDIO_WET_TAIL=$(MAP02_AUDIO_WET_TAIL) -Isource $(LDFLAGS) $(MAP02_AUDIO_SOURCES) -o $@ $(LDLIBS) -lm
+
+$(MAP02_AUDIO_BUILD)/$(MAP02_AUDIO_TARGET).nacp: | $(MAP02_AUDIO_BUILD)
+	$(NACPTOOL) --create "Vandal Hearts MAP02 Audio Research" "$(APP_AUTHOR)" "$(APP_VERSION)" $@
+
+$(MAP02_AUDIO_BUILD)/$(MAP02_AUDIO_TARGET).nro: $(MAP02_AUDIO_BUILD)/$(MAP02_AUDIO_TARGET).elf $(MAP02_AUDIO_BUILD)/$(MAP02_AUDIO_TARGET).nacp
+	$(ELF2NRO) $< $@ --nacp=$(MAP02_AUDIO_BUILD)/$(MAP02_AUDIO_TARGET).nacp
+	python3 tests/check_nro.py $@
