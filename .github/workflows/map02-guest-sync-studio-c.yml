@@ -62,7 +62,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
+          # Container image uid may differ from actions/checkout owner. Trust
+          # only this workspace for this one git command (no global config).
+          test "$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
       - name: Install Pillow from Ubuntu packages
         run: |
           sudo apt-get update
@@ -157,7 +159,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
+          # Container image uid may differ from actions/checkout owner. Trust
+          # only this workspace for this one git command (no global config).
+          test "$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
       - name: Cross-compile exact two guest trace receipts
         shell: bash
         run: |
@@ -216,7 +220,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
+          # Container image uid may differ from actions/checkout owner. Trust
+          # only this workspace for this one git command (no global config).
+          test "$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
       - uses: actions/download-artifact@v4
         with:
           name: map02-wet-tail-guest-optical-trace-nros
