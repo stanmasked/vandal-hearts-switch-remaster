@@ -58,13 +58,19 @@ replaces its filename or dependencies.
    host test suites, plus unchanged MAP02 graphics tests.
 3. Separate original and audio-enabled NRO builds on devkitA64, NRO header
    validation, nonempty audio binary and distinct output bytes.
-4. The resulting build artifacts are retained for subsequent **actual**
-   NeXium framebuffer and PulseAudio captures.
+4. The resulting build artifacts are retained for **actual** NeXium checks.
+   The dedicated `.github/workflows/map02-audio-nexium.yml` reuses the
+   existing working MAP02 screenshot/input smoke test against the combined
+   NRO, verifies the recorded same-run SHA256, and requires an on-screen
+   blue `AUDIO ACTIVE` marker emitted when the guest audout worker reports
+   its playing state. This optical marker is NOT a virtual PCM measurement.
 
 A successful build is not a successful emulator run, a sample-aligned
-A/B experiment, or a physical hardware-audio result. Follow-up work must
-exercise the **combined NRO** in NeXium and check simultaneous MAP02 graphics,
-input and generated audio without conflating a virtual monitor with real DAC.
+A/B experiment, or a physical hardware-audio result. The optical NeXium gate
+can establish co-execution of MAP02 graphics/input with a *running guest
+audio worker*, but it cannot establish sound generation or audibility.
+Actual PulseAudio monitor PCM capture and physical speaker testing remain
+separate evidence gates; they must not be inferred from the blue marker.
 
 **Draft only / DO NOT MERGE** until the NRO CI and emulator evidence are
 reviewed. Parent Draft PRs #171, #177, #187 and #194 are unchanged.
