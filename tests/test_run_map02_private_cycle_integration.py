@@ -58,6 +58,18 @@ class PrivateOneShotIntegratedEvidenceTests(unittest.TestCase):
             })
         self.preflight_mock = self.preflight.start()
         self.addCleanup(self.preflight.stop)
+        # Existing real synthetic evidence is intentionally populated:
+        # this integration checks finalization, not the empty prelaunch
+        # filesystem gate (covered independently by the unit suite).
+        self.layout = patch(
+            "tools.run_map02_private_cycle_session.inspect_private_launch_layout",
+            return_value={
+                "prelaunch_layout_ready": True,
+                "private_directory_roles_checked": 7,
+                "capture_output_directories_empty": 5,
+                "single_private_handoff_plan_present": True})
+        self.layout_mock = self.layout.start()
+        self.addCleanup(self.layout.stop)
         self.plan_read = patch(
             "tools.run_map02_private_cycle_session.private_file",
             return_value=(b'{"synthetic":"plan"}\n',
