@@ -14,7 +14,9 @@ import os
 from pathlib import Path
 import stat
 
-from tools.check_map02_original_extraction_anchors import compare_data_ranges
+from tools.check_map02_original_extraction_anchors import (
+    compare_data_ranges, compare_loaded_sections,
+)
 from tools.check_map02_original_inc_provenance import (_original_blob_sha1,
                                                       check_original_includes)
 
@@ -159,6 +161,14 @@ def verify_private_pc_inputs(upstream, *, krom_source=None):
                                   root / "build" / (EXE + ".elf"))
     if anchors["original_exe_and_mips_elf_data_anchors_match"] is not True:
         raise ValueError("retail decomp data anchors not verified")
+    # Compare all initialized ELF runtime sections mapped into the original
+    # PS-X loaded image, not only the three named data anchor locations.
+    # Coverage gaps and outside-image allocations are NOT authenticated.
+    mapped_sections = compare_loaded_sections(
+        root / EXE, root / "build" / (EXE + ".elf"))
+    if (mapped_sections["original_exe_and_mips_elf_loaded_sections_match"]
+            is not True):
+        raise ValueError("original extracted MIPS loaded sections not verified")
     # Verify all three generated C initializer include FILE BYTES against
     # the pinned original US EXE, not merely their presence or combined SHA.
     includes = check_original_includes(root)
@@ -202,6 +212,13 @@ def verify_private_pc_inputs(upstream, *, krom_source=None):
         "original_exe_and_mips_elf_data_anchors_match": True,
         "original_private_data_bytes_compared":
             anchors["original_private_data_bytes_compared"],
+        "original_exe_and_mips_elf_loaded_sections_match": True,
+        "original_allocated_sections_compared":
+            mapped_sections["original_allocated_sections_compared"],
+        "original_allocated_section_bytes_compared":
+            mapped_sections["original_allocated_section_bytes_compared"],
+        "unmapped_allocated_sections_not_authenticated":
+            mapped_sections["unmapped_allocated_sections_not_authenticated"],
         "original_resource_includes_present": len(ASSETS),
         "original_resource_includes_match_owned_us_exe": True,
         "us_ps1_font_charset_verified": True,
