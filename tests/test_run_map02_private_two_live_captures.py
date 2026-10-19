@@ -713,6 +713,44 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
                         **good, **modified
                     })
 
+    def test_strict_gate_rejects_mutated_native_gpu_source_commitments(self):
+        # The two source journals were independently replay-verified and
+        # their raw JSONL digests match. False post-audit labels may keep
+        # all legacy equality flags set; the strict receipt must detect
+        # the inconsistency with replayed DrawOTag pair counts and SHA.
+        good = self.run_two(require_identical_gpu_timeline=True)
+        two_live._require_bit_exact_gpu_timeline(good)
+        modifications = (
+            {"first_gpu_journal_sha256": "0" * 64},
+            {"second_gpu_journal_sha256": "0" * 64},
+            {"first_gpu_journal_sha256": "F" * 64},
+            {"second_gpu_journal_sha256": None},
+            {"first_gpu_pairs_verified": 0},
+            {"second_gpu_pairs_verified": 2},
+            {"first_gpu_pairs_verified": True},
+            {"second_gpu_pairs_verified": "1"},
+        )
+        for changed in modifications:
+            with self.subTest(changed=changed):
+                with self.assertRaisesRegex(ValueError, "not bit-exact"):
+                    two_live._require_bit_exact_gpu_timeline({
+                        **good, **changed})
+
+    def test_full_strict_run_rejects_post_audit_journal_digest_tamper(self):
+        # Preserve the real GPU JSONL and VRAM private files; falsify only
+        # one public digest label AFTER the complete independent replays.
+        real_audit = two_live.audit
+        def tamper_source_digest(*args, **kwargs):
+            original = real_audit(*args, **kwargs)
+            return {**original, "second_gpu_journal_sha256": "0" * 64}
+        with patch.object(two_live, "audit", side_effect=tamper_source_digest):
+            with self.assertRaisesRegex(ValueError, "not bit-exact"):
+                self.run_two(require_identical_gpu_timeline=True)
+        self.assertEqual(len(list(self.dirs[0].iterdir())), 2)
+        self.assertEqual(len(list(self.dirs[2].iterdir())), 2)
+        self.assertEqual(len(list(self.dirs[1].iterdir())), 3)
+        self.assertEqual(len(list(self.dirs[3].iterdir())), 3)
+
     def test_full_strict_run_rejects_post_audit_secondary_counter_tamper(self):
         # Do not merely unit-test the gate: run both real synthetic C11
         # children and let the independent audit replay all private files.
