@@ -175,7 +175,9 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
             self.assertEqual(result["globally_ordered_native_gpu_events"], 6)
             self.assertEqual(result["native_draw_pairs"], 1)
             self.assertEqual(result["native_transfer_pairs"], 2)
+            self.assertEqual(result["vram_bridge_checks"], 2)
             self.assertFalse(result["whole_original_gameplay_frame_proven"])
+            self.assertFalse(result["physical_ps1_equivalence_proven"])
 
     def test_rejects_oversubscribed_or_counterfeit_completion(self):
         for change in (
