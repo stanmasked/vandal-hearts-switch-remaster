@@ -411,7 +411,18 @@ def _require_safe_public_two_run_receipt(receipt):
     audit_part = {key: receipt[key] for key in _AUDIT_SAFE_KEYS}
     audit_part["schema"] = AUDIT_SCHEMA
     _require_safe_public_audit_summary(audit_part)
-    if (any(receipt[key] is not True for key in _TWO_RUN_TRUE_FIELDS)
+    # The audit has proved only synthetic repeatability, never authentic
+    # retail provenance or permission to substitute HD output. Preserve
+    # these semantic limits even if a late callback tampers with the report.
+    if (any(receipt[key] is not False for key in (
+            "actual_gameplay_rendering_authenticated",
+            "ps1_hardware_pixel_equivalence_verified",
+            "gpu_journal_writer_kernel_authenticated",
+            "hd_replacement_authorized"))
+            or any(receipt[key] is not True for key in (
+                "two_full_replays_per_capture_verified",
+                "four_private_file_inventories_stable_through_replays"))
+            or any(receipt[key] is not True for key in _TWO_RUN_TRUE_FIELDS)
             or any(receipt[key] is not False for key in _TWO_RUN_FALSE_FIELDS)
             or any(type(receipt[key]) is not bool
                    for key in _TWO_RUN_STRICT_FIELDS)
@@ -544,6 +555,10 @@ def run(executable, first_frame, first_journal, second_frame, second_journal,
                 or report.get("hd_replacement_authorized") is not False):
             raise ValueError("MAP02 two-run native repeatability witness invalid")
         _require_safe_public_audit_summary(report)
+        # Every permitted audit value is now an immutable scalar. Freeze its
+        # exact value at the first acceptance boundary: the strict GPU gate
+        # below may call other code and must never alter any public claim.
+        accepted_audit_snapshot = dict(report)
         # Compare source-labelled replay results to the immutable claims
         # captured at publication, not just to one another. Two FORGED
         # source digests could agree and fool a boolean-only strict gate.
@@ -578,6 +593,8 @@ def run(executable, first_frame, first_journal, second_frame, second_journal,
                                 original_identity=elf_identity)
         for fd, path, identity in zip(opened, folders, identities):
             _check_directory(fd, path, identity)
+        if report != accepted_audit_snapshot:
+            raise ValueError("MAP02 public audit summary changed after validation")
         public_receipt = {
             **report,
             "schema": SCHEMA,
