@@ -181,9 +181,15 @@ def compare_loaded_sections(exe_path, elf_path):
             mapped.sort()
             total = 0
             previous_end = exe_load
+            uncovered_spans = 0
+            largest_uncovered_span = 0
             for begin, end, offset in mapped:
                 if begin < previous_end:
                     raise ValueError("original ELF has overlapping allocated sections")
+                if begin > previous_end:
+                    uncovered_spans += 1
+                    largest_uncovered_span = max(
+                        largest_uncovered_span, begin - previous_end)
                 previous_end = end
                 length = end - begin
                 for start in range(0, length, 65536):
@@ -197,6 +203,14 @@ def compare_loaded_sections(exe_path, elf_path):
                         raise ValueError(
                             "extracted ELF loaded section differs from original PS-X bytes")
                 total += length
+            if previous_end < end_of_image:
+                uncovered_spans += 1
+                largest_uncovered_span = max(
+                    largest_uncovered_span, end_of_image - previous_end)
+            # Gaps are measured in PS-X loaded-address order, not ELF
+            # storage offsets: their positions remain private.
+            if (uncovered_spans == 0) != (total == payload_size):
+                raise ValueError("original ELF loaded coverage accounting inconsistent")
     return {
         "original_exe_and_mips_elf_loaded_sections_match": True,
         "original_allocated_sections_compared": len(mapped),
@@ -208,6 +222,8 @@ def compare_loaded_sections(exe_path, elf_path):
         "original_psx_loaded_bytes_not_covered_by_elf_sections":
             payload_size - total,
         "original_psx_loaded_payload_fully_covered": total == payload_size,
+        "original_psx_uncovered_contiguous_spans": uncovered_spans,
+        "original_psx_largest_uncovered_span_bytes": largest_uncovered_span,
         "unmapped_allocated_sections_not_authenticated": outside,
         "complete_matching_decomp_proven": False,
         "actual_gameplay_executed": False,
