@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 import subprocess
 
+from tools.check_map02_private_launch_layout import _directory_identity
 from tools.check_map02_private_cycle_readiness import verify_private_cycle_readiness
 from tools.finalize_map02_private_capture import finalize_private_capture
 from tools.map02_local_capture_handoff import PLAN, _validate_plan
@@ -67,6 +68,19 @@ def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
     if tuple(sealed.iterdir()):
         raise ValueError("private MAP02 seal directory must be empty before execution")
     original_seal_directory_identity = _dir_identity(sealed.stat())
+    # The readiness verifier protects its own seven roots, but the caller
+    # must also guard the interval between its last check and the decision
+    # to report a successful dry-run or start the real PC process.
+    original_capture_directory_identities = tuple(
+        _directory_identity(Path(folder).absolute(), "prelaunch")
+        for folder in captures)
+
+    def require_original_capture_directories():
+        if tuple(
+            _directory_identity(Path(folder).absolute(), "prelaunch")
+            for folder in captures
+        ) != original_capture_directory_identities:
+            raise ValueError("private MAP02 capture folders changed during one-shot preflight")
 
     def require_original_seal_directory(*, must_be_empty):
         current = _roots(captures, seal_directory)
@@ -94,6 +108,7 @@ def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
     if private_file(Path(handoff).absolute(), PLAN, max_bytes=4096,
                     _with_identity=True) != (plan_raw, plan_identity):
         raise ValueError("MAP02 private launch plan changed before execution")
+    require_original_capture_directories()
     require_original_seal_directory(must_be_empty=True)
     if dry_run:
         # Exactly the pre-execution checks used by the real one-shot path:
