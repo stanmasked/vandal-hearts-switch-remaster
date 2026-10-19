@@ -103,6 +103,45 @@ class Map02PrivateInputInventoryTests(unittest.TestCase):
         })
         self.assertNotIn(str(self.root), json.dumps(result))
 
+    def test_prebuild_original_inputs_are_visible_before_elf_or_receipt(self):
+        self.populate()
+        # The real sequence does not have a PC binary or receipt before
+        # compiling the original owned resources. Metadata inventory must
+        # distinguish source presence from downstream output presence.
+        (self.upstream / "platform/pc" / BUILD / "vandalhearts_pc").unlink()
+        (self.receipt / RECEIPT).unlink()
+        (self.handoff / PLAN).unlink()
+        result = self.inspect()
+        self.assertTrue(result["original_build_source_paths_present"])
+        self.assertTrue(result["private_make_bundle_paths_present"])
+        self.assertFalse(result["postbuild_launch_paths_present"])
+        self.assertFalse(result["all_prerequisite_paths_present"])
+        self.assertFalse(result["ready_for_controlled_local_launch"])
+        self.assertFalse(result["original_file_bytes_verified"])
+        self.assertNotIn(str(self.root), json.dumps(result))
+
+    def test_build_overlay_absence_does_not_hide_original_source_presence(self):
+        self.populate()
+        (self.bundle / "map02_cycle_build_inputs.json").unlink()
+        result = self.inspect()
+        self.assertTrue(result["original_build_source_paths_present"])
+        self.assertFalse(result["private_make_bundle_paths_present"])
+        self.assertTrue(result["postbuild_launch_paths_present"])
+        self.assertFalse(result["all_prerequisite_paths_present"])
+        # The status remains path-only; a synthetic "full" launch path is
+        # never accepted as authenticated game or original GPU rendering.
+        self.assertFalse(result["build_provenance_authenticated"])
+        self.assertFalse(result["original_map02_rendering_proven"])
+
+    def test_source_generator_missing_isolated_from_postbuild_artifacts(self):
+        self.populate()
+        (self.upstream / INCLUDE_GENERATOR).unlink()
+        result = self.inspect()
+        self.assertFalse(result["original_build_source_paths_present"])
+        self.assertTrue(result["private_make_bundle_paths_present"])
+        self.assertTrue(result["postbuild_launch_paths_present"])
+        self.assertFalse(result["all_prerequisite_paths_present"])
+
     def test_missing_or_malformed_prerequisite_is_localized_by_category(self):
         self.populate()
         original = self.inspect()
