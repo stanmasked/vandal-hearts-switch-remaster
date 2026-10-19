@@ -1,0 +1,34 @@
+name: MAP02 v178 genuine unaligned MIPS GPU MMIO route coverage
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v178-unaligned-gpu-mips.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/check_map02_v178_native_unaligned_routes.py'
+      - 'tests/test_map02_v178_unaligned_gpu_mips.py'
+      - 'tools/apply_map02_v176_narrow_gpu_mmio.py'
+      - 'tools/make_map02_v78_vblank_mips_exe.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unaligned-gpu-mips:
+    name: pinned unaligned GPU route and regression audit (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit 4 original MIPS unaligned opcodes, routes and prior GPU witnesses
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/check_map02_v178_native_unaligned_routes.py tests/test_map02_v178_unaligned_gpu_mips.py
+          python3 -m unittest discover -s tests -p 'test_map02_v178_unaligned_gpu_mips.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v177_narrow_gpu_lanes.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v176_narrow_gpu_mmio.py' -v
+          echo 'VH178_PRE_NATIVE_UNALIGNED_GPU_ROUTES_PASS mutations=4 original_retail_executed=0'
