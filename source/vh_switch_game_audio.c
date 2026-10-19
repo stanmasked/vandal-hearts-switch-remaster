@@ -17,6 +17,13 @@
 #endif
 #include "vh_audio_scene_trace.h"
 #include "vh_audio_scene_optical.h"
+#ifndef VH_MAP02_AUDIO_PCM_METRICS
+#define VH_MAP02_AUDIO_PCM_METRICS 0
+#endif
+#if VH_MAP02_AUDIO_PCM_METRICS
+#include "vh_map02_pcm_metrics.h"
+static VhMap02PcmMetrics first_page_metrics;
+#endif
 
 #include <stdio.h>
 
