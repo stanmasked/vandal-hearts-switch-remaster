@@ -130,12 +130,18 @@ def verify_native_windows(directory, *, target_frame):
                 window, first["snapshot"], expected=VRAM_BYTES)
             after_vram = private_file(
                 window, second["snapshot"], expected=VRAM_BYTES)
-            if (idx and offset == 0 and last_operation == "draw" and
-                    first["operation"] == "draw" and
-                    (first["window"], first["draw_mode"]) !=
-                    last_draw_post_state):
-                raise ValueError(
-                    "GPU state continuity broken at native window boundary")
+            if idx and offset == 0 and last_operation == "draw":
+                # Every transfer for target frame N happens while the
+                # original C s_drawFrame is N-1. Once target DrawOTag
+                # begins, frame N-1 transfers cannot reappear merely
+                # because the bounded journal switched to window-001.
+                if first["operation"] != "draw":
+                    raise ValueError(
+                        "native GPU transfer appears after DrawOTag across window boundary")
+                if ((first["window"], first["draw_mode"]) !=
+                        last_draw_post_state):
+                    raise ValueError(
+                        "GPU state continuity broken at native window boundary")
             if last_vram is not None and last_vram != hashlib.sha256(
                     before_vram).digest():
                 raise ValueError("GPU VRAM continuity broken at native event/window boundary")
