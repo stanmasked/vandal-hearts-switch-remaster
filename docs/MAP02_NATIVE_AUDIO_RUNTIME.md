@@ -63,14 +63,18 @@ replaces its filename or dependencies.
    existing working MAP02 screenshot/input smoke test against the combined
    NRO, verifies the recorded same-run SHA256, and requires an on-screen
    blue `AUDIO ACTIVE` marker emitted when the guest audout worker reports
-   its playing state. This optical marker is NOT a virtual PCM measurement.
+   its playing state. It also captures a separate 48-kHz stereo virtual
+   PulseAudio monitor from the **same NRO** and checks duration, nonzero
+   sample counts, RMS, guest sink attachment and the NRO SHA256 manifest.
 
 A successful build is not a successful emulator run, a sample-aligned
 A/B experiment, or a physical hardware-audio result. The optical NeXium gate
 can establish co-execution of MAP02 graphics/input with a *running guest
-audio worker*, but it cannot establish sound generation or audibility.
-Actual PulseAudio monitor PCM capture and physical speaker testing remain
-separate evidence gates; they must not be inferred from the blue marker.
+audio worker*. A **successful independent virtual PCM capture** can establish
+nonzero NeXium monitor samples from the guest, but does not show that this
+was retail music, that STUDIO_C specifically caused a tail, that independent
+A/B captures are sample-aligned, or that a physical speaker produced sound.
+Do not infer any of those claims from the blue glyphs or host PCM alone.
 
 **Draft only / DO NOT MERGE** until the NRO CI and emulator evidence are
 reviewed. Parent Draft PRs #171, #177, #187 and #194 are unchanged.
