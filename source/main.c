@@ -16,6 +16,12 @@
 #ifndef VH_MAP02_AUDIO_EXPERIMENT
 #define VH_MAP02_AUDIO_EXPERIMENT 0
 #endif
+#ifndef VH_MAP02_AUDIO_TRACE_RECEIPT
+#define VH_MAP02_AUDIO_TRACE_RECEIPT 0
+#endif
+#if VH_MAP02_AUDIO_TRACE_RECEIPT && !VH_MAP02_AUDIO_EXPERIMENT
+#error "MAP02 trace receipt requires audio experiment enabled"
+#endif
 #if VH_MAP02_AUDIO_EXPERIMENT
 #include "vh_switch_game_audio.h"
 /* Only accessed by the gameplay/framebuffer thread. */
@@ -434,6 +440,27 @@ int main(int argc, char **argv) {
         vh_switch_game_audio_stop();
         if (audio_resume_message_enabled)
             (void)appletSetRestartMessageEnabled(false);
+#if VH_MAP02_AUDIO_TRACE_RECEIPT
+        /* Diagnostic-only output AFTER the audout owner has joined.
+         * It cannot affect PCM generation or the scene-switch clock. */
+        u32 receipt_stride_bytes = 0;
+        u32 *receipt_pixels = (u32 *)framebufferBegin(&fb, &receipt_stride_bytes);
+        if (receipt_pixels) {
+            VhCanvas receipt = {
+                (uint32_t *)receipt_pixels,
+                (size_t)(receipt_stride_bytes / sizeof(u32)),
+                FB_WIDTH, FB_HEIGHT
+            };
+            (void)vh_switch_game_audio_trace_render(&receipt,
+                RGBA8_MAXALPHA(0, 0, 0),
+                RGBA8_MAXALPHA(255, 255, 255),
+                RGBA8_MAXALPHA(255, 0, 255));
+        }
+        framebufferEnd(&fb);
+        /* Keep the optical trace on screen long enough for NeXium
+         * automation to read it. This is NOT the default game build. */
+        svcSleepThread(8000000000LL);
+#endif
     }
 #endif
     framebufferClose(&fb);
