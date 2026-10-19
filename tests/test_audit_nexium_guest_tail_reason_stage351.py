@@ -193,7 +193,7 @@ class Stage351Tests(unittest.TestCase):
         old348=self.root/"old348.csv";old348.write_bytes(second)
         locator=self.root/"source-root.txt"
         locator.write_text(str(self.root),encoding="utf-8")
-        forged=raw.replace(b"tail_reason_code,4\\n",b"tail_reason_code,7\\n")
+        forged=raw.replace(b"tail_reason_code,4\n",b"tail_reason_code,7\n")
         (self.directory/"audio-exit-tail-reason-000.csv").write_bytes(forged)
         argv=["--guest-root-file",str(locator),
               "--stage313",str(r313),"--stage348",str(r348),
