@@ -155,8 +155,10 @@ def main():
                                timeout=a.timeout,
                                report_dir=a.report_dir,
                                krom_source=a.krom_source)
-    except ValueError as exc:
-        p.error(str(exc))
+    except ValueError:
+        # Deep source/retail input validation can raise ValueError with a
+        # user-owned path or excerpt. Never publish it via command output.
+        p.error("private full PC build input or provenance verification failed")
     except OSError:
         # Native file errors may embed owned executable, BIOS or SDK paths.
         p.error("private full PC build filesystem verification failed")
