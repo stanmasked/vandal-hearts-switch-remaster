@@ -21,8 +21,10 @@ jobs:
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
-      - name: Install Pillow
-        run: python3 -m pip install --user Pillow
+      - name: Install Pillow from Ubuntu packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pil
       - name: Reject forged guest scene transitions
         run: python3 -m unittest discover -s tests -p 'test_decode_map02_guest_scene_trace.py' -v
 
