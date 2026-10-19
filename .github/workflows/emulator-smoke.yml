@@ -1036,45 +1036,6 @@ jobs:
           PY
           echo "Stage348: independently SHA256 rechecked original guest post-join PCM software lease accounting. NOT device queue depth, audible fidelity or physical Nintendo Switch sound." >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Stage351 verify original post-join tail failure cause against old source receipts
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 tools/audit_nexium_guest_tail_reason_stage351.py \
-            --guest-root-file runtime-evidence/guest-sd-root.txt \
-            --stage313 runtime-evidence/guest-last-audout-release-stage313.json \
-            --stage348 runtime-evidence/guest-lease-reconciliation-stage348.json \
-            --stage313-original runtime-evidence/audio-exit-output-000.csv \
-            --stage348-original runtime-evidence/audio-lease-reconciliation-000.csv \
-            --output runtime-evidence/guest-exit-tail-reason-stage351.json \
-            --output-original runtime-evidence/audio-exit-tail-reason-000.csv
-          python3 - <<'PY'
-          import hashlib,json
-          from pathlib import Path
-          doc=json.loads(Path(
-              "runtime-evidence/guest-exit-tail-reason-stage351.json"
-              ).read_text(encoding="utf-8"))
-          original=Path("runtime-evidence/audio-exit-tail-reason-000.csv")
-          if (doc["schema"]!="vh-stage351-original-guest-exit-tail-reason/v1"
-              or doc["result"]!="ORIGINAL_GUEST_EXIT_TAIL_CAUSE_SOURCE_VERIFIED"
-              or doc["original_guest_tail_reason_source_observed"] is not True
-              or doc["original_guest_tail_reason_bytes_preserved"] is not True
-              or doc["bound_to_original_stage313_tail_observation"] is not True
-              or doc["bound_to_original_stage348_lease_observation"] is not True
-              or doc["prior_stage313_and_stage348_original_bytes_reaudited"] is not True
-              or doc["one_to_one_causal_attribution_proven"] is not False
-              or doc["physical_Nintendo_Switch_audio_tested"] is not False
-              or not original.is_file() or original.is_symlink()
-              or hashlib.sha256(original.read_bytes()).hexdigest()!=
-                 doc["original_guest_tail_reason_csv_sha256"]):
-              raise SystemExit("Stage351 original guest tail source not verified")
-          print("Stage351 original software tail result:",doc["reason_name"])
-          print("Stage351 guest source SHA256:",
-                doc["original_guest_tail_reason_csv_sha256"])
-          print("Stage351 final software abandoned sessions:",doc["abandoned_sessions"])
-          PY
-          echo "Stage351: original guest exit-tail service cause independently source-audited after join; not proof of DAC/speaker audio." >> "$GITHUB_STEP_SUMMARY"
-
       - name: Stage308 independently source-verify guest optical scene clocks versus guest exit
         shell: bash
         run: |
@@ -1179,6 +1140,45 @@ jobs:
                 r["last_page_relative_to_Plus_ns"])
           PY
           echo "Stage314: copied ORIGINAL guest audout last-return CSV byte-for-byte, re-audited against original Stage307/310 exit source and Stage313 source, preserved separate audit hash. No DAC/speaker playback proof or guest-to-host PCM timing claims." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage351 verify original post-join tail failure cause against old source receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_guest_tail_reason_stage351.py \
+            --guest-root-file runtime-evidence/guest-sd-root.txt \
+            --stage313 runtime-evidence/guest-last-audout-release-stage313.json \
+            --stage348 runtime-evidence/guest-lease-reconciliation-stage348.json \
+            --stage313-original runtime-evidence/audio-exit-output-000.csv \
+            --stage348-original runtime-evidence/audio-lease-reconciliation-000.csv \
+            --output runtime-evidence/guest-exit-tail-reason-stage351.json \
+            --output-original runtime-evidence/audio-exit-tail-reason-000.csv
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          doc=json.loads(Path(
+              "runtime-evidence/guest-exit-tail-reason-stage351.json"
+              ).read_text(encoding="utf-8"))
+          original=Path("runtime-evidence/audio-exit-tail-reason-000.csv")
+          if (doc["schema"]!="vh-stage351-original-guest-exit-tail-reason/v1"
+              or doc["result"]!="ORIGINAL_GUEST_EXIT_TAIL_CAUSE_SOURCE_VERIFIED"
+              or doc["original_guest_tail_reason_source_observed"] is not True
+              or doc["original_guest_tail_reason_bytes_preserved"] is not True
+              or doc["bound_to_original_stage313_tail_observation"] is not True
+              or doc["bound_to_original_stage348_lease_observation"] is not True
+              or doc["prior_stage313_and_stage348_original_bytes_reaudited"] is not True
+              or doc["one_to_one_causal_attribution_proven"] is not False
+              or doc["physical_Nintendo_Switch_audio_tested"] is not False
+              or not original.is_file() or original.is_symlink()
+              or hashlib.sha256(original.read_bytes()).hexdigest()!=
+                 doc["original_guest_tail_reason_csv_sha256"]):
+              raise SystemExit("Stage351 original guest tail source not verified")
+          print("Stage351 original software tail result:",doc["reason_name"])
+          print("Stage351 guest source SHA256:",
+                doc["original_guest_tail_reason_csv_sha256"])
+          print("Stage351 final software abandoned sessions:",doc["abandoned_sessions"])
+          PY
+          echo "Stage351: original guest exit-tail service cause independently source-audited after join; not proof of DAC/speaker audio." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Capture ten additional A/B transitions in isolated NeXium
         id: scene_soak_capture
