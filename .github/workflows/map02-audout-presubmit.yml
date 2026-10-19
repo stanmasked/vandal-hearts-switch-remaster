@@ -234,7 +234,11 @@ jobs:
             sleep 3
             import -window "$window" "$ROOT/presubmit-guest.png"
             test -s "$ROOT/presubmit-guest.png"
+            # Do not block forever on a GUI that ignores SIGINT:
+            # retain the captured PNG as evidence and reap boundedly.
             kill -INT "$guest" 2>/dev/null || true
+            sleep 1
+            kill -KILL "$guest" 2>/dev/null || true
             wait "$guest" 2>/dev/null || true
           '
       - name: Decode actual guest CRC and assert eight descriptor identities
