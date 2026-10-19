@@ -46,7 +46,7 @@ def fixture():
              "soundtrack_identity_or_audible_playback_verified":False}
         for k in ("monitor","scenes"):
             frames=1000+i*1000
-            doc[k+"_capture"]={
+            doc["monitor_capture" if k=="monitor" else "scene_capture"]={
                 "kind":k,"pcm_sha256":format(99+i*2+(k=="scenes"),"064x"),
                 "pcm_bytes":frames*4,"frames":frames,
                 "analysis_block_frames":480,
@@ -98,7 +98,7 @@ class OriginalPcmIndicatorTests(unittest.TestCase):
         with self.assertRaises(ValueError):compare_verified_reports(self.source,a)
     def test_longest_zero_run_cannot_exceed_zero_total(self):
         a=copy.deepcopy(self.docs)
-        a[3]["scenes_capture"]["longest_exact_zero_stereo_run_frames"]=101
+        a[3]["scene_capture"]["longest_exact_zero_stereo_run_frames"]=101
         with self.assertRaises(ValueError):compare_verified_reports(self.source,a)
     def test_partial_final_10ms_block_can_be_all_zero_without_full_480_frames(self):
         v=copy.deepcopy(self.docs[0]["monitor_capture"])
@@ -129,14 +129,14 @@ class OriginalPcmIndicatorTests(unittest.TestCase):
 
     def test_large_step_boundary_cannot_exceed_total(self):
         a=copy.deepcopy(self.docs)
-        a[0]["scenes_capture"]["ge4096_deltas_at_10ms_block_boundaries"]=3
+        a[0]["scene_capture"]["ge4096_deltas_at_10ms_block_boundaries"]=3
         with self.assertRaises(ValueError):compare_verified_reports(self.source,a)
     def test_cannot_substitute_monitor_for_scene_markers(self):
         a=copy.deepcopy(self.docs)
-        a[1]["scenes_capture"]["scene_event_markers"]=None
+        a[1]["scene_capture"]["scene_event_markers"]=None
         with self.assertRaises(ValueError):compare_verified_reports(self.source,a)
     def test_derived_rates_normalize_by_valid_actual_frame_counts(self):
-        sample=self.docs[3]["scenes_capture"]
+        sample=self.docs[3]["scene_capture"]
         r=compact_pcm(sample,"scenes")
         self.assertEqual(r["frames"],4000)
         self.assertEqual(r["exact_zero_frames_per_million"],25000)
