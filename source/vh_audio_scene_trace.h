@@ -18,7 +18,9 @@ typedef enum {
     VH_SCENE_TRACE_ACCEPT = 3, /* vh_music_scene_request returned 0 */
     VH_SCENE_TRACE_SUBMIT_CALL = 4, /* submit/recover call entered */
     VH_SCENE_TRACE_RELEASE_RETURN = 5, /* submit/recover returned success */
-    VH_SCENE_TRACE_SUBMIT_ERROR = 6 /* submit/recover exhausted retries */
+    VH_SCENE_TRACE_SUBMIT_ERROR = 6, /* submit/recover exhausted retries */
+    VH_SCENE_TRACE_PCM_PAGE_NONZERO = 7, /* generated first 48-kHz page has nonzero signed samples */
+    VH_SCENE_TRACE_PCM_PAGE_SILENT = 8 /* generated first 48-kHz page consists only of zeros */
 } VhAudioSceneTraceKind;
 
 typedef struct {

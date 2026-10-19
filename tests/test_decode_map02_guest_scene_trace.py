@@ -16,7 +16,7 @@ def fixture(rows=None, dropped=0):
     if rows is None:
         rows=[]
         for serial,scene in ((1,2),(2,1)):
-            for kind in (1,2,3,4,5):
+            for kind in (1,2,3,7,4,5):
                 rows.append((kind,scene,serial,1000000+len(rows)*1000))
     buf=bytearray(924)
     buf[:8]=b"VHFBTRC1"
@@ -50,9 +50,10 @@ class TraceOpticalTests(unittest.TestCase):
     def test_valid_pair_has_ticket_correlated_input_post_accept_and_pcm(self):
         screenshot(self.image,fixture())
         result=tool.audit_receipt(tool.decode_image(self.image),0)
-        self.assertEqual(result["result"],"POST_ACCEPT_FIRST_PCM_PAGE_CORRELATED")
+        self.assertEqual(result["result"],"FIRST_PCM_PAGE_NONZERO_AND_SUBMITTED")
         self.assertEqual([x["serial"] for x in result["confirmed_transitions"]],[1,2])
         self.assertFalse(result["sample_aligned_guest_reverb_proven"])
+        self.assertTrue(result["first_pre_submit_pcm_page_nonzero_verified"])
 
     def test_bad_crc_rejected(self):
         broken=bytearray(fixture())
@@ -79,14 +80,14 @@ class TraceOpticalTests(unittest.TestCase):
         image.paste(crop.resize((769,459),Image.Resampling.NEAREST),(264,154))
         image.save(self.image)
         decoded=tool.decode_image(self.image)
-        self.assertEqual(len(decoded["rows"]),10)
+        self.assertEqual(len(decoded["rows"]),12)
         self.assertEqual(tool.audit_receipt(decoded,1)["result"],
-                         "POST_ACCEPT_FIRST_PCM_PAGE_CORRELATED")
+                         "FIRST_PCM_PAGE_NONZERO_AND_SUBMITTED")
 
     def test_missing_accept_is_rejected(self):
         rows=[]
         for serial,scene in ((1,2),(2,1)):
-            for kind in (1,2,4,5) if serial==1 else (1,2,3,4,5):
+            for kind in (1,2,7,4,5) if serial==1 else (1,2,3,7,4,5):
                 rows.append((kind,scene,serial,100000+1000*len(rows)))
         with self.assertRaisesRegex(ValueError,"ACCEPT"):
             tool.audit_receipt(tool.unpack(fixture(rows)),0)
@@ -94,7 +95,7 @@ class TraceOpticalTests(unittest.TestCase):
     def test_cross_ticket_accept_does_not_count(self):
         rows=[]
         for serial,scene in ((1,2),(2,1)):
-            for kind in (1,2,3,4,5):
+            for kind in (1,2,3,7,4,5):
                 rows.append((kind,scene,1 if kind==3 and serial==2 else serial,
                             100000+1000*len(rows)))
         with self.assertRaisesRegex(ValueError,"ACCEPT"):
@@ -103,7 +104,7 @@ class TraceOpticalTests(unittest.TestCase):
     def test_missing_pcm_release_is_rejected(self):
         rows=[]
         for serial,scene in ((1,2),(2,1)):
-            for kind in (1,2,3,4) if serial==2 else (1,2,3,4,5):
+            for kind in (1,2,3,7,4) if serial==2 else (1,2,3,7,4,5):
                 rows.append((kind,scene,serial,100000+1000*len(rows)))
         with self.assertRaisesRegex(ValueError,"RELEASE_RETURN"):
             tool.audit_receipt(tool.unpack(fixture(rows)),0)
@@ -115,16 +116,41 @@ class TraceOpticalTests(unittest.TestCase):
     def test_submit_error_rejected(self):
         rows=[]
         for serial,scene in ((1,2),(2,1)):
-            for kind in (1,2,3,4,5):
+            for kind in (1,2,3,7,4,5):
                 rows.append((kind,scene,serial,100000+1000*len(rows)))
         rows.append((6,1,2,200000))
         with self.assertRaisesRegex(ValueError,"failed"):
             tool.audit_receipt(tool.unpack(fixture(rows)),0)
 
+    def test_missing_pre_submit_pcm_page_proof_is_rejected(self):
+        rows=[]
+        for serial,scene in ((1,2),(2,1)):
+            for kind in (1,2,3,4,5) if serial==2 else (1,2,3,7,4,5):
+                rows.append((kind,scene,serial,100000+1000*len(rows)))
+        with self.assertRaisesRegex(ValueError,"PCM_PAGE_NONZERO"):
+            tool.audit_receipt(tool.unpack(fixture(rows)),0)
+
+    def test_explicit_silent_first_pcm_page_is_rejected(self):
+        rows=[]
+        for serial,scene in ((1,2),(2,1)):
+            for kind in (1,2,3,8,4,5) if serial==1 else (1,2,3,7,4,5):
+                rows.append((kind,scene,serial,100000+1000*len(rows)))
+        with self.assertRaisesRegex(ValueError,"silent"):
+            tool.audit_receipt(tool.unpack(fixture(rows)),1)
+
+    def test_pcm_page_proof_from_wrong_ticket_is_rejected(self):
+        rows=[]
+        for serial,scene in ((1,2),(2,1)):
+            for kind in (1,2,3,7,4,5):
+                rows.append((kind,scene,serial+1 if kind==7 and serial==1 else serial,
+                             100000+1000*len(rows)))
+        with self.assertRaisesRegex(ValueError,"PCM_PAGE_NONZERO"):
+            tool.audit_receipt(tool.unpack(fixture(rows)),0)
+
     def test_nonmonotonic_clock_rejected(self):
         rows=[]
         for serial,scene in ((1,2),(2,1)):
-            for kind in (1,2,3,4,5):
+            for kind in (1,2,3,7,4,5):
                 rows.append((kind,scene,serial,100000+1000*len(rows)))
         kind,scene,serial,_=rows[3]
         rows[3]=(kind,scene,serial,2)
