@@ -110,6 +110,33 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
                     ValueError, "GPU state continuity broken"):
                 self.verify()
 
+    def test_preframe_transfer_cannot_reappear_after_draw_at_window_boundary(self):
+        # All four original window-000 events are valid DrawOTag F4 draws.
+        # Window-001 contains a self-consistent, VRAM-neutral ClearImage
+        # transfer in the PREVIOUS frame. Per-window checks accept this
+        # separately; global frame chronology must reject their order.
+        second = self.root / "window-001"
+        second.mkdir(mode=0o700)
+        before = dict(self.events[0], step=0, frame=6,
+                      operation="clear", primitive_type=0, semi=0,
+                      rect=[0, 0, 0, 0], snapshot="gpu-0000-vram.bin")
+        after = dict(before, step=1, phase="after",
+                     snapshot="gpu-0001-vram.bin")
+        for event in (before, after):
+            (second / event["snapshot"]).write_bytes(self.snapshots[3])
+        (second / "gpu-native-events.jsonl").write_bytes(
+            jsonline(before) + jsonline(after))
+        self.status.update(window_capacity_events=4, windows_written=2,
+                           observed_hooks=6, before_hooks=3, after_hooks=3,
+                           draw_before_hooks=2, transfer_before_hooks=1,
+                           indexed_hooks=6, written_hooks=6)
+        self.save_status()
+        with patch("tools.verify_map02_native_gpu_windows.MAX_RECORDS", 4):
+            with self.assertRaisesRegex(
+                    ValueError,
+                    "transfer appears after DrawOTag across window boundary"):
+                self.verify()
+
     def test_rejects_oversubscribed_or_counterfeit_completion(self):
         for change in (
             {"observed_hooks": 6},
