@@ -42,6 +42,58 @@ static int mocked_wait(Harness *h,int failed,unsigned count,const void *released
         &h->reason,&h->lease,failed,count,released);
 }
 
+/* Reconcile each injected branch through the unmodified Stage351
+ * post-join CSV writer, not merely an asserted enum value.
+ * This is a host-only fake source and cannot replace original NeXium CSV.
+ */
+static void verify_after_join_csv(const Harness *h,unsigned code,int returned) {
+    VhAudioExitOutputWitness witness={0};
+    vh_audio_exit_output_reset(&witness);
+    assert(vh_audio_exit_output_tail(&witness,100,110,returned)==1);
+    VhAudioDiagnostics final={0};
+    final.lease_pages_acquired=h->lease.pages_leased;
+    final.lease_pages_released=h->lease.pages_released;
+    final.abandoned_sessions=h->lease.abandoned_sessions;
+    final.lease_mismatches=h->lease.mismatched_releases;
+    final.lease_busy_begin_rejections=h->lease.busy_begin_rejections;
+    final.pages_submitted=h->lease.pages_released;
+    FILE *csv=tmpfile();
+    assert(csv);
+    assert(vh_audio_tail_reason_write_csv(
+        &h->reason,&witness,&final,csv)==8);
+    rewind(csv);
+    const char *const names[]={
+        "scope,value","software_exit_tail_reason_only,1",
+        "tail_reason_code,","tail_attempted,1",
+        "tail_descriptor_return_confirmed,","tail_lease_acquired,1",
+        "lease_pages_acquired,","lease_pages_released,",
+        "abandoned_sessions,"
+    };
+    char row[96];
+    for(unsigned i=0;i<9u;i++) {
+        assert(fgets(row,sizeof row,csv));
+        if(i==2u) {
+            unsigned parsed=999u;
+            assert(sscanf(row,"tail_reason_code,%u",&parsed)==1);
+            assert(parsed==code);
+        }
+        else if(i==4u) {
+            unsigned parsed=999u;
+            assert(sscanf(row,"tail_descriptor_return_confirmed,%u",
+                          &parsed)==1 && parsed==(unsigned)returned);
+        }
+        else if(i>=6u) {
+            assert(strncmp(row,names[i],strlen(names[i]))==0);
+        }
+        else {
+            const size_t length=strlen(names[i]);
+            assert(strncmp(row,names[i],length)==0);
+        }
+    }
+    assert(fgetc(csv)==EOF && !ferror(csv));
+    fclose(csv);
+}
+
 static void fail_closed(Harness *h,unsigned code) {
     assert(vh_audio_tail_reason_read(&h->reason)==code);
     assert(h->lease.in_flight==&h->owned_descriptor);
@@ -64,6 +116,7 @@ static void fail_closed(Harness *h,unsigned code) {
         &h->lease,&h->owned_descriptor));
     assert(h->lease.pages_leased==2);
     assert(h->lease.pages_released==1);
+    verify_after_join_csv(h,code,0);
 }
 
 static void test_append_failure_keeps_lease_and_skips_wait(void) {
@@ -116,6 +169,7 @@ static void test_successful_exact_return_releases_lease(void) {
     assert(h.lease.pages_leased==1 && h.lease.pages_released==1);
     vh_audio_buffer_lease_session_closed(&h.lease);
     assert(h.lease.abandoned_sessions==0);
+    verify_after_join_csv(&h,VH_TAIL_RETURN_CONFIRMED,1);
 }
 
 static void test_multiple_count_still_checks_exact_descriptor(void) {
