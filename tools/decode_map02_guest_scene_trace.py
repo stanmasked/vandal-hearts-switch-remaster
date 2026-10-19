@@ -20,17 +20,30 @@ def decode_image(path):
     img = Image.open(path).convert("RGB")
     if img.size != (WIDTH, HEIGHT):
         raise ValueError("Unexpected NeXium screenshot geometry")
-    def sample(x, y):
-        return img.getpixel((x, y))
-    magenta = sample(LEFT+3, TOP+3)
-    if not (magenta[0]>=200 and magenta[1]<=45 and magenta[2]>=200):
+    # NeXium's host window may letterbox/scale the Switch framebuffer.
+    # Calibrate using our full magenta border, never hard-code viewport
+    # pixels or perform OCR/image guessing. The recorded packet's CRC
+    # still has to match the exact decoded bits.
+    magenta = []
+    for index, (red, green, blue) in enumerate(img.getdata()):
+        if red >= 200 and green <= 45 and blue >= 200:
+            magenta.append((index % WIDTH, index // WIDTH))
+    if len(magenta) < 4000:
         raise ValueError("Missing magenta trace receipt border")
+    left = min(p[0] for p in magenta)
+    right = max(p[0] for p in magenta)
+    top = min(p[1] for p in magenta)
+    bottom = max(p[1] for p in magenta)
+    width = right-left+1
+    height = bottom-top+1
+    if not (740 <= width <= 810 and 440 <= height <= 490):
+        raise ValueError("Unexpected calibrated trace viewport geometry")
     packed = bytearray(PACKET_BYTES)
     for bit in range(PACKET_BYTES * 8):
         col, row = bit % COLS, bit // COLS
-        px = LEFT + MODULE + col * MODULE + MODULE//2
-        py = TOP + MODULE + row * MODULE + MODULE//2
-        color = sample(px, py)
+        px = round(left + (col + 1.5)*width/(COLS + 2))
+        py = round(top + (row + 1.5)*height/(ROWS + 2))
+        color = img.getpixel((px, py))
         if max(color) <= 48:
             packed[bit//8] |= 0x80 >> (bit%8)
         elif min(color) < 208:
