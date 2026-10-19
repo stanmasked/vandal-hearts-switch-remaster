@@ -31,8 +31,8 @@ int main(void) {
            a.reset_hash==b.reset_hash && a.wet_nonzero==b.wet_nonzero);
     assert(a.wet_hash!=a.reset_hash);
     assert(a.native48.different_pages==48);
-    assert(a.native48.prefix_frames>=64u*555u);
-    assert(a.native48.tail_frames>=48u*555u);
+    assert(a.native48.prefix_frames==35665u);
+    assert(a.native48.tail_frames==26750u);
     assert(a.native48.wet_nonzero>0u);
     assert(a.native48.reset_first_page_nonzero<=2u);
     assert(a.native48.reset_later_nonzero==0u);
