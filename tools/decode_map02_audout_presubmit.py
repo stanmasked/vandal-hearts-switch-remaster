@@ -6,7 +6,8 @@ import struct
 import zlib
 from pathlib import Path
 
-from decode_map02_guest_scene_trace import decode_packet_image
+# Pure byte-level tests intentionally do not require Pillow.
+# The screenshot decoder is loaded only when the CLI processes a PNG.
 
 MAGIC=b"VHPRE001"
 FRAMES=(557,558)
@@ -51,6 +52,7 @@ def main():
     ap.add_argument("--output",type=Path,required=True)
     args=ap.parse_args()
     try:
+        from decode_map02_guest_scene_trace import decode_packet_image
         result=decode(decode_packet_image(args.image))
     except (OSError,TypeError,ValueError) as exc:
         result={"schema":"vh-map02-presubmit-optical/v1",
