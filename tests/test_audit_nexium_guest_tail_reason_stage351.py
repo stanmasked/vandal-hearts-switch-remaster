@@ -129,6 +129,37 @@ class Stage351Tests(unittest.TestCase):
         with self.assertRaises(ExitTimelineError):
             audit_existing_original_sources(first,second,a,b)
 
+    def test_real_nexium_original_source_dependency_order(self):
+        """Stage351 must consume Stage313/348 only after Stage314 copied CSV."""
+        workflow=(Path(__file__).resolve().parents[1]/
+                  ".github"/"workflows"/"emulator-smoke.yml").read_text(
+                      encoding="utf-8")
+        labels=(
+            "Stage313 verify guest last audout PCM page return",
+            "Stage348 independently verify actual Stage347 post-join guest",
+            "Stage314 preserve original guest-created last audout page",
+            "Stage351 verify original post-join tail failure cause",
+            "Capture ten additional A/B transitions in isolated NeXium",
+        )
+        positions=[]
+        for label in labels:
+            self.assertEqual(workflow.count("- name: "+label),1,label)
+            positions.append(workflow.index("- name: "+label))
+        self.assertEqual(positions,sorted(positions))
+        stage314=workflow[positions[2]:positions[3]]
+        self.assertIn(
+            "--output-original runtime-evidence/audio-exit-output-000.csv",
+            stage314)
+        stage351=workflow[positions[3]:positions[4]]
+        self.assertIn(
+            "--stage313-original runtime-evidence/audio-exit-output-000.csv",
+            stage351)
+        self.assertIn(
+            "--stage348-original runtime-evidence/audio-lease-reconciliation-000.csv",
+            stage351)
+        self.assertIn(
+            "prior_stage313_and_stage348_original_bytes_reaudited",stage351)
+
     def test_each_code_is_source_consistent(self):
         for code in range(len(REASONS)):
             abandoned=int(3<=code<=6)
