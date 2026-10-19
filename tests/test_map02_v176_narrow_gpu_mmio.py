@@ -199,10 +199,11 @@ int main(void){
                       "test_map02_v176_narrow_gpu_mmio.py",
                       "--vh176-mips-vblank-narrow-mmio",
                       "V176_SYNTHETIC.EXE",
-                      "V176_BAD_LB_GP1.EXE",
-                      "V176_BAD_LH_GP0.EXE",
-                      "V176_BAD_SB_GP1.EXE",
-                      "V176_BAD_SH_GP0.EXE",
+                      "V176_BAD_",
+                      '"LB_GP1":0x81090004',
+                      '"LH_GP0":0x85090000',
+                      '"SB_GP1":0xa1090004',
+                      '"SH_GP0":0xa5090000',
                       "VH176_NARROW_MMIO_REFUSED",
                       "VH176_GUEST_MIPS_NARROW_GPU_QUIET_PASS"):
             self.assertIn(token,guard)
