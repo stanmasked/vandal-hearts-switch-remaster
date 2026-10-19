@@ -168,12 +168,10 @@ static uint32_t crc32_ieee(const uint8_t *data,size_t n) {
     }
     return crc^UINT32_C(0xffffffff);
 }
-int vh_guest_sync_studio_c_draw(VhCanvas *canvas,
-    const VhGuestSyncStudioC *v,
-    uint32_t black,uint32_t white,uint32_t marker) {
-    if(!canvas || !v) return -1;
-    uint8_t packet[VH_SCENE_OPTICAL_PACKET_BYTES];
-    memset(packet,0,sizeof packet);
+int vh_guest_sync_studio_c_encode(const VhGuestSyncStudioC *v,
+    uint8_t packet[924]) {
+    if(!v || !packet) return -1;
+    memset(packet,0,VH_SCENE_OPTICAL_PACKET_BYTES);
     memcpy(packet,"VHSYNC01",8);
     packet[8]=1u; /* version */
     packet[9]=(uint8_t)(v->failure_line ? 1u : 0u);
