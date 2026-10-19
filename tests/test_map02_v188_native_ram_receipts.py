@@ -99,7 +99,7 @@ class V188NativeReceiptSequence(unittest.TestCase):
                                        "VH185_NATIVE_RAM_PERSISTENCE_IGNORED"), mode)
             with self.assertRaises(ValueError):
                 audit_log(base.replace(f"phase={phase} vblanks={phase}",
-                                       f"phase={phase} vblanks=3"), mode)
+                                       f"phase={phase} vblanks={2 if phase == 3 else 3}"), mode)
             with self.assertRaises(ValueError):
                 audit_log(base + base, mode)
 
