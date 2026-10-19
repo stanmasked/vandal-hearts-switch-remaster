@@ -21,7 +21,13 @@ The standalone `VH_MAP02_AUDIO_SYNC_TAIL_WITNESS=1` opt-in Makefile adds no code
 
 `tools/decode_guest_sync_studio_c.py` validates the screenshot's recovered 924-byte packet, magenta-window calibration, CRC32, zeroed unused bytes, same-clock proof flags, replay count, scene note counts, 64/48 block counts, all-different tails, zero reset samples and divergent wet/reset hashes. The CI boots two otherwise identical diagnostic binaries with outer wet-tail setting 0/1, and requires **the same synthetic proof fingerprints in both**—a consistency check, not comparing their independent PCM monitor timing.
 
-The identical C source is also compiled for GCC and Clang under ASan/UBSan with a generated-only regression; 12 Python packet fixtures reject manipulated proof flags, bad CRC, missing causal effect, new notes, wet/reset silence, nonrepeatability and reserved-byte violations.
+The identical C source is compiled for GCC and Clang under ASan/UBSan with a generated-only regression; 13 Python packet fixtures reject manipulated proof flags, bad CRC, impossible sample counts, missing causal effect, new notes, wet/reset silence, nonrepeatability and reserved-byte violations.
+
+### Cross-architecture fingerprint parity
+
+The CI captures **the actual stdout fingerprints from executing that identical C source under GCC and Clang** (pre-switch, wet-tail and reset FNV-1a hashes, retained nonzero signed PCM sample count). A separate fail-closed auditor, `tools/audit_guest_sync_cross_arch.py`, reads those exact-run compiler logs and both separately decoded **NeXium guest optical receipts**. It requires GCC == Clang == guest WET_TAIL=0 == guest WET_TAIL=1 for all four measured fields, and also validates the guest 64/48 block count, zero reset samples, no new notes, two identical replays, same-run Git SHA/run/attempt and explicit rejection of any claim about live audout reverb causality. Ten generated-only negative/positive audit fixtures reject forged guest/host fingerprints and receipt identities. On success, a separate JSON `guest-host-cross-architecture-parity.json` is archived.
+
+**Cross-architecture equality is a strict extra test, not a guarantee.** Any compiler or native architecture discrepancy must fail the workflow for diagnosis, not be rounded away or declared equivalent. It still isolates only the synthetic DSP fixture, not the streaming audout music path.
 
 ## Carefully bounded claims
 
