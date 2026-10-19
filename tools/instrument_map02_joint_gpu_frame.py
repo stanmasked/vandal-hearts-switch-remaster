@@ -27,6 +27,9 @@ SESSION_CHECK = r'''
 static int VH_Map02JointGpuSessionReady(void)
 {
     VH_CaptureInit();
+#if defined(VH_MAP02_POSIX_CAPTURE_WINDOWS)
+    if (vh_capture_windows) return 0; /* single held journal only */
+#endif
     return vh_capture_init && vh_capture_frame != 0 &&
         vh_capture_frame == (unsigned long)s_drawFrame &&
         vh_capture_seq >= 2u && vh_capture_seq < VH_CAPTURE_LIMIT &&
@@ -45,7 +48,7 @@ PRIVATE_FILE_OPENERS = (
     '    file = fopen(snapshot_path, "wb");',
     '        file = fopen(upload_path, "wb");',
     '    log = fopen(log_path, "ab");',
-    '    fclose(log);',
+    '    if (ferror(log) == 0) {\n        if (fclose(log) == 0) ++vh_capture_saved;\n    } else {\n        (void)fclose(log);\n    }',
 )
 EVENT_ANCHOR = 'static void VH_CaptureEvent('
 
@@ -129,9 +132,26 @@ def instrument(original: bytes) -> str:
     combined = combined.replace(
         PRIVATE_FILE_OPENERS[3],
         "#if defined(VH_MAP02_PRIVATE_FRAME_PIPE_TRACE)\n"
-        "    if (VH_Map02FlushLog(log) == 0)\n"
+        "    if (VH_Map02FlushLog(log) == 0) {\n"
         "        ++vh_map02_joint_events_completed;\n"
+        "        ++vh_capture_saved;\n"
+        "    }\n"
         "#else\n" + PRIVATE_FILE_OPENERS[3] + "\n#endif", 1)
+    # The native completion receipt is also journal evidence: it must be
+    # exclusive, 0600, no-follow and bound to the held root inventory.
+    status_opener = '    file = fopen(status_path, "wx");'
+    if combined.count(status_opener) != 2:
+        raise ValueError("joint MAP02 native completion receipt anchor changed")
+    combined = combined.replace(
+        status_opener,
+        "#if defined(VH_MAP02_PRIVATE_FRAME_PIPE_TRACE)\n"
+        "    file = VH_Map02SecureFile(status_path);\n"
+        "#else\n" + status_opener + "\n#endif")
+    # The held single-journal fd and 64-record final-frame receipt are not
+    # compatible with the separate optional two-window recorder mode.
+    guard = '    return vh_capture_init && vh_capture_frame != 0 &&'
+    if SESSION_CHECK.count(guard) != 1:
+        raise ValueError("joint MAP02 session guard anchor changed")
     combined = combined.replace(
         ORIGINAL_GPU_MARKER, SESSION_CHECK + "\n" + ORIGINAL_GPU_MARKER, 1)
     return COMPILE_GUARD + "\n" + combined
