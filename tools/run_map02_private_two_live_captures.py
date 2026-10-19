@@ -214,6 +214,10 @@ def run(executable, first_frame, first_journal, second_frame, second_journal,
             exe_fd, executable, executable_sha256)
 
         witnesses = []
+        # Freeze the two actual native CAPTURE receipt claims as immutable
+        # scalar values before any independent replay starts. This gives a
+        # second source of evidence when a post-replay report is mutated.
+        launch_claims = []
         for offset in (0, 2):
             _require_held_elf_image(exe_fd, executable, executable_sha256,
                                     original_identity=elf_identity)
@@ -247,6 +251,11 @@ def run(executable, first_frame, first_journal, second_frame, second_journal,
             if witness != published[0]:
                 raise ValueError("MAP02 two-run published frame/GPU files changed")
             witnesses.append(witness)
+            launch_claims.append((
+                receipt.get("image_sha256"),
+                receipt.get("gpu_journal_sha256"),
+                receipt.get("gpu_journal_pairs_verified"),
+            ))
             _require_held_elf_image(exe_fd, executable, executable_sha256,
                                     original_identity=elf_identity)
 
@@ -268,6 +277,20 @@ def run(executable, first_frame, first_journal, second_frame, second_journal,
                 or report.get("gpu_journal_writer_kernel_authenticated") is not False
                 or report.get("hd_replacement_authorized") is not False):
             raise ValueError("MAP02 two-run native repeatability witness invalid")
+        # Compare source-labelled replay results to the immutable claims
+        # captured at publication, not just to one another. Two FORGED
+        # source digests could agree and fool a boolean-only strict gate.
+        replay_claims = (
+            (report.get("first_image_sha256"),
+             report.get("first_gpu_journal_sha256"),
+             report.get("first_gpu_pairs_verified")),
+            (report.get("second_image_sha256"),
+             report.get("second_gpu_journal_sha256"),
+             report.get("second_gpu_pairs_verified")),
+        )
+        if tuple(launch_claims) != replay_claims:
+            raise ValueError(
+                "MAP02 independent replay disagrees with pinned capture receipts")
         verify_all_published()
         _require_held_elf_image(exe_fd, executable, executable_sha256,
                                 original_identity=elf_identity)
