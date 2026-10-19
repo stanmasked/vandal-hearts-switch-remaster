@@ -201,6 +201,13 @@ def compare_loaded_sections(exe_path, elf_path):
         "original_exe_and_mips_elf_loaded_sections_match": True,
         "original_allocated_sections_compared": len(mapped),
         "original_allocated_section_bytes_compared": total,
+        # Lengths are aggregate counters only, never private addresses or
+        # file contents. Sparse ELF coverage is allowed, but must not be
+        # reported as full PS-X image authentication.
+        "original_psx_loaded_payload_bytes": payload_size,
+        "original_psx_loaded_bytes_not_covered_by_elf_sections":
+            payload_size - total,
+        "original_psx_loaded_payload_fully_covered": total == payload_size,
         "unmapped_allocated_sections_not_authenticated": outside,
         "complete_matching_decomp_proven": False,
         "actual_gameplay_executed": False,
