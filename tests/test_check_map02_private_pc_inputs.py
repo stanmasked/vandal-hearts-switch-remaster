@@ -324,6 +324,52 @@ for name, offset, size in [
         with self.assertRaisesRegex(ValueError, "aliases ELF metadata"):
             verify_private_pc_inputs(self.root)
 
+    def test_distinct_runtime_sections_cannot_reuse_same_elf_file_bytes(self):
+        # The fixture bytes repeat every 256 addresses. Two distinct PS-X
+        # ranges can match identically without proving that the extracted
+        # ELF contains two independent file-backed sections.
+        first_address = ANCHORS[0][1]
+        first_file_offset = struct.unpack_from(
+            "<I", self.elf.read_bytes(), 64 + 40 + 16)[0]
+        original = self.exe.read_bytes()
+        for shift, alias_offset in (
+            (0, first_file_offset), (8, first_file_offset + 8),
+        ):
+            with self.subTest(shift=shift):
+                # Regenerate the synthetic base without mutating its three
+                # pinned anchor sections.
+                if shift:
+                    self.elf.write_bytes(base)
+                else:
+                    base = self.elf.read_bytes()
+                other_address = first_address + 256 + shift
+                old_start = PSX_HEADER + first_address - LOAD_VRAM + shift
+                new_start = PSX_HEADER + other_address - LOAD_VRAM
+                self.assertEqual(
+                    original[old_start:old_start + 16],
+                    original[new_start:new_start + 16])
+                self.add_synthetic_loaded_section(
+                    other_address, size=16)
+                fresh = compare_loaded_sections(self.exe, self.elf)
+                self.assertEqual(fresh["original_allocated_sections_compared"], 4)
+                forged = bytearray(self.elf.read_bytes())
+                table = struct.unpack_from("<I", forged, 32)[0]
+                struct.pack_into(
+                    "<I", forged, table + 4 * 40 + 16, alias_offset)
+                self.elf.write_bytes(forged)
+                # Original three anchors have not changed. Only the
+                # expanded verifier sees the disk-payload alias.
+                self.assertTrue(compare_data_ranges(self.exe, self.elf)[
+                    "original_exe_and_mips_elf_data_anchors_match"])
+                with self.assertRaisesRegex(
+                    ValueError, "overlap file payload"
+                ):
+                    compare_loaded_sections(self.exe, self.elf)
+                with self.assertRaisesRegex(
+                    ValueError, "overlap file payload"
+                ):
+                    verify_private_pc_inputs(self.root)
+
     def test_mapped_section_overlap_and_boundary_rejected(self):
         self.add_synthetic_loaded_section(ANCHORS[0][1], size=16)
         with self.assertRaisesRegex(ValueError, "overlapping allocated"):
