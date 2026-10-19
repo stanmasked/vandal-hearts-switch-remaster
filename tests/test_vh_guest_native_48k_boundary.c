@@ -1,0 +1,60 @@
+/* Exact 32768-source-frame cue boundary: probe production 44.1->48k
+ * interpolation independently of SPU wet state. Generated data only. */
+#include "vh_audio_resample.h"
+#include "vh_audio_output_ramp.h"
+#include "vh_audio_stream.h"
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+
+static int16_t constant[VH_AUDIO_BLOCK_FRAMES*2u];
+static int16_t silence[VH_AUDIO_BLOCK_FRAMES*2u];
+static int16_t output[VH_AUDIO_RESAMPLE_MAX_FRAMES*2u];
+
+static unsigned count_nonzero(const int16_t *p,size_t frames) {
+    unsigned nonzero=0;
+    for(size_t i=0;i<frames*2u;i++) nonzero+=(p[i]!=0);
+    return nonzero;
+}
+
+int main(void) {
+    for(size_t i=0;i<VH_AUDIO_BLOCK_FRAMES;i++) {
+        constant[2*i]=10000;
+        constant[2*i+1]=-10000;
+    }
+    for(unsigned repeat=0;repeat<2;repeat++) {
+        VhAudioResample converter;
+        VhAudioOutputRamp ramp;
+        vh_audio_resample_reset(&converter);
+        vh_audio_output_ramp_arm(&ramp);
+        unsigned accumulated=0;
+        for(unsigned block=0;block<64;block++) {
+            const size_t n=vh_audio_resample_process(&converter,
+                constant,VH_AUDIO_BLOCK_FRAMES,output,
+                VH_AUDIO_RESAMPLE_MAX_FRAMES);
+            assert(n>0 && n<=VH_AUDIO_RESAMPLE_MAX_FRAMES);
+            assert(vh_audio_output_ramp_apply(&ramp,output,n)==0);
+            accumulated+=(unsigned)n;
+        }
+        assert(accumulated>35520 && accumulated<35776);
+        assert(converter.input_frames==64u*VH_AUDIO_BLOCK_FRAMES);
+        assert(ramp.position==VH_AUDIO_OUTPUT_RAMP_FRAMES);
+        /* At THIS exact synthetic musical boundary the next output
+         * tick interpolates prior 10000 into current zero at 10500/48000. */
+        const size_t n=vh_audio_resample_process(&converter,
+            silence,VH_AUDIO_BLOCK_FRAMES,output,VH_AUDIO_RESAMPLE_MAX_FRAMES);
+        assert(n>0 && n<=VH_AUDIO_RESAMPLE_MAX_FRAMES);
+        assert(vh_audio_output_ramp_apply(&ramp,output,n)==0);
+        assert(output[0]==7812 && output[1]==-7812);
+        assert(count_nonzero(output,n)==2u);
+        for(unsigned next=0;next<47;next++) {
+            const size_t m=vh_audio_resample_process(&converter,
+                silence,VH_AUDIO_BLOCK_FRAMES,output,VH_AUDIO_RESAMPLE_MAX_FRAMES);
+            assert(m>0);
+            assert(vh_audio_output_ramp_apply(&ramp,output,m)==0);
+            assert(count_nonzero(output,m)==0u);
+        }
+    }
+    puts("PASS: exact 64x512 cue-boundary has 2 transient signed samples, no later PCM; replay 2/2");
+    return 0;
+}
