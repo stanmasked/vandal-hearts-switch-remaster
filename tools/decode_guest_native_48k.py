@@ -20,7 +20,7 @@ def decode(packet):
     pre,tail,different,wet,first_residue,later_residue=struct.unpack_from("<IIIIII",packet,12)
     prehash,wethash,resethash=struct.unpack_from("<QQQ",packet,40)
     rounds=struct.unpack_from("<I",packet,64)[0]
-    if not (64*555<=pre<=64*559 and 48*555<=tail<=48*559
+    if not (pre==35665 and tail==26750
             and different==48 and 0<wet<=2*tail and rounds==2):
         raise ValueError("Output-stage clocks, tail differences or replay invalid")
     if first_residue>2 or later_residue!=0:
