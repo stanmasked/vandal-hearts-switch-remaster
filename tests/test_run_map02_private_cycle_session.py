@@ -46,6 +46,11 @@ class PrivateOneShotCycleTests(unittest.TestCase):
             "hardware_ps1_equivalence_proven": False,
             "game_content_emitted": False,
         }
+        # Retain true production implementations before this test case's
+        # synthetic mocks replace them. Standalone filesystem tests below
+        # must inspect actual on-disk inode/mtime rather than mock tuples.
+        self.real_input_identity = runner._private_input_identity
+        self.real_receipt_directory_identity = runner._receipt_directory_identity
         simulated = {
             # Original game inputs are not present in synthetic CI. These
             # identities are mocked like the existing complete preflight;
@@ -393,22 +398,22 @@ class PrivateOneShotCycleTests(unittest.TestCase):
         source = self.root / "owned-synthetic-identity"
         source.write_bytes(b"original-synthetic-content")
         source.chmod(0o600)
-        first = runner._private_input_identity(source, "synthetic")
-        self.assertEqual(first, runner._private_input_identity(source, "synthetic"))
+        first = self.real_input_identity(source, "synthetic")
+        self.assertEqual(first, self.real_input_identity(source, "synthetic"))
         source.write_bytes(b"modified-synthetic-content")
-        changed = runner._private_input_identity(source, "synthetic")
+        changed = self.real_input_identity(source, "synthetic")
         self.assertNotEqual(first, changed)
         original = source.read_bytes()
         source.rename(self.root / "archived-synthetic-identity")
         source.write_bytes(original)
         source.chmod(0o600)
-        self.assertNotEqual(changed, runner._private_input_identity(source, "synthetic"))
+        self.assertNotEqual(changed, self.real_input_identity(source, "synthetic"))
         linked = self.root / "symlink-synthetic-identity"
         linked.symlink_to(source)
         with self.assertRaisesRegex(ValueError, "became linked"):
-            runner._private_input_identity(linked, "synthetic")
+            self.real_input_identity(linked, "synthetic")
         with self.assertRaisesRegex(ValueError, "input unavailable"):
-            runner._private_input_identity(self.root / "no-such-file", "synthetic")
+            self.real_input_identity(self.root / "no-such-file", "synthetic")
 
     def test_dry_run_rejects_late_build_receipt_directory_swap(self):
         first = (1, 100, 22, 0o40700, 3, 4)
@@ -442,15 +447,15 @@ class PrivateOneShotCycleTests(unittest.TestCase):
     def test_real_receipt_directory_identity_rejects_symlink_and_replacement(self):
         receipt = self.root / "actual-synthetic-receipt-root"
         receipt.mkdir(mode=0o700)
-        first = runner._receipt_directory_identity(receipt)
+        first = self.real_receipt_directory_identity(receipt)
         renamed = self.root / "original-synthetic-receipt-root"
         receipt.rename(renamed)
         receipt.mkdir(mode=0o700)
-        self.assertNotEqual(first, runner._receipt_directory_identity(receipt))
+        self.assertNotEqual(first, self.real_receipt_directory_identity(receipt))
         with self.assertRaisesRegex(ValueError, "directory is not owner-only"):
             alias = self.root / "linked-synthetic-receipt-root"
             alias.symlink_to(renamed, target_is_directory=True)
-            runner._receipt_directory_identity(alias)
+            self.real_receipt_directory_identity(alias)
 
     def test_dry_run_rejects_input_inode_drift_after_final_layout_scan(self):
         for drifted in (self.elf, self.disc,
