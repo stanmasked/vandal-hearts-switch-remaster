@@ -22,8 +22,17 @@
 #if VH_MAP02_AUDIO_TRACE_RECEIPT && !VH_MAP02_AUDIO_EXPERIMENT
 #error "MAP02 trace receipt requires audio experiment enabled"
 #endif
+#ifndef VH_MAP02_AUDIO_SYNC_TAIL_WITNESS
+#define VH_MAP02_AUDIO_SYNC_TAIL_WITNESS 0
+#endif
+#if VH_MAP02_AUDIO_SYNC_TAIL_WITNESS && !VH_MAP02_AUDIO_TRACE_RECEIPT
+#error "Guest synchronized STUDIO_C witness requires opt-in optical receipt"
+#endif
 #if VH_MAP02_AUDIO_EXPERIMENT
 #include "vh_switch_game_audio.h"
+#if VH_MAP02_AUDIO_SYNC_TAIL_WITNESS
+#include "vh_guest_sync_studio_c.h"
+#endif
 /* Only accessed by the gameplay/framebuffer thread. */
 static int g_map02_audio_started;
 #endif
@@ -470,6 +479,26 @@ int main(int argc, char **argv) {
                 FB_WIDTH, FB_HEIGHT
             };
             (void)vh_switch_game_audio_pcm_metrics_render(&receipt,
+                RGBA8_MAXALPHA(0,0,0),
+                RGBA8_MAXALPHA(255,255,255),
+                RGBA8_MAXALPHA(255,0,255));
+        }
+        framebufferEnd(&fb);
+        svcSleepThread(8000000000LL);
+#endif
+#if VH_MAP02_AUDIO_SYNC_TAIL_WITNESS
+        /* Second-order synthetic counterfactual in ONE guest clock:
+         * no active audout owner, no original game assets. */
+        static VhGuestSyncStudioC guest_sync;
+        (void)vh_guest_sync_studio_c_run(&guest_sync);
+        receipt_pixels=(u32 *)framebufferBegin(&fb,&receipt_stride_bytes);
+        if(receipt_pixels) {
+            VhCanvas receipt={
+                (uint32_t *)receipt_pixels,
+                (size_t)(receipt_stride_bytes/sizeof(u32)),
+                FB_WIDTH,FB_HEIGHT
+            };
+            (void)vh_guest_sync_studio_c_draw(&receipt,&guest_sync,
                 RGBA8_MAXALPHA(0,0,0),
                 RGBA8_MAXALPHA(255,255,255),
                 RGBA8_MAXALPHA(255,0,255));
