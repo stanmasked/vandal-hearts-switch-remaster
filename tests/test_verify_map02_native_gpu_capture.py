@@ -207,7 +207,7 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
         self.events[2]["draw_env"] = clip[:]
         self.save()
         with self.assertRaisesRegex(ValueError,
-                                    r"before/after metadata diverges \\(draw_env\\)"):
+                                    r"before/after metadata diverges \(draw_env\)"):
             verify_capture(self.root, target_frame=12)
 
         self.events[3]["draw_env"] = clip[:]
@@ -218,7 +218,7 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
         del self.events[2]["draw_env"]
         self.save()
         with self.assertRaisesRegex(ValueError,
-                                    r"before/after metadata diverges \\(draw_env\\)"):
+                                    r"before/after metadata diverges \(draw_env\)"):
             verify_capture(self.root, target_frame=12)
 
     def test_main_drawenv_metadata_checked_without_dropping_ft4_checks(self):
