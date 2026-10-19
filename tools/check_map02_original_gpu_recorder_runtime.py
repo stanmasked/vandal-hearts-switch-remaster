@@ -2,7 +2,8 @@
 """Run real pinned original-PC GPU recorder and audit its terminal receipt.
 
 No real game content. The original libgpu.c and pc_raster.c execute a
-handmade DR_MODE/F4/FT4 ordering table; 34-draw overflow is deliberately
+handmade DR_MODE/F4/FT4 ordering table; 34 raster draws plus one
+state-only DR_MODE create 35 native event pairs in overflow mode. These are
 synthetic. The capture is temporary and never uploaded as a CI artifact.
 """
 import argparse
@@ -15,7 +16,7 @@ import tempfile
 from tools.check_map02_original_drawotag_runtime import HARNESS
 from tools.instrument_map02_gpu_native_events import instrument
 from tools.verify_map02_native_gpu_capture import (
-    STATUS, LOG, verify_capture_receipt,
+    STATUS, LOG, verify_capture, verify_capture_receipt,
 )
 from tools.verify_map02_native_gpu_windows import verify_native_windows
 
@@ -79,21 +80,36 @@ def execute_real_recorder(upstream, *, cc="cc"):
                                  + executed.stderr[-3500:])
             if label == "windowed":
                 result = verify_native_windows(private, target_frame=1)
+                # 32 extra F4 + 2 original raster draws + 1 state-only
+                # DR_MODE = 35 native event pairs, with 70 BEFORE/AFTER
+                # snapshots in two windows. The recorder must NOT drop the
+                # DR_MODE state transition at the 64/65 boundary.
                 if (result["recorded_windows"] != 2 or
-                        result["globally_ordered_native_gpu_events"] != 68 or
-                        result["native_draw_pairs"] != 34 or
-                        result["vram_bridge_checks"] != 33 or
+                        result["globally_ordered_native_gpu_events"] != 70 or
+                        result["native_draw_pairs"] != 35 or
+                        result["vram_bridge_checks"] != 34 or
                         result["whole_original_gameplay_frame_proven"]):
                     raise ValueError("native GPU windows did not preserve original OT")
-                # Real-byte mutation at the first AFTER-64 event must break the
-                # bridge from window-000, without tampering with manifest counts.
-                boundary = private / "window-001" / "gpu-0000-vram.bin"
-                with boundary.open("r+b") as fh:
-                    initial = fh.read(1)
-                    if len(initial) != 1:
-                        raise ValueError("missing boundary VRAM byte")
-                    fh.seek(0)
-                    fh.write(bytes([initial[0] ^ 1]))
+                second = private / "window-001"
+                rows = [json.loads(row) for row in
+                        (second / LOG).read_bytes().splitlines()]
+                if (len(rows) != 6 or
+                        [e["primitive_type"] for e in rows] != [5,5,1,1,2,2] or
+                        [e["phase"] for e in rows] !=
+                        ["before","after"] * 3):
+                    raise ValueError("DR_MODE/FT4 at native window boundary lost")
+                # Real-byte mutation of ALL second-window snapshots at
+                # off-primitive (0,0) preserves every local BEFORE/AFTER
+                # transition. Only the cross-window VRAM continuity guard
+                # can reject it; we must exercise that guard independently.
+                for local_step in range(6):
+                    snapshot = second / f"gpu-{local_step:04d}-vram.bin"
+                    with snapshot.open("r+b") as fh:
+                        initial = fh.read(1)
+                        if len(initial) != 1:
+                            raise ValueError("missing boundary VRAM byte")
+                        fh.seek(0)
+                        fh.write(bytes([initial[0] ^ 1]))
                 try:
                     verify_native_windows(private, target_frame=1)
                 except ValueError as exc:
@@ -104,28 +120,46 @@ def execute_real_recorder(upstream, *, cc="cc"):
                 continue
             status = json.loads((private / STATUS).read_bytes())
             events = [json.loads(row) for row in (private / LOG).read_bytes().splitlines()]
-            if status["gpu_draw_frame"] != 1 or (
-                    status["draw_before_hooks"] != (34 if extra_draws else 2)):
-                raise ValueError("original DrawOTag did not report all draw hooks")
-            if any(e["primitive_type"] == 5 for e in events):
-                raise ValueError("DR_MODE should never consume a native draw slot")
+            # The PR #55 strict auditor captures DR_MODE for GPU-state
+            # provenance. It consumes one event pair but never a PutPixel
+            # raster draw ordinal. The original fixture has 2 raster draws.
+            expected_pairs = 3 + extra_draws
+            if (status["gpu_draw_frame"] != 1 or
+                    status["draw_before_hooks"] != expected_pairs or
+                    status["observed_hooks"] != 2 * expected_pairs):
+                raise ValueError("original DrawOTag did not report all GPU hooks")
             if extra_draws:
-                if (len(events) != 64 or status["observed_hooks"] != 68 or
+                # AddPrim is LIFO: the 32 extra F4 exhaust the 64-event
+                # recorder, so DR_MODE + two older draws remain unrecorded.
+                if (len(events) != 64 or
+                        any(e["primitive_type"] == 5 for e in events) or
                         not status["limit_reached"]):
                     raise ValueError("original GPU recorder overflow did not surface")
                 try:
                     verify_capture_receipt(private, target_frame=1, events=events)
-                except ValueError:
-                    pass
+                except ValueError as exc:
+                    if not any(word in str(exc) for word in
+                               ("incomplete", "count/log divergence")):
+                        raise
                 else:
                     raise ValueError("overfull native GPU capture was accepted")
             else:
-                if len(events) != 4:
-                    raise ValueError("DR_MODE incorrectly counted as a draw event")
+                if (len(events) != 6 or
+                        [e["primitive_type"] for e in events] !=
+                        [5,5,1,1,2,2] or
+                        [e["phase"] for e in events] !=
+                        ["before","after"] * 3):
+                    raise ValueError("DR_MODE/F4/FT4 original OT capture mismatch")
                 proof = verify_capture_receipt(private, target_frame=1,
                                                events=events)
                 if not proof["capture_window_closed_without_detected_loss"]:
                     raise ValueError("closed synthetic frame failed recorder receipt")
+                # Receipt accounting alone cannot prove DR_MODE kept VRAM
+                # invariant. Validate complete pre/post BGR555 snapshots.
+                checked = verify_capture(private, target_frame=1)
+                if (checked["native_gpu_pairs_verified"] != 3 or
+                        checked["draw_otag_primitive_pairs"] != 3):
+                    raise ValueError("closed original OT GPU snapshot replay failed")
         return ("closed", "overflow-rejected", "two-windows-bridged")
 
 
