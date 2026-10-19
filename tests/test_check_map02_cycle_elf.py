@@ -79,6 +79,11 @@ class OriginalCycleElfAuditTests(unittest.TestCase):
         load = elf._require_entry_in_executable_load
         valid = "  LOAD 0x001000 0x00004000 0x00004000 0x000030 0x000040 R E 0x1000"
         load(valid, 0x4010, 0x5000)
+        # ELF permits a BSS-only PT_LOAD (p_filesz=0) alongside
+        # ordinary executable segments. It cannot host the entry itself,
+        # but it must not invalidate an otherwise runnable executable.
+        bss_only = "  LOAD 0x002000 0x00005000 0x00005000 0x000000 0x000040 RW 0x1000"
+        load(valid + "\n" + bss_only, 0x4010, 0x5000)
         cases = (
             (valid, 0x4030, 0x5000, "entry is not in executable"),
             (valid.replace("R E", "RW"), 0x4010, 0x5000,
