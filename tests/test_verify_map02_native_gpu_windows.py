@@ -74,7 +74,7 @@ class NativeGpuWindowEvidenceTests(unittest.TestCase):
         data = bytearray(self.snapshots[2])
         data[:2] = (99).to_bytes(2, "little")
         name.write_bytes(data)
-        with self.assertRaisesRegex(ValueError, "continuity broken"):
+        with self.assertRaisesRegex(ValueError, "discontinuous VRAM|continuity broken"):
             self.verify()
 
     def test_rejects_oversubscribed_or_counterfeit_completion(self):
