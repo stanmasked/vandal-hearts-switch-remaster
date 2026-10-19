@@ -13,7 +13,7 @@ from pathlib import Path
 import stat
 
 from tools.verify_map02_native_gpu_capture import (
-    verify_capture, LOG, VRAM_BYTES, MAX_EVENT_BYTES
+    verify_capture, LOG, STATUS, VRAM_BYTES, MAX_EVENT_BYTES
 )
 from tools.compare_map02_private_bgr555_frames import _object_pairs
 
@@ -34,6 +34,10 @@ def _read_pinned(directory_fd, name, *, keep=False):
         first = os.fstat(file_fd)
         if name == LOG:
             minimum, maximum = 1, MAX_EVENT_BYTES
+        elif name == STATUS:
+            # Exact source-recorder terminal receipt, never unbounded or
+            # silently ignored. Keep the same inode/mode/mtime pinning.
+            minimum, maximum = 1, 4096
         elif name.startswith("gpu-") and name.endswith("-vram.bin"):
             minimum = maximum = VRAM_BYTES
         elif name.startswith("gpu-") and name.endswith("-upload.bin"):
@@ -101,6 +105,11 @@ def audit(journal_dir, *, frame, final_pixels):
 
         # Independent event/snapshot verification is retained unchanged.
         report = verify_capture(root, target_frame=frame)
+        # A receipt produced by the newer opt-in original-PC probe is
+        # part of the private evidence inventory. The verifier must have
+        # actually parsed/reconciled it, not merely tolerated its filename.
+        if (STATUS in names) != (report["capture_receipt_supplied"] is True):
+            raise ValueError("MAP02 joint GPU terminal status inventory diverges")
         if (report["record_cap_reached"]
                 or report["draw_otag_primitive_pairs"] < 1
                 or report["native_gpu_pairs_verified"] < 1):
@@ -118,6 +127,8 @@ def audit(journal_dir, *, frame, final_pixels):
                 or last["frame"] != frame or last["snapshot"] != final_name):
             raise ValueError("MAP02 joint GPU lacks final DrawOTag after-VRAM witness")
         required = {LOG}
+        if STATUS in names:
+            required.add(STATUS)
         for i, event in enumerate(events):
             if event["snapshot"] != f"gpu-{i:04d}-vram.bin":
                 raise ValueError("MAP02 joint GPU snapshot inventory drift")
