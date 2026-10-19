@@ -22,6 +22,9 @@ from tools.audit_map02_private_frame_repeatability import (
 )
 from tools.prepare_map02_private_frame_pair import _directory, _check_directory, WIDTH, HEIGHT
 from tools.run_map02_private_joint_capture_audit import _session_inode_witness
+from tools.replay_map02_live_frame_receipt import (
+    _read_private_file, RECEIPT_NAME, MAX_RECEIPT,
+)
 
 SCHEMA = "vh.map02.private-two-live-elf-gpu-runs.v1"
 CAPTURE_SCHEMA = "vh.map02.live-child-pipe-bgr555-gpu.v1"
@@ -247,6 +250,18 @@ def run(executable, first_frame, first_journal, second_frame, second_journal,
                     or receipt.get("hd_replacement_authorized") is not False
                     or len(published) != 1):
                 raise ValueError("MAP02 two-run native capture receipt incomplete")
+            # Bind the in-memory result returned by the capture launcher to
+            # the precise canonical receipt actually saved in the pinned
+            # output directory. Flags not duplicated in the final audit
+            # must not be silently mutable after native publication.
+            saved_receipt, _ = _read_private_file(
+                opened[offset], RECEIPT_NAME, max_bytes=MAX_RECEIPT)
+            expected_receipt = (
+                json.dumps(receipt, sort_keys=True) + "\n"
+            ).encode("utf-8")
+            if saved_receipt != expected_receipt:
+                raise ValueError(
+                    "MAP02 native capture return differs from published receipt")
             witness = _session_inode_witness(frame_dir, journal_dir)
             if witness != published[0]:
                 raise ValueError("MAP02 two-run published frame/GPU files changed")
