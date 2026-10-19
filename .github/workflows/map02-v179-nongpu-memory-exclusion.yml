@@ -1,0 +1,33 @@
+name: MAP02 v179 actual guest non-GPU memory exclusion across genuine VBlank
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v179-nongpu-memory-exclusion.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/make_map02_v179_nongpu_mips_exes.py'
+      - 'tests/test_map02_v179_nongpu_memory_exclusion.py'
+      - 'tools/make_map02_v78_vblank_mips_exe.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  nongpu-exclusion:
+    name: guest MIPS memory exclusion and inherited GPU regressions (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check eight exact signed MIPS mutants and prior GPU observers
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/make_map02_v179_nongpu_mips_exes.py tests/test_map02_v179_nongpu_memory_exclusion.py
+          python3 -m unittest discover -s tests -p 'test_map02_v179_nongpu_memory_exclusion.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v178_unaligned_gpu_mips.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v177_narrow_gpu_lanes.py' -v
+          echo 'VH179_PRIVATE_NONGPU_EXCLUSION_FIXTURES_PASS synthetic_variants=8 original_retail_executed=0'
