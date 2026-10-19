@@ -82,6 +82,17 @@ class Stage348OriginalGuestSoftwareLeaseTests(unittest.TestCase):
             self.assertEqual(original.read_bytes(),csv())
             self.assertEqual(main(["--guest-root-file",str(locator),
                      "--output",str(report),"--output-original",str(original)]),2)
+    def test_symlinked_intermediate_guest_directory_is_rejected(self):
+        with TemporaryDirectory() as d:
+            root=Path(d)
+            actual=root/"real"
+            (actual/"switch"/"vandal-hearts-remake").mkdir(parents=True)
+            (actual/"switch"/"vandal-hearts-remake"/
+             "audio-lease-reconciliation-000.csv").write_bytes(csv())
+            (root/"sdmc").symlink_to(actual, target_is_directory=True)
+            with self.assertRaises(ExitTimelineError):
+                audit_guest(root)
+
     def test_missing_ambiguous_or_symlinked_guest_source_rejected(self):
         with TemporaryDirectory() as d:
             root=Path(d)
