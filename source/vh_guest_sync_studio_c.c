@@ -190,5 +190,12 @@ int vh_guest_sync_studio_c_encode(const VhGuestSyncStudioC *v,
     put_le(packet+64,v->verified_roundtrips,4);
     put_le(packet+68,v->failure_line,4);
     put_le(packet+CRC_OFFSET,crc32_ieee(packet,CRC_OFFSET),4);
+    return 0;
+}
+int vh_guest_sync_studio_c_draw(VhCanvas *canvas,
+    const VhGuestSyncStudioC *v,
+    uint32_t black,uint32_t white,uint32_t marker) {
+    uint8_t packet[VH_SCENE_OPTICAL_PACKET_BYTES];
+    if(vh_guest_sync_studio_c_encode(v,packet)) return -1;
     return vh_audio_scene_optical_draw_packet(canvas,packet,black,white,marker);
 }
