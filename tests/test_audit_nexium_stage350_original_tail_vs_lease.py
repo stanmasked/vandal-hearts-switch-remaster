@@ -102,7 +102,7 @@ class Stage350Tests(unittest.TestCase):
 
     def test_tail_failure_and_abandonment_can_diverge(self):
         a=self.load(self.fixtures("a",0,False))
-        b=self.load(self.fixtures("b",0,True))
+        b=self.load(self.fixtures("b",1,True))
         doc=compare_pairs(a,b,1,2)
         self.assertFalse(doc["unconfirmed_tail_and_abandoned_lease_coincide_in_both_sources"])
 
