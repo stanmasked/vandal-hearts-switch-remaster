@@ -265,6 +265,44 @@ for name, offset, size in [
         self.assertTrue(compare_loaded_sections(self.exe, self.elf)[
             "original_exe_and_mips_elf_loaded_sections_match"])
 
+    def test_elf_program_header_table_cannot_impersonate_runtime_bytes(self):
+        # The fixture has unused padding immediately before its first
+        # initialized section. Declare that padding a 32-byte ELF32
+        # program-header table: the ordinary sections must still pass.
+        valid = bytearray(self.elf.read_bytes())
+        struct.pack_into("<I", valid, 28, 224)  # e_phoff
+        struct.pack_into("<HH", valid, 42, 32, 1)  # e_phentsize, e_phnum
+        self.elf.write_bytes(valid)
+        self.assertTrue(compare_loaded_sections(self.exe, self.elf)[
+            "original_exe_and_mips_elf_loaded_sections_match"])
+
+        forged = bytearray(valid)
+        # First original runtime section now points into the new table.
+        # It doesn't overlap the ELF32 file header or section-header table.
+        struct.pack_into("<I", forged, 64 + 40 + 16, 240)
+        self.elf.write_bytes(forged)
+        with self.assertRaisesRegex(ValueError, "aliases ELF metadata"):
+            compare_loaded_sections(self.exe, self.elf)
+        with self.assertRaisesRegex(ValueError, "aliases ELF metadata"):
+            verify_private_pc_inputs(self.root)
+
+    def test_malformed_elf_program_header_table_fails_closed(self):
+        original = self.elf.read_bytes()
+        for name, phoff, entsize, count in (
+            ("table inside ELF file header", 32, 32, 1),
+            ("undersized program header entry", 224, 31, 1),
+            ("table beyond end of file", len(original) - 16, 32, 1),
+        ):
+            with self.subTest(name=name):
+                forged = bytearray(original)
+                struct.pack_into("<I", forged, 28, phoff)
+                struct.pack_into("<HH", forged, 42, entsize, count)
+                self.elf.write_bytes(forged)
+                with self.assertRaisesRegex(
+                    ValueError, "program header table is invalid"
+                ):
+                    compare_loaded_sections(self.exe, self.elf)
+
     def test_private_preflight_rejects_metadata_alias_even_with_correct_anchors(self):
         original = bytearray(self.elf.read_bytes())
         # Preserve the three pinned data ranges but inject a fourth section
