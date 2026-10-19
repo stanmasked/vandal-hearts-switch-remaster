@@ -186,6 +186,14 @@ def verify_private_pc_inputs(upstream, *, krom_source=None):
     original_directories = tuple(
         _require_checkout_ancestors(root, relative)
         for relative in relatives)
+    # The strict verifier must not start the original .inc generator when any
+    # owned input has a second hardlink or is not owner-readable. In particular
+    # this includes KROM/BIOS and the extracted .inc files, which are normally
+    # deeply hashed only after original include regeneration.
+    for relative in relatives:
+        _checked_file(root / relative, "original-checkout-" + Path(relative).name)
+    if not default_krom:
+        _checked_file(krom_source, "explicit-owned-ps1-font")
     root_identity = _input_identity(root / EXE, "US PS-X executable")
     paths = [
         ("retail-us-exe", root / EXE, _original_exe),
