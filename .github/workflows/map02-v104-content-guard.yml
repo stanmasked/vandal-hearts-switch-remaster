@@ -234,6 +234,9 @@ on:
       - 'tools/apply_map02_v180_nongpu_opcode_provenance.py'
       - 'tests/test_map02_v180_nongpu_opcode_provenance.py'
       - '.github/workflows/map02-v180-nongpu-opcode-provenance.yml'
+      - 'tools/apply_map02_v181_word_ram_opcodes.py'
+      - 'tests/test_map02_v181_word_ram_opcodes.py'
+      - '.github/workflows/map02-v181-word-ram-opcodes.yml'
       - 'tests/test_map02_v172_mips_real_vblank_vram.py'
       - '.github/workflows/map02-v172-mips-real-vblank-vram.yml'
       - 'tests/test_map02_v171_mips_multiphase_vram.py'
@@ -437,6 +440,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v178_unaligned_gpu_mips.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v179_nongpu_memory_exclusion.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v180_nongpu_opcode_provenance.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v181_word_ram_opcodes.py' -v
           python3 -m remaster.tools.check_map02_v147_native_bounded_c --cc "${{ matrix.cc }}" \
             | grep -Fx 'VH147_COMPILED_BOUNDED_NATIVE_PASS capacity=1024 generic=1 repeated_pc=1 overflow_refused=1 atomic_mode0600=1 no_overwrite=1 original_retail=0'
           python3 -m remaster.tools.check_map02_v144_native_challenge_c --cc "${{ matrix.cc }}" \
@@ -457,7 +461,10 @@ jobs:
           git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
           git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
-          python3 -m remaster.tools.apply_map02_v180_nongpu_opcode_provenance upstream-pcsx
+          python3 -m remaster.tools.apply_map02_v181_word_ram_opcodes upstream-pcsx
+          grep -F 'vh181_observe(regs,mem,0u)' upstream-pcsx/libpcsxcore/psxmem.c
+          grep -F 'vh181_observe(regs,mem,1u)' upstream-pcsx/libpcsxcore/psxmem.c
+          grep -F 'VH181_NATIVE_GUEST_WORD_RAM_PASS' upstream-pcsx/frontend/main.c
           grep -F 'vh180_observe_nongpu(regs,mem,0u,0u)' upstream-pcsx/libpcsxcore/psxmem.c
           grep -F 'vh180_observe_nongpu(regs,mem,2u,0u)' upstream-pcsx/libpcsxcore/psxmem.c
           grep -F 'VH180_NONGPU_GUEST_OPCODE_EXECUTED_PASS' upstream-pcsx/frontend/main.c
@@ -2195,6 +2202,66 @@ jobs:
             exit 1
           fi
           echo 'VH180_NATIVE_NONGPU_OPCODE_PROVENANCE_PASS cases=8 four_vblanks_each=1 pixels_each=2380 genuine_pc_opcode=1 missing_opcode_refused=1 original_retail=0'
+          # v181: real pinned MIPS LW/SW 32-bit ordinary guest RAM access
+          # must be PC+opcode+physical-address bound on every native
+          # emulator-internal VBlank window; pixel success alone is never
+          # sufficient evidence of executing the inserted 32-bit opcode.
+          python3 -m remaster.tools.apply_map02_v181_word_ram_opcodes \
+            --generate-private proof/private \
+            | grep -Fx 'VH181_WORD_RAM_VARIANTS_PASS count=4 single_signed_mips_word=1 original_retail=0'
+          for idx in 0 1 2 3; do
+            case "$idx" in
+              0) kind=LW_RAM0; filename=V181_LW_RAM0.EXE;;
+              1) kind=LW_RAM4; filename=V181_LW_RAM4.EXE;;
+              2) kind=SW_RAM0; filename=V181_SW_RAM0.EXE;;
+              3) kind=SW_RAM4; filename=V181_SW_RAM4.EXE;;
+            esac
+            mkdir -m 700 "proof/v181-${idx}-home"
+            timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+              SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+              HOME="$PWD/proof/v181-${idx}-home" \
+              ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+              "--vh181-nongpu-word-${idx}" \
+              "proof/private/$filename" \
+              > "proof/private/v181-${idx}.log" 2>&1 || {
+                tail -n 90 "proof/private/v181-${idx}.log"
+                exit 1
+              }
+            grep -E '^VH181_NATIVE_GUEST_WORD_RAM_PASS kind=${idx} windows=4 observed=[1-9][0-9]* pc_opcode_addr=1 vblanks=4 samples=2380 original_retail=0$' \
+              "proof/private/v181-${idx}.log"
+            grep -Fx 'VH176_GUEST_MIPS_NARROW_GPU_QUIET_PASS windows=4 narrow_reads=0 narrow_writes=0 vblanks=4 samples=2380 native_psxcounters=1 original_retail=0' \
+              "proof/private/v181-${idx}.log"
+            for phase in 0 1 2 3; do
+              grep -F "VH78_VBLANK_OBSERVED phase=$phase event=" \
+                "proof/private/v181-${idx}.log"
+              grep -Fx "VH78_PHASE_PASS phase=$phase checked=595 guard=499" \
+                "proof/private/v181-${idx}.log"
+            done
+            if grep -Eq 'VH181_NATIVE_WORD_UNOBSERVED_REFUSED|VH175_VBLANK_GPU_READ_PORT_REFUSED|VH176_NARROW_MMIO_REFUSED' \
+                "proof/private/v181-${idx}.log"; then
+              echo "VH181_FALSE_POSITIVE_OR_GPU_REFUSAL kind=$kind"
+              exit 1
+            fi
+          done
+          python3 -m remaster.tools.make_map02_v78_vblank_mips_exe \
+            --output proof/private/V181_UNMODIFIED.EXE
+          mkdir -m 700 proof/v181-unmodified-home
+          rc=0
+          timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+            HOME="$PWD/proof/v181-unmodified-home" \
+            ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+            --vh181-nongpu-word-0 proof/private/V181_UNMODIFIED.EXE \
+            > proof/private/v181-unmodified.log 2>&1 || rc=$?
+          test "$rc" -eq 84
+          grep -Fx 'VH181_NATIVE_WORD_UNOBSERVED_REFUSED kind=0 phase=0 count=0 faults=0' \
+            proof/private/v181-unmodified.log
+          if grep -Eq 'VH181_NATIVE_GUEST_WORD_RAM_PASS|VH176_GUEST_MIPS_NARROW_GPU_QUIET_PASS' \
+              proof/private/v181-unmodified.log; then
+            echo 'VH181_UNMODIFIED_GUEST_FALSE_ACCEPT_REFUSED'
+            exit 1
+          fi
+          echo 'VH181_NATIVE_RAM_WORD_PROVENANCE_PASS kinds=4 four_vblanks_each=1 samples_each=2380 missing_opcode_refused=1 original_retail=0'
           # Retain valid signed synthetic EXE / CPU stage markers, but
           # mutate one actual interpreted ORI instruction so the first
           # GP0(60) red command carries a wrong color. The native GPU
