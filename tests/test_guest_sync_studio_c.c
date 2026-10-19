@@ -18,6 +18,9 @@ static uint32_t le32(const uint8_t *p) {
     return (uint32_t)p[0]|((uint32_t)p[1]<<8)|
            ((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24);
 }
+static uint64_t le64(const uint8_t *p) {
+    return (uint64_t)le32(p)|((uint64_t)le32(p+4u)<<32);
+}
 int main(void) {
     VhGuestSyncStudioC a,b;
     uint8_t packet[924];
@@ -45,8 +48,18 @@ int main(void) {
     assert(vh_guest_native_48k_encode(&a,packet)==0);
     assert(!memcmp(packet,"VH48K001",8));
     assert(packet[8]==1u && packet[9]==0u && packet[10]==15u);
+    /* Check all 9 encoded numbers/fingerprints directly, not only CRC.
+     * Decoder and cross-architecture auditor remain separate gates. */
+    assert(le32(packet+12)==35665u);
+    assert(le32(packet+16)==26750u);
     assert(le32(packet+20)==48u);
+    assert(le32(packet+24)==a.native48.wet_nonzero);
+    assert(le32(packet+28)==a.native48.reset_first_page_nonzero);
     assert(le32(packet+32)==0u);
+    assert(le64(packet+40)==a.native48.prefix_hash);
+    assert(le64(packet+48)==a.native48.wet_hash);
+    assert(le64(packet+56)==a.native48.reset_hash);
+    assert(le32(packet+64)==2u);
     assert(le32(packet+909)==crc32(packet,909u));
     assert(vh_guest_sync_studio_c_encode(&a,packet)==0);
     assert(memcmp(packet,"VHSYNC01",8)==0);
