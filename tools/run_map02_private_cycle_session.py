@@ -31,6 +31,34 @@ SAFE_STAGES = (
     "seal-publication", "seal-verification", "complete",
 )
 
+# A readiness result is not a boolean permission token. Its complete
+# no-gameplay/no-publication contract must agree with the independent
+# preflight before the coordinator can start the original PC binary.
+READINESS_TRUE = (
+    "source_bound_plan_checked", "original_pc_source_identity_checked",
+    "complete_pc_elf_symbols_checked", "complete_pc_elf_bytes_checked",
+    "private_original_image_bytes_checked",
+    "pinned_full_elf_build_receipt_checked",
+    "prelaunch_inputs_stable_across_checks",
+)
+READINESS_FALSE = (
+    "gameplay_process_started", "original_map02_rendering_proven",
+    "hardware_ps1_equivalence_proven", "game_content_emitted",
+)
+
+
+def _require_full_readiness_report(ready):
+    if type(ready) is not dict or ready.get("ready_for_controlled_local_launch") is not True:
+        raise ValueError("MAP02 original PC cycle preflight was not confirmed")
+    if (ready.get("schema") != "vh.map02.private-pc-cycle-readiness.v1" or
+            type(ready.get("private_directories_checked")) is not int or
+            ready["private_directories_checked"] != 7 or
+            type(ready.get("capture_folders_empty")) is not int or
+            ready["capture_folders_empty"] != 5 or
+            any(ready.get(k) is not True for k in READINESS_TRUE) or
+            any(ready.get(k) is not False for k in READINESS_FALSE)):
+        raise ValueError("MAP02 original PC cycle preflight report contract mismatch")
+
 
 def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
                                 preview, rgb, seal_directory, owned_game,
@@ -103,8 +131,7 @@ def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
         *captures, pc_binary=binary, owned_game_image=owned_game,
         upstream_checkout=upstream, build_receipt_dir=build_receipt,
         build_bundle_dir=build_bundle, krom_source=krom_source)
-    if ready["ready_for_controlled_local_launch"] is not True:
-        raise ValueError("MAP02 original PC cycle preflight was not confirmed")
+    _require_full_readiness_report(ready)
     if private_file(Path(handoff).absolute(), PLAN, max_bytes=4096,
                     _with_identity=True) != (plan_raw, plan_identity):
         raise ValueError("MAP02 private launch plan changed before execution")
