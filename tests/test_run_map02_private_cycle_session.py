@@ -51,10 +51,16 @@ class PrivateOneShotCycleTests(unittest.TestCase):
             "_validate_plan": {"target_gpu_draw_frame": 12},
             "verify_private_cycle_readiness": self.ready_report,
             "inspect_private_launch_layout": {
+                "schema": "vh.map02.prelaunch-directory-layout.v1",
                 "prelaunch_layout_ready": True,
                 "private_directory_roles_checked": 7,
                 "capture_output_directories_empty": 5,
-                "single_private_handoff_plan_present": True},
+                "single_private_handoff_plan_present": True,
+                "original_pc_elf_verified": False,
+                "original_game_image_verified": False,
+                "original_gameplay_executed": False,
+                "map02_frame_authenticated": False,
+                "private_game_bytes_read": False},
             "launch_observed_pc": {
                 "kernel_executable_hash_matched": True,
                 "same_process_gpu_scoped_nonce_checked": True,
@@ -293,6 +299,14 @@ class PrivateOneShotCycleTests(unittest.TestCase):
             {**original, "private_directory_roles_checked": 6},
             {**original, "capture_output_directories_empty": True},
             {**original, "single_private_handoff_plan_present": False},
+            {**original, "schema": "foreign-layout"},
+            {**original, "original_gameplay_executed": True},
+            {**original, "private_game_bytes_read": True},
+            {**original, "original_pc_elf_verified": True},
+            {**original, "map02_frame_authenticated": True},
+            {**original, "unexpected_game_frame_claim": True},
+            {key: value for key, value in original.items()
+             if key != "original_game_image_verified"},
         ):
             with self.subTest(forged=forged):
                 self.mocks["inspect_private_launch_layout"].return_value = forged
