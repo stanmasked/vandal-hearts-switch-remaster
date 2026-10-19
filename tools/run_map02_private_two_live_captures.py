@@ -381,6 +381,45 @@ def _require_safe_public_audit_summary(report):
         raise ValueError("MAP02 public audit summary fields unsafe")
 
 
+# Guard the OUTER successful CLI receipt as well as the internal independent
+# audit. Only the seven deliberately added Boolean launcher claims may cross
+# this boundary; no future ad-hoc paths, logs or byte arrays can be forwarded.
+_TWO_RUN_TRUE_FIELDS = frozenset((
+    "same_elf_arguments_used_for_both_launches",
+    "two_native_elf_captures_and_complete_replays_verified",
+    "same_executable_inode_and_sha_pinned_through_both_launches",
+))
+_TWO_RUN_FALSE_FIELDS = frozenset((
+    "original_ps1_reference_authenticated",
+    "retail_gameplay_authenticated",
+))
+_TWO_RUN_STRICT_FIELDS = frozenset((
+    "strict_gpu_timeline_match_required",
+    "strict_gpu_timeline_match_verified",
+))
+_TWO_RUN_SAFE_KEYS = (_AUDIT_SAFE_KEYS | _TWO_RUN_TRUE_FIELDS |
+                      _TWO_RUN_FALSE_FIELDS | _TWO_RUN_STRICT_FIELDS)
+
+
+def _require_safe_public_two_run_receipt(receipt):
+    """Require exact, scalar-only outer success schema before returning it."""
+    if (type(receipt) is not dict or receipt.keys() != _TWO_RUN_SAFE_KEYS
+            or receipt.get("schema") != SCHEMA):
+        raise ValueError("MAP02 public two-run receipt fields unsafe")
+    # Reuse the tested independent-audit contract, restoring only its
+    # deliberately different schema label in the local checking copy.
+    audit_part = {key: receipt[key] for key in _AUDIT_SAFE_KEYS}
+    audit_part["schema"] = AUDIT_SCHEMA
+    _require_safe_public_audit_summary(audit_part)
+    if (any(receipt[key] is not True for key in _TWO_RUN_TRUE_FIELDS)
+            or any(receipt[key] is not False for key in _TWO_RUN_FALSE_FIELDS)
+            or any(type(receipt[key]) is not bool
+                   for key in _TWO_RUN_STRICT_FIELDS)
+            or receipt["strict_gpu_timeline_match_required"] is not
+               receipt["strict_gpu_timeline_match_verified"]):
+        raise ValueError("MAP02 public two-run receipt fields unsafe")
+
+
 def run(executable, first_frame, first_journal, second_frame, second_journal,
         *, frame, executable_sha256, args=(), timeout=10,
         require_identical_gpu_timeline=False):
@@ -539,7 +578,7 @@ def run(executable, first_frame, first_journal, second_frame, second_journal,
                                 original_identity=elf_identity)
         for fd, path, identity in zip(opened, folders, identities):
             _check_directory(fd, path, identity)
-        return {
+        public_receipt = {
             **report,
             "schema": SCHEMA,
             "same_elf_arguments_used_for_both_launches": True,
@@ -551,6 +590,8 @@ def run(executable, first_frame, first_journal, second_frame, second_journal,
             "retail_gameplay_authenticated": False,
             "hd_replacement_authorized": False,
         }
+        _require_safe_public_two_run_receipt(public_receipt)
+        return public_receipt
     finally:
         if exe_fd is not None:
             os.close(exe_fd)
