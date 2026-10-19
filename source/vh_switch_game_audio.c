@@ -665,6 +665,14 @@ int vh_switch_game_audio_trace_render(VhCanvas *canvas,
     return vh_audio_scene_optical_draw(canvas,&scene_trace,
                                         black,white,marker);
 }
+#if VH_MAP02_AUDIO_PCM_METRICS
+int vh_switch_game_audio_pcm_metrics_render(VhCanvas *canvas,
+    uint32_t black,uint32_t white,uint32_t marker) {
+    if(thread_started) return -1;
+    return vh_map02_pcm_metrics_draw(canvas,&first_page_metrics,
+                                     black,white,marker);
+}
+#endif
 
 VhAudoutQueueExportResult vh_switch_game_audio_queue_export(
     char *committed_path,size_t capacity) {
