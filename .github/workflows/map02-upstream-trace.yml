@@ -97,6 +97,7 @@ on:
       - 'tools/check_map02_original_gpu_recorder_runtime.py'
       - 'tests/test_check_map02_original_gpu_recorder_runtime.py'
       - 'tools/verify_map02_native_gpu_capture.py'
+      - 'tools/verify_map02_native_gpu_windows.py'
       - 'tools/verify_map02_source_native_ft4_join.py'
       - 'tools/verify_map02_source_native_ot_order.py'
       - 'tools/verify_map02_native_overdraw.py'
@@ -166,6 +167,7 @@ on:
       - 'tests/test_map02_camera_provenance.py'
       - 'tests/test_instrument_map02_gpu_native_events.py'
       - 'tests/test_verify_map02_native_gpu_capture.py'
+      - 'tests/test_verify_map02_native_gpu_windows.py'
       - 'tests/test_verify_map02_source_native_ft4_join.py'
       - 'tests/test_verify_map02_source_native_ot_order.py'
       - 'tests/test_verify_map02_native_overdraw.py'
@@ -297,6 +299,7 @@ on:
       - 'tools/check_map02_original_gpu_recorder_runtime.py'
       - 'tests/test_check_map02_original_gpu_recorder_runtime.py'
       - 'tools/verify_map02_native_gpu_capture.py'
+      - 'tools/verify_map02_native_gpu_windows.py'
       - 'tools/verify_map02_source_native_ft4_join.py'
       - 'tools/verify_map02_source_native_ot_order.py'
       - 'tools/verify_map02_native_overdraw.py'
@@ -366,6 +369,7 @@ on:
       - 'tests/test_map02_camera_provenance.py'
       - 'tests/test_instrument_map02_gpu_native_events.py'
       - 'tests/test_verify_map02_native_gpu_capture.py'
+      - 'tests/test_verify_map02_native_gpu_windows.py'
       - 'tests/test_verify_map02_source_native_ft4_join.py'
       - 'tests/test_verify_map02_source_native_ot_order.py'
       - 'tests/test_verify_map02_native_overdraw.py'
@@ -862,6 +866,7 @@ jobs:
             cd remaster
             python3 -m unittest discover -s tests -p 'test_instrument_map02_gpu_native_events.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_native_gpu_capture.py' -v
+            python3 -m unittest discover -s tests -p 'test_verify_map02_native_gpu_windows.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_source_native_ft4_join.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_source_native_ot_order.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_native_overdraw.py' -v
