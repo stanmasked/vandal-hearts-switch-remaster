@@ -35,6 +35,10 @@ int vh_switch_game_audio_queue_dump(FILE *stream);
  * Returns -1 when the instrument is not compiled in.
  */
 int vh_switch_game_audio_presubmit_dump(FILE *stream);
+/* Opt-in post-join optical packet for NeXium framebuffer capture.
+ * Draws no game assets and does not establish DAC/speaker playback. */
+int vh_switch_game_audio_presubmit_render(VhCanvas *canvas,
+    uint32_t black,uint32_t white,uint32_t marker);
 VhAudoutQueueExportResult vh_switch_game_audio_queue_export(
     char *committed_path,size_t capacity);
 /* Separate per-call latency band CSV, only after worker join. */
