@@ -43,6 +43,7 @@ static VhMap02PcmMetrics first_page_metrics;
 #endif
 #if VH_MAP02_AUDIO_PRESUBMIT_WITNESS
 #include "vh_audout_presubmit_witness.h"
+#include "vh_audout_presubmit_optical.h"
 static VhAudoutPresubmitWitness presubmit_witness;
 #endif
 #include "vh_audio_output_edges.h"
@@ -762,6 +763,21 @@ int vh_switch_game_audio_presubmit_dump(FILE *stream) {
     return (int)presubmit_witness.count;
 #else
     (void)stream;
+    return -1;
+#endif
+}
+
+int vh_switch_game_audio_presubmit_render(VhCanvas *canvas,
+    uint32_t black,uint32_t white,uint32_t marker) {
+#if VH_MAP02_AUDIO_PRESUBMIT_WITNESS
+    if(thread_started || !canvas) return -1;
+    uint8_t packet[VH_SCENE_OPTICAL_PACKET_BYTES];
+    if(vh_audout_presubmit_optical_encode(&presubmit_witness,packet)<0)
+        return -1;
+    return vh_audio_scene_optical_draw_packet(canvas,packet,
+                                               black,white,marker);
+#else
+    (void)canvas;(void)black;(void)white;(void)marker;
     return -1;
 #endif
 }
