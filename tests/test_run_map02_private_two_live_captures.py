@@ -1038,6 +1038,65 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
         result = self.run_two(args=args, require_identical_gpu_timeline=True)
         self.assertTrue(result["strict_gpu_timeline_match_verified"])
 
+    def test_public_preflight_json_schema_rejects_private_values_and_false_attestation(self):
+        # Dry-run is a READ-ONLY readiness claim, not a native capture.
+        # Check the precise public envelope before CLI serialization.
+        for strict in (False, True):
+            with self.subTest(strict=strict):
+                with (patch.object(
+                        two_live, "capture",
+                        side_effect=AssertionError("native launch forbidden")),
+                      patch.object(
+                        two_live, "audit",
+                        side_effect=AssertionError("GPU replay forbidden"))):
+                    valid = two_live.preflight(
+                        self.executable, *self.dirs, frame=123,
+                        executable_sha256=self.digest,
+                        require_identical_gpu_timeline=strict)
+                two_live._require_safe_public_preflight(valid)
+                self.assertEqual(valid["schema"], two_live.PREFLIGHT_SCHEMA)
+                self.assertEqual(set(valid), two_live._PREFLIGHT_SAFE_KEYS)
+                self.assertEqual(len(valid), 16)
+                self.assertIs(
+                    valid["strict_gpu_timeline_match_requested"], strict)
+                mutations = (
+                    ("private-path", {"private_gpu_events_path":
+                                      str(self.dirs[1] / "gpu-native-events.jsonl")}),
+                    ("raw-bytes", {"private_frame": b"\\x01\\x02"}),
+                    ("nested-value", {"private_records": [{"pixel": 1}]}),
+                    ("missing-field", None),
+                    ("wrong-schema", {"schema": two_live.SCHEMA}),
+                    ("malformed-hash", {"executable_sha256": "z" * 64}),
+                    ("boolean-as-frame", {"frame": True}),
+                    ("negative-frame", {"frame": -1}),
+                    ("wrong-dimensions", {"width": two_live.WIDTH + 1}),
+                    ("strict-string",
+                     {"strict_gpu_timeline_match_requested": "true"}),
+                    ("fake-launch", {"native_elf_launched": True}),
+                    ("fake-capture",
+                     {"two_native_elf_captures_and_complete_replays_verified": True}),
+                    ("fake-hardware",
+                     {"ps1_hardware_pixel_equivalence_verified": True}),
+                    ("fake-HD", {"hd_replacement_authorized": True}),
+                    ("false-privacy",
+                     {"private_pixel_bytes_or_paths_emitted": True}),
+                    ("unverified-private-dirs",
+                     {"four_owner_private_empty_directory_roles_verified": False}),
+                )
+                for name, changes in mutations:
+                    with self.subTest(strict=strict, case=name):
+                        altered = dict(valid)
+                        if changes is None:
+                            del altered["same_elf_arguments_validated"]
+                        else:
+                            altered.update(changes)
+                        with self.assertRaisesRegex(
+                                ValueError, "public preflight fields unsafe") as caught:
+                            two_live._require_safe_public_preflight(altered)
+                        self.assertNotIn(str(self.dirs[1]), str(caught.exception))
+                self.assertTrue(
+                    all(not list(folder.iterdir()) for folder in self.dirs))
+
     def test_dry_run_refuses_wrong_sha_aliases_and_nonempty_destinations(self):
         call = lambda *paths, **kw: two_live.preflight(
             self.executable, *paths, frame=123,
@@ -1290,6 +1349,9 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
                                    timeout=16)
         self.assertEqual(completed.returncode, 0, completed.stderr)
         report = json.loads(completed.stdout)
+        self.assertEqual(set(report), two_live._PREFLIGHT_SAFE_KEYS)
+        self.assertEqual(len(report), 16)
+        two_live._require_safe_public_preflight(report)
         self.assertFalse(report["native_elf_launched"])
         self.assertTrue(report["strict_gpu_timeline_match_requested"])
         self.assertFalse(report["strict_gpu_timeline_match_verified"])
