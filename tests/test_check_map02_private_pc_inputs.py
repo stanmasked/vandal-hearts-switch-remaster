@@ -288,6 +288,35 @@ for name, offset, size in [
         with self.assertRaisesRegex(ValueError, "not a PS-X EXE"):
             verify_private_pc_inputs(self.root)
 
+    def test_anchor_rejects_bytes_past_declared_psx_load_even_if_file_contains_them(self):
+        # The file still carries all original synthetic anchor bytes, but
+        # the PS-X header explicitly stops one byte before the last anchor.
+        original = bytearray(self.exe.read_bytes())
+        last_address, last_length = ANCHORS[-1][1:]
+        truncated_load = last_address - LOAD_VRAM + last_length - 1
+        struct.pack_into("<I", original, 0x1c, truncated_load)
+        self.exe.write_bytes(original)
+        with self.assertRaisesRegex(ValueError, "past declared load image"):
+            compare_data_ranges(self.exe, self.elf)
+        # Even a test-only updated retail digest cannot bypass that
+        # independent structural comparison in the full local preflight.
+        with patch.object(private_inputs, "US_EXE_MD5",
+                          hashlib.md5(self.exe.read_bytes()).hexdigest()):
+            with self.assertRaisesRegex(ValueError, "past declared load image"):
+                verify_private_pc_inputs(self.root)
+
+    def test_both_private_extractors_reject_zero_or_truncated_psx_load_extent(self):
+        original = self.exe.read_bytes()
+        for declared in (0, len(original) - PSX_HEADER + 1):
+            with self.subTest(declared_payload=declared):
+                edited = bytearray(original)
+                struct.pack_into("<I", edited, 0x1c, declared)
+                self.exe.write_bytes(edited)
+                for verifier in (compare_data_ranges, compare_loaded_sections):
+                    with self.assertRaisesRegex(ValueError, "invalid load extent"):
+                        verifier(self.exe, self.elf)
+        self.exe.write_bytes(original)
+
     def test_three_original_map_and_font_ranges_are_byte_identical(self):
         detail = compare_data_ranges(self.exe, self.elf)
         self.assertEqual(detail["original_private_data_bytes_compared"], 1216)
