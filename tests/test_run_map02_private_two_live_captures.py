@@ -1064,6 +1064,69 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
                             elif marker.exists():
                                 marker.unlink()
 
+    def test_final_strict_receipt_guard_rejects_post_gate_mutations(self):
+        # Both actual C11 child captures and full independent GPU/VRAM
+        # replays have finished, and the strict exactness classifier has
+        # returned successfully. A last-moment change must still block the
+        # positive receipt: publication inside Git, byte-identical file
+        # inode replacement, loss of output permissions, or ELF mutation.
+        original_gate = two_live._require_bit_exact_gpu_timeline
+        pristine_elf = self.executable
+        root = self.dirs[0].parent
+        cases = (
+            ("git-marker", "Git worktree"),
+            ("same-byte-frame-inode", "published files changed"),
+            ("directory-mode", "0700"),
+            ("elf-mtime", "ELF identity changed"),
+        )
+        for scenario, error in cases:
+            with self.subTest(scenario=scenario):
+                for folder in self.dirs:
+                    for entry in folder.iterdir():
+                        entry.unlink()
+                marker = root / ".git"
+                elf_copy = root / "local-pinned-elf"
+                if scenario == "elf-mtime":
+                    shutil.copy2(pristine_elf, elf_copy)
+                    self.executable = elf_copy
+                gate_calls = []
+                def alter_after_gpu_gate(report):
+                    original_gate(report)
+                    gate_calls.append(1)
+                    if scenario == "git-marker":
+                        marker.mkdir(mode=0o700)
+                    elif scenario == "same-byte-frame-inode":
+                        target = self.dirs[0] / "process-frame.bgr555"
+                        replacement = self.dirs[0] / "same-bytes-new-inode"
+                        replacement.write_bytes(target.read_bytes())
+                        replacement.chmod(0o600)
+                        os.replace(replacement, target)
+                    elif scenario == "directory-mode":
+                        self.dirs[3].chmod(0o500)
+                    elif scenario == "elf-mtime":
+                        info = elf_copy.stat()
+                        os.utime(elf_copy, ns=(
+                            info.st_atime_ns, info.st_mtime_ns + 1_000_000_000))
+                try:
+                    with patch.object(
+                            two_live, "_require_bit_exact_gpu_timeline",
+                            side_effect=alter_after_gpu_gate):
+                        with self.assertRaisesRegex(ValueError, error) as caught:
+                            self.run_two(require_identical_gpu_timeline=True)
+                    self.assertEqual(gate_calls, [1])
+                    self.assertNotIn(str(root), str(caught.exception))
+                    self.assertEqual(len(list(self.dirs[0].iterdir())), 2)
+                    self.assertEqual(len(list(self.dirs[1].iterdir())), 3)
+                    self.assertEqual(len(list(self.dirs[2].iterdir())), 2)
+                    self.assertEqual(len(list(self.dirs[3].iterdir())), 3)
+                finally:
+                    if marker.exists():
+                        marker.rmdir()
+                    self.dirs[3].chmod(0o700)
+                    self.executable = pristine_elf
+                    if elf_copy.exists():
+                        elf_copy.unlink()
+
     def test_dry_run_cli_prints_only_safe_readiness_fields(self):
         cmd = [
             sys.executable, "-m", "tools.run_map02_private_two_live_captures",
