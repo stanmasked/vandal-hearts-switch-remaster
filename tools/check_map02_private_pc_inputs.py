@@ -17,7 +17,8 @@ import stat
 from tools.check_map02_original_extraction_anchors import (
     compare_data_ranges, compare_loaded_sections,
 )
-from tools.check_map02_original_inc_provenance import (_original_blob_sha1,
+from tools.check_map02_original_inc_provenance import (GENERATOR,
+                                                      _original_blob_sha1,
                                                       check_original_includes)
 
 EXE = "SLUS_004.47"
@@ -40,6 +41,30 @@ def _checked_file(path, category, *, max_size=128 * 1024 * 1024):
             or st.st_size <= 0 or st.st_size > max_size):
         raise ValueError("invalid owner, type or size for original input: " + category)
     return path
+
+
+def _require_checkout_ancestors(root, relative):
+    """Refuse linked/inaccessible directories inside the pinned checkout.
+
+    A leaf-file lstat alone follows intermediate directory symlinks. Such a
+    redirected asset tree must not pass the full byte verifier when the
+    metadata-only private input inventory already correctly rejects it.
+    """
+    parent = Path(root)
+    relative = Path(relative)
+    for component in (".", *relative.parts[:-1]):
+        if component != ".":
+            parent = parent / component
+        try:
+            info = parent.lstat()
+        except OSError:
+            raise ValueError("original PC source directory unavailable") from None
+        bits = stat.S_IMODE(info.st_mode)
+        if (not stat.S_ISDIR(info.st_mode) or
+                info.st_uid != os.geteuid() or
+                bits & (stat.S_IRUSR | stat.S_IXUSR) !=
+                (stat.S_IRUSR | stat.S_IXUSR)):
+            raise ValueError("original PC source directory linked or inaccessible")
 
 
 def _hash_file(path, algorithm):
@@ -134,8 +159,20 @@ def verify_private_pc_inputs(upstream, *, krom_source=None):
     # In this source-pinned checkout the compiler flag -I$(GAME_ROOT)
     # resolves src/{core,maps} quotes to <repo>/assets/*.inc.
     root = upstream
-    if krom_source is None:
+    default_krom = krom_source is None
+    if default_krom:
         krom_source = (root / "external/psy-q/3.6/PSYQ/BIN/KROMDAT.BIN")
+    # Validate all original in-checkout path components before any source
+    # regeneration subprocess or retail-byte read. Explicit owned KROM
+    # overrides remain independent paths, not checkout-bound resources.
+    relatives = (
+        EXE, "build/" + EXE + ".elf", GENERATOR, FONT_GENERATOR,
+        *(str(Path("assets") / name) for name in ASSETS),
+    )
+    if default_krom:
+        relatives += ("external/psy-q/3.6/PSYQ/BIN/KROMDAT.BIN",)
+    for relative in relatives:
+        _require_checkout_ancestors(root, relative)
     root_identity = _input_identity(root / EXE, "US PS-X executable")
     paths = [
         ("retail-us-exe", root / EXE, _original_exe),
@@ -249,9 +286,11 @@ def main():
     try:
         result = verify_private_pc_inputs(
             args.pinned_original_pc_checkout, krom_source=args.krom_source)
-    except ValueError as exc:
-        parser.error(str(exc))
-    except OSError:
+    except (ValueError, OSError):
+        # The original EXE/ELF/BIOS and source-generator validators can
+        # include caller-owned private paths in underlying exceptions.
+        # Never publish those through the CLI; Python callers retain the
+        # exception for local diagnosis.
         parser.error("private original input verification failed")
     print(json.dumps(result, indent=2, sort_keys=True))
 
