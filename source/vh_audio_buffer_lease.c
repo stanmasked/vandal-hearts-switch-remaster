@@ -5,8 +5,14 @@
 
 int vh_audio_buffer_lease_begin(VhAudioBufferLease *lease,
                                 const void *descriptor) {
-    if (!lease || !descriptor || lease->in_flight) return -1;
+    if (!lease || !descriptor) return -1;
+    if (lease->in_flight) {
+        if (lease->busy_begin_rejections<UINT_MAX)
+            ++lease->busy_begin_rejections;
+        return -1;
+    }
     lease->in_flight=descriptor;
+    if (lease->pages_leased<UINT64_MAX) ++lease->pages_leased;
     return 0;
 }
 

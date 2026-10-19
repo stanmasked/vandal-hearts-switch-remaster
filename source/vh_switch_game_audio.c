@@ -58,6 +58,8 @@ static atomic_uint published_resume_restarts;
 static atomic_uint published_resume_recoveries;
 static atomic_uint published_lease_mismatches;
 static atomic_uint published_abandoned_sessions;
+static atomic_ullong published_lease_pages_acquired;
+static atomic_uint published_lease_busy_begin_rejections;
 /* Two producer threads reserve immutable slots, then release-publish.
  * No heap, locks or file I/O in this path. */
 static VhAudioSceneTrace scene_trace;
@@ -293,6 +295,10 @@ static void publish_audio_diagnostics(const VhAudioOutputRecovery *r,
     atomic_store_explicit(&published_abandoned_sessions,
                           lease->abandoned_sessions,
                           memory_order_release);
+    atomic_store_explicit(&published_lease_pages_acquired,
+                          lease->pages_leased,memory_order_release);
+    atomic_store_explicit(&published_lease_busy_begin_rejections,
+                          lease->busy_begin_rejections,memory_order_release);
 }
 
 static void audio_worker(void *unused) {
@@ -612,6 +618,8 @@ int vh_switch_game_audio_start(unsigned initial_scene) {
     atomic_store_explicit(&published_resume_recoveries,0u,memory_order_release);
     atomic_store_explicit(&published_lease_mismatches,0u,memory_order_release);
     atomic_store_explicit(&published_abandoned_sessions,0u,memory_order_release);
+    atomic_store_explicit(&published_lease_pages_acquired,0u,memory_order_release);
+    atomic_store_explicit(&published_lease_busy_begin_rejections,0u,memory_order_release);
     Result rc = threadCreate(&audio_thread, audio_worker, NULL,
                              NULL, 0x10000u, 0x2Cu, -2);
     if (R_FAILED(rc)) return -1;
@@ -824,4 +832,8 @@ void vh_switch_game_audio_diagnostics(VhAudioDiagnostics *out) {
         &published_lease_mismatches,memory_order_acquire);
     out->abandoned_sessions=atomic_load_explicit(
         &published_abandoned_sessions,memory_order_acquire);
+    out->lease_pages_acquired=(uint64_t)atomic_load_explicit(
+        &published_lease_pages_acquired,memory_order_acquire);
+    out->lease_busy_begin_rejections=atomic_load_explicit(
+        &published_lease_busy_begin_rejections,memory_order_acquire);
 }

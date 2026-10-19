@@ -151,6 +151,8 @@ static void continuous_pages(void) {
         assert(totals.restart_attempts==expected_restarts);
         assert(totals.recoveries<=page+1u);
         assert(m.lease.pages_released==page+1u);
+        assert(m.lease.pages_leased==m.calls);
+        assert(m.lease.busy_begin_rejections==expected_mismatches);
         assert(m.lease.mismatched_releases==expected_mismatches);
         assert(m.accepted_rolling==expected);
     }
@@ -183,6 +185,8 @@ static void continuous_pages(void) {
     assert(totals.pages_submitted==PAGES+1u);
     assert(totals.frames_submitted==expected_frames+MAX_FRAMES);
     assert(m.accepted_pages==PAGES+1u);
+    assert(m.lease.pages_leased==m.calls);
+    assert(m.lease.busy_begin_rejections==expected_mismatches+3u);
     assert(m.lease.pages_released==PAGES+1u);
     assert(m.accepted_rolling==hash_append(before_hash,pcm,MAX_FRAMES));
     assert(!m.lease.in_flight);

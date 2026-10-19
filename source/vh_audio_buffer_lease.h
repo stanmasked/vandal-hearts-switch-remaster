@@ -14,6 +14,9 @@ typedef struct {
     uint64_t pages_released;
     unsigned mismatched_releases;
     unsigned abandoned_sessions;
+    /* Stage346: software-only lease transitions, not DAC queue metrics. */
+    uint64_t pages_leased;
+    unsigned busy_begin_rejections;
 } VhAudioBufferLease;
 
 /* 0 = descriptor is now owned by device, -1 = busy or invalid. */
