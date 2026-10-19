@@ -111,6 +111,12 @@ def parse_source(raw:bytes,stage313:dict,stage351:dict)->dict:
         "last_pre_submit_probe_query_succeeded":bool(present and status),
         "last_pre_submit_probe_queue_count":count if present and status else None,
         "last_pre_submit_probe_age_ns":age if present else None,
+        # Derived strictly from the original two tail clocks and the
+        # pre-submit stamp. This is tail-service RETURN, not app exit or
+        # the timestamp of the queue-count service query itself.
+        "last_pre_submit_probe_age_at_tail_end_ns":(
+            age+values["tail_elapsed_ns"] if present else None),
+        "tail_end_probe_age_is_derived_not_direct_queue_measurement":True,
         "last_pre_submit_probe_dropped_count":values["last_pre_submit_probe_dropped_count"],
         "stage351_tail_reason_code":reason,
         "direct_exit_time_queue_depth_observed":False,
