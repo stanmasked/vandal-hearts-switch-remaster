@@ -148,7 +148,7 @@ def compare_loaded_sections(exe_path, elf_path):
             end_of_image = exe_load + payload_size
 
             elf_header = _read_at(elf, 52, 0)
-            if (len(elf_header) != 52 or elf_header[:6] != b"\\x7fELF\\x01\\x01" or
+            if (len(elf_header) != 52 or elf_header[:6] != b"\x7fELF\x01\x01" or
                     struct.unpack_from("<H", elf_header, 18)[0] != 8):
                 raise ValueError("extracted original MIPS ELF has invalid ELF32 header")
             shoff = struct.unpack_from("<I", elf_header, 32)[0]
