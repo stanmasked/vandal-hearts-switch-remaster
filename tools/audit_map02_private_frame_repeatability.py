@@ -420,6 +420,49 @@ def _require_gpu_snapshot_aggregate_consistency(data):
         raise ValueError(error)
 
 
+def _require_terminal_gpu_frame_consistency(snapshots, *, different,
+                                            changed_scanlines, stp_bit_differences,
+                                            first_image_sha256, second_image_sha256):
+    """Bind private BGR555 terminal pixels to the final native GPU snapshots.
+
+    Only terminal snapshots of EQUAL-length verified timelines refer to
+    the same ordinal. Do not compare the common-prefix end to a longer
+    capture's final frame when one process emitted additional GPU pairs.
+    """
+    error = "MAP02 terminal GPU snapshot/frame aggregate inconsistent"
+    if (type(snapshots) is not dict
+            or any(type(x) is not int for x in (
+                different, changed_scanlines, stp_bit_differences))
+            or not 0 <= different <= WIDTH * HEIGHT
+            or not 0 <= changed_scanlines <= HEIGHT
+            or not 0 <= stp_bit_differences <= different
+            or (different == 0) != (changed_scanlines == 0)
+            or different > WIDTH * changed_scanlines
+            or changed_scanlines > different):
+        raise ValueError(error)
+    for value in (first_image_sha256, second_image_sha256):
+        if (type(value) is not str or len(value) != 64
+                or any(ch not in "0123456789abcdef" for ch in value)):
+            raise ValueError(error)
+    if ((first_image_sha256 == second_image_sha256) != (different == 0)):
+        raise ValueError(error)
+    first_count = snapshots.get("first_gpu_vram_snapshot_count")
+    second_count = snapshots.get("second_gpu_vram_snapshot_count")
+    common = snapshots.get("gpu_vram_snapshots_compared")
+    last = snapshots.get("last_different_gpu_vram_snapshot_index")
+    if (any(type(value) is not int
+            for value in (first_count, second_count, common))
+            or min(first_count, second_count) != common):
+        raise ValueError(error)
+    if first_count == second_count:
+        # The last native GPU after-VRAM in each capture is itself the
+        # independently replayed BGR555 terminal frame. Its equality
+        # MUST agree with the separately recomputed full-frame diff.
+        terminal_snapshots_differ = last == common - 1
+        if terminal_snapshots_differ != (different > 0):
+            raise ValueError(error)
+
+
 def _joint_gpu_vram_first_divergence(snapshots, events):
     """Localize the first disagreement in aligned, replay-verified GPU pairs.
 
@@ -578,6 +621,10 @@ def audit(first_frame, first_journal, second_frame, second_journal, executable):
                 != event_records["repeated_gpu_event_records_identical"]):
             raise ValueError("MAP02 GPU event digests disagree with records")
         _require_gpu_snapshot_aggregate_consistency(snapshots)
+        _require_terminal_gpu_frame_consistency(
+            snapshots, different=different, changed_scanlines=lines,
+            stp_bit_differences=stp, first_image_sha256=a["image_sha256"],
+            second_image_sha256=b["image_sha256"])
         joint = _joint_gpu_vram_first_divergence(snapshots, event_records)
         check_inventories()
         for fd, (path, identity) in zip(opened, sessions):
