@@ -1,0 +1,29 @@
+# MAP02: synchronized guest 44.1-kHz → 48-kHz audout format bridge
+
+**Research-only Draft / DO NOT MERGE.** Child of verified [PR #210](https://github.com/stanmasked/vandal-hearts-switch-remaster/pull/210), which reproduced identical generated-only STUDIO_C wet-tail PCM under GCC, Clang and both NeXium guest binaries.
+
+## A specific missing layer
+
+PR #210's same-clock DSP comparison used the native PS1 SPU output at **44,100 Hz**. The real Switch audout thread converts that to **48,000 Hz stereo s16le** with a stateful integer resampler and a **192-output-frame ramp** on device startup.
+
+The new isolated `source/vh_guest_native_48k.c` receives the very same two **synchronized 512-frame** 44.1-kHz SPU blocks from the #210 synthetic test. It applies two independent instances of the **unchanged production** `vh_audio_resample_process()` and `vh_audio_output_ramp_apply()` on every generated block, without submitting either output buffer to the live audout device.
+
+The experiment demands:
+- Identical 48-kHz PCM pages before the common scene transition (64 blocks)
+- Exactly equal 48-kHz stereo output **frame counts** on the two synthetic paths
+- All **48 post-switch pages** must differ, with retained-history output nonzero
+- A special distinction between the **first reset-mode page** and later pages: the stateful resampler may interpolate **one stereo output frame from the previous scene**, so its first reset page is allowed up to **2 nonzero sample values**, but *all later reset pages must contain zero*
+- Different retained-history and reset post-process hashes
+- Two complete synthetic trials must have identical 48-kHz lengths, nonzero counts, output hashes and boundary-residue values
+
+The test does **not** claim that the interpolation necessarily produces a nonzero value: it measures the actual first-page count and rejects more than one stereo frame of residue.
+
+## Guest evidence and strict boundaries
+
+Only the extra opt-in `Makefile.map02-guest-sync-tail` binary builds this observer. It adds a **fourth diagnostic optical screen** after guest audout has joined, with the same calibrated magenta border, a new `VH48K001` packet and CRC32. No copyrighted PS1 music data, raw PCM arrays, file I/O or extra work in the live audio thread.
+
+`tools/decode_guest_native_48k.py` verifies first/remaining reset residue, complete block counts, physical bounds, hashes, immutable ticket context and packet integrity. Twelve generated positive/negative cases prevent false green results. GCC/Clang ASan+UBSan execute the same C DSP+output-stage fixture, while NeXium checks both outer NRO modes independently and requires identical synthetic 48-kHz metrics from both.
+
+**Evidence limits:** This isolates retained STUDIO_C state *after the native 48-kHz conversion and device-start ramp*, but is still a generated-only in-guest counterfactual. It does not prove the live audout stream's content is sample-aligned across independent guest boots, physical speaker output, original PS1 music fidelity or a real gameplay cue's acoustic reverb.
+
+Historical frozen-source identity checking is intentionally unchanged and may reject this research instrumentation. Parent PR #210, #207 and all earlier drafts remain unmerged. `main` is untouched.
