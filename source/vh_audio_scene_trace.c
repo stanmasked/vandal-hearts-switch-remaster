@@ -20,7 +20,7 @@ int vh_audio_scene_trace_record(VhAudioSceneTrace *trace,
                                 VhAudioSceneTraceKind kind,
                                 unsigned serial, unsigned scene,
                                 uint64_t monotonic_ns) {
-    if (!trace || kind<VH_SCENE_TRACE_INPUT || kind>VH_SCENE_TRACE_SUBMIT_ERROR ||
+    if (!trace || kind<VH_SCENE_TRACE_INPUT || kind>VH_SCENE_TRACE_PCM_PAGE_SILENT ||
         scene>2u) return -1;
     const unsigned index = atomic_fetch_add_explicit(
         &trace->reserved, 1u, memory_order_relaxed);
