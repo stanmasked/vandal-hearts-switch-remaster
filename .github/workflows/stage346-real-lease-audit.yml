@@ -1,0 +1,38 @@
+name: Stage346 actual PCM lease audit counters
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage346-real-lease-audit.yml'
+      - 'source/vh_audio_buffer_lease.c'
+      - 'source/vh_audio_buffer_lease.h'
+      - 'tests/test_vh_audio_buffer_lease.c'
+      - 'tests/test_vh_audio_page_continuity_stage345.c'
+permissions:
+  contents: read
+jobs:
+  host-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: GCC/Clang native exact-lease tests including UBSan
+        env:
+          UBSAN_OPTIONS: halt_on_error=1
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          for cc in gcc clang; do
+            for test in test_vh_audio_buffer_lease test_vh_audio_page_continuity_stage345; do
+              "$cc" -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+                "tests/${test}.c" source/vh_audio_buffer_lease.c source/vh_audio_output_recovery.c \
+                -o "build/${test}-${cc}"
+              "./build/${test}-${cc}"
+              "$cc" -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+                -fsanitize=undefined -fno-omit-frame-pointer \
+                "tests/${test}.c" source/vh_audio_buffer_lease.c source/vh_audio_output_recovery.c \
+                -o "build/${test}-${cc}-ubsan"
+              "./build/${test}-${cc}-ubsan"
+            done
+          done
+          echo "Stage346 actual software PCM lease counters tested; physical Switch speakers remain untested." >> "$GITHUB_STEP_SUMMARY"

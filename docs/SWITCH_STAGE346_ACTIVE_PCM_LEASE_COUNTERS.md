@@ -1,0 +1,9 @@
+# Stage346 — in-game PCM lease ownership audit
+
+[Stage345 #39282936266](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39282936266) and Host SPU [#39282945466](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39282945466) **passed** both GCC and Clang under optimized and UBSan builds. Stage346 adds **two saturating owner-only counters** to the existing production `VhAudioBufferLease` API. `pages_leased` increments only on successful acquisition of a descriptor while no page is in flight; `busy_begin_rejections` increments only if a second valid descriptor is offered while the old one remains leased. Invalid null inputs are not counted. Both counters saturate, never wrap.
+
+The real Nintendo Switch audio worker now publishes both via the existing atomic diagnostic snapshot as `lease_pages_acquired` and `lease_busy_begin_rejections`. It adds **no timestamps, libnx queries, file I/O, dynamic allocations or locking** in the audout submission path. Ownership release semantics, restart behavior, PCM output, SPU synthesis, game code and strict original NeXium source CSV verifiers are unchanged.
+
+Existing lease tests validate saturation and exact increments. The 512-page native Stage345 simulation checks the lease acquisition count equals actual submission attempts, that busy reuse attempts match deliberately foreign releases, and that accepted PCM hashes and frame counters remain exact across service restarts. Dedicated Stage346 CI runs production lease C sources with GCC, Clang and UBSan; the complete Host SPU and NRO build checks also run on push.
+
+These describe real **software owner** transitions only. They do not measure physical Horizon audio queues or DAC/speaker output, and pointer identity alone cannot disambiguate a hypothetical stale release from a previous session if the same descriptor address is reused.
