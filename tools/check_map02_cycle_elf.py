@@ -93,6 +93,48 @@ def _require_entry_in_executable_load(segments, entry, file_size):
         raise ValueError("MAP02 PC ELF entry is not in executable loaded file bytes")
 
 
+def _require_available_elf_interpreter(segments, file_size):
+    """Check the named ELF PT_INTERP without invoking its loader or the game.
+
+    Static binaries have no PT_INTERP. Dynamic binaries must name exactly
+    one existing executable host interpreter. This is a local availability
+    check only: it neither loads dependencies nor authenticates the loader.
+    """
+    interp_rows = [line.split() for line in segments.splitlines()
+                   if line.split() and line.split()[0] == "INTERP"]
+    requested = re.findall(
+        r"^\s*\[Requesting program interpreter: ([^\]\n]+)\]\s*$",
+        segments, re.M)
+    if not interp_rows:
+        if requested:
+            raise ValueError("MAP02 PC ELF interpreter metadata is inconsistent")
+        return
+    if len(interp_rows) != 1 or len(requested) != 1:
+        raise ValueError("MAP02 PC ELF interpreter metadata is inconsistent")
+    parts = interp_rows[0]
+    if len(parts) < 8:
+        raise ValueError("MAP02 PC ELF interpreter segment is malformed")
+    try:
+        offset, file_bytes, mem_bytes = (
+            int(parts[i], 16) for i in (1, 4, 5))
+    except ValueError:
+        raise ValueError("MAP02 PC ELF interpreter segment is malformed") from None
+    if (not 2 <= file_bytes <= 4096 or file_bytes > mem_bytes or
+            offset + file_bytes > file_size):
+        raise ValueError("MAP02 PC ELF interpreter segment has invalid bounds")
+    interpreter = requested[0]
+    if (not interpreter.startswith("/") or "\x00" in interpreter or
+            interpreter != interpreter.strip()):
+        raise ValueError("MAP02 PC ELF interpreter path is invalid")
+    try:
+        info = os.stat(interpreter)
+    except OSError:
+        raise ValueError("MAP02 PC ELF system interpreter is unavailable") from None
+    if not stat.S_ISREG(info.st_mode) or not os.access(interpreter, os.X_OK):
+        raise ValueError("MAP02 PC ELF system interpreter is unavailable")
+
+
+
 def audit_cycle_elf(path):
     binary = Path(path).absolute()
     if binary.is_symlink() or not binary.is_file():
@@ -111,8 +153,10 @@ def audit_cycle_elf(path):
         raise ValueError("MAP02 cycle ELF has no executable entry point")
     if not re.search(r"^\s*Machine:\s+.*(X86-64|80386|AArch64)", header, re.M):
         raise ValueError("unsupported MAP02 PC ELF architecture")
+    segments = _run("segments", binary)
     _require_entry_in_executable_load(
-        _run("segments", binary), int(entry.group(1), 16), st.st_size)
+        segments, int(entry.group(1), 16), st.st_size)
+    _require_available_elf_interpreter(segments, st.st_size)
     symbols = set()
     initialized_data = {}
     for line in _run("nm", binary).splitlines():
