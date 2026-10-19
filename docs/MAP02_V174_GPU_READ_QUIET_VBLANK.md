@@ -7,6 +7,7 @@ This stage extends [v173](https://github.com/stanmasked/vandal-hearts-switch-rem
 - The previously attested self-authored `VH78SYN!` executable still drives four internal `psxRcntUpdate()/GPU_vBlank(1,0)` transitions using 512-instruction MIPS NOP/jump waits.
 - v173 forbids MIPS guest `GP0`/`GP1` **writes** during each wait. v174 also forbids interpreted guest `GP0`/`GP1` **reads** at 0x1f801810 and 0x1f801814, including KSEG aliases, while permitting ordinary CPU RAM reads.
 - The observer is installed before the original 32-bit PCSX read implementation and does not alter its return value. Each new read-window observer arms after v173 and disarms with the same four VBlank boundaries before VRAM readback.
+- The v174 observer now has an independent armed-state latch: same-phase double arming, incorrect-phase disarming and duplicate disarming all fail closed, preventing accidental counter resets from hiding a forbidden read.
 - The positive path must retain all v173/v172 provenance and 595 native Unai samples per phase (2380 total).
 
 Expected genuine native marker for both GCC and Clang (requires CI confirmation):
