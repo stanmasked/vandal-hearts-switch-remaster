@@ -154,6 +154,21 @@ class PrivateFullPcBuildTests(unittest.TestCase):
         self.assertIn("filesystem verification failed", output.getvalue())
         self.assertNotIn(private_path, output.getvalue())
 
+    def test_cli_redacts_private_owned_paths_from_value_errors(self):
+        secret = str(self.upstream / "SLUS_004.47")
+        stderr = io.StringIO()
+        with (patch("sys.argv", [
+                  "private-build", str(self.upstream), str(self.bundle),
+                  "--report-dir", str(self.upstream.parent / "receipt")]),
+              patch.object(local_build, "build_full_pc",
+                           side_effect=ValueError("private source " + secret)),
+              redirect_stderr(stderr)):
+            with self.assertRaises(SystemExit) as thrown:
+                local_build.main()
+        self.assertEqual(thrown.exception.code, 2)
+        self.assertIn("input or provenance verification failed", stderr.getvalue())
+        self.assertNotIn(secret, stderr.getvalue())
+
     def test_preexisting_generated_font_or_symlink_blocks_build(self):
         private_c = self.exe.parent / "map02_pinned_kanji_font.c"
         private_c.parent.mkdir(parents=True, exist_ok=True)
