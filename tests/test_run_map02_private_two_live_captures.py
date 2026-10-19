@@ -917,6 +917,84 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
                 encoding="utf-8"), "must remain unchanged")
         self.assertTrue(all(not list(folder.iterdir()) for folder in self.dirs[:3]))
 
+    def test_private_capture_paths_inside_git_worktree_refused_before_launch(self):
+        # A 0700 destination under a version-controlled source tree is
+        # still one accidental git-add away from publishing original GPU
+        # journals/VRAM. Reject .git directories AND linked-worktree
+        # .git files in BOTH the read-only and actual capture paths.
+        for git_kind in ("directory", "file"):
+            with self.subTest(git_kind=git_kind):
+                checkout = self.dirs[0].parent / ("checkout-" + git_kind)
+                checkout.mkdir(mode=0o700)
+                marker = checkout / ".git"
+                if git_kind == "directory":
+                    marker.mkdir(mode=0o700)
+                else:
+                    marker.write_text(
+                        "gitdir: /private/git/worktrees/example\\n",
+                        encoding="utf-8")
+                outputs = [checkout / folder.name for folder in self.dirs]
+                for output in outputs:
+                    output.mkdir(mode=0o700)
+                with patch.object(
+                        two_live, "capture",
+                        side_effect=AssertionError("ELF must not launch")):
+                    for operation in (two_live.preflight, two_live.run):
+                        with self.assertRaisesRegex(ValueError, "Git worktree"):
+                            operation(
+                                self.executable, *outputs, frame=123,
+                                executable_sha256=self.digest)
+                self.assertTrue(all(not list(p.iterdir()) for p in outputs))
+
+    def test_owner_private_but_nonwritable_capture_dir_is_refused(self):
+        # The preflight must not give a false readiness receipt for 0500:
+        # owner-only is secure, but a real GPU capture cannot reliably
+        # publish the required files there as an unprivileged user.
+        output = self.dirs[3]
+        output.chmod(0o500)
+        with patch.object(two_live, "capture",
+                          side_effect=AssertionError("ELF must not launch")):
+            for operation in (two_live.preflight, two_live.run):
+                with self.assertRaisesRegex(ValueError, "0700"):
+                    operation(
+                        self.executable, *self.dirs, frame=123,
+                        executable_sha256=self.digest)
+        self.assertTrue(all(not list(p.iterdir()) for p in self.dirs))
+
+    def test_git_marker_created_mid_preflight_or_before_first_launch_refused(self):
+        # A .git marker may appear AFTER the four initial directories
+        # passed. The final dry-run check and the per-launch real guard
+        # must both detect the new publication risk.
+        root = self.dirs[0].parent
+        original = two_live._require_held_elf_image
+        for operation in (two_live.preflight, two_live.run):
+            with self.subTest(operation=operation.__name__):
+                marker = root / ".git"
+                calls = []
+                def mark_before_launch(*args, **kwargs):
+                    result = original(*args, **kwargs)
+                    calls.append(1)
+                    if len(calls) == 1:
+                        marker.mkdir(mode=0o700)
+                    return result
+                try:
+                    with (
+                        patch.object(two_live, "_require_held_elf_image",
+                                     side_effect=mark_before_launch),
+                        patch.object(
+                            two_live, "capture",
+                            side_effect=AssertionError("ELF must not launch")),
+                    ):
+                        with self.assertRaisesRegex(ValueError, "Git worktree"):
+                            operation(
+                                self.executable, *self.dirs, frame=123,
+                                executable_sha256=self.digest)
+                    self.assertEqual(calls, [1])
+                    self.assertTrue(all(
+                        not list(p.iterdir()) for p in self.dirs))
+                finally:
+                    marker.rmdir()
+
     def test_dry_run_cli_prints_only_safe_readiness_fields(self):
         cmd = [
             sys.executable, "-m", "tools.run_map02_private_two_live_captures",
