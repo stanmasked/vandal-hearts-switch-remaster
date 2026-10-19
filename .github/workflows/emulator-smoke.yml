@@ -1216,6 +1216,33 @@ jobs:
           PY
           echo "Stage357: independently preserved true guest raw Result from existing bounded tail wait, not physical audio." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Stage360 independently audit last retained pre-submit queue probe age at exit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/audit_nexium_guest_exit_probe_context_stage360.py \
+            --guest-root-file runtime-evidence/guest-sd-root.txt \
+            --stage313 runtime-evidence/guest-last-audout-release-stage313.json \
+            --stage351 runtime-evidence/guest-exit-tail-reason-stage351.json \
+            --output runtime-evidence/guest-exit-probe-context-stage360.json \
+            --output-original runtime-evidence/audio-exit-probe-context-000.csv
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          doc=json.loads(Path("runtime-evidence/guest-exit-probe-context-stage360.json").read_text())
+          raw=Path("runtime-evidence/audio-exit-probe-context-000.csv").read_bytes()
+          if (doc["result"]!="ORIGINAL_NEIXUM_EXIT_PRE_SUBMIT_PROBE_AGE_SOURCE_VERIFIED"
+              or doc["original_guest_context_bytes_preserved"] is not True
+              or hashlib.sha256(raw).hexdigest()!=doc["original_guest_context_sha256"]
+              or doc["direct_exit_time_queue_depth_observed"] is not False
+              or doc["scheduler_latency_measured"] is not False
+              or doc["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage360 guest context source not trusted")
+          print("Stage360 original probe age (ns):",doc["last_pre_submit_probe_age_ns"],
+                "exit software interval (ns):",doc["tail_elapsed_ns"])
+          PY
+          echo "Stage360: source-bound age of latest existing pre-submit audout probe; NOT direct shutdown queue depth or scheduler time." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Preserve bounded unverified guest Stage351 source on strict audit failure
         if: ${{ failure() && steps.stage351_audit.outcome == 'failure' }}
         shell: bash

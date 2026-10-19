@@ -10,6 +10,8 @@ on:
       - 'source/vh_switch_game_audio.h'
       - 'source/main.c'
       - 'tests/test_vh_audio_exit_probe_context_stage360.c'
+      - 'tools/audit_nexium_guest_exit_probe_context_stage360.py'
+      - 'tests/test_audit_nexium_guest_exit_probe_context_stage360.py'
 permissions:
   contents: read
 jobs:
@@ -41,4 +43,7 @@ jobs:
               fi
             done
           done
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_nexium_guest_exit_probe_context_stage360.py' -v
+          python3 -m py_compile tools/audit_nexium_guest_exit_probe_context_stage360.py
           echo "Stage360: old pre-submit probe is aged, never a directly measured shutdown queue; no extra audout service call or tick read." >> "$GITHUB_STEP_SUMMARY"
