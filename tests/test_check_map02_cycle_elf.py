@@ -100,46 +100,90 @@ class OriginalCycleElfAuditTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, error):
                     load(raw, entry, size)
 
-    def test_nonexecuting_interpreter_audit_accepts_static_or_installed_loader(self):
-        check = elf._require_available_elf_interpreter
-        check("", 4096)  # a static ELF has no PT_INTERP
-        # The fixture uses a local synthetic executable, never a game/BIOS.
-        interpreter = self.root / "fake-system-ld-so"
-        interpreter.write_bytes(b"synthetic-loader-fixture")
-        interpreter.chmod(0o700)
+    def interpreter_fixture(self, path, *, payload=None):
+        """Synthetic ELF with a declared PT_INTERP; never executed."""
+        selected = self.root / "fake-pt-interp-binary"
+        original = bytearray(self.executable.read_bytes())
+        if payload is None:
+            payload = str(path).encode("utf-8") + b"\x00"
+        original[0x80:0x180] = payload.ljust(0x100, b"\x00")
+        selected.write_bytes(original)
+        selected.chmod(0o700)
         row = (
             " INTERP 0x000080 0x000080 0x000080 "
             "0x000100 0x000100 R 0x1"
         )
-        report = row + "\n [Requesting program interpreter: " + str(interpreter) + "]\n"
-        check(report, 4096)
+        report = row + "\n [Requesting program interpreter: " + str(path) + "]\n"
+        return selected, report, row
+
+    def test_nonexecuting_interpreter_audit_accepts_static_or_installed_loader(self):
+        check = elf._require_available_elf_interpreter
+        check("", 4096, self.executable)  # static ELF: no PT_INTERP
+        # Use our already-compiled synthetic host ELF as a stand-in. Its
+        # header is ABI-compatible; it is not loaded or executed here.
+        binary, report, _ = self.interpreter_fixture(self.executable)
+        check(report, binary.stat().st_size, binary)
+
+    def test_interpreter_binary_bytes_must_match_readelf_report(self):
+        check = elf._require_available_elf_interpreter
+        binary, report, _ = self.interpreter_fixture(
+            self.executable, payload=b"/missing/different/ld.so\x00")
+        with self.assertRaisesRegex(ValueError, "bytes differ from metadata"):
+            check(report, binary.stat().st_size, binary)
+
+        # No terminator: an overlong/malformed PT_INTERP must be rejected,
+        # not silently treated as a truncated loader pathname.
+        binary, report, _ = self.interpreter_fixture(
+            self.executable, payload=b"x" * 256)
+        with self.assertRaisesRegex(ValueError, "bytes differ from metadata"):
+            check(report, binary.stat().st_size, binary)
+
+    def test_interpreter_must_match_native_pc_elf_class_and_machine(self):
+        check = elf._require_available_elf_interpreter
+        fake_loader = self.root / "other-architecture-loader"
+        loader = bytearray(self.executable.read_bytes()[:64])
+        loader[18:20] = (8).to_bytes(2, "little")  # synthetic MIPS, not host
+        fake_loader.write_bytes(loader)
+        fake_loader.chmod(0o700)
+        binary, report, _ = self.interpreter_fixture(fake_loader)
+        with self.assertRaisesRegex(ValueError, "ABI mismatch"):
+            check(report, binary.stat().st_size, binary)
+        loader[18:20] = self.executable.read_bytes()[18:20]
+        loader[4] = 1 if loader[4] == 2 else 2
+        fake_loader.write_bytes(loader)
+        with self.assertRaisesRegex(ValueError, "ABI mismatch"):
+            check(report, binary.stat().st_size, binary)
+        fake_loader.write_bytes(b"#!/bin/sh\n")
+        with self.assertRaisesRegex(ValueError, "ABI mismatch"):
+            check(report, binary.stat().st_size, binary)
 
     def test_private_preflight_fails_closed_on_missing_or_forged_elf_interpreter(self):
         check = elf._require_available_elf_interpreter
-        missing = str(self.root / "absent-original-elf-loader")
-        row = (
-            " INTERP 0x000080 0x000080 0x000080 "
-            "0x000100 0x000100 R 0x1"
-        )
-        for description, report, file_size, error in (
-            ("missing interpreter", row + "\n [Requesting program interpreter: "
-             + missing + "]\n", 4096, "system interpreter is unavailable"),
-            ("relative interpreter", row + "\n [Requesting program interpreter: "
-             + "relative/ld.so]\n", 4096, "interpreter path is invalid"),
-            ("missing request", row, 4096, "metadata is inconsistent"),
+        missing = self.root / "absent-original-elf-loader"
+        binary, report, row = self.interpreter_fixture(missing)
+        for description, output, size, error in (
+            ("missing interpreter", report, binary.stat().st_size,
+             "system interpreter is unavailable"),
+            ("relative interpreter", row +
+             "\n [Requesting program interpreter: relative/ld.so]\n",
+             binary.stat().st_size, "interpreter path is invalid"),
+            ("missing request", row, binary.stat().st_size,
+             "metadata is inconsistent"),
             ("request without segment",
-             "[Requesting program interpreter: " + missing + "]",
-             4096, "metadata is inconsistent"),
-            ("duplicated PT_INTERP", row + "\n" + row + "\n [Requesting program interpreter: "
-             + missing + "]\n", 4096, "metadata is inconsistent"),
-            ("invalid file extent", row + "\n [Requesting program interpreter: "
-             + missing + "]\n", 128, "segment has invalid bounds"),
-            ("malformed PT_INTERP", " INTERP bad\n [Requesting program interpreter: "
-             + missing + "]\n", 4096, "segment is malformed"),
+             "[Requesting program interpreter: " + str(missing) + "]",
+             binary.stat().st_size, "metadata is inconsistent"),
+            ("duplicated PT_INTERP", row + "\n" + row +
+             "\n [Requesting program interpreter: " + str(missing) + "]\n",
+             binary.stat().st_size, "metadata is inconsistent"),
+            ("invalid file extent", report, 128, "segment has invalid bounds"),
+            ("malformed PT_INTERP",
+             " INTERP bad\n [Requesting program interpreter: "
+             + str(missing) + "]\n",
+             binary.stat().st_size, "segment is malformed"),
         ):
             with self.subTest(description=description):
                 with self.assertRaisesRegex(ValueError, error):
-                    check(report, file_size)
+                    check(output, size, binary)
 
     def test_native_introspection_timeout_redacts_private_elf_path(self):
         private = str(self.executable)
