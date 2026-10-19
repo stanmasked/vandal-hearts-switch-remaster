@@ -1,9 +1,15 @@
-name: NeXium MAP02 guest INPUT POST ACCEPT PCM receipt
+name: NeXium MAP02 first PCM page nonzero per scene ticket
 
 on:
   pull_request:
     paths:
       - "source/main.c"
+      - "source/vh_switch_game_audio.c"
+      - "source/vh_audio_scene_trace.h"
+      - "source/vh_audio_scene_trace.c"
+      - "source/vh_audio_scene_optical.c"
+      - "tests/test_map02_guest_pcm_witness.c"
+      - "docs/MAP02_GUEST_FIRST_PCM_PAGE.md"
       - "Makefile.map02-guest-trace"
       - "tools/decode_map02_guest_scene_trace.py"
       - "tests/test_decode_map02_guest_scene_trace.py"
@@ -25,8 +31,21 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y python3-pil
-      - name: Reject forged guest scene transitions
+      - name: Reject forged guest scene transitions and silent first PCM pages
         run: python3 -m unittest discover -s tests -p 'test_decode_map02_guest_scene_trace.py' -v
+      - name: Test C11 PCM witness event kinds and optical byte serialization
+        shell: bash
+        run: |
+          set -euo pipefail
+          for cc in gcc clang; do
+            "$cc" -std=c11 -O1 -g -Wall -Wextra -Werror -Isource \
+              -fsanitize=address,undefined -fno-omit-frame-pointer \
+              tests/test_map02_guest_pcm_witness.c \
+              source/vh_audio_scene_trace.c source/vh_audio_scene_optical.c \
+              -o "/tmp/map02-pcm-witness-$cc"
+            ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+              "/tmp/map02-pcm-witness-$cc"
+          done
 
   paired-trace-nro:
     name: Build distinct 0/1 NRO binaries with diagnostic post-join display
