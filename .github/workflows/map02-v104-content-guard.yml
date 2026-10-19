@@ -2227,8 +2227,12 @@ jobs:
                 tail -n 90 "proof/private/v181-${idx}.log"
                 exit 1
               }
-            grep -E '^VH181_NATIVE_GUEST_WORD_RAM_PASS kind=${idx} windows=4 observed=[1-9][0-9]* pc_opcode_addr=1 vblanks=4 samples=2380 original_retail=0$' \
-              "proof/private/v181-${idx}.log"
+            if ! grep -E "^VH181_NATIVE_GUEST_WORD_RAM_PASS kind=${idx} windows=4 observed=[1-9][0-9]* pc_opcode_addr=1 vblanks=4 samples=2380 original_retail=0$" \
+                "proof/private/v181-${idx}.log"; then
+              echo "VH181_EXPECTED_NATIVE_MARKER_MISSING kind=${kind}"
+              grep -E 'VH181_|VH176_|VH175_|VH78_|REFUSED' "proof/private/v181-${idx}.log" | tail -n 40 || true
+              exit 1
+            fi
             grep -Fx 'VH176_GUEST_MIPS_NARROW_GPU_QUIET_PASS windows=4 narrow_reads=0 narrow_writes=0 vblanks=4 samples=2380 native_psxcounters=1 original_retail=0' \
               "proof/private/v181-${idx}.log"
             for phase in 0 1 2 3; do
