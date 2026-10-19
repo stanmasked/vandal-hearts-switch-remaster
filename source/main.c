@@ -12,6 +12,16 @@
 #include "map02_terrain_lighting.h"
 #include "map02_face_direction.h"
 
+/* Additive opt-in: standard MAP02 NRO remains video-only. */
+#ifndef VH_MAP02_AUDIO_EXPERIMENT
+#define VH_MAP02_AUDIO_EXPERIMENT 0
+#endif
+#if VH_MAP02_AUDIO_EXPERIMENT
+#include "vh_switch_game_audio.h"
+/* Only accessed by the gameplay/framebuffer thread. */
+static int g_map02_audio_started;
+#endif
+
 #define FB_WIDTH 1280
 #define FB_HEIGHT 720
 #define GRID_WIDTH 8
@@ -309,10 +319,32 @@ static void draw_frame(u32 *pixels, u32 stride, int cursor_x, int cursor_y,
     fill_rect(pixels, stride, 1000, 600, 8 + (int)(frame_tick % 89), 8, COLOR_HERO);
     draw_text(pixels, stride, 1000, 612, "FRAME", COLOR_MUTED, 1);
 
+#if VH_MAP02_AUDIO_EXPERIMENT
+    /* Guest-status observation only: not proof of audible speaker output. */
+    const int audio_state = g_map02_audio_started
+        ? vh_switch_game_audio_status() : -1;
+    draw_text(pixels, stride, 970, 92,
+              audio_state == 1 ? "AUDIO ACTIVE" :
+              audio_state == 2 ? "AUDIO PAUSED" :
+              audio_state < 0 ? "AUDIO ERROR" : "AUDIO STARTING",
+              audio_state == 1 ? COLOR_HERO :
+              audio_state < 0 ? COLOR_ENEMY : COLOR_MUTED, 1);
+#endif
     /* Small status indicator changes color while the unit is selected. */
     fill_rect(pixels, stride, FB_WIDTH - 116, 42, 44, 44,
               hero_selected ? COLOR_CURSOR : COLOR_HERO);
 }
+
+#if VH_MAP02_AUDIO_EXPERIMENT
+static void map02_audio_applet_event(AppletHookType event, void *context) {
+    (void)context;
+    const int focused = appletGetFocusState() == AppletFocusState_InFocus;
+    if (event == AppletHookType_OnResume)
+        vh_switch_game_audio_on_resume(focused);
+    else if (event == AppletHookType_OnFocusState)
+        vh_switch_game_audio_set_focus(focused);
+}
+#endif
 
 int main(int argc, char **argv) {
     (void)argc;
@@ -336,8 +368,30 @@ int main(int argc, char **argv) {
     init_ft4_probe_texture();
     VhGameState state = {1, 2, 1, 2, 6, 3, 0};
     u32 frame_tick = 0;
+#if VH_MAP02_AUDIO_EXPERIMENT
+    /* Audio has its own owner thread and never blocks the MAP02 frame loop. */
+    const int audio_started = vh_switch_game_audio_start(
+        vh_game_music_for_state(&state)) == 0;
+    g_map02_audio_started = audio_started;
+    AppletHookCookie audio_focus_hook = {0};
+    int audio_resume_message_enabled = 0;
+    if (audio_started) {
+        if (appletGetAppletType() == AppletType_Application)
+            audio_resume_message_enabled =
+                R_SUCCEEDED(appletSetRestartMessageEnabled(true));
+        vh_switch_game_audio_set_focus(
+            appletGetFocusState() == AppletFocusState_InFocus);
+        appletHook(&audio_focus_hook, map02_audio_applet_event, NULL);
+    }
+#endif
 
     while (appletMainLoop()) {
+#if VH_MAP02_AUDIO_EXPERIMENT
+        /* Some launch modes suspend threads without a focus callback. */
+        if (audio_started)
+            vh_switch_game_audio_set_focus(
+                appletGetFocusState() == AppletFocusState_InFocus);
+#endif
         padUpdate(&pad);
         const u64 buttons_down = padGetButtonsDown(&pad);
 
@@ -350,8 +404,17 @@ int main(int argc, char **argv) {
         if (buttons_down & HidNpadButton_B)     actions |= VH_INPUT_CANCEL;
         if (buttons_down & HidNpadButton_Plus)  actions |= VH_INPUT_QUIT;
 
+#if VH_MAP02_AUDIO_EXPERIMENT
+        const unsigned music_before = vh_game_music_for_state(&state);
+#endif
         if (vh_process_input(&state, actions, GRID_WIDTH, GRID_HEIGHT, MOVE_RANGE))
             break;
+#if VH_MAP02_AUDIO_EXPERIMENT
+        const unsigned music_after = vh_game_music_for_state(&state);
+        if (audio_started && music_after != music_before)
+            vh_switch_game_audio_post_at(
+                music_after, armTicksToNs(armGetSystemTick()));
+#endif
 
         u32 stride_bytes = 0;
         u32 *pixels = (u32 *)framebufferBegin(&fb, &stride_bytes);
@@ -364,6 +427,15 @@ int main(int argc, char **argv) {
         framebufferEnd(&fb);
     }
 
+#if VH_MAP02_AUDIO_EXPERIMENT
+    /* This is the only blocking audio join; never wait during a frame. */
+    if (audio_started) {
+        appletUnhook(&audio_focus_hook);
+        vh_switch_game_audio_stop();
+        if (audio_resume_message_enabled)
+            (void)appletSetRestartMessageEnabled(false);
+    }
+#endif
     framebufferClose(&fb);
     return 0;
 }
