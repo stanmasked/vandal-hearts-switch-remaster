@@ -274,6 +274,36 @@ class PrivateCycleReadinessTests(unittest.TestCase):
                 self.verify()
         self.assertTrue(backup.is_dir())
 
+    def test_standalone_readiness_rejects_receipt_directory_inode_drift(self):
+        # Simulate the receipt *directory* being replaced between two
+        # complete checks, while retaining the same receipt report and file
+        # identity. This gate must stand on its own outside the one-shot CLI.
+        actual_identity = readiness._directory_identity
+        receipt_reads = [0]
+
+        def change_only_receipt_root(path, role):
+            identity = actual_identity(path, role)
+            if role == "build-receipt":
+                receipt_reads[0] += 1
+                if receipt_reads[0] == 2:
+                    return (identity[0], identity[1] + 1, *identity[2:])
+            return identity
+
+        with patch.object(readiness, "_directory_identity",
+                          side_effect=change_only_receipt_root):
+            with self.assertRaisesRegex(
+                    ValueError, "build receipt directory changed during preflight"):
+                self.verify()
+        self.assertEqual(receipt_reads[0], 2)
+        self.assertEqual(self.mocks[4].call_count, 2)
+
+    def test_standalone_readiness_rejects_linked_receipt_directory(self):
+        old = self.root / "original-private-build-receipt"
+        self.receipt.rename(old)
+        self.receipt.symlink_to(old, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "not owner-only"):
+            self.verify()
+
     def test_rejects_full_build_provenance_changed_between_audits(self):
         first = {"source_pinned_full_elf_bytes_checked": True,
                  "private_build_receipt_sha256": "a" * 64}
