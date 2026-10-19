@@ -1002,6 +1002,68 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
                 finally:
                     marker.rmdir()
 
+    def test_git_worktree_initialized_between_or_after_live_captures_refused(self):
+        # Original private C11 evidence is produced by real ELF children.
+        # If someone initializes a Git worktree around the private output
+        # after the FIRST capture, no second child may launch. If Git
+        # appears after the SECOND capture, no independent replay/positive
+        # receipt may proceed. Both .git directories and linked-worktree
+        # .git files are hazardous even when outputs remain mode 0700.
+        root = self.dirs[0].parent
+        for after_launch in (1, 2):
+            for git_kind in ("directory", "linked-worktree-file"):
+                for strict in (False, True):
+                    with self.subTest(
+                            after_launch=after_launch,
+                            git_kind=git_kind, strict=strict):
+                        for folder in self.dirs:
+                            for file in folder.iterdir():
+                                file.unlink()
+                        marker = root / ".git"
+                        calls = []
+                        def make_worktree_after_capture(*args, **kwargs):
+                            receipt = original_capture(*args, **kwargs)
+                            calls.append(1)
+                            if len(calls) == after_launch:
+                                if git_kind == "directory":
+                                    marker.mkdir(mode=0o700)
+                                else:
+                                    marker.write_text(
+                                        "gitdir: /private/other-worktree\\n",
+                                        encoding="utf-8")
+                            return receipt
+                        try:
+                            with (
+                                patch.object(
+                                    two_live, "capture",
+                                    side_effect=make_worktree_after_capture),
+                                patch.object(
+                                    two_live, "audit",
+                                    side_effect=AssertionError(
+                                        "replay must not consume Git-published evidence")),
+                            ):
+                                with self.assertRaisesRegex(
+                                        ValueError, "Git worktree") as error:
+                                    self.run_two(
+                                        require_identical_gpu_timeline=strict)
+                            self.assertNotIn(str(root), str(error.exception))
+                            self.assertEqual(len(calls), after_launch)
+                            self.assertEqual(
+                                len(list(self.dirs[0].iterdir())), 2)
+                            self.assertEqual(
+                                len(list(self.dirs[1].iterdir())), 3)
+                            self.assertEqual(
+                                len(list(self.dirs[2].iterdir())),
+                                2 if after_launch == 2 else 0)
+                            self.assertEqual(
+                                len(list(self.dirs[3].iterdir())),
+                                3 if after_launch == 2 else 0)
+                        finally:
+                            if marker.is_dir():
+                                marker.rmdir()
+                            elif marker.exists():
+                                marker.unlink()
+
     def test_dry_run_cli_prints_only_safe_readiness_fields(self):
         cmd = [
             sys.executable, "-m", "tools.run_map02_private_two_live_captures",
