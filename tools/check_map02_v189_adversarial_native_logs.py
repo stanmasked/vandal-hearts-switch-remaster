@@ -129,10 +129,14 @@ def audit_replay(directory: Path) -> tuple[int, int, int]:
         raw = path.read_text(encoding="utf-8")
         audit_strict(raw, mode)
         unique: set[str] = set()
+        distinct_transcripts: set[str] = set()
         for label, tampered in replay_mutations(raw, mode):
-            if label in unique or tampered == raw:
-                raise ValueError(f"v189 invalid or duplicate tamper recipe mode={mode}: {label}")
+            if label in unique or tampered == raw or tampered in distinct_transcripts:
+                raise ValueError(
+                    f"v189 invalid, duplicate or overlapping tamper recipe mode={mode}: {label}"
+                )
             unique.add(label)
+            distinct_transcripts.add(tampered)
             try:
                 audit_strict(tampered, mode)
             except ValueError:
