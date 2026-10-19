@@ -124,6 +124,33 @@ class Map02PrivateInputInventoryTests(unittest.TestCase):
         self.assertFalse(report["private_build_receipt_path_present"])
         self.assertFalse(report["all_prerequisite_paths_present"])
 
+    def test_source_tree_intermediate_symlink_cannot_claim_origins_present(self):
+        self.populate()
+        for relative, field in (
+            ("assets", "original_asset_include_paths_present"),
+            ("build", "extracted_original_mips_elf_path_present"),
+            ("platform/pc/tools", "pinned_font_generator_path_present"),
+            ("platform/pc/build-map02-cycle",
+             "full_pc_elf_executable_path_present"),
+        ):
+            with self.subTest(relative=relative):
+                directory = self.upstream / relative
+                archived = self.root / ("archived-" + relative.replace("/", "-"))
+                directory.rename(archived)
+                directory.symlink_to(archived, target_is_directory=True)
+                try:
+                    report = self.inspect()
+                    self.assertFalse(report["all_prerequisite_paths_present"])
+                    if field == "original_asset_include_paths_present":
+                        self.assertEqual(report[field], 0)
+                    else:
+                        self.assertIs(report[field], False)
+                    self.assertNotIn(str(self.root), json.dumps(report))
+                finally:
+                    directory.unlink()
+                    archived.rename(directory)
+                self.assertTrue(self.inspect()["all_prerequisite_paths_present"])
+
     def test_executable_and_private_folders_require_expected_modes(self):
         self.populate()
         pc = self.upstream / "platform/pc" / BUILD / "vandalhearts_pc"
