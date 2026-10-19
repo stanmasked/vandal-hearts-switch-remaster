@@ -749,15 +749,15 @@ VhAudoutQueueExportResult vh_switch_game_audio_probe_export(
 int vh_switch_game_audio_presubmit_dump(FILE *stream) {
 #if VH_MAP02_AUDIO_PRESUBMIT_WITNESS
     if(!stream || thread_started || presubmit_witness.pending) return -1;
-    if(fputs("index,frames,fnv1a64,crc32,attempts,successful_returns\\n",
+    if(fputs("index,frames,fnv1a64,crc32,attempts,successful_returns\n",
              stream)<0) return -1;
     for(unsigned i=0;i<presubmit_witness.count;i++) {
         const VhAudoutPresubmitPage *p=&presubmit_witness.page[i];
-        if(fprintf(stream,"%u,%u,%016llx,%08x,%u,%u\\n",
+        if(fprintf(stream,"%u,%u,%016llx,%08x,%u,%u\n",
             i,p->frames,(unsigned long long)p->fnv1a64,p->crc32,
             p->attempts,p->successful_returns)<0) return -1;
     }
-    if(fprintf(stream,"mismatches,%u\\n",
+    if(fprintf(stream,"mismatches,%u\n",
                presubmit_witness.mismatches)<0) return -1;
     return (int)presubmit_witness.count;
 #else
