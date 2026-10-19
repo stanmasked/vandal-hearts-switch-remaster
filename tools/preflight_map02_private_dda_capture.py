@@ -64,6 +64,29 @@ def _executable_fingerprint(path):
         raise ValueError("cannot securely read the local executable") from exc
 
 
+
+def _require_outside_git_checkout(path):
+    """Refuse native GPU/VRAM output anywhere inside a Git worktree.
+
+    Check the literal absolute path AND its resolved destination because
+    linked worktrees can use a .git FILE rather than a directory. This is
+    an accidental-publication guard, not a full filesystem sandbox.
+    """
+    for candidate in (Path(path).absolute(), Path(path).resolve(strict=True)):
+        for parent in (candidate, *candidate.parents):
+            if parent.name == ".git":
+                raise ValueError("native capture directory is in a Git worktree")
+            try:
+                os.lstat(parent / ".git")
+            except FileNotFoundError:
+                continue
+            except OSError as exc:
+                raise ValueError(
+                    "native capture Git boundary cannot be verified"
+                ) from exc
+            raise ValueError("native capture directory is in a Git worktree")
+
+
 def preflight(environ, *, executable=None):
     """Require synchronized native capture selectors and fresh private output."""
     if not hasattr(os, "getuid"):
@@ -84,6 +107,11 @@ def preflight(environ, *, executable=None):
         raise ValueError("native capture directory is unavailable") from exc
     if root != second_resolved:
         raise ValueError("GPU and DDA output directories must match")
+    # The older single-session native capture has the same private-data
+    # publication hazard as the newer two-live-run capture. Reject both
+    # ordinary and linked Git worktrees before any GPU file is written.
+    _require_outside_git_checkout(first)
+    _require_outside_git_checkout(second)
     if not root.is_dir():
         raise ValueError("native capture path is not a directory")
     mode = root.stat()
