@@ -1,0 +1,50 @@
+name: Stage351 real guest exit-tail reason unit source verification
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage351-exit-tail-reason.yml'
+      - 'source/vh_audio_exit_tail_reason_stage351.h'
+      - 'tests/test_vh_audio_exit_tail_reason_stage351.c'
+      - 'tools/audit_nexium_guest_tail_reason_stage351.py'
+      - 'tests/test_audit_nexium_guest_tail_reason_stage351.py'
+      - 'source/vh_switch_game_audio.c'
+      - 'source/main.c'
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: GCC/Clang and UBSan software-only exit-tail cause tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stage351 native and strict synthetic source controls
+        env:
+          UBSAN_OPTIONS: halt_on_error=1
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          for cc in gcc clang; do
+            for sanitizer in none undefined; do
+              if [ "$sanitizer" = none ]; then
+                "$cc" -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+                  tests/test_vh_audio_exit_tail_reason_stage351.c \
+                  -o "build/stage351-$cc-native"
+                "build/stage351-$cc-native"
+              else
+                "$cc" -std=c11 -Wall -Wextra -Werror -O1 -g \
+                  -fsanitize=undefined -fno-omit-frame-pointer -Isource \
+                  tests/test_vh_audio_exit_tail_reason_stage351.c \
+                  -o "build/stage351-$cc-ubsan"
+                "build/stage351-$cc-ubsan"
+              fi
+            done
+          done
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_nexium_guest_tail_reason_stage351.py' -v
+          python3 -m py_compile tools/audit_nexium_guest_tail_reason_stage351.py
+          echo "Stage351 tests are synthetic. Original NeXium source must be observed in an independent NRO runtime workflow." >> "$GITHUB_STEP_SUMMARY"
