@@ -58,6 +58,9 @@ def patch_memory(source:str):
 
 def read_provenance_oracle():
     s=protected_vblank_oracle()
+    s=once(s,"if(vh173_mips_vblank_quiet_smoke) {",
+           "if(vh174_mips_vblank_read_quiet_smoke) {",
+           "v174 must use its own CLI option, never v173 fallthrough")
     arm="unsigned int entry_count=vh78_vblank_observed_count;"
     s=once(s,arm,
         "if(vh174_arm_wait_read(phase)!=0){\n"
