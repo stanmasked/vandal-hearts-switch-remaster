@@ -1,4 +1,4 @@
 # Research-only paired synthetic 44.1-kHz SPU replay inside the libnx guest.
 # Included after Makefile.map02-audio and Makefile.map02-guest-trace.
 override CFLAGS += -DVH_MAP02_AUDIO_SYNC_TAIL_WITNESS=1
-MAP02_AUDIO_SOURCES += $(SOURCES)/vh_guest_sync_studio_c.c
+MAP02_AUDIO_SOURCES += $(SOURCES)/vh_guest_sync_studio_c.c $(SOURCES)/vh_guest_native_48k.c
