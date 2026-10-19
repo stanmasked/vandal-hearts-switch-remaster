@@ -534,6 +534,41 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"wrong file size"):
             verify_capture(self.root,target_frame=12)
 
+    def test_second_capture_window_loadimage_uses_local_upload_step(self):
+        # A real two-window recorder uses global event indices 64/65,
+        # but the second journal restarts at local steps 0/1. It must
+        # name both snapshots and the AFTER upload using the local index.
+        self.events = [
+            self.make(0, "before", "load", "", rect=[0,0,1,1]),
+            self.make(1, "after", "load", "gpu-0001-upload.bin",
+                      rect=[0,0,1,1]),
+        ]
+        self.save()
+        corrected = bytearray(self.pre)
+        corrected[:2] = b"\\x1f\\x00"
+        (self.root/"gpu-0001-vram.bin").write_bytes(corrected)
+        (self.root/"gpu-0001-upload.bin").write_bytes(b"\\x1f\\x00")
+        window = self.root/"window-001"
+        window.mkdir(mode=0o700)
+        for name in ("gpu-0000-vram.bin", "gpu-0001-vram.bin",
+                     "gpu-0001-upload.bin", "gpu-native-events.jsonl"):
+            (window/name).write_bytes((self.root/name).read_bytes())
+        result = verify_capture(window, target_frame=12)
+        self.assertEqual(result["native_gpu_pairs_verified"], 1)
+        self.assertEqual(result["load_pairs_with_verified_payload"], 1)
+        self.assertEqual(result["load_pairs_with_verified_vram_effect"], 1)
+        self.assertFalse(result["real_gameplay_authenticated"])
+
+        # Old buggy recorder named the upload by global step 65,
+        # but falsely declared an otherwise valid local step 1.
+        self.events[1]["upload"] = "gpu-0065-upload.bin"
+        (window/"gpu-0065-upload.bin").write_bytes(b"\\x1f\\x00")
+        (window/"gpu-native-events.jsonl").write_text(
+            "".join(json.dumps(e,sort_keys=True)+"\\n"
+                    for e in self.events), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "unexpected upload filename"):
+            verify_capture(window, target_frame=12)
+
     def test_same_length_upload_mutation_changes_payload_fingerprint(self):
         self.events=self.events[:2]
         self.events[0]=self.make(0,"before","load","",rect=[0,0,1,1])
