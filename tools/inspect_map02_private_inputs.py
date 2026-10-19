@@ -27,6 +27,11 @@ def _regular(path, *, owner_only=False, executable=False):
             or info.st_nlink != 1 or info.st_size == 0):
         return False
     permissions = stat.S_IMODE(info.st_mode)
+    # A metadata-only inventory must not count unreadable originals as
+    # usable. Owner ownership alone is insufficient for the deep byte
+    # verifier that follows this presence check.
+    if not permissions & stat.S_IRUSR:
+        return False
     if owner_only and permissions != 0o600:
         return False
     if executable and not permissions & stat.S_IXUSR:
@@ -39,8 +44,11 @@ def _folder(path, *, private=False):
         info = Path(path).lstat()
     except OSError:
         return False
+    permissions = stat.S_IMODE(info.st_mode)
     return (stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid()
-            and (not private or stat.S_IMODE(info.st_mode) == 0o700))
+            and permissions & (stat.S_IRUSR | stat.S_IXUSR) ==
+                (stat.S_IRUSR | stat.S_IXUSR)
+            and (not private or permissions == 0o700))
 
 
 def _source_tree_file(root, relative, *, executable=False):
