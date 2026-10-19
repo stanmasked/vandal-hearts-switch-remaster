@@ -11,7 +11,9 @@ import json
 from pathlib import Path
 import subprocess
 
-from tools.check_map02_private_launch_layout import _directory_identity
+from tools.check_map02_private_launch_layout import (
+    _directory_identity, inspect_private_launch_layout,
+)
 from tools.check_map02_private_cycle_readiness import verify_private_cycle_readiness
 from tools.finalize_map02_private_capture import finalize_private_capture
 from tools.map02_local_capture_handoff import PLAN, _validate_plan
@@ -140,6 +142,18 @@ def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
     if private_file(Path(handoff).absolute(), PLAN, max_bytes=4096,
                     _with_identity=True) != (plan_raw, plan_identity):
         raise ValueError("MAP02 private launch plan changed before execution")
+    require_original_capture_directories()
+    require_original_seal_directory(must_be_empty=True)
+    # A second independent structural scan closes the gap after the
+    # readiness verifier returns: metadata equality alone must not let an
+    # unexpected capture file or changed handoff inventory pass.
+    final_layout = inspect_private_launch_layout(*captures)
+    if (type(final_layout) is not dict or
+            final_layout.get("prelaunch_layout_ready") is not True or
+            final_layout.get("private_directory_roles_checked") != 7 or
+            final_layout.get("capture_output_directories_empty") != 5 or
+            final_layout.get("single_private_handoff_plan_present") is not True):
+        raise ValueError("private MAP02 one-shot layout recheck was not confirmed")
     require_original_capture_directories()
     require_original_seal_directory(must_be_empty=True)
     if dry_run:
