@@ -33,6 +33,11 @@ int vh_audio_scene_optical_encode(const VhAudioSceneTrace *trace,
 /* Draw over the framebuffer after joining the audio worker. Caller
  * supplies native pixel packing (RGBA8_MAXALPHA in libnx), avoiding
  * any portable-host dependence on Switch pixel channel order. */
+/* Draw caller-owned CRC32 optical packet with the same calibrated border.
+ * May only be invoked after the audout owner is joined. */
+int vh_audio_scene_optical_draw_packet(VhCanvas *canvas,
+    const uint8_t packet[VH_SCENE_OPTICAL_PACKET_BYTES],
+    uint32_t black,uint32_t white,uint32_t marker);
 int vh_audio_scene_optical_draw(VhCanvas *canvas,
                                 const VhAudioSceneTrace *trace,
                                 uint32_t black,uint32_t white,uint32_t marker);
