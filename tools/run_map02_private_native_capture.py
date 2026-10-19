@@ -330,6 +330,11 @@ def capture(executable, preflight_report, summary_report, *,
     if (receipt["process_started"] and receipt["process_exit_code"] == 0
             and receipt["failure_category"] is None):
         try:
+            # A Git worktree may be initialized while the child is running.
+            # Reject such captures before independently consuming journals,
+            # then check again after replay before any positive receipt.
+            for key in DIR_KEYS:
+                _require_outside_git_checkout(env[key])
             receipt["verification"] = verify_session(
                 env[DIR_KEYS[0]], native_frame=config["capture_frame"],
                 preflight_report=preflight_report, executable=executable,
