@@ -20,6 +20,7 @@ from tools.verify_map02_source_native_ft4_join import (
 )
 from tools.verify_map02_native_overdraw import verify_native_overdraw
 from tools.map02_pc_writepixel_reference import expected_write_pixel
+from tools.map02_observed_blends import summarize_observed_blends
 
 SCHEMA = "vh.map02.native-putpixel-ot.v1"
 PIXEL_LOG = "putpixel-native-events.jsonl"
@@ -246,6 +247,17 @@ def verify_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
                 else:
                     sampled_bit15_only += 1
 
+    # Keep the independent main-branch *observed* STP/ABR bins beside the
+    # PR's stricter source-pinned PC WritePixel formula/VRAM replay checks.
+    # Neither binning nor formula checking authenticates physical PS1 pixels.
+    blend_report = summarize_observed_blends(rows)
+    all_bins = blend_report["observed_semi_putpixel_by_accuracy_and_abr"]
+    observed_semi_calls = sum(b["calls"] for mode in all_bins for b in mode)
+    if (observed_semi_calls != requests or
+            sum(blend_report["observed_opaque_putpixel_by_accuracy"]) != opaque or
+            sum(b["calls"] for b in all_bins[1]) != accurate_blend_checked or
+            sum(b["calls"] for b in all_bins[0]) != legacy_blend_checked):
+        raise ValueError("independent observed STP/ABR accounting mismatch")
     if accurate_blend_checked + legacy_blend_checked != requests:
         raise ValueError("source-pinned PC blend mode accounting mismatch")
     if (sum(source_blend_abr_calls) !=
@@ -262,6 +274,7 @@ def verify_pixel_ot(source_dir, native_dir, *, compiler="gcc"):
         raise ValueError("scoped source FT4 PutPixel call accounting mismatch")
 
     return {
+        **blend_report,
         "pixel_ot_manifest_sha256": digest(meta_raw),
         "native_gpu_event_log_sha256": digest(native_raw),
         "scoped_putpixel_log_sha256": digest(pixel_raw),
