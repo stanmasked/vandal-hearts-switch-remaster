@@ -291,9 +291,15 @@ def verify_capture(directory: Path, *, target_frame: int):
         validate_meta(before,i,target_frame)
         validate_meta(after,i+1,target_frame)
         for key in ("frame","operation","rect","dest","rgb","primitive_type",
-                    "semi","ft4","draw_env"):
+                    "semi","ft4"):
             if before[key]!=after[key]:
                 raise ValueError(f"GPU event {i}: before/after metadata diverges ({key})")
+        # DRAWENV is optional in old original-PC native journals. Its
+        # presence and six-number bounds were checked by validate_meta;
+        # a one-sided capture must still fail, but absent on both sides
+        # must not trigger KeyError or falsely assert clip provenance.
+        if before.get("draw_env") != after.get("draw_env"):
+            raise ValueError(f"GPU event {i}: before/after metadata diverges (draw_env)")
         a=private_file(directory,before["snapshot"],expected=VRAM_BYTES)
         b=private_file(directory,after["snapshot"],expected=VRAM_BYTES)
         snapshot_hashes.extend((sha(a),sha(b)))
