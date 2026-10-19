@@ -327,6 +327,7 @@ static void draw_frame(u32 *pixels, u32 stride, int cursor_x, int cursor_y,
               audio_state == 1 ? "AUDIO ACTIVE" :
               audio_state == 2 ? "AUDIO PAUSED" :
               audio_state < 0 ? "AUDIO ERROR" : "AUDIO STARTING",
+              audio_state == 1 ? COLOR_HERO :
               audio_state < 0 ? COLOR_ENEMY : COLOR_MUTED, 1);
 #endif
     /* Small status indicator changes color while the unit is selected. */
