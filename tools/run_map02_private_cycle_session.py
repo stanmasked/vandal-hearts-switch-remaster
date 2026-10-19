@@ -154,6 +154,13 @@ def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
             final_layout.get("capture_output_directories_empty") != 5 or
             final_layout.get("single_private_handoff_plan_present") is not True):
         raise ValueError("private MAP02 one-shot layout recheck was not confirmed")
+    # The final structural scan checks the plan's existence, ownership and
+    # mode, but not its bytes. Re-bind both contents and inode AFTER the
+    # scan, including same-size in-place edits that leave directory metadata
+    # unchanged. The native launcher will independently verify it again.
+    if private_file(Path(handoff).absolute(), PLAN, max_bytes=4096,
+                    _with_identity=True) != (plan_raw, plan_identity):
+        raise ValueError("MAP02 private launch plan changed after final layout scan")
     require_original_capture_directories()
     require_original_seal_directory(must_be_empty=True)
     if dry_run:
