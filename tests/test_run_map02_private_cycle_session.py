@@ -173,6 +173,53 @@ class PrivateOneShotCycleTests(unittest.TestCase):
         self.mocks["launch_observed_pc"].assert_not_called()
         self.mocks["seal_final_capture"].assert_not_called()
 
+    def test_dry_run_rejects_byte_identical_capture_folder_replacement(self):
+        # A new, empty 0700 folder is not the same private session root.
+        source = self.folders[0]
+        archived = self.root / "old-source-capture"
+
+        def replace_folder(*args, **kwargs):
+            source.rename(archived)
+            source.mkdir(mode=0o700)
+            return {"ready_for_controlled_local_launch": True}
+
+        self.mocks["verify_private_cycle_readiness"].side_effect = replace_folder
+        with self.assertRaisesRegex(ValueError, "capture folders changed"):
+            self.execute(dry_run=True, allow_local_completion=False)
+        self.assertTrue(archived.is_dir())
+        for name in ("launch_observed_pc", "finalize_private_capture",
+                     "seal_final_capture", "verify_final_seal"):
+            self.mocks[name].assert_not_called()
+        self.assertFalse(list(self.folders[-1].iterdir()))
+
+    def test_dry_run_rejects_new_capture_output_during_preflight(self):
+        native = self.folders[1]
+
+        def inject_output(*args, **kwargs):
+            (native / "unexpected-synthetic-output").write_bytes(b"synthetic")
+            return {"ready_for_controlled_local_launch": True}
+
+        self.mocks["verify_private_cycle_readiness"].side_effect = inject_output
+        with self.assertRaisesRegex(ValueError, "capture folders changed"):
+            self.execute(dry_run=True, allow_local_completion=False)
+        self.mocks["launch_observed_pc"].assert_not_called()
+        self.mocks["seal_final_capture"].assert_not_called()
+
+    def test_real_one_shot_rejects_folder_swap_before_child_process(self):
+        handoff = self.folders[3]
+        archived = self.root / "old-handoff"
+
+        def replace_handoff(*args, **kwargs):
+            handoff.rename(archived)
+            handoff.mkdir(mode=0o700)
+            return {"ready_for_controlled_local_launch": True}
+
+        self.mocks["verify_private_cycle_readiness"].side_effect = replace_handoff
+        with self.assertRaisesRegex(ValueError, "capture folders changed"):
+            self.execute()
+        self.mocks["launch_observed_pc"].assert_not_called()
+        self.mocks["finalize_private_capture"].assert_not_called()
+
     def test_dry_run_and_publish_permission_mutually_exclusive(self):
         with self.assertRaisesRegex(ValueError, "forbids local completion"):
             self.execute(dry_run=True)
