@@ -13,7 +13,7 @@ from tools.apply_map02_v187_native_ram_snapshots import (
 from tools.apply_map02_v186_late_vblank_ram_corruption import (
     patch_frontend as v186_patch, expected_failure,
 )
-from tools.apply_map02_v185_ram_vblank_persistence import persistence_oracle
+from tools.apply_map02_v185_ram_vblank_persistence import patch_frontend as v185_patch
 from tools.apply_map02_v183_native_ram_values import VALUE, TRANSFORMED
 from tools.apply_map02_v185_ram_vblank_persistence import GUARD_VALUE
 
@@ -58,9 +58,12 @@ class V187NativeSnapshots(unittest.TestCase):
                                  f"{SNAPSHOT_MARKER} phase={boundary} vblanks={boundary} ")
 
     def test_native_insertion_precedes_guest_reexecution_and_ram_comparison(self):
-        stub = ('\t\telse if (!strcmp(argv[i], "--vh183-guest-ram-values"))\n'
-                '\t\t\tvh183_guest_ram_values=1;\n' + persistence_oracle())
-        native = patch_frontend(v186_patch(stub))
+        # Generate all v185 CLI flags first; the previous partial stub only
+        # carried the v183 flag while incorrectly expecting v185 flags.
+        stub = ('\tint vh183_guest_ram_values=0;\n'
+                '\t\telse if (!strcmp(argv[i], "--vh183-guest-ram-values"))\n'
+                '\tif (loadst_f) {\n')
+        native = patch_frontend(v186_patch(v185_patch(stub)))
         self.assertIn(SNAPSHOT_SUCCESS, native)
         self.assertIn("vh78_vblank_observed_count!=phase", native)
         self.assertIn("VH187_NATIVE_VBLANK_SEQUENCE_REFUSED", native)
