@@ -38,6 +38,38 @@ class Stage362Tests(unittest.TestCase):
         doc=audit(old,make_pair(wall_second=1792449462203))
         self.assertTrue(doc["strict_stage303_chronology_compatible"])
         self.assertFalse(doc["real_DAC_or_speaker_audio_verified"])
+    def test_pcm_size_regression_remains_strict_failure(self):
+        old=ORIGINAL.replace(b"after_wait,8732688",b"after_wait,8732600")
+        doc=audit(old,make_pair(bytes_second=8732600))
+        self.assertEqual(doc["pcm_file_size_delta_bytes"],-88)
+        self.assertFalse(doc["strict_stage303_chronology_compatible"])
+    def test_failed_signal_preserves_strict_failure(self):
+        old=ORIGINAL.replace(b"after_wait,8732688,1792449461203,1",
+                             b"after_wait,8732688,1792449461203,0")
+        doc=audit(old,make_pair(signal_second=0))
+        self.assertFalse(doc["strict_stage303_chronology_compatible"])
+    def test_capture_script_preserves_old_csv_and_produces_companion(self):
+        script=(Path(__file__).resolve().parents[1]/
+                "tools/capture_nexium_scene_audio.sh").read_text()
+        self.assertIn("SCENE_RECORDER_STOP_DUAL=",script)
+        self.assertIn("scene-recorder-stop-monotonic.csv",script)
+        self.assertIn("printf 'event,pcm_bytes,host_epoch_ms,signal_success",script)
+        self.assertIn(
+            "printf 'event,pcm_bytes,host_epoch_ms,host_monotonic_ns,signal_success",
+            script)
+        self.assertEqual(script.count("time.monotonic_ns()"),2)
+        self.assertEqual(script.count('> "$SCENE_RECORDER_STOP"'),1)
+        self.assertEqual(script.count('> "$SCENE_RECORDER_STOP_DUAL"'),1)
+    def test_strict_stage303_precedes_diagnostic_stage362(self):
+        workflow=(Path(__file__).resolve().parents[1]/
+                  ".github/workflows/emulator-smoke.yml").read_text()
+        old="name: Stage303 original host recorder SIGINT snapshots versus exact terminal PCM"
+        new="name: Stage362 independent recorder stop wall/monotonic companion audit"
+        self.assertIn(old,workflow)
+        self.assertIn(new,workflow)
+        self.assertLess(workflow.index(old),workflow.index(new))
+        self.assertIn("python3 tools/audit_nexium_pcm_recorder_stop.py",workflow)
+        self.assertIn("always() && steps.scene_capture.outcome == 'success'",workflow)
     def test_reject_mismatched_legacy_wall_time(self):
         with self.assertRaises(RecorderClocksError):
             audit(ORIGINAL,make_pair(wall_second=1792449461204))
