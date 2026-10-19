@@ -213,6 +213,51 @@ def _require_private_capture_destination(path, fd):
                     "MAP02 private capture directory is in a Git worktree")
 
 
+PREFLIGHT_SCHEMA = "vh.map02.private-two-live-elf-preflight.v1"
+_PREFLIGHT_TRUE_FIELDS = frozenset((
+    "four_owner_private_empty_directory_roles_verified",
+    "same_executable_inode_and_sha_checked_at_preflight",
+    "same_elf_arguments_validated",
+))
+_PREFLIGHT_FALSE_FIELDS = frozenset((
+    "native_elf_launched",
+    "two_native_elf_captures_and_complete_replays_verified",
+    "strict_gpu_timeline_match_verified",
+    "actual_gameplay_rendering_authenticated",
+    "ps1_hardware_pixel_equivalence_verified",
+    "hd_replacement_authorized",
+    "private_pixel_bytes_or_paths_emitted",
+))
+_PREFLIGHT_SAFE_KEYS = (
+    {"schema", "frame", "width", "height", "executable_sha256",
+     "strict_gpu_timeline_match_requested"} |
+    _PREFLIGHT_TRUE_FIELDS | _PREFLIGHT_FALSE_FIELDS
+)
+
+
+def _require_safe_public_preflight(receipt):
+    """Keep dry-run JSON a strictly bounded, non-attesting public envelope."""
+    if (type(receipt) is not dict
+            or receipt.keys() != _PREFLIGHT_SAFE_KEYS
+            or receipt.get("schema") != PREFLIGHT_SCHEMA
+            or type(receipt.get("frame")) is not int
+            or receipt["frame"] < 0
+            or (type(receipt.get("width")), type(receipt.get("height"))) !=
+               (int, int)
+            or (receipt["width"], receipt["height"]) != (WIDTH, HEIGHT)
+            or type(receipt.get("executable_sha256")) is not str
+            or len(receipt["executable_sha256"]) != 64
+            or any(c not in "0123456789abcdef"
+                   for c in receipt["executable_sha256"])
+            or type(receipt.get("strict_gpu_timeline_match_requested"))
+               is not bool
+            or any(receipt[key] is not True
+                   for key in _PREFLIGHT_TRUE_FIELDS)
+            or any(receipt[key] is not False
+                   for key in _PREFLIGHT_FALSE_FIELDS)):
+        raise ValueError("MAP02 public preflight fields unsafe")
+
+
 def preflight(executable, first_frame, first_journal, second_frame,
               second_journal, *, frame, executable_sha256, args=(),
               timeout=10, require_identical_gpu_timeline=False):
@@ -247,8 +292,8 @@ def preflight(executable, first_frame, first_journal, second_frame,
             if os.listdir(fd):
                 raise ValueError("MAP02 two-run private directory not empty")
         _require_held_elf_image(exe_fd, executable, executable_sha256)
-        return {
-            "schema": "vh.map02.private-two-live-elf-preflight.v1",
+        public_receipt = {
+            "schema": PREFLIGHT_SCHEMA,
             "frame": frame,
             "width": WIDTH,
             "height": HEIGHT,
@@ -265,6 +310,8 @@ def preflight(executable, first_frame, first_journal, second_frame,
             "hd_replacement_authorized": False,
             "private_pixel_bytes_or_paths_emitted": False,
         }
+        _require_safe_public_preflight(public_receipt)
+        return public_receipt
     finally:
         if exe_fd is not None:
             os.close(exe_fd)
