@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - 'work/map02-dda-coverage-independent-audit'
+      - 'work/map02-pr55-receipt-compatibility'
   pull_request:
     paths:
       - 'tools/make_map02_trace_patch.py'
@@ -162,6 +163,8 @@ on:
       - 'tests/test_verify_map02_vertical_dda.py'
       - 'tests/test_verify_map02_raster_skips.py'
       - 'tests/test_verify_map02_putpixel_scope.py'
+      - 'tools/map02_observed_blends.py'
+      - 'tests/test_map02_observed_blends.py'
       - 'tests/test_verify_map02_putpixel_multi_scope.py'
       - 'tests/test_publish_map02_multi_capture_manifest.py'
       - 'tests/test_instrument_map02_multi_putpixel_scope.py'
@@ -740,6 +743,7 @@ jobs:
             cd remaster
             python3 -m unittest discover -s tests -p 'test_instrument_map02_putpixel_scope.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_putpixel_scope.py' -v
+            python3 -m unittest discover -s tests -p 'test_map02_observed_blends.py' -v
             python3 -m unittest discover -s tests -p 'test_audit_map02_putpixel_samples.py' -v
             python3 -m unittest discover -s tests -p 'test_verify_map02_putpixel_multi_scope.py' -v
             python3 -m unittest discover -s tests -p 'test_publish_map02_multi_capture_manifest.py' -v
