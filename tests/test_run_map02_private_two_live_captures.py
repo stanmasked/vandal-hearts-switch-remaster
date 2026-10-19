@@ -853,6 +853,43 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "summary fields unsafe"):
                     two_live._require_safe_public_audit_summary(altered)
 
+    def test_outer_public_two_run_receipt_exact_schema(self):
+        # The internal 59-field auditor is already checked. Independently
+        # lock down the final two-run JSON envelope after the runner adds
+        # seven success claims, before the public CLI can print it.
+        valid = self.run_two(require_identical_gpu_timeline=True)
+        two_live._require_safe_public_two_run_receipt(valid)
+        self.assertEqual(set(valid), two_live._TWO_RUN_SAFE_KEYS)
+        self.assertEqual(len(valid), len(two_live._AUDIT_SAFE_KEYS) + 7)
+        diagnostic = dict(valid)
+        diagnostic["strict_gpu_timeline_match_required"] = False
+        diagnostic["strict_gpu_timeline_match_verified"] = False
+        two_live._require_safe_public_two_run_receipt(diagnostic)
+        cases = (
+            ("extra-private-path", {"private_gpu_events_path":
+                                     str(self.dirs[1] / "gpu-native-events.jsonl")}),
+            ("extra-raw-bytes", {"raw_native_frame": b"\\x01\\x02"}),
+            ("missing-outer-field", None),
+            ("int-for-bool", {"same_elf_arguments_used_for_both_launches": 1}),
+            ("nested-flag", {"strict_gpu_timeline_match_verified": [True]}),
+            ("false-retail-auth", {"retail_gameplay_authenticated": True}),
+            ("false-source-auth", {"original_ps1_reference_authenticated": True}),
+            ("disagreeing-strict-flags",
+             {"strict_gpu_timeline_match_verified": False}),
+            ("wrong-outer-schema", {"schema": two_live.AUDIT_SCHEMA}),
+            ("corrupt-inner-counter", {"gpu_event_records_compared": True}),
+        )
+        for title, mutation in cases:
+            with self.subTest(title=title):
+                altered = dict(valid)
+                if mutation is None:
+                    del altered["same_executable_inode_and_sha_pinned_through_both_launches"]
+                else:
+                    altered.update(mutation)
+                with self.assertRaises(ValueError) as caught:
+                    two_live._require_safe_public_two_run_receipt(altered)
+                self.assertNotIn(str(self.dirs[1]), str(caught.exception))
+
     def test_full_two_run_never_emits_unapproved_audit_fields(self):
         # Repeat two real ELF captures and independent GPU replays.
         # Falsify only the *returned* post-audit summary to simulate a
