@@ -199,8 +199,10 @@ def main():
             a.private_build_receipt_directory, a.original_pc_executable,
             a.pinned_original_checkout, a.prepared_private_bundle,
             krom_source=a.krom_source)
-    except ValueError as exc:
-        p.error(str(exc))
+    except ValueError:
+        # A receipt/provenance mismatch can carry sensitive original file
+        # paths. The Python verifier still raises normally to local callers.
+        p.error("private PC build receipt or provenance verification failed")
     except (OSError, subprocess.TimeoutExpired):
         # OSError and TimeoutExpired can render user-owned argv/paths.
         p.error("private PC build receipt filesystem or command verification failed")
