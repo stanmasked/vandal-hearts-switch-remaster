@@ -1,0 +1,33 @@
+name: MAP02 v180 prove actual non-GPU guest MIPS opcode execution
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v180-nongpu-opcode-provenance.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v180_nongpu_opcode_provenance.py'
+      - 'tests/test_map02_v180_nongpu_opcode_provenance.py'
+      - 'tools/make_map02_v179_nongpu_mips_exes.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  guest-opcode:
+    name: compiled guest opcode plus real memory PC witness (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check eight real opcode-PC-memory proofs with GCC/Clang
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v180_nongpu_opcode_provenance.py tests/test_map02_v180_nongpu_opcode_provenance.py
+          python3 -m unittest discover -s tests -p 'test_map02_v180_nongpu_opcode_provenance.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v179_nongpu_memory_exclusion.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v178_unaligned_gpu_mips.py' -v
+          echo 'VH180_INDEPENDENT_OPCODE_PROVENANCE_FIXTURE_PASS eight_signed_cases=1 original_retail_executed=0'
