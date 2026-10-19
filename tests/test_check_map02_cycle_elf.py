@@ -58,6 +58,43 @@ class OriginalCycleElfAuditTests(unittest.TestCase):
         self.assertFalse(result["original_map02_rendering_proven"])
         self.assertFalse(result["physical_ps1_equivalence_proven"])
 
+    def test_entry_must_be_mapped_by_executable_file_backed_segment(self):
+        # Use the compiled host ELF rather than invented symbol-table text.
+        # Redirect only the ELF entry point to an unmapped virtual address.
+        source = self.executable.read_bytes()
+        wrong = self.root / "entry-unmapped"
+        modified = bytearray(source)
+        if modified[4] == 2:  # ELFCLASS64
+            modified[24:32] = (0xfffffffffffff000).to_bytes(8, "little")
+        elif modified[4] == 1:  # ELFCLASS32
+            modified[24:28] = (0xfffff000).to_bytes(4, "little")
+        else:
+            self.fail("synthetic compiler generated an unrecognized ELF class")
+        wrong.write_bytes(modified)
+        wrong.chmod(0o700)
+        with self.assertRaisesRegex(ValueError, "entry is not in executable"):
+            audit_cycle_elf(wrong)
+
+    def test_elf_load_map_checks_file_bounds_and_executable_flags(self):
+        load = elf._require_entry_in_executable_load
+        valid = "  LOAD 0x001000 0x00004000 0x00004000 0x000030 0x000040 R E 0x1000"
+        load(valid, 0x4010, 0x5000)
+        cases = (
+            (valid, 0x4030, 0x5000, "entry is not in executable"),
+            (valid.replace("R E", "RW"), 0x4010, 0x5000,
+             "entry is not in executable"),
+            (valid.replace("0x000030 0x000040", "0x000050 0x000040"),
+             0x4010, 0x5000, "invalid executable load extent"),
+            (valid, 0x4010, 0x1010, "invalid executable load extent"),
+            ("  LOAD incomplete", 0x4010, 0x5000,
+             "malformed load program headers"),
+            ("", 0x4010, 0x5000, "entry is not in executable"),
+        )
+        for raw, entry, size, error in cases:
+            with self.subTest(case=error, entry=entry, file_size=size):
+                with self.assertRaisesRegex(ValueError, error):
+                    load(raw, entry, size)
+
     def test_native_introspection_timeout_redacts_private_elf_path(self):
         private = str(self.executable)
         timeout = subprocess.TimeoutExpired(
