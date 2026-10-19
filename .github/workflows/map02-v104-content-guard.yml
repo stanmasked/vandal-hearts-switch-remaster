@@ -242,6 +242,9 @@ on:
       - 'tools/apply_map02_v183_native_ram_values.py'
       - 'tests/test_map02_v183_native_ram_values.py'
       - '.github/workflows/map02-v183-native-ram-values.yml'
+      - 'tools/make_map02_v184_ram_chain_negatives.py'
+      - 'tests/test_map02_v184_ram_data_chain_refusals.py'
+      - '.github/workflows/map02-v184-ram-data-chain-refusals.yml'
       - 'tests/test_map02_v172_mips_real_vblank_vram.py'
       - '.github/workflows/map02-v172-mips-real-vblank-vram.yml'
       - 'tests/test_map02_v171_mips_multiphase_vram.py'
@@ -448,6 +451,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v181_word_ram_opcodes.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v182_lw_sw_identity_mismatch.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v183_native_ram_values.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v184_ram_data_chain_refusals.py' -v
           python3 -m remaster.tools.check_map02_v147_native_bounded_c --cc "${{ matrix.cc }}" \
             | grep -Fx 'VH147_COMPILED_BOUNDED_NATIVE_PASS capacity=1024 generic=1 repeated_pc=1 overflow_refused=1 atomic_mode0600=1 no_overwrite=1 original_retail=0'
           python3 -m remaster.tools.check_map02_v144_native_challenge_c --cc "${{ matrix.cc }}" \
@@ -2367,6 +2371,36 @@ jobs:
             fi
           done
           echo 'VH183_NATIVE_GUEST_RAM_DATA_PASS genuine_sw_lw=1 value_dependency=1 four_vblanks=1 negatives=2 samples=2380 original_retail=0'
+          # v184: real pinned interpreter must reject THREE distinct late
+          # modifications of the fully validated SW/LW/XORI/SW dependency.
+          # Each variant changes exactly one signed guest instruction;
+          # first RAM word remains right but the computed final one is bad.
+          python3 -m remaster.tools.make_map02_v184_ram_chain_negatives \
+            --generate-private proof/private \
+            | grep -Fx 'VH184_SIGNED_RAM_CHAIN_NEGATIVES_PASS variants=3 single_mips_word_each=1 original_retail=0'
+          for kind in MISSING_XORI MISSING_FINAL_SW WRONG_LW_ADDRESS; do
+            mkdir -m 700 "proof/v184-$kind-home"
+            rc=0
+            timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+              SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+              HOME="$PWD/proof/v184-$kind-home" \
+              ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+              --vh183-guest-ram-values "proof/private/V184_RAM_$kind.EXE" \
+              > "proof/private/v184-$kind.log" 2>&1 || rc=$?
+            test "$rc" -eq 85 || {
+              echo "VH184_EXPECTED_RAM_REFUSAL_MISSING kind=$kind rc=$rc"
+              grep -E 'VH183_|VH184_|REFUSED' "proof/private/v184-$kind.log" | tail -n 40 || true
+              exit 1
+            }
+            grep -Fx 'VH183_NATIVE_RAM_VALUE_REFUSED phase=0 first_ok=1 derived_ok=0' \
+              "proof/private/v184-$kind.log"
+            if grep -Eq 'VH183_NATIVE_GUEST_RAM_VALUES_PASS|VH176_GUEST_MIPS_NARROW_GPU_QUIET_PASS' \
+                "proof/private/v184-$kind.log"; then
+              echo "VH184_FALSE_GPU_OR_RAM_SUCCESS kind=$kind"
+              exit 1
+            fi
+          done
+          echo 'VH184_NATIVE_GUEST_RAM_CHAIN_REFUSALS_PASS late_mutations=3 native_exit=85 correct_ram_provenance_inherited=1 original_retail=0'
           # Retain valid signed synthetic EXE / CPU stage markers, but
           # mutate one actual interpreted ORI instruction so the first
           # GP0(60) red command carries a wrong color. The native GPU
