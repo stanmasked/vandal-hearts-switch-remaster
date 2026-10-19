@@ -182,8 +182,14 @@ def audit_existing_original_sources(
     }
 
 
+def _regular_unlinked(path: Path) -> bool:
+    return (path.is_file() and
+            not any(part.is_symlink() for part in (path, *path.parents)))
+
+
 def audit_guest(root: Path, stage313: dict, stage348: dict) -> tuple[dict,bytes]:
-    if root.is_symlink() or not root.is_dir():
+    if (not root.is_dir() or
+        any(part.is_symlink() for part in (root, *root.parents))):
         raise ExitTimelineError("missing or linked original guest SD root")
     directory = root
     for part in SUBDIR.parts:
@@ -191,7 +197,7 @@ def audit_guest(root: Path, stage313: dict, stage348: dict) -> tuple[dict,bytes]
         if directory.is_symlink() or not directory.is_dir():
             raise ExitTimelineError("linked/missing original guest SD directory")
     target = directory / SOURCE
-    if (target.is_symlink() or not target.is_file()
+    if (not _regular_unlinked(target)
         or len(list(directory.glob("audio-exit-tail-reason-*.csv"))) != 1):
         raise ExitTimelineError("missing/ambiguous original tail reason source")
     raw = target.read_bytes()
@@ -216,7 +222,7 @@ def main(argv=None):
                 raise ExitTimelineError("refuse overwrite Stage351 evidence")
         for path in (a.guest_root_file,a.stage313,a.stage348,
                      a.stage313_original,a.stage348_original):
-            if path.is_symlink() or not path.is_file():
+            if not _regular_unlinked(path):
                 raise ExitTimelineError("Stage351 original source dependency unavailable")
         root = a.guest_root_file.read_text(encoding="utf-8").strip()
         if not root.startswith("/") or "\n" in root or "\x00" in root:
