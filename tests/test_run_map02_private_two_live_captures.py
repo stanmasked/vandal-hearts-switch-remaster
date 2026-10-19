@@ -989,7 +989,14 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
                             operation(
                                 self.executable, *self.dirs, frame=123,
                                 executable_sha256=self.digest)
-                    self.assertEqual(calls, [1])
+                    # The real runner verifies the held ELF once before
+                    # the loop and again when entering its first launch.
+                    # Dry-run verifies it once before checking directories.
+                    # In BOTH cases the newly created .git marker blocks
+                    # capture before a child ELF can execute.
+                    self.assertEqual(
+                        calls, [1] if operation is two_live.preflight
+                        else [1, 1])
                     self.assertTrue(all(
                         not list(p.iterdir()) for p in self.dirs))
                 finally:
