@@ -17,6 +17,13 @@
 #endif
 #include "vh_audio_scene_trace.h"
 #include "vh_audio_scene_optical.h"
+#ifndef VH_MAP02_AUDIO_PCM_METRICS
+#define VH_MAP02_AUDIO_PCM_METRICS 0
+#endif
+#if VH_MAP02_AUDIO_PCM_METRICS
+#include "vh_map02_pcm_metrics.h"
+static VhMap02PcmMetrics first_page_metrics;
+#endif
 
 #include <stdio.h>
 
@@ -466,6 +473,16 @@ static void audio_worker(void *unused) {
             state = -7;
             break;
         }
+#if VH_MAP02_AUDIO_PCM_METRICS
+        if(pending_trace_page) {
+            if(vh_map02_pcm_metrics_capture(&first_page_metrics,
+                  pending_trace_serial,pending_trace_scene,
+                  pcm_48000_page,count)<0) {
+                state=-12;
+                break;
+            }
+        }
+#endif
 #if VH_MAP02_AUDIO_PCM_WITNESS
         /* Optional post-render per-ticket witness: inspect exactly the
          * FIRST 48-kHz stereo page rendered AFTER this scene is accepted,
@@ -575,6 +592,9 @@ int vh_switch_game_audio_start(unsigned initial_scene) {
     if (thread_started || initial_scene > VH_GAME_MUSIC_HERO_SELECTED)
         return -1;
     vh_audio_scene_trace_init(&scene_trace);
+#if VH_MAP02_AUDIO_PCM_METRICS
+    vh_map02_pcm_metrics_init(&first_page_metrics);
+#endif
     vh_audout_queue_reset(&audout_telemetry);
     if(vh_audout_queue_set_probe_phase(&audout_telemetry,
                                       VH_AUDOUT_PROBE_PHASE)) return -1;
@@ -645,6 +665,14 @@ int vh_switch_game_audio_trace_render(VhCanvas *canvas,
     return vh_audio_scene_optical_draw(canvas,&scene_trace,
                                         black,white,marker);
 }
+#if VH_MAP02_AUDIO_PCM_METRICS
+int vh_switch_game_audio_pcm_metrics_render(VhCanvas *canvas,
+    uint32_t black,uint32_t white,uint32_t marker) {
+    if(thread_started) return -1;
+    return vh_map02_pcm_metrics_draw(canvas,&first_page_metrics,
+                                     black,white,marker);
+}
+#endif
 
 VhAudoutQueueExportResult vh_switch_game_audio_queue_export(
     char *committed_path,size_t capacity) {

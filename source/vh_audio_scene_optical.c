@@ -52,17 +52,14 @@ int vh_audio_scene_optical_encode(
              crc32_ieee(packet,VH_SCENE_OPTICAL_CRC_OFFSET),4);
     return (int)rows;
 }
-int vh_audio_scene_optical_draw(VhCanvas *canvas,
-                                const VhAudioSceneTrace *trace,
+int vh_audio_scene_optical_draw_packet(VhCanvas *canvas,
+                                const uint8_t packet[VH_SCENE_OPTICAL_PACKET_BYTES],
                                 uint32_t black,uint32_t white,
                                 uint32_t marker) {
-    if(!canvas || !canvas->pixels ||
+    if(!packet || !canvas || !canvas->pixels ||
        canvas->width < VH_SCENE_OPTICAL_LEFT+(int)VH_SCENE_OPTICAL_WIDTH ||
        canvas->height < VH_SCENE_OPTICAL_TOP+(int)VH_SCENE_OPTICAL_HEIGHT ||
        canvas->stride_pixels<(size_t)canvas->width) return -1;
-    uint8_t packet[VH_SCENE_OPTICAL_PACKET_BYTES];
-    const int rows=vh_audio_scene_optical_encode(trace,packet);
-    if(rows<0) return -1;
     vh_canvas_fill_rect(canvas,0,0,canvas->width,canvas->height,black);
     vh_canvas_fill_rect(canvas,VH_SCENE_OPTICAL_LEFT,VH_SCENE_OPTICAL_TOP,
                         VH_SCENE_OPTICAL_WIDTH,VH_SCENE_OPTICAL_HEIGHT,
@@ -88,5 +85,16 @@ int vh_audio_scene_optical_draw(VhCanvas *canvas,
                 VH_SCENE_OPTICAL_MODULE,VH_SCENE_OPTICAL_MODULE,black);
         }
     }
+    return 0;
+}
+int vh_audio_scene_optical_draw(VhCanvas *canvas,
+                                const VhAudioSceneTrace *trace,
+                                uint32_t black,uint32_t white,
+                                uint32_t marker) {
+    uint8_t packet[VH_SCENE_OPTICAL_PACKET_BYTES];
+    const int rows=vh_audio_scene_optical_encode(trace,packet);
+    if(rows<0) return -1;
+    if(vh_audio_scene_optical_draw_packet(canvas,packet,black,white,marker))
+        return -1;
     return rows;
 }

@@ -17,7 +17,7 @@ KINDS = {1:"INPUT",2:"POST",3:"ACCEPT",4:"SUBMIT_CALL",
          7:"PCM_PAGE_NONZERO",8:"PCM_PAGE_SILENT"}
 
 
-def decode_image(path):
+def decode_packet_image(path):
     img = Image.open(path).convert("RGB")
     if img.size != (WIDTH, HEIGHT):
         raise ValueError("Unexpected NeXium screenshot geometry")
@@ -49,7 +49,11 @@ def decode_image(path):
             packed[bit//8] |= 0x80 >> (bit%8)
         elif min(color) < 208:
             raise ValueError("Invalid optical module color")
-    return unpack(bytes(packed))
+    return bytes(packed)
+
+
+def decode_image(path):
+    return unpack(decode_packet_image(path))
 
 
 def unpack(packet):
