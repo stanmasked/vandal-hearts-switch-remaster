@@ -9,6 +9,7 @@ on:
       - 'work/map02-pr55-window-upload-index'
       - 'work/map02-pr55-joint-status-inventory'
       - 'work/map02-main-merge-candidate'
+      - 'work/map02-main-blend-compat'
   pull_request:
     paths:
       - 'tools/map02_dda_coverage.py'

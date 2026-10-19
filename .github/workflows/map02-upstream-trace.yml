@@ -10,6 +10,7 @@ on:
       - 'work/map02-pr55-window-upload-index'
       - 'work/map02-pr55-joint-status-inventory'
       - 'work/map02-main-merge-candidate'
+      - 'work/map02-main-blend-compat'
     paths:
       - 'tools/make_map02_trace_patch.py'
       - 'tools/prepare_map02_pcport.py'
