@@ -473,6 +473,16 @@ static void audio_worker(void *unused) {
             state = -7;
             break;
         }
+#if VH_MAP02_AUDIO_PCM_METRICS
+        if(pending_trace_page) {
+            if(vh_map02_pcm_metrics_capture(&first_page_metrics,
+                  pending_trace_serial,pending_trace_scene,
+                  pcm_48000_page,count)<0) {
+                state=-12;
+                break;
+            }
+        }
+#endif
 #if VH_MAP02_AUDIO_PCM_WITNESS
         /* Optional post-render per-ticket witness: inspect exactly the
          * FIRST 48-kHz stereo page rendered AFTER this scene is accepted,
