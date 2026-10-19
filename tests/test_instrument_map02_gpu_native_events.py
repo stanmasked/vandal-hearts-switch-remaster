@@ -78,6 +78,19 @@ class NativeGpuProbeTests(unittest.TestCase):
         self.assertIn('if (upload && upload_words > 0u && upload_words <= 16384u)',rendered)
         self.assertIn('fwrite(upload, sizeof(unsigned short), upload_words, file)',rendered)
 
+    def test_two_window_loadimage_filename_uses_local_record_index(self):
+        # At global step 65 the recorder has local step 1 in window-001.
+        # Native JSONL and VRAM snapshot names are already local, so the
+        # upload must NOT be called gpu-0065-upload.bin.
+        rendered = instrument(minimal_source())
+        self.assertIn('local_seq = seq % VH_CAPTURE_LIMIT;', rendered)
+        self.assertIn('"gpu-%04u-vram.bin", local_seq', rendered)
+        self.assertIn('"gpu-%04u-upload.bin", local_seq', rendered)
+        self.assertIn('"\\\"rect\\\":", local_seq', rendered)
+        self.assertNotIn('"gpu-%04u-upload.bin", seq', rendered)
+        self.assertIn('VH_MAP02_GPU_CAPTURE_WINDOW_COUNT', rendered)
+        self.assertIn('gpu-native-window-index.json', rendered)
+
     def test_injection_is_fail_closed_and_unique(self):
         once=instrument(minimal_source())
         with self.assertRaisesRegex(ValueError,'already instrumented'):
