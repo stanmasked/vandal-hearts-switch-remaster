@@ -1,0 +1,31 @@
+name: MAP02 v189 adversarial real native PCSX log replay audit
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v189-adversarial-native-log-replay.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/check_map02_v189_adversarial_native_logs.py'
+      - 'tests/test_map02_v189_adversarial_native_logs.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  adversarial-log-model:
+    name: Native log adversarial mutation model (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail closed on all 159 controlled RAM and VBlank transcript mutations
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/check_map02_v189_adversarial_native_logs.py tests/test_map02_v189_adversarial_native_logs.py
+          python3 -m unittest discover -s tests -p 'test_map02_v189_adversarial_native_logs.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v188_native_ram_receipts.py' -v
+          echo 'VH189_INDEPENDENT_NATIVE_LOG_REPLAY_PASS modes=10 mutations=159 original_retail_executed=0'
