@@ -120,6 +120,11 @@ def _private_input_identity(path, category):
             info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
 
 
+def _receipt_directory_identity(path):
+    """Bind the private build-receipt directory itself across preflight."""
+    return _directory_identity(Path(path).absolute(), "build-receipt")
+
+
 def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
                                 preview, rgb, seal_directory, owned_game,
                                 upstream, binary, build_receipt, build_bundle,
@@ -197,6 +202,7 @@ def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
     before_inputs = tuple(
         _private_input_identity(path, category)
         for path, category in pinned_inputs)
+    before_receipt_directory = _receipt_directory_identity(build_receipt)
 
     enter("full-preflight")
     ready = verify_private_cycle_readiness(
@@ -227,6 +233,8 @@ def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
              for path, category in pinned_inputs) != before_inputs:
         raise ValueError(
             "MAP02 original PC ELF, owned image or build receipt changed after preflight")
+    if _receipt_directory_identity(build_receipt) != before_receipt_directory:
+        raise ValueError("MAP02 original build receipt directory changed after preflight")
     if dry_run:
         # Exactly the pre-execution checks used by the real one-shot path:
         # no subprocess, no output witness, no finalizer, no seal.
