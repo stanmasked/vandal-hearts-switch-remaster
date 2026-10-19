@@ -3,10 +3,11 @@
 import hashlib
 import sys
 import unittest
+import tempfile
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"tools"))
 from audit_nexium_stage361_original_success_probe import (
-    RUN_ID,PINS,VERIFIED,bound_source,receipt_equals,parse_failed_host_stop
+    RUN_ID,PINS,VERIFIED,FILES,bound_source,receipt_equals,parse_failed_host_stop,archive_paths
 )
 
 ORIGINAL_HOST=(b"event,pcm_bytes,host_epoch_ms,signal_success\n"
@@ -73,6 +74,27 @@ class Stage361Tests(unittest.TestCase):
             receipt_equals({"tail_observed":True},
                 {"tail_observed":1,"original_guest_source_relative_path":"canonical.csv"},
                 path="canonical.csv")
+    def test_reject_ambiguous_original_archive_filename(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root=Path(scratch)
+            for filename in FILES.values():
+                (root/filename).write_bytes(b"test only\\n")
+            self.assertEqual(set(archive_paths(root)),set(FILES))
+            duplicate=root/"duplicate"
+            duplicate.mkdir()
+            (duplicate/FILES["probe"]).write_bytes(b"forged\\n")
+            with self.assertRaises(ValueError):
+                archive_paths(root)
+    def test_reject_linked_original_archive_source(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root=Path(scratch)
+            for filename in FILES.values():
+                (root/filename).write_bytes(b"test only\\n")
+            source=root/FILES["probe"]
+            source.unlink()
+            source.symlink_to(root/FILES["reason"])
+            with self.assertRaises(ValueError):
+                archive_paths(root)
     def test_reject_missing_receipt_field(self):
         with self.assertRaises(ValueError):
             receipt_equals({},{"tail_observed":True,
