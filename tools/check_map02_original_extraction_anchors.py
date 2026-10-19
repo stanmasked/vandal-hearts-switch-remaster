@@ -156,6 +156,12 @@ def compare_loaded_sections(exe_path, elf_path):
             if (len(elf_header) != 52 or elf_header[:6] != b"\x7fELF\x01\x01" or
                     struct.unpack_from("<H", elf_header, 18)[0] != 8):
                 raise ValueError("extracted original MIPS ELF has invalid ELF32 header")
+            # Reject malformed ELF32 metadata before interpreting its
+            # section ranges as independent evidence of original PS-X bytes.
+            if (elf_header[6] != 1 or
+                    struct.unpack_from("<I", elf_header, 20)[0] != 1 or
+                    struct.unpack_from("<H", elf_header, 40)[0] != 52):
+                raise ValueError("original MIPS ELF has invalid header version or size")
             shoff = struct.unpack_from("<I", elf_header, 32)[0]
             entsize, count = struct.unpack_from("<HH", elf_header, 46)
             if (shoff < 52 or entsize < 40 or not (1 <= count <= 512)
@@ -170,6 +176,12 @@ def compare_loaded_sections(exe_path, elf_path):
                         phoff + phentsize * phnum > elf_size):
                     raise ValueError("original ELF program header table is invalid")
                 phend = phoff + phentsize * phnum
+                # Both metadata tables are parsed independently. A file
+                # that makes them overlap is structurally ambiguous even
+                # when runtime sections point to distinct byte ranges.
+                if phoff < shoff + entsize * count and shoff < phend:
+                    raise ValueError(
+                        "original ELF program and section header tables overlap")
             else:
                 phoff = phend = 0
 
