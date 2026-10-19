@@ -74,8 +74,15 @@ def audit_source(raw:bytes)->dict:
 def audit_guest(root:Path)->tuple[dict,bytes]:
     if root.is_symlink() or not root.is_dir():
         raise ExitTimelineError("original guest source root missing or linked")
-    target=root/SUBDIR/FILE
-    siblings=list((root/SUBDIR).glob("audio-lease-reconciliation-*.csv"))
+    # Reject indirect symlink escapes anywhere in the guest SD path,
+    # not only at the target filename.
+    directory=root
+    for part in SUBDIR.parts:
+        directory=directory/part
+        if directory.is_symlink() or not directory.is_dir():
+            raise ExitTimelineError("original guest SD directory missing or linked")
+    target=directory/FILE
+    siblings=list(directory.glob("audio-lease-reconciliation-*.csv"))
     if len(siblings)!=1 or target.is_symlink() or not target.is_file():
         raise ExitTimelineError("missing/ambiguous original lease guest source")
     raw=target.read_bytes()
