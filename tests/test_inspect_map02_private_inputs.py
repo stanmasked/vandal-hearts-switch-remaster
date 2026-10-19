@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 import tools.inspect_map02_private_inputs as inventory
 from tools.check_map02_private_pc_inputs import ASSETS, EXE, FONT_GENERATOR
+from tools.check_map02_original_inc_provenance import GENERATOR as INCLUDE_GENERATOR
 from tools.check_map02_cycle_make_plan import BUILD
 from tools.map02_cycle_build_provenance import NAME as RECEIPT
 from tools.map02_local_capture_handoff import PLAN
@@ -48,6 +49,7 @@ class Map02PrivateInputInventoryTests(unittest.TestCase):
         self.make_file(self.upstream / EXE)
         self.make_file(self.upstream / "build" / (EXE + ".elf"))
         self.make_file(self.upstream / FONT_GENERATOR)
+        self.make_file(self.upstream / INCLUDE_GENERATOR)
         self.make_file(self.krom)
         for name in ASSETS:
             self.make_file(self.upstream / "assets" / name)
@@ -123,6 +125,32 @@ class Map02PrivateInputInventoryTests(unittest.TestCase):
         report = self.inspect()
         self.assertFalse(report["private_build_receipt_path_present"])
         self.assertFalse(report["all_prerequisite_paths_present"])
+
+    def test_missing_include_generator_is_not_mistaken_for_full_input_presence(self):
+        self.populate()
+        generator = self.upstream / INCLUDE_GENERATOR
+        self.assertTrue(self.inspect()["all_prerequisite_paths_present"])
+        generator.unlink()
+        report = self.inspect()
+        self.assertIs(report["pinned_original_include_generator_path_present"], False)
+        self.assertIs(report["pinned_font_generator_path_present"], True)
+        self.assertFalse(report["all_prerequisite_paths_present"])
+        self.assertFalse(report["original_file_bytes_verified"])
+        self.assertNotIn(str(self.root), json.dumps(report))
+
+    def test_linked_include_generator_is_never_counted_as_original_source(self):
+        self.populate()
+        generator = self.upstream / INCLUDE_GENERATOR
+        original = generator.read_bytes()
+        backup = self.root / "borrowed-original-generator.py"
+        backup.write_bytes(original)
+        generator.unlink()
+        generator.symlink_to(backup)
+        report = self.inspect()
+        self.assertIs(report["pinned_original_include_generator_path_present"], False)
+        self.assertIs(report["pinned_font_generator_path_present"], True)
+        self.assertFalse(report["all_prerequisite_paths_present"])
+        self.assertFalse(report["ready_for_controlled_local_launch"])
 
     def test_source_tree_intermediate_symlink_cannot_claim_origins_present(self):
         self.populate()
