@@ -349,6 +349,88 @@ class NativeIndependentRunRepeatabilityTests(unittest.TestCase):
                     repeat._require_gpu_snapshot_aggregate_consistency(
                         {**good, field: value})
 
+    def test_terminal_bgr555_must_match_final_aligned_gpu_snapshot(self):
+        # Independently replay two real synthetic C11 producers in each
+        # scenario. Early VRAM may diverge and later reconverge, but when
+        # both GPU timelines have equal length their last after-VRAM
+        # equality must match the separately compared terminal frames.
+        def validate(report):
+            repeat._require_terminal_gpu_frame_consistency(
+                report, different=report["different_bgr555_pixels"],
+                changed_scanlines=report["changed_scanlines"],
+                stp_bit_differences=report["stp_bit_differences"],
+                first_image_sha256=report["first_image_sha256"],
+                second_image_sha256=report["second_image_sha256"])
+
+        equal = self.run_repeat()
+        validate(equal)
+        self.assertEqual(equal["different_bgr555_pixels"], 0)
+        self.assertIsNone(equal["last_different_gpu_vram_snapshot_index"])
+
+        # Fabricate matching source digests for a purported terminal
+        # pixel mismatch: digest claim alone should not pass when last
+        # replayed GPU snapshots are demonstrably equal.
+        with self.assertRaisesRegex(ValueError, "terminal GPU snapshot/frame"):
+            repeat._require_terminal_gpu_frame_consistency(
+                equal, different=1, changed_scanlines=1,
+                stp_bit_differences=0,
+                first_image_sha256=equal["first_image_sha256"],
+                second_image_sha256="0" * 64)
+        for kwargs in (
+            {"changed_scanlines": 1},
+            {"stp_bit_differences": 1},
+            {"different": True},
+            {"first_image_sha256": "invalid"},
+        ):
+            with self.subTest(kwargs=kwargs):
+                values = {
+                    "different": equal["different_bgr555_pixels"],
+                    "changed_scanlines": equal["changed_scanlines"],
+                    "stp_bit_differences": equal["stp_bit_differences"],
+                    "first_image_sha256": equal["first_image_sha256"],
+                    "second_image_sha256": equal["second_image_sha256"],
+                }
+                values.update(kwargs)
+                with self.assertRaisesRegex(ValueError, "terminal GPU snapshot/frame"):
+                    repeat._require_terminal_gpu_frame_consistency(equal, **values)
+
+        for variant, expected_pixels in (
+            ("alternate-before", 0), ("alternate", 1)):
+            with self.subTest(variant=variant):
+                for folder in (self.f2, self.j2):
+                    for entry in folder.iterdir():
+                        entry.unlink()
+                self.capture(self.f2, self.j2, variant)
+                result = self.run_repeat()
+                validate(result)
+                self.assertEqual(result["different_bgr555_pixels"],
+                                 expected_pixels)
+                # Contradict the TRUE final native after-VRAM equality
+                # while also adjusting the public image hashes so the
+                # two forged terminal-frame fields agree with each other.
+                fake_pixels = 0 if expected_pixels else 1
+                fake_second_hash = (
+                    result["first_image_sha256"] if fake_pixels == 0
+                    else "0" * 64)
+                with self.assertRaisesRegex(
+                        ValueError, "terminal GPU snapshot/frame"):
+                    repeat._require_terminal_gpu_frame_consistency(
+                        result, different=fake_pixels,
+                        changed_scanlines=int(fake_pixels != 0),
+                        stp_bit_differences=0,
+                        first_image_sha256=result["first_image_sha256"],
+                        second_image_sha256=fake_second_hash)
+
+    def test_independent_full_audit_rejects_forged_terminal_pixel_difference(self):
+        # Full audit integration: force a synthetic terminal frame-diff
+        # miscount while leaving the native GPU before/after snapshots
+        # unmodified and independently replay-valid.
+        with patch.object(repeat, "_private_difference",
+                          return_value=(1, 1, 0)):
+            with self.assertRaisesRegex(
+                    ValueError, "terminal GPU snapshot/frame"):
+                self.run_repeat()
+
     def test_vram_ordered_commitment_must_match_actual_differences(self):
         # The raw VRAM bytes were independently replayed before this
         # aggregate is constructed. Even mutually self-consistent boolean
