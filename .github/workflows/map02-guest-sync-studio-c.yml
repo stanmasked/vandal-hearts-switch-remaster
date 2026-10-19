@@ -305,7 +305,7 @@ jobs:
                           "independent_outer_nro_modes":True,
                           "identical_generated_synthetic_stimulus":True,
                           "wet_and_reset_in_single_guest_clock":True,
-                          "host_guest_synthetic_tails_agree_across_modes":True,
+                          "guest_synthetic_tails_match_across_outer_modes":True,
                           "guest_synthetic_reverb_causally_proven":True,
                           "real_audout_reverb_causality_proven":False,
                           "physical_switch_audio_tested":False,
