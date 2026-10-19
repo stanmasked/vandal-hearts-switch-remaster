@@ -55,7 +55,15 @@ class PrivateCapturePreflightTests(unittest.TestCase):
             "snapshot": "gpu-0000-vram.bin", "rect": None,
             "dest": [0, 0], "rgb": [200, 0, 0],
             "primitive_type": 2, "semi": 1, "window": [0, 0, 0, 0],
-            "draw_mode": [0, 0, 0], "upload": "", "ft4": None,
+            "draw_mode": [0, 0, 0], "upload": "",
+            # Type 2 is POLY_FT4 in the source-pinned native recorder.
+            # Include its complete packet metadata so the structural
+            # preflight can reach the intended edge/receipt assertions.
+            "ft4": {
+                "tpage": 0, "clut": 0,
+                "xy": [10, 20, 11, 20, 11, 21, 10, 21],
+                "uv": [0, 0, 1, 0, 1, 1, 0, 1],
+            },
         }
         b = dict(a, step=1, phase="after", snapshot="gpu-0001-vram.bin")
         self.native_events = encode(a) + encode(b)
