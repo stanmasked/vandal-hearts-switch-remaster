@@ -44,6 +44,11 @@ on:
 permissions:
   contents: read
 
+# pull_request GITHUB_SHA refers to GitHub's temporary merge commit, not
+# necessarily to the actual PR head. Compile and audit the explicit source SHA.
+env:
+  VH_EXACT_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
 jobs:
   decoder-regressions:
     name: Optical packet CRC, serial and PCM receipt negative tests
@@ -51,6 +56,13 @@ jobs:
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_SOURCE_SHA }}
+      - name: Reject non-head checkout (not the PR merge ref)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
       - name: Install Pillow from Ubuntu packages
         run: |
           sudo apt-get update
@@ -139,6 +151,13 @@ jobs:
     timeout-minutes: 18
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_SOURCE_SHA }}
+      - name: Reject non-head checkout (not the PR merge ref)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
       - name: Cross-compile exact two guest trace receipts
         shell: bash
         run: |
@@ -167,7 +186,8 @@ jobs:
               hashes[str(mode)]=hashlib.sha256(data).hexdigest()
           assert hashes["0"]!=hashes["1"]
           receipt={"schema":"vh-map02-post-join-guest-trace/v1",
-                   "git_sha":os.environ["GITHUB_SHA"],
+                   "git_sha":os.environ["VH_EXACT_SOURCE_SHA"],
+                   "workflow_event_sha":os.environ["GITHUB_SHA"],
                    "run_id":int(os.environ["GITHUB_RUN_ID"]),
                    "attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
                    "trace_receipt_enabled":True,
@@ -190,6 +210,13 @@ jobs:
     timeout-minutes: 18
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_SOURCE_SHA }}
+      - name: Reject non-head checkout (not the PR merge ref)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
       - uses: actions/download-artifact@v4
         with:
           name: map02-wet-tail-guest-optical-trace-nros
@@ -208,7 +235,8 @@ jobs:
           root=Path("nros")
           m=json.loads((root/"manifest.json").read_text())
           assert m["schema"]=="vh-map02-post-join-guest-trace/v1"
-          assert m["git_sha"]==os.environ["GITHUB_SHA"]
+          assert m["git_sha"]==os.environ["VH_EXACT_SOURCE_SHA"]
+          assert m["workflow_event_sha"]==os.environ["GITHUB_SHA"]
           assert m["run_id"]==int(os.environ["GITHUB_RUN_ID"])
           assert m["attempt"]==int(os.environ["GITHUB_RUN_ATTEMPT"])
           assert m["trace_receipt_enabled"]
@@ -394,14 +422,14 @@ jobs:
             --guest0 runtime-evidence/wet-tail-0-synced.json \
             --guest1 runtime-evidence/wet-tail-1-synced.json \
             --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" \
-            --sha "$GITHUB_SHA" \
+            --sha "$VH_EXACT_SOURCE_SHA" \
             --out runtime-evidence/guest-host-cross-architecture-parity.json
           python3 tools/audit_guest_native48_cross_arch.py \
             --gcc host-sync/gcc.txt --clang host-sync/clang.txt \
             --guest0 runtime-evidence/wet-tail-0-native48.json \
             --guest1 runtime-evidence/wet-tail-1-native48.json \
             --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" \
-            --sha "$GITHUB_SHA" \
+            --sha "$VH_EXACT_SOURCE_SHA" \
             --out runtime-evidence/guest-native48-cross-architecture-parity.json
       - name: Always archive guest receipts, PNG screenshots and logs
         if: always()
