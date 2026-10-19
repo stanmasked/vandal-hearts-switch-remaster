@@ -332,16 +332,14 @@ for name, offset, size in [
         first_file_offset = struct.unpack_from(
             "<I", self.elf.read_bytes(), 64 + 40 + 16)[0]
         original = self.exe.read_bytes()
+        base = self.elf.read_bytes()
         for shift, alias_offset in (
             (0, first_file_offset), (8, first_file_offset + 8),
         ):
             with self.subTest(shift=shift):
-                # Regenerate the synthetic base without mutating its three
-                # pinned anchor sections.
-                if shift:
-                    self.elf.write_bytes(base)
-                else:
-                    base = self.elf.read_bytes()
+                # Restore the original synthetic ELF before each case, so
+                # the fourth section is the only intentional modification.
+                self.elf.write_bytes(base)
                 other_address = first_address + 256 + shift
                 old_start = PSX_HEADER + first_address - LOAD_VRAM + shift
                 new_start = PSX_HEADER + other_address - LOAD_VRAM
