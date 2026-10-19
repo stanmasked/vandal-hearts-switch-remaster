@@ -253,15 +253,16 @@ def main():
     p.add_argument("new_private_output_dir", type=Path)
     args = p.parse_args()
     try:
-        path = prepare(args.pinned_upstream_checkout, args.new_private_output_dir)
-    except (OSError, ValueError, UnicodeError) as exc:
-        p.error(str(exc))
-    print("Created private source-pinned MAP02 single-ELF make overlay:", path)
-    print("From the pinned upstream platform/pc directory, when you have the")
-    print("necessary locally owned retail files and PC-port dependencies:")
-    print("make -f Makefile -f " + str(path) +
-          " link BUILD_DIR=build-map02-cycle REGION=us NO_WEBP=1 NO_HDVIDEO=1")
-    print("No retail assets read, no binary compiled, no gameplay executed.")
+        prepare(args.pinned_upstream_checkout, args.new_private_output_dir)
+    except (OSError, ValueError, UnicodeError):
+        # Native filesystem errors and path-validation exceptions may embed
+        # the user's private game checkout, overlay location or SDK paths.
+        # Keep terminal/CI status independent of any caller-controlled path.
+        p.error("private MAP02 source-pinned overlay preparation failed")
+    print("Private source-pinned MAP02 Make overlay created.")
+    print("Run the separate Make-plan audit with the paths supplied above;")
+    print("then use the private full-PC-ELF builder, not a direct public make.")
+    print("No retail bytes read, no executable compiled, no gameplay executed.")
 
 
 if __name__ == "__main__":
