@@ -1,0 +1,42 @@
+name: Stage347 after-join audout lease reconciliation
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage347-after-join-lease-reconciliation.yml'
+      - 'source/vh_audio_lease_reconciliation.h'
+      - 'tests/test_vh_audio_lease_reconciliation_stage347.c'
+      - 'source/vh_switch_game_audio.c'
+      - 'source/main.c'
+permissions:
+  contents: read
+jobs:
+  source-lease-accounting:
+    name: GCC/Clang and UBSan canonical after-join descriptor accounting
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Host source-only reconciliation and saturation guards
+        env:
+          UBSAN_OPTIONS: halt_on_error=1
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          for cc in gcc clang; do
+            for sanitizer in none undefined; do
+              if [ "$sanitizer" = none ]; then
+                "$cc" -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+                  tests/test_vh_audio_lease_reconciliation_stage347.c \
+                  -o "build/stage347-$cc-native"
+                "build/stage347-$cc-native"
+              else
+                "$cc" -std=c11 -Wall -Wextra -Werror -O1 -g -Isource \
+                  -fsanitize=undefined -fno-omit-frame-pointer \
+                  tests/test_vh_audio_lease_reconciliation_stage347.c \
+                  -o "build/stage347-$cc-ubsan"
+                "build/stage347-$cc-ubsan"
+              fi
+            done
+          done
+          echo "Stage347: after-join descriptor totals reconcile on GCC/Clang, UBSan; not an observed NeXium source or physical audio." >> "$GITHUB_STEP_SUMMARY"

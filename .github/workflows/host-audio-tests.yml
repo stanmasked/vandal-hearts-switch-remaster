@@ -413,6 +413,16 @@ jobs:
              source/vh_audio_buffer_lease.c source/vh_audio_output_recovery.c \
              -o build/test_vh_audio_buffer_lease
           ./build/test_vh_audio_buffer_lease
+      - name: Stage347 canonical post-join descriptor lifecycle source reconciliation
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          for cc in gcc clang; do
+            "$cc" -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+              tests/test_vh_audio_lease_reconciliation_stage347.c \
+              -o "build/test_vh_audio_lease_reconciliation_stage347-$cc"
+            "build/test_vh_audio_lease_reconciliation_stage347-$cc"
+          done
       - name: Stage345 512-page audio ownership and PCM retry continuity stress on GCC and Clang
         run: |
           set -euo pipefail
