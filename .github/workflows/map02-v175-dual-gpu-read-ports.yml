@@ -1,0 +1,34 @@
+name: MAP02 v175 distinguish guest GPU GP0 and GP1 reads in real VBlank waits
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v175-dual-gpu-read-ports.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v175_dual_gpu_read_ports.py'
+      - 'tests/test_map02_v175_dual_gpu_read_ports.py'
+      - 'tools/apply_map02_v174_vblank_read_quiet.py'
+      - 'tools/make_map02_v78_vblank_mips_exe.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  independent-gpu-ports:
+    name: fail-closed GP0 versus GP1 actual guest read witness (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile GPU read port discrimination and inherited wait sentinels
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v175_dual_gpu_read_ports.py tests/test_map02_v175_dual_gpu_read_ports.py
+          python3 -m unittest discover -s tests -p 'test_map02_v175_dual_gpu_read_ports.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v174_vblank_read_quiet.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v173_vblank_quiet_mmio.py' -v
+          echo 'VH175_COMPILED_INDEPENDENT_READ_PORTS_PASS gp0=0 gp1=0 real_native_pending=1 original_retail_executed=0'
