@@ -10,6 +10,9 @@ from unittest.mock import patch
 
 import tools.check_map02_private_launch_layout as layout
 from tools.map02_local_capture_handoff import PLAN
+from tools.run_map02_private_cycle_session import (
+    LAYOUT_FIELDS, _require_final_layout_report,
+)
 
 
 class Map02PrivateLaunchLayoutTests(unittest.TestCase):
@@ -39,6 +42,9 @@ class Map02PrivateLaunchLayoutTests(unittest.TestCase):
         self.assertEqual(result["private_directory_roles_checked"], 7)
         self.assertEqual(result["capture_output_directories_empty"], 5)
         self.assertTrue(result["prelaunch_layout_ready"])
+        # The producer and the one-shot launcher must agree exactly.
+        self.assertEqual(set(result), LAYOUT_FIELDS)
+        _require_final_layout_report(result)
         for name in ("original_pc_elf_verified", "original_game_image_verified",
                      "original_gameplay_executed", "map02_frame_authenticated",
                      "private_game_bytes_read"):
