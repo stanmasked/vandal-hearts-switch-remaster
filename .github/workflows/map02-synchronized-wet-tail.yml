@@ -94,7 +94,7 @@ jobs:
           a=root/"map02-wet-tail-0.nro"
           b=root/"map02-wet-tail-1.nro"
           h=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
-          assert a.read_bytes()[:4]==b.read_bytes()[:4]==b"NRO0"
+          assert a.read_bytes()[16:20]==b.read_bytes()[16:20]==b"NRO0"
           assert h(a)!=h(b), "WET_TAIL=1 must alter its NRO binary"
           receipt={
             "schema":"vh-map02-wet-tail-pair/v1",
