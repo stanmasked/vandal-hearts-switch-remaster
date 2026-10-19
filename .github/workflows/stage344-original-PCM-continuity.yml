@@ -20,14 +20,14 @@ jobs:
     steps:
       - name: Checkout original source-audited PCM indicators
         uses: actions/checkout@v4
-      - name: Twelve positive and negative PCM provenance tests
+      - name: Fourteen positive and negative PCM provenance tests
         run: |
           set -euo pipefail
           python3 -m py_compile tools/audit_nexium_stage344_four_original_pcm_indicators.py
           python3 -m unittest discover -s tests -p 'test_audit_nexium_stage344_four_original_pcm_indicators.py' -v
       - name: Require all four original game executions and Stage342 independent source audit success
         env:
-          GH_${{ github.token }}: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           for n in 39166023593 39167324026 39175592570 39182548276 39183433971; do
