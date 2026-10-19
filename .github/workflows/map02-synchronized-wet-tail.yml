@@ -1,0 +1,120 @@
+name: MAP02 synchronous STUDIO_C tail vs legacy reset
+
+on:
+  pull_request:
+    paths:
+      - "tests/test_map02_synchronized_wet_tail.c"
+      - ".github/workflows/map02-synchronized-wet-tail.yml"
+      - "docs/MAP02_SYNCHRONIZED_WET_TAIL.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synchronized-pcm:
+    name: Identical MAP02 A-input and scene timeline (${{ matrix.compiler }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile synchronized generated-source scene test with ASan+UBSan
+        shell: bash
+        env:
+          CC: ${{ matrix.compiler }}
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          "$CC" -std=c11 -O1 -g -Wall -Wextra -Werror -Isource \
+            -fsanitize=address,undefined -fno-sanitize-recover=all \
+            -fno-omit-frame-pointer \
+            tests/test_map02_synchronized_wet_tail.c \
+            source/vh_game_music_mailbox.c source/vh_music_scene.c \
+            source/vh_native_seq.c source/vh_native_spu.c \
+            source/vh_spu_reverb.c source/vh_spu_gaussian.c \
+            source/vh_audio_stream.c -lm \
+            -o build/test_map02_synchronized_wet_tail
+          ./build/test_map02_synchronized_wet_tail \
+            | tee "build/synchronized-wet-tail-${CC}.txt"
+          echo "PASS: same input, same cue clock; reset silent, wet nonzero" \
+            >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve original MAP02 A/B music input contract
+        shell: bash
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=c11 -O1 -g -Wall -Wextra -Werror -Isource \
+            tests/test_map02_music_input.c source/vh_game_music_mailbox.c \
+            -o build/test_map02_music_input
+          ./build/test_map02_music_input
+      - name: Archive synchronized evidence log (no original game audio)
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-synchronized-wet-tail-${{ matrix.compiler }}
+          path: build/synchronized-wet-tail-*.txt
+          if-no-files-found: error
+
+  independent-libnx-modes:
+    name: Pair libnx MAP02 WET_TAIL 0 vs 1 in one CI run
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build default and opt-in MAP02 music NRO separately
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$PATH"
+          make -f Makefile -f Makefile.map02-audio \
+            MAP02_AUDIO_BUILD=build/map02-wet-tail-0 \
+            MAP02_AUDIO_WET_TAIL=0 map02-audio-nro
+          make -f Makefile -f Makefile.map02-audio \
+            MAP02_AUDIO_BUILD=build/map02-wet-tail-1 \
+            MAP02_AUDIO_WET_TAIL=1 map02-audio-nro
+          mkdir -p build/wet-tail-0-1
+          cp build/map02-wet-tail-0/vandal-hearts-map02-audio.nro \
+             build/wet-tail-0-1/map02-wet-tail-0.nro
+          cp build/map02-wet-tail-1/vandal-hearts-map02-audio.nro \
+             build/wet-tail-0-1/map02-wet-tail-1.nro
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          root=Path("build/wet-tail-0-1")
+          a=root/"map02-wet-tail-0.nro"
+          b=root/"map02-wet-tail-1.nro"
+          h=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
+          assert a.read_bytes()[:4]==b.read_bytes()[:4]==b"NRO0"
+          assert h(a)!=h(b), "WET_TAIL=1 must alter its NRO binary"
+          receipt={
+            "schema":"vh-map02-wet-tail-pair/v1",
+            "git_sha":os.environ["GITHUB_SHA"],
+            "run_id":int(os.environ["GITHUB_RUN_ID"]),
+            "run_attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
+            "legacy_sha256":h(a),
+            "wet_tail_sha256":h(b),
+            "legacy_bytes":a.stat().st_size,
+            "wet_tail_bytes":b.stat().st_size,
+            "bitwise_distinct":True,
+            "original_ps1_assets_included":False,
+            "physical_switch_audio_tested":False
+          }
+          (root/"manifest.json").write_text(json.dumps(receipt,indent=2)+"\n")
+          print(json.dumps(receipt,indent=2))
+          PY
+      - name: Archive exact-run wet-tail variants, not original soundtrack
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-wet-tail-0-vs-1-nro
+          path: build/wet-tail-0-1/
+          if-no-files-found: error
