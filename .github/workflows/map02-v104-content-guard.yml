@@ -2297,7 +2297,7 @@ jobs:
                 grep -E 'VH181_|VH176_|REFUSED' "proof/private/v182-${actual}-${expected}.log" | tail -n 30 || true
                 exit 1
               fi
-              grep -Fx 'VH181_NATIVE_WORD_UNOBSERVED_REFUSED kind=${expected} phase=0 count=0 faults=0' \
+              grep -Fx "VH181_NATIVE_WORD_UNOBSERVED_REFUSED kind=${expected} phase=0 count=0 faults=0" \
                 "proof/private/v182-${actual}-${expected}.log" || {
                   echo "VH182_UNEXPECTED_REFUSAL_CLASS actual=${actual} expected=${expected}"
                   tail -n 50 "proof/private/v182-${actual}-${expected}.log"
