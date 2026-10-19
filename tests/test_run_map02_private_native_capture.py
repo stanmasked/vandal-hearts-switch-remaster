@@ -212,6 +212,48 @@ class PrivateNativeLauncherTests(unittest.TestCase):
             if marker.exists():
                 marker.rmdir()
 
+    def test_git_worktree_during_native_child_skips_replay_and_success_receipt(self):
+        # A repository can be created after the real synthetic child starts,
+        # even when preflight and the pre-exec guard were both safe. Reject
+        # its output before any private journal is independently consumed.
+        from tools import run_map02_private_native_capture as launcher
+        actual_popen = launcher.subprocess.Popen
+        marker = self.base / ".git"
+        started = []
+        def git_initialized_after_spawn(*args, **kwargs):
+            process = actual_popen(*args, **kwargs)
+            started.append(1)
+            marker.mkdir(mode=0o700)
+            return process
+        try:
+            with (
+                patch.object(launcher.subprocess, "Popen",
+                             side_effect=git_initialized_after_spawn),
+                patch.object(launcher, "verify_session",
+                             side_effect=AssertionError(
+                                 "replay must not consume Git-published GPU files")),
+            ):
+                report = self.run_synthetic()
+            self.assertEqual(started, [1])
+            self.assertTrue(report["process_started"])
+            self.assertEqual(report["process_exit_code"], 0)
+            self.assertFalse(report["capture_verified"])
+            self.assertIsNone(report["verification"])
+            self.assertEqual(report["failure_category"],
+                             "incomplete_or_invalid_private_capture")
+            self.assertFalse(report["retail_map02_verified"])
+            self.assertFalse(report["hd_replacement_authorized"])
+            self.assertTrue(self.preflight.is_file())
+            self.assertTrue(self.summary.is_file())
+            self.assertFalse(json.loads(
+                self.summary.read_text())["capture_verified"])
+            self.assertTrue((self.capture_dir /
+                             "gpu-native-events.jsonl").is_file())
+            self.assertNotIn(str(self.base), json.dumps(report))
+        finally:
+            if marker.exists():
+                marker.rmdir()
+
     def test_late_git_worktree_after_native_replay_never_verifies_capture(self):
         # A late .git marker cannot turn valid, fully replayed synthetic
         # evidence into a successful receipt under version control.
