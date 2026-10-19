@@ -587,6 +587,49 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
                     for folder in self.dirs:
                         self.assertNotIn(str(folder), json.dumps(report))
 
+    def test_changed_terminal_extra_gpu_pair_strict_two_launch_run_refuses_both_orders(self):
+        # Exercise the ACTUAL opt-in strict orchestrator, not merely its
+        # post-hoc predicate. Both independent child sessions are fully
+        # generated and locally replay-verified, but a second draw in
+        # just one capture changes the terminal BGR555 frame.
+        for longer_second in (True, False):
+            with self.subTest(longer_second=longer_second):
+                if not longer_second:
+                    for directory in self.dirs:
+                        for item in directory.iterdir():
+                            item.unlink()
+                first_args = () if longer_second else ("two-pair-extra-terminal",)
+                second_args = ("two-pair-extra-terminal",) if longer_second else ()
+                real_capture = two_live.capture
+                calls = []
+                def alter_only_second(*args, **kwargs):
+                    calls.append(tuple(kwargs["args"]))
+                    if len(calls) == 2:
+                        kwargs["args"] = second_args
+                    return real_capture(*args, **kwargs)
+                with patch.object(two_live, "capture",
+                                  side_effect=alter_only_second):
+                    with self.assertRaisesRegex(ValueError, "not bit-exact"):
+                        self.run_two(
+                            args=first_args,
+                            require_identical_gpu_timeline=True)
+                self.assertEqual(len(calls), 2)
+                self.assertEqual(calls[0], first_args)
+                self.assertEqual(len(list(self.dirs[0].iterdir())), 2)
+                self.assertEqual(len(list(self.dirs[2].iterdir())), 2)
+                # The capture files are retained only in owner-private
+                # directories for diagnosis; no successful strict receipt.
+                diagnostic = two_live.audit(*self.dirs, self.executable)
+                self.assertEqual(diagnostic["different_bgr555_pixels"], 1)
+                self.assertEqual(diagnostic["unmatched_gpu_event_records"], 2)
+                self.assertEqual(diagnostic["unmatched_gpu_vram_snapshots"], 2)
+                self.assertEqual(
+                    diagnostic["first_joint_gpu_divergence_kind"],
+                    "unmatched-tail")
+                self.assertFalse(diagnostic["hd_replacement_authorized"])
+                for directory in self.dirs:
+                    self.assertNotIn(str(directory), json.dumps(diagnostic))
+
     def test_unmatched_second_draw_pair_strict_mode_rejects_both_directions(self):
         for longer_second in (True, False):
             with self.subTest(longer_second=longer_second):
