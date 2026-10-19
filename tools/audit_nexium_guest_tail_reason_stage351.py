@@ -121,9 +121,9 @@ def audit_existing_original_sources(
     """Bind both earlier verified receipts to their actual original CSV bytes."""
     if (not isinstance(original_stage313,bytes)
         or len(original_stage313)>1024
-        or not original_stage313.startswith(b"event,value\\n")
-        or not original_stage313.endswith(b"\\n")
-        or b"\\r" in original_stage313 or b"\\x00" in original_stage313):
+        or not original_stage313.startswith(b"event,value\n")
+        or not original_stage313.endswith(b"\n")
+        or b"\r" in original_stage313 or b"\x00" in original_stage313):
         raise ExitTimelineError("Stage313 original last page CSV missing or malformed")
     sha313=hashlib.sha256(original_stage313).hexdigest()
     if stage313.get("original_guest_page_witness_sha256") != sha313:
@@ -132,14 +132,14 @@ def audit_existing_original_sources(
         "page_return_count","last_page_return_guest_ns","last_page_frames",
         "tail_attempt_guest_ns","tail_success_return_guest_ns",
     )
-    lines=original_stage313[len(b"event,value\\n"):].splitlines(keepends=True)
+    lines=original_stage313[len(b"event,value\n"):].splitlines(keepends=True)
     if len(lines)!=len(expected):
         raise ExitTimelineError("Stage313 original row count changed")
     observed={}
     for label,line in zip(expected,lines):
         prefix=(label+",").encode("ascii")
         if (not line.startswith(prefix) or line.count(b",")!=1
-            or not line.endswith(b"\\n")):
+            or not line.endswith(b"\n")):
             raise ExitTimelineError("Stage313 original row sequence changed")
         field=line[len(prefix):-1]
         if (not field or not field.isascii() or not field.isdigit()
