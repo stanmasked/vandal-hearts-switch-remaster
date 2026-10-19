@@ -16,7 +16,13 @@ The experiment demands:
 - Different retained-history and reset post-process hashes
 - Two complete synthetic trials must have identical 48-kHz lengths, nonzero counts, output hashes and boundary-residue values
 
-The test does **not** claim that the interpolation necessarily produces a nonzero value: it measures the actual first-page count and rejects more than one stereo frame of residue.
+The paired DSP test does **not** assume that interpolation necessarily produces a nonzero value: it measures the actual first-page count and rejects more than one stereo frame of residue.
+
+### Independent exact-boundary and compiler/guest comparison
+
+A separate asset-free `tests/test_vh_guest_native_48k_boundary.c` exercises the **production resampler and output ramp directly**, without SEQ/SPU or optical parsing. After exactly 64 × 512 source frames of a generated `+10000/-10000` stereo tone, a zero block has **one interpolated stereo output frame** at the particular transition phase; the expected first signed samples are `+7812/-7812`, with two nonzero sample values total, and **47 subsequent silence blocks must be exactly zero**. The C fixture repeats the entire transition twice and is compiled under both GCC and Clang with ASan/UBSan. This proves a property of that deliberately chosen 32768-source-frame boundary, not all possible input positions.
+
+The guest source test also prints an exact `native48 ...` stdout receipt under GCC and Clang: 48-kHz pre/wet/reset FNV hashes, total prefix and tail frames, number of differing pages, retained nonzero values and reset-first/reset-later residue counts. A second fail-closed auditor `tools/audit_guest_native48_cross_arch.py` requires **all nine values** to agree exactly with **both** CRC-verified NeXium `VH48K001` receipts. Twelve generated-only tests reject forged compiler logs, guest values and unsafe claims. Any real compiler or architecture mismatch causes a failure rather than being rounded away or described as equivalent.
 
 ## Guest evidence and strict boundaries
 
