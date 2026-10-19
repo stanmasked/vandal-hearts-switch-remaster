@@ -43,6 +43,24 @@ def _folder(path, *, private=False):
             and (not private or stat.S_IMODE(info.st_mode) == 0o700))
 
 
+def _source_tree_file(root, relative, *, executable=False):
+    """Reject symlinked *parent* directories within the owned PC checkout.
+
+    An lstat of the final file alone would accept original files reached
+    through redirected assets/, build/ or platform/ paths. This remains a
+    presence check: it never opens, reads or hashes game content.
+    """
+    if not _folder(root):
+        return False
+    relative = Path(relative)
+    current = Path(root)
+    for component in relative.parts[:-1]:
+        current = current / component
+        if not _folder(current):
+            return False
+    return _regular(current / relative.name, executable=executable)
+
+
 def inspect_private_map02_inputs(upstream, owned_image, build_bundle,
                                  build_receipt_dir, handoff_dir,
                                  *, krom_source=None):
@@ -59,22 +77,24 @@ def inspect_private_map02_inputs(upstream, owned_image, build_bundle,
     receipt_ok = _folder(receipt_dir, private=True)
     handoff_ok = _folder(handoff, private=True)
     includes_count = sum(
-        _regular(root / "assets" / name) for name in ASSETS)
+        _source_tree_file(root, Path("assets") / name) for name in ASSETS)
     statuses = {
         "pinned_upstream_checkout_directory_present": upstream_ok,
-        "original_us_psx_executable_path_present": _regular(root / EXE),
+        "original_us_psx_executable_path_present":
+            _source_tree_file(root, EXE),
         "extracted_original_mips_elf_path_present":
-            _regular(root / "build" / (EXE + ".elf")),
+            _source_tree_file(root, Path("build") / (EXE + ".elf")),
         "original_asset_include_paths_present": includes_count,
         "original_asset_include_paths_expected": len(ASSETS),
         "pinned_font_generator_path_present":
-            _regular(root / FONT_GENERATOR),
+            _source_tree_file(root, FONT_GENERATOR),
         "owned_krom_or_ps1_bios_path_present": _regular(krom),
         "owned_disc_image_private_path_present":
             _regular(image, owner_only=True),
         "full_pc_elf_executable_path_present":
-            _regular(root / "platform/pc" / BUILD / "vandalhearts_pc",
-                     executable=True),
+            _source_tree_file(root,
+                              Path("platform/pc") / BUILD / "vandalhearts_pc",
+                              executable=True),
         "prepared_private_build_bundle_directory_present": bundle_ok,
         "build_bundle_manifest_path_present":
             bundle_ok and _regular(bundle / "map02_cycle_build_inputs.json",
