@@ -24,7 +24,7 @@ def decode(packet):
     pre_notes,next_notes,replays,failure=struct.unpack_from("<IIII",packet,56)
     if failure:
         raise ValueError("Guest replay failed at source line")
-    if (pre,tail,different)!=(64,48,48) or not wet_n or reset_n:
+    if (pre,tail,different)!=(64,48,48) or not (0<wet_n<=tail*512*2) or reset_n:
         raise ValueError("Guest synthesized tail not aligned or unexpectedly dry/silent")
     if (pre_notes,next_notes,replays,failure)!=(1,0,2,0):
         raise ValueError("Wrong synchronized input, note ownership or replay")
