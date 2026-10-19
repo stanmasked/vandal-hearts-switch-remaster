@@ -896,6 +896,47 @@ for name, offset, size in [
                     output.getvalue())
                 self.assertNotIn(str(self.root), output.getvalue())
 
+    def test_hardlinked_original_source_files_fail_before_regeneration(self):
+        # The metadata-only inventory already rejects multiple hardlinks.
+        # The authoritative private-byte preflight must reject the same
+        # inputs BEFORE calling the original generated-include subprocess.
+        for source in (
+            self.exe, self.elf, self.generator, self.font_generator,
+            *(self.root / "assets" / name for name in ASSETS),
+            self.krom,
+        ):
+            with self.subTest(source=source.relative_to(self.root).as_posix()):
+                alias = self.root.parent / (
+                    "external-alias-" + source.name)
+                os.link(source, alias)
+                try:
+                    with patch.object(private_inputs,
+                                      "check_original_includes") as regenerate:
+                        with self.assertRaisesRegex(
+                                ValueError, "links"):
+                            verify_private_pc_inputs(self.root)
+                    regenerate.assert_not_called()
+                finally:
+                    alias.unlink()
+        self.assertTrue(
+            verify_private_pc_inputs(self.root)["us_ps1_font_charset_verified"])
+
+    def test_hardlinked_explicit_owned_krom_rejected_before_regeneration(self):
+        explicit = self.root.parent / "standalone-synthetic-ps1-font.bin"
+        explicit.write_bytes(self.glyph)
+        alias = self.root.parent / "hardlink-to-owned-font.bin"
+        os.link(explicit, alias)
+        try:
+            with patch.object(private_inputs,
+                              "check_original_includes") as regenerate:
+                with self.assertRaisesRegex(ValueError, "links"):
+                    verify_private_pc_inputs(self.root, krom_source=explicit)
+            regenerate.assert_not_called()
+        finally:
+            alias.unlink()
+        report = verify_private_pc_inputs(self.root, krom_source=explicit)
+        self.assertTrue(report["us_ps1_font_charset_verified"])
+
     def test_private_input_cli_oserror_redacts_owned_path(self):
         output = io.StringIO()
         with patch("sys.argv", ["private-inputs", str(self.root)]), \
