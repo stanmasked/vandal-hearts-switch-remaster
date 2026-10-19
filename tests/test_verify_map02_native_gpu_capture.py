@@ -68,6 +68,91 @@ class NativeGpuCaptureValidationTests(unittest.TestCase):
         self.assertNotIn("31978",summary)
         self.assertNotIn("xy",summary)
 
+    def test_main_terminal_receipt_api_preserves_strict_pr_vram_checks(self):
+        # Reconciling main's hook accounting must not replace PR #55's
+        # independent VRAM transfer and DrawOTag validation.
+        from tools.verify_map02_native_gpu_capture import (
+            STATUS, verify_capture_receipt,
+        )
+        baseline = verify_capture(self.root, target_frame=12)
+        self.assertFalse(baseline["capture_receipt_supplied"])
+        self.assertFalse(baseline["capture_window_closed_without_detected_loss"])
+        self.assertEqual(baseline["clear_pairs_with_verified_vram_effect"], 1)
+        receipt = {
+            "schema": "vh.map02.native-capture-status.v1",
+            "gpu_draw_frame": 12,
+            "observed_hooks": 4,
+            "before_hooks": 2,
+            "after_hooks": 2,
+            "draw_before_hooks": 1,
+            "transfer_before_hooks": 1,
+            "indexed_hooks": 4,
+            "written_hooks": 4,
+            "limit_reached": False,
+            "walk_finished": True,
+            "hooks_balanced": True,
+            "observed_window_closed_without_detected_loss": True,
+        }
+        path = self.root / STATUS
+        path.write_text(json.dumps(receipt), encoding="utf-8")
+        checked = verify_capture_receipt(
+            self.root, target_frame=12, events=self.events)
+        self.assertTrue(checked["capture_receipt_supplied"])
+        self.assertFalse(checked["full_original_gameplay_frame_proven"])
+        validated = verify_capture(self.root, target_frame=12)
+        self.assertTrue(validated["capture_window_closed_without_detected_loss"])
+        self.assertFalse(validated["gpu_write_stream_complete"])
+        self.assertEqual(validated["changed_transfer_vram_words"], 1)
+        self.assertEqual(validated["clear_pairs_with_verified_vram_effect"], 1)
+        self.assertFalse(validated["real_gameplay_authenticated"])
+
+        for name, changed in (
+            ("invented-hook", {"observed_hooks": 5}),
+            ("lost-index", {"indexed_hooks": 3}),
+            ("false-balanced", {"hooks_balanced": False}),
+            ("unfinished-walk", {"walk_finished": False}),
+            ("truncation-cap", {"limit_reached": True}),
+            ("false-closed-window",
+             {"observed_window_closed_without_detected_loss": False}),
+            ("wrong-frame", {"gpu_draw_frame": 13}),
+            ("bad-schema", {"schema": "invented"}),
+        ):
+            with self.subTest(name=name):
+                path.write_text(json.dumps({**receipt, **changed}),
+                                encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    verify_capture(self.root, target_frame=12)
+        path.write_text(json.dumps(receipt), encoding="utf-8")
+        self.events[0]["rgb"][0] = 248
+        self.events[1]["rgb"][0] = 248
+        self.save()
+        with self.assertRaisesRegex(ValueError,
+                                    "ClearImage post-VRAM"):
+            verify_capture(self.root, target_frame=12)
+
+    def test_main_drawenv_metadata_checked_without_dropping_ft4_checks(self):
+        for event in self.events:
+            event["draw_env"] = [0, 0, 1024, 512, -30, 25]
+        self.save()
+        self.assertEqual(verify_capture(self.root, target_frame=12)[
+            "draw_otag_primitive_pairs"], 1)
+        self.events[3]["draw_env"][4] = -31
+        self.save()
+        with self.assertRaisesRegex(ValueError,
+                                    "before/after metadata diverges"):
+            verify_capture(self.root, target_frame=12)
+        self.events[3]["draw_env"][4] = -30
+        self.events[2]["draw_env"][2] = -1
+        self.save()
+        with self.assertRaisesRegex(ValueError, "DRAWENV"):
+            verify_capture(self.root, target_frame=12)
+        self.events[2]["draw_env"] = [0, 0, 1024, 512, -30, 25]
+        del self.events[3]["draw_env"]
+        self.save()
+        with self.assertRaisesRegex(ValueError,
+                                    "before/after metadata diverges"):
+            verify_capture(self.root, target_frame=12)
+
     def test_adjacent_draw_pairs_have_exact_vram_continuity(self):
         # The first captured draw may start with changes from an
         # unobserved preceding frame. Two draws within target DrawOTag
