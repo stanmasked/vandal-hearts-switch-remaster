@@ -67,6 +67,35 @@ def _require_full_readiness_report(ready):
         raise ValueError("MAP02 original PC cycle preflight report contract mismatch")
 
 
+# The final filesystem scan also uses an exact, versioned fail-closed
+# contract. It MUST NOT claim that a structural directory inspection
+# authenticated an executable, disc image, rendered frame or gameplay.
+LAYOUT_TRUE = (
+    "single_private_handoff_plan_present", "prelaunch_layout_ready",
+)
+LAYOUT_FALSE = (
+    "original_pc_elf_verified", "original_game_image_verified",
+    "original_gameplay_executed", "map02_frame_authenticated",
+    "private_game_bytes_read",
+)
+LAYOUT_FIELDS = frozenset((
+    "schema", "private_directory_roles_checked",
+    "capture_output_directories_empty", *LAYOUT_TRUE, *LAYOUT_FALSE,
+))
+
+
+def _require_final_layout_report(layout):
+    if (type(layout) is not dict or set(layout) != LAYOUT_FIELDS or
+            layout.get("schema") != "vh.map02.prelaunch-directory-layout.v1" or
+            type(layout.get("private_directory_roles_checked")) is not int or
+            layout["private_directory_roles_checked"] != 7 or
+            type(layout.get("capture_output_directories_empty")) is not int or
+            layout["capture_output_directories_empty"] != 5 or
+            any(layout.get(key) is not True for key in LAYOUT_TRUE) or
+            any(layout.get(key) is not False for key in LAYOUT_FALSE)):
+        raise ValueError("private MAP02 one-shot layout recheck was not confirmed")
+
+
 def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
                                 preview, rgb, seal_directory, owned_game,
                                 upstream, binary, build_receipt, build_bundle,
@@ -148,12 +177,7 @@ def execute_private_map02_cycle(source, native, scoped, handoff, cycle,
     # readiness verifier returns: metadata equality alone must not let an
     # unexpected capture file or changed handoff inventory pass.
     final_layout = inspect_private_launch_layout(*captures)
-    if (type(final_layout) is not dict or
-            final_layout.get("prelaunch_layout_ready") is not True or
-            final_layout.get("private_directory_roles_checked") != 7 or
-            final_layout.get("capture_output_directories_empty") != 5 or
-            final_layout.get("single_private_handoff_plan_present") is not True):
-        raise ValueError("private MAP02 one-shot layout recheck was not confirmed")
+    _require_final_layout_report(final_layout)
     # The final structural scan checks the plan's existence, ownership and
     # mode, but not its bytes. Re-bind both contents and inode AFTER the
     # scan, including same-size in-place edits that leave directory metadata
