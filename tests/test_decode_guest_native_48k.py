@@ -16,7 +16,7 @@ def fixture(mutate=None):
     p=bytearray(924)
     p[:8]=b"VH48K001"
     p[8]=1;p[10]=15
-    struct.pack_into("<IIIIII",p,12,35657,26750,48,49000,2,0)
+    struct.pack_into("<IIIIII",p,12,35665,26750,48,49000,2,0)
     struct.pack_into("<QQQ",p,40,0x1111222233334444,
                      0x9950037014a7e866,0xf5edab31b6802325)
     struct.pack_into("<I",p,64,2)
