@@ -1,0 +1,9 @@
+# Stage342: four genuine independent NeXium guest audio source captures
+
+This source audit is **conditional on the entire fourth original NeXium run #39182548276 succeeding**, including unchanged strict Stage303–305, Stage334 and Stage336 checks. It never treats a queued, incomplete, or failed run as a confirmed fourth source. It independently downloads the original source artifacts from runs #39166023593, #39167324026, #39175592570 and #39182548276.
+
+The four-source comparator replays original guest PlayBuffer software histories, host-only recorder clock deltas, source SHA-256 pins and strict original PCM success receipts. It binds the third and fourth source archives to their **own** NRO build SHA, run ID, attempt and capture-time PCM monitor report. It separately crosschecks the later PCM quality report rather than confusing it with NRO-bearing recorder metadata. It rejects duplicate guest/host CSVs and source mismatches; it never mixes guest clock durations with host PCM sample timing.
+
+The failed fourth attempt #39177437951 had an original backwards host wall-clock recorder-stop interval of −87 ms and is excluded. The subsequent run #39179079695 passed strict PCM checks but originally failed Stage336 due to a report path error; its **retrospective** re-audit succeeded in Stage341 but its original full workflow remained failed. Neither rejected run is used as an original accepted fourth cohort here.
+
+**Evidence limitations:** Software-call service durations and recorder intervals are not independent measurements of physical Nintendo Switch speakers, DAC quality, original PS1 soundtrack fidelity, or causally established audible audio dropout. Stage342 must finish green in addition to the fourth original full runtime workflow before its four-source comparison can be described as independently verified.
