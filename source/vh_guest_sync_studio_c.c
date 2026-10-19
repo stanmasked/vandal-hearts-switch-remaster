@@ -122,8 +122,8 @@ static unsigned replay(VhGuestSyncStudioC *out) {
     NEED(out->reset_nonzero==0u && out->wet_nonzero>0u);
     NEED(out->different_blocks==TAIL_BLOCKS);
     NEED(out->wet_hash!=out->reset_hash);
-    NEED(out->native48.prefix_frames>=PRE_BLOCKS*555u);
-    NEED(out->native48.tail_frames>=TAIL_BLOCKS*555u);
+    NEED(out->native48.prefix_frames==35665u);
+    NEED(out->native48.tail_frames==26750u);
     NEED(out->native48.different_pages==TAIL_BLOCKS);
     NEED(out->native48.wet_nonzero>0u);
     /* Only one interpolated stereo frame may bridge the old cue. */
