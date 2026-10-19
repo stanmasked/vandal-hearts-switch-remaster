@@ -244,6 +244,43 @@ for name, offset, size in [
                          initial["original_psx_uncovered_contiguous_spans"] + 1)
         self.assertFalse(split["original_psx_loaded_payload_fully_covered"])
 
+    def test_loaded_section_cannot_alias_elf_header_or_section_table(self):
+        source = self.elf.read_bytes()
+        # Exercise a syntactically valid allocated PROGBITS entry whose
+        # contents point into ELF metadata rather than runtime bytes.
+        first_section_offset_field = 64 + 40 + 16
+        for name, alias_offset in (
+            ("ELF file header", 0),
+            ("ELF section table", 64),
+            ("crossing section table boundary", 208),
+        ):
+            with self.subTest(case=name):
+                forged = bytearray(source)
+                struct.pack_into(
+                    "<I", forged, first_section_offset_field, alias_offset)
+                self.elf.write_bytes(forged)
+                with self.assertRaisesRegex(ValueError, "aliases ELF metadata"):
+                    compare_loaded_sections(self.exe, self.elf)
+        self.elf.write_bytes(source)
+        self.assertTrue(compare_loaded_sections(self.exe, self.elf)[
+            "original_exe_and_mips_elf_loaded_sections_match"])
+
+    def test_private_preflight_rejects_metadata_alias_even_with_correct_anchors(self):
+        original = bytearray(self.elf.read_bytes())
+        # Preserve the three pinned data ranges but inject a fourth section
+        # mapped at a distinct PS-X address with an offset into the ELF
+        # section-header table. A separately valid anchor report is not
+        # enough to allow the complete private input preflight.
+        self.add_synthetic_loaded_section()
+        forged = bytearray(self.elf.read_bytes())
+        table = struct.unpack_from("<I", forged, 32)[0]
+        struct.pack_into("<I", forged, table + 4 * 40 + 16, table)
+        self.elf.write_bytes(forged)
+        self.assertTrue(compare_data_ranges(self.exe, self.elf)[
+            "original_exe_and_mips_elf_data_anchors_match"])
+        with self.assertRaisesRegex(ValueError, "aliases ELF metadata"):
+            verify_private_pc_inputs(self.root)
+
     def test_mapped_section_overlap_and_boundary_rejected(self):
         self.add_synthetic_loaded_section(ANCHORS[0][1], size=16)
         with self.assertRaisesRegex(ValueError, "overlapping allocated"):
