@@ -58,6 +58,7 @@ static unsigned replay(VhGuestSyncStudioC *out) {
     out->initial_hash=UINT64_C(14695981039346656037);
     out->wet_hash=UINT64_C(14695981039346656037);
     out->reset_hash=UINT64_C(14695981039346656037);
+    vh_guest_native_48k_init(&out->native48);
     for(unsigned i=0;i<128u;i++)
         synth_pcm[i]=(int16_t)(11000+(int)i*17);
     vh_native_spu_reset(&wet_spu);vh_native_spu_reset(&reset_spu);
@@ -82,6 +83,7 @@ static unsigned replay(VhGuestSyncStudioC *out) {
         NEED(vh_music_scene_render(&reset,reset_pcm)==0);
         NEED(memcmp(wet_pcm,reset_pcm,sizeof wet_pcm)==0);
         out->initial_hash=hash_block(out->initial_hash,wet_pcm);
+        NEED(vh_guest_native_48k_observe(&out->native48,wet_pcm,reset_pcm,0,i)==0);
     }
     NEED(wet.seq.note_ons==1u && reset.seq.note_ons==1u);
     out->pre_note_ons=(uint32_t)wet.seq.note_ons;
@@ -109,6 +111,7 @@ static unsigned replay(VhGuestSyncStudioC *out) {
         out->different_blocks+=(memcmp(wet_pcm,reset_pcm,sizeof wet_pcm)!=0);
         out->wet_hash=hash_block(out->wet_hash,wet_pcm);
         out->reset_hash=hash_block(out->reset_hash,reset_pcm);
+        NEED(vh_guest_native_48k_observe(&out->native48,wet_pcm,reset_pcm,1,i)==0);
         NEED(wet.stage==reset.stage);
         NEED(wet.blocks_rendered==reset.blocks_rendered);
         NEED(wet.seq.note_ons==0u && reset.seq.note_ons==0u);
@@ -119,6 +122,14 @@ static unsigned replay(VhGuestSyncStudioC *out) {
     NEED(out->reset_nonzero==0u && out->wet_nonzero>0u);
     NEED(out->different_blocks==TAIL_BLOCKS);
     NEED(out->wet_hash!=out->reset_hash);
+    NEED(out->native48.prefix_frames>=PRE_BLOCKS*555u);
+    NEED(out->native48.tail_frames>=TAIL_BLOCKS*555u);
+    NEED(out->native48.different_pages==TAIL_BLOCKS);
+    NEED(out->native48.wet_nonzero>0u);
+    /* Only one interpolated stereo frame may bridge the old cue. */
+    NEED(out->native48.reset_first_page_nonzero<=2u);
+    NEED(out->native48.reset_later_nonzero==0u);
+    NEED(out->native48.wet_hash!=out->native48.reset_hash);
     NEED(vh_music_scene_request(&wet,NULL,0)==0);
     NEED(vh_music_scene_request(&reset,NULL,0)==0);
     NEED(vh_music_scene_render(&wet,wet_pcm)==0);
@@ -148,12 +159,22 @@ int vh_guest_sync_studio_c_run(VhGuestSyncStudioC *out) {
        first.pre_blocks!=second.pre_blocks ||
        first.post_blocks!=second.post_blocks ||
        first.pre_note_ons!=second.pre_note_ons ||
-       first.next_note_ons!=second.next_note_ons) {
+       first.next_note_ons!=second.next_note_ons ||
+       first.native48.prefix_hash!=second.native48.prefix_hash ||
+       first.native48.wet_hash!=second.native48.wet_hash ||
+       first.native48.reset_hash!=second.native48.reset_hash ||
+       first.native48.prefix_frames!=second.native48.prefix_frames ||
+       first.native48.tail_frames!=second.native48.tail_frames ||
+       first.native48.different_pages!=second.native48.different_pages ||
+       first.native48.wet_nonzero!=second.native48.wet_nonzero ||
+       first.native48.reset_first_page_nonzero!=second.native48.reset_first_page_nonzero ||
+       first.native48.reset_later_nonzero!=second.native48.reset_later_nonzero) {
         memset(out,0,sizeof *out);out->failure_line=(uint32_t)__LINE__;
         return -1;
     }
     *out=first;
     out->verified_roundtrips=2u;
+    out->native48.verified_roundtrips=2u;
     return 0;
 }
 static void put_le(uint8_t *dst,uint64_t value,unsigned n) {
