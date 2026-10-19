@@ -29,6 +29,20 @@ class Map02ScopedCiPolicyTests(unittest.TestCase):
         ):
             self.assertIn(suite, raw)
 
+    def test_private_input_inventory_is_triggered_and_executed(self):
+        raw = WORKFLOW.read_text(encoding="utf-8")
+        # The workflow uses an explicit unittest module list. Merely
+        # compiling tests does not run the new privacy/inventory tests.
+        for path in (
+            "tools/inspect_map02_private_inputs.py",
+            "tests/test_inspect_map02_private_inputs.py",
+        ):
+            self.assertEqual(raw.count("      - '" + path + "'"), 2,
+                             "MAP02 push and PR triggers must cover " + path)
+        self.assertEqual(
+            raw.count("            tests.test_inspect_map02_private_inputs \\"),
+            1, "MAP02 inventory regressions must actually be executed")
+
     def test_no_private_evidence_artifact_upload(self):
         raw = WORKFLOW.read_text(encoding="utf-8")
         self.assertNotIn("actions/upload-artifact", raw)
