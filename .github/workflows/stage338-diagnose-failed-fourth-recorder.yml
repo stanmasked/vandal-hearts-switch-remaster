@@ -64,6 +64,10 @@ jobs:
               or r["physical_Nintendo_Switch_audio_tested"] is not False):
               raise SystemExit("Stage338 source diagnostic or scope is invalid")
           print("Stage338 original strict failure gate:",r["original_stop_verification"]["gate"])
+          # Only an allowlisted relative field/status diagnostic is printed,
+          # NEVER original absolute host clock epochs or PCM.
+          print("Stage338 precise original stop CSV rejection:",
+                r["original_stop_verification"].get("original_stop_csv_failure"))
           print("Stage338 host stop source-byte delta:",
               r["original_stop_verification"].get(
                   "after_wait_minus_original_final_pcm_bytes"))
