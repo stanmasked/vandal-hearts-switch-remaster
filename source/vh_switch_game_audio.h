@@ -49,6 +49,10 @@ VhSceneExportResult vh_switch_game_audio_trace_export(
  * No guest file system or stdout transport is required. */
 int vh_switch_game_audio_trace_render(VhCanvas *canvas,
     uint32_t black,uint32_t white,uint32_t marker);
+/* Opt-in research receipt of first post-ramp 48-kHz stereo PCM metrics.
+ * Valid only after the native audio worker has been joined. */
+int vh_switch_game_audio_pcm_metrics_render(VhCanvas *canvas,
+    uint32_t black,uint32_t white,uint32_t marker);
 /* Forward libnx AppletHookType_OnFocusState/OnResume transitions
  * from the main thread. Does not wait for the audio worker.
  */
