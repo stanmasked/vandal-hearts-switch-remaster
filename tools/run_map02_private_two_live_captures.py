@@ -15,7 +15,11 @@ import subprocess
 
 from tools.capture_map02_live_frame_pipe import capture, _fingerprint_fd
 from tools.map02_linux_elf_process_image import require_elf_image
-from tools.audit_map02_private_frame_repeatability import audit
+from tools.audit_map02_private_frame_repeatability import (
+    audit, _require_gpu_snapshot_aggregate_consistency,
+    _require_terminal_gpu_frame_consistency,
+    _joint_gpu_vram_first_divergence,
+)
 from tools.prepare_map02_private_frame_pair import _directory, _check_directory, WIDTH, HEIGHT
 from tools.run_map02_private_joint_capture_audit import _session_inode_witness
 
@@ -121,6 +125,28 @@ def _require_bit_exact_gpu_timeline(report):
             or type(report.get("gpu_vram_equal_different_state_transitions")) is not int
             or report["gpu_vram_equal_different_state_transitions"] != 0):
         raise ValueError("MAP02 independent native GPU timelines are not bit-exact")
+    # The main audit checks these on its own path; repeat the independent
+    # calculations at the final strict acceptance boundary as well. A
+    # post-audit mutation of one secondary phase/history/digest field must
+    # never become a successful bit-exact receipt by preserving only the
+    # legacy all-true booleans and zero mismatch counters.
+    try:
+        _require_gpu_snapshot_aggregate_consistency(report)
+        _require_terminal_gpu_frame_consistency(
+            report,
+            different=report["different_bgr555_pixels"],
+            changed_scanlines=report["changed_scanlines"],
+            stp_bit_differences=report["stp_bit_differences"],
+            first_image_sha256=report["first_image_sha256"],
+            second_image_sha256=report["second_image_sha256"],
+        )
+        witnessed = _joint_gpu_vram_first_divergence(report, report)
+        if any(witnessed[key] is not None for key in joint_keys):
+            raise ValueError("unexpected GPU divergence")
+    except (ValueError, KeyError, TypeError) as exc:
+        raise ValueError(
+            "MAP02 independent native GPU timelines are not bit-exact"
+        ) from exc
 
 
 def run(executable, first_frame, first_journal, second_frame, second_journal,
