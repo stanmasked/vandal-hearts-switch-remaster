@@ -64,16 +64,26 @@ def _read_at(stream, length, offset):
     return os.pread(stream.fileno(), length, offset)
 
 
+def _psx_loaded_extent(exe, exe_size):
+    """Only declared PS-X load bytes count as original runtime image."""
+    header = _read_at(exe, PSX_HEADER, 0)
+    if len(header) != PSX_HEADER or header[:8] != b"PS-X EXE":
+        raise ValueError("original US EXE does not have a full PS-X header")
+    exe_load, payload_size = struct.unpack_from("<II", header, 0x18)
+    if exe_load != LOAD_VRAM:
+        raise ValueError("pinned US PS-X EXE has unexpected load VRAM")
+    if (payload_size == 0 or payload_size > exe_size - PSX_HEADER or
+            exe_load + payload_size > 0x100000000):
+        raise ValueError("original PS-X executable has invalid load extent")
+    return exe_load, payload_size
+
+
 def compare_data_ranges(exe_path, elf_path):
     """Check source-pinned anchor bytes through stable file descriptors only."""
     with _stable_source(exe_path, "US PS-X EXE") as (exe, exe_size):
         with _stable_source(elf_path, "MIPS ELF") as (elf, elf_size):
-            header = _read_at(exe, PSX_HEADER, 0)
-            if len(header) != PSX_HEADER or header[:8] != b"PS-X EXE":
-                raise ValueError("original US EXE does not have a full PS-X header")
-            exe_load = int.from_bytes(header[0x18:0x1c], "little")
-            if exe_load != LOAD_VRAM:
-                raise ValueError("pinned US PS-X EXE has unexpected load VRAM")
+            exe_load, payload_size = _psx_loaded_extent(exe, exe_size)
+            end_of_image = exe_load + payload_size
             elf_header = _read_at(elf, 52, 0)
             if (len(elf_header) < 52 or elf_header[:4] != bytes.fromhex("7f454c46")
                     or elf_header[4] != 1 or elf_header[5] != 1):
@@ -108,8 +118,10 @@ def compare_data_ranges(exe_path, elf_path):
                     raise ValueError("original MIPS ELF missing unique data section: " + key)
                 first, offset = matched[0]
                 source_offset = PSX_HEADER + address - LOAD_VRAM
-                if source_offset < PSX_HEADER or source_offset + length > exe_size:
-                    raise ValueError("original US PS-X data extends past executable")
+                if (source_offset < PSX_HEADER or
+                        address + length > end_of_image or
+                        source_offset + length > exe_size):
+                    raise ValueError("original US PS-X data extends past declared load image")
                 from_exe = _read_at(exe, length, source_offset)
                 from_elf = _read_at(elf, length, offset + address - first)
                 if (len(from_exe) != length or len(from_elf) != length
@@ -137,14 +149,7 @@ def compare_loaded_sections(exe_path, elf_path):
     """
     with _stable_source(exe_path, "US PS-X EXE") as (exe, exe_size):
         with _stable_source(elf_path, "MIPS ELF") as (elf, elf_size):
-            header = _read_at(exe, PSX_HEADER, 0)
-            if len(header) != PSX_HEADER or header[:8] != b"PS-X EXE":
-                raise ValueError("original US EXE does not have a full PS-X header")
-            exe_load, payload_size = struct.unpack_from("<II", header, 0x18)
-            if (exe_load != LOAD_VRAM or payload_size == 0 or
-                    payload_size > exe_size - PSX_HEADER or
-                    exe_load + payload_size > 0x100000000):
-                raise ValueError("original PS-X executable has invalid load extent")
+            exe_load, payload_size = _psx_loaded_extent(exe, exe_size)
             end_of_image = exe_load + payload_size
 
             elf_header = _read_at(elf, 52, 0)
