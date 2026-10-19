@@ -1189,6 +1189,8 @@ jobs:
             --guest-root-file runtime-evidence/guest-sd-root.txt \
             --stage351 runtime-evidence/guest-exit-tail-reason-stage351.json \
             --stage351-original runtime-evidence/audio-exit-tail-reason-000.csv \
+            --stage313 runtime-evidence/guest-last-audout-release-stage313.json \
+            --stage348 runtime-evidence/guest-lease-reconciliation-stage348.json \
             --output runtime-evidence/guest-exit-tail-wait-result-stage357.json \
             --output-original runtime-evidence/audio-exit-tail-wait-result-000.csv
           python3 - <<'PY'

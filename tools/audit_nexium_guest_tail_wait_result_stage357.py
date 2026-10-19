@@ -14,6 +14,7 @@ from audit_nexium_guest_exit_timeline import SUBDIR,ExitTimelineError
 from audit_nexium_guest_tail_reason_stage351 import (
     SCHEMA as STAGE351_SCHEMA,VERIFIED as STAGE351_VERIFIED,
     SOURCE as STAGE351_SOURCE,
+    audit_source as audit_stage351_source,
 )
 SOURCE="audio-exit-tail-wait-result-000.csv"
 SCHEMA="vh-stage357-original-guest-raw-exit-tail-wait-result/v1"
@@ -105,6 +106,8 @@ def main(argv=None)->int:
     p.add_argument("--guest-root-file",type=Path,required=True)
     p.add_argument("--stage351",type=Path,required=True)
     p.add_argument("--stage351-original",type=Path,required=True)
+    p.add_argument("--stage313",type=Path,required=True)
+    p.add_argument("--stage348",type=Path,required=True)
     p.add_argument("--output",type=Path,required=True)
     p.add_argument("--output-original",type=Path,required=True)
     a=p.parse_args(argv)
@@ -114,7 +117,8 @@ def main(argv=None)->int:
         for dest in (a.output,a.output_original):
             if dest.exists() or dest.is_symlink():
                 raise ExitTimelineError("refuse overwrite source evidence")
-        for source in (a.guest_root_file,a.stage351,a.stage351_original):
+        for source in (a.guest_root_file,a.stage351,a.stage351_original,
+                       a.stage313,a.stage348):
             if not regular(source):
                 raise ExitTimelineError("missing or linked verified input")
         root=a.guest_root_file.read_text(encoding="utf-8").strip()
@@ -122,12 +126,35 @@ def main(argv=None)->int:
             raise ExitTimelineError("invalid original guest root locator")
         report=json.loads(a.stage351.read_text(encoding="utf-8"))
         old=a.stage351_original.read_bytes()
+        report313=json.loads(a.stage313.read_text(encoding="utf-8"))
+        report348=json.loads(a.stage348.read_text(encoding="utf-8"))
         if (not isinstance(report,dict)
+            or not isinstance(report313,dict)
+            or not isinstance(report348,dict)
             or hashlib.sha256(old).hexdigest()!=
                 report.get("original_guest_tail_reason_csv_sha256")
-            or not old.startswith(b"scope,value\n")
-            or report.get("original_guest_tail_reason_bytes_preserved") is not True):
-            raise ExitTimelineError("Stage351 original CSV mismatch")
+            or report.get("original_guest_tail_reason_bytes_preserved") is not True
+            or report.get("prior_stage313_and_stage348_original_bytes_reaudited") is not True):
+            raise ExitTimelineError("Stage351 original receipts not independently verified")
+        # Reparse ALL original Stage351 ordered numeric rows against its
+        # prior Stage313 and Stage348 receipt objects; no reconstructed
+        # reason code is accepted just because the receipt says it exists.
+        trusted=audit_stage351_source(old,report313,report348)
+        for key in (
+            "schema","result","original_guest_tail_reason_csv_sha256",
+            "reason_code","reason_name","tail_attempted",
+            "tail_descriptor_return_confirmed","tail_lease_acquired",
+            "lease_pages_acquired","lease_pages_released",
+            "abandoned_sessions","original_guest_tail_reason_source_observed",
+            "original_guest_tail_reason_bytes_preserved",
+            "bound_to_original_stage313_tail_observation",
+            "bound_to_original_stage348_lease_observation",
+            "one_to_one_causal_attribution_proven",
+            "physical_Nintendo_Switch_audio_tested",
+            "DAC_or_speaker_audio_verified",
+        ):
+            if type(report.get(key)) is not type(trusted[key]) or report[key]!=trusted[key]:
+                raise ExitTimelineError("Stage351 receipt disagrees with source or earlier stages")
         doc,raw=audit_guest(Path(root),report)
         for dest in (a.output,a.output_original):
             dest.parent.mkdir(parents=True,exist_ok=True)
