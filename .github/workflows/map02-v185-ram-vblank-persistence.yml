@@ -1,0 +1,31 @@
+name: MAP02 v185 RAM retention across genuine native VBlank gaps
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-v185-ram-vblank-persistence.yml'
+      - '.github/workflows/map02-v104-content-guard.yml'
+      - 'tools/apply_map02_v185_ram_vblank_persistence.py'
+      - 'tests/test_map02_v185_ram_vblank_persistence.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  boundary-audit:
+    name: MIPS RAM retention and fail-closed interphase tampering (${{ matrix.cc }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert genuine pre-execution readback and three distinct tamper types
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q tools/apply_map02_v185_ram_vblank_persistence.py tests/test_map02_v185_ram_vblank_persistence.py
+          python3 -m unittest discover -s tests -p 'test_map02_v185_ram_vblank_persistence.py' -v
+          python3 -m unittest discover -s tests -p 'test_map02_v184_ram_data_chain_refusals.py' -v
+          echo 'VH185_INDEPENDENT_RAM_PERSISTENCE_PASS boundaries=3 corruptions=3 original_retail_executed=0'
