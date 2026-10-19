@@ -161,6 +161,17 @@ def compare_loaded_sections(exe_path, elf_path):
             if (shoff < 52 or entsize < 40 or not (1 <= count <= 512)
                     or shoff + entsize * count > elf_size):
                 raise ValueError("original ELF section headers are invalid")
+            # ELF32 e_phoff/e_phentsize/e_phnum describe another table of
+            # metadata. Its bytes cannot masquerade as PS-X runtime data.
+            phoff = struct.unpack_from("<I", elf_header, 28)[0]
+            phentsize, phnum = struct.unpack_from("<HH", elf_header, 42)
+            if phnum:
+                if (phoff < 52 or phentsize < 32 or
+                        phoff + phentsize * phnum > elf_size):
+                    raise ValueError("original ELF program header table is invalid")
+                phend = phoff + phentsize * phnum
+            else:
+                phoff = phend = 0
 
             mapped = []
             outside = 0
@@ -174,13 +185,14 @@ def compare_loaded_sections(exe_path, elf_path):
                     continue  # not initialized runtime bytes (e.g. .bss)
                 if offset + size > elf_size or address + size > 0x100000000:
                     raise ValueError("original ELF loaded section has invalid bounds")
-                # A mapped runtime section must contain real file payload,
-                # not byte aliases into its own ELF/section metadata. Valid
-                # ELF files place SHT_PROGBITS payload outside both regions.
+                # A mapped runtime section must contain actual file
+                # payload, not byte aliases into its own ELF metadata.
+                # That includes the optional program-header table.
                 section_table_end = shoff + entsize * count
                 if (offset < 52 or
                         (offset < section_table_end and
-                         shoff < offset + size)):
+                         shoff < offset + size) or
+                        (phnum and offset < phend and phoff < offset + size)):
                     raise ValueError(
                         "original ELF loaded section aliases ELF metadata")
                 if address >= end_of_image or address + size <= exe_load:
