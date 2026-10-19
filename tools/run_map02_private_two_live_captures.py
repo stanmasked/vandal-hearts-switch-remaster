@@ -372,6 +372,12 @@ def run(executable, first_frame, first_journal, second_frame, second_journal,
                                     original_identity=elf_identity)
 
         def verify_all_published():
+            # A Git checkout can be initialized around the private output
+            # paths AFTER one or both ELF children have already run. Recheck
+            # every destination before/after independent replay, not merely
+            # before the first/second capture.
+            for role_fd, role_path in zip(opened, folders):
+                _require_private_capture_destination(role_path, role_fd)
             for offset, witness in zip((0, 2), witnesses):
                 if _session_inode_witness(*folders[offset:offset + 2]) != witness:
                     raise ValueError("MAP02 two-run published files changed during replay")
