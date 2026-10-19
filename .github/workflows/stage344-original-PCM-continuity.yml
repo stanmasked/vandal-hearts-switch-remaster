@@ -1,0 +1,109 @@
+name: Stage344 compare genuine four original NeXium PCM continuity indicators
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage344-original-PCM-continuity.yml'
+      - 'tools/audit_nexium_stage344_four_original_pcm_indicators.py'
+      - 'tests/test_audit_nexium_stage344_four_original_pcm_indicators.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  original-pcm-comparison:
+    name: Independently reread real PCM files without inferring audible dropouts
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout original source-audited PCM indicators
+        uses: actions/checkout@v4
+      - name: Twelve positive and negative PCM provenance tests
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/audit_nexium_stage344_four_original_pcm_indicators.py
+          python3 -m unittest discover -s tests -p 'test_audit_nexium_stage344_four_original_pcm_indicators.py' -v
+      - name: Require all four original game executions and Stage342 independent source audit success
+        env:
+          GH_${{ github.token }}: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for n in 39166023593 39167324026 39175592570 39182548276 39183433971; do
+            test "$(gh api repos/stanmasked/vandal-hearts-switch-remaster/actions/runs/$n --jq '.conclusion')" = success
+          done
+      - name: Download original first NeXium raw audio evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39166023593
+          github-token: ${{ github.token }}
+          path: pcm-first
+      - name: Download original second NeXium raw audio evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39167324026
+          github-token: ${{ github.token }}
+          path: pcm-second
+      - name: Download original third NeXium raw audio evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39175592570
+          github-token: ${{ github.token }}
+          path: pcm-third
+      - name: Download original fourth NeXium raw audio evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: nexium-runtime-evidence
+          run-id: 39182548276
+          github-token: ${{ github.token }}
+          path: pcm-fourth
+      - name: Download independently authenticated Stage342 four-source report
+        uses: actions/download-artifact@v4
+        with:
+          name: stage342-four-genuine-neXium-guest-host-source-audit
+          run-id: 39183433971
+          github-token: ${{ github.token }}
+          path: stage342
+      - name: Independently hash and scan actual PCM streams and verify exact original Stage299 reports
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p stage344-compact
+          python3 tools/audit_nexium_stage344_four_original_pcm_indicators.py \
+            --first-archive pcm-first \
+            --second-archive pcm-second \
+            --third-archive pcm-third \
+            --fourth-archive pcm-fourth \
+            --stage342-report stage342/four-original-sources.json \
+            --output stage344-compact/four-original-PCM-continuity-indicators.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("stage344-compact/four-original-PCM-continuity-indicators.json").read_text())
+          if (r["result"]!="FOUR_ORIGINAL_NEXIUM_PCM_CONTINUITY_INDICATORS_SOURCE_REPLAYED"
+              or r["all_four_original_Stage299_PCM_reports_independently_recomputed"] is not True
+              or r["original_Stage342_guest_host_source_chain_confirmed"] is not True
+              or r["original_PCM_streams_distinct_within_and_across_runs"] is not True
+              or r["missing_or_duplicated_samples_not_verified_without_reference"] is not True
+              or r["physical_Nintendo_Switch_audio_tested"] is not False
+              or len(r["original_capture_indicator_rows"])!=4):
+              raise SystemExit("Stage344 original virtual PCM source audit failed")
+          for row in r["original_capture_indicator_rows"]:
+              print(row["source"],"monitor zeros per million:",
+                    row["monitor"]["exact_zero_frames_per_million"],
+                    "scene zeros per million:",row["scenes"]["exact_zero_frames_per_million"],
+                    "monitor large steps:",row["monitor"]["large_adjacent_sample_steps_ge4096"],
+                    "scene large steps:",row["scenes"]["large_adjacent_sample_steps_ge4096"])
+          PY
+          echo "Stage344: exact SHA-matched original virtual PCM source comparison; missing samples, audout queue underrun and physical sound NOT proved." >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload compact statistics only not original virtual PCM or absolute epochs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage344-original-four-PCM-indicator-summaries
+          path: stage344-compact/
+          if-no-files-found: warn
