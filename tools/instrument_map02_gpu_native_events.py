@@ -166,7 +166,9 @@ static void VH_CaptureEvent(const char *phase, const char *operation, int transf
     }
     upload_name[0] = '\0';
     if (upload && upload_words > 0u && upload_words <= 16384u) {
-        n = snprintf(upload_name, sizeof upload_name, "gpu-%04u-upload.bin", seq);
+        /* Match snapshot, JSONL step and all per-window upload filenames. */
+        n = snprintf(upload_name, sizeof upload_name,
+                     "gpu-%04u-upload.bin", local_seq);
         if (n < 0 || (size_t)n >= sizeof upload_name) return;
         n = snprintf(upload_path, sizeof upload_path, "%s/%s",
                      directory, upload_name);
