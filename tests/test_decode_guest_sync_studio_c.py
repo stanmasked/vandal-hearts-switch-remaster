@@ -47,6 +47,9 @@ class SyncedGuestTests(unittest.TestCase):
     def test_wet_is_silent_rejected(self):
         with self.assertRaisesRegex(ValueError,"silent"):
             m.decode(payload(lambda p:struct.pack_into("<I",p,24,0)))
+    def test_impossible_nonzero_count_rejected(self):
+        with self.assertRaisesRegex(ValueError,"aligned"):
+            m.decode(payload(lambda p:struct.pack_into("<I",p,24,1000000)))
     def test_different_hash_is_required(self):
         with self.assertRaisesRegex(ValueError,"fingerprint"):
             m.decode(payload(lambda p:struct.pack_into("<Q",p,40,0xf5edab31b6802325)))
