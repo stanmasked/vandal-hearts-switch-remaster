@@ -50,6 +50,11 @@ class PrivateOneShotCycleTests(unittest.TestCase):
             "private_file": (self.plan, self.plan_identity),
             "_validate_plan": {"target_gpu_draw_frame": 12},
             "verify_private_cycle_readiness": self.ready_report,
+            "inspect_private_launch_layout": {
+                "prelaunch_layout_ready": True,
+                "private_directory_roles_checked": 7,
+                "capture_output_directories_empty": 5,
+                "single_private_handoff_plan_present": True},
             "launch_observed_pc": {
                 "kernel_executable_hash_matched": True,
                 "same_process_gpu_scoped_nonce_checked": True,
@@ -279,6 +284,42 @@ class PrivateOneShotCycleTests(unittest.TestCase):
         self.mocks["launch_observed_pc"].assert_not_called()
         self.mocks["seal_final_capture"].assert_not_called()
         self.assertFalse(list(self.folders[-1].iterdir()))
+
+    def test_dry_run_rejects_false_or_incomplete_final_layout(self):
+        original = self.mocks["inspect_private_launch_layout"].return_value
+        for forged in (
+            {"prelaunch_layout_ready": True},
+            {**original, "prelaunch_layout_ready": False},
+            {**original, "private_directory_roles_checked": 6},
+            {**original, "capture_output_directories_empty": True},
+            {**original, "single_private_handoff_plan_present": False},
+        ):
+            with self.subTest(forged=forged):
+                self.mocks["inspect_private_launch_layout"].return_value = forged
+                with self.assertRaisesRegex(ValueError, "layout recheck"):
+                    self.execute(dry_run=True, allow_local_completion=False)
+        self.mocks["launch_observed_pc"].assert_not_called()
+        self.mocks["seal_final_capture"].assert_not_called()
+
+    def test_real_structural_rescan_rejects_late_unexpected_output(self):
+        # The readiness stub says ready, and metadata checks are mocked
+        # stable, but the actual independent layout scanner must detect
+        # a newly written capture artifact before the original child starts.
+        from tools.check_map02_private_launch_layout import (
+            inspect_private_launch_layout as real_inspect,
+        )
+        plan_file = self.folders[3] / runner.PLAN
+        plan_file.write_bytes(b'{"synthetic":"plan"}\\n')
+        plan_file.chmod(0o600)
+        native = self.folders[1]
+        (native / "late-unexpected-synthetic").write_bytes(b"synthetic")
+        with patch.object(runner, "_directory_identity",
+                          return_value=(1, 1, 1, 0o40700, 1, 1)):
+            self.mocks["inspect_private_launch_layout"].side_effect = real_inspect
+            with self.assertRaisesRegex(ValueError, "not empty"):
+                self.execute(dry_run=True, allow_local_completion=False)
+        self.mocks["launch_observed_pc"].assert_not_called()
+        self.mocks["seal_final_capture"].assert_not_called()
 
     def test_dry_run_and_publish_permission_mutually_exclusive(self):
         with self.assertRaisesRegex(ValueError, "forbids local completion"):
