@@ -177,6 +177,31 @@ class Stage357Tests(unittest.TestCase):
         ):
             self.assertIn("- '"+path+"'",workflow)
 
+    def test_production_tail_has_one_append_one_bounded_wait_and_one_snapshot(self):
+        source=(Path(__file__).resolve().parents[1]/"source"/
+                "vh_switch_game_audio.c").read_text(encoding="utf-8")
+        start=source.index("static int output_tail_submit_bounded(")
+        end=source.index("/* Called by the single audio owner;",start)
+        actual=source[start:end]
+        # One original service invocation each. Stage357 is a snapshot
+        # of the *existing* wait return, not another wait or poll.
+        self.assertEqual(actual.count("audoutAppendAudioOutBuffer("),1)
+        self.assertEqual(actual.count("audoutWaitPlayFinish("),1)
+        self.assertEqual(actual.count("vh_tail357_record("),1)
+        self.assertEqual(actual.count("vh_audio_tail_stage353_wait_checked("),1)
+        self.assertIn("UINT64_C(12000000)",actual)
+        self.assertLess(actual.index("audoutWaitPlayFinish("),
+                        actual.index("vh_tail357_record("))
+        self.assertLess(actual.index("vh_tail357_record("),
+                        actual.index("vh_audio_tail_stage353_wait_checked("))
+        self.assertIn("R_FAILED(wait_result)",actual)
+        # Source recording must be separate, only callable after join.
+        export_start=source.index(
+            "int vh_switch_game_audio_tail_wait_result_dump(FILE *stream)")
+        exported=source[export_start:export_start+350]
+        self.assertIn("if (!stream || thread_started) return -1",exported)
+        self.assertIn("vh_tail357_write_csv(",exported)
+
     def test_reject_symlinked_guest_source(self):
         self.path.symlink_to(self.root/"missing.csv")
         with self.assertRaises(ExitTimelineError):
