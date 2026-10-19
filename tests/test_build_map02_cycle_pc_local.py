@@ -341,6 +341,33 @@ class PrivateFullPcBuildTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "changed during PC build"):
                 build_full_pc(self.upstream, self.bundle)
 
+    def test_invalid_original_input_blocks_even_make_dry_run(self):
+        # Make -n can still execute recursive or '+' recipes. An invalid
+        # original US EXE/MIPS ELF/KROM must be rejected before *any* make
+        # graph subprocess is started, not just before the full compiler.
+        self.active[4].side_effect = ValueError(
+            "original private US executable differs from pinned identity")
+        with patch("tools.build_map02_cycle_pc_local.subprocess.run") as compiler:
+            with self.assertRaisesRegex(ValueError, "pinned identity"):
+                build_full_pc(self.upstream, self.bundle)
+        compiler.assert_not_called()
+        self.active[0].assert_not_called()
+        self.assertFalse(self.exe.parent.exists())
+
+    def test_make_graph_follows_successful_strict_original_input_check(self):
+        calls = []
+        self.active[4].side_effect = lambda *a, **k: (
+            calls.append("original-inputs") or
+            {"private_build_inputs_binding_sha256": "9" * 64})
+        self.active[0].side_effect = lambda *a, **k: (
+            calls.append("make-graph") or self.plan)
+        with patch("tools.build_map02_cycle_pc_local.subprocess.run",
+                   side_effect=self.build_fake):
+            report = build_full_pc(self.upstream, self.bundle)
+        self.assertTrue(report["full_elf_linked"])
+        self.assertEqual(calls, [
+            "original-inputs", "make-graph", "original-inputs"])
+
     def test_bad_time_limits_and_changed_bundle_rejected_before_make(self):
         with self.assertRaisesRegex(ValueError, "timeout"):
             build_full_pc(self.upstream, self.bundle, timeout=4)
