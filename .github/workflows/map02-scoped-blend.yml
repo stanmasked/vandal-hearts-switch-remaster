@@ -16,6 +16,7 @@ on:
       - 'tools/map02_vram_edge_witness.py'
       - 'tools/check_map02_private_capture_ready.py'
       - 'tests/test_check_map02_private_capture_ready.py'
+      - 'tests/test_check_map02_original_gpu_recorder_runtime.py'
       - 'tools/instrument_map02_gpu_native_events.py'
       - 'tools/verify_map02_native_gpu_capture.py'
       - 'tests/test_instrument_map02_gpu_native_events.py'
@@ -89,6 +90,7 @@ on:
       - 'tools/map02_vram_edge_witness.py'
       - 'tools/check_map02_private_capture_ready.py'
       - 'tests/test_check_map02_private_capture_ready.py'
+      - 'tests/test_check_map02_original_gpu_recorder_runtime.py'
       - 'tools/instrument_map02_gpu_native_events.py'
       - 'tools/verify_map02_native_gpu_capture.py'
       - 'tests/test_instrument_map02_gpu_native_events.py'
@@ -179,6 +181,7 @@ jobs:
             tests.test_map02_vram_edge_witness \
             tests.test_publish_map02_vram_edges_witness \
             tests.test_check_map02_private_capture_ready \
+            tests.test_check_map02_original_gpu_recorder_runtime \
             tests.test_instrument_map02_gpu_native_events \
             tests.test_verify_map02_gpu_capture_receipt \
             tests.test_verify_map02_native_gpu_windows \

@@ -21,6 +21,28 @@ from tools.verify_map02_native_gpu_capture import (
 from tools.verify_map02_native_gpu_windows import verify_native_windows
 
 
+
+def require_original_ot_pairs(events, expected_types):
+    """Audit ordered native BEFORE/AFTER pairs including state-only DR_MODE.
+
+    This checks the synthetic source's exact primitive order, not genuine
+    MAP02 gameplay or raster/PS1 parity. The full VRAM validator runs
+    separately and is not replaced by these bounded metadata assertions.
+    """
+    if len(events) != 2 * len(expected_types):
+        raise ValueError("original GPU event-pair count mismatch")
+    for ordinal, expected_type in enumerate(expected_types):
+        before, after = events[2 * ordinal:2 * ordinal + 2]
+        if (before.get("operation") != "draw" or
+                after.get("operation") != "draw" or
+                before.get("primitive_type") != expected_type or
+                after.get("primitive_type") != expected_type or
+                before.get("phase") != "before" or
+                after.get("phase") != "after"):
+            raise ValueError("original GPU event-pair order/phase mismatch")
+    return len(expected_types)
+
+
 def execute_real_recorder(upstream, *, cc="cc"):
     pc = Path(upstream).resolve() / "platform" / "pc"
     raster = pc / "src" / "pc_raster.c"
@@ -93,11 +115,7 @@ def execute_real_recorder(upstream, *, cc="cc"):
                 second = private / "window-001"
                 rows = [json.loads(row) for row in
                         (second / LOG).read_bytes().splitlines()]
-                if (len(rows) != 6 or
-                        [e["primitive_type"] for e in rows] != [5,5,1,1,2,2] or
-                        [e["phase"] for e in rows] !=
-                        ["before","after"] * 3):
-                    raise ValueError("DR_MODE/FT4 at native window boundary lost")
+                require_original_ot_pairs(rows, (5, 1, 2))
                 # Real-byte mutation of ALL second-window snapshots at
                 # off-primitive (0,0) preserves every local BEFORE/AFTER
                 # transition. Only the cross-window VRAM continuity guard
@@ -131,10 +149,9 @@ def execute_real_recorder(upstream, *, cc="cc"):
             if extra_draws:
                 # AddPrim is LIFO: the 32 extra F4 exhaust the 64-event
                 # recorder, so DR_MODE + two older draws remain unrecorded.
-                if (len(events) != 64 or
-                        any(e["primitive_type"] == 5 for e in events) or
-                        not status["limit_reached"]):
+                if not status["limit_reached"]:
                     raise ValueError("original GPU recorder overflow did not surface")
+                require_original_ot_pairs(events, (1,) * 32)
                 try:
                     verify_capture_receipt(private, target_frame=1, events=events)
                 except ValueError as exc:
@@ -144,12 +161,7 @@ def execute_real_recorder(upstream, *, cc="cc"):
                 else:
                     raise ValueError("overfull native GPU capture was accepted")
             else:
-                if (len(events) != 6 or
-                        [e["primitive_type"] for e in events] !=
-                        [5,5,1,1,2,2] or
-                        [e["phase"] for e in events] !=
-                        ["before","after"] * 3):
-                    raise ValueError("DR_MODE/F4/FT4 original OT capture mismatch")
+                require_original_ot_pairs(events, (5, 1, 2))
                 proof = verify_capture_receipt(private, target_frame=1,
                                                events=events)
                 if not proof["capture_window_closed_without_detected_loss"]:
