@@ -45,12 +45,17 @@ READINESS_FALSE = (
     "gameplay_process_started", "original_map02_rendering_proven",
     "hardware_ps1_equivalence_proven", "game_content_emitted",
 )
+READINESS_FIELDS = frozenset((
+    "schema", "private_directories_checked", "capture_folders_empty",
+    "ready_for_controlled_local_launch", *READINESS_TRUE, *READINESS_FALSE,
+))
 
 
 def _require_full_readiness_report(ready):
     if type(ready) is not dict or ready.get("ready_for_controlled_local_launch") is not True:
         raise ValueError("MAP02 original PC cycle preflight was not confirmed")
-    if (ready.get("schema") != "vh.map02.private-pc-cycle-readiness.v1" or
+    if (set(ready) != READINESS_FIELDS or
+            ready.get("schema") != "vh.map02.private-pc-cycle-readiness.v1" or
             type(ready.get("private_directories_checked")) is not int or
             ready["private_directories_checked"] != 7 or
             type(ready.get("capture_folders_empty")) is not int or
