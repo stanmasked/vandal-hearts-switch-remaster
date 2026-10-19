@@ -69,6 +69,9 @@ class NativeVBlankReadQuiet174(unittest.TestCase):
     def test_negative_and_positive_ordering_before_pixel_readback(self):
         front=patch_frontend(fake_front())
         oracle=read_provenance_oracle()
+        self.assertIn("if(vh174_mips_vblank_read_quiet_smoke) {",oracle)
+        self.assertNotIn("if(vh173_mips_vblank_quiet_smoke) {",oracle)
+        self.assertIn("--vh174-mips-vblank-read-quiet",front)
         for needle in (
             "--vh174-mips-vblank-read-quiet",
             "vh174_arm_wait_read(phase)!=0",
