@@ -301,6 +301,21 @@ class PrivateOneShotCycleTests(unittest.TestCase):
         self.mocks["launch_observed_pc"].assert_not_called()
         self.mocks["seal_final_capture"].assert_not_called()
 
+    def test_real_structural_rescan_accepts_clean_dry_run(self):
+        from tools.check_map02_private_launch_layout import (
+            inspect_private_launch_layout as real_inspect,
+        )
+        plan_file = self.folders[3] / runner.PLAN
+        plan_file.write_bytes(self.plan)
+        plan_file.chmod(0o600)
+        self.mocks["inspect_private_launch_layout"].side_effect = real_inspect
+        report = self.execute(dry_run=True, allow_local_completion=False)
+        self.assertTrue(report["private_layout_and_capture_plan_checked"])
+        self.assertFalse(report["gameplay_process_started"])
+        self.mocks["inspect_private_launch_layout"].assert_called_once()
+        self.mocks["launch_observed_pc"].assert_not_called()
+        self.mocks["seal_final_capture"].assert_not_called()
+
     def test_real_structural_rescan_rejects_late_unexpected_output(self):
         # The readiness stub says ready, and metadata checks are mocked
         # stable, but the actual independent layout scanner must detect
@@ -309,7 +324,7 @@ class PrivateOneShotCycleTests(unittest.TestCase):
             inspect_private_launch_layout as real_inspect,
         )
         plan_file = self.folders[3] / runner.PLAN
-        plan_file.write_bytes(b'{"synthetic":"plan"}\\n')
+        plan_file.write_bytes(self.plan)
         plan_file.chmod(0o600)
         native = self.folders[1]
         (native / "late-unexpected-synthetic").write_bytes(b"synthetic")
