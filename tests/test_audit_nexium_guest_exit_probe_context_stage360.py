@@ -88,5 +88,17 @@ class Stage360Tests(unittest.TestCase):
         n,raw,a,b=fixtures()
         with self.assertRaises(ExitTimelineError):
             parse_source(raw(n).replace(b"tail_elapsed_ns,12\n",b"tail_elapsed_ns,012\n"),a,b)
+    def test_stage360_guest_export_does_not_redeclare_existing_probe_path(self):
+        from re import findall
+        original=(Path(__file__).resolve().parents[1]/"source"/"main.c").read_text()
+        # Both exporters live in the SAME main() scope. Distinct names
+        # are necessary for the real libnx NRO, not just host C helpers.
+        self.assertEqual(len(findall(r"\\bchar probe_path\\[",original)),1)
+        self.assertEqual(len(findall(r"\\bchar exit_probe_path\\[",original)),1)
+        stage360=original[original.index("/* Stage360: an independent post-join guest source"):
+                          original.index("char scene_path[VH_SCENE_TRACE_EXPORT_PATH_CAP]")]
+        self.assertNotIn("char probe_path[",stage360)
+        self.assertIn("audio-exit-probe-context-%03u.csv",stage360)
+
 if __name__=="__main__":
     unittest.main()
