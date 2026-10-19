@@ -1,0 +1,89 @@
+name: Stage349 compare two real NeXium guest lease source cohorts
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage349-original-lease-cohorts.yml'
+      - 'tools/compare_nexium_stage349_original_lease_cohorts.py'
+      - 'tests/test_compare_nexium_stage349_original_lease_cohorts.py'
+      - 'tools/audit_nexium_guest_lease_reconciliation_stage348.py'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  synthetic:
+    name: Reject forged Stage349 original guest PCM lease evidence
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test two-cohort original-source comparator
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_compare_nexium_stage349_original_lease_cohorts.py' -v
+          python3 -m py_compile tools/compare_nexium_stage349_original_lease_cohorts.py
+
+  two-original-sources:
+    name: Reopen both real NeXium original software lease CSVs
+    runs-on: ubuntu-latest
+    needs: synthetic
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download two independently successful original NeXium archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 39292707481 --repo stanmasked/vandal-hearts-switch-remaster \
+            --name nexium-runtime-evidence --dir original-first
+          gh run download 39292997818 --repo stanmasked/vandal-hearts-switch-remaster \
+            --name nexium-runtime-evidence --dir original-second
+
+      - name: Require unique original CSV and independently preserved Stage348 source receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t first_csv < <(find original-first -type f -name 'audio-lease-reconciliation-000.csv')
+          mapfile -t second_csv < <(find original-second -type f -name 'audio-lease-reconciliation-000.csv')
+          mapfile -t first_receipt < <(find original-first -type f -name 'guest-lease-reconciliation-stage348.json')
+          mapfile -t second_receipt < <(find original-second -type f -name 'guest-lease-reconciliation-stage348.json')
+          test "${#first_csv[@]}" -eq 1
+          test "${#second_csv[@]}" -eq 1
+          test "${#first_receipt[@]}" -eq 1
+          test "${#second_receipt[@]}" -eq 1
+          python3 tools/compare_nexium_stage349_original_lease_cohorts.py \
+            --first-csv "${first_csv[0]}" \
+            --first-receipt "${first_receipt[0]}" \
+            --first-run-id 39292707481 \
+            --first-sha256 3a9d3e738330713a81be4bf507485613485053b79f9a86df1516b683c8795365 \
+            --second-csv "${second_csv[0]}" \
+            --second-receipt "${second_receipt[0]}" \
+            --second-run-id 39292997818 \
+            --second-sha256 9e2724e77795fafd1374bc502cd3457c942190650ea34b9400fde33218f048db \
+            --output comparison-stage349-report.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("comparison-stage349-report.json").read_text())
+          a=r["first_original"]
+          b=r["second_original"]
+          if (r["result"] != "TWO_DISTINCT_ORIGINAL_GUEST_SOFTWARE_LEASE_SOURCES_RECONCILED"
+              or (a["lease_pages_acquired"],a["lease_pages_released"],a["abandoned_sessions"])
+                 != (1427,1426,1)
+              or (b["lease_pages_acquired"],b["lease_pages_released"],b["abandoned_sessions"])
+                 != (1446,1446,0)
+              or r["physical_Nintendo_Switch_audio_tested"] is not False):
+              raise SystemExit("Stage349 real-source cohort or scope mismatch")
+          print("Stage349 verified two independently archived originals; first abandoned=1, second=0")
+          PY
+          echo "Stage349 reverified both exact original NeXium guest software CSV SHA-256 values and independent Stage348 receipts; not DAC/speaker audio." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish source-only comparison receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage349-original-lease-comparison
+          path: comparison-stage349-report.json
+          if-no-files-found: error
