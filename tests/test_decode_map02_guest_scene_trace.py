@@ -64,10 +64,24 @@ class TraceOpticalTests(unittest.TestCase):
     def test_optical_border_is_required(self):
         screenshot(self.image,fixture())
         img=Image.open(self.image)
-        img.putpixel((253,163),(0,0,0))
+        from PIL import ImageDraw
+        ImageDraw.Draw(img).rectangle((250,160,1047,635),outline=(0,0,0),width=7)
         img.save(self.image)
         with self.assertRaisesRegex(ValueError,"border"):
             tool.decode_image(self.image)
+
+    def test_nexium_letterboxed_viewport_calibration(self):
+        screenshot(self.image,fixture())
+        original=Image.open(self.image).convert("RGB")
+        # Reproduce the actual 769x459 viewport from the NeXium log.
+        image=Image.new("RGB",(1280,720),(9,9,12))
+        crop=original.crop((250,160,1048,636))
+        image.paste(crop.resize((769,459),Image.Resampling.NEAREST),(264,154))
+        image.save(self.image)
+        decoded=tool.decode_image(self.image)
+        self.assertEqual(len(decoded["rows"]),10)
+        self.assertEqual(tool.audit_receipt(decoded,1)["result"],
+                         "POST_ACCEPT_FIRST_PCM_PAGE_CORRELATED")
 
     def test_missing_accept_is_rejected(self):
         rows=[]
