@@ -1,0 +1,44 @@
+name: Stage360 existing pre-submit queue probe age at bounded exit
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage360-exit-probe-context.yml'
+      - 'source/vh_audio_exit_probe_context_stage360.h'
+      - 'source/vh_audout_queue_telemetry.h'
+      - 'source/vh_switch_game_audio.c'
+      - 'source/vh_switch_game_audio.h'
+      - 'source/main.c'
+      - 'tests/test_vh_audio_exit_probe_context_stage360.c'
+permissions:
+  contents: read
+jobs:
+  host:
+    name: GCC Clang UBSan existing guest queue probe context and no new service
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm canonical source and already recorded probe age
+        env:
+          UBSAN_OPTIONS: halt_on_error=1
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          for cc in gcc clang; do
+            for mode in opt ubsan; do
+              if [ "$mode" = opt ]; then
+                "$cc" -std=c11 -Wall -Wextra -Werror -O2 -Isource \
+                  tests/test_vh_audio_exit_probe_context_stage360.c \
+                  -o "build/stage360-$cc"
+                "build/stage360-$cc"
+              else
+                "$cc" -std=c11 -Wall -Wextra -Werror -O1 -g \
+                  -fsanitize=undefined -fno-omit-frame-pointer -Isource \
+                  tests/test_vh_audio_exit_probe_context_stage360.c \
+                  -o "build/stage360-$cc-ubsan"
+                "build/stage360-$cc-ubsan"
+              fi
+            done
+          done
+          echo "Stage360: old pre-submit probe is aged, never a directly measured shutdown queue; no extra audout service call or tick read." >> "$GITHUB_STEP_SUMMARY"

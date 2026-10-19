@@ -1,0 +1,9 @@
+# Stage360 — existing pre-submit queue observation aligned with original bounded exit
+
+The source already records `audoutGetAudioOutBufferCount` once per 16 normal output attempts **before** `audoutPlayBuffer`. The last retained pre-submit query is not the shutdown queue depth and can be stale by many seconds (especially if the fixed-size probe array filled).
+
+Stage360 adds an **audio-worker-only snapshot** after the original final 96-frame PCM taper attempt, using the existing `tail_begin` and `tail_end` guest clock calls (no new timestamp), the previously recorded `VhAudoutProbeSample` journal and the already classified Stage351 software result. It tracks normal submit count, the most recent *retained* pre-submit queue-count query status/count, its attempt number, its age at tail begin and probe overflow count. If the query failed, its count is explicitly unknown (the CSV's numerical zero must not be construed as empty queue). If missing/future/invalid, observed=0.
+
+The original audio worker still calls exactly **one** 12-ms `audoutWaitPlayFinish` and no extra `audoutGetAudioOutBufferCount` at shutdown. A separate exclusive `audio-exit-probe-context-000.csv` is written only after worker join; all pre-existing Stage313/347/348/351/357 CSVs retain their schema. The experimental source includes recorded software tail interval, which also includes surrounding instrumentation and thus is not isolated kernel eventWait duration.
+
+Stage360 C11 GCC/Clang/UBSan tests reject nonmonotonic times, nonexistent/future queue probes, stale entries treated as fresh, failed queries treated as empty queue, and mismatched Stage351 attempt flags. A subsequent real NRO/NeXium source check is required before these new fields can be called observed guest measurements. This work does not alter musical time, buffer ownership or PCM, and does not prove a physical Nintendo Switch acoustic dropout or sound output.

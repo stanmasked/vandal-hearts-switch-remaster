@@ -18,6 +18,7 @@
 #include "vh_audio_exit_tail_reason_stage351.h"
 #include "vh_audio_exit_tail_checks_stage353.h"
 #include "vh_audio_exit_tail_wait_result_stage357.h"
+#include "vh_audio_exit_probe_context_stage360.h"
 
 #include <stdio.h>
 
@@ -75,6 +76,7 @@ static VhAudioLastPlayBufferCall last_playbuffer_call; /* same owner, existing c
 static VhPlayBufferHistory last_playbuffer_history; /* last 16 real calls */
 static VhAudioExitTailReason exit_tail_reason; /* written only on cleanup */
 static VhAudioTailWaitResult357 exit_tail_wait_result; /* same owner; read after join */
+static VhTailProbeContext360 exit_tail_probe_context; /* old query history only */
 /* Audout worker is the sole writer. Main reads after thread join. */
 static VhAudoutQueueTelemetry audout_telemetry;
 static atomic_ullong scene_trace_latest_ticket; /* serial << 32 | scene */
@@ -577,8 +579,13 @@ cleanup:
         const uint64_t tail_begin=scene_trace_now_ns();
         const int tail_returned=output_tail_submit_bounded(
             &recovery_backend,VH_AUDIO_STOP_TAIL_FRAMES)==0;
+        const uint64_t tail_end=scene_trace_now_ns(); /* original end tick */
         (void)vh_audio_exit_output_tail(
-            &exit_output_witness,tail_begin,scene_trace_now_ns(),tail_returned);
+            &exit_output_witness,tail_begin,tail_end,tail_returned);
+        /* Stage360 consumes only existing pre-submit query journal.
+         * No extra service call or clock read at exit. */
+        (void)vh_tail360_capture(
+            &exit_tail_probe_context,&audout_telemetry,tail_begin,tail_end);
     }
     /* A stopped audout service may retain queued buffers. Close the
      * old session BEFORE overwriting or releasing the shared PCM page.
@@ -616,6 +623,7 @@ int vh_switch_game_audio_start(unsigned initial_scene) {
     vh_playbuffer_history_reset(&last_playbuffer_history);
     vh_audio_tail_reason_reset(&exit_tail_reason);
     vh_tail357_reset(&exit_tail_wait_result);
+    vh_tail360_reset(&exit_tail_probe_context);
     vh_audout_queue_reset(&audout_telemetry);
     if(vh_audout_queue_set_probe_phase(&audout_telemetry,
                                       VH_AUDOUT_PROBE_PHASE)) return -1;
@@ -829,6 +837,14 @@ int vh_switch_game_audio_tail_wait_result_dump(FILE *stream) {
     if (!stream || thread_started) return -1;
     return vh_tail357_write_csv(
         &exit_tail_wait_result,&exit_tail_reason,stream);
+}
+
+/* Stage360: pre-existing periodic *pre-submit* probe and exit tick,
+ * never a direct queue-at-exit observation. Post-join only. */
+int vh_switch_game_audio_exit_probe_context_dump(FILE *stream) {
+    if (!stream || thread_started) return -1;
+    return vh_tail360_write_csv(
+        &exit_tail_probe_context,&exit_tail_reason,stream);
 }
 
 void vh_switch_game_audio_stop(void) {

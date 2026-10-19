@@ -80,6 +80,9 @@ int vh_switch_game_audio_tail_reason_dump(FILE *stream);
 /* Stage357: one captured raw audoutWaitPlayFinish Result after worker join.
  * Separate new CSV; no additional audout calls, no device output claim. */
 int vh_switch_game_audio_tail_wait_result_dump(FILE *stream);
+/* Stage360: last retained PRE-SUBMIT queue query, with age at tail start;
+ * never queue depth at shutdown. No new service query. */
+int vh_switch_game_audio_exit_probe_context_dump(FILE *stream);
 void vh_switch_game_audio_stop(void);
 /* 0 starting/stopped, 1 playing, 2 paused, negative means audio failed.
  * Main gameplay can continue silently if the device is unavailable.
