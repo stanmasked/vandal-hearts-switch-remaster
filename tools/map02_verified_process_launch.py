@@ -737,8 +737,11 @@ def main():
                 a.private_handoff_dir, a.private_native_windows,
                 a.private_scoped_capture, a.pc_binary, a.owned_game_image,
                 upstream=a.upstream_checkout)
-    except ValueError as exc:
-        p.error(str(exc))
+    except ValueError:
+        # Input identity, private receipt and source-bound ELF checks may
+        # raise ValueError with the user-owned path in their explanation.
+        # Runtime launch CLI failures must never publish those strings.
+        p.error("private MAP02 process input or source-bound check failed")
     except (OSError, subprocess.TimeoutExpired):
         # Native launch failures can expose a private executable, disc or
         # SDK filename via OSError.filename or TimeoutExpired.cmd/output.
