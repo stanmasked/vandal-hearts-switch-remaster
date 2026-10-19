@@ -64,6 +64,14 @@ class Native48ParityTests(unittest.TestCase):
     def test_guest_frame_count_mismatch_fails(self):
         self.update_guest(1,"post_switch_native_frames",26751)
         with self.assertRaisesRegex(ValueError,"differ"):self.run_audit()
+    def test_host_one_prefix_frame_drift_is_rejected(self):
+        for f in (self.gcc,self.clang):
+            f.write_text(self.line.replace("prefix_frames=35665","prefix_frames=35664"))
+        with self.assertRaisesRegex(ValueError,"bounds"):self.run_audit()
+    def test_host_one_tail_frame_drift_is_rejected(self):
+        for f in (self.gcc,self.clang):
+            f.write_text(self.line.replace("tail_frames=26750","tail_frames=26751"))
+        with self.assertRaisesRegex(ValueError,"bounds"):self.run_audit()
     def test_guest_boundary_residue_mismatch_fails(self):
         self.update_guest(0,"reset_first_page_nonzero_sample_values",1)
         with self.assertRaisesRegex(ValueError,"differ"):self.run_audit()
