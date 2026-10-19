@@ -272,6 +272,115 @@ def preflight(executable, first_frame, first_journal, second_frame,
             os.close(fd)
 
 
+# Explicit egress contract for the digest-only independent repeatability
+# report. A future audit refactor must consciously extend this allowlist;
+# never forward novel paths, raw VRAM, logs, or arbitrary nested values to
+# public CI/CLI JSON just because the top-level witness claims safety.
+_AUDIT_SAFE_BOOLEAN_FIELDS = frozenset((
+        "actual_gameplay_rendering_authenticated",
+        "four_private_file_inventories_stable_through_replays",
+        "gpu_journal_writer_kernel_authenticated",
+        "gpu_vram_divergence_reappeared_after_reconvergence",
+        "gpu_vram_reconverged_at_common_prefix_end",
+        "gpu_vram_timeline_commitments_identical",
+        "hd_replacement_authorized",
+        "private_pixel_bytes_or_paths_emitted",
+        "ps1_hardware_pixel_equivalence_verified",
+        "repeated_full_gpu_vram_snapshot_sequence_identical",
+        "repeated_gpu_event_journal_identical",
+        "repeated_gpu_event_records_identical",
+        "repeated_gpu_final_vram_identical",
+        "repeated_native_frame_pixels_identical",
+        "two_full_replays_per_capture_verified",
+))
+_AUDIT_SAFE_DIGEST_FIELDS = frozenset((
+        "executable_sha256",
+        "first_gpu_journal_sha256",
+        "second_gpu_journal_sha256",
+        "first_gpu_vram_timeline_sha256",
+        "second_gpu_vram_timeline_sha256",
+        "first_image_sha256",
+        "second_image_sha256",
+))
+_AUDIT_SAFE_OPTIONAL_INDEX_FIELDS = frozenset((
+        "first_different_gpu_draw_pair_index",
+        "first_different_gpu_event_pair_index",
+        "first_different_gpu_event_record_index",
+        "first_different_gpu_snapshot_changed_pixels",
+        "first_different_gpu_snapshot_changed_scanlines",
+        "first_different_gpu_snapshot_stp_bit_differences",
+        "first_different_gpu_vram_snapshot_index",
+        "first_joint_gpu_divergence_index",
+        "first_joint_gpu_divergence_pair_index",
+        "first_reconverged_gpu_vram_snapshot_index",
+        "last_different_gpu_vram_snapshot_index",
+))
+_AUDIT_SAFE_NONNEGATIVE_FIELDS = frozenset((
+        "first_gpu_event_count",
+        "second_gpu_event_count",
+        "gpu_event_records_compared",
+        "different_gpu_event_records_in_common_prefix",
+        "unmatched_gpu_event_records",
+        "first_gpu_vram_snapshot_count",
+        "second_gpu_vram_snapshot_count",
+        "gpu_vram_snapshots_compared",
+        "different_gpu_vram_snapshots_in_common_prefix",
+        "different_gpu_before_vram_snapshots",
+        "different_gpu_after_vram_snapshots",
+        "unmatched_gpu_vram_snapshots",
+        "gpu_vram_equal_different_state_transitions",
+        "frame",
+        "width",
+        "height",
+        "first_gpu_pairs_verified",
+        "second_gpu_pairs_verified",
+        "different_bgr555_pixels",
+        "changed_scanlines",
+        "stp_bit_differences",
+))
+_AUDIT_SAFE_ENUMS = {
+    "first_different_gpu_event_phase": (None, "before", "after"),
+    "first_different_gpu_snapshot_phase": (None, "before", "after"),
+    "first_joint_gpu_divergence_phase": (None, "before", "after"),
+    "first_joint_gpu_divergence_kind": (
+        None, "event-only", "vram-only", "event-and-vram", "unmatched-tail"),
+}
+_AUDIT_SAFE_KEYS = (
+    _AUDIT_SAFE_BOOLEAN_FIELDS | _AUDIT_SAFE_DIGEST_FIELDS |
+    _AUDIT_SAFE_OPTIONAL_INDEX_FIELDS | _AUDIT_SAFE_NONNEGATIVE_FIELDS |
+    frozenset(_AUDIT_SAFE_ENUMS) | {"schema"}
+)
+
+
+def _require_safe_public_audit_summary(report):
+    """Refuse unsafe/extra fields before any audit summary can be emitted."""
+    if (type(report) is not dict
+            or report.keys() != _AUDIT_SAFE_KEYS
+            or report.get("schema") != AUDIT_SCHEMA
+            or report.get("private_pixel_bytes_or_paths_emitted") is not False):
+        raise ValueError("MAP02 public audit summary fields unsafe")
+    if any(type(report[key]) is not bool
+           for key in _AUDIT_SAFE_BOOLEAN_FIELDS):
+        raise ValueError("MAP02 public audit summary fields unsafe")
+    if any(type(report[key]) is not str or len(report[key]) != 64
+           or any(c not in "0123456789abcdef" for c in report[key])
+           for key in _AUDIT_SAFE_DIGEST_FIELDS):
+        raise ValueError("MAP02 public audit summary fields unsafe")
+    if any(value is not None and
+           (type(value) is not int or value < 0)
+           for value in (report[key] for key in _AUDIT_SAFE_OPTIONAL_INDEX_FIELDS)):
+        raise ValueError("MAP02 public audit summary fields unsafe")
+    if any(type(report[key]) is not int or report[key] < 0
+           for key in _AUDIT_SAFE_NONNEGATIVE_FIELDS):
+        raise ValueError("MAP02 public audit summary fields unsafe")
+    if any(report[key] not in allowed or
+           (report[key] is not None and type(report[key]) is not str)
+           for key, allowed in _AUDIT_SAFE_ENUMS.items()):
+        raise ValueError("MAP02 public audit summary fields unsafe")
+    if (report["width"], report["height"]) != (WIDTH, HEIGHT):
+        raise ValueError("MAP02 public audit summary fields unsafe")
+
+
 def run(executable, first_frame, first_journal, second_frame, second_journal,
         *, frame, executable_sha256, args=(), timeout=10,
         require_identical_gpu_timeline=False):
@@ -395,6 +504,7 @@ def run(executable, first_frame, first_journal, second_frame, second_journal,
                 or report.get("gpu_journal_writer_kernel_authenticated") is not False
                 or report.get("hd_replacement_authorized") is not False):
             raise ValueError("MAP02 two-run native repeatability witness invalid")
+        _require_safe_public_audit_summary(report)
         # Compare source-labelled replay results to the immutable claims
         # captured at publication, not just to one another. Two FORGED
         # source digests could agree and fool a boolean-only strict gate.
