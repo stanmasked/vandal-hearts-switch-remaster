@@ -79,10 +79,12 @@ on:
       - 'tools/check_map02_cycle_object_inventory.py'
       - 'tests/test_check_map02_cycle_object_inventory.py'
       - 'tools/check_map02_public_reloc_link.py'
+      - 'tools/inspect_map02_private_inputs.py'
       - 'tools/check_map02_private_pc_inputs.py'
       - 'tools/check_map02_original_font_c.py'
       - 'tools/check_map02_original_extraction_anchors.py'
       - 'tools/check_map02_original_inc_provenance.py'
+      - 'tests/test_inspect_map02_private_inputs.py'
       - 'tests/test_check_map02_private_pc_inputs.py'
       - 'tests/test_check_map02_original_font_c.py'
       - 'tools/check_map02_linked_font_elf.py'
@@ -211,10 +213,12 @@ on:
       - 'tools/check_map02_cycle_object_inventory.py'
       - 'tests/test_check_map02_cycle_object_inventory.py'
       - 'tools/check_map02_public_reloc_link.py'
+      - 'tools/inspect_map02_private_inputs.py'
       - 'tools/check_map02_private_pc_inputs.py'
       - 'tools/check_map02_original_font_c.py'
       - 'tools/check_map02_original_extraction_anchors.py'
       - 'tools/check_map02_original_inc_provenance.py'
+      - 'tests/test_inspect_map02_private_inputs.py'
       - 'tests/test_check_map02_private_pc_inputs.py'
       - 'tests/test_check_map02_original_font_c.py'
       - 'tools/check_map02_linked_font_elf.py'
@@ -338,6 +342,7 @@ jobs:
             tests.test_check_map02_cycle_make_plan \
             tests.test_check_map02_cycle_object_inventory \
             tests.test_check_map02_public_reloc_link \
+            tests.test_inspect_map02_private_inputs \
             tests.test_check_map02_private_pc_inputs \
             tests.test_check_map02_original_font_c \
             tests.test_check_map02_linked_font_elf \
