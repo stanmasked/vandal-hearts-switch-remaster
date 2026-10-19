@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - 'work/map02-dda-coverage-independent-audit'
+      - 'work/map02-pr55-receipt-compatibility'
   pull_request:
     paths:
       - 'tools/map02_dda_coverage.py'
