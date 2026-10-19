@@ -13,6 +13,9 @@ from tools.map02_local_capture_handoff import (
     PLAN, PLAN_SCHEMA, PINNED_UPSTREAM_REF, REQUIRED_DIAGNOSTIC_MACROS,
 )
 from tools.map02_cycle_build_provenance import NAME as BUILD_RECEIPT
+from tools.run_map02_private_cycle_session import (
+    READINESS_FIELDS, _require_full_readiness_report,
+)
 
 
 class PrivateCycleReadinessTests(unittest.TestCase):
@@ -82,6 +85,8 @@ class PrivateCycleReadinessTests(unittest.TestCase):
                    side_effect=AssertionError("never execute native PC ELF")):
             result = self.verify()
         self.assertTrue(result["ready_for_controlled_local_launch"])
+        self.assertEqual(set(result), READINESS_FIELDS)
+        _require_full_readiness_report(result)
         self.assertEqual(result["private_directories_checked"], 7)
         self.assertEqual(result["capture_folders_empty"], 5)
         for flag in ("gameplay_process_started", "original_map02_rendering_proven",
