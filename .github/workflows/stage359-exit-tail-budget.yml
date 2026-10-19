@@ -1,0 +1,32 @@
+name: Stage359 bounded exit fade and event wait sensitivity (no gameplay change)
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage359-exit-tail-budget.yml'
+      - 'tools/audit_stage359_exit_tail_time_budget.py'
+      - 'tests/test_audit_stage359_exit_tail_time_budget.py'
+      - 'source/vh_audio_output_edges.h'
+      - 'source/vh_switch_game_audio.c'
+permissions:
+  contents: read
+jobs:
+  bounded-budget:
+    name: Stage359 96-frame 2ms fade versus unchanged 12ms wait hypotheses
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate timeout and hypothetical queue-lag model without gameplay edits
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_stage359_exit_tail_time_budget.py' -v
+          python3 tools/audit_stage359_exit_tail_time_budget.py \
+            --output stage359-noncausal-tail-budget-analysis.json
+          echo "Stage359 is HYPOTHETICAL; no actual queue depth, scheduler latency, physical Switch sound or timeout fix can be inferred." >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage359-hypothetical-original-12ms-tail-sensitivity
+          path: stage359-noncausal-tail-budget-analysis.json
+          if-no-files-found: error
