@@ -69,6 +69,8 @@ def verify_private_cycle_readiness(source, native, scoped, handoff, cycle,
     # Retain the exact build-receipt inode throughout both independent
     # provenance checks. An identical-bytes replacement must not qualify.
     receipt_root = Path(build_receipt_dir).absolute()
+    receipt_directory_identity = _directory_identity(
+        receipt_root, "build-receipt")
     receipt_raw, receipt_identity = private_file(
         receipt_root, BUILD_RECEIPT, max_bytes=4096, _with_identity=True)
     receipt = verify_build_receipt(
@@ -92,6 +94,9 @@ def verify_private_cycle_readiness(source, native, scoped, handoff, cycle,
             private_file(receipt_root, BUILD_RECEIPT, max_bytes=4096,
                          _with_identity=True) != (receipt_raw, receipt_identity)):
         raise ValueError("private original MAP02 build receipt changed during preflight")
+    if _directory_identity(receipt_root, "build-receipt") != receipt_directory_identity:
+        raise ValueError(
+            "private original MAP02 build receipt directory changed during preflight")
     second_layout = inspect_private_launch_layout(*layout_args)
     after_directories = tuple(
         _directory_identity(Path(directory).absolute(), "prelaunch")
