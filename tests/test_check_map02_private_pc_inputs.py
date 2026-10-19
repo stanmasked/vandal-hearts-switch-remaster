@@ -193,10 +193,14 @@ for name, offset, size in [
             summary["original_psx_loaded_bytes_not_covered_by_elf_sections"],
             payload_size - 1216)
         self.assertFalse(summary["original_psx_loaded_payload_fully_covered"])
+        self.assertEqual(summary["original_psx_uncovered_contiguous_spans"], 4)
+        self.assertGreater(summary["original_psx_largest_uncovered_span_bytes"], 0)
         ready = verify_private_pc_inputs(self.root)
         for key in ("original_psx_loaded_payload_bytes",
                     "original_psx_loaded_bytes_not_covered_by_elf_sections",
-                    "original_psx_loaded_payload_fully_covered"):
+                    "original_psx_loaded_payload_fully_covered",
+                    "original_psx_uncovered_contiguous_spans",
+                    "original_psx_largest_uncovered_span_bytes"):
             self.assertEqual(ready[key], summary[key])
         self.assertFalse(ready["original_map02_rendering_proven"])
 
@@ -216,7 +220,29 @@ for name, offset, size in [
         self.assertEqual(
             report["original_psx_loaded_bytes_not_covered_by_elf_sections"], 0)
         self.assertTrue(report["original_psx_loaded_payload_fully_covered"])
+        self.assertEqual(report["original_psx_uncovered_contiguous_spans"], 0)
+        self.assertEqual(report["original_psx_largest_uncovered_span_bytes"], 0)
         self.assertFalse(report["complete_matching_decomp_proven"])
+
+    def test_uncovered_span_counts_only_real_address_gaps(self):
+        baseline = compare_loaded_sections(self.exe, self.elf)
+        self.assertEqual(baseline["original_psx_uncovered_contiguous_spans"], 4)
+        # Add a section directly after MAP32: contiguous coverage must
+        # not manufacture a new uncovered address gap.
+        self.add_synthetic_loaded_section(ANCHORS[0][1] + ANCHORS[0][2])
+        adjacent = compare_loaded_sections(self.exe, self.elf)
+        self.assertEqual(adjacent["original_psx_uncovered_contiguous_spans"], 4)
+        self.assertEqual(
+            adjacent["original_psx_loaded_bytes_not_covered_by_elf_sections"],
+            baseline["original_psx_loaded_bytes_not_covered_by_elf_sections"] - 16)
+
+    def test_disjoint_extra_section_splits_one_uncovered_span(self):
+        initial = compare_loaded_sections(self.exe, self.elf)
+        self.add_synthetic_loaded_section(ANCHORS[0][1] + ANCHORS[0][2] + 16)
+        split = compare_loaded_sections(self.exe, self.elf)
+        self.assertEqual(split["original_psx_uncovered_contiguous_spans"],
+                         initial["original_psx_uncovered_contiguous_spans"] + 1)
+        self.assertFalse(split["original_psx_loaded_payload_fully_covered"])
 
     def test_mapped_section_overlap_and_boundary_rejected(self):
         self.add_synthetic_loaded_section(ANCHORS[0][1], size=16)
