@@ -12,6 +12,11 @@ on:
 permissions:
   contents: read
 
+# For pull_request, GITHUB_SHA is a temporary merge ref. Build and report
+# the exact source-branch head; retain event SHA separately for auditing.
+env:
+  VH_EXACT_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
 jobs:
   build:
     name: Build libnx NRO for runtime smoke test
@@ -20,8 +25,16 @@ jobs:
       image: devkitpro/devkita64:latest
     timeout-minutes: 20
     steps:
-      - name: Checkout repository
+      - name: Checkout exact source commit
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_SOURCE_SHA }}
+      - name: Verify exact source checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Trust only the checked-out workspace for this one Git command.
+          test "$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
 
       - name: Build and test libnx prototype
         shell: bash
@@ -35,6 +48,18 @@ jobs:
           make -f Makefile -f Makefile.map02-audio map02-audio-nro
           sha256sum build/map02-audio/vandal-hearts-map02-audio.nro \
             > build/map02-audio/nro.sha256
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          out=Path('build/map02-audio/source-provenance.json')
+          receipt={'schema':'vh-map02-exact-head-nro-provenance/v1',
+                   'source_sha':os.environ['VH_EXACT_SOURCE_SHA'],
+                   'event_sha':os.environ['GITHUB_SHA'],
+                   'run_id':int(os.environ['GITHUB_RUN_ID']),
+                   'attempt':int(os.environ['GITHUB_RUN_ATTEMPT']),
+                   'nro_sha256':Path('build/map02-audio/nro.sha256').read_text().split()[0]}
+          out.write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n')
+          PY
 
       - name: Upload NROs for emulator smoke test
         uses: actions/upload-artifact@v4
@@ -43,6 +68,7 @@ jobs:
           path: |
             build/map02-audio/vandal-hearts-map02-audio.nro
             build/map02-audio/nro.sha256
+            build/map02-audio/source-provenance.json
           if-no-files-found: error
 
   run-in-emulator:
@@ -51,8 +77,16 @@ jobs:
     needs: build
     timeout-minutes: 15
     steps:
-      - name: Checkout repository
+      - name: Checkout exact source commit
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VH_EXACT_SOURCE_SHA }}
+      - name: Verify exact source checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Trust only the checked-out workspace for this one Git command.
+          test "$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)" = "$VH_EXACT_SOURCE_SHA"
 
       - name: Download test NROs
         uses: actions/download-artifact@v4
@@ -67,6 +101,17 @@ jobs:
           expected="$(awk 'NR==1{print $1}' nros/nro.sha256)"
           actual="$(sha256sum nros/vandal-hearts-map02-audio.nro | cut -d ' ' -f1)"
           test -n "$expected" && test "$expected" = "$actual"
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          m=json.loads(Path('nros/source-provenance.json').read_text())
+          assert m['schema']=='vh-map02-exact-head-nro-provenance/v1'
+          assert m['source_sha']==os.environ['VH_EXACT_SOURCE_SHA']
+          assert m['event_sha']==os.environ['GITHUB_SHA']
+          assert m['run_id']==int(os.environ['GITHUB_RUN_ID'])
+          assert m['attempt']==int(os.environ['GITHUB_RUN_ATTEMPT'])
+          assert m['nro_sha256']==Path('nros/nro.sha256').read_text().split()[0]
+          PY
 
       - name: Install headless display and Vulkan runtime
         shell: bash
@@ -456,7 +501,8 @@ jobs:
               "schema":"vh-map02-audout-virtual-pcm/v1",
               "run_id":int(__import__("os").environ["GITHUB_RUN_ID"]),
               "run_attempt":int(__import__("os").environ["GITHUB_RUN_ATTEMPT"]),
-              "git_sha":__import__("os").environ["GITHUB_SHA"],
+              "git_sha":__import__("os").environ["VH_EXACT_SOURCE_SHA"],
+              "workflow_event_sha":__import__("os").environ["GITHUB_SHA"],
               "nro_sha256":binary_hash,
               "nro_hash_matches_build":binary_hash==recorded_hash,
               "pcm_sha256":hashlib.sha256(raw).hexdigest(),
