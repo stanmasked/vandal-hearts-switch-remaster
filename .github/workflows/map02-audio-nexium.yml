@@ -77,7 +77,8 @@ jobs:
             libgtk-3-0t64 libasound2t64 libudev1 libxkbcommon0 libxkbcommon-x11-0 \
             libx11-xcb1 libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
             libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
-            libvulkan1 mesa-vulkan-drivers
+            libvulkan1 mesa-vulkan-drivers \
+            pulseaudio pulseaudio-utils libasound2-plugins
 
       - name: Download NeXium nightly
         shell: bash
@@ -377,6 +378,107 @@ jobs:
 
           run_probe "nros/vandal-hearts-map02-audio.nro" "libnx-framebuffer" "1"
           exit "$result"
+
+      - name: Capture independent virtual PCM from the combined MAP02 audio NRO
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime-evidence
+          runtime_dir="${RUNNER_TEMP}/map02-audio-pulse"
+          mkdir -p "$runtime_dir"
+          chmod 700 "$runtime_dir"
+          export XDG_RUNTIME_DIR="$runtime_dir"
+          pulseaudio --daemonize=yes --exit-idle-time=-1 \
+            --log-target=file:runtime-evidence/pulseaudio.log
+          export PULSE_SERVER="unix:$runtime_dir/pulse/native"
+          pactl info > runtime-evidence/pulse-server.txt
+          pactl load-module module-null-sink \
+            sink_name=vh_map02_capture rate=48000 channels=2 \
+            sink_properties=device.description=VH_MAP02_Research \
+            > runtime-evidence/pulse-module-id.txt
+          pactl set-default-sink vh_map02_capture
+          cat > "${RUNNER_TEMP}/map02-asound.conf" <<'ASOUND'
+          pcm.!default { type pulse }
+          ctl.!default { type pulse }
+          ASOUND
+          export ALSA_CONFIG_PATH="${RUNNER_TEMP}/map02-asound.conf"
+          export SDL_AUDIODRIVER=pulse
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          export VK_ICD_FILENAMES="$icd"
+          parec --device=vh_map02_capture.monitor --rate=48000 \
+            --channels=2 --format=s16le --raw \
+            >runtime-evidence/map02-audio-monitor-s16le-48k.pcm \
+            2>runtime-evidence/parec.log &
+          recorder=$!
+          sleep 1
+          timeout --kill-after=5s 46s xvfb-run -a -s "-screen 0 1280x720x24" \
+            "$NEXIUM_BIN" nros/vandal-hearts-map02-audio.nro \
+            >runtime-evidence/map02-audio-guest.log 2>&1 &
+          guest=$!
+          for sample in 1 2 3 4; do
+            sleep 10
+            {
+              echo "=== virtual sink-input sample $sample ==="
+              pactl list sink-inputs
+            } >>runtime-evidence/pulse-sink-inputs.txt
+          done
+          guest_exit=0
+          wait "$guest" || guest_exit=$?
+          printf '%s\n' "$guest_exit" > runtime-evidence/guest-exit-status.txt
+          kill -INT "$recorder" 2>/dev/null || true
+          wait "$recorder" 2>/dev/null || true
+          python3 - <<'PY'
+          import array
+          import hashlib
+          import json
+          import math
+          import sys
+          from pathlib import Path
+
+          path=Path("runtime-evidence/map02-audio-monitor-s16le-48k.pcm")
+          raw=path.read_bytes()
+          if len(raw)%4:
+              raise SystemExit("Incomplete stereo s16le PCM frame")
+          pcm=array.array("h")
+          pcm.frombytes(raw)
+          if sys.byteorder!="little":
+              pcm.byteswap()
+          count=len(pcm)
+          samples_ge256=sum(abs(s)>=256 for s in pcm)
+          rms=math.sqrt(sum(float(s)*s for s in pcm)/count) if count else 0.0
+          sink=Path("runtime-evidence/pulse-sink-inputs.txt").read_text()
+          guest_sink="nexium" in sink.lower()
+          nro=Path("nros/vandal-hearts-map02-audio.nro").read_bytes()
+          recorded_hash=Path("nros/nro.sha256").read_text().split()[0]
+          binary_hash=hashlib.sha256(nro).hexdigest()
+          report={
+              "schema":"vh-map02-audout-virtual-pcm/v1",
+              "run_id":int(__import__("os").environ["GITHUB_RUN_ID"]),
+              "run_attempt":int(__import__("os").environ["GITHUB_RUN_ATTEMPT"]),
+              "git_sha":__import__("os").environ["GITHUB_SHA"],
+              "nro_sha256":binary_hash,
+              "nro_hash_matches_build":binary_hash==recorded_hash,
+              "pcm_sha256":hashlib.sha256(raw).hexdigest(),
+              "duration_seconds":round(count/96000,3),
+              "sample_values":count,
+              "sample_values_abs_ge256":samples_ge256,
+              "rms":round(rms,3),
+              "guest_sink_input_observed":guest_sink,
+              "virtual_audio_nonzero":samples_ge256>=9600 and rms>=32,
+              "soundtrack_or_reverb_causality_proven":False,
+              "physical_speaker_audio_tested":False,
+              "result":"NONZERO_VIRTUAL_PCM_UNATTRIBUTED_TO_MUSIC"
+                       if guest_sink and samples_ge256>=9600 and rms>=32 and
+                          count>=30*96000 and binary_hash==recorded_hash
+                       else "VIRTUAL_AUDIO_NOT_ESTABLISHED"
+          }
+          Path("runtime-evidence/map02-audio-pcm-report.json").write_text(
+              json.dumps(report,sort_keys=True,indent=2)+"\n",encoding="utf-8")
+          print(json.dumps(report,sort_keys=True,indent=2))
+          if report["result"]!="NONZERO_VIRTUAL_PCM_UNATTRIBUTED_TO_MUSIC":
+              raise SystemExit("Failed to establish same-run nonzero guest virtual PCM")
+          PY
 
       - name: Upload runtime evidence
         if: always()
