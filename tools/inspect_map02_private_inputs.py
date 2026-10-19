@@ -128,15 +128,44 @@ def inspect_private_map02_inputs(upstream, owned_image, build_bundle,
         "private_capture_plan_path_present":
             handoff_ok and _regular(handoff / PLAN, owner_only=True),
     }
-    present = all(
-        value == len(ASSETS) if name == "original_asset_include_paths_present"
-        else value is True
-        for name, value in statuses.items()
-        if name != "original_asset_include_paths_expected")
+    # A single all-inputs flag stays false until AFTER the full ELF is
+    # locally linked, a source-bound receipt exists and a capture plan is
+    # prepared. Report distinct *presence-only* milestones so a user can
+    # diagnose what is missing for the NEXT stage rather than mistaking an
+    # unfinished output for a missing prerequisite of its own build.
+    original_build_source_paths_present = all((
+        upstream_ok,
+        statuses["original_us_psx_executable_path_present"],
+        statuses["extracted_original_mips_elf_path_present"],
+        includes_count == len(ASSETS),
+        statuses["pinned_original_include_generator_path_present"],
+        statuses["pinned_font_generator_path_present"],
+        statuses["owned_krom_or_ps1_bios_path_present"],
+    ))
+    private_make_bundle_paths_present = all((
+        bundle_ok,
+        statuses["build_bundle_manifest_path_present"],
+        statuses["build_bundle_make_overlay_path_present"],
+    ))
+    postbuild_launch_paths_present = all((
+        statuses["owned_disc_image_private_path_present"],
+        statuses["full_pc_elf_executable_path_present"],
+        receipt_ok,
+        statuses["private_build_receipt_path_present"],
+        handoff_ok,
+        statuses["private_capture_plan_path_present"],
+    ))
     return {
         "schema": "vh.map02.private-input-presence-inventory.v1",
         **statuses,
-        "all_prerequisite_paths_present": present,
+        "original_build_source_paths_present": original_build_source_paths_present,
+        "private_make_bundle_paths_present": private_make_bundle_paths_present,
+        "postbuild_launch_paths_present": postbuild_launch_paths_present,
+        "all_prerequisite_paths_present": all((
+            original_build_source_paths_present,
+            private_make_bundle_paths_present,
+            postbuild_launch_paths_present,
+        )),
         "original_file_bytes_verified": False,
         "build_provenance_authenticated": False,
         "ready_for_controlled_local_launch": False,
