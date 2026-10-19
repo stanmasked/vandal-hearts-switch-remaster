@@ -6,8 +6,10 @@ separately generates from the exact public, pinned original PC port and
 compiles all four REAL original CD/GPU/raster units in one relocatable blob.
 """
 import hashlib
+import io
 import json
 import subprocess
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 import tempfile
 import unittest
@@ -144,6 +146,54 @@ class SingleElfBuildOverlayTests(unittest.TestCase):
         # An incomplete bundle must not be retried over the same location.
         with self.assertRaisesRegex(ValueError, "NEW directory"):
             mod.prepare(self.upstream, self.output)
+
+    def test_cli_success_does_not_disclose_owned_checkout_or_bundle(self):
+        import sys
+        out = io.StringIO()
+        args = ["prepare-map02-cycle-build", str(self.upstream),
+                str(self.output)]
+        with patch.object(sys, "argv", args), redirect_stdout(out):
+            mod.main()
+        self.assertTrue((self.output / "map02_cycle.mk").is_file())
+        self.assertIn("Make overlay created", out.getvalue())
+        self.assertNotIn(str(self.upstream), out.getvalue())
+        self.assertNotIn(str(self.output), out.getvalue())
+        self.assertNotIn("VANDAL", out.getvalue().upper())
+
+    def test_cli_failure_with_sensitive_oserror_never_prints_private_path(self):
+        import sys
+        secret = str(self.root / "private-retail-SLUS_004.47")
+        args = ["prepare-map02-cycle-build", str(self.upstream),
+                str(self.output)]
+        err = io.StringIO()
+        with (patch.object(sys, "argv", args),
+              patch.object(mod, "prepare",
+                           side_effect=OSError("cannot read " + secret)),
+              redirect_stderr(err)):
+            with self.assertRaises(SystemExit) as result:
+                mod.main()
+        self.assertEqual(result.exception.code, 2)
+        self.assertIn("overlay preparation failed", err.getvalue())
+        for private in (secret, str(self.upstream), str(self.output)):
+            self.assertNotIn(private, err.getvalue())
+        self.assertFalse(self.output.exists())
+
+    def test_cli_failure_with_sensitive_valueerror_never_prints_private_path(self):
+        import sys
+        secret = str(self.root / "sensitive-source-checkout")
+        args = ["prepare-map02-cycle-build", str(self.upstream),
+                str(self.output)]
+        err = io.StringIO()
+        with (patch.object(sys, "argv", args),
+              patch.object(mod, "prepare",
+                           side_effect=ValueError("bad path " + secret)),
+              redirect_stderr(err)):
+            with self.assertRaises(SystemExit) as result:
+                mod.main()
+        self.assertEqual(result.exception.code, 2)
+        self.assertIn("overlay preparation failed", err.getvalue())
+        self.assertNotIn(secret, err.getvalue())
+        self.assertNotIn(str(self.output), err.getvalue())
 
     def test_source_or_makefile_drift_rejected_without_output(self):
         self.source.write_text("void altered(void) {}\n")
