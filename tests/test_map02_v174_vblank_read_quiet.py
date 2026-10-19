@@ -55,6 +55,8 @@ class NativeVBlankReadQuiet174(unittest.TestCase):
             "vh174_observe_wait_read(mem);",
             "vh174_arm_wait_read(unsigned phase)",
             "vh174_wait_read_faults(void)",
+            "vh174_disarm_wait_read(unsigned phase)",
+            "vh174_read_armed",
             "physical==0x1f801810u || physical==0x1f801814u",
             "vh173_wait_active",
         ):
@@ -76,6 +78,7 @@ class NativeVBlankReadQuiet174(unittest.TestCase):
             "--vh174-mips-vblank-read-quiet",
             "vh174_arm_wait_read(phase)!=0",
             "vh174_wait_read_faults();",
+            "vh174_disarm_wait_read(phase);",
             "VH174_VBLANK_WAIT_READ_REFUSED",
             "VH174_GUEST_MIPS_VBLANK_READ_QUIET_PASS",
             "VH173_GUEST_MIPS_VBLANK_QUIET_PASS",
@@ -87,7 +90,10 @@ class NativeVBlankReadQuiet174(unittest.TestCase):
         self.assertLess(oracle.index("vh173_arm_wait_quiet(phase)!=0"),
                         oracle.index("vh174_arm_wait_read(phase)!=0"))
         self.assertLess(oracle.index("vh174_wait_read_faults();"),
+                        oracle.index("vh174_disarm_wait_read(phase);"))
+        self.assertLess(oracle.index("vh174_disarm_wait_read(phase);"),
                         oracle.index("vh173_disarm_wait_quiet(phase);"))
+        self.assertIn("vh174_read_disarmed!=0",oracle)
         self.assertLess(oracle.index("VH174_VBLANK_WAIT_READ_REFUSED"),
                         oracle.index("GPU_freeze(1,&state,&vram)"))
         with self.assertRaises(ValueError):patch_frontend(front)
@@ -112,11 +118,14 @@ int main(void) {
     for(unsigned p=0;p<4u;p++){
        if(vh173_arm_wait_quiet(p)!=0)return 3;
        if(vh174_arm_wait_read((p+1u)%4u)==0)return 4;
-       if(vh174_arm_wait_read(p)!=0)return 5;
+       if(vh174_arm_wait_read(p)!=0 || vh174_arm_wait_read(p)==0)return 5;
        psxMemRead32(&regs,0x80011000u+p*4u);
        psxMemRead32(&regs,0x1f801820u);
-       if(vh174_wait_read_faults()!=0u ||
+       if(vh174_disarm_wait_read((p+1u)%4u)==0 ||
+          vh174_wait_read_faults()!=0u ||
           vh173_wait_mmio_faults()!=0u ||
+          vh174_disarm_wait_read(p)!=0 ||
+          vh174_disarm_wait_read(p)==0 ||
           vh173_disarm_wait_quiet(p)!=0)return 6;
     }
     if(vh173_arm_wait_quiet(0u)!=0 ||
@@ -124,12 +133,18 @@ int main(void) {
     psxMemRead32(&regs,0x1f801810u);
     psxMemRead32(&regs,0xbf801814u);
     if(vh174_wait_read_faults()!=2u ||
+       vh174_arm_wait_read(0u)==0 ||
+       vh174_wait_read_faults()!=2u ||
        vh173_wait_mmio_faults()!=0u ||
+       vh174_disarm_wait_read(0u)!=0 ||
        vh173_disarm_wait_quiet(0u)!=0)return 8;
     if(vh173_arm_wait_quiet(1u)!=0 ||
        vh174_arm_wait_read(1u)!=0)return 9;
     psxMemRead32(&regs,0x9f801810u);
     if(vh174_wait_read_faults()!=1u ||
+       vh174_disarm_wait_read(0u)==0 ||
+       vh174_wait_read_faults()!=1u ||
+       vh174_disarm_wait_read(1u)!=0 ||
        vh173_disarm_wait_quiet(0u)==0 ||
        vh173_disarm_wait_quiet(1u)!=0)return 10;
     puts("VH174_COMPILED_GPU_READ_QUIET_PASS windows=4 good_reads=0 bad_gp0=1 bad_gp1=1 alias_refused=1 original_retail=0");
