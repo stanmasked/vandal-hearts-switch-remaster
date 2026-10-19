@@ -739,17 +739,27 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
     def test_full_strict_run_rejects_post_audit_journal_digest_tamper(self):
         # Preserve the real GPU JSONL and VRAM private files; falsify only
         # one public digest label AFTER the complete independent replays.
+        # The new capture-receipt boundary refuses this inconsistency
+        # BEFORE the strict bit-exact predicate. Both diagnostic and
+        # strict modes must reject the forged source claim.
         real_audit = two_live.audit
         def tamper_source_digest(*args, **kwargs):
             original = real_audit(*args, **kwargs)
             return {**original, "second_gpu_journal_sha256": "0" * 64}
-        with patch.object(two_live, "audit", side_effect=tamper_source_digest):
-            with self.assertRaisesRegex(ValueError, "not bit-exact"):
-                self.run_two(require_identical_gpu_timeline=True)
-        self.assertEqual(len(list(self.dirs[0].iterdir())), 2)
-        self.assertEqual(len(list(self.dirs[2].iterdir())), 2)
-        self.assertEqual(len(list(self.dirs[1].iterdir())), 3)
-        self.assertEqual(len(list(self.dirs[3].iterdir())), 3)
+        for strict in (False, True):
+            with self.subTest(strict=strict):
+                for directory in self.dirs:
+                    for entry in directory.iterdir():
+                        entry.unlink()
+                with patch.object(two_live, "audit",
+                                  side_effect=tamper_source_digest):
+                    with self.assertRaisesRegex(
+                            ValueError, "pinned capture receipts"):
+                        self.run_two(require_identical_gpu_timeline=strict)
+                self.assertEqual(len(list(self.dirs[0].iterdir())), 2)
+                self.assertEqual(len(list(self.dirs[2].iterdir())), 2)
+                self.assertEqual(len(list(self.dirs[1].iterdir())), 3)
+                self.assertEqual(len(list(self.dirs[3].iterdir())), 3)
 
     def test_full_strict_run_rejects_post_audit_secondary_counter_tamper(self):
         # Do not merely unit-test the gate: run both real synthetic C11
