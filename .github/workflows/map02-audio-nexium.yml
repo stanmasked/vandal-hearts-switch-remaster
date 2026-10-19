@@ -1,0 +1,387 @@
+name: MAP02 native audio NeXium optical runtime
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/map02-audio-nexium.yml'
+      - 'source/main.c'
+      - 'Makefile.map02-audio'
+      - 'tests/test_map02_music_input.c'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build libnx NRO for runtime smoke test
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build and test libnx prototype
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
+          export DEVKITA64="${DEVKITA64:-$DEVKITPRO/devkitA64}"
+          export PATH="$DEVKITA64/bin:$DEVKITPRO/tools/bin:$DEVKITPRO/portlibs/switch/bin:$PATH"
+          make test
+          make verify-nro
+          make -f Makefile -f Makefile.map02-audio map02-audio-nro
+          sha256sum build/map02-audio/vandal-hearts-map02-audio.nro \
+            > build/map02-audio/nro.sha256
+
+      - name: Upload NROs for emulator smoke test
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-audio-optical-smoke-nro
+          path: |
+            build/map02-audio/vandal-hearts-map02-audio.nro
+            build/map02-audio/nro.sha256
+          if-no-files-found: error
+
+  run-in-emulator:
+    name: Launch NROs in NeXium
+    runs-on: ubuntu-26.04
+    needs: build
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download test NROs
+        uses: actions/download-artifact@v4
+        with:
+          name: map02-audio-optical-smoke-nro
+          path: nros
+
+      - name: Verify same-workflow audio NRO SHA256
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$(awk 'NR==1{print $1}' nros/nro.sha256)"
+          actual="$(sha256sum nros/vandal-hearts-map02-audio.nro | cut -d ' ' -f1)"
+          test -n "$expected" && test "$expected" = "$actual"
+
+      - name: Install headless display and Vulkan runtime
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl jq xvfb xauth xdotool imagemagick python3-pil \
+            libgtk-3-0t64 libasound2t64 libudev1 libxkbcommon0 libxkbcommon-x11-0 \
+            libx11-xcb1 libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 \
+            libxcb-randr0 libxcb-render0 libxcb-shape0 libxcb-xkb1 \
+            libvulkan1 mesa-vulkan-drivers
+
+      - name: Download NeXium nightly
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          release_json="$(curl -fsSL --retry 3 --retry-all-errors -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/nexium-emu/nexium-nightly/releases/tags/nightly)"
+          asset_url="$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "nexium-linux-x86_64.tar.gz") | .browser_download_url')"
+          test -n "$asset_url"
+          curl -fL --retry 3 --retry-all-errors "$asset_url" -o /tmp/nexium-linux.tar.gz
+          mkdir -p /tmp/nexium
+          tar -xzf /tmp/nexium-linux.tar.gz -C /tmp/nexium
+          emu_bin="$(find /tmp/nexium -type f -executable \( -name 'nexium-gui' -o -name 'nexium' \) -print -quit)"
+          if [ -z "$emu_bin" ]; then
+            emu_bin="$(find /tmp/nexium -type f -executable ! -name 'ffmpeg' -print -quit)"
+          fi
+          test -n "$emu_bin"
+          echo "NEXIUM_BIN=$emu_bin" >> "$GITHUB_ENV"
+          echo "NeXium executable: $emu_bin"
+          ldd "$emu_bin" || true
+
+      - name: Run framebuffer, texture, and input probes
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p runtime-evidence
+          icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -name 'lvp_icd*.json' -print -quit)"
+          if [ -z "$icd" ]; then
+            echo "Lavapipe Vulkan ICD not found" | tee runtime-evidence/runner.log
+            exit 1
+          fi
+          echo "Vulkan ICD: $icd" | tee runtime-evidence/runner.log
+          result=0
+
+          run_probe() {
+            local nro="$1"
+            local label="$2"
+            local check_input="${3:-0}"
+            local shot="runtime-evidence/$label.png"
+            local shot_selected="runtime-evidence/$label-selected.png"
+            local shot_cancelled="runtime-evidence/$label-cancelled.png"
+            local shot_invalid="runtime-evidence/$label-invalid-move.png"
+            local shot_enemy_blocked="runtime-evidence/$label-enemy-blocked.png"
+            local shot_after="runtime-evidence/$label-after-move.png"
+            local shot_plus="runtime-evidence/$label-after-plus.png"
+            local log="runtime-evidence/$label.log"
+            export NRO="$nro" SHOT="$shot" SHOT_SELECTED="$shot_selected" SHOT_CANCELLED="$shot_cancelled" SHOT_INVALID="$shot_invalid" SHOT_ENEMY_BLOCKED="$shot_enemy_blocked" SHOT_AFTER="$shot_after" SHOT_PLUS="$shot_plus" LOG="$log" CHECK_INPUT="$check_input" VK_ICD_FILENAMES="$icd"
+            echo "Launching $nro in NeXium" | tee -a runtime-evidence/runner.log
+
+            if ! timeout --kill-after=5s 60s xvfb-run -a -s "-screen 0 1280x720x24" bash -c '
+              set -euo pipefail
+              "$NEXIUM_BIN" "$NRO" >"$LOG" 2>&1 &
+              pid=$!
+              for i in $(seq 1 30); do
+                sleep 1
+                state="$(ps -o stat= -p "$pid" 2>/dev/null | tr -d " " || true)"
+                if [ -z "$state" ] || [[ "$state" == Z* ]] || ! kill -0 "$pid" 2>/dev/null; then
+                  wait "$pid" || rc=$?
+                  cat "$LOG"
+                  echo "NeXium exited before screenshot (status ${rc:-unknown})"
+                  exit 1
+                fi
+              done
+              window="$(xdotool search --onlyvisible --name "NeXium" 2>/dev/null | tail -n 1 || true)"
+              if [ -z "$window" ]; then
+                echo "NeXium window not found" >&2
+                exit 1
+              fi
+              timeout --kill-after=2s 10s import -window "$window" "$SHOT"
+              if [ "$CHECK_INPUT" = "1" ]; then
+                timeout --kill-after=1s 3s xdotool windowfocus --sync "$window" || true
+                timeout --kill-after=1s 3s xdotool keydown --window "$window" c
+                sleep 0.15
+                timeout --kill-after=1s 3s xdotool keyup --window "$window" c
+                sleep 0.3
+                timeout --kill-after=2s 10s import -window "$window" "$SHOT_SELECTED"
+                timeout --kill-after=1s 3s xdotool keydown --window "$window" x
+                sleep 0.15
+                timeout --kill-after=1s 3s xdotool keyup --window "$window" x
+                sleep 0.3
+                timeout --kill-after=2s 10s import -window "$window" "$SHOT_CANCELLED"
+                timeout --kill-after=1s 3s xdotool keydown --window "$window" c
+                sleep 0.15
+                timeout --kill-after=1s 3s xdotool keyup --window "$window" c
+                sleep 0.15
+                for press in 1 2; do
+                  timeout --kill-after=1s 3s timeout --kill-after=1s 3s xdotool keydown --window "$window" Right
+                  sleep 0.15
+                  timeout --kill-after=1s 3s timeout --kill-after=1s 3s xdotool keyup --window "$window" Right
+                  sleep 0.15
+                done
+                timeout --kill-after=1s 3s xdotool keydown --window "$window" c
+                sleep 0.15
+                timeout --kill-after=1s 3s xdotool keyup --window "$window" c
+                sleep 0.3
+                timeout --kill-after=2s 10s import -window "$window" "$SHOT_AFTER"
+                timeout --kill-after=1s 3s xdotool keydown --window "$window" c
+                sleep 0.15
+                timeout --kill-after=1s 3s xdotool keyup --window "$window" c
+                sleep 0.15
+                for press in 1 2 3; do
+                  timeout --kill-after=1s 3s timeout --kill-after=1s 3s xdotool keydown --window "$window" Right
+                  sleep 0.15
+                  timeout --kill-after=1s 3s timeout --kill-after=1s 3s xdotool keyup --window "$window" Right
+                  sleep 0.15
+                done
+                timeout --kill-after=1s 3s xdotool keydown --window "$window" c
+                sleep 0.15
+                timeout --kill-after=1s 3s xdotool keyup --window "$window" c
+                sleep 0.3
+                timeout --kill-after=2s 10s import -window "$window" "$SHOT_INVALID"
+
+                for press in 1 2; do
+                  timeout --kill-after=1s 3s xdotool keydown --window "$window" Left
+                  sleep 0.15
+                  timeout --kill-after=1s 3s xdotool keyup --window "$window" Left
+                  sleep 0.15
+                done
+                timeout --kill-after=1s 3s xdotool keydown --window "$window" Down
+                sleep 0.15
+                timeout --kill-after=1s 3s xdotool keyup --window "$window" Down
+                sleep 0.15
+                timeout --kill-after=1s 3s xdotool keydown --window "$window" c
+                sleep 0.15
+                timeout --kill-after=1s 3s xdotool keyup --window "$window" c
+                sleep 0.15
+                timeout --kill-after=1s 3s xdotool keydown --window "$window" c
+                sleep 0.15
+                timeout --kill-after=1s 3s xdotool keyup --window "$window" c
+                sleep 0.15
+                for press in 1 2; do
+                  timeout --kill-after=1s 3s timeout --kill-after=1s 3s xdotool keydown --window "$window" Right
+                  sleep 0.15
+                  timeout --kill-after=1s 3s timeout --kill-after=1s 3s xdotool keyup --window "$window" Right
+                  sleep 0.15
+                done
+                timeout --kill-after=1s 3s xdotool keydown --window "$window" c
+                sleep 0.15
+                timeout --kill-after=1s 3s xdotool keyup --window "$window" c
+                sleep 0.3
+                timeout --kill-after=2s 10s import -window "$window" "$SHOT_ENEMY_BLOCKED"
+
+                # NeXium default keyboard mapping sends M as the Switch Plus button.
+                # Capture the guest after Plus to gather evidence that applet exit is handled.
+                timeout --kill-after=1s 3s xdotool keydown --window "$window" m
+                sleep 0.2
+                timeout --kill-after=1s 3s xdotool keyup --window "$window" m
+                sleep 1
+                if xdotool getwindowname "$window" >/dev/null 2>&1; then
+                  timeout --kill-after=2s 10s import -window "$window" "$SHOT_PLUS" || true
+                fi
+              fi
+              sleep 1
+              test -s "$SHOT"
+              test -s "$SHOT_AFTER"
+              if [ "$CHECK_INPUT" = "1" ]; then
+                test -s "$SHOT_SELECTED"
+                test -s "$SHOT_CANCELLED"
+                test -s "$SHOT_INVALID"
+                test -s "$SHOT_ENEMY_BLOCKED"
+              fi
+              kill -INT "$pid" 2>/dev/null || true
+              sleep 2
+              kill -KILL "$pid" 2>/dev/null || true
+              wait "$pid" 2>/dev/null || true
+            '; then
+              echo "Runtime launch/screenshot failed for $label" | tee -a runtime-evidence/runner.log
+              result=1
+              return
+            fi
+
+            if ! python3 - "$shot" "$shot_selected" "$shot_cancelled" "$shot_invalid" "$shot_enemy_blocked" "$shot_after" "$shot_plus" "$label" <<'PY'
+          from PIL import Image
+          from pathlib import Path
+          import sys
+
+          before = Image.open(sys.argv[1]).convert("RGB")
+          selected = Image.open(sys.argv[2]).convert("RGB") if Path(sys.argv[2]).exists() else None
+          cancelled = Image.open(sys.argv[3]).convert("RGB") if Path(sys.argv[3]).exists() else None
+          invalid = Image.open(sys.argv[4]).convert("RGB") if Path(sys.argv[4]).exists() else None
+          enemy_blocked = Image.open(sys.argv[5]).convert("RGB") if Path(sys.argv[5]).exists() else None
+          after = Image.open(sys.argv[6]).convert("RGB")
+          plus = Image.open(sys.argv[7]).convert("RGB") if Path(sys.argv[7]).exists() else None
+          label = sys.argv[8]
+          if plus is not None:
+              from PIL import ImageChops
+              diff = ImageChops.difference(enemy_blocked, plus)
+              changed = sum(1 for pixel in diff.getdata() if max(pixel) > 24)
+              print(f"{label}: pixels changed after Plus/M input={changed}; screenshot saved for inspection")
+          else:
+              print(f"{label}: no post-Plus screenshot captured; emulator/app may have closed its window")
+          hero = (86, 190, 244)
+          cursor = (255, 219, 102)
+
+          def near_color_count(image, color, box):
+              crop = image.crop(box)
+              return sum(
+                  1 for r, g, b in crop.getdata()
+                  if max(abs(r - color[0]), abs(g - color[1]), abs(b - color[2])) <= 16
+              )
+
+          hero_before = near_color_count(before, hero, (0, 0, before.width, before.height))
+          hero_after = near_color_count(after, hero, (0, 0, after.width, after.height))
+          print(f"{sys.argv[1]}: size={before.size}, hero pixels={hero_before}")
+          print(f"{sys.argv[2]}: size={after.size}, hero pixels={hero_after}")
+          if before.size != (1280, 720) or after.size != (1280, 720):
+              raise SystemExit("Unexpected screenshot dimensions")
+          if hero_before < 50 or hero_after < 50:
+              raise SystemExit("Expected hero marker color was not detected")
+
+          changed = sum(
+              1 for a, b in zip(before.getdata(), after.getdata())
+              if max(abs(a[0]-b[0]), abs(a[1]-b[1]), abs(a[2]-b[2])) > 24
+          )
+          print(f"{label}: changed pixels between screenshots={changed}")
+          if changed < 100:
+              raise SystemExit("Framebuffer output did not visibly change after input")
+
+          if label == "libnx-framebuffer":
+              # With this experimental binary, the AUDIO ACTIVE status
+              # glyphs are blue and occupy x970..1100, y92..99.
+              # Their presence verifies the guest worker reports playing,
+              # NOT a speaker or DAC audio signal.
+              active_marker = near_color_count(before, hero, (967, 90, 1100, 100))
+              print(f"{label}: AUDIO ACTIVE blue glyph pixels={active_marker}")
+              if active_marker < 24:
+                  raise SystemExit("MAP02 audio worker not active in NeXium guest")
+              grid_x, grid_y, cell = 352, 100, 72
+              def tile_box(x, y):
+                  return (x + 4, y + 4, x + cell - 4, y + cell - 4)
+              tile_one = tile_box(grid_x + cell, grid_y + 2 * cell)
+              tile_two = tile_box(grid_x + 2 * cell, grid_y + 2 * cell)
+              tile_three = tile_box(grid_x + 3 * cell, grid_y + 2 * cell)
+              before_one = near_color_count(before, cursor, tile_one)
+              before_two = near_color_count(before, cursor, tile_two)
+              before_three = near_color_count(before, cursor, tile_three)
+              after_one = near_color_count(after, cursor, tile_one)
+              after_two = near_color_count(after, cursor, tile_two)
+              after_three = near_color_count(after, cursor, tile_three)
+              print(f"{label}: cursor yellow counts before=({before_one},{before_two},{before_three}) after=({after_one},{after_two},{after_three})")
+              if not (before_one >= 300 and before_two <= 100 and before_three <= 100 and
+                      after_one <= 100 and after_two <= 100 and after_three >= 300):
+                  raise SystemExit("Two Right-arrow presses did not move the cursor exactly two tiles")
+
+              if selected is None or cancelled is None:
+                  raise SystemExit("Missing selection/cancel screenshots")
+              range_color = (43, 91, 91)
+              range_selected = near_color_count(selected, range_color, tile_two)
+              range_cancelled = near_color_count(cancelled, range_color, tile_two)
+              hero_start = near_color_count(before, hero, tile_one)
+              hero_start_after = near_color_count(after, hero, tile_one)
+              hero_destination = near_color_count(after, hero, tile_three)
+              print(f"{label}: range tile pixels selected={range_selected} cancelled={range_cancelled}")
+              print(f"{label}: hero pixels start before={hero_start} after={hero_start_after}; destination after={hero_destination}")
+              if not (range_selected >= 300 and range_cancelled <= 100):
+                  raise SystemExit("A selection / B cancel did not toggle the movement-range highlight")
+              if not (hero_start >= 300 and hero_start_after <= 100 and hero_destination >= 300):
+                  raise SystemExit("Valid selected move did not relocate the hero two tiles right")
+
+              if invalid is None:
+                  raise SystemExit("Missing invalid-move screenshot")
+              tile_four = tile_box(grid_x + 4 * cell, grid_y + 2 * cell)
+              tile_six = tile_box(grid_x + 6 * cell, grid_y + 2 * cell)
+              invalid_hero = near_color_count(invalid, hero, tile_three)
+              invalid_cursor = near_color_count(invalid, cursor, tile_six)
+              invalid_range = near_color_count(invalid, range_color, tile_four)
+              print(f"{label}: after out-of-range attempt hero-at-origin-destination={invalid_hero}, cursor-at-invalid-tile={invalid_cursor}, selected-range={invalid_range}")
+              if not (invalid_hero >= 300 and invalid_cursor >= 300 and invalid_range >= 300):
+                  raise SystemExit("Out-of-range move was not rejected while preserving hero position and selection")
+
+              if enemy_blocked is None:
+                  raise SystemExit("Missing enemy-blocked screenshot")
+              tile_old_hero = tile_box(grid_x + 3 * cell, grid_y + 2 * cell)
+              tile_new_hero = tile_box(grid_x + 4 * cell, grid_y + 3 * cell)
+              tile_enemy = tile_box(grid_x + 6 * cell, grid_y + 3 * cell)
+              tile_enemy_range = tile_box(grid_x + 5 * cell, grid_y + 3 * cell)
+              old_hero_after_block = near_color_count(enemy_blocked, hero, tile_old_hero)
+              new_hero_after_block = near_color_count(enemy_blocked, hero, tile_new_hero)
+              enemy_marker = near_color_count(enemy_blocked, (235, 89, 98), tile_enemy)
+              cursor_on_enemy = near_color_count(enemy_blocked, cursor, tile_enemy)
+              range_after_block = near_color_count(enemy_blocked, range_color, tile_enemy_range)
+              print(f"{label}: enemy-blocked attempt old-hero={old_hero_after_block}, new-hero={new_hero_after_block}, enemy-marker={enemy_marker}, cursor={cursor_on_enemy}, selected-range={range_after_block}")
+              if not (old_hero_after_block <= 100 and new_hero_after_block >= 300 and
+                      enemy_marker >= 300 and cursor_on_enemy >= 300 and range_after_block >= 300):
+                  raise SystemExit("Move onto the enemy tile was not rejected while preserving the hero and selection")
+
+ 
+          else:
+              print("SDL2 input is not asserted here; SDL2 joystick input is checked in the separate workflow.")
+          PY
+            then
+              echo "Render or right-arrow input check failed for $label" | tee -a runtime-evidence/runner.log
+              result=1
+            fi
+          }
+
+          run_probe "nros/vandal-hearts-map02-audio.nro" "libnx-framebuffer" "1"
+          exit "$result"
+
+      - name: Upload runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: map02-audio-nexium-optical-evidence
+          path: runtime-evidence/
+          if-no-files-found: warn
