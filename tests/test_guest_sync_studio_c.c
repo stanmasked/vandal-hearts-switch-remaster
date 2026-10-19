@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "vh_guest_sync_studio_c.h"
+#include "vh_audio_stream.h"
 static uint32_t crc32(const uint8_t *buf,unsigned count) {
     uint32_t crc=UINT32_C(0xffffffff);
     for(unsigned i=0;i<count;i++) {
@@ -54,6 +55,24 @@ int main(void) {
     assert(le32(packet+20)==48u && le32(packet+24)==a.wet_nonzero);
     assert(le32(packet+28)==0u && le32(packet+64)==2u);
     assert(le32(packet+909)==crc32(packet,909u));
+    /* Negative sequential-page cases use generated silence only. The
+     * recorder must fail before consuming resampler state on invalid order. */
+    {
+        static const int16_t quiet[VH_AUDIO_BLOCK_FRAMES*2u]={0};
+        VhGuestNative48k probe;
+        vh_guest_native_48k_init(&probe);
+        assert(vh_guest_native_48k_observe(&probe,quiet,quiet,0u,1u)==-1);
+        assert(vh_guest_native_48k_observe(&probe,quiet,quiet,1u,0u)==-1);
+        assert(vh_guest_native_48k_observe(&probe,quiet,quiet,0u,64u)==-1);
+        assert(vh_guest_native_48k_observe(&probe,quiet,quiet,1u,48u)==-1);
+        assert(vh_guest_native_48k_observe(&probe,quiet,quiet,0u,0u)==0);
+        assert(probe.prefix_frames==557u);
+        assert(vh_guest_native_48k_observe(&probe,quiet,quiet,0u,0u)==-1);
+        assert(vh_guest_native_48k_observe(&probe,quiet,quiet,0u,2u)==-1);
+        assert(vh_guest_native_48k_observe(&probe,quiet,quiet,0u,1u)==0);
+        assert(probe.prefix_frames==1114u);
+    }
+    puts("PASS: sequential native 48k pages reject skipped, duplicated and early tail indices");
     puts("PASS: synchronized guest DSP replay: 64 identical prefix, 48/48 different tail blocks, 0 reset samples");
     printf("initial=%016llx wet=%016llx reset=%016llx wet_nonzero=%u\n",
            (unsigned long long)a.initial_hash,
