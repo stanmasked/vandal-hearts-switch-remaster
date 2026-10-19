@@ -156,6 +156,7 @@ class WindowScopedJoinTests(unittest.TestCase):
                          [0, 4])
         self.assertEqual(result["independently_sampled_draw_edges"], 2)
         self.assertFalse(result["whole_original_gameplay_frame_proven"])
+        self.assertFalse(result["physical_ps1_equivalence_proven"])
 
         # Forge an unreported GPU-state transition across a raster packet.
         # The native validator must fail instead of masking the evidence

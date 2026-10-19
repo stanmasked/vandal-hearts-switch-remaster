@@ -17,6 +17,7 @@ on:
       - 'work/map02-main-transfer-frame-fix'
       - 'work/map02-main-recorder-drmode-boundary'
       - 'work/map02-scoped-drmode-ordinal-compat'
+      - 'work/map02-drmode-four-gates'
     paths:
       - 'tools/make_map02_trace_patch.py'
       - 'tools/prepare_map02_pcport.py'
