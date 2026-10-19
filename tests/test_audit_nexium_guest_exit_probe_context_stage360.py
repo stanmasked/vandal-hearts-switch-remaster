@@ -39,11 +39,15 @@ class Stage360Tests(unittest.TestCase):
         x=parse_source(raw(n),a,b)
         self.assertTrue(x["last_pre_submit_probe_observed"])
         self.assertEqual(x["last_pre_submit_probe_age_ns"],30)
+        self.assertEqual(x["last_pre_submit_probe_age_at_tail_end_ns"],42)
+        self.assertTrue(x["tail_end_probe_age_is_derived_not_direct_queue_measurement"])
         self.assertFalse(x["direct_exit_time_queue_depth_observed"])
         self.assertFalse(x["scheduler_latency_measured"])
     def test_successful_exit_clock_alignment(self):
         n,raw,a,b=fixtures(7)
-        self.assertEqual(parse_source(raw(n),a,b)["stage351_tail_reason_code"],7)
+        x=parse_source(raw(n),a,b)
+        self.assertEqual(x["stage351_tail_reason_code"],7)
+        self.assertEqual(x["last_pre_submit_probe_age_at_tail_end_ns"],42)
     def test_failed_probe_not_interpreted_as_empty(self):
         n,raw,a,b=fixtures()
         n["last_pre_submit_probe_queue_status"]=0
@@ -60,6 +64,17 @@ class Stage360Tests(unittest.TestCase):
                     "last_pre_submit_probe_age_ns"):n[key]=0
         x=parse_source(raw(n),a,b)
         self.assertIsNone(x["last_pre_submit_probe_age_ns"])
+        self.assertIsNone(x["last_pre_submit_probe_age_at_tail_end_ns"])
+    def test_derived_end_age_tracks_only_original_tail_interval(self):
+        n,raw,a,b=fixtures(4)
+        # For a failed wait Stage313 has no successful-return time,
+        # but original Stage360 still carries its own tail-end tick.
+        n["tail_end_guest_ns"]=217
+        n["tail_elapsed_ns"]=17
+        x=parse_source(raw(n),a,b)
+        self.assertEqual(x["last_pre_submit_probe_age_ns"],30)
+        self.assertEqual(x["last_pre_submit_probe_age_at_tail_end_ns"],47)
+        self.assertFalse(x["direct_exit_time_queue_depth_observed"])
     def test_reject_future_probe_age(self):
         n,raw,a,b=fixtures()
         n["last_pre_submit_probe_age_ns"]=201
