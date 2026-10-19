@@ -101,9 +101,14 @@ def verify_window_scoped_join(native_windows, scoped_capture, *,
 
     coordinate = (edges[0]["x"], edges[0]["y"])
     address = (coordinate[1] * 1024 + coordinate[0]) * 2
-    if len(edges) != windows_report["native_draw_pairs"]:
-        raise ValueError("selected DrawOTag draw boundary count differs from GPU windows")
+    # The strict GPU recorder includes DR_MODE (source-pinned type 5)
+    # because it changes persistent GPU draw state. Scoped PutPixel,
+    # BlendG1 and direct VRAM edges deliberately assign ordinals only
+    # to raster primitives; DR_MODE has no pixels or raster edge.
+    if len(edges) > windows_report["native_draw_pairs"]:
+        raise ValueError("selected DrawOTag draw boundary count exceeds GPU windows")
     ordinal = 0
+    state_only_mode_pairs = 0
     across_windows = 0
     draw_indices = []
     for window_index in range(windows_report["recorded_windows"]):
@@ -115,6 +120,14 @@ def verify_window_scoped_join(native_windows, scoped_capture, *,
             before, after = rows[index:index + 2]
             if before["operation"] != "draw":
                 continue
+            if before["primitive_type"] == 5:
+                # verify_native_windows() already checked both snapshots:
+                # state-only DR_MODE must preserve all BGR555 VRAM bytes,
+                # remain in-order and carry the GPU-state transition.
+                state_only_mode_pairs += 1
+                continue
+            if ordinal >= len(edges):
+                raise ValueError("raster DrawOTag boundary missing a selected-pixel edge")
             edge = edges[ordinal]
             if (edge["primitive_ordinal"] != ordinal or
                     edge["primitive_type"] != before["primitive_type"] or
@@ -133,8 +146,10 @@ def verify_window_scoped_join(native_windows, scoped_capture, *,
                 across_windows += 1
             draw_indices.append(global_event_step)
             ordinal += 1
-    if ordinal != len(edges):
-        raise ValueError("native GPU windows omit DrawOTag edge ordinals")
+    if (ordinal != len(edges) or
+            ordinal + state_only_mode_pairs !=
+            windows_report["native_draw_pairs"]):
+        raise ValueError("selected raster DrawOTag boundaries differ from GPU windows")
 
     # A successful first check does not authorize returning old digests
     # if any file changes while we read native snapshots or source GTE.
