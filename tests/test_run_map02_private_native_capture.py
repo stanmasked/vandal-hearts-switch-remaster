@@ -150,6 +150,36 @@ class PrivateNativeLauncherTests(unittest.TestCase):
         return capture(self.executable, self.preflight, self.summary,
                        game_args=list(args), environ=self.env)
 
+    def test_git_worktree_prevents_original_native_child_and_receipt_creation(self):
+        # Do not start even a synthetic child when the native output
+        # directory is below a Git checkout. Private GPU logs and BGR555
+        # frames must never be one accidental git-add from publication.
+        from tools import run_map02_private_native_capture as launcher
+        marker = self.base / ".git"
+        for kind in ("directory", "linked-worktree-file"):
+            with self.subTest(kind=kind):
+                if kind == "directory":
+                    marker.mkdir(mode=0o700)
+                else:
+                    marker.write_text(
+                        "gitdir: /private/elsewhere\\n", encoding="utf-8")
+                try:
+                    with patch.object(
+                            launcher.subprocess, "Popen",
+                            side_effect=AssertionError("must not spawn")):
+                        with self.assertRaisesRegex(
+                                ValueError, "Git worktree") as caught:
+                            self.run_synthetic()
+                    self.assertNotIn(str(self.base), str(caught.exception))
+                    self.assertFalse(self.preflight.exists())
+                    self.assertFalse(self.summary.exists())
+                    self.assertEqual(list(self.capture_dir.iterdir()), [])
+                finally:
+                    if marker.is_dir():
+                        marker.rmdir()
+                    else:
+                        marker.unlink()
+
     def test_real_subprocess_produces_valid_private_trace(self):
         result = self.run_synthetic()
         self.assertTrue(result["process_started"])
