@@ -41,6 +41,11 @@ int main(void) {
     const uint64_t first_hash=w.page[0].fnv1a64;
     const uint32_t first_crc=w.page[0].crc32;
     assert(first_hash && first_crc);
+    /* Independent PCM16-LE reference (Python struct.pack + zlib.crc32).
+     * These constants guard byte ordering and digest implementations,
+     * rather than comparing two copies of the SAME buggy algorithm. */
+    assert(first_hash==UINT64_C(0x05d42c5563013652));
+    assert(first_crc==UINT32_C(0x154b4767));
     for(unsigned i=1u;i<VH_AUDOUT_PRESUBMIT_CAP;i++) {
         const size_t frames=i&1u?558u:557u;
         fill(i+1u);
@@ -56,12 +61,16 @@ int main(void) {
     assert(vh_audout_presubmit_return(&w,1)==1);
     assert(w.count==VH_AUDOUT_PRESUBMIT_CAP);
     assert(w.mismatches==2u);
+    assert(w.page[1].fnv1a64==UINT64_C(0xf53cd6dfed5657df));
+    assert(w.page[1].crc32==UINT32_C(0x667ef4d2));
     vh_audout_presubmit_reset(&w);
     assert(w.count==0u && w.mismatches==0u && !w.pending);
     fill(7u);
     assert(vh_audout_presubmit_arm(&w,page,1u)==0);
     assert(vh_audout_presubmit_before_call(&w,page,1u)==0);
     assert(vh_audout_presubmit_return(&w,1)==0);
+    assert(w.page[0].fnv1a64==UINT64_C(0x6dcd8fc02714d452));
+    assert(w.page[0].crc32==UINT32_C(0x5b9f7c93));
     puts("PASS: PCM16 stereo pre-submit dual fingerprints and exact-page release");
     puts("PASS: reject changed frames/PCM, accept identical retry without re-render");
     puts("PASS: bounded eight-page observer, no PCM pointers or audout side effects");
