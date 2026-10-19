@@ -29,6 +29,10 @@ class V189NativeLogReplay(unittest.TestCase):
             recipes = list(replay_mutations(original, mode))
             self.assertEqual(len(recipes), 15 if mode == 0 else 16)
             self.assertEqual(len({label for label, _ in recipes}), len(recipes))
+            self.assertEqual(
+                len({mutated for _, mutated in recipes}), len(recipes),
+                "Every adversarial case must change a different native transcript",
+            )
             for label, mutated in recipes:
                 with self.subTest(mode=mode, recipe=label):
                     self.assertNotEqual(mutated, original)
