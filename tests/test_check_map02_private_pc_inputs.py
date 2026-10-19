@@ -185,6 +185,39 @@ for name, offset, size in [
         with self.assertRaisesRegex(ValueError, "no mapped initialized"):
             compare_loaded_sections(self.exe, self.elf)
 
+    def test_coverage_counters_do_not_inflate_sparse_extraction(self):
+        payload_size = len(self.exe.read_bytes()) - PSX_HEADER
+        summary = compare_loaded_sections(self.exe, self.elf)
+        self.assertEqual(summary["original_psx_loaded_payload_bytes"], payload_size)
+        self.assertEqual(
+            summary["original_psx_loaded_bytes_not_covered_by_elf_sections"],
+            payload_size - 1216)
+        self.assertFalse(summary["original_psx_loaded_payload_fully_covered"])
+        ready = verify_private_pc_inputs(self.root)
+        for key in ("original_psx_loaded_payload_bytes",
+                    "original_psx_loaded_bytes_not_covered_by_elf_sections",
+                    "original_psx_loaded_payload_fully_covered"):
+            self.assertEqual(ready[key], summary[key])
+        self.assertFalse(ready["original_map02_rendering_proven"])
+
+    def test_full_payload_coverage_requires_one_nonoverlapping_section(self):
+        size = len(self.exe.read_bytes()) - PSX_HEADER
+        self.add_synthetic_loaded_section(LOAD_VRAM, size=size)
+        elf = bytearray(self.elf.read_bytes())
+        table = struct.unpack_from("<I", elf, 32)[0]
+        # Remove the three tiny sections: the new ELF contains only one
+        # contiguous initialized runtime section covering the whole image.
+        for index in (1, 2, 3):
+            struct.pack_into("<I", elf, table + index * 40 + 4, 0)
+        self.elf.write_bytes(elf)
+        report = compare_loaded_sections(self.exe, self.elf)
+        self.assertEqual(report["original_allocated_sections_compared"], 1)
+        self.assertEqual(report["original_allocated_section_bytes_compared"], size)
+        self.assertEqual(
+            report["original_psx_loaded_bytes_not_covered_by_elf_sections"], 0)
+        self.assertTrue(report["original_psx_loaded_payload_fully_covered"])
+        self.assertFalse(report["complete_matching_decomp_proven"])
+
     def test_mapped_section_overlap_and_boundary_rejected(self):
         self.add_synthetic_loaded_section(ANCHORS[0][1], size=16)
         with self.assertRaisesRegex(ValueError, "overlapping allocated"):
