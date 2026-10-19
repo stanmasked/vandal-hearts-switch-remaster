@@ -185,6 +185,34 @@ def _validated_launch_args(frame, executable_sha256, args, timeout,
     return tuple(args)
 
 
+def _require_private_capture_destination(path, fd):
+    """Refuse a Git worktree or a non-writable private capture directory.
+
+    Owner-only permissions are not sufficient: an operator might otherwise
+    write original GPU/VRAM bytes under a public repository by accident.
+    Check both the literal path and its real target, including linked
+    worktrees whose .git entry is a FILE rather than a directory.
+    This is a local preventative check, not a sandbox or publication proof.
+    """
+    if stat.S_IMODE(os.fstat(fd).st_mode) & 0o700 != 0o700:
+        raise ValueError("MAP02 capture directory requires private 0700 permissions")
+    for root in (Path(path).absolute(), Path(path).resolve(strict=True)):
+        for parent in (root, *root.parents):
+            if parent.name == ".git":
+                raise ValueError("MAP02 private capture directory is in a Git worktree")
+            try:
+                os.lstat(parent / ".git")
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                raise ValueError(
+                    "MAP02 private capture Git boundary cannot be verified"
+                ) from exc
+            else:
+                raise ValueError(
+                    "MAP02 private capture directory is in a Git worktree")
+
+
 def preflight(executable, first_frame, first_journal, second_frame,
               second_journal, *, frame, executable_sha256, args=(),
               timeout=10, require_identical_gpu_timeline=False):
@@ -206,6 +234,7 @@ def preflight(executable, first_frame, first_journal, second_frame,
         for path in folders:
             fd, identity = _directory(path, empty=True)
             opened.append(fd)
+            _require_private_capture_destination(path, fd)
             identities.append(identity)
         if len({identity[:2] for identity in identities}) != 4:
             raise ValueError("MAP02 two-run private directory roles overlap")
@@ -214,6 +243,7 @@ def preflight(executable, first_frame, first_journal, second_frame,
         _require_held_elf_image(exe_fd, executable, executable_sha256)
         for fd, path, identity in zip(opened, folders, identities):
             _check_directory(fd, path, identity)
+            _require_private_capture_destination(path, fd)
             if os.listdir(fd):
                 raise ValueError("MAP02 two-run private directory not empty")
         _require_held_elf_image(exe_fd, executable, executable_sha256)
@@ -268,6 +298,7 @@ def run(executable, first_frame, first_journal, second_frame, second_journal,
         for path in folders:
             fd, identity = _directory(path, empty=True)
             opened.append(fd)
+            _require_private_capture_destination(path, fd)
             identities.append(identity)
         if len({identity[:2] for identity in identities}) != 4:
             raise ValueError("MAP02 two-run private directory roles overlap")
@@ -288,6 +319,9 @@ def run(executable, first_frame, first_journal, second_frame, second_journal,
             _require_held_elf_image(exe_fd, executable, executable_sha256,
                                     original_identity=elf_identity)
             frame_dir, journal_dir = folders[offset:offset + 2]
+            for role_fd, role_path in zip(opened[offset:offset + 2],
+                                          folders[offset:offset + 2]):
+                _require_private_capture_destination(role_path, role_fd)
             published = []
             def pin(held_output_fd, held_journal_fd):
                 if held_journal_fd is None:
