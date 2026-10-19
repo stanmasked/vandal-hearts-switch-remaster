@@ -82,11 +82,13 @@ jobs:
             grep '^source/vh_' | grep -v '^source/vh_native_tone.h$')
           test "${#frozen[@]}" -eq 50
           test "${#parent_sources[@]}" -eq 54
-          test "${#staged[@]}" -eq 57
-          # Eight precisely reviewed opt-in source overlays vs frozen
-          # parent (including two NEW bounded witness files), no wildcard.
+          test "${#staged[@]}" -eq 59
+          # Ten precisely reviewed opt-in source overlays vs frozen
+          # parent (four NEW witness/optical files), no wildcard.
           expected_changes=(
             source/main.c
+            source/vh_audout_presubmit_optical.c
+            source/vh_audout_presubmit_optical.h
             source/vh_audout_presubmit_witness.c
             source/vh_audout_presubmit_witness.h
             source/vh_guest_native_48k.c
@@ -126,14 +128,18 @@ jobs:
             test "$(git rev-parse "HEAD:$file")" = \
                  "$(git rev-parse "$expected:$file")"
           done
-          # These five exact Git blob pins protect new opt-in source
+          # These seven exact Git blob pins protect new opt-in source
           # changes. Do not permit unreviewed audio/entrypoint changes.
           test "$(git rev-parse HEAD:source/main.c)" = \
-               "16c90b32c20844d7e91b8fdbea871a1291584665"
+               "679f68152fe1e9211911e221fa1fc18487733b61"
           test "$(git rev-parse HEAD:source/vh_switch_game_audio.c)" = \
-               "e7aae6810e4f0480b6f5dc41a2cd8fb93b250ada"
+               "b1ff92ee1d2725729b5e793715a9f68ade153837"
           test "$(git rev-parse HEAD:source/vh_switch_game_audio.h)" = \
-               "581f0875df3309c1d5abf0331fea48a365710ad4"
+               "ca8e1906cbc149dd98e1b293ecfb8d94bf50c237"
+          test "$(git rev-parse HEAD:source/vh_audout_presubmit_optical.c)" = \
+               "e0b7458af5e52bb197d00471843ebb70d17f4647"
+          test "$(git rev-parse HEAD:source/vh_audout_presubmit_optical.h)" = \
+               "35d53e7193a3d9c80b037e245595d5bbbca60c5b"
           test "$(git rev-parse HEAD:source/vh_audout_presubmit_witness.c)" = \
                "58b10244715e22d560ddd432318fafd36f1ab1c2"
           test "$(git rev-parse HEAD:source/vh_audout_presubmit_witness.h)" = \
@@ -151,4 +157,4 @@ jobs:
           git diff --exit-code "$main" HEAD -- \
             Makefile source/game_rules.h source/game_renderer.h \
             'source/map02*' 'source/ps1_*' source/software_renderer.h
-          echo "PASS: 44 frozen blobs + 52 parent blobs + 8 exact-scoped source changes (5 child blob pins), 8 tests and stock MAP02 graphics preserved" >> "$GITHUB_STEP_SUMMARY"
+          echo "PASS: 44 frozen blobs + 52 parent blobs + 10 exact-scoped source changes (7 child blob pins), 8 tests and stock MAP02 graphics preserved" >> "$GITHUB_STEP_SUMMARY"
