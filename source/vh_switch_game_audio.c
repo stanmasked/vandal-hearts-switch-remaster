@@ -38,6 +38,14 @@ static VhMap02PcmMetrics first_page_metrics;
 #include "vh_audout_queue_telemetry.h"
 #include "vh_audout_queue_export.h"
 #include "vh_audio_output_ramp.h"
+#ifndef VH_MAP02_AUDIO_PRESUBMIT_WITNESS
+#define VH_MAP02_AUDIO_PRESUBMIT_WITNESS 0
+#endif
+#if VH_MAP02_AUDIO_PRESUBMIT_WITNESS
+#include "vh_audout_presubmit_witness.h"
+#include "vh_audout_presubmit_optical.h"
+static VhAudoutPresubmitWitness presubmit_witness;
+#endif
 #include "vh_audio_output_edges.h"
 #include "vh_game_music_banks.h"
 #include "vh_music_scene.h"
@@ -190,9 +198,21 @@ static int output_submit(void *opaque, const int16_t *stereo,
     }
     AudioOutBuffer *released = NULL;
     const uint64_t begin_ns=scene_trace_now_ns();
+#if VH_MAP02_AUDIO_PRESUBMIT_WITNESS
+    /* Hash actual descriptor bytes just BEFORE the libnx call. A retry
+     * must match the same sealed post-ramp page; never touch it while
+     * the service may own the buffer. No libnx call is added here. */
+    if(vh_audout_presubmit_before_call(&presubmit_witness,
+        (const int16_t *)s->buffer->buffer,
+        s->buffer->data_size/(2u*sizeof(int16_t)))<0) return -1;
+#endif
     const Result played=audoutPlayBuffer(s->buffer,&released);
     const int returned=R_SUCCEEDED(played) &&
         vh_audio_buffer_lease_release(&s->lease,released)==0;
+#if VH_MAP02_AUDIO_PRESUBMIT_WITNESS
+    if(vh_audout_presubmit_return(&presubmit_witness,returned)<0)
+        return -1;
+#endif
     vh_audout_queue_record(&audout_telemetry,begin_ns,
         scene_trace_now_ns(),returned,queue_status,queue_count);
     return returned ? 0 : -1;
@@ -308,6 +328,9 @@ static void audio_worker(void *unused) {
         output_open, output_start
     };
     VhAudioOutputRecovery recovery_stats = {0};
+#if VH_MAP02_AUDIO_PRESUBMIT_WITNESS
+    vh_audout_presubmit_reset(&presubmit_witness);
+#endif
     VhAudioOutputRamp output_ramp = {VH_AUDIO_OUTPUT_RAMP_FRAMES};
     VhAudioResumeLatency resume_stats = {0};
     uint64_t resume_begin_tick = 0;
@@ -496,6 +519,16 @@ static void audio_worker(void *unused) {
             scene_trace_emit(nonzero ? VH_SCENE_TRACE_PCM_PAGE_NONZERO
                                      : VH_SCENE_TRACE_PCM_PAGE_SILENT,
                              pending_trace_serial,pending_trace_scene);
+        }
+#endif
+#if VH_MAP02_AUDIO_PRESUBMIT_WITNESS
+        /* Seal the generated page once, before ANY recovery retry.
+         * Only the first eight normal pages are observed. Fail closed
+         * in this opt-in research build on a corrupt observer state. */
+        if(vh_audout_presubmit_arm(&presubmit_witness,
+                                  pcm_48000_page,count)<0) {
+            state=-14;
+            break;
         }
 #endif
         /* If audout rejects the page, reinitialize the device and
@@ -712,6 +745,41 @@ VhAudoutQueueExportResult vh_switch_game_audio_probe_export(
     if(thread_started) return VH_AUDOUT_QUEUE_EXPORT_INVALID;
     return vh_audout_probe_export(&audout_telemetry,
         VH_SCENE_TRACE_SD_DIRECTORY,committed_path,capacity);
+}
+
+int vh_switch_game_audio_presubmit_dump(FILE *stream) {
+#if VH_MAP02_AUDIO_PRESUBMIT_WITNESS
+    if(!stream || thread_started || presubmit_witness.pending) return -1;
+    if(fputs("index,frames,fnv1a64,crc32,attempts,successful_returns\n",
+             stream)<0) return -1;
+    for(unsigned i=0;i<presubmit_witness.count;i++) {
+        const VhAudoutPresubmitPage *p=&presubmit_witness.page[i];
+        if(fprintf(stream,"%u,%u,%016llx,%08x,%u,%u\n",
+            i,p->frames,(unsigned long long)p->fnv1a64,p->crc32,
+            p->attempts,p->successful_returns)<0) return -1;
+    }
+    if(fprintf(stream,"mismatches,%u\n",
+               presubmit_witness.mismatches)<0) return -1;
+    return (int)presubmit_witness.count;
+#else
+    (void)stream;
+    return -1;
+#endif
+}
+
+int vh_switch_game_audio_presubmit_render(VhCanvas *canvas,
+    uint32_t black,uint32_t white,uint32_t marker) {
+#if VH_MAP02_AUDIO_PRESUBMIT_WITNESS
+    if(thread_started || !canvas) return -1;
+    uint8_t packet[VH_SCENE_OPTICAL_PACKET_BYTES];
+    if(vh_audout_presubmit_optical_encode(&presubmit_witness,packet)<0)
+        return -1;
+    return vh_audio_scene_optical_draw_packet(canvas,packet,
+                                               black,white,marker);
+#else
+    (void)canvas;(void)black;(void)white;(void)marker;
+    return -1;
+#endif
 }
 
 int vh_switch_game_audio_queue_dump(FILE *stream) {

@@ -1,5 +1,6 @@
 #include <switch.h>
 #include <string.h>
+#include <stdio.h>
 
 #include "game_rules.h"
 #include "game_state.h"
@@ -15,6 +16,12 @@
 /* Additive opt-in: standard MAP02 NRO remains video-only. */
 #ifndef VH_MAP02_AUDIO_EXPERIMENT
 #define VH_MAP02_AUDIO_EXPERIMENT 0
+#endif
+#ifndef VH_MAP02_AUDIO_PRESUBMIT_WITNESS
+#define VH_MAP02_AUDIO_PRESUBMIT_WITNESS 0
+#endif
+#if VH_MAP02_AUDIO_PRESUBMIT_WITNESS && !VH_MAP02_AUDIO_EXPERIMENT
+#error "audout pre-submit witness requires an opt-in MAP02 audio build"
 #endif
 #ifndef VH_MAP02_AUDIO_TRACE_RECEIPT
 #define VH_MAP02_AUDIO_TRACE_RECEIPT 0
@@ -447,6 +454,29 @@ int main(int argc, char **argv) {
     if (audio_started) {
         appletUnhook(&audio_focus_hook);
         vh_switch_game_audio_stop();
+#if VH_MAP02_AUDIO_PRESUBMIT_WITNESS
+        /* No worker-thread stdout, writes or allocated PCM pointers. */
+        (void)vh_switch_game_audio_presubmit_dump(stdout);
+        /* Optical receipt is rendered only after the audio owner joins.
+         * Existing research workflows use their own trace screens. */
+        u32 presubmit_stride_bytes=0;
+        u32 *presubmit_pixels=(u32 *)framebufferBegin(
+            &fb,&presubmit_stride_bytes);
+        if(presubmit_pixels) {
+            VhCanvas presubmit_canvas={
+                (uint32_t *)presubmit_pixels,
+                (size_t)(presubmit_stride_bytes/sizeof(u32)),
+                FB_WIDTH,FB_HEIGHT
+            };
+            (void)vh_switch_game_audio_presubmit_render(
+                &presubmit_canvas,
+                RGBA8_MAXALPHA(0,0,0),
+                RGBA8_MAXALPHA(255,255,255),
+                RGBA8_MAXALPHA(255,0,255));
+        }
+        framebufferEnd(&fb);
+        svcSleepThread(8000000000LL);
+#endif
         if (audio_resume_message_enabled)
             (void)appletSetRestartMessageEnabled(false);
 #if VH_MAP02_AUDIO_TRACE_RECEIPT
