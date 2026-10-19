@@ -65,15 +65,59 @@ jobs:
         run: |
           set -euo pipefail
           audio="bb92f521596588ab47e2e529fc8a3ebacb5a93a8"
+          parent="f30e44f1b2173fd991e688e9d3e5b07e9b63c25f"
           main="af8e1709488df6e9bcc591e66fae337bcf713c69"
           git cat-file -e "$audio^{commit}"
+          git cat-file -e "$parent^{commit}"
           git cat-file -e "$main^{commit}"
-          # Git tree IDs prove the content bytes are unchanged.
+          # Frozen integration audio has 50 vh_* source blobs. The staged
+          # parent deliberately added 4 diagnostic sources and modified 6
+          # integration files. This isolated 48k PR adds a fifth source
+          # and changes only the synchronized observer pair.
+          mapfile -t frozen < <(git ls-tree -r --name-only "$audio" source | \
+            grep '^source/vh_' | grep -v '^source/vh_native_tone.h$')
+          mapfile -t parent_sources < <(git ls-tree -r --name-only "$parent" source | \
+            grep '^source/vh_' | grep -v '^source/vh_native_tone.h$')
           mapfile -t staged < <(git ls-tree -r --name-only HEAD source | \
             grep '^source/vh_' | grep -v '^source/vh_native_tone.h$')
-          test "${#staged[@]}" -eq 50
-          for file in "${staged[@]}"; do
-            test "$(git rev-parse "HEAD:$file")" = "$(git rev-parse "$audio:$file")"
+          test "${#frozen[@]}" -eq 50
+          test "${#parent_sources[@]}" -eq 54
+          test "${#staged[@]}" -eq 55
+          # Only these three research-only source paths differ from the
+          # frozen parent. In particular, no game audio or renderer changes.
+          expected_changes=(
+            source/vh_guest_native_48k.c
+            source/vh_guest_sync_studio_c.c
+            source/vh_guest_sync_studio_c.h
+          )
+          mapfile -t actual_changes < <(git diff --name-only "$parent" HEAD -- source)
+          test "${#actual_changes[@]}" -eq "${#expected_changes[@]}"
+          for i in "${!expected_changes[@]}"; do
+            test "${actual_changes[i]}" = "${expected_changes[i]}"
+          done
+          # Every original parent file except the two opt-in diagnostic
+          # observer files must have byte-identical Git blobs.
+          for file in "${parent_sources[@]}"; do
+            case "$file" in
+              source/vh_guest_sync_studio_c.c|source/vh_guest_sync_studio_c.h)
+                continue ;;
+            esac
+            test "$(git rev-parse "HEAD:$file")" = \
+                 "$(git rev-parse "$parent:$file")"
+          done
+          # Enforce byte identity of 44 original audio blobs. The other
+          # six belong to the approved parent-stage optical/runtime bridge
+          # and must instead match that immutable parent commit.
+          for file in "${frozen[@]}"; do
+            case "$file" in
+              source/vh_audio_scene_optical.c|source/vh_audio_scene_optical.h|\
+              source/vh_audio_scene_trace.c|source/vh_audio_scene_trace.h|\
+              source/vh_switch_game_audio.c|source/vh_switch_game_audio.h)
+                expected="$parent" ;;
+              *) expected="$audio" ;;
+            esac
+            test "$(git rev-parse "HEAD:$file")" = \
+                 "$(git rev-parse "$expected:$file")"
           done
           tests=(
             test_vh_audio_resample.c test_vh_audio_stream.c
@@ -88,4 +132,4 @@ jobs:
           git diff --exit-code "$main" HEAD -- \
             Makefile source/main.c source/game_rules.h source/game_renderer.h \
             'source/map02*' 'source/ps1_*' source/software_renderer.h
-          echo "PASS: exact 50 audio source blobs + 8 tests preserved; graphics MAP02 main unchanged" >> "$GITHUB_STEP_SUMMARY"
+          echo "PASS: exact frozen 44 + parent 52 audio blobs, 3 allowlisted research sources, 8 tests, graphics main unchanged" >> "$GITHUB_STEP_SUMMARY"
