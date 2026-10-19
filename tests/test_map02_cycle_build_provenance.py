@@ -122,6 +122,21 @@ class CycleBuildReceiptTests(unittest.TestCase):
                 self.assertIn("command verification failed", output.getvalue())
                 self.assertNotIn(private_path, output.getvalue())
 
+    def test_cli_redacts_private_paths_from_receipt_value_error(self):
+        private_path = str(self.upstream / "SLUS_004.47")
+        args = ["verify-build", str(self.receipt_dir), str(self.binary),
+                str(self.upstream), str(self.bundle)]
+        output = io.StringIO()
+        with (patch("sys.argv", args),
+              patch.object(provenance, "verify_build_receipt",
+                           side_effect=ValueError("different ELF " + private_path)),
+              redirect_stderr(output)):
+            with self.assertRaises(SystemExit) as caught:
+                provenance.main()
+        self.assertEqual(caught.exception.code, 2)
+        self.assertIn("provenance verification failed", output.getvalue())
+        self.assertNotIn(private_path, output.getvalue())
+
     def test_altered_generated_krom_c_blocks_receipt_verification(self):
         self.publish()
         with patch(
