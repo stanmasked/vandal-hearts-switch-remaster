@@ -459,7 +459,24 @@ int main(int argc, char **argv) {
         framebufferEnd(&fb);
         /* Keep the optical trace on screen long enough for NeXium
          * automation to read it. This is NOT the default game build. */
+        svcSleepThread(7000000000LL);
+#if VH_MAP02_AUDIO_PCM_METRICS
+        /* Separate post-join optical packet, not gameplay framebuffer. */
+        receipt_pixels = (u32 *)framebufferBegin(&fb, &receipt_stride_bytes);
+        if(receipt_pixels) {
+            VhCanvas receipt = {
+                (uint32_t *)receipt_pixels,
+                (size_t)(receipt_stride_bytes / sizeof(u32)),
+                FB_WIDTH, FB_HEIGHT
+            };
+            (void)vh_switch_game_audio_pcm_metrics_render(&receipt,
+                RGBA8_MAXALPHA(0,0,0),
+                RGBA8_MAXALPHA(255,255,255),
+                RGBA8_MAXALPHA(255,0,255));
+        }
+        framebufferEnd(&fb);
         svcSleepThread(8000000000LL);
+#endif
 #endif
     }
 #endif
