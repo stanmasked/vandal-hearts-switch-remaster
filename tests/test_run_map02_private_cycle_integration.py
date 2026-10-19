@@ -39,7 +39,23 @@ class PrivateOneShotIntegratedEvidenceTests(unittest.TestCase):
         self.build_bundle = Path("/no-original-source-overlay")
         self.preflight = patch(
             "tools.run_map02_private_cycle_session.verify_private_cycle_readiness",
-            return_value={"ready_for_controlled_local_launch": True})
+            return_value={
+                "schema": "vh.map02.private-pc-cycle-readiness.v1",
+                "private_directories_checked": 7,
+                "capture_folders_empty": 5,
+                "source_bound_plan_checked": True,
+                "original_pc_source_identity_checked": True,
+                "complete_pc_elf_symbols_checked": True,
+                "complete_pc_elf_bytes_checked": True,
+                "private_original_image_bytes_checked": True,
+                "pinned_full_elf_build_receipt_checked": True,
+                "prelaunch_inputs_stable_across_checks": True,
+                "ready_for_controlled_local_launch": True,
+                "gameplay_process_started": False,
+                "original_map02_rendering_proven": False,
+                "hardware_ps1_equivalence_proven": False,
+                "game_content_emitted": False,
+            })
         self.preflight_mock = self.preflight.start()
         self.addCleanup(self.preflight.stop)
         self.plan_read = patch(
