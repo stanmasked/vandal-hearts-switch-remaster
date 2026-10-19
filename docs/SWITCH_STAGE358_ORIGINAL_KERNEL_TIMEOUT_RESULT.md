@@ -1,0 +1,9 @@
+# Stage358 — original NeXium 0xEA01 / KernelError_TimedOut cross-audit
+
+**Observed completed NRO + NeXium:** [run #39325440778](https://github.com/stanmasked/vandal-hearts-switch-remaster/actions/runs/39325440778). Original authenticated Stage351: **4 / wait_failed**; Stage348: **1414 acquired / 1413 released / 1 abandoned**. New independent Stage357 original guest CSV auditor (executing in NeXium's full smoke workflow) reports **59905**, hexadecimal **0xEA01**.
+
+Per published libnx `include/switch/result.h` macros, `R_MODULE(res) = res & 0x1ff`, `R_DESCRIPTION(res) = (res >> 9) & 0x1fff`, and `KernelError_TimedOut = 117` in `Module_Kernel = 1`. Hence `0xEA01 = MAKERESULT(Module_Kernel,KernelError_TimedOut)`. This identifies a **kernel timeout result** during the existing bounded `audoutWaitPlayFinish` call. The exact deeper call site inside `audoutWaitPlayFinish` is NOT directly traced; libnx first checks released buffers, and if none exist calls `eventWait` on the buffer event for the requested timeout. A timeout return is consistent with that branch, not a proven audible glitch.
+
+The Stage358 workflow independently downloads the ORIGINAL `nexium-runtime-evidence` archive from the completed run, verifies four SHA-pinned original Stage313/348/351/357 CSV families and Stage313/314/348/351/357 receipts using the earlier strict Stage352/357 validators, and asserts the full 1414/1413/1 code4/0xEA01 software profile. It rejects raw byte tampering, altered owner receipts, forged outcome classifications and claims of speaker/DAC proof. Artifact output is only one JSON receipt.
+
+Do NOT call the additional Stage358 re-audit CI completed until its actual GitHub Actions job succeeds. No changes to production PCM, music assets, 12-ms timeout or thread ownership were introduced to generate this replay.
