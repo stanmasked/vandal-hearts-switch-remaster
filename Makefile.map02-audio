@@ -37,7 +37,7 @@ MAP02_AUDIO_SOURCES := \
   $(SOURCES)/vh_audio_stream.c
 
 ifeq ($(MAP02_AUDIO_PRESUBMIT_WITNESS),1)
-MAP02_AUDIO_SOURCES += $(SOURCES)/vh_audout_presubmit_witness.c
+MAP02_AUDIO_SOURCES += $(SOURCES)/vh_audout_presubmit_witness.c $(SOURCES)/vh_audout_presubmit_optical.c
 endif
 
 .PHONY: map02-audio-nro
