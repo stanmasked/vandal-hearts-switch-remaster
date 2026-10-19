@@ -16,6 +16,8 @@ from tools.verify_map02_frame_bundle import fields, number, parse_json
 from tools.verify_map02_vram_timeline import VRAM_BYTES
 
 LOG = "gpu-native-events.jsonl"
+STATUS = "gpu-native-capture-status.json"
+STATUS_SCHEMA = "vh.map02.native-capture-status.v1"
 MAX_RECORDS = 64
 MAX_EVENT_BYTES = 128 * 1024
 # Exact pinned platform/pc/include/PsyQ/libgpu.h PC_GPU_PRIM_POLY_FT4.
@@ -132,7 +134,8 @@ def sha(raw):
 def validate_meta(event, step, target_frame):
     fields(event, ("stage","step","frame","phase","operation","snapshot",
                    "rect","dest","rgb","primitive_type","semi","window",
-                   "draw_mode","upload","ft4"), f"event {step}")
+                   "draw_mode","upload","ft4"), f"event {step}",
+           optional=("draw_env",))
     if event["stage"] != "native_vram":
         raise ValueError("not a native PC GPU VRAM event")
     if number(event["step"],"event step",0,MAX_RECORDS-1) != step:
@@ -159,6 +162,16 @@ def validate_meta(event, step, target_frame):
             raise ValueError(f"{name}: wrong field shape")
         for value in data:
             number(value,name,lo,hi)
+    # The optional DRAWENV snapshot is written by the opt-in native probe.
+    # Older captures stay readable but cannot prove drawing-area clipping.
+    # clip is [x,y,width,height], with 16-bit signed offsets [ofsX,ofsY].
+    if "draw_env" in event:
+        draw_env=event["draw_env"]
+        if type(draw_env) is not list or len(draw_env)!=6:
+            raise ValueError("DRAWENV: expected six integers")
+        for i,value in enumerate(draw_env):
+            number(value, "DRAWENV", -32768 if i in (0,1,4,5) else 0,
+                   65535 if i in (2,3) else 32767)
     rect=event["rect"]
     if op=="draw":
         if rect is not None or event["upload"]:
@@ -189,6 +202,61 @@ def validate_meta(event, step, target_frame):
             raise ValueError("only LoadImage can contain an upload")
         if op=="load" and event["upload"] not in ("",f"gpu-{step:04d}-upload.bin"):
             raise ValueError("unexpected upload filename")
+
+
+def verify_capture_receipt(directory: Path, *, target_frame: int, events):
+    """Require an exclusive recorder terminal receipt; old captures are not
+    automatically treated as complete. This is a consistency check only."""
+    directory = Path(directory).absolute()
+    raw = private_file(directory, STATUS, max_bytes=4096)
+    status = parse_json(raw, STATUS)
+    fields(status, (
+        "schema", "gpu_draw_frame", "observed_hooks",
+        "before_hooks", "after_hooks", "draw_before_hooks",
+        "transfer_before_hooks", "indexed_hooks", "written_hooks",
+        "limit_reached", "walk_finished", "hooks_balanced",
+        "observed_window_closed_without_detected_loss",
+    ), STATUS)
+    if status["schema"] != STATUS_SCHEMA:
+        raise ValueError("unsupported native GPU capture status schema")
+    if number(status["gpu_draw_frame"], "receipt frame", 1, 2**32-1) != target_frame:
+        raise ValueError("native GPU receipt frame mismatch")
+    counts = {}
+    for name in ("observed_hooks", "before_hooks", "after_hooks",
+                 "draw_before_hooks", "transfer_before_hooks",
+                 "indexed_hooks", "written_hooks"):
+        counts[name] = number(status[name], "receipt " + name, 0, 2**32-1)
+    for key in ("limit_reached", "walk_finished", "hooks_balanced",
+                "observed_window_closed_without_detected_loss"):
+        if type(status[key]) is not bool:
+            raise ValueError("native GPU receipt flag must be boolean")
+    if type(events) is not list or len(events) % 2:
+        raise ValueError("invalid native GPU event list for receipt")
+    pairs = len(events) // 2
+    draws = sum(e["operation"] == "draw" for e in events[::2])
+    transfers = pairs - draws
+    if (counts["observed_hooks"] !=
+            counts["before_hooks"] + counts["after_hooks"] or
+            counts["draw_before_hooks"] +
+            counts["transfer_before_hooks"] != counts["before_hooks"] or
+            counts["draw_before_hooks"] != draws or
+            counts["transfer_before_hooks"] != transfers or
+            counts["before_hooks"] != pairs or
+            counts["after_hooks"] != pairs or
+            counts["indexed_hooks"] != len(events) or
+            counts["written_hooks"] != len(events)):
+        raise ValueError("native GPU receipt count/log divergence")
+    if (len(events) >= MAX_RECORDS or status["limit_reached"] or
+            not status["walk_finished"] or not status["hooks_balanced"] or
+            not status["observed_window_closed_without_detected_loss"]):
+        raise ValueError("native GPU capture incomplete: cap, failed hooks or OT walk")
+    return {
+        "capture_receipt_supplied": True,
+        "native_gpu_event_hooks_accounted": counts["observed_hooks"],
+        "native_gpu_draw_pairs_accounted": draws,
+        "capture_window_closed_without_detected_loss": True,
+        "full_original_gameplay_frame_proven": False,
+    }
 
 
 def verify_capture(directory: Path, *, target_frame: int):
@@ -223,7 +291,7 @@ def verify_capture(directory: Path, *, target_frame: int):
         validate_meta(before,i,target_frame)
         validate_meta(after,i+1,target_frame)
         for key in ("frame","operation","rect","dest","rgb","primitive_type",
-                    "semi","ft4"):
+                    "semi","ft4","draw_env"):
             if before[key]!=after[key]:
                 raise ValueError(f"GPU event {i}: before/after metadata diverges ({key})")
         a=private_file(directory,before["snapshot"],expected=VRAM_BYTES)
@@ -306,7 +374,20 @@ def verify_capture(directory: Path, *, target_frame: int):
                 validate_clear_vram(a,b,after["rect"],after["rgb"])
                 clears+=1
                 clear_pairs_with_verified_vram_effect+=1
+    # Preserve PR#55 full VRAM/transfer verifications AND main's terminal
+    # recorder completeness receipt. No receipt means diagnostic only.
+    status_path = directory / STATUS
+    if status_path.exists() or status_path.is_symlink():
+        status_report = verify_capture_receipt(
+            directory, target_frame=target_frame, events=events)
+    else:
+        status_report = {
+            "capture_receipt_supplied": False,
+            "capture_window_closed_without_detected_loss": False,
+            "full_original_gameplay_frame_proven": False,
+        }
     return {
+        **status_report,
         "native_gpu_events_sha256":sha(log_raw),
         "vram_snapshot_sha256_list_sha256":sha("".join(snapshot_hashes).encode("ascii")),
         "upload_payload_sha256_list_sha256":(
