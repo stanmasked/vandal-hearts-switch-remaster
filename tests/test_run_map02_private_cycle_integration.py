@@ -64,10 +64,16 @@ class PrivateOneShotIntegratedEvidenceTests(unittest.TestCase):
         self.layout = patch(
             "tools.run_map02_private_cycle_session.inspect_private_launch_layout",
             return_value={
+                "schema": "vh.map02.prelaunch-directory-layout.v1",
                 "prelaunch_layout_ready": True,
                 "private_directory_roles_checked": 7,
                 "capture_output_directories_empty": 5,
-                "single_private_handoff_plan_present": True})
+                "single_private_handoff_plan_present": True,
+                "original_pc_elf_verified": False,
+                "original_game_image_verified": False,
+                "original_gameplay_executed": False,
+                "map02_frame_authenticated": False,
+                "private_game_bytes_read": False})
         self.layout_mock = self.layout.start()
         self.addCleanup(self.layout.stop)
         self.plan_read = patch(
