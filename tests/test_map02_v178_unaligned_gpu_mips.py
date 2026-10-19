@@ -68,6 +68,9 @@ class V178UnalignedGPU(unittest.TestCase):
     def test_pinned_interpreter_route_audit_requires_all_paths(self):
         source=native_excerpt()
         self.assertEqual(len(check(source)),4)
+        self.assertEqual(len(check(source.replace(
+            "psxMemWrite8(regs, addr, val & 0xff);",
+            "psxMemWrite8 (regs, addr, val & 0xff);"))),4)
         self.assertIn("psxMemRead32",get_function(source,"doLWL"))
         self.assertIn("psxMemWrite16",get_function(source,"doSWR"))
         for mutation in (
