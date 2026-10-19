@@ -251,6 +251,9 @@ on:
       - 'tools/apply_map02_v186_late_vblank_ram_corruption.py'
       - 'tests/test_map02_v186_late_vblank_ram_corruption.py'
       - '.github/workflows/map02-v186-late-vblank-ram-corruption.yml'
+      - 'tools/apply_map02_v187_native_ram_snapshots.py'
+      - 'tests/test_map02_v187_native_ram_snapshots.py'
+      - '.github/workflows/map02-v187-native-ram-snapshots.yml'
       - 'tests/test_map02_v172_mips_real_vblank_vram.py'
       - '.github/workflows/map02-v172-mips-real-vblank-vram.yml'
       - 'tests/test_map02_v171_mips_multiphase_vram.py'
@@ -460,6 +463,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v184_ram_data_chain_refusals.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v185_ram_vblank_persistence.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v186_late_vblank_ram_corruption.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v187_native_ram_snapshots.py' -v
           python3 -m remaster.tools.check_map02_v147_native_bounded_c --cc "${{ matrix.cc }}" \
             | grep -Fx 'VH147_COMPILED_BOUNDED_NATIVE_PASS capacity=1024 generic=1 repeated_pc=1 overflow_refused=1 atomic_mode0600=1 no_overwrite=1 original_retail=0'
           python3 -m remaster.tools.check_map02_v144_native_challenge_c --cc "${{ matrix.cc }}" \
@@ -480,7 +484,7 @@ jobs:
           git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
           git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
-          python3 -m remaster.tools.apply_map02_v186_late_vblank_ram_corruption upstream-pcsx
+          python3 -m remaster.tools.apply_map02_v187_native_ram_snapshots upstream-pcsx
           grep -F 'VH183_NATIVE_GUEST_RAM_VALUES_PASS' upstream-pcsx/frontend/main.c
           grep -F 'vh181_observe(regs,mem,0u)' upstream-pcsx/libpcsxcore/psxmem.c
           grep -F 'vh181_observe(regs,mem,1u)' upstream-pcsx/libpcsxcore/psxmem.c
@@ -2432,6 +2436,13 @@ jobs:
               fi
               grep -Fx 'VH185_NATIVE_RAM_PERSISTENCE_PASS boundaries=3 seed_once=1 guest_values_retained=1 guard_retained=1 real_vblanks=4 unai_samples=2380 original_retail=0' \
                 "proof/private/v185-$mode.log"
+              grep -Fx 'VH187_NATIVE_RAM_SNAPSHOTS_PASS boundaries=3 ordered_vblanks=3 exact_values=1 guard=1 original_retail=0' \
+                "proof/private/v185-$mode.log"
+              for phase in 1 2 3; do
+                native_snapshot="VH187_NATIVE_RAM_SNAPSHOT phase=$phase vblanks=$phase first=51a7c3d9 derived=51a73c26 guard=a1b2c3d4"
+                grep -Fx "$native_snapshot" "proof/private/v185-$mode.log"
+                test "$(grep -Fxc "$native_snapshot" "proof/private/v185-$mode.log")" -eq 1
+              done
               grep -Fx 'VH183_NATIVE_GUEST_RAM_VALUES_PASS windows=4 guest_sw_lw_dependency=1 real_memory_readback=1 vblanks=4 samples=2380 original_retail=0' \
                 "proof/private/v185-$mode.log"
               grep -Fx 'VH176_GUEST_MIPS_NARROW_GPU_QUIET_PASS windows=4 narrow_reads=0 narrow_writes=0 vblanks=4 samples=2380 native_psxcounters=1 original_retail=0' \
@@ -2451,7 +2462,14 @@ jobs:
                 3) expected='VH185_NATIVE_RAM_PERSISTENCE_REFUSED phase=1 first_ok=1 derived_ok=1 guard_ok=0';;
               esac
               grep -Fx "$expected" "proof/private/v185-$mode.log"
-              if grep -Eq 'VH185_NATIVE_RAM_PERSISTENCE_PASS|VH183_NATIVE_GUEST_RAM_VALUES_PASS|VH176_GUEST_MIPS_NARROW_GPU_QUIET_PASS' \
+              case "$mode" in
+                1) values='first=51a7c3d8 derived=51a73c26 guard=a1b2c3d4';;
+                2) values='first=51a7c3d9 derived=51a73c27 guard=a1b2c3d4';;
+                3) values='first=51a7c3d9 derived=51a73c26 guard=a1b2c3d5';;
+              esac
+              native_snapshot="VH187_NATIVE_RAM_SNAPSHOT phase=1 vblanks=1 $values"
+              grep -Fx "$native_snapshot" "proof/private/v185-$mode.log"
+              if grep -Eq 'VH187_NATIVE_RAM_SNAPSHOTS_PASS|VH185_NATIVE_RAM_PERSISTENCE_PASS|VH183_NATIVE_GUEST_RAM_VALUES_PASS|VH176_GUEST_MIPS_NARROW_GPU_QUIET_PASS' \
                   "proof/private/v185-$mode.log"; then
                 echo "VH185_FALSE_POSITIVE_AFTER_TAMPER mode=$mode"
                 exit 1
@@ -2484,6 +2502,18 @@ jobs:
             esac
             grep -Fx "VH185_NATIVE_RAM_PERSISTENCE_REFUSED phase=$phase $expected_field" \
               "proof/private/v186-$mode.log"
+            case "$mode" in
+              4|7) values='first=51a7c3d8 derived=51a73c26 guard=a1b2c3d4';;
+              5|8) values='first=51a7c3d9 derived=51a73c27 guard=a1b2c3d4';;
+              6|9) values='first=51a7c3d9 derived=51a73c26 guard=a1b2c3d5';;
+            esac
+            for prior in 1 2; do
+              if test "$prior" -ge "$phase"; then break; fi
+              native_snapshot="VH187_NATIVE_RAM_SNAPSHOT phase=$prior vblanks=$prior first=51a7c3d9 derived=51a73c26 guard=a1b2c3d4"
+              grep -Fx "$native_snapshot" "proof/private/v186-$mode.log"
+            done
+            native_snapshot="VH187_NATIVE_RAM_SNAPSHOT phase=$phase vblanks=$phase $values"
+            grep -Fx "$native_snapshot" "proof/private/v186-$mode.log"
             for observed_phase in 0 1; do
               grep -F "VH78_VBLANK_OBSERVED phase=$observed_phase event=" \
                 "proof/private/v186-$mode.log"
@@ -2491,7 +2521,7 @@ jobs:
             if test "$phase" -eq 3; then
               grep -F 'VH78_VBLANK_OBSERVED phase=2 event=' "proof/private/v186-$mode.log"
             fi
-            if grep -Eq 'VH185_NATIVE_RAM_PERSISTENCE_PASS|VH183_NATIVE_GUEST_RAM_VALUES_PASS|VH176_GUEST_MIPS_NARROW_GPU_QUIET_PASS' \
+            if grep -Eq 'VH187_NATIVE_RAM_SNAPSHOTS_PASS|VH185_NATIVE_RAM_PERSISTENCE_PASS|VH183_NATIVE_GUEST_RAM_VALUES_PASS|VH176_GUEST_MIPS_NARROW_GPU_QUIET_PASS' \
                 "proof/private/v186-$mode.log"; then
               echo "VH186_FALSE_RAM_OR_GPU_SUCCESS mode=$mode"
               exit 1
