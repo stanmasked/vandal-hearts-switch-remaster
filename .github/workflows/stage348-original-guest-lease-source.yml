@@ -1,0 +1,23 @@
+name: Stage348 strictly audit source-created guest PCM lease receipts
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage348-original-guest-lease-source.yml'
+      - 'tools/audit_nexium_guest_lease_reconciliation_stage348.py'
+      - 'tests/test_audit_nexium_guest_lease_reconciliation_stage348.py'
+permissions:
+  contents: read
+jobs:
+  canonical-guest-lease-source:
+    name: Reject forged, duplicated, malformed and non-balanced guest lease CSVs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stage348 original source preservation and 16 negative/positive scenarios
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/audit_nexium_guest_lease_reconciliation_stage348.py tests/test_audit_nexium_guest_lease_reconciliation_stage348.py
+          python3 -m unittest discover -s tests -p 'test_audit_nexium_guest_lease_reconciliation_stage348.py' -v
+          echo "Stage348 strictly validates the canonical guest software lease source format. This synthetic CI does not itself show real NeXium guest SD evidence or physical Switch sound." >> "$GITHUB_STEP_SUMMARY"
