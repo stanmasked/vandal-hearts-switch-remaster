@@ -1,5 +1,6 @@
 """Actual synthetic C11 two-launch ELF -> GPU/BGR555 -> audit integration tests."""
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -8,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
 
 from test_map02_joint_native_capture_c11 import PRODUCER
@@ -1536,6 +1538,61 @@ class TwoLiveElfPrivateAuditTests(unittest.TestCase):
         with patch.object(two_live, "audit", side_effect=falsify):
             with self.assertRaisesRegex(ValueError, "witness invalid"):
                 self.run_two()
+
+    def test_cli_dispatch_never_prints_mutated_public_reports(self):
+        # A future CLI refactor must not bypass the independent public
+        # egress guard by forwarding an unvalidated operation result.
+        # All private captures are synthetic; this invokes the actual
+        # argparse/print path after mocking only the operation return.
+        preflight_receipt = two_live.preflight(
+            self.executable, *self.dirs, frame=123,
+            executable_sha256=self.digest,
+            require_identical_gpu_timeline=True)
+        live_receipt = self.run_two(require_identical_gpu_timeline=True)
+        arguments = [
+            "vh-map02-test", "--executable", str(self.executable),
+            "--executable-sha256", self.digest,
+            "--first-frame", str(self.dirs[0]),
+            "--first-journal", str(self.dirs[1]),
+            "--second-frame", str(self.dirs[2]),
+            "--second-journal", str(self.dirs[3]), "--frame", "123",
+            "--require-identical-gpu-timeline",
+        ]
+        cases = (
+            ("dry-run-private-path", True,
+             {"private_gpu_events_path":
+              str(self.dirs[1] / "gpu-native-events.jsonl")}),
+            ("dry-run-forged-launch", True, {"native_elf_launched": True}),
+            ("dry-run-extra-bytes", True, {"raw_vram": b"\\x00\\x01"}),
+            ("live-private-path", False,
+             {"private_gpu_events_path": str(self.dirs[1])}),
+            ("live-extra-bytes", False, {"raw_gpu": b"\\x00\\x01"}),
+            ("live-forged-hardware", False,
+             {"ps1_hardware_pixel_equivalence_verified": True}),
+            ("live-forged-retail", False,
+             {"retail_gameplay_authenticated": True}),
+            ("live-bad-counter", False, {"gpu_event_records_compared": True}),
+        )
+        for title, dry_run, changes in cases:
+            with self.subTest(title=title):
+                forged = dict(preflight_receipt if dry_run else live_receipt)
+                forged.update(changes)
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with (
+                    patch.object(sys, "argv",
+                                 arguments + (["--dry-run"] if dry_run else [])),
+                    patch.object(two_live, "preflight", return_value=forged),
+                    patch.object(two_live, "run", return_value=forged),
+                    redirect_stdout(stdout),
+                    redirect_stderr(stderr),
+                ):
+                    with self.assertRaises(SystemExit) as terminated:
+                        two_live.main()
+                self.assertEqual(terminated.exception.code, 2)
+                self.assertEqual(stdout.getvalue(), "")
+                self.assertIn("failed verification", stderr.getvalue())
+                for private in (self.executable, *self.dirs):
+                    self.assertNotIn(str(private), stderr.getvalue())
 
     def test_cli_reports_only_digests_not_private_paths(self):
         # Exercise the actual subprocess/JSON stdout egress, not only the
