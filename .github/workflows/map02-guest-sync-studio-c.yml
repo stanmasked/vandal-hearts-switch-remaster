@@ -267,7 +267,9 @@ jobs:
               sleep 7
               import -window "$window" "$ROOT/wet-tail-$MODE-metrics.png"
               test -s "$ROOT/wet-tail-$MODE-metrics.png"
-              sleep 8
+              # The synthetic SEQ/SPU replay runs after audout joins; give
+              # the guest extra bounded time to paint its third 8s receipt.
+              sleep 10
               import -window "$window" "$ROOT/wet-tail-$MODE-synced.png"
               test -s "$ROOT/wet-tail-$MODE-synced.png"
               kill -INT "$guest" 2>/dev/null || true
