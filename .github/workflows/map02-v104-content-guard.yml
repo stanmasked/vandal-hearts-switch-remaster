@@ -248,6 +248,9 @@ on:
       - 'tools/apply_map02_v185_ram_vblank_persistence.py'
       - 'tests/test_map02_v185_ram_vblank_persistence.py'
       - '.github/workflows/map02-v185-ram-vblank-persistence.yml'
+      - 'tools/apply_map02_v186_late_vblank_ram_corruption.py'
+      - 'tests/test_map02_v186_late_vblank_ram_corruption.py'
+      - '.github/workflows/map02-v186-late-vblank-ram-corruption.yml'
       - 'tests/test_map02_v172_mips_real_vblank_vram.py'
       - '.github/workflows/map02-v172-mips-real-vblank-vram.yml'
       - 'tests/test_map02_v171_mips_multiphase_vram.py'
@@ -456,6 +459,7 @@ jobs:
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v183_native_ram_values.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v184_ram_data_chain_refusals.py' -v
           python3 -m unittest discover -s remaster/tests -p 'test_map02_v185_ram_vblank_persistence.py' -v
+          python3 -m unittest discover -s remaster/tests -p 'test_map02_v186_late_vblank_ram_corruption.py' -v
           python3 -m remaster.tools.check_map02_v147_native_bounded_c --cc "${{ matrix.cc }}" \
             | grep -Fx 'VH147_COMPILED_BOUNDED_NATIVE_PASS capacity=1024 generic=1 repeated_pc=1 overflow_refused=1 atomic_mode0600=1 no_overwrite=1 original_retail=0'
           python3 -m remaster.tools.check_map02_v144_native_challenge_c --cc "${{ matrix.cc }}" \
@@ -476,7 +480,7 @@ jobs:
           git -C upstream-pcsx fetch -q --depth=1 origin "$pin"
           git -C upstream-pcsx -c advice.detachedHead=false checkout -q FETCH_HEAD
           test "$(git -C upstream-pcsx rev-parse HEAD)" = "$pin"
-          python3 -m remaster.tools.apply_map02_v185_ram_vblank_persistence upstream-pcsx
+          python3 -m remaster.tools.apply_map02_v186_late_vblank_ram_corruption upstream-pcsx
           grep -F 'VH183_NATIVE_GUEST_RAM_VALUES_PASS' upstream-pcsx/frontend/main.c
           grep -F 'vh181_observe(regs,mem,0u)' upstream-pcsx/libpcsxcore/psxmem.c
           grep -F 'vh181_observe(regs,mem,1u)' upstream-pcsx/libpcsxcore/psxmem.c
@@ -2455,6 +2459,45 @@ jobs:
             fi
           done
           echo 'VH185_NATIVE_RAM_VBLANK_PERSISTENCE_PASS retained_boundaries=3 clean=1 negative_corruptions=3 native_exit=86 original_retail=0'
+          # v186: tamper a guest-computed RAM word or untouched guard AFTER
+          # phase 1 or phase 2, never phase 0. The NEXT VBlank-phase RAM
+          # precheck must refuse before a later guest SW can repair the bit.
+          for mode in 4 5 6 7 8 9; do
+            mkdir -m 700 "proof/v186-$mode-home"
+            rc=0
+            timeout 75s env -u VH_MAP02_V82_PRIVATE_PATH \
+              SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+              HOME="$PWD/proof/v186-$mode-home" \
+              ./upstream-pcsx/pcsx -novid -nodrc -nothread \
+              "--vh186-ram-persist-$mode" "proof/private/V183_RAM_CORRECT.EXE" \
+              > "proof/private/v186-$mode.log" 2>&1 || rc=$?
+            test "$rc" -eq 86 || {
+              echo "VH186_MISSING_LATE_BOUNDARY_REFUSAL mode=$mode rc=$rc"
+              grep -E 'VH185_|VH183_|REFUSED' "proof/private/v186-$mode.log" | tail -n 40 || true
+              exit 1
+            }
+            if test "$mode" -le 6; then phase=2; else phase=3; fi
+            case "$mode" in
+              4|7) expected_field='first_ok=0 derived_ok=1 guard_ok=1';;
+              5|8) expected_field='first_ok=1 derived_ok=0 guard_ok=1';;
+              6|9) expected_field='first_ok=1 derived_ok=1 guard_ok=0';;
+            esac
+            grep -Fx "VH185_NATIVE_RAM_PERSISTENCE_REFUSED phase=$phase $expected_field" \
+              "proof/private/v186-$mode.log"
+            for observed_phase in 0 1; do
+              grep -F "VH78_VBLANK_OBSERVED phase=$observed_phase event=" \
+                "proof/private/v186-$mode.log"
+            done
+            if test "$phase" -eq 3; then
+              grep -F 'VH78_VBLANK_OBSERVED phase=2 event=' "proof/private/v186-$mode.log"
+            fi
+            if grep -Eq 'VH185_NATIVE_RAM_PERSISTENCE_PASS|VH183_NATIVE_GUEST_RAM_VALUES_PASS|VH176_GUEST_MIPS_NARROW_GPU_QUIET_PASS' \
+                "proof/private/v186-$mode.log"; then
+              echo "VH186_FALSE_RAM_OR_GPU_SUCCESS mode=$mode"
+              exit 1
+            fi
+          done
+          echo 'VH186_NATIVE_LATE_RAM_REFUSALS_PASS corruptions=6 refusal_phases=2,3 native_exit=86 original_retail=0'
           # Retain valid signed synthetic EXE / CPU stage markers, but
           # mutate one actual interpreted ORI instruction so the first
           # GP0(60) red command carries a wrong color. The native GPU
