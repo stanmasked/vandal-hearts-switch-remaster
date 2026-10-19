@@ -26,6 +26,7 @@ class Native48ParityTests(unittest.TestCase):
             file.write_text("PASS: guest synthetic DSP\n"+self.line+"\n")
         for mode,file in enumerate(self.guests):
             file.write_text(json.dumps({
+                "schema":"vh-map02-guest-native-48k-bridge/v1",
                 "outer_nro_wet_tail_mode":mode,
                 "result":"GUEST_NATIVE_48K_SYNCHRONIZED_TAIL_OBSERVED",
                 "pre_switch_native_fnv1a64":"1111222233334444",
@@ -96,6 +97,32 @@ class Native48ParityTests(unittest.TestCase):
             audit_tool.audit(self.gcc,self.clang,*self.guests,0,1,SHA)
     def test_guest_missing_field_fails(self):
         self.update_guest(1,"wet_native_fnv1a64",None)
-        with self.assertRaisesRegex(ValueError,"differ"):self.run_audit()
+        with self.assertRaisesRegex(ValueError,"types"):self.run_audit()
+    def test_wrong_guest_schema_fails(self):
+        self.update_guest(0,"schema","vh-map02-guest-native-48k-bridge/v0")
+        with self.assertRaisesRegex(ValueError,"status"):self.run_audit()
+    def test_missing_guest_schema_fails(self):
+        self.update_guest(1,"schema",None)
+        with self.assertRaisesRegex(ValueError,"status"):self.run_audit()
+    def test_boolean_guest_mode_fails(self):
+        self.update_guest(0,"outer_nro_wet_tail_mode",False)
+        with self.assertRaisesRegex(ValueError,"types"):self.run_audit()
+    def test_boolean_zero_residue_fails(self):
+        self.update_guest(1,"reset_later_pages_nonzero_sample_values",False)
+        with self.assertRaisesRegex(ValueError,"types"):self.run_audit()
+    def test_duplicate_guest_json_keys_fail(self):
+        p=self.guests[0]
+        original=p.read_text()
+        p.write_text(original.replace(
+            '"schema": "vh-map02-guest-native-48k-bridge/v1"',
+            '"schema": "forged", "schema": "vh-map02-guest-native-48k-bridge/v1"'))
+        with self.assertRaisesRegex(ValueError,"Duplicate"):self.run_audit()
+    def test_guest_array_instead_of_object_fails(self):
+        self.guests[0].write_text('[]')
+        with self.assertRaisesRegex(ValueError,"object"):self.run_audit()
+    def test_zero_prefix_hash_rejected_independently(self):
+        for file in (self.gcc,self.clang):
+            file.write_text(self.line.replace("1111222233334444","0000000000000000"))
+        with self.assertRaisesRegex(ValueError,"bounds"):self.run_audit()
 
 if __name__=="__main__":unittest.main()
