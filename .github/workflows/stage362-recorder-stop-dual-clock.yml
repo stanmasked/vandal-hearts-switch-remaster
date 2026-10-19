@@ -1,0 +1,26 @@
+name: Stage362 original host recorder wall and monotonic stop diagnostics
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage362-recorder-stop-dual-clock.yml'
+      - 'tools/audit_nexium_recorder_stop_dual_clock_stage362.py'
+      - 'tests/test_audit_nexium_recorder_stop_dual_clock_stage362.py'
+      - 'tools/capture_nexium_scene_audio.sh'
+permissions:
+  contents: read
+jobs:
+  host-dual-clock:
+    name: Original strict Stage303 stays unchanged; reject forged host timestamps
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run host-only Stage362 source mutation tests
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests \
+            -p 'test_audit_nexium_recorder_stop_dual_clock_stage362.py' -v
+          python3 -m py_compile tools/audit_nexium_recorder_stop_dual_clock_stage362.py
+          bash -n tools/capture_nexium_scene_audio.sh
+          echo "Stage362 synthetic only; actual NeXium host-monotonic recorder evidence requires fresh emulator capture. Stage303 strict original-source audit remains unchanged." >> "$GITHUB_STEP_SUMMARY"
